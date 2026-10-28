@@ -14,7 +14,8 @@
 //   handler (sshFrontDoor), piped to the container's port. Public inbound TCP to Workers is
 //   not generally available yet.
 // - `off` (or unset): neither; no gateway container starts.
-import { Container } from '@cloudflare/containers';
+import { Container, type StopParams } from '@cloudflare/containers';
+import { deferred } from './background';
 import type { Env } from './types';
 
 /** The gateway's SSH listener inside its container (unprivileged; clients use port 22). */
@@ -25,7 +26,7 @@ export const PLATFORM_HOST = 'platform.internal';
 /** The one gateway instance (both front doors). */
 export const GATEWAY = 'ssh-gateway-0';
 const PLATFORM_PATHS =
-  /^\/(internal\/ssh\/(lookup|session)|git\/r[0-9a-f]{20}(\.git)?\/(info\/refs|git-upload-pack|git-receive-pack))$/;
+  /^\/(internal\/ssh\/(lookup|session|status)|git\/r[0-9a-f]{20}(\.git)?\/(info\/refs|git-upload-pack|git-receive-pack))$/;
 
 export type FrontDoor = 'tunnel' | 'connect';
 /** The configured front door, or null when SSH is off. */
@@ -95,9 +96,23 @@ export class SshGateway extends Container<Env> {
   /** The tunnel front door's keep-alive (the platform's cron): starts the container if it
    * stopped (a deploy, a crash) and resets its sleep timer. */
   async keepAlive() {
+    const started = !this.ctx.container?.running;
     await this.ready();
     this.renewActivityTimeout();
-    return { running: true };
+    return { started };
+  }
+
+  // Lifecycle in `wrangler tail` (the container's own output is in its logs, and the
+  // gateway reports cloudflared's state through /internal/ssh/status).
+  override onStart() {
+    log('ssh.container_started', {});
+  }
+  override onStop(params: StopParams) {
+    log('ssh.container_stopped', { exit_code: params.exitCode, reason: params.reason });
+  }
+  override onError(error: unknown) {
+    log('ssh.container_error', { error: String(error).slice(0, 300) });
+    throw error;
   }
 
   /** One SSH connection, forwarded from the `connect` front door. */
@@ -140,16 +155,31 @@ export async function sshFrontDoor(socket: Socket, env: Env) {
   await splice(socket, stub.connect(`${GATEWAY}:22`));
 }
 
-/** The platform's cron: keeps the one gateway (and its tunnel) running on the tunnel front
- * door; nothing otherwise. */
-export async function sshKeepAlive(env: Env) {
+const log = (event: string, fields: Record<string, unknown>) =>
+  console.log(JSON.stringify({ event, ...fields }));
+
+/** Keeps the one gateway (and its tunnel) running on the tunnel front door; nothing
+ * otherwise. Called by the platform's cron and, at most once a minute per isolate, by
+ * /health (sshWake), so a deploy's health check starts it without waiting for the cron. */
+export async function sshKeepAlive(env: Env, by: 'cron' | 'health') {
   const stub = frontDoor(env) === 'tunnel' && gateway(env);
   if (!stub) return;
+  const started = Date.now();
   try {
-    await stub.keepAlive();
+    const result = await stub.keepAlive();
+    if (by === 'health' || result.started)
+      log('ssh.keepalive', { by, started: result.started, ms: Date.now() - started });
   } catch (e) {
     console.error(
-      JSON.stringify({ event: 'ssh.keepalive_failed', error: String(e).slice(0, 200) }),
+      JSON.stringify({ event: 'ssh.keepalive_failed', by, error: String(e).slice(0, 300) }),
     );
   }
+}
+
+let woken = 0;
+/** /health on the tunnel front door: starts the gateway after the answer (throttled). */
+export function sshWake(env: Env) {
+  if (frontDoor(env) !== 'tunnel' || Date.now() - woken < 60_000) return;
+  woken = Date.now();
+  deferred(() => sshKeepAlive(env, 'health'));
 }

@@ -78,7 +78,7 @@ try {
   };
   // The stand-in cloudflared: records its arguments and whether it got the token (never its value).
   const fake = join(dir, 'cloudflared');
-  writeFileSync(fake, `#!/bin/sh\necho "$@" > "${dir}/cloudflared.args"\n[ "$TUNNEL_TOKEN" = e2e-token ] && echo yes > "${dir}/cloudflared.token"\nexec sleep 600\n`);
+  writeFileSync(fake, `#!/bin/sh\necho "$@" > "${dir}/cloudflared.args"\n[ "$TUNNEL_TOKEN" = e2e-token ] && echo yes > "${dir}/cloudflared.token"\necho "INF Registered tunnel connection connIndex=0 location=e2e protocol=http2" >&2\nexec sleep 600\n`);
   chmodSync(fake, 0o755);
   if (docker) {
     const arch = process.arch === 'arm64' ? 'linux/arm64' : 'linux/amd64';
@@ -116,6 +116,11 @@ try {
     if (args !== 'tunnel --no-autoupdate run' || !existsSync(join(dir, 'cloudflared.token')))
       throw new Error(`cloudflared was not started as expected: ${args}`);
     metrics.cloudflared = `${args} (token from the environment)`;
+    // The gateway reported its own and cloudflared's state to the platform's log.
+    const platformLog = children.find((c) => c.cmd === wrangler).log();
+    const reported = ['ssh.gateway.started', 'ssh.tunnel.started', 'ssh.tunnel.connected'].filter((e) => platformLog.includes(e));
+    if (reported.length !== 3) throw new Error(`platform log lacks gateway reports: got ${reported}`);
+    metrics.reported = reported.join(', ');
   }
   console.log(JSON.stringify({ ok: true, gateway: docker ? 'docker' : 'native', ...metrics }, null, 2));
 } catch (e) {

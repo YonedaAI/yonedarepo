@@ -50,7 +50,7 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
   }
   /** Every minute: keeps the SSH gateway (and its tunnel) running. */
   scheduled() {
-    return sshKeepAlive(this.env);
+    return sshKeepAlive(this.env, 'cron');
   }
   /** Jobs of a batch run side by side (they wait on I/O, not CPU); each settles alone. */
   async queue(batch: MessageBatch<Envelope>) {
