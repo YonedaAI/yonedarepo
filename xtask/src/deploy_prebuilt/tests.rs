@@ -167,3 +167,22 @@ fn installed_outputs_drop_the_revision_marker_and_stale_files() {
     assert!(!target.join(REVISION).exists());
     assert!(!target.join("stale.js").exists());
 }
+
+#[test]
+fn a_frontend_built_for_another_api_origin_is_refused() {
+    let dir = outputs(HEAD);
+    let prebuilt = check(dir.path(), HEAD).unwrap();
+    let origin = "https://api.dev.yonedarepo.com";
+    let assets = dir.path().join(FRONTEND).join("assets");
+    let refused = |needle: &str| {
+        let error = prebuilt.check_api_origin(origin).unwrap_err().to_string();
+        assert!(error.contains(needle), "expected {needle:?} in {error:?}");
+    };
+    refused("no prebuilt frontend-dist/assets");
+    std::fs::create_dir_all(&assets).unwrap();
+    std::fs::write(assets.join("index-a.js"), "fetch(location.origin+'/git/')").unwrap();
+    std::fs::write(assets.join("index-a.css"), origin).unwrap();
+    refused("not built with VITE_YONEDA_API_ORIGIN=https://api.dev.yonedarepo.com");
+    std::fs::write(assets.join("index-b.js"), format!("const o=\"{origin}\";")).unwrap();
+    prebuilt.check_api_origin(origin).unwrap();
+}
