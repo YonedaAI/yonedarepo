@@ -8,7 +8,7 @@ use super::batches::open;
 use super::*;
 use std::collections::BTreeMap;
 use yoneda_core::git_object::ObjectId;
-use yoneda_refmodel::{CommitId, MAIN, Op, Outcome, Plan, Repo, Rng, Role, Tree, generate};
+use yoneda_refmodel::{CommitId, MAIN, Op, Outcome, Plan, Repo, Rng, Role, Scope, Tree, generate};
 
 mod adapter;
 mod git;
@@ -73,7 +73,7 @@ impl Driver {
                     None => json!({"path": path, "delete": true}),
                 };
                 let reads = if *read { json!([path]) } else { json!([]) };
-                (self.commit_on(branch, json!([change]), reads), None)
+                (self.commit_on(OWNER, branch, json!([change]), reads), None)
             }
             Op::Revert { branch, back } => {
                 let tip = self.model.refs[branch];
@@ -84,7 +84,7 @@ impl Driver {
                 let source = row(&json!(self.ids[source]));
                 let old = row(&source["parents"][0])["tree"].clone();
                 (
-                    self.commit_on(branch, self.replay(&old, &source["tree"]), json!([])),
+                    self.commit_on(OWNER, branch, self.replay(&old, &source["tree"]), json!([])),
                     None,
                 )
             }
@@ -153,6 +153,51 @@ impl Driver {
                 }
             }
             Op::RunQueue => (self.run_queue(), None),
+            Op::MintToken {
+                name,
+                scopes,
+                grant,
+            } => {
+                let scopes: Vec<&str> = scopes
+                    .iter()
+                    .map(|s| match s {
+                        Scope::Read => "read",
+                        Scope::Write => "write",
+                        Scope::Land => "land",
+                    })
+                    .collect();
+                let secret = format!("{name}-secret-0123456789abcdef0123456789");
+                let mint = json!({"op":"repo_token_create","name":name,"scopes":scopes,
+                    "paths":grant,"_secret":secret});
+                (done(self.h.run(OWNER, mint)), None)
+            }
+            Op::RevokeToken { name } => (
+                done(
+                    self.h
+                        .run(OWNER, json!({"op":"repo_token_revoke","name":name})),
+                ),
+                None,
+            ),
+            Op::TokenCommit {
+                token,
+                branch,
+                path,
+                content,
+            } => {
+                let change = match content {
+                    Some(text) => file(path, text),
+                    None => json!({"path": path, "delete": true}),
+                };
+                let who = format!("token:{token}");
+                (
+                    self.commit_on(&who, branch, json!([change]), json!([])),
+                    None,
+                )
+            }
+            Op::TokenRead { token, path } => {
+                let read = json!({"op":"repo_path_history","ref":MAIN,"path":path});
+                (done(self.h.run(&format!("token:{token}"), read)), None)
+            }
             Op::Member { account, role } => {
                 let command = match role {
                     Some(role) => json!({"op":"repo_member_put","account":account,

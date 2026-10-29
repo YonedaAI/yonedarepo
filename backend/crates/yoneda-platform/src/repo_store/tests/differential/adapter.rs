@@ -8,15 +8,16 @@ use yoneda_refmodel::{Access, Caller, MAIN, Plan};
 const MERGER: &str = "platform:merge";
 
 impl Driver {
-    /// Commits `changes` on `branch`'s tip at the current version and lands it there.
-    pub(super) fn commit_on(&self, branch: &str, changes: Value, reads: Value) -> Seen {
+    /// Commits `changes` on `branch`'s tip at the current version as `who` and lands it
+    /// there.
+    pub(super) fn commit_on(&self, who: &str, branch: &str, changes: Value, reads: Value) -> Seen {
         let parent = self.ids[self.model.refs[branch]].clone();
         let version = self.model.version;
-        match self.h.commit(OWNER, Some(&parent), version, changes, reads) {
+        match self.h.commit(who, Some(&parent), version, changes, reads) {
             Err(e) => Seen::Refused(e.code),
             Ok(id) => match answer(
                 self.h
-                    .run(OWNER, json!({"op":"repo_land","ref":branch,"commit":id})),
+                    .run(who, json!({"op":"repo_land","ref":branch,"commit":id})),
             ) {
                 Seen::Moved => Seen::Committed(id),
                 other => other,

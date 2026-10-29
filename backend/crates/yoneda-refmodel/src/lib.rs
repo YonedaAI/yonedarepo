@@ -2,7 +2,7 @@
 //! global log version, and the operations the differential tests drive (a one-file commit
 //! landed on its branch, working-branch create, move and delete by compare-and-swap, tags,
 //! landing a branch on main with its merge-plan outcome, reverts, platform merge commits
-//! and rebases, queued landings, and who may read and write). It has no dependencies, so
+//! and rebases, queued landings, tokens, and who may read and write). It has no dependencies, so
 //! it shares no code with the platform it checks; commits are numbered in creation order
 //! and the test maps those numbers to Git ids.
 //!
@@ -19,6 +19,7 @@
 //! - Landings queued on main settle in batches: a fast-forward alone, else one octopus merge
 //!   of the independent clean merges (`queue`); while any wait, direct landings on main
 //!   are refused as MERGE_REQUIRED.
+//! - Repository tokens act within their scopes and path grant (`tokens`).
 //! - Files are one line each (the generator keeps them so), so a three-way merge is decided
 //!   per file: a side that left a file alone takes the other's version; two different
 //!   changes conflict.
@@ -29,11 +30,13 @@ mod graph;
 mod land;
 mod merge;
 mod queue;
+mod tokens;
 
 pub use access::{Access, Caller, Role};
 pub use cases::{PATHS, Rng, generate};
 pub use queue::{Batch, Ticket, TicketStatus};
 use std::collections::{BTreeMap, BTreeSet};
+pub use tokens::{Scope, Token};
 
 /// A commit's number: its position in creation order (0 is the seeded root).
 pub type CommitId = usize;
@@ -76,7 +79,10 @@ pub enum Op {
         read: bool,
     },
     /// Creates working branch `name` at `from`'s tip, expecting it absent.
-    CreateBranch { name: String, from: String },
+    CreateBranch {
+        name: String,
+        from: String,
+    },
     /// Moves `name` to `to`'s tip, expecting it at `expected`'s tip.
     MoveBranch {
         name: String,
@@ -84,29 +90,76 @@ pub enum Op {
         expected: String,
     },
     /// Deletes `name`, expecting it at `expected`'s tip.
-    DeleteBranch { name: String, expected: String },
+    DeleteBranch {
+        name: String,
+        expected: String,
+    },
     /// Creates tag `name` at `at`'s tip.
-    Tag { name: String, at: String },
+    Tag {
+        name: String,
+        at: String,
+    },
     /// Lands `branch`'s tip on main.
-    Land { branch: String },
+    Land {
+        branch: String,
+    },
     /// Reverts the commit `back` first parents below `branch`'s tip onto that tip and lands
     /// the revert on `branch`.
-    Revert { branch: String, back: usize },
+    Revert {
+        branch: String,
+        back: usize,
+    },
     /// Lands `branch`'s tip on main; where main moved (merge required), through a platform
     /// merge commit of the two, as the adapter builds one.
-    MergeLand { branch: String },
+    MergeLand {
+        branch: String,
+    },
     /// Replays working branch `branch`'s own commits onto main's head and moves it there.
-    Rebase { branch: String },
+    Rebase {
+        branch: String,
+    },
     /// `caller` tries `access`.
-    Probe { caller: Caller, access: Access },
+    Probe {
+        caller: Caller,
+        access: Access,
+    },
     /// `caller` makes the repository public or private.
-    SetVisibility { caller: Caller, public: bool },
+    SetVisibility {
+        caller: Caller,
+        public: bool,
+    },
     /// The owner grants `account` `role`, or removes it (`None`).
-    Member { account: String, role: Option<Role> },
+    Member {
+        account: String,
+        role: Option<Role>,
+    },
     /// Lands `branch`'s tip on main, queuing it where a merge is required.
-    Enqueue { branch: String },
+    Enqueue {
+        branch: String,
+    },
     /// The combiner settles one batch of main's queue.
     RunQueue,
+    /// The owner mints repository token `name` with `scopes` and an optional path grant.
+    MintToken {
+        name: String,
+        scopes: BTreeSet<Scope>,
+        grant: Option<Vec<String>>,
+    },
+    RevokeToken {
+        name: String,
+    },
+    /// A one-file commit on `branch` as token `token`, landed there.
+    TokenCommit {
+        token: String,
+        branch: String,
+        path: String,
+        content: Option<String>,
+    },
+    /// Token `token` reads `path`'s history on main.
+    TokenRead {
+        token: String,
+        path: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -149,6 +202,8 @@ pub struct Repo {
     pub members: BTreeMap<String, Role>,
     /// Main's landing queue, every ticket ever issued.
     pub tickets: Vec<Ticket>,
+    /// Repository tokens by name, revoked ones included (names are never reused).
+    pub tokens: BTreeMap<String, Token>,
 }
 
 impl Repo {
@@ -176,6 +231,7 @@ impl Repo {
             public: false,
             members: BTreeMap::new(),
             tickets: Vec::new(),
+            tokens: BTreeMap::new(),
         }
     }
 
@@ -233,6 +289,22 @@ impl Repo {
             Op::Member { account, role } => (self.set_member(account, *role), None),
             Op::Enqueue { branch } => (self.enqueue(branch), None),
             Op::RunQueue => (self.run_queue(), None),
+            Op::MintToken {
+                name,
+                scopes,
+                grant,
+            } => (self.mint(name, scopes, grant), None),
+            Op::RevokeToken { name } => (self.revoke(name), None),
+            Op::TokenCommit {
+                token,
+                branch,
+                path,
+                content,
+            } => (
+                self.token_commit(token, branch, path, content.as_deref()),
+                None,
+            ),
+            Op::TokenRead { token, path } => (self.token_read(token, path), None),
         }
     }
 

@@ -1,7 +1,8 @@
 //! Scripted cases for outcomes the random cases reach only rarely: each script must reach
 //! the outcome it names, under the same model, platform and Git checks.
 use super::{Driver, git};
-use yoneda_refmodel::{Access, Caller, MAIN, Op};
+use std::collections::BTreeSet;
+use yoneda_refmodel::{Access, Caller, MAIN, Op, Scope};
 
 const B1: &str = "refs/heads/b1";
 
@@ -212,4 +213,69 @@ fn a_queued_ticket_for_a_landed_commit_settles() {
     assert!(landed.is_ok(), "{landed:?}");
     let status = h.ok(OWNER, json!({"op":"repo_land_status","ticket":ticket}));
     assert_ne!(status["status"], "pending");
+}
+
+fn mint(name: &str, scopes: &[Scope], grant: Option<&[&str]>) -> Op {
+    Op::MintToken {
+        name: name.into(),
+        scopes: scopes.iter().cloned().collect::<BTreeSet<_>>(),
+        grant: grant.map(|g| g.iter().map(|p| (*p).to_owned()).collect()),
+    }
+}
+
+fn token_put(token: &str, branch: &str, path: &str, text: &str) -> Op {
+    Op::TokenCommit {
+        token: token.into(),
+        branch: branch.into(),
+        path: path.into(),
+        content: Some(format!("{text}\n")),
+    }
+}
+
+fn token_read(token: &str, path: &str) -> Op {
+    Op::TokenRead {
+        token: token.into(),
+        path: path.into(),
+    }
+}
+
+#[test]
+fn tokens_act_within_their_scopes_and_grants() {
+    let script = [
+        branch_off_main(),
+        // t1 reads and writes src/ only, and cannot land on main.
+        mint("t1", &[Scope::Read, Scope::Write], Some(&["src/"])),
+        token_put("t1", B1, "src/b.rs", "from t1"),
+        token_put("t1", B1, "a.txt", "outside the grant"),
+        token_put("t1", MAIN, "src/b.rs", "no land scope"),
+        // The change is checked before the landing scope: nothing to change comes first.
+        token_put("t1", MAIN, "src/lib.rs", "pub fn a() {}"),
+        token_read("t1", "src/lib.rs"),
+        token_read("t1", "README.md"),
+        mint("t1", &[Scope::Read], None),
+        // t2 only reads; t3 writes and lands anywhere but cannot read.
+        mint("t2", &[Scope::Read], None),
+        token_put("t2", B1, "a.txt", "no write scope"),
+        token_read("t2", "a.txt"),
+        mint("t3", &[Scope::Write, Scope::Land], None),
+        token_put("t3", MAIN, "a.txt", "landed by t3"),
+        token_read("t3", "a.txt"),
+        Op::RevokeToken { name: "t3".into() },
+        token_put("t3", MAIN, "a.txt", "revoked"),
+        token_read("never", "a.txt"),
+    ];
+    run_reaching(
+        "tokens",
+        &script,
+        &[
+            "TokenCommit Committed",
+            "TokenCommit FORBIDDEN",
+            "TokenCommit NO_CHANGES",
+            "TokenCommit UNAUTHORIZED",
+            "TokenRead Done",
+            "TokenRead FORBIDDEN",
+            "TokenRead UNAUTHORIZED",
+            "MintToken ALREADY_EXISTS",
+        ],
+    );
 }
