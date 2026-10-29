@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import usageSource from '../../../../backend/crates/yoneda-cli/src/command/usage.rs?raw';
 import tools from '../../../../backend/crates/yoneda-core/src/platform_tools.json';
+import { nextTheme, THEMES } from '../shell/theme';
 import { formatSourceRoute, parseSourceRoute } from '../source-platform/sourceRoute';
 import { BLOG_POSTS, COMPANY_PAGES, DOCS_NAV, DOCS_PAGES, LEGAL_PAGES } from './content';
 import { formatUsd, MARGIN, METERS, meterPrice, PRICING, roundUpClean } from './pricing';
@@ -14,7 +15,6 @@ import { SiteLayout } from './SiteLayout';
 import { SiteBlog, SiteCompany, SiteDocs, SiteLegal } from './SitePages';
 import { SitePricing } from './SitePricing';
 import { siteView } from './siteRoute';
-import { nextTheme, THEMES } from './theme';
 
 const navigate = () => {};
 const render = (element: React.ReactElement) => renderToStaticMarkup(element);
@@ -90,7 +90,7 @@ describe('site nav', () => {
   });
 
   it('cycles the theme System → Light → Dark → System', () => {
-    expect(THEMES).toEqual(['system', 'light', 'dark']);
+    expect(THEMES.map((t) => t.id)).toEqual(['system', 'light', 'dark']);
     expect(['system', 'light', 'dark'].map((t) => nextTheme(t as never))).toEqual([
       'light',
       'dark',
