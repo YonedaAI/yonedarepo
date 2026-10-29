@@ -40,6 +40,7 @@ import {
   limitAnonymous,
   setVisibility,
 } from './repo-public';
+import { quarantineRoute } from './repo-quarantine';
 import { releaseDownload, releasesRoute } from './repo-releases';
 import { SESSION_BODY_LIMIT } from './repo-session-records';
 import { timed, withTimings } from './repo-timing';
@@ -71,6 +72,8 @@ const STATUS: Record<string, number> = {
   RATE_LIMITED: 429,
   OVERLOADED: 503,
   INTERNAL: 500,
+  // Withheld by the repository's owner (quarantine): known, deliberately not served.
+  QUARANTINED: 451,
 };
 export const statusOf = (code: string, known: boolean) => STATUS[code] ?? (known ? 400 : 500);
 const COMMIT_BODY_LIMIT = 64 * 1024 * 1024;
@@ -151,6 +154,8 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   if (resource === 'refs' && sha === 'batch' && !sub && post)
     return batchRefs(ctx, await bodyOf(req));
   if (!resource && get) return run('git_status', {});
+  if (resource === 'quarantine')
+    return quarantineRoute(ctx, req.method, sha, sub, () => bodyOf(req));
   if (get && resource === 'refs') return run('git_refs', query);
   if (get && resource === 'log') return run('git_log', query);
   if (get && resource === 'txlog') return run('git_txlog', query);

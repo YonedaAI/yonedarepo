@@ -6,6 +6,7 @@ import type { CheckJob } from './check-container';
 import { blobWaves } from './repo-object-waves';
 import { type RepoObjects, type TreeEntry, toBase64 } from './repo-objects';
 import { ApiError, type Json, withTrees } from './repo-ops';
+import { quarantined } from './repo-quarantine-guard';
 import type { Env } from './types';
 
 const MAX_FILES = 100_000;
@@ -17,8 +18,9 @@ const MAX_SEED_BYTES = 16 * 1024 * 1024;
 type SeedFile = CheckJob['files'][number] & { id: string };
 type Seed = { commit: string; tree: string; files: SeedFile[] };
 
-const seedKey = (repo: string, ref: string) =>
-  `platform/v1/${repo}/seeds/${encodeURIComponent(ref)}.json`;
+/** Seeds hold file content: a purge deletes every one of a repository (repo-quarantine). */
+export const seedPrefix = (repo: string) => `platform/v1/${repo}/seeds/`;
+const seedKey = (repo: string, ref: string) => `${seedPrefix(repo)}${encodeURIComponent(ref)}.json`;
 const tooLarge = () => new ApiError('TOO_LARGE', 'Commit is too large for a platform check');
 
 /** Every file under `tree`: its trees walked, then its blobs read a wave at a time. */
@@ -134,6 +136,9 @@ export async function checkFiles(
     });
   }
   const files = [...byPath.values()].sort((a, b) => (a.path < b.path ? -1 : 1));
+  // A seed written before a quarantine may still hold the content: never shipped.
+  const [held] = await objects.withheldAmong(files.map((f) => f.id));
+  if (held) throw quarantined(held[0], held[1]);
   const bytes = files.reduce((sum, f) => sum + (f.data_b64.length * 3) / 4, 0);
   if (files.length > MAX_FILES || bytes > MAX_BYTES)
     throw new ApiError('TOO_LARGE', 'Commit is too large for a platform check');

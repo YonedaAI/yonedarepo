@@ -198,3 +198,29 @@ fn a_segment_larger_than_a_text_field_is_searched() {
         .collect();
     assert!(paths.contains(&"f017.rs"), "{paths:?}");
 }
+
+#[test]
+fn a_withheld_file_is_listed_by_path_unread_as_quarantined() {
+    let secret = b"password hunter2\n";
+    let id = hash_object(ObjectKind::Blob, secret);
+    let files = json!([{ "path": "staging.txt", "id": id.hex() }]);
+    // Never asked for: no content is supplied, and none is needed.
+    let built = compute(
+        json!({ "op": "index_files", "files": files, "withheld": [id.hex()], "blobs": {} }),
+    )
+    .unwrap();
+    let ask = |query: &str| {
+        compute(
+            json!({ "op": "search_segment", "segment_b64": built["segment_b64"],
+            "prefix": "", "query": query }),
+        )
+        .unwrap()
+    };
+    assert_eq!(ask("hunter2")["candidates"], json!([]));
+    let by_path = ask("staging");
+    assert_eq!(by_path["candidates"][0]["indexed"], false);
+    assert_eq!(
+        by_path["unindexed"],
+        json!([{ "path": "staging.txt", "reason": "quarantined" }])
+    );
+}

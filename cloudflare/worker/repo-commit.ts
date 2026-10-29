@@ -67,7 +67,7 @@ export async function commit(
       blobs,
       stage: true,
     });
-    objects ??= ctx.adopt(prepared.object_store);
+    objects ??= ctx.adopt(prepared.object_store, prepared.quarantined);
     const store = objects;
     if (prepared.need_blobs) {
       base = { parent: prepared.parent, base_version: prepared.base_version };

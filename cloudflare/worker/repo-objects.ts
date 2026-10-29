@@ -8,6 +8,7 @@ import { type Location, platformCall, readBundled, readKnown, SMALL_RANGE } from
 import { cachedCopy, edgePut } from './repo-cache-tiers';
 import { compute } from './repo-compute';
 import { Inherited } from './repo-inherit';
+import { quarantined, type Withheld, withheldMap } from './repo-quarantine-guard';
 import { SharedShardAsk, stagedInShards, stagedWithCommits } from './repo-shard-reads';
 import { stagedInShardOf } from './repo-shards';
 import {
@@ -70,6 +71,12 @@ export class RepoObjects {
   readonly hits: TierHits = { edge: 0, r2: 0, store: 0 };
   /** This request's shared asks of every commit shard (`walk`'s last resort). */
   #shards?: SharedShardAsk;
+  /** Blobs this repository withholds (quarantine), by id, with the path the owner named:
+   * set from the access answer that authorized the request (`withhold`). */
+  private withheld: Withheld = new Map();
+  /** Whether an access answer set `withheld` (a store adopted from a commit's answer has
+   * none; `RepoContext.objects` then reads status before serving from it). */
+  knowsWithheld = false;
   /** A fork's parent objects (repo-inherit), asked when this repository's tiers miss. */
   readonly inherited?: Inherited;
   constructor(
@@ -83,6 +90,40 @@ export class RepoObjects {
       this.inherited = new Inherited(
         new RepoObjects(env, parent.repo, parseStore(env, parent.spec), trees),
       );
+  }
+
+  /** Withholds the blobs an access answer lists (`quarantined`: `[{id, path}]`). */
+  withhold(list: unknown) {
+    if (!Array.isArray(list)) return this;
+    this.withheld = withheldMap(list);
+    this.knowsWithheld = true;
+    return this;
+  }
+
+  /** The withheld blobs among `ids`, with their paths: this repository's, and in a fork
+   * those its parent withholds (inherited content is the parent's to withhold). */
+  async withheldAmong(ids: Iterable<string>): Promise<Withheld> {
+    const parent = this.inherited ? await this.inherited.withheld() : new Map();
+    const found: Withheld = new Map();
+    for (const id of ids) {
+      const path = this.withheld.get(id) ?? parent.get(id);
+      if (path !== undefined) found.set(id, path);
+    }
+    return found;
+  }
+
+  /** Whether this repository (or a fork's parent) withholds any blob. */
+  async withholdsAny() {
+    return (
+      this.withheld.size > 0 ||
+      (this.inherited ? (await this.inherited.withheld()).size > 0 : false)
+    );
+  }
+
+  /** Refuses a withheld blob (QUARANTINED), before any tier is asked for its bytes. */
+  async refuse(id: string) {
+    const [held] = await this.withheldAmong([id]);
+    if (held) throw quarantined(held[0], held[1]);
   }
 
   /** The store of record: raw Git content of platform-built objects, never deleted. */
@@ -124,6 +165,7 @@ export class RepoObjects {
    * reads of one object in this isolate share one walk down the tiers; only the read that
    * started it waits for its fills (`read.joined`: the time a read waited on another's). */
   async read(id: string, kind: ObjectKind, stagedWith?: string): Promise<Uint8Array> {
+    if (kind === 'blob') await this.refuse(id);
     // A guarded read never joins an unguarded one (which may serve inherited bytes).
     const key = `${this.repo}/${kind}/${id}${this.inherited?.guard ? '/guarded' : ''}`;
     const shared = inFlight.get(key);
