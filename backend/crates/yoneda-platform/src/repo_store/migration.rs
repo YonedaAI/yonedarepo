@@ -2,7 +2,7 @@ use crate::storage::SqlStore;
 use serde_json::json;
 use yoneda_core::{Error, Result};
 
-pub(crate) const MIGRATIONS: [(i64, &str); 38] = [
+pub(crate) const MIGRATIONS: [(i64, &str); 39] = [
     (1, include_str!("../migrations/repo_store/0001_source.sql")),
     (
         2,
@@ -139,6 +139,10 @@ pub(crate) const MIGRATIONS: [(i64, &str); 38] = [
     (
         38,
         include_str!("../migrations/repo_store/0038_quarantine.sql"),
+    ),
+    (
+        40,
+        include_str!("../migrations/repo_store/0040_memories.sql"),
     ),
 ];
 

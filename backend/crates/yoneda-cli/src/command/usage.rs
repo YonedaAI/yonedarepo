@@ -37,6 +37,11 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
   change delete <n>                   delete a closed change and its comments (author or owner)
   release create <tag> [--title <t>] [-m <notes>] [--asset <file>]   publish a tag's release
   release list | release show <tag>   releases; a release's notes and assets (with sha256)
+  memory add <decision|constraint|gotcha|howto> -m <text> [--anchors <path|path#symbol|dir/>,…]
+             [--supersedes <id>] [--commit <sha>]   leave a memory for later sessions, shown
+                                      when they read the anchored files (session: $YONEDA_SESSION_ID)
+  memory list [--path <p>] [--kind <k>] [--status current|stale|draft|retired|…]
+  memory show <id> | memory retire <id> [-m <reason>]
   policy show | policy set '<json>'
   token create <name> [--scopes read,write] [--paths a/,b/] | token list | token revoke <name>
   log [path] [--ref <b>] [--limit <n>] [--at <version>]
@@ -53,13 +58,14 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
                                       {context, turns}); readers see it, credentials redacted
   session list [<sha>]                the coding sessions recorded for a commit (default HEAD)
   context [--max-bytes <n>]           what a new coding session here should know: recent
-                                      sessions, open changes, landing rules, contracts
+                                      sessions, open changes, landing rules, contracts, memories
 
 declared reads (closure coverage: landing refuses a push whose reads changed meanwhile)
   reads add <path>... | reads list | reads clear    this session's reads ($GIT_DIR/yoneda/reads)
   push [<git push args>]              git push -o yoneda.reads=<recorded reads>, then clear them
-  hook claude-start|claude-read|claude-bash|claude-stop    agent hook entry points (JSON on
-  hook opencode-start|opencode-read|opencode-shell|opencode-stop      stdin; plugins/)
+  hook claude-start|claude-read|claude-prompt|claude-memory|claude-bash|claude-stop
+  hook opencode-start|opencode-read|opencode-prompt|opencode-memory|opencode-shell|opencode-stop
+                                      agent hook entry points (JSON on stdin; plugins/)
 
 offline checkouts (`yoneda clone`, kept for existing scripts)
   clone <repo-id> [dir] [--origin <url>]

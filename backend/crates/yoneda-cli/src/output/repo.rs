@@ -256,7 +256,50 @@ pub struct SessionList {
     pub sessions: Vec<Session>,
 }
 
+/// `memory add`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MemoryAdd {
+    /// The memory's id.
+    pub memory: Value,
+    /// The commit it was written against.
+    pub commit: String,
+    /// Whether the same memory was recorded already (this answers that one).
+    pub already: bool,
+}
+
+/// `memory list`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MemoryList {
+    /// The memories newest first, as the platform returns them (with anchors and staleness).
+    pub memories: Vec<Value>,
+    /// The `before` cursor of the next page, when more remain.
+    pub next: Value,
+}
+
+/// `memory show`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MemoryShow {
+    /// The memory as the platform returns it.
+    pub memory: Value,
+}
+
+/// `memory retire`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct MemoryRetire {
+    pub memory: u64,
+    /// Whether it was retired already.
+    pub already: bool,
+}
+
 super::report! {
+    MemoryAdd => "memory-add",
+    MemoryList => "memory-list",
+    MemoryShow => "memory-show",
+    MemoryRetire => "memory-retire",
     TokenCreate => "token-create",
     TokenList => "token-list",
     TokenRevoke => "token-revoke",

@@ -7,6 +7,7 @@ import { compactAfterLanding } from './repo-compaction';
 import { compute } from './repo-compute';
 import { keepAllowed, requirePath } from './repo-grants';
 import { fanoutHooks } from './repo-hooks';
+import { memoryMatches } from './repo-memories';
 import { withObjects } from './repo-object-compute';
 import { blobWaves } from './repo-object-waves';
 import { toBase64 } from './repo-objects';
@@ -30,6 +31,15 @@ export async function search(ctx: RepoContext, args: Json) {
   const query = String(args.query ?? args.q ?? '');
   if (query.length < 2 || query.length > 200)
     throw new ApiError('INVALID_INPUT', 'query must be 2-200 characters');
+  // Memories whose text matches, read alongside the code (a separate group); a failure is
+  // raised once the code search has settled, not left unhandled.
+  const memories =
+    args.memories === false || args.memories === 'false'
+      ? Promise.resolve({ found: null })
+      : memoryMatches(ctx, query).then(
+          (found) => ({ found }),
+          (error: unknown) => ({ error }),
+        );
   const where = await target(ctx, args.commit ?? args.ref, args.at);
   const { indexes, built } = await searchSegments(ctx, where.tree);
   const objects = await ctx.objects();
@@ -97,6 +107,10 @@ export async function search(ctx: RepoContext, args: Json) {
     partitions_built: built,
     skipped_files: skipped,
     skipped_count: skippedCount,
+    memories: await memories.then((m) => {
+      if ('error' in m) throw m.error;
+      return m.found;
+    }),
   };
 }
 

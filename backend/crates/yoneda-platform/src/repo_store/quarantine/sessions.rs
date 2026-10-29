@@ -7,7 +7,7 @@ use std::collections::HashSet;
 use yoneda_core::{Error, Result};
 
 /// Session records withheld now (quarantined or purged), by record id.
-fn withheld<S: SqlStore>(db: &S) -> Result<HashSet<i64>> {
+pub(in crate::repo_store) fn withheld<S: SqlStore>(db: &S) -> Result<HashSet<i64>> {
     Ok(db
         .query(
             "SELECT target_id FROM quarantine WHERE target_kind='session' AND state<>'released'",

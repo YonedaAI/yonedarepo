@@ -38,6 +38,22 @@ Landing checks more than overlapping writes. A push may declare the files its ch
 2. Push. With a `yoneda::` remote, `git push` declares them by itself. With an HTTPS remote (`https://…/git/r….git`), use `yoneda push <git push arguments>` (e.g. `yoneda push origin main`): it adds `-o yoneda.reads=…`. Either clears them after a clean push. In Claude Code, a plain `git push` to an HTTPS remote is stopped while reads are recorded.
 3. Record the session. The Claude Code and opencode plugins do it at the end of each turn that pushed: the CLI, model, your last message (truncated) and the session's transcript with the context it started with. The platform redacts credentials in the transcript and the repository's readers can see it. Elsewhere, after pushing: `yoneda session record --cli <cli> --summary <text> --model <m> [--transcript <file>]` for HEAD (a short summary, never secrets). `yoneda session list` shows a commit's records.
 
+## Memories: what the code does not say
+
+The repository keeps memories that agents and people leave for later sessions. You are shown them without asking: the relevant ones at session start, the ones on a file when you read it, and those matching your prompt (each once per session; one marked "the code changed since" may be out of date, so verify it).
+
+1. **Add one when you learn something a later session would otherwise rediscover:**
+   - a **decision** and why (`chose retries over a queue: the queue loses order`)
+   - a **constraint** the code does not enforce (`src/gen/ is generated; edit the template`)
+   - a **gotcha**: a non-obvious fix or trap (`the land queue replays retry(); keep it idempotent`)
+   - a **howto** that took effort to find (`run the eval with --serial; it shares one port`)
+2. Not for what the code, a commit message or the session summary already says, and never secrets (a memory holding a credential is refused).
+3. Anchor it to the files, directories (`dir/`) or symbols (`path#symbol`) it is about. It reaches the next agent who reads them, and reads as stale once that code changes on main.
+4. `yoneda memory add <decision|constraint|gotcha|howto> -m <text> --anchors src/net.rs#retry,docs/` (at most 2 KiB of text; or MCP `git_memory_add` with `session_id` set to `$YONEDA_SESSION_ID`). If an old memory is wrong, pass `--supersedes <n>`; `yoneda memory retire <n> -m <why>` when it no longer holds.
+5. `yoneda memory list [--path <p>]` and `yoneda memory show <n>` read them; MCP `git_context_relevant` ranks memories, contracts, sessions and open changes for files or a question.
+
+When a session added a memory, its end-of-turn summary is also offered as a draft memory for a person to publish or discard.
+
 ## Read on the server instead of opening many files
 
 The server answers these from its index, with no checkout. Prefer them to reading file after file:

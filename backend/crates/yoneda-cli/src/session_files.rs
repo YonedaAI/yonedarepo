@@ -7,6 +7,9 @@
 //!   unattributed ones), and only then removes the line.
 //! - `context-<digest>`: the context packet a session started with (`yoneda context`, which
 //!   the start hooks inject), one file per session, kept for its transcript.
+//! - `memory-<digest>`: present when a session added a memory since its last turn ended
+//!   (`yoneda memory add`, or the agent hooks seeing the MCP tool), so the turn-end hook
+//!   offers the session's summary as a draft memory.
 //!
 //! The session id comes from the agent's environment: `YONEDA_SESSION_ID` (the Claude
 //! Code plugin exports it at session start), else opencode's `OPENCODE_SESSION_ID`, which
@@ -162,6 +165,27 @@ impl SessionFiles {
     /// The context packet `session` started with, when one was kept.
     pub fn context(&self, session: &str) -> Option<String> {
         std::fs::read_to_string(self.context_file(session)).ok()
+    }
+
+    fn memory_file(&self, session: &str) -> PathBuf {
+        let digest = yoneda_core::digest(session.as_bytes());
+        self.dir.join(format!("memory-{}", &digest[..16]))
+    }
+
+    /// Notes that `session` added a memory.
+    pub fn note_memory_added(&self, session: &str) -> Result<()> {
+        std::fs::create_dir_all(&self.dir).context(format!("creating {}", self.dir.display()))?;
+        let path = self.memory_file(session);
+        std::fs::write(&path, b"").context(format!("writing {}", path.display()))
+    }
+
+    /// Whether `session` added a memory since this was last asked (and forgets it).
+    pub fn take_memory_added(&self, session: &str) -> Result<bool> {
+        match std::fs::remove_file(self.memory_file(session)) {
+            Ok(()) => Ok(true),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+            Err(e) => Err(e).context("removing the memory note"),
+        }
     }
 
     /// Notes `commits` as pushed with `reads` declared, by `session` when known.

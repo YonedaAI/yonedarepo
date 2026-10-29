@@ -7,8 +7,12 @@
 // session at Stop; then the real opencode plugin (plugins/opencode/yoneda/index.ts, with a
 // stand-in opencode context) starts a session whose context names both earlier summaries,
 // records a read, refuses the smart-HTTP push, and records its session when the run ends.
-// The sessions API reads every record back, newest first, with its session id. The
-// repository is deleted.
+// The sessions API reads every record back, newest first, with its session id.
+// Continuous memory: a memory added before the Claude session is in its start context and
+// is not repeated when the anchored file is read; one added after the start comes back once
+// on the next read of that file; one matching the prompt's words comes back on the prompt;
+// after the session adds a memory (git_memory_add), its Stop offers the summary as a draft;
+// the session's deliveries (start, read, prompt) read back. The repository is deleted.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -23,6 +27,9 @@ const MODEL = 'zai-coding-plan/glm-5.3';
 const SEED = 'Seed session: added retry() with three attempts to src/net.ts.';
 const CLAUDE = 'Claude session: retry() now backs off exponentially.';
 const OPENCODE = 'opencode session: added jitter to the backoff in retry().';
+const MEMORY_START = 'Kit memory: the land queue replays retry(), so it must stay idempotent.';
+const MEMORY_READ = 'Kit memory: src/net.ts is the only module allowed to open sockets.';
+const MEMORY_PROMPT = 'Kit memory: the backoff ceiling is thirty seconds, set by the gateway.';
 /** The kit may itself run inside an agent session: its ids must not leak into the clones. */
 const NO_SESSION = { YONEDA_SESSION_ID: '', OPENCODE_SESSION_ID: '' };
 
@@ -108,6 +115,9 @@ export async function agentHooks(kit, metrics) {
     'the seed session is recorded on its commit',
   );
 
+  // A memory left before the Claude session starts, anchored to the symbol it is about.
+  await kit.yonedaOk(['memory', 'add', 'gotcha', '-m', MEMORY_START, '--anchors', 'src/net.ts#retry'], { cwd: a, env: kit.env(NO_SESSION) });
+
   // Claude Code: SessionStart → context and session id; reads; push refusal; Stop.
   const envFile = kit.path('claude-env');
   writeFileSync(envFile, '');
@@ -115,9 +125,27 @@ export async function agentHooks(kit, metrics) {
   const context = JSON.parse(started.stdout || '{}').hookSpecificOutput?.additionalContext ?? '';
   assert.ok(context.includes(SEED), `the Claude session's start context lacks the seed summary: ${context.slice(0, 400)}`);
   assert.match(readFileSync(envFile, 'utf8'), /export YONEDA_SESSION_ID='claude-code:kit-claude'/);
+  assert.ok(context.includes(MEMORY_START), `the start context lacks the memory: ${context.slice(0, 600)}`);
   metrics.claude_context_bytes = context.length;
-  await hook(kit, 'claude-read', { tool_name: 'Read', tool_input: { file_path: join(a, 'src/net.ts') }, tool_response: {}, cwd: a });
+  const readNet = { session_id: 'kit-claude', hook_event_name: 'PostToolUse', tool_name: 'Read', tool_input: { file_path: join(a, 'src/net.ts') }, tool_response: {}, cwd: a };
+  const injected = async (event, payload) => {
+    const ran = await hook(kit, event, payload);
+    assert.equal(ran.code, 0, ran.stderr);
+    return JSON.parse(ran.stdout || '{}').hookSpecificOutput?.additionalContext ?? '';
+  };
+  assert.equal(await injected('claude-read', readNet), '', 'a memory the start context showed is not repeated');
   assert.equal((await kit.yonedaOk(['reads', 'list'], { cwd: a })).stdout, 'src/net.ts', 'the read is recorded');
+  await api.post(`/repos/${repo}/memories`, { kind: 'constraint', text: MEMORY_READ, anchors: [{ path: 'src/net.ts' }] });
+  await api.post(`/repos/${repo}/memories`, { kind: 'howto', text: MEMORY_PROMPT });
+  const onRead = await injected('claude-read', readNet);
+  assert.ok(onRead.includes(MEMORY_READ) && !onRead.includes(MEMORY_PROMPT), `the read did not bring the file's new memory: ${onRead}`);
+  assert.ok(onRead.length <= 1536, 'one injection stays under its cap');
+  assert.equal(await injected('claude-read', readNet), '', 'a memory is injected once per session');
+  const onPrompt = await injected('claude-prompt', { session_id: 'kit-claude', hook_event_name: 'UserPromptSubmit', prompt: 'What is the backoff ceiling here?', cwd: a });
+  assert.ok(onPrompt.includes(MEMORY_PROMPT), `the prompt did not bring the matching memory: ${onPrompt}`);
+  metrics.memory_injection_bytes = onRead.length + onPrompt.length;
+  // The session adds a memory itself (the MCP tool, seen by its PostToolUse hook).
+  assert.equal((await hook(kit, 'claude-memory', { session_id: 'kit-claude', hook_event_name: 'PostToolUse', tool_name: 'mcp__yoneda__git_memory_add', cwd: a })).code, 0);
   const viaHelper = await hook(kit, 'claude-bash', { tool_name: 'Bash', tool_input: { command: 'git push origin main' }, cwd: a });
   assert.equal(viaHelper.stdout, '', 'a yoneda:: push is let through (its helper declares the reads)');
   await kit.ok(join(kit.bin, 'yoneda'), ['reads', 'add', 'src/net.ts'], { cwd: h, env: http });
@@ -142,6 +170,14 @@ export async function agentHooks(kit, metrics) {
     [['claude-code', 'claude-sonnet-5-5', 'claude-code:kit-claude', CLAUDE]],
     'the Claude session is recorded on its commit',
   );
+  const drafts = (await api.get(`/repos/${repo}/memories?status=draft`)).memories;
+  assert.deepEqual(
+    drafts.map((m) => [m.session_id, m.text]),
+    [['claude-code:kit-claude', CLAUDE]],
+    "the session's summary is offered as a draft memory",
+  );
+  const delivered = (await api.get(`/repos/${repo}/context/deliveries?session_id=claude-code:kit-claude`)).deliveries;
+  assert.deepEqual(delivered.map((d) => d.trigger), ['start', 'read', 'prompt'], 'the session page reads what the session was shown');
 
   // opencode: the real plugin with a stand-in opencode context.
   const plugin = (await import(resolve(root, 'plugins/opencode/yoneda/index.ts'))).default;

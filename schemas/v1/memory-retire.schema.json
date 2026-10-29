@@ -1,0 +1,43 @@
+{
+  "$defs": {
+    "MemoryRetire": {
+      "additionalProperties": false,
+      "description": "`memory retire`.",
+      "properties": {
+        "already": {
+          "description": "Whether it was retired already.",
+          "type": "boolean"
+        },
+        "memory": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "memory",
+        "already"
+      ],
+      "title": "MemoryRetire",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `memory-retire`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/MemoryRetire"
+    },
+    "schema": {
+      "const": "yoneda.cli.memory-retire.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.memory-retire.v1",
+  "type": "object"
+}
