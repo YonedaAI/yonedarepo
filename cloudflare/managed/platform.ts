@@ -61,6 +61,13 @@ export class Platform {
     return answer ?? {};
   }
 
+  /** The caller's repositories (owner, role) and orgs: who owns which workspace. */
+  repos() {
+    return this.#call('GET', '/repos');
+  }
+  orgs() {
+    return this.#call('GET', '/orgs');
+  }
   status(repo: string) {
     return this.#call('GET', `/repos/${repo}`);
   }

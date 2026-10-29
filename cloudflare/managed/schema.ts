@@ -21,20 +21,26 @@ export const REPO_SCHEMA: string[] = [
    );
    CREATE TABLE runs (
      id TEXT PRIMARY KEY,
+     repo TEXT NOT NULL,
      agent TEXT NOT NULL,
      change INTEGER NOT NULL,
      head TEXT NOT NULL,
      status TEXT NOT NULL CHECK (status IN
        ('queued','running','passed','findings','paused','superseded','cancelled','failed')),
      attempt INTEGER NOT NULL DEFAULT 1,
+     value TEXT,
+     harness TEXT NOT NULL,
      provider TEXT NOT NULL,
      model TEXT NOT NULL,
+     fallback TEXT,
+     container_seconds INTEGER NOT NULL DEFAULT 0,
      calls INTEGER NOT NULL DEFAULT 0,
      input_tokens INTEGER NOT NULL DEFAULT 0,
      output_tokens INTEGER NOT NULL DEFAULT 0,
      charged_microusd INTEGER NOT NULL DEFAULT 0,
      findings INTEGER NOT NULL DEFAULT 0,
      withheld INTEGER NOT NULL DEFAULT 0,
+     findings_json TEXT,
      error TEXT,
      created_at INTEGER NOT NULL,
      finished_at INTEGER,
@@ -60,6 +66,23 @@ export const LEDGER_SCHEMA: string[] = [
      run TEXT NOT NULL,
      at INTEGER NOT NULL,
      PRIMARY KEY (repo, run)
+   );`,
+];
+
+/** WorkspaceAgents: per-agent overrides (workspace-wide or per repository) and where it runs. */
+export const WORKSPACE_SCHEMA: string[] = [
+  `CREATE TABLE settings (
+     agent TEXT NOT NULL,
+     scope TEXT NOT NULL,
+     overrides TEXT NOT NULL,
+     updated_at INTEGER NOT NULL,
+     updated_by TEXT NOT NULL,
+     PRIMARY KEY (agent, scope)
+   );
+   CREATE TABLE enabled (
+     agent TEXT NOT NULL,
+     repo TEXT NOT NULL,
+     PRIMARY KEY (agent, repo)
    );`,
 ];
 

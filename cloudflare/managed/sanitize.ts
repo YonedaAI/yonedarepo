@@ -22,6 +22,13 @@ const CREDENTIALS: RegExp[] = [
 
 export const looksLikeCredential = (text: string) => CREDENTIALS.some((re) => re.test(text));
 
+/** `text` with every credential-shaped run replaced (transcripts kept for the run page). */
+export function redact(text: string): string {
+  let out = text;
+  for (const re of CREDENTIALS) out = out.replace(new RegExp(re.source, 'g'), '[redacted]');
+  return out;
+}
+
 /** Plain, inert text: no control characters, HTML, images or links, at most `max` chars. */
 export function defuse(value: unknown, max: number): string {
   const text = typeof value === 'string' ? value : '';
