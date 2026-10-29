@@ -132,6 +132,42 @@ it('a full clone reads each bundled byte about once', async () => {
   }
 });
 
+/** `commits` commits on `parent` over a root of `dirs` directories, each commit rewriting
+ * one directory's file: a root tree of `dirs` entries per commit, newest first. */
+async function wideRoots(parent: string, commits: number, dirs: number) {
+  const objects: Raw[] = [];
+  const dir = async (d: number, version: number) => {
+    const content = await blob(`dir ${d} version ${version}\n`);
+    const t = await tree([['100644', 'f.txt', content.id]]);
+    objects.unshift(t, content);
+    return t.id;
+  };
+  const names = Array.from({ length: dirs }, (_, d) => `d${String(d).padStart(4, '0')}`);
+  const ids: string[] = [];
+  for (let d = 0; d < dirs; d++) ids.push(await dir(d, 0));
+  for (let i = 0; i < commits; i++) {
+    if (i > 0) ids[(i * 7) % dirs] = await dir((i * 7) % dirs, i);
+    const root = await tree(names.map((name, d) => ['40000', name, ids[d]] as [string, string, string]));
+    const commit = await commitObject(root.id, parent, i);
+    objects.unshift(commit, root);
+    parent = commit.id;
+  }
+  return objects;
+}
+
+it('a partial clone whose trees the session cannot keep reads each tree bundle about once', async () => {
+  // 700 roots of 900 entries (21 MiB): more trees than the session keeps (TREE_BYTES), in 3
+  // waves of commits, so each wave and both passes need trees an earlier one dropped.
+  let objects: Raw[] = [];
+  const { repo, token, tip } = await pushHistory('gate_wide_roots', async (main) => (objects = await wideRoots(main, 700, 900)));
+  const { timing } = await clone(repo, token, [`want ${tip}`, 'filter blob:none', 'done']);
+  const trees = frames(objects.filter((o) => o.kind !== 'blob'));
+  console.log(`partial clone, wide roots (${mib(trees)} of trees): ${JSON.stringify(timing)}`);
+  // A read per tree bundle, a second reading it whole, and a few for the levels.
+  expect(timing.walk_reads).toBeLessThanOrEqual(2 * spanned(trees) + LEVELS);
+  expect(timing.walk_read).toBeLessThanOrEqual(3 * (trees / 1048576) + 1.1);
+});
+
 // Known-failing. Blame reads its versions with the 1 MiB gap a clone bridges, so it reads
 // the files between them: log.txt's 12 versions (~1 KiB) cost 1.26 MiB in 2 reads, its 60
 // (~11 KiB) 6.93 MiB in 3, nearly every file byte pushed. Target: within the bound.

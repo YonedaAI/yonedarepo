@@ -146,7 +146,7 @@ export async function sendPack(
     if (store === 'on') writer = new PackWriter(objects.env, objects.repo, key);
   }
   const session = open();
-  const seen = new SeenTrees();
+  const seen = new SeenTrees(commits.length);
   const budget = new ReadBudget();
   // The commits the walk names are read while their trees are walked.
   const early: Promise<Read[]> =

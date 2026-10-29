@@ -21,8 +21,8 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use yoneda_core::{
     Error, Result,
     git_object::{
-        FileMode, ObjectHasher, ObjectId, ObjectKind, PackWriter, TreeEntry, Walk, diff_trees,
-        encode_delta, encode_tree, hash_object,
+        FileMode, ObjectHasher, ObjectId, ObjectKind, PackWriter, TreeChange, TreeEntry, Walk,
+        diff_trees, encode_delta, encode_tree, hash_object,
     },
 };
 
@@ -71,6 +71,9 @@ pub struct UploadSession {
     /// About how many bytes `trees` holds, and whether trees are still kept between waves.
     tree_bytes: usize,
     dropping: bool,
+    /// Diffs of the wave being walked that every tree they read was held for, by commit
+    /// index: a round walks only the commits still waiting for trees.
+    diffs: HashMap<usize, Vec<TreeChange>>,
     /// The wave walked next, the rounds it took so far, and the pass (counting, sending).
     wave: usize,
     rounds: usize,
@@ -153,8 +156,24 @@ impl UploadSession {
     }
 
     /// Walks wave `wave` with the trees held: what it still needs, or its objects.
-    fn walk_wave(&self, wave: usize) -> Result<WaveWalk> {
+    fn walk_wave(&mut self, wave: usize) -> Result<WaveWalk> {
+        let commits = wave * WAVE_COMMITS..self.commits.len().min((wave + 1) * WAVE_COMMITS);
         let mut need = BTreeSet::new();
+        for i in commits.clone() {
+            if self.diffs.contains_key(&i) {
+                continue;
+            }
+            let sent = &self.commits[i];
+            match diff_trees(sent.base, Some(sent.tree), &self.trees, MAX_FILES)? {
+                Walk::Need(ids) => need.extend(ids),
+                Walk::Done(changes) => {
+                    self.diffs.insert(i, changes);
+                }
+            }
+        }
+        if !need.is_empty() {
+            return Ok(WaveWalk::Need(need));
+        }
         let mut objects = Vec::new();
         let mut pairs = Vec::new();
         let mut seen = HashSet::new();
@@ -163,38 +182,30 @@ impl UploadSession {
                 objects.push((id, kind));
             }
         };
-        let end = self.commits.len().min((wave + 1) * WAVE_COMMITS);
-        for sent in &self.commits[wave * WAVE_COMMITS..end] {
+        let diffs = std::mem::take(&mut self.diffs);
+        for i in commits {
+            let (sent, changes) = (&self.commits[i], &diffs[&i]);
             add(sent.commit, ObjectKind::Commit, &mut objects);
-            match diff_trees(sent.base, Some(sent.tree), &self.trees, MAX_FILES)? {
-                Walk::Need(ids) => need.extend(ids),
-                Walk::Done(changes) => {
-                    if sent.base != Some(sent.tree) {
-                        add(sent.tree, ObjectKind::Tree, &mut objects);
-                    }
-                    for tree in new_trees(sent.tree, &changes, &mut &self.trees)? {
-                        add(tree, ObjectKind::Tree, &mut objects);
-                    }
-                    for change in changes.iter().filter(|_| !self.omit_blobs) {
-                        if let Some((mode, id)) = change.new
-                            && mode != FileMode::Gitlink
-                        {
-                            add(id, ObjectKind::Blob, &mut objects);
-                            if let Some((old_mode, old)) = change.old
-                                && old_mode != FileMode::Gitlink
-                            {
-                                pairs.push((old, id));
-                            }
-                        }
+            if sent.base != Some(sent.tree) {
+                add(sent.tree, ObjectKind::Tree, &mut objects);
+            }
+            for tree in new_trees(sent.tree, changes, &mut &self.trees)? {
+                add(tree, ObjectKind::Tree, &mut objects);
+            }
+            for change in changes.iter().filter(|_| !self.omit_blobs) {
+                if let Some((mode, id)) = change.new
+                    && mode != FileMode::Gitlink
+                {
+                    add(id, ObjectKind::Blob, &mut objects);
+                    if let Some((old_mode, old)) = change.old
+                        && old_mode != FileMode::Gitlink
+                    {
+                        pairs.push((old, id));
                     }
                 }
             }
         }
-        Ok(if need.is_empty() {
-            WaveWalk::Done(objects, pairs)
-        } else {
-            WaveWalk::Need(need)
-        })
+        Ok(WaveWalk::Done(objects, pairs))
     }
 
     fn waves(&self) -> usize {
