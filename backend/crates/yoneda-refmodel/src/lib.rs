@@ -111,6 +111,8 @@ pub struct Repo {
     pub fork: Option<Fork>,
     /// Commits carried in from the fork (recorded as pushed).
     pub carried: BTreeSet<CommitId>,
+    /// Deleted by its owner: the authority answers GONE to all but the delete.
+    pub deleted: bool,
 }
 
 impl Repo {
@@ -147,6 +149,7 @@ impl Repo {
             unprojected: Vec::new(),
             fork: None,
             carried: BTreeSet::new(),
+            deleted: false,
         }
     }
 

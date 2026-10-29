@@ -136,6 +136,12 @@ pub enum Op {
     },
     /// Carries the fork's `feature` into the parent's mirror branch.
     Carry,
+    /// The fork's owner deletes the fork; the parent forgets it.
+    DeleteFork,
+    /// The owner deletes the repository, with the right name (`confirmed`) or not.
+    DeleteRepo {
+        confirmed: bool,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -172,6 +178,14 @@ pub struct Plan {
 impl Repo {
     /// Applies `op`; a landing also answers its merge plan, taken before it lands.
     pub fn apply(&mut self, op: &Op) -> (Outcome, Option<Plan>) {
+        // A deleted repository answers GONE; shard and fork work never reach it.
+        let elsewhere = matches!(
+            op,
+            Op::DeleteRepo { .. } | Op::ShardCommit { .. } | Op::ForkCommit { .. }
+        );
+        if self.deleted && !elsewhere {
+            return (Outcome::Refused("GONE"), None);
+        }
         match op {
             Op::Commit {
                 branch,
@@ -246,6 +260,8 @@ impl Repo {
             Op::Fork => (self.fork_repo(), None),
             Op::ForkCommit { path, content } => (self.fork_commit(path, content), None),
             Op::Carry => (self.carry(), None),
+            Op::DeleteFork => (self.delete_fork(), None),
+            Op::DeleteRepo { confirmed } => (self.delete_repo(*confirmed), None),
         }
     }
 }

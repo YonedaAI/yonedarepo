@@ -45,7 +45,10 @@ fn run_reaching(name: &str, script: &[Op], reaches: &[&str]) {
             panic!("{name}, step {step}, {op:?}: {e}");
         }
     }
-    if let Err(e) = git::check(&driver) {
+    // A deleted repository has nothing left for Git to read.
+    if !driver.model.deleted
+        && let Err(e) = git::check(&driver)
+    {
         panic!("{name}, git: {e}");
     }
     for label in reaches {
@@ -556,6 +559,51 @@ fn chained_shard_commits_and_the_window_before_projection() {
             "Probe PROJECTION_PENDING",
             "Commit MERGE_REQUIRED",
             "Project made",
+        ],
+    );
+}
+
+/// The parent cannot go while its fork lives; deleting the fork makes the parent forget
+/// it, and then the parent goes. Afterwards its authority answers GONE (the delete itself
+/// answers already); work built without it (a shard commit) still builds.
+#[test]
+fn a_parent_goes_only_after_its_fork_and_then_answers_gone() {
+    let script = [
+        Op::Fork,
+        Op::DeleteRepo { confirmed: false },
+        Op::DeleteRepo { confirmed: true },
+        fork_put("src/fork.rs", "from the fork"),
+        Op::DeleteFork,
+        Op::DeleteFork,
+        fork_put("src/fork.rs", "after"),
+        Op::Carry,
+        Op::DeleteRepo { confirmed: true },
+        Op::DeleteRepo { confirmed: true },
+        Op::Probe {
+            caller: Caller::Owner,
+            access: Access::Status,
+        },
+        Op::Publish,
+        put(MAIN, "a.txt", "too late", false),
+        shard("a.txt", "built anyway", false),
+        submit(vec![0]),
+    ];
+    run_reaching(
+        "deletion",
+        &script,
+        &[
+            "DeleteRepo INVALID_INPUT",
+            "DeleteRepo CONFLICT",
+            "DeleteFork Done",
+            "DeleteFork Already",
+            "ForkCommit GONE",
+            "Carry GONE",
+            "DeleteRepo Done",
+            "DeleteRepo Already",
+            "Probe GONE",
+            "Commit GONE",
+            "ShardCommit Committed",
+            "Submit GONE",
         ],
     );
 }

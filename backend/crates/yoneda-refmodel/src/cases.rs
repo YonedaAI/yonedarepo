@@ -214,6 +214,8 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
             branch: working(rng),
         },
         77..80 if repo.fork.is_none() => Op::Fork,
+        // Rarely, the fork goes (the repository itself is deleted only in scripts).
+        77..80 if rng.below(20) == 0 => Op::DeleteFork,
         77..80 if rng.below(3) == 0 => Op::Carry,
         77..80 => {
             let path = rng.pick(&PATHS).to_string();
