@@ -57,7 +57,7 @@ export async function releasePages(page, { account, repo: { id, name }, shot }, 
     what: `tag ${tag} in the repository's refs`,
   });
   await sleep(1_000);
-  await tabs.getByRole('link', { name: 'Code' }).click();
+  await tabs.getByRole('link', { name: 'Overview' }).click();
   await tabs.getByRole('link', { name: 'Releases' }).click();
   await page.getByRole('button', { name: 'New release' }).click();
   const form = page.getByRole('form', { name: 'Publish a release' });
@@ -140,7 +140,7 @@ export async function forkPages(page, { account, repo: { id, name }, shot, clean
   });
   await account.post(forkApi('/branches'), { ref: 'kit-fork', commit: made.commit, expected: null });
   await page.reload();
-  await page.getByRole('navigation', { name: 'Repository' }).getByRole('link', { name: 'History' }).click();
+  await page.getByRole('navigation', { name: 'Repository' }).getByRole('link', { name: 'Commits' }).click();
   const history = page.getByRole('region', { name: 'History', exact: true });
   await history.getByLabel('Branch').selectOption('kit-fork').catch((e) => {
     throw new Error(`the History Branch picker does not offer kit-fork: ${e.message.split('\n')[0]}`);

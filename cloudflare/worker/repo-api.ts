@@ -4,6 +4,7 @@
 // are workspace sessions (owners) or repository tokens (agents, CI, scripts) — all the
 // same to us.
 
+import { accountActivity } from './account-activity';
 import { accountMcp } from './account-mcp';
 import { authenticate } from './auth';
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
@@ -127,6 +128,8 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
     req.method === 'POST'
   )
     return deviceApprove(env, auth, await bodyOf(req));
+  if (parts[0] === 'activity' && parts.length === 1 && req.method === 'GET')
+    return accountActivity(env, auth);
   if (parts[0] === 'orgs')
     return orgsRoute(env, auth, req.method, parts.slice(1), () => bodyOf(req), url.searchParams);
   if (parts[0] !== 'repos') throw new ApiError('NOT_FOUND', 'Unknown API path');

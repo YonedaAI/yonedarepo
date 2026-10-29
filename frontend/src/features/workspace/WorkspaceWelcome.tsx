@@ -9,6 +9,7 @@ import {
   Network,
   Plus,
 } from 'lucide-react';
+import { describeFailure } from '../source-platform/SourceStatus';
 import { AccountPanel } from './AccountPanel';
 
 export function WorkspaceWelcome({
@@ -26,12 +27,18 @@ export function WorkspaceWelcome({
   onSignedIn: () => void;
   onNew: () => void;
 }) {
+  const failed = error ? describeFailure(error, 'your repositories') : undefined;
   if (loading || error)
     return (
       <section className="workspace-loading" aria-live="polite">
         {error ? <GitBranch size={28} /> : <LoaderCircle size={28} className="spin" />}
         <h1>{error ? 'Could not open your workspace' : 'Opening your workspace'}</h1>
-        <p>{error || 'Loading repositories…'}</p>
+        <p>
+          {failed ? failed.text : 'Loading repositories…'}
+          {failed?.reference && (
+            <small className="failure-reference">Reference {failed.reference}</small>
+          )}
+        </p>
         {error && (
           <button type="button" disabled={loading} onClick={onRetry}>
             Retry connection

@@ -106,7 +106,7 @@ export function RepoFiles({
             onChange={(at) => navigate({ ...route, at })}
           />
           <a className="toolbar-link" {...linkTo({ ...route, view: 'overview' }, navigate)}>
-            Overview
+            Subsystems
           </a>
           <CloneButton repo={route.repo} name={status?.name} origin={currentApiOrigin()} />
         </span>

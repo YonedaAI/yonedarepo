@@ -49,7 +49,7 @@ fn subject(message: &Value) -> String {
 
 /// One session row as the API answers it: the record, its commit's subject line and how
 /// many reads the commit declared.
-fn session(row: &Value) -> Result<Value> {
+pub(super) fn session(row: &Value) -> Result<Value> {
     let reads: Vec<String> = serde_json::from_str(row["read_set"].as_str().unwrap_or("[]"))
         .map_err(|_| corrupt("read set"))?;
     Ok(json!({

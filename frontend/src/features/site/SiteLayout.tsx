@@ -2,9 +2,9 @@
 // signed in), the page, and a footer. At phone width the sections fold into a menu button.
 import { GitBranch, Menu, Monitor, Moon, Sun, X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
+import { nextTheme, type Theme, useTheme } from '../shell/theme';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { navSection, SITE_NAV, type SitePage } from './siteRoute';
-import { nextTheme, readTheme, type Theme, writeTheme } from './theme';
 
 const THEME_LABEL: Record<Theme, string> = { system: 'System', light: 'Light', dark: 'Dark' };
 const THEME_ICON = { system: Monitor, light: Sun, dark: Moon };
@@ -24,7 +24,7 @@ export function SiteLayout({
   children?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
-  const [theme, setTheme] = useState<Theme>(readTheme);
+  const [theme, setTheme] = useTheme();
   const ThemeIcon = THEME_ICON[theme];
   const current = navSection(page);
   // Following a link closes the phone menu.
@@ -49,9 +49,7 @@ export function SiteLayout({
             aria-label={`Theme: ${THEME_LABEL[theme]} (switch to ${THEME_LABEL[nextTheme(theme)]})`}
             title={`Theme: ${THEME_LABEL[theme]}`}
             onClick={() => {
-              const next = nextTheme(theme);
-              writeTheme(next);
-              setTheme(next);
+              setTheme(nextTheme(theme));
             }}
           >
             <ThemeIcon size={18} aria-hidden="true" />

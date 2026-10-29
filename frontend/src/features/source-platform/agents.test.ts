@@ -1,3 +1,5 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import {
   appendPage,
@@ -12,6 +14,7 @@ import {
   sessionsPath,
   transcriptUrl,
 } from './agentModel';
+import { RepoAgents } from './RepoAgents';
 import { formatSourceRoute, parseSourceRoute, routeTab } from './sourceRoute';
 
 const repo = 'r0123456789abcdef0123';
@@ -119,7 +122,7 @@ describe('agent pages', () => {
     ]);
   });
 
-  it('addresses every agent page and keeps them under the Agents tab', () => {
+  it('addresses every agent page, sessions under Sessions and the rest under Agents', () => {
     for (const route of [
       { view: 'agents', repo, section: 'sessions' },
       { view: 'agents', repo, section: 'contracts' },
@@ -129,7 +132,10 @@ describe('agent pages', () => {
     ] as const) {
       const url = formatSourceRoute(route);
       expect(parseSourceRoute(url, '')).toEqual(route);
-      expect(routeTab(route)).toBe('agents');
+      // Sessions have their own sidebar page; the other records stay under Agents.
+      expect(routeTab(route)).toBe(
+        route.view === 'session' || route.section === 'sessions' ? 'sessions' : 'agents',
+      );
     }
     expect(formatSourceRoute({ view: 'agents', repo, section: 'sessions' })).toBe(
       `/source/${repo}/agents`,
@@ -144,5 +150,21 @@ describe('agent pages', () => {
       repo,
       section: 'sessions',
     });
+  });
+});
+
+describe('agent record tabs', () => {
+  it('name the records in plain words and keep the API slugs in the address', () => {
+    const html = renderToStaticMarkup(
+      createElement(RepoAgents, { repo, section: 'pins', branches: [], navigate: () => {} }),
+    );
+    const tabs = [...html.matchAll(/href="([^"]+)"[^>]*>([^<]+)</g)].map((m) => [m[1], m[2]]);
+    expect(tabs).toEqual([
+      [`/source/${repo}/agents`, 'Sessions'],
+      [`/source/${repo}/agents/contracts`, 'Contracts'],
+      [`/source/${repo}/agents/pins`, 'Kept commits'],
+      [`/source/${repo}/agents/bisects`, 'Find a breaking commit'],
+    ]);
+    expect(html).toMatch(/aria-current="page" href="[^"]+\/pins"/);
   });
 });

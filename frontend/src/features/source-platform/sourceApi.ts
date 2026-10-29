@@ -22,30 +22,79 @@ export function onRepoGone(listener: GoneListener): () => void {
   return () => goneListeners.delete(listener);
 }
 
+/** Waits before retry `n` (1-based) of a read the server could not answer. */
+export const RETRY_DELAYS_MS = [400, 1200, 3000];
+
+/** The platform's reference for a failure ("… reference = l2hpofb8"), for support. */
+export const referenceOf = (text: string) => /reference\s*[=:]\s*([\w-]+)/i.exec(text)?.[1];
+
+/** What a server failure says to people: never the raw error, only its reference. */
+export const SERVER_FAILURE = 'Something went wrong on our side.';
+
+const wait = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason);
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer);
+        reject(signal.reason);
+      },
+      { once: true },
+    );
+  });
+
+/**
+ * Calls the platform API. A read (GET) the server could not answer (5xx, 503 OVERLOADED or
+ * a dropped connection) is retried with backoff (RETRY_DELAYS_MS) before it fails; a write
+ * is never retried here, since it may have taken effect. A server failure throws
+ * SERVER_FAILURE with the platform's reference, never its raw text.
+ */
 export async function sourceApi<T = any>(
   path: string,
   init: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown; signal?: AbortSignal } = {},
 ): Promise<T> {
-  const response = await fetch(`/api/v1${path}`, {
-    method: init.method ?? (init.body === undefined ? 'GET' : 'POST'),
-    headers: { 'content-type': 'application/json' },
-    body: init.body === undefined ? undefined : JSON.stringify(init.body),
-    signal: init.signal,
-    credentials: 'same-origin',
-  });
-  const value = await response.json().catch(() => ({}));
-  if (!response.ok) {
+  const method = init.method ?? (init.body === undefined ? 'GET' : 'POST');
+  const retries = method === 'GET' ? RETRY_DELAYS_MS.length : 0;
+  for (let attempt = 0; ; attempt++) {
+    let response: Response;
+    try {
+      response = await fetch(`/api/v1${path}`, {
+        method,
+        headers: { 'content-type': 'application/json' },
+        body: init.body === undefined ? undefined : JSON.stringify(init.body),
+        signal: init.signal,
+        credentials: 'same-origin',
+      });
+    } catch (e) {
+      if (init.signal?.aborted || attempt >= retries) {
+        if (init.signal?.aborted) throw e;
+        throw new SourceApiError('NETWORK', "Couldn't reach YonedaRepo. Check your connection.", 0);
+      }
+      await wait(RETRY_DELAYS_MS[attempt] ?? 0, init.signal);
+      continue;
+    }
+    const value = await response.json().catch(() => ({}));
+    if (response.ok) return value as T;
+    if (response.status >= 500 && attempt < retries) {
+      await wait(RETRY_DELAYS_MS[attempt] ?? 0, init.signal);
+      continue;
+    }
     const code = value.error?.code ?? 'REQUEST_FAILED';
     const repo = code === 'GONE' ? REPO_PATH.exec(path)?.[1] : undefined;
     if (repo) for (const listener of goneListeners) listener(repo);
-    throw new SourceApiError(
-      code,
-      value.error?.message ?? `Request failed (${response.status})`,
-      response.status,
-      value.error?.details,
-    );
+    const raw = String(value.error?.message ?? `Request failed (${response.status})`);
+    if (response.status >= 500) {
+      const reference = referenceOf(raw) ?? response.headers.get('cf-ray') ?? undefined;
+      throw new SourceApiError(
+        code,
+        reference ? `${SERVER_FAILURE} Reference: ${reference}` : SERVER_FAILURE,
+        response.status,
+      );
+    }
+    throw new SourceApiError(code, raw, response.status, value.error?.details);
   }
-  return value as T;
 }
 
 export const shortSha = (sha: string) => sha.slice(0, 10);

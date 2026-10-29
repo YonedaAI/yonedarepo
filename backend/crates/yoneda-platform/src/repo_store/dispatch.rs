@@ -4,11 +4,12 @@ use super::auth::{self, Actor};
 use super::op::{InitOp, Op, RepoOp as R, StoreOp};
 use super::rows::{self, Settings};
 use super::{
-    adopt, agent_context, agent_reads, annotated, bisect, branches, change_comments, change_delete,
-    change_records, changes, changesets, checks, classes, contracts, git_http, head, history,
-    history_import, hook_delivery, hook_events, hooks, land, land_queue, land_tickets, members,
-    merging, prepare, projection, projection_plan, pushed, reads, rebase, record, releases,
-    sessions, staging, store_lineage, submitted, symbols, tags, tokens, version_projection,
+    activity, adopt, agent_context, agent_reads, annotated, bisect, branches, change_comments,
+    change_delete, change_records, changes, changesets, checks, classes, contracts, git_http, head,
+    history, history_import, hook_delivery, hook_events, hooks, land, land_queue, land_tickets,
+    members, merging, prepare, projection, projection_plan, pushed, reads, rebase, record,
+    releases, sessions, staging, store_lineage, submitted, symbols, tags, tokens,
+    version_projection,
 };
 use super::{
     authorize::authorize, break_glass, deletion, forks, grants, lfs, maintenance, visibility,
@@ -61,6 +62,7 @@ fn run<S: SqlStore>(
         R::Log => reads::log(db, c),
         R::Txlog => reads::txlog(db, c),
         R::ChangeRecords => change_records::records(db, c),
+        R::Activity => activity::activity(db, c),
         R::Commit => reads::commit(db, c, settings),
         R::MergeBase => reads::merge_base(db, c),
         R::MergePlan => merging::plan(db, c),

@@ -162,7 +162,7 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
   await shot('source-clone');
   await page.keyboard.press('Escape');
   const tabs = page.getByRole('navigation', { name: 'Repository' });
-  await tabs.getByRole('link', { name: 'History' }).click();
+  await tabs.getByRole('link', { name: 'Commits' }).click();
   await page.getByRole('list', { name: 'History of main' }).getByRole('listitem').first().waitFor();
   await shot('source-history');
   await branchesPage(page, account, id, shot, m);

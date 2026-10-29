@@ -1,5 +1,6 @@
 // Derived data over immutable objects: code search (over repo-search-index), path history
 // and blame. Index builds run eagerly after landing (queue) and lazily on demand.
+import { touchActivity } from './repo-activity';
 import { noteBundles } from './repo-bundles';
 import { emitChangeLog } from './repo-changelog';
 import { compactAfterLanding } from './repo-compaction';
@@ -131,10 +132,11 @@ export function pathHistory(ctx: RepoContext, args: Json) {
 
 /** Eager derived builds after a landing: the new head's search segments. */
 export async function deriveAfterLanding(env: Env, envelope: Envelope) {
-  // Change-log analytics and webhooks first and independent of the builds below; neither
-  // throws.
+  // Change-log analytics, webhooks and the Home's activity row first and independent of the
+  // builds below; none throws.
   await emitChangeLog(env, envelope.repo_id);
   await fanoutHooks(env, envelope.repo_id);
+  await touchActivity(env, envelope.repo_id);
   const ctx = new RepoContext(
     env,
     envelope.repo_id,

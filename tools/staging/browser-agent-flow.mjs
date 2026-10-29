@@ -26,7 +26,7 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
   const tabs = page.getByRole('navigation', { name: 'Repository' });
   await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).click();
   await page.waitForURL(`**/source/${id}`);
-  await tabs.getByRole('link', { name: 'Agents' }).click();
+  await tabs.getByRole('link', { name: 'Sessions' }).click();
   await page.waitForURL(`**/source/${id}/agents`);
   const list = page.getByRole('list', { name: 'Sessions' });
   const row = list.getByRole('listitem').filter({ hasText: summary });
@@ -62,9 +62,9 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
   m.landed_commit_panel = 'landed line, Revert only';
 
   for (const [section, empty] of [
-    ['contracts', /^No contracts recorded yet\./],
-    ['pins', /^No pinned commits\./],
-    ['bisects', /^No bisects yet\./],
+    ['contracts', /^No contracts yet\./],
+    ['pins', /^No kept commits\./],
+    ['bisects', /^No searches yet\./],
   ]) {
     await page.goto(new URL(`/source/${id}/agents/${section}`, page.url()).href);
     await see(page.getByText(empty), `the ${section} empty state`);

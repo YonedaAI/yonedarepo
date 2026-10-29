@@ -1,5 +1,6 @@
 // The Agents tab: what agents record on the repository. Sessions (which coding session
-// produced which commit), symbol contracts, pins and bisects. Plans (`git_plan`) and
+// produced which commit), contracts (notes on functions and types), kept commits (pins) and
+// searches for a breaking commit (bisects). The URL slugs keep the API names. Plans (`git_plan`) and
 // codemods (`git_codemod`) have no page: a plan is computed per request and never stored,
 // and a codemod's result is an ordinary commit, shown in History like any other.
 import { linkTo, type Navigate } from '../shell/useRoute';
@@ -8,11 +9,11 @@ import { AgentSessions } from './AgentSessions';
 import { AgentBisects, AgentPins } from './AgentUpkeep';
 import { AGENT_SECTIONS, type AgentSection } from './agentModel';
 
-const LABELS: Record<AgentSection, string> = {
+export const LABELS: Record<AgentSection, string> = {
   sessions: 'Sessions',
   contracts: 'Contracts',
-  pins: 'Pins',
-  bisects: 'Bisects',
+  pins: 'Kept commits',
+  bisects: 'Find a breaking commit',
 };
 
 export function RepoAgents({
