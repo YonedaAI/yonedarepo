@@ -76,9 +76,37 @@ it('serves a large blob as a stub to a client that downloads it on its own reque
   expect((await SELF_FETCH(`${repo}/objects/${id('big.txt')}`)).status).toBe(404);
 });
 
+it('resumes a large blob download from a byte offset (HTTP Range)', async () => {
+  const owner = { cookie: await signup('rangeowner') };
+  const text = Array.from({ length: 3 * 1024 * 1024 }, (_, i) => String.fromCharCode(97 + (i % 26))).join('');
+  const created = await api('/repos', owner, {
+    body: { name: 'ranged', policy: { required_checks: [], approvals: 0 }, files: [file('big.txt', text)], author },
+  });
+  const repo = `/repos/${created.body.id}`;
+  const tree = await api(`${repo}/objects`, owner, { body: { objects: [{ id: created.body.tree, kind: 'tree' }] } });
+  const big = tree.body.objects[0].entries[0].id;
+  const from = 1_000_003;
+  const rest = await SELF_FETCH(`${repo}/objects/${big}`, owner.cookie, { range: `bytes=${from}-` });
+  expect(rest.status).toBe(206);
+  expect(rest.headers.get('content-range')).toBe(`bytes ${from}-${text.length - 1}/${text.length}`);
+  expect(rest.headers.get('content-length')).toBe(String(text.length - from));
+  expect(await rest.text()).toBe(text.slice(from));
+  const middle = await SELF_FETCH(`${repo}/objects/${big}`, owner.cookie, { range: 'bytes=10-19' });
+  expect(middle.status).toBe(206);
+  expect(await middle.text()).toBe(text.slice(10, 20));
+  // Past the end: 416 with the size, so the client restarts instead of guessing.
+  const past = await SELF_FETCH(`${repo}/objects/${big}`, owner.cookie, { range: `bytes=${text.length}-` });
+  expect(past.status).toBe(416);
+  expect(past.headers.get('content-range')).toBe(`bytes */${text.length}`);
+  // A range this endpoint does not serve (several, or a suffix) gets the whole blob.
+  const whole = await SELF_FETCH(`${repo}/objects/${big}`, owner.cookie, { range: 'bytes=0-1,5-6' });
+  expect(whole.status).toBe(200);
+  expect((await whole.text()).length).toBe(text.length);
+});
+
 /** A raw (non-JSON) GET of the platform API. */
-const SELF_FETCH = (path: string, cookie?: string) =>
-  platformFetch(new Request(`https://yoneda/api/v1${path}`, { headers: cookie ? { cookie } : {} }), scoped);
+const SELF_FETCH = (path: string, cookie?: string, headers: Record<string, string> = {}) =>
+  platformFetch(new Request(`https://yoneda/api/v1${path}`, { headers: { ...headers, ...(cookie ? { cookie } : {}) } }), scoped);
 
 const hex = (bytes: ArrayBuffer) => [...new Uint8Array(bytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
 async function gitId(kind: string, data: Uint8Array) {
