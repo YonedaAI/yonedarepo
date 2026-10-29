@@ -13,7 +13,7 @@
 //! first), keeping each wave's object ids; `send` lists them wave by wave, walking nothing
 //! again. Trees are kept between waves while they fit TREE_BYTES; a tree the session let
 //! go comes back with its entry (`pack_entry` with its raw content).
-use crate::platform_objects::{new_trees, supplied_tree};
+use crate::platform_objects::{new_tree_versions, supplied_tree};
 use crate::storage::{bad, string};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -47,11 +47,12 @@ const MAX_DELTA_BYTES: usize = 4 * 1024 * 1024;
 /// Bytes of written versions kept as bases for versions still to come.
 const BASE_BYTES: usize = 32 * 1024 * 1024;
 
-/// A walked wave: its objects in order, and the file version pairs its diffs found.
+/// A walked wave: its objects in order, and the version pairs (files and directories) its
+/// diffs found.
 type Walked = (Vec<(ObjectId, ObjectKind)>, Vec<(ObjectId, ObjectId)>);
 
-/// One wave's walk: the trees it still needs, or its objects in order with the file
-/// version pairs its diffs found.
+/// One wave's walk: the trees it still needs, or its objects in order with the version
+/// pairs its diffs found.
 enum WaveWalk {
     Need(BTreeSet<ObjectId>),
     Done(Vec<(ObjectId, ObjectKind)>, Vec<(ObjectId, ObjectId)>),
@@ -87,8 +88,9 @@ pub struct UploadSession {
     unsent: HashSet<ObjectId>,
     count: usize,
     writer: Option<PackWriter>,
-    /// Each file version's other versions in this pack (its path's previous and next, from
-    /// the commits' diffs): one written first is the base the other is sent against.
+    /// Each file or directory version's other versions in this pack (its path's previous
+    /// and next, from the commits' diffs): one written first is the base the other is sent
+    /// against.
     partners: HashMap<ObjectId, Vec<ObjectId>>,
     /// Written versions kept as bases while a partner is still to come, with their chain
     /// depth; `base_bytes` in all.
@@ -233,8 +235,11 @@ impl UploadSession {
             if sent.base != Some(sent.tree) {
                 add(sent.tree, ObjectKind::Tree, &mut objects);
             }
-            for tree in new_trees(sent.tree, changes, &mut &self.trees)? {
+            for (tree, was) in new_tree_versions(sent.base, sent.tree, changes, &mut &self.trees)? {
                 add(tree, ObjectKind::Tree, &mut objects);
+                if let Some(old) = was {
+                    pairs.push((old, tree));
+                }
             }
             for change in changes.iter().filter(|_| !self.omit_blobs) {
                 if let Some((mode, id)) = change.new
@@ -385,13 +390,28 @@ impl UploadSession {
     pub fn pack_entry(&mut self, kind: &str, id: &str, data: Option<&[u8]>) -> Result<Vec<u8>> {
         let id = ObjectId::parse(id)?;
         let (kind, bytes) = match (kind, data) {
-            ("tree", Some(data)) => (ObjectKind::Tree, data.to_vec()),
+            ("tree", Some(data)) => {
+                if hash_object(ObjectKind::Tree, data) != id {
+                    return Err(Error::new(
+                        "GIT_OBJECT_INVALID",
+                        format!("Stored tree does not hash to {id}"),
+                    ));
+                }
+                return self.versioned_entry(ObjectKind::Tree, id, data);
+            }
             ("tree", None) => {
                 let entries = self
                     .trees
                     .get(&id)
                     .ok_or_else(|| bad(&format!("Tree {id} was never read")))?;
-                (ObjectKind::Tree, encode_tree(entries)?)
+                let data = encode_tree(entries)?;
+                if hash_object(ObjectKind::Tree, &data) != id {
+                    return Err(Error::new(
+                        "GIT_OBJECT_INVALID",
+                        format!("Stored tree does not hash to {id}"),
+                    ));
+                }
+                return self.versioned_entry(ObjectKind::Tree, id, &data);
             }
             ("tag", None) => {
                 let (_, data) = self
@@ -408,7 +428,7 @@ impl UploadSession {
                         format!("Stored blob does not hash to {id}"),
                     ));
                 }
-                return self.blob_entry(id, data);
+                return self.versioned_entry(ObjectKind::Blob, id, data);
             }
             ("commit", Some(data)) => (ObjectKind::Commit, data.to_vec()),
             _ => {
@@ -430,11 +450,13 @@ impl UploadSession {
         Ok(writer.entry(kind, &bytes))
     }
 
-    /// A file version: as a delta against a partner already written and kept, when that
-    /// is under half its size and the chain stays within `MAX_DEPTH`, else whole. It is
-    /// then kept as a base while a partner is still to come, and a base whose partners are
-    /// all written is let go.
-    fn blob_entry(&mut self, id: ObjectId, data: &[u8]) -> Result<Vec<u8>> {
+    /// A file or directory version: as a delta against a partner already written and
+    /// kept, when that is under half its size and the chain stays within `MAX_DEPTH`, else
+    /// whole. It is then kept as a base while a partner is still to come, and a base whose
+    /// partners are all written is let go. A tree differs from its previous version by a
+    /// few entries, but its ids do not compress: whole, svelte's 98,763 trees were 104 MiB
+    /// of the 225 MiB clone (GitHub's whole pack is 119 MiB).
+    fn versioned_entry(&mut self, kind: ObjectKind, id: ObjectId, data: &[u8]) -> Result<Vec<u8>> {
         let partners = self.partners.get(&id).cloned().unwrap_or_default();
         let base = partners
             .iter()
@@ -452,7 +474,7 @@ impl UploadSession {
             .ok_or_else(|| bad("The pack has not started"))?;
         let (entry, depth) = match delta {
             Some((base, delta, depth)) => (writer.delta_entry(&base, &delta), depth),
-            None => (writer.entry(ObjectKind::Blob, data), 0),
+            None => (writer.entry(kind, data), 0),
         };
         self.wrote(id, &partners);
         let awaited = partners.iter().any(|p| !self.written.contains(p));
@@ -700,6 +722,80 @@ mod tests {
         reader.finish().unwrap();
         for (v, blob) in blobs.iter().enumerate() {
             assert_eq!(*reader.content(blob).unwrap(), versions[v]);
+        }
+    }
+
+    #[test]
+    fn sends_a_directorys_other_version_as_a_delta_git_resolves() {
+        use yoneda_core::git_object::{PackLimits, PackReader};
+        // src/ holds 200 files; each commit rewrites one, so each src/ and root differ from
+        // their previous version by one entry.
+        let mut files: Vec<TreeEntry> = (0..200)
+            .map(|n| TreeEntry {
+                name: format!("f{n:03}.rs"),
+                mode: FileMode::Blob,
+                id: hash_object(ObjectKind::Blob, format!("{n}\n").as_bytes()),
+            })
+            .collect();
+        let mut raw: HashMap<ObjectId, Vec<u8>> = HashMap::new();
+        let mut roots = Vec::new();
+        for v in 0..3 {
+            files[v].id = hash_object(ObjectKind::Blob, format!("v{v}\n").as_bytes());
+            let src = encode_tree(&files).unwrap();
+            let src_id = hash_object(ObjectKind::Tree, &src);
+            let root = encode_tree(&[TreeEntry {
+                name: "src".into(),
+                mode: FileMode::Tree,
+                id: src_id,
+            }])
+            .unwrap();
+            let root_id = hash_object(ObjectKind::Tree, &root);
+            raw.insert(src_id, src);
+            raw.insert(root_id, root);
+            roots.push(root_id);
+        }
+        let commit = |n: usize| format!("{n}").repeat(40);
+        let walk = json!({ "commits": [
+            { "commit": commit(2), "tree": roots[2], "base_tree": roots[1] },
+            { "commit": commit(1), "tree": roots[1], "base_tree": roots[0] },
+            { "commit": commit(0), "tree": roots[0], "base_tree": null },
+        ], "omit_blobs": true });
+        let mut session = UploadSession::new(&walk).unwrap();
+        let supplied: Vec<Value> = raw
+            .iter()
+            .map(|(id, data)| json!({ "id": id, "data_b64": STANDARD.encode(data) }))
+            .collect();
+        assert_eq!(
+            session.step(&json!({ "trees": supplied })).unwrap()["count"],
+            9
+        );
+        let wave = session.send(&json!({})).unwrap();
+        let trees: Vec<ObjectId> = wave["trees"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| ObjectId::parse(t.as_str().unwrap()).unwrap())
+            .collect();
+        assert_eq!(trees.len(), 6);
+        // The trees alone, newest first as listed: the first src/ and root go whole, each
+        // older version as a small delta against the newer one.
+        session.count = 6;
+        let mut pack = session.pack_start().unwrap();
+        let mut sizes = Vec::new();
+        for id in &trees {
+            let entry = session.pack_entry("tree", &id.hex(), None).unwrap();
+            sizes.push((raw[id].len(), entry.len()));
+            pack.extend(entry);
+        }
+        let whole = sizes.iter().filter(|(_, sent)| *sent > 200).count();
+        assert!(whole <= 2, "{sizes:?}");
+        assert!(session.bases.is_empty());
+        pack.extend(session.pack_finish().unwrap());
+        let mut reader = PackReader::new(PackLimits::default(), 1 << 30);
+        reader.feed(&pack).unwrap();
+        reader.finish().unwrap();
+        for id in &trees {
+            assert_eq!(*reader.content(id).unwrap(), raw[id]);
         }
     }
 }
