@@ -42,6 +42,7 @@ pub fn execute_commit_store<S: SqlStore>(db: &S, command: Value) -> Result<Value
             "store_objects_pending" => staging::pending(&owned),
             "store_objects_projected" => staging::projected(&owned, c),
             "store_staged_objects" => staged(&owned, c),
+            "store_staged_held" => staging::held(&owned, c),
             "store_status" => staging::status(&owned),
             "store_vacuum_scan" => vacuum_scan(&owned, c),
             "store_vacuum_delete" => vacuum_delete(&owned, c),

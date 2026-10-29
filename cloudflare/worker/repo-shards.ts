@@ -3,7 +3,7 @@
 // queueing on the repository authority. A commit id names its shard, so any Worker reads
 // it back at once. The authority adopts a commit (parents first) when it first needs it.
 import { durableJson } from './durable';
-import type { CachedObject, RawObject } from './repo-stores';
+import type { CachedObject } from './repo-stores';
 import { record, timed } from './repo-timing';
 import type { Env } from './types';
 
@@ -17,10 +17,9 @@ const NOT_RECORDED = /Commit ([0-9a-f]{40}) is not recorded/;
 const ADOPT_DEPTH = 256;
 
 export const shardOf = (commit: string) => Number.parseInt(commit.slice(0, 2), 16) % SHARDS;
+export const legacyShardOf = (commit: string) => Number.parseInt(commit[0], 16) % LEGACY_SHARDS;
 /** The shards that may hold `commit`: where it is written now, then where it was. */
-const shardsOf = (commit: string) => [
-  ...new Set([shardOf(commit), Number.parseInt(commit[0], 16) % LEGACY_SHARDS]),
-];
+export const shardsOf = (commit: string) => [...new Set([shardOf(commit), legacyShardOf(commit)])];
 
 function fail(error: { code: string; message: string }) {
   return Object.assign(new Error(error.message), { code: error.code });
@@ -156,33 +155,6 @@ export const unrecorded = (e: unknown) =>
   (e as { code?: string })?.code === 'NOT_FOUND'
     ? (NOT_RECORDED.exec(String((e as Error).message))?.[1] ?? null)
     : null;
-
-/** Staged objects of shard commits not yet in R2, from every shard (a rare read path:
- * an object is staged with its commit, whose id the reader does not know). A shard that
- * cannot answer fails the call only when an object is found in no other shard: one busy
- * shard of 64 must not fail reads of objects it does not hold. */
-export async function stagedInShards(env: Env, repo: string, ids: string[], raw = false) {
-  if (!env.COMMIT_SHARDS || ids.length === 0) return [];
-  let failure: unknown = null;
-  const found = await Promise.all(
-    Array.from({ length: SHARDS }, (_, shard) =>
-      shardCall(env, repo, shard, {
-        op: 'store_staged_objects',
-        ids,
-        ...(raw ? { raw: true } : {}),
-      }).then(
-        (r) => r.objects as (CachedObject | RawObject)[],
-        (e) => {
-          failure ??= e;
-          return [];
-        },
-      ),
-    ),
-  );
-  const byId = new Map(found.flat().map((o) => [o.id, o]));
-  if (failure && ids.some((id) => !byId.has(id))) throw failure;
-  return [...byId.values()];
-}
 
 /** Staged objects among `ids` held with `commit` (its shard; none once R2 holds them). */
 export async function stagedInShardOf(env: Env, repo: string, commit: string, ids: string[]) {
