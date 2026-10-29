@@ -13,8 +13,7 @@ use super::{
 };
 use super::{
     authorize::authorize, break_glass, deletion, forks, grants, lfs, maintenance, memory,
-    quarantine,
-    visibility,
+    quarantine, visibility,
 };
 use crate::storage::SqlStore;
 use serde_json::{Value, json};
