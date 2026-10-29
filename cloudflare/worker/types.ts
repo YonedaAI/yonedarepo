@@ -51,6 +51,9 @@ export interface Env {
   PLATFORM_OBJECT_STORE?: string;
   /** `on` writes a large push's objects as bundles (repo-bundles); reads always use them. */
   PUSH_BUNDLES?: string;
+  /** `on` serves a full clone's pack from the store when one is held, else stores it as it
+   * streams (repo-pack-cache); otherwise every pack is built. */
+  PACK_CACHE?: string;
   /** `off` leaves a shard commit's blobs to its shard's drain instead of also writing them
    * to R2's cache key after the commit (repo-commit-shard); anything else writes them. */
   BLOB_WRITE_THROUGH?: string;
