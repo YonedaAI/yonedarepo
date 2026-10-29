@@ -24,6 +24,8 @@ printf '%s %s\\n' "$2" "$input" >> '${log}'
 case "$2" in
   opencode-start) echo "CONTEXT for $(printf '%s' "$input" | sed 's/.*"sessionID":"\\([^"]*\\)".*/\\1/')" ;;
   opencode-shell) case "$input" in *"git push"*) echo "use yoneda push" ;; esac ;;
+  opencode-read) case "$input" in *memo.rs*) echo "MEMORY on memo.rs" ;; esac ;;
+  opencode-prompt) echo "PROMPT context" ;;
 esac
 `,
   );
@@ -92,6 +94,36 @@ test('wires context, reads, push refusal and session records through yoneda hook
     await cleanup();
     const stops = fake.calls().filter((c) => c.event === 'opencode-stop').map((c) => c.payload.sessionID);
     assert.deepEqual(stops.sort(), ['s1', 's1', 's2'], 'cleanup records every session it saw');
+  } finally {
+    if (saved === undefined) delete process.env.YONEDA_BIN;
+    else process.env.YONEDA_BIN = saved;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('adds memories on files read and context for new prompts to later model calls', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'yoneda-opencode-'));
+  const fake = fakeYoneda(dir);
+  const saved = process.env.YONEDA_BIN;
+  process.env.YONEDA_BIN = fake.bin;
+  try {
+    const messages = [{ type: 'user', text: 'Fix the retry budget' }];
+    const { hooks, ctx } = fakeOpencode(dir, messages);
+    await plugin.default.setup(ctx);
+    const first = modelCall('s1');
+    await hooks['session.context'](first);
+    assert.deepEqual(first.system.map((p) => p.text), ['CONTEXT for s1', 'PROMPT context']);
+    await hooks['tool.execute.after']({ tool: 'read', sessionID: 's1', input: { path: 'memo.rs' }, status: 'completed', result: { output: 'x' } });
+    await hooks['tool.execute.after']({ tool: 'read', sessionID: 's1', input: { path: 'other.rs' }, status: 'completed', result: { output: 'x' } });
+    await hooks['tool.execute.after']({ tool: 'yoneda_git_memory_add', sessionID: 's1', input: {}, status: 'completed' });
+    const next = modelCall('s1');
+    await hooks['session.context'](next);
+    // The same prompt is not asked about again; a read with nothing new adds nothing.
+    assert.deepEqual(next.system.map((p) => p.text), ['CONTEXT for s1', 'PROMPT context', 'MEMORY on memo.rs']);
+    assert.equal(fake.calls().filter((c) => c.event === 'opencode-prompt').length, 1);
+    assert.deepEqual(fake.calls().find((c) => c.event === 'opencode-prompt').payload, { sessionID: 's1', cwd: dir, prompt: 'Fix the retry budget' });
+    assert.deepEqual(fake.calls().find((c) => c.event === 'opencode-memory').payload, { sessionID: 's1', cwd: dir });
+    assert.equal(plugin.lastPrompt([{ type: 'user', text: 'a' }, { info: { type: 'user', text: 'b' } }, { type: 'assistant' }]), 'b');
   } finally {
     if (saved === undefined) delete process.env.YONEDA_BIN;
     else process.env.YONEDA_BIN = saved;

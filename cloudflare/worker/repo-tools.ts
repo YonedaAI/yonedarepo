@@ -15,6 +15,7 @@ import { forkRepository } from './repo-forks';
 import { hookOperations, notifyHooks } from './repo-hooks';
 import { landWithMerge } from './repo-landing';
 import { memberOperations } from './repo-members';
+import { memoryOperations } from './repo-memories';
 import { explicitMerge } from './repo-merge';
 import { getObjects } from './repo-object-fetch';
 import { ApiError, diff, type Json, type RepoContext } from './repo-ops';
@@ -108,7 +109,8 @@ export const operations: Record<string, Operation> = {
       ref: a.ref || null,
     }),
   // What a new coding session should know: heads, landing rules, recent sessions, open
-  // changes and contracts on the paths it works on (a list, or comma-separated over REST).
+  // changes, contracts and memories on the paths it works on (a list, or comma-separated
+  // over REST).
   git_context: (ctx, a) =>
     ctx.call({
       op: 'repo_agent_context',
@@ -117,6 +119,7 @@ export const operations: Record<string, Operation> = {
       sessions: optionalNumber(a.sessions),
       changes: optionalNumber(a.changes),
       contracts: optionalNumber(a.contracts),
+      memories: optionalNumber(a.memories),
     }),
   git_bisect: async (ctx, a) => {
     const step = a.id
@@ -169,6 +172,7 @@ export const operations: Record<string, Operation> = {
   ...changeOperations,
   ...releaseOperations,
   ...memberOperations,
+  ...memoryOperations,
   git_land: (ctx, a) => {
     if (!/^[0-9a-f]{40}$/.test(String(a.commit ?? '')))
       throw new ApiError('INVALID_INPUT', 'commit must be a 40-character commit id');

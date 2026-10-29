@@ -12,8 +12,8 @@ use super::{
     version_projection,
 };
 use super::{
-    authorize::authorize, break_glass, deletion, forks, grants, lfs, maintenance, quarantine,
-    visibility,
+    authorize::authorize, break_glass, deletion, forks, grants, lfs, maintenance, memory,
+    quarantine, visibility,
 };
 use crate::storage::SqlStore;
 use serde_json::{Value, json};
@@ -53,6 +53,7 @@ fn run<S: SqlStore>(
         StoreOp::Lfs(op) => return lfs::run(db, c, op, actor, settings),
         StoreOp::Fork(op) => return forks::run(db, c, op, actor, settings),
         StoreOp::Quarantine(op) => return quarantine::run(db, c, op, actor),
+        StoreOp::Memory(op) => return memory::run(db, c, op, actor),
         StoreOp::Repo(op) => op,
     };
     match op {

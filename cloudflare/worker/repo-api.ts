@@ -25,6 +25,7 @@ import { hooksRoute, notifyHooks } from './repo-hooks';
 import { lfsRoute } from './repo-lfs';
 import { repoMcp } from './repo-mcp';
 import { membersRoute } from './repo-members';
+import { contextRoute, memoriesRoute } from './repo-memories';
 import { downloadBlob } from './repo-object-fetch';
 import { parseStore } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
@@ -205,6 +206,10 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   if (resource === 'commits' && sha && sub === 'sessions' && get)
     return run('git_sessions', { commit: sha });
   if (resource === 'context' && !sha && get) return run('git_context', query);
+  if (resource === 'context' && sha && !sub)
+    return contextRoute(ctx, req.method, sha, query, () => bodyOf(req));
+  if (resource === 'memories')
+    return memoriesRoute(ctx, req.method, sha, sub, query, () => bodyOf(req));
   if (resource === 'commits' && sha && sub === 'reviews' && post)
     return run('git_review', { ...(await bodyOf(req)), commit: sha });
   if (resource === 'commits' && sha && sub === 'revert' && post)

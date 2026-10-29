@@ -57,6 +57,7 @@ export type RepoTab =
   | 'commits'
   | 'sessions'
   | 'context'
+  | 'memories'
   | 'releases'
   | 'search'
   | 'settings';
@@ -187,7 +188,11 @@ export function routeTab(route: SourceRoute): RepoTab | undefined {
     case 'release':
       return 'releases';
     case 'agents':
-      return route.section === 'sessions' ? 'sessions' : 'agents';
+      return route.section === 'sessions'
+        ? 'sessions'
+        : route.section === 'memories'
+          ? 'memories'
+          : 'agents';
     case 'session':
       return 'sessions';
     case 'context':
@@ -210,6 +215,7 @@ export function tabRoute(tab: RepoTab, repo: string): SourceRoute {
   if (tab === 'sessions') return { view: 'agents', repo, section: 'sessions' };
   if (tab === 'agents') return { view: 'agents', repo, section: 'contracts' };
   if (tab === 'context') return { view: 'context', repo };
+  if (tab === 'memories') return { view: 'agents', repo, section: 'memories' };
   if (tab === 'search') return { view: 'search', repo, query: '' };
   return { view: 'repo-settings', repo, section: 'rules' };
 }

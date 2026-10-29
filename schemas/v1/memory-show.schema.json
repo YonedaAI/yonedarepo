@@ -1,0 +1,36 @@
+{
+  "$defs": {
+    "MemoryShow": {
+      "additionalProperties": false,
+      "description": "`memory show`.",
+      "properties": {
+        "memory": {
+          "description": "The memory as the platform returns it."
+        }
+      },
+      "required": [
+        "memory"
+      ],
+      "title": "MemoryShow",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `memory-show`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/MemoryShow"
+    },
+    "schema": {
+      "const": "yoneda.cli.memory-show.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.memory-show.v1",
+  "type": "object"
+}

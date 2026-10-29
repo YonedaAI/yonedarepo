@@ -105,6 +105,31 @@ pub enum ReleaseCommand {
     },
 }
 
+/// `yoneda memory …`: the repository's memories (decisions, constraints, gotchas, how-tos).
+#[derive(Debug, PartialEq, Eq)]
+pub enum MemoryCommand {
+    Add {
+        kind: String,
+        text: String,
+        /// `path`, `path#symbol` or `dir/`.
+        anchors: Vec<String>,
+        supersedes: Option<u64>,
+        commit: Option<String>,
+    },
+    List {
+        path: Option<String>,
+        kind: Option<String>,
+        status: Option<String>,
+    },
+    Show {
+        id: u64,
+    },
+    Retire {
+        id: u64,
+        reason: Option<String>,
+    },
+}
+
 /// `yoneda change …`: change requests (a branch proposed for landing on main).
 #[derive(Debug, PartialEq, Eq)]
 pub enum ChangeCommand {
@@ -159,8 +184,13 @@ pub struct Anchor {
 pub enum HookEvent {
     /// Claude Code SessionStart: the repository's context, and the session id exported.
     ClaudeStart,
-    /// Claude Code PostToolUse on Read/Grep: records the files read.
+    /// Claude Code PostToolUse on Read/Grep: records the files read, and adds the memories
+    /// and contracts on them that this session has not been shown yet.
     ClaudeRead,
+    /// Claude Code UserPromptSubmit: adds what is relevant to the prompt, not shown yet.
+    ClaudePrompt,
+    /// Claude Code PostToolUse on the git_memory_add MCP tool: notes the session added one.
+    ClaudeMemory,
     /// Claude Code PreToolUse on Bash: sends `git push` with recorded reads to `yoneda push`.
     ClaudeBash,
     /// Claude Code Stop: posts a session record for each commit pushed this turn.
@@ -174,6 +204,8 @@ pub enum HookEvent {
 pub enum OpencodeEvent {
     Start,
     Read,
+    Prompt,
+    Memory,
     Shell,
     Stop,
 }
@@ -270,6 +302,10 @@ pub enum Command {
     Release {
         target: Target,
         command: ReleaseCommand,
+    },
+    Memory {
+        target: Target,
+        command: MemoryCommand,
     },
     Hook(HookEvent),
     /// `yoneda context`: what a coding session starting here should know.

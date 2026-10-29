@@ -7,7 +7,7 @@
 //! so publishing grants nobody write and lifts no token's restriction. Only the owner's
 //! account (or an owner of the owning organization) changes visibility.
 use super::auth::Actor;
-use super::op::{ForkOp, LfsOp, RepoOp as R, StoreOp};
+use super::op::{ForkOp, LfsOp, MemoryOp, RepoOp as R, StoreOp};
 use crate::storage::{SqlStore, bad, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
@@ -82,6 +82,9 @@ fn public_read(op: StoreOp) -> bool {
                 | R::BundleLocate
         ) | StoreOp::Lfs(LfsOp::Batch)
             | StoreOp::Fork(ForkOp::Source | ForkOp::Export)
+            | StoreOp::Memory(
+                MemoryOp::List | MemoryOp::Show | MemoryOp::Relevant | MemoryOp::Deliveries
+            )
     )
 }
 
