@@ -8,7 +8,7 @@ use super::batches::open;
 use super::*;
 use std::collections::BTreeMap;
 use yoneda_core::git_object::ObjectId;
-use yoneda_refmodel::{CommitId, MAIN, Op, Outcome, Plan, Repo, Rng, Role, Tree, generate};
+use yoneda_refmodel::{CommitId, MAIN, Op, Outcome, Plan, Repo, Rng, Role, Scope, Tree, generate};
 
 mod adapter;
 mod git;
@@ -23,6 +23,9 @@ enum Seen {
     Moved,
     Already,
     Done,
+    Queued(u64),
+    /// A combiner run: tickets landed, tickets failed with why, and its merge commit.
+    Batch(Vec<u64>, Vec<(u64, String)>, Option<String>),
     Refused(String),
 }
 
@@ -70,7 +73,7 @@ impl Driver {
                     None => json!({"path": path, "delete": true}),
                 };
                 let reads = if *read { json!([path]) } else { json!([]) };
-                (self.commit_on(branch, json!([change]), reads), None)
+                (self.commit_on(OWNER, branch, json!([change]), reads), None)
             }
             Op::Revert { branch, back } => {
                 let tip = self.model.refs[branch];
@@ -81,7 +84,7 @@ impl Driver {
                 let source = row(&json!(self.ids[source]));
                 let old = row(&source["parents"][0])["tree"].clone();
                 (
-                    self.commit_on(branch, self.replay(&old, &source["tree"]), json!([])),
+                    self.commit_on(OWNER, branch, self.replay(&old, &source["tree"]), json!([])),
                     None,
                 )
             }
@@ -109,10 +112,11 @@ impl Driver {
                 )),
                 None,
             ),
-            Op::Tag { name, at } => (
+            Op::Tag { name, at, message } => (
                 answer(self.h.run(
                     OWNER,
-                    json!({"op":"repo_tag_create","name":name,"commit":self.git_id(at)}),
+                    json!({"op":"repo_tag_create","name":name,"commit":self.git_id(at),
+                        "message":message}),
                 )),
                 None,
             ),
@@ -135,6 +139,65 @@ impl Driver {
                 let visibility = if *public { "public" } else { "private" };
                 let set = json!({"op":"repo_set_visibility","visibility":visibility});
                 (done(self.as_caller(caller, set)), None)
+            }
+            Op::Enqueue { branch } => {
+                // As the adapter lands: directly, or joining the queue in the same call.
+                let landed = self.h.run(
+                    OWNER,
+                    json!({"op":"repo_land","ref":MAIN,"commit":self.git_id(branch),"enqueue":true}),
+                );
+                match landed {
+                    Ok(v) if v["queued"] == true => {
+                        (Seen::Queued(v["ticket"].as_u64().unwrap_or_default()), None)
+                    }
+                    other => (answer(other), None),
+                }
+            }
+            Op::RunQueue => (self.run_queue(), None),
+            Op::MintToken {
+                name,
+                scopes,
+                grant,
+            } => {
+                let scopes: Vec<&str> = scopes
+                    .iter()
+                    .map(|s| match s {
+                        Scope::Read => "read",
+                        Scope::Write => "write",
+                        Scope::Land => "land",
+                    })
+                    .collect();
+                let secret = format!("{name}-secret-0123456789abcdef0123456789");
+                let mint = json!({"op":"repo_token_create","name":name,"scopes":scopes,
+                    "paths":grant,"_secret":secret});
+                (done(self.h.run(OWNER, mint)), None)
+            }
+            Op::RevokeToken { name } => (
+                done(
+                    self.h
+                        .run(OWNER, json!({"op":"repo_token_revoke","name":name})),
+                ),
+                None,
+            ),
+            Op::TokenCommit {
+                token,
+                branch,
+                path,
+                content,
+            } => {
+                let change = match content {
+                    Some(text) => file(path, text),
+                    None => json!({"path": path, "delete": true}),
+                };
+                let who = format!("token:{token}");
+                (
+                    self.commit_on(&who, branch, json!([change]), json!([])),
+                    None,
+                )
+            }
+            Op::TokenRead { token, path } => {
+                let read = json!({"op":"repo_path_history","ref":MAIN,"path":path});
+                (done(self.h.run(&format!("token:{token}"), read)), None)
             }
             Op::Member { account, role } => {
                 let command = match role {
@@ -177,6 +240,22 @@ impl Driver {
                     self.same_files(*id)?;
                 }
             }
+            (Seen::Batch(landed, failed, merge), Outcome::Batch(model))
+                if *landed == model.landed
+                    && failed.len() == model.failed.len()
+                    && failed
+                        .iter()
+                        .zip(&model.failed)
+                        .all(|(s, m)| s.0 == m.0 && s.1 == m.1)
+                    && merge.is_some() == model.merge.is_some()
+                    && model.merge.is_none_or(|m| m == self.ids.len()) =>
+            {
+                if let (Some(id), Some(m)) = (merge, model.merge) {
+                    self.ids.push(id.clone());
+                    self.same_files(m)?;
+                }
+            }
+            (Seen::Queued(ticket), Outcome::Queued(model)) if ticket == model => {}
             (Seen::Moved, Outcome::Moved)
             | (Seen::Already, Outcome::Already)
             | (Seen::Done, Outcome::Done) => {}
@@ -204,6 +283,16 @@ impl Driver {
             .collect();
         if refs != model {
             return Err(format!("refs: platform {refs:?}, model {model:?}"));
+        }
+        let annotated: Vec<&String> = listed["annotated"]
+            .as_object()
+            .map(|tags| tags.keys().collect())
+            .unwrap_or_default();
+        let model: Vec<&String> = self.model.annotated.keys().collect();
+        if annotated != model {
+            return Err(format!(
+                "annotated tags: platform {annotated:?}, model {model:?}"
+            ));
         }
         if listed["version"] != self.model.version {
             let version = &listed["version"];
@@ -254,6 +343,14 @@ fn label(op: &Op, outcome: &Outcome) -> String {
     match outcome {
         Outcome::Committed(_) => format!("{kind} Committed"),
         Outcome::Rebased(_) => format!("{kind} Rebased"),
+        Outcome::Queued(_) => format!("{kind} Queued"),
+        Outcome::Batch(batch) => match (&batch.merge, batch.landed.len(), batch.failed.len()) {
+            (Some(_), landed, _) if landed > 1 => format!("{kind} octopus"),
+            (Some(_), _, _) => format!("{kind} merge"),
+            (None, 1, _) => format!("{kind} fast-forward"),
+            (None, _, 0) => format!("{kind} nothing"),
+            (None, _, _) => format!("{kind} failed"),
+        },
         Outcome::Refused(code) => format!("{kind} {code}"),
         other => format!("{kind} {other:?}"),
     }

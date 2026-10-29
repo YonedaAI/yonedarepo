@@ -29,7 +29,17 @@ pub fn merge3(base: &Tree, ours: &Tree, theirs: &Tree) -> Option<Tree> {
 }
 
 impl Repo {
-    fn tree_of(&self, commit: Option<CommitId>) -> Tree {
+    /// Paths written by the commits reachable from `tip` and not from `head`.
+    pub(crate) fn branch_paths(&self, tip: CommitId, head: CommitId) -> BTreeSet<String> {
+        let behind = self.ancestors(head);
+        self.ancestors(tip)
+            .into_iter()
+            .filter(|c| !behind.contains(c))
+            .flat_map(|c| self.commits[c].writes.iter().cloned())
+            .collect()
+    }
+
+    pub(crate) fn tree_of(&self, commit: Option<CommitId>) -> Tree {
         commit
             .map(|c| self.commits[c].tree.clone())
             .unwrap_or_default()
@@ -52,14 +62,12 @@ impl Repo {
         let Some(tree) = merge3(&self.tree_of(base), ours, &self.commits[commit].tree) else {
             return Outcome::Refused("CONFLICT");
         };
+        // The merge commit is built, but queued landings refuse it as they refuse any.
+        if self.busy(MAIN) {
+            return Outcome::Refused("MERGE_REQUIRED");
+        }
         let writes = Self::changed(ours, &tree);
-        let behind = self.ancestors(head);
-        let allowed: BTreeSet<&String> = self
-            .ancestors(commit)
-            .into_iter()
-            .filter(|c| !behind.contains(c))
-            .flat_map(|c| &self.commits[c].writes)
-            .collect();
+        let allowed = self.branch_paths(commit, head);
         if writes.iter().any(|path| !allowed.contains(path)) {
             return Outcome::Refused("FORBIDDEN");
         }

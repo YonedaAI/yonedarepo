@@ -8,15 +8,16 @@ use yoneda_refmodel::{Access, Caller, MAIN, Plan};
 const MERGER: &str = "platform:merge";
 
 impl Driver {
-    /// Commits `changes` on `branch`'s tip at the current version and lands it there.
-    pub(super) fn commit_on(&self, branch: &str, changes: Value, reads: Value) -> Seen {
+    /// Commits `changes` on `branch`'s tip at the current version as `who` and lands it
+    /// there.
+    pub(super) fn commit_on(&self, who: &str, branch: &str, changes: Value, reads: Value) -> Seen {
         let parent = self.ids[self.model.refs[branch]].clone();
         let version = self.model.version;
-        match self.h.commit(OWNER, Some(&parent), version, changes, reads) {
+        match self.h.commit(who, Some(&parent), version, changes, reads) {
             Err(e) => Seen::Refused(e.code),
             Ok(id) => match answer(
                 self.h
-                    .run(OWNER, json!({"op":"repo_land","ref":branch,"commit":id})),
+                    .run(who, json!({"op":"repo_land","ref":branch,"commit":id})),
             ) {
                 Seen::Moved => Seen::Committed(id),
                 other => other,
@@ -225,5 +226,121 @@ impl Driver {
             }
         }
         done(answered)
+    }
+
+    /// One combiner run as `repo-merge.ts` `landBatch` runs it: claim main's queue, land
+    /// the first fast-forward alone, else merge every item against the head, keep the clean
+    /// ones that neither read nor write what an earlier kept one wrote nor merge a path it
+    /// merged, and land them as one merge commit.
+    pub(super) fn run_queue(&self) -> Seen {
+        let claim = match self
+            .h
+            .run(MERGER, json!({"op":"repo_land_claim","ref":"main"}))
+        {
+            Err(e) => return Seen::Refused(e.code),
+            Ok(claim) => claim,
+        };
+        let mut failed: Vec<(u64, String)> = claim["failed"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|f| {
+                (
+                    f["ticket"].as_u64().unwrap_or_default(),
+                    f["result"]["code"].as_str().unwrap_or_default().to_owned(),
+                )
+            })
+            .collect();
+        if claim["empty"] == true {
+            return Seen::Batch(vec![], failed, None);
+        }
+        let items = claim["items"].as_array().cloned().unwrap_or_default();
+        let batch = |landed: Vec<u64>, failures: &[(u64, String)], merge: Option<&str>| {
+            let failures: Vec<Value> = failures
+                .iter()
+                .map(|(t, code)| json!({"ticket": t, "error": {"code": code}}))
+                .collect();
+            self.h.run(
+                MERGER,
+                json!({"op":"repo_land_batch","ref":"main","epoch":claim["epoch"],
+                "head":claim["head"],"landed":landed,"failed":failures,"merge":merge}),
+            )
+        };
+        if let Some(fast) = items.iter().find(|i| i["fast_forward"] == true) {
+            let ticket = fast["ticket"].as_u64().unwrap_or_default();
+            return match batch(vec![ticket], &[], None) {
+                Err(e) => Seen::Refused(e.code),
+                Ok(_) => Seen::Batch(vec![ticket], failed, None),
+            };
+        }
+        let claimed = failed.len();
+        let (mut accepted, mut changes) = (Vec::new(), Vec::new());
+        let (mut written, mut touched) = (Vec::<String>::new(), Vec::<String>::new());
+        for item in &items {
+            let merged = self.merge(
+                &item["base_tree"],
+                &claim["head_tree"],
+                &item["commit_tree"],
+            );
+            let ticket = item["ticket"].as_u64().unwrap_or_default();
+            if merged["conflicts"]
+                .as_array()
+                .is_some_and(|c| !c.is_empty())
+            {
+                failed.push((ticket, "CONFLICT".into()));
+                continue;
+            }
+            let strings = |v: &Value| -> Vec<String> {
+                v.as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|s| s.as_str().map(str::to_owned))
+                    .collect()
+            };
+            let keys: Vec<String> = strings(&item["reads"])
+                .into_iter()
+                .chain(strings(&item["writes"]))
+                .collect();
+            let paths: Vec<String> = merged["changes"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|c| c["path"].as_str().map(str::to_owned))
+                .collect();
+            if keys.iter().any(|k| written.contains(k)) || paths.iter().any(|p| touched.contains(p))
+            {
+                continue;
+            }
+            written.extend(strings(&item["writes"]));
+            touched.extend(paths);
+            changes.extend(merged["changes"].as_array().cloned().unwrap_or_default());
+            accepted.push((ticket, item["commit"].clone()));
+        }
+        let new_failures = failed[claimed..].to_vec();
+        if accepted.is_empty() {
+            return match batch(vec![], &new_failures, None) {
+                Err(e) => Seen::Refused(e.code),
+                Ok(_) => Seen::Batch(vec![], failed, None),
+            };
+        }
+        let head = claim["head"].as_str().unwrap_or_default();
+        let parents: Vec<Value> = accepted.iter().map(|a| a.1.clone()).collect();
+        let made = self.h.commit_with(
+            MERGER,
+            Some(head),
+            claim["version"].as_u64().unwrap_or_default(),
+            json!(changes),
+            json!([]),
+            json!({"merge_parents": parents}),
+        );
+        let merge = match made {
+            Err(e) => return Seen::Refused(e.code),
+            Ok(id) => id,
+        };
+        let landed: Vec<u64> = accepted.iter().map(|a| a.0).collect();
+        match batch(landed.clone(), &new_failures, Some(&merge)) {
+            Err(e) => Seen::Refused(e.code),
+            Ok(_) => Seen::Batch(landed, failed, Some(merge)),
+        }
     }
 }

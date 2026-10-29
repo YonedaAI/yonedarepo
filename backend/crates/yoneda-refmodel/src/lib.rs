@@ -2,20 +2,25 @@
 //! global log version, and the operations the differential tests drive (a one-file commit
 //! landed on its branch, working-branch create, move and delete by compare-and-swap, tags,
 //! landing a branch on main with its merge-plan outcome, reverts, platform merge commits
-//! and rebases, and who may read and write). It has no dependencies, so
+//! and rebases, queued landings, tokens, and who may read and write). It has no dependencies, so
 //! it shares no code with the platform it checks; commits are numbered in creation order
 //! and the test maps those numbers to Git ids.
 //!
 //! The rules modelled (from the platform's documented contracts):
 //! - Every ref move (landing, branch set or delete, tag creation) appends one log entry and
 //!   advances the version by one; a no-op (`already`) and a refusal advance nothing.
-//! - Main is protected: it moves only by landing. Tags are created once and never move.
+//! - Main is protected: it moves only by landing. Tags (lightweight, or annotated with a
+//!   tag object) are created once and never move.
 //! - A landing whose target head is the commit's parent or an ancestor of it fast-forwards.
 //!   Otherwise optimistic concurrency decides against main's entries after the commit's base
 //!   version: one writing a path the commit read is a conflict; none is a stale parent;
 //!   entries writing other paths need a rebase, the same paths a merge.
 //! - A private repository exists only for its owner and members; a public one is read by
 //!   anyone, and written only by write members and the owner (`access`).
+//! - Landings queued on main settle in batches: a fast-forward alone, else one octopus merge
+//!   of the independent clean merges (`queue`); while any wait, direct landings on main
+//!   are refused as MERGE_REQUIRED.
+//! - Repository tokens act within their scopes and path grant (`tokens`).
 //! - Files are one line each (the generator keeps them so), so a three-way merge is decided
 //!   per file: a side that left a file alone takes the other's version; two different
 //!   changes conflict.
@@ -25,10 +30,14 @@ mod commits;
 mod graph;
 mod land;
 mod merge;
+mod queue;
+mod tokens;
 
 pub use access::{Access, Caller, Role};
 pub use cases::{PATHS, Rng, generate};
+pub use queue::{Batch, Ticket, TicketStatus};
 use std::collections::{BTreeMap, BTreeSet};
+pub use tokens::{Scope, Token};
 
 /// A commit's number: its position in creation order (0 is the seeded root).
 pub type CommitId = usize;
@@ -71,7 +80,10 @@ pub enum Op {
         read: bool,
     },
     /// Creates working branch `name` at `from`'s tip, expecting it absent.
-    CreateBranch { name: String, from: String },
+    CreateBranch {
+        name: String,
+        from: String,
+    },
     /// Moves `name` to `to`'s tip, expecting it at `expected`'s tip.
     MoveBranch {
         name: String,
@@ -79,25 +91,78 @@ pub enum Op {
         expected: String,
     },
     /// Deletes `name`, expecting it at `expected`'s tip.
-    DeleteBranch { name: String, expected: String },
+    DeleteBranch {
+        name: String,
+        expected: String,
+    },
     /// Creates tag `name` at `at`'s tip.
-    Tag { name: String, at: String },
+    Tag {
+        name: String,
+        at: String,
+        /// With a message, an annotated tag (a tag object the platform builds).
+        message: Option<String>,
+    },
     /// Lands `branch`'s tip on main.
-    Land { branch: String },
+    Land {
+        branch: String,
+    },
     /// Reverts the commit `back` first parents below `branch`'s tip onto that tip and lands
     /// the revert on `branch`.
-    Revert { branch: String, back: usize },
+    Revert {
+        branch: String,
+        back: usize,
+    },
     /// Lands `branch`'s tip on main; where main moved (merge required), through a platform
     /// merge commit of the two, as the adapter builds one.
-    MergeLand { branch: String },
+    MergeLand {
+        branch: String,
+    },
     /// Replays working branch `branch`'s own commits onto main's head and moves it there.
-    Rebase { branch: String },
+    Rebase {
+        branch: String,
+    },
     /// `caller` tries `access`.
-    Probe { caller: Caller, access: Access },
+    Probe {
+        caller: Caller,
+        access: Access,
+    },
     /// `caller` makes the repository public or private.
-    SetVisibility { caller: Caller, public: bool },
+    SetVisibility {
+        caller: Caller,
+        public: bool,
+    },
     /// The owner grants `account` `role`, or removes it (`None`).
-    Member { account: String, role: Option<Role> },
+    Member {
+        account: String,
+        role: Option<Role>,
+    },
+    /// Lands `branch`'s tip on main, queuing it where a merge is required.
+    Enqueue {
+        branch: String,
+    },
+    /// The combiner settles one batch of main's queue.
+    RunQueue,
+    /// The owner mints repository token `name` with `scopes` and an optional path grant.
+    MintToken {
+        name: String,
+        scopes: BTreeSet<Scope>,
+        grant: Option<Vec<String>>,
+    },
+    RevokeToken {
+        name: String,
+    },
+    /// A one-file commit on `branch` as token `token`, landed there.
+    TokenCommit {
+        token: String,
+        branch: String,
+        path: String,
+        content: Option<String>,
+    },
+    /// Token `token` reads `path`'s history on main.
+    TokenRead {
+        token: String,
+        path: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -110,6 +175,10 @@ pub enum Outcome {
     Moved,
     /// Nothing to do: the ref is already there (or already gone).
     Already,
+    /// A landing ticket (new, or the one already pending for the commit).
+    Queued(u64),
+    /// What a combiner run settled.
+    Batch(Batch),
     /// Done, moving no ref (an access check, visibility, membership).
     Done,
     /// Refused with the platform's error code (`STALE_HEAD` also for a stale batch delete).
@@ -134,6 +203,12 @@ pub struct Repo {
     pub public: bool,
     /// Member accounts and their roles (the owner is not one).
     pub members: BTreeMap<String, Role>,
+    /// Main's landing queue, every ticket ever issued.
+    pub tickets: Vec<Ticket>,
+    /// Repository tokens by name, revoked ones included (names are never reused).
+    pub tokens: BTreeMap<String, Token>,
+    /// Annotated tags' messages, by tag ref.
+    pub annotated: BTreeMap<String, String>,
 }
 
 impl Repo {
@@ -160,6 +235,9 @@ impl Repo {
             landings: BTreeSet::from([(0, MAIN.to_owned())]),
             public: false,
             members: BTreeMap::new(),
+            tickets: Vec::new(),
+            tokens: BTreeMap::new(),
+            annotated: BTreeMap::new(),
         }
     }
 
@@ -192,8 +270,8 @@ impl Repo {
                 None => (Outcome::Refused("NOT_FOUND"), None),
             },
             Op::DeleteBranch { name, expected } => (self.delete(name, self.tip(expected)), None),
-            Op::Tag { name, at } => match self.tip(at) {
-                Some(target) => (self.tag(name, target), None),
+            Op::Tag { name, at, message } => match self.tip(at) {
+                Some(target) => (self.tag(name, target, message.as_deref()), None),
                 None => (Outcome::Refused("NOT_FOUND"), None),
             },
             Op::Land { branch } => match self.tip(branch) {
@@ -215,6 +293,24 @@ impl Repo {
             Op::Probe { caller, access } => (self.access(caller, *access), None),
             Op::SetVisibility { caller, public } => (self.set_visibility(caller, *public), None),
             Op::Member { account, role } => (self.set_member(account, *role), None),
+            Op::Enqueue { branch } => (self.enqueue(branch), None),
+            Op::RunQueue => (self.run_queue(), None),
+            Op::MintToken {
+                name,
+                scopes,
+                grant,
+            } => (self.mint(name, scopes, grant), None),
+            Op::RevokeToken { name } => (self.revoke(name), None),
+            Op::TokenCommit {
+                token,
+                branch,
+                path,
+                content,
+            } => (
+                self.token_commit(token, branch, path, content.as_deref()),
+                None,
+            ),
+            Op::TokenRead { token, path } => (self.token_read(token, path), None),
         }
     }
 
@@ -254,12 +350,22 @@ impl Repo {
         }
     }
 
-    fn tag(&mut self, name: &str, target: CommitId) -> Outcome {
+    /// A tag is created once. Asking again for the same lightweight tag is a no-op; any
+    /// other second request is refused, an annotated one too (its tag object, tagged
+    /// later, is a different object).
+    fn tag(&mut self, name: &str, target: CommitId, message: Option<&str>) -> Outcome {
         match self.tip(name) {
-            Some(current) if current == target => Outcome::Already,
+            Some(current)
+                if current == target && message.is_none() && !self.annotated.contains_key(name) =>
+            {
+                Outcome::Already
+            }
             Some(_) => Outcome::Refused("ALREADY_EXISTS"),
             None => {
                 self.move_ref(name, Some(target), BTreeSet::new(), false);
+                if let Some(text) = message {
+                    self.annotated.insert(name.to_owned(), text.to_owned());
+                }
                 Outcome::Moved
             }
         }
