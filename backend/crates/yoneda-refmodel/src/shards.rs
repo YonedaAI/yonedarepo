@@ -7,7 +7,8 @@
 //! reads or writes what an earlier member of the same submission wrote waits (deferred).
 //! The projector then builds main's Git commit for the submission: the landed commit
 //! itself where it is the only one and sits on the head, else a commit whose parents are
-//! the head and every landed commit.
+//! the head and every landed commit. Until then only main waits: every other ref stays
+//! readable, and main is named pending, never shown at a commit that skips them.
 use crate::land::Occ;
 use crate::queue::{Ticket, TicketStatus};
 use crate::{Commit, CommitId, Entry, MAIN, Outcome, Repo};
@@ -269,5 +270,25 @@ impl Repo {
             self.refs.insert(MAIN.to_owned(), target);
         }
         made
+    }
+
+    /// Refs waiting for the projector: main while it has changesets not projected.
+    pub fn pending(&self) -> Vec<&str> {
+        if self.unprojected.is_empty() {
+            vec![]
+        } else {
+            vec![MAIN]
+        }
+    }
+
+    /// A branch's head now: waiting only while that branch has unprojected changesets.
+    pub(crate) fn read_ref(&self, name: &str) -> Outcome {
+        if self.pending().contains(&name) {
+            return Outcome::Refused("PROJECTION_PENDING");
+        }
+        match self.tip(name) {
+            Some(_) => Outcome::Done,
+            None => Outcome::Refused("NOT_FOUND"),
+        }
     }
 }

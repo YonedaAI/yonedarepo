@@ -607,3 +607,36 @@ fn a_parent_goes_only_after_its_fork_and_then_answers_gone() {
         ],
     );
 }
+
+/// While main waits for the projector, every other branch and tag stays readable: a
+/// branch's head reads now, and a partial listing shows the rest and names main pending.
+#[test]
+fn only_main_waits_for_the_projector() {
+    let read = |name: &str| Op::ReadRef { name: name.into() };
+    let script = [
+        branch_off_main(),
+        tag("refs/tags/v1", None),
+        Op::Publish,
+        shard("a.txt", "in the window", false),
+        Op::Submit {
+            picks: vec![0],
+            chained: false,
+            project: false,
+        },
+        read(B1),
+        read(MAIN),
+        Op::ListRefs,
+        Op::Project,
+        read(MAIN),
+        Op::ListRefs,
+    ];
+    run_reaching(
+        "only main waits",
+        &script,
+        &[
+            "ReadRef Done",
+            "ReadRef PROJECTION_PENDING",
+            "ListRefs Done",
+        ],
+    );
+}

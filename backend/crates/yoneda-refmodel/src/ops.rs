@@ -142,6 +142,12 @@ pub enum Op {
     DeleteRepo {
         confirmed: bool,
     },
+    /// The owner reads branch `name`'s head now (`repo_snapshot`).
+    ReadRef {
+        name: String,
+    },
+    /// The owner lists the refs that are readable now (`repo_refs` partial).
+    ListRefs,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -262,6 +268,8 @@ impl Repo {
             Op::Carry => (self.carry(), None),
             Op::DeleteFork => (self.delete_fork(), None),
             Op::DeleteRepo { confirmed } => (self.delete_repo(*confirmed), None),
+            Op::ReadRef { name } => (self.read_ref(name), None),
+            Op::ListRefs => (Outcome::Done, None),
         }
     }
 }
