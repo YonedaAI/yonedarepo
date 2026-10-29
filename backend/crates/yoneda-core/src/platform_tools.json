@@ -225,7 +225,7 @@
   },
   {
     "name": "git_grep",
-    "description": "Search file contents and paths at a commit, branch or past version (case-insensitive with ignore_case). Uses a trigram index partitioned by top-level directory and reused across commits; results list matching lines per file.",
+    "description": "Search file contents and paths at a commit, branch or past version (case-insensitive with ignore_case). Uses a trigram index partitioned by top-level directory and reused across commits; results list matching lines per file. Memories whose text holds the query's words come back as a separate group (memories; null for a path-restricted token); memories: false leaves them out.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -256,6 +256,9 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 200
+        },
+        "memories": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -1038,7 +1041,7 @@
   },
   {
     "name": "git_context",
-    "description": "What a coding session starting work should know, in one read: main's head (and branch's, when named), the landing rules, the newest session records (what earlier sessions did), open change requests, and the newest authored symbol contracts, those on paths first.",
+    "description": "What a coding session starting work should know, in one read: main's head (and branch's, when named), the landing rules, the newest session records (what earlier sessions did), open change requests, and the newest authored symbol contracts, those on paths first, and the repository's current memories ranked for those paths.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1066,6 +1069,226 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 10
+        },
+        "memories": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 20
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_memory_add",
+    "description": "Leave a memory for later coding sessions (needs write): a decision, a constraint, a gotcha or a how-to that the code alone does not say, at most 2 KiB of text (refused if it holds a credential). Anchor it to the files, directories (ending in /) or symbols it is about: it is shown to later sessions when they read those files, and reads as stale once the anchored code changes on main. It is written against commit (default: the head of ref, default main). Pass session_id (your $YONEDA_SESSION_ID) to link it to your session, and supersedes to replace an older memory that is now wrong. The same memory posted again answers the first.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "decision",
+            "constraint",
+            "gotcha",
+            "howto"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "anchors": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "type": "string",
+                "description": "A file, or a directory ending in /"
+              },
+              "symbol_path": {
+                "type": "string",
+                "maxLength": 512,
+                "description": "A symbol in the file, as symbol_list names it"
+              }
+            },
+            "required": [
+              "path"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "commit": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{40}$"
+        },
+        "ref": {
+          "type": "string"
+        },
+        "session_id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "supersedes": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "kind",
+        "text"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_memory_list",
+    "description": "The repository's memories newest first (default 50, at most 200), each with its anchors and whether the anchored code has changed since (stale). Filter by path (memories on that file, a directory holding it, or under a directory/), kind, status (current: the default, active and drafts; active; stale; draft; retired; superseded; all) or session_id; at reads as of a log version; pass next as before for the following page.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "decision",
+            "constraint",
+            "gotcha",
+            "howto"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "current",
+            "active",
+            "stale",
+            "draft",
+            "retired",
+            "superseded",
+            "all"
+          ]
+        },
+        "session_id": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "ref": {
+          "type": "string"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "before": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_memory_show",
+    "description": "One memory: its text, kind, author, commit, source session, what superseded it or it supersedes, whether it was retired (by whom and why), and each anchor with its blob or node digest and whether that code has changed on ref (default main) since.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "ref": {
+          "type": "string"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_memory_retire",
+    "description": "Retire a memory that is no longer true (needs write). It is kept, marked retired with your reason, and no longer shown to coding sessions. To replace it with a corrected one, use git_memory_add with supersedes instead.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 500
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_context_relevant",
+    "description": "What is relevant to the files, symbols (path#symbol_path) and/or text (e.g. the task) you are working on, ranked in one read: current memories, authored contracts, recent session records and open change requests. Ranked by where each is anchored (a named symbol, then the file, then its directory), plus matching words of query, then fresh before stale, then newest. types narrows it (memory, contract, session, change); limit is at most 50.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100
+        },
+        "symbols": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100
+        },
+        "query": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "types": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "memory",
+              "contract",
+              "session",
+              "change"
+            ]
+          }
+        },
+        "ref": {
+          "type": "string"
+        },
+        "at": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
         }
       },
       "additionalProperties": false
