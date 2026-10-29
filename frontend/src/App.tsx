@@ -6,6 +6,7 @@
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { AccountSettings } from './features/account-settings/AccountSettings';
+import { VerifyEmailPage } from './features/account-settings/VerifyEmailPage';
 import { ExplorePage } from './features/explore/ExplorePage';
 import { AppRail } from './features/shell/AppRail';
 import { AppSidebar } from './features/shell/AppSidebar';
@@ -134,11 +135,13 @@ export function App() {
             ? 'Settings'
             : route.view === 'device'
               ? 'Approve a device'
-              : route.view === 'org'
-                ? route.org
-                : gone
-                  ? 'Repository not found'
-                  : (row?.name ?? loaded?.name ?? repo ?? '');
+              : route.view === 'verify-email'
+                ? 'Confirm your email'
+                : route.view === 'org'
+                  ? route.org
+                  : gone
+                    ? 'Repository not found'
+                    : (row?.name ?? loaded?.name ?? repo ?? '');
   const activityError = activity.error && !/Sign in/.test(activity.error) ? activity.error : '';
   const refresh = () => {
     setTick((t) => t + 1);
@@ -285,6 +288,9 @@ export function App() {
               />
             )}
             {route.view === 'device' && <DevicePage code={route.code} />}
+            {route.view === 'verify-email' && (
+              <VerifyEmailPage account={route.account} token={route.token} />
+            )}
             {route.view === 'org' && (
               <OrgPage
                 key={`${route.org}:${tick}`}
