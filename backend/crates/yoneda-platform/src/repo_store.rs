@@ -79,6 +79,7 @@ mod releases;
 mod reviewers;
 mod rows;
 mod runner;
+mod search_records;
 mod session_range;
 mod sessions;
 pub(crate) mod staging;

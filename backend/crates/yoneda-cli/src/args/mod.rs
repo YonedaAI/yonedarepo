@@ -121,7 +121,7 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "ssh-key" => ssh_key::ssh_key(rest)?,
         "token" => sub::token(rest)?,
         "check" => sub::check(rest)?,
-        "log" | "grep" | "blame" | "diff" | "symbols" => sub::read(command, rest)?,
+        "log" | "grep" | "search" | "blame" | "diff" | "symbols" => sub::read(command, rest)?,
         "setup" => setup(rest)?,
         "land" => {
             let p = Parsed::new(rest, &with(&["branch"]), &[])?;
@@ -398,6 +398,20 @@ mod tests {
                     path: None,
                     ignore_case: true,
                     at: Some(7)
+                }
+            })
+        );
+        assert_eq!(
+            parsed("search retry --in commits,changes --limit 5").ok(),
+            Some(Command::Read {
+                target: Target::default(),
+                command: ReadCommand::Search {
+                    query: "retry".into(),
+                    groups: Some(vec!["commits".into(), "changes".into()]),
+                    path: None,
+                    branch: None,
+                    limit: Some(5),
+                    at: None
                 }
             })
         );
