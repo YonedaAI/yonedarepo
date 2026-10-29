@@ -32,8 +32,12 @@ mod large;
 const MAX_FILES: usize = 200_000;
 /// Commits walked together.
 const WAVE_COMMITS: usize = 256;
-/// Tree entries' bytes (about) kept between waves; past it, each wave reads its own.
-const TREE_BYTES: usize = 32 * 1024 * 1024;
+/// Memory (about) the trees kept between waves may take; past it, each wave reads its own.
+/// Measured: a 200,000-object clone kept 32 MiB of estimated trees for ~27 MiB of Wasm
+/// growth with a lighter estimate.
+const TREE_BYTES: usize = 16 * 1024 * 1024;
+/// What one tree entry costs held (its `TreeEntry`, its name's allocation, the map slot).
+const ENTRY_BYTES: usize = 72;
 /// Rounds of tree reads one wave may take (a directory level each).
 const WAVE_ROUNDS: usize = 64;
 /// Delta chains are at most this long (Git's default `pack.depth`).
@@ -138,7 +142,11 @@ impl UploadSession {
         for tree in input["trees"].as_array().into_iter().flatten() {
             let id = ObjectId::parse(&string(tree, "id")?)?;
             let entries = supplied_tree(&id, tree)?;
-            self.tree_bytes += 32 + entries.iter().map(|e| e.name.len() + 32).sum::<usize>();
+            self.tree_bytes += ENTRY_BYTES
+                + entries
+                    .iter()
+                    .map(|e| e.name.len() + ENTRY_BYTES)
+                    .sum::<usize>();
             self.trees.insert(id, entries);
         }
         Ok(())
@@ -580,18 +588,20 @@ mod tests {
 mod wave_tests {
     use super::*;
 
-    /// `n` commits, each adding one file to a growing directory under a root tree.
+    /// `n` commits, each rewriting one of 8 files in a directory under a root tree.
     fn history(n: usize) -> (Value, HashMap<ObjectId, Vec<u8>>) {
         let mut trees = HashMap::new();
-        let mut files = Vec::new();
+        let mut files: Vec<TreeEntry> = (0..8)
+            .map(|k| TreeEntry {
+                name: format!("f{k}"),
+                mode: FileMode::Blob,
+                id: hash_object(ObjectKind::Blob, b""),
+            })
+            .collect();
         let mut commits = Vec::new();
         let mut base: Option<ObjectId> = None;
         for i in 0..n {
-            files.push(TreeEntry {
-                name: format!("f{i:05}"),
-                mode: FileMode::Blob,
-                id: hash_object(ObjectKind::Blob, format!("{i}\n").as_bytes()),
-            });
+            files[i % 8].id = hash_object(ObjectKind::Blob, format!("{i}\n").as_bytes());
             let dir = encode_tree(&files).unwrap();
             let dir_id = hash_object(ObjectKind::Tree, &dir);
             let root = encode_tree(&[TreeEntry {
@@ -665,8 +675,9 @@ mod wave_tests {
         let commits = WAVE_COMMITS * 3 + 7;
         let (walk, trees) = history(commits);
         let (count, listed, supplied) = run(&walk, &trees, false);
-        // Each commit: itself, a root and a directory tree, one new file.
-        assert_eq!(count, commits * 4);
+        // Each commit: itself, a root and a directory tree, one new file; and the empty
+        // file the first commit's other seven start as.
+        assert_eq!(count, commits * 4 + 1);
         assert_eq!(listed.len(), count);
         assert_eq!(
             listed.iter().collect::<HashSet<_>>().len(),

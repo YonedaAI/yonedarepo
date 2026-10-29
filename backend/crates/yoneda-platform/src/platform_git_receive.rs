@@ -4,7 +4,7 @@
 //! adapter to store. Nothing here moves a ref: the adapter records the commits and then
 //! applies the ref updates through the authority's compare-and-swap paths, with each
 //! command's old id as the expected-old lease (`git_land` takes none; see `repo_store::land`).
-use crate::platform_git_verify::{Step, Verifier};
+use crate::platform_git_verify::{Step, Verified, Verifier};
 use crate::platform_objects::supplied_tree;
 use crate::secret_scan::StreamScan;
 use crate::storage::{bad, string};
@@ -48,6 +48,8 @@ pub struct ReceiveSession {
     written: usize,
     /// The spilled file streaming out now, scanned for credentials as it goes.
     scanning: Option<StreamScan>,
+    /// The verified commits, handed out a page at a time (`verified_page`).
+    verified: Vec<Verified>,
 }
 
 impl Default for ReceiveSession {
@@ -68,6 +70,7 @@ impl ReceiveSession {
             writes: Vec::new(),
             written: 0,
             scanning: None,
+            verified: Vec::new(),
         }
     }
 
@@ -241,22 +244,36 @@ impl ReceiveSession {
                     _ => 2,
                 });
                 self.written = 0;
-                let mut commits = Vec::with_capacity(verified.len());
-                for v in verified {
-                    let data = pack.content(&v.commit)?;
-                    let objects: Vec<Value> = v
-                        .objects
-                        .iter()
-                        .map(|(id, kind)| json!({ "id": id, "kind": kind.name() }))
-                        .collect();
-                    commits.push(json!({
-                        "commit": v.commit, "data_b64": STANDARD.encode(data.as_slice()),
-                        "touches": v.touches, "objects": objects,
-                    }));
-                }
-                Ok(json!({ "commits": commits, "objects": self.writes.len() }))
+                // Listed a page at a time: one JSON value of every commit's touches and
+                // objects held most of a 40,000-object push's memory (about 90 MiB).
+                let count = verified.len();
+                self.verified = verified;
+                Ok(json!({ "verified": count, "objects": self.writes.len() }))
             }
         }
+    }
+
+    /// Verified commits `from..from + count` to record: each with its exact bytes, its
+    /// path touches and the objects it introduced.
+    pub fn verified_page(&mut self, from: usize, count: usize) -> Result<Value> {
+        let Some(pack) = self.pack.as_mut() else {
+            return Ok(json!({ "commits": [] }));
+        };
+        let end = self.verified.len().min(from.saturating_add(count));
+        let mut commits = Vec::with_capacity(end.saturating_sub(from));
+        for v in self.verified.get(from..end).unwrap_or_default() {
+            let data = pack.content(&v.commit)?;
+            let objects: Vec<Value> = v
+                .objects
+                .iter()
+                .map(|(id, kind)| json!({ "id": id, "kind": kind.name() }))
+                .collect();
+            commits.push(json!({
+                "commit": v.commit, "data_b64": STANDARD.encode(data.as_slice()),
+                "touches": v.touches, "objects": objects,
+            }));
+        }
+        Ok(json!({ "commits": commits }))
     }
 
     /// The next verified objects to store, up to about `budget` bytes, each framed as
