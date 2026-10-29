@@ -106,3 +106,45 @@
     padding: 4px;
   }
 }
+/* The theme choice: a segmented radio group in the account menu and in Account settings. */
+.theme-picker {
+  display: flex;
+  gap: 2px;
+  margin: 4px 0;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.theme-picker legend {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.theme-picker label {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.theme-picker label.checked {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.theme-picker label:has(input:focus-visible) {
+  outline: 3px solid var(--blue);
+  outline-offset: 1px;
+}
+.theme-picker input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.account-settings .theme-picker {
+  max-width: 340px;
+}

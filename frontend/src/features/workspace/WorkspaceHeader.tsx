@@ -1,9 +1,9 @@
 // The shell's top bar: the navigation menu (phones), the page title, Getting started, the
-// theme, refresh and the account menu.
-import { Menu, Moon, RefreshCw, Sun, X } from 'lucide-react';
+// theme (cycles System, Light, Dark), refresh and the account menu.
+import { Menu, Monitor, Moon, RefreshCw, Sun, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { AccountIdentity } from '../../lib/types';
-import type { Theme } from '../shell/theme';
+import { nextTheme, THEMES, useTheme } from '../shell/theme';
 import type { Navigate } from '../shell/useRoute';
 import { AccountMenu } from './AccountMenu';
 
@@ -16,8 +16,6 @@ export function WorkspaceHeader({
   navigate = () => {},
   menuOpen = false,
   onMenu,
-  theme = 'dark',
-  onTheme,
   progress,
   onConnect,
   onSignIn,
@@ -34,8 +32,6 @@ export function WorkspaceHeader({
   /** The phone navigation menu is open. */
   menuOpen?: boolean;
   onMenu?: () => void;
-  theme?: Theme;
-  onTheme?: (theme: Theme) => void;
   /** The Getting started meter, while steps remain. */
   progress?: ReactNode;
   onConnect?: () => void;
@@ -43,7 +39,10 @@ export function WorkspaceHeader({
   onSignOut: () => Promise<void>;
   onError: (message: string) => void;
 }) {
-  const next: Theme = theme === 'dark' ? 'light' : 'dark';
+  const [theme, setTheme] = useTheme();
+  const label = (id: string) => THEMES.find((t) => t.id === id)?.label;
+  const Icon = theme === 'light' ? Sun : theme === 'dark' ? Moon : Monitor;
+  const switchTo = `Theme: ${label(theme)}. Switch to ${label(nextTheme(theme))}`;
   return (
     <header className="workspace-header">
       <div className="topbar-start">
@@ -63,17 +62,15 @@ export function WorkspaceHeader({
       </div>
       <div className="header-actions">
         {progress}
-        {onTheme && (
-          <button
-            type="button"
-            className="icon-button"
-            aria-label={`Use the ${next} theme`}
-            title={`Use the ${next} theme`}
-            onClick={() => onTheme(next)}
-          >
-            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
-        )}
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={switchTo}
+          title={switchTo}
+          onClick={() => setTheme(nextTheme(theme))}
+        >
+          <Icon size={16} />
+        </button>
         <button
           type="button"
           className="icon-button"

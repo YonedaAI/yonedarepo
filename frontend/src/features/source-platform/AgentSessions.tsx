@@ -148,7 +148,12 @@ export function AgentSessions({
   return (
     <section aria-labelledby="sessions-heading">
       <div className="agent-head">
-        <h2 id="sessions-heading">Sessions</h2>
+        <div>
+          <h2 id="sessions-heading">Sessions</h2>
+          <p className="agent-subtitle">
+            Which coding session made each commit: the tool, the model and a short summary.
+          </p>
+        </div>
         <div className="agent-filters">
           <Filter label="CLI" value={filters.cli} options={data.clis} onChange={set('cli')} />
           <Filter

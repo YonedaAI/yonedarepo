@@ -62,9 +62,9 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
   m.landed_commit_panel = 'landed line, Revert only';
 
   for (const [section, empty] of [
-    ['contracts', /^No contracts recorded yet\./],
-    ['pins', /^No pinned commits\./],
-    ['bisects', /^No bisects yet\./],
+    ['contracts', /^No contracts yet\./],
+    ['pins', /^No kept commits\./],
+    ['bisects', /^No searches yet\./],
   ]) {
     await page.goto(new URL(`/source/${id}/agents/${section}`, page.url()).href);
     await see(page.getByText(empty), `the ${section} empty state`);
