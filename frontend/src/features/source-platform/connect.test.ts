@@ -38,6 +38,11 @@ describe('the Clone menu', () => {
       ['HTTPS (needs a personal token as the password)', `git clone ${api}/git/${repo}.git demo`],
     ]);
   });
+  it('waits for the repository name: never a command that clones into a directory named by the id', () => {
+    const html = renderToStaticMarkup(createElement(CloneButton, { repo, origin: api }));
+    expect(html).not.toContain('git clone');
+    expect(html).toContain('Loading the clone commands');
+  });
   it('says what each needs: one yoneda login on the API origin, or a personal token', () => {
     for (const component of [CloneButton, ConnectPanel]) {
       const html = renderToStaticMarkup(
