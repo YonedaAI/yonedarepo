@@ -12,7 +12,8 @@ use super::{
     version_projection,
 };
 use super::{
-    authorize::authorize, break_glass, deletion, forks, grants, lfs, maintenance, visibility,
+    authorize::authorize, break_glass, deletion, forks, grants, lfs, maintenance, quarantine,
+    visibility,
 };
 use crate::storage::SqlStore;
 use serde_json::{Value, json};
@@ -51,12 +52,14 @@ fn run<S: SqlStore>(
         StoreOp::Maintenance(op) => return maintenance::run(db, c, op, principal),
         StoreOp::Lfs(op) => return lfs::run(db, c, op, actor, settings),
         StoreOp::Fork(op) => return forks::run(db, c, op, actor, settings),
+        StoreOp::Quarantine(op) => return quarantine::run(db, c, op, actor),
         StoreOp::Repo(op) => op,
     };
     match op {
         R::Status => serde_json::to_value(super::status::status(db, settings, actor)?)
             .map_err(|e| yoneda_core::Error::new("ENCODING", e.to_string())),
-        R::CloneAccess => Ok(json!({ "object_store": settings.object_store })),
+        R::CloneAccess => quarantine::refuse_direct_clone(db)
+            .map(|()| json!({ "object_store": settings.object_store })),
         R::Refs => reads::refs(db, c),
         R::Snapshot => reads::snapshot(db, c),
         R::Log => reads::log(db, c),
@@ -74,13 +77,20 @@ fn run<S: SqlStore>(
         R::Contracts => contracts::list(db, c),
         R::BisectStart => bisect::start(db, c, principal, settings),
         R::BisectStep => bisect::step_op(db, c, principal, settings),
-        // The store travels with the answer, so the adapter needs no status read first.
-        R::PrepareCommit => prepare::prepare(db, c, principal, settings).map(|mut prepared| {
-            prepared["object_store"] = json!(settings.object_store);
-            prepared
-        }),
+        // The store (and what it withholds) travels with the answer, so the adapter needs
+        // no status read first.
+        R::PrepareCommit => {
+            prepare::prepare(db, c, principal, settings).and_then(|mut prepared| {
+                prepared["object_store"] = json!(settings.object_store);
+                prepared["quarantined"] = json!(quarantine::withheld(db)?);
+                Ok(prepared)
+            })
+        }
         R::RecordCommit => record::record(db, c, principal, settings),
-        R::BeginCommit => adopt::begin(db, c, principal, settings),
+        R::BeginCommit => adopt::begin(db, c, principal, settings).and_then(|mut begun| {
+            begun["quarantined"] = json!(quarantine::withheld(db)?);
+            Ok(begun)
+        }),
         R::AdoptCommit => adopt::adopt(db, c, settings),
         R::Check => record::check(db, c, actor, settings),
         R::CheckRequest => checks::request_op(db, c, principal, settings),
@@ -126,7 +136,11 @@ fn run<S: SqlStore>(
         R::ReleaseAssetPut => releases::asset_put(db, c, actor),
         R::ReleaseAsset => releases::asset(db, c, actor),
         // Git over HTTPS: each checks its own scope (read to fetch, write to push).
-        R::GitAccess => git_http::access(actor, c, settings),
+        // Withheld blobs travel with access: the adapter refuses a fetch that needs one.
+        R::GitAccess => git_http::access(actor, c, settings).and_then(|mut access| {
+            access["quarantined"] = json!(quarantine::withheld(db)?);
+            Ok(access)
+        }),
         R::GitWalk => git_http::walk(db, c, actor),
         R::RecordPushed => pushed::record(db, c, actor, settings),
         R::BundleIndex => {

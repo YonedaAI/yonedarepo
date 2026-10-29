@@ -53,16 +53,19 @@ pub fn head_begin(c: &Value) -> Result<Value> {
         "principal": actor.principal, "parent": head["head"], "parent_id": head["head"]["id"],
         "parent_elsewhere": false, "base_version": head["base_version"],
         "object_store": head["object_store"], "runners": head["runners"],
+        "quarantined": head["quarantined"],
     }))
 }
 
 /// `head_access`: the caller's read access (principal, directory grant, and whether it
-/// reads only because the repository is public).
+/// reads only because the repository is public), with the blobs no read serves.
 pub fn head_access(c: &Value) -> Result<Value> {
     let actor = actor(c)?;
     actor.require("read")?;
+    let head = &c["head"];
     Ok(json!({
         "principal": actor.principal, "owner": actor.owner, "grant": actor.grant,
-        "public": actor.public,
+        "public": actor.public, "quarantined": head["quarantined"],
+        "quarantine_epoch": head["quarantine_epoch"],
     }))
 }

@@ -97,7 +97,7 @@ export async function deleteRepository(env: Env, auth: Credentials, repo: string
 const R2_PAGE = 1000;
 
 /** Deletes every R2 object under `prefix`, a page at a time. */
-async function purgePrefix(env: Env, prefix: string) {
+export async function purgePrefix(env: Env, prefix: string) {
   for (;;) {
     const page = await env.OBJECTS.list({ prefix, limit: R2_PAGE });
     if (page.objects.length > 0) await env.OBJECTS.delete(page.objects.map((o) => o.key));

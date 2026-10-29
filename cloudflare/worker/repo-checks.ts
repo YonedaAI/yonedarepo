@@ -86,7 +86,9 @@ const ranOn = (run: Json) => ({ commit: run.commit, tree: run.tree });
 /** The files and starting evidence of a claimed command check, ready for its container. */
 async function containerJob(env: Env, repo: string, call: Call, run: Json) {
   const status = await call({ op: 'repo_status' });
-  const objects = new RepoObjects(env, repo, parseStore(env, status.object_store));
+  const objects = new RepoObjects(env, repo, parseStore(env, status.object_store)).withhold(
+    status.quarantined,
+  );
   const shipped = await checkFiles(env, repo, objects, run.tree);
   const job: CheckJob = {
     command: run.command,
