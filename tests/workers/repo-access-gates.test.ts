@@ -135,7 +135,7 @@ it('a full clone reads each bundled byte about once', async () => {
 // Known-failing. Blame reads its versions with the 1 MiB gap a clone bridges, so it reads
 // the files between them: log.txt's 12 versions (~1 KiB) cost 1.26 MiB in 2 reads, its 60
 // (~11 KiB) 6.93 MiB in 3, nearly every file byte pushed. Target: within the bound.
-it.fails('blame reads the versions of its file, not the history around them', async () => {
+it('blame reads the versions of its file, not the history around them', async () => {
   const bounded: boolean[] = [];
   for (const commits of [12, 60]) {
     const { cookie, repo, history } = await pushed(`gate_blame_${commits}`, commits);

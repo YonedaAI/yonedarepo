@@ -246,15 +246,30 @@ export async function readLocated(
   const sorted = [...located].sort((a, b) =>
     a.bundle === b.bundle ? a.at - b.at : a.bundle < b.bundle ? -1 : 1,
   );
-  const ranges: { bundle: string; start: number; end: number; members: Location[] }[] = [];
+  // A neighbour joins a range only while the bytes bridged stay within what the range
+  // wants (or GAP): sparse objects among large ones (a file's versions between the files
+  // of each commit) are read on their own, at most about twice what is wanted, while a
+  // dense run (a clone's) still comes in one read.
+  type Range = { bundle: string; start: number; end: number; members: Location[]; wanted: number };
+  const ranges: Range[] = [];
   for (const l of sorted) {
     const last = ranges.at(-1);
     const start = l.at - HEADER;
     const end = l.at + l.size;
-    if (last && last.bundle === l.bundle && start - last.end <= gap && end - last.start <= range) {
+    const bridged = last ? Math.max(0, start - last.end) : 0;
+    const wanted = (last?.wanted ?? 0) + HEADER + l.size;
+    const waste = last ? last.end - last.start - last.wanted + bridged : 0;
+    if (
+      last &&
+      last.bundle === l.bundle &&
+      bridged <= gap &&
+      waste <= Math.max(GAP, wanted) &&
+      end - last.start <= range
+    ) {
       last.end = Math.max(last.end, end);
       last.members.push(l);
-    } else ranges.push({ bundle: l.bundle, start, end, members: [l] });
+      last.wanted = wanted;
+    } else ranges.push({ bundle: l.bundle, start, end, members: [l], wanted: HEADER + l.size });
   }
   const out = new Map<string, Uint8Array>();
   await inWidth(ranges, READ_WIDTH, async (r) => {
