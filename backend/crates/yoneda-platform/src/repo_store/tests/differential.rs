@@ -112,10 +112,11 @@ impl Driver {
                 )),
                 None,
             ),
-            Op::Tag { name, at } => (
+            Op::Tag { name, at, message } => (
                 answer(self.h.run(
                     OWNER,
-                    json!({"op":"repo_tag_create","name":name,"commit":self.git_id(at)}),
+                    json!({"op":"repo_tag_create","name":name,"commit":self.git_id(at),
+                        "message":message}),
                 )),
                 None,
             ),
@@ -282,6 +283,16 @@ impl Driver {
             .collect();
         if refs != model {
             return Err(format!("refs: platform {refs:?}, model {model:?}"));
+        }
+        let annotated: Vec<&String> = listed["annotated"]
+            .as_object()
+            .map(|tags| tags.keys().collect())
+            .unwrap_or_default();
+        let model: Vec<&String> = self.model.annotated.keys().collect();
+        if annotated != model {
+            return Err(format!(
+                "annotated tags: platform {annotated:?}, model {model:?}"
+            ));
         }
         if listed["version"] != self.model.version {
             let version = &listed["version"];
