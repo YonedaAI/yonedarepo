@@ -85,6 +85,35 @@ describe('sidebar', () => {
   });
 });
 
+describe('a repository that is gone', () => {
+  // Deleted while open (the next read answered GONE) or reached by a stale link to one of its
+  // pages: no Repository pages and no current entry, only the account's repositories.
+  for (const route of [
+    { view: 'changes', repo: a },
+    { view: 'agents', repo: a, section: 'sessions' },
+  ] as SourceRoute[])
+    it(`hides the Repository pages on ${route.view}`, () => {
+      const html = sidebar({ route, missing: true, rows: [{ repo: b, name: 'mine' }] });
+      expect(html).not.toContain('aria-label="Repository"');
+      expect(html).not.toContain(`href="/source/${a}`);
+      expect(html).toContain('Choose a repository');
+      expect(html).toContain('aria-label="Repositories"');
+      expect(html).toContain(`href="/source/${b}"`);
+      const shortcuts = renderToStaticMarkup(
+        createElement(AppRail, {
+          authenticated: true,
+          route,
+          missing: true,
+          collapsed: false,
+          onToggle: () => {},
+          navigate: () => {},
+          onNew: () => {},
+        }),
+      );
+      expect(shortcuts).not.toContain(`href="/source/${a}`);
+    });
+});
+
 describe('repository switcher', () => {
   it('opens on a search over the rows and marks the open one', () => {
     const html = renderToStaticMarkup(

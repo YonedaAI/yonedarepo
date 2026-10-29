@@ -7,6 +7,7 @@ import { linkTo, type Navigate } from './useRoute';
 export function AppRail({
   authenticated,
   route,
+  missing = false,
   collapsed,
   onToggle,
   navigate,
@@ -14,13 +15,15 @@ export function AppRail({
 }: {
   authenticated: boolean;
   route: SourceRoute;
+  /** The open repository is gone: Changes and Search go to the repository list. */
+  missing?: boolean;
   /** The sidebar is hidden. */
   collapsed: boolean;
   onToggle: () => void;
   navigate: Navigate;
   onNew: () => void;
 }) {
-  const repo = routeRepo(route);
+  const repo = missing ? undefined : routeRepo(route);
   const page = routeTab(route);
   const elsewhere: SourceRoute = authenticated ? { view: 'repositories' } : { view: 'explore' };
   const item = (on: boolean) => `rail-item${on ? ' active' : ''}`;
