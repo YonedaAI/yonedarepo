@@ -1,15 +1,25 @@
 // The welcome email through the real account authority (workerd) with Resend's endpoint
-// stubbed: sign-up enqueues one job, the consumer's request, redelivery, missing config, and
+// stubbed: sign-up asks the platform (its entrypoint method, as the front does over its
+// service binding) to queue one job, the consumer's request, redelivery, missing config, and
 // retry versus give-up by Resend's answer. No real Resend calls.
 import { env } from 'cloudflare:workers';
-import { reset } from 'cloudflare:test';
+import { createExecutionContext, reset } from 'cloudflare:test';
 import { afterEach, expect, it, vi } from 'vitest';
-import { maskAddress, RESEND_EMAILS, welcomeJob } from '../../cloudflare/worker/account-email';
 import { accountRoute } from '../../cloudflare/worker/accounts';
-import { renderWelcome, WELCOME_DOCS } from '../../cloudflare/worker/email-welcome';
-import { platformJob } from '../../cloudflare/worker/platform-entrypoint';
+import { PlatformEntrypoint, platformJob } from '../../cloudflare/worker/platform-entrypoint';
+import {
+  maskAddress,
+  RESEND_EMAILS,
+  welcomeJob,
+} from '../../cloudflare/worker/platform-welcome-email';
+import {
+  renderVerify,
+  renderWelcome,
+  WELCOME_DOCS,
+} from '../../cloudflare/worker/platform-welcome-template';
 import { sha } from '../../cloudflare/worker/storage';
 import type { Env, Envelope } from '../../cloudflare/worker/types';
+import { workspace } from '../../cloudflare/worker/workspace';
 
 const bindings = env as unknown as Env;
 afterEach(async () => {
@@ -35,8 +45,13 @@ const configured: Partial<Env> = {
   EMAIL_CONTACT: 'hello@yonedarepo.test',
   WEB_ORIGIN: 'https://yonedarepo.test',
 };
-const scoped = (extra: Partial<Env> = {}) =>
-  ({ ...bindings, PLATFORM_QUEUE: fakeQueue, ...extra }) as unknown as Env;
+/** A front-like env: no queue of its own, the platform's entrypoint behind PLATFORM. The
+ * platform side runs with the recording queue. */
+const scoped = (extra: Partial<Env> = {}) => {
+  const platformEnv = { ...bindings, PLATFORM_QUEUE: fakeQueue, ...extra } as unknown as Env;
+  const platform = new PlatformEntrypoint(createExecutionContext(), platformEnv);
+  return { ...platformEnv, PLATFORM_QUEUE: undefined, PLATFORM: platform } as unknown as Env;
+};
 
 /** A sign-up gives `email` (the account name when it is an address); null leaves it out. */
 async function auth(
@@ -70,6 +85,22 @@ function resend(answers: { status: number; name?: string }[] = []) {
   return { got, send };
 }
 
+it('renders the confirmation link in the welcome email and its own email (snapshots)', async () => {
+  const config = { origin: 'https://yonedarepo.com', contact: 'hello@yonedarepo.com' };
+  const verifyUrl = `https://yonedarepo.com/verify-email?account=ada&token=${'ab'.repeat(32)}`;
+  const welcome = renderWelcome({ ...config, verifyUrl });
+  await expect(welcome.text).toMatchFileSnapshot('./__snapshots__/welcome-email-confirm.txt');
+  const confirm = renderVerify({ ...config, verifyUrl });
+  expect(confirm.subject).toBe('Confirm your email for YonedaRepo');
+  await expect(confirm.text).toMatchFileSnapshot('./__snapshots__/confirm-email.txt');
+  await expect(confirm.html).toMatchFileSnapshot('./__snapshots__/confirm-email.html');
+  for (const email of [welcome, confirm]) {
+    expect(email.text).toContain(verifyUrl);
+    expect(email.html).toContain(`href="${verifyUrl.replaceAll('&', '&amp;')}"`);
+    expect(email.text).toContain('The link works once, for 24 hours.');
+  }
+});
+
 it('renders the welcome email (text and HTML snapshots)', async () => {
   const email = renderWelcome({ origin: 'https://yonedarepo.com', contact: 'hello@yonedarepo.com' });
   expect(email.subject).toBe('Welcome to YonedaRepo');
@@ -88,13 +119,28 @@ it('renders the welcome email (text and HTML snapshots)', async () => {
 
 it('enqueues exactly one welcome job when an account is created, and none otherwise', async () => {
   const target = scoped();
+  // The front has no queue: the platform's entrypoint queues the job.
+  expect(target.PLATFORM_QUEUE).toBeUndefined();
   expect((await auth(target, 'signup', 'ada@example.com')).status).toBe(200);
   expect(queued).toEqual([
-    { v: 1, kind: 'account_welcome', repo_id: '', job_id: 'welcome', workspace: 'ada@example.com', to: 'ada@example.com' },
+    {
+      v: 1,
+      kind: 'account_welcome',
+      repo_id: '',
+      job_id: 'welcome',
+      workspace: 'ada@example.com',
+      token: expect.stringMatching(/^[0-9a-f]{64}$/),
+    },
   ]);
   // A username account's welcome goes to its contact email.
   expect((await auth(target, 'signup', 'ada_user', 'Ada.Lovelace@Example.org')).status).toBe(200);
-  expect(queued[1]).toMatchObject({ workspace: 'ada_user', to: 'ada.lovelace@example.org' });
+  expect(queued[1]).toMatchObject({ workspace: 'ada_user' });
+  // The job names the account only; the address comes from the account authority.
+  expect(JSON.stringify(queued)).not.toContain('lovelace');
+  expect(await workspace(target, 'ada_user', { op: 'welcome_state' })).toEqual({
+    sent: false,
+    email: 'ada.lovelace@example.org',
+  });
   // A repeated sign-up and a login add nothing; a sign-up without a valid email is refused
   // and creates no account.
   expect((await auth(target, 'signup', 'ada@example.com')).status).toBe(400);
@@ -123,7 +169,12 @@ it('posts the welcome email to Resend with its key and a per-account idempotency
   const key = request.headers.get('idempotency-key');
   expect(key).toBe(`welcome/${await sha('grace@example.com')}`);
   expect(key).not.toContain('grace');
-  const email = renderWelcome({ origin: 'https://yonedarepo.test', contact: 'hello@yonedarepo.test' });
+  // The confirmation link carries the job's token.
+  const email = renderWelcome({
+    origin: 'https://yonedarepo.test',
+    contact: 'hello@yonedarepo.test',
+    verifyUrl: `https://yonedarepo.test/verify-email?account=grace%40example.com&token=${queued[0].token}`,
+  });
   expect(request.json).toEqual({
     from: 'YonedaRepo <hello@yonedarepo.test>',
     to: ['grace@example.com'],
@@ -228,4 +279,30 @@ it('retries a 5xx with backoff through the queue job, and stops on a 4xx', async
   }
   expect(message.retry).toHaveBeenCalledWith({ delaySeconds: 30 });
   expect(message.ack).not.toHaveBeenCalled();
+});
+
+it('sends nothing for an account without a contact email', async () => {
+  const target = scoped(configured);
+  // As an OAuth account with no verified address (or one made before the field) is stored.
+  await workspace(target, 'no_contact', {
+    op: 'identity_signup',
+    username: 'no_contact',
+    provider: 'github',
+    subject: '42',
+    login: 'no_contact',
+    session_hash: 'a'.repeat(64),
+  });
+  const { got, send } = resend();
+  const job: Envelope = { v: 1, kind: 'account_welcome', repo_id: '', job_id: 'welcome', workspace: 'no_contact' };
+  expect(await welcomeJob(target, job, 1, send)).toEqual({});
+  expect(got).toHaveLength(0);
+});
+
+it('serves accountCreated as an entrypoint method (RPC), not over HTTP', async () => {
+  // The combined Worker's own entrypoint, the way the platform reaches itself over SELF.
+  const self = bindings.SELF as unknown as { accountCreated(account: string): Promise<void> };
+  expect((await auth(scoped(), 'signup', 'rpc_only')).status).toBe(200);
+  await expect(self.accountCreated('rpc_only')).resolves.toBeUndefined();
+  const res = await bindings.SELF.fetch('https://yoneda/api/accountCreated', { method: 'POST' });
+  expect(res.status).toBe(404);
 });

@@ -4,7 +4,7 @@
 // stay pending for the next view), a session record marks its repository for re-reading,
 // another account sees none of it, and a repository token cannot ask.
 import { expect, it } from 'vitest';
-import { summarize } from '../../cloudflare/worker/account-activity';
+import { summarize } from '../../cloudflare/worker/platform-account-activity';
 import { api, author, countingOps, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();

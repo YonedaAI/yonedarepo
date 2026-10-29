@@ -18,6 +18,15 @@ op_names! {
     }
 }
 op_names! {
+    /// The contact email's verification (tokens, the change, the confirmation).
+    pub(crate) enum EmailOp {
+        Status = "email_status",
+        Token = "email_token",
+        Change = "email_change",
+        Verify = "email_verify",
+    }
+}
+op_names! {
     pub(crate) enum TokenOp {
         Create = "pat_create",
         List = "pat_list",
@@ -92,6 +101,7 @@ op_names! {
 #[serde(untagged)]
 pub(crate) enum AccountOp {
     Signin(SigninOp),
+    Email(EmailOp),
     Token(TokenOp),
     Ssh(SshOp),
     Device(DeviceOp),
@@ -113,6 +123,7 @@ impl AccountOp {
     pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Signin(op) => op.name(),
+            Self::Email(op) => op.name(),
             Self::Token(op) => op.name(),
             Self::Ssh(op) => op.name(),
             Self::Device(op) => op.name(),
@@ -126,6 +137,7 @@ impl AccountOp {
     #[cfg(test)]
     pub(crate) fn all() -> Vec<Self> {
         let mut all: Vec<Self> = SigninOp::ALL.iter().copied().map(Self::Signin).collect();
+        all.extend(EmailOp::ALL.iter().copied().map(Self::Email));
         all.extend(TokenOp::ALL.iter().copied().map(Self::Token));
         all.extend(SshOp::ALL.iter().copied().map(Self::Ssh));
         all.extend(DeviceOp::ALL.iter().copied().map(Self::Device));

@@ -51,6 +51,8 @@ export const operations: Record<string, Operation> = {
           op: 'repo_log',
           ref: a.ref ?? 'main',
           limit: Number(a.limit ?? 50),
+          // From a commit of the history instead of the branch head: the next page.
+          ...(a.from ? { from: String(a.from) } : {}),
           ...version(a),
         }),
   git_txlog: (ctx, a) =>

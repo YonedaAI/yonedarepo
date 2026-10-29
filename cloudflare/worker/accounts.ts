@@ -4,7 +4,7 @@ import {
   encodeAccountIdentifier,
   normalizeAccountIdentifier,
 } from '../../shared/account';
-import { accountCreated } from './account-email';
+import { accountCreated, contactEmail, emailRoute } from './account-email';
 import { error, readJson, response } from './http';
 import { unlink } from './oauth-identity';
 import { configuredProviders } from './oauth-providers';
@@ -23,12 +23,6 @@ export function username(value: unknown) {
   const name = normalizeAccountIdentifier(value);
   if (!name) throw new Error(ACCOUNT_IDENTIFIER_HELP);
   return name;
-}
-/** A sign-up's contact email (required for new accounts; the welcome email goes there). */
-function contactEmail(value: unknown) {
-  const email = typeof value === 'string' ? normalizeAccountIdentifier(value) : null;
-  if (!email?.includes('@')) throw new Error('Enter a valid email address');
-  return email;
 }
 export function sessionCookie(req: Request, value = '') {
   return `${cookieName}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${value ? 604800 : 0}${new URL(req.url).protocol === 'https:' ? '; Secure' : ''}`;
@@ -98,6 +92,8 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
           await unlink(env, principal.workspace, String((await readJson(req)).provider ?? '')),
         );
       else return error('NOT_FOUND', 'Unknown authentication route', 404);
+    } else if (action === 'email' || action.startsWith('email/')) {
+      result = await emailRoute(req, env, action, () => accountPrincipal(req, env));
     } else if (action === 'logout' && req.method === 'POST') {
       const session = sessionValue(req);
       if (session)

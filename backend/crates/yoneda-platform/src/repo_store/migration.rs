@@ -2,7 +2,7 @@ use crate::storage::SqlStore;
 use serde_json::json;
 use yoneda_core::{Error, Result};
 
-pub(crate) const MIGRATIONS: [(i64, &str); 39] = [
+pub(crate) const MIGRATIONS: [(i64, &str); 41] = [
     (1, include_str!("../migrations/repo_store/0001_source.sql")),
     (
         2,
@@ -140,9 +140,18 @@ pub(crate) const MIGRATIONS: [(i64, &str); 39] = [
         38,
         include_str!("../migrations/repo_store/0038_quarantine.sql"),
     ),
+    // Applied after 0040 on repositories that had 0040 first (they are independent).
+    (
+        39,
+        include_str!("../migrations/repo_store/0039_ref_chains.sql"),
+    ),
     (
         40,
         include_str!("../migrations/repo_store/0040_memories.sql"),
+    ),
+    (
+        41,
+        include_str!("../migrations/repo_store/0041_session_fetch.sql"),
     ),
 ];
 

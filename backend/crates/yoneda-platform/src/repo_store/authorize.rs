@@ -2,7 +2,7 @@
 //! with their own rules (`maintenance`, `lfs`, `forks`) decide for their ops.
 use super::auth::Actor;
 use super::op::{RepoOp as R, StoreOp};
-use super::{forks, land, lfs, maintenance, quarantine, rows, tags};
+use super::{forks, land_gates, lfs, maintenance, quarantine, rows, tags};
 use serde_json::Value;
 use yoneda_core::{Error, Result};
 
@@ -96,8 +96,8 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
             "Only the platform importer records imported history",
         )),
         R::Review => actor.require("review"),
-        // Protected refs need `land`; any other branch lands with `write` (`land::scope`).
-        R::Land | R::LandEnqueue => actor.require(land::scope(&rows::branch_ref(c)?)),
+        // Protected refs need `land`; any other branch lands with `write` (`land_gates::scope`).
+        R::Land | R::LandEnqueue => actor.require(land_gates::scope(&rows::branch_ref(c)?)),
         // Only the platform merger builds and lands batches.
         R::LandClaim | R::LandBatch | R::LandRelease | R::LandChangesets | R::LandSubmitted
             if !actor.can("lander") =>

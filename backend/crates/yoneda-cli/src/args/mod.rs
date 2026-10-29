@@ -70,17 +70,33 @@ fn policy(rest: &[String]) -> Result<Command> {
 }
 
 fn clone(rest: &[String]) -> Result<Command> {
-    let p = Parsed::new(rest, &["origin"], &[])?;
+    let p = Parsed::new(rest, &["origin", "sparse"], &["full", "offline"])?;
     p.at_most(2)?;
     let repo = p
         .positional
         .first()
         .cloned()
         .ok_or_else(|| Error::usage("clone needs a repository id"))?;
+    let mode = match (
+        p.on("full"),
+        parser::list(p.flag("sparse")),
+        p.on("offline"),
+    ) {
+        (false, None, false) => CloneMode::Lazy,
+        (true, None, false) => CloneMode::Full,
+        (false, Some(dirs), false) if !dirs.is_empty() => CloneMode::Sparse(dirs),
+        (false, None, true) => CloneMode::Offline,
+        _ => {
+            return Err(Error::usage(
+                "clone takes one of --full, --sparse <dir,...> and --offline",
+            ));
+        }
+    };
     Ok(Command::Clone {
         repo,
         dir: p.positional.get(1).cloned(),
         origin: p.flag("origin"),
+        mode,
     })
 }
 
@@ -131,6 +147,16 @@ pub fn parse(args: &[String]) -> Result<Command> {
             Command::Conflicts
         }
         "clone" => clone(rest)?,
+        "sparse" => {
+            let p = Parsed::new(rest, &[], &["add"])?;
+            if p.positional.is_empty() {
+                return Err(Error::usage("sparse needs the directories to keep"));
+            }
+            Command::Sparse {
+                add: p.on("add"),
+                dirs: p.positional,
+            }
+        }
         "status" => {
             let p = Parsed::new(rest, &[], &["brief"])?;
             p.at_most(0)?;
@@ -180,7 +206,40 @@ mod tests {
             Some(Command::Clone {
                 repo: "r1".into(),
                 dir: Some("work".into()),
-                origin: Some("http://x".into())
+                origin: Some("http://x".into()),
+                mode: CloneMode::Lazy
+            })
+        );
+        assert_eq!(
+            parsed("clone r1 --sparse src/app,docs").ok(),
+            Some(Command::Clone {
+                repo: "r1".into(),
+                dir: None,
+                origin: None,
+                mode: CloneMode::Sparse(vec!["src/app".into(), "docs".into()])
+            })
+        );
+        for (line, mode) in [
+            ("clone r1 --full", CloneMode::Full),
+            ("clone r1 --offline", CloneMode::Offline),
+        ] {
+            assert!(
+                matches!(parsed(line), Ok(Command::Clone { mode: m, .. }) if m == mode),
+                "{line}"
+            );
+        }
+        assert_eq!(
+            parsed("sparse src docs").ok(),
+            Some(Command::Sparse {
+                dirs: vec!["src".into(), "docs".into()],
+                add: false
+            })
+        );
+        assert_eq!(
+            parsed("sparse --add lib").ok(),
+            Some(Command::Sparse {
+                dirs: vec!["lib".into()],
+                add: true
             })
         );
         assert_eq!(
@@ -629,6 +688,9 @@ mod tests {
         for line in [
             "sync --land --attempt a",
             "clone",
+            "clone r1 --full --offline",
+            "clone r1 --sparse ,",
+            "sparse",
             "status extra",
             "reads",
             "reads add",

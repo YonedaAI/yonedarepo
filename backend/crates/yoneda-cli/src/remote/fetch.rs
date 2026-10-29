@@ -8,24 +8,37 @@
 //! cannot be written exactly, and neither can anything built on it (its parents' ids
 //! would be missing), so such a head is converted instead (`convert`, recorded in the
 //! commit map).
+//!
+//! What trees and blobs come with them is the session's `Filter`: in a lazy clone, the
+//! trees only (`snapshot::walk`).
 use super::convert::Converter;
 use super::map::CommitMap;
 use crate::api::Api;
 use crate::error::{Error, Result};
 use crate::git::Git;
-use crate::snapshot::{self, Served};
+use crate::snapshot::{self, Filter, Served};
 use std::collections::HashSet;
 use yoneda_core::git_object::{Commit, ObjectKind};
+
+/// Commits per log page (the platform's most), and the most the walk lists up front.
+const LOG_PAGE: usize = 200;
+const LOGGED: usize = 100_000;
 
 pub struct Fetcher<'a> {
     pub api: &'a Api,
     pub git: &'a Git,
     pub map: &'a mut CommitMap,
+    pub filter: &'a Filter,
 }
 
 impl<'a> Fetcher<'a> {
-    pub fn new(api: &'a Api, git: &'a Git, map: &'a mut CommitMap) -> Self {
-        Self { api, git, map }
+    pub fn new(api: &'a Api, git: &'a Git, map: &'a mut CommitMap, filter: &'a Filter) -> Self {
+        Self {
+            api,
+            git,
+            map,
+            filter,
+        }
     }
 
     fn has(&self, id: &str) -> Result<bool> {
@@ -45,18 +58,18 @@ impl<'a> Fetcher<'a> {
             return Ok(head.to_owned());
         }
         let Some(commits) = self.walk(head, branch).await? else {
-            return Converter::new(self.api, self.git, self.map)
+            return Converter::new(self.api, self.git, self.map, self.filter)
                 .convert(head, branch)
                 .await;
         };
         let trees: Vec<String> = commits.iter().map(|(_, tree, _)| tree.clone()).collect();
-        snapshot::fetch_trees(self.api, self.git, &trees).await?;
+        snapshot::fetch_trees(self.api, self.git, &trees, self.filter).await?;
         // Commits last, in one pack: a commit present locally always has its history.
         let objects = commits
             .into_iter()
             .map(|(_, _, bytes)| (ObjectKind::Commit, bytes))
             .collect();
-        snapshot::write_objects(self.git, objects)?;
+        snapshot::write_objects(self.git, objects, self.filter)?;
         Ok(head.to_owned())
     }
 
@@ -100,18 +113,44 @@ impl<'a> Fetcher<'a> {
         Ok(Some(found))
     }
 
-    /// The commits on `branch`'s first-parent chain the log lists (one request; a
-    /// failure only costs extra rounds).
+    /// The commits on `branch`'s first-parent chain, a log page of `LOG_PAGE` at a time (each
+    /// from the last page's first parent), so the walk asks for most of a long history in a
+    /// few requests rather than one generation per object fetch. A failure, a server that
+    /// ignores `from` (its page would not start there) or `LOGGED` commits stop the listing;
+    /// that only costs extra rounds.
     async fn logged(&self, branch: &str) -> Vec<String> {
-        let path = format!("/log?ref={}&limit=200", crate::api::encode(branch));
-        let Ok(log) = self.api.get(&path).await else {
-            return Vec::new();
-        };
-        log["commits"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .filter_map(|c| c["commit"].as_str().map(str::to_owned))
-            .collect()
+        let mut ids = Vec::new();
+        let mut from: Option<String> = None;
+        while ids.len() < LOGGED {
+            let mut path = format!("/log?ref={}&limit={LOG_PAGE}", crate::api::encode(branch));
+            if let Some(from) = &from {
+                path.push_str(&format!("&from={from}"));
+            }
+            let Ok(log) = self.api.get(&path).await else {
+                break;
+            };
+            let commits = log["commits"].as_array().cloned().unwrap_or_default();
+            if from.is_some()
+                && commits.first().and_then(|c| c["commit"].as_str()) != from.as_deref()
+            {
+                break;
+            }
+            ids.extend(
+                commits
+                    .iter()
+                    .filter_map(|c| c["commit"].as_str().map(str::to_owned)),
+            );
+            if commits.len() < LOG_PAGE {
+                break;
+            }
+            from = commits
+                .last()
+                .and_then(|c| c["parents"][0].as_str())
+                .map(str::to_owned);
+            if from.is_none() {
+                break;
+            }
+        }
+        ids
     }
 }

@@ -53,9 +53,10 @@ fn signup<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let identity = identity(c)?;
     let mut a = json!({"username":username,"verifier":null,"recovery_hash":null,"created_at":now});
     // The provider-verified email is the account's contact email (password sign-ups store
-    // theirs under the same field); never part of the public account.
+    // theirs under the same field), already verified; never part of the public account.
     if let Some(email) = &identity.email {
         a["email"] = json!(email);
+        a["email_verified_at"] = json!(now);
     }
     put(db, "account", &a)?;
     insert(db, &identity, now)?;

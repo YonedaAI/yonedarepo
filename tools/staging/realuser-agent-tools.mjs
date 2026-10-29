@@ -26,10 +26,8 @@ import {
   contextContracts,
   contractListed,
   editedSource,
-  pickFunction,
+  findFunction,
   pinListed,
-  sourceCandidates,
-  subdirectories,
   withoutRunner,
   withRunner,
 } from './agent-tools-plan.mjs';
@@ -41,31 +39,9 @@ import { scratch, scratchPrefix, timedSteps } from './realuser-plan.mjs';
 
 const b64 = (text) => Buffer.from(text).toString('base64');
 const q = (params) => new URLSearchParams(params).toString();
-/** Directories walked looking for a function, and files whose symbols are read. */
-const MAX_DIRS = 60;
-const MAX_FILES = 25;
 const BISECT_COMMITS = 6;
 const BREAK_AT = 4;
 const BISECT_TIMEOUT_MS = 20 * 60_000;
-
-/** A real function of `repo` at main: the first Rust/TypeScript/JavaScript file (breadth
- * first) whose symbols include a mid-sized function. REST: GET /tree and GET /symbols. */
-export async function findFunction(rest, path) {
-  const dirs = [''];
-  const files = [];
-  for (let walked = 0; dirs.length && walked < MAX_DIRS && files.length < MAX_FILES; walked++) {
-    const dir = dirs.shift();
-    const { entries } = await rest.get(`${path}/tree?${q({ ref: 'main', path: dir })}`);
-    files.push(...sourceCandidates(dir, entries));
-    dirs.push(...subdirectories(dir, entries));
-  }
-  for (const file of files.slice(0, MAX_FILES)) {
-    const listed = await rest.get(`${path}/symbols?${q({ ref: 'main', path: file })}`);
-    const symbol = pickFunction(listed.symbols);
-    if (symbol) return { path: file, symbol_path: symbol.symbol_path };
-  }
-  throw new Error(`no Rust, TypeScript or JavaScript function in ${files.length} source files at main; run on a repository with some (--agent-tools-repo oss-commander)`);
-}
 
 export async function realuserAgentTools(ctx, metrics, { headed = false } = {}) {
   const { ws, repo, ts, owner, mint } = ctx;

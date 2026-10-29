@@ -5,8 +5,8 @@ export type Envelope = {
   job_id: string;
   kind: string;
   workspace?: string;
-  /** The recipient of an account email job (account-email.ts); never logged in full. */
-  to?: string;
+  /** An account email job's confirmation token (platform-email-verify.ts); never logged. */
+  token?: string;
 };
 export interface Env {
   WORKSPACES: DurableObjectNamespace;

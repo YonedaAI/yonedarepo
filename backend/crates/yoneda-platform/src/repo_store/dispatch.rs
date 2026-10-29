@@ -6,9 +6,9 @@ use super::rows::{self, Settings};
 use super::{
     activity, adopt, agent_context, agent_reads, annotated, bisect, branches, change_comments,
     change_delete, change_records, changes, changesets, checks, classes, contracts, git_http, head,
-    history, history_import, hook_delivery, hook_events, hooks, land, land_queue, land_tickets,
-    members, merging, prepare, projection, projection_plan, pushed, reads, rebase, record,
-    releases, sessions, staging, store_lineage, submitted, symbols, tags, tokens,
+    history, history_import, hook_delivery, hook_events, hooks, land, land_batch, land_queue,
+    land_tickets, members, merging, prepare, projection, projection_plan, pushed, reads, rebase,
+    record, releases, sessions, staging, store_lineage, submitted, symbols, tags, tokens,
     version_projection,
 };
 use super::{
@@ -163,8 +163,8 @@ fn run<S: SqlStore>(
         R::LandEnqueue => land_tickets::enqueue(db, c, principal, settings),
         R::LandStatus => land_tickets::status(db, c),
         R::LandClaim => land_queue::claim(db, c),
-        R::LandBatch => land_queue::land_batch(db, c, principal),
-        R::LandRelease => land_queue::release(db, c),
+        R::LandBatch => land_batch::land_batch(db, c, principal),
+        R::LandRelease => land_batch::release(db, c),
         R::LandChangesets => changesets::land(db, c),
         R::LandSubmitted => submitted::land(db, c, settings),
         R::ChangesetPlan => projection_plan::plan(db, c),

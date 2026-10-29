@@ -7,9 +7,9 @@
 // Counts are of R2 reads in local workerd. Gates marked `it.fails` are known-failing: each
 // names today's measured ratio and its target, and starts passing (so failing as
 // `it.fails`) once a fix meets the target.
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { blob, commitObject, fetchTimed, objectReads, pushHistory, type Raw, sorted, tree } from './pushed-history';
-import { api, usePlatformFixture } from './repo-fixture';
+import { api, scoped, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -135,7 +135,7 @@ it('a full clone reads each bundled byte about once', async () => {
 // Known-failing. Blame reads its versions with the 1 MiB gap a clone bridges, so it reads
 // the files between them: log.txt's 12 versions (~1 KiB) cost 1.26 MiB in 2 reads, its 60
 // (~11 KiB) 6.93 MiB in 3, nearly every file byte pushed. Target: within the bound.
-it.fails('blame reads the versions of its file, not the history around them', async () => {
+it('blame reads the versions of its file, not the history around them', async () => {
   const bounded: boolean[] = [];
   for (const commits of [12, 60]) {
     const { cookie, repo, history } = await pushed(`gate_blame_${commits}`, commits);
@@ -147,6 +147,30 @@ it.fails('blame reads the versions of its file, not the history around them', as
     bounded.push(within(`blame log.txt, ${commits} commits`, read, frames(history.logs)));
   }
   expect(bounded).toEqual([true, true]);
+});
+
+it('blame reads small versions six at a time, not three', async () => {
+  const { cookie, repo } = await pushed('gate_blame_width', 60);
+  let open = 0;
+  let most = 0;
+  const get = scoped.OBJECTS.get.bind(scoped.OBJECTS);
+  const spy = vi.spyOn(scoped.OBJECTS, 'get').mockImplementation((async (key: string, options?: R2GetOptions) => {
+    if (!key.includes('/bundles/')) return get(key, options as any);
+    open++;
+    most = Math.max(most, open);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return await get(key, options as any);
+    } finally {
+      open--;
+    }
+  }) as any);
+  try {
+    expect((await api(`/repos/${repo}/blame?path=log.txt`, { cookie }, {})).body.versions).toBe(60);
+  } finally {
+    spy.mockRestore();
+  }
+  expect(most).toBeGreaterThanOrEqual(6);
 });
 
 it('search reads the head, not the history', async () => {
