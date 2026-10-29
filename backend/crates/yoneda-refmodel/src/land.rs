@@ -1,0 +1,99 @@
+//! Landing: already there, a fast-forward, or the optimistic-concurrency refusal, and the
+//! merge plan the platform reports for it.
+use crate::{CommitId, MAIN, Outcome, Plan, Repo};
+use std::collections::BTreeSet;
+
+enum Occ {
+    /// An entry after the base wrote a path the commit read (or moved the ref opaquely).
+    Conflict(Vec<String>),
+    /// No entry after the base.
+    FastForward,
+    /// Entries after the base, writing none of the commit's paths.
+    Rebase,
+    /// Entries after the base writing these of the commit's paths.
+    Merge(Vec<String>),
+}
+
+impl Repo {
+    /// Lands `commit` on main.
+    pub(crate) fn land(&mut self, commit: CommitId) -> Outcome {
+        self.land_on(MAIN, commit)
+    }
+
+    /// Lands `commit` on `refname`: a no-op where it is the head or landed there before; a
+    /// fast-forward (logging every path the head and the commit differ in) where the head
+    /// is its parent or an ancestor; otherwise refused as optimistic concurrency decides.
+    /// Off-head landings happen on main only (commits are built on their branch's tip), so
+    /// the concurrency base is always the commit's base version.
+    pub(crate) fn land_on(&mut self, refname: &str, commit: CommitId) -> Outcome {
+        let head = self.tip(refname);
+        if head == Some(commit) || self.landings.contains(&(commit, refname.to_owned())) {
+            return Outcome::Already;
+        }
+        let paths = match head {
+            None => self.commits[commit].writes.clone(),
+            Some(head)
+                if self.commits[commit].parent == Some(head) || self.is_ancestor(head, commit) =>
+            {
+                Self::changed(&self.commits[head].tree, &self.commits[commit].tree)
+            }
+            Some(_) => {
+                return Outcome::Refused(match self.occ(commit, refname) {
+                    Occ::Conflict(_) => "CONFLICT",
+                    Occ::FastForward => "STALE_PARENT",
+                    Occ::Rebase | Occ::Merge(_) => "MERGE_REQUIRED",
+                });
+            }
+        };
+        self.move_ref(refname, Some(commit), paths, true);
+        self.landings.insert((commit, refname.to_owned()));
+        Outcome::Moved
+    }
+
+    /// `repo_merge_plan` for landing `commit` on main (decided whether or not it is on head).
+    pub(crate) fn plan(&self, commit: CommitId) -> Plan {
+        let head = self.tip(MAIN);
+        let (kind, paths) = match self.occ(commit, MAIN) {
+            Occ::FastForward if self.commits[commit].parent == head => ("fast_forward", vec![]),
+            Occ::FastForward => ("stale", vec![]),
+            Occ::Rebase => ("rebase", vec![]),
+            Occ::Merge(paths) => ("merge", paths),
+            Occ::Conflict(paths) => ("conflict", paths),
+        };
+        Plan { kind, paths }
+    }
+
+    /// Main's entries after the commit's base version against what it read and wrote. Paths
+    /// here never nest (no file is another's directory), so overlapping means equal.
+    fn occ(&self, commit: CommitId, refname: &str) -> Occ {
+        let c = &self.commits[commit];
+        let later: Vec<_> = self
+            .log
+            .iter()
+            .filter(|e| e.version > c.base_version && e.refname == refname)
+            .collect();
+        for entry in &later {
+            let stale: Vec<String> = c.read_set.intersection(&entry.paths).cloned().collect();
+            // A ref move without paths cannot be proven independent of what was read.
+            let opaque = entry.paths.is_empty() && !entry.landing;
+            if opaque || !stale.is_empty() {
+                return Occ::Conflict(stale);
+            }
+        }
+        if later.is_empty() {
+            return Occ::FastForward;
+        }
+        let theirs: BTreeSet<&String> = later.iter().flat_map(|e| &e.paths).collect();
+        let shared: Vec<String> = c
+            .writes
+            .iter()
+            .filter(|p| theirs.contains(p))
+            .cloned()
+            .collect();
+        if shared.is_empty() {
+            Occ::Rebase
+        } else {
+            Occ::Merge(shared)
+        }
+    }
+}

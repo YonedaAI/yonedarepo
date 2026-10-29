@@ -13,6 +13,15 @@ const WORKSPACES: [Option<&str>; 2] = [None, Some("backend/crates/yoneda-ssh-gat
 #[serde(deny_unknown_fields)]
 struct Layers {
     allow: BTreeMap<String, BTreeSet<String>>,
+    #[serde(default)]
+    isolated: Isolated,
+}
+
+/// Crates with no dependency at all (workspace or external; normal, build or dev).
+#[derive(Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct Isolated {
+    crates: BTreeSet<String>,
 }
 
 #[derive(Deserialize)]
@@ -62,7 +71,8 @@ fn metadata(manifest: Option<&str>) -> Result<Metadata> {
     Ok(serde_json::from_slice(&output.stdout)?)
 }
 
-/// Unlisted crates, unknown table rows and normal/build edges the table does not allow.
+/// Unlisted crates, unknown table rows, normal/build edges the table does not allow, and
+/// any dependency of an isolated crate.
 fn violations(layers: &Layers, packages: &[Package]) -> Vec<String> {
     let crates: BTreeSet<&str> = packages.iter().map(|p| p.name.as_str()).collect();
     let mut errors = Vec::new();
@@ -78,9 +88,20 @@ fn violations(layers: &Layers, packages: &[Package]) -> Vec<String> {
             }
         }
     }
+    for name in &layers.isolated.crates {
+        if !crates.contains(name.as_str()) {
+            errors.push(format!("[isolated] names unknown crate {name}"));
+        }
+    }
     for package in packages {
         for dependency in &package.dependencies {
             let kind = dependency.kind.as_deref().unwrap_or("normal");
+            if layers.isolated.crates.contains(&package.name) {
+                errors.push(format!(
+                    "{} is isolated but depends on {} ({kind})",
+                    package.name, dependency.name
+                ));
+            }
             let internal = crates.contains(dependency.name.as_str());
             if kind == "dev" || !internal || dependency.name == package.name {
                 continue;
@@ -146,6 +167,21 @@ mod tests {
             package("store", &[]),
         ];
         assert!(violations(&layers, &packages).is_empty());
+    }
+
+    #[test]
+    fn an_isolated_crate_has_no_dependency_of_any_kind() {
+        let layers = table("[allow]\nmodel = []\ncore = []\n[isolated]\ncrates = [\"model\"]\n");
+        let clean = [package("model", &[]), package("core", &[("serde", None)])];
+        assert!(violations(&layers, &clean).is_empty());
+        let dev = [
+            package("model", &[("proptest", Some("dev"))]),
+            package("core", &[]),
+        ];
+        assert_eq!(
+            violations(&layers, &dev),
+            ["model is isolated but depends on proptest (dev)"]
+        );
     }
 
     #[test]
