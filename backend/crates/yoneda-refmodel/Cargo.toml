@@ -1,0 +1,10 @@
+[package]
+name = "yoneda-refmodel"
+description = "An independent reference model of a repository: the oracle of the platform's differential tests."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Deliberately no dependencies: the model is written from the platform's documented rules,
+# not from its code, so a shared bug cannot make both sides agree.
+[dependencies]
