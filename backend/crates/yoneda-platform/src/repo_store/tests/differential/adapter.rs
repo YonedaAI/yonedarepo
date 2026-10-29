@@ -147,7 +147,7 @@ impl Driver {
         let version = plan["version"].as_u64().unwrap_or_default();
         let mut head = plan["onto_head"].clone();
         let mut tree = plan["onto_tree"].clone();
-        let mut made = Vec::new();
+        let (mut made, mut dropped) = (Vec::new(), 0);
         for item in plan["commits"].as_array().into_iter().flatten() {
             let merged = self.merge(&item["parent_tree"], &tree, &item["tree"]);
             if merged["conflicts"]
@@ -158,6 +158,7 @@ impl Driver {
             }
             let changes = merged["changes"].clone();
             if changes.as_array().is_none_or(Vec::is_empty) {
+                dropped += 1;
                 continue;
             }
             let parent = head.as_str().unwrap_or_default().to_owned();
@@ -178,7 +179,7 @@ impl Driver {
             json!({"op":"repo_branch_set","ref":branch,"commit":head,"expected":plan["head"]}),
         );
         match answer(moved) {
-            Seen::Moved => Seen::Rebased(made),
+            Seen::Moved => Seen::Rebased(made, dropped),
             other => other,
         }
     }
