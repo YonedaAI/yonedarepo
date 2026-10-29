@@ -6,15 +6,19 @@
 // (`{id, kind, size, large}`) and downloads each one's bytes on its own request instead.
 import { decide, outside } from './repo-grants';
 import { guardInherited } from './repo-inherit';
-import { toBase64 } from './repo-objects';
+import { type ObjectKind, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext, SHA, walk } from './repo-ops';
 
-/** Response bytes per page (base64 text for blobs, JSON otherwise). */
-const OBJECT_BUDGET = 4 * 1024 * 1024;
+/** Response bytes per page (base64 text for blobs, JSON otherwise). A streamed page holds
+ * only its batch in flight, so the budget bounds the client's wait, not the isolate's
+ * memory: 4 MiB pages cost a 77 MB clone about 54 of them (claude-code, measured). */
+const OBJECT_BUDGET = 16 * 1024 * 1024;
 /** Object bytes one page may read, stubs included: the page stops once past it. */
-const READ_BUDGET = 24 * 1024 * 1024;
-/** Objects read at once. */
-const READ_WIDTH = 8;
+const READ_BUDGET = 64 * 1024 * 1024;
+/** Objects read at once: trees and commits are small; blobs (up to `LARGE_BLOB` inline, a
+ * stub's whole content until it is known to be large) are a few at a time. */
+const READ_WIDTH = 64;
+const BLOB_WIDTH = 8;
 /** Blobs above this many bytes come as stubs to a client that downloads them separately. */
 export const LARGE_BLOB = 2 * 1024 * 1024;
 const OBJECT_KINDS = ['tree', 'blob', 'commit'];
@@ -46,12 +50,39 @@ async function authorizeObjects(ctx: RepoContext, wanted: Json[], commitId: unkn
   }
 }
 
-/**
- * Immutable objects by id and kind, in request order, up to a response budget. `next`
- * resumes after the last object served, so an interrupted client never refetches what it
- * already has. With `large`, blobs over `LARGE_BLOB` are stubs (see the header).
- */
-export async function getObjects(ctx: RepoContext, args: Json) {
+/** One page's request and progress (`openPage` validates and authorizes it). */
+type Wanted = { id: string; kind: ObjectKind; path?: string };
+type Page = {
+  ctx: RepoContext;
+  objects: Awaited<ReturnType<RepoContext['objects']>>;
+  wanted: Wanted[];
+  start: number;
+  index: number;
+  raw: boolean;
+  large: boolean;
+  served: number;
+  missing: string[];
+  bytes: number;
+  read: number;
+  largest: number;
+  phase: string;
+  began: number;
+};
+
+/** The next batch read at once from `index`: up to `READ_WIDTH` objects, `BLOB_WIDTH`
+ * blobs of them (a blob's size is known only once read, so blobs in flight are few). */
+export function nextBatch(wanted: Wanted[], index: number): Wanted[] {
+  let blobs = 0;
+  let end = index;
+  while (end < wanted.length && end - index < READ_WIDTH) {
+    if (wanted[end].kind === 'blob' && ++blobs > BLOB_WIDTH) break;
+    end++;
+  }
+  return wanted.slice(index, end);
+}
+
+/** Validates and authorizes a page request; throws the API error before any answer. */
+async function openPage(ctx: RepoContext, args: Json): Promise<Page> {
   const wanted = args.objects;
   if (
     !Array.isArray(wanted) ||
@@ -73,100 +104,166 @@ export async function getObjects(ctx: RepoContext, args: Json) {
   // holds (imported history) keeps the tree-and-parents form. Path-restricted callers get
   // that form too: a message may name paths outside their grant.
   const raw = args.raw === true && !grant.restricted;
-  const large = args.large === true;
-  const served: Json[] = [];
-  const missing: string[] = [];
-  let bytes = 0;
-  let read = 0;
-  let largest = 0;
-  let index = start;
-  let phase = 'read';
-  const began = Date.now();
-  /** One line per page (and per failure) in the Worker's logs: what the page cost. */
-  const log = (event: string, extra: Json = {}) =>
-    console.log(
-      JSON.stringify({
-        event,
-        repo: ctx.repo,
-        requested: wanted.length,
-        after: start,
-        index,
-        served: served.length,
-        missing: missing.length,
-        bytes,
-        read,
-        largest,
-        large,
-        raw,
-        ms: Date.now() - began,
-        tiers: objects.hits,
-        ...extra,
-      }),
-    );
+  return {
+    ctx,
+    objects,
+    wanted,
+    start,
+    index: start,
+    raw,
+    large: args.large === true,
+    served: 0,
+    missing: [],
+    bytes: 0,
+    read: 0,
+    largest: 0,
+    phase: 'read',
+    began: Date.now(),
+  };
+}
+
+/** One line per page (and per failure) in the Worker's logs: what the page cost. */
+function logPage(page: Page, event: string, extra: Json = {}) {
+  const { ctx, wanted, start, index, served, missing, bytes, read, largest, large, raw } = page;
+  console.log(
+    JSON.stringify({
+      event,
+      repo: ctx.repo,
+      requested: wanted.length,
+      after: start,
+      index,
+      served,
+      missing: missing.length,
+      bytes,
+      read,
+      largest,
+      large,
+      raw,
+      ms: Date.now() - page.began,
+      tiers: page.objects.hits,
+      ...extra,
+    }),
+  );
+}
+
+/**
+ * A page's objects in request order, until its response budget or `READ_BUDGET` object
+ * bytes read (stubs included); ids the platform lacks go to `page.missing`. With `large`,
+ * blobs over `LARGE_BLOB` are stubs (see the header).
+ */
+async function* readPage(page: Page): AsyncGenerator<Json> {
+  const { objects, wanted, raw, large } = page;
   /** A blob as served: inline, or a stub the client downloads (never base64 of its bytes). */
   const blob = async (id: string) => {
     const content = await objects.blob(id);
-    read += content.length;
-    largest = Math.max(largest, content.length);
+    page.read += content.length;
+    page.largest = Math.max(page.largest, content.length);
     return large && content.length > LARGE_BLOB
       ? { id, kind: 'blob', size: content.length, large: true }
       : { id, kind: 'blob', data_b64: toBase64(content) };
   };
-  try {
-    // A page ends at its response budget or once it has read `READ_BUDGET` object bytes.
-    while (index < wanted.length && read < READ_BUDGET) {
-      const batch = wanted.slice(index, index + READ_WIDTH);
-      const commits = raw ? batch.filter((o: Json) => o.kind === 'commit') : [];
-      phase = commits.length ? 'raw commits' : 'read';
-      const exact = new Map(
-        (commits.length ? await objects.raw(commits) : [])
-          .filter((o) => o.kind === 'commit')
-          .map((o) => [o.id, o]),
-      );
-      phase = 'read';
-      const results = await Promise.all(
-        batch.map((o: Json) =>
-          o.kind === 'commit' && exact.has(o.id)
-            ? exact.get(o.id)
-            : (o.kind === 'blob' ? blob(o.id) : objects.object(o.id, o.kind)).catch((e) => {
-                if (e?.code === 'NOT_FOUND') return null;
-                throw e;
-              }),
-        ),
-      );
-      phase = 'serve';
-      let stop = false;
-      for (const [offset, object] of results.entries()) {
-        if (!object) missing.push(batch[offset].id);
-        else {
-          // A blob's size is its base64 text; stringifying it would copy it once more.
-          const text = (object as Json).data_b64;
-          const size = typeof text === 'string' ? text.length + 96 : JSON.stringify(object).length;
-          if (served.length > 0 && bytes + size > OBJECT_BUDGET) {
-            stop = true;
-            break;
-          }
-          bytes += size;
-          served.push(object);
-        }
-        index++;
+  while (page.index < wanted.length && page.read < READ_BUDGET) {
+    const batch = nextBatch(wanted, page.index);
+    const commits = raw ? batch.filter((o) => o.kind === 'commit') : [];
+    page.phase = commits.length ? 'raw commits' : 'read';
+    const exact = new Map(
+      (commits.length ? await objects.raw(commits) : [])
+        .filter((o) => o.kind === 'commit')
+        .map((o) => [o.id, o]),
+    );
+    page.phase = 'read';
+    const results = await Promise.all(
+      batch.map((o) =>
+        o.kind === 'commit' && exact.has(o.id)
+          ? exact.get(o.id)
+          : (o.kind === 'blob' ? blob(o.id) : objects.object(o.id, o.kind)).catch((e) => {
+              if (e?.code === 'NOT_FOUND') return null;
+              throw e;
+            }),
+      ),
+    );
+    page.phase = 'serve';
+    for (const [offset, object] of results.entries()) {
+      if (!object) page.missing.push(batch[offset].id);
+      else {
+        // A blob's size is its base64 text; stringifying it would copy it once more.
+        const text = (object as Json).data_b64;
+        const size = typeof text === 'string' ? text.length + 96 : JSON.stringify(object).length;
+        if (page.served > 0 && page.bytes + size > OBJECT_BUDGET) return;
+        page.bytes += size;
+        page.served++;
+        yield object;
       }
-      if (stop) break;
+      page.index++;
     }
-  } catch (e: any) {
-    log('objects.failed', {
-      phase,
-      error: `${e?.code ?? 'ERROR'}: ${String(e?.message ?? e).slice(0, 300)}`,
-    });
+  }
+}
+
+const nextOf = (page: Page) => (page.index < page.wanted.length ? page.index : null);
+const failed = (page: Page, e: any) =>
+  logPage(page, 'objects.failed', {
+    phase: page.phase,
+    error: `${e?.code ?? 'ERROR'}: ${String(e?.message ?? e).slice(0, 300)}`,
+  });
+
+/** Immutable objects by id and kind, in request order, up to a response budget, as one JSON
+ * value (MCP). `next` resumes after the last object served, so an interrupted client never
+ * refetches what it already has. */
+export async function getObjects(ctx: RepoContext, args: Json) {
+  const page = await openPage(ctx, args);
+  const served: Json[] = [];
+  try {
+    for await (const object of readPage(page)) served.push(object);
+  } catch (e) {
+    failed(page, e);
     throw e;
   }
-  log('objects.page');
-  return {
-    objects: served,
-    missing,
-    next: index < wanted.length ? index : null,
-    tiers: objects.hits,
-  };
+  logPage(page, 'objects.page');
+  return { objects: served, missing: page.missing, next: nextOf(page), tiers: page.objects.hits };
+}
+
+/** `POST /objects` over REST: the same page as `getObjects`, streamed as each batch is read,
+ * so a page holds only the batch in flight rather than its whole answer twice (the objects
+ * and their JSON). A failure mid-page ends the body early: the client keeps the objects that
+ * arrived whole and asks again from the first one that did not. */
+export async function streamObjects(ctx: RepoContext, args: Json): Promise<Response> {
+  const page = await openPage(ctx, args);
+  const objects = readPage(page);
+  // The first object is read before answering, so a refusal or failure there (an inherited
+  // object the caller may not read, an unavailable tier) is an API error with its status.
+  let ahead: IteratorResult<Json> | undefined;
+  try {
+    ahead = await objects.next();
+  } catch (e) {
+    failed(page, e);
+    throw e;
+  }
+  const text = new TextEncoder();
+  let first = true;
+  const body = new ReadableStream<Uint8Array>({
+    start(out) {
+      out.enqueue(text.encode('{"objects":['));
+    },
+    async pull(out) {
+      try {
+        const step = ahead ?? (await objects.next());
+        ahead = undefined;
+        if (!step.done) {
+          out.enqueue(text.encode(`${first ? '' : ','}${JSON.stringify(step.value)}`));
+          first = false;
+          return;
+        }
+        const tail = { missing: page.missing, next: nextOf(page), tiers: page.objects.hits };
+        out.enqueue(text.encode(`],${JSON.stringify(tail).slice(1)}`));
+        logPage(page, 'objects.page');
+        out.close();
+      } catch (e) {
+        failed(page, e);
+        out.error(e);
+      }
+    },
+  });
+  return new Response(body, { headers: { 'content-type': 'application/json' } });
 }
 
 /** `GET /repos/:id/objects/<id>` (`?commit=&path=` for a path-restricted caller): one blob's
