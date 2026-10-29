@@ -8,12 +8,15 @@
 //! cannot be written exactly, and neither can anything built on it (its parents' ids
 //! would be missing), so such a head is converted instead (`convert`, recorded in the
 //! commit map).
+//!
+//! What trees and blobs come with them is the session's `Filter`: in a lazy clone, the
+//! trees only (`snapshot::walk`).
 use super::convert::Converter;
 use super::map::CommitMap;
 use crate::api::Api;
 use crate::error::{Error, Result};
 use crate::git::Git;
-use crate::snapshot::{self, Served};
+use crate::snapshot::{self, Filter, Served};
 use std::collections::HashSet;
 use yoneda_core::git_object::{Commit, ObjectKind};
 
@@ -21,11 +24,17 @@ pub struct Fetcher<'a> {
     pub api: &'a Api,
     pub git: &'a Git,
     pub map: &'a mut CommitMap,
+    pub filter: &'a Filter,
 }
 
 impl<'a> Fetcher<'a> {
-    pub fn new(api: &'a Api, git: &'a Git, map: &'a mut CommitMap) -> Self {
-        Self { api, git, map }
+    pub fn new(api: &'a Api, git: &'a Git, map: &'a mut CommitMap, filter: &'a Filter) -> Self {
+        Self {
+            api,
+            git,
+            map,
+            filter,
+        }
     }
 
     fn has(&self, id: &str) -> Result<bool> {
@@ -45,18 +54,18 @@ impl<'a> Fetcher<'a> {
             return Ok(head.to_owned());
         }
         let Some(commits) = self.walk(head, branch).await? else {
-            return Converter::new(self.api, self.git, self.map)
+            return Converter::new(self.api, self.git, self.map, self.filter)
                 .convert(head, branch)
                 .await;
         };
         let trees: Vec<String> = commits.iter().map(|(_, tree, _)| tree.clone()).collect();
-        snapshot::fetch_trees(self.api, self.git, &trees).await?;
+        snapshot::fetch_trees(self.api, self.git, &trees, self.filter).await?;
         // Commits last, in one pack: a commit present locally always has its history.
         let objects = commits
             .into_iter()
             .map(|(_, _, bytes)| (ObjectKind::Commit, bytes))
             .collect();
-        snapshot::write_objects(self.git, objects)?;
+        snapshot::write_objects(self.git, objects, self.filter)?;
         Ok(head.to_owned())
     }
 

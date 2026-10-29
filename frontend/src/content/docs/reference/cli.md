@@ -5,6 +5,18 @@ summary: Every yoneda command, as `yoneda` prints it with no arguments.
 
 Run `yoneda` with no arguments to print this list. Repository commands use the current clone's `yoneda::` remote, or `--repo <id> [--origin <url>]`.
 
+## Git
+
+```text
+clone (a yoneda:: Git remote; lazy: commits and trees now, each file's contents when Git
+first needs it)
+  clone <repo-id> [dir] [--origin <url>]    lazy clone (git clone yoneda::<origin>/<repo-id>)
+  clone <repo-id> [dir] --full              every object (or git clone -c yoneda.lazy=false)
+  clone <repo-id> [dir] --sparse <dir,...>  only these directories (and the top's files)
+  sparse [--add] <dir>...                   this clone: check out only these directories (--add:
+                                            these too)
+```
+
 ## Account
 
 ```text
@@ -88,8 +100,8 @@ declared reads (closure coverage: landing refuses a push whose reads changed mea
 ## Offline checkouts
 
 ```text
-offline checkouts (`yoneda clone`, kept for existing scripts)
-  clone <repo-id> [dir] [--origin <url>]
+offline checkouts (kept for existing scripts)
+  clone <repo-id> [dir] --offline [--origin <url>]
   status [--brief] | sync [--land | --attempt <id> [--mcp-url <url>]] | pull
 ```
 
@@ -103,6 +115,6 @@ yoneda.cli.<command>.v1 (schemas/v1), or yoneda.cli.error.v1 with a stable code.
 ## Git
 
 ```text
-Git: git clone yoneda::https://api.yonedarepo.com/<repo-id>, then fetch, pull and push.
+Git: git clone yoneda::https://api.yonedarepo.com/<repo-id> (lazy), then fetch, pull and push.
 The token comes from YONEDA_TOKEN when set, else from `yoneda login`.
 ```

@@ -4,7 +4,8 @@ use crate::checkout::Checkout;
 use crate::error::{Error, Result};
 use crate::{
     account, agent_hook, attempt, brief, change_cmd, clone, context_cmd, declared_reads, login,
-    memory_cmd, pull, reads, release_cmd, repo_ops, session_cmd, setup, status, sync, target,
+    memory_cmd, pull, reads, release_cmd, repo_ops, session_cmd, setup, sparse, status, sync,
+    target,
 };
 use crate::{human, output};
 
@@ -122,9 +123,13 @@ async fn run(command: Command) -> Result<()> {
             repo_ops::check(&target::resolve(&target)?, command).await
         }
         Command::Conflicts => repo_ops::conflicts(),
-        Command::Clone { repo, dir, origin } => {
-            clone::clone(&repo, dir.as_deref(), origin.as_deref()).await
-        }
+        Command::Clone {
+            repo,
+            dir,
+            origin,
+            mode,
+        } => clone::clone(&repo, dir.as_deref(), origin.as_deref(), mode).await,
+        Command::Sparse { dirs, add } => sparse::sparse(&dirs, add).await,
         Command::Status { brief } => show_status(brief).await,
         Command::Pull => pull::pull(&mut Checkout::open()?).await,
         Command::Sync(mode) => sync_checkout(mode).await,

@@ -12,6 +12,14 @@ git remote -v            # yoneda::https://api.dev.yonedarepo.com/r… means thi
 yoneda status --brief    # one line, no network: repository, branch, commits not on the platform yet
 ```
 
+## Cloning: fetch only what you need
+
+`git clone yoneda::https://…/<repo-id>` (or `yoneda clone <repo-id>`) is lazy: it brings the history's commits and trees, and Git fetches a file's contents the first time anything needs them (checkout, diff, blame, a build). Git works as in a full clone.
+
+- Take only the directories your task is in: `yoneda clone <repo-id> --sparse src/app,docs` (the files at the top come too). Nothing outside them is fetched or on disk: `yoneda sparse --add lib` brings a directory in, and `git show HEAD:<path>` reads one file without checking it out.
+- `yoneda clone <repo-id> --full` (or `git clone -c yoneda.lazy=false …`) fetches every object up front, e.g. before working offline.
+- Each session record reports what the clone fetched against the bytes of the files you read.
+
 ## The loop
 
 1. **Commit small and often.** One logical change per commit. Small commits merge cleanly on the server; large ones conflict.

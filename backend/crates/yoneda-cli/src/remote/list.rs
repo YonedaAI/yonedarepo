@@ -59,9 +59,14 @@ pub async fn list(session: &mut Session, for_push: bool) -> Result<String> {
         } else if name == MAIN {
             session.heads.record(server, version)?;
             let branch = Some("main");
-            let local = Fetcher::new(&session.api, &session.git, &mut session.map)
-                .local(server, branch)
-                .await?;
+            let local = Fetcher::new(
+                &session.api,
+                &session.git,
+                &mut session.map,
+                &session.filter,
+            )
+            .local(server, branch)
+            .await?;
             if for_push {
                 main_for_push(session, &local)
             } else {
@@ -74,9 +79,14 @@ pub async fn list(session: &mut Session, for_push: bool) -> Result<String> {
         } else {
             // A tag names no branch whose log could list its history in one request.
             let branch = name.strip_prefix("refs/heads/");
-            Fetcher::new(&session.api, &session.git, &mut session.map)
-                .local(server, branch)
-                .await?
+            Fetcher::new(
+                &session.api,
+                &session.git,
+                &mut session.map,
+                &session.filter,
+            )
+            .local(server, branch)
+            .await?
         };
         out.push_str(&format!("{local} {name}\n"));
     }
