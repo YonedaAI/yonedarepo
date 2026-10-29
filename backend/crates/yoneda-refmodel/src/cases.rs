@@ -190,8 +190,12 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
             at: any_ref(rng),
             message: (rng.below(2) == 0).then(|| format!("Release at step {step}")),
         },
-        55..65 => Op::Land {
+        55..61 => Op::Land {
             branch: working(rng),
+        },
+        61..65 => Op::LandOn {
+            branch: working(rng),
+            onto: working(rng),
         },
         65..74 => Op::MergeLand {
             branch: working(rng),

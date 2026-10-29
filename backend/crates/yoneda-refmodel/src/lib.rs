@@ -113,6 +113,11 @@ pub enum Op {
     Land {
         branch: String,
     },
+    /// Lands `branch`'s tip on working branch `onto` (no gates, the write scope).
+    LandOn {
+        branch: String,
+        onto: String,
+    },
     /// Reverts the commit `back` first parents below `branch`'s tip onto that tip and lands
     /// the revert on `branch`.
     Revert {
@@ -313,6 +318,7 @@ impl Repo {
                 None => (Outcome::Refused("NOT_FOUND"), None),
             },
             Op::Revert { branch, back } => (self.revert(branch, *back), None),
+            Op::LandOn { branch, onto } => (self.land_onto(branch, onto), None),
             Op::MergeLand { branch } => match self.tip(branch) {
                 Some(commit) => {
                     let plan = self.plan(commit);

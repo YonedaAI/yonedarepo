@@ -15,6 +15,14 @@ pub(crate) enum Occ {
 }
 
 impl Repo {
+    /// Lands `branch`'s tip on working branch `onto`.
+    pub(crate) fn land_onto(&mut self, branch: &str, onto: &str) -> Outcome {
+        match (self.tip(branch), self.tip(onto)) {
+            (Some(commit), Some(_)) => self.land_on(onto, commit),
+            _ => Outcome::Refused("NOT_FOUND"),
+        }
+    }
+
     /// Lands `commit` on main.
     pub(crate) fn land(&mut self, commit: CommitId) -> Outcome {
         self.land_on(MAIN, commit)
@@ -23,8 +31,6 @@ impl Repo {
     /// Lands `commit` on `refname`: a no-op where it is the head or landed there before;
     /// refused while landings are queued there (`busy`); a fast-forward (logging every path the head and the commit differ in) where the head
     /// is its parent or an ancestor; otherwise refused as optimistic concurrency decides.
-    /// Off-head landings happen on main only (commits are built on their branch's tip), so
-    /// the concurrency base is always the commit's base version.
     pub(crate) fn land_on(&mut self, refname: &str, commit: CommitId) -> Outcome {
         let head = self.tip(refname);
         if head == Some(commit) || self.landings.contains_key(&(commit, refname.to_owned())) {
@@ -72,12 +78,27 @@ impl Repo {
 
     /// Main's entries after the commit's base version against what it read and wrote. Paths
     /// here never nest (no file is another's directory), so overlapping means equal.
+    /// The version after which `refname`'s landings are concurrent with `commit`: its base
+    /// version on a protected branch; on a working branch, its parent's first landing
+    /// there when that came earlier (the base version reads main, so it can postdate a
+    /// teammate's landing on the branch that the commit does not hold).
+    fn since(&self, commit: CommitId, refname: &str) -> u64 {
+        let c = &self.commits[commit];
+        let landed = c
+            .parents
+            .first()
+            .filter(|_| !Self::protected(refname))
+            .and_then(|p| self.landings.get(&(*p, refname.to_owned())));
+        landed.map_or(c.base_version, |v| (*v).min(c.base_version))
+    }
+
     pub(crate) fn occ(&self, commit: CommitId, refname: &str) -> Occ {
         let c = &self.commits[commit];
+        let since = self.since(commit, refname);
         let later: Vec<_> = self
             .log
             .iter()
-            .filter(|e| e.version > c.base_version && e.refname == refname)
+            .filter(|e| e.version > since && e.refname == refname)
             .collect();
         for entry in &later {
             let stale: Vec<String> = c.read_set.intersection(&entry.paths).cloned().collect();

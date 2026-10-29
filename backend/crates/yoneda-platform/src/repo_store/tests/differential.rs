@@ -142,6 +142,10 @@ impl Driver {
                     .run(OWNER, json!({"op":"repo_land","ref":MAIN,"commit":commit}));
                 (answer(landed), Some(plan))
             }
+            Op::LandOn { branch, onto } => {
+                let land = json!({"op":"repo_land","ref":onto,"commit":self.git_id(branch)});
+                (answer(self.h.run(OWNER, land)), None)
+            }
             Op::MergeLand { branch } => {
                 let commit = self.git_id(branch);
                 let plan = self.plan(&commit);
@@ -505,7 +509,6 @@ fn the_platform_matches_the_reference_model() {
             "Rebase CONFLICT",
             "Probe Done",
             "Probe NOT_FOUND",
-            "Probe FORBIDDEN",
             "SetVisibility Done",
             "SetVisibility FORBIDDEN",
             "Member Done",
