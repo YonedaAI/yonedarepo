@@ -86,6 +86,9 @@ describe('plugins', () => {
     expect(hero.id === 'agenthero' && hero.hook?.id).toBe(2);
     expect(isInstalled(found, 'agenthero')).toBe(true);
     expect(isInstalled(installedPlugins([token(MANAGED_TOKEN)], hooks), 'agenthero')).toBe(false);
+    expect(installedPlugins([token(`${MANAGED_TOKEN}-mf3k2`)], hooks).map((p) => p.id)).toEqual([
+      'managed',
+    ]);
     // A token alone counts as installed; its missing hook is reported, not invented.
     const alone = installedPlugins([token(AGENTHERO_TOKEN)], [hook(4, ['land'])]);
     expect(alone).toEqual([{ id: 'agenthero', name: 'AgentHero', token: token(AGENTHERO_TOKEN) }]);

@@ -8,7 +8,8 @@ import type { RepoToken } from '../source-platform/RepoTokens';
 import type { Hook } from './HookParts';
 
 export const AGENTHERO_TOKEN = 'plugin-agenthero';
-/** The token the managed agents post with (cloudflare/managed, `token_name`). */
+/** The token the managed agents post with (cloudflare/managed, `token_name`); a reconnect after
+ * that name was revoked takes `yoneda-managed-agents-<suffix>`. */
 export const MANAGED_TOKEN = 'yoneda-managed-agents';
 export const AGENTHERO_SCOPES = ['read', 'review', 'check'] as const;
 export const AGENTHERO_EVENTS = ['change', 'branch', 'check'] as const;
@@ -76,7 +77,7 @@ export function installedPlugins(tokens: RepoToken[], hooks: Hook[]): InstalledP
   const live = (match: (name: string) => boolean) =>
     tokens.find((t) => match(t.name) && !t.revoked_at);
   const out: InstalledPlugin[] = [];
-  const managed = live((name) => name === MANAGED_TOKEN);
+  const managed = live((name) => name === MANAGED_TOKEN || name.startsWith(`${MANAGED_TOKEN}-`));
   if (managed) out.push({ id: 'managed', name: 'Managed agents', token: managed });
   const hero = live((name) => AGENTHERO_NAME.test(name));
   if (hero) {

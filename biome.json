@@ -5,6 +5,7 @@
       "cloudflare/worker/**",
       "cloudflare/eval/**",
       "cloudflare/superfan/**",
+      "cloudflare/managed/**",
       "frontend/src/**",
       "shared/**",
       "!shared/contracts/**",
