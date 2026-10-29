@@ -578,12 +578,12 @@ fn deliveries_are_recorded_per_session_and_left_out_of_later_rankings() {
 
 #[test]
 fn the_memory_tables_arrive_by_a_repeatable_forward_migration() {
-    // Upgrades from the schema just before 0040 (every earlier migration applied).
+    // Upgrades from the schema just before 0039 (every earlier migration applied).
     let db = crate::native::NativeStore::memory().unwrap();
     let migrations = &super::super::migration::MIGRATIONS;
     let before = migrations
         .iter()
-        .position(|(version, _)| *version == 40)
+        .position(|(version, _)| *version == 39)
         .unwrap();
     super::super::migration::migrate_with(&db, "repo_schema_migrations", &migrations[..before])
         .unwrap();
@@ -616,4 +616,108 @@ fn the_memory_tables_arrive_by_a_repeatable_forward_migration() {
         .unwrap()[0]["id"],
         1
     );
+}
+
+#[test]
+fn quarantine_masks_a_quarantined_sessions_memories_and_those_on_a_withheld_blob() {
+    let (h, _, first) = landed();
+    let session = h.ok(
+        AGENT,
+        json!({"op":"repo_session_record","commit":first,"cli":"claude-code",
+               "summary":"pasted the staging password hunter2","session_id":"claude-code:s1"}),
+    )["session"]
+        .clone();
+    let add = |c: Value| h.ok(AGENT, c)["memory"].clone();
+    let mut from_session = memory(&first, "gotcha", "staging password is hunter2", json!([]));
+    from_session["session_id"] = json!("claude-code:s1");
+    let from_session = add(from_session);
+    let on_blob = add(memory(
+        &first,
+        "constraint",
+        "lib.rs holds the retry budget",
+        json!([lib_anchor(None)]),
+    ));
+    let clean = add(memory(
+        &first,
+        "howto",
+        "retry budget lives in the gateway",
+        json!([]),
+    ));
+    h.ok(
+        AGENT,
+        json!({"op":"repo_context_deliver","session_id":"claude-code:s2","trigger":"read",
+               "subject":"src/lib.rs","items":[{"type":"memory","id":from_session},{"type":"session","id":session}],"bytes":10}),
+    );
+    let quarantine = |kind: &str, id: &str| {
+        h.ok(
+            OWNER,
+            json!({"op":"repo_quarantine","target":{"kind":kind,"id":id},"path":"src/lib.rs",
+                   "reason":"a leaked credential"}),
+        )["record"]["id"]
+            .clone()
+    };
+    let record = quarantine("session", &session.to_string());
+    let blob_record = quarantine("blob", &blob(LIB_V1));
+    let is_masked = |m: &Value| m["text"].is_null() && m["quarantined"] == true;
+    let listed = h.ok(READER, json!({"op":"repo_memory_list","status":"all"}))["memories"].clone();
+    for m in listed.as_array().unwrap() {
+        assert_eq!(is_masked(m), m["id"] != clean, "{m}");
+    }
+    assert!(is_masked(&shown(&h, &from_session, json!({}))));
+    assert!(is_masked(&shown(&h, &on_blob, json!({}))));
+    // A ranking never carries withheld text: masked memories and the session are left out.
+    let ranked = h.ok(
+        READER,
+        json!({"op":"repo_context_relevant","paths":["src/lib.rs"],"query":"staging password retry budget"}),
+    )["items"]
+        .clone();
+    let ids: Vec<(String, Value)> = ranked
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|i| (i["type"].as_str().unwrap().to_owned(), i["id"].clone()))
+        .collect();
+    assert_eq!(ids, [("memory".to_owned(), clean.clone())]);
+    let context = h.ok(
+        READER,
+        json!({"op":"repo_agent_context","paths":["src/lib.rs"]}),
+    );
+    assert!(!context.to_string().contains("hunter2"));
+    // Delivery labels are masked too.
+    let delivered = h.ok(
+        READER,
+        json!({"op":"repo_context_deliveries","session_id":"claude-code:s2"}),
+    );
+    assert!(!delivered.to_string().contains("hunter2"), "{delivered}");
+    // Releasing the blob serves its memory again; purging the session clears its memories.
+    h.ok(
+        OWNER,
+        json!({"op":"repo_quarantine_release","id":blob_record}),
+    );
+    assert!(!is_masked(&shown(&h, &on_blob, json!({}))));
+    let claim = h.ok(
+        OWNER,
+        json!({"op":"repo_quarantine_purge","id":record,"confirm":session.to_string()}),
+    )["claims"][0]
+        .clone();
+    h.ok(
+        OWNER,
+        json!({"op":"repo_quarantine_purged","claims":[{"id":record,"epoch":claim["epoch"]}]}),
+    );
+    let stored =
+        h.db.query(
+            "SELECT body FROM memories WHERE id=?",
+            std::slice::from_ref(&from_session),
+        )
+        .unwrap();
+    assert_eq!(stored[0]["body"], "");
+    assert!(
+        h.db.query(
+            "SELECT rowid FROM memory_text WHERE memory_text MATCH '\"hunter2\"'",
+            &[]
+        )
+        .unwrap()
+        .is_empty()
+    );
+    assert!(is_masked(&shown(&h, &from_session, json!({}))));
 }

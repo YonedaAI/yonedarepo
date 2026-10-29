@@ -8,7 +8,7 @@ import {
   NO_MEMORY_FILTERS,
   parseAnchors,
 } from './memoryModel';
-import { formatSourceRoute, parseSourceRoute } from './sourceRoute';
+import { formatSourceRoute, parseSourceRoute, routeTab, tabRoute } from './sourceRoute';
 
 const repo = 'r0123456789abcdef0123';
 
@@ -53,5 +53,13 @@ describe('memories page', () => {
     const route = parseSourceRoute(`/source/${repo}/agents/memories`, '');
     expect(route).toEqual({ view: 'agents', repo, section: 'memories' });
     expect(formatSourceRoute(route)).toBe(`/source/${repo}/agents/memories`);
+  });
+});
+
+describe('the Memories page in the shell', () => {
+  it('is its own page in the Repository nav', () => {
+    const route = parseSourceRoute(`/source/${repo}/agents/memories`, '');
+    expect(routeTab(route)).toBe('memories');
+    expect(formatSourceRoute(tabRoute('memories', repo))).toBe(`/source/${repo}/agents/memories`);
   });
 });

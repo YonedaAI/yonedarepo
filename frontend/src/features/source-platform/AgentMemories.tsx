@@ -83,7 +83,7 @@ function MemoryRow({
   onChanged: () => void;
 }) {
   const readOnly = useReadOnly();
-  const live = m.status === 'active' || m.status === 'draft';
+  const live = (m.status === 'active' || m.status === 'draft') && !m.quarantined;
   return (
     <li id={`memory-${m.id}`}>
       <div className="memory-chips">
@@ -91,7 +91,11 @@ function MemoryRow({
         {m.status !== 'active' && <span className={`chip memory-${m.status}`}>{m.status}</span>}
         {m.stale && <span className="chip memory-stale">stale: the code changed since</span>}
       </div>
-      <p className="memory-text">{m.text}</p>
+      {m.quarantined ? (
+        <p className="source-meta">Withheld by the repository's owner (quarantine).</p>
+      ) : (
+        <p className="memory-text">{m.text}</p>
+      )}
       {m.anchors.length > 0 && (
         <ul className="memory-anchors" aria-label={`Anchors of memory #${m.id}`}>
           {m.anchors.map((a) => (
@@ -138,7 +142,7 @@ function MemoryRow({
             onClick={() =>
               onEdit({
                 kind: m.kind,
-                text: m.text,
+                text: m.text ?? '',
                 anchors: m.anchors.map(anchorText).join(', '),
                 supersedes: m.id,
                 publish: m.status === 'draft',

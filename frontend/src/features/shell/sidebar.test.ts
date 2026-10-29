@@ -72,6 +72,7 @@ describe('sidebar', () => {
       'Commits',
       'Sessions',
       'Context',
+      'Memories',
       'Releases',
       'Search',
     ]);

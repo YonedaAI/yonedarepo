@@ -1,6 +1,7 @@
 // Context: what `yoneda context` (MCP `git_context`) gives a coding agent starting a
-// session in this repository: main's head, the landing rules, the newest sessions, the open
-// changes and the authored symbol contracts. One read of the authority.
+// session in this repository: main's head, the landing rules, the memories ranked for it,
+// the newest sessions, the open changes and the authored symbol contracts. One read of the
+// authority.
 
 import type { Policy } from '../repo-settings/policy';
 import { linkTo, type Navigate } from '../shell/useRoute';
@@ -26,6 +27,8 @@ export type AgentContext = {
   sessions: SessionRecord[];
   changes: Change[];
   contracts: ContextRecord[];
+  /** Current memories, ranked (repo_context_relevant items); absent from older servers. */
+  memories?: { id: number; text: string; stale: boolean | null; memory: { kind: string } }[];
 };
 
 export const contextPath = (repo: string) =>
@@ -59,6 +62,24 @@ export function RepoContext({ repo, navigate }: { repo: string; navigate: Naviga
           )}
         </p>
         <p>Landing on main needs {needs.length ? needs.join(' · ') : 'nothing (lands at once)'}.</p>
+      </section>
+      <section aria-labelledby="context-memories">
+        <h2 id="context-memories">Memories</h2>
+        {context.memories?.length ? (
+          <ul className="context-list">
+            {context.memories.map((m) => (
+              <li key={m.id}>
+                <span>
+                  <span className="chip">{m.memory.kind}</span>{' '}
+                  {m.stale && <span className="chip memory-stale">stale</span>} {m.text}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="source-empty">No memories yet.</p>
+        )}
+        <a {...linkTo({ view: 'agents', repo, section: 'memories' }, navigate)}>All memories</a>
       </section>
       <section aria-labelledby="context-sessions">
         <h2 id="context-sessions">Recent sessions</h2>
