@@ -1,7 +1,7 @@
 //! A reference model of one YonedaRepo repository: refs, commits as whole file trees, the
 //! global log version, and the operations the differential tests drive (a one-file commit
 //! landed on its branch, working-branch create, move and delete by compare-and-swap, tags,
-//! and landing a branch on main with its merge-plan outcome). It has no dependencies, so
+//! landing a branch on main with its merge-plan outcome, and reverts). It has no dependencies, so
 //! it shares no code with the platform it checks; commits are numbered in creation order
 //! and the test maps those numbers to Git ids.
 //!
@@ -73,6 +73,9 @@ pub enum Op {
     Tag { name: String, at: String },
     /// Lands `branch`'s tip on main.
     Land { branch: String },
+    /// Reverts the commit `back` first parents below `branch`'s tip onto that tip and lands
+    /// the revert on `branch`.
+    Revert { branch: String, back: usize },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -169,6 +172,7 @@ impl Repo {
                 }
                 None => (Outcome::Refused("NOT_FOUND"), None),
             },
+            Op::Revert { branch, back } => (self.revert(branch, *back), None),
         }
     }
 
@@ -188,17 +192,63 @@ impl Repo {
                 "NOT_FOUND"
             });
         }
+        let reads = if read {
+            BTreeSet::from([path.to_owned()])
+        } else {
+            BTreeSet::new()
+        };
+        self.record(
+            branch,
+            parent,
+            tree,
+            reads,
+            BTreeSet::from([path.to_owned()]),
+        )
+    }
+
+    /// A revert: each path the source changed against its parent goes back to the parent's
+    /// content, provided the tip still holds the source's (else the paths conflict).
+    fn revert(&mut self, branch: &str, back: usize) -> Outcome {
+        let Some(tip) = self.tip(branch) else {
+            return Outcome::Refused("NOT_FOUND");
+        };
+        let Some(source) = self.ancestry(tip).get(back).copied() else {
+            return Outcome::Refused("NOT_FOUND");
+        };
+        let Some(parent) = self.commits[source].parent else {
+            return Outcome::Refused("INVALID_INPUT");
+        };
+        let (before, after) = (&self.commits[parent].tree, &self.commits[source].tree);
+        let changed = Self::changed(before, after);
+        let mut tree = self.commits[tip].tree.clone();
+        if changed.iter().any(|path| tree.get(path) != after.get(path)) {
+            return Outcome::Refused("CONFLICT");
+        }
+        for path in &changed {
+            match before.get(path) {
+                Some(text) => tree.insert(path.clone(), text.clone()),
+                None => tree.remove(path),
+            };
+        }
+        self.record(branch, tip, tree, BTreeSet::new(), changed)
+    }
+
+    /// A new commit of `tree` on `parent` (`branch`'s tip), landed on `branch`.
+    fn record(
+        &mut self,
+        branch: &str,
+        parent: CommitId,
+        tree: Tree,
+        read_set: BTreeSet<String>,
+        writes: BTreeSet<String>,
+    ) -> Outcome {
         let id = self.commits.len();
         self.commits.push(Commit {
             parent: Some(parent),
             tree,
             base_version: self.version,
-            read_set: if read {
-                BTreeSet::from([path.to_owned()])
-            } else {
-                BTreeSet::new()
-            },
-            writes: BTreeSet::from([path.to_owned()]),
+            read_set,
+            writes,
         });
         // Built on the branch's tip, it always fast-forwards there.
         match self.land_on(branch, id) {

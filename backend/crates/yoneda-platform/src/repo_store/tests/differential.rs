@@ -51,6 +51,49 @@ impl Driver {
             .map_or(Value::Null, |id| json!(self.ids[id]))
     }
 
+    /// Commits `changes` on `branch`'s tip at the current version and lands it there.
+    fn commit_on(&self, branch: &str, changes: Value, reads: Value) -> Seen {
+        let parent = self.ids[self.model.refs[branch]].clone();
+        let version = self.model.version;
+        match self.h.commit(OWNER, Some(&parent), version, changes, reads) {
+            Err(e) => Seen::Refused(e.code),
+            Ok(id) => match self
+                .h
+                .run(OWNER, json!({"op":"repo_land","ref":branch,"commit":id}))
+            {
+                Err(e) => Seen::Refused(e.code),
+                Ok(v) if v["already"] == true => Seen::Already,
+                Ok(_) => Seen::Committed(id),
+            },
+        }
+    }
+
+    /// `replay_changes` reverting `old` -> `new` (tree ids), its tree requests answered from
+    /// the object store double, as the adapter does.
+    fn replay(&self, old: &Value, new: &Value) -> Value {
+        let mut trees = serde_json::Map::new();
+        loop {
+            let step = crate::platform_compute(json!({"op":"replay_changes","direction":"revert",
+                "old":old,"new":new,"trees":trees}))
+            .unwrap();
+            let Some(need) = step["need_trees"].as_array() else {
+                return step["changes"].clone();
+            };
+            let objects = self.h.objects.borrow();
+            for id in need.iter().filter_map(Value::as_str) {
+                let entries = decode_tree(&objects[id].1).unwrap();
+                let listed: Vec<Value> = entries
+                    .iter()
+                    .map(|e| {
+                        json!({"name": e.name, "id": e.id,
+                    "type": if e.mode == FileMode::Tree { "tree" } else { "blob" }})
+                    })
+                    .collect();
+                trees.insert(id.into(), json!(listed));
+            }
+        }
+    }
+
     /// Runs `op` on the platform: its outcome, and for a landing its merge plan first.
     fn platform(&self, op: &Op) -> (Seen, Option<Plan>) {
         let answer = |result: yoneda_core::Result<Value>| match result {
@@ -73,24 +116,20 @@ impl Driver {
                     None => json!({"path": path, "delete": true}),
                 };
                 let reads = if *read { json!([path]) } else { json!([]) };
-                let parent = self.ids[self.model.refs[branch]].clone();
-                let made = self.h.commit(
-                    OWNER,
-                    Some(&parent),
-                    self.model.version,
-                    json!([change]),
-                    reads,
-                );
-                match made {
-                    Err(e) => (Seen::Refused(e.code), None),
-                    Ok(id) => match answer(
-                        self.h
-                            .run(OWNER, json!({"op":"repo_land","ref":branch,"commit":id})),
-                    ) {
-                        Seen::Moved => (Seen::Committed(id), None),
-                        other => (other, None),
-                    },
-                }
+                (self.commit_on(branch, json!([change]), reads), None)
+            }
+            Op::Revert { branch, back } => {
+                let tip = self.model.refs[branch];
+                let Some(source) = self.model.ancestry(tip).get(*back).copied() else {
+                    return (Seen::Refused("NOT_FOUND".into()), None);
+                };
+                let row = |id: &Value| self.h.ok(OWNER, json!({"op":"repo_commit","commit":id}));
+                let source = row(&json!(self.ids[source]));
+                let old = row(&source["parents"][0])["tree"].clone();
+                (
+                    self.commit_on(branch, self.replay(&old, &source["tree"]), json!([])),
+                    None,
+                )
             }
             Op::CreateBranch { name, from } => (
                 answer(self.h.run(
@@ -277,7 +316,7 @@ fn cases(count: u64, steps: usize) -> BTreeMap<String, usize> {
 
 #[test]
 fn the_platform_matches_the_reference_model() {
-    let tally = cases(12, 80);
+    let tally = cases(16, 80);
     // The generator still reaches every landing outcome and every refusal it aims for.
     if std::env::var("YONEDA_DIFF_SEED").is_err() {
         for label in [
@@ -292,6 +331,8 @@ fn the_platform_matches_the_reference_model() {
             "DeleteBranch Moved",
             "DeleteBranch STALE_HEAD",
             "Tag ALREADY_EXISTS",
+            "Revert Committed",
+            "Revert CONFLICT",
         ] {
             assert!(tally.contains_key(label), "no {label} in {tally:?}");
         }
