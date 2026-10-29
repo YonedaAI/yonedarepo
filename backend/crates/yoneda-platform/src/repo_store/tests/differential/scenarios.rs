@@ -119,7 +119,11 @@ fn a_public_repository_asks_callers_without_credentials_to_sign_in() {
             access: Access::Push,
         },
     ];
-    run("public anonymous", &script, "Probe UNAUTHORIZED");
+    run_reaching(
+        "public anonymous",
+        &script,
+        &["Probe UNAUTHORIZED", "Probe FORBIDDEN"],
+    );
 }
 
 #[test]
@@ -323,6 +327,53 @@ fn shard_commits_on_a_trailing_published_head_land_as_the_log_allows() {
             "Submit failed",
             "Submit deferred+landed",
             "Submit already",
+        ],
+    );
+}
+
+fn land_on(branch: &str, onto: &str) -> Op {
+    Op::LandOn {
+        branch: branch.into(),
+        onto: onto.into(),
+    }
+}
+
+/// Working branches land without gates; off their head, concurrency counts from where the
+/// landed work's parent landed on the branch, not from the (later) version it read.
+#[test]
+fn landings_on_working_branches_count_from_the_parents_landing() {
+    let (b2, b3) = ("refs/heads/b2", "refs/heads/b3");
+    let script = [
+        branch_off_main(),
+        off_main(b2),
+        put(b2, "src/b.rs", "first", false),
+        // b1 is at b2's parent: a fast-forward.
+        land_on(b2, B1),
+        // b1 moves on; b3 starts from b2, whose tip landed on b1.
+        put(B1, "a.txt", "b1 moved", false),
+        Op::CreateBranch {
+            name: b3.into(),
+            from: b2.into(),
+        },
+        // Built on what landed, reading a later version: b1's write after that landing is
+        // concurrent. Another path needs a merge; a path it read conflicts.
+        put(b2, "src/b.rs", "second", false),
+        land_on(b2, B1),
+        put(b3, "a.txt", "b3 read it", true),
+        land_on(b3, B1),
+        // A parent that never landed on b1: nothing there is concurrent, but b1 is not
+        // its parent either.
+        put(b2, "README.md", "third", false),
+        land_on(b2, B1),
+    ];
+    run_reaching(
+        "working branches",
+        &script,
+        &[
+            "LandOn Moved",
+            "LandOn MERGE_REQUIRED",
+            "LandOn CONFLICT",
+            "LandOn STALE_PARENT",
         ],
     );
 }
