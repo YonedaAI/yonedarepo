@@ -1,54 +1,53 @@
-// The welcome email: a new account (password sign-up, or a first sign-in with GitHub or
-// Google) enqueues one platform job after the account exists, and the platform's queue
-// consumer sends it through Resend. Sign-up never waits on Resend and never fails because of
-// email. One email per account: the account authority's sent marker, plus Resend's
-// Idempotency-Key (24 hours) for a redelivery that races the marker.
-
+// Account email, front and platform alike (the platform sends; platform-email-verify.ts).
+// - The account-created hook: a new account (password sign-up, or a first sign-in with
+//   GitHub or Google) asks the platform, through its entrypoint's `accountCreated` method, to
+//   queue the welcome email. Sign-up never waits on it, and never fails because of email.
+// - `/api/auth/email*`: Settings shows the contact email, resends the confirmation or changes
+//   the address (the entrypoint's `verifyEmail`), and the confirmation page POSTs its token.
+// The front reaches the platform over the PLATFORM service binding and the platform itself
+// over SELF, so the front binds no platform queue. Until confirmed, the address receives only
+// the welcome and confirmation emails.
+import { normalizeAccountIdentifier } from '../../shared/account';
 import { afterAnswer } from './background';
-import { renderWelcome } from './email-welcome';
+import { error, readJson, response } from './http';
 import { sha } from './storage';
-import type { Env, Envelope } from './types';
+import type { Env, Principal } from './types';
 import { workspace } from './workspace';
 
-export const RESEND_EMAILS = 'https://api.resend.com/emails';
-/** Deliveries per message: the platform-jobs queue's max_retries (3) plus the first. */
-const MAX_ATTEMPTS = 4;
+type Outcome = { sent: true } | { sent: false; reason: string };
+/** The platform entrypoint's RPC surface used here. */
+type Platform = {
+  accountCreated(account: string): Promise<void>;
+  verifyEmail(account: string, change?: string): Promise<Outcome>;
+};
+const platformOf = (env: Env) => (env.PLATFORM ?? env.SELF) as unknown as Platform | undefined;
 
 let warnedOff = false;
-/** Logs once per isolate why email is off (names only, never values). */
-function off(reason: string) {
-  if (warnedOff) return;
-  warnedOff = true;
-  console.warn(JSON.stringify({ event: 'email.off', reason }));
-}
 
-/** `a…@example.com`: enough to recognise a failure, never the whole address. */
-export function maskAddress(address: string) {
-  const at = address.lastIndexOf('@');
-  return at > 0 ? `${address[0]}…${address.slice(at)}` : '…';
+/** A contact email (sign-up's required field, or a new address): normalized, or refused. */
+export function contactEmail(value: unknown) {
+  const email = typeof value === 'string' ? normalizeAccountIdentifier(value) : null;
+  if (!email?.includes('@')) throw new Error('Enter a valid email address');
+  return email;
 }
 
 /**
- * The account-created hook, for every path that creates an account: enqueues the welcome
- * email after the response where the request lends its waitUntil. `email` is the account's
- * contact email (password sign-up) or the provider's verified address (OAuth); without one,
- * no email. Never throws.
+ * Asks the platform to welcome `account`, after the response where the request lends its
+ * waitUntil. `email` is the address the account stored (password sign-up's contact email, or
+ * the provider's verified address); without one, no email. Never throws.
  */
 export function accountCreated(env: Env, account: string, email: string | null) {
   return afterAnswer(async () => {
-    const to = email;
-    if (!to) return;
-    if (!env.PLATFORM_QUEUE) return off('PLATFORM_QUEUE is not bound');
-    const job: Envelope = {
-      v: 1,
-      kind: 'account_welcome',
-      repo_id: '',
-      job_id: 'welcome',
-      workspace: account,
-      to,
-    };
+    if (!email) return;
+    const platform = platformOf(env);
+    if (typeof platform?.accountCreated !== 'function') {
+      if (!warnedOff)
+        console.warn(JSON.stringify({ event: 'email.off', reason: 'no platform binding' }));
+      warnedOff = true;
+      return;
+    }
     try {
-      await env.PLATFORM_QUEUE.send(job);
+      await platform.accountCreated(account);
     } catch (e: any) {
       const error = String(e?.message ?? e).slice(0, 200);
       console.error(JSON.stringify({ event: 'email.welcome.enqueue_failed', error }));
@@ -56,95 +55,61 @@ export function accountCreated(env: Env, account: string, email: string | null) 
   });
 }
 
-function config(env: Env) {
-  const missing: string[] = (['EMAIL_FROM', 'EMAIL_CONTACT', 'WEB_ORIGIN'] as const).filter(
-    (name) => !env[name]?.trim(),
-  );
-  if (!env.RESEND_API_KEY) missing.unshift('RESEND_API_KEY');
-  if (missing.length) return off(`missing ${missing.join(', ')}`);
-  return {
-    from: env.EMAIL_FROM as string,
-    contact: env.EMAIL_CONTACT as string,
-    origin: (env.WEB_ORIGIN as string).replace(/\/+$/, ''),
-  };
-}
+const LINK_INVALID =
+  'This confirmation link is invalid, used or expired. Ask for a new one in Settings.';
+const REFUSED: Record<string, [string, string, number]> = {
+  limited: ['RATE_LIMITED', 'You asked for several emails today. Try again tomorrow.', 429],
+  verified: ['ALREADY_VERIFIED', 'Your email address is already confirmed.', 409],
+  no_email: ['NO_EMAIL', 'Add an email address first.', 409],
+  same: ['SAME_EMAIL', 'That is already your email address.', 409],
+};
 
-/** The Resend key from the Secrets Store, at send time; never logged. */
-async function resendKey(env: Env) {
-  try {
-    const key = (await env.RESEND_API_KEY?.get())?.trim();
-    if (key) return key;
-  } catch {
-    // The store's error is not logged: only that the key could not be read.
-  }
-  off('RESEND_API_KEY is empty or unreadable');
-}
-
-/** Seconds before delivery `attempts + 1`: 30 s, 2 min, 8 min. */
-const backoff = (attempts: number) => 30 * 4 ** Math.max(0, attempts - 1);
-
-/** Resend answers worth repeating: its own faults, rate limits and an in-flight duplicate. */
-function transient(status: number, name: unknown) {
-  return (
-    status >= 500 || status === 429 || (status === 409 && name === 'concurrent_idempotent_requests')
-  );
-}
-
-/**
- * The queue job: sends the welcome email unless it was sent. `{ retry }` asks the queue to
- * redeliver after that many seconds; a permanent failure is logged and settles the job.
- */
-export async function welcomeJob(
+/** `/api/auth/<action>` for `email`, `email/resend` and `email/verify`. */
+export async function emailRoute(
+  req: Request,
   env: Env,
-  envelope: Envelope,
-  attempts: number,
-  send: typeof fetch = fetch,
-): Promise<{ retry?: number }> {
-  const settings = config(env);
-  const account = envelope.workspace;
-  const to = envelope.to;
-  if (!settings || !account || !to) return {};
-  if ((await workspace(env, account, { op: 'welcome_state' })).sent) return {};
-  const key = await resendKey(env);
-  if (!key) return {};
-  const email = renderWelcome(settings);
-  const failed = (detail: Record<string, unknown>) => {
-    if (attempts < MAX_ATTEMPTS && detail.transient) return { retry: backoff(attempts) };
-    console.error(
-      JSON.stringify({ event: 'email.welcome.failed', to: maskAddress(to), attempts, ...detail }),
-    );
-    return {};
-  };
-  let answer: Response;
-  try {
-    answer = await send(RESEND_EMAILS, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${key}`,
-        'content-type': 'application/json',
-        // Per account, never the address itself.
-        'idempotency-key': `welcome/${await sha(account)}`,
-      },
-      body: JSON.stringify({
-        from: settings.from,
-        to: [to],
-        reply_to: settings.contact,
-        subject: email.subject,
-        text: email.text,
-        html: email.html,
-      }),
-    });
-  } catch (e: any) {
-    return failed({ transient: true, error: String(e?.message ?? e).slice(0, 200) });
+  action: string,
+  principal: () => Promise<Principal | null>,
+): Promise<Response> {
+  if (action === 'email/verify') {
+    // Only the page's button: opening the link (a GET, or a mail scanner) confirms nothing.
+    if (req.method !== 'POST') return error('NOT_FOUND', 'Unknown authentication route', 404);
+    if (
+      env.AUTH_LIMITER &&
+      !(await env.AUTH_LIMITER.limit({ key: req.headers.get('cf-connecting-ip') ?? 'local' }))
+        .success
+    )
+      return error('RATE_LIMITED', 'Wait before trying again', 429);
+    const body = await readJson(req);
+    const account =
+      typeof body.account === 'string' ? normalizeAccountIdentifier(body.account) : null;
+    const token =
+      typeof body.token === 'string' && /^[0-9a-f]{64}$/.test(body.token) ? body.token : null;
+    if (!account || !token) return error('INVALID_TOKEN', LINK_INVALID, 400);
+    const result = await workspace(env, account, {
+      op: 'email_verify',
+      token_hash: await sha(token),
+    }).catch(() => ({ verified: false })); // no such account
+    return result.verified
+      ? response({ verified: true })
+      : error('INVALID_TOKEN', LINK_INVALID, 400);
   }
-  if (answer.ok) {
-    await workspace(env, account, { op: 'welcome_sent' });
-    return {};
+  const known =
+    (action === 'email' && ['GET', 'POST'].includes(req.method)) ||
+    (action === 'email/resend' && req.method === 'POST');
+  if (!known) return error('NOT_FOUND', 'Unknown authentication route', 404);
+  const who = await principal();
+  if (!who) return error('UNAUTHORIZED', 'Sign in to manage your email address', 401);
+  if (req.method === 'GET') {
+    const status = await workspace(env, who.workspace, { op: 'email_status' });
+    return response({ email: status.email ?? null, verified: Boolean(status.verified) });
   }
-  const body = await answer.json<{ name?: string }>().catch(() => ({}) as { name?: string });
-  return failed({
-    transient: transient(answer.status, body.name),
-    status: answer.status,
-    name: body.name,
-  });
+  const change = action === 'email' ? contactEmail((await readJson(req)).email) : undefined;
+  const platform = platformOf(env);
+  if (typeof platform?.verifyEmail !== 'function')
+    return error('EMAIL_UNAVAILABLE', 'Email is not available right now', 503);
+  const outcome = await platform.verifyEmail(who.workspace, change);
+  if (outcome.sent) return response({ sent: true });
+  const [code, message, status] = REFUSED[outcome.reason] ?? ['EMAIL_REFUSED', 'Not sent', 409];
+  return error(code, message, status);
 }

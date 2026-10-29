@@ -5,7 +5,8 @@
 //! the adapter redacts and fits the document, `platform_transcript`, and writes it to R2
 //! before posting, so a stored transcript fills an absent `transcript_ref`), and optionally
 //! the coding session's own id (`session_id`), which ties one session's records together
-//! across commits. Only the commit's pusher (the principal that recorded it) or the
+//! across commits, and optionally its clone's fetch efficiency (`fetched_bytes` against
+//! `read_bytes`). Only the commit's pusher (the principal that recorded it) or the
 //! repository owner may post one: anyone else could attribute work to a session that did
 //! not do it. A summary holding a credential is refused, as a committed file would be.
 use super::auth::Actor;
@@ -55,6 +56,18 @@ pub(super) fn shown_model(stored: &Value) -> Value {
         .as_str()
         .and_then(real_model)
         .map_or(Value::Null, |m| json!(m))
+}
+
+/// An optional byte count (`fetched_bytes`, `read_bytes`): a non-negative safe integer.
+fn byte_count(c: &Value, key: &str) -> Result<Value> {
+    match &c[key] {
+        Value::Null => Ok(Value::Null),
+        v => v
+            .as_u64()
+            .filter(|n| *n <= (1u64 << 53))
+            .map(|n| json!(n))
+            .ok_or_else(|| bad(&format!("{key} must be a byte count"))),
+    }
 }
 
 fn hex_digest(s: &str) -> bool {
@@ -109,8 +122,9 @@ pub fn stored_transcript(column: &Value) -> Result<Value> {
 }
 
 /// `repo_session_record`: `{commit, cli, model?, summary, prompt_digest?, transcript_ref?,
-/// read_set_digest?, session_id?, transcript?, dry_run?}`. The same record posted again
-/// answers the first one; `dry_run` checks a record (or finds it kept) without keeping it.
+/// read_set_digest?, session_id?, transcript?, fetched_bytes?, read_bytes?, dry_run?}`. The
+/// same record posted again answers the first one; `dry_run` checks a record (or finds it
+/// kept) without keeping it.
 pub fn record<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     whole_repository(actor)?;
     let id = object_id(c, "commit")?;
@@ -149,6 +163,8 @@ pub fn record<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     })?;
     let prompt = optional(c, "prompt_digest", 64, hex_digest)?;
     let reads = optional(c, "read_set_digest", 64, hex_digest)?;
+    let fetched = byte_count(c, "fetched_bytes")?;
+    let read_bytes = byte_count(c, "read_bytes")?;
     for (field, text) in [
         ("summary", Some(summary)),
         ("model", model.as_str()),
@@ -197,9 +213,10 @@ pub fn record<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
         return Ok(json!({ "commit": id, "dry_run": true }));
     }
     db.query(
-        "INSERT INTO sessions(commit_id,cli,model,summary,prompt_digest,transcript_ref,read_set_digest,recorded_by,at,session_id,transcript) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO sessions(commit_id,cli,model,summary,prompt_digest,transcript_ref,read_set_digest,recorded_by,at,session_id,transcript,fetched_bytes,read_bytes) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
         &[json!(id.hex()), json!(cli), model, json!(summary), prompt, transcript, reads,
-          json!(actor.principal), json!(number(c, "now")?), session_id, json!(stored)],
+          json!(actor.principal), json!(number(c, "now")?), session_id, json!(stored), fetched,
+          read_bytes],
     )?;
     let session = db.query("SELECT last_insert_rowid() AS id", &[])?[0]["id"].clone();
     Ok(json!({ "commit": id, "session": session }))
@@ -212,7 +229,7 @@ pub fn list<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     rows::recorded(db, &id)?;
     let mut sessions = db.query(
         "SELECT id,cli,model,summary,prompt_digest,transcript_ref,read_set_digest,recorded_by,at,\
-         session_id,transcript FROM sessions WHERE commit_id=? ORDER BY id",
+         session_id,transcript,fetched_bytes,read_bytes FROM sessions WHERE commit_id=? ORDER BY id",
         &[json!(id.hex())],
     )?;
     for session in &mut sessions {

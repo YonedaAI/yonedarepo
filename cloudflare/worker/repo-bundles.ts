@@ -25,8 +25,11 @@ const INDEX_OBJECTS = 5_000;
 const LOCATE_IDS = 2_000;
 /** Authority calls in flight (they do not count against R2's six). */
 const LOCATE_WIDTH = 4;
-/** Ranged reads in flight, leaving room under the six for other reads. */
+/** Ranged reads in flight, leaving room under the six for other reads; when every range
+ * is small (a file's versions read one by one, as for blame), as many as R2 takes at once:
+ * those reads wait out their round trips, not their bytes. */
 const READ_WIDTH = 3;
+const SMALL_READ_WIDTH = 6;
 /** Neighbours closer than this are read in one range, of at most RANGE bytes. */
 const GAP = 64 * 1024;
 /** The gap bridged where reads are many and sequential (a clone's walk and pack): a ranged
@@ -246,18 +249,34 @@ export async function readLocated(
   const sorted = [...located].sort((a, b) =>
     a.bundle === b.bundle ? a.at - b.at : a.bundle < b.bundle ? -1 : 1,
   );
-  const ranges: { bundle: string; start: number; end: number; members: Location[] }[] = [];
+  // A neighbour joins a range only while the bytes bridged stay within what the range
+  // wants (or GAP): sparse objects among large ones (a file's versions between the files
+  // of each commit) are read on their own, at most about twice what is wanted, while a
+  // dense run (a clone's) still comes in one read.
+  type Range = { bundle: string; start: number; end: number; members: Location[]; wanted: number };
+  const ranges: Range[] = [];
   for (const l of sorted) {
     const last = ranges.at(-1);
     const start = l.at - HEADER;
     const end = l.at + l.size;
-    if (last && last.bundle === l.bundle && start - last.end <= gap && end - last.start <= range) {
+    const bridged = last ? Math.max(0, start - last.end) : 0;
+    const wanted = (last?.wanted ?? 0) + HEADER + l.size;
+    const waste = last ? last.end - last.start - last.wanted + bridged : 0;
+    if (
+      last &&
+      last.bundle === l.bundle &&
+      bridged <= gap &&
+      waste <= Math.max(GAP, wanted) &&
+      end - last.start <= range
+    ) {
       last.end = Math.max(last.end, end);
       last.members.push(l);
-    } else ranges.push({ bundle: l.bundle, start, end, members: [l] });
+      last.wanted = wanted;
+    } else ranges.push({ bundle: l.bundle, start, end, members: [l], wanted: HEADER + l.size });
   }
   const out = new Map<string, Uint8Array>();
-  await inWidth(ranges, READ_WIDTH, async (r) => {
+  const small = ranges.every((r) => r.end - r.start <= SMALL_RANGE);
+  await inWidth(ranges, small ? SMALL_READ_WIDTH : READ_WIDTH, async (r) => {
     const object = await timed('bundle.read', () =>
       env.OBJECTS.get(bundleKey(repo, r.bundle), {
         range: { offset: r.start, length: r.end - r.start },

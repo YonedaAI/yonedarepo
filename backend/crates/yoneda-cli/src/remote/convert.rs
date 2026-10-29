@@ -8,7 +8,7 @@ use super::map::CommitMap;
 use crate::api::Api;
 use crate::error::{Error, Result};
 use crate::git::Git;
-use crate::snapshot;
+use crate::snapshot::{self, Filter};
 use serde_json::Value;
 use std::collections::{HashMap, HashSet};
 use yoneda_core::git_object::{Commit, ObjectId, ObjectKind, Signature, TzOffset, write_pack};
@@ -84,15 +84,17 @@ pub struct Converter<'a> {
     pub api: &'a Api,
     pub git: &'a Git,
     pub map: &'a mut CommitMap,
+    pub filter: &'a Filter,
     cache: HashMap<String, Info>,
 }
 
 impl<'a> Converter<'a> {
-    pub fn new(api: &'a Api, git: &'a Git, map: &'a mut CommitMap) -> Self {
+    pub fn new(api: &'a Api, git: &'a Git, map: &'a mut CommitMap, filter: &'a Filter) -> Self {
         Self {
             api,
             git,
             map,
+            filter,
             cache: HashMap::new(),
         }
     }
@@ -158,7 +160,7 @@ impl<'a> Converter<'a> {
         }
         let order = self.ancestry(head).await?;
         let trees: Vec<String> = order.iter().map(|(_, info)| info.tree.clone()).collect();
-        snapshot::fetch_trees(self.api, self.git, &trees).await?;
+        snapshot::fetch_trees(self.api, self.git, &trees, self.filter).await?;
         let mut built: HashMap<String, String> = HashMap::new();
         let mut objects = Vec::new();
         for (id, info) in &order {
@@ -226,7 +228,8 @@ impl<'a> Converter<'a> {
             .collect();
         let pack = write_pack(&objects)
             .map_err(|e| Error::new(format!("building a pack: {}", e.message)))?;
-        self.git.unpack(&pack)
+        // Stand-ins for the promisor's commits, kept with them in a lazy clone.
+        self.git.add_pack(&pack, self.filter.lazy())
     }
 }
 

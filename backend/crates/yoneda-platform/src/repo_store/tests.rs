@@ -299,6 +299,17 @@ fn commit_review_check_land_and_time_travel() {
         .map(|c| c["commit"].as_str().unwrap())
         .collect();
     assert_eq!(ids, vec![child.as_str(), root.as_str()]);
+    // A page from a commit of the history: that commit and its first parents.
+    let from = h.ok(OWNER, json!({"op":"repo_log","ref":"main","from":root}));
+    assert_eq!(from["commits"][0]["commit"], json!(root));
+    assert_eq!(from["commits"].as_array().unwrap().len(), 1);
+    assert_eq!(
+        code(h.run(
+            OWNER,
+            json!({"op":"repo_log","ref":"main","from":"e".repeat(40)})
+        )),
+        "NOT_FOUND"
+    );
     let entries = h.ok(OWNER, json!({"op":"repo_txlog"}))["entries"].clone();
     assert_eq!(entries[1]["paths"].as_array().unwrap().len(), 2);
     assert_eq!(entries[1]["read_set"], json!(["src/"]));
@@ -1642,6 +1653,7 @@ mod git_shallow;
 mod hooks;
 mod land_cas;
 mod land_shapes;
+mod landed_tickets;
 mod lfs;
 mod lfs_sweep;
 mod members;
@@ -1652,6 +1664,7 @@ mod orgs;
 mod pushed;
 mod quarantine;
 mod rebase;
+mod ref_chain;
 mod releases;
 mod secrets;
 mod self_review;

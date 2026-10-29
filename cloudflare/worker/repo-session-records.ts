@@ -26,6 +26,8 @@ export async function recordSession(ctx: RepoContext, a: Json): Promise<Json> {
     transcript_ref: a.transcript_ref ?? null,
     read_set_digest: a.read_set_digest ?? null,
     session_id: a.session_id ?? null,
+    fetched_bytes: a.fetched_bytes ?? null,
+    read_bytes: a.read_bytes ?? null,
   };
   if (a.transcript === undefined || a.transcript === null) return ctx.call(record);
   const { document, transcript } = compute({ op: 'session_transcript', transcript: a.transcript });

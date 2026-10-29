@@ -1,6 +1,6 @@
 // The Home's activity row (D1 `platform_activity`): marked touched when a ref moves or a
 // session is recorded, so the next account view re-reads that repository's authority
-// (account-activity.ts).
+// (platform-account-activity.ts).
 import type { Env } from './types';
 
 /** A ref moved or a session was recorded: the next Home view re-reads the repository.

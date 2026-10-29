@@ -1,7 +1,7 @@
 //! Snapshot-consistent reads. `at` pins a log version; refs at a past version are rebuilt
 //! by replaying the hash-chained log, so time travel also verifies history integrity.
 use super::{
-    land::gates,
+    land_gates::gates,
     rows::{self, Settings, branch_ref, current_version, object_id},
 };
 use crate::storage::SqlStore;
@@ -85,12 +85,17 @@ pub fn snapshot<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     )
 }
 
-/// First-parent history from a branch head, newest first.
+/// First-parent history from a branch head, newest first; with `from` (a recorded commit),
+/// from that commit instead, so a client pages a long history 200 commits a request rather
+/// than one generation per object fetch.
 pub fn log<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let version = at(db, c)?;
     let refname = branch_ref(c)?;
     let limit = c["limit"].as_u64().unwrap_or(50).clamp(1, 200);
-    let mut next = refs_at(db, c, version)?.remove(&refname);
+    let mut next = match c.get("from").filter(|v| !v.is_null()) {
+        Some(_) => Some(rows::recorded(db, &object_id(c, "from")?)?.id),
+        None => refs_at(db, c, version)?.remove(&refname),
+    };
     let mut commits = Vec::new();
     while let Some(id) = next {
         if commits.len() as u64 >= limit {

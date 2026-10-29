@@ -13,6 +13,10 @@ export type SessionRecord = {
   read_set_digest: string | null;
   /** The coding session's own id (`opencode:<id>`, `claude-code:<id>`); null on older records. */
   session_id: string | null;
+  /** Bytes the session's clone fetched from the platform; null when not reported. */
+  fetched_bytes?: number | null;
+  /** Bytes of the files the session's agent read; null when not reported. */
+  read_bytes?: number | null;
   recorded_by: string;
   at: number;
   /** The commit message's first line. */
@@ -175,6 +179,18 @@ export function transcriptUrl(ref: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+const mib = (bytes: number) => (bytes / 1024 / 1024).toFixed(bytes < 1024 * 1024 ? 2 : 1);
+
+/** `fetched 0.42 of 0.10 MiB read (4.2×)`: what the session's clone fetched against what
+ * its agent read; null when the record has no tally. */
+export function fetchEfficiency(s: Pick<SessionRecord, 'fetched_bytes' | 'read_bytes'>) {
+  const fetched = s.fetched_bytes;
+  if (fetched == null) return null;
+  const read = s.read_bytes ?? 0;
+  const ratio = read > 0 ? ` (${(fetched / read).toFixed(1)}×)` : '';
+  return `fetched ${mib(fetched)} of ${mib(read)} MiB read${ratio}`;
 }
 
 /** `token:agent` → `agent (token)`, `user:ws` → `ws`: who recorded, as people read it. */

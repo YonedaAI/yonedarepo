@@ -374,3 +374,52 @@ fn a_forks_lfs_downloads_name_its_parent_and_its_quota_is_its_own() {
         Value::Null
     );
 }
+
+/// A parent writer moved the mirror off the fork branch's head; carrying the unchanged
+/// branch again moves the mirror back (the head keeps its first landing there).
+#[test]
+fn carrying_again_moves_a_moved_mirror_back_to_the_fork_head() {
+    let (parent, root) = seeded();
+    let fork = fork(&parent);
+    let feature = fork
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("src/fork.rs", "forked\n")]),
+            json!([]),
+        )
+        .unwrap();
+    set_branch(&fork, "feature", &feature);
+    let id = feature.as_str();
+    let pushed = json!([{"commit": id, "data_b64": STANDARD.encode(&fork.objects.borrow()[id].1),
+        "touches": [{"path": "src/fork.rs", "op": "add", "old_blob": null,
+            "new_blob": yoneda_core::git_object::hash_object(ObjectKind::Blob, b"forked\n"), "mode": "blob"}],
+        "objects": [{"id": id, "kind": "commit"}], "check": false}]);
+    parent.ok(FORKER, json!({"op":"repo_record_pushed","commits":pushed}));
+    let mirror = || {
+        parent.run(
+            FORKER,
+            json!({"op":"repo_fork_mirror","fork":FORK_ID,"branch":"feature","commit":feature}),
+        )
+    };
+    let first = mirror().unwrap();
+    let branch = format!("forks/{FORK_ID}/feature");
+    parent.ok(
+        AGENT,
+        json!({"op":"repo_branch_set","ref":branch,"commit":root,"expected":feature}),
+    );
+    let again = mirror().unwrap_or_else(|e| panic!("{e}"));
+    assert!(
+        again["version"].as_u64() > first["version"].as_u64(),
+        "{again}"
+    );
+    let refs = parent.ok(OWNER, json!({"op":"repo_refs"}));
+    assert_eq!(refs["refs"][format!("refs/heads/{branch}")], json!(feature));
+    let shown = parent.ok(OWNER, json!({"op":"repo_commit","commit":feature}));
+    assert_eq!(
+        shown["landings"].as_array().map(Vec::len),
+        Some(1),
+        "{shown}"
+    );
+}

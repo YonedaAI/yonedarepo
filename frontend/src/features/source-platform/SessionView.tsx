@@ -4,7 +4,13 @@
 // may name where one is kept, linked when it is a web address).
 import { ArrowLeft } from 'lucide-react';
 import { linkTo, type Navigate } from '../shell/useRoute';
-import { recorder, type SessionDetail, summaryText, transcriptUrl } from './agentModel';
+import {
+  fetchEfficiency,
+  recorder,
+  type SessionDetail,
+  summaryText,
+  transcriptUrl,
+} from './agentModel';
 import { SessionDeliveries } from './SessionDeliveries';
 import { SessionTranscript } from './SessionTranscript';
 import { Failure, Loading } from './SourceStatus';
@@ -39,6 +45,7 @@ export function SessionView({
     );
   const { session: s, commit, reads, reads_truncated, related } = loaded.data as SessionDetail;
   const transcript = transcriptUrl(s.transcript_ref);
+  const efficiency = fetchEfficiency(s);
   const commitLink = (sha: string, text: string) => (
     <a {...linkTo({ view: 'commit', repo, commit: sha }, navigate)}>
       <code>{shortSha(sha)}</code> {text}
@@ -77,6 +84,8 @@ export function SessionView({
             'not recorded'
           )}
         </dd>
+        <dt>Fetch efficiency</dt>
+        <dd>{efficiency ?? 'not recorded'}</dd>
         {s.prompt_digest && (
           <>
             <dt>Prompts digest</dt>

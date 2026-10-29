@@ -16,8 +16,8 @@ const MAX_LIMIT: u64 = 200;
 /// Declared reads shown with one session.
 const MAX_READS: usize = 500;
 const SESSION_COLUMNS: &str = "s.id,s.commit_id,s.cli,s.model,s.summary,s.prompt_digest,\
-    s.transcript_ref,s.read_set_digest,s.recorded_by,s.at,s.session_id,s.transcript,c.message,\
-    c.read_set";
+    s.transcript_ref,s.read_set_digest,s.recorded_by,s.at,s.session_id,s.transcript,\
+    s.fetched_bytes,s.read_bytes,c.message,c.read_set";
 
 fn limit(c: &Value) -> u64 {
     c["limit"]
@@ -59,6 +59,7 @@ pub(super) fn session(row: &Value) -> Result<Value> {
         "transcript_ref": row["transcript_ref"], "read_set_digest": row["read_set_digest"],
         "recorded_by": row["recorded_by"], "at": row["at"], "session_id": row["session_id"],
         "transcript": stored_transcript(&row["transcript"])?,
+        "fetched_bytes": row["fetched_bytes"], "read_bytes": row["read_bytes"],
         "subject": subject(&row["message"]), "reads": reads.len(),
     }))
 }

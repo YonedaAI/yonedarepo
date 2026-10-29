@@ -127,6 +127,7 @@ pub fn record<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Val
         "UPDATE refs SET commit_id=?,version=? WHERE name=?",
         &[json!(head.hex()), json!(version), json!(refname)],
     )?;
+    super::ref_chain::advance(db, &refname, &head)?;
     super::projection::target(db, &refname, &head, version, now)?;
     Ok(json!({
         "ref": refname, "projected": steps.len(), "head": head, "version": version,

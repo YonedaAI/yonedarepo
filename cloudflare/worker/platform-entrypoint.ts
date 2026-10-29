@@ -2,10 +2,11 @@
 // TCP and the tunnel gateway's keep-alive cron; platform-ssh-gateway.ts), plus its own queue
 // jobs (checks, object and ref projection, derived data, webhooks, account emails). No agent runs, harnesses, providers or budgets.
 import { WorkerEntrypoint } from 'cloudflare:workers';
-import { welcomeJob } from './account-email';
 import { withWaitUntil } from './background';
+import { queueWelcome, verifyEmail } from './platform-email-verify';
 import { platformFetch } from './platform-routes';
 import { sshFrontDoor, sshKeepAlive } from './platform-ssh-gateway';
+import { welcomeJob } from './platform-welcome-email';
 import { purgeRepository } from './repo-admin';
 import { executeCheckRun } from './repo-checks';
 import { deriveAfterLanding } from './repo-derived';
@@ -60,6 +61,16 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
   /** Inbound TCP: Git over SSH, through the SSH gateway container. */
   connect(socket: Socket) {
     return sshFrontDoor(socket, this.env);
+  }
+  /** A new account (RPC from the front Worker, or SELF): queues its welcome email. Not on
+   * any HTTP route, so only Workers bound to this one can ask. */
+  accountCreated(account: string) {
+    return queueWelcome(this.env, account);
+  }
+  /** Settings' resend (no `change`) or address change for a signed-in account (RPC, as
+   * above): a new confirmation token and email, or why not. */
+  verifyEmail(account: string, change?: string) {
+    return verifyEmail(this.env, account, change);
   }
   /** Every minute: keeps the SSH gateway (and its tunnel) running. */
   scheduled() {
