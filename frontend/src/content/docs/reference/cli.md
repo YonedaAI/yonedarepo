@@ -65,7 +65,7 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
                  [--transcript <file>] uploads it (Claude Code JSONL, opencode messages or
                                       {context, turns}); readers see it, credentials redacted
   session list [<sha>]                the coding sessions recorded for a commit (default HEAD)
-  context [--max-bytes <n>] [--json]  what a new coding session here should know: recent
+  context [--max-bytes <n>]           what a new coding session here should know: recent
                                       sessions, open changes, landing rules, contracts
 ```
 
@@ -85,6 +85,13 @@ declared reads (closure coverage: landing refuses a push whose reads changed mea
 offline checkouts (`yoneda clone`, kept for existing scripts)
   clone <repo-id> [dir] [--origin <url>]
   status [--brief] | sync [--land | --attempt <id> [--mcp-url <url>]] | pull
+```
+
+## Git
+
+```text
+--json (any command but help, push and hook): one JSON document on stdout, schema
+yoneda.cli.<command>.v1 (schemas/v1), or yoneda.cli.error.v1 with a stable code.
 ```
 
 ## Git
