@@ -1,19 +1,21 @@
 name: CI
-# The parts of `cargo xtask check` (the local gate) as parallel jobs, plus the runtime image,
-# then (pushes to dev only) the dev deploy + smoke. The deploy reuses the Wasm, frontend and
-# image these jobs built and tested (`deploy --prebuilt`, each artifact stamped with REVISION). Keep the job list in step with the `check`
-# arm in xtask/src/commands.rs. The deploy lives here because workflow_run, schedule and
-# workflow_dispatch triggers fire only for workflow files on the default branch (main).
+# The parts of `cargo xtask check` (the local gate) as parallel jobs, plus the runtime image
+# build. Keep the job list in step with the `check` arm in xtask/src/commands.rs. CI only
+# tests: dev deploys from the local checkout (`cargo xtask deploy --env dev`, AGENTS.md), so
+# a push to dev runs nothing here; run CI on dev by hand with workflow_dispatch.
 on:
-  push:
-    branches: [dev, main]
+  # Documentation-only changes (docs/, Markdown anywhere, the site's content) run nothing.
   pull_request:
+    paths-ignore: ['docs/**', '**/*.md', 'frontend/src/content/**']
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', '**/*.md', 'frontend/src/content/**']
+  workflow_dispatch:
 permissions:
   contents: read
-# Push runs never wait for or cancel each other (a shared group queued them 13 min behind
-# the previous push); deploy-dev deploys only the tip of dev. PR runs supersede.
+# One run per branch or PR: a newer push cancels the older run of the same ref.
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 # An explicit bash shell runs with -eo pipefail, so `cmd | tee` fails when cmd fails.
 defaults:
@@ -26,14 +28,14 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Registry, git deps and target/, keyed on the lockfiles and toolchain; saved after every
+      # run (pruned of this workspace's own artifacts) so later runs build only what changed.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: rust-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: rust-${{ runner.os }}-
+          shared-key: rust
+          workspaces: |
+            .
+            backend/crates/yoneda-ssh-gateway
       - run: cargo xtask layers
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
@@ -49,23 +51,17 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cargo/bin/worker-build
-            target
-          key: wasm-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: wasm-${{ runner.os }}-
+          shared-key: wasm
+          # The pinned build tool lives in ~/.cargo/bin, which the cache keeps.
+          cache-bin: true
       - name: Install Worker build tool
         run: command -v worker-build >/dev/null || cargo install worker-build --version 0.8.7 --locked
       - name: worker-build --release
         working-directory: backend/crates/yoneda-worker
         run: worker-build --release
-      # `deploy --prebuilt` refuses an output whose REVISION is not the deployed commit.
-      - name: Stamp the build with its commit
-        run: echo "$GITHUB_SHA" > backend/crates/yoneda-worker/build/REVISION
+      # The workerd suites below test this build.
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: worker-wasm
@@ -74,7 +70,7 @@ jobs:
           retention-days: 1
 
   # The workerd suite split by file across four runners (vitest --shard), each with the
-  # config's own worker cap; deploy-dev needs every shard. workers-total adds up the counts.
+  # config's own worker cap. workers-total adds up the counts.
   workers:
     name: Workers suite (workerd ${{ matrix.shard }}/4)
     needs: wasm
@@ -164,38 +160,16 @@ jobs:
       - run: pnpm test:superfan
       - run: pnpm test:runtime
       - run: pnpm test:frontend
-      # The dev deploy installs this build: point its Git, CLI and MCP lines at the dev platform
-      # host (infra/api_origin.rs; `deploy --prebuilt` refuses a build for another origin).
-      - name: Frontend build for the dev platform API
-        run: |
-          host=$(jq -re '.workers[] | select(.role == "platform") | .config.routes[] | select(.custom_domain) | .pattern' infra/envs/dev.json)
-          VITE_YONEDA_API_ORIGIN="https://$host" pnpm --dir frontend build
-      - name: Stamp the frontend build with its commit
-        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
-        run: echo "$GITHUB_SHA" > frontend/dist/REVISION
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
-        with:
-          name: frontend-dist
-          path: frontend/dist
-          if-no-files-found: error
-          retention-days: 1
+      - run: pnpm --dir frontend build
 
-  # Layers are cached in the GitHub Actions cache, so unchanged layers rebuild instantly and
-  # come out byte-identical (the registry push then skips them). On pushes to dev the tested
-  # image is saved for deploy-dev, which pushes it instead of letting wrangler rebuild it.
+  # The CheckContainer image must build. Layers are cached in the GitHub Actions cache, so an
+  # unchanged image takes about a minute; the image is checked, not kept (no load, no push).
   image:
     name: Runtime image
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # The image is built in buildx, loaded into Docker and saved for the deploy: three copies of
-      # the ~2 GB image can overflow the runner's free disk, so drop preinstalled toolchains we never use.
-      - name: Free runner disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
-          df -h /
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - name: Build check image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
@@ -207,101 +181,6 @@ jobs:
           platforms: linux/amd64
           # The same flags wrangler builds with.
           provenance: false
-          load: true
-          tags: yonedarepo-runtime:ci
+          outputs: type=cacheonly
           cache-from: type=gha,scope=runtime
           cache-to: type=gha,scope=runtime,mode=max,ignore-error=true
-      - name: Save the tested image for the dev deploy
-        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
-        run: |
-          out="$RUNNER_TEMP/runtime-image"
-          mkdir -p "$out"
-          echo "$GITHUB_SHA" > "$out/REVISION"
-          docker image inspect --format '{{.Id}}' yonedarepo-runtime:ci > "$out/IMAGE_ID"
-          docker save yonedarepo-runtime:ci | zstd -q -T0 -3 -o "$out/image.tar.zst"
-          ls -lh "$out"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
-        with:
-          name: runtime-image
-          path: ${{ runner.temp }}/runtime-image
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 1
-
-  deploy-dev:
-    name: Deploy dev + smoke
-    needs: [rust, wasm, workers, suites, image]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    environment: dev
-    concurrency:
-      group: deploy-dev
-      cancel-in-progress: false
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Fetch the tip of dev for the deploy guard
-        run: git fetch --no-tags --depth=1 origin +dev:refs/remotes/origin/dev
-      # A newer push has its own CI run and deploy; skip quietly instead of failing the guard.
-      - name: Skip unless this commit is still the tip of dev
-        id: tip
-        run: |
-          if [ "$(git rev-parse HEAD)" = "$(git rev-parse refs/remotes/origin/dev)" ]; then
-            echo "current=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::$(git rev-parse --short HEAD) is no longer the tip of dev; its successor deploys."
-          fi
-      - uses: ./.github/actions/setup
-        if: steps.tip.outputs.current == 'true'
-      # dev fixes are usually deployed from the owner's Mac (`cargo xtask deploy --env dev`)
-      # before the push; when both Workers' /health already shows this commit, skip the rest
-      # with a summary line instead of redeploying (and rolling out) the same commit.
-      - name: Skip when dev already runs this commit
-        id: live
-        if: steps.tip.outputs.current == 'true'
-        run: cargo xtask live-check --env dev
-      - name: Write the dev secrets file (0600, outside the tree)
-        if: steps.live.outputs.deploy == 'true'
-        env:
-          OWNER_TOKEN: ${{ secrets.OWNER_TOKEN }}
-          VAULT_KEY: ${{ secrets.VAULT_KEY }}
-        run: |
-          install -d -m 700 ~/.config/yonedarepo
-          umask 077
-          printf 'OWNER_TOKEN=%s\nVAULT_KEY=%s\n' "$OWNER_TOKEN" "$VAULT_KEY" > ~/.config/yonedarepo/staging.env
-      # The tested outputs; xtask refuses any whose REVISION is not HEAD (fail closed).
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: steps.live.outputs.deploy == 'true'
-        with:
-          name: worker-wasm
-          path: ${{ runner.temp }}/prebuilt/worker-wasm
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: steps.live.outputs.deploy == 'true'
-        with:
-          name: frontend-dist
-          path: ${{ runner.temp }}/prebuilt/frontend-dist
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: steps.live.outputs.deploy == 'true'
-        with:
-          name: runtime-image
-          path: ${{ runner.temp }}/prebuilt/runtime-image
-      - name: Deploy dev
-        if: steps.live.outputs.deploy == 'true'
-        run: cargo xtask deploy --env dev --prebuilt "$RUNNER_TEMP/prebuilt" | tee "$RUNNER_TEMP/deploy.txt"
-      - name: Smoke
-        if: steps.live.outputs.deploy == 'true'
-        run: cargo xtask infra smoke --env dev | tee "$RUNNER_TEMP/smoke.txt"
-      # The deploy and smoke tables reach the job summary from xtask itself; on a failure
-      # before them, the last log lines do.
-      - name: Log tail on failure
-        if: failure()
-        run: |
-          set +e  # report whatever exists; a missing file is not a failure
-          { echo '### Deploy dev: log tail'; echo '```'; tail -n 20 "$RUNNER_TEMP/deploy.txt" 2>/dev/null; tail -n 20 "$RUNNER_TEMP/smoke.txt" 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-      - name: Remove the secrets file
-        if: always()
-        run: rm -f ~/.config/yonedarepo/staging.env
