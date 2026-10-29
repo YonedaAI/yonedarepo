@@ -193,4 +193,19 @@ fn shards_verify_what_they_record_and_only_the_platform_reaches_them() {
     )
     .unwrap();
     assert_eq!(elsewhere["record"], Value::Null);
+    // Which ids a shard holds, without content, for readers that ask every shard.
+    let absent = "0".repeat(40);
+    let held = on(
+        &s,
+        json!({"op": "store_staged_held", "ids": [built["commit"], absent]}),
+    )
+    .unwrap();
+    assert_eq!(held["held"], json!([built["commit"]]));
+    let none = on(
+        &other,
+        json!({"op": "store_staged_held", "ids": [built["commit"]]}),
+    )
+    .unwrap();
+    assert_eq!(none["held"], json!([]));
+    assert!(on(&s, json!({"op": "store_staged_held", "ids": []})).is_err());
 }
