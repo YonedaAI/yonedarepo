@@ -71,6 +71,7 @@ fn public_read(op: StoreOp) -> bool {
                 | R::AgentContext
                 | R::Changes
                 | R::ChangeShow
+                | R::ChangeGates
                 | R::CheckRun
                 | R::TagShow
                 | R::Releases

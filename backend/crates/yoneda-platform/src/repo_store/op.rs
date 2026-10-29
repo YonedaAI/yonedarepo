@@ -31,6 +31,7 @@ op_names! {
         ChangeComment = "repo_change_comment",
         ChangeCreate = "repo_change_create",
         ChangeDelete = "repo_change_delete",
+        ChangeGates = "repo_change_gates",
         ChangeRecords = "repo_change_records",
         ChangeReopen = "repo_change_reopen",
         ChangeShow = "repo_change_show",

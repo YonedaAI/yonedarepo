@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use yoneda_core::{Error, Result, git_object::ObjectId, txlog::TxKind};
 mod automation;
-pub use automation::{pauses, refuse_if_paused, state};
+pub use automation::{paused, pauses, refuse_if_paused, state};
 
 /// The one refusal every non-human caller gets, whatever its scopes or role.
 pub fn refusal() -> Error {

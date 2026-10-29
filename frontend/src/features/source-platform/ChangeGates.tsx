@@ -1,8 +1,8 @@
-// A change's landing gates and its actions: approve or reject the head, land it on its base
+// A change's reviews and actions (its gates are MergeGates, above it): approve or reject the head, land it on its base
 // (gated when the base is protected), close, reopen or delete (a closed change, by its
 // author or the owner). The server decides each one; the panel only offers what the status allows.
 import { useState } from 'react';
-import { type Conflict, ConflictList, GateSummary, ReviewButtons } from './CommitGates';
+import { type Conflict, ConflictList, ReviewButtons } from './CommitGates';
 import { type ChangeDetail, who } from './changeModel';
 import { useReadOnly } from './repoAccess';
 import { Failure } from './SourceStatus';
@@ -65,9 +65,6 @@ export function ChangeGates({
         <p className="source-change-banner">
           The branch <code>{change.branch}</code> no longer exists.
         </p>
-      )}
-      {commit && status !== 'landed' && (
-        <GateSummary gates={commit.gates} classes={commit.review_classes} />
       )}
       {commit && commit.reviews.length > 0 && (
         <ul className="source-reviews" aria-label="Reviews of the head commit">
