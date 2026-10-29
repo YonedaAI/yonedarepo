@@ -57,7 +57,7 @@ The call uses the platform Worker's own Secrets Store binding `REVIEW_MODEL_KEY`
 
 Use Rust from `rust-toolchain.toml`, Node 24, pnpm 11, Docker and `worker-build` 0.8.7. `cargo xtask doctor` checks installed commands and Docker availability. `cargo xtask setup` installs locked JS dependencies and creates an ignored owner token with private file permissions.
 
-`cargo xtask check` is the required local gate: Rust formatting, Clippy with warnings denied, native tests, the actual Wasm build, TypeScript/Biome, workerd integration tests and browser production build. It requires no Cloudflare login and no model calls.
+`cargo xtask check` is the required local gate: the crate layer table (`cargo xtask layers`, `xtask/layers.toml`), Rust formatting, Clippy with warnings denied, native tests, the actual Wasm build, TypeScript/Biome, workerd integration tests and browser production build. It requires no Cloudflare login and no model calls.
 
 `cargo xtask dev` builds assets and Wasm, applies D1 migrations locally and starts Wrangler. For hot reload, run `pnpm --dir frontend dev` beside it. Cloudflare capabilities that need remote services (Artifacts, the check container, model checks) are proven only by the live kit, never by local tests.
 
