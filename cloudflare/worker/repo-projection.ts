@@ -82,7 +82,10 @@ const PACK_OBJECTS = 400;
  * read back. (Separate pushes could land a child before its parent and be refused.)
  */
 async function storeAhead(call: (c: Json) => Promise<Json>, objects: RepoObjects, commits: Json[]) {
-  const raw = await objects.raw(commits.flatMap((c) => c.objects));
+  const raw = await objects.raw(
+    commits.flatMap((c) => c.objects),
+    owners(commits),
+  );
   const byId = new Map(raw.map((o) => [o.id, o]));
   const bodies = commits.map((c) => {
     const own = (c.objects as Json[]).map((o) => byId.get(o.id));
@@ -98,6 +101,12 @@ async function storeAhead(call: (c: Json) => Promise<Json>, objects: RepoObjects
     throw new Error(`${missing.length} commits are not readable from the object store`);
   await call({ op: 'repo_objects_stored', commits: commits.map((c) => c.commit) });
 }
+
+/** The commit each planned object came with: a staged one is in that commit's shard. */
+const owners = (commits: Json[]) =>
+  new Map<string, string>(
+    commits.flatMap((c) => (c.objects as Json[]).map((o) => [o.id, c.commit] as [string, string])),
+  );
 
 /** Commits from the front of `commits` holding at least `limit` objects. */
 function front(commits: Json[], limit: number) {
@@ -139,7 +148,7 @@ export async function projectRefs(env: Env, envelope: Envelope, attempt = REFUSE
       commits = commits.slice(n);
     }
     const wanted = commits.flatMap((c) => c.objects);
-    const raw = await objects.raw(wanted);
+    const raw = await objects.raw(wanted, owners(commits));
     // `raw` answers each object once; commits may share one (a batch's tree is its change's).
     if (raw.length < new Set(wanted.map((o) => o.id)).size)
       throw new Error(`Objects for ${row.refname} are not readable`);
