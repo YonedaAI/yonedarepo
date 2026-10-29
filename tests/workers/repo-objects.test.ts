@@ -191,9 +191,9 @@ it('checks a blob read from the store of record against its id without Rust comp
   // `git hash-object` of "hello\n".
   expect(await gitObjectId('blob', new TextEncoder().encode('hello\n'))).toBe('ce013625030ba8dba906f756967f9e9ca394464a');
   const owner = { cookie: await signup('pagesowner') };
-  // 40 blobs of 1 MiB: a page stops at its response budget (4 MiB of base64) and every blob
-  // still arrives, in order, across pages.
-  const files = Array.from({ length: 40 }, (_, i) => file(`c${i}.md`, `${i}`.padEnd(1024 * 1024, 'x')));
+  // 12 blobs of 1 MiB: a page stops at its response budget (4 MiB of base64) and every blob
+  // still arrives, in order, across pages. (40 took over CI's 60 s on its 4-vCPU runners.)
+  const files = Array.from({ length: 12 }, (_, i) => file(`c${i}.md`, `${i}`.padEnd(1024 * 1024, 'x')));
   const created = await api('/repos', owner, { body: { name: 'pages', policy: { required_checks: [], approvals: 0 }, files, author } });
   const repo = `/repos/${created.body.id}`;
   const tree = await api(`${repo}/objects`, owner, { body: { objects: [{ id: created.body.tree, kind: 'tree' }] } });
@@ -210,5 +210,5 @@ it('checks a blob read from the store of record against its id without Rust comp
     after = page.body.next;
   }
   expect(got.map((o) => o.id)).toEqual(blobs.map((b: any) => b.id));
-  expect(pages).toBeGreaterThanOrEqual(10);
+  expect(pages).toBeGreaterThanOrEqual(3);
 });

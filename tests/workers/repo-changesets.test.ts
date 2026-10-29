@@ -72,7 +72,14 @@ it('owner fast-forward landing and its readback wait for the projected commit', 
   // The readback is the projected Git commit at the latest version, never a stale head.
   const snapshot = (await api(`${repo}/refs`, owner, {}, changesets)).body;
   expect(snapshot.version).toBe(3);
-  const owned = await commitOn(repo, owner, [file('d.txt', 'd\n')], changesets);
+  // Built on the head the readback named: a commit on `ref: main` may begin from the published
+  // head, which can trail the log by up to its refresh bound, and fast-forward-only refuses that.
+  const owned = await api(
+    `${repo}/commits`,
+    owner,
+    { body: { parent: snapshot.refs['refs/heads/main'], base_version: snapshot.version, changes: [file('d.txt', 'd\n')], message: 'change', author } },
+    changesets,
+  );
   const ff = await api(`${repo}/land`, owner, { body: { ref: 'main', commit: owned.body.commit, fast_forward_only: true } }, changesets);
   expect(ff.status).toBe(200);
   expect((await api(`${repo}/refs`, owner, {}, changesets)).body.refs['refs/heads/main']).toBe(owned.body.commit);

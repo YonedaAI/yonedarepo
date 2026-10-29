@@ -90,7 +90,8 @@ it('serves every hot read source without an authority call', async () => {
       if (content !== null) expect(reply.body.content, name).toBe(content);
     }
     if (name === 'tree') expect(replies[0].body.entries).toHaveLength(10);
-    if (name === 'refs') expect(replies[0].body).toEqual({ version, refs: { 'refs/heads/main': commit } });
+    // `annotated` maps annotated tags to their tag objects (none here).
+    if (name === 'refs') expect(replies[0].body).toEqual({ version, refs: { 'refs/heads/main': commit }, annotated: {} });
     if (name === 'commit-blob' || name === 'version-blob') expect(replies[0].body.commit).toBe(commit);
   }
   expect(ops).toEqual([]);
@@ -193,7 +194,7 @@ it("serves refs through the land combiner's head role", async () => {
   const target = { ...scoped, LAND_COMBINERS: bindings.LAND_COMBINERS } as unknown as Env;
   const { owner, repo, id, commit, version } = await seededRepo('refsrole', target);
   const role = bindings.LAND_COMBINERS.get(bindings.LAND_COMBINERS.idFromName(`${id}#head`)) as unknown as RefsHolder;
-  expect(await role.refs(id, 0)).toEqual({ version, refs: { 'refs/heads/main': commit } });
+  expect(await role.refs(id, 0)).toEqual({ version, refs: { 'refs/heads/main': commit }, annotated: {} });
   const moved = await api(`${repo}/branches`, owner, { body: { ref: 'topic', commit, expected: null } }, target);
   expect((await role.refs(id, moved.body.version)).refs['refs/heads/topic']).toBe(commit);
   expect((await api(`${repo}/refs`, owner, {}, target)).body.refs['refs/heads/topic']).toBe(commit);
