@@ -81,9 +81,6 @@ export function App() {
     if (!session.loading && !session.error) signedInHint(session.authenticated);
   }, [session.loading, session.error, session.authenticated]);
 
-  const site = siteView(route, session, signedInHint());
-  if (site) return <SiteRoot site={site} session={session} navigate={navigate} />;
-
   async function created(result: Created) {
     platform.reload();
     activity.reload();
@@ -114,6 +111,9 @@ export function App() {
     activity.reload();
     void session.discover();
   };
+  // The public site (its own pages, and `/` while signed out) renders in its own frame.
+  const site = siteView(route, session, signedInHint());
+  if (site) return <SiteRoot site={site} session={session} navigate={navigate} />;
   return (
     <div className={`app${collapsed ? ' sidebar-collapsed' : ''}${menuOpen ? ' menu-open' : ''}`}>
       <a className="skip-link" href="#workspace">
