@@ -105,6 +105,21 @@ fn the_welcome_marker_is_set_once_and_only_on_an_account() {
     );
 }
 #[test]
+fn the_welcome_state_names_the_contact_email_the_job_sends_to() {
+    let db = NativeStore::memory().unwrap();
+    let state = |db: &NativeStore| call(db, json!({"op":"welcome_state"})).unwrap();
+    assert_eq!(state(&db), json!({"sent":false,"email":null}));
+    call(&db, json!({"op":"signup","username":"alice","email":"Alice@Example.com","password":"a long test password","salt":"01".repeat(16),"recovery_hash":"b".repeat(64),"session_hash":"a".repeat(64)})).unwrap();
+    assert_eq!(
+        state(&db),
+        json!({"sent":false,"email":"alice@example.com"})
+    );
+    // An account made without one (before the field, or OAuth with no verified address).
+    let db = NativeStore::memory().unwrap();
+    signup(&db);
+    assert_eq!(state(&db), json!({"sent":false,"email":null}));
+}
+#[test]
 fn recovery_rotates_password_code_and_revokes_all_existing_sessions() {
     let db = NativeStore::memory().unwrap();
     signup(&db);

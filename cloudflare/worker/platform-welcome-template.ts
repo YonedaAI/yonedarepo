@@ -1,6 +1,7 @@
-// The welcome email's content: one plain-text and one HTML part, rendered from config only
-// (no account data, so one rendering serves every recipient). The HTML is inline-styled with
-// no backgrounds, images or tracking, so it reads the same in light and dark mail clients.
+// The welcome email's content (platform side): one plain-text and one HTML part, rendered
+// from config only (no account data, so one rendering serves every recipient). The HTML is
+// inline-styled with no backgrounds, images or tracking, so it reads the same in light and
+// dark mail clients.
 
 export type WelcomeConfig = {
   /** The website (`https://yonedarepo.com`): the docs links and the footer. */

@@ -41,8 +41,12 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
         }
         // Whether this account was signed up (the platform invites members by account).
         SigninOp::AccountExists => Ok(json!({"exists": account(db).is_ok()})),
-        // The welcome email's sent marker; the send itself happens outside, from a queue job.
-        SigninOp::WelcomeState => Ok(json!({"sent": get(db, "welcome_email").is_ok()})),
+        // The welcome email's sent marker and the contact email it goes to (none on an
+        // account made without one); the send itself happens outside, from a queue job.
+        SigninOp::WelcomeState => Ok(json!({
+            "sent": get(db, "welcome_email").is_ok(),
+            "email": account(db).map(|a| a["email"].clone()).unwrap_or(Value::Null),
+        })),
         SigninOp::WelcomeSent => {
             account(db)?;
             if get(db, "welcome_email").is_err() {

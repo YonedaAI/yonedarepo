@@ -3,11 +3,16 @@
 // browser app on yonedarepo.com and www, account sign-in (/api/auth/*) and the owner session,
 // and proxies /api/v1 to the production platform through the PLATFORM service binding on the
 // same origin. Accounts live in the platform's WorkspaceAuthority (WORKSPACES script binding).
-// It has no stores or containers; it only sends new accounts' welcome-email jobs to the platform-jobs queue. Secrets, set from stdin:
+// It has no stores, containers or queues of its own; a new account's welcome email is asked of the platform over PLATFORM. Secrets, set from stdin:
 // OWNER_TOKEN  production owner credential (~/.config/yonedarepo/prod.env)
 // The exact www route keeps www on this Worker; the apex is a Custom Domain.
 // v4 deletes the agent layer's Durable Object classes (RepositoryAuthority, LiveRoom,
 // AgentSandbox) and their data; the agent-run code is on the agent-run-workspaces branch.
+// Sign-in with GitHub and Google (worker/oauth.ts): optional secrets GITHUB_OAUTH_CLIENT_ID /
+// GITHUB_OAUTH_CLIENT_SECRET (a GitHub OAuth App) and GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET
+// (a Google OAuth web client). A provider whose two secrets are unset is off: hidden on the sign-in
+// page, its /auth/<provider>/* routes answer 404. Callback URLs: https://yonedarepo.com/auth/github/callback
+// and https://yonedarepo.com/auth/google/callback. Deploy uploads them when the secrets file has them.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
@@ -75,14 +80,6 @@
     "region": "aws:us-east-1"
   },
   "preview_urls": false,
-  "queues": {
-    "producers": [
-      {
-        "binding": "PLATFORM_QUEUE",
-        "queue": "yonedarepo-prod-platform-jobs"
-      }
-    ]
-  },
   "ratelimits": [
     {
       "name": "AUTH_LIMITER",

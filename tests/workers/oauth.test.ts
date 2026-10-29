@@ -7,17 +7,20 @@ import { exportJWK, generateKeyPair, SignJWT } from 'jose';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { frontFetch } from '../../cloudflare/worker/front-routes';
 import type { Env } from '../../cloudflare/worker/types';
+import { workspace } from '../../cloudflare/worker/workspace';
 
 const bindings = env as unknown as Env;
-/** Welcome-email jobs the account-created hook enqueued (the queue is faked here). */
+/** Welcome emails the account-created hook asked the platform for (its entrypoint method is
+ * faked here), with the contact email the platform's job would send to. */
 const welcomed: { workspace?: string; to?: string }[] = [];
 const configured: Env = {
   ...bindings,
-  PLATFORM_QUEUE: {
-    send: async (job: { kind: string; workspace?: string; to?: string }) => {
-      if (job.kind === 'account_welcome') welcomed.push({ workspace: job.workspace, to: job.to });
+  PLATFORM: {
+    accountCreated: async (account: string) => {
+      const state = await workspace(bindings, account, { op: 'welcome_state' });
+      welcomed.push({ workspace: account, to: state.email });
     },
-  } as unknown as Env['PLATFORM_QUEUE'],
+  } as unknown as Env['PLATFORM'],
   GITHUB_OAUTH_CLIENT_ID: 'gh-client',
   GITHUB_OAUTH_CLIENT_SECRET: 'gh-secret',
   GOOGLE_OAUTH_CLIENT_ID: 'google-client.apps.googleusercontent.com',
