@@ -55,6 +55,7 @@ pub fn compute(c: Value) -> Result<Value> {
         "push_combine" => crate::platform_push::push_combine(&c),
         "push_split" => crate::platform_push::push_split(&c),
         "staged_push" => crate::platform_push::staged_push(&c),
+        "carrier_push" => crate::platform_push::carrier_push(&c),
         "branch_push" => crate::platform_push::branch_push(&c),
         "parse_objects" => crate::platform_push::parse_objects(&c),
         "build_commit" => crate::platform_build::build_commit(&c),

@@ -2,7 +2,9 @@
 // become visible drift instead of forced updates.
 import { expect, it, vi } from 'vitest';
 import { projectObjects, projectRefs } from '../../cloudflare/worker/repo-projection';
-import { parseStore } from '../../cloudflare/worker/repo-objects';
+import { platformFetch } from '../../cloudflare/worker/platform-routes';
+import { compute } from '../../cloudflare/worker/repo-compute';
+import { fromBase64, parseStore, RepoObjects, toBase64 } from '../../cloudflare/worker/repo-objects';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, artifacts, author, bindings, file, pushes, queued, receivePacks, refusals, scoped, signup, usePlatformFixture } from './repo-fixture';
 
@@ -129,4 +131,79 @@ it('projects a long backlog in one receive-pack per chunk, never a refused push'
   expect(warn.mock.calls.filter((c) => String(c[0]).startsWith('object store push attempt'))).toEqual([]);
   for (const commit of landedCommits) expect(artifacts.get(`yr-${created.body.id}`)?.get(commit)?.kind).toBe('commit');
   expect((await api(repo, owner)).body.projections[0]).toMatchObject({ status: 'ok', projected_commit: landedCommits.at(-1) });
+});
+
+type Raw = { id: string; kind: 'commit' | 'tree' | 'blob'; data: Uint8Array };
+const text = new TextEncoder();
+const hex = (bytes: Uint8Array) => [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
+async function object(kind: Raw['kind'], data: Uint8Array): Promise<Raw> {
+  const whole = new Uint8Array([...text.encode(`${kind} ${data.length}\0`), ...data]);
+  return { id: hex(new Uint8Array(await crypto.subtle.digest('SHA-1', whole))), kind, data };
+}
+const tree = (entries: [string, string, string][]) =>
+  object('tree', new Uint8Array(entries.flatMap(([mode, name, id]) => [...text.encode(`${mode} ${name}\0`), ...(id.match(/../g) ?? []).map((h) => Number.parseInt(h, 16))])));
+
+it('projects one huge pushed commit in bounded packs: its files under carriers, then the commit', async () => {
+  const on = { ...scoped, PUSH_BUNDLES: 'on' } as unknown as Env;
+  const owner = { cookie: await signup('huge') };
+  const created = await api('/repos', owner, { body: { name: 'h', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', '0\n')], author } }, on);
+  const id = created.body.id as string;
+  await drain(on);
+  const { token } = (await api(`/repos/${id}/tokens`, owner, { body: { name: 'git', scopes: ['read', 'write', 'land'] } }, on)).body;
+  const main = (await api(`/repos/${id}/refs`, owner, {}, on)).body.refs['refs/heads/main'] as string;
+  // One commit of 1,500 distinct files across 30 directories.
+  const blobs: Raw[] = [];
+  const dirs: [string, string, string][] = [];
+  for (let d = 0; d < 30; d++) {
+    const entries: [string, string, string][] = [];
+    for (let k = d * 50; k < d * 50 + 50; k++) {
+      const blob = await object('blob', text.encode(`file ${k}: ${'x'.repeat(k % 97)} ${k * 7919}\n`));
+      blobs.push(blob);
+      entries.push(['100644', `${k}.txt`, blob.id]);
+    }
+    const t = await tree(entries.sort(([, a], [, b]) => (a < b ? -1 : 1)));
+    blobs.push(t);
+    dirs.push(['40000', `d${String(d).padStart(2, '0')}`, t.id]);
+  }
+  const root = await tree(dirs);
+  const who = `${author.name} <${author.email}> 1700000000 +0000`;
+  const commit = await object('commit', text.encode(`tree ${root.id}\nparent ${main}\nauthor ${who}\ncommitter ${who}\n\nhuge\n`));
+  const { push_b64 } = compute({
+    op: 'branch_push',
+    refname: 'refs/heads/main',
+    old: main,
+    new: commit.id,
+    objects: [commit, root, ...blobs].map((o) => ({ id: o.id, kind: o.kind, data_b64: toBase64(o.data) })),
+  });
+  const pushed = await platformFetch(
+    new Request(`https://yoneda/git/${id}.git/git-receive-pack`, { method: 'POST', headers: { authorization: `Basic ${btoa(`git:${token}`)}` }, body: fromBase64(push_b64) }),
+    on,
+  );
+  expect(new TextDecoder().decode(await pushed.arrayBuffer())).toContain('ok refs/heads/main');
+
+  const before = pushes.length;
+  const sizes: number[] = [];
+  const push = vi.spyOn(RepoObjects.prototype, 'push');
+  push.mockImplementation(async function (this: RepoObjects, body: Uint8Array) {
+    sizes.push(body.length);
+    return this.store.push(body);
+  });
+  try {
+    await drain(on);
+  } finally {
+    push.mockRestore();
+  }
+  // No pack carries the whole commit: the largest is at most about a third of them all.
+  const total = sizes.reduce((n, s) => n + s, 0);
+  expect(sizes.length).toBeGreaterThanOrEqual(4);
+  expect(Math.max(...sizes)).toBeLessThan(total / 3);
+  const held = artifacts.get(`yr-${id}`);
+  expect(held?.get(commit.id)?.kind).toBe('commit');
+  for (const b of blobs) expect(held?.get(b.id)?.kind, b.id).toBe(b.kind);
+  // Every carrier ref made is deleted once the commit holds its files.
+  const made = pushes.slice(before).filter((p) => p.startsWith(`${zero} `)).map((p) => p.split(' ')[2]);
+  const deleted = new Set(pushes.slice(before).filter((p) => p.split(' ')[1] === zero).map((p) => p.split(' ')[2]));
+  expect(made.filter((r) => deleted.has(r))).toHaveLength(4);
+  expect(made.filter((r) => !deleted.has(r))).toEqual([`refs/yoneda/c/${commit.id}`]);
+  expect((await api(`/repos/${id}`, owner, {}, on)).body.projections[0]).toMatchObject({ status: 'ok', projected_commit: commit.id });
 });

@@ -26,6 +26,8 @@ pub const STAGE_LIMIT: usize = 1024 * 1024;
 pub const STAGE_OBJECTS: usize = 256;
 const PENDING_BYTES: usize = 8 * 1024 * 1024;
 const READ_IDS: usize = 64;
+/// Ids one `held` answer covers: it names ids, not content, so it can take many.
+const HELD_IDS: usize = 1_000;
 /// A drain request older than this is presumed lost (a dropped queue message) and resent.
 const DISPATCH_STALE_MS: i64 = 30_000;
 
@@ -277,6 +279,27 @@ pub fn read<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         });
     }
     Ok(json!({ "objects": objects }))
+}
+
+/// Which of `ids` (at most HELD_IDS) are staged here, without their content: a reader that
+/// does not know which shard staged an object asks every shard this, then reads the
+/// content from the shards that hold it.
+pub fn held<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+    let ids = c["ids"]
+        .as_array()
+        .filter(|ids| !ids.is_empty() && ids.len() <= HELD_IDS)
+        .ok_or_else(|| bad("ids must list 1 to 1000 object ids"))?;
+    let ids = ids
+        .iter()
+        .map(|id| ObjectId::parse(id.as_str().unwrap_or_default()).map(|id| id.hex()))
+        .collect::<Result<Vec<_>>>()?;
+    let rows = db.query(
+        "SELECT DISTINCT id FROM staged_objects WHERE id IN (SELECT value FROM json_each(?)) \
+         AND commit_id IN (SELECT commit_id FROM object_projections)",
+        &[json!(json!(ids).to_string())],
+    )?;
+    let held: Vec<&Value> = rows.iter().map(|row| &row["id"]).collect();
+    Ok(json!({ "held": held }))
 }
 
 /// A staged row's object, verified against its id.
