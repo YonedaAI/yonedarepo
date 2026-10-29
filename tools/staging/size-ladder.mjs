@@ -16,8 +16,11 @@
 // platform call at all.
 //
 // Limits it runs into (written before any live run):
-// - push: 64 MiB of pack, 40,000 objects, 16 MiB per object (planned at 40 MiB / 30,000);
-// - fetch: at most 40,000 objects (full and partial clones of any rung here exceed it);
+// - push: 64 MiB of pack held, 40,000 objects, 100 MiB per file (planned at 40 MiB /
+//   30,000; files over 8 MiB stream and must arrive whole: pushed with
+//   core.bigFileThreshold=8m);
+// - fetch: no object cap; at most 40,000 object-store reads (bundled history is read in
+//   ranges) and 15 minutes;
 // - Worker isolate 128 MB (a 64 MiB push is verified in memory); 50,000 subrequests;
 // - repository DO SQLite 10 GB (bundle index rows, commit records and path changes grow
 //   with objects and commits); stored clone packs (PACK_CACHE) in 8 MiB parts, 4 per repo.
@@ -207,7 +210,8 @@ async function importRun(rung, dir, n) {
   const start = main ? checkpoints.indexOf(main) + 1 : 0;
   assert.ok(!main || start > 0, `${name}: main ${main} is no checkpoint of ${rung.commit}`);
   for (let k = start; k < checkpoints.length; k++) {
-    const pushed = git(['push', '-q', `${values.api}/git/${entry.id}.git`, `${checkpoints[k]}:refs/heads/main`], secret, dir);
+    // Files over 8 MiB go whole, never as deltas of other versions (the server streams them).
+    const pushed = git(['-c', 'core.bigFileThreshold=8m', 'push', '-q', `${values.api}/git/${entry.id}.git`, `${checkpoints[k]}:refs/heads/main`], secret, dir);
     entry.pushes[k] = { ok: pushed.ok, wall_ms: pushed.wall_ms, error: pushed.error, metrics: pushed.metrics };
     save();
     if (!pushed.ok) break;
@@ -280,7 +284,7 @@ try {
     if (values['plan-only']) {
       const planned = (await plan(rung, dir)).length;
       const refused = rungState(rung).refused_push;
-      console.log(`${rung.name}: ${planned} pushes planned${refused ? `; push ${refused} carries a blob over 16 MiB` : ''}`);
+      console.log(`${rung.name}: ${planned} pushes planned${refused ? `; push ${refused} carries a file over 100 MiB` : ''}`);
       continue;
     }
     for (let n = 1; n <= runs; n++) if (only.has('import')) await step(rung, 'import', n, () => importRun(rung, dir, n));

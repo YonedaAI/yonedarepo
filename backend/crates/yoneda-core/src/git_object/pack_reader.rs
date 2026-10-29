@@ -5,7 +5,7 @@
 //! they inflate and only small ones are cached as likely delta bases. Blobs over the
 //! limits' spill size are not held at all (`take_spilled`), so they cannot be delta bases,
 //! and deltas resolve to at most that size.
-use super::delta::apply_delta;
+use super::delta::{apply_delta, delta_result_size};
 use super::pack::inflate_exact;
 use super::pack_header::EntryKind;
 use super::pack_walk::{Content, PackWalker, Spill, Walked};
@@ -207,6 +207,7 @@ impl PackReader {
     }
 
     fn resolve_delta(&mut self, index: usize, base: usize, delta: &[u8]) -> Result<()> {
+        self.held_result(delta)?;
         let source = self.content_at(base)?;
         let data = apply_delta(&source, delta, self.max_delta_result)?;
         let kind = self.slots[base]
@@ -241,17 +242,20 @@ impl PackReader {
         Ok(())
     }
 
+    /// Refuses a delta resolving past what is held in memory (`max_delta_result`).
+    fn held_result(&self, delta: &[u8]) -> Result<()> {
+        let size = delta_result_size(delta)?;
+        if size > self.max_delta_result {
+            return Err(large_delta(size));
+        }
+        Ok(())
+    }
+
     /// An entry's own inflated payload (a whole object, or a delta's instructions).
     fn inflated(&self, index: usize) -> Result<Vec<u8>> {
         let slot = &self.slots[index];
         if slot.spilled {
-            return Err(Error::new(
-                "TOO_LARGE",
-                format!(
-                    "A delta is based on a file of {} MiB, which is not held in memory; push large files whole (git -c pack.window=0 push) or with Git LFS",
-                    slot.size >> 20
-                ),
-            ));
+            return Err(large_delta(slot.size));
         }
         let bytes = self
             .walker
@@ -292,9 +296,22 @@ impl PackReader {
         };
         while let Some(next) = chain.pop() {
             let delta = self.inflated(next)?;
+            self.held_result(&delta)?;
             data = Rc::new(apply_delta(&data, &delta, self.max_delta_result)?);
             self.cache.put(next, data.clone());
         }
         Ok(data)
     }
+}
+
+/// A delta on or to a file too large to hold (a pack carrying several versions of it):
+/// refused, with the client setting that sends such files whole.
+fn large_delta(size: usize) -> Error {
+    Error::new(
+        "TOO_LARGE",
+        format!(
+            "The push sends a file of {} MiB as a delta of another version; files over 8 MiB must arrive whole: push with `git -c core.bigFileThreshold=8m push`, or use Git LFS",
+            size >> 20
+        ),
+    )
 }
