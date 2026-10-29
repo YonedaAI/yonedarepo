@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { SourceApiError, sourceApi } from './sourceApi';
+import { type ApiInit, SourceApiError, sourceApi } from './sourceApi';
 
 export type Loaded<T> = {
   data?: T;
@@ -12,8 +12,9 @@ export type Loaded<T> = {
   reload: () => void;
 };
 
-/** GETs `path` (null skips), cancelling stale reads when the path changes. */
-export function useSource<T = any>(path: string | null): Loaded<T> {
+/** GETs `path` (null skips), cancelling stale reads when the path changes. `base` reads the
+ * managed agents Worker instead of the platform. */
+export function useSource<T = any>(path: string | null, base?: ApiInit['base']): Loaded<T> {
   const [state, setState] = useState<{
     data?: T;
     error?: string;
@@ -35,7 +36,7 @@ export function useSource<T = any>(path: string | null): Loaded<T> {
       errorStatus: undefined,
       code: undefined,
     }));
-    sourceApi<T>(path, { signal: controller.signal })
+    sourceApi<T>(path, { signal: controller.signal, base })
       .then((data) => setState({ data, loading: false }))
       .catch((e) => {
         if (controller.signal.aborted) return;
@@ -48,7 +49,7 @@ export function useSource<T = any>(path: string | null): Loaded<T> {
         });
       });
     return () => controller.abort();
-  }, [path, tick]);
+  }, [path, base, tick]);
   const reload = useCallback(() => setTick((t) => t + 1), []);
   return { ...state, reload };
 }

@@ -147,13 +147,16 @@ describe('agent pages', () => {
     for (const route of [
       { view: 'agents', repo, section: 'sessions' },
       { view: 'agents', repo, section: 'memories' },
+      { view: 'agents', repo, section: 'managed' },
+      { view: 'agents', repo, section: 'runs' },
+      { view: 'agents', repo, section: 'runs', agent: 'code-review' },
       { view: 'agents', repo, section: 'contracts' },
       { view: 'agents', repo, section: 'pins' },
       { view: 'agents', repo, section: 'bisects' },
       { view: 'session', repo, id: 7 },
     ] as const) {
-      const url = formatSourceRoute(route);
-      expect(parseSourceRoute(url, '')).toEqual(route);
+      const [path, query = ''] = formatSourceRoute(route).split('?');
+      expect(parseSourceRoute(path, query ? `?${query}` : '')).toEqual(route);
       // Sessions and Memories have their own sidebar pages; the rest are Agent tools.
       expect(routeTab(route)).toBe(
         route.view === 'session' || route.section === 'sessions'
@@ -189,12 +192,27 @@ describe('agent tool tabs', () => {
     const html = render('pins');
     const tabs = [...html.matchAll(/href="([^"]+)"[^>]*>([^<]+)</g)].map((m) => [m[1], m[2]]);
     expect(tabs).toEqual([
+      [`/source/${repo}/agents/managed`, 'Managed'],
       [`/source/${repo}/agents/contracts`, 'Contracts'],
       [`/source/${repo}/agents/pins`, 'Kept commits'],
       [`/source/${repo}/agents/bisects`, 'Find a breaking commit'],
     ]);
     expect(html).toContain('aria-label="Agent tools"');
     expect(html).toMatch(/aria-current="page" href="[^"]+\/pins"/);
+  });
+
+  it('keep the Managed tab current on its runs list', () => {
+    const html = render('runs');
+    expect(html).toMatch(/aria-current="page" href="[^"]+\/agents\/managed"/);
+    expect(formatSourceRoute({ view: 'agents', repo, section: 'runs', agent: 'code-review' })).toBe(
+      `/source/${repo}/agents/runs?agent=code-review`,
+    );
+    // The agent filter belongs to the runs list only.
+    expect(parseSourceRoute(`/source/${repo}/agents/managed`, '?agent=code-review')).toEqual({
+      view: 'agents',
+      repo,
+      section: 'managed',
+    });
   });
 
   it('leave Sessions and Memories to their own sidebar pages, with no tab row', () => {

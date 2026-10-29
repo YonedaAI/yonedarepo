@@ -13,6 +13,7 @@ export const REPO_SETTINGS_SECTIONS = [
   'checks',
   'secrets',
   'webhooks',
+  'plugins',
   'members',
   'tokens',
   'lfs',
@@ -43,7 +44,8 @@ export type SourceRoute =
   | { view: 'change'; repo: string; number: number }
   | { view: 'releases'; repo: string }
   | { view: 'release'; repo: string; tag: string }
-  | { view: 'agents'; repo: string; section: AgentSection }
+  /** `agent` filters the managed `runs` list. */
+  | { view: 'agents'; repo: string; section: AgentSection; agent?: string }
   | { view: 'session'; repo: string; id: number }
   | { view: 'context'; repo: string }
   | { view: 'repo-settings'; repo: string; section: RepoSettingsSection };
@@ -51,8 +53,9 @@ export type SourceRoute =
 /** The repository's sidebar pages. Overview is the code browser (`files`, `overview`);
  * Commits holds `history`, `transactions`, `branches` and `commit`; Changes holds `change`;
  * Releases holds `release`; Sessions holds the agent sessions and each `session`; Memories
- * the agent memories; Agent tools (`agents`) the other agent records (contracts, pins,
- * bisects). Each page has one sidebar entry, highlighted on every route it holds. */
+ * the agent memories; Agent tools (`agents`) the managed agents and their runs, then the
+ * other agent records (contracts, pins, bisects). Each page has one sidebar entry,
+ * highlighted on every route it holds. */
 export type RepoTab =
   | 'overview'
   | 'changes'
@@ -121,7 +124,11 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
     const id = Number(rest[1]);
     if (rest[0] === 'sessions' && /^[1-9][0-9]*$/.test(rest[1] ?? '') && Number.isSafeInteger(id))
       return { view: 'session', repo, id };
-    return { view: 'agents', repo, section: isAgentSection(rest[0]) ? rest[0] : 'sessions' };
+    const section = isAgentSection(rest[0]) ? rest[0] : 'sessions';
+    const agent = params.get('agent');
+    return section === 'runs' && agent
+      ? { view: 'agents', repo, section, agent }
+      : { view: 'agents', repo, section };
   }
   // A tag may hold slashes, as segments or encoded.
   if (view === 'releases')
@@ -170,8 +177,12 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'change') return `${base}/changes/${route.number}`;
   if (route.view === 'releases') return `${base}/releases`;
   if (route.view === 'release') return `${base}/releases/${encodeURIComponent(route.tag)}`;
-  if (route.view === 'agents')
-    return route.section === 'sessions' ? `${base}/agents` : `${base}/agents/${route.section}`;
+  if (route.view === 'agents') {
+    if (route.section === 'sessions') return `${base}/agents`;
+    const agent =
+      route.section === 'runs' && route.agent ? `?agent=${encodeURIComponent(route.agent)}` : '';
+    return `${base}/agents/${route.section}${agent}`;
+  }
   if (route.view === 'session') return `${base}/agents/sessions/${route.id}`;
   if (route.view === 'context') return `${base}/context`;
   const query = new URLSearchParams();
@@ -231,7 +242,7 @@ export function tabRoute(tab: RepoTab, repo: string): SourceRoute {
   if (tab === 'changes') return { view: 'changes', repo };
   if (tab === 'releases') return { view: 'releases', repo };
   if (tab === 'sessions') return { view: 'agents', repo, section: 'sessions' };
-  if (tab === 'agents') return { view: 'agents', repo, section: 'contracts' };
+  if (tab === 'agents') return { view: 'agents', repo, section: 'managed' };
   if (tab === 'context') return { view: 'context', repo };
   if (tab === 'memories') return { view: 'agents', repo, section: 'memories' };
   if (tab === 'search') return { view: 'search', repo, query: '' };

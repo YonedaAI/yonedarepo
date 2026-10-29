@@ -7,11 +7,24 @@ import usageSource from '../../../../backend/crates/yoneda-cli/src/command/usage
 import tools from '../../../../backend/crates/yoneda-core/src/platform_tools.json';
 import transcriptSource from '../../../../backend/crates/yoneda-core/src/transcript.rs?raw';
 import scanSource from '../../../../backend/crates/yoneda-platform/src/secret_scan.rs?raw';
+import {
+  AGENT_MARGIN,
+  MANAGED_AGENTS,
+  STARTING_CREDIT_USD,
+} from '../../../../shared/managed-agents';
 import { nextTheme, THEMES } from '../shell/theme';
 import { formatSourceRoute, parseSourceRoute } from '../source-platform/sourceRoute';
 import { BLOG_POSTS, COMPANY_PAGES, DOCS_NAV, DOCS_PAGES, LEGAL_PAGES } from './content';
 import { FEATURES } from './features';
-import { formatUsd, MARGIN, METERS, meterPrice, PRICING, roundUpClean } from './pricing';
+import {
+  agentUsageRows,
+  formatUsd,
+  MARGIN,
+  METERS,
+  meterPrice,
+  PRICING,
+  roundUpClean,
+} from './pricing';
 import { SiteFeatures } from './SiteFeatures';
 import { SiteHome } from './SiteHome';
 import { SiteLayout } from './SiteLayout';
@@ -145,6 +158,29 @@ describe('pricing', () => {
     expect(html).toContain('Enterprise');
     expect(html).toContain('href="mailto:privacy@yonedarepo.com"');
     expect(html).not.toMatch(/buy now|add (a )?card now|pay now/i);
+  });
+
+  it('prices agent usage at the provider rate × the same margin, from one credit', () => {
+    expect(AGENT_MARGIN).toBe(MARGIN);
+    expect(PRICING.startingCreditUsd).toBe(STARTING_CREDIT_USD);
+    const rows = agentUsageRows();
+    expect(rows.map((r) => r.model).sort()).toEqual(
+      [...new Set(MANAGED_AGENTS.map((a) => a.model))].sort(),
+    );
+    for (const row of rows) {
+      expect(row.input_price_per_million).toBeCloseTo(row.input_cost_per_million * MARGIN, 6);
+      expect(row.output_price_per_million).toBeCloseTo(row.output_cost_per_million * MARGIN, 6);
+      expect(row.agents.length).toBeGreaterThan(0);
+    }
+    const glm = rows.find((r) => r.model === 'glm-5.3-flash');
+    expect(glm).toMatchObject({ input_price_per_million: 0.195, output_price_per_million: 0.65 });
+    const html = render(createElement(SitePricing, { navigate }));
+    expect(html).toContain('Agent usage: pay as you go');
+    for (const row of rows) {
+      expect(html).toContain(row.model);
+      expect(html).toContain(formatUsd(row.output_price_per_million));
+    }
+    expect(html).toContain('agents pause at a $0');
   });
 });
 

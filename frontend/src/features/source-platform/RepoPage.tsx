@@ -175,6 +175,8 @@ export function RepoPage({
               <RepoAgents
                 repo={repo}
                 section={route.section}
+                agent={route.agent}
+                admin={owner}
                 branches={(data?.refs ?? [])
                   .filter((r) => r.name.startsWith('refs/heads/'))
                   .map((r) => r.name.slice('refs/heads/'.length))}

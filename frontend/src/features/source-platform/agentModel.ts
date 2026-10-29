@@ -157,7 +157,16 @@ export type Bisect = {
   remaining: number;
 };
 
-export const AGENT_SECTIONS = ['sessions', 'memories', 'contracts', 'pins', 'bisects'] as const;
+/** `managed` (the agents YonedaRepo runs) and its `runs` list lead the Agent tools page. */
+export const AGENT_SECTIONS = [
+  'sessions',
+  'memories',
+  'managed',
+  'runs',
+  'contracts',
+  'pins',
+  'bisects',
+] as const;
 export type AgentSection = (typeof AGENT_SECTIONS)[number];
 
 /** The sessions read for these filters, from the page after `before` when given. */

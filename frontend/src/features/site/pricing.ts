@@ -18,6 +18,13 @@
 // Requests, CPU, Durable Object calls and R2 operations are not metered: they are part of
 // the free platform.
 
+import {
+  type AgentRate,
+  defaultAgentRates,
+  MANAGED_AGENTS,
+  STARTING_CREDIT_USD,
+} from '../../../../shared/managed-agents';
+
 /** Price = Cloudflare cost × MARGIN, rounded up by `roundUpClean`, unless `price` is set. */
 export const MARGIN = 1.3;
 
@@ -95,8 +102,9 @@ export const METERS: Meter[] = [
 ];
 
 export const PRICING = {
-  /** Credit on a new account; no card is asked for. */
-  startingCreditUsd: 5,
+  /** Credit on a new account; no card is asked for. The managed agents grant the same
+   * amount (shared/managed-agents.ts), so there is one number. */
+  startingCreditUsd: STARTING_CREDIT_USD,
   /** Automatic top-up: when the balance falls below `belowUsd`, add `addUsd`. */
   topUp: { belowUsd: 5, addUsd: 20 },
   /** Where Enterprise enquiries go (a `mailto:` or https URL); the legal and privacy address
@@ -119,4 +127,17 @@ export function formatUsd(value: number): string {
   if (Number.isInteger(value)) return `$${value}`;
   const decimals = String(Number(value.toPrecision(6))).split('.')[1]?.length ?? 0;
   return `$${value.toFixed(Math.max(2, decimals))}`;
+}
+
+/** A model the managed agents use, with the agents that use it, as the pricing page lists it. */
+export type AgentUsageRow = AgentRate & { agents: string[] };
+
+/** Agent usage rates: each default model's provider rate × the agent margin, per million tokens. */
+export function agentUsageRows(): AgentUsageRow[] {
+  return defaultAgentRates().map((rate) => ({
+    ...rate,
+    agents: MANAGED_AGENTS.filter(
+      (a) => a.provider === rate.provider && a.model === rate.model,
+    ).map((a) => a.label),
+  }));
 }
