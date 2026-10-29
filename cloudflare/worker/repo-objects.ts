@@ -113,6 +113,12 @@ export class RepoObjects {
     return found;
   }
 
+  /** Every blob this repository (or a fork's parent) withholds, with its path. */
+  async withheldAll(): Promise<Withheld> {
+    const parent = this.inherited ? await this.inherited.withheld() : new Map();
+    return new Map([...parent, ...this.withheld]);
+  }
+
   /** Whether this repository (or a fork's parent) withholds any blob. */
   async withholdsAny() {
     return (

@@ -7,6 +7,7 @@
 // goes to a temporary key first (the id is known only once the last byte hashed) and is
 // streamed to its id: twice the bytes through R2, once per pushed file.
 
+import type { UploadSession } from './repo-git-sessions';
 import { ApiError, type Json } from './repo-ops';
 import { R2Parts } from './repo-r2-parts';
 import type { Env } from './types';
@@ -127,4 +128,26 @@ export function largeWarnings(stored: { id: string; size: number }[], commits: J
       (f) =>
         `warning: File ${paths.get(f.id) ?? f.id} is ${(f.size / 1048576).toFixed(2)} MB; this is larger than the recommended maximum file size of 50.00 MB. Consider Git Large File Storage (https://git-lfs.com).`,
     );
+}
+
+/** A large file's zlib stream for its pack entry, from its R2 body, never held whole: the
+ * session hashes its content (checked against its id at `largeEnd`) and the bytes written
+ * (into the pack's trailer). */
+export async function* deflated(session: UploadSession, file: LargeBody) {
+  const zlib = new CompressionStream('deflate');
+  const writer = zlib.writable.getWriter();
+  const none = new Uint8Array();
+  const feeding = (async () => {
+    for await (const chunk of file.body as unknown as AsyncIterable<Uint8Array>) {
+      session.largeData(chunk, none);
+      await writer.write(chunk);
+    }
+    await writer.close();
+  })();
+  feeding.catch(() => {});
+  for await (const packed of zlib.readable as unknown as AsyncIterable<Uint8Array>) {
+    session.largeData(none, packed);
+    yield packed;
+  }
+  await feeding;
 }
