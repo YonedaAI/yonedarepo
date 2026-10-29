@@ -95,9 +95,9 @@ pub(super) fn claim<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
 }
 
 /// `repo_quarantine_purged {claims: [{id, epoch}]}`: the claimed content is deleted. Each
-/// record still at its claim's epoch becomes purged (a session record's text, and its
-/// session's memories' text, are cleared here, in the same transaction); `purged` counts
-/// them.
+/// record still at its claim's epoch becomes purged (a session record's text and its
+/// session's memories' text, or the text of memories anchored to a blob, are cleared here,
+/// in the same transaction); `purged` counts them.
 pub(super) fn done<S: SqlStore>(db: &S, c: &Value, actor: &super::Actor) -> Result<Value> {
     let now = number(c, "now")?;
     let claims = c["claims"]
@@ -116,10 +116,13 @@ pub(super) fn done<S: SqlStore>(db: &S, c: &Value, actor: &super::Actor) -> Resu
         )?;
         let Some(row) = rows.first() else { continue };
         purged += 1;
-        if Target::parse(row["target_kind"].as_str().unwrap_or_default())? == Target::Session {
-            let id = row["target_id"].as_str().unwrap_or_default();
-            super::sessions::clear(db, id)?;
-            super::memories::clear(db, id)?;
+        let id = row["target_id"].as_str().unwrap_or_default();
+        match Target::parse(row["target_kind"].as_str().unwrap_or_default())? {
+            Target::Session => {
+                super::sessions::clear(db, id)?;
+                super::memories::clear(db, id)?;
+            }
+            Target::Blob => super::memories::clear_on_blob(db, id)?,
         }
     }
     Ok(json!({ "purged": purged }))
