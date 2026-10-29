@@ -5,7 +5,9 @@ use crate::platform_objects::object_json;
 use crate::storage::{bad, string};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use yoneda_core::git_object::{Commit, ObjectId, ObjectKind, hash_object, write_pack};
+use yoneda_core::git_object::{
+    Commit, FileMode, ObjectId, ObjectKind, TreeEntry, encode_tree, hash_object, write_pack,
+};
 use yoneda_core::transport::{
     combine_receive_pack_requests, hidden_ref, receive_pack_request, split_receive_pack_report,
 };
@@ -112,6 +114,45 @@ pub fn staged_push(c: &Value) -> Result<Value> {
     }))
 }
 
+/// A chunk of a commit too large for one pack (`objects`: raw blobs) pushed on its own: a
+/// carrier tree naming each blob by its id and a carrier commit of that tree keep them
+/// reachable under the carrier's hidden ref, so the store's connectivity check accepts the
+/// chunk and the commit's own push (its trees, which name the blobs) can follow. The
+/// carrier is the same for the same blobs, so a retried chunk repeats its push exactly.
+pub fn carrier_push(c: &Value) -> Result<Value> {
+    let mut objects = raw_objects(c)?;
+    if objects.is_empty() || objects.iter().any(|(k, _)| *k != ObjectKind::Blob) {
+        return Err(bad("A carrier holds one or more blobs"));
+    }
+    // One entry per blob (a chunk may name one twice).
+    let mut ids = std::collections::BTreeSet::new();
+    objects.retain(|(k, d)| ids.insert(hash_object(*k, d)));
+    let entries: Vec<TreeEntry> = ids
+        .into_iter()
+        .map(|id| TreeEntry {
+            name: id.hex(),
+            mode: FileMode::Blob,
+            id,
+        })
+        .collect();
+    let tree = encode_tree(&entries)?;
+    let tree_id = hash_object(ObjectKind::Tree, &tree);
+    let who = "YonedaRepo projection <projection@yoneda.invalid> 0 +0000";
+    let commit = format!("tree {tree_id}\nauthor {who}\ncommitter {who}\n\ncarrier\n").into_bytes();
+    let commit_id = hash_object(ObjectKind::Commit, &commit);
+    let mut packed: Vec<(ObjectKind, &[u8])> =
+        objects.iter().map(|(k, d)| (*k, d.as_slice())).collect();
+    packed.push((ObjectKind::Tree, &tree));
+    packed.push((ObjectKind::Commit, &commit));
+    let body = receive_pack_request(
+        &hidden_ref(&commit_id),
+        None,
+        commit_id,
+        &write_pack(&packed)?,
+    )?;
+    Ok(json!({ "push_b64": STANDARD.encode(body), "commit": commit_id }))
+}
+
 /// The structured form of raw objects read from the store of record (R2), verified.
 pub fn parse_objects(c: &Value) -> Result<Value> {
     let objects = raw_objects(c)?
@@ -119,4 +160,41 @@ pub fn parse_objects(c: &Value) -> Result<Value> {
         .map(|(k, d)| object_json(hash_object(*k, d), *k, d))
         .collect::<Result<Vec<_>>>()?;
     Ok(json!({ "objects": objects }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::platform_compute::compute;
+
+    #[test]
+    fn a_carrier_keeps_its_blobs_reachable_under_its_own_hidden_ref() {
+        let blob = |text: &str| {
+            json!({ "id": hash_object(ObjectKind::Blob, text.as_bytes()),
+            "kind": "blob", "data_b64": STANDARD.encode(text) })
+        };
+        let chunk = json!({ "objects": [blob("one\n"), blob("two\n"), blob("one\n")] });
+        let pushed = carrier_push(&chunk).unwrap();
+        assert_eq!(
+            carrier_push(&chunk).unwrap(),
+            pushed,
+            "the same chunk, the same push"
+        );
+        let received =
+            compute(json!({ "op": "receive_pack", "body_b64": pushed["push_b64"] })).unwrap();
+        let commit = pushed["commit"].as_str().unwrap();
+        assert_eq!(received["ref"], format!("refs/yoneda/c/{commit}"));
+        let kinds: Vec<&str> = received["objects"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|o| o["kind"].as_str().unwrap())
+            .collect();
+        assert_eq!(kinds, ["blob", "blob", "tree", "commit"]);
+        let tree = &received["objects"][2]["entries"];
+        assert_eq!(tree.as_array().unwrap().len(), 2);
+        let trees = json!({ "objects": [{ "id": hash_object(ObjectKind::Tree, b""), "kind": "tree", "data_b64": "" }] });
+        assert!(carrier_push(&trees).is_err(), "blobs only");
+        assert!(carrier_push(&json!({ "objects": [] })).is_err());
+    }
 }
