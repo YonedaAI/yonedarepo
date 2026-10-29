@@ -64,7 +64,8 @@ Tests
 
 Environments and deploys
 - Exactly two environments: dev (`yonedarepo-dev-*`, dev.yonedarepo.com) and prod (`yonedarepo-prod-*`, yonedarepo.com), defined in `infra/envs/{dev,prod}.json`.
-- Deploy dev from the local checkout with `cargo xtask deploy --env dev`; don't push to GitHub just to deploy. Load credentials with `set -a; . <file>; set +a` and never print them.
+- Deploy dev from the local checkout with `cargo xtask deploy --env dev`; don't push to GitHub just to deploy.
+- Never push `dev` to GitHub after each merge: every push runs the full CI (about 9 jobs, 8+ minutes each). Push only when the owner asks, and never with known-red tests. Load credentials with `set -a; . <file>; set +a` and never print them.
 - Heavy tests (bursts, big pushes, compaction, full kit, real agents) run on dev only. Prod gets one deploy per wave, only when dev is fully green and the owner says "ship", followed by the small smoke (frontend, sign-in, CLI items 12–17, browser item, one model check).
 - Before a container rollout, warn the owner and re-check for active runs. Local Docker builds are fine (native arm64 for local tests); remove superseded and test images afterwards and never touch other projects' volumes.
 - Product scope: agents are stock CLIs used as clients of the git platform; do not build agent orchestration (planners, reviewer agents, supervisors) into the product.

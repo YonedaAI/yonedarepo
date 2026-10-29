@@ -2866,6 +2866,7 @@ dependencies = [
  "tokio",
  "toml",
  "uuid",
+ "yoneda-cli",
  "yoneda-platform",
 ]
 
@@ -2898,6 +2899,7 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "reqwest",
+ "schemars",
  "serde",
  "serde_json",
  "tempfile",

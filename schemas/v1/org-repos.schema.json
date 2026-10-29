@@ -1,0 +1,60 @@
+{
+  "$defs": {
+    "OrgRepo": {
+      "additionalProperties": false,
+      "description": "A repository an organization owns.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "type": "object"
+    },
+    "OrgRepos": {
+      "additionalProperties": false,
+      "description": "`org repos`.",
+      "properties": {
+        "org": {
+          "type": "string"
+        },
+        "repos": {
+          "items": {
+            "$ref": "#/$defs/OrgRepo"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "org",
+        "repos"
+      ],
+      "title": "OrgRepos",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `org-repos`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/OrgRepos"
+    },
+    "schema": {
+      "const": "yoneda.cli.org-repos.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.org-repos.v1",
+  "type": "object"
+}

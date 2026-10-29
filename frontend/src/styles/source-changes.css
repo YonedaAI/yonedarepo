@@ -42,15 +42,15 @@
   justify-self: start;
 }
 .source-change-open {
-  background: #e9f7ef;
+  background: var(--success-soft);
   color: var(--success);
 }
 .source-change-landed {
-  background: #edf3ff;
+  background: var(--accent-soft);
   color: var(--blue);
 }
 .source-change-closed {
-  background: #f1f4f9;
+  background: var(--surface-2);
   color: var(--muted);
 }
 .source-change > header h2 {
@@ -108,7 +108,7 @@
 .source-thread {
   border: 1px solid var(--line);
   border-radius: 8px;
-  background: #f8fafc;
+  background: var(--surface-2);
   padding: 8px 12px;
   margin: 6px 0;
   font-family: "IBM Plex Sans", sans-serif;
@@ -144,7 +144,7 @@
 .source-patch .source-line-comment:hover,
 .source-patch .source-line-comment:focus-visible {
   background: var(--blue);
-  color: #fff;
+  color: var(--on-accent);
 }
 .source-open-change {
   border: 1px solid var(--line);

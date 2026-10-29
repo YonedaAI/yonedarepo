@@ -7,8 +7,8 @@
 import { expect, it } from 'vitest';
 import { isolateLocations } from '../../cloudflare/worker/repo-bundles';
 import { isolateTrees } from '../../cloudflare/worker/repo-tree-memo';
-import { blob, commitObject, fetchV2, objectReads, on, pkt, pushHistory, type Raw, request, sorted, tree } from './pushed-history';
-import { api, bindings, countingOps, usePlatformFixture } from './repo-fixture';
+import { blob, bundleKinds, commitObject, fetchV2, objectReads, on, pkt, pushHistory, type Raw, request, sorted, tree } from './pushed-history';
+import { api, countingOps, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -47,16 +47,8 @@ const pushedHistory = (name: string, commits: number) => pushHistory(name, (main
 it('keeps the commits and trees of a large push in bundles of their own', async () => {
   // 60 commits: 420 objects, more than a push stages.
   const { repo } = await pushedHistory('history_split', 60);
-  const listed = await bindings.OBJECTS.list({ prefix: `platform/v1/${repo}/bundles/` });
-  expect(listed.objects.length).toBeGreaterThan(1);
-  const kinds: string[] = [];
-  for (const { key } of listed.objects) {
-    const bytes = new Uint8Array(await ((await bindings.OBJECTS.get(key)) as R2ObjectBody).arrayBuffer());
-    const view = new DataView(bytes.buffer);
-    const held = new Set<number>();
-    for (let at = 0; at < bytes.length; at += 25 + view.getUint32(at + 21)) held.add(bytes[at]);
-    kinds.push([...held].sort().join(''));
-  }
+  const kinds = await bundleKinds(repo);
+  expect(kinds.length).toBeGreaterThan(1);
   // Commits (1) and trees (2) apart from files (3).
   expect(kinds.every((k) => k === '3' || !k.includes('3'))).toBe(true);
   expect(kinds).toContain('3');

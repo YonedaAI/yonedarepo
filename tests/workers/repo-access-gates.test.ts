@@ -2,11 +2,13 @@
 // needs, not with the repository's history. Each gate pushes a synthetic history in one
 // push (bundles on), reads it once in a fresh isolate, and compares the bytes R2 returned
 // for the repository's bundles (ranged reads count their range) with the frames (25-byte
-// header + content) of the objects the request needed. Counts are of R2 reads in local
-// workerd. Gates marked `it.fails` are known-failing: each names today's measured ratio and
-// its target, and starts passing (so failing as `it.fails`) once a fix meets the target.
+// header + content) of the objects the request needed. Clones are also gated walk and
+// pack apart, on the fetch's own PackStats line (checked against the binding's count).
+// Counts are of R2 reads in local workerd. Gates marked `it.fails` are known-failing: each
+// names today's measured ratio and its target, and starts passing (so failing as
+// `it.fails`) once a fix meets the target.
 import { expect, it } from 'vitest';
-import { blob, commitObject, fetchV2, objectReads, pushHistory, type Raw, sorted, tree } from './pushed-history';
+import { blob, commitObject, fetchTimed, objectReads, pushHistory, type Raw, sorted, tree } from './pushed-history';
 import { api, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
@@ -19,6 +21,8 @@ const frames = (objects: Raw[]) => objects.reduce((n, o) => n + 25 + o.data.leng
 const mib = (n: number) => `${(n / 1048576).toFixed(2)}MiB`;
 
 type History = { objects: Raw[]; head: Raw[]; logs: Raw[] };
+/** Directory levels of `rewrites` (the root, d, e, f): a walk round each. */
+const LEVELS = 4;
 
 /** `commits` commits on `parent`, each rewriting one of `slots` files of about `size` bytes
  * under d/e/f/ and appending a line to log.txt: four new trees and two files per commit,
@@ -67,27 +71,64 @@ function within(gate: string, read: { reads: number; others: number; bytes: numb
   return read.bytes <= SLACK * wanted + ALLOWANCE;
 }
 
+/** What a clone read, split as PackStats reports it (walk: the trees the walk asked for;
+ * pack: the commits and files the pack sent), checked against the binding's own count. */
+async function clone(repo: string, token: string, args: string[]) {
+  let fetched: Awaited<ReturnType<typeof fetchTimed>> | undefined;
+  const total = await objectReads(repo, async () => (fetched = await fetchTimed(repo, token, args)));
+  const { count, timing } = fetched as NonNullable<typeof fetched>;
+  // PackStats counts every ranged read the binding saw (sizes are rounded to 0.1 MiB).
+  expect(timing.walk_reads + timing.reads).toBe(total.reads);
+  expect(Math.abs(timing.walk_read + timing.read - total.bytes / 1048576)).toBeLessThanOrEqual(0.1);
+  return { count, timing, total };
+}
+
+/** A push writes bundles of about 4 MiB (repo-git-receive WRITE_BUDGET), so `bytes` of
+ * objects kept together span at most this many bundles. */
+const spanned = (bytes: number) => Math.ceil(bytes / (4 * 1048576)) + 1;
+
+/** The walk reads trees from the few bundles that hold the commits and trees, a read per
+ * bundle plus at most one per directory level (`levels`): not a read per bundle of the
+ * push (the old layout interleaved them with files: dev read 67 times across 36 bundles,
+ * 96.2 MiB, for 0.5 MiB of trees). Its bytes get one bridged 1 MiB gap of slack (and 0.1
+ * MiB of rounding): a small walk reads about twice what it wants (dev, new layout: 1.0 MiB
+ * for 0.5). */
+function walkReadsTreesOnly(timing: Record<string, number>, treeBytes: number, levels: number) {
+  expect(timing.walk_bundles).toBeLessThanOrEqual(spanned(treeBytes));
+  expect(timing.walk_reads).toBeLessThanOrEqual(spanned(treeBytes) + levels);
+  expect(timing.walk_read).toBeLessThanOrEqual(2 * timing.walk_wanted + 1.1);
+}
+
+/** The pack reads what it sends, about once (dev, new layout: 168.2 MiB for 168.2). */
+function packReadOnce(timing: Record<string, number>) {
+  expect(timing.read).toBeLessThanOrEqual(1.1 * timing.wanted + 0.1);
+}
+
 it('a partial clone reads its commits and trees, never the files between them', async () => {
   for (const commits of [12, 60]) {
     const { repo, token, tip, history } = await pushed(`gate_partial_${commits}`, commits);
     const wanted = frames(history.objects.filter((o) => o.kind !== 'blob'));
-    let count: unknown;
-    const read = await objectReads(repo, async () => (count = await fetchV2(repo, token, [`want ${tip}`, 'filter blob:none', 'done'])));
+    const { count, timing, total } = await clone(repo, token, [`want ${tip}`, 'filter blob:none', 'done']);
     // The pushed commits and trees, and the seed commit and its tree.
     expect(count).toBe(history.objects.length - commits * 2 + 2);
-    expect(within(`partial clone, ${commits} commits`, read, wanted)).toBe(true);
+    console.log(`partial clone, ${commits} commits: ${JSON.stringify(timing)}`);
+    walkReadsTreesOnly(timing, wanted, LEVELS);
+    expect(timing.bundles).toBeLessThanOrEqual(spanned(wanted));
+    packReadOnce(timing);
+    expect(within(`partial clone, ${commits} commits`, total, wanted)).toBe(true);
   }
 });
 
 it('a full clone reads each bundled byte about once', async () => {
   for (const commits of [12, 60]) {
     const { repo, token, tip, history } = await pushed(`gate_full_${commits}`, commits);
-    const wanted = frames(history.objects);
-    let count: unknown;
-    const read = await objectReads(repo, async () => (count = await fetchV2(repo, token, [`want ${tip}`, 'done'])));
+    const { count, timing, total } = await clone(repo, token, [`want ${tip}`, 'done']);
     // The pushed objects and the seed commit's tree, file and commit.
     expect(count).toBe(history.objects.length + 3);
-    expect(within(`full clone, ${commits} commits`, read, wanted)).toBe(true);
+    console.log(`full clone, ${commits} commits: ${JSON.stringify(timing)}`);
+    walkReadsTreesOnly(timing, frames(history.objects.filter((o) => o.kind !== 'blob')), LEVELS);
+    packReadOnce(timing);
+    expect(within(`full clone, ${commits} commits`, total, frames(history.objects))).toBe(true);
   }
 });
 

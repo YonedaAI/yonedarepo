@@ -4,6 +4,7 @@
 // are workspace sessions (owners) or repository tokens (agents, CI, scripts) — all the
 // same to us.
 
+import { accountActivity } from './account-activity';
 import { accountMcp } from './account-mcp';
 import { authenticate } from './auth';
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
@@ -24,6 +25,7 @@ import { hooksRoute, notifyHooks } from './repo-hooks';
 import { lfsRoute } from './repo-lfs';
 import { repoMcp } from './repo-mcp';
 import { membersRoute } from './repo-members';
+import { contextRoute, memoriesRoute } from './repo-memories';
 import { downloadBlob } from './repo-object-fetch';
 import { parseStore } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
@@ -39,6 +41,7 @@ import {
   limitAnonymous,
   setVisibility,
 } from './repo-public';
+import { quarantineRoute } from './repo-quarantine';
 import { releaseDownload, releasesRoute } from './repo-releases';
 import { SESSION_BODY_LIMIT } from './repo-session-records';
 import { timed, withTimings } from './repo-timing';
@@ -70,6 +73,8 @@ const STATUS: Record<string, number> = {
   RATE_LIMITED: 429,
   OVERLOADED: 503,
   INTERNAL: 500,
+  // Withheld by the repository's owner (quarantine): known, deliberately not served.
+  QUARANTINED: 451,
 };
 export const statusOf = (code: string, known: boolean) => STATUS[code] ?? (known ? 400 : 500);
 const COMMIT_BODY_LIMIT = 64 * 1024 * 1024;
@@ -127,6 +132,8 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
     req.method === 'POST'
   )
     return deviceApprove(env, auth, await bodyOf(req));
+  if (parts[0] === 'activity' && parts.length === 1 && req.method === 'GET')
+    return accountActivity(env, auth);
   if (parts[0] === 'orgs')
     return orgsRoute(env, auth, req.method, parts.slice(1), () => bodyOf(req), url.searchParams);
   if (parts[0] !== 'repos') throw new ApiError('NOT_FOUND', 'Unknown API path');
@@ -148,6 +155,8 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   if (resource === 'refs' && sha === 'batch' && !sub && post)
     return batchRefs(ctx, await bodyOf(req));
   if (!resource && get) return run('git_status', {});
+  if (resource === 'quarantine')
+    return quarantineRoute(ctx, req.method, sha, sub, () => bodyOf(req));
   if (get && resource === 'refs') return run('git_refs', query);
   if (get && resource === 'log') return run('git_log', query);
   if (get && resource === 'txlog') return run('git_txlog', query);
@@ -197,6 +206,10 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   if (resource === 'commits' && sha && sub === 'sessions' && get)
     return run('git_sessions', { commit: sha });
   if (resource === 'context' && !sha && get) return run('git_context', query);
+  if (resource === 'context' && sha && !sub)
+    return contextRoute(ctx, req.method, sha, query, () => bodyOf(req));
+  if (resource === 'memories')
+    return memoriesRoute(ctx, req.method, sha, sub, query, () => bodyOf(req));
   if (resource === 'commits' && sha && sub === 'reviews' && post)
     return run('git_review', { ...(await bodyOf(req)), commit: sha });
   if (resource === 'commits' && sha && sub === 'revert' && post)
@@ -371,6 +384,7 @@ async function handle(req: Request, env: Env): Promise<Response> {
       new RepoContext(env, blob[1], caller(env, blob[1], auth)),
       blob[2],
       url.searchParams,
+      req.headers.get('range'),
     ).catch(failure);
   return answer(() => route(req, env, url, auth));
 }

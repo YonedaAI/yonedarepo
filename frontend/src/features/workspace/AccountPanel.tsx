@@ -1,22 +1,51 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import {
   isValidAccountIdentifier,
   MAX_ACCOUNT_IDENTIFIER_LENGTH,
+  normalizeAccountIdentifier,
 } from '../../../../shared/account';
 import { api } from '../../lib/api';
+import { OAuthButtons, TermsNotice } from './OAuthButtons';
+import { isProvider, oauthStartUrl, type Provider } from './oauthModel';
+
+/** The sign-in providers the Worker has secrets for (none when the list cannot be read). */
+function useProviders() {
+  const [providers, setProviders] = useState<Provider[] | null>(null);
+  useEffect(() => {
+    let live = true;
+    api<{ providers: unknown[] }>('auth/providers')
+      .then((r) => live && setProviders(r.providers.filter(isProvider)))
+      .catch(() => live && setProviders([]));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return providers;
+}
+
 export function AccountPanel({
   onConnected,
   initialMode = 'signup',
+  initialError = '',
+  initialProviders = null,
 }: {
   onConnected: () => void;
   initialMode?: 'signup' | 'login';
+  /** A provider sign-in that came back refused (its `auth_error`, in words). */
+  initialError?: string;
+  /** Providers known before the list loads (tests render without effects). */
+  initialProviders?: Provider[] | null;
 }) {
   const [mode, setMode] = useState<'signup' | 'login' | 'recover'>(initialMode);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(initialError);
+  const loaded = useProviders();
+  const providers = loaded ?? initialProviders;
+  const [pending, setPending] = useState<Provider | null>(null);
   const [recovery, setRecovery] = useState('');
   const [recovered, setRecovered] = useState(false);
   const identifierHelp = useId();
+  const emailHelp = useId();
   if (recovery)
     return (
       <section className="account-panel">
@@ -64,6 +93,22 @@ export function AccountPanel({
             : 'Sign in'}
       </h2>
       <p>Your repositories and tokens belong to your account.</p>
+      {mode !== 'recover' && (
+        <OAuthButtons
+          providers={providers}
+          pending={pending}
+          busy={busy}
+          onStart={(provider) => {
+            setPending(provider);
+            setError('');
+            window.location.assign(
+              oauthStartUrl(provider, {
+                returnTo: `${window.location.pathname}${window.location.search}`,
+              }),
+            );
+          }}
+        />
+      )}
       <form
         key={mode}
         onSubmit={async (e) => {
@@ -76,6 +121,12 @@ export function AccountPanel({
             const identifier = data.get('username');
             if (typeof identifier !== 'string' || !isValidAccountIdentifier(identifier))
               throw new Error('Enter a valid username or email address.');
+            const email = data.get('email');
+            if (
+              mode === 'signup' &&
+              (typeof email !== 'string' || !normalizeAccountIdentifier(email)?.includes('@'))
+            )
+              throw new Error('Enter a valid email address.');
             const result = await api<{ recovery_code?: string }>(
               `auth/${mode}`,
               Object.fromEntries(data),
@@ -111,6 +162,26 @@ export function AccountPanel({
             ? 'Choose a username or use your email address.'
             : 'Enter the username or email you registered with.'}
         </p>
+        {mode === 'signup' && (
+          <>
+            <label>
+              Email
+              <input
+                type="email"
+                name="email"
+                required
+                autoComplete="email"
+                maxLength={MAX_ACCOUNT_IDENTIFIER_LENGTH}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                aria-describedby={emailHelp}
+                placeholder="you@example.com"
+              />
+            </label>
+            <p id={emailHelp}>We send one welcome email here. It is never shown to others.</p>
+          </>
+        )}
         {mode === 'recover' && (
           <label>
             Recovery code
@@ -130,7 +201,7 @@ export function AccountPanel({
         </label>
         {mode !== 'login' && <p>Use at least 12 characters. You will receive a recovery code.</p>}
         {error && <p role="alert">{error}</p>}
-        <button disabled={busy} type="submit">
+        <button disabled={busy || pending !== null} type="submit">
           {busy
             ? 'Connecting…'
             : mode === 'signup'
@@ -158,6 +229,7 @@ export function AccountPanel({
             </button>
           ))}
       </div>
+      <TermsNotice />
     </section>
   );
 }

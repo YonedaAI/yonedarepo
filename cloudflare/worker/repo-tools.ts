@@ -1,6 +1,8 @@
 // The platform's operation table, named after Git verbs. The HTTP API and MCP both
 // dispatch here, so an MCP client and a REST client can never see different behavior.
 
+import { afterAnswer } from './background';
+import { touchActivity } from './repo-activity';
 import { changeOperations } from './repo-changes';
 import { landMode } from './repo-changesets';
 import { dispatchRuns } from './repo-checks';
@@ -13,6 +15,7 @@ import { forkRepository } from './repo-forks';
 import { hookOperations, notifyHooks } from './repo-hooks';
 import { landWithMerge } from './repo-landing';
 import { memberOperations } from './repo-members';
+import { memoryOperations } from './repo-memories';
 import { explicitMerge } from './repo-merge';
 import { getObjects } from './repo-object-fetch';
 import { ApiError, diff, type Json, type RepoContext } from './repo-ops';
@@ -87,7 +90,12 @@ export const operations: Record<string, Operation> = {
     await dispatchRuns(ctx.env, ctx.repo, requested.runs);
     return requested;
   },
-  git_session_record: recordSession,
+  git_session_record: async (ctx, a) => {
+    const recorded = await recordSession(ctx, a);
+    // The Home lists sessions: its next view re-reads this repository.
+    await afterAnswer(() => touchActivity(ctx.env, ctx.repo));
+    return recorded;
+  },
   git_sessions: (ctx, a) => ctx.call({ op: 'repo_sessions', commit: a.commit }),
   // The listing the web's Sessions page reads (GET /sessions, repo-agent-records.ts).
   git_sessions_recent: (ctx, a) =>
@@ -101,7 +109,8 @@ export const operations: Record<string, Operation> = {
       ref: a.ref || null,
     }),
   // What a new coding session should know: heads, landing rules, recent sessions, open
-  // changes and contracts on the paths it works on (a list, or comma-separated over REST).
+  // changes, contracts and memories on the paths it works on (a list, or comma-separated
+  // over REST).
   git_context: (ctx, a) =>
     ctx.call({
       op: 'repo_agent_context',
@@ -110,6 +119,7 @@ export const operations: Record<string, Operation> = {
       sessions: optionalNumber(a.sessions),
       changes: optionalNumber(a.changes),
       contracts: optionalNumber(a.contracts),
+      memories: optionalNumber(a.memories),
     }),
   git_bisect: async (ctx, a) => {
     const step = a.id
@@ -162,6 +172,7 @@ export const operations: Record<string, Operation> = {
   ...changeOperations,
   ...releaseOperations,
   ...memberOperations,
+  ...memoryOperations,
   git_land: (ctx, a) => {
     if (!/^[0-9a-f]{40}$/.test(String(a.commit ?? '')))
       throw new ApiError('INVALID_INPUT', 'commit must be a 40-character commit id');

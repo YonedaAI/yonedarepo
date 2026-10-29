@@ -219,6 +219,7 @@ pub fn list<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
         session["model"] = shown_model(&session["model"]);
         session["transcript"] = stored_transcript(&session["transcript"])?;
     }
+    super::quarantine::mask_sessions(db, &mut sessions)?;
     Ok(json!({ "commit": id, "sessions": sessions }))
 }
 
@@ -230,6 +231,7 @@ pub fn transcript<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value
         .as_i64()
         .filter(|n| *n > 0)
         .ok_or_else(|| bad("id must be a session id"))?;
+    super::quarantine::refuse_transcript(db, id)?;
     let row = db.query("SELECT transcript FROM sessions WHERE id=?", &[json!(id)])?;
     let meta = match row.first() {
         Some(row) => stored_transcript(&row["transcript"])?,

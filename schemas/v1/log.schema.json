@@ -1,0 +1,67 @@
+{
+  "$defs": {
+    "Log": {
+      "additionalProperties": false,
+      "description": "`log`.",
+      "properties": {
+        "commits": {
+          "items": {
+            "$ref": "#/$defs/LogEntry"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "commits"
+      ],
+      "title": "Log",
+      "type": "object"
+    },
+    "LogEntry": {
+      "additionalProperties": false,
+      "description": "A commit in the log.",
+      "properties": {
+        "commit": {
+          "type": "string"
+        },
+        "message": {
+          "description": "The whole message (the human mode prints its first line).",
+          "type": "string"
+        },
+        "version": {
+          "description": "The log version it landed at, if it landed.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "commit",
+        "version",
+        "message"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `log`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/Log"
+    },
+    "schema": {
+      "const": "yoneda.cli.log.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.log.v1",
+  "type": "object"
+}

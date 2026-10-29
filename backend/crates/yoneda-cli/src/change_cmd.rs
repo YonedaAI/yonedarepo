@@ -4,6 +4,8 @@
 //! `yoneda change land <n>`.
 use crate::command::ChangeCommand;
 use crate::error::{Error, Result};
+use crate::human;
+use crate::output::{self, ChangeSummary};
 use crate::repo_ops::{current_branch, land_head};
 use crate::target::Resolved;
 use serde_json::{Value, json};
@@ -23,6 +25,19 @@ fn summary(change: &Value) -> String {
         text(change, "base"),
         text(change, "author"),
     )
+}
+
+/// The one-line fields of a change, for `--json`.
+fn summarized(change: &Value) -> ChangeSummary {
+    ChangeSummary {
+        number: change["number"].as_u64().unwrap_or_default(),
+        status: text(change, "status"),
+        title: text(change, "title"),
+        branch: text(change, "branch"),
+        base: text(change, "base"),
+        author: text(change, "author"),
+        head: change["head"].as_str().map(str::to_owned),
+    }
 }
 
 fn names(list: &Value) -> String {
@@ -59,23 +74,23 @@ fn gates(gates: &Value) -> String {
 }
 
 fn show(change: &Value) {
-    println!("{}", summary(change));
+    human!("{}", summary(change));
     if let Some(fork) = change["source_repo"].as_str() {
-        println!("from fork {fork} branch {}", text(change, "source_branch"));
+        human!("from fork {fork} branch {}", text(change, "source_branch"));
     }
     if !text(change, "body").is_empty() {
-        println!("\n  {}\n", text(change, "body").replace('\n', "\n  "));
+        human!("\n  {}\n", text(change, "body").replace('\n', "\n  "));
     }
     match change["head"].as_str() {
-        Some(head) => println!("head {head}"),
-        None => println!("head: none (the branch is gone)"),
+        Some(head) => human!("head {head}"),
+        None => human!("head: none (the branch is gone)"),
     }
     if change["status"] == "landed" {
-        println!("landed at version {}", change["landed_version"]);
+        human!("landed at version {}", change["landed_version"]);
     } else if let Some(record) = change["head_commit"].as_object() {
-        println!("{}", gates(&record["gates"]));
+        human!("{}", gates(&record["gates"]));
         for review in record["reviews"].as_array().into_iter().flatten() {
-            println!(
+            human!(
                 "  {} by {}{}",
                 text(review, "decision"),
                 text(review, "principal"),
@@ -90,9 +105,9 @@ fn show(change: &Value) {
         .as_array()
         .cloned()
         .unwrap_or_default();
-    println!("{} file(s) changed", files.len());
+    human!("{} file(s) changed", files.len());
     for file in &files {
-        println!("  {} {}", text(file, "op"), text(file, "path"));
+        human!("  {} {}", text(file, "op"), text(file, "path"));
     }
     for comment in change["comments"].as_array().into_iter().flatten() {
         let at = match comment["path"].as_str() {
@@ -104,8 +119,8 @@ fn show(change: &Value) {
         } else {
             " [resolved]"
         };
-        println!("- {}{at}{resolved}", text(comment, "principal"));
-        println!("  {}", text(comment, "body").replace('\n', "\n  "));
+        human!("- {}{at}{resolved}", text(comment, "principal"));
+        human!("  {}", text(comment, "body").replace('\n', "\n  "));
     }
 }
 
@@ -141,21 +156,29 @@ pub async fn run(t: &Resolved, command: ChangeCommand) -> Result<()> {
                     .ok_or_else(|| Error::usage(format!("{} is not a fork", t.repo)))?;
                 body["fork"] = json!(t.repo);
                 let change = t.api.sibling(parent)?.post("/changes", &body).await?;
-                println!("Opened on {parent}: {}", summary(&change));
-                println!(
+                human!("Opened on {parent}: {}", summary(&change));
+                human!(
                     "next: a reviewer of {parent} approves {}, then yoneda change land {} --repo {parent}",
                     text(&change, "head"),
                     change["number"]
                 );
+                output::emit(&output::ChangeCreate {
+                    repo: parent.to_owned(),
+                    change: summarized(&change),
+                });
                 return Ok(());
             }
             let change = t.api.post("/changes", &body).await?;
-            println!("Opened {}", summary(&change));
-            println!(
+            human!("Opened {}", summary(&change));
+            human!(
                 "next: yoneda review approve {} (a reviewer), then yoneda change land {}",
                 text(&change, "head"),
                 change["number"]
             );
+            output::emit(&output::ChangeCreate {
+                repo: t.repo.clone(),
+                change: summarized(&change),
+            });
         }
         ChangeCommand::List { status } => {
             let status = status.unwrap_or_else(|| "open".into());
@@ -165,13 +188,21 @@ pub async fn run(t: &Resolved, command: ChangeCommand) -> Result<()> {
                 .await?;
             let changes = listed["changes"].as_array().cloned().unwrap_or_default();
             if changes.is_empty() {
-                println!("No {status} changes");
+                human!("No {status} changes");
             }
             for change in &changes {
-                println!("{}", summary(change));
+                human!("{}", summary(change));
             }
+            output::emit(&output::ChangeList {
+                changes: changes.iter().map(summarized).collect(),
+                status,
+            });
         }
-        ChangeCommand::Show { number } => show(&t.api.get(&format!("/changes/{number}")).await?),
+        ChangeCommand::Show { number } => {
+            let change = t.api.get(&format!("/changes/{number}")).await?;
+            show(&change);
+            output::emit(&output::ChangeShow { change });
+        }
         ChangeCommand::Comment {
             number,
             body,
@@ -188,12 +219,18 @@ pub async fn run(t: &Resolved, command: ChangeCommand) -> Result<()> {
                 .api
                 .post(&format!("/changes/{number}/comments"), &request)
                 .await?;
-            if !posted["comment"].is_null() {
-                println!("Commented on change #{number}");
+            let commented = !posted["comment"].is_null();
+            if commented {
+                human!("Commented on change #{number}");
             }
             if resolve {
-                println!("Resolved {} comment(s)", posted["resolved"]);
+                human!("Resolved {} comment(s)", posted["resolved"]);
             }
+            output::emit(&output::ChangeComment {
+                number,
+                commented,
+                resolved: posted["resolved"].as_u64().unwrap_or_default(),
+            });
         }
         ChangeCommand::Land { number } => {
             let change = t.api.get(&format!("/changes/{number}")).await?;
@@ -207,7 +244,14 @@ pub async fn run(t: &Resolved, command: ChangeCommand) -> Result<()> {
                 .as_str()
                 .ok_or_else(|| Error::new(format!("change #{number} has no head commit")))?;
             let base = change["base"].as_str().unwrap_or("main");
-            land_head(t, &format!("change #{number}"), head, base).await?;
+            let landed = land_head(t, &format!("change #{number}"), head, base).await?;
+            output::emit(&output::ChangeLand {
+                number,
+                head: head.to_owned(),
+                base: base.to_owned(),
+                version: landed.version,
+                merged: landed.merged,
+            });
         }
         ChangeCommand::Close { number } => {
             let change = t

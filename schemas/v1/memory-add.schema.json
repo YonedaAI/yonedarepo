@@ -1,0 +1,46 @@
+{
+  "$defs": {
+    "MemoryAdd": {
+      "additionalProperties": false,
+      "description": "`memory add`.",
+      "properties": {
+        "already": {
+          "description": "Whether the same memory was recorded already (this answers that one).",
+          "type": "boolean"
+        },
+        "commit": {
+          "description": "The commit it was written against.",
+          "type": "string"
+        },
+        "memory": {
+          "description": "The memory's id."
+        }
+      },
+      "required": [
+        "memory",
+        "commit",
+        "already"
+      ],
+      "title": "MemoryAdd",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `memory-add`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/MemoryAdd"
+    },
+    "schema": {
+      "const": "yoneda.cli.memory-add.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.memory-add.v1",
+  "type": "object"
+}

@@ -4,7 +4,10 @@ import {
   encodeAccountIdentifier,
   normalizeAccountIdentifier,
 } from '../../shared/account';
+import { accountCreated } from './account-email';
 import { error, readJson, response } from './http';
+import { unlink } from './oauth-identity';
+import { configuredProviders } from './oauth-providers';
 import { sha } from './storage';
 import type { Env, Principal } from './types';
 import { workspace } from './workspace';
@@ -21,7 +24,13 @@ export function username(value: unknown) {
   if (!name) throw new Error(ACCOUNT_IDENTIFIER_HELP);
   return name;
 }
-function cookie(req: Request, value = '') {
+/** A sign-up's contact email (required for new accounts; the welcome email goes there). */
+function contactEmail(value: unknown) {
+  const email = typeof value === 'string' ? normalizeAccountIdentifier(value) : null;
+  if (!email?.includes('@')) throw new Error('Enter a valid email address');
+  return email;
+}
+export function sessionCookie(req: Request, value = '') {
   return `${cookieName}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${value ? 604800 : 0}${new URL(req.url).protocol === 'https:' ? '; Secure' : ''}`;
 }
 function sessionValue(req: Request) {
@@ -38,6 +47,14 @@ function sessionValue(req: Request) {
   if (!name) return null;
   const token = parts[1];
   return { name, token };
+}
+/** The signed-in account and its session's digest (linking a provider records both). */
+export async function signedInSession(req: Request, env: Env) {
+  const session = sessionValue(req);
+  if (!session) return null;
+  const sessionHash = await sha(session.token);
+  const result = await workspace(env, session.name, { op: 'session', session_hash: sessionHash });
+  return result.authenticated ? { account: session.name, sessionHash } : null;
 }
 export async function accountPrincipal(req: Request, env: Env): Promise<Principal | null> {
   const session = sessionValue(req);
@@ -65,6 +82,22 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
           ? { authenticated: true, username: principal.workspace }
           : { authenticated: false },
       );
+    } else if (action === 'providers' && req.method === 'GET') {
+      // Sign-in providers whose secrets are set (the sign-in page shows only these).
+      result = response({ providers: configuredProviders(env) });
+    } else if ((action === 'identities' && req.method === 'GET') || action === 'unlink') {
+      const principal = await accountPrincipal(req, env);
+      if (!principal) return error('UNAUTHORIZED', 'Sign in to manage sign-in methods', 401);
+      if (req.method === 'GET')
+        result = response({
+          ...(await workspace(env, principal.workspace, { op: 'identity_list' })),
+          providers: configuredProviders(env),
+        });
+      else if (req.method === 'POST')
+        result = response(
+          await unlink(env, principal.workspace, String((await readJson(req)).provider ?? '')),
+        );
+      else return error('NOT_FOUND', 'Unknown authentication route', 404);
     } else if (action === 'logout' && req.method === 'POST') {
       const session = sessionValue(req);
       if (session)
@@ -73,7 +106,7 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
           session_hash: await sha(session.token),
         });
       result = response({ authenticated: false });
-      result.headers.set('set-cookie', cookie(req));
+      result.headers.set('set-cookie', sessionCookie(req));
     } else if (['signup', 'login', 'recover'].includes(action) && req.method === 'POST') {
       if (
         env.AUTH_LIMITER &&
@@ -89,6 +122,7 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
         (action !== 'login' && body.password.length < 12)
       )
         throw new Error('Use a password of 12–128 characters');
+      const email = action === 'signup' ? contactEmail(body.email) : null;
       const token = randomToken();
       const recovery = randomToken();
       const command =
@@ -96,6 +130,7 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
           ? {
               op: action,
               username: name,
+              email,
               password: body.password,
               salt: randomToken(16),
               session_hash: await sha(token),
@@ -117,10 +152,14 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
           'Credentials did not match; wait a minute after repeated attempts',
           401,
         );
+      if (action === 'signup') await accountCreated(env, name, email);
       result = response({ ...account, ...(action !== 'login' ? { recovery_code: recovery } : {}) });
       if (action !== 'recover')
-        result.headers.set('set-cookie', cookie(req, `${encodeAccountIdentifier(name)}.${token}`));
-      else result.headers.set('set-cookie', cookie(req));
+        result.headers.set(
+          'set-cookie',
+          sessionCookie(req, `${encodeAccountIdentifier(name)}.${token}`),
+        );
+      else result.headers.set('set-cookie', sessionCookie(req));
     } else return error('NOT_FOUND', 'Unknown authentication route', 404);
     result.headers.set('cache-control', 'no-store');
     return result;

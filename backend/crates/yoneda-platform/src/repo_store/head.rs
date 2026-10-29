@@ -44,9 +44,11 @@ pub fn head<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value
     let members = super::members::live(db)?;
     // Changes only when access does, so caches keep the access snapshot across landings.
     let visibility = settings.visibility.as_str();
+    let quarantined = super::quarantine::withheld(db)?;
+    let quarantine_epoch = super::quarantine::epoch(db)?;
     let access_version = yoneda_core::fingerprint(&json!({
         "tokens": tokens, "members": members, "paused": paused, "workspace": settings.workspace,
-        "visibility": visibility,
+        "visibility": visibility, "quarantine_epoch": quarantine_epoch,
     }))?;
     Ok(json!({
         "ref": refname, "version": current_version(db)?, "base_version": base_version,
@@ -56,5 +58,6 @@ pub fn head<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value
         "workspace": settings.workspace, "owner": settings.owner,
         "paused": paused, "tokens": tokens, "members": members, "visibility": visibility,
         "access_version": access_version,
+        "quarantined": quarantined, "quarantine_epoch": quarantine_epoch,
     }))
 }

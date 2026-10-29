@@ -1,0 +1,56 @@
+{
+  "$defs": {
+    "OrgList": {
+      "additionalProperties": false,
+      "description": "`org list`.",
+      "properties": {
+        "orgs": {
+          "items": {
+            "$ref": "#/$defs/OrgMembership"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "orgs"
+      ],
+      "title": "OrgList",
+      "type": "object"
+    },
+    "OrgMembership": {
+      "additionalProperties": false,
+      "description": "An organization and the caller's role in it.",
+      "properties": {
+        "org": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "org",
+        "role"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `org-list`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/OrgList"
+    },
+    "schema": {
+      "const": "yoneda.cli.org-list.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.org-list.v1",
+  "type": "object"
+}

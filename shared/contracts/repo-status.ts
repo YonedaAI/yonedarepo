@@ -20,6 +20,10 @@ export type RepoStatus = {
   policy: Policy;
   policy_digest: string;
   projections: Projection[];
+  /** Changes whenever `quarantined` does: caches derived from content are keyed by it. */
+  quarantine_epoch: number;
+  /** Blobs no read serves (quarantined or purged); trees still name them. */
+  quarantined: Withheld[];
   refs: RefHead[];
   version: number;
   viewer: Viewer;
@@ -97,6 +101,12 @@ export type Viewer = {
 };
 
 export type Visibility = "private" | "public";
+
+/** A withheld blob and the path its owner named when quarantining it. */
+export type Withheld = {
+  id: string;
+  path: string | null;
+};
 
 export const repoStatusSchema = {
   "$defs": {
@@ -410,6 +420,25 @@ export const repoStatusSchema = {
         "public"
       ],
       "type": "string"
+    },
+    "Withheld": {
+      "description": "A withheld blob and the path its owner named when quarantining it.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "path": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "path"
+      ],
+      "type": "object"
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -473,6 +502,19 @@ export const repoStatusSchema = {
       },
       "type": "array"
     },
+    "quarantine_epoch": {
+      "description": "Changes whenever `quarantined` does: caches derived from content are keyed by it.",
+      "format": "uint64",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "quarantined": {
+      "description": "Blobs no read serves (quarantined or purged); trees still name them.",
+      "items": {
+        "$ref": "#/$defs/Withheld"
+      },
+      "type": "array"
+    },
     "refs": {
       "items": {
         "$ref": "#/$defs/RefHead"
@@ -508,7 +550,9 @@ export const repoStatusSchema = {
     "forks",
     "visibility",
     "viewer",
-    "grant"
+    "grant",
+    "quarantined",
+    "quarantine_epoch"
   ],
   "title": "RepoStatus",
   "type": "object"

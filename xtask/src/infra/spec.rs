@@ -57,6 +57,10 @@ pub(crate) struct WorkerSpec {
     /// Secret names this Worker needs; values come from `secrets_file`.
     #[serde(default)]
     pub secrets: Vec<String>,
+    /// Secret names that switch a feature on (sign-in providers): uploaded when the secrets
+    /// file has them, skipped without failing the deploy when it does not.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub optional_secrets: Vec<String>,
     /// The `service` its `/health` reports, when it serves one.
     #[serde(default)]
     pub health: Option<String>,
@@ -165,6 +169,8 @@ impl Spec {
                 config.insert("workers_dev".into(), json!(true));
                 if let Some(vars) = config.get_mut("vars").and_then(Value::as_object_mut) {
                     vars.remove("SSH_HOST");
+                    // The sender is one env's verified domain (and email is off here).
+                    vars.remove("EMAIL_FROM");
                     if vars.contains_key("SSH_FRONT_DOOR") {
                         vars.insert("SSH_FRONT_DOOR".into(), json!("off"));
                     }

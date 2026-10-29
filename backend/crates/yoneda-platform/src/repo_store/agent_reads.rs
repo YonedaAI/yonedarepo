@@ -49,7 +49,7 @@ fn subject(message: &Value) -> String {
 
 /// One session row as the API answers it: the record, its commit's subject line and how
 /// many reads the commit declared.
-fn session(row: &Value) -> Result<Value> {
+pub(super) fn session(row: &Value) -> Result<Value> {
     let reads: Vec<String> = serde_json::from_str(row["read_set"].as_str().unwrap_or("[]"))
         .map_err(|_| corrupt("read set"))?;
     Ok(json!({
@@ -152,6 +152,7 @@ pub fn session_list<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Val
     let next = more
         .then(|| sessions.last().map(|s| s["id"].clone()))
         .flatten();
+    super::quarantine::mask_sessions(db, &mut sessions)?;
     Ok(json!({
         "sessions": sessions, "next": next, "clis": distinct("cli")?, "models": distinct("model")?,
         "ref": branch, "head": head, "base": base, "branch_scan_truncated": truncated,
@@ -199,13 +200,18 @@ pub fn session_show<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Val
     )?;
     let parents: Vec<String> = serde_json::from_str(row["parents"].as_str().unwrap_or("[]"))
         .map_err(|_| corrupt("parents"))?;
+    let mut shown = [session(&row)?];
+    super::quarantine::mask_sessions(db, &mut shown)?;
+    let mut related = related.iter().map(session).collect::<Result<Vec<_>>>()?;
+    super::quarantine::mask_sessions(db, &mut related)?;
+    let [shown] = shown;
     Ok(json!({
-        "session": session(&row)?,
+        "session": shown,
         "commit": { "id": row["commit_id"], "message": row["message"],
                     "principal": row["principal"], "parents": parents },
         "reads": reads.iter().take(MAX_READS).collect::<Vec<_>>(),
         "reads_truncated": reads.len() > MAX_READS,
-        "related": related.iter().map(session).collect::<Result<Vec<_>>>()?,
+        "related": related,
     }))
 }
 

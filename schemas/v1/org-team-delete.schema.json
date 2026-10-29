@@ -1,0 +1,40 @@
+{
+  "$defs": {
+    "OrgTeamDelete": {
+      "additionalProperties": false,
+      "description": "`org team delete`.",
+      "properties": {
+        "org": {
+          "type": "string"
+        },
+        "team": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "org",
+        "team"
+      ],
+      "title": "OrgTeamDelete",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `org-team-delete`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/OrgTeamDelete"
+    },
+    "schema": {
+      "const": "yoneda.cli.org-team-delete.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.org-team-delete.v1",
+  "type": "object"
+}

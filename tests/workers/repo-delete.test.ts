@@ -72,7 +72,8 @@ it('lets the owner session delete, and nobody else', async () => {
   const cookie = await signup('owner_deleter');
   const id = (await api('/repos', { cookie }, { body: { name: 'mine' } })).body.id;
   const other = await signup('other_deleter');
-  expect((await api(`/repos/${id}?confirm=mine`, { cookie: other }, { method: 'DELETE' })).status).toBe(403);
+  // A private repository is hidden from a signed-in non-member: 404, as if it did not exist.
+  expect((await api(`/repos/${id}?confirm=mine`, { cookie: other }, { method: 'DELETE' })).status).toBe(404);
   expect((await api(`/repos/${id}?confirm=mine`, { cookie }, { method: 'DELETE' })).body).toEqual({ deleted: true });
   expect((await api(`/repos/${id}`, { cookie })).body.error.code).toBe('GONE');
 });

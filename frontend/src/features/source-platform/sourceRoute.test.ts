@@ -34,6 +34,8 @@ describe('source routes', () => {
       { view: 'repo-settings', repo, section: 'rules' },
       { view: 'repo-settings', repo, section: 'webhooks' },
       { view: 'repo-settings', repo, section: 'visibility' },
+      { view: 'repositories' },
+      { view: 'context', repo },
     ];
     for (const route of routes) {
       const url = new URL(formatSourceRoute(route), 'https://x');
@@ -72,16 +74,40 @@ describe('source routes', () => {
   });
 });
 
-describe('repository tabs', () => {
-  it('groups views under their tab and starts each tab at its first view', () => {
-    expect(routeTab({ view: 'overview', repo, path: '', ref: 'main' })).toBe('code');
-    expect(routeTab({ view: 'transactions', repo })).toBe('history');
-    expect(routeTab({ view: 'commit', repo, commit: sha })).toBe('history');
+describe('repository pages', () => {
+  it('groups views under their sidebar page and starts each page at its first view', () => {
+    expect(routeTab({ view: 'files', repo, path: 'src', ref: 'main' })).toBe('overview');
+    expect(routeTab({ view: 'overview', repo, path: '', ref: 'main' })).toBe('overview');
+    expect(routeTab({ view: 'transactions', repo })).toBe('commits');
+    expect(routeTab({ view: 'commit', repo, commit: sha })).toBe('commits');
     expect(routeTab({ view: 'repo-settings', repo, section: 'tokens' })).toBe('settings');
     expect(routeTab({ view: 'change', repo, number: 3 })).toBe('changes');
+    expect(routeTab({ view: 'context', repo })).toBe('context');
     expect(routeTab({ view: 'settings' })).toBeUndefined();
-    for (const tab of ['code', 'history', 'changes', 'search', 'settings'] as const)
+    expect(routeTab({ view: 'repositories' })).toBeUndefined();
+    for (const tab of [
+      'overview',
+      'changes',
+      'agents',
+      'commits',
+      'sessions',
+      'context',
+      'releases',
+      'search',
+      'settings',
+    ] as const)
       expect(routeTab(tabRoute(tab, repo))).toBe(tab);
+    // The old deep links keep their addresses.
+    expect(formatSourceRoute(tabRoute('overview', repo))).toBe(`/source/${repo}`);
+    expect(formatSourceRoute(tabRoute('commits', repo))).toBe(`/source/${repo}/history`);
+    expect(formatSourceRoute(tabRoute('sessions', repo))).toBe(`/source/${repo}/agents`);
+    expect(formatSourceRoute(tabRoute('agents', repo))).toBe(`/source/${repo}/agents/contracts`);
+  });
+  it('addresses the repository list and the agent context page', () => {
+    expect(formatSourceRoute({ view: 'repositories' })).toBe('/repositories');
+    expect(parseSourceRoute('/repositories', '')).toEqual({ view: 'repositories' });
+    expect(parseSourceRoute('/repositories/x', '')).toEqual({ view: 'home' });
+    expect(formatSourceRoute({ view: 'context', repo })).toBe(`/source/${repo}/context`);
   });
 });
 

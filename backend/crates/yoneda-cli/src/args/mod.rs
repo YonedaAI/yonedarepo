@@ -3,6 +3,7 @@
 mod change;
 #[cfg(test)]
 mod docs;
+mod memory;
 mod org;
 mod parser;
 mod release;
@@ -147,6 +148,7 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "session" => sub::session(rest)?,
         "change" => change::change(rest)?,
         "release" => release::release(rest)?,
+        "memory" => memory::memory(rest)?,
         "hook" => sub::hook(rest)?,
         "context" => sub::context(rest)?,
         "help" | "--help" | "-h" => Command::Help,
@@ -478,6 +480,47 @@ mod tests {
                 target: Target::default(),
                 command: ReleaseCommand::Show { tag: "v1".into() }
             })
+        );
+        assert_eq!(
+            parse(&[
+                "memory".into(),
+                "add".into(),
+                "gotcha".into(),
+                "-m".into(),
+                "retry() must stay idempotent".into(),
+                "--anchors".into(),
+                "src/net.rs#retry,docs/".into(),
+                "--supersedes".into(),
+                "4".into(),
+            ])
+            .ok(),
+            Some(Command::Memory {
+                target: Target::default(),
+                command: MemoryCommand::Add {
+                    kind: "gotcha".into(),
+                    text: "retry() must stay idempotent".into(),
+                    anchors: vec!["src/net.rs#retry".into(), "docs/".into()],
+                    supersedes: Some(4),
+                    commit: None,
+                }
+            })
+        );
+        assert_eq!(
+            parsed("memory list --path src/ --status stale --json").ok(),
+            Some(Command::Memory {
+                target: Target::default(),
+                command: MemoryCommand::List {
+                    path: Some("src/".into()),
+                    kind: None,
+                    status: Some("stale".into()),
+                }
+            })
+        );
+        assert!(parsed("memory add gotcha").is_err());
+        assert!(parsed("memory show x").is_err());
+        assert_eq!(
+            parsed("hook claude-prompt").ok(),
+            Some(Command::Hook(HookEvent::ClaudePrompt))
         );
         assert_eq!(
             parsed("setup codex").ok(),

@@ -4,15 +4,15 @@
   padding: 0;
   width: min(600px, calc(100vw - 32px));
   max-height: calc(100dvh - 48px);
-  color: #152436;
-  background: #fff;
-  box-shadow: 0 24px 80px #12243b30;
+  color: var(--text);
+  background: var(--surface);
+  box-shadow: 0 24px 80px var(--shadow-strong);
 }
 .dialog-wide {
   width: min(800px, calc(100vw - 32px));
 }
 .dialog::backdrop {
-  background: #15243665;
+  background: var(--overlay);
   backdrop-filter: blur(3px);
 }
 .dialog-heading {
@@ -24,7 +24,7 @@
   border-bottom: 1px solid var(--line);
   position: sticky;
   top: 0;
-  background: #fff;
+  background: var(--surface);
   z-index: 2;
 }
 .dialog-heading h2 {

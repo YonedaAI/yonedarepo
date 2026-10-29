@@ -1,0 +1,40 @@
+{
+  "$defs": {
+    "CheckRun": {
+      "additionalProperties": false,
+      "description": "`check run`.",
+      "properties": {
+        "commit": {
+          "type": "string"
+        },
+        "run": {
+          "description": "The queued check run, as the platform records it."
+        }
+      },
+      "required": [
+        "commit",
+        "run"
+      ],
+      "title": "CheckRun",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `check-run`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/CheckRun"
+    },
+    "schema": {
+      "const": "yoneda.cli.check-run.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.check-run.v1",
+  "type": "object"
+}

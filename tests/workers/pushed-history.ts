@@ -56,9 +56,56 @@ export async function fetchV2(repo: string, token: string, args: string[]) {
   return new DataView(bytes.buffer, bytes.byteOffset + at + 8, 4).getUint32(0);
 }
 
+/** A v2 fetch asking for timings: its pack object count and the `yoneda-timing` fields
+ * (PackStats: `walk_reads`, `walk_read` in MiB, ...), units dropped. */
+export async function fetchTimed(repo: string, token: string, args: string[]) {
+  const body = `${pkt('command=fetch\n')}${pkt('object-format=sha1\n')}0001${args.map((a) => pkt(`${a}\n`)).join('')}0000`;
+  const bytes = await request(repo, token, 'git-upload-pack', body, { 'git-protocol': 'version=2', 'x-yoneda-timing': '1' });
+  const text = new TextDecoder('latin1').decode(bytes);
+  const at = text.indexOf('PACK');
+  const count = new DataView(bytes.buffer, bytes.byteOffset + at + 8, 4).getUint32(0);
+  const line = /yoneda-timing (.*)\n/.exec(text)?.[1] ?? '';
+  const timing: Record<string, number> = {};
+  for (const [, key, value] of line.matchAll(/(\w+)=([\d.]+)/g)) timing[key] = Number(value);
+  return { count, timing };
+}
+
+/** The kinds each of this repository's bundles holds, as a sorted string of frame kinds
+ * (1 commit, 2 tree, 3 blob): `'12'` holds commits and trees only. */
+export async function bundleKinds(repo: string) {
+  const listed = await scoped.OBJECTS.list({ prefix: `platform/v1/${repo}/bundles/` });
+  const kinds: string[] = [];
+  for (const { key } of listed.objects) {
+    const bytes = new Uint8Array(await ((await scoped.OBJECTS.get(key)) as R2ObjectBody).arrayBuffer());
+    const view = new DataView(bytes.buffer);
+    const held = new Set<number>();
+    for (let at = 0; at < bytes.length; at += 25 + view.getUint32(at + 21)) held.add(bytes[at]);
+    kinds.push([...held].sort().join(''));
+  }
+  return kinds;
+}
+
+/** Waits (up to 2 s) until no read of `repo`'s bundles happens for two 25 ms windows: a
+ * push leaves the head holder warming the new head's trees in the background, which a
+ * measurement must not count as its own. */
+async function quiet(repo: string) {
+  const gets = vi.spyOn(scoped.OBJECTS, 'get');
+  try {
+    for (let calm = 0, round = 0; calm < 2 && round < 80; round++) {
+      const before = gets.mock.calls.length;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+      const read = gets.mock.calls.slice(before).some(([key]) => String(key).startsWith(`platform/v1/${repo}/bundles/`));
+      calm = read ? 0 : calm + 1;
+    }
+  } finally {
+    gets.mockRestore();
+  }
+}
+
 /** R2 reads of this repository's objects while `run` runs, in a fresh isolate: `reads` and
  * `bytes` of its bundles (ranged reads count the range), `others` of its other keys. */
 export async function objectReads(repo: string, run: () => Promise<unknown>) {
+  await quiet(repo);
   isolateLocations.clear();
   isolateTrees.clear();
   const gets = vi.spyOn(scoped.OBJECTS, 'get');

@@ -15,6 +15,7 @@ op_names! {
 op_names! {
     /// Commands the repository store runs itself.
     pub(crate) enum RepoOp {
+        Activity = "repo_activity",
         AdoptCommit = "repo_adopt_commit",
         AgentContext = "repo_agent_context",
         BeginCommit = "repo_begin_commit",
@@ -155,6 +156,31 @@ op_names! {
     }
 }
 
+op_names! {
+    /// Withholding content and purging it (`quarantine`).
+    pub(crate) enum QuarantineOp {
+        Put = "repo_quarantine",
+        List = "repo_quarantines",
+        Release = "repo_quarantine_release",
+        Purge = "repo_quarantine_purge",
+        Claim = "repo_quarantine_claim",
+        Purged = "repo_quarantine_purged",
+    }
+}
+
+op_names! {
+    /// Repository memories and the context delivered to coding sessions (`memory`).
+    pub(crate) enum MemoryOp {
+        Add = "repo_memory_add",
+        Retire = "repo_memory_retire",
+        List = "repo_memory_list",
+        Show = "repo_memory_show",
+        Relevant = "repo_context_relevant",
+        Deliver = "repo_context_deliver",
+        Deliveries = "repo_context_deliveries",
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum Op {
@@ -170,6 +196,8 @@ pub(crate) enum StoreOp {
     Maintenance(MaintenanceOp),
     Lfs(LfsOp),
     Fork(ForkOp),
+    Quarantine(QuarantineOp),
+    Memory(MemoryOp),
 }
 
 impl Op {
@@ -194,6 +222,8 @@ impl Op {
         let store = store.chain(MaintenanceOp::ALL.iter().copied().map(StoreOp::Maintenance));
         let store = store.chain(LfsOp::ALL.iter().copied().map(StoreOp::Lfs));
         let store = store.chain(ForkOp::ALL.iter().copied().map(StoreOp::Fork));
+        let store = store.chain(QuarantineOp::ALL.iter().copied().map(StoreOp::Quarantine));
+        let store = store.chain(MemoryOp::ALL.iter().copied().map(StoreOp::Memory));
         let init = InitOp::ALL.iter().copied().map(Self::Init);
         init.chain(store.map(Self::Store)).collect()
     }
@@ -207,6 +237,8 @@ impl StoreOp {
             Self::Maintenance(op) => op.name(),
             Self::Lfs(op) => op.name(),
             Self::Fork(op) => op.name(),
+            Self::Quarantine(op) => op.name(),
+            Self::Memory(op) => op.name(),
         }
     }
 }

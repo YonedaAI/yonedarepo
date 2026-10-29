@@ -2,7 +2,9 @@
 // repositories are listed at `/source/explore` (the platform host redirects `/explore` there;
 // the bare path parses too, for a host that does not). Older
 // addresses (`/source`, `/source/tokens`, a repository's `/connect`, `/members` and
-// `/settings/branches`) still parse, into the view that replaced them.
+// `/settings/branches`) still parse, into the view that replaced them. The public site's
+// pages (`site/siteRoute.ts`) parse here too, as one `site` view.
+import { formatSitePage, parseSitePath, type SitePage } from '../site/siteRoute';
 import { AGENT_SECTIONS, type AgentSection } from './agentModel';
 import { normalizeUserCode } from './connect';
 
@@ -22,10 +24,12 @@ export type RepoSettingsSection = (typeof REPO_SETTINGS_SECTIONS)[number];
 
 export type SourceRoute =
   | { view: 'home' }
+  | { view: 'repositories' }
   | { view: 'explore' }
   | { view: 'settings' }
   | { view: 'device'; code: string }
   | { view: 'org'; org: string }
+  | { view: 'site'; site: SitePage }
   | { view: 'files'; repo: string; path: string; ref: string; at?: number }
   | { view: 'overview'; repo: string; path: string; ref: string; at?: number }
   | { view: 'history'; repo: string; ref: string }
@@ -39,15 +43,21 @@ export type SourceRoute =
   | { view: 'release'; repo: string; tag: string }
   | { view: 'agents'; repo: string; section: AgentSection }
   | { view: 'session'; repo: string; id: number }
+  | { view: 'context'; repo: string }
   | { view: 'repo-settings'; repo: string; section: RepoSettingsSection };
 
-/** The repository tabs; `transactions`, `branches` and `commit` belong to History, `overview` to Code,
- * `change` to Changes, `release` to Releases, `session` to Agents. */
+/** The repository's sidebar pages. Overview is the code browser (`files`, `overview`);
+ * Commits holds `history`, `transactions`, `branches` and `commit`; Changes holds `change`;
+ * Releases holds `release`; Sessions holds the agent sessions and each `session`; Agents
+ * the other agent records (contracts, pins, bisects). */
 export type RepoTab =
-  | 'code'
-  | 'history'
+  | 'overview'
   | 'changes'
   | 'agents'
+  | 'commits'
+  | 'sessions'
+  | 'context'
+  | 'memories'
   | 'releases'
   | 'search'
   | 'settings';
@@ -68,10 +78,13 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
   if (root === 'device')
     return { view: 'device', code: normalizeUserCode(params.get('code') ?? '') };
   if (root === 'settings' && !repo) return { view: 'settings' };
+  if (root === 'repositories' && !repo) return { view: 'repositories' };
   if (root === 'orgs' && repo && ORG_NAME.test(repo) && !view) return { view: 'org', org: repo };
   if (root === 'source' && repo === 'tokens' && !view) return { view: 'settings' };
   if ((root === 'source' && repo === 'explore' && !view) || (root === 'explore' && !repo))
     return { view: 'explore' };
+  const site = parseSitePath(parts);
+  if (site) return { view: 'site', site };
   if (root !== 'source' || !repo || !REPO.test(repo)) return { view: 'home' };
   const ref = params.get('ref') || 'main';
   if (view === 'history') return { view: 'history', repo, ref };
@@ -83,6 +96,7 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
   if (view === 'settings')
     return { view: 'repo-settings', repo, section: isSection(rest[0]) ? rest[0] : 'rules' };
   if (view === 'search') return { view: 'search', repo, query: params.get('q') ?? '' };
+  if (view === 'context') return { view: 'context', repo };
   if (view === 'changes') {
     const number = Number(rest[0]);
     return rest[0] && /^[1-9][0-9]*$/.test(rest[0]) && Number.isSafeInteger(number)
@@ -116,8 +130,10 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
 export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'home') return '/';
   if (route.view === 'settings') return '/settings';
+  if (route.view === 'repositories') return '/repositories';
   if (route.view === 'explore') return '/source/explore';
   if (route.view === 'org') return `/orgs/${route.org}`;
+  if (route.view === 'site') return formatSitePage(route.site);
   if (route.view === 'device')
     return route.code ? `/device?code=${encodeURIComponent(route.code)}` : '/device';
   const base = `/source/${route.repo}`;
@@ -139,6 +155,7 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'agents')
     return route.section === 'sessions' ? `${base}/agents` : `${base}/agents/${route.section}`;
   if (route.view === 'session') return `${base}/agents/sessions/${route.id}`;
+  if (route.view === 'context') return `${base}/context`;
   const query = new URLSearchParams();
   if (route.ref !== 'main') query.set('ref', route.ref);
   if (route.at !== undefined) query.set('at', String(route.at));
@@ -153,17 +170,17 @@ export function formatSourceRoute(route: SourceRoute): string {
 export const routeRepo = (route: SourceRoute): string | undefined =>
   'repo' in route ? route.repo : undefined;
 
-/** The tab a repository route belongs to. */
+/** The sidebar page a repository route belongs to. */
 export function routeTab(route: SourceRoute): RepoTab | undefined {
   switch (route.view) {
     case 'files':
     case 'overview':
-      return 'code';
+      return 'overview';
     case 'history':
     case 'transactions':
     case 'branches':
     case 'commit':
-      return 'history';
+      return 'commits';
     case 'changes':
     case 'change':
       return 'changes';
@@ -171,8 +188,15 @@ export function routeTab(route: SourceRoute): RepoTab | undefined {
     case 'release':
       return 'releases';
     case 'agents':
+      return route.section === 'sessions'
+        ? 'sessions'
+        : route.section === 'memories'
+          ? 'memories'
+          : 'agents';
     case 'session':
-      return 'agents';
+      return 'sessions';
+    case 'context':
+      return 'context';
     case 'search':
       return 'search';
     case 'repo-settings':
@@ -182,13 +206,16 @@ export function routeTab(route: SourceRoute): RepoTab | undefined {
   }
 }
 
-/** Where a tab starts. */
+/** Where a page starts. */
 export function tabRoute(tab: RepoTab, repo: string): SourceRoute {
-  if (tab === 'code') return { view: 'files', repo, path: '', ref: 'main' };
-  if (tab === 'history') return { view: 'history', repo, ref: 'main' };
+  if (tab === 'overview') return { view: 'files', repo, path: '', ref: 'main' };
+  if (tab === 'commits') return { view: 'history', repo, ref: 'main' };
   if (tab === 'changes') return { view: 'changes', repo };
   if (tab === 'releases') return { view: 'releases', repo };
-  if (tab === 'agents') return { view: 'agents', repo, section: 'sessions' };
+  if (tab === 'sessions') return { view: 'agents', repo, section: 'sessions' };
+  if (tab === 'agents') return { view: 'agents', repo, section: 'contracts' };
+  if (tab === 'context') return { view: 'context', repo };
+  if (tab === 'memories') return { view: 'agents', repo, section: 'memories' };
   if (tab === 'search') return { view: 'search', repo, query: '' };
   return { view: 'repo-settings', repo, section: 'rules' };
 }

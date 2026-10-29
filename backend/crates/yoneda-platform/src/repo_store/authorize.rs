@@ -2,7 +2,7 @@
 //! with their own rules (`maintenance`, `lfs`, `forks`) decide for their ops.
 use super::auth::Actor;
 use super::op::{RepoOp as R, StoreOp};
-use super::{forks, land, lfs, maintenance, rows, tags};
+use super::{forks, land, lfs, maintenance, quarantine, rows, tags};
 use serde_json::Value;
 use yoneda_core::{Error, Result};
 
@@ -11,6 +11,8 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         StoreOp::Maintenance(op) => return maintenance::authorize(actor, op),
         StoreOp::Lfs(op) => return lfs::authorize(actor, op, c),
         StoreOp::Fork(op) => return forks::authorize(actor, op),
+        StoreOp::Quarantine(op) => return quarantine::authorize(actor, op),
+        StoreOp::Memory(op) => return super::memory::authorize(actor, op),
         StoreOp::Repo(op) => op,
     };
     match op {
@@ -58,6 +60,11 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         R::ChangeRecords if !actor.can("classify") => Err(Error::new(
             "FORBIDDEN",
             "Only the platform reads change records",
+        )),
+        // The activity summary spans every path and session: the platform projects it.
+        R::Activity if !actor.can("classify") => Err(Error::new(
+            "FORBIDDEN",
+            "Only the platform reads the activity summary",
         )),
         R::CheckClaim
         | R::CheckRelease
@@ -113,7 +120,8 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         R::SetVisibility => actor.require_repo_owner(),
         R::CloneAccess => actor.require_human_reader(),
         // Every other op, and a guarded op above whose caller passes its guard, reads.
-        R::AdoptCommit
+        R::Activity
+        | R::AdoptCommit
         | R::AgentContext
         | R::BisectList
         | R::BundleIndex

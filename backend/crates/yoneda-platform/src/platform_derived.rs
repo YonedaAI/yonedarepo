@@ -117,11 +117,18 @@ pub fn partition_files(c: &Value) -> Result<Value> {
 
 /// `index_files`: the segment of a chunk of a partition's files (`files: [{path, id}]`),
 /// asking for their content. `sizes` (`{id: bytes}`, what the adapter knows) lists a file
-/// too large to index by path, unread; the segment is the same either way.
+/// too large to index by path, unread; the segment is the same either way. `withheld`
+/// (quarantined blob ids) are listed by path, unread, as quarantined.
 pub fn index_files(c: &Value) -> Result<Value> {
     let listed = c["files"]
         .as_array()
         .ok_or_else(|| bad("files must be a list"))?;
+    let withheld: BTreeSet<&str> = c["withheld"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
     let mut need = BTreeSet::new();
     let mut contents = Vec::with_capacity(listed.len());
     for file in listed {
@@ -130,7 +137,9 @@ pub fn index_files(c: &Value) -> Result<Value> {
             ObjectId::parse(&string(file, "id")?)?,
         );
         let size = c["sizes"].get(id.hex()).and_then(Value::as_u64);
-        if size.is_some_and(|n| n > MAX_INDEXED_BYTES as u64) {
+        if withheld.contains(id.hex().as_str())
+            || size.is_some_and(|n| n > MAX_INDEXED_BYTES as u64)
+        {
             contents.push((path, id, None));
             continue;
         }
@@ -144,8 +153,13 @@ pub fn index_files(c: &Value) -> Result<Value> {
     if !need.is_empty() {
         return Ok(json!({ "need_blobs": need }));
     }
-    let segment = build_segment(&contents).encode()?;
-    Ok(json!({ "segment_b64": STANDARD.encode(segment) }))
+    let mut segment = build_segment(&contents);
+    for file in &mut segment.files {
+        if withheld.contains(file.id.hex().as_str()) {
+            file.skipped = Some("quarantined".into());
+        }
+    }
+    Ok(json!({ "segment_b64": STANDARD.encode(segment.encode()?) }))
 }
 
 /// `search_segment`: of a stored segment (`segment_b64`) under `prefix`, the files that may

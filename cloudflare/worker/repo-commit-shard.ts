@@ -61,7 +61,7 @@ export async function commitInShard(
           : { parent: null, base_version: body.base_version ?? 0 }),
       paths: body.changes.map((c: Json) => c?.path),
     }));
-  const store = given ?? ctx.adopt(begun.object_store);
+  const store = given ?? ctx.adopt(begun.object_store, begun.quarantined);
   let parent = begun.parent;
   if (begun.parent_elsewhere) {
     const record = await shardRecord(ctx.env, ctx.repo, begun.parent_id);
