@@ -12,12 +12,14 @@ use yoneda_refmodel::{CommitId, MAIN, Op, Outcome, Plan, Repo, Rng, Role, Tree, 
 
 mod adapter;
 mod git;
+mod scenarios;
 
 /// What the platform answered for one operation.
 #[derive(Debug, PartialEq, Eq)]
 enum Seen {
     Committed(String),
-    Rebased(Vec<String>),
+    /// The commits a rebase made, and how many replays it dropped as already upstream.
+    Rebased(Vec<String>, usize),
     Moved,
     Already,
     Done,
@@ -150,6 +152,9 @@ impl Driver {
         let (seen, seen_plan) = self.platform(op);
         let (expected, plan) = self.model.apply(op);
         *self.tally.entry(label(op, &expected)).or_default() += 1;
+        if matches!(seen, Seen::Rebased(_, dropped) if dropped > 0) {
+            *self.tally.entry("Rebase dropped".into()).or_default() += 1;
+        }
         if seen_plan != plan {
             return Err(format!(
                 "merge plan: platform {seen_plan:?}, model {plan:?}"
@@ -160,7 +165,7 @@ impl Driver {
                 self.ids.push(id.clone());
                 self.same_files(*model)?;
             }
-            (Seen::Rebased(ids), Outcome::Rebased(model))
+            (Seen::Rebased(ids, _), Outcome::Rebased(model))
                 if model.len() == ids.len()
                     && model
                         .iter()
@@ -317,12 +322,12 @@ fn cases(count: u64, steps: usize) -> BTreeMap<String, usize> {
 #[test]
 fn the_platform_matches_the_reference_model() {
     let tally = cases(16, 80);
-    // The generator still reaches every landing outcome and every refusal it aims for.
+    // The generator still reaches every landing outcome and every refusal it aims for
+    // (the rarest have scripts of their own: `scenarios`).
     if std::env::var("YONEDA_DIFF_SEED").is_err() {
         for label in [
             "Land Moved",
             "Land Already",
-            "Land CONFLICT",
             "Land MERGE_REQUIRED",
             "Land STALE_PARENT",
             "CreateBranch STALE_HEAD",
@@ -333,14 +338,12 @@ fn the_platform_matches_the_reference_model() {
             "Tag ALREADY_EXISTS",
             "Revert Committed",
             "Revert CONFLICT",
-            "MergeLand Committed",
             "MergeLand CONFLICT",
             "Rebase Rebased",
             "Rebase Already",
             "Rebase CONFLICT",
             "Probe Done",
             "Probe NOT_FOUND",
-            "Probe UNAUTHORIZED",
             "Probe FORBIDDEN",
             "SetVisibility Done",
             "SetVisibility FORBIDDEN",
