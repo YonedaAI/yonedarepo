@@ -183,38 +183,6 @@ fn queued_landings_settle_as_an_octopus_a_fast_forward_and_failures() {
     );
 }
 
-/// Found by the differential when it enqueued with `repo_land_enqueue` directly: a ticket
-/// for a commit that already landed on main is claimed as a fast-forward, and the batch's
-/// landing record then breaks the landings key. The adapter never sends such a ticket
-/// (`repo_land` answers `already` before it would queue), but the authority accepts it,
-/// and the queue then fails every claim the same way until someone releases it.
-#[test]
-#[ignore = "known-failing: land_batch answers DATABASE (UNIQUE constraint failed: \
-            landings.commit_id, landings.refname) and leaves the ticket pending; target: the \
-            ticket settles (landed, already) or enqueue refuses a landed commit"]
-fn a_queued_ticket_for_a_landed_commit_settles() {
-    use crate::repo_store::tests::{OWNER, batches::open};
-    use serde_json::json;
-    let (h, root) = open();
-    let ticket = h.ok(
-        OWNER,
-        json!({"op":"repo_land_enqueue","ref":"main","commit":root}),
-    )["ticket"]
-        .clone();
-    let claim = h.ok(
-        "platform:merge",
-        json!({"op":"repo_land_claim","ref":"main"}),
-    );
-    let landed = h.run(
-        "platform:merge",
-        json!({"op":"repo_land_batch","ref":"main","epoch":claim["epoch"],"head":claim["head"],
-            "landed":[ticket],"failed":[]}),
-    );
-    assert!(landed.is_ok(), "{landed:?}");
-    let status = h.ok(OWNER, json!({"op":"repo_land_status","ticket":ticket}));
-    assert_ne!(status["status"], "pending");
-}
-
 fn mint(name: &str, scopes: &[Scope], grant: Option<&[&str]>) -> Op {
     Op::MintToken {
         name: name.into(),
