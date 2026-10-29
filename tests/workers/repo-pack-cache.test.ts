@@ -1,8 +1,7 @@
-// A full clone served from a stored pack (PACK_CACHE=on). A clone asks for every ref tip
-// and has nothing: its pack depends on its wants alone, so the first one is stored while
-// it streams and later ones stream that object, with no bundle reads, deltas or zlib.
-// Fetches with haves, filters or depth are built as before. Counts are of R2 reads in
-// local workerd.
+// Clones served from a stored pack (PACK_CACHE=on). A clone has nothing: its pack depends
+// on its wants, filter and depth alone, so the first one is stored while it streams and
+// later ones stream that object, with no bundle reads, deltas or zlib. Fetches with haves
+// are built as before. Counts are of R2 reads in local workerd.
 import { expect, it, vi } from 'vitest';
 import { withWaitUntil } from '../../cloudflare/worker/background';
 import { isolateLocations } from '../../cloudflare/worker/repo-bundles';
@@ -135,11 +134,27 @@ it('serves a full clone from the pack the first one stored', async () => {
   const v0 = await reads(repo, () => request(repo, token, 'git-upload-pack', `${pkt(`want ${tip} side-band-64k\n`)}0000${pkt('done\n')}`));
   expect(v0).toEqual({ bundles: 0, packs: 1 });
 
-  // A fetch with haves, a partial clone or a shallow one is built for what it asks.
+  // A partial clone is never served the full clone's pack (this one, of commits and trees
+  // only, is too small to store).
   const partial = await reads(repo, async () => expect(count(await fetchV2(repo, token, [`want ${tip}`, 'filter blob:none', 'done']))).toBe(2 + 6 * 3));
-  expect(partial.packs).toBe(0);
-  const shallow = await reads(repo, () => fetchV2(repo, token, [`want ${tip}`, 'deepen 1', 'done']));
-  expect(shallow.packs).toBe(0);
+  expect(partial.bundles).toBeGreaterThan(0);
+  // A shallow clone and a checkout's files wanted by id (neither has anything) store packs
+  // of their own, and later ones stream them.
+  const fresh = [
+    [[`want ${tip}`, 'deepen 1', 'done'], 1 + 2 + 6],
+    [[...objects.filter((o) => o.kind === 'blob').map((o) => `want ${o.id}`), 'filter blob:none', 'done'], 6],
+  ] as const;
+  for (const [args, objectCount] of fresh) {
+    let built: Uint8Array | string = '';
+    const first = await reads(repo, async () => (built = await fetchV2(repo, token, [...args])));
+    expect(count(built)).toBe(objectCount);
+    expect(first.bundles).toBeGreaterThan(0);
+    let again: Uint8Array | string = '';
+    const hit = await reads(repo, async () => (again = await fetchV2(repo, token, [...args])));
+    expect(hit).toEqual({ bundles: 0, packs: 1 });
+    expect(again).toEqual(built);
+  }
+  // A fetch with haves is built for what it lacks.
   const incremental = await reads(repo, async () => expect(count(await fetchV2(repo, token, [`want ${tip}`, `have ${objects[4].id}`, 'done']))).toBe(4));
   expect(incremental.packs).toBe(0);
 
@@ -152,7 +167,7 @@ it('serves a full clone from the pack the first one stored', async () => {
 
 const digest = async (bytes: Uint8Array) => hex(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)));
 
-it('stores a pack of several parts, nothing when aborted, and keeps the four most recent', async () => {
+it('stores a pack of several parts, nothing when aborted, and keeps the eight most recent', async () => {
   const at = (name: string) => `derived/v1/rpackwriter/packs/v2/${name}.pack`;
   const write = async (key: string, size: number) => {
     const writer = new PackWriter(scoped, 'rpackwriter', key);
@@ -177,9 +192,10 @@ it('stores a pack of several parts, nothing when aborted, and keeps the four mos
   expect(await (await write(at('small'), 1_000)).writer.finish()).toBe(false);
   expect(await bindings.OBJECTS.head(at('small'))).toBeNull();
 
-  for (const name of ['p1', 'p2', 'p3', 'p4']) await (await write(at(name), 300_000)).writer.finish();
+  const names = ['p1', 'p2', 'p3', 'p4', 'p5', 'p6', 'p7', 'p8'];
+  for (const name of names) await (await write(at(name), 300_000)).writer.finish();
   const kept = (await bindings.OBJECTS.list({ prefix: 'derived/v1/rpackwriter/packs/v2/' })).objects.map((o) => o.key);
-  expect(kept.filter((k) => k.endsWith('.pack')).sort()).toEqual(['p1', 'p2', 'p3', 'p4'].map(at));
+  expect(kept.filter((k) => k.endsWith('.pack')).sort()).toEqual(names.map(at));
 });
 
 it('holds three parts of a pack at most: a store two parts behind the clone is given up', async () => {
