@@ -35,6 +35,7 @@ test('Claude Code runs read-only tools against the gateway with a placeholder ke
   assert.equal(c.env.ANTHROPIC_BASE_URL, `${gateway.base}/anthropic`);
   assert.equal(c.env.ANTHROPIC_API_KEY, PLACEHOLDER_KEY);
   assert.equal(c.env.MAX_THINKING_TOKENS, '24000');
+  assert.equal(c.env.ANTHROPIC_SMALL_FAST_MODEL, 'claude-sonnet-5-5');
   assert.equal(c.stdin, 'review this');
   assert.throws(() => buildCommand(spec({ harness: 'claude-code', provider: 'codex', model: 'gpt-5.6-luna' })));
 });

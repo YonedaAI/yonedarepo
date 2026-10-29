@@ -65,6 +65,10 @@ export function buildCommand(spec) {
         ...env,
         ANTHROPIC_BASE_URL: base,
         ANTHROPIC_API_KEY: PLACEHOLDER_KEY,
+        // Background work (titles, summaries) uses the run's model too: the gateway handler
+        // refuses any other, so a run never spends on a model it was not given.
+        ANTHROPIC_SMALL_FAST_MODEL: model,
+        ANTHROPIC_DEFAULT_HAIKU_MODEL: model,
         MAX_THINKING_TOKENS: String(THINKING[reasoning]),
         CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
       },
