@@ -30,7 +30,9 @@ import { ApiError, type Credentials, caller, type Json, RepoContext } from './re
 import { verifyPat } from './repo-pat';
 import {
   ANONYMOUS,
+  admitAnonymous,
   anonymousRead,
+  anonymousRepo,
   capped,
   explore,
   isExplore,
@@ -336,8 +338,11 @@ async function handle(req: Request, env: Env): Promise<Response> {
   if (!signed && (req.headers.has('authorization') || !anonymousRead(req, url)))
     return error('UNAUTHORIZED', 'Sign in or use a repository token', 401);
   if (!signed) {
-    const limited = await limitAnonymous(env, req, url.pathname).catch(failure);
-    if (limited) return limited;
+    const repo = anonymousRepo(url);
+    const refused = await limitAnonymous(env, req, url.pathname)
+      .then(() => (repo ? admitAnonymous(env, repo) : undefined))
+      .then(() => null, failure);
+    if (refused) return refused;
   }
   const auth = signed ?? ANONYMOUS;
   const mcp = /^\/api\/v1\/repos\/(r[0-9a-f]{20})\/mcp$/.exec(url.pathname);
