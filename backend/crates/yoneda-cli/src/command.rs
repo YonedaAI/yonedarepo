@@ -81,6 +81,9 @@ pub enum SessionCommand {
         transcript_ref: Option<String>,
         /// The coding session's id (default: from the environment).
         session_id: Option<String>,
+        /// A transcript file to upload: Claude Code's JSON lines, opencode's messages, or a
+        /// YonedaRepo transcript (`agent_transcript::from_file`).
+        transcript: Option<String>,
     },
     List {
         commit: Option<String>,
@@ -127,6 +130,18 @@ pub enum ChangeCommand {
         resolve: bool,
     },
     Land {
+        number: u64,
+    },
+    /// Close an open change without landing it (its author, the owner or a lander).
+    Close {
+        number: u64,
+    },
+    /// Reopen a closed change whose branch still exists with no other open change.
+    Reopen {
+        number: u64,
+    },
+    /// A closed change and its comments (its author or the owner).
+    Delete {
         number: u64,
     },
 }

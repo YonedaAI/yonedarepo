@@ -37,6 +37,9 @@ pub fn change(rest: &[String]) -> Result<Command> {
         }
         "show" => ChangeCommand::Show { number: number()? },
         "land" => ChangeCommand::Land { number: number()? },
+        "close" => ChangeCommand::Close { number: number()? },
+        "reopen" => ChangeCommand::Reopen { number: number()? },
+        "delete" => ChangeCommand::Delete { number: number()? },
         "comment" => {
             let anchor = match (p.flag("path"), p.number("line")?, p.flag("side")) {
                 (None, None, None) => None,

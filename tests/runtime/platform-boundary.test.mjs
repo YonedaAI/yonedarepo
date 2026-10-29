@@ -39,19 +39,8 @@ test('platform adapter modules import only platform and neutral modules', async 
   }
 });
 
+// Crate-to-crate dependencies are checked by `cargo xtask layers` against xtask/layers.toml.
 const crates = 'backend/crates';
-const dependencies = async (crate) => {
-  const manifest = await readFile(`${crates}/${crate}/Cargo.toml`, 'utf8');
-  // Normal dependencies only; dev-dependencies may pull in native test stores.
-  const section = manifest.split(/^\[dev-dependencies\]/m)[0];
-  return [...section.matchAll(/^(yoneda-[a-z-]+)\s*[=.]/gm)].map(([, name]) => name);
-};
-
-test('the platform depends on core contracts and the store only; core and the store are leaves', async () => {
-  assert.deepEqual((await dependencies('yoneda-platform')).sort(), ['yoneda-core', 'yoneda-store']);
-  assert.deepEqual(await dependencies('yoneda-store'), ['yoneda-core']);
-  assert.deepEqual(await dependencies('yoneda-core'), []);
-});
 
 /** First path segment of each top-level item in the braced import starting at `start`. */
 function topLevel(source, start) {
@@ -72,8 +61,9 @@ function topLevel(source, start) {
 test('platform Rust modules use only platform code and core contracts', async () => {
   // `account`: members are named by account identifier, the same contract signup validates.
   // `PLATFORM_MCP_TOOLS`: the MCP tool schemas (a core contract) the platform's tests pin
-  // against its own event and role lists.
-  const allowed = ['git_object', 'transport', 'txlog', 'textdiff', 'merge', 'search', 'blame', 'account', 'Error', 'Result', 'digest', 'fingerprint', 'validate_path', 'validate_symlink', 'hex', 'PLATFORM_MCP_TOOLS'];
+  // against its own event and role lists. `transcript`: the session transcript shape and
+  // truncation rule, which the CLI fits uploads to as well.
+  const allowed = ['git_object', 'transport', 'txlog', 'textdiff', 'merge', 'search', 'blame', 'account', 'transcript', 'Error', 'Result', 'digest', 'fingerprint', 'validate_path', 'validate_symlink', 'hex', 'PLATFORM_MCP_TOOLS'];
   const root = `${crates}/yoneda-platform/src`;
   const files = (await readdir(root, { recursive: true })).filter((f) => f.endsWith('.rs'));
   assert.ok(files.length >= 20, files.join());

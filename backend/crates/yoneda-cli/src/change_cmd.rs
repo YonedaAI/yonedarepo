@@ -209,6 +209,25 @@ pub async fn run(t: &Resolved, command: ChangeCommand) -> Result<()> {
             let base = change["base"].as_str().unwrap_or("main");
             land_head(t, &format!("change #{number}"), head, base).await?;
         }
+        ChangeCommand::Close { number } => {
+            let change = t
+                .api
+                .post(&format!("/changes/{number}/close"), &json!({}))
+                .await?;
+            println!("Closed {}", summary(&change));
+            println!("next: yoneda change reopen {number}, or yoneda change delete {number}");
+        }
+        ChangeCommand::Reopen { number } => {
+            let change = t
+                .api
+                .post(&format!("/changes/{number}/reopen"), &json!({}))
+                .await?;
+            println!("Reopened {}", summary(&change));
+        }
+        ChangeCommand::Delete { number } => {
+            t.api.delete(&format!("/changes/{number}")).await?;
+            println!("Deleted change #{number}");
+        }
     }
     Ok(())
 }

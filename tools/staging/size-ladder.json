@@ -1,0 +1,68 @@
+{
+  "about": "Size ladder of pure open-source imports (permissive licenses), pinned commits. size_kb is GitHub's reported repository size; the script measures the packed size, objects and commits of the pinned commit and writes them to its results. Optional rungs run only when named with --rungs.",
+  "rungs": [
+    {
+      "name": "svelte",
+      "source": "https://github.com/sveltejs/svelte.git",
+      "branch": "main",
+      "commit": "23f166ba29ac71ad9ef94cbbdcc45a4c5c73ecaf",
+      "license": "MIT",
+      "size_kb": 124310,
+      "measured": "118.8 MiB packed, 168,943 objects, 11,458 commits (7,025 first-parent), 13,129 tip files and trees, largest blob 18.3 MB (site/static/tutorial/music/strauss.mp3)",
+      "query": "createEventDispatcher",
+      "path": "packages/svelte/src/index-client.js",
+      "expect": [
+        "Import: 8 pushes planned (--plan-only); push 3 carries strauss.mp3 (18.3 MB > 16 MiB per object) and is expected to be refused, so reads run on the first 2 pushes' history.",
+        "Full clone: refused, 169k objects > the 40,000 a fetch sends (even of the partial history, likely).",
+        "Partial clone: likely refused (11k commits plus their trees > 40,000).",
+        "Shallow clone: about 13k objects, served.",
+        "Search: first query builds the index cold (tens of seconds); later ones served. Blame, history, Overview: served."
+      ]
+    },
+    {
+      "name": "kubernetes",
+      "source": "https://github.com/kubernetes/kubernetes.git",
+      "branch": "master",
+      "commit": "d0d1a17193d42dab5e893d21266bc5f8de16735f",
+      "license": "Apache-2.0",
+      "size_kb": 1540848,
+      "query": "PodSpec",
+      "path": "pkg/kubelet/kubelet.go",
+      "expect": [
+        "Import: 40-60 pushes (about 1.5 GB / 40 MiB; objects likely over 1M / 30k), hours of pushing; any blob over 16 MiB stops it.",
+        "Full and partial clone: refused (objects far over 40,000).",
+        "Shallow clone: the tip's files and trees, near 40,000 (borderline: refused if over).",
+        "Search: cold index build over many partitions may exceed a request's limits (first break expected here after clones). Overview, blame, history: served; history and blame on 142k commits test the authority's log size."
+      ]
+    },
+    {
+      "name": "material-design-icons",
+      "source": "https://github.com/google/material-design-icons.git",
+      "branch": "master",
+      "commit": "10ecc14790612ca8fd164e3f4ffe9c16fc50d5b7",
+      "license": "Apache-2.0",
+      "size_kb": 5170545,
+      "query": "favorite",
+      "path": "README.md",
+      "expect": [
+        "Import: about 130+ pushes by bytes (5 GB / 40 MiB) but only 318 commits: single first-parent steps of tens of thousands of icon files are expected to exceed one push (40,000 objects or 64 MiB): the import is expected to break here first.",
+        "Shallow clone: the tip holds far over 40,000 files: refused. Full and partial clone: refused.",
+        "Search: directories of more than 200,000 files are not indexed (named as refused); Overview lists the whole tree (large) but analyses at most 400 source files."
+      ]
+    },
+    {
+      "name": "clickhouse",
+      "optional": true,
+      "source": "https://github.com/ClickHouse/ClickHouse.git",
+      "branch": "master",
+      "commit": "474f3e327db3b2d947433adac57e79bc2155a923",
+      "license": "Apache-2.0",
+      "size_kb": 14768367,
+      "query": "MergeTree",
+      "path": "src/Storages/MergeTree/MergeTreeData.cpp",
+      "expect": [
+        "Optional source-code rung over 5 GB (313k commits). Import: hundreds of pushes; same fetch caps as kubernetes; DO SQLite growth from 313k commits' records is the limit to watch."
+      ]
+    }
+  ]
+}

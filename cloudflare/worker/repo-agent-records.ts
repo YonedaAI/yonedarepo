@@ -1,8 +1,10 @@
 // Read-only, repository-wide views of what agents record, for the web's agent pages:
-// session records (GET sessions, sessions/<id>), authored contract records (GET contracts),
+// session records (GET sessions, sessions/<id>, and the transcript stored for one,
+// sessions/<id>/transcript), authored contract records (GET contracts),
 // pins (GET pins) and bisects (GET bisect). The authority decides access; this only maps
 // query strings onto its operations.
 import { ApiError, type Json, type RepoContext } from './repo-ops';
+import { readTranscript } from './repo-session-records';
 
 /** A positive integer query parameter, absent when not given. */
 function count(query: Record<string, string>, key: string): number | undefined {
@@ -23,6 +25,8 @@ export function agentRecords(
   sub: string | undefined,
   query: Record<string, string>,
 ): Promise<Json> | undefined {
+  if (resource === 'sessions' && id !== undefined && sub === 'transcript')
+    return readTranscript(ctx, count({ id }, 'id') as number);
   if (!resource || !RESOURCES.has(resource) || sub !== undefined) return undefined;
   if (id !== undefined)
     return resource === 'sessions'

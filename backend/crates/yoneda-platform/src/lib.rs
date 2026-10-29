@@ -53,6 +53,7 @@ pub mod platform_push_reads;
 mod platform_review;
 mod platform_symbol_graph;
 mod platform_symbols;
+mod platform_transcript;
 mod platform_views;
 pub(crate) mod repo_store;
 mod secret_scan;
@@ -70,5 +71,9 @@ pub(crate) mod storage {
 
 #[cfg(test)]
 pub(crate) mod native {
-    pub use yoneda_store::native::NativeStore;
+    pub use yoneda_store::{counted::Counted, native::NativeStore};
 }
+
+#[cfg(test)]
+#[path = "platform_transcript_tests.rs"]
+mod platform_transcript_tests;

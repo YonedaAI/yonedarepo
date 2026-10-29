@@ -94,14 +94,24 @@ impl Git {
             .stderr(Stdio::piped())
             .spawn()
             .context("running git (is it installed?)")?;
-        if let (Some(bytes), Some(mut stdin)) = (input, child.stdin.take()) {
-            stdin
-                .write_all(bytes)
-                .context(format!("writing to git {}", args[0]))?;
-        }
+        // The input is written from its own thread while stdout and stderr are drained
+        // here: written first, a large request (cat-file --batch-check ids) fills the
+        // child's stdout pipe, the child stops reading, and both sides wait forever.
+        let writer = match (input, child.stdin.take()) {
+            (Some(bytes), Some(mut stdin)) => {
+                let bytes = bytes.to_vec();
+                Some(std::thread::spawn(move || stdin.write_all(&bytes)))
+            }
+            _ => None,
+        };
         let out = child
             .wait_with_output()
             .context(format!("waiting for git {}", args[0]))?;
+        let written = match writer.map(std::thread::JoinHandle::join) {
+            None => Ok(()),
+            Some(Ok(result)) => result,
+            Some(Err(_)) => return Err(Error::new(format!("writing to git {} panicked", args[0]))),
+        };
         if !out.status.success() {
             return Err(Error::new(format!(
                 "git {} failed: {}",
@@ -109,7 +119,13 @@ impl Git {
                 String::from_utf8_lossy(&out.stderr).trim()
             )));
         }
-        Ok(out.stdout)
+        // A child that succeeded without reading all its input closed the pipe on purpose.
+        match written {
+            Err(e) if e.kind() != std::io::ErrorKind::BrokenPipe => {
+                Err(Error::new(format!("writing to git {}: {e}", args[0])))
+            }
+            _ => Ok(out.stdout),
+        }
     }
 
     pub fn run(&self, args: &[&str]) -> Result<String> {
@@ -289,3 +305,7 @@ impl Git {
             .is_empty())
     }
 }
+
+#[cfg(test)]
+#[path = "git_tests.rs"]
+mod tests;

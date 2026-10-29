@@ -5,7 +5,8 @@
 // R2 URLs (repo-s3-presign.ts) so object bytes never pass through a Worker. An upload URL signs
 // `x-amz-checksum-sha256` (the oid), so R2 refuses other bytes; verify then checks the
 // stored object's size and sha256 again before the authority records it. Objects live at
-// `platform/v1/<repo>/lfs/<oid>`, under the repository's prefix, so its purge removes them.
+// `platform/v1/<repo>/lfs/<oid>`, under the repository's prefix, so its purge removes them;
+// bytes no object references any more are swept before that (repo-lfs-sweep.ts).
 // Credentials are those of smart HTTP (a token as the Basic password, or a bearer header);
 // without any, a public repository's objects download anonymously (repo-public.ts).
 // A fork serves the LFS objects it inherits to readers of its parent (repo-lfs-inherit.ts).
@@ -17,6 +18,7 @@ import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { toHex } from './hmac';
 import { readJson } from './http';
 import { inheritObjects } from './repo-lfs-inherit';
+import { lfsKey, scheduleSweep, sweepLfs } from './repo-lfs-sweep';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { admitAnonymous } from './repo-public';
 import { presign, type S3Credentials } from './repo-s3-presign';
@@ -44,7 +46,7 @@ const STATUS: Record<string, number> = {
 };
 
 export const isLfsPath = (pathname: string) => PATH.test(pathname);
-export const lfsKey = (repo: string, oid: string) => `platform/v1/${repo}/lfs/${oid}`;
+export { lfsKey };
 
 const answer = (value: Json, status = 200) =>
   new Response(JSON.stringify(value), {
@@ -158,8 +160,8 @@ async function batch(ctx: RepoContext, req: Request, url: URL): Promise<Response
     operation,
     objects: objects.map((o: Json) => ({ oid: o?.oid, size: o?.size })),
   });
-  const lapsed = (decided.lapsed as string[]).map((oid) => lfsKey(ctx.repo, oid));
-  if (lapsed.length > 0) await ctx.env.OBJECTS.delete(lapsed).catch(() => {});
+  // Lapsed reservations' bytes, and new ones once they lapse, are the sweep's (repo-lfs-sweep).
+  await scheduleSweep(ctx.env, ctx.repo, decided.sweep_at);
   // A fork's missing objects may be its parent's, for callers who read the parent.
   if (decided.parent) await inheritObjects(ctx, decided);
   const verifyHref = `${url.origin}/git/${ctx.repo}.git/info/lfs/verify`;
@@ -205,11 +207,16 @@ async function storedSha256(env: Env, key: string, head: R2Object) {
   return toHex(await digest.digest);
 }
 
-/** Forgets a reservation whose bytes failed verification (or no longer fit), and deletes
- * the bytes unless the object is stored after all. */
+/** Forgets a reservation whose bytes failed verification (or no longer fit): the authority
+ * queues the bytes for the sweep (unless the object is stored after all), which is
+ * scheduled and then run at once, so they are gone before verify answers. Should that run
+ * fail, the scheduled one deletes them. */
 async function discard(ctx: RepoContext, oid: string) {
-  const { stored } = await ctx.call({ op: 'repo_lfs_discard', oid });
-  if (!stored) await ctx.env.OBJECTS.delete(lfsKey(ctx.repo, oid));
+  const { sweep_at } = await ctx.call({ op: 'repo_lfs_discard', oid });
+  await scheduleSweep(ctx.env, ctx.repo, sweep_at);
+  await sweepLfs(ctx.env, ctx.repo).catch((e) =>
+    console.warn(`lfs sweep after discard failed: ${e?.message ?? e}`),
+  );
 }
 
 /** `POST verify {oid, size}`: after an upload, the stored bytes are checked (size and

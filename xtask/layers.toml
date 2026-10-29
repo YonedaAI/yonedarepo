@@ -1,0 +1,32 @@
+# Workspace layer allow-table, enforced by `cargo xtask layers` (part of `cargo xtask check`).
+#
+# [allow]: for every crate of the workspace (and of the separate SSH gateway workspace), the
+# workspace crates it may depend on as a normal or build dependency, on any target; optional
+# dependencies count. Dev-dependencies are not checked: tests may pull in native stores.
+# The edges follow "Layout and boundaries" in AGENTS.md. Every crate must be listed.
+[allow]
+# Core contracts: no workspace dependency.
+yoneda-core = []
+# The SQL store trait shared by the Durable Object and native SQLite adapters.
+yoneda-store = ["yoneda-core"]
+# The source platform depends only on core contracts and the store.
+yoneda-platform = ["yoneda-core", "yoneda-store"]
+# Binding interoperability; no product policy, so never the platform.
+yoneda-cloudflare = ["yoneda-core", "yoneda-store"]
+# Rust Durable Objects and Worker integration: the only crate that wires the platform to bindings.
+yoneda-worker = ["yoneda-core", "yoneda-cloudflare", "yoneda-platform"]
+# The check server inside the CheckContainer image.
+yoneda-runtime = ["yoneda-core"]
+# The CLI and Git remote helper are API clients.
+yoneda-cli = ["yoneda-core"]
+# Its own workspace: the gateway image builds from its directory alone.
+yoneda-ssh-gateway = []
+# The reference model shares no code with what it checks (see [isolated]).
+yoneda-refmodel = []
+# `cargo xtask contracts` writes shared/contracts/*.ts from the platform's Rust types.
+xtask = ["yoneda-platform"]
+
+# Crates with no dependency of any kind (workspace or external; normal, build or dev): the
+# reference model is an independent oracle, so a shared bug cannot make both sides agree.
+[isolated]
+crates = ["yoneda-refmodel"]

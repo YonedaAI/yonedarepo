@@ -6,8 +6,8 @@ YonedaRepo is a Git-compatible source platform for agents and API clients, built
 
 - `backend/crates/yoneda-core`: core contracts: the Git object model, transaction log rules, merge, derived data and pure validation. No Cloudflare or network dependencies.
 - `backend/crates/yoneda-store`: the SQL store trait shared by Durable Object and native SQLite adapters.
-- `backend/crates/yoneda-platform`: the source platform (SourceRepository and account authorities, their migrations, stateless compute). Depends only on `yoneda-core` and `yoneda-store` (enforced by `tests/runtime/platform-boundary.test.mjs`). Agent identity reaches it only as an API principal.
-- `backend/crates/yoneda-refmodel`: an independent reference model of a repository (refs, commits, landing rules), the oracle of `yoneda-platform`'s differential tests (`repo_store/tests/differential.rs`, which also checks against real Git). No dependencies of any kind.
+- `backend/crates/yoneda-platform`: the source platform (SourceRepository and account authorities, their migrations, stateless compute). Depends only on `yoneda-core` and `yoneda-store` (crate edges enforced by `cargo xtask layers` against `xtask/layers.toml`; module imports by `tests/runtime/platform-boundary.test.mjs`). Agent identity reaches it only as an API principal.
+- `backend/crates/yoneda-refmodel`: an independent reference model of a repository (refs, commits, landing rules), the oracle of `yoneda-platform`'s differential tests (`repo_store/tests/differential.rs`, which also checks against real Git). No dependencies of any kind, including dev (`[isolated]` in `xtask/layers.toml`).
 - `backend/crates/yoneda-cloudflare`: binding interoperability; no product policy.
 - `backend/crates/yoneda-worker`: Rust Durable Objects and Worker integration.
 - `backend/crates/yoneda-runtime`: the platform check server (`check-server`) that runs inside the CheckContainer image.
@@ -58,6 +58,7 @@ Tests
 - Targeted tests only: the test files and crate filters for the code you changed, plus fmt/clippy/tsc/biome for touched languages. Never run full suites (whole `tests/workers`, `cargo test --workspace`) unless the lead or owner asks; never leave a suite running in the background.
 - Reproduce a defect with a failing test first. Prefer upgrading a tool or image over skipping or loosening a test; all dependencies stay on their newest versions unless blocked (say why).
 - Test data is "pure" repositories: imported open-source repos or the owner's dev test repos. Never use this codebase as test data.
+- Keep dev test repositories (the owner's repos and the OSS imports) for repeated tests. Never delete, re-import or repack them without the owner confirming exactly which repos; ask when an instruction is ambiguous.
 - Real coding agents (opencode, Claude Code, …) run only inside the Docker sandbox (`tools/staging/agent-sandbox*`): only the agent's clone mounted, a throwaway HOME, no host git config, `gh`, SSH or credentials, a fail-closed cwd/origin check, and a before/after check that the host checkout and every remote are unchanged. Never run them on the host.
 - Performance work: write the request budget first, put new paths behind a switch, bench with the 1,000-writer burst and real-history repos, at least 3 runs, server-side timing, min/median/max.
 

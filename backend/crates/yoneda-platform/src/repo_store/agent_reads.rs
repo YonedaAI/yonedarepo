@@ -6,7 +6,7 @@
 use super::auth::Actor;
 use super::rows::{branch_ref, corrupt};
 use super::session_range::{commit_param, range};
-use super::sessions::whole_repository;
+use super::sessions::{stored_transcript, whole_repository};
 use crate::storage::{SqlStore, bad};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
@@ -16,7 +16,8 @@ const MAX_LIMIT: u64 = 200;
 /// Declared reads shown with one session.
 const MAX_READS: usize = 500;
 const SESSION_COLUMNS: &str = "s.id,s.commit_id,s.cli,s.model,s.summary,s.prompt_digest,\
-    s.transcript_ref,s.read_set_digest,s.recorded_by,s.at,s.session_id,c.message,c.read_set";
+    s.transcript_ref,s.read_set_digest,s.recorded_by,s.at,s.session_id,s.transcript,c.message,\
+    c.read_set";
 
 fn limit(c: &Value) -> u64 {
     c["limit"]
@@ -52,10 +53,12 @@ fn session(row: &Value) -> Result<Value> {
     let reads: Vec<String> = serde_json::from_str(row["read_set"].as_str().unwrap_or("[]"))
         .map_err(|_| corrupt("read set"))?;
     Ok(json!({
-        "id": row["id"], "commit": row["commit_id"], "cli": row["cli"], "model": row["model"],
+        "id": row["id"], "commit": row["commit_id"], "cli": row["cli"],
+        "model": super::sessions::shown_model(&row["model"]),
         "summary": row["summary"], "prompt_digest": row["prompt_digest"],
         "transcript_ref": row["transcript_ref"], "read_set_digest": row["read_set_digest"],
         "recorded_by": row["recorded_by"], "at": row["at"], "session_id": row["session_id"],
+        "transcript": stored_transcript(&row["transcript"])?,
         "subject": subject(&row["message"]), "reads": reads.len(),
     }))
 }
@@ -142,6 +145,8 @@ pub fn session_list<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Val
             )?
             .into_iter()
             .map(|r| r["v"].clone())
+            // The Model filter offers real models only (no "none" from before real_model).
+            .filter(|v| column != "model" || !super::sessions::shown_model(v).is_null())
             .collect())
     };
     let next = more
