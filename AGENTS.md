@@ -68,7 +68,8 @@ Environments and deploys
 - Never push `dev` to GitHub after each merge: every push runs the full CI (about 9 jobs, 8+ minutes each). Push only when the owner asks, and never with known-red tests. Load credentials with `set -a; . <file>; set +a` and never print them.
 - Heavy tests (bursts, big pushes, compaction, full kit, real agents) run on dev only. Prod gets one deploy per wave, only when dev is fully green and the owner says "ship", followed by the small smoke (frontend, sign-in, CLI items 12–17, browser item, one model check).
 - Before a container rollout, warn the owner and re-check for active runs. Local Docker builds are fine (native arm64 for local tests); remove superseded and test images afterwards and never touch other projects' volumes.
-- Product scope: agents are stock CLIs used as clients of the git platform; do not build agent orchestration (planners, reviewer agents, supervisors) into the product.
+- Product scope: agents are stock CLIs used as clients of the git platform; do not build agent orchestration (planners, supervisors, multi-agent teams) into the platform.
+- Exception (owner, 2026-10-29): predefined **managed agents** (code review, security review) run in their own Worker (`<prefix>-agents-managed`) as ordinary API clients of the platform: Cloudflare Workflows + Queues for durable steps, AI Gateway for model calls and per-use cost, billed from the account's credit. The platform never runs, schedules or knows about agents; third-party runtimes (e.g. AgentHero) connect as plugins through webhooks and MCP.
 - Status and task lists contain only what a working dev and prod need; no governance or nice-to-have rows.
 
 ## References
