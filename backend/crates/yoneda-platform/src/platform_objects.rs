@@ -116,27 +116,51 @@ pub fn new_trees(
     changes: &[TreeChange],
     trees: &mut impl TreeLookup,
 ) -> Result<Vec<ObjectId>> {
+    Ok(new_tree_versions(None, root, changes, trees)?
+        .into_iter()
+        .map(|(tree, _)| tree)
+        .collect())
+}
+
+/// `new_trees`, each with the tree at its path in `base` (the first parent's root) where
+/// that is a tree the lookup holds: its previous version, which a pack may send it against.
+pub fn new_tree_versions(
+    base: Option<ObjectId>,
+    root: ObjectId,
+    changes: &[TreeChange],
+    trees: &mut impl TreeLookup,
+) -> Result<Vec<(ObjectId, Option<ObjectId>)>> {
     let mut found = Vec::new();
     let mut seen = HashSet::new();
     if !changes.is_empty() && seen.insert(root) {
-        found.push(root);
+        found.push((root, base));
     }
     for change in changes {
-        let mut at = root;
+        let (mut at, mut was) = (root, base);
         let parts: Vec<&str> = change.path.split('/').collect();
         for dir in &parts[..parts.len() - 1] {
-            let next = trees.entries(&at)?.and_then(|entries| {
-                entries
-                    .iter()
-                    .find(|e| e.name == *dir && e.mode.is_tree())
-                    .map(|e| e.id)
-            });
-            let Some(next) = next else { break };
+            let Some(next) = subtree(trees, &at, dir)? else {
+                break;
+            };
+            was = match was {
+                Some(old) => subtree(trees, &old, dir)?,
+                None => None,
+            };
             at = next;
             if seen.insert(at) {
-                found.push(at);
+                found.push((at, was));
             }
         }
     }
     Ok(found)
+}
+
+/// Directory `name` of tree `id`, when the lookup holds `id` and it has one.
+fn subtree(trees: &mut impl TreeLookup, id: &ObjectId, name: &str) -> Result<Option<ObjectId>> {
+    Ok(trees.entries(id)?.and_then(|entries| {
+        entries
+            .iter()
+            .find(|e| e.name == name && e.mode.is_tree())
+            .map(|e| e.id)
+    }))
 }

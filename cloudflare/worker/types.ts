@@ -71,9 +71,15 @@ export interface Env {
   PLATFORM_OBJECT_STORE?: string;
   /** `on` writes a large push's objects as bundles (repo-bundles); reads always use them. */
   PUSH_BUNDLES?: string;
-  /** `on` serves a full clone's pack from the store when one is held, else stores it as it
-   * streams (repo-pack-cache); otherwise every pack is built. */
+  /** `on` serves a clone's pack (full, partial or shallow) from the store when one is held,
+   * else stores it as it streams or hands it to a job, and builds main's packs after a push
+   * (repo-pack-cache, repo-pack-jobs); otherwise every pack is built. */
   PACK_CACHE?: string;
+  /** Objects a pack needs before a job builds it (default 5000; repo-pack-jobs). */
+  PACK_BUILD_MIN_OBJECTS?: string;
+  /** Wasm MiB above which a clone hands its pack to a job instead of storing it (default
+   * 48; repo-git-upload). */
+  PACK_STORE_WASM_MIB?: string;
   /** `off` leaves a shard commit's blobs to its shard's drain instead of also writing them
    * to R2's cache key after the commit (repo-commit-shard); anything else writes them. */
   BLOB_WRITE_THROUGH?: string;
