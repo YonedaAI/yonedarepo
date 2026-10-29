@@ -6,20 +6,22 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Loaded } from './useSource';
 
-const state: { value: Loaded<any>; paths: (string | null)[] } = {
+const state: { value: Loaded<any>; gates: Loaded<any>; paths: (string | null)[] } = {
   value: { loading: true, reload: () => {} },
+  gates: { loading: true, reload: () => {} },
   paths: [],
 };
 vi.mock('./useSource', () => ({
   useSource: (path: string | null) => {
     state.paths.push(path);
-    return state.value;
+    return path?.endsWith('/gates') ? state.gates : state.value;
   },
 }));
 
 const { ChangeTable, StatusFilter } = await import('./RepoChanges');
 const { ChangeView } = await import('./ChangeView');
 const { ChangeSessions } = await import('./ChangeSessions');
+const { MergeGates } = await import('./MergeGates');
 const { OpenChangeButton, baseChoices, proposable } = await import('./OpenChange');
 const { DiffFiles } = await import('./DiffFiles');
 const { anchorKey, conversation, diffAnchors, groupComments, rowAnchor } = await import(
@@ -32,6 +34,38 @@ const loaded = (value: Partial<Loaded<any>>): Loaded<any> => ({
   reload: () => {},
   ...value,
 });
+const changeGates = {
+  number: 3,
+  status: 'open',
+  base: 'main',
+  head: 'b'.repeat(40),
+  base_protected: true,
+  ready: false,
+  requirements: [
+    { kind: 'check', name: 'unit', state: 'blocked', why: 'Failed (token:ci)', enforced: true },
+    {
+      kind: 'approvals',
+      name: 'Approvals',
+      state: 'waiting',
+      why: '0 of 1 approvals',
+      enforced: true,
+    },
+    {
+      kind: 'comments',
+      name: 'Review comments',
+      state: 'waiting',
+      why: '1 unresolved review comment',
+      enforced: false,
+    },
+    {
+      kind: 'freshness',
+      name: 'Base',
+      state: 'ready',
+      why: 'Up to date with main',
+      enforced: false,
+    },
+  ],
+};
 const repo = 'r0123456789abcdef0123';
 const head = 'a'.repeat(40);
 const older = 'b'.repeat(40);
@@ -92,6 +126,7 @@ const view = () => html(ChangeView, { repo, number: 7 });
 
 beforeEach(() => {
   state.value = { loading: true, reload: () => {} };
+  state.gates = { loading: true, reload: () => {} };
   state.paths = [];
 });
 
@@ -205,9 +240,11 @@ describe('change page', () => {
 
   it('offers review and land on an open change, land only once the gates pass', () => {
     state.value = loaded({ data: detail() });
+    state.gates = loaded({ data: changeGates });
     const blocked = view();
-    expect(blocked).toContain('Not ready to land');
-    expect(blocked).toContain('Waiting for checks: test');
+    // The gates panel, from its own read, at the top of an open change.
+    expect(blocked).toContain('Not ready to land: 1 blocked, 1 waiting');
+    expect(blocked.indexOf('id="gates-heading"')).toBeLessThan(blocked.indexOf('>Approve<'));
     expect(blocked).toContain('>Approve<');
     expect(blocked).toMatch(/<button type="button" disabled="">Land on main/);
     expect(blocked).toContain('Close change');
@@ -367,5 +404,30 @@ describe('sessions behind a change', () => {
     const page = html(ChangeView, { repo, number: 7, navigate: () => {} });
     expect(page).toContain('Sessions behind this change');
     expect(state.paths).toContain(`/repos/${repo}/sessions?head=${head}&limit=200&base=${older}`);
+  });
+});
+
+describe('merge gates', () => {
+  it('lists each requirement with its state and why, enforced ones first', () => {
+    const out = html(MergeGates, { gates: loaded({ data: changeGates }) });
+    expect(out).toContain('Gates');
+    expect(out).toContain('Not ready to land: 1 blocked, 1 waiting');
+    expect(out).toContain('Failed (token:ci)');
+    expect(out).toContain('data-state="blocked"');
+    expect(out).toContain('not enforced');
+    expect(out.indexOf('unit')).toBeLessThan(out.indexOf('Review comments'));
+  });
+
+  it('says when the change can land, and shows loading and failure', () => {
+    const ready = { ...changeGates, ready: true, requirements: changeGates.requirements.slice(3) };
+    expect(html(MergeGates, { gates: loaded({ data: ready }) })).toContain('Ready to land');
+    expect(html(MergeGates, { gates: loaded({ loading: true }) })).toContain('gates');
+    expect(html(MergeGates, { gates: loaded({ error: 'boom' }) })).toContain('boom');
+  });
+
+  it('asks for the gates of the change it shows', () => {
+    state.paths = [];
+    html(ChangeView, { repo: 'r0123456789abcdef0123', number: 3 });
+    expect(state.paths).toContain('/repos/r0123456789abcdef0123/changes/3/gates');
   });
 });
