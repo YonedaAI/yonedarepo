@@ -1,6 +1,6 @@
-// Agents → Contracts: the authored contracts agents recorded, per symbol, newest first. A
-// symbol's record history opens on demand, with whether its latest record still governs the
-// symbol on main (authored) or the symbol has changed since (stale).
+// Agents → Contracts: the contracts agents recorded (short notes on a function or type), per
+// symbol, newest first. A symbol's record history opens on demand, with whether its latest
+// record still holds on main (authored) or the code changed since (stale: out of date).
 import { useState } from 'react';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import {
@@ -25,9 +25,9 @@ function StatusOnMain({ repo, group }: { repo: string; group: ContractGroup }) {
   if (status.loading) return <span className="source-meta">checking main…</span>;
   if (status.error) return <span className="source-meta">not on main ({status.error})</span>;
   const text = {
-    authored: 'governs the symbol on main',
-    stale: 'stale: the symbol changed on main since',
-    derived: 'no authored contract applies on main',
+    authored: 'up to date on main',
+    stale: 'out of date: the code changed on main since',
+    derived: 'no contract applies on main',
   }[status.data?.status ?? 'derived'];
   return <span className={`chip agent-contract-${status.data?.status}`}>{text}</span>;
 }
@@ -103,16 +103,20 @@ export function AgentContracts({ repo, navigate }: { repo: string; navigate: Nav
   }
   return (
     <section aria-labelledby="contracts-heading">
-      <h2 id="contracts-heading">Symbol contracts</h2>
+      <h2 id="contracts-heading">Contracts</h2>
+      <p className="agent-subtitle">
+        Short notes on functions and types that agents read before changing them.
+      </p>
       {records.length === 0 ? (
         <div className="source-empty-state">
           <p>
-            <strong>No contracts recorded yet.</strong> A contract states a symbol's inputs,
-            outputs, effects, errors and invariants, bound to the symbol as it was when recorded.
+            <strong>No contracts yet.</strong> A contract is a short note on a function or type:
+            what it takes, what it returns, what it changes, what can go wrong, and what must always
+            stay true. Agents read it before changing that code, and it's marked out of date when
+            the code changes.
           </p>
-          <p>
-            Agents record one with MCP <code>symbol_contract_record</code> (a handle from{' '}
-            <code>symbol_get</code>) or <code>POST /contracts</code>.
+          <p className="source-meta">
+            Agents add one with the MCP tool <code>symbol_contract_record</code>.
           </p>
         </div>
       ) : (

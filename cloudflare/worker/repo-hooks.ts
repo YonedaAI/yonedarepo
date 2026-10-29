@@ -6,6 +6,7 @@
 // in the platform dead-letter queue; its payload stays first in line for the next job.
 import { deferred } from './background';
 import { hmacHex, toHex } from './hmac';
+import { touchActivity } from './repo-activity';
 import { ApiError, caller, type Json, type RepoContext } from './repo-ops';
 import type { Env, Envelope } from './types';
 
@@ -70,11 +71,16 @@ export async function dispatchHooks(env: Env, repo: string, job = 'fanout') {
 }
 
 /** After a request moved a ref or recorded a check: a fan-out job, sent after the response
- * where the request lends its waitUntil. A lost message only delays events until the next
- * landing, ref move or check fans them out. */
+ * where the request lends its waitUntil, and the Home's activity row marked for re-reading.
+ * A lost message only delays events until the next landing, ref move or check fans them out. */
 export async function notifyHooks(env: Env, repo: string) {
   const send = () =>
-    dispatchHooks(env, repo).catch((e) => console.warn(`hook dispatch failed: ${e?.message ?? e}`));
+    Promise.all([
+      dispatchHooks(env, repo).catch((e) =>
+        console.warn(`hook dispatch failed: ${e?.message ?? e}`),
+      ),
+      touchActivity(env, repo),
+    ]);
   if (!deferred(send)) await send();
 }
 

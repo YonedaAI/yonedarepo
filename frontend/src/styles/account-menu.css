@@ -10,17 +10,17 @@
   border-radius: 8px;
   cursor: pointer;
   list-style: none;
-  color: #152436;
+  color: var(--text);
 }
 .account-menu > summary::-webkit-details-marker {
   display: none;
 }
 .account-menu > summary:hover,
 .account-menu[open] > summary {
-  background: #f3f6fa;
+  background: var(--surface-2);
 }
 .account-menu > summary:focus-visible {
-  outline: 3px solid #87bce7;
+  outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
 }
 .account-avatar {
@@ -28,10 +28,10 @@
   place-items: center;
   width: 32px;
   height: 32px;
-  border: 1px solid #dbe5fc;
+  border: 1px solid var(--accent-line);
   border-radius: 50%;
-  background: #edf3ff;
-  color: #244da1;
+  background: var(--accent-soft);
+  color: var(--accent-text);
   font-size: 13px;
   font-weight: 600;
   flex: none;
@@ -62,8 +62,8 @@
   padding: 6px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #fff;
-  box-shadow: 0 8px 28px #12243b18;
+  background: var(--surface);
+  box-shadow: 0 8px 28px var(--shadow);
 }
 .account-dropdown p {
   display: grid;
@@ -76,20 +76,17 @@
 .account-dropdown strong {
   overflow-wrap: anywhere;
   font-weight: 500;
-  color: #152436;
+  color: var(--text);
 }
 .account-dropdown button {
   width: 100%;
   justify-content: flex-start;
   background: transparent;
-  color: #526175;
+  color: var(--muted);
   font-size: 12px;
 }
 .account-dropdown button:hover {
-  background: #f3f6fa;
-}
-.workspace-breadcrumb {
-  min-width: 0;
+  background: var(--surface-2);
 }
 .header-actions {
   flex: none;
@@ -104,5 +101,65 @@
   .account-menu > summary {
     gap: 6px;
     padding: 4px;
+  }
+}
+/* The theme choice: a segmented radio group in the account menu and in Account settings. */
+.theme-picker {
+  display: flex;
+  gap: 2px;
+  margin: 4px 0;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.theme-picker legend {
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.theme-picker label {
+  display: inline-flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+.theme-picker label.checked {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.theme-picker label:has(input:focus-visible) {
+  outline: 3px solid var(--blue);
+  outline-offset: 1px;
+}
+.theme-picker input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.account-settings .theme-picker {
+  max-width: 340px;
+}
+.menu-progress {
+  display: none;
+}
+@media (max-width: 800px) {
+  /* The top bar keeps the page title; Getting started moves into the account menu. */
+  .topbar-progress {
+    display: none;
+  }
+  .menu-progress {
+    display: block;
+    margin: 4px 0;
+  }
+}
+@media (max-width: 480px) {
+  .account-label {
+    display: none;
   }
 }

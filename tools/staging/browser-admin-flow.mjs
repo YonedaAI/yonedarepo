@@ -158,7 +158,7 @@ export async function deletedRepoPage(page, { origin, account, shot, cleanup }, 
   await rail.waitFor();
   await page.waitForURL(`**/source/${id}`);
   const tabs = page.getByRole('navigation', { name: 'Repository' });
-  await tabs.getByRole('link', { name: 'History' }).click();
+  await tabs.getByRole('link', { name: 'Commits' }).click();
   await page.getByRole('list', { name: 'History of main' }).getByRole('listitem').first().waitFor();
   const done = await remove();
   assert.ok(done.ok, `Delete repository: ${done.status} ${done.body?.error?.code ?? ''}`);

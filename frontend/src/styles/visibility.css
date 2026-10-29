@@ -5,9 +5,9 @@
   align-items: center;
   gap: 4px;
   padding: 1px 8px;
-  border: 1px solid #a9d6cf;
+  border: 1px solid var(--success-line);
   border-radius: 999px;
-  background: #eef8f6;
+  background: var(--success-soft);
   color: var(--success);
   font-size: 12px;
   font-weight: 500;
@@ -44,7 +44,7 @@
 }
 .new-repository .visibility-option:has(input:checked) {
   border-color: var(--blue);
-  background: #f5f8ff;
+  background: var(--accent-soft);
 }
 .new-repository .visibility-option:has(input:focus-visible) {
   outline: 2px solid var(--blue);
@@ -104,14 +104,14 @@
   align-items: center;
   gap: 8px;
   padding: 9px 16px;
-  border: 1px solid #8090a4;
+  border: 1px solid var(--faint);
   border-radius: 7px;
-  color: #203a5b;
+  color: var(--text);
   font-weight: 500;
 }
 .repo-not-found-link:hover {
   border-color: var(--blue);
-  background: #edf3ff;
+  background: var(--accent-soft);
 }
 .rail-explore {
   margin-bottom: 12px;

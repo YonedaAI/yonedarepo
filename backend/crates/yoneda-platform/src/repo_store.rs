@@ -16,6 +16,7 @@
 use crate::storage::SqlStore;
 use serde_json::Value;
 use yoneda_core::Result;
+mod activity;
 mod adopt;
 mod agent_context;
 mod agent_reads;

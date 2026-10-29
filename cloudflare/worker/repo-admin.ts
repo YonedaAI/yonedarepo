@@ -82,6 +82,7 @@ export async function deleteRepository(env: Env, auth: Credentials, repo: string
   await env.INDEX.batch([
     env.INDEX.prepare('DELETE FROM platform_repos WHERE id=?').bind(repo),
     env.INDEX.prepare('DELETE FROM platform_members WHERE repo=?').bind(repo),
+    env.INDEX.prepare('DELETE FROM platform_activity WHERE repo=?').bind(repo),
   ]);
   await dropDeletedHead(env, repo);
   await env.PLATFORM_QUEUE.send({
