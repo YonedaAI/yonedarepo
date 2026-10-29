@@ -38,6 +38,23 @@ fn optional(c: &Value, key: &str, max: usize, valid: impl Fn(&str) -> bool) -> R
     }
 }
 
+/// What a tool sends when it has no model to name; stored, and shown, as no model at all.
+const NO_MODEL: [&str; 6] = ["none", "null", "unknown", "undefined", "n/a", "-"];
+
+/// `text` as a model id, or `None` when it names no model (blank or a placeholder).
+pub(super) fn real_model(text: &str) -> Option<&str> {
+    let text = text.trim();
+    (!text.is_empty() && !NO_MODEL.iter().any(|p| text.eq_ignore_ascii_case(p))).then_some(text)
+}
+
+/// A stored model as the API shows it: null for a placeholder kept before `real_model`.
+pub(super) fn shown_model(stored: &Value) -> Value {
+    stored
+        .as_str()
+        .and_then(real_model)
+        .map_or(Value::Null, |m| json!(m))
+}
+
 fn hex_digest(s: &str) -> bool {
     s.len() == 64
         && s.bytes()
@@ -73,7 +90,12 @@ pub fn record<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
         .map(str::trim)
         .filter(|s| !s.is_empty() && s.len() <= MAX_SUMMARY)
         .ok_or_else(|| bad("summary must be 1-4096 bytes; truncate it before posting"))?;
-    let model = optional(c, "model", MAX_MODEL, printable)?;
+    // A placeholder ("none", "") is no model: stored as null rather than refused.
+    let model = match &c["model"] {
+        Value::String(s) if real_model(s).is_none() => Value::Null,
+        Value::String(s) => optional(&json!({ "model": s.trim() }), "model", MAX_MODEL, printable)?,
+        _ => optional(c, "model", MAX_MODEL, printable)?,
+    };
     let transcript = optional(c, "transcript_ref", MAX_REF, |s| {
         printable(s) && !s.contains(char::is_whitespace)
     })?;
@@ -132,10 +154,13 @@ pub fn list<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     whole_repository(actor)?;
     let id = object_id(c, "commit")?;
     rows::recorded(db, &id)?;
-    let sessions = db.query(
+    let mut sessions = db.query(
         "SELECT id,cli,model,summary,prompt_digest,transcript_ref,read_set_digest,recorded_by,at,\
          session_id FROM sessions WHERE commit_id=? ORDER BY id",
         &[json!(id.hex())],
     )?;
+    for session in &mut sessions {
+        session["model"] = shown_model(&session["model"]);
+    }
     Ok(json!({ "commit": id, "sessions": sessions }))
 }

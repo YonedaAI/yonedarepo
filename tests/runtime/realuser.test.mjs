@@ -145,7 +145,7 @@ test('agents get distinct real files: docs first, then source; never hidden or h
 
 test('agents are judged on branch, diff, session on the change and the landed change', () => {
   const task = agentTask({ n: 1, ts: TS, repo: 'oss-cobra', target: 'README.md' });
-  const session = { id: 7, cli: 'opencode', session_id: 'opencode:abc' };
+  const session = { id: 7, cli: 'opencode', session_id: 'opencode:abc', model: 'zai-coding-plan/glm-5.3' };
   const good = { head: 'h', base: 'b', paths: ['README.md'], sessions: [session], listed: [7], status: 'landed' };
   assert.deepEqual(agentProblems(task, good), []);
   assert.match(agentProblems(task, { ...good, head: null })[0], /was not pushed/);
@@ -212,4 +212,13 @@ test('cleanup deletes scratch branches at their current heads, read as of the cu
   await assert.rejects(deleteScratch(refused, 'r1', TS), /refs\/batch refused: 403 FORBIDDEN no/);
   heads = {};
   assert.equal(await deleteScratch(refused, 'r1', TS), 0);
+});
+
+test("an agent's session must name the real model it ran on", () => {
+  const task = agentTask({ n: 1, ts: TS, repo: 'oss-cobra', target: 'README.md' });
+  const good = { head: 'h', base: 'b', paths: ['README.md'], listed: [7], status: 'landed' };
+  const session = (model) => ({ id: 7, cli: 'opencode', session_id: 'opencode:abc', model });
+  assert.deepEqual(agentProblems(task, { ...good, sessions: [session('zai-coding-plan/glm-5.3')] }), []);
+  for (const model of [null, undefined, 'none', ''])
+    assert.match(agentProblems(task, { ...good, sessions: [session(model)] })[0], /names no model/, String(model));
 });
