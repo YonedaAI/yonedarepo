@@ -229,6 +229,8 @@ export function agentProblems(task, { head, base, paths = [], sessions = [], lis
   const recorded = sessions.filter((s) => s.cli === 'opencode' && String(s.session_id ?? '').startsWith('opencode:'));
   if (!recorded.length) problems.push(`${task.agent}: its head has no opencode session record`);
   else if (!recorded.some((s) => listed.includes(s.id))) problems.push(`${task.agent}: its session is not listed on its change`);
+  // The plugin records the model the session ran on (`provider/model`), never a placeholder.
+  if (recorded.length && !recorded.some((s) => /^[^/\s]+\/\S+$/.test(String(s.model ?? '')))) problems.push(`${task.agent}: its session record names no model (${recorded.map((s) => s.model ?? 'null').join(', ')})`);
   if (status !== 'landed') problems.push(`${task.agent}: its change is ${status ?? 'not opened'}, not landed on its base`);
   return problems;
 }
