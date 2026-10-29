@@ -107,4 +107,8 @@ it('clones a 200,000-object history full and partial, streamed in waves', { time
     );
   // Memory is the wave's, not the history's.
   expect(full.grown).toBeLessThan(64 * MiB);
+  // Walks bridge gaps between trees and commits (each read is a round trip): measured 440
+  // and 46 R2 reads; bounding their waste as blob reads do made them 662 and 268.
+  expect(full.r2).toBeLessThanOrEqual(480);
+  expect(partial.r2).toBeLessThanOrEqual(60);
 });
