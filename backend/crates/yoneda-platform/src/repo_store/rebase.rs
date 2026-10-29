@@ -24,11 +24,9 @@ pub fn plan<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         return Err(bad("A branch cannot be rebased onto itself"));
     }
     let version = current_version(db)?;
-    // The current refs, refused while landed changesets still await their Git commit.
-    let refs = super::reads::refs_at(db, &json!({}), version)?;
+    // The two refs now, each refused while it has landed changesets awaiting their Git commit.
     let found = |name: &str| {
-        refs.get(name)
-            .copied()
+        rows::ref_value(db, name)?
             .ok_or_else(|| Error::new("NOT_FOUND", format!("{name} does not exist")))
     };
     let (head, onto_head) = (found(&refname)?, found(&onto)?);

@@ -26,8 +26,10 @@ pub(super) fn at<S: SqlStore>(db: &S, c: &Value) -> Result<u64> {
     }
 }
 
-/// Refs as of `version`. Current reads use the refs table (O(refs)); time travel replays the hash-chained log from the nearest checkpoint, so time travel also
-/// verifies the history it crosses without re-reading the whole log.
+/// Refs as of `version`, every one of them: current reads use the refs table (O(refs))
+/// and are refused while any ref has landed changesets not yet projected (callers that
+/// need the whole set: Git advertisements, wants); time travel replays the hash-chained
+/// log from the nearest checkpoint, so it also verifies the history it crosses.
 pub(super) fn refs_at<S: SqlStore>(
     db: &S,
     c: &Value,
@@ -35,22 +37,14 @@ pub(super) fn refs_at<S: SqlStore>(
 ) -> Result<BTreeMap<String, ObjectId>> {
     // Reads without `at` take the fast path; an explicit `at` always verifies.
     if c.get("at").is_none_or(Value::is_null) {
-        if super::changesets::any_unprojected(db)? {
+        let (refs, pending) = current_refs(db)?;
+        if !pending.is_empty() {
             return Err(Error::new(
                 "PROJECTION_PENDING",
                 "Landed changesets are not projected to Git yet",
             ));
         }
-        return db
-            .query("SELECT name,commit_id FROM refs", &[])?
-            .into_iter()
-            .map(|r| {
-                Ok((
-                    r["name"].as_str().unwrap_or_default().to_owned(),
-                    ObjectId::parse(r["commit_id"].as_str().unwrap_or_default())?,
-                ))
-            })
-            .collect();
+        return Ok(refs);
     }
     // Below the compaction floor the state comes from the archived segment holding it.
     if version > 0 && version < super::maintenance::archive::floor(db)? {
@@ -62,8 +56,58 @@ pub(super) fn refs_at<S: SqlStore>(
     Ok(replay_projected(&from, &tail, &projected)?.refs)
 }
 
+/// The current refs whose Git commits are known, and the names of those with landed
+/// changesets not yet projected (left out: their last projected commit would skip them).
+fn current_refs<S: SqlStore>(db: &S) -> Result<(BTreeMap<String, ObjectId>, Vec<String>)> {
+    let pending: Vec<String> = db
+        .query(
+            "SELECT DISTINCT refname FROM changesets WHERE projected IS NULL ORDER BY refname",
+            &[],
+        )?
+        .into_iter()
+        .filter_map(|r| r["refname"].as_str().map(str::to_owned))
+        .collect();
+    let mut refs = BTreeMap::new();
+    for row in db.query("SELECT name,commit_id FROM refs", &[])? {
+        let name = row["name"].as_str().unwrap_or_default().to_owned();
+        if !pending.contains(&name) {
+            refs.insert(
+                name,
+                ObjectId::parse(row["commit_id"].as_str().unwrap_or_default())?,
+            );
+        }
+    }
+    Ok((refs, pending))
+}
+
+/// One ref as of `version`: now, refused only while it has landed changesets not yet
+/// projected; at an earlier version, from the verified replay.
+pub(super) fn ref_at<S: SqlStore>(
+    db: &S,
+    c: &Value,
+    version: u64,
+    refname: &str,
+) -> Result<Option<ObjectId>> {
+    if c.get("at").is_none_or(Value::is_null) {
+        return rows::ref_value(db, refname);
+    }
+    Ok(refs_at(db, c, version)?.remove(refname))
+}
+
+/// `repo_refs`: every ref, or PROJECTION_PENDING while any has landed changesets not yet
+/// projected (the adapter waits for the projector and retries). With `partial`, a reader
+/// that cannot wait gets every other ref and the waiting ones' names (`pending`): a ref
+/// never shows a commit that skips its changesets.
 pub fn refs<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let version = at(db, c)?;
+    let current = c.get("at").is_none_or(Value::is_null);
+    if current && c["partial"] == true {
+        let (refs, pending) = current_refs(db)?;
+        let annotated = super::annotated::listed(db, &refs)?;
+        return Ok(
+            json!({ "version": version, "refs": refs, "annotated": annotated, "pending": pending }),
+        );
+    }
     let refs = refs_at(db, c, version)?;
     // Annotated tags: the tag object each such ref names to Git (the ref holds the commit).
     let annotated = super::annotated::listed(db, &refs)?;
@@ -73,7 +117,7 @@ pub fn refs<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
 pub fn snapshot<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let version = at(db, c)?;
     let refname = branch_ref(c)?;
-    let commit = refs_at(db, c, version)?.remove(&refname).ok_or_else(|| {
+    let commit = ref_at(db, c, version, &refname)?.ok_or_else(|| {
         Error::new(
             "NOT_FOUND",
             format!("{refname} does not exist at version {version}"),
@@ -94,7 +138,7 @@ pub fn log<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let limit = c["limit"].as_u64().unwrap_or(50).clamp(1, 200);
     let mut next = match c.get("from").filter(|v| !v.is_null()) {
         Some(_) => Some(rows::recorded(db, &object_id(c, "from")?)?.id),
-        None => refs_at(db, c, version)?.remove(&refname),
+        None => ref_at(db, c, version, &refname)?,
     };
     let mut commits = Vec::new();
     while let Some(id) = next {
