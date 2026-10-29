@@ -3,11 +3,10 @@
 // import as pushes within the receive limits, and aggregating runs into min/median/max.
 // No I/O here, so tests/runtime/size-ladder.test.mjs covers it without a platform.
 
-/** Receive-pack limits per push (platform_git_receive.rs): 64 MiB of pack, 40,000 objects,
- * 16 MiB per object. An import plans below them: on-disk sizes are a pack's estimate. */
-export const PUSH_LIMITS = { objects: 30_000, bytes: 40 * 1024 * 1024, objectBytes: 16 * 1024 * 1024 };
-/** Objects one fetch sends at most (platform_git_upload.rs MAX_OBJECTS). */
-export const FETCH_OBJECTS = 40_000;
+/** Receive-pack limits per push (platform_git_receive.rs): 64 MiB of pack held (files
+ * over 8 MiB stream and are not held), 40,000 objects, 100 MiB per file. An import plans
+ * below them: on-disk sizes are a pack's estimate. */
+export const PUSH_LIMITS = { objects: 30_000, bytes: 40 * 1024 * 1024, objectBytes: 100 * 1024 * 1024 };
 
 /** `name;dur=12.3;desc="4", ...` → `{ name: { ms, n } }` (n: items the phase counted). */
 export function parseServerTiming(header) {

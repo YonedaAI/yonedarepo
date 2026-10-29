@@ -257,5 +257,26 @@ fn spills_large_files_without_holding_them_and_keeps_delta_offsets() {
     // A delta whose base was spilled cannot be resolved: refused, saying why.
     let refused = read_spilling(&pack, 4096, 1024).map(|_| ()).unwrap_err();
     assert_eq!(refused.code, "TOO_LARGE");
-    assert!(refused.message.contains("Git LFS"), "{}", refused.message);
+    assert!(
+        refused.message.contains("core.bigFileThreshold=8m"),
+        "{}",
+        refused.message
+    );
+    // What it says works: files over the threshold arrive whole, and the pack reads.
+    let whole = git(
+        repo.path(),
+        &[
+            "-c",
+            "core.bigFileThreshold=1k",
+            "pack-objects",
+            "--stdout",
+            "--revs",
+            "-q",
+            "--delta-base-offset",
+        ],
+        Some(b"main\n"),
+    );
+    let (reader, spilled, _) = read_spilling(&whole, 4096, 1024).unwrap();
+    assert_eq!(reader.objects().count(), expected.len());
+    assert!(spilled.len() > 1, "every version of big.txt spilled whole");
 }
