@@ -186,7 +186,7 @@ function git(args, secret, cwd) {
     const line = r.stderr.split(/[\r\n]/).find((l) => l.includes('yoneda-timing'));
     const metrics = { ...lib.parseTimingLine(line), ...lib.requestCounts(phases) };
     for (const [k, v] of Object.entries(metrics)) if (typeof v !== 'number') delete metrics[k];
-    const error = r.status === 0 ? undefined : scrub(r.stderr.trim().split('\n').slice(-3).join(' ')).slice(0, 400);
+    const error = r.status === 0 ? undefined : scrub(lib.gitError(r.stderr)).slice(0, 400);
     return { ok: r.status === 0, wall_ms: r.ms, error, metrics, server_timing: phases };
   } finally {
     rmSync(scratch, { recursive: true, force: true });
@@ -294,10 +294,18 @@ try {
       console.log(`${rung.name}: no imported history to read`);
       continue;
     }
+    // Blame and history read a file the imported tip holds: an import that stopped early
+    // may predate the configured one.
+    const tip = rungState(rung).checkpoints[target.pushes.findLastIndex((p) => p?.ok)];
+    const files = ok('git', ['ls-tree', '-r', '--name-only', tip], { cwd: dir }).split('\n');
+    const changed = ok('git', ['log', '--first-parent', '-n', '1000', '--format=', '--name-only', tip], { cwd: dir });
+    const path = lib.readPath(rung.path, files, changed.split('\n').filter(Boolean));
+    if (path !== rung.path) console.log(`${rung.name}: blame and history read ${path} (${rung.path} is not at ${tip.slice(0, 12)})`);
+    const reading = { ...rung, path };
     const secret = await token(target.id, ['read']);
     const url = `${values.api}/git/${target.id}.git`;
     for (let n = 1; n <= runs; n++)
-      for (const op of Object.keys(reads)) if (only.has(op)) await step(rung, op, n, () => reads[op](rung, url, secret, target.id));
+      for (const op of Object.keys(reads)) if (only.has(op)) await step(reading, op, n, () => reads[op](reading, url, secret, target.id));
   }
   if (values.cleanup)
     for (const rs of Object.values(state.rungs))
