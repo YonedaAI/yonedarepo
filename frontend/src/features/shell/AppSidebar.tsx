@@ -76,6 +76,7 @@ export function AppSidebar({
   orgs = [],
   route,
   repoName,
+  missing = false,
   settings = false,
   navigate = () => {},
   onNew,
@@ -90,6 +91,8 @@ export function AppSidebar({
   route: SourceRoute;
   /** The open repository's name, once its status loaded. */
   repoName?: string;
+  /** The open repository is gone (deleted, or a stale link): no Repository pages. */
+  missing?: boolean;
   /** The viewer may change the open repository's settings. */
   settings?: boolean;
   navigate?: Navigate;
@@ -97,7 +100,7 @@ export function AppSidebar({
   /** Reads the repositories again after a failed read. */
   onRetry?: () => void;
 }) {
-  const repo = routeRepo(route);
+  const repo = missing ? undefined : routeRepo(route);
   const page = routeTab(route);
   const pages = REPO_PAGES.filter((p) => p.id !== 'settings' || settings);
   return (

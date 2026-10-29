@@ -64,6 +64,8 @@ export function App() {
   const repo = routeRepo(route);
   const row = repo ? rows.find((r) => r.repo === repo) : undefined;
   const loaded = shown && shown.repo === repo ? shown : undefined;
+  // The open repository answered NOT_FOUND or GONE: the shell drops its pages too.
+  const gone = Boolean(repo) && repo === missing;
   useEffect(() => {
     if (!menuOpen) return;
     const onEscape = (event: KeyboardEvent) => {
@@ -100,7 +102,7 @@ export function App() {
               ? 'Approve a device'
               : route.view === 'org'
                 ? route.org
-                : repo && repo === missing
+                : gone
                   ? 'Repository not found'
                   : (row?.name ?? loaded?.name ?? repo ?? '');
   const activityError = activity.error && !/Sign in/.test(activity.error) ? activity.error : '';
@@ -122,6 +124,7 @@ export function App() {
       <AppRail
         authenticated={session.authenticated}
         route={route}
+        missing={gone}
         collapsed={collapsed}
         onToggle={() => {
           saveCollapsed(!collapsed);
@@ -137,6 +140,7 @@ export function App() {
         rowsError={rowsError}
         orgs={orgs.data?.orgs ?? []}
         route={route}
+        missing={gone}
         repoName={row?.name ?? loaded?.name}
         settings={loaded?.settings}
         navigate={navigate}
