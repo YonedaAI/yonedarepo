@@ -3,7 +3,9 @@
 //! out presigned R2 URLs for what a batch allows, then verifies the stored bytes (size and
 //! sha256) before `repo_lfs_store` records them. A batch's new uploads are reserved as
 //! `pending` rows that count against the quota until they are stored or lapse, so uploads
-//! that are never verified cannot grow storage past it. Stock `git lfs` reads and writes
+//! that are never verified cannot grow storage past it. Bytes no row references any more
+//! (a lapsed reservation, a failed verification) are swept by the platform's LFS job
+//! (`sweep`). Stock `git lfs` reads and writes
 //! whole repositories, so a path-restricted credential is refused, as for smart HTTP.
 use super::auth::Actor;
 use super::git_http::whole_repository;
@@ -14,6 +16,7 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use yoneda_core::{Error, Result};
 mod quota;
+pub(super) mod sweep;
 #[cfg(test)]
 pub use quota::DEFAULT_QUOTA_BYTES;
 use quota::{quota_exceeded, set_quota, usage};
@@ -32,6 +35,11 @@ pub(super) fn authorize(actor: &Actor, op: LfsOp, c: &Value) -> Result<()> {
         LfsOp::Store | LfsOp::Discard => actor.require("write"),
         LfsOp::SetQuota => actor.require_owner(),
         LfsOp::Batch | LfsOp::Usage => actor.require("read"),
+        LfsOp::SweepClaim | LfsOp::SweepDone if actor.can("lfs") => Ok(()),
+        LfsOp::SweepClaim | LfsOp::SweepDone => Err(Error::new(
+            "FORBIDDEN",
+            "Only the platform sweeps LFS objects",
+        )),
     }
 }
 
@@ -47,6 +55,8 @@ pub(super) fn run<S: SqlStore>(
         LfsOp::Batch => batch(db, c, actor, settings),
         LfsOp::Store => store(db, c, actor),
         LfsOp::Discard => discard(db, c),
+        LfsOp::SweepClaim => sweep::claim(db, c),
+        LfsOp::SweepDone => sweep::done(db, c),
         LfsOp::Usage => usage(db).map(|u| u.json()),
         LfsOp::SetQuota => set_quota(db, c, actor),
     }
@@ -111,8 +121,8 @@ fn row<S: SqlStore>(db: &S, oid: &str) -> Result<Option<Row>> {
         }))
 }
 
-/// Drops reservations older than `PENDING_MS`; answers their oids, whose bytes (if any were
-/// uploaded) the adapter deletes.
+/// Drops reservations older than `PENDING_MS` and queues their bytes (if any were uploaded)
+/// for the sweep; answers their oids.
 fn lapse<S: SqlStore>(db: &S, now: i64) -> Result<Vec<String>> {
     let cutoff = now - PENDING_MS;
     let lapsed: Vec<String> = db
@@ -127,15 +137,19 @@ fn lapse<S: SqlStore>(db: &S, now: i64) -> Result<Vec<String>> {
         "DELETE FROM lfs_objects WHERE state='pending' AND reserved_at<?",
         &[json!(cutoff)],
     )?;
+    for oid in &lapsed {
+        sweep::orphan(db, oid, now)?;
+    }
     Ok(lapsed)
 }
 
 /// `repo_lfs_batch {operation, objects: [{oid, size}]}`: per object, whether it is stored
 /// (`present`), may be uploaded (`upload`), or an error (`{code, message}` as the LFS batch
 /// API answers it). Uploads are reserved against the quota as a whole: a batch that does
-/// not fit is refused (`QUOTA_EXCEEDED`) and reserves nothing. `lapsed` lists expired
-/// reservations whose bytes the adapter deletes. A fork's download answers its `parent`,
-/// which the adapter asks (with the caller's credentials) for objects the fork lacks.
+/// not fit is refused (`QUOTA_EXCEEDED`) and reserves nothing; an oid a sweep holds is a
+/// per-object 409. `sweep_at` is when the adapter schedules the sweep job (null: armed
+/// already). A fork's download answers its `parent`, which the adapter asks (with the
+/// caller's credentials) for objects the fork lacks.
 fn batch<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings) -> Result<Value> {
     let upload = match c["operation"].as_str() {
         Some("upload") => true,
@@ -153,7 +167,7 @@ fn batch<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings) -> 
         ));
     }
     let now = number(c, "now")?;
-    let mut lapsed = if upload { lapse(db, now)? } else { Vec::new() };
+    let lapsed = if upload { lapse(db, now)? } else { Vec::new() };
     let held = rows(db)?;
     let mut answers = Vec::with_capacity(objects.len());
     // New reservations (and resized pending ones), by oid: the size to reserve.
@@ -175,6 +189,9 @@ fn batch<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings) -> 
             ),
             Some(r) if r.stored => json!({ "oid": oid, "size": size, "present": true }),
             _ if !upload => object_error(&json!(oid), &json!(size), 404, "Object does not exist"),
+            _ if sweep::sweeping(db, &oid, now)? => {
+                object_error(&json!(oid), &json!(size), 409, &sweep::busy(&oid).message)
+            }
             _ => {
                 reserve.insert(oid.clone(), size);
                 json!({ "oid": oid, "size": size, "upload": true })
@@ -194,20 +211,28 @@ fn batch<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings) -> 
             return Err(quota_exceeded(&usage, wanted));
         }
         for (oid, size) in &reserve {
+            sweep::adopted(db, oid)?;
             db.query(
                 "INSERT INTO lfs_objects(oid,size,state,uploaded_by,reserved_at) VALUES(?,?,'pending',?,?) \
                  ON CONFLICT(oid) DO UPDATE SET size=excluded.size,uploaded_by=excluded.uploaded_by,reserved_at=excluded.reserved_at",
                 &[json!(oid), json!(size), json!(actor.principal), json!(now)],
             )?;
         }
-        lapsed.retain(|oid| !reserve.contains_key(oid));
     }
+    // Lapsed bytes are swept now; a first reservation is swept when it lapses.
+    let sweep_at = if !lapsed.is_empty() {
+        sweep::arm(db, now, now)?
+    } else if !reserve.is_empty() {
+        sweep::arm(db, now + PENDING_MS, now)?
+    } else {
+        Value::Null
+    };
     let parent = settings
         .parent
         .as_ref()
         .filter(|_| !upload)
         .map(|(repo, _)| repo);
-    Ok(json!({ "objects": answers, "lapsed": lapsed, "parent": parent }))
+    Ok(json!({ "objects": answers, "parent": parent, "sweep_at": sweep_at }))
 }
 
 /// `repo_lfs_store {oid, size}`: records an object whose bytes the adapter verified in R2.
@@ -223,6 +248,7 @@ fn store<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
         Some(r) if r.stored => {
             return Err(bad(&format!("Object {oid} is stored with size {}", r.size)));
         }
+        _ if sweep::sweeping(db, &oid, now)? => return Err(sweep::busy(&oid)),
         held => {
             let usage = usage(db)?;
             let freed = held.map_or(0, |r| r.size);
@@ -231,6 +257,7 @@ fn store<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
             }
         }
     }
+    sweep::adopted(db, &oid)?;
     db.query(
         "INSERT INTO lfs_objects(oid,size,state,uploaded_by,reserved_at,stored_at) VALUES(?,?,'stored',?,?,?) \
          ON CONFLICT(oid) DO UPDATE SET size=excluded.size,state='stored',stored_at=excluded.stored_at",
@@ -239,19 +266,23 @@ fn store<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     Ok(json!({ "oid": oid, "size": size, "stored": true, "already": false }))
 }
 
-/// `repo_lfs_discard {oid}`: drops a reservation whose upload failed verification. A stored
-/// object is never discarded (`stored`), so the adapter deletes the bytes only when not.
+/// `repo_lfs_discard {oid}`: drops a reservation whose upload failed verification and queues
+/// its bytes for the sweep (`sweep_at`). A stored object is never discarded (`stored`).
 fn discard<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let oid = string(c, "oid")?;
     if !valid_oid(&oid) {
         return Err(bad("oid must be a sha256: 64 lowercase hex digits"));
     }
+    let now = number(c, "now")?;
     let stored = row(db, &oid)?.is_some_and(|r| r.stored);
+    let mut sweep_at = Value::Null;
     if !stored {
         db.query(
             "DELETE FROM lfs_objects WHERE oid=? AND state='pending'",
             &[json!(oid)],
         )?;
+        sweep::orphan(db, &oid, now)?;
+        sweep_at = sweep::arm(db, now, now)?;
     }
-    Ok(json!({ "oid": oid, "stored": stored }))
+    Ok(json!({ "oid": oid, "stored": stored, "sweep_at": sweep_at }))
 }

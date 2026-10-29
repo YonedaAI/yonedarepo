@@ -170,10 +170,11 @@ fn the_quota_refuses_whole_batches_and_counts_reservations() {
         json!({"op":"repo_lfs_store","oid":oid(1),"size":600}),
     );
 
-    // A day later the unverified reservation lapses and its bytes are the adapter's to delete.
+    // A day later the unverified reservation lapses: its bytes are queued for the sweep.
     *h.now.borrow_mut() += PENDING_MS;
-    let later = batch(&h, AGENT, "upload", json!([{"oid": oid(5), "size": 100}])).unwrap();
-    assert_eq!(later["lapsed"], json!([oid(2)]));
+    batch(&h, AGENT, "upload", json!([{"oid": oid(5), "size": 100}])).unwrap();
+    let orphans = h.db.query("SELECT oid FROM lfs_orphans", &[]).unwrap();
+    assert_eq!(orphans, vec![json!({"oid": oid(2)})]);
     assert_eq!(usage(&h)["used_bytes"], 700);
 
     // Lowering the quota keeps what is stored and refuses more.
