@@ -1,24 +1,82 @@
-@import "@fontsource/ibm-plex-sans/400.css";
-@import "@fontsource/ibm-plex-sans/500.css";
-@import "@fontsource/ibm-plex-sans/600.css";
-@import "@fontsource/ibm-plex-mono/400.css";
 :root {
   font-family: "IBM Plex Sans", sans-serif;
-  color: #152436;
-  background: #f6f8fb;
   font-synthesis: none;
-  --line: #e1e6ed;
-  --muted: #637286;
-  --blue: #245de8;
-  --surface: #fff;
-  --success: #157f72;
   font-size: 14px;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  /* Dark is the default theme; `data-theme="light"` on the root switches. */
+  color-scheme: dark;
+  --bg: #0b0d10;
+  --surface: #121519;
+  --surface-2: #181c21;
+  --surface-3: #20252c;
+  --text: #e6eaef;
+  --text-2: #c3cbd5;
+  --muted: #8e98a5;
+  --faint: #6a737e;
+  --line: #242a31;
+  --line-strong: #353d47;
+  --blue: #4d80f5;
+  --on-accent: #fff;
+  --accent-soft: #172238;
+  --accent-line: #2a3d63;
+  --accent-text: #a3bfff;
+  --success: #3cc995;
+  --success-soft: #10291f;
+  --success-line: #1f5240;
+  --warn: #e9b04f;
+  --warn-soft: #2a2213;
+  --warn-line: #5a4519;
+  --danger: #ff6f6f;
+  --danger-soft: #2c1517;
+  --danger-line: #5c262a;
+  --focus-ring: #7ea6ff;
+  --shadow-soft: #00000040;
+  --shadow: #00000080;
+  --shadow-strong: #000000b0;
+  --overlay: #000000a0;
+  --bubble: #4d80f5;
+  color: var(--text);
+  background: var(--bg);
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f6f8fb;
+  --surface: #fff;
+  --surface-2: #f3f6fa;
+  --surface-3: #e8edf3;
+  --text: #152436;
+  --text-2: #43546b;
+  --muted: #5d6c80;
+  --faint: #8090a4;
+  --line: #e1e6ed;
+  --line-strong: #c5d6e1;
+  --blue: #245de8;
+  --on-accent: #fff;
+  --accent-soft: #edf3ff;
+  --accent-line: #dbe5fc;
+  --accent-text: #244da1;
+  --success: #157f72;
+  --success-soft: #e9f7ef;
+  --success-line: #b9dcc5;
+  --warn: #8a5a00;
+  --warn-soft: #fff8e6;
+  --warn-line: #f0dca8;
+  --danger: #b4232c;
+  --danger-soft: #fdeeee;
+  --danger-line: #f3c5c8;
+  --focus-ring: #87bce7;
+  --shadow-soft: #15243606;
+  --shadow: #12243b18;
+  --shadow-strong: #12243b30;
+  --overlay: #15243665;
+  --bubble: #245de8;
 }
 * {
   box-sizing: border-box;
 }
 body {
   margin: 0;
+  background: var(--bg);
 }
 button,
 input,
@@ -33,7 +91,7 @@ button {
   gap: 8px;
   border: 1px solid transparent;
   background: var(--blue);
-  color: #fff;
+  color: var(--on-accent);
   padding: 9px 16px;
   border-radius: 7px;
   cursor: pointer;
@@ -58,11 +116,11 @@ button.icon-button {
 input,
 textarea,
 select {
-  border: 1px solid #c5d6e1;
-  background: white;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
   border-radius: 5px;
   padding: 10px 12px;
-  color: #152436;
+  color: var(--text);
   min-width: 0;
 }
 input:focus-visible,
@@ -107,12 +165,12 @@ p {
   line-height: 1.6;
 }
 button.quiet {
-  background: #fff;
-  border-color: #8090a4;
-  color: #203a5b;
+  background: var(--surface);
+  border-color: var(--faint);
+  color: var(--text);
 }
 button.quiet:not(:disabled):hover {
-  background: #edf3ff;
+  background: var(--accent-soft);
   border-color: var(--blue);
 }
 button.text-button {
@@ -165,9 +223,9 @@ pre {
   overflow-wrap: anywhere;
 }
 .form-error {
-  border: 1px solid #edc5c5;
-  background: #fff5f4;
-  color: #98382e;
+  border: 1px solid var(--danger-line);
+  background: var(--danger-soft);
+  color: var(--danger);
   padding: 12px;
   border-radius: 6px;
 }
@@ -182,7 +240,7 @@ pre {
   top: -60px;
   left: 16px;
   z-index: 100;
-  background: white;
+  background: var(--surface);
   padding: 12px;
   color: var(--blue);
 }

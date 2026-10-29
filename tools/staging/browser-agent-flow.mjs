@@ -26,7 +26,7 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
   const tabs = page.getByRole('navigation', { name: 'Repository' });
   await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).click();
   await page.waitForURL(`**/source/${id}`);
-  await tabs.getByRole('link', { name: 'Agents' }).click();
+  await tabs.getByRole('link', { name: 'Sessions' }).click();
   await page.waitForURL(`**/source/${id}/agents`);
   const list = page.getByRole('list', { name: 'Sessions' });
   const row = list.getByRole('listitem').filter({ hasText: summary });

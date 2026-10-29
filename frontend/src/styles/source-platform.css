@@ -39,8 +39,8 @@
   overflow-wrap: anywhere;
 }
 .source-note {
-  background: #fff8e6;
-  border: 1px solid #f0dca8;
+  background: var(--warn-soft);
+  border: 1px solid var(--warn-line);
   padding: 8px 10px;
   border-radius: 6px;
 }
@@ -48,9 +48,9 @@
   display: flex;
   gap: 12px;
   align-items: center;
-  color: #a0262f;
-  background: #fdeeee;
-  border: 1px solid #f3c5c8;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid var(--danger-line);
   padding: 8px 10px;
   border-radius: 6px;
   margin: 8px 0;
@@ -71,7 +71,7 @@
   align-items: center;
   padding: 8px 12px;
   border-bottom: 1px solid var(--line);
-  background: #f8fafc;
+  background: var(--surface-2);
   flex-wrap: wrap;
 }
 .source-file pre {
@@ -113,13 +113,13 @@
   width: 160px;
 }
 button.danger {
-  background: #b4232c;
+  background: var(--danger);
 }
 .source-check-pass {
   color: var(--success);
 }
 .source-check-fail {
-  color: #b4232c;
+  color: var(--danger);
 }
 .source-op {
   font-size: 12px;
@@ -151,14 +151,14 @@ button.danger {
   white-space: nowrap;
 }
 .source-patch-add {
-  background: #e9f7ef;
+  background: var(--success-soft);
 }
 .source-patch-delete {
-  background: #fdecee;
+  background: var(--danger-soft);
 }
 .source-patch-hunk,
 .source-patch-note {
-  background: #f1f4f9;
+  background: var(--surface-2);
   color: var(--muted);
 }
 .source-table-wrap {
@@ -185,13 +185,13 @@ button.danger {
   font-size: 12px;
   padding: 1px 8px;
   border-radius: 10px;
-  background: #eef2fb;
+  background: var(--accent-soft);
   color: var(--muted);
 }
 .source-class-logic,
 .source-class-unknown {
-  background: #fff3e0;
-  color: #8a4b00;
+  background: var(--warn-soft);
+  color: var(--warn);
 }
 .source-diff .source-empty {
   margin: 0;
@@ -201,8 +201,8 @@ button.danger {
   display: inline-block;
   padding: 0 6px;
   border-radius: 4px;
-  background: #b4232c;
-  color: #fff;
+  background: var(--danger);
+  color: var(--on-accent);
   font-size: 12px;
   font-weight: 600;
 }
@@ -213,7 +213,7 @@ button.danger {
   margin: 4px 0;
 }
 .source-break-glass-confirm {
-  border: 1px solid #b4232c;
+  border: 1px solid var(--danger);
   border-radius: 6px;
   padding: 8px 12px;
 }
@@ -298,10 +298,10 @@ button.danger {
   max-width: 760px;
 }
 .source-danger {
-  border: 1px solid #b4232c;
+  border: 1px solid var(--danger);
   border-radius: 6px;
   padding: 12px 16px;
 }
 .source-danger h2 {
-  color: #b4232c;
+  color: var(--danger);
 }

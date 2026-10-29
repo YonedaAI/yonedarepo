@@ -119,7 +119,7 @@ describe('agent pages', () => {
     ]);
   });
 
-  it('addresses every agent page and keeps them under the Agents tab', () => {
+  it('addresses every agent page, sessions under Sessions and the rest under Agents', () => {
     for (const route of [
       { view: 'agents', repo, section: 'sessions' },
       { view: 'agents', repo, section: 'contracts' },
@@ -129,7 +129,10 @@ describe('agent pages', () => {
     ] as const) {
       const url = formatSourceRoute(route);
       expect(parseSourceRoute(url, '')).toEqual(route);
-      expect(routeTab(route)).toBe('agents');
+      // Sessions have their own sidebar page; the other records stay under Agents.
+      expect(routeTab(route)).toBe(
+        route.view === 'session' || route.section === 'sessions' ? 'sessions' : 'agents',
+      );
     }
     expect(formatSourceRoute({ view: 'agents', repo, section: 'sessions' })).toBe(
       `/source/${repo}/agents`,

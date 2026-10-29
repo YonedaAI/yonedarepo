@@ -32,7 +32,7 @@
   display: inline-flex;
   padding: 10px;
   border-radius: 12px;
-  background: #eaf0ff;
+  background: var(--accent-soft);
   color: var(--blue);
   margin-bottom: 18px;
 }
@@ -41,14 +41,14 @@
   align-items: center;
   gap: 14px;
   margin: 22px 0 18px;
-  color: #90a0b4;
+  color: var(--faint);
 }
 .welcome-flow span {
   display: flex;
   align-items: center;
   gap: 7px;
   font-size: 12px;
-  color: #43546b;
+  color: var(--text-2);
 }
 .welcome-note,
 .welcome-story .welcome-note {
@@ -56,11 +56,11 @@
   color: var(--muted);
 }
 .account-panel {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 12px;
   padding: 24px;
-  box-shadow: 0 12px 32px #15243606;
+  box-shadow: 0 12px 32px var(--shadow-soft);
 }
 details.account-panel {
   padding: 14px 20px;
@@ -104,7 +104,7 @@ details.account-panel[open] {
 .account-tabs {
   display: flex;
   padding: 3px;
-  background: #f3f5f9;
+  background: var(--surface-2);
   border-radius: 7px;
   gap: 3px;
 }
@@ -116,9 +116,9 @@ details.account-panel[open] {
   min-height: 34px;
 }
 .account-tabs button.selected {
-  background: white;
-  color: #152436;
-  box-shadow: 0 1px 3px #15243618;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 1px 3px var(--shadow);
 }
 .recovery-code {
   display: block;

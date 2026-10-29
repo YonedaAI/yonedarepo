@@ -15,6 +15,7 @@ op_names! {
 op_names! {
     /// Commands the repository store runs itself.
     pub(crate) enum RepoOp {
+        Activity = "repo_activity",
         AdoptCommit = "repo_adopt_commit",
         AgentContext = "repo_agent_context",
         BeginCommit = "repo_begin_commit",

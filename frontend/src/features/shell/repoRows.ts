@@ -37,3 +37,13 @@ export function repoRows(platform: PlatformRepo[]): RepoRow[] {
     }))
     .sort((a, b) => a.name.localeCompare(b.name) || a.repo.localeCompare(b.repo));
 }
+
+/** The repository switcher's rows for `query`: name or owner containing it, any case, in
+ * listing order. */
+export function matchRows(rows: RepoRow[], query: string): RepoRow[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return rows;
+  return rows.filter(
+    (r) => r.name.toLowerCase().includes(q) || (r.shared ?? '').toLowerCase().includes(q),
+  );
+}
