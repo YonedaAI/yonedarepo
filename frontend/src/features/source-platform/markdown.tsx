@@ -1,13 +1,19 @@
-// A small Markdown reader for READMEs: headings, paragraphs, lists, quotes, fenced code,
-// rules, and inline code, emphasis and links. It builds React elements (never HTML strings),
-// so repository content cannot inject markup; only http(s) and mailto links are live.
-import type { ReactNode } from 'react';
+// A small Markdown reader for READMEs and the site's own pages: headings, paragraphs, lists,
+// quotes, fenced code, pipe tables, rules, and inline code, emphasis and links. It builds
+// React elements (never HTML strings), so repository content cannot inject markup; only
+// http(s) and mailto links are live, plus same-site `/` paths when the caller resolves them.
+import type { MouseEvent, ReactNode } from 'react';
+
+/** Props for a same-site link (`/docs/cli`), or nothing to leave it as text. */
+export type LinkResolver = (
+  path: string,
+) => { href: string; onClick: (event: MouseEvent) => void } | undefined;
 
 const SAFE_LINK = /^(https?:|mailto:)/i;
 const INLINE =
   /(`+)([\s\S]*?)\1|\*\*([^*]+)\*\*|__([^_]+)__|\*([^*\s][^*]*)\*|_([^_\s][^_]*)_|!?\[([^\]]*)\]\(([^)\s]*)(?:\s+"[^"]*")?\)/g;
 
-export function inline(text: string, key = ''): ReactNode[] {
+export function inline(text: string, key = '', link?: LinkResolver): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
   for (const m of text.matchAll(INLINE)) {
@@ -15,16 +21,25 @@ export function inline(text: string, key = ''): ReactNode[] {
     if (at > last) out.push(text.slice(last, at));
     const k = `${key}${at}`;
     if (m[1]) out.push(<code key={k}>{m[2]}</code>);
-    else if (m[3] ?? m[4]) out.push(<strong key={k}>{inline(m[3] ?? m[4], `${k}.`)}</strong>);
-    else if (m[5] ?? m[6]) out.push(<em key={k}>{inline(m[5] ?? m[6], `${k}.`)}</em>);
+    else if (m[3] ?? m[4]) out.push(<strong key={k}>{inline(m[3] ?? m[4], `${k}.`, link)}</strong>);
+    else if (m[5] ?? m[6]) out.push(<em key={k}>{inline(m[5] ?? m[6], `${k}.`, link)}</em>);
     else if (m[0].startsWith('!')) out.push(m[7]);
     else if (SAFE_LINK.test(m[8]))
       out.push(
         <a key={k} href={m[8]} target="_blank" rel="noreferrer noopener">
-          {inline(m[7], `${k}.`)}
+          {inline(m[7], `${k}.`, link)}
         </a>,
       );
-    else out.push(...inline(m[7], `${k}.`));
+    else {
+      const local = /^\/(?!\/)/.test(m[8]) ? link?.(m[8]) : undefined;
+      if (local)
+        out.push(
+          <a key={k} {...local}>
+            {inline(m[7], `${k}.`, link)}
+          </a>,
+        );
+      else out.push(...inline(m[7], `${k}.`, link));
+    }
     last = at + m[0].length;
   }
   if (last < text.length) out.push(text.slice(last));
@@ -36,10 +51,20 @@ type Block =
   | { kind: 'code'; text: string }
   | { kind: 'list'; ordered: boolean; items: string[] }
   | { kind: 'quote'; text: string }
+  | { kind: 'table'; head: string[]; rows: string[][] }
   | { kind: 'rule' }
   | { kind: 'paragraph'; text: string };
 
 const LIST = /^\s{0,3}([-*+]|\d{1,9}[.)])\s+(.*)$/;
+const TABLE_ROW = /^\s{0,3}\|.*\|\s*$/;
+const TABLE_RULE = /^\s{0,3}\|(\s*:?-+:?\s*\|)+\s*$/;
+// A row's cells; `\|` stays a literal bar inside a cell.
+const cells = (row: string) =>
+  row
+    .trim()
+    .slice(1, -1)
+    .split(/(?<!\\)\|/)
+    .map((cell) => cell.trim().replaceAll('\\|', '|'));
 
 export function blocks(source: string): Block[] {
   const lines = source.replace(/\r\n?/g, '\n').split('\n');
@@ -54,6 +79,11 @@ export function blocks(source: string): Block[] {
         body.push(lines[i]);
       out.push({ kind: 'code', text: body.join('\n') });
       i++;
+    } else if (TABLE_ROW.test(line) && TABLE_RULE.test(lines[i + 1] ?? '')) {
+      const head = cells(line);
+      const rows: string[][] = [];
+      for (i += 2; i < lines.length && TABLE_ROW.test(lines[i]); i++) rows.push(cells(lines[i]));
+      out.push({ kind: 'table', head, rows });
     } else if (/^\s{0,3}#{1,6}\s/.test(line)) {
       const [, hashes, text] = /^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$/.exec(line) ?? ['', '#', line];
       out.push({ kind: 'heading', level: hashes.length, text });
@@ -90,16 +120,71 @@ export function blocks(source: string): Block[] {
   return out;
 }
 
-export function Markdown({ source }: { source: string }) {
+/** A heading's anchor id: lower case, words joined by hyphens. */
+export const anchorId = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[`*_]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+
+/**
+ * `shift` moves heading levels down (a README's `#` sits under its page's own h1); `link`
+ * resolves same-site paths; `anchors` gives each heading an id for `#` links.
+ */
+export function Markdown({
+  source,
+  shift = 1,
+  link,
+  anchors = false,
+}: {
+  source: string;
+  shift?: number;
+  link?: LinkResolver;
+  anchors?: boolean;
+}) {
+  const text = (value: string, key: string) => inline(value, key, link);
   return (
     <>
       {blocks(source).map((block, n) => {
         // Blocks are positional parts of one immutable document.
         const key = `b${n}`;
         if (block.kind === 'heading') {
-          const Tag = `h${Math.min(block.level + 1, 6)}` as 'h2';
-          return <Tag key={key}>{inline(block.text, key)}</Tag>;
+          const Tag = `h${Math.min(block.level + shift, 6)}` as 'h2';
+          return (
+            <Tag key={key} id={anchors ? anchorId(block.text) : undefined}>
+              {text(block.text, key)}
+            </Tag>
+          );
         }
+        if (block.kind === 'table')
+          return (
+            <div key={key} className="markdown-table">
+              <table>
+                <thead>
+                  <tr>
+                    {block.head.map((cell, j) => (
+                      // biome-ignore lint/suspicious/noArrayIndexKey: positional cells of one row.
+                      <th key={j} scope="col">
+                        {text(cell, `${key}.h${j}.`)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {block.rows.map((row, r) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: positional rows of one table.
+                    <tr key={r}>
+                      {row.map((cell, j) => (
+                        // biome-ignore lint/suspicious/noArrayIndexKey: positional cells of one row.
+                        <td key={j}>{text(cell, `${key}.${r}.${j}.`)}</td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
         if (block.kind === 'code')
           return (
             <pre key={key}>
@@ -112,15 +197,15 @@ export function Markdown({ source }: { source: string }) {
             <List key={key}>
               {block.items.map((item, j) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: positional items of one list.
-                <li key={`${key}.${j}`}>{inline(item, `${key}.${j}.`)}</li>
+                <li key={`${key}.${j}`}>{text(item, `${key}.${j}.`)}</li>
               ))}
             </List>
           );
         }
         if (block.kind === 'quote')
-          return <blockquote key={key}>{inline(block.text, key)}</blockquote>;
+          return <blockquote key={key}>{text(block.text, key)}</blockquote>;
         if (block.kind === 'rule') return <hr key={key} />;
-        return <p key={key}>{inline(block.text, key)}</p>;
+        return <p key={key}>{text(block.text, key)}</p>;
       })}
     </>
   );

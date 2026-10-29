@@ -79,6 +79,29 @@ describe('README reader', () => {
     expect(out).not.toContain('javascript:');
     expect(out).toContain('&lt;script&gt;');
   });
+  it('reads pipe tables, with an escaped bar inside a cell', () => {
+    const parsed = blocks('| A | B |\n|---|:-:|\n| `a\\|b` | 2 |\nafter');
+    expect(parsed).toEqual([
+      { kind: 'table', head: ['A', 'B'], rows: [['`a|b`', '2']] },
+      { kind: 'paragraph', text: 'after' },
+    ]);
+    expect(blocks('| not | a table |\nplain')[0].kind).toBe('paragraph');
+    expect(html(Markdown, { source: '| A |\n|---|\n| **x** |' })).toContain(
+      '<th scope="col">A</th>',
+    );
+  });
+  it('makes same-site links live only through a resolver, never protocol-relative ones', () => {
+    const source = '[docs](/docs/cli) [evil](//e.com/x)';
+    const plain = html(Markdown, { source });
+    expect(plain).not.toContain('href');
+    const link = (path: string) => ({ href: `/site${path}`, onClick: () => {} });
+    const resolved = html(Markdown, { source, link, shift: 0, anchors: true });
+    expect(resolved).toContain('href="/site/docs/cli"');
+    expect(resolved).not.toContain('e.com');
+    expect(html(Markdown, { source: '## Hi there', shift: 0, anchors: true })).toBe(
+      '<h2 id="hi-there">Hi there</h2>',
+    );
+  });
 });
 
 describe('file table', () => {
