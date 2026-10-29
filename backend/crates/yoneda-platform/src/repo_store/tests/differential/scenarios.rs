@@ -2,7 +2,7 @@
 //! the outcome it names, under the same model, platform and Git checks.
 use super::{Driver, git};
 use std::collections::BTreeSet;
-use yoneda_refmodel::{Access, Caller, MAIN, Op, Role, Scope};
+use yoneda_refmodel::{Access, Caller, MAIN, MIRROR, Op, Role, Scope};
 
 const B1: &str = "refs/heads/b1";
 
@@ -425,4 +425,73 @@ fn admins_manage_members_but_not_admins_or_visibility() {
             "SetVisibility FORBIDDEN",
         ],
     );
+}
+
+fn fork_put(path: &str, text: &str) -> Op {
+    Op::ForkCommit {
+        path: path.into(),
+        content: format!("{text}\n"),
+    }
+}
+
+/// Fork work carried back lands on the parent as of where its history landed there: the
+/// parent's later writes count against it, whatever the fork's own log says.
+#[test]
+fn carried_fork_work_is_based_where_its_history_landed_in_the_parent() {
+    let script = [
+        Op::Fork,
+        Op::Fork,
+        put(MAIN, "README.md", "parent moved", false),
+        fork_put("src/fork.rs", "from the fork"),
+        Op::Carry,
+        Op::Carry,
+        // Its base is main's root landing (version 1), so main's README.md write is
+        // concurrent: a merge is required, and a merge landing builds one.
+        Op::Land {
+            branch: MIRROR.into(),
+        },
+        Op::MergeLand {
+            branch: MIRROR.into(),
+        },
+        // More fork work moves the mirror forward.
+        fork_put("src/fork.rs", "more from the fork"),
+        Op::Carry,
+    ];
+    run_reaching(
+        "fork",
+        &script,
+        &[
+            "Fork Done",
+            "Fork Already",
+            "ForkCommit Committed",
+            "Carry Moved",
+            "Carry Already",
+            "Land MERGE_REQUIRED",
+            "MergeLand Committed",
+        ],
+    );
+}
+
+/// Found by the long differential run (seed 31): when a parent writer moves the mirror
+/// branch off the fork's head and the fork's branch is carried again unchanged, the
+/// mirror move logs the head landing on the mirror a second time and breaks the landings
+/// key. Random cases leave the mirror to the carry until this is fixed.
+#[test]
+#[ignore = "known-failing: repo_fork_mirror answers DATABASE (UNIQUE constraint failed: \
+            landings.commit_id, landings.refname) moving the mirror back to a head it held; \
+            target: the mirror moves (the model's Moved)"]
+fn carrying_again_moves_the_mirror_back_to_the_fork_head() {
+    let script = [
+        Op::Fork,
+        fork_put("src/fork.rs", "from the fork"),
+        Op::Carry,
+        // A writer of the parent moves the mirror elsewhere.
+        Op::MoveBranch {
+            name: MIRROR.into(),
+            to: MAIN.into(),
+            expected: MIRROR.into(),
+        },
+        Op::Carry,
+    ];
+    run("mirror back", &script, "Carry Moved");
 }

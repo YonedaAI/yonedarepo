@@ -15,6 +15,7 @@ use yoneda_refmodel::{
 };
 
 mod adapter;
+mod forks;
 mod git;
 mod scenarios;
 
@@ -47,6 +48,8 @@ struct Driver {
     published: std::cell::RefCell<Value>,
     /// Shard commits' records, in the order they were built (the model's `shard`).
     shard: std::cell::RefCell<Vec<Value>>,
+    /// The fork's authority, once forked.
+    fork: std::cell::RefCell<Option<Harness>>,
 }
 
 impl Driver {
@@ -64,6 +67,7 @@ impl Driver {
             tally: BTreeMap::new(),
             published: published.into(),
             shard: Vec::new().into(),
+            fork: None.into(),
         }
     }
 
@@ -183,6 +187,9 @@ impl Driver {
                 read,
             } => (self.shard_commit(path, content, *read), None),
             Op::Submit { picks } => (self.submit(picks), None),
+            Op::Fork => (self.fork_repo(), None),
+            Op::ForkCommit { path, content } => (self.fork_commit(path, content), None),
+            Op::Carry => (self.carry(), None),
             Op::MintToken {
                 name,
                 scopes,
@@ -341,6 +348,7 @@ impl Driver {
                 "annotated tags: platform {annotated:?}, model {model:?}"
             ));
         }
+        self.same_fork()?;
         if listed["version"] != self.model.version {
             let version = &listed["version"];
             return Err(format!(

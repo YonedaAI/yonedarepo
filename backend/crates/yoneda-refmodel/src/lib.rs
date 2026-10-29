@@ -24,6 +24,8 @@
 //! - Commits may begin from a published head that trails the log and land through the
 //!   combiner as changesets, or the merge path, decided against everything landed since
 //!   (`shards`).
+//! - A fork shares the commits; carrying its work back records what the parent lacks and
+//!   moves the parent's mirror branch (`forks`).
 //! - Files are one line each (the generator keeps them so), so a three-way merge is decided
 //!   per file: a side that left a file alone takes the other's version; two different
 //!   changes conflict.
@@ -31,6 +33,7 @@ mod access;
 mod branches;
 mod cases;
 mod commits;
+mod forks;
 mod graph;
 mod land;
 mod merge;
@@ -41,6 +44,7 @@ mod tokens;
 
 pub use access::{Access, Caller, Role};
 pub use cases::{PATHS, Rng, generate};
+pub use forks::{FEATURE, FORK_ID, Fork, MIRROR};
 pub use ops::{Op, Outcome, Plan};
 pub use queue::{Batch, Ticket, TicketStatus};
 pub use shards::{Item, Submitted};
@@ -99,6 +103,10 @@ pub struct Repo {
     pub published: (CommitId, u64),
     /// Shard commits, in the order they were built.
     pub shard: Vec<CommitId>,
+    /// The fork, once made.
+    pub fork: Option<Fork>,
+    /// Commits carried in from the fork (recorded as pushed).
+    pub carried: BTreeSet<CommitId>,
 }
 
 impl Repo {
@@ -131,6 +139,8 @@ impl Repo {
             annotated: BTreeMap::new(),
             published: (0, 1),
             shard: Vec::new(),
+            fork: None,
+            carried: BTreeSet::new(),
         }
     }
 
