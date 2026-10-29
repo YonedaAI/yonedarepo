@@ -58,6 +58,8 @@ async function onEvent(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'event'
   const [connection, enabled] = await Promise.all([repo.connection(), repo.enabled()]);
   if (!connection || enabled.length === 0 || !m.commit) return;
   const platform = new Platform(env, { token: connection.token });
+  // The owner's break-glass pause stops automation, managed agents included.
+  if (await platform.automationPaused(m.repo)) return;
   const open = ((await platform.openChanges(m.repo)).changes ?? []) as Record<string, any>[];
   const branch = m.ref?.startsWith('refs/heads/') ? m.ref.slice('refs/heads/'.length) : null;
   // Only the change's current head is reviewed; an event for an older head is stale.

@@ -431,11 +431,15 @@
         "secrets Claude, Codex, ZAI and MiMo. Agent models and fallbacks: shared/managed-agents.ts.",
         "Credit: one CreditLedger per workspace, $5 promotional credit, runs pause at $0; container time",
         "is billed at the check-minute rate. Transcripts (redacted) in R2 {prefix}-managed-transcripts.",
-        "Secrets (both optional): AI_GATEWAY_TOKEN, the gateway's token when it is authenticated;",
-        "MANAGED_ADMIN_TOKEN, bearer for POST /admin/accounts/<workspace>/credit (unset: nobody may grant).",
+        "Secrets: MANAGED_VAULT_KEY (required: 64 hex characters, generated once and kept; seals each",
+        "repository's stored agent token and webhook secret, so losing it means re-enabling agents).",
+        "Optional: AI_GATEWAY_TOKEN, the gateway's token when it is authenticated; MANAGED_ADMIN_TOKEN,",
+        "bearer for POST /admin/accounts/<workspace>/credit (unset: nobody may grant).",
         "Deployed before the front Worker, which binds it as MANAGED."
       ],
-      "secrets": [],
+      "secrets": [
+        "MANAGED_VAULT_KEY"
+      ],
       "optional_secrets": [
         "AI_GATEWAY_TOKEN",
         "MANAGED_ADMIN_TOKEN"

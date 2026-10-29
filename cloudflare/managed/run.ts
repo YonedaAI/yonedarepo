@@ -65,7 +65,9 @@ async function prepare(
 ): Promise<Prepared | string> {
   const connection = await repoStub(env, p.repo).connection();
   if (!connection) return 'not_connected';
-  const change = await new Platform(env, { token: connection.token }).change(p.repo, p.change);
+  const platform = new Platform(env, { token: connection.token });
+  if (await platform.automationPaused(p.repo)) return 'automation_paused';
+  const change = await platform.change(p.repo, p.change);
   if (change.status !== 'open') return 'change_not_open';
   if (change.head !== p.head) return 'superseded';
   const stored = await workspaceStub(env, p.account).settings(agent.id);

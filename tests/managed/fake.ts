@@ -42,6 +42,9 @@ export class FakePlatform {
   tokens: string[] = [];
   hooks: any[] = [];
   changes: FakeChange[] = [];
+  revoked: string[] = [];
+  /** The owner's break-glass automation pause (repo status `automation.paused`). */
+  paused = false;
   /** The workspace (the billed account): one per test, since ledgers outlive a test. */
   readonly account = `ws-${crypto.randomUUID().slice(0, 8)}`;
   readonly repos: string[];
@@ -82,6 +85,14 @@ export class FakePlatform {
       });
     if (req.method === 'GET' && path === '/orgs') return ok({ orgs: [] });
     const base = `/repos/${this.repo}`;
+    if (req.method === 'GET' && path === base)
+      return ok({ owner: this.account, automation: { paused: this.paused ? { by: 'user:owner' } : null } });
+    const del = /^\/repos\/(r[0-9a-f]{20})\/(tokens|hooks)\/([^/]+)$/.exec(path);
+    if (req.method === 'DELETE' && del) {
+      if (!owner) return refuse('FORBIDDEN', 403);
+      this.revoked.push(`${del[2]}:${decodeURIComponent(del[3])}`);
+      return ok({ deleted: true });
+    }
     if (req.method === 'GET' && path === `${base}/changes`)
       return ok({ changes: this.changes.filter((c) => c.status === 'open').map(({ files, ...c }) => c) });
     const show = new RegExp(`^${base}/changes/(\\d+)$`).exec(path);

@@ -26,6 +26,8 @@ export default defineConfig({
           AI_GATEWAY_URL: 'https://gateway.example.com/v1/acct/yonedarepo-test-agents',
           AI_GATEWAY_PROVIDERS: 'claude=anthropic,codex=openai,zai=custom-zai,mimo=custom-mimo',
           MANAGED_ADMIN_TOKEN: 'fixture-admin-token',
+          // A fixture vault key (not a secret): 32 bytes of 0x11.
+          MANAGED_VAULT_KEY: '11'.repeat(32),
         },
       },
     }),

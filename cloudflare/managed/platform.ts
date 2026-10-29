@@ -71,6 +71,11 @@ export class Platform {
   status(repo: string) {
     return this.#call('GET', `/repos/${repo}`);
   }
+  /** Whether the owner's break-glass pause stops automation (`automation.paused`), managed
+   * agents included. */
+  async automationPaused(repo: string) {
+    return Boolean((await this.status(repo)).automation?.paused);
+  }
   openChanges(repo: string) {
     return this.#call('GET', `/repos/${repo}/changes?status=open&limit=200`);
   }
@@ -102,5 +107,11 @@ export class Platform {
   }
   createHook(repo: string, url: string, events: string[]) {
     return this.#call('POST', `/repos/${repo}/hooks`, { url, events });
+  }
+  revokeToken(repo: string, name: string) {
+    return this.#call('DELETE', `/repos/${repo}/tokens/${encodeURIComponent(name)}`);
+  }
+  deleteHook(repo: string, id: number) {
+    return this.#call('DELETE', `/repos/${repo}/hooks/${id}`);
   }
 }
