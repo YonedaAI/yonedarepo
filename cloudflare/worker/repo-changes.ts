@@ -81,9 +81,12 @@ export const changeOperations = {
     notified(ctx, ctx.call({ op: 'repo_change_close', number: changeNumber(a.number) })),
   git_change_reopen: (ctx: RepoContext, a: Json) =>
     notified(ctx, ctx.call({ op: 'repo_change_reopen', number: changeNumber(a.number) })),
+  // A closed change and its comments; the authority refuses open and landed ones.
+  git_change_delete: (ctx: RepoContext, a: Json) =>
+    notified(ctx, ctx.call({ op: 'repo_change_delete', number: changeNumber(a.number) })),
 };
 
-/** `GET|POST /changes`, `GET /changes/:n`, `POST /changes/:n/comments|close|reopen`. */
+/** `GET|POST /changes`, `GET|DELETE /changes/:n`, `POST /changes/:n/comments|close|reopen`. */
 export async function changesRoute(
   ctx: RepoContext,
   req: Request,
@@ -101,6 +104,7 @@ export async function changesRoute(
       number,
       patch: query.patch === '1' || query.patch === 'true',
     });
+  if (number && !sub && method === 'DELETE') return ops.git_change_delete(ctx, { number });
   if (number && method === 'POST' && sub === 'comments')
     return ops.git_change_comment(ctx, { ...(await body()), number });
   if (number && method === 'POST' && sub === 'close') return ops.git_change_close(ctx, { number });

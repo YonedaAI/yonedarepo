@@ -41,6 +41,8 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         // the fork's writer needs only read here.
         R::ChangeCreate if c["source_repo"].is_string() => actor.require("read"),
         R::ChangeCreate | R::ChangeClose | R::ChangeReopen => actor.require("write"),
+        // The author or the owner (decided in `change_delete`); a reader never.
+        R::ChangeDelete => actor.require("write"),
         // Reviewers discuss a change as well as writers.
         R::ChangeComment => actor.require_any(&["write", "review"]),
         R::CheckRequest | R::BisectStart => actor.require_any(&["write", "check"]),

@@ -2344,6 +2344,41 @@
     }
   },
   {
+    "name": "git_change_delete",
+    "description": "Delete a closed change request and its comments (close an open one first; a landed change stays as history). Only its author or the owner may delete it; the branch and its commits stay, and the number is never reused. Sends the change.deleted webhook event. REST: DELETE /changes/:number.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The change number"
+        }
+      },
+      "required": [
+        "number"
+      ],
+      "additionalProperties": false
+    },
+    "outputSchema": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "type": "integer"
+        },
+        "deleted": {
+          "type": "boolean",
+          "const": true
+        }
+      },
+      "required": [
+        "number",
+        "deleted"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "git_release_create",
     "description": "Publish a release for an existing tag: a title and notes, then assets with git_release_asset_upload. One release per tag (ALREADY_EXISTS otherwise). Needs the write and land scopes and a whole-repository credential. Sends the release.published webhook event. REST: POST /releases.",
     "inputSchema": {
@@ -2486,7 +2521,7 @@
   },
   {
     "name": "git_hook_create",
-    "description": "Add a webhook: signed POSTs (X-Yoneda-Signature: sha256=<hex HMAC-SHA256 of the body with the secret>, X-Yoneda-Event, X-Yoneda-Delivery) to a public https url for each event, in log order, at least once. Events: land, merged, refused, branch (created/moved/deleted), tag, check (conclusion pass/fail/error), change (change requests: X-Yoneda-Event change.opened, change.commented, change.landed or change.closed; titles and comment text only for hooks without paths), release (release.published or release.deleted); all when omitted. paths limits commit messages to commits inside those paths. Returns the secret once. Needs the owner or repo:admin.",
+    "description": "Add a webhook: signed POSTs (X-Yoneda-Signature: sha256=<hex HMAC-SHA256 of the body with the secret>, X-Yoneda-Event, X-Yoneda-Delivery) to a public https url for each event, in log order, at least once. Events: land, merged, refused, branch (created/moved/deleted), tag, check (conclusion pass/fail/error), change (change requests: X-Yoneda-Event change.opened, change.commented, change.landed, change.closed or change.deleted; titles and comment text only for hooks without paths), release (release.published or release.deleted); all when omitted. paths limits commit messages to commits inside those paths. Returns the secret once. Needs the owner or repo:admin.",
     "inputSchema": {
       "type": "object",
       "properties": {
