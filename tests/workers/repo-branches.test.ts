@@ -61,8 +61,9 @@ it('issues repository tokens with the repository, and only the operator creates 
     body: { name: 'for-reviewer', workspace: 'provisioned_owner', files: [file('README.md', 'y\n')], author, tokens: [{ name: 'agents', scopes: ['read'] }] },
   });
   expect(provisioned.status).toBe(200);
-  // The named workspace owns it: its own session reads and lists it; the creator's cannot.
+  // The named workspace owns it: its own session reads and lists it; the creator's cannot,
+  // and a private repository does not admit it exists to a non-member (404, not 403).
   expect((await api(`/repos/${provisioned.body.id}`, recipient)).status).toBe(200);
   expect((await api('/repos', recipient)).body.repos.map((r: any) => r.id)).toContain(provisioned.body.id);
-  expect((await api(`/repos/${provisioned.body.id}`, owner)).status).toBe(403);
+  expect((await api(`/repos/${provisioned.body.id}`, owner)).status).toBe(404);
 });
