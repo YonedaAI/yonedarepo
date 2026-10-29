@@ -1,4 +1,6 @@
 /target/
+# Workspaces of their own (the SSH gateway, the pack builder) build beside their manifests.
+/backend/crates/*/target/
 /node_modules
 /.vitest/
 /frontend/node_modules

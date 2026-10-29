@@ -156,7 +156,8 @@ async function advertise(ctx: RepoContext, service: string) {
 }
 
 /** The request body, inflated when Git compressed it. */
-function requestBody(req: Request): ReadableStream<Uint8Array> {
+/** A Git request's body, gunzipped when Git compressed it (it does past a few KiB). */
+export function requestBody(req: Request): ReadableStream<Uint8Array> {
   const body = req.body ?? new ReadableStream<Uint8Array>({ start: (c) => c.close() });
   return req.headers.get('content-encoding') === 'gzip'
     ? body.pipeThrough(new DecompressionStream('gzip'))

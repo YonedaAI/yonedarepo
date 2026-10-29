@@ -1,0 +1,17 @@
+# Its own workspace (and Cargo.lock), like the SSH gateway: the PackBuilder image builds from
+# this directory alone, and the platform workspace's manifest and lockfile (inputs of the
+# CheckContainer runtime image, xtask/src/deploy_inputs.rs) stay untouched. No dependencies:
+# it runs Git and answers a handful of HTTP requests from its own Worker.
+[workspace]
+
+[package]
+name = "yoneda-pack-builder"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+rust-version = "1.99"
+description = "Builds a repository's clone packs with stock Git inside the PackBuilder container."
+
+[profile.release]
+lto = true
+strip = "debuginfo"

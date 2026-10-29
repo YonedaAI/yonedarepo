@@ -11,6 +11,7 @@ import { packKey } from '../../cloudflare/worker/repo-pack-cache';
 import { transcriptKey } from '../../cloudflare/worker/repo-session-records';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, bindings, delayed, drainObjects, file, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { fakeBuilders } from './repo-pack-fixture';
 
 usePlatformFixture();
 
@@ -254,7 +255,8 @@ it("withholds a blob a fork inherits once its parent quarantines it", async () =
 });
 
 it('never serves or builds a stored pack of any kind while a blob is withheld, and purge deletes them', async () => {
-  const cached = { ...scoped, PACK_CACHE: 'on', PACK_BUILD_MIN_OBJECTS: '0' } as unknown as Env;
+  const builders = fakeBuilders(() => cached);
+  const cached = { ...scoped, PACK_CACHE: 'on', PACK_BUILD_MIN_OBJECTS: '0', PACK_BUILDERS: builders.namespace } as unknown as Env;
   const { cookie, id, reader } = await setUp('quarantine_packs', cached);
   const main = (await api(`/repos/${id}/refs`, { cookie }, {}, cached)).body.refs['refs/heads/main'];
   const secret = await blobId(SECRET);
@@ -292,7 +294,8 @@ it('never serves or builds a stored pack of any kind while a blob is withheld, a
   expect(await keys(`derived/v1/${id}/packs/`)).toEqual([]);
   // A pack-build job (after a push, or handed a clone's fetch) stores nothing while the
   // blob is withheld.
-  const job = { v: 1, kind: 'platform_pack_build', repo_id: id, job_id: `push-0-${main}` };
+  const job = { v: 1, kind: 'platform_pack_build', repo_id: id, job_id: `push-${main}` };
   await platformJob(cached, { body: job, attempts: 1, ack: () => {}, retry: () => {} } as unknown as Message<any>);
   expect(await keys(`derived/v1/${id}/packs/`)).toEqual([]);
+  expect(builders.record.started).toBe(0);
 });
