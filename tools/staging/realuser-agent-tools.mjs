@@ -23,6 +23,7 @@ import {
   bisectReport,
   bisectRunner,
   checkSeconds,
+  contextContracts,
   contractListed,
   editedSource,
   pickFunction,
@@ -113,8 +114,8 @@ export async function realuserAgentTools(ctx, metrics, { headed = false } = {}) 
         await ws.ok('git', ['clone', '-q', '--filter=blob:none', `${ws.api}/git/${repo}.git`, dir], { token });
         // An uncommitted change to the file: `yoneda context` puts contracts on it first.
         appendFileSync(join(dir, shown.contract.path), '\n');
-        const context = JSON.parse((await ws.ok('yoneda', ['context', '--json'], { cwd: dir, token })).stdout);
-        const ours = (context.contracts ?? []).find((c) => c.path === shown.contract.path && c.symbol_path === shown.contract.symbol_path);
+        const contracts = contextContracts((await ws.ok('yoneda', ['context', '--json'], { cwd: dir, token })).stdout);
+        const ours = contracts.find((c) => c.path === shown.contract.path && c.symbol_path === shown.contract.symbol_path);
         assert.ok(ours, `yoneda context names no contract on ${shown.contract.path}`);
         assert.equal(ours.contract?.summary, shown.contract.record.contract.summary);
       }],
