@@ -80,10 +80,18 @@ impl Driver {
 
     /// `repo_merge_plan` for landing `commit` on main.
     pub(super) fn plan(&self, commit: &Value) -> Plan {
-        let plan = self.h.ok(
+        let plan = match self.h.run(
             OWNER,
             json!({"op":"repo_merge_plan","ref":MAIN,"commit":commit}),
-        );
+        ) {
+            Ok(plan) => plan,
+            Err(e) => {
+                return Plan {
+                    kind: leak(&e.code),
+                    paths: vec![],
+                };
+            }
+        };
         Plan {
             kind: leak(plan["outcome"].as_str().unwrap_or_default()),
             paths: serde_json::from_value(plan["paths"].clone()).unwrap_or_default(),
@@ -103,10 +111,13 @@ impl Driver {
             Err(e) if e.code == "MERGE_REQUIRED" => {}
             other => return answer(other),
         }
-        let plan = self.h.ok(
+        let plan = match self.h.run(
             OWNER,
             json!({"op":"repo_merge_plan","ref":MAIN,"commit":commit}),
-        );
+        ) {
+            Ok(plan) => plan,
+            Err(e) => return Seen::Refused(e.code),
+        };
         let merged = self.merge(&plan["base_tree"], &plan["head_tree"], &plan["commit_tree"]);
         if merged["conflicts"]
             .as_array()
@@ -346,13 +357,28 @@ impl Driver {
 
     /// A commit begun from the published head with stateless compute and built there, as
     /// an isolate does (`repo-commit-shard.ts`); its record stays in the shard.
-    pub(super) fn shard_commit(&self, path: &str, content: &str, read: bool) -> Seen {
+    pub(super) fn shard_commit(
+        &self,
+        path: &str,
+        content: &str,
+        read: bool,
+        on: Option<usize>,
+    ) -> Seen {
         let begin = json!({"op":"head_begin","head":*self.published.borrow(),
             "credentials":super::credentials(OWNER),"paths":[path]});
-        let begun = match crate::platform_compute(begin) {
+        let mut begun = match crate::platform_compute(begin) {
             Err(e) => return Seen::Refused(e.code),
             Ok(begun) => begun,
         };
+        // A client's next commit on its own last one: that commit is the parent.
+        if let Some(index) = on {
+            let Some(record) = self.shard.borrow().get(index).cloned() else {
+                return Seen::Refused("NOT_FOUND".into());
+            };
+            let commit = &record["commit"];
+            begun["parent"] = json!({"id": commit["id"], "tree": commit["tree"], "generation": commit["generation"]});
+            begun["parent_id"] = commit["id"].clone();
+        }
         let reads = if read { json!([path]) } else { json!([]) };
         let record = self.h.shard_commit_from(&begun, path, content, reads);
         let built = record["objects"].as_array().into_iter().flatten();
@@ -365,12 +391,29 @@ impl Driver {
         Seen::Committed(id)
     }
 
-    /// The combiner submits the picked shard commits as the owner's landings, then the
-    /// projector builds main's Git commits.
-    pub(super) fn submit(&self, picks: &[usize]) -> Seen {
+    /// The combiner submits the picked shard commits as the owner's landings (with
+    /// `chained`, each with the chain of shard commits the authority lacks, as
+    /// `shardChain` sends it after a `need_chain`), then, with `project`, the projector runs.
+    pub(super) fn submit(&self, picks: &[usize], chained: bool, project: bool) -> Seen {
         let shard = self.shard.borrow();
-        let records: Vec<&Value> = picks.iter().filter_map(|p| shard.get(*p)).collect();
-        let answered = self.h.submit(records.iter().map(|r| (OWNER, *r)).collect());
+        let items: Vec<Value> = picks
+            .iter()
+            .filter_map(|p| shard.get(*p))
+            .map(|record| {
+                let records = if chained {
+                    self.chain(&shard, record)
+                } else {
+                    vec![record.clone()]
+                };
+                json!({"credentials": super::credentials(OWNER), "records": records})
+            })
+            .collect();
+        drop(shard);
+        let submitted = json!({"op":"repo_land_submitted","ref":"main","items":items});
+        let answered = match self.h.run("platform:merge", submitted) {
+            Err(e) => return Seen::Refused(e.code),
+            Ok(answered) => answered,
+        };
         let items = answered["items"]
             .as_array()
             .into_iter()
@@ -384,12 +427,58 @@ impl Driver {
                 status => (status.to_owned(), item["version"].clone()),
             })
             .collect();
+        if !project {
+            return Seen::Submitted(items, Vec::new());
+        }
         self.h.project_all();
-        let head = self.h.ok(OWNER, json!({"op":"repo_refs"}))["refs"][MAIN]
+        Seen::Submitted(items, self.made_by_projection())
+    }
+
+    /// `record` after the shard records below it whose commits the authority lacks,
+    /// oldest first.
+    fn chain(&self, shard: &[Value], record: &Value) -> Vec<Value> {
+        let mut chain = vec![record.clone()];
+        loop {
+            let parents: Vec<String> = serde_json::from_str(
+                chain[chain.len() - 1]["commit"]["parents"]
+                    .as_str()
+                    .unwrap_or("[]"),
+            )
+            .unwrap_or_default();
+            let Some(below) = parents.first().and_then(|p| {
+                shard
+                    .iter()
+                    .find(|r| r["commit"]["id"].as_str() == Some(p.as_str()))
+            }) else {
+                break;
+            };
+            let held = self.h.run(
+                OWNER,
+                json!({"op":"repo_commit","commit":below["commit"]["id"]}),
+            );
+            if held.is_ok() {
+                break;
+            }
+            chain.push(below.clone());
+        }
+        chain.reverse();
+        chain
+    }
+
+    /// The commits projection added on main's first-parent line, oldest first: those
+    /// not numbered yet, from the head down to the first known one.
+    pub(super) fn made_by_projection(&self) -> Vec<String> {
+        let mut at = self.h.ok(OWNER, json!({"op":"repo_refs"}))["refs"][MAIN]
             .as_str()
-            .unwrap_or_default()
-            .to_owned();
-        Seen::Submitted(items, head)
+            .map(str::to_owned);
+        let mut made = Vec::new();
+        while let Some(id) = at.filter(|id| !self.ids.contains(id)) {
+            let shown = self.h.ok(OWNER, json!({"op":"repo_commit","commit":id}));
+            at = shown["parents"][0].as_str().map(str::to_owned);
+            made.push(id);
+        }
+        made.reverse();
+        made
     }
 
     /// Trees that reached the object double without a prepare (built in a shard, in the

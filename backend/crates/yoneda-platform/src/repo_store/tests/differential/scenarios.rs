@@ -45,7 +45,10 @@ fn run_reaching(name: &str, script: &[Op], reaches: &[&str]) {
             panic!("{name}, step {step}, {op:?}: {e}");
         }
     }
-    if let Err(e) = git::check(&driver) {
+    // A deleted repository has nothing left for Git to read.
+    if !driver.model.deleted
+        && let Err(e) = git::check(&driver)
+    {
         panic!("{name}, git: {e}");
     }
     for label in reaches {
@@ -285,6 +288,16 @@ fn shard(path: &str, text: &str, read: bool) -> Op {
         path: path.into(),
         content: format!("{text}\n"),
         read,
+        on: None,
+    }
+}
+
+/// The combiner submits `picks` alone, and the projector runs right after.
+fn submit(picks: Vec<usize>) -> Op {
+    Op::Submit {
+        picks,
+        chained: false,
+        project: true,
     }
 }
 
@@ -301,21 +314,21 @@ fn shard_commits_on_a_trailing_published_head_land_as_the_log_allows() {
         // merge with main; a path main since wrote takes the merge path; a path it read
         // that main since wrote is a conflict.
         shard("src/b.rs", "on the trailing head", false),
-        Op::Submit { picks: vec![0] },
+        submit(vec![0]),
         shard("a.txt", "on the trailing head", false),
-        Op::Submit { picks: vec![1] },
+        submit(vec![1]),
         shard("README.md", "read on the trailing head", true),
-        Op::Submit { picks: vec![2] },
+        submit(vec![2]),
         Op::RunQueue,
         // Two members of one submission writing one file: the second waits, and on its
         // own later it meets the first's changeset and takes the merge path.
         Op::Publish,
         shard("docs.md", "first", false),
         shard("docs.md", "second", false),
-        Op::Submit { picks: vec![3, 4] },
-        Op::Submit { picks: vec![4] },
+        submit(vec![3, 4]),
+        submit(vec![4]),
         // A landed member submitted again answers with its version.
-        Op::Submit { picks: vec![3] },
+        submit(vec![3]),
         Op::RunQueue,
     ];
     run_reaching(
@@ -490,4 +503,140 @@ fn carrying_again_moves_the_mirror_back_to_the_fork_head() {
         Op::Carry,
     ];
     run("mirror back", &script, "Carry Moved");
+}
+
+/// A client's next shard commit built on its own unlanded one: alone it needs its chain;
+/// sent with the chain it takes the merge path (both adopted). Between a landing and
+/// its projection, reads of the refs, plans and claims are refused and direct landings
+/// wait; the published head stays at the last projection.
+#[test]
+fn chained_shard_commits_and_the_window_before_projection() {
+    let unprojected = |picks: Vec<usize>| Op::Submit {
+        picks,
+        chained: false,
+        project: false,
+    };
+    let script = [
+        Op::Publish,
+        shard("a.txt", "first", false),
+        Op::ShardCommit {
+            path: "src/b.rs".into(),
+            content: "on the first\n".into(),
+            read: false,
+            on: Some(0),
+        },
+        submit(vec![1]),
+        Op::Submit {
+            picks: vec![1],
+            chained: true,
+            project: true,
+        },
+        Op::RunQueue,
+        // A landing the projector has not built yet.
+        shard("README.md", "in the window", false),
+        unprojected(vec![2]),
+        Op::Probe {
+            caller: Caller::Owner,
+            access: Access::Refs,
+        },
+        Op::Land {
+            branch: MAIN.into(),
+        },
+        put(MAIN, "a.txt", "waits", false),
+        Op::RunQueue,
+        Op::Publish,
+        shard("docs.md", "on the projected head", false),
+        Op::Project,
+        submit(vec![3]),
+    ];
+    run_reaching(
+        "chains and window",
+        &script,
+        &[
+            "Submit need_chain",
+            "Submit queued",
+            "Submit landed",
+            "Probe PROJECTION_PENDING",
+            "Commit MERGE_REQUIRED",
+            "Project made",
+        ],
+    );
+}
+
+/// The parent cannot go while its fork lives; deleting the fork makes the parent forget
+/// it, and then the parent goes. Afterwards its authority answers GONE (the delete itself
+/// answers already); work built without it (a shard commit) still builds.
+#[test]
+fn a_parent_goes_only_after_its_fork_and_then_answers_gone() {
+    let script = [
+        Op::Fork,
+        Op::DeleteRepo { confirmed: false },
+        Op::DeleteRepo { confirmed: true },
+        fork_put("src/fork.rs", "from the fork"),
+        Op::DeleteFork,
+        Op::DeleteFork,
+        fork_put("src/fork.rs", "after"),
+        Op::Carry,
+        Op::DeleteRepo { confirmed: true },
+        Op::DeleteRepo { confirmed: true },
+        Op::Probe {
+            caller: Caller::Owner,
+            access: Access::Status,
+        },
+        Op::Publish,
+        put(MAIN, "a.txt", "too late", false),
+        shard("a.txt", "built anyway", false),
+        submit(vec![0]),
+    ];
+    run_reaching(
+        "deletion",
+        &script,
+        &[
+            "DeleteRepo INVALID_INPUT",
+            "DeleteRepo CONFLICT",
+            "DeleteFork Done",
+            "DeleteFork Already",
+            "ForkCommit GONE",
+            "Carry GONE",
+            "DeleteRepo Done",
+            "DeleteRepo Already",
+            "Probe GONE",
+            "Commit GONE",
+            "ShardCommit Committed",
+            "Submit GONE",
+        ],
+    );
+}
+
+/// While main waits for the projector, every other branch and tag stays readable: a
+/// branch's head reads now, and a partial listing shows the rest and names main pending.
+#[test]
+fn only_main_waits_for_the_projector() {
+    let read = |name: &str| Op::ReadRef { name: name.into() };
+    let script = [
+        branch_off_main(),
+        tag("refs/tags/v1", None),
+        Op::Publish,
+        shard("a.txt", "in the window", false),
+        Op::Submit {
+            picks: vec![0],
+            chained: false,
+            project: false,
+        },
+        read(B1),
+        read(MAIN),
+        Op::ListRefs,
+        Op::Project,
+        read(MAIN),
+        Op::ListRefs,
+    ];
+    run_reaching(
+        "only main waits",
+        &script,
+        &[
+            "ReadRef Done",
+            "ReadRef PROJECTION_PENDING",
+            "ListRefs Done",
+        ],
+    );
 }

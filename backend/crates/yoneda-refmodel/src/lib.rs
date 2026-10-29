@@ -103,10 +103,16 @@ pub struct Repo {
     pub published: (CommitId, u64),
     /// Shard commits, in the order they were built.
     pub shard: Vec<CommitId>,
+    /// Shard commits the authority does not hold (not adopted, nor landed and projected).
+    pub unrecorded: BTreeSet<CommitId>,
+    /// Submissions' changesets the projector has yet to build, as (version, commit).
+    pub unprojected: Vec<Vec<(u64, CommitId)>>,
     /// The fork, once made.
     pub fork: Option<Fork>,
     /// Commits carried in from the fork (recorded as pushed).
     pub carried: BTreeSet<CommitId>,
+    /// Deleted by its owner: the authority answers GONE to all but the delete.
+    pub deleted: bool,
 }
 
 impl Repo {
@@ -139,8 +145,11 @@ impl Repo {
             annotated: BTreeMap::new(),
             published: (0, 1),
             shard: Vec::new(),
+            unrecorded: BTreeSet::new(),
+            unprojected: Vec::new(),
             fork: None,
             carried: BTreeSet::new(),
+            deleted: false,
         }
     }
 
