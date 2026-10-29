@@ -49,6 +49,12 @@ export interface Env {
   /** The platform's own review-model key (model checks); never an agent-layer key. */
   REVIEW_MODEL_KEY?: { get(): Promise<string> };
   AUTH_LIMITER?: RateLimit;
+  /** Sign-in with GitHub / Google (oauth.ts): each provider is on only while both of its
+   * secrets are set; otherwise its routes answer 404 and the sign-in page hides it. */
+  GITHUB_OAUTH_CLIENT_ID?: string;
+  GITHUB_OAUTH_CLIENT_SECRET?: string;
+  GOOGLE_OAUTH_CLIENT_ID?: string;
+  GOOGLE_OAUTH_CLIENT_SECRET?: string;
   /** Requests without credentials (public repositories), per client address. */
   PUBLIC_LIMITER?: RateLimit;
   OWNER_TOKEN?: string;

@@ -1,11 +1,15 @@
 //! The account authority (one WorkspaceAuthority Durable Object per account, one per
-//! device login code and one per SSH key fingerprint): sign-in sessions, personal access
-//! tokens, SSH keys and device login. Only trusted Worker adapters can call these commands.
+//! device login code, SSH key fingerprint, OAuth sign-in attempt and identity claim): sign-in
+//! sessions, provider identities, personal access tokens, SSH keys and device login. Only trusted Worker adapters can call these commands.
 use crate::storage::{SqlStore, bad, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 mod access;
 mod device;
+mod identities;
+#[cfg(test)]
+mod identities_tests;
+mod oauth_flows;
 mod op;
 mod orgs;
 #[cfg(test)]
@@ -38,13 +42,15 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             op::AccountOp::Token(op) => tokens::handle(&db, &command, op, now),
             op::AccountOp::Ssh(op) => ssh_keys::handle(&db, &command, op, now),
             op::AccountOp::Device(op) => device::handle(&db, &command, op, now),
+            op::AccountOp::Identity(op) => identities::handle(&db, &command, op, now),
+            op::AccountOp::OAuth(op) => oauth_flows::handle(&db, &command, op, now),
             op::AccountOp::Org(op) => orgs::handle(&db, &command, op, now),
             op::AccountOp::OrgMember(op) => orgs::member(&db, &command, op, now),
         }
     }))
 }
 /// Digest-pinned, forward-only account migrations (version, SQL), applied in order.
-const MIGRATIONS: [(i64, &str); 6] = [
+const MIGRATIONS: [(i64, &str); 7] = [
     (1, include_str!("accounts/migrations/0001_accounts.sql")),
     (
         2,
@@ -54,6 +60,7 @@ const MIGRATIONS: [(i64, &str); 6] = [
     (4, include_str!("accounts/migrations/0004_team_ids.sql")),
     (5, include_str!("accounts/migrations/0005_ssh_keys.sql")),
     (6, include_str!("accounts/migrations/0006_token_origin.sql")),
+    (7, include_str!("accounts/migrations/0007_identities.sql")),
 ];
 fn migrate<S: SqlStore>(store: &S) -> Result<()> {
     store.query("CREATE TABLE IF NOT EXISTS workspace_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)", &[])?;

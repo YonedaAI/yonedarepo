@@ -180,3 +180,54 @@ details.account-panel[open] {
   color: var(--muted);
   line-height: 1.6;
 }
+/* Sign-in with GitHub / Google: light buttons with each provider's own mark (Google's
+   sign-in branding: white, a grey outline, dark text). */
+.oauth-buttons {
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+}
+button.oauth-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 40px;
+  background: #fff;
+  color: #1f1f1f;
+  border: 1px solid #747775;
+  font-weight: 500;
+}
+button.oauth-button:hover:not(:disabled) {
+  background: #f3f5f9;
+}
+button.oauth-button:disabled {
+  opacity: 0.6;
+}
+button.oauth-button svg {
+  flex: none;
+}
+.oauth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.oauth-divider::before,
+.oauth-divider::after {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--line);
+}
+.oauth-terms {
+  margin: 16px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+.oauth-method {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}

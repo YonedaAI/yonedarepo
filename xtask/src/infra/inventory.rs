@@ -31,6 +31,8 @@ pub(crate) struct Deployable {
     pub config_path: String,
     pub config: Value,
     pub secrets: Vec<String>,
+    /// Uploaded when the secrets file has them; never required.
+    pub optional_secrets: Vec<String>,
     pub health: Option<(String, String)>,
     pub has_containers: bool,
     /// Always-on container applications (by application name) and what a rollout drops.
@@ -70,6 +72,7 @@ fn deployable(spec: &Spec, worker: &WorkerSpec, config: Value) -> Result<Deploya
         has_containers,
         always_on,
         secrets: worker.secrets.clone(),
+        optional_secrets: worker.optional_secrets.clone(),
         health,
         name,
         config,

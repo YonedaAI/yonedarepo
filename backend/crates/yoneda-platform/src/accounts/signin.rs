@@ -69,11 +69,14 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
                 return Ok(json!({"authenticated":false,"limited":true}));
             }
             let recovery = op == SigninOp::Recover;
+            // An account made by a sign-in provider has no password (nor a recovery code).
             let valid = if recovery {
                 equal(
                     &hash(c, "recovery_hash", &[64])?,
                     a["recovery_hash"].as_str().unwrap_or_default(),
                 )
+            } else if !a["verifier"].is_object() {
+                false
             } else {
                 let supplied =
                     password_hash(&string(c, "password")?, &string(&a["verifier"], "salt")?)?;
@@ -95,6 +98,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
                 )?;
                 super::tokens::revoke_all(db, now)?;
                 super::ssh_keys::remove_all(db, now)?;
+                super::identities::remove_all(db)?;
                 audit(db, "account.recovered", now, json!({}))?;
             } else {
                 session(db, c, now)?;
@@ -116,7 +120,7 @@ fn contact_email(c: &Value) -> Result<Option<String>> {
         _ => Err(bad("Enter a valid email address")),
     }
 }
-fn session<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<()> {
+pub(super) fn session<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<()> {
     db.query("DELETE FROM workspace_records WHERE id LIKE 'session:%' AND json_extract(payload,'$.expires')<=?", &[json!(now)])?;
     let count = db.query(
         "SELECT COUNT(*) AS n FROM workspace_records WHERE id LIKE 'session:%'",
