@@ -111,10 +111,6 @@ fn a_page_of_the_log_costs_the_same_after_10_or_1000_commits() {
 }
 
 #[test]
-#[ignore = "known-failing: repo_path_history walks first parents (3 statements per commit, \
-            up to MAX_SCAN 5,000). rare.txt (3 versions) after 10 commits: 38 statements, \
-            71 rows, 12.8 KB; after 1,000: 3,008 statements, 3,041 rows, 911 KB. Target: \
-            the 10-commit cost after 1,000 (statements and rows equal)"]
 fn a_rarely_touched_path_history_costs_the_same_after_10_or_1000_commits() {
     let [(small_history, small), (large_history, large)] = after_10_and_1000(|h, _, _| {
         measure(h, || {
