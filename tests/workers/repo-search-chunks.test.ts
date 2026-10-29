@@ -77,3 +77,19 @@ it('indexes a root of more than 8 MiB in chunks and names only the file over the
   expect(again.partitions_built).toBe(0);
   expect(again.results).toHaveLength(2);
 });
+
+it('searches a partition whose segment is larger than a short text field', async () => {
+  // 300 files of distinct identifiers: the root's segment base64'd is far over 16 KiB, which
+  // the Rust op once read as a capped text field (live: every search answered 400).
+  const cookie = await signup('search_big_segment');
+  const files = Array.from({ length: 300 }, (_, i) =>
+    file(`src/f${String(i).padStart(3, '0')}.ts`, `export const handler_${i}_${(i * 7919).toString(36)} = () => hook_${i};\n`),
+  );
+  const created = await api('/repos', { cookie }, { body: { name: 'big-segment', policy: { approvals: 0, required_checks: [] }, files, author } }, on);
+  const repo = created.body.id as string;
+  const found = await api(`/repos/${repo}/search?query=hook_217`, { cookie }, {}, on);
+  expect(found.status, JSON.stringify(found.body)).toBe(200);
+  expect(found.body.results.map((r: { path: string }) => r.path)).toEqual(['src/f217.ts']);
+  const keys = (await bindings.OBJECTS.list({ prefix: `derived/v1/${repo}/search/v4/` })).objects;
+  expect(Math.max(...keys.map((k) => k.size))).toBeGreaterThan(12 * 1024);
+});
