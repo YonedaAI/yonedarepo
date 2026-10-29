@@ -15,13 +15,26 @@ const run = (args, opts = {}) => spawnSync('docker', args, { stdio: 'inherit', .
 
 const built = run(['build', '-f', 'cloudflare/containers/harness/Dockerfile', '-t', tag, '.'], { cwd: root });
 if (built.status !== 0) process.exit(built.status ?? 1);
+/** Every harness and the providers it drives, with each agent's default model among them. */
+const CASES = [
+  'claude-code/claude/claude-sonnet-5-5',
+  'claude-code/zai/glm-5.3-flash',
+  'codex/codex/gpt-5.6-luna',
+  'opencode/zai/glm-5.3-flash',
+  'opencode/mimo/mimo-v2.6-flash',
+];
 try {
   const inside = readFileSync(new URL('./managed-harness-smoke/inside.mjs', import.meta.url));
-  const smoke = run(['run', '--rm', '-i', '--network', 'none', '--entrypoint', 'node', tag, '--input-type=module', '-'], {
-    input: inside,
-    stdio: ['pipe', 'inherit', 'inherit'],
-  });
-  process.exitCode = smoke.status ?? 1;
+  let failed = 0;
+  for (const smokeCase of CASES) {
+    const smoke = run(
+      ['run', '--rm', '-i', '--network', 'none', '-e', `SMOKE_CASE=${smokeCase}`, '--entrypoint', 'node', tag, '--input-type=module', '-'],
+      { input: inside, stdio: ['pipe', 'inherit', 'inherit'] },
+    );
+    if (smoke.status !== 0) failed++;
+  }
+  console.log(`harness smoke: ${CASES.length - failed}/${CASES.length} passed`);
+  process.exitCode = failed ? 1 : 0;
 } finally {
   if (!keep) run(['image', 'rm', '-f', tag], { stdio: 'ignore' });
 }
