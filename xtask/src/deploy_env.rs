@@ -148,7 +148,7 @@ pub(crate) fn steps(
             worker: index,
             dry_run,
         });
-        if !dry_run && !worker.secrets.is_empty() {
+        if !dry_run && !(worker.secrets.is_empty() && worker.optional_secrets.is_empty()) {
             steps.push(Step::Secrets { worker: index });
         }
         if !dry_run && worker.health.is_some() {

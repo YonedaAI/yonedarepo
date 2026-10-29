@@ -13,6 +13,7 @@
 // (a Google OAuth web client). A provider whose two secrets are unset is off: hidden on the sign-in
 // page, its /auth/<provider>/* routes answer 404. Callback URLs: https://yonedarepo.com/auth/github/callback
 // and https://yonedarepo.com/auth/google/callback. Deploy uploads them when the secrets file has them.
+// /api/managed is proxied to the managed agents Worker (MANAGED service binding, deployed first).
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
@@ -108,6 +109,10 @@
     {
       "binding": "PLATFORM",
       "service": "yonedarepo-prod-platform"
+    },
+    {
+      "binding": "MANAGED",
+      "service": "yonedarepo-prod-agents-managed"
     }
   ],
   "vars": {

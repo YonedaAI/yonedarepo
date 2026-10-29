@@ -258,6 +258,7 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
         [
             "yonedarepo-dev-superfan",
             "yonedarepo-dev-platform",
+            "yonedarepo-dev-agents-managed",
             "yonedarepo-dev-agents",
             "yonedarepo-dev-bench"
         ]
@@ -272,6 +273,7 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
                 host("api.dev.yonedarepo.com", true),
                 host("https://api.dev.yonedarepo.com/*", false)
             ],
+            vec![host("managed.dev.yonedarepo.com", true)],
             vec![
                 host("dev.yonedarepo.com", true),
                 host("https://dev.yonedarepo.com/*", false)

@@ -168,8 +168,11 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
             Step::Health { worker: 2 },
             d(3),
             Step::Secrets { worker: 3 },
+            Step::Health { worker: 3 },
+            d(4),
+            Step::Secrets { worker: 4 },
         ],
-        "superfan (no /health), platform, agents, bench (BENCH_KEY, no /health)"
+        "superfan (no /health), platform, agents-managed (optional secrets), agents, bench (BENCH_KEY, no /health)"
     );
     assert!(
         !plan.iter().any(|s| matches!(s, Step::ActiveGate { .. })),
@@ -234,7 +237,7 @@ fn a_workstation_build_is_gated_then_built_pushed_and_recorded_before_migrations
 fn prod_checks_active_runs_right_before_each_container_rollout() {
     let workers = prod_workers();
     let roles: Vec<&str> = workers.iter().map(|w| w.role.as_str()).collect();
-    assert_eq!(roles, ["superfan", "platform", "agents"]);
+    assert_eq!(roles, ["superfan", "platform", "agents-managed", "agents"]);
     let plan = steps(&Env::Prod, &workers, false, &Source::Dockerfile);
     for (index, worker) in workers.iter().enumerate() {
         let gate = plan
@@ -252,7 +255,7 @@ fn prod_checks_active_runs_right_before_each_container_rollout() {
         }
     }
     assert!(workers[1].has_containers);
-    assert!(!workers[0].has_containers && !workers[2].has_containers);
+    assert!(!workers[0].has_containers && !workers[2].has_containers && !workers[3].has_containers);
 }
 
 #[test]

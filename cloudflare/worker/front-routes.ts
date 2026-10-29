@@ -1,7 +1,7 @@
 // The front Worker's HTTP surface (yonedarepo.com, dev.yonedarepo.com): the browser app,
 // account sign-in (password, and GitHub / Google at /auth/*), and the platform's public API
-// proxied on the same origin. Repositories,
-// Git, tokens and MCP all live on the platform Worker.
+// proxied on the same origin, as is the managed agents Worker's browser API (/api/managed).
+// Repositories, Git, tokens and MCP all live on the platform Worker.
 import { accountRoute } from './accounts';
 import { error, response } from './http';
 import { oauthRoute } from './oauth';
@@ -21,6 +21,10 @@ export async function frontFetch(req: Request, env: Env): Promise<Response> {
     return env.PLATFORM
       ? env.PLATFORM.fetch(req)
       : error('NOT_FOUND', 'The source platform is not bound', 404);
+  if (url.pathname.startsWith('/api/managed/'))
+    return env.MANAGED
+      ? env.MANAGED.fetch(req)
+      : error('NOT_FOUND', 'Managed agents are not available here', 404);
   try {
     const authResponse = await accountRoute(req, env);
     if (authResponse) return authResponse;

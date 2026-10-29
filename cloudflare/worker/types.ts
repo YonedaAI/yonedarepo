@@ -88,6 +88,8 @@ export interface Env {
   WEB_ORIGIN?: string;
   /** The source platform Worker (front Worker); its public API is all it calls. */
   PLATFORM?: Fetcher;
+  /** The managed agents Worker (front Worker): `/api/managed/*` is proxied to it. */
+  MANAGED?: Fetcher;
   PUBLIC_APP_ORIGIN?: string;
   /** This Worker itself (service binding); the SSH gateway's container reaches the
    * platform through it (platform-ssh-gateway.ts). */
