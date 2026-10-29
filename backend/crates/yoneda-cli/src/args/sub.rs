@@ -100,7 +100,7 @@ pub fn read(command: &str, rest: &[String]) -> Result<Command> {
     let p = Parsed::new(
         rest,
         &with(&["ref", "limit", "at", "path", "in"]),
-        &["ignore-case"],
+        &["ignore-case", "word"],
     )?;
     let at = p.number("at")?;
     let command = match command {
@@ -117,6 +117,7 @@ pub fn read(command: &str, rest: &[String]) -> Result<Command> {
             query: p.exactly(1, "grep <query>")?[0].clone(),
             path: p.flag("path"),
             ignore_case: p.on("ignore-case"),
+            word: p.on("word"),
             at,
         },
         "search" => ReadCommand::Search {
@@ -125,6 +126,7 @@ pub fn read(command: &str, rest: &[String]) -> Result<Command> {
             path: p.flag("path"),
             branch: p.flag("ref"),
             limit: p.number("limit")?,
+            word: p.on("word"),
             at,
         },
         "blame" => ReadCommand::Blame {

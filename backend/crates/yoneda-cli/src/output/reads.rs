@@ -27,6 +27,9 @@ pub struct Log {
 pub struct GrepLine {
     pub line: Option<u64>,
     pub text: Option<String>,
+    /// Where the query matched in `text`: `[start, end)` in UTF-16 code units.
+    #[serde(default)]
+    pub ranges: Vec<[u32; 2]>,
 }
 
 /// A file with matches.
@@ -34,6 +37,13 @@ pub struct GrepLine {
 #[serde(deny_unknown_fields)]
 pub struct GrepFile {
     pub path: String,
+    /// Why it ranks where it does: `word` (a whole-word match), `path` (the path matched),
+    /// or `substring` (only inside words). Files are listed in that order, then by hits.
+    #[serde(default, rename = "match")]
+    pub matched: Option<String>,
+    /// Matches in the file, of which at most 20 lines are listed.
+    #[serde(default)]
+    pub hits: Option<u64>,
     /// The matching lines (empty: the path itself matched).
     pub lines: Vec<GrepLine>,
 }

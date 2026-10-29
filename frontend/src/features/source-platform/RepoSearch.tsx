@@ -1,28 +1,32 @@
 // One search across the repository: matching files and lines, memories, and the commits,
 // session records and change requests whose text holds the query's words (searchModel).
 import { type FormEvent, useState } from 'react';
+import { SearchCode } from './SearchCode';
 import { Failure, Loading } from './SourceStatus';
 import { foundNothing, recordSections, type SearchAnswer, searchPath } from './searchModel';
 import { formatSourceRoute, type SourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
 
-/** Files not content-searched named in the note; the rest are counted. */
-const NAMED = 5;
-
 export function RepoSearch({
   repo,
   query,
+  word = false,
   onNavigate,
 }: {
   repo: string;
   query: string;
+  word?: boolean;
   onNavigate: (r: SourceRoute) => void;
 }) {
   const [draft, setDraft] = useState(query);
-  const found = useSource<SearchAnswer>(query.length >= 2 ? searchPath(repo, query) : null);
+  const found = useSource<SearchAnswer>(query.length >= 2 ? searchPath(repo, query, word) : null);
+  const go = (q: string, w: boolean) =>
+    onNavigate(
+      w ? { view: 'search', repo, query: q, word: true } : { view: 'search', repo, query: q },
+    );
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    onNavigate({ view: 'search', repo, query: draft.trim() });
+    go(draft.trim(), word);
   };
   return (
     <section aria-label="Search">
@@ -38,6 +42,14 @@ export function RepoSearch({
           />
         </label>
         <button type="submit">Search</button>
+        <label className="search-word">
+          <input
+            type="checkbox"
+            checked={word}
+            onChange={(e) => go(draft.trim() || query, e.target.checked)}
+          />
+          Whole words
+        </label>
       </form>
       {query.length >= 2 && found.loading && <Loading what="results" />}
       {found.error && <Failure error={found.error} onRetry={found.reload} />}
@@ -97,36 +109,15 @@ export function RepoSearch({
           </ul>
         </section>
       ) : null}
-      {found.data?.skipped_count ? (
-        <p className="source-note">
-          Content not searched (matched by path only) for {found.data.skipped_count}{' '}
-          {found.data.skipped_count === 1 ? 'file' : 'files'}:{' '}
-          {found.data.skipped_files
-            .slice(0, NAMED)
-            .map((f) => `${f.path} (${f.reason})`)
-            .join(', ')}
-          {found.data.skipped_count > NAMED ? `, and ${found.data.skipped_count - NAMED} more` : ''}
-        </p>
-      ) : null}
-      {found.data?.results.length ? <h3>Code</h3> : null}
-      {found.data?.results.map((r) => (
-        <article key={r.path} className="source-file">
-          <header>
-            <a
-              href={`/source/${repo}/files/${r.path}`}
-              onClick={(e) => {
-                e.preventDefault();
-                onNavigate({ view: 'files', repo, path: r.path, ref: 'main' });
-              }}
-            >
-              <code>{r.path}</code>
-            </a>
-          </header>
-          {r.lines.length > 0 && (
-            <pre>{r.lines.map((l) => `${String(l.line).padStart(5)}  ${l.text}`).join('\n')}</pre>
-          )}
-        </article>
-      ))}
+      {found.data && (
+        <SearchCode
+          repo={repo}
+          results={found.data.results}
+          skipped={found.data.skipped_files}
+          skippedCount={found.data.skipped_count}
+          onNavigate={onNavigate}
+        />
+      )}
     </section>
   );
 }

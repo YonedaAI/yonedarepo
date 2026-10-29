@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { foundNothing, recordSections, type SearchAnswer, searchPath } from './searchModel';
+import {
+  type CodeHit,
+  foundNothing,
+  highlight,
+  recordSections,
+  type SearchAnswer,
+  searchPath,
+  shownLines,
+} from './searchModel';
 
 const repo = 'r0123456789abcdef0123';
 const empty: SearchAnswer = { results: [], skipped_files: [], skipped_count: 0 };
@@ -9,6 +17,49 @@ describe('repository search', () => {
     expect(searchPath(repo, 'retry backoff')).toBe(
       `/repos/${repo}/search?query=retry%20backoff&ignore_case=true`,
     );
+    expect(searchPath(repo, 'test', true)).toBe(
+      `/repos/${repo}/search?query=test&ignore_case=true&word=true`,
+    );
+  });
+
+  it('marks the ranges the platform matched (UTF-16 offsets)', () => {
+    expect(highlight('export function test() {}', [[16, 20]])).toEqual([
+      { text: 'export function ', mark: false },
+      { text: 'test', mark: true },
+      { text: '() {}', mark: false },
+    ]);
+    expect(
+      highlight('é test test', [
+        [2, 6],
+        [7, 11],
+      ]),
+    ).toEqual([
+      { text: 'é ', mark: false },
+      { text: 'test', mark: true },
+      { text: ' ', mark: false },
+      { text: 'test', mark: true },
+    ]);
+    expect(highlight('plain', undefined)).toEqual([{ text: 'plain', mark: false }]);
+  });
+
+  it('shows the first lines of a file and counts the matches left in it', () => {
+    const line = (n: number, marks: number) => ({
+      line: n,
+      text: 'x',
+      ranges: Array.from({ length: marks }, () => [0, 1] as [number, number]),
+    });
+    const hit: CodeHit = {
+      path: 'src/a.ts',
+      match: 'word',
+      hits: 12,
+      lines: [line(1, 2), line(4, 1), line(9, 1), line(10, 3), line(11, 1)],
+    };
+    expect(shownLines(hit, false)).toEqual({ lines: hit.lines.slice(0, 3), more: 8 });
+    expect(shownLines(hit, true)).toEqual({ lines: hit.lines, more: 4 });
+    expect(shownLines({ path: 'test/x.md', match: 'path', hits: 0, lines: [] }, false)).toEqual({
+      lines: [],
+      more: 0,
+    });
   });
 
   it('lists commits, sessions and changes with their counts, linked to their pages', () => {

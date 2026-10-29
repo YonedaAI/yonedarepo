@@ -94,6 +94,16 @@
       "additionalProperties": false,
       "description": "A file with matches.",
       "properties": {
+        "hits": {
+          "default": null,
+          "description": "Matches in the file, of which at most 20 lines are listed.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "lines": {
           "description": "The matching lines (empty: the path itself matched).",
           "items": {
@@ -101,12 +111,22 @@
           },
           "type": "array"
         },
+        "match": {
+          "default": null,
+          "description": "Why it ranks where it does: `word` (a whole-word match), `path` (the path matched),\nor `substring` (only inside words). Files are listed in that order, then by hits.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "path": {
           "type": "string"
         }
       },
       "required": [
         "path",
+        "match",
+        "hits",
         "lines"
       ],
       "type": "object"
@@ -123,6 +143,21 @@
             "null"
           ]
         },
+        "ranges": {
+          "default": [],
+          "description": "Where the query matched in `text`: `[start, end)` in UTF-16 code units.",
+          "items": {
+            "items": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "maxItems": 2,
+            "minItems": 2,
+            "type": "array"
+          },
+          "type": "array"
+        },
         "text": {
           "type": [
             "string",
@@ -132,7 +167,8 @@
       },
       "required": [
         "line",
-        "text"
+        "text",
+        "ranges"
       ],
       "type": "object"
     },

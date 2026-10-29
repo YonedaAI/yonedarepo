@@ -3,7 +3,18 @@
 // count. A record group is null when it was not asked for or the caller cannot read it.
 import type { SourceRoute } from './sourceRoute';
 
-export type CodeHit = { path: string; lines: { line: number; text: string }[] };
+/** A matching line; `ranges` are `[start, end)` in UTF-16 code units of `text`. */
+export type CodeLine = { line: number; text: string; ranges?: [number, number][] };
+/**
+ * A file the code search found, ranked by `match` (a whole word, the path, then only inside
+ * words), then `hits` (matches in the file, of which at most 20 lines are listed).
+ */
+export type CodeHit = {
+  path: string;
+  match?: 'word' | 'path' | 'substring';
+  hits?: number;
+  lines: CodeLine[];
+};
 export type Skipped = { path: string; reason: string };
 /** A memory whose text holds the query's words. */
 export type MemoryHit = {
@@ -53,9 +64,36 @@ export type SearchAnswer = {
   changes?: RecordGroup<ChangeHit> | null;
 };
 
-/** The search API path for `query` (case-insensitive code search). */
-export const searchPath = (repo: string, query: string) =>
-  `/repos/${repo}/search?query=${encodeURIComponent(query)}&ignore_case=true`;
+/** The search API path for `query` (case-insensitive code search; whole words with `word`). */
+export const searchPath = (repo: string, query: string, word = false) =>
+  `/repos/${repo}/search?query=${encodeURIComponent(query)}&ignore_case=true${word ? '&word=true' : ''}`;
+
+/** Lines a file shows before it is expanded. */
+const COLLAPSED = 3;
+
+/** `text` split at the matched ranges, each piece marked or not. */
+export function highlight(
+  text: string,
+  ranges: CodeLine['ranges'],
+): { text: string; mark: boolean }[] {
+  const pieces: { text: string; mark: boolean }[] = [];
+  let at = 0;
+  for (const [start, end] of ranges ?? []) {
+    if (start < at || end <= start || end > text.length) continue;
+    if (start > at) pieces.push({ text: text.slice(at, start), mark: false });
+    pieces.push({ text: text.slice(start, end), mark: true });
+    at = end;
+  }
+  if (at < text.length || pieces.length === 0) pieces.push({ text: text.slice(at), mark: false });
+  return pieces;
+}
+
+/** The lines a file shows, and how many of its matches they leave out. */
+export function shownLines(hit: CodeHit, expanded: boolean) {
+  const lines = expanded ? hit.lines : hit.lines.slice(0, COLLAPSED);
+  const shown = lines.reduce((n, l) => n + Math.max(1, l.ranges?.length ?? 0), 0);
+  return { lines, more: Math.max(0, (hit.hits ?? 0) - shown) };
+}
 
 /** One record result as the page lists it: where it links, its label and its detail. */
 export type RecordRow = { key: string; route: SourceRoute; label: string; detail: string };

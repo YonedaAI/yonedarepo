@@ -1,0 +1,36 @@
+/* Search results: matched spans, per-file counts, the "+N more" row and the muted note for
+   text files too large to search inside. */
+.search-file pre > div {
+  white-space: pre;
+}
+.search-file mark {
+  background: var(--accent-soft);
+  color: inherit;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px var(--accent-line);
+}
+.search-line-number {
+  color: var(--muted);
+  user-select: none;
+}
+.search-file header .source-meta {
+  margin-left: auto;
+  font-size: 12px;
+}
+.search-file .search-more {
+  display: block;
+  padding: 0 12px 10px;
+  font-size: 13px;
+}
+.search-skipped {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 4px 0 12px;
+}
+.search-word {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}

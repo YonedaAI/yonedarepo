@@ -390,19 +390,20 @@ mod tests {
             })
         );
         assert_eq!(
-            parsed("grep needle -i --at 7").ok(),
+            parsed("grep needle -i -w --at 7").ok(),
             Some(Command::Read {
                 target: Target::default(),
                 command: ReadCommand::Grep {
                     query: "needle".into(),
                     path: None,
                     ignore_case: true,
+                    word: true,
                     at: Some(7)
                 }
             })
         );
         assert_eq!(
-            parsed("search retry --in commits,changes --limit 5").ok(),
+            parsed("search retry --in commits,changes --limit 5 --word").ok(),
             Some(Command::Read {
                 target: Target::default(),
                 command: ReadCommand::Search {
@@ -411,6 +412,7 @@ mod tests {
                     path: None,
                     branch: None,
                     limit: Some(5),
+                    word: true,
                     at: None
                 }
             })
