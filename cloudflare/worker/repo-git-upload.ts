@@ -103,20 +103,23 @@ export async function uploadPack(
   const commits = (walk.commits ?? []).map((c: Json) => String(c.commit));
   const full = request.haves.length === 0;
   return sendPack(ack, () => UploadSession.open(walk), objects, band, stats, commits, {
-    full,
+    fresh: full,
     wants: request.wants,
+    shape: '',
   });
 }
 
-/** What a fetch asked for: every object its `wants` reach (`full`: no haves, filter or
- * depth), whose pack may then come from or go to the store (repo-pack-cache). */
-export type Asked = { full: boolean; wants: string[] };
+/** What a fetch asked for: its `wants` and, when it has nothing (`fresh`: no haves or
+ * shallow commits), its `shape` (filter and depth; '' for a full clone): such a pack may
+ * then come from or go to the store (repo-pack-cache). */
+export type Asked = { fresh: boolean; wants: string[]; shape: string };
 
 /** `head`, then the pack the session lists, on side-band `band` (none when 0) and ending
  * with a flush when banded. A failure before the pack starts is an ERR line after `head`
  * (Git prints it as `remote error: <message>`); an overloaded authority is rethrown, so Git
  * gets an HTTP 503 it can retry. A full clone's pack is streamed from the store when held
- * there, else stored as it streams (PACK_CACHE=on); the session is opened only to build.
+ * there, else stored as it streams (PACK_CACHE=on); so is a partial or shallow clone's, or
+ * a checkout's files wanted by id. The session is opened only to build.
  * A pack that would carry a quarantined blob is never started: the ERR names the blob
  * (and its path), rather than a pack Git finds incomplete. */
 export async function sendPack(
@@ -132,15 +135,15 @@ export async function sendPack(
   const tally = stats ?? new PackStats(false);
   let writer: PackWriter | undefined;
   let store = 'off';
-  // A stored pack carries every blob: never served or stored while any is withheld. Stored
+  // A stored pack may carry any blob: never served or stored while any is withheld. Stored
   // packs are side-band packets of CHUNK (what version 2 always asks for).
   if (
-    asked?.full &&
+    asked?.fresh &&
     band === CHUNK &&
     packCacheOn(objects.env) &&
     !(await objects.withholdsAny())
   ) {
-    const key = await packKey(objects.repo, asked.wants);
+    const key = await packKey(objects.repo, asked.wants, asked.shape);
     const stored = await timed('git.pack_cached', () => storedPack(objects.env, key));
     if (stored) return sendStored(head, stored, band, stats);
     tally.cache = 'miss';
@@ -148,6 +151,8 @@ export async function sendPack(
     if (store === 'on') writer = new PackWriter(objects.env, objects.repo, key);
   }
   const session = open();
+  (globalThis as any).__DBG = `walk${Date.now() % 100000}`;
+  (globalThis as any).__DBGM = !!asked?.shape;
   const seen = new SeenTrees(commits.length);
   const budget = new ReadBudget();
   // The commits the walk names are read while their trees are walked.
@@ -179,6 +184,7 @@ export async function sendPack(
     return errLine(head, e);
   }
   logPack('git.pack.start', objects.repo, tally, { objects: count, store });
+  (globalThis as any).__DBG = `send${Date.now() % 100000}`;
   const chunks = packChunks(session, objects, seen, early, budget, tally);
   const storing = new Storing(writer, tally);
   const out = new ReadableStream<Uint8Array>({

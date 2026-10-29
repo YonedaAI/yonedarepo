@@ -302,6 +302,8 @@ export async function readLocated(
       throw Object.assign(new Error(`Object bundle ${r.bundle} is missing`), { code: 'NOT_FOUND' });
     const bytes = new Uint8Array(await object.arrayBuffer());
     stats?.read(r.bundle, r.start, all ? bytes.length : r.end, r.members);
+    if ((globalThis as any).__DBGM) for (const m of r.members) console.log(`DBGMEM ${(globalThis as any).__DBG} ${m.bundle.slice(0, 8)} ${m.at} ${m.size} ${m.kind}`);
+    if ((globalThis as any).__DBG) console.log(`DBGREAD ${(globalThis as any).__DBG} ${r.bundle.slice(0, 8)} ${r.start} ${all ? bytes.length : r.end} ${r.members.length} ${r.members.reduce((n, m) => n + m.size, 0)} ${all ? 'whole' : 'range'} ${r.members[0]?.kind}`);
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     for (const m of r.members) {
       const head = m.at - HEADER - r.start;
