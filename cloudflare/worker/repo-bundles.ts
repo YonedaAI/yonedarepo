@@ -234,7 +234,9 @@ export type ReadOptions = {
   /** Bridge a gap only while the range's waste stays within what it wants (blob reads). */
   bounded?: boolean;
   copy?: boolean;
-  frame?: (kind: string, id: string, data: Uint8Array) => void;
+  frame?: (kind: string, id: string, data: Uint8Array, bundle: string) => void;
+  /** Bundles read whole (one read for all their ranges, every frame seen). */
+  whole?: (bundle: string) => boolean;
   stats?: ReadStats;
 };
 
@@ -246,7 +248,7 @@ export async function readLocated(
   repo: string,
   located: Location[],
   range = RANGE,
-  { gap = GAP, bounded = false, copy = false, frame, stats }: ReadOptions = {},
+  { gap = GAP, bounded = false, copy = false, frame, whole, stats }: ReadOptions = {},
 ) {
   const sorted = [...located].sort((a, b) =>
     a.bundle === b.bundle ? a.at - b.at : a.bundle < b.bundle ? -1 : 1,
@@ -277,18 +279,29 @@ export async function readLocated(
       last.wanted = wanted;
     } else ranges.push({ bundle: l.bundle, start, end, members: [l], wanted: HEADER + l.size });
   }
+  // A bundle read whole is one range from its start (its end is the object's).
+  const bundles = whole ? [...new Set(ranges.map((r) => r.bundle))].filter(whole) : [];
+  for (const bundle of bundles) {
+    const parts = ranges.filter((r) => r.bundle === bundle);
+    const members = parts.flatMap((r) => r.members);
+    const wanted = parts.reduce((n, r) => n + r.wanted, 0);
+    ranges.splice(0, ranges.length, ...ranges.filter((r) => r.bundle !== bundle));
+    ranges.push({ bundle, start: 0, end: Number.POSITIVE_INFINITY, members, wanted });
+  }
   const out = new Map<string, Uint8Array>();
   const small = ranges.every((r) => r.end - r.start <= SMALL_RANGE);
   await inWidth(ranges, small ? SMALL_READ_WIDTH : READ_WIDTH, async (r) => {
+    const all = r.end === Number.POSITIVE_INFINITY;
     const object = await timed('bundle.read', () =>
-      env.OBJECTS.get(bundleKey(repo, r.bundle), {
-        range: { offset: r.start, length: r.end - r.start },
-      }),
+      env.OBJECTS.get(
+        bundleKey(repo, r.bundle),
+        all ? {} : { range: { offset: r.start, length: r.end - r.start } },
+      ),
     );
-    stats?.read(r.bundle, r.start, r.end, r.members);
     if (!object)
       throw Object.assign(new Error(`Object bundle ${r.bundle} is missing`), { code: 'NOT_FOUND' });
     const bytes = new Uint8Array(await object.arrayBuffer());
+    stats?.read(r.bundle, r.start, all ? bytes.length : r.end, r.members);
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     for (const m of r.members) {
       const head = m.at - HEADER - r.start;
@@ -313,6 +326,7 @@ export async function readLocated(
         kind,
         hex(bytes.subarray(at + 1, at + 21)),
         bytes.subarray(at + HEADER, at + HEADER + size),
+        r.bundle,
       );
       at += HEADER + size;
     }
