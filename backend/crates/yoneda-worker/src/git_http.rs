@@ -245,15 +245,6 @@ pub fn git_upload_close(handle: u32) {
     UPLOADING.with_borrow_mut(|s| s.open.remove(&handle));
 }
 
-/// This isolate's Wasm memory in bytes (it only grows): what tests bound for large files.
-#[wasm_bindgen(js_name = wasmMemoryBytes, wasm_bindgen = ::worker::wasm_bindgen)]
-pub fn wasm_memory_bytes() -> f64 {
-    #[cfg(target_arch = "wasm32")]
-    return (core::arch::wasm32::memory_size(0) * 65_536) as f64;
-    #[cfg(not(target_arch = "wasm32"))]
-    0.0
-}
-
 /// Opens a pack of `count` objects the adapter writes piece by piece (`PackStream`).
 #[wasm_bindgen(js_name = gitPackOpen, wasm_bindgen = ::worker::wasm_bindgen)]
 pub fn git_pack_open(now: f64, count: u32) -> String {
