@@ -70,5 +70,5 @@ pub(crate) mod storage {
 
 #[cfg(test)]
 pub(crate) mod native {
-    pub use yoneda_store::native::NativeStore;
+    pub use yoneda_store::{counted::Counted, native::NativeStore};
 }

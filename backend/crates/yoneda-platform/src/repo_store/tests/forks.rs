@@ -16,8 +16,9 @@ const FORKER: &str = "platform:fork";
 /// objects visible (as the adapter's reads fall back to the parent's store).
 fn fork_of(parent: &Harness, version: u64) -> Harness {
     let h = Harness {
-        db: NativeStore::memory().unwrap(),
+        db: Counted::new(NativeStore::memory().unwrap()),
         objects: RefCell::new(parent.objects.borrow().clone()),
+        object_reads: Cell::default(),
         cached: RefCell::new(parent.cached.borrow().clone()),
         shard: RefCell::default(),
         now: RefCell::new(*parent.now.borrow()),
