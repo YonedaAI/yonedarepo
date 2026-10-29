@@ -6,14 +6,15 @@ use crate::api::Api;
 use crate::error::{Error, Result};
 use crate::git::Git;
 use base64::Engine;
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::collections::HashSet;
+use transfer::request;
 use yoneda_core::git_object::{
     FileMode, ObjectId, ObjectKind, TreeEntry, encode_tree, hash_object, write_pack,
 };
 
-/// Ids per `POST /objects` request (the platform takes up to 10 000).
-const REQUEST_OBJECTS: usize = 2_000;
+mod transfer;
+
 /// Fetched bytes held before they are written out as a pack.
 const PACK_BYTES: usize = 64 * 1024 * 1024;
 
@@ -107,75 +108,6 @@ async fn fetch(api: &Api, wanted: &[(String, ObjectKind)]) -> Result<Vec<Value>>
         )));
     }
     Ok(fetched)
-}
-
-/// The served objects among `wanted` and the ids the platform does not have. `raw` asks
-/// for commits as their exact Git content. Large blobs come as stubs (`large`: base64 in a
-/// JSON page costs the platform several copies of a blob) and are downloaded one by one.
-/// A page the platform cannot answer (a gateway error left after the client's retries, such
-/// as a Worker over its limits) is asked again for half as many ids, down to one.
-async fn request(
-    api: &Api,
-    wanted: &[(String, ObjectKind)],
-    raw: bool,
-) -> Result<(Vec<Value>, Vec<String>)> {
-    let mut fetched = Vec::with_capacity(wanted.len());
-    let mut absent = Vec::new();
-    for batch in wanted.chunks(REQUEST_OBJECTS) {
-        let mut pos = 0;
-        let mut window = batch.len();
-        while pos < batch.len() {
-            let part = &batch[pos..(pos + window).min(batch.len())];
-            let ids: Vec<Value> = part
-                .iter()
-                .map(|(id, kind)| json!({ "id": id, "kind": kind.name() }))
-                .collect();
-            let body = json!({ "objects": ids, "after": 0, "raw": raw, "large": true });
-            let page = match api.post_read("/objects", &body).await {
-                Ok(page) => page,
-                Err(failure) if window > 1 && crate::api::transient(&failure) => {
-                    window = window.div_ceil(2);
-                    continue;
-                }
-                Err(failure) => return Err(failure.into()),
-            };
-            absent.extend(
-                page["missing"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|m| m.as_str().map(str::to_owned)),
-            );
-            for object in page["objects"].as_array().cloned().unwrap_or_default() {
-                fetched.push(if object["large"] == true {
-                    downloaded(api, &object).await?
-                } else {
-                    object
-                });
-            }
-            // `next`: where the page stopped within `part` (none: it served all of it).
-            let done = page["next"]
-                .as_u64()
-                .map_or(part.len(), |n| usize::try_from(n).unwrap_or(0));
-            if done == 0 {
-                return Err(Error::new("the platform's object paging did not advance"));
-            }
-            pos += done;
-        }
-    }
-    Ok((fetched, absent))
-}
-
-/// A large blob's stub as the served blob: its bytes downloaded on their own (verified
-/// against the id with every other object).
-async fn downloaded(api: &Api, stub: &Value) -> Result<Value> {
-    let id = object_id(stub, "id")?;
-    let bytes = api.get_bytes(&format!("/objects/{id}")).await?;
-    Ok(json!({
-        "id": id.hex(),
-        "kind": "blob",
-        "data_b64": base64::engine::general_purpose::STANDARD.encode(bytes),
-    }))
 }
 
 /// A platform commit as served with `raw`.
@@ -329,8 +261,14 @@ fn write(git: &Git, pending: &mut Vec<(ObjectKind, Vec<u8>)>) -> Result<()> {
 }
 
 #[cfg(test)]
+mod fake;
+#[cfg(test)]
+mod resume_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     /// A local platform stand-in: `POST /objects` answers a page with one large blob as a
