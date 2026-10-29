@@ -8,11 +8,13 @@ mod coalesce;
 mod repo;
 mod resume;
 mod retry;
+mod timeouts;
 
 pub(crate) use coalesce::Coalesce;
 pub use resume::Received;
 use retry::RETRIES;
 pub(crate) use retry::{pause, transient};
+pub use timeouts::Timeouts;
 
 /// A refused or failed API call, with the platform's error code and details.
 #[derive(Debug)]
@@ -53,6 +55,8 @@ pub struct Api {
     header: Header,
     /// Object fetches in flight through this client (see `coalesce`).
     objects: std::sync::Arc<Coalesce>,
+    /// Idle and total waits (see `timeouts`).
+    timeouts: Timeouts,
 }
 
 pub fn valid_repo_id(repo: &str) -> bool {
@@ -112,6 +116,7 @@ impl Api {
             base: format!("{origin}/api/v1/repos/{repo}"),
             header: token.header(),
             objects: Default::default(),
+            timeouts: Timeouts::from_env(),
         })
     }
 
@@ -127,6 +132,7 @@ impl Api {
             base: format!("{origin}/api/v1/repos/{repo}"),
             header: Header::None,
             objects: Default::default(),
+            timeouts: Timeouts::from_env(),
         })
     }
 
@@ -139,6 +145,7 @@ impl Api {
                 base: format!("{parent}/{repo}"),
                 header: self.header.clone(),
                 objects: Default::default(),
+                timeouts: Timeouts::from_env(),
             }),
             _ => Err(Error::new(format!("{repo:?} is not a repository id"))),
         }
@@ -152,6 +159,7 @@ impl Api {
             base: format!("{origin}/api/v1"),
             header: token.map_or(Header::None, Token::header),
             objects: Default::default(),
+            timeouts: Timeouts::from_env(),
         })
     }
 
@@ -197,7 +205,7 @@ impl Api {
         &self,
         request: reqwest::RequestBuilder,
     ) -> std::result::Result<Vec<u8>, Failure> {
-        let received = self.receive(request).await?;
+        let received = self.receive(request, false).await?;
         match received.cut {
             Some(cut) => Err(cut),
             None => Ok(received.bytes),
@@ -205,17 +213,28 @@ impl Api {
     }
 
     /// Sends `request` with this client's credentials; a success's body as far as it
-    /// arrived (see `Received`), or the API error.
+    /// arrived (see `Received`), or the API error. The body may go quiet for at most the
+    /// idle timeout; so may the wait for the answer itself when `prompt` (an object
+    /// transfer: other calls, such as a landing, may wait on the platform longer).
     async fn receive(
         &self,
         request: reqwest::RequestBuilder,
+        prompt: bool,
     ) -> std::result::Result<Received, Failure> {
+        let idle = self.timeouts.idle;
         let request = match &self.header {
             Header::Authorization(value) => request.header("authorization", value),
             Header::Cookie(value) => request.header("cookie", value),
             Header::None => request,
         };
-        let response = request.send().await.map_err(unreachable)?;
+        let response = if prompt {
+            tokio::time::timeout(idle, request.send())
+                .await
+                .map_err(|_| resume::stalled("an answer", idle))?
+        } else {
+            request.send().await
+        }
+        .map_err(unreachable)?;
         let status = response.status().as_u16();
         // Named in the error, so a failure says which request it was (never a credential).
         let path = response.url().path().to_owned();
@@ -225,9 +244,12 @@ impl Api {
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.trim().parse::<u64>().ok());
         if (200..300).contains(&status) {
-            return Ok(resume::received(response, status).await);
+            return Ok(resume::received(response, status, idle).await);
         }
-        let bytes = response.bytes().await.map_err(unreachable)?;
+        let bytes = tokio::time::timeout(idle, response.bytes())
+            .await
+            .map_err(|_| resume::stalled("the error's body", idle))?
+            .map_err(unreachable)?;
         let value: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
         let error = &value["error"];
         Err(Failure {

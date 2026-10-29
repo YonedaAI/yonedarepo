@@ -23,6 +23,10 @@ pub struct Reply {
     pub body: Vec<u8>,
     /// Body bytes sent before the connection drops (`None`: all of them).
     pub cut_at: Option<usize>,
+    /// Hold the connection open after `cut_at` bytes instead of dropping it (a stall).
+    pub stall: bool,
+    /// Hold the connection open without answering at all (not even headers).
+    pub silent: bool,
     pub delay_ms: u64,
 }
 
@@ -33,6 +37,8 @@ impl Reply {
             headers: vec![("content-type".into(), kind.into())],
             body,
             cut_at: None,
+            stall: false,
+            silent: false,
             delay_ms: 0,
         }
     }
@@ -41,7 +47,23 @@ impl Reply {
         self.cut_at = Some(at);
         self
     }
+
+    /// Sends `at` body bytes, then nothing more on an open connection.
+    pub fn stall(mut self, at: usize) -> Self {
+        self.cut_at = Some(at);
+        self.stall = true;
+        self
+    }
+
+    /// Never answers, on an open connection.
+    pub fn silent(mut self) -> Self {
+        self.silent = true;
+        self
+    }
 }
+
+/// How long a stalled connection is held: past any test's timeouts.
+const HOLD: std::time::Duration = std::time::Duration::from_secs(120);
 
 /// Requests seen so far, and the body bytes actually sent per request.
 pub type Log = Arc<Mutex<Vec<(Seen, usize)>>>;
@@ -78,6 +100,10 @@ where
                     log.push((request, 0));
                     (reply, log.len() - 1)
                 };
+                if reply.silent {
+                    tokio::time::sleep(HOLD).await;
+                    return;
+                }
                 if reply.delay_ms > 0 {
                     tokio::time::sleep(std::time::Duration::from_millis(reply.delay_ms)).await;
                 }
@@ -101,6 +127,9 @@ where
                     && let Some(entry) = log.get_mut(index)
                 {
                     entry.1 = sent;
+                }
+                if reply.stall {
+                    tokio::time::sleep(HOLD).await;
                 }
                 // Dropping the socket short of content-length is the cut.
             });

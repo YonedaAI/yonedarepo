@@ -6,6 +6,8 @@
 //!   skipped before the last whole object are the ones it lacks).
 //! - A large blob's download cut off resumes with `Range` from the bytes it has.
 //! - Concurrent callers of one `Api` wanting the same object share one request.
+//! - A request that goes quiet for the idle timeout counts as cut (`api::Timeouts`); a
+//!   fetch past its total budget ends naming the request it waited on and how far it got.
 //!
 //! Every object is still verified against its id before it is written (`verified`,
 //! `commits`); a download is also checked here, so corrupt resumed bytes never leave it.
@@ -15,7 +17,7 @@ use crate::error::{Error, Result};
 use base64::Engine;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use yoneda_core::git_object::{ObjectKind, hash_object};
 
 /// Ids per `POST /objects` request (the platform takes up to 10 000).
@@ -23,6 +25,27 @@ const REQUEST_OBJECTS: usize = 2_000;
 /// Consecutive attempts that brought nothing new before a request is given up (or, for a
 /// page, asked again for half as many ids).
 const ATTEMPTS: u64 = 3;
+
+/// How far a fetch got and what it is waiting on, for the error that ends it.
+#[derive(Default)]
+struct Progress {
+    arrived: usize,
+    doing: String,
+}
+
+type Tracker = Mutex<Progress>;
+
+fn note(tracker: &Tracker, update: impl FnOnce(&mut Progress)) {
+    if let Ok(mut progress) = tracker.lock() {
+        update(&mut progress);
+    }
+}
+
+/// `failure` ended the request `doing` names.
+fn failed(tracker: &Tracker, failure: api::Failure) -> Error {
+    let doing = tracker.lock().map(|p| p.doing.clone()).unwrap_or_default();
+    Error::new(format!("{doing}: {failure}"))
+}
 
 /// The served objects among `wanted`, in request order, and the ids the platform does not
 /// have. `raw` asks for commits as their exact Git content. Large blobs come as stubs
@@ -47,7 +70,23 @@ pub(super) async fn request(
     let mut outcomes: HashMap<String, Option<Arc<Value>>> = HashMap::new();
     if !mine.is_empty() {
         // On failure `lead` is dropped unfinished: its waiters fail with this caller.
-        let (fetched, absent) = pages(api, &mine, raw).await?;
+        let budget = api.timeouts().budget;
+        let tracker = Tracker::default();
+        let (fetched, absent) =
+            match tokio::time::timeout(budget, pages(api, &mine, raw, &tracker)).await {
+                Ok(fetched) => fetched?,
+                Err(_) => {
+                    let progress = tracker.lock().map(|p| (p.arrived, p.doing.clone()));
+                    let (arrived, doing) = progress.unwrap_or_default();
+                    return Err(Error::new(format!(
+                        "fetching objects took longer than its {} ms budget \
+                     (YONEDA_FETCH_BUDGET_SECS): {arrived} of {} objects arrived, \
+                     still waiting on {doing}",
+                        budget.as_millis(),
+                        mine.len()
+                    )));
+                }
+            };
         let absent: HashSet<String> = absent.into_iter().collect();
         let mut fetched: HashMap<String, Value> = fetched
             .into_iter()
@@ -88,10 +127,11 @@ async fn pages(
     api: &Api,
     wanted: &[(String, ObjectKind)],
     raw: bool,
+    tracker: &Tracker,
 ) -> Result<(Vec<Value>, Vec<String>)> {
     let mut fetched = Vec::with_capacity(wanted.len());
     let mut absent = Vec::new();
-    for batch in wanted.chunks(REQUEST_OBJECTS) {
+    for (n, batch) in wanted.chunks(REQUEST_OBJECTS).enumerate() {
         let mut pos = 0;
         let mut window = batch.len();
         let mut failures = 0;
@@ -102,6 +142,10 @@ async fn pages(
                 .map(|(id, kind)| json!({ "id": id, "kind": kind.name() }))
                 .collect();
             let body = json!({ "objects": ids, "after": 0, "raw": raw, "large": true });
+            let first = n * REQUEST_OBJECTS + pos;
+            note(tracker, |p| {
+                p.doing = format!("POST /objects ({} ids from #{first})", part.len());
+            });
             let (objects, done, stopped) = match api.post_read_once("/objects", &body).await {
                 Ok(Received {
                     bytes, cut: None, ..
@@ -136,14 +180,15 @@ async fn pages(
                     (whole, done, Some(cut))
                 }
                 Err(failure) if api::transient(&failure) => (Vec::new(), 0, Some(failure)),
-                Err(failure) => return Err(failure.into()),
+                Err(failure) => return Err(failed(tracker, failure)),
             };
             for object in objects {
                 fetched.push(if object["large"] == true {
-                    download(api, &object).await?
+                    download(api, &object, tracker).await?
                 } else {
                     object
                 });
+                note(tracker, |p| p.arrived += 1);
             }
             pos += done;
             match stopped {
@@ -155,7 +200,7 @@ async fn pages(
                         window = window.div_ceil(2);
                         failures = 0;
                     } else {
-                        return Err(failure.into());
+                        return Err(failed(tracker, failure));
                     }
                 }
                 _ => failures = 0,
@@ -223,13 +268,16 @@ fn aligned(part: &[(String, ObjectKind)], whole: &[Value]) -> Result<(usize, Vec
 
 /// A large blob's stub as the served blob: its bytes downloaded on their own, resuming a
 /// cut download from the bytes already here, and verified against the id.
-async fn download(api: &Api, stub: &Value) -> Result<Value> {
+async fn download(api: &Api, stub: &Value, tracker: &Tracker) -> Result<Value> {
     let id = object_id(stub, "id")?;
     let path = format!("/objects/{id}");
     let mut bytes: Vec<u8> = Vec::new();
     let mut failures = 0;
     loop {
         let have = bytes.len() as u64;
+        note(tracker, |p| {
+            p.doing = format!("GET /objects/{id} from byte {have}")
+        });
         let stopped = match api.get_bytes_from(&path, have).await {
             Ok(received) => {
                 // A 206 continues these bytes; any other answer is the blob from its start.
@@ -250,13 +298,13 @@ async fn download(api: &Api, stub: &Value) -> Result<Value> {
                 }
             }
             Err(failure) if api::transient(&failure) => Some(failure),
-            Err(failure) => return Err(failure.into()),
+            Err(failure) => return Err(failed(tracker, failure)),
         };
         match stopped {
             Some(failure) => {
                 failures += 1;
                 if failures > ATTEMPTS {
-                    return Err(failure.into());
+                    return Err(failed(tracker, failure));
                 }
                 api::pause(&failure, failures).await;
             }
