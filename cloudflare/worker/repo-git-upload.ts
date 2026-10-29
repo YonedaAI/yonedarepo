@@ -122,11 +122,17 @@ export async function sendPack(
   asked?: Asked,
 ): Promise<Response> {
   let writer: PackWriter | undefined;
-  // A stored pack carries every blob: never served or stored while any is withheld.
-  if (asked?.full && packCacheOn(objects.env) && !(await objects.withholdsAny())) {
+  // A stored pack carries every blob: never served or stored while any is withheld. Stored
+  // packs are side-band packets of CHUNK (what version 2 always asks for).
+  if (
+    asked?.full &&
+    band === CHUNK &&
+    packCacheOn(objects.env) &&
+    !(await objects.withholdsAny())
+  ) {
     const key = await packKey(objects.repo, asked.wants);
     const stored = await timed('git.pack_cached', () => storedPack(objects.env, key));
-    if (stored) return sendStored(head, stored.body, band, stats);
+    if (stored) return sendStored(head, stored, band, stats);
     writer = new PackWriter(objects.env, objects.repo, key);
     if (stats) stats.cache = 'miss';
   }
@@ -173,8 +179,10 @@ export async function sendPack(
           await store.finish();
           end(controller, band, stats);
         } else {
-          await store.add(next.value);
-          controller.enqueue(band ? sideBand(1, next.value, band) : next.value);
+          const sent = band ? sideBand(1, next.value, band) : next.value;
+          // A copy: the client's stream may take the bytes enqueued before the store does.
+          store.add(sent.slice());
+          controller.enqueue(sent);
         }
       } catch (e: any) {
         await store.abort();

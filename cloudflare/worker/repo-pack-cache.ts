@@ -2,10 +2,12 @@
 // gets every object reachable from its wants, so its pack depends on the wants alone. Built
 // from bundles, a clone reads all of history raw (168 MiB for claude-code's 32 MiB pack)
 // and deltas and compresses it in the Worker: 6-10 s live against GitHub's 1.6-1.9 s. The
-// first such clone of a set of tips stores the pack while it streams; the next streams that
-// one R2 object. Wants are still walked by the authority first, so a stored pack is served
+// first such clone of a set of tips stores the pack while it streams, behind the response
+// (repo-pack-stream `Storing`: the clone never waits on R2); the next streams that one R2
+// object. Wants are still walked by the authority first, so a stored pack is served
 // only for tips the client may fetch now (a force-push that dropped history leaves its old
-// pack unreachable). Key: `derived/v1/<repo>/packs/v1/<sha256 of the sorted wants>.pack`.
+// pack unreachable). Key: `derived/v1/<repo>/packs/v2/<sha256 of the sorted wants>.pack`;
+// v2 holds the pack as side-band packets (the hit path pipes them as they are), v1 raw.
 import { PART, R2Parts } from './repo-r2-parts';
 import type { Env } from './types';
 
@@ -17,7 +19,7 @@ const MIN_STORED = 256 * 1024;
 const KEPT = 4;
 
 export const packCacheOn = (env: Env) => env.PACK_CACHE === 'on';
-const prefix = (repo: string) => `derived/v1/${repo}/packs/v1/`;
+const prefix = (repo: string) => `derived/v1/${repo}/packs/v2/`;
 const recentKey = (repo: string) => `${prefix(repo)}recent`;
 
 /** Where the pack of a full clone wanting `wants` is stored. */
