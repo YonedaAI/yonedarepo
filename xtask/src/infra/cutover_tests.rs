@@ -81,7 +81,10 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     assert_eq!(platform["placement"]["region"], "aws:us-east-1");
     assert_eq!(
         platform["secrets_store_secrets"],
-        json!([{"binding": "REVIEW_MODEL_KEY", "store_id": "3d9115d4fe864c54a792bcb790a763e3", "secret_name": "ZAI"}])
+        json!([
+            {"binding": "REVIEW_MODEL_KEY", "store_id": "3d9115d4fe864c54a792bcb790a763e3", "secret_name": "ZAI"},
+            {"binding": "RESEND_API_KEY", "store_id": "3d9115d4fe864c54a792bcb790a763e3", "secret_name": "Resend-Yoneda"}
+        ])
     );
     let check = &platform["containers"][0];
     assert_eq!(check["class_name"], "CheckContainer");
@@ -94,10 +97,14 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
         vars,
         &json!({"PUBLIC_APP_ORIGIN": "https://yonedarepo.com"})
     );
+    // Its one queue binding sends welcome-email jobs to the platform's consumer.
+    assert_eq!(
+        agents["queues"],
+        json!({"producers": [{"binding": "PLATFORM_QUEUE", "queue": "yonedarepo-prod-platform-jobs"}]})
+    );
     for absent in [
         "secrets_store_secrets",
         "containers",
-        "queues",
         "d1_databases",
         "r2_buckets",
     ] {

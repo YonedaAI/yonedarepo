@@ -3,7 +3,7 @@
 // browser app on yonedarepo.com and www, account sign-in (/api/auth/*) and the owner session,
 // and proxies /api/v1 to the production platform through the PLATFORM service binding on the
 // same origin. Accounts live in the platform's WorkspaceAuthority (WORKSPACES script binding).
-// It has no stores, containers or queues of its own. Secrets, set from stdin:
+// It has no stores or containers; it only sends new accounts' welcome-email jobs to the platform-jobs queue. Secrets, set from stdin:
 // OWNER_TOKEN  production owner credential (~/.config/yonedarepo/prod.env)
 // The exact www route keeps www on this Worker; the apex is a Custom Domain.
 // v4 deletes the agent layer's Durable Object classes (RepositoryAuthority, LiveRoom,
@@ -75,6 +75,14 @@
     "region": "aws:us-east-1"
   },
   "preview_urls": false,
+  "queues": {
+    "producers": [
+      {
+        "binding": "PLATFORM_QUEUE",
+        "queue": "yonedarepo-prod-platform-jobs"
+      }
+    ]
+  },
   "ratelimits": [
     {
       "name": "AUTH_LIMITER",
