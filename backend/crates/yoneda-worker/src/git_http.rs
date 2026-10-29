@@ -160,6 +160,20 @@ pub fn git_upload_step(handle: u32, input: &str) -> String {
     answer(parse(input).and_then(|c| UPLOADING.with_borrow_mut(|s| s.with(handle, |u| u.step(&c)))))
 }
 
+/// Which of `ids` (a JSON list) the counted pack holds (`UploadSession::holds`).
+#[wasm_bindgen(js_name = gitUploadHolds, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_upload_holds(handle: u32, ids: &str) -> String {
+    answer(
+        parse(ids).and_then(|ids| UPLOADING.with_borrow_mut(|s| s.with(handle, |u| u.holds(&ids)))),
+    )
+}
+
+/// The sending pass (`UploadSession::send`): the next wave's objects to write.
+#[wasm_bindgen(js_name = gitUploadSend, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_upload_send(handle: u32, input: &str) -> String {
+    answer(parse(input).and_then(|c| UPLOADING.with_borrow_mut(|s| s.with(handle, |u| u.send(&c)))))
+}
+
 #[wasm_bindgen(js_name = gitUploadStart, wasm_bindgen = ::worker::wasm_bindgen)]
 pub fn git_upload_start(handle: u32) -> Result<Vec<u8>, JsError> {
     UPLOADING

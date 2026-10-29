@@ -152,7 +152,7 @@ export async function storeBundle(
 }
 
 /** Whether this isolate knows `repo` holds bundles (its status says so, or it read one). */
-const holdsBundles = (repo: string) => isolateLocations.holds(repo);
+export const holdsBundles = (repo: string) => isolateLocations.holds(repo);
 export const noteBundles = (repo: string) => isolateLocations.bundled(repo);
 
 /** Of `found` (locations answered for `wanted`), those of the kind asked, by id. */

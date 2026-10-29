@@ -13,12 +13,34 @@ import {
   type Wanted,
   WIDE_GAP,
 } from './repo-bundles';
+import type { UploadSession } from './repo-git-sessions';
 import { type LargeBody, largeBody } from './repo-large-files';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 
 /** Objects outside bundles read at a time, one R2 object each. */
 const READS = 32;
+/** Object-store reads one fetch may make (a Worker request has 50,000 subrequests; the
+ * rest are its walk's and the authority's): past it the fetch fails, saying so. */
+export const FETCH_READS = 40_000;
+
+/** What a fetch has spent of FETCH_READS. */
+export class ReadBudget {
+  used = 0;
+  constructor(readonly limit = FETCH_READS) {}
+  spend(reads: number) {
+    this.used += reads;
+    if (this.used > this.limit) throw overBudget(`more than ${this.limit} object-store reads`);
+  }
+}
+
+/** A fetch past the server's budget: what to do instead. */
+export const overBudget = (what: string) =>
+  new ApiError(
+    'TOO_LARGE',
+    `This fetch needs ${what}, past the server's budget for one request; clone with --filter=blob:none or --depth, or use git-remote-yoneda`,
+  );
+
 /** Repository reads in flight while verifying a push. */
 const VERIFY_READS = 16;
 /** Groups read while the one before them is written into the pack. */
@@ -60,7 +82,12 @@ const byPlace = (a?: Location, b?: Location) => {
  * bundle about once, not once per object it lists in commit order. `stats` counts the
  * ranged reads.
  */
-export async function* rawObjects(objects: RepoObjects, wanted: Wanted[], stats?: ReadStats) {
+export async function* rawObjects(
+  objects: RepoObjects,
+  wanted: Wanted[],
+  stats?: ReadStats,
+  budget?: ReadBudget,
+) {
   const where = await locate(objects.env, objects.repo, wanted);
   const order = [...wanted].sort((a, b) => byPlace(where.get(a.id), where.get(b.id)));
   const groups: Wanted[][] = [];
@@ -89,6 +116,8 @@ export async function* rawObjects(objects: RepoObjects, wanted: Wanted[], stats?
     start = end;
   }
   const read = async (group: Wanted[]) => {
+    // A ranged read, and one read per object outside the bundles.
+    budget?.spend(1 + group.filter((w) => !where.has(w.id)).length);
     const bundled = await readLocated(
       objects.env,
       objects.repo,
@@ -228,4 +257,39 @@ export async function supply(ctx: RepoContext, objects: RepoObjects, need: Json)
     )),
   );
   return { present };
+}
+
+/** Counts what the pack holds (the session's counting pass), reading the trees each
+ * wave of commits needs: `{count}`. */
+export async function enumerate(
+  session: UploadSession,
+  objects: RepoObjects,
+  stats?: ReadStats,
+  seen = new SeenTrees(),
+) {
+  let step = session.step({});
+  while (step.need_trees) {
+    const trees = await treesFor(objects, step.need_trees as string[], undefined, seen, stats);
+    step = session.step({ trees });
+  }
+  return step;
+}
+
+/** The session's sending pass: each wave's trees to write and objects to read, the last
+ * with the tag objects (`done`). */
+export async function* waves(
+  session: UploadSession,
+  objects: RepoObjects,
+  seen = new SeenTrees(),
+  stats?: ReadStats,
+) {
+  for (;;) {
+    let wave = session.send({});
+    while (wave.need_trees) {
+      const trees = await treesFor(objects, wave.need_trees as string[], undefined, seen, stats);
+      wave = session.send({ trees });
+    }
+    yield wave as { trees: string[]; fetch: Wanted[]; tags?: string[]; done: boolean };
+    if (wave.done) return;
+  }
 }

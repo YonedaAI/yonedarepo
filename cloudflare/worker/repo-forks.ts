@@ -5,9 +5,8 @@
 // recorded as pushed) and opens an ordinary change on the parent's mirror branch.
 import { dispatchRuns } from './repo-checks';
 import { listRepository, newRepoId, owning } from './repo-create';
-import { rawObjects } from './repo-git-objects';
+import { enumerate, rawObjects, waves } from './repo-git-objects';
 import { UploadSession } from './repo-git-sessions';
-import { enumerate } from './repo-git-upload';
 import { refreshHead } from './repo-head';
 import { isLarge, putLarge } from './repo-large-files';
 import { parseStore, RepoObjects, toBase64 } from './repo-objects';
@@ -168,16 +167,15 @@ export async function carryForkBranch(env: Env, parent: string, fork: string, br
  * lists them) from `from` into `into`'s store of record; answers its pushed record. */
 async function copyCommit(from: RepoObjects, into: RepoObjects, commit: Json) {
   const session = UploadSession.open({ commits: [commit] });
-  let listed: Json;
+  const objects: { id: string; kind: string }[] = [];
   try {
-    listed = await enumerate(session, from);
+    await enumerate(session, from);
+    for await (const wave of waves(session, from)) {
+      objects.push(...wave.trees.map((id) => ({ id, kind: 'tree' })), ...wave.fetch);
+    }
   } finally {
     session.close();
   }
-  const objects: { id: string; kind: string }[] = [
-    ...listed.trees.map((id: string) => ({ id, kind: 'tree' })),
-    ...listed.fetch,
-  ];
   let data_b64 = '';
   for await (const group of rawObjects(from, objects)) {
     const lost = group.find((o) => !o.data);

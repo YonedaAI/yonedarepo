@@ -71,8 +71,17 @@ export class UploadSession {
       value(fn<string>('gitUploadOpen')(Date.now(), JSON.stringify(walk))) as unknown as number,
     );
   }
+  /** The counting pass: `{need_trees}` or `{count}`. */
   step(input: Json): Json {
     return value(fn<string>('gitUploadStep')(this.handle, JSON.stringify(input)));
+  }
+  /** Which of `ids` the counted pack holds (after `step` answered `{count}`). */
+  holds(ids: string[]): string[] {
+    return value(fn<string>('gitUploadHolds')(this.handle, JSON.stringify(ids))) as string[];
+  }
+  /** The sending pass: `{need_trees}` or the next wave's `{trees, fetch, tags?, done}`. */
+  send(input: Json): Json {
+    return value(fn<string>('gitUploadSend')(this.handle, JSON.stringify(input)));
   }
   start() {
     return bytes(() => fn<Uint8Array>('gitUploadStart')(this.handle));
