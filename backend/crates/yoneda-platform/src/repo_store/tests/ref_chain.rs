@@ -154,7 +154,7 @@ fn upgrading_from_0038_answers_from_the_walk_then_from_the_chain_after_a_move() 
     super::super::migrate_repo_store(&h.db).unwrap();
     let applied: Vec<i64> =
         h.db.query(
-            "SELECT version FROM repo_schema_migrations WHERE version>=38 ORDER BY version",
+            "SELECT version FROM repo_schema_migrations WHERE version BETWEEN 38 AND 40 ORDER BY version",
             &[],
         )
         .unwrap()
