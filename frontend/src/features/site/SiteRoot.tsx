@@ -4,11 +4,11 @@ import { useEffect } from 'react';
 import type { Session } from '../../hooks/useSession';
 import type { Navigate } from '../shell/useRoute';
 import { AccountPanel } from '../workspace/AccountPanel';
-import { BLOG_POSTS, COMPANY_PAGES, DOCS_PAGES } from './content';
+import { BLOG_POSTS, COMPANY_PAGES, DOCS_PAGES, LEGAL_PAGES } from './content';
 import { SiteFeatures } from './SiteFeatures';
 import { SiteHome } from './SiteHome';
 import { SiteLayout } from './SiteLayout';
-import { SiteBlog, SiteCompany, SiteDocs } from './SitePages';
+import { SiteBlog, SiteCompany, SiteDocs, SiteLegal } from './SitePages';
 import { SitePricing } from './SitePricing';
 import { SIGNED_IN_HINT, type SitePage } from './siteRoute';
 
@@ -40,6 +40,8 @@ function pageTitle(site: SitePage): string {
     case 'about':
     case 'vision':
       return COMPANY_PAGES[site.page].title;
+    case 'legal':
+      return LEGAL_PAGES[site.doc].title;
     case 'signin':
       return site.mode === 'login' ? 'Sign in' : 'Create your account';
   }
@@ -74,6 +76,7 @@ export function SiteRoot({
       {(site.page === 'about' || site.page === 'vision') && (
         <SiteCompany page={site.page} navigate={navigate} />
       )}
+      {site.page === 'legal' && <SiteLegal doc={site.doc} navigate={navigate} />}
       {site.page === 'signin' && (
         <section className="site-signin" aria-labelledby="signin-heading">
           <h1 id="signin-heading">{title}</h1>

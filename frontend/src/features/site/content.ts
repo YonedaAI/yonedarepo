@@ -1,7 +1,7 @@
 // The site's written pages: Markdown files under `frontend/src/content`, each opening with a
 // small front matter block (`title:`, and `date:`/`summary:` for posts), bundled at build time.
 
-type Page = { title: string; summary: string; body: string };
+type Page = { title: string; summary: string; body: string; status: string };
 export type Post = Page & { slug: string; date: string };
 
 const raw = (files: Record<string, unknown>) => files as Record<string, string>;
@@ -10,6 +10,9 @@ const docsFiles = raw(
 );
 const blogFiles = raw(
   import.meta.glob('../../content/blog/*.md', { query: '?raw', import: 'default', eager: true }),
+);
+const legalFiles = raw(
+  import.meta.glob('../../content/legal/*.md', { query: '?raw', import: 'default', eager: true }),
 );
 const companyFiles = raw(
   import.meta.glob('../../content/company/*.md', { query: '?raw', import: 'default', eager: true }),
@@ -29,7 +32,12 @@ export function frontMatter(source: string): { fields: Record<string, string>; b
 
 const page = (source: string): Page => {
   const { fields, body } = frontMatter(source);
-  return { title: fields.title ?? '', summary: fields.summary ?? '', body };
+  return {
+    title: fields.title ?? '',
+    summary: fields.summary ?? '',
+    status: fields.status ?? '',
+    body,
+  };
 };
 // `../../content/docs/guides/cli.md` → `guides/cli`.
 const slugOf = (path: string, dir: string) =>
@@ -69,4 +77,10 @@ export const BLOG_POSTS: Post[] = Object.entries(blogFiles)
 export const COMPANY_PAGES = {
   about: page(companyFiles['../../content/company/about.md'] ?? ''),
   vision: page(companyFiles['../../content/company/vision.md'] ?? ''),
+};
+
+/** Terms and Privacy; `status` (front matter) is shown above each, e.g. a draft notice. */
+export const LEGAL_PAGES = {
+  terms: page(legalFiles['../../content/legal/terms.md'] ?? ''),
+  privacy: page(legalFiles['../../content/legal/privacy.md'] ?? ''),
 };
