@@ -88,10 +88,14 @@ impl Repo {
             read_set,
             writes,
         });
-        // Built on the branch's tip, it always fast-forwards there.
+        // Built on the branch's tip, it fast-forwards there unless queued landings hold
+        // the branch; refused, it is left unlanded (and unnumbered here: nothing names it).
         match self.land_on(branch, id) {
             Outcome::Moved => Outcome::Committed(id),
-            other => other,
+            other => {
+                self.commits.pop();
+                other
+            }
         }
     }
 }

@@ -23,6 +23,9 @@ enum Seen {
     Moved,
     Already,
     Done,
+    Queued(u64),
+    /// A combiner run: tickets landed, tickets failed with why, and its merge commit.
+    Batch(Vec<u64>, Vec<(u64, String)>, Option<String>),
     Refused(String),
 }
 
@@ -136,6 +139,20 @@ impl Driver {
                 let set = json!({"op":"repo_set_visibility","visibility":visibility});
                 (done(self.as_caller(caller, set)), None)
             }
+            Op::Enqueue { branch } => {
+                // As the adapter lands: directly, or joining the queue in the same call.
+                let landed = self.h.run(
+                    OWNER,
+                    json!({"op":"repo_land","ref":MAIN,"commit":self.git_id(branch),"enqueue":true}),
+                );
+                match landed {
+                    Ok(v) if v["queued"] == true => {
+                        (Seen::Queued(v["ticket"].as_u64().unwrap_or_default()), None)
+                    }
+                    other => (answer(other), None),
+                }
+            }
+            Op::RunQueue => (self.run_queue(), None),
             Op::Member { account, role } => {
                 let command = match role {
                     Some(role) => json!({"op":"repo_member_put","account":account,
@@ -177,6 +194,22 @@ impl Driver {
                     self.same_files(*id)?;
                 }
             }
+            (Seen::Batch(landed, failed, merge), Outcome::Batch(model))
+                if *landed == model.landed
+                    && failed.len() == model.failed.len()
+                    && failed
+                        .iter()
+                        .zip(&model.failed)
+                        .all(|(s, m)| s.0 == m.0 && s.1 == m.1)
+                    && merge.is_some() == model.merge.is_some()
+                    && model.merge.is_none_or(|m| m == self.ids.len()) =>
+            {
+                if let (Some(id), Some(m)) = (merge, model.merge) {
+                    self.ids.push(id.clone());
+                    self.same_files(m)?;
+                }
+            }
+            (Seen::Queued(ticket), Outcome::Queued(model)) if ticket == model => {}
             (Seen::Moved, Outcome::Moved)
             | (Seen::Already, Outcome::Already)
             | (Seen::Done, Outcome::Done) => {}
@@ -254,6 +287,14 @@ fn label(op: &Op, outcome: &Outcome) -> String {
     match outcome {
         Outcome::Committed(_) => format!("{kind} Committed"),
         Outcome::Rebased(_) => format!("{kind} Rebased"),
+        Outcome::Queued(_) => format!("{kind} Queued"),
+        Outcome::Batch(batch) => match (&batch.merge, batch.landed.len(), batch.failed.len()) {
+            (Some(_), landed, _) if landed > 1 => format!("{kind} octopus"),
+            (Some(_), _, _) => format!("{kind} merge"),
+            (None, 1, _) => format!("{kind} fast-forward"),
+            (None, _, 0) => format!("{kind} nothing"),
+            (None, _, _) => format!("{kind} failed"),
+        },
         Outcome::Refused(code) => format!("{kind} {code}"),
         other => format!("{kind} {other:?}"),
     }
