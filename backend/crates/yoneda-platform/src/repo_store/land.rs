@@ -9,6 +9,7 @@
 //! called the authority, so landing is its first optimistic-concurrency check. A stock
 //! `git push` differs: each ref command carries Git's old id as an expected-old lease
 //! (`platform_git_receive`).
+use super::land_tickets::landed_version;
 use super::rows::{self, CommitRow, Settings, branch_ref, current_version, object_id};
 use super::{changes, merging};
 use crate::storage::{SqlStore, number};
@@ -221,11 +222,7 @@ pub fn land<S: SqlStore>(db: &S, c: &Value, principal: &str, settings: &Settings
     // Read past unprojected changesets: they only route this landing (below).
     let current = rows::projected_ref(db, &refname)?;
     // Already landed (directly, or through a platform merge): a retried land is a no-op.
-    let landed = db.query(
-        "SELECT version FROM landings WHERE commit_id=? AND refname=?",
-        &[json!(commit.id.hex()), json!(refname)],
-    )?;
-    if current == Some(commit.id) || !landed.is_empty() {
+    if current == Some(commit.id) || landed_version(db, &commit.id, &refname)?.is_some() {
         return Ok(json!({ "landed": true, "already": true, "ref": refname, "commit": commit.id }));
     }
     require_gates(db, &commit.id, &refname, settings)?;
