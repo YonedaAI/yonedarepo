@@ -121,10 +121,12 @@ export async function agentRun(kit, { root, agents = 4, wave2 = 2, model, timeou
   const egress = await startEgress({ image: sandbox.image, allow, run: Date.now().toString(36) });
   metrics.egress_allow = allow.join(',');
   try {
-    await agentWaves(kit, { root, agents, wave2, model, timeoutS, budgetUsd, fake, credential, image: sandbox.image, network: egress.network, containers }, metrics);
+    await agentWaves(kit, { root, agents, wave2, model, timeoutS, budgetUsd, fake, credential, image: sandbox.image, egress, containers }, metrics);
   } finally {
     for (const name of containers) spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
-    metrics.egress_refused = (await egress.stop()).join(',') || 'none';
+    const stopped = await egress.stop();
+    metrics.egress_refused = stopped.refused.join(',') || 'none';
+    if (stopped.died) metrics.egress_died = stopped.died;
     const drift = await hostProblems(before, watched);
     metrics.host_unchanged = drift.length === 0;
     if (drift.length) {
@@ -134,7 +136,7 @@ export async function agentRun(kit, { root, agents = 4, wave2 = 2, model, timeou
   }
 }
 
-async function agentWaves(kit, { root, agents, wave2, model, timeoutS, budgetUsd, fake, credential, image, network, containers }, metrics) {
+async function agentWaves(kit, { root, agents, wave2, model, timeoutS, budgetUsd, fake, credential, image, egress, containers }, metrics) {
   const api = kit.pat();
   const name = `kit-agents-${Date.now()}`;
   const files = [
@@ -165,11 +167,11 @@ async function agentWaves(kit, { root, agents, wave2, model, timeoutS, budgetUsd
       await kit.gitOk(dir, 'remote', 'set-url', 'origin', remote);
       const minted = await api.post(`/repos/${repo}/tokens`, { name: `kit-${task.agent}`, scopes: ['read', 'write', 'land'] });
       secrets.push(minted.token);
-      const env = sandboxEnv({ origin, token: minted.token, remote, credential });
+      const env = sandboxEnv({ origin, token: minted.token, remote, credential, proxy: egress.address });
       const container = `yoneda-kit-${task.agent}-${Date.now().toString(36)}`;
       containers.push(container);
       const command = [...(fake ? FAKE_OPENCODE : ['opencode']), ...opencodeArgs({ model, title: `kit ${task.agent}`, text: prompt(task) })];
-      const args = sandboxArgs({ name: container, clone: realpathSync(dir), env, command, network, image });
+      const args = sandboxArgs({ name: container, clone: realpathSync(dir), env, command, network: egress.network, image });
       const line = printable(['docker', ...args]);
       writeFileSync(join(evidence, `${task.agent}.command.txt`), `${line}\n`);
       console.log(`  ${task.agent}: ${line.slice(0, 300)}…`);

@@ -23,8 +23,10 @@ export const HOOK_LOG = `${WORKDIR}/.git/yoneda-hooks.jsonl`;
 export const GUARD_EXIT = 97;
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
-/** The egress proxy's name on the agents' network, and its port. */
-export const EGRESS_PROXY = 'egress:3128';
+/** The egress proxy's port (egress-proxy.mjs PORT). Agents reach it by its address on their
+ * network, never by a name: a name depends on Docker's DNS, and on 2026-10-28 the name went
+ * with a crashed proxy, so every client failed with "getaddrinfo EAI_AGAIN egress". */
+export const EGRESS_PORT = 3128;
 export const EGRESS_LABEL = 'yoneda.agent-sandbox-egress=1';
 /** Where each model provider's API is (opencode provider id → `host:port`). A provider not
  * listed here is refused: add its API host after checking where opencode sends it. */
@@ -65,9 +67,12 @@ export function credentialFor(exported, model) {
 }
 
 /** The container's whole environment (names and values); nothing else of the host reaches it.
- * Every client in it (opencode, git, the `yoneda` remote helper) reads the proxy variables. */
-export function sandboxEnv({ origin, token, remote, credential }) {
-  const proxy = `http://${EGRESS_PROXY}`;
+ * Every client in it (opencode, git, the `yoneda` remote helper) reads the proxy variables,
+ * which name the egress proxy at `proxy` (`startEgress`'s IPv4 `address:port`); the egress
+ * check probes exactly that proxy and refuses to start an agent whose variables differ. */
+export function sandboxEnv({ origin, token, remote, credential, proxy }) {
+  if (!/^\d{1,3}(\.\d{1,3}){3}:\d{1,5}$/.test(proxy ?? '')) throw new Error(`the egress proxy must be an IPv4 address:port, not ${proxy}`);
+  const proxyUrl = `http://${proxy}`;
   return {
     YONEDA_ORIGIN: origin,
     YONEDA_TOKEN: token,
@@ -87,11 +92,11 @@ export function sandboxEnv({ origin, token, remote, credential }) {
     GIT_CONFIG_KEY_2: 'core.trustctime',
     GIT_CONFIG_VALUE_2: 'false',
     SANDBOX_EXPECTED_ORIGIN: remote,
-    SANDBOX_EGRESS_PROXY: EGRESS_PROXY,
-    HTTPS_PROXY: proxy,
-    HTTP_PROXY: proxy,
-    https_proxy: proxy,
-    http_proxy: proxy,
+    SANDBOX_EGRESS_PROXY: proxy,
+    HTTPS_PROXY: proxyUrl,
+    HTTP_PROXY: proxyUrl,
+    https_proxy: proxyUrl,
+    http_proxy: proxyUrl,
     NO_PROXY: 'localhost,127.0.0.1',
     no_proxy: 'localhost,127.0.0.1',
     ...(credential ? { SANDBOX_CREDENTIAL: 'stdin' } : {}),
@@ -156,12 +161,12 @@ export function sandboxArgs({ name, clone, env, command, network, image = IMAGE 
 /** `docker run` arguments for the egress proxy: the sandbox image's proxy, on Docker's default
  * bridge (the internet, and the host gateway for a loopback platform), with nothing mounted,
  * no capabilities and the allowlist (`SANDBOX_EGRESS_ALLOW` in the client's environment). It
- * joins the agents' internal network as `egress` afterwards. */
+ * joins the agents' internal network afterwards. Not `--rm`: should it exit, its log (what it
+ * refused, why it died) must outlive it; `startEgress`'s stop removes it. */
 export function egressArgs({ name, image = IMAGE }) {
   return [
     'run',
     '-d',
-    '--rm',
     '--init',
     '--name',
     name,

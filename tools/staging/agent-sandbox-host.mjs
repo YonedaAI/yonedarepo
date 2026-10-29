@@ -6,7 +6,7 @@
 import { execFile, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { credentialFor, EGRESS_LABEL, EGRESS_PROXY, egressArgs, IMAGE, IMAGE_LABEL } from './agent-sandbox.mjs';
+import { credentialFor, EGRESS_LABEL, EGRESS_PORT, egressArgs, IMAGE, IMAGE_LABEL } from './agent-sandbox.mjs';
 
 const run = promisify(execFile);
 /** `{ ok, out, err }` of a command; never rejects. */
@@ -33,9 +33,11 @@ export async function buildSandbox(root) {
 
 /**
  * The agents' network and its egress proxy for one run: an internal Docker network (no route
- * out) and the proxy container, on the default bridge and joined to that network as `egress`,
- * forwarding to `allow` (`host:port` list) alone. `stop()` removes both and answers the
- * targets the proxy refused (what agents tried to reach beyond the allowlist).
+ * out) and the proxy container, on the default bridge and joined to that network, forwarding
+ * to `allow` (`host:port` list) alone; `address` is its IPv4 `address:port` on that network,
+ * what agents' proxy variables name (`sandboxEnv`). `stop()` removes both and answers
+ * `{ refused, died }`: the targets the proxy refused (what agents tried to reach beyond the
+ * allowlist), and `null` or how the proxy ended when it did not outlive the run.
  */
 export async function startEgress({ image, allow, run }) {
   const network = `yoneda-sandbox-${run}`;
@@ -46,10 +48,13 @@ export async function startEgress({ image, allow, run }) {
     return done.out;
   };
   const stop = async () => {
+    const state = await exec('docker', ['inspect', '-f', '{{.State.Status}} {{.State.ExitCode}}', proxy]);
     const logs = await exec('docker', ['logs', proxy]);
     await exec('docker', ['rm', '-f', proxy]);
     await exec('docker', ['network', 'rm', network]);
-    return `${logs.out}\n${logs.err}`
+    const [status, code] = state.out.split(' ');
+    const died = status === 'running' ? null : `${status || 'gone'} (exit ${code ?? '?'}): ${logs.err.split('\n').filter(Boolean).slice(-6).join(' | ').slice(-600)}`;
+    const refused = `${logs.out}\n${logs.err}`
       .split('\n')
       .map((line) => {
         try {
@@ -60,18 +65,27 @@ export async function startEgress({ image, allow, run }) {
       })
       .filter((e) => e?.event === 'egress.refused')
       .map((e) => `${e.method} ${e.target}`);
+    return { refused, died };
   };
+  let address;
   try {
     await must(['network', 'create', '--internal', '--label', EGRESS_LABEL, network]);
     await must(egressArgs({ name: proxy, image }), { SANDBOX_EGRESS_ALLOW: allow.join(',') });
-    await must(['network', 'connect', '--alias', EGRESS_PROXY.split(':')[0], network, proxy]);
-    for (let i = 0; i < 50 && !(await exec('docker', ['logs', proxy])).out.includes('egress.listening'); i++)
-      await new Promise((resolve) => setTimeout(resolve, 100));
+    await must(['network', 'connect', network, proxy]);
+    const ip = await must(['inspect', '-f', `{{(index .NetworkSettings.Networks "${network}").IPAddress}}`, proxy]);
+    if (!/^\d{1,3}(\.\d{1,3}){3}$/.test(ip)) throw new Error(`the egress proxy has no IPv4 address on ${network}: ${ip || '(none)'}`);
+    address = `${ip}:${EGRESS_PORT}`;
+    let listening = false;
+    for (let i = 0; i < 50 && !listening; i++) {
+      listening = (await exec('docker', ['logs', proxy])).out.includes('egress.listening');
+      if (!listening) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    if (!listening) throw new Error(`the egress proxy ${proxy} did not start listening`);
   } catch (e) {
     await stop();
     throw e;
   }
-  return { network, proxy, stop };
+  return { network, proxy, address, stop };
 }
 
 /** The host opencode's stored credential for `model`'s provider, as `opencode auth import`

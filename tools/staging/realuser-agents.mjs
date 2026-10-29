@@ -42,7 +42,7 @@ export async function realuserAgents(ctx, { repos, perRepo, model, timeoutS, bud
   const egress = await startEgress({ image: sandbox.image, allow, run: Date.now().toString(36) });
   metrics.egress_allow = allow.join(',');
   try {
-    for (const repo of repos) runs.push(...(await prepareRepo(ctx, repo, { perRepo, origin, credential, model, image: sandbox.image, network: egress.network, budget, timeoutS, containers })));
+    for (const repo of repos) runs.push(...(await prepareRepo(ctx, repo, { perRepo, origin, credential, model, image: sandbox.image, egress, budget, timeoutS, containers })));
     const outcomes = await Promise.all(runs.map(runAgent));
     metrics.agent_ms = outcomes.map((o) => `${o.agent}:${o.ms}`).join(',');
     metrics.exits = outcomes.map((o) => `${o.agent}:${o.killed ?? o.code}`).join(',');
@@ -59,12 +59,14 @@ export async function realuserAgents(ctx, { repos, perRepo, model, timeoutS, bud
     assert.ok(problems.length === 0, problems.join('; '));
   } finally {
     for (const name of containers) spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
-    metrics.egress_refused = (await egress.stop()).join(',') || 'none';
+    const stopped = await egress.stop();
+    metrics.egress_refused = stopped.refused.join(',') || 'none';
+    if (stopped.died) metrics.egress_died = stopped.died;
   }
 }
 
 /** The repository's scratch base at main, and its agents' clones, tokens and containers. */
-async function prepareRepo(ctx, repo, { perRepo, origin, credential, model, image, network, budget, timeoutS, containers }) {
+async function prepareRepo(ctx, repo, { perRepo, origin, credential, model, image, egress, budget, timeoutS, containers }) {
   const { ws, ts, owner, mint, evidence } = ctx;
   ctx.touch(repo.id);
   const base = scratch(scratchRefs(ts).agentBase, ts);
@@ -102,10 +104,10 @@ async function prepareRepo(ctx, repo, { perRepo, origin, credential, model, imag
     await ws.git(dir, null, 'config', 'user.email', task.email);
     // The URL the platform has from inside the container; the sandbox refuses any other.
     await ws.git(dir, null, 'remote', 'set-url', 'origin', remote);
-    const env = sandboxEnv({ origin, token, remote, credential });
+    const env = sandboxEnv({ origin, token, remote, credential, proxy: egress.address });
     const name = `yoneda-realuser-${n}-${Date.now().toString(36)}`;
     containers.push(name);
-    const args = sandboxArgs({ name, clone: realpathSync(dir), env, command: ['opencode', ...opencodeArgs({ model, title: `realuser ${agent}`, text: task.text })], network, image });
+    const args = sandboxArgs({ name, clone: realpathSync(dir), env, command: ['opencode', ...opencodeArgs({ model, title: `realuser ${agent}`, text: task.text })], network: egress.network, image });
     writeFileSync(join(evidence, `${agent}.command.txt`), `${printable(['docker', ...args])}\n`);
     runs.push({ task, name, cwd: ws.dir, env: clientEnv(process.env, env), credential, scrub: ws.scrub, args, evidence, timeoutMs: timeoutS * 1000, budget });
   }
