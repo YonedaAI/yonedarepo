@@ -2,8 +2,10 @@
 // visibility.rs). A request without credentials is anonymous (`{_anonymous: true}`) where
 // it may read: GETs of one repository's API, smart-HTTP fetches and LFS downloads, and the
 // public listing. The authority admits it on a public repository and answers NOT_FOUND on
-// a private one. Anonymous requests are rate limited per client address, and the costly
-// reads (search, blame) more tightly and with smaller results. Visibility changes update the
+// a private one. Before anything of a repository wakes for an anonymous request, the
+// discovery index must list it as public (`admitAnonymous`). Anonymous requests are rate
+// limited per client address, and the costly reads (search, blame) more tightly and with
+// smaller results. Visibility changes update the
 // discovery listing on the side that never lists a private repository, and republish main's
 // head before answering, so a repository made private stops serving anonymous reads
 // everywhere within ACCESS_MS.
@@ -14,6 +16,7 @@ import type { Env } from './types';
 export const ANONYMOUS: Credentials = { _anonymous: true };
 
 const REPO_READ = /^\/api\/v1\/repos\/r[0-9a-f]{20}(?:\/|$)/;
+const REPO_ID = /^\/api\/v1\/repos\/(r[0-9a-f]{20})(?:\/|$)/;
 /** Reads whose cost grows with the repository: limited per address on their own. */
 const COSTLY = /^\/api\/v1\/repos\/r[0-9a-f]{20}\/(?:search|blame)$/;
 /** Most results a costly anonymous read returns. */
@@ -31,6 +34,23 @@ export function anonymousRead(req: Request, url: URL): boolean {
   if (req.method !== 'GET' && req.method !== 'HEAD') return false;
   return isExplore(url) || (REPO_READ.test(url.pathname) && !url.pathname.endsWith('/mcp'));
 }
+
+/** Refuses an anonymous request for a repository the discovery index does not list as
+ * public, before any of the repository's objects (authority, head holder) wakes: private
+ * and unknown repositories get the authority's own NOT_FOUND, so neither is told apart.
+ * The index only lags towards private (see `setVisibility`; rows are written once the
+ * authority accepted a repository), so this can hide a public repository for a moment but
+ * never admits a private one; the authority still decides every request it lets through. */
+export async function admitAnonymous(env: Env, repo: string) {
+  const row = await env.INDEX.prepare('SELECT visibility FROM platform_repos WHERE id=?')
+    .bind(repo)
+    .first<{ visibility: string }>();
+  if (row?.visibility !== 'public') throw new ApiError('NOT_FOUND', 'Repository not found');
+}
+
+/** The repository an anonymous API read addresses (`anonymousRead` admits only these and
+ * the public listing). */
+export const anonymousRepo = (url: URL) => REPO_ID.exec(url.pathname)?.[1] ?? null;
 
 /** Refuses an anonymous request over its address's budget: every read counts against
  * PUBLIC_LIMITER, and search and blame against the sign-in limiter's tighter one too. */
