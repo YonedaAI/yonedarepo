@@ -181,7 +181,7 @@
           "LFS_S3_BUCKET": "{prefix}-platform-objects",
           "SSH_FRONT_DOOR": "tunnel",
           "SSH_HOST": "ssh.dev.yonedarepo.com",
-          "EMAIL_FROM": "YonedaRepo (dev) <hello@dev.yonedarepo.com>",
+          "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>",
           "EMAIL_CONTACT": "hello@yonedarepo.com"
         },
         "secrets_store_secrets": [
