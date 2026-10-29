@@ -77,9 +77,10 @@ export class UploadSession {
   static open(walk: Json) {
     return new UploadSession(opened('gitUploadOpen', Date.now(), JSON.stringify(walk)));
   }
-  /** The counting pass: `{need_trees}` or `{count}`. */
-  step(input: Json): Json {
-    return value(fn<string>('gitUploadStep')(this.handle, JSON.stringify(input)));
+  /** The counting pass: `{need_trees}` or `{count}`, given the trees read since (`trees`
+   * as entries, `raw` framed: see `treeFrames`). */
+  step(input: Json, raw = new Uint8Array()): Json {
+    return value(fn<string>('gitUploadStep')(this.handle, JSON.stringify(input), raw));
   }
   /** Which of `ids` the counted pack holds (after `step` answered `{count}`). */
   holds(ids: string[]): string[] {
@@ -88,6 +89,10 @@ export class UploadSession {
   /** The sending pass: `{need_trees}` or the next wave's `{trees, fetch, tags?, done}`. */
   send(input: Json): Json {
     return value(fn<string>('gitUploadSend')(this.handle, JSON.stringify(input)));
+  }
+  /** Trees for the wave being sent: as entries (`trees`) and `raw` frames (`treeFrames`). */
+  supply(trees: Json[], raw = new Uint8Array()) {
+    value(fn<string>('gitUploadTrees')(this.handle, JSON.stringify({ trees }), raw));
   }
   start() {
     return bytes(() => fn<Uint8Array>('gitUploadStart')(this.handle));

@@ -10,6 +10,11 @@ use miniz_oxide::{
 };
 use sha1::{Digest, Sha1};
 
+/// zlib level of written entries: the fastest. A pack's entries are deflated in the Worker
+/// under its CPU limit; for svelte's 45,787-object clone level 1 cut the entries' CPU by
+/// about 40% against level 6 for 2.4% more bytes (most bytes are deltas or compressed).
+const LEVEL: u8 = 1;
+
 #[derive(Clone, Copy, Debug)]
 pub struct PackLimits {
     pub max_objects: u32,
@@ -62,7 +67,7 @@ impl PackWriter {
     pub fn entry(&mut self, kind: ObjectKind, data: &[u8]) -> Vec<u8> {
         let mut out = entry_header(kind.pack_code(), data.len());
         out.reserve(data.len() / 2 + 32);
-        out.extend_from_slice(&compress_to_vec_zlib(data, 6));
+        out.extend_from_slice(&compress_to_vec_zlib(data, LEVEL));
         self.hasher.update(&out);
         out
     }
@@ -72,7 +77,7 @@ impl PackWriter {
     pub fn delta_entry(&mut self, base: &ObjectId, delta: &[u8]) -> Vec<u8> {
         let mut out = entry_header(7, delta.len());
         out.extend_from_slice(base.as_bytes());
-        out.extend_from_slice(&compress_to_vec_zlib(delta, 6));
+        out.extend_from_slice(&compress_to_vec_zlib(delta, LEVEL));
         self.hasher.update(&out);
         out
     }

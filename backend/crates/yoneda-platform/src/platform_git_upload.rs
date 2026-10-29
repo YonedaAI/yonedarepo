@@ -10,9 +10,9 @@
 //!
 //! Commits go in waves of WAVE_COMMITS, so memory is bounded by a wave's trees, not the
 //! history: `step` walks every wave once to count what the pack holds (its header comes
-//! first), keeping only the ids seen; `send` walks them again and lists each wave's
-//! objects to write. Trees are kept between waves (and passes) while they fit TREE_BYTES,
-//! so a fetch of a modest history reads each tree once.
+//! first), keeping each wave's object ids; `send` lists them wave by wave, walking nothing
+//! again. Trees are kept between waves while they fit TREE_BYTES; a tree the session let
+//! go comes back with its entry (`pack_entry` with its raw content).
 use crate::platform_objects::{new_trees, supplied_tree};
 use crate::storage::{bad, string};
 use base64::{Engine, engine::general_purpose::STANDARD};
@@ -22,7 +22,7 @@ use yoneda_core::{
     Error, Result,
     git_object::{
         FileMode, ObjectHasher, ObjectId, ObjectKind, PackWriter, TreeChange, TreeEntry, Walk,
-        diff_trees, encode_delta, encode_tree, hash_object,
+        decode_tree, diff_trees, encode_delta, encode_tree, hash_object,
     },
 };
 
@@ -46,6 +46,9 @@ const MAX_DEPTH: u8 = 50;
 const MAX_DELTA_BYTES: usize = 4 * 1024 * 1024;
 /// Bytes of written versions kept as bases for versions still to come.
 const BASE_BYTES: usize = 32 * 1024 * 1024;
+
+/// A walked wave: its objects in order, and the file version pairs its diffs found.
+type Walked = (Vec<(ObjectId, ObjectKind)>, Vec<(ObjectId, ObjectId)>);
 
 /// One wave's walk: the trees it still needs, or its objects in order with the file
 /// version pairs its diffs found.
@@ -71,6 +74,8 @@ pub struct UploadSession {
     /// About how many bytes `trees` holds, and whether trees are still kept between waves.
     tree_bytes: usize,
     dropping: bool,
+    /// Each walked wave's objects in order and file version pairs, until `send` lists it.
+    walked: Vec<Walked>,
     /// Diffs of the wave being walked that every tree they read was held for, by commit
     /// index: a round walks only the commits still waiting for trees.
     diffs: HashMap<usize, Vec<TreeChange>>,
@@ -151,6 +156,45 @@ impl UploadSession {
                     .map(|e| e.name.len() + ENTRY_BYTES)
                     .sum::<usize>();
             self.trees.insert(id, entries);
+        }
+        Ok(())
+    }
+
+    /// Adds trees the adapter read (`add_trees`, and raw `frames`: `add_raw_trees`) for the
+    /// entries of the wave being sent.
+    pub fn supply(&mut self, input: &Value, frames: &[u8]) -> Result<()> {
+        self.add_trees(input)?;
+        self.add_raw_trees(frames)
+    }
+
+    /// Adds trees the adapter read raw, framed as 20-byte id, 4-byte big-endian length and
+    /// content: each must hash to its id. Raw bytes cross without base64 or JSON, and hash
+    /// as they are (no re-encoding: what hashes to the id is the tree).
+    pub fn add_raw_trees(&mut self, mut frames: &[u8]) -> Result<()> {
+        while !frames.is_empty() {
+            let (head, rest) = frames
+                .split_at_checked(24)
+                .ok_or_else(|| bad("Truncated tree frame"))?;
+            let id = ObjectId::from_bytes(head[..20].try_into().map_err(|_| bad("Bad tree id"))?);
+            let length =
+                u32::from_be_bytes(head[20..24].try_into().map_err(|_| bad("Bad length"))?);
+            let (data, rest) = rest
+                .split_at_checked(length as usize)
+                .ok_or_else(|| bad("Truncated tree frame"))?;
+            if hash_object(ObjectKind::Tree, data) != id {
+                return Err(Error::new(
+                    "TREE_INVALID",
+                    format!("Supplied tree does not match {id}"),
+                ));
+            }
+            let entries = decode_tree(data)?;
+            self.tree_bytes += ENTRY_BYTES
+                + entries
+                    .iter()
+                    .map(|e| e.name.len() + ENTRY_BYTES)
+                    .sum::<usize>();
+            self.trees.insert(id, entries);
+            frames = rest;
         }
         Ok(())
     }
@@ -242,8 +286,9 @@ impl UploadSession {
         while self.wave < self.waves() {
             match self.walk_wave(self.wave)? {
                 WaveWalk::Need(need) => return self.need(need),
-                WaveWalk::Done(objects, _) => {
-                    self.unsent.extend(objects.into_iter().map(|(id, _)| id));
+                WaveWalk::Done(objects, pairs) => {
+                    self.unsent.extend(objects.iter().map(|(id, _)| *id));
+                    self.walked.push((objects, pairs));
                     self.next_wave();
                 }
             }
@@ -291,10 +336,11 @@ impl UploadSession {
             let tags: Vec<ObjectId> = self.tags.iter().map(|(id, _)| *id).collect();
             return Ok(json!({ "trees": [], "fetch": fetch, "tags": tags, "done": true }));
         }
-        let (objects, pairs) = match self.walk_wave(self.wave)? {
-            WaveWalk::Need(need) => return self.need(need),
-            WaveWalk::Done(objects, pairs) => (objects, pairs),
-        };
+        let (objects, pairs) = self
+            .walked
+            .get_mut(self.wave)
+            .map(std::mem::take)
+            .ok_or_else(|| bad("The fetch has not been counted"))?;
         let objects: Vec<(ObjectId, ObjectKind)> = objects
             .into_iter()
             .filter(|(id, _)| self.unsent.remove(id))
@@ -339,6 +385,7 @@ impl UploadSession {
     pub fn pack_entry(&mut self, kind: &str, id: &str, data: Option<&[u8]>) -> Result<Vec<u8>> {
         let id = ObjectId::parse(id)?;
         let (kind, bytes) = match (kind, data) {
+            ("tree", Some(data)) => (ObjectKind::Tree, data.to_vec()),
             ("tree", None) => {
                 let entries = self
                     .trees
@@ -497,6 +544,68 @@ mod tests {
         let only = lazy.send(&json!({})).unwrap();
         assert_eq!(only["fetch"], json!([{ "id": kept, "kind": "blob" }]));
         assert_eq!(only["done"], true);
+    }
+
+    #[test]
+    fn sends_every_wave_without_walking_again_taking_dropped_trees_raw() {
+        // 300 commits (two waves) over a root of 1,000 files, one rewritten per commit:
+        // more trees than TREE_BYTES, so the session lets the first wave's go.
+        let files: Vec<ObjectId> = (0..1000)
+            .map(|n| hash_object(ObjectKind::Blob, format!("{n}\n").as_bytes()))
+            .collect();
+        let mut entries: Vec<TreeEntry> = files
+            .iter()
+            .enumerate()
+            .map(|(n, id)| TreeEntry {
+                name: format!("f{n:04}"),
+                mode: FileMode::Blob,
+                id: *id,
+            })
+            .collect();
+        let mut trees: HashMap<ObjectId, Vec<u8>> = HashMap::new();
+        let mut commits = Vec::new();
+        let mut base: Option<ObjectId> = None;
+        for c in 0..300 {
+            entries[c % 1000].id = hash_object(ObjectKind::Blob, format!("v{c}\n").as_bytes());
+            let data = encode_tree(&entries).unwrap();
+            let tree = hash_object(ObjectKind::Tree, &data);
+            trees.insert(tree, data);
+            commits.push(json!({ "commit": format!("{c:040x}"), "tree": tree, "base_tree": base }));
+            base = Some(tree);
+        }
+        let mut session = UploadSession::new(&json!({ "commits": commits })).unwrap();
+        let frames = |ids: &Value| {
+            let mut out = Vec::new();
+            for id in ids.as_array().unwrap() {
+                let id = ObjectId::parse(id.as_str().unwrap()).unwrap();
+                out.extend_from_slice(id.as_bytes());
+                out.extend_from_slice(&(trees[&id].len() as u32).to_be_bytes());
+                out.extend_from_slice(&trees[&id]);
+            }
+            out
+        };
+        let mut step = session.step(&json!({})).unwrap();
+        while let Some(need) = step.get("need_trees").cloned() {
+            session.add_raw_trees(&frames(&need)).unwrap();
+            step = session.step(&json!({})).unwrap();
+        }
+        assert!(session.dropping, "the trees must outgrow TREE_BYTES");
+        session.pack_start().unwrap();
+        let first = session.send(&json!({})).unwrap();
+        assert!(first.get("need_trees").is_none());
+        let tree = first["trees"][0].as_str().unwrap().to_owned();
+        // Let go after counting: only its raw content writes its entry.
+        let id = ObjectId::parse(&tree).unwrap();
+        assert!(session.pack_entry("tree", &tree, None).is_err());
+        assert!(session.pack_entry("tree", &tree, Some(&trees[&id])).is_ok());
+        assert!(session.pack_entry("tree", &tree, Some(b"not it")).is_err());
+        let second = session.send(&json!({})).unwrap();
+        assert!(second.get("need_trees").is_none());
+        assert_eq!(
+            first["trees"].as_array().unwrap().len() + second["trees"].as_array().unwrap().len(),
+            300
+        );
+        assert_eq!(session.send(&json!({})).unwrap()["done"], true);
     }
 
     #[test]
