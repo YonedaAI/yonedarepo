@@ -17,7 +17,7 @@ use crate::platform_objects::{new_tree_versions, supplied_tree};
 use crate::storage::{bad, string};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use yoneda_core::{
     Error, Result,
     git_object::{
@@ -44,8 +44,15 @@ const WAVE_ROUNDS: usize = 64;
 const MAX_DEPTH: u8 = 50;
 /// File versions larger than this are sent whole and never kept as a base.
 const MAX_DELTA_BYTES: usize = 4 * 1024 * 1024;
-/// Bytes of written versions kept as bases for versions still to come.
-const BASE_BYTES: usize = 32 * 1024 * 1024;
+/// Bytes of written versions kept as bases for versions still to come (svelte, local:
+/// 16 MiB with the oldest leaving packs as small as 32 MiB refusing new ones did).
+const BASE_BYTES: usize = 16 * 1024 * 1024;
+/// Commits and files listed to read together, across waves (at least this many, or the
+/// rest): the adapter reads a listing in bundle order, so the bundle ranges waves share are
+/// read once per listing, not once per wave. svelte, local: per wave its pack read 1,068
+/// MiB in 1,019 reads for 651 MiB; listings of 16,384 read 859 MiB in 441 (one listing,
+/// 652 MiB in 252, but its JSON grew the isolate's Wasm by 30 MiB, not 9).
+const FETCH_BATCH: usize = 16_384;
 
 /// A walked wave: its objects in order, and the version pairs (files and directories) its
 /// diffs found.
@@ -93,12 +100,20 @@ pub struct UploadSession {
     /// against.
     partners: HashMap<ObjectId, Vec<ObjectId>>,
     /// Written versions kept as bases while a partner is still to come, with their chain
-    /// depth; `base_bytes` in all.
+    /// depth; `base_bytes` in all. Past BASE_BYTES the oldest kept leave (`kept`, oldest
+    /// first, may name bases already let go): a version's next one mostly follows it
+    /// closely in the adapter's (bundle) order, so refusing new bases once full kept the
+    /// ones whose partners came last and sent the near ones whole.
     bases: HashMap<ObjectId, (Vec<u8>, u8)>,
     base_bytes: usize,
+    kept: VecDeque<ObjectId>,
     written: HashSet<ObjectId>,
     /// A file streamed through the adapter (`large_start`): its id and its content's hash.
     large: Option<(ObjectId, ObjectHasher)>,
+    /// Commits and files of the waves sent since the last listing (FETCH_BATCH), and the
+    /// file version pairs among them.
+    batch: Vec<(ObjectId, ObjectKind)>,
+    batch_pairs: Vec<(ObjectId, ObjectId)>,
 }
 
 impl UploadSession {
@@ -331,13 +346,20 @@ impl UploadSession {
             self.tree_bytes = 0;
         }
         self.add_trees(input)?;
+        // Everything listed before is written: pairs and bases begin again.
+        self.partners.clear();
+        self.bases.clear();
+        self.base_bytes = 0;
+        self.kept.clear();
         if self.wave >= self.waves() {
-            let fetch: Vec<Value> = self
+            let wanted: Vec<(ObjectId, ObjectKind)> = self
                 .wanted_blobs
                 .iter()
                 .filter(|id| self.unsent.remove(*id))
-                .map(|id| json!({ "id": id, "kind": "blob" }))
+                .map(|id| (*id, ObjectKind::Blob))
                 .collect();
+            self.batch.extend(wanted);
+            let fetch = self.list_batch();
             let tags: Vec<ObjectId> = self.tags.iter().map(|(id, _)| *id).collect();
             return Ok(json!({ "trees": [], "fetch": fetch, "tags": tags, "done": true }));
         }
@@ -346,35 +368,54 @@ impl UploadSession {
             .get_mut(self.wave)
             .map(std::mem::take)
             .ok_or_else(|| bad("The fetch has not been counted"))?;
-        let objects: Vec<(ObjectId, ObjectKind)> = objects
+        let (trees, others): (Vec<_>, Vec<_>) = objects
             .into_iter()
             .filter(|(id, _)| self.unsent.remove(id))
-            .collect();
-        // Only versions both sent in this wave pair up (no thin packs).
-        let listed: HashSet<ObjectId> = objects.iter().map(|(id, _)| *id).collect();
-        self.partners.clear();
-        self.bases.clear();
-        self.base_bytes = 0;
+            .partition(|(_, kind)| *kind == ObjectKind::Tree);
+        let trees: Vec<ObjectId> = trees.into_iter().map(|(id, _)| id).collect();
+        // Only versions both sent in this pack, and listed together, pair up (no thin
+        // packs): directories within the wave, files within the listing.
+        let listed: HashSet<ObjectId> = trees.iter().copied().collect();
         for (old, new) in pairs {
-            if old != new && listed.contains(&old) && listed.contains(&new) {
-                self.partners.entry(old).or_default().push(new);
-                self.partners.entry(new).or_default().push(old);
+            if listed.contains(&new) {
+                if old != new && listed.contains(&old) {
+                    self.pair(old, new);
+                }
+            } else {
+                self.batch_pairs.push((old, new));
             }
         }
-        let fetch: Vec<Value> = objects
-            .iter()
-            .filter(|(_, kind)| matches!(kind, ObjectKind::Commit | ObjectKind::Blob))
-            .map(|(id, kind)| json!({ "id": id, "kind": kind.name() }))
-            .collect();
-        let trees: Vec<ObjectId> = objects
-            .iter()
-            .filter(|(_, kind)| *kind == ObjectKind::Tree)
-            .map(|(id, _)| *id)
-            .collect();
+        self.batch.extend(others);
+        let fetch = if self.batch.len() >= FETCH_BATCH {
+            self.list_batch()
+        } else {
+            Vec::new()
+        };
         // The adapter writes this wave's trees before asking for the next.
         self.wave += 1;
         self.rounds = 0;
         Ok(json!({ "trees": trees, "fetch": fetch, "done": false }))
+    }
+
+    fn pair(&mut self, old: ObjectId, new: ObjectId) {
+        self.partners.entry(old).or_default().push(new);
+        self.partners.entry(new).or_default().push(old);
+    }
+
+    /// The commits and files gathered since the last listing, for the adapter to read, with
+    /// their versions paired.
+    fn list_batch(&mut self) -> Vec<Value> {
+        let batch = std::mem::take(&mut self.batch);
+        let listed: HashSet<ObjectId> = batch.iter().map(|(id, _)| *id).collect();
+        for (old, new) in std::mem::take(&mut self.batch_pairs) {
+            if old != new && listed.contains(&old) && listed.contains(&new) {
+                self.pair(old, new);
+            }
+        }
+        batch
+            .iter()
+            .map(|(id, kind)| json!({ "id": id, "kind": kind.name() }))
+            .collect()
     }
 
     /// The pack header (after a final `step`).
@@ -478,11 +519,30 @@ impl UploadSession {
         };
         self.wrote(id, &partners);
         let awaited = partners.iter().any(|p| !self.written.contains(p));
-        if awaited && data.len() <= MAX_DELTA_BYTES && self.base_bytes + data.len() <= BASE_BYTES {
-            self.base_bytes += data.len();
-            self.bases.insert(id, (data.to_vec(), depth));
+        if awaited && data.len() <= MAX_DELTA_BYTES {
+            self.keep_base(id, data, depth);
         }
         Ok(entry)
+    }
+
+    /// Keeps `data` as a base, letting the oldest kept go while they exceed BASE_BYTES.
+    fn keep_base(&mut self, id: ObjectId, data: &[u8], depth: u8) {
+        while self.base_bytes + data.len() > BASE_BYTES {
+            let Some(oldest) = self.kept.pop_front() else {
+                return;
+            };
+            if let Some((bytes, _)) = self.bases.remove(&oldest) {
+                self.base_bytes -= bytes.len();
+            }
+        }
+        self.base_bytes += data.len();
+        self.bases.insert(id, (data.to_vec(), depth));
+        self.kept.push_back(id);
+        // Ids of bases let go since stay listed; drop them once they are most of it.
+        if self.kept.len() > 4 * self.bases.len() + 1024 {
+            let bases = &self.bases;
+            self.kept.retain(|k| bases.contains_key(k));
+        }
     }
 
     /// Records `id` written and lets go of partners' bases no version still needs.
@@ -537,7 +597,8 @@ mod tests {
                     "omit_blobs": omit, "objects": objects })
         };
         let trees = json!({ "trees": [{ "id": tree, "data_b64": STANDARD.encode(&data) }] });
-        // The count, then the one wave's listing (trees kept from counting: no reads).
+        // The count, then the one wave's trees (kept from counting: no reads) and, with the
+        // last listing, its commit and files.
         let listed = |walk: Value| {
             let mut session = UploadSession::new(&walk).unwrap();
             assert_eq!(
@@ -546,13 +607,14 @@ mod tests {
             );
             let count = session.step(&trees).unwrap()["count"].clone();
             let wave = session.send(&json!({})).unwrap();
-            assert_eq!(session.send(&json!({})).unwrap()["done"], true);
-            (count, wave)
+            let last = session.send(&json!({})).unwrap();
+            assert_eq!(last["done"], true);
+            (count, wave, last)
         };
-        let (count, full) = listed(walk(false, json!([])));
+        let (count, full, _) = listed(walk(false, json!([])));
         assert_eq!(count, 4);
         assert_eq!(full["trees"], json!([tree]));
-        let (count, partial) = listed(walk(true, json!([])));
+        let (count, _, partial) = listed(walk(true, json!([])));
         assert_eq!(count, 2);
         assert_eq!(
             partial["fetch"],
@@ -689,6 +751,7 @@ mod tests {
             session.step(&json!({ "trees": supplied })).unwrap()["count"],
             9
         );
+        session.send(&json!({})).unwrap();
         assert_eq!(
             session.send(&json!({})).unwrap()["fetch"]
                 .as_array()
@@ -798,6 +861,21 @@ mod tests {
             assert_eq!(*reader.content(id).unwrap(), raw[id]);
         }
     }
+
+    #[test]
+    fn the_oldest_base_leaves_for_a_new_one_past_the_budget() {
+        let mut session = UploadSession::default();
+        let third = BASE_BYTES / 3 + 1;
+        let ids: Vec<ObjectId> = (0..3)
+            .map(|n| hash_object(ObjectKind::Blob, format!("{n}").as_bytes()))
+            .collect();
+        for id in &ids {
+            session.keep_base(*id, &vec![0; third], 0);
+        }
+        assert!(!session.bases.contains_key(&ids[0]));
+        assert!(session.bases.contains_key(&ids[1]) && session.bases.contains_key(&ids[2]));
+        assert_eq!(session.base_bytes, 2 * third);
+    }
 }
 
 #[cfg(test)]
@@ -843,7 +921,7 @@ mod wave_tests {
         walk: &Value,
         trees: &HashMap<ObjectId, Vec<u8>>,
         drop: bool,
-    ) -> (usize, Vec<String>, usize) {
+    ) -> (usize, Vec<String>, usize, Vec<usize>) {
         let supply = |need: &Value| {
             let listed: Vec<Value> = need
                 .as_array()
@@ -867,6 +945,7 @@ mod wave_tests {
         }
         let count = step["count"].as_u64().unwrap() as usize;
         let mut listed = Vec::new();
+        let mut fetches = Vec::new();
         loop {
             let mut wave = session.send(&json!({})).unwrap();
             while let Some(need) = wave.get("need_trees") {
@@ -876,21 +955,25 @@ mod wave_tests {
             for t in wave["trees"].as_array().unwrap() {
                 listed.push(t.as_str().unwrap().to_owned());
             }
-            for f in wave["fetch"].as_array().unwrap() {
+            let fetch = wave["fetch"].as_array().unwrap();
+            if !fetch.is_empty() {
+                fetches.push(fetch.len());
+            }
+            for f in fetch {
                 listed.push(f["id"].as_str().unwrap().to_owned());
             }
             if wave["done"] == true {
                 break;
             }
         }
-        (count, listed, supplied)
+        (count, listed, supplied, fetches)
     }
 
     #[test]
     fn waves_list_every_object_once_and_count_it_first() {
         let commits = WAVE_COMMITS * 3 + 7;
         let (walk, trees) = history(commits);
-        let (count, listed, supplied) = run(&walk, &trees, false);
+        let (count, listed, supplied, fetches) = run(&walk, &trees, false);
         // Each commit: itself, a root and a directory tree, one new file; and the empty
         // file the first commit's other seven start as.
         assert_eq!(count, commits * 4 + 1);
@@ -902,9 +985,11 @@ mod wave_tests {
         );
         // Small enough to keep every tree: each read once.
         assert_eq!(supplied, commits * 2);
+        // The commits and files of all four waves come in one listing (under FETCH_BATCH).
+        assert_eq!(fetches, vec![commits * 2 + 1]);
         // Trees let go wave by wave: the same pack, each tree read about twice (once per
         // pass) plus each wave's first base again.
-        let (dropped, relisted, reread) = run(&walk, &trees, true);
+        let (dropped, relisted, reread, _) = run(&walk, &trees, true);
         assert_eq!((dropped, relisted), (count, listed));
         let waves = commits.div_ceil(WAVE_COMMITS);
         assert!(reread <= 2 * (commits * 2 + waves * 2), "{reread}");
