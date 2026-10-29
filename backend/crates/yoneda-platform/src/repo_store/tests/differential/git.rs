@@ -84,25 +84,23 @@ pub(super) fn check(driver: &Driver) -> Checked {
     same_merge_bases(driver, dir)
 }
 
-/// `git rev-list --parents` from `name` is the model's ancestry of `tip`, parents included.
+/// `git rev-list --parents` from `name` lists the model's ancestors of `tip`, each with
+/// its parents in order (as a set: the walk order is Git's).
 fn same_history(driver: &Driver, dir: &Path, name: &str, tip: usize) -> Checked {
     let listed = text(git(dir, &["rev-list", "--parents", name], b"")?);
-    let model: Vec<String> = driver
+    let model: BTreeSet<String> = driver
         .model
-        .ancestry(tip)
+        .ancestors(tip)
         .into_iter()
         .map(|id| {
-            let parent = driver.model.commits[id]
-                .parent
-                .map(|p| driver.ids[p].clone());
-            [Some(driver.ids[id].clone()), parent]
-                .into_iter()
-                .flatten()
+            std::iter::once(id)
+                .chain(driver.model.commits[id].parents.iter().copied())
+                .map(|c| driver.ids[c].as_str())
                 .collect::<Vec<_>>()
                 .join(" ")
         })
         .collect();
-    let lines: Vec<&str> = listed.lines().collect();
+    let lines: BTreeSet<String> = listed.lines().map(str::to_owned).collect();
     if lines != model {
         return Err(format!("history of {name}: git {lines:?}, model {model:?}"));
     }
