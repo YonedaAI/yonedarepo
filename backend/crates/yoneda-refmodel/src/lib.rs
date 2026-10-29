@@ -9,7 +9,8 @@
 //! The rules modelled (from the platform's documented contracts):
 //! - Every ref move (landing, branch set or delete, tag creation) appends one log entry and
 //!   advances the version by one; a no-op (`already`) and a refusal advance nothing.
-//! - Main is protected: it moves only by landing. Tags are created once and never move.
+//! - Main is protected: it moves only by landing. Tags (lightweight, or annotated with a
+//!   tag object) are created once and never move.
 //! - A landing whose target head is the commit's parent or an ancestor of it fast-forwards.
 //!   Otherwise optimistic concurrency decides against main's entries after the commit's base
 //!   version: one writing a path the commit read is a conflict; none is a stale parent;
@@ -98,6 +99,8 @@ pub enum Op {
     Tag {
         name: String,
         at: String,
+        /// With a message, an annotated tag (a tag object the platform builds).
+        message: Option<String>,
     },
     /// Lands `branch`'s tip on main.
     Land {
@@ -204,6 +207,8 @@ pub struct Repo {
     pub tickets: Vec<Ticket>,
     /// Repository tokens by name, revoked ones included (names are never reused).
     pub tokens: BTreeMap<String, Token>,
+    /// Annotated tags' messages, by tag ref.
+    pub annotated: BTreeMap<String, String>,
 }
 
 impl Repo {
@@ -232,6 +237,7 @@ impl Repo {
             members: BTreeMap::new(),
             tickets: Vec::new(),
             tokens: BTreeMap::new(),
+            annotated: BTreeMap::new(),
         }
     }
 
@@ -264,8 +270,8 @@ impl Repo {
                 None => (Outcome::Refused("NOT_FOUND"), None),
             },
             Op::DeleteBranch { name, expected } => (self.delete(name, self.tip(expected)), None),
-            Op::Tag { name, at } => match self.tip(at) {
-                Some(target) => (self.tag(name, target), None),
+            Op::Tag { name, at, message } => match self.tip(at) {
+                Some(target) => (self.tag(name, target, message.as_deref()), None),
                 None => (Outcome::Refused("NOT_FOUND"), None),
             },
             Op::Land { branch } => match self.tip(branch) {
@@ -344,12 +350,22 @@ impl Repo {
         }
     }
 
-    fn tag(&mut self, name: &str, target: CommitId) -> Outcome {
+    /// A tag is created once. Asking again for the same lightweight tag is a no-op; any
+    /// other second request is refused, an annotated one too (its tag object, tagged
+    /// later, is a different object).
+    fn tag(&mut self, name: &str, target: CommitId, message: Option<&str>) -> Outcome {
         match self.tip(name) {
-            Some(current) if current == target => Outcome::Already,
+            Some(current)
+                if current == target && message.is_none() && !self.annotated.contains_key(name) =>
+            {
+                Outcome::Already
+            }
             Some(_) => Outcome::Refused("ALREADY_EXISTS"),
             None => {
                 self.move_ref(name, Some(target), BTreeSet::new(), false);
+                if let Some(text) = message {
+                    self.annotated.insert(name.to_owned(), text.to_owned());
+                }
                 Outcome::Moved
             }
         }

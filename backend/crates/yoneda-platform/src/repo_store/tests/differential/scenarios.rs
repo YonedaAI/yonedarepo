@@ -279,3 +279,31 @@ fn tokens_act_within_their_scopes_and_grants() {
         ],
     );
 }
+
+fn tag(name: &str, message: Option<&str>) -> Op {
+    Op::Tag {
+        name: name.into(),
+        at: MAIN.into(),
+        message: message.map(str::to_owned),
+    }
+}
+
+#[test]
+fn tags_are_created_once_annotated_or_not() {
+    let script = [
+        tag("refs/tags/v1", Some("First release")),
+        // A second annotated request is a new tag object: refused, as is a lightweight one.
+        tag("refs/tags/v1", Some("First release")),
+        tag("refs/tags/v1", None),
+        tag("refs/tags/v2", None),
+        tag("refs/tags/v2", None),
+        tag("refs/tags/v2", Some("Too late")),
+        put(MAIN, "a.txt", "moved on", false),
+        tag("refs/tags/v1", Some("Elsewhere")),
+    ];
+    run_reaching(
+        "tags",
+        &script,
+        &["Tag Moved", "Tag Already", "Tag ALREADY_EXISTS"],
+    );
+}

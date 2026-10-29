@@ -171,6 +171,7 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
         50..55 => Op::Tag {
             name: rng.pick(&TAGS).to_string(),
             at: any_ref(rng),
+            message: (rng.below(2) == 0).then(|| format!("Release at step {step}")),
         },
         55..65 => Op::Land {
             branch: working(rng),
