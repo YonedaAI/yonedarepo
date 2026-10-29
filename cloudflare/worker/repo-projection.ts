@@ -92,7 +92,7 @@ async function storeAhead(call: (c: Json) => Promise<Json>, objects: RepoObjects
     ? await carryFiles(objects, commits[0])
     : { carriers: [] as string[], carried: new Set<string>() };
   const own = (c: Json) => (c.objects as Json[]).filter((o) => !carried.has(o.id));
-  const raw = await objects.raw(commits.flatMap(own) as Wanted[]);
+  const raw = await objects.raw(commits.flatMap(own) as Wanted[], owners(commits));
   const byId = new Map(raw.map((o) => [o.id, o]));
   const bodies = commits.map((c) => {
     const read = own(c).map((o) => byId.get(o.id));
@@ -135,7 +135,7 @@ async function carryFiles(objects: RepoObjects, commit: Json) {
   };
   for (let i = 0; i < files.length; i += CARRIER_READS) {
     const wave = files.slice(i, i + CARRIER_READS);
-    const raw = await objects.raw(wave);
+    const raw = await objects.raw(wave, owners([commit]));
     if (raw.length < new Set(wave.map((o) => o.id)).size)
       throw new Error(`Objects of ${commit.commit} are not readable`);
     for (const object of raw) {
@@ -157,6 +157,12 @@ async function dropCarriers(objects: RepoObjects, carriers: string[]) {
     .push(fromBase64(combine(bodies)))
     .catch((e) => console.warn(`carrier refs not deleted: ${e?.message ?? e}`));
 }
+
+/** The commit each planned object came with: a staged one is in that commit's shard. */
+const owners = (commits: Json[]) =>
+  new Map<string, string>(
+    commits.flatMap((c) => (c.objects as Json[]).map((o) => [o.id, c.commit] as [string, string])),
+  );
 
 /** Commits from the front of `commits` holding at least `limit` objects. */
 function front(commits: Json[], limit: number) {
@@ -198,7 +204,7 @@ export async function projectRefs(env: Env, envelope: Envelope, attempt = REFUSE
       commits = commits.slice(n);
     }
     const wanted = commits.flatMap((c) => c.objects);
-    const raw = await objects.raw(wanted);
+    const raw = await objects.raw(wanted, owners(commits));
     // `raw` answers each object once; commits may share one (a batch's tree is its change's).
     if (raw.length < new Set(wanted.map((o) => o.id)).size)
       throw new Error(`Objects for ${row.refname} are not readable`);

@@ -8,7 +8,8 @@ import { type Location, platformCall, readBundled, readKnown, SMALL_RANGE } from
 import { cachedCopy, edgePut } from './repo-cache-tiers';
 import { compute } from './repo-compute';
 import { Inherited } from './repo-inherit';
-import { stagedInShardOf, stagedInShards } from './repo-shards';
+import { SharedShardAsk, stagedInShards, stagedWithCommits } from './repo-shard-reads';
+import { stagedInShardOf } from './repo-shards';
 import {
   type CachedObject,
   fromBase64,
@@ -67,6 +68,8 @@ const inFlight = new Map<string, Promise<Walked>>();
  */
 export class RepoObjects {
   readonly hits: TierHits = { edge: 0, r2: 0, store: 0 };
+  /** This request's shared asks of every commit shard (`walk`'s last resort). */
+  #shards?: SharedShardAsk;
   /** A fork's parent objects (repo-inherit), asked when this repository's tiers miss. */
   readonly inherited?: Inherited;
   constructor(
@@ -199,11 +202,9 @@ export class RepoObjects {
     // Commit shards last: finding a staged object there means asking every shard, and
     // imported objects (in Artifacts only) must not pay that on each first read.
     if (!object) {
-      object = ofKind(
-        (
-          await timed('read.shards', () => stagedInShards(this.env, this.repo, [id]))
-        )[0] as CachedObject,
-      );
+      this.#shards ??= new SharedShardAsk(this.env, this.repo);
+      const shards = this.#shards;
+      object = ofKind(await timed('read.shards', () => shards.get(id)));
       object ??= await timed('read.raw', () => this.recorded(id, kind));
     }
     if (!object) throw missing(`${kind[0].toUpperCase()}${kind.slice(1)} ${id}`);
@@ -249,11 +250,15 @@ export class RepoObjects {
   /**
    * Raw content of objects for a pack, once per id: the store of record (R2: bundles where
    * the repository holds any, then one object per key), a fork's parent's store of record,
-   * then the authority's staged copy or bundle location for objects still missing, and a
-   * fork's parent's every tier last. Missing ones are left out. Bundled bytes come in
-   * ranges of `SMALL_RANGE`: callers hold every result at once.
+   * then the authority's staged copy or bundle location for objects still missing, the
+   * commit shards (once for all; `owners` names the commit an object was staged with, so
+   * only its shard is asked), and a fork's parent's every tier last. Missing ones are left
+   * out. Bundled bytes come in ranges of `SMALL_RANGE`: callers hold every result at once.
    */
-  async raw(asked: { id: string; kind: string }[]): Promise<RawObject[]> {
+  async raw(
+    asked: { id: string; kind: string }[],
+    owners?: Map<string, string>,
+  ): Promise<RawObject[]> {
     const wanted = [...new Map(asked.map((w) => [w.id, w])).values()];
     const found = new Map((await this.stored(wanted)).map((o) => [o.id, o]));
     const add = (w: { id: string; kind: string }, data: Uint8Array) =>
@@ -271,12 +276,16 @@ export class RepoObjects {
       for (const o of answer.objects as RawObject[]) found.set(o.id, o);
       const located = await readKnown(this.env, this.repo, chunk, answer.located, SMALL_RANGE);
       for (const w of chunk) if (located.has(w.id)) add(w, located.get(w.id) as Uint8Array);
-      const ids = missing(chunk).map((w) => w.id);
-      for (const o of (await stagedInShards(this.env, this.repo, ids, true)) as RawObject[])
-        found.set(o.id, o);
-      // A staged copy is dropped only after its R2 write: look in R2 once more.
-      for (const o of await this.stored(missing(chunk))) found.set(o.id, o);
     }
+    // Commit shards once for all still missing: their commits' shards when the caller
+    // names them (`owners`: id → commit), else every shard.
+    const ids = missing(absent).map((w) => w.id);
+    const sharded = owners
+      ? await stagedWithCommits(this.env, this.repo, ids, owners, true)
+      : await stagedInShards(this.env, this.repo, ids, true);
+    for (const o of sharded as RawObject[]) found.set(o.id, o);
+    // A staged copy is dropped only after its R2 write: look in R2 once more.
+    for (const o of await this.stored(missing(absent))) found.set(o.id, o);
     for (const o of (await this.inherited?.raw(missing(wanted), true)) ?? []) found.set(o.id, o);
     return [...found.values()];
   }
