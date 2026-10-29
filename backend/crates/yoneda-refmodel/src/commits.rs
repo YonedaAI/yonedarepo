@@ -53,6 +53,11 @@ impl Repo {
         };
         let (before, after) = (&self.commits[parent].tree, &self.commits[source].tree);
         let changed = Self::changed(before, after);
+        // A commit that changed nothing (a merge that brought nothing new) gives a revert no
+        // change to commit; the platform refuses an empty change list.
+        if changed.is_empty() {
+            return Outcome::Refused("INVALID_INPUT");
+        }
         let mut tree = self.commits[tip].tree.clone();
         if changed.iter().any(|path| tree.get(path) != after.get(path)) {
             return Outcome::Refused("CONFLICT");

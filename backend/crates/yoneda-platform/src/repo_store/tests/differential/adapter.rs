@@ -1,9 +1,9 @@
 //! The adapter's side of each operation, played as `cloudflare/worker` plays it: commits
 //! on a branch's tip, reverts through `replay_changes`, platform merge commits through
 //! `merge_trees` and `repo_land` with `merge`, and rebases through `repo_rebase_plan`.
-use super::{Driver, Seen, answer, leak};
+use super::{Driver, Seen, answer, done, leak};
 use crate::repo_store::tests::*;
-use yoneda_refmodel::{MAIN, Plan};
+use yoneda_refmodel::{Access, Caller, MAIN, Plan};
 
 const MERGER: &str = "platform:merge";
 
@@ -181,5 +181,48 @@ impl Driver {
             Seen::Moved => Seen::Rebased(made),
             other => other,
         }
+    }
+
+    /// Runs `command` with `caller`'s credentials, as the adapter forwards them.
+    pub(super) fn as_caller(
+        &self,
+        caller: &Caller,
+        mut command: Value,
+    ) -> yoneda_core::Result<Value> {
+        *self.h.now.borrow_mut() += 1_000;
+        command["now"] = json!(*self.h.now.borrow());
+        match caller {
+            Caller::Owner => command["_session"] = json!({"workspace": "ws-1", "principal": OWNER}),
+            Caller::Anonymous => command["_anonymous"] = json!(true),
+            Caller::Account(name) => {
+                command["_session"] =
+                    json!({"workspace": name, "principal": format!("user:{name}"), "human": true})
+            }
+        }
+        execute_repo_store(&self.h.db, command)
+    }
+
+    /// `caller` tries `access`; a reader allowed the refs sees the model's.
+    pub(super) fn probe(&self, caller: &Caller, access: Access) -> Seen {
+        let command = match access {
+            Access::Status => json!({"op":"repo_status"}),
+            Access::Refs => json!({"op":"repo_refs"}),
+            Access::Log => json!({"op":"repo_log","ref":"main","limit":5}),
+            Access::Fetch => json!({"op":"repo_git_access","service":"git-upload-pack"}),
+            Access::Push => json!({"op":"repo_git_access","service":"git-receive-pack"}),
+        };
+        let answered = self.as_caller(caller, command);
+        if let Ok(listed) = &answered
+            && access == Access::Refs
+        {
+            let model = &self.model.refs;
+            let seen = listed["refs"].as_object().map_or(0, |refs| {
+                refs.keys().filter(|name| model.contains_key(*name)).count()
+            });
+            if seen != model.len() {
+                return Seen::Refused(format!("REFS_MISMATCH {listed}"));
+            }
+        }
+        done(answered)
     }
 }

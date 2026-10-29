@@ -8,7 +8,7 @@ use super::batches::open;
 use super::*;
 use std::collections::BTreeMap;
 use yoneda_core::git_object::ObjectId;
-use yoneda_refmodel::{CommitId, MAIN, Op, Outcome, Plan, Repo, Rng, Tree, generate};
+use yoneda_refmodel::{CommitId, MAIN, Op, Outcome, Plan, Repo, Rng, Role, Tree, generate};
 
 mod adapter;
 mod git;
@@ -20,6 +20,7 @@ enum Seen {
     Rebased(Vec<String>),
     Moved,
     Already,
+    Done,
     Refused(String),
 }
 
@@ -127,6 +128,20 @@ impl Driver {
                 (self.merge_land(&commit), Some(plan))
             }
             Op::Rebase { branch } => (self.rebase(branch), None),
+            Op::Probe { caller, access } => (self.probe(caller, *access), None),
+            Op::SetVisibility { caller, public } => {
+                let visibility = if *public { "public" } else { "private" };
+                let set = json!({"op":"repo_set_visibility","visibility":visibility});
+                (done(self.as_caller(caller, set)), None)
+            }
+            Op::Member { account, role } => {
+                let command = match role {
+                    Some(role) => json!({"op":"repo_member_put","account":account,
+                        "role":if *role == Role::Read { "read" } else { "write" }}),
+                    None => json!({"op":"repo_member_remove","account":account}),
+                };
+                (done(self.h.run(OWNER, command)), None)
+            }
         }
     }
 
@@ -157,7 +172,9 @@ impl Driver {
                     self.same_files(*id)?;
                 }
             }
-            (Seen::Moved, Outcome::Moved) | (Seen::Already, Outcome::Already) => {}
+            (Seen::Moved, Outcome::Moved)
+            | (Seen::Already, Outcome::Already)
+            | (Seen::Done, Outcome::Done) => {}
             (Seen::Refused(code), Outcome::Refused(model)) if code == model => {}
             _ => return Err(format!("outcome: platform {seen:?}, model {expected:?}")),
         }
@@ -249,6 +266,14 @@ fn answer(result: yoneda_core::Result<Value>) -> Seen {
     }
 }
 
+/// An answer that moves no ref: done, or refused.
+fn done(result: yoneda_core::Result<Value>) -> Seen {
+    match result {
+        Err(e) => Seen::Refused(e.code),
+        Ok(_) => Seen::Done,
+    }
+}
+
 /// A plan kind as the model's static names (the platform's set is small and fixed).
 fn leak(kind: &str) -> &'static str {
     ["fast_forward", "stale", "rebase", "merge", "conflict"]
@@ -313,6 +338,14 @@ fn the_platform_matches_the_reference_model() {
             "Rebase Rebased",
             "Rebase Already",
             "Rebase CONFLICT",
+            "Probe Done",
+            "Probe NOT_FOUND",
+            "Probe UNAUTHORIZED",
+            "Probe FORBIDDEN",
+            "SetVisibility Done",
+            "SetVisibility FORBIDDEN",
+            "Member Done",
+            "Member NOT_FOUND",
         ] {
             assert!(tally.contains_key(label), "no {label} in {tally:?}");
         }
