@@ -58,6 +58,7 @@ mod land_tickets;
 mod lfs;
 mod maintenance;
 pub(crate) mod members;
+mod memory;
 mod merging;
 pub(crate) mod migration;
 pub(crate) mod op;

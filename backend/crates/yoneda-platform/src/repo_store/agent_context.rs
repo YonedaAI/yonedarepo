@@ -1,9 +1,10 @@
 //! `repo_agent_context`: what a coding agent starting a session in a clone should know
 //! about the repository, in one read of the authority: the heads of main and of the
 //! agent's branch, the landing rules, the newest session records (what earlier sessions
-//! did, newest first), the open change requests, and the authored symbol contracts on the
-//! paths the agent is working on (then the newest others). Every list is bounded; the
-//! client renders and caps the text it hands the agent.
+//! did, newest first), the open change requests, the authored symbol contracts on the
+//! paths the agent is working on (then the newest others), and the repository's current
+//! memories ranked for those paths (`memory::relevance`, the newest others filling the
+//! rest). Every list is bounded; the client renders and caps the text it hands the agent.
 use super::auth::Actor;
 use super::rows::{self, Settings};
 use super::{agent_reads, changes, sessions};
@@ -15,6 +16,7 @@ const MAX_PATHS: usize = 100;
 const MAX_CONTRACTS: u64 = 10;
 const MAX_CHANGES: u64 = 20;
 const MAX_SESSIONS: u64 = 50;
+const MAX_MEMORIES: u64 = 20;
 
 fn count(c: &Value, key: &str, default: u64, max: u64) -> Result<u64> {
     match &c[key] {
@@ -62,7 +64,7 @@ fn contracts<S: SqlStore>(db: &S, paths: &[String], limit: u64) -> Result<Vec<Va
         .collect()
 }
 
-/// `repo_agent_context {branch?, paths?, sessions?, changes?, contracts?}`.
+/// `repo_agent_context {branch?, paths?, sessions?, changes?, contracts?, memories?}`.
 pub fn context<S: SqlStore>(
     db: &S,
     c: &Value,
@@ -111,5 +113,7 @@ pub fn context<S: SqlStore>(
         "sessions": recent["sessions"],
         "changes": open["changes"],
         "contracts": contracts(db, &paths, count(c, "contracts", 5, MAX_CONTRACTS)?)?,
+        "memories": super::memory::relevance::for_start(
+            db, &paths, count(c, "memories", 8, MAX_MEMORIES)?)?,
     }))
 }
