@@ -1,5 +1,6 @@
 //! Seeded random operation sequences: every case is reproducible from its seed.
-use crate::{Access, Caller, MAIN, Op, Repo, Role};
+use crate::{Access, Caller, MAIN, Op, Repo, Role, Scope};
+use std::collections::BTreeSet;
 
 /// SplitMix64: small, fast and good enough to drive test cases deterministically.
 pub struct Rng(u64);
@@ -45,6 +46,50 @@ fn caller(rng: &mut Rng) -> Caller {
         0 => Caller::Owner,
         1 => Caller::Anonymous,
         _ => Caller::Account(rng.pick(&ACCOUNTS).to_string()),
+    }
+}
+
+/// Token names the generator mints, revokes and uses (one may never be minted).
+const TOKENS: [&str; 3] = ["t1", "t2", "t3"];
+/// Grant entries: a directory and single files.
+const GRANTS: [&str; 3] = ["src/", "a.txt", "README.md"];
+
+/// A token operation: mostly commits and reads, sometimes minting or revoking.
+fn token_op(rng: &mut Rng, step: usize, existing: &[&str]) -> Op {
+    let token = rng.pick(&TOKENS).to_string();
+    let path = rng.pick(&PATHS).to_string();
+    match rng.below(20) {
+        0..8 => Op::TokenCommit {
+            token,
+            branch: rng.pick(existing).to_string(),
+            content: Some(format!("{path} by token at step {step}\n")),
+            path,
+        },
+        8..12 => Op::TokenRead { token, path },
+        12..18 => {
+            let mut scopes = BTreeSet::new();
+            for scope in [Scope::Read, Scope::Write, Scope::Land] {
+                if rng.below(2) == 0 {
+                    scopes.insert(scope);
+                }
+            }
+            if scopes.is_empty() {
+                scopes.insert(Scope::Read);
+            }
+            let grant = (rng.below(2) == 0).then(|| {
+                let mut entries = vec![rng.pick(&GRANTS).to_string()];
+                if rng.below(2) == 0 {
+                    entries.push(rng.pick(&GRANTS).to_string());
+                }
+                entries
+            });
+            Op::MintToken {
+                name: token,
+                scopes,
+                grant,
+            }
+        }
+        _ => Op::RevokeToken { name: token },
     }
 }
 
@@ -140,7 +185,7 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
             branch: working(rng),
         },
         86..90 => Op::RunQueue,
-        90..96 => Op::Probe {
+        90..93 => Op::Probe {
             caller: caller(rng),
             access: *rng.pick(&[
                 Access::Status,
@@ -150,6 +195,7 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
                 Access::Push,
             ]),
         },
+        93..96 => token_op(rng, step, &existing),
         96..98 => Op::SetVisibility {
             caller: if rng.below(2) == 0 {
                 Caller::Owner
