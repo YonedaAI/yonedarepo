@@ -1,4 +1,4 @@
-// A yoneda:: full clone next to the same smart-HTTP clone, locally: `wrangler dev` serves the
+// yoneda:: clones (lazy, the default, and full) next to the same smart-HTTP clone, locally: `wrangler dev` serves the
 // platform Worker (tests/ssh/wrangler.jsonc), the history of a pure source repository (an
 // open-source clone given by --source; never this codebase) is pushed over HTTPS, then each
 // clone runs --runs times. For the yoneda:: clone it counts the platform requests by kind
@@ -80,61 +80,64 @@ try {
   };
   const pushMs = timed(['-C', resolve(values.source), 'push', '-q', `${origin}/git/${repo}.git`, `${branch}:refs/heads/main`], git);
   const https = [];
-  const helper = [];
-  const requests = [];
+  // A yoneda:: clone is lazy by default (commits and trees; blobs as checkout needs them);
+  // `-c yoneda.lazy=false` makes it a full one.
+  const modes = { lazy: [], full: [] };
+  const requests = { lazy: [], full: [] };
   for (let run = 0; run < runs; run++) {
     https.push(timed(['clone', '-q', `${origin}/git/${repo}.git`, join(dir, `https-${run}`)], git));
-    // The helper talks to the platform through a counting proxy: every request it makes,
-    // with its time and answer size, measured from the client's side.
-    const seen = [];
-    const proxy = createHttpServer(async (req, res) => {
+    for (const mode of Object.keys(modes)) {
+      // The helper talks to the platform through a counting proxy: every request it makes,
+      // with its time and answer size, measured from the client's side.
+      const seen = [];
+      const proxy = createHttpServer(async (req, res) => {
+        const started = performance.now();
+        const chunks = [];
+        for await (const chunk of req) chunks.push(chunk);
+        const headers = Object.fromEntries(Object.entries(req.headers).filter(([k]) => !['host', 'connection', 'content-length', 'transfer-encoding'].includes(k)));
+        try {
+          const upstream = await fetch(`${origin}${req.url}`, { method: req.method, headers, body: chunks.length ? Buffer.concat(chunks) : undefined });
+          const body = Buffer.from(await upstream.arrayBuffer());
+          const back = {};
+          upstream.headers.forEach((v, k) => {
+            if (!['content-encoding', 'content-length', 'transfer-encoding', 'connection'].includes(k)) back[k] = v;
+          });
+          res.writeHead(upstream.status, back);
+          res.end(body);
+          seen.push({ key: `${req.method} ${req.url.replace(/r[0-9a-f]{20}/, '<repo>').replace(/[0-9a-f]{40}/, '<id>').replace(/\?.*$/, '')}`, ms: performance.now() - started, bytes: body.length });
+        } catch {
+          res.writeHead(502).end();
+        }
+      });
+      await new Promise((done) => proxy.listen(0, '127.0.0.1', done));
+      const via = `http://127.0.0.1:${proxy.address().port}`;
+      const target = join(dir, `${mode}-${run}`);
+      // Asynchronously: a synchronous clone would block the proxy in this process.
       const started = performance.now();
-      const chunks = [];
-      for await (const chunk of req) chunks.push(chunk);
-      const headers = Object.fromEntries(Object.entries(req.headers).filter(([k]) => !['host', 'connection', 'content-length', 'transfer-encoding'].includes(k)));
-      try {
-        const upstream = await fetch(`${origin}${req.url}`, { method: req.method, headers, body: chunks.length ? Buffer.concat(chunks) : undefined });
-        const body = Buffer.from(await upstream.arrayBuffer());
-        const back = {};
-        upstream.headers.forEach((v, k) => {
-          if (!['content-encoding', 'content-length', 'transfer-encoding', 'connection'].includes(k)) back[k] = v;
-        });
-        res.writeHead(upstream.status, back);
-        res.end(body);
-        seen.push({ key: `${req.method} ${req.url.replace(/r[0-9a-f]{20}/, '<repo>').replace(/[0-9a-f]{40}/, '<id>').replace(/\?.*$/, '')}`, ms: performance.now() - started, bytes: body.length });
-      } catch {
-        res.writeHead(502).end();
+      const config = mode === 'full' ? ['-c', 'yoneda.lazy=false'] : [];
+      await execFileAsync('git', ['clone', '-q', ...config, `yoneda::${via}/${repo}`, target], { env: { ...git, PATH: `${bin}:${process.env.PATH}`, YONEDA_TOKEN: token, XDG_CONFIG_HOME: join(dir, 'config') }, maxBuffer: 1 << 26 });
+      modes[mode].push(Math.round(performance.now() - started));
+      await new Promise((done) => proxy.close(done));
+      const kinds = {};
+      for (const { key, ms, bytes } of seen) {
+        kinds[key] ??= { count: 0, ms: 0, mib: 0 };
+        kinds[key].count++;
+        kinds[key].ms += Math.round(ms);
+        kinds[key].mib = Number((kinds[key].mib + bytes / 1048576).toFixed(1));
       }
-    });
-    await new Promise((done) => proxy.listen(0, '127.0.0.1', done));
-    const via = `http://127.0.0.1:${proxy.address().port}`;
-    // Asynchronously: a synchronous clone would block the proxy in this process.
-    const started = performance.now();
-    await execFileAsync('git', ['clone', '-q', `yoneda::${via}/${repo}`, join(dir, `helper-${run}`)], { env: { ...git, PATH: `${bin}:${process.env.PATH}`, YONEDA_TOKEN: token, XDG_CONFIG_HOME: join(dir, 'config') }, maxBuffer: 1 << 26 });
-    helper.push(Math.round(performance.now() - started));
-    await new Promise((done) => proxy.close(done));
-    const kinds = {};
-    for (const { key, ms, bytes } of seen) {
-      kinds[key] ??= { count: 0, ms: 0, mib: 0 };
-      kinds[key].count++;
-      kinds[key].ms += Math.round(ms);
-      kinds[key].mib = Number((kinds[key].mib + bytes / 1048576).toFixed(1));
+      const pages = seen.filter((r) => r.key.endsWith('/objects'));
+      // Small pages are the commit and tree walk's rounds; large ones carry blobs.
+      const bucket = (lo, hi) => {
+        const list = pages.filter((p) => p.bytes >= lo && p.bytes < hi);
+        return { count: list.length, ms: Math.round(list.reduce((a, p) => a + p.ms, 0)), mib: Number((list.reduce((a, p) => a + p.bytes, 0) / 1048576).toFixed(1)) };
+      };
+      requests[mode].push({ kinds, pages_by_size: { under_64k: bucket(0, 65536), under_1m: bucket(65536, 1 << 20), over_1m: bucket(1 << 20, Infinity) } });
+      const heads = [join(dir, `https-${run}`), target].map((d) => execFileSync('git', ['-C', d, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim());
+      if (heads[0] !== heads[1]) throw new Error(`the ${mode} clone is at ${heads[1]}, not ${heads[0]}`);
     }
-    const pages = seen.filter((r) => r.key.endsWith('/objects'));
-    // Small pages are the commit and tree walk's rounds; large ones carry blobs.
-    const bucket = (lo, hi) => {
-      const list = pages.filter((p) => p.bytes >= lo && p.bytes < hi);
-      return { count: list.length, ms: Math.round(list.reduce((a, p) => a + p.ms, 0)), mib: Number((list.reduce((a, p) => a + p.bytes, 0) / 1048576).toFixed(1)) };
-    };
-    requests.push({
-      kinds,
-      page_ms: pages.length ? stats(pages.map((p) => Math.round(p.ms))) : null,
-      pages_by_size: { under_64k: bucket(0, 65536), under_1m: bucket(65536, 1 << 20), over_1m: bucket(1 << 20, Infinity) },
-    });
-    const heads = ['https', 'helper'].map((k) => execFileSync('git', ['-C', join(dir, `${k}-${run}`), 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim());
-    if (heads[0] !== heads[1]) throw new Error(`the clones disagree: ${heads.join(' ')}`);
   }
-  console.log(JSON.stringify({ source: values.source, push_ms: pushMs, https_ms: stats(https), helper_ms: stats(helper), ratio: Number((stats(helper).median / stats(https).median).toFixed(1)), requests }, null, 2));
+  const ratio = (list) => Number((stats(list).median / stats(https).median).toFixed(1));
+  console.log(JSON.stringify({ source: values.source, push_ms: pushMs, https_ms: stats(https), lazy_ms: stats(modes.lazy), lazy_ratio: ratio(modes.lazy), full_ms: stats(modes.full), full_ratio: ratio(modes.full), requests }, null, 2));
 } catch (e) {
   console.error(`FAILED: ${e.stack ?? e}\n--- wrangler (last 3000 bytes)\n${log.slice(-3000)}`);
   process.exitCode = 1;
