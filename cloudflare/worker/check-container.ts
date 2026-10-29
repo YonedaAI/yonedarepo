@@ -2,7 +2,7 @@
 // mode. It receives files and argv from the Worker and returns evidence; it holds no
 // platform credentials and has no network, so a check cannot reach or alter the platform.
 import { Container } from '@cloudflare/containers';
-import { jsonBody, STREAM_TYPE, streamBody } from './check-stream';
+import { jsonBody, STREAM_TYPE, streamBody } from './platform-check-stream';
 import {
   type CheckReport,
   completeContainerCheck,
