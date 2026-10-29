@@ -1,6 +1,6 @@
 // A repository's Settings tab (owner and admins): landing rules, checks, secret exceptions,
-// webhooks, members, repository tokens, the LFS quota, visibility, connect, and deleting it. Branches and
-// tags are under History, where the write role reaches them too.
+// webhooks, plugins, members, repository tokens, the LFS quota, visibility, connect, and
+// deleting it. Branches and tags are under History, where the write role reaches them too.
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { ConnectPanel, DeleteRepository } from '../source-platform/ConnectPanel';
 import { currentApiOrigin } from '../source-platform/connect';
@@ -14,6 +14,7 @@ import { ChecksSettings } from './ChecksSettings';
 import { LandingRules } from './LandingRules';
 import { LfsSettings } from './LfsSettings';
 import { PolicyForm } from './PolicyForm';
+import { RepoPlugins } from './RepoPlugins';
 import { RepoWebhooks } from './RepoWebhooks';
 import { SecretExceptions } from './SecretExceptions';
 import { VisibilitySettings } from './VisibilitySettings';
@@ -23,6 +24,7 @@ export const SECTION_TITLES: Record<RepoSettingsSection, string> = {
   checks: 'Checks',
   secrets: 'Secret exceptions',
   webhooks: 'Webhooks',
+  plugins: 'Plugins',
   members: 'Members',
   tokens: 'Repository tokens',
   lfs: 'Large files (LFS)',
@@ -99,6 +101,7 @@ export function RepoSettings({
           </section>
         )}
         {section === 'webhooks' && <RepoWebhooks repo={repo} />}
+        {section === 'plugins' && <RepoPlugins repo={repo} navigate={navigate} />}
         {section === 'members' && <RepoMembers repo={repo} viewer={status.viewer} />}
         {section === 'tokens' && <RepoTokens repo={repo} />}
         {section === 'lfs' && <LfsSettings repo={repo} />}

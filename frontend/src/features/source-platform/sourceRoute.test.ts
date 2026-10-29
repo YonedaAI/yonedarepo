@@ -102,7 +102,7 @@ describe('repository pages', () => {
     expect(formatSourceRoute(tabRoute('overview', repo))).toBe(`/source/${repo}`);
     expect(formatSourceRoute(tabRoute('commits', repo))).toBe(`/source/${repo}/history`);
     expect(formatSourceRoute(tabRoute('sessions', repo))).toBe(`/source/${repo}/agents`);
-    expect(formatSourceRoute(tabRoute('agents', repo))).toBe(`/source/${repo}/agents/contracts`);
+    expect(formatSourceRoute(tabRoute('agents', repo))).toBe(`/source/${repo}/agents/managed`);
   });
   it('addresses the repository list and the agent context page', () => {
     expect(formatSourceRoute({ view: 'repositories' })).toBe('/repositories');

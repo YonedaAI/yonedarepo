@@ -106,6 +106,8 @@ describe('the highlighted page', () => {
     [{ view: 'session', repo: a, id: 3 }, 'Sessions'],
     [{ view: 'agents', repo: a, section: 'memories' }, 'Memories'],
     [{ view: 'context', repo: a }, 'Context'],
+    [{ view: 'agents', repo: a, section: 'managed' }, 'Agent tools'],
+    [{ view: 'agents', repo: a, section: 'runs', agent: 'code-review' }, 'Agent tools'],
     [{ view: 'agents', repo: a, section: 'contracts' }, 'Agent tools'],
     [{ view: 'agents', repo: a, section: 'pins' }, 'Agent tools'],
     [{ view: 'agents', repo: a, section: 'bisects' }, 'Agent tools'],

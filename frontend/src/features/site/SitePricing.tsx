@@ -2,7 +2,7 @@
 // here can be bought yet and the page says so first.
 import { Check } from 'lucide-react';
 import type { Navigate } from '../shell/useRoute';
-import { formatUsd, MARGIN, METERS, meterPrice, PRICING } from './pricing';
+import { agentUsageRows, formatUsd, MARGIN, METERS, meterPrice, PRICING } from './pricing';
 import { siteLink } from './SiteLayout';
 
 const FREE = [
@@ -80,6 +80,51 @@ export function SitePricing({ navigate }: { navigate: Navigate }) {
         </div>
       </section>
 
+      <section aria-labelledby="agent-usage-heading" className="site-section">
+        <h2 id="agent-usage-heading">Agent usage: pay as you go</h2>
+        <p>
+          The managed agents (code review and security review) are paid for by the model calls they
+          make: the tokens each call reads and writes, at the provider&apos;s rate plus {margin}%.
+          Every platform feature stays free. Agent usage comes out of the same{' '}
+          {formatUsd(PRICING.startingCreditUsd)} starting credit, and agents pause at a $0 balance
+          until credit is added. Setting up billing is coming.
+        </p>
+        <div className="site-table">
+          <table>
+            <caption>Agent model rates, per million tokens</caption>
+            <thead>
+              <tr>
+                <th scope="col">Model</th>
+                <th scope="col">Used by</th>
+                <th scope="col">Input</th>
+                <th scope="col">Output</th>
+                <th scope="col">Cost basis</th>
+              </tr>
+            </thead>
+            <tbody>
+              {agentUsageRows().map((row) => (
+                <tr key={`${row.provider}/${row.model}`}>
+                  <th scope="row">
+                    {row.model}
+                    <small>{row.provider}</small>
+                  </th>
+                  <td>{row.agents.join(', ')}</td>
+                  <td className="site-rate">{formatUsd(row.input_price_per_million)}</td>
+                  <td className="site-rate">{formatUsd(row.output_price_per_million)}</td>
+                  <td>
+                    Provider list rate
+                    <small>
+                      {formatUsd(row.input_cost_per_million)} in /{' '}
+                      {formatUsd(row.output_cost_per_million)} out × {MARGIN}
+                    </small>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section aria-labelledby="balance-heading" className="site-section site-cards">
         <h2 id="balance-heading">Your balance</h2>
         <div className="site-card">
@@ -101,8 +146,8 @@ export function SitePricing({ navigate }: { navigate: Navigate }) {
           <h3>Pauses at $0</h3>
           <p className="site-figure">No surprise bills</p>
           <p>
-            At a zero balance metered work pauses: new checks wait, and storage or egress past the
-            free allowance stops growing until you top up. Nothing is deleted.
+            At a zero balance metered work pauses: new checks and agent runs wait, and storage or
+            egress past the free allowance stops growing until you top up. Nothing is deleted.
           </p>
         </div>
       </section>

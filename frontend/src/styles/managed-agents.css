@@ -1,0 +1,118 @@
+/* Agent tools → Managed (cards, credit meter, runs) and Settings → Plugins. Theme tokens only. */
+.managed-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  margin: 12px 0;
+}
+.managed-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.managed-card h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.managed-card p {
+  margin: 0;
+}
+.managed-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.managed-facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+.managed-facts dt {
+  color: var(--muted);
+}
+.managed-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.managed-actions,
+.plugin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: auto;
+}
+.managed-figure {
+  font-size: 18px;
+  font-weight: 600;
+}
+.managed-meter {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+.managed-meter span {
+  display: block;
+  height: 100%;
+  background: var(--blue);
+}
+.managed-meter span.spent {
+  background: var(--warn);
+}
+.managed-paused {
+  padding: 8px 10px;
+  border: 1px solid var(--warn-line);
+  border-radius: 6px;
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.chip.run-good {
+  border-color: var(--success-line);
+  background: var(--success-soft);
+  color: var(--success);
+}
+.chip.run-warn {
+  border-color: var(--warn-line);
+  background: var(--warn-soft);
+  color: var(--warn);
+}
+.chip.run-bad {
+  border-color: var(--danger-line);
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.plugin-list {
+  list-style: none;
+  margin: 0 0 16px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.plugin-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  padding: 12px 14px;
+}
+.plugin-row + .plugin-row {
+  border-top: 1px solid var(--line);
+}
+.plugin-row p {
+  margin: 4px 0 0;
+}
+.repo-plugins h3 {
+  margin: 16px 0 8px;
+  font-size: 14px;
+}
