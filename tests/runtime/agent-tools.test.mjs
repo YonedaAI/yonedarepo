@@ -185,3 +185,15 @@ test('a bisect that does not name the breaking commit reports its final record a
   const named = bisectReport({ status: 'found', result: { first_bad: commits[2] } }, commits, details, 'realuser-1-bisect');
   assert.equal(named.first_bad, commits[2]);
 });
+
+test('yoneda context --json is read from its v1 envelope (and from a bare read of an older CLI)', async () => {
+  const { contextContracts } = await import('../../tools/staging/agent-tools-plan.mjs');
+  const contract = { path: 'lib/x.js', symbol_path: 'parse', commit: 'a'.repeat(40), contract: { summary: 'Parses.' } };
+  const read = { main: 'b'.repeat(40), version: 7, policy: {}, sessions: [], changes: [], contracts: [contract] };
+  const envelope = { schema: 'yoneda.cli.context.v1', data: { brief: 'main, clean', branch: 'main', context: read } };
+  assert.deepEqual(contextContracts(JSON.stringify(envelope)), [contract]);
+  assert.deepEqual(contextContracts(`${JSON.stringify(envelope)}\n`), [contract]);
+  assert.deepEqual(contextContracts(JSON.stringify(read)), [contract]);
+  assert.deepEqual(contextContracts(JSON.stringify({ ...envelope, data: { ...envelope.data, context: { ...read, contracts: undefined } } })), []);
+  assert.throws(() => contextContracts(JSON.stringify({ schema: 'yoneda.cli.status.v1', data: {} })), /yoneda\.cli\.status\.v1/);
+});

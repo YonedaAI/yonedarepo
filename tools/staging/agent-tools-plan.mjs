@@ -131,3 +131,17 @@ export function bisectReport(done, commits, details, name) {
   const lines = runs.map((r) => `step ${r.step} ${r.commit} ${r.status} exit ${r.exit_code ?? '?'} ${((r.duration_ms ?? 0) / 1000).toFixed(1)} s`);
   return { record: done, first_bad, runs, text: `bisect ${JSON.stringify(done)}; check runs: ${lines.join('; ') || 'none'}` };
 }
+
+/**
+ * The contracts of `yoneda context --json` output: the v1 envelope
+ * (`{schema: "yoneda.cli.context.v1", data: {brief, branch, context}}`, schemas/v1/
+ * context.schema.json) carries the platform's read unchanged in `data.context`; an older CLI
+ * printed that read bare. Any other envelope is a different command's output.
+ */
+export function contextContracts(stdout) {
+  const parsed = JSON.parse(stdout);
+  if (parsed.schema !== undefined && parsed.schema !== 'yoneda.cli.context.v1')
+    throw new Error(`yoneda context --json printed ${parsed.schema}, not yoneda.cli.context.v1`);
+  const read = parsed.schema ? parsed.data?.context : parsed;
+  return read?.contracts ?? [];
+}
