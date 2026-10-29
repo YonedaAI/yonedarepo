@@ -4,7 +4,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { SourceRoute } from '../source-platform/sourceRoute';
+import { formatSourceRoute, type SourceRoute } from '../source-platform/sourceRoute';
 import { AppRail } from './AppRail';
 import { AppSidebar, labelled } from './AppSidebar';
 import { RepoSwitcher } from './RepoSwitcher';
@@ -59,7 +59,7 @@ describe('sidebar', () => {
   it("lists the open repository's pages, Settings only for its admins", () => {
     const route: SourceRoute = { view: 'agents', repo: a, section: 'sessions' };
     const html = sidebar({ route, rows: [{ repo: a, name: 'parser' }] });
-    const pages = [...html.matchAll(/<span class="side-text">([A-Za-z]+)<\/span>/g)].map(
+    const pages = [...html.matchAll(/<span class="side-text">([A-Za-z ]+)<\/span>/g)].map(
       (m) => m[1],
     );
     expect(pages).toEqual([
@@ -68,11 +68,11 @@ describe('sidebar', () => {
       'Explore',
       'Overview',
       'Changes',
-      'Agents',
       'Commits',
       'Sessions',
-      'Context',
       'Memories',
+      'Context',
+      'Agent tools',
       'Releases',
       'Search',
     ]);
@@ -84,6 +84,38 @@ describe('sidebar', () => {
     expect(sidebar({})).toContain('Choose a repository');
     expect(sidebar({})).not.toContain('aria-label="Repository"');
   });
+});
+
+describe('the highlighted page', () => {
+  // Every repository route highlights exactly one Repository entry: the page it is on.
+  const active = (route: SourceRoute) => {
+    const html = sidebar({ route, settings: true });
+    const nav = html.slice(html.indexOf('aria-label="Repository"'));
+    return [
+      ...nav.matchAll(
+        /aria-current="page"[^>]*>(?:<svg.*?<\/svg>)?<span class="side-text">([^<]+)</g,
+      ),
+    ].map((m) => m[1]);
+  };
+  for (const [route, page] of [
+    [{ view: 'files', repo: a, path: '', ref: 'main' }, 'Overview'],
+    [{ view: 'changes', repo: a }, 'Changes'],
+    [{ view: 'change', repo: a, number: 2 }, 'Changes'],
+    [{ view: 'history', repo: a, ref: 'main' }, 'Commits'],
+    [{ view: 'agents', repo: a, section: 'sessions' }, 'Sessions'],
+    [{ view: 'session', repo: a, id: 3 }, 'Sessions'],
+    [{ view: 'agents', repo: a, section: 'memories' }, 'Memories'],
+    [{ view: 'context', repo: a }, 'Context'],
+    [{ view: 'agents', repo: a, section: 'contracts' }, 'Agent tools'],
+    [{ view: 'agents', repo: a, section: 'pins' }, 'Agent tools'],
+    [{ view: 'agents', repo: a, section: 'bisects' }, 'Agent tools'],
+    [{ view: 'releases', repo: a }, 'Releases'],
+    [{ view: 'search', repo: a, query: '' }, 'Search'],
+    [{ view: 'repo-settings', repo: a, section: 'rules' }, 'Settings'],
+  ] as [SourceRoute, string][])
+    it(`is ${page} on ${formatSourceRoute(route)}`, () => {
+      expect(active(route)).toEqual([page]);
+    });
 });
 
 describe('a repository that is gone', () => {

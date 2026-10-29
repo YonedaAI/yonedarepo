@@ -5,7 +5,7 @@ summary: Record which coding session produced a commit, what it read, and hand i
 
 ## What a session record holds
 
-A session record links a commit to the coding session that wrote it: the agent CLI, the model, a summary, the session's own id and how many files it declared as read. Records are listed newest first on the **Agents → Sessions** tab, filterable by CLI, model and branch.
+A session record links a commit to the coding session that wrote it: the agent CLI, the model, a summary, the session's own id and how many files it declared as read. Records are listed newest first on the repository's **Sessions** page, filterable by CLI, model and branch.
 
 A record can also carry the session's **transcript**: the context it started with, then its prompts, tool calls with input and output, and replies. The session's page shows it as turns, with tool calls collapsed and named by file or command.
 
