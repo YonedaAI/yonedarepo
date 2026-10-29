@@ -15,8 +15,13 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
                     "Username or email unavailable",
                 ));
             }
+            let email = contact_email(c)?;
             let verifier = verifier(c)?;
-            let a = json!({"username":username,"verifier":verifier,"recovery_hash":hash(c,"recovery_hash",&[64])?,"created_at":now});
+            let mut a = json!({"username":username,"verifier":verifier,"recovery_hash":hash(c,"recovery_hash",&[64])?,"created_at":now});
+            // Forward-only: accounts made before the field have none.
+            if let Some(email) = email {
+                a["email"] = json!(email);
+            }
             put(db, "account", &a)?;
             session(db, c, now)?;
             audit(db, "account.created", now, json!({"username":username}))?;
@@ -36,6 +41,16 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
         }
         // Whether this account was signed up (the platform invites members by account).
         SigninOp::AccountExists => Ok(json!({"exists": account(db).is_ok()})),
+        // The welcome email's sent marker; the send itself happens outside, from a queue job.
+        SigninOp::WelcomeState => Ok(json!({"sent": get(db, "welcome_email").is_ok()})),
+        SigninOp::WelcomeSent => {
+            account(db)?;
+            if get(db, "welcome_email").is_err() {
+                put(db, "welcome_email", &json!({"at":now}))?;
+                audit(db, "account.welcome_sent", now, json!({}))?;
+            }
+            Ok(json!({"sent":true}))
+        }
         SigninOp::Logout => {
             db.query(
                 "DELETE FROM workspace_records WHERE id=?",
@@ -86,6 +101,19 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
             }
             Ok(public_account(&a))
         }
+    }
+}
+/// The sign-up's contact email (the welcome email's address), if given: normalized, and
+/// refused unless it is an email address. Stored only; never part of the public account.
+fn contact_email(c: &Value) -> Result<Option<String>> {
+    match &c["email"] {
+        Value::Null => Ok(None),
+        Value::String(text) => yoneda_core::account::normalize_account_identifier(text)
+            .ok()
+            .filter(|email| email.contains('@'))
+            .map(Some)
+            .ok_or_else(|| bad("Enter a valid email address")),
+        _ => Err(bad("Enter a valid email address")),
     }
 }
 fn session<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<()> {

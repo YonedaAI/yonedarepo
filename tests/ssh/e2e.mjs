@@ -101,7 +101,7 @@ try {
     const response = await fetch(`${origin}/api/auth/signup`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: name, password: 'local ssh e2e password' }),
+      body: JSON.stringify({ username: name, email: `${name}@example.com`, password: 'local ssh e2e password' }),
     });
     if (!response.ok) throw new Error(`signup ${name}: ${response.status} ${await response.text()}`);
     return new Session(`${origin}/api/v1`, { cookie: (response.headers.get('set-cookie') ?? '').split(';')[0] });

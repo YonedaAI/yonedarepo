@@ -165,6 +165,8 @@ impl Spec {
                 config.insert("workers_dev".into(), json!(true));
                 if let Some(vars) = config.get_mut("vars").and_then(Value::as_object_mut) {
                     vars.remove("SSH_HOST");
+                    // The sender is one env's verified domain (and email is off here).
+                    vars.remove("EMAIL_FROM");
                     if vars.contains_key("SSH_FRONT_DOOR") {
                         vars.insert("SSH_FRONT_DOOR".into(), json!("off"));
                     }

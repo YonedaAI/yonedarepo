@@ -88,7 +88,9 @@ export class Session {
 export async function accountSession(origin, username, password) {
   const anonymous = new Session(origin);
   let login = await anonymous.raw('POST', '/api/auth/login', { username, password });
-  if (login.status === 401) login = await anonymous.raw('POST', '/api/auth/signup', { username, password });
+  // A first sign-up's welcome email goes to Resend's test inbox, never a real address.
+  const email = `delivered+${username.replace(/[^a-z0-9_]/gi, '_')}@resend.dev`;
+  if (login.status === 401) login = await anonymous.raw('POST', '/api/auth/signup', { username, email, password });
   assert.equal(login.status, 200, `Kit sign-in failed: ${login.body?.error?.code ?? login.status}`);
   const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0];
   return new Session(origin, { cookie });

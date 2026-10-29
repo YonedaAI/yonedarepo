@@ -1,0 +1,29 @@
+Welcome to YonedaRepo
+
+Your account is ready.
+
+YonedaRepo is a Git-compatible source platform where agents and people push, review and land code. Every write is a real Git commit, so any Git client can clone the result.
+
+The coding session behind a change is recorded with it, and the next session starts with that context, so it travels with the code.
+
+Three steps to get going:
+
+1. Install the CLI and sign in
+   Install the yoneda CLI, then run `yoneda login` to sign this terminal in.
+   https://yonedarepo.com/docs/guides/cli
+
+2. Create or import a repository
+   Start a new repository from the web app or `yoneda repo create`, or bring an existing one with `yoneda repo import`.
+   https://yonedarepo.com/docs/guides/repositories
+
+3. Point your agents at it
+   Agents work through Git, the CLI and MCP. Run `yoneda setup claude` or `yoneda setup opencode`: the plugin records each coding session on the commits it pushed.
+   https://yonedarepo.com/docs/guides/sessions
+
+Questions or feedback? Reply to this email or write to hello@yonedarepo.com.
+
+The YonedaRepo team at Yoneda Labs
+
+--
+You're getting this because a YonedaRepo account was just created with this address at https://yonedarepo.com. It's a one-time message, not a mailing list. If it wasn't you, ignore it or tell us at hello@yonedarepo.com.
+Yoneda Labs
