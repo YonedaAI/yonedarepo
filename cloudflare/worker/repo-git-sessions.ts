@@ -22,17 +22,17 @@ function fn<T>(name: string): (...args: unknown[]) => T {
 
 /** A JSON answer (`{value}` or `{error}`) as its value, or the error as an ApiError. */
 function value(answer: string): Json {
-  return valueOf(JSON.parse(answer));
+  return answered(JSON.parse(answer));
 }
 
-function valueOf(parsed: Json): Json {
+function answered(parsed: Json): Json {
   if (parsed.error) throw new ApiError(parsed.error.code, parsed.error.message);
   return parsed.value;
 }
 
 /** A session's handle: opening checks the instance's stack and may reset it once. */
 const opened = (name: string, ...args: unknown[]) =>
-  valueOf(resetOnce(() => fn<string>(name)(...args))) as unknown as number;
+  answered(resetOnce(() => fn<string>(name)(...args))) as unknown as number;
 
 /** A thrown session error (its message is the JSON `{code, message}`) as an ApiError. */
 function bytes(run: () => Uint8Array): Uint8Array {
