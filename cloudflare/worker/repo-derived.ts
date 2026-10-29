@@ -243,7 +243,13 @@ export async function deriveAfterLanding(env: Env, envelope: Envelope) {
     envelope.repo_id,
     caller(env, envelope.repo_id, { _system: 'derive' }),
   );
-  const head = await ctx.call({ op: 'repo_snapshot', ref: envelope.job_id });
+  const head = await ctx.call({ op: 'repo_snapshot', ref: envelope.job_id }).catch((e) => {
+    // The branch went away after this job was queued (a deleted scratch branch): there is
+    // nothing to derive, and retrying would not change that.
+    if (e?.code === 'NOT_FOUND') return null;
+    throw e;
+  });
+  if (!head) return null;
   // A push's bundles are then read in bulk, not one staged read per file.
   if ((await ctx.status()).bundled) noteBundles(envelope.repo_id);
   const segments = await searchSegments(ctx, head.tree);
