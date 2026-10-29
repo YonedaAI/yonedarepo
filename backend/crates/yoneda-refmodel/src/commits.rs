@@ -3,6 +3,24 @@ use crate::{Commit, CommitId, Outcome, Repo, Tree};
 use std::collections::BTreeSet;
 
 impl Repo {
+    /// Why a one-file change to `branch`'s tip would be refused before it is recorded.
+    pub(crate) fn change_refusal(
+        &self,
+        branch: &str,
+        path: &str,
+        content: Option<&str>,
+    ) -> Option<&'static str> {
+        let Some(parent) = self.tip(branch) else {
+            return Some("NOT_FOUND");
+        };
+        let tree = &self.commits[parent].tree;
+        match content {
+            Some(text) if tree.get(path).map(String::as_str) == Some(text) => Some("NO_CHANGES"),
+            None if !tree.contains_key(path) => Some("NOT_FOUND"),
+            _ => None,
+        }
+    }
+
     pub(crate) fn commit(
         &mut self,
         branch: &str,
@@ -10,33 +28,24 @@ impl Repo {
         content: Option<&str>,
         read: bool,
     ) -> Outcome {
+        if let Some(code) = self.change_refusal(branch, path, content) {
+            return Outcome::Refused(code);
+        }
         let Some(parent) = self.tip(branch) else {
             return Outcome::Refused("NOT_FOUND");
         };
         let mut tree = self.commits[parent].tree.clone();
-        let changed = match content {
-            Some(text) => tree.insert(path.to_owned(), text.to_owned()).as_deref() != Some(text),
-            None => tree.remove(path).is_some(),
+        match content {
+            Some(text) => tree.insert(path.to_owned(), text.to_owned()),
+            None => tree.remove(path),
         };
-        if !changed {
-            return Outcome::Refused(if content.is_some() {
-                "NO_CHANGES"
-            } else {
-                "NOT_FOUND"
-            });
-        }
         let reads = if read {
             BTreeSet::from([path.to_owned()])
         } else {
             BTreeSet::new()
         };
-        self.record(
-            branch,
-            parent,
-            tree,
-            reads,
-            BTreeSet::from([path.to_owned()]),
-        )
+        let writes = BTreeSet::from([path.to_owned()]);
+        self.record(branch, parent, tree, reads, writes)
     }
 
     /// A revert: each path the source changed against its parent goes back to the parent's
@@ -88,10 +97,14 @@ impl Repo {
             read_set,
             writes,
         });
-        // Built on the branch's tip, it always fast-forwards there.
+        // Built on the branch's tip, it fast-forwards there unless queued landings hold
+        // the branch; refused, it is left unlanded (and unnumbered here: nothing names it).
         match self.land_on(branch, id) {
             Outcome::Moved => Outcome::Committed(id),
-            other => other,
+            other => {
+                self.commits.pop();
+                other
+            }
         }
     }
 }

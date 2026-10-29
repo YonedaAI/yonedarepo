@@ -3,11 +3,12 @@
 //! each ref's commit graph and files and each pair of branches' merge bases. Without a
 //! `git` binary the check is skipped.
 use super::Driver;
+use base64::{Engine, engine::general_purpose::STANDARD};
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use yoneda_core::git_object::write_pack;
+use yoneda_core::git_object::{ObjectKind, write_pack};
 use yoneda_refmodel::Tree;
 
 type Checked = std::result::Result<(), String>;
@@ -63,15 +64,21 @@ pub(super) fn check(driver: &Driver) -> Checked {
     let dir = bare.0.as_path();
     git(dir, &["init", "-q", "--bare", "."], b"")?;
     let objects = driver.h.objects.borrow();
+    let tags = tag_objects(driver)?;
     let listed: Vec<_> = objects
         .values()
         .map(|(kind, data)| (*kind, data.as_slice()))
+        .chain(
+            tags.iter()
+                .map(|(_, data)| (ObjectKind::Tag, data.as_slice())),
+        )
         .collect();
     let pack = write_pack(&listed).map_err(|e| e.message)?;
     git(dir, &["unpack-objects", "-q", "--strict"], &pack)?;
     for (name, id) in &driver.model.refs {
         git(dir, &["update-ref", name, &driver.ids[*id]], b"")?;
     }
+    same_annotations(driver, dir)?;
     git(
         dir,
         &["fsck", "--strict", "--no-dangling", "--no-progress"],
@@ -82,6 +89,54 @@ pub(super) fn check(driver: &Driver) -> Checked {
         same_files(dir, name, &driver.model.commits[*tip].tree)?;
     }
     same_merge_bases(driver, dir)
+}
+
+/// Each annotated tag's object as the authority keeps it (`repo_tag_show`), by tag ref.
+fn tag_objects(driver: &Driver) -> std::result::Result<Vec<(String, Vec<u8>)>, String> {
+    let mut out = Vec::new();
+    for name in driver.model.annotated.keys() {
+        let shown = driver.h.ok(
+            super::OWNER,
+            serde_json::json!({"op":"repo_tag_show","name":name}),
+        );
+        let data = STANDARD
+            .decode(
+                shown["data_b64"]
+                    .as_str()
+                    .ok_or(format!("{name} has no tag object"))?,
+            )
+            .map_err(|e| e.to_string())?;
+        out.push((name.clone(), data));
+    }
+    Ok(out)
+}
+
+/// Git reads each annotated tag's object (which it hashed itself when unpacking) as a tag
+/// of the model's commit, under the tag's name, with the model's message; the ref then
+/// names the object, as Git advertises it.
+fn same_annotations(driver: &Driver, dir: &Path) -> Checked {
+    for (name, message) in &driver.model.annotated {
+        let data = &tag_objects(driver)?
+            .into_iter()
+            .find(|(n, _)| n == name)
+            .ok_or("tag object missing")?
+            .1;
+        let id = text(git(dir, &["hash-object", "-t", "tag", "--stdin"], data)?);
+        let id = id.trim();
+        let shown = text(git(dir, &["cat-file", "tag", id], b"")?);
+        let commit = &driver.ids[driver.model.refs[name]];
+        let short = name.strip_prefix("refs/tags/").unwrap_or(name);
+        let expected_head = format!("object {commit}\ntype commit\ntag {short}\n");
+        if !shown.starts_with(&expected_head)
+            || shown.trim_end().rsplit("\n\n").next() != Some(message)
+        {
+            return Err(format!(
+                "tag {name}: git shows {shown:?}, model {commit} {message:?}"
+            ));
+        }
+        git(dir, &["update-ref", name, id], b"")?;
+    }
+    Ok(())
 }
 
 /// `git rev-list --parents` from `name` lists the model's ancestors of `tip`, each with
