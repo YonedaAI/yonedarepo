@@ -466,8 +466,23 @@ fn declared_reads_through_the_helper(w: &World) -> TestResult {
             a.ok(&da, &["reads", "list"])?.trim().is_empty(),
             "reads cleared",
         )?;
+        // Every commit the landing push sent waits for the session's record (A's own commit
+        // and the merge `git pull` made), each with the reads it declared; the refused push
+        // noted nothing. Notes stay until a session records them.
+        let head = a.git_output(&da, &["rev-parse", "HEAD"])?;
+        let merge = String::from_utf8_lossy(&head.stdout).trim().to_owned();
         let pushed = std::fs::read_to_string(da.join(".git/yoneda/pushed")).unwrap_or_default();
-        check(pushed.lines().count() == 1, &format!("pushed: {pushed}"))?;
+        let mut noted: Vec<&str> = pushed.lines().filter_map(|l| l.split(' ').next()).collect();
+        noted.sort_unstable();
+        let mut sent = vec![mine.as_str(), merge.as_str()];
+        sent.sort_unstable();
+        check(noted == sent, &format!("pushed {pushed} for {sent:?}"))?;
+        check(
+            pushed
+                .lines()
+                .all(|l| l.split(' ').nth(1).is_some_and(|d| d.len() == 64)),
+            &format!("each note carries the declared reads' digest: {pushed}"),
+        )?;
     }
     Ok(())
 }
@@ -1075,25 +1090,51 @@ fn public_repositories_clone_without_credentials() -> TestResult {
     public_repositories_read_without_credentials(&World { platform, proxy })
 }
 
+/// One scenario of the helper test, on its own repository.
+type Scenario = fn(&World) -> TestResult;
+
 #[test]
 #[ignore = "starts the local platform under workerd: cargo test -p yoneda-cli -- --include-ignored"]
 fn git_works_through_the_remote_helper() -> TestResult {
     let platform = Platform::start()?;
     let proxy = Proxy::start(&platform.origin)?;
     let w = World { platform, proxy };
-    clone_push_branch_and_land(&w).map_err(|e| format!("basics: {e}"))?;
-    disjoint_pushes_to_main_both_land(&w).map_err(|e| format!("disjoint: {e}"))?;
-    first_push_into_an_empty_repository(&w).map_err(|e| format!("empty: {e}"))?;
-    same_line_overlap_conflicts_then_resolves(&w).map_err(|e| format!("overlap: {e}"))?;
-    resumed_team_merge_lands(&w).map_err(|e| format!("team merge: {e}"))?;
-    declared_reads_through_the_helper(&w).map_err(|e| format!("reads: {e}"))?;
-    atomic_push_with_a_stale_ref_moves_nothing(&w).map_err(|e| format!("atomic: {e}"))?;
+    // Every scenario runs (each on its own repository), and every failure is reported, so
+    // one broken scenario does not hide another.
+    let mut scenarios: Vec<(&str, Scenario)> = vec![
+        ("basics", clone_push_branch_and_land),
+        ("disjoint", disjoint_pushes_to_main_both_land),
+        ("empty", first_push_into_an_empty_repository),
+        ("overlap", same_line_overlap_conflicts_then_resolves),
+        ("team merge", resumed_team_merge_lands),
+        ("reads", declared_reads_through_the_helper),
+        ("atomic", atomic_push_with_a_stale_ref_moves_nothing),
+    ];
     #[cfg(unix)]
-    killed_push_leaves_refs_unchanged(&w).map_err(|e| format!("killed: {e}"))?;
-    fresh_clone_is_byte_identical(&w).map_err(|e| format!("fresh clone: {e}"))?;
-    tags_push_and_clone(&w).map_err(|e| format!("tags: {e}"))?;
-    unrebuildable_commit_is_mapped(&w).map_err(|e| format!("mapped: {e}"))?;
-    device_login_then_clone_with_the_stored_token(&w).map_err(|e| format!("login: {e}"))?;
-    import_in_batches(&w).map_err(|e| format!("import: {e}"))?;
-    account_and_repository_commands(&w).map_err(|e| format!("account: {e}"))
+    scenarios.push(("killed", killed_push_leaves_refs_unchanged));
+    scenarios.extend([
+        (
+            "fresh clone",
+            fresh_clone_is_byte_identical as fn(&World) -> TestResult,
+        ),
+        ("tags", tags_push_and_clone),
+        ("mapped", unrebuildable_commit_is_mapped),
+        ("login", device_login_then_clone_with_the_stored_token),
+        ("import", import_in_batches),
+        ("account", account_and_repository_commands),
+    ]);
+    let failures: Vec<String> = scenarios
+        .iter()
+        .filter_map(|(name, run)| run(&w).err().map(|e| format!("{name}: {e}")))
+        .collect();
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} of {} scenarios failed:\n{}",
+            failures.len(),
+            scenarios.len(),
+            failures.join("\n")
+        ))
+    }
 }
