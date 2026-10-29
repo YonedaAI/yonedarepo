@@ -3,7 +3,6 @@
 //! host keys `SSH_HOST_ED25519_KEY` (required) and `SSH_HOST_ECDSA_KEY` (OpenSSH private
 //! key files, unencrypted, as is or base64-encoded on one line). With `TUNNEL_TOKEN`, it also
 //! runs cloudflared (the Cloudflare Tunnel front door, tunnel.rs). Host keys come from secrets so they survive every deploy.
-use base64::{Engine, engine::general_purpose::STANDARD};
 use russh::keys::{Algorithm, PrivateKey};
 use std::net::SocketAddr;
 
@@ -52,13 +51,13 @@ impl Config {
                 "shorter than 32 characters".into(),
             ));
         }
-        let mut host_keys = vec![host_key(
+        let mut host_keys = vec![crate::host_key::parse(
             "SSH_HOST_ED25519_KEY",
             &required("SSH_HOST_ED25519_KEY")?,
             |a| matches!(a, Algorithm::Ed25519),
         )?];
         if let Some(ecdsa) = get("SSH_HOST_ECDSA_KEY") {
-            host_keys.push(host_key("SSH_HOST_ECDSA_KEY", &ecdsa, |a| {
+            host_keys.push(crate::host_key::parse("SSH_HOST_ECDSA_KEY", &ecdsa, |a| {
                 matches!(a, Algorithm::Ecdsa { .. })
             })?);
         }
@@ -79,41 +78,10 @@ impl Config {
     }
 }
 
-fn host_key(
-    name: &'static str,
-    pem: &str,
-    expected: impl Fn(&Algorithm) -> bool,
-) -> Result<PrivateKey, ConfigError> {
-    // One-line secret stores hold the key file base64-encoded (`base64 < ssh_host_ed25519_key`).
-    let decoded;
-    let pem = match pem.trim() {
-        armored if armored.starts_with("-----BEGIN") => armored,
-        encoded => {
-            decoded = STANDARD
-                .decode(encoded)
-                .ok()
-                .and_then(|bytes| String::from_utf8(bytes).ok())
-                .ok_or_else(|| {
-                    ConfigError::Invalid(name, "neither a key file nor base64 of one".into())
-                })?;
-            decoded.trim()
-        }
-    };
-    // Never echo the key: only what kind of problem it has.
-    let key = PrivateKey::from_openssh(pem)
-        .map_err(|_| ConfigError::Invalid(name, "not an OpenSSH private key".into()))?;
-    if key.is_encrypted() || !expected(&key.algorithm()) {
-        return Err(ConfigError::Invalid(
-            name,
-            "wrong algorithm, or passphrase-protected".into(),
-        ));
-    }
-    Ok(key)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use base64::{Engine, engine::general_purpose::STANDARD};
     use std::collections::HashMap;
 
     /// A fixed test host key, made at test time (no key material in the source).
