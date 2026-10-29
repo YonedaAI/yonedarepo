@@ -15,13 +15,7 @@ import type { AccountActivity } from './features/shell/homeModel';
 import { type Created, NewRepositoryDialog } from './features/shell/NewRepositoryDialog';
 import { RepositoriesPage } from './features/shell/RepositoriesPage';
 import { type PlatformRepo, repoRows } from './features/shell/repoRows';
-import {
-  applyTheme,
-  saveCollapsed,
-  storedCollapsed,
-  storedTheme,
-  type Theme,
-} from './features/shell/theme';
+import { saveCollapsed, storedCollapsed } from './features/shell/theme';
 import { type Navigate, useRoute } from './features/shell/useRoute';
 import { SiteRoot, signedInHint } from './features/site/SiteRoot';
 import { siteView } from './features/site/siteRoute';
@@ -41,7 +35,6 @@ export function App() {
   const [route, go] = useRoute();
   const [menuOpen, setMenuOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(storedCollapsed);
-  const [theme, setTheme] = useState<Theme>(storedTheme);
   // Following a link closes the phone navigation menu.
   const navigate = useCallback<Navigate>(
     (next, options) => {
@@ -71,7 +64,6 @@ export function App() {
   const repo = routeRepo(route);
   const row = repo ? rows.find((r) => r.repo === repo) : undefined;
   const loaded = shown && shown.repo === repo ? shown : undefined;
-  useEffect(() => applyTheme(theme), [theme]);
   useEffect(() => {
     if (!menuOpen) return;
     const onEscape = (event: KeyboardEvent) => {
@@ -162,8 +154,6 @@ export function App() {
           navigate={navigate}
           menuOpen={menuOpen}
           onMenu={() => setMenuOpen(!menuOpen)}
-          theme={theme}
-          onTheme={setTheme}
           progress={
             activity.data && (
               <GettingStarted

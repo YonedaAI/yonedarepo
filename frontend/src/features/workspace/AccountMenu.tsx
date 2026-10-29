@@ -1,6 +1,7 @@
 import { ChevronDown, LogOut, PlugZap, Settings, UserRound } from 'lucide-react';
 import { useRef, useState } from 'react';
 import type { AccountIdentity } from '../../lib/types';
+import { ThemePicker } from '../shell/ThemePicker';
 import { linkTo, type Navigate } from '../shell/useRoute';
 
 export function AccountMenu({
@@ -66,6 +67,7 @@ export function AccountMenu({
             Connect agents (CLI, MCP)
           </button>
         )}
+        <ThemePicker />
         <button
           type="button"
           disabled={busy}

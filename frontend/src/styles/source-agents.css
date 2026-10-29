@@ -250,3 +250,11 @@
     margin-bottom: 8px;
   }
 }
+.agent-subtitle {
+  margin: -6px 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.agent-head .agent-subtitle {
+  margin: 4px 0 0;
+}

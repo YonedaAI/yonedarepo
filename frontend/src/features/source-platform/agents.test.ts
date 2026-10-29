@@ -1,3 +1,5 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import {
   appendPage,
@@ -12,6 +14,7 @@ import {
   sessionsPath,
   transcriptUrl,
 } from './agentModel';
+import { RepoAgents } from './RepoAgents';
 import { formatSourceRoute, parseSourceRoute, routeTab } from './sourceRoute';
 
 const repo = 'r0123456789abcdef0123';
@@ -147,5 +150,21 @@ describe('agent pages', () => {
       repo,
       section: 'sessions',
     });
+  });
+});
+
+describe('agent record tabs', () => {
+  it('name the records in plain words and keep the API slugs in the address', () => {
+    const html = renderToStaticMarkup(
+      createElement(RepoAgents, { repo, section: 'pins', branches: [], navigate: () => {} }),
+    );
+    const tabs = [...html.matchAll(/href="([^"]+)"[^>]*>([^<]+)</g)].map((m) => [m[1], m[2]]);
+    expect(tabs).toEqual([
+      [`/source/${repo}/agents`, 'Sessions'],
+      [`/source/${repo}/agents/contracts`, 'Contracts'],
+      [`/source/${repo}/agents/pins`, 'Kept commits'],
+      [`/source/${repo}/agents/bisects`, 'Find a breaking commit'],
+    ]);
+    expect(html).toMatch(/aria-current="page" href="[^"]+\/pins"/);
   });
 });
