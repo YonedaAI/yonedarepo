@@ -12,20 +12,26 @@ const titles = {
 export function WorkspacePanels({
   panel,
   authenticated,
+  accountError,
   onSignedIn,
   onClose,
 }: {
   panel: WorkspacePanel;
   authenticated: boolean;
+  /** Why a provider sign-in came back refused, shown in the sign-in panel. */
+  accountError?: string;
   onSignedIn: () => void;
   onClose: () => void;
 }) {
-  if (!panel) return null;
+  // Signed in, the sign-in panel has nothing to show (a refused provider sign-in may have
+  // opened it before the session loaded).
+  if (!panel || (panel === 'account' && authenticated)) return null;
   return (
     <Dialog key={panel} title={titles[panel]} onClose={onClose}>
       {panel === 'account' && !authenticated && (
         <AccountPanel
           initialMode="login"
+          initialError={accountError}
           onConnected={() => {
             onClose();
             onSignedIn();
