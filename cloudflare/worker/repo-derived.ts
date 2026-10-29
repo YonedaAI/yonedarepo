@@ -27,19 +27,97 @@ const SKIPPED_LISTED = 50;
 const asOf = (args: Json) =>
   args.at === undefined || args.at === null || args.at === '' ? {} : { at: Number(args.at) };
 
+/** The groups one search answers: code (files and lines at a revision), then memories,
+ * commits, session records and change requests (the repository's records). */
+export const SEARCH_GROUPS = ['code', 'memories', 'commits', 'sessions', 'changes'] as const;
+const RECORD_GROUPS = ['commits', 'sessions', 'changes'];
+/** Results per record group when `limit` is not given, and at most. */
+const RECORD_LIMIT = 10;
+const MAX_RECORD_LIMIT = 50;
+
+/** `groups` as a list or a comma-separated string (a query parameter); all when absent. */
+function searchGroups(args: Json): string[] {
+  const raw = args.groups;
+  if (raw === undefined || raw === null || raw === '') return [...SEARCH_GROUPS];
+  const asked = (Array.isArray(raw) ? raw : String(raw).split(',')).map((g) => String(g).trim());
+  if (asked.length === 0 || asked.some((g) => !(SEARCH_GROUPS as readonly string[]).includes(g)))
+    throw new ApiError('INVALID_INPUT', `groups lists ${SEARCH_GROUPS.join(', ')}`);
+  return asked;
+}
+
+/** A group's read settled into a value or an error, raised once the code search is done
+ * (a failure is not left unhandled while the code is read). */
+const settled = <T>(work: Promise<T>) =>
+  work.then(
+    (found) => ({ found }),
+    (error: unknown) => ({ error }),
+  );
+const raised = async <T>(work: Promise<{ found: T } | { error: unknown }>) => {
+  const outcome = await work;
+  if ('error' in outcome) throw outcome.error;
+  return outcome.found;
+};
+
+/** Result tiers, best first: the query as a whole word in the content, in the path, or
+ * only inside longer words. */
+const TIERS = ['word', 'path', 'substring'];
+/** Candidate files read and ranked per search, and lines listed per file. */
+const SCAN_FILES = 1000;
+const SHOWN_LINES = 20;
+
+/** Whether `path` holds `query` (as a whole word, with `word`). */
+function inPath(path: string, query: string, ignoreCase: boolean, word: boolean) {
+  const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const pattern = word ? `(^|[^A-Za-z0-9_])${escaped}([^A-Za-z0-9_]|$)` : escaped;
+  return new RegExp(pattern, ignoreCase ? 'i' : '').test(path);
+}
+
+/** A file's tier (see TIERS) from its matches, or null when it does not match. */
+function matchOf(path: string, query: string, found: Json, ignoreCase: boolean, word: boolean) {
+  if (found.word_hits > 0) return 'word';
+  if (inPath(path, query, ignoreCase, word)) return 'path';
+  return !word && found.hits > 0 ? 'substring' : null;
+}
+
 export async function search(ctx: RepoContext, args: Json) {
   const query = String(args.query ?? args.q ?? '');
   if (query.length < 2 || query.length > 200)
     throw new ApiError('INVALID_INPUT', 'query must be 2-200 characters');
-  // Memories whose text matches, read alongside the code (a separate group); a failure is
-  // raised once the code search has settled, not left unhandled.
+  const groups = searchGroups(args);
+  // Memories whose text matches, read alongside the code (a separate group).
   const memories =
-    args.memories === false || args.memories === 'false'
+    !groups.includes('memories') || args.memories === false || args.memories === 'false'
       ? Promise.resolve({ found: null })
-      : memoryMatches(ctx, query).then(
-          (found) => ({ found }),
-          (error: unknown) => ({ error }),
-        );
+      : settled(memoryMatches(ctx, query));
+  // Commits, session records and change requests whose text matches (each its own group).
+  const asked = RECORD_GROUPS.filter((g) => groups.includes(g));
+  const recordLimit = Math.min(
+    Number(args.limit ?? RECORD_LIMIT) || RECORD_LIMIT,
+    MAX_RECORD_LIMIT,
+  );
+  const records = asked.length
+    ? settled(ctx.call({ op: 'repo_search_records', query, groups: asked, limit: recordLimit }))
+    : Promise.resolve({ found: {} as Json });
+  const answer = async (code: Json) => {
+    const found = (await raised(records)) as Json;
+    return {
+      ...code,
+      query,
+      groups,
+      memories: await raised(memories),
+      commits: found.commits ?? null,
+      sessions: found.sessions ?? null,
+      changes: found.changes ?? null,
+    };
+  };
+  if (!groups.includes('code'))
+    return answer({
+      commit: null,
+      results: [],
+      partitions_built: 0,
+      skipped_files: [],
+      skipped_count: 0,
+    });
   const where = await target(ctx, args.commit ?? args.ref, args.at);
   const { indexes, built } = await searchSegments(ctx, where.tree);
   const objects = await ctx.objects();
@@ -76,8 +154,13 @@ export async function search(ctx: RepoContext, args: Json) {
     for (const file of await keepAllowed(ctx, candidates as Json[]))
       if (under(file.path)) files.push(file);
   }
-  for (let i = 0; i < files.length && results.length < limit; i += GREP_WAVE) {
-    const wave = files.slice(i, i + GREP_WAVE);
+  // Every candidate up to SCAN_FILES is read and ranked before the best `limit` are kept
+  // (in segment order, the first `limit` found were A→Z by path, whatever they held).
+  const ignoreCase = args.ignore_case === true || args.ignore_case === 'true';
+  const word = args.word === true || args.word === 'true';
+  const scan = files.slice(0, SCAN_FILES);
+  for (let i = 0; i < scan.length; i += GREP_WAVE) {
+    const wave = scan.slice(i, i + GREP_WAVE);
     const content = new Map<string, Uint8Array>();
     const indexed = wave.filter((f) => f.indexed).map((f) => String(f.id));
     await timed('search.files', async () => {
@@ -85,33 +168,37 @@ export async function search(ctx: RepoContext, args: Json) {
         for (const [id, data] of read) content.set(id, data);
     });
     for (const file of wave) {
-      if (results.length >= limit) break;
       const data = content.get(file.id);
-      const lines = data
+      const found = data
         ? compute({
             op: 'grep',
             id: file.id,
             query,
-            ignore_case: args.ignore_case === true,
+            ignore_case: ignoreCase,
+            word,
+            max: SHOWN_LINES,
             blobs: { [file.id]: toBase64(data) },
-          }).lines
-        : [];
-      const pathHit = String(file.path).toLowerCase().includes(query.toLowerCase());
-      if (lines.length > 0 || pathHit) results.push({ path: file.path, id: file.id, lines });
+          })
+        : { lines: [], hits: 0, word_hits: 0 };
+      const match = matchOf(String(file.path), query, found, ignoreCase, word);
+      if (match)
+        results.push({ path: file.path, id: file.id, match, hits: found.hits, lines: found.lines });
     }
   }
-  return {
+  results.sort(
+    (a, b) =>
+      TIERS.indexOf(a.match) - TIERS.indexOf(b.match) ||
+      b.hits - a.hits ||
+      (a.path < b.path ? -1 : a.path > b.path ? 1 : 0),
+  );
+  return answer({
     commit: where.commit,
-    query,
-    results,
+    results: results.slice(0, limit),
+    truncated: files.length > SCAN_FILES,
     partitions_built: built,
     skipped_files: skipped,
     skipped_count: skippedCount,
-    memories: await memories.then((m) => {
-      if ('error' in m) throw m.error;
-      return m.found;
-    }),
-  };
+  });
 }
 
 export async function blame(ctx: RepoContext, args: Json) {

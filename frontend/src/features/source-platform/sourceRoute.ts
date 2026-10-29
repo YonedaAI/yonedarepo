@@ -38,7 +38,7 @@ export type SourceRoute =
   | { view: 'commit'; repo: string; commit: string }
   | { view: 'transactions'; repo: string }
   | { view: 'branches'; repo: string }
-  | { view: 'search'; repo: string; query: string }
+  | { view: 'search'; repo: string; query: string; word?: boolean }
   | { view: 'changes'; repo: string }
   | { view: 'change'; repo: string; number: number }
   | { view: 'releases'; repo: string }
@@ -104,7 +104,12 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
   if (view === 'members') return { view: 'repo-settings', repo, section: 'members' };
   if (view === 'settings')
     return { view: 'repo-settings', repo, section: isSection(rest[0]) ? rest[0] : 'rules' };
-  if (view === 'search') return { view: 'search', repo, query: params.get('q') ?? '' };
+  if (view === 'search') {
+    const query = params.get('q') ?? '';
+    return params.get('word') === '1'
+      ? { view: 'search', repo, query, word: true }
+      : { view: 'search', repo, query };
+  }
   if (view === 'context') return { view: 'context', repo };
   if (view === 'changes') {
     const number = Number(rest[0]);
@@ -157,7 +162,9 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'repo-settings')
     return route.section === 'rules' ? `${base}/settings` : `${base}/settings/${route.section}`;
   if (route.view === 'search')
-    return route.query ? `${base}/search?q=${encodeURIComponent(route.query)}` : `${base}/search`;
+    return route.query
+      ? `${base}/search?q=${encodeURIComponent(route.query)}${route.word ? '&word=1' : ''}`
+      : `${base}/search`;
   if (route.view === 'commit') return `${base}/commit/${route.commit}`;
   if (route.view === 'changes') return `${base}/changes`;
   if (route.view === 'change') return `${base}/changes/${route.number}`;

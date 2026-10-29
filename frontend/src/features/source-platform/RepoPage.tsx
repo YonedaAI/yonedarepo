@@ -204,7 +204,13 @@ export function RepoPage({
               />
             )}
             {route.view === 'search' && (
-              <RepoSearch key={route.query} repo={repo} query={route.query} onNavigate={navigate} />
+              <RepoSearch
+                key={`${route.query}|${route.word === true}`}
+                repo={repo}
+                query={route.query}
+                word={route.word}
+                onNavigate={navigate}
+              />
             )}
             {route.view === 'repo-settings' && (
               <RepoSettings

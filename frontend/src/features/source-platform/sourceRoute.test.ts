@@ -24,6 +24,7 @@ describe('source routes', () => {
       { view: 'commit', repo, commit: sha },
       { view: 'transactions', repo },
       { view: 'search', repo, query: 'retry with' },
+      { view: 'search', repo, query: 'test', word: true },
       { view: 'overview', repo, path: '', ref: 'main' },
       { view: 'overview', repo, path: 'src/net', ref: 'dev', at: 4 },
       { view: 'changes', repo },

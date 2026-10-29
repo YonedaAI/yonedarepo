@@ -121,7 +121,7 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "ssh-key" => ssh_key::ssh_key(rest)?,
         "token" => sub::token(rest)?,
         "check" => sub::check(rest)?,
-        "log" | "grep" | "blame" | "diff" | "symbols" => sub::read(command, rest)?,
+        "log" | "grep" | "search" | "blame" | "diff" | "symbols" => sub::read(command, rest)?,
         "setup" => setup(rest)?,
         "land" => {
             let p = Parsed::new(rest, &with(&["branch"]), &[])?;
@@ -390,14 +390,30 @@ mod tests {
             })
         );
         assert_eq!(
-            parsed("grep needle -i --at 7").ok(),
+            parsed("grep needle -i -w --at 7").ok(),
             Some(Command::Read {
                 target: Target::default(),
                 command: ReadCommand::Grep {
                     query: "needle".into(),
                     path: None,
                     ignore_case: true,
+                    word: true,
                     at: Some(7)
+                }
+            })
+        );
+        assert_eq!(
+            parsed("search retry --in commits,changes --limit 5 --word").ok(),
+            Some(Command::Read {
+                target: Target::default(),
+                command: ReadCommand::Search {
+                    query: "retry".into(),
+                    groups: Some(vec!["commits".into(), "changes".into()]),
+                    path: None,
+                    branch: None,
+                    limit: Some(5),
+                    word: true,
+                    at: None
                 }
             })
         );
