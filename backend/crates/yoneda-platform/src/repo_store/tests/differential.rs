@@ -8,16 +8,21 @@ use super::batches::open;
 use super::*;
 use std::collections::BTreeMap;
 use yoneda_core::git_object::ObjectId;
-use yoneda_refmodel::{CommitId, MAIN, Op, Outcome, Plan, Repo, Rng, Tree, generate};
+use yoneda_refmodel::{CommitId, MAIN, Op, Outcome, Plan, Repo, Rng, Role, Tree, generate};
 
+mod adapter;
 mod git;
+mod scenarios;
 
 /// What the platform answered for one operation.
 #[derive(Debug, PartialEq, Eq)]
 enum Seen {
     Committed(String),
+    /// The commits a rebase made, and how many replays it dropped as already upstream.
+    Rebased(Vec<String>, usize),
     Moved,
     Already,
+    Done,
     Refused(String),
 }
 
@@ -53,14 +58,6 @@ impl Driver {
 
     /// Runs `op` on the platform: its outcome, and for a landing its merge plan first.
     fn platform(&self, op: &Op) -> (Seen, Option<Plan>) {
-        let answer = |result: yoneda_core::Result<Value>| match result {
-            Err(e) => Seen::Refused(e.code),
-            Ok(v) if v["stale"].as_array().is_some_and(|s| !s.is_empty()) => {
-                Seen::Refused("STALE_HEAD".into())
-            }
-            Ok(v) if v["already"] == true || v["refs"][0]["already"] == true => Seen::Already,
-            Ok(_) => Seen::Moved,
-        };
         match op {
             Op::Commit {
                 branch,
@@ -73,24 +70,20 @@ impl Driver {
                     None => json!({"path": path, "delete": true}),
                 };
                 let reads = if *read { json!([path]) } else { json!([]) };
-                let parent = self.ids[self.model.refs[branch]].clone();
-                let made = self.h.commit(
-                    OWNER,
-                    Some(&parent),
-                    self.model.version,
-                    json!([change]),
-                    reads,
-                );
-                match made {
-                    Err(e) => (Seen::Refused(e.code), None),
-                    Ok(id) => match answer(
-                        self.h
-                            .run(OWNER, json!({"op":"repo_land","ref":branch,"commit":id})),
-                    ) {
-                        Seen::Moved => (Seen::Committed(id), None),
-                        other => (other, None),
-                    },
-                }
+                (self.commit_on(branch, json!([change]), reads), None)
+            }
+            Op::Revert { branch, back } => {
+                let tip = self.model.refs[branch];
+                let Some(source) = self.model.first_parents(tip).get(*back).copied() else {
+                    return (Seen::Refused("NOT_FOUND".into()), None);
+                };
+                let row = |id: &Value| self.h.ok(OWNER, json!({"op":"repo_commit","commit":id}));
+                let source = row(&json!(self.ids[source]));
+                let old = row(&source["parents"][0])["tree"].clone();
+                (
+                    self.commit_on(branch, self.replay(&old, &source["tree"]), json!([])),
+                    None,
+                )
             }
             Op::CreateBranch { name, from } => (
                 answer(self.h.run(
@@ -125,18 +118,31 @@ impl Driver {
             ),
             Op::Land { branch } => {
                 let commit = self.git_id(branch);
-                let plan = self.h.ok(
-                    OWNER,
-                    json!({"op":"repo_merge_plan","ref":MAIN,"commit":commit}),
-                );
-                let plan = Plan {
-                    kind: leak(plan["outcome"].as_str().unwrap_or_default()),
-                    paths: serde_json::from_value(plan["paths"].clone()).unwrap_or_default(),
-                };
+                let plan = self.plan(&commit);
                 let landed = self
                     .h
                     .run(OWNER, json!({"op":"repo_land","ref":MAIN,"commit":commit}));
                 (answer(landed), Some(plan))
+            }
+            Op::MergeLand { branch } => {
+                let commit = self.git_id(branch);
+                let plan = self.plan(&commit);
+                (self.merge_land(&commit), Some(plan))
+            }
+            Op::Rebase { branch } => (self.rebase(branch), None),
+            Op::Probe { caller, access } => (self.probe(caller, *access), None),
+            Op::SetVisibility { caller, public } => {
+                let visibility = if *public { "public" } else { "private" };
+                let set = json!({"op":"repo_set_visibility","visibility":visibility});
+                (done(self.as_caller(caller, set)), None)
+            }
+            Op::Member { account, role } => {
+                let command = match role {
+                    Some(role) => json!({"op":"repo_member_put","account":account,
+                        "role":if *role == Role::Read { "read" } else { "write" }}),
+                    None => json!({"op":"repo_member_remove","account":account}),
+                };
+                (done(self.h.run(OWNER, command)), None)
             }
         }
     }
@@ -146,6 +152,9 @@ impl Driver {
         let (seen, seen_plan) = self.platform(op);
         let (expected, plan) = self.model.apply(op);
         *self.tally.entry(label(op, &expected)).or_default() += 1;
+        if matches!(seen, Seen::Rebased(_, dropped) if dropped > 0) {
+            *self.tally.entry("Rebase dropped".into()).or_default() += 1;
+        }
         if seen_plan != plan {
             return Err(format!(
                 "merge plan: platform {seen_plan:?}, model {plan:?}"
@@ -156,7 +165,21 @@ impl Driver {
                 self.ids.push(id.clone());
                 self.same_files(*model)?;
             }
-            (Seen::Moved, Outcome::Moved) | (Seen::Already, Outcome::Already) => {}
+            (Seen::Rebased(ids, _), Outcome::Rebased(model))
+                if model.len() == ids.len()
+                    && model
+                        .iter()
+                        .enumerate()
+                        .all(|(i, m)| *m == self.ids.len() + i) =>
+            {
+                self.ids.extend(ids.iter().cloned());
+                for id in model {
+                    self.same_files(*id)?;
+                }
+            }
+            (Seen::Moved, Outcome::Moved)
+            | (Seen::Already, Outcome::Already)
+            | (Seen::Done, Outcome::Done) => {}
             (Seen::Refused(code), Outcome::Refused(model)) if code == model => {}
             _ => return Err(format!("outcome: platform {seen:?}, model {expected:?}")),
         }
@@ -230,8 +253,29 @@ fn label(op: &Op, outcome: &Outcome) -> String {
     let kind = kind.split([' ', '{']).next().unwrap_or_default();
     match outcome {
         Outcome::Committed(_) => format!("{kind} Committed"),
+        Outcome::Rebased(_) => format!("{kind} Rebased"),
         Outcome::Refused(code) => format!("{kind} {code}"),
         other => format!("{kind} {other:?}"),
+    }
+}
+
+/// A ref move's answer: moved, already there, or refused (a batch's stale refs too).
+fn answer(result: yoneda_core::Result<Value>) -> Seen {
+    match result {
+        Err(e) => Seen::Refused(e.code),
+        Ok(v) if v["stale"].as_array().is_some_and(|s| !s.is_empty()) => {
+            Seen::Refused("STALE_HEAD".into())
+        }
+        Ok(v) if v["already"] == true || v["refs"][0]["already"] == true => Seen::Already,
+        Ok(_) => Seen::Moved,
+    }
+}
+
+/// An answer that moves no ref: done, or refused.
+fn done(result: yoneda_core::Result<Value>) -> Seen {
+    match result {
+        Err(e) => Seen::Refused(e.code),
+        Ok(_) => Seen::Done,
     }
 }
 
@@ -277,13 +321,13 @@ fn cases(count: u64, steps: usize) -> BTreeMap<String, usize> {
 
 #[test]
 fn the_platform_matches_the_reference_model() {
-    let tally = cases(12, 80);
-    // The generator still reaches every landing outcome and every refusal it aims for.
+    let tally = cases(16, 80);
+    // The generator still reaches every landing outcome and every refusal it aims for
+    // (the rarest have scripts of their own: `scenarios`).
     if std::env::var("YONEDA_DIFF_SEED").is_err() {
         for label in [
             "Land Moved",
             "Land Already",
-            "Land CONFLICT",
             "Land MERGE_REQUIRED",
             "Land STALE_PARENT",
             "CreateBranch STALE_HEAD",
@@ -292,6 +336,19 @@ fn the_platform_matches_the_reference_model() {
             "DeleteBranch Moved",
             "DeleteBranch STALE_HEAD",
             "Tag ALREADY_EXISTS",
+            "Revert Committed",
+            "Revert CONFLICT",
+            "MergeLand CONFLICT",
+            "Rebase Rebased",
+            "Rebase Already",
+            "Rebase CONFLICT",
+            "Probe Done",
+            "Probe NOT_FOUND",
+            "Probe FORBIDDEN",
+            "SetVisibility Done",
+            "SetVisibility FORBIDDEN",
+            "Member Done",
+            "Member NOT_FOUND",
         ] {
             assert!(tally.contains_key(label), "no {label} in {tally:?}");
         }
