@@ -1,7 +1,8 @@
 // The opencode plugin (plugins/opencode/yoneda/index.ts) against a fake opencode context and
 // a fake `yoneda` that records each hook call: the session context is fetched once per
 // session and added to every model call, reads go to opencode-read, a refused push throws,
-// and a session's record is made when its run ends and again (idempotently) at cleanup.
+// and a session's record (with its messages, for the transcript) is made when its run ends
+// and again (idempotently) at cleanup.
 import assert from 'node:assert/strict';
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -85,7 +86,8 @@ test('wires context, reads, push refusal and session records through yoneda hook
     emit({ type: 'session.execution.succeeded', data: { sessionID: 's1' } });
     await until(() => fake.calls().some((c) => c.event === 'opencode-stop'));
     const stop = fake.calls().find((c) => c.event === 'opencode-stop').payload;
-    assert.deepEqual(stop, { sessionID: 's1', cwd: dir, model: 'zai-coding-plan/glm-5.3', summary: 'Did it.', prompts: [] });
+    // The session's messages go too: the hook makes the uploaded transcript from them.
+    assert.deepEqual(stop, { sessionID: 's1', cwd: dir, model: 'zai-coding-plan/glm-5.3', summary: 'Did it.', prompts: [], messages });
 
     await cleanup();
     const stops = fake.calls().filter((c) => c.event === 'opencode-stop').map((c) => c.payload.sessionID);

@@ -206,7 +206,14 @@ pub fn session(rest: &[String]) -> Result<Command> {
     let (sub, rest) = split_sub(rest, "session")?;
     let p = Parsed::new(
         &rest,
-        &with(&["cli", "summary", "model", "transcript-ref", "session-id"]),
+        &with(&[
+            "cli",
+            "summary",
+            "model",
+            "transcript-ref",
+            "session-id",
+            "transcript",
+        ]),
         &[],
     )?;
     p.at_most(1)?;
@@ -223,6 +230,7 @@ pub fn session(rest: &[String]) -> Result<Command> {
             model: p.flag("model"),
             transcript_ref: p.flag("transcript-ref"),
             session_id: p.flag("session-id"),
+            transcript: p.flag("transcript"),
         },
         "list" => SessionCommand::List { commit },
         other => return Err(Error::usage(format!("unknown session command {other:?}"))),

@@ -25,6 +25,7 @@ pub mod merge;
 mod merge_tree_tests;
 pub mod search;
 pub mod textdiff;
+pub mod transcript;
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, thiserror::Error)]
 #[error("{code}: {message}")]

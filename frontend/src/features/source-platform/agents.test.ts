@@ -79,6 +79,7 @@ describe('agent pages', () => {
       at: id,
       subject: 'change',
       reads: 0,
+      transcript: null,
     });
     const groups = groupSessions([
       record(6, 'shared', 'opencode:x'),
