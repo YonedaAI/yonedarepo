@@ -108,7 +108,9 @@ it('serves a quarantined blob on no read path, in any isolate, until and after p
   const byContent = await api(`${repo}/search?query=hunter2`, reader, {}, local);
   expect(byContent.body.results, JSON.stringify(byContent.body)).toEqual([]);
   const byPath = await api(`${repo}/search?query=staging`, reader, {}, local);
-  expect(byPath.body.results).toEqual([{ path: 'config/staging.txt', id: blob, lines: [] }]);
+  expect(byPath.body.results).toEqual([
+    { path: 'config/staging.txt', id: blob, match: 'path', hits: 0, lines: [] },
+  ]);
 
   // A fresh isolate (its own head copies and caches) decides the same.
   vi.resetModules();

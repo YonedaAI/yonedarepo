@@ -225,7 +225,7 @@
   },
   {
     "name": "git_grep",
-    "description": "Search file contents and paths at a commit, branch or past version (case-insensitive with ignore_case). Uses a trigram index partitioned by top-level directory and reused across commits; results list matching lines per file. Memories whose text holds the query's words come back as a separate group (memories; null for a path-restricted token); memories: false leaves them out.",
+    "description": "Search the repository in one query: file contents and paths at a commit, branch or past version (results: files ranked whole-word matches first, then path matches, then matches inside words, each by hit count then path, with each line's match ranges and the file's hit count; whole words only with word; case-insensitive with ignore_case; binary files are never listed as not searched), memories whose text holds the query's words (memories), and the commits (message, who recorded it, paths touched, or an id prefix), session records (summary and declared reads) and change requests (title and description) holding all of its words: each of commits, sessions and changes is {count, capped, results}, ranked by where the words appear, then newest first (at most limit, 50, per group). groups narrows the answer (code, memories, commits, sessions, changes); a group left out, and for a path-restricted token memories, sessions and changes, is null, and its commits are those touching its grant.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -252,6 +252,10 @@
         "ignore_case": {
           "type": "boolean"
         },
+        "word": {
+          "type": "boolean",
+          "description": "Whole words only: the query on identifier boundaries (test, not latest)"
+        },
         "limit": {
           "type": "integer",
           "minimum": 1,
@@ -259,6 +263,21 @@
         },
         "memories": {
           "type": "boolean"
+        },
+        "groups": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "code",
+              "memories",
+              "commits",
+              "sessions",
+              "changes"
+            ]
+          },
+          "minItems": 1,
+          "uniqueItems": true
         }
       },
       "required": [

@@ -9,7 +9,7 @@ use yoneda_core::{
     Error, Result,
     blame::{BlameLine, blame},
     git_object::{FileMode, ObjectId, ObjectKind, TreeEntry, hash_object},
-    search::{MAX_INDEXED_BYTES, StoredSegment, build_segment, grep},
+    search::{MAX_INDEXED_BYTES, StoredSegment, binary_path, build_segment, grep},
 };
 
 /// Files one directory may list for indexing (its index is built in chunks).
@@ -172,10 +172,12 @@ pub fn search_segment(c: &Value) -> Result<Value> {
         "" => path.to_owned(),
         _ => format!("{prefix}/{path}"),
     };
+    // Text files whose content is not searched (over the cap); binary ones never are and
+    // are not reported (by content when read, by extension when too large to read).
     let unindexed: Vec<Value> = segment
         .files
         .iter()
-        .filter(|f| !f.indexed)
+        .filter(|f| !f.indexed && f.skipped.as_deref() != Some("binary") && !binary_path(&f.path))
         .map(|f| json!({ "path": at(&f.path), "reason": f.skipped.as_deref().unwrap_or("not indexed") }))
         .collect();
     Ok(json!({
@@ -188,7 +190,14 @@ pub fn grep_blob(c: &Value) -> Result<Value> {
     let id = ObjectId::parse(&string(c, "id")?)?;
     let data = verified_blob(c, &id)?.ok_or_else(|| bad("Blob not supplied"))?;
     let max = c["max"].as_u64().unwrap_or(20).min(200) as usize;
-    Ok(json!({ "lines": grep(&data, &string(c, "query")?, c["ignore_case"] == true, max) }))
+    let query = string(c, "query")?;
+    Ok(json!(grep(
+        &data,
+        &query,
+        c["ignore_case"] == true,
+        c["word"] == true,
+        max
+    )))
 }
 
 /// Blame from (commit, blob id) versions oldest first; blobs are verified.

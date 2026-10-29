@@ -32,7 +32,11 @@ it('searches with partition reuse, blames lines and detects renames', async () =
   ]);
   const first = await api(`${repo}/search?query=retry_with`, owner);
   expect(first.body.results.map((r: any) => r.path).sort()).toEqual(['docs/guide.md', 'src/retry.rs']);
-  expect(first.body.results.find((r: any) => r.path === 'src/retry.rs').lines[0]).toEqual({ line: 1, text: 'fn retry_with_backoff() {}' });
+  expect(first.body.results.find((r: any) => r.path === 'src/retry.rs').lines[0]).toEqual({
+    line: 1,
+    text: 'fn retry_with_backoff() {}',
+    ranges: [[3, 13]],
+  });
   expect(first.body.partitions_built).toBe(3);
 
   const docs = await land([file('docs/guide.md', 'Use retry_with_backoff.\nAlso RETRY_WITH caps.\n')], 'docs');

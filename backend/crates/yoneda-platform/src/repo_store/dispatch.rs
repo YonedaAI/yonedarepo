@@ -8,8 +8,8 @@ use super::{
     change_delete, change_gates, change_records, changes, changesets, checks, classes, contracts,
     git_http, head, history, history_import, hook_delivery, hook_events, hooks, land, land_batch,
     land_queue, land_tickets, members, merging, prepare, projection, projection_plan, pushed,
-    reads, rebase, record, releases, sessions, staging, store_lineage, submitted, symbols, tags,
-    tokens, version_projection,
+    reads, rebase, record, releases, search_records, sessions, staging, store_lineage, submitted,
+    symbols, tags, tokens, version_projection,
 };
 use super::{
     authorize::authorize, break_glass, deletion, forks, grants, lfs, maintenance, memory,
@@ -98,6 +98,7 @@ fn run<S: SqlStore>(
         R::SessionRecord => sessions::record(db, c, actor),
         R::Sessions => sessions::list(db, c, actor),
         R::SessionList => agent_reads::session_list(db, c, actor),
+        R::SearchRecords => search_records::search(db, c, actor),
         R::SessionShow => agent_reads::session_show(db, c, actor),
         R::SessionTranscript => sessions::transcript(db, c, actor),
         R::ContractList => agent_reads::contract_list(db, c),

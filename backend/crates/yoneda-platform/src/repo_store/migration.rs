@@ -2,7 +2,7 @@ use crate::storage::SqlStore;
 use serde_json::json;
 use yoneda_core::{Error, Result};
 
-pub(crate) const MIGRATIONS: [(i64, &str); 41] = [
+pub(crate) const MIGRATIONS: [(i64, &str); 42] = [
     (1, include_str!("../migrations/repo_store/0001_source.sql")),
     (
         2,
@@ -153,7 +153,42 @@ pub(crate) const MIGRATIONS: [(i64, &str); 41] = [
         41,
         include_str!("../migrations/repo_store/0041_session_fetch.sql"),
     ),
+    (
+        42,
+        include_str!("../migrations/repo_store/0042_search_text.sql"),
+    ),
 ];
+
+/// The statements of a migration, split at `;`, except within a trigger's `BEGIN … END`;
+/// a piece holding only comments is none.
+fn statements(sql: &str) -> Vec<String> {
+    let code = |piece: &str| {
+        piece
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with("--"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let starts = |piece: &str, word: &str| code(piece).to_ascii_uppercase().starts_with(word);
+    let mut out = Vec::new();
+    let mut trigger: Option<String> = None;
+    for piece in sql.split(';') {
+        if let Some(open) = trigger.as_mut() {
+            open.push(';');
+            open.push_str(piece);
+            if starts(piece, "END") {
+                out.extend(trigger.take());
+            }
+        } else if starts(piece, "CREATE TRIGGER") {
+            trigger = Some(piece.to_owned());
+        } else if !code(piece).is_empty() {
+            out.push(piece.to_owned());
+        }
+    }
+    out.extend(trigger);
+    out
+}
 
 /// Digest-pinned, forward-only migrations for the platform's own Durable Object.
 pub fn migrate_repo_store<S: SqlStore>(db: &S) -> Result<()> {
@@ -200,8 +235,8 @@ pub(crate) fn migrate_with<S: SqlStore>(
                 }
                 continue;
             }
-            for statement in sql.split(';').filter(|s| !s.trim().is_empty()) {
-                owned.query(statement, &[])?;
+            for statement in statements(sql) {
+                owned.query(&statement, &[])?;
             }
             owned.query(
                 &format!("INSERT INTO {table}(version,digest) VALUES(?,?)"),
@@ -211,4 +246,28 @@ pub(crate) fn migrate_with<S: SqlStore>(
         Ok(json!({ "version": latest }))
     }))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_trigger_body_stays_one_statement() {
+        for (version, sql) in MIGRATIONS {
+            if sql.to_ascii_uppercase().contains("CREATE TRIGGER") {
+                continue;
+            }
+            let plain: Vec<&str> = sql.split(';').filter(|s| !s.trim().is_empty()).collect();
+            assert_eq!(statements(sql), plain, "migration {version}");
+        }
+        let sql = "-- note\nCREATE TABLE t(a);\nCREATE TRIGGER t_add AFTER INSERT ON t BEGIN\n  \
+                   DELETE FROM u;\n  INSERT INTO u VALUES(new.a);\nEND;\nCREATE TABLE u(a)";
+        let split = statements(sql);
+        assert_eq!(split.len(), 3, "{split:?}");
+        assert!(
+            split[1].trim_start().starts_with("CREATE TRIGGER")
+                && split[1].trim_end().ends_with("END")
+        );
+    }
 }

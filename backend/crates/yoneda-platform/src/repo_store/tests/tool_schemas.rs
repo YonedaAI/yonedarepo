@@ -53,3 +53,15 @@ fn memory_kinds_and_statuses_match_the_authority() {
         super::super::memory::relevance::TYPES.to_vec()
     );
 }
+
+#[test]
+fn search_groups_match_the_authority() {
+    let groups = tool_enum("git_grep", "/properties/groups/items/enum");
+    let mut expected = vec!["code".to_owned(), "memories".to_owned()];
+    expected.extend(
+        crate::repo_store::search_records::GROUPS
+            .iter()
+            .map(|g| (*g).to_owned()),
+    );
+    assert_eq!(groups, expected);
+}

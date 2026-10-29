@@ -1,44 +1,38 @@
+// One search across the repository: matching files and lines, memories, and the commits,
+// session records and change requests whose text holds the query's words (searchModel).
 import { type FormEvent, useState } from 'react';
+import { SearchCode } from './SearchCode';
 import { Failure, Loading } from './SourceStatus';
-import type { SourceRoute } from './sourceRoute';
+import { foundNothing, recordSections, type SearchAnswer, searchPath } from './searchModel';
+import { formatSourceRoute, type SourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
-
-type Result = { path: string; lines: { line: number; text: string }[] };
-type Skipped = { path: string; reason: string };
-/** A memory whose text holds the query's words (the search API's memories group). */
-type MemoryHit = { id: number; text: string; stale: boolean | null; memory: { kind: string } };
-/** Files not content-searched named in the note; the rest are counted. */
-const NAMED = 5;
 
 export function RepoSearch({
   repo,
   query,
+  word = false,
   onNavigate,
 }: {
   repo: string;
   query: string;
+  word?: boolean;
   onNavigate: (r: SourceRoute) => void;
 }) {
   const [draft, setDraft] = useState(query);
-  const found = useSource<{
-    results: Result[];
-    skipped_files: Skipped[];
-    skipped_count: number;
-    memories?: MemoryHit[] | null;
-  }>(
-    query.length >= 2
-      ? `/repos/${repo}/search?query=${encodeURIComponent(query)}&ignore_case=true`
-      : null,
-  );
+  const found = useSource<SearchAnswer>(query.length >= 2 ? searchPath(repo, query, word) : null);
+  const go = (q: string, w: boolean) =>
+    onNavigate(
+      w ? { view: 'search', repo, query: q, word: true } : { view: 'search', repo, query: q },
+    );
   const submit = (event: FormEvent) => {
     event.preventDefault();
-    onNavigate({ view: 'search', repo, query: draft.trim() });
+    go(draft.trim(), word);
   };
   return (
     <section aria-label="Search">
-      <form onSubmit={submit} className="source-toolbar" aria-label="Search code">
+      <form onSubmit={submit} className="source-toolbar" aria-label="Search the repository">
         <label htmlFor="source-search" className="source-version">
-          Search code
+          Search code, commits, sessions and changes
           <input
             id="source-search"
             value={draft}
@@ -48,12 +42,48 @@ export function RepoSearch({
           />
         </label>
         <button type="submit">Search</button>
+        <label className="search-word">
+          <input
+            type="checkbox"
+            checked={word}
+            onChange={(e) => go(draft.trim() || query, e.target.checked)}
+          />
+          Whole words
+        </label>
       </form>
       {query.length >= 2 && found.loading && <Loading what="results" />}
       {found.error && <Failure error={found.error} onRetry={found.reload} />}
-      {found.data && found.data.results.length === 0 && !found.data.memories?.length && (
+      {found.data && foundNothing(found.data) && (
         <p className="source-empty">No matches for “{query}”.</p>
       )}
+      {found.data &&
+        recordSections(repo, found.data).map((section) => (
+          <section
+            key={section.key}
+            aria-labelledby={`search-${section.key}-heading`}
+            className="search-records"
+          >
+            <h3 id={`search-${section.key}-heading`}>
+              {section.title} <span className="source-meta">({section.count})</span>
+            </h3>
+            <ul className="agent-list">
+              {section.rows.map((row) => (
+                <li key={row.key}>
+                  <a
+                    href={formatSourceRoute(row.route)}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      onNavigate(row.route);
+                    }}
+                  >
+                    {row.label}
+                  </a>
+                  <p className="source-meta">{row.detail}</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        ))}
       {found.data?.memories?.length ? (
         <section aria-labelledby="search-memories-heading" className="search-memories">
           <h3 id="search-memories-heading">Memories</h3>
@@ -79,35 +109,15 @@ export function RepoSearch({
           </ul>
         </section>
       ) : null}
-      {found.data?.skipped_count ? (
-        <p className="source-note">
-          Content not searched (matched by path only) for {found.data.skipped_count}{' '}
-          {found.data.skipped_count === 1 ? 'file' : 'files'}:{' '}
-          {found.data.skipped_files
-            .slice(0, NAMED)
-            .map((f) => `${f.path} (${f.reason})`)
-            .join(', ')}
-          {found.data.skipped_count > NAMED ? `, and ${found.data.skipped_count - NAMED} more` : ''}
-        </p>
-      ) : null}
-      {found.data?.results.map((r) => (
-        <article key={r.path} className="source-file">
-          <header>
-            <a
-              href={`/source/${repo}/files/${r.path}`}
-              onClick={(e) => {
-                e.preventDefault();
-                onNavigate({ view: 'files', repo, path: r.path, ref: 'main' });
-              }}
-            >
-              <code>{r.path}</code>
-            </a>
-          </header>
-          {r.lines.length > 0 && (
-            <pre>{r.lines.map((l) => `${String(l.line).padStart(5)}  ${l.text}`).join('\n')}</pre>
-          )}
-        </article>
-      ))}
+      {found.data && (
+        <SearchCode
+          repo={repo}
+          results={found.data.results}
+          skipped={found.data.skipped_files}
+          skippedCount={found.data.skipped_count}
+          onNavigate={onNavigate}
+        />
+      )}
     </section>
   );
 }

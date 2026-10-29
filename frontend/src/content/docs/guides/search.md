@@ -5,9 +5,11 @@ summary: Search, blame, log and diff on the server, at any landed version.
 
 ## Search
 
-The **Search** tab, `yoneda grep <query> [--path <p>] [-i]`, `GET /api/v1/repos/<id>/search?q=` and MCP `git_grep` search the repository's code.
+The **Search** tab, `yoneda grep <query> [--path <p>] [-i] [-w]`, `GET /api/v1/repos/<id>/search?q=` and MCP `git_grep` search the repository's code.
 
-The index is kept per directory and rebuilt only where files changed. Files over 4 MiB and binary files are not content-searched; a search answer names the files it could not search and why.
+Results are ranked: files where the query is a whole word (`test`, not `latest`) first, then files whose path matches, then files where it only appears inside words; within each, more matches first, then by path. `-w` (`word=true`, the **Whole words** toggle) leaves out the matches inside words. Each line carries the ranges that matched, and each file its match count.
+
+The index is kept per directory and rebuilt only where files changed. Binary files are not content-searched and not listed. Text files over 4 MiB are not content-searched either; a search answer names them.
 
 ## Reading at a version
 
