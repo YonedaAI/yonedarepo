@@ -1,10 +1,13 @@
 //! Platform-only tests: a scripted client plays the adapter (object store + readback).
 //! No agents, runs or provider keys are involved.
 use super::execute_repo_store;
-use crate::native::NativeStore;
+use crate::native::{Counted, NativeStore};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
-use std::{cell::RefCell, collections::HashMap};
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashMap,
+};
 use yoneda_core::git_object::{
     Commit, FileMode, ObjectKind, PackLimits, decode_tree, hash_object, read_pack,
 };
@@ -15,9 +18,11 @@ const CI: &str = "token:ci";
 const SYSTEM: &str = "platform:checks";
 
 struct Harness {
-    db: NativeStore,
+    db: Counted<NativeStore>,
     /// Plays the object store: raw objects unpacked from real pushed packs.
     objects: RefCell<HashMap<String, (ObjectKind, Vec<u8>)>>,
+    /// Objects the authority asked the adapter for (trees and blobs), and their bytes.
+    object_reads: Cell<(u64, u64)>,
     /// The adapter's write-through cache copies returned by prepare.
     cached: RefCell<HashMap<String, Value>>,
     /// Plays the commit shards: records of commits built outside the authority, by id.
@@ -28,8 +33,9 @@ struct Harness {
 impl Harness {
     fn new() -> Self {
         let h = Self {
-            db: NativeStore::memory().unwrap(),
+            db: Counted::new(NativeStore::memory().unwrap()),
             objects: RefCell::default(),
+            object_reads: Cell::default(),
             cached: RefCell::default(),
             shard: RefCell::default(),
             now: RefCell::new(1_700_000_000_000),
@@ -71,8 +77,16 @@ impl Harness {
         self.run(principal, c.clone())
             .unwrap_or_else(|e| panic!("{c} failed: {e}"))
     }
+    /// Reads object `id` from the object store double, counting it.
+    fn read_object(&self, id: &str) -> Vec<u8> {
+        let bytes = self.objects.borrow()[id].1.clone();
+        let (count, total) = self.object_reads.get();
+        self.object_reads
+            .set((count + 1, total + bytes.len() as u64));
+        bytes
+    }
     fn tree_json(&self, id: &str) -> Value {
-        let (_, bytes) = &self.objects.borrow()[id];
+        let bytes = &self.read_object(id);
         let entries = decode_tree(bytes).unwrap();
         let listed = json!(entries.iter().map(|e| json!({"name": e.name, "id": e.id, "type": match e.mode {
             FileMode::Tree => "tree", FileMode::Executable => "exec", FileMode::Symlink => "symlink",
@@ -142,7 +156,7 @@ impl Harness {
                 assert!(!need.is_empty());
                 for id in need {
                     let id = id.as_str().unwrap();
-                    supplied_blobs[id] = json!(STANDARD.encode(&self.objects.borrow()[id].1));
+                    supplied_blobs[id] = json!(STANDARD.encode(self.read_object(id)));
                 }
                 continue;
             }
@@ -1592,6 +1606,7 @@ fn contract_records_bind_to_commit_and_digest_and_respect_grants() {
     );
 }
 
+mod access_gates;
 mod account_access;
 mod agent_reads;
 mod batches;
