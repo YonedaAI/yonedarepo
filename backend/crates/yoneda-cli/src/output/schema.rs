@@ -107,6 +107,7 @@ pub fn all() -> Vec<(&'static str, Value)> {
         entry::<Conflicts>(),
         entry::<Context>(),
         entry::<Cloned>(),
+        entry::<SparseScope>(),
         entry::<Status>(),
         entry::<Pull>(),
         entry::<Synced>(),

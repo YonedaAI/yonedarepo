@@ -487,3 +487,71 @@ fn a_placeholder_model_is_stored_and_listed_as_none_at_all() {
     let per_commit = h.ok(CI, json!({"op":"repo_sessions","commit":commits[4]}));
     assert_eq!(per_commit["sessions"][0]["model"], Value::Null);
 }
+
+/// A record carries its clone's fetch efficiency: bytes fetched and bytes of files read,
+/// both optional byte counts, shown by the commit's listing and the repository's.
+#[test]
+fn a_record_carries_its_clone_s_fetch_efficiency() {
+    let (h, root) = seeded();
+    let commit = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("src/lazy.rs", "x\n")]),
+            json!([]),
+        )
+        .unwrap();
+    let with = |fetched: Value, read: Value| {
+        let mut s = session(&commit, "lazy");
+        s["fetched_bytes"] = fetched;
+        s["read_bytes"] = read;
+        s
+    };
+    for (fetched, read) in [
+        (json!(-1), json!(0)),
+        (json!(1.5), json!(0)),
+        (json!("12"), json!(0)),
+        (json!(0), json!(9_007_199_254_740_993u64)),
+    ] {
+        assert_eq!(code(h.run(AGENT, with(fetched, read))), "INVALID_INPUT");
+    }
+    h.ok(AGENT, with(json!(1_048_576), json!(4096)));
+    h.ok(AGENT, session(&commit, "no tally"));
+    let listed = h.ok(CI, json!({"op":"repo_sessions","commit":commit}));
+    assert_eq!(listed["sessions"][0]["fetched_bytes"], 1_048_576);
+    assert_eq!(listed["sessions"][0]["read_bytes"], 4096);
+    assert!(listed["sessions"][1]["fetched_bytes"].is_null());
+    let recent = h.ok(CI, json!({"op":"repo_session_list"}));
+    let lazy = recent["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["summary"] == "lazy")
+        .unwrap();
+    assert_eq!(
+        (lazy["fetched_bytes"].clone(), lazy["read_bytes"].clone()),
+        (json!(1_048_576), json!(4096))
+    );
+}
+
+#[test]
+fn upgrades_from_the_quarantine_schema_with_no_fetch_tally() {
+    use crate::storage::SqlStore;
+    let db = crate::native::NativeStore::memory().unwrap();
+    let migrations = &super::super::migration::MIGRATIONS;
+    let before = migrations
+        .iter()
+        .position(|(version, _)| *version == 41)
+        .unwrap();
+    super::super::migration::migrate_with(&db, "repo_schema_migrations", &migrations[..before])
+        .unwrap();
+    db.query("INSERT INTO sessions(commit_id,cli,summary,recorded_by,at) VALUES('c','x','old','user:owner',1)", &[]).unwrap();
+    super::super::migrate_repo_store(&db).unwrap();
+    super::super::migrate_repo_store(&db).unwrap();
+    let rows = db
+        .query("SELECT summary,fetched_bytes,read_bytes FROM sessions", &[])
+        .unwrap();
+    assert_eq!(rows[0]["summary"], "old");
+    assert!(rows[0]["fetched_bytes"].is_null() && rows[0]["read_bytes"].is_null());
+}

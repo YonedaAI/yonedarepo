@@ -1,11 +1,12 @@
 //! The local repository, through the `git` executable: plumbing only, so a person's own
 //! Git configuration and hooks never change what is synced.
 use crate::error::{Context, Error, Result};
-use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+mod objects;
 
 /// Identity of the commits this client makes for platform snapshots.
 const SNAPSHOT_IDENTITY: [(&str, &str); 4] = [
@@ -19,7 +20,13 @@ pub struct Git {
     dir: PathBuf,
     /// An explicit repository (the remote helper gets `GIT_DIR`, maybe bare).
     git_dir: Option<PathBuf>,
+    /// Set in the remote helper: how deeply helpers are nested (see `in_helper`).
+    helper_depth: Option<u32>,
 }
+
+/// How deeply remote helpers are nested: a helper's own Git run that needs an absent
+/// object starts another helper to fetch it, which never needs one in turn.
+pub const HELPER_DEPTH: &str = "YONEDA_HELPER_DEPTH";
 
 /// A local commit's author and message.
 pub struct Authored {
@@ -33,6 +40,7 @@ impl Git {
         Self {
             dir: dir.into(),
             git_dir: None,
+            helper_depth: None,
         }
     }
 
@@ -41,7 +49,21 @@ impl Git {
         Self {
             dir: dir.into(),
             git_dir: Some(git_dir.into()),
+            helper_depth: None,
         }
+    }
+
+    /// The remote helper's Git at nesting `depth`: its runs never fetch absent objects
+    /// lazily (`GIT_NO_LAZY_FETCH`), except to read contents (`read_objects`), and any
+    /// helper they start knows it is nested.
+    pub fn in_helper(mut self, depth: u32) -> Self {
+        self.helper_depth = Some(depth);
+        self
+    }
+
+    /// The repository directory, when given explicitly.
+    pub fn git_dir(&self) -> Option<&Path> {
+        self.git_dir.as_deref()
     }
 
     /// Whether `ancestor` is reachable from (or equal to) `commit`.
@@ -72,6 +94,11 @@ impl Git {
             )
             .env("GIT_TERMINAL_PROMPT", "0")
             .envs(envs.iter().copied());
+        if let Some(depth) = self.helper_depth {
+            command
+                .env("GIT_NO_LAZY_FETCH", "1")
+                .env(HELPER_DEPTH, (depth + 1).to_string());
+        }
         command
     }
 
@@ -186,84 +213,6 @@ impl Git {
             email: email.to_owned(),
             message: message.trim_end().to_owned(),
         })
-    }
-
-    /// Object contents by id, through one `git cat-file --batch`.
-    pub fn read_blobs(&self, ids: &[String]) -> Result<HashMap<String, Vec<u8>>> {
-        if ids.is_empty() {
-            return Ok(HashMap::new());
-        }
-        let mut child = self
-            .command(&[])
-            .args(["cat-file", "--batch"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .context("running git cat-file")?;
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| Error::new("git cat-file stdin"))?;
-        let request = ids.iter().map(|id| format!("{id}\n")).collect::<String>();
-        // A writer thread keeps a large request from deadlocking against the output.
-        let writer = std::thread::spawn(move || stdin.write_all(request.as_bytes()));
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| Error::new("git cat-file stdout"))?;
-        let mut reader = BufReader::new(stdout);
-        let mut blobs = HashMap::new();
-        for id in ids {
-            let mut header = String::new();
-            reader
-                .read_line(&mut header)
-                .context("reading git cat-file")?;
-            let size = match header.split_whitespace().collect::<Vec<_>>()[..] {
-                [_, "blob", size] => size.parse::<usize>().context("git cat-file size")?,
-                _ => {
-                    return Err(Error::new(format!(
-                        "{id} is not a blob in the local repository"
-                    )));
-                }
-            };
-            let mut data = vec![0; size + 1];
-            reader
-                .read_exact(&mut data)
-                .context("reading git cat-file")?;
-            data.truncate(size);
-            blobs.insert(id.clone(), data);
-        }
-        writer
-            .join()
-            .map_err(|_| Error::new("git cat-file writer panicked"))?
-            .context("writing to git cat-file")?;
-        child.wait().context("waiting for git cat-file")?;
-        Ok(blobs)
-    }
-
-    /// The ids among `ids` that the local object database does not hold.
-    pub fn missing(&self, ids: &[String]) -> Result<Vec<String>> {
-        if ids.is_empty() {
-            return Ok(Vec::new());
-        }
-        let request = ids.iter().map(|id| format!("{id}\n")).collect::<String>();
-        let out = self.output(
-            &["cat-file", "--batch-check"],
-            Some(request.as_bytes()),
-            &[],
-        )?;
-        Ok(String::from_utf8_lossy(&out)
-            .lines()
-            .filter_map(|line| line.strip_suffix(" missing").map(str::to_owned))
-            .collect())
-    }
-
-    /// Adds a pack to the local object database (`git index-pack` verifies every
-    /// object and writes the pack with its index).
-    pub fn unpack(&self, pack: &[u8]) -> Result<()> {
-        self.output(&["index-pack", "--stdin"], Some(pack), &[])
-            .map(|_| ())
     }
 
     /// A commit of `tree` on `parent`, with the snapshot identity.

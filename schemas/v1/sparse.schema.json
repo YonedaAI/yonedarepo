@@ -1,0 +1,39 @@
+{
+  "$defs": {
+    "SparseScope": {
+      "additionalProperties": false,
+      "description": "`sparse`: the directories the clone now checks out (with the files at its top).",
+      "properties": {
+        "scope": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "scope"
+      ],
+      "title": "SparseScope",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `sparse`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/SparseScope"
+    },
+    "schema": {
+      "const": "yoneda.cli.sparse.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.sparse.v1",
+  "type": "object"
+}
