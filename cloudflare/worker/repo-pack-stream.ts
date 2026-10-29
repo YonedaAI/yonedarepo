@@ -95,9 +95,10 @@ export class Storing {
       return;
     }
     this.#backlog += bytes.length;
-    this.#queue = this.#queue.then(() =>
-      writer.add(bytes).then(() => void (this.#backlog -= bytes.length)),
-    );
+    this.#queue = this.#queue.then(async () => {
+      await writer.add(bytes);
+      this.#backlog -= bytes.length;
+    });
     this.#queue.catch((e) => this.#drop(e?.message ?? e));
   }
 
