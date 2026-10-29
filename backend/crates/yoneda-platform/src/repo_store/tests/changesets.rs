@@ -187,7 +187,8 @@ fn disjoint_landings_append_changesets_and_overlaps_fall_back_to_merges() {
         json!({"commit": null, "at": null})
     );
     // Head reads fail closed until the projector catches up (the adapter projects and
-    // retries); new work still begins, on the last projected head and its version.
+    // retries; a partial listing names main as pending instead, see `pending_refs`); new
+    // work still begins, on the last projected head and its version.
     for read in [
         json!({"op":"repo_refs"}),
         json!({"op":"repo_snapshot","ref":"main"}),
