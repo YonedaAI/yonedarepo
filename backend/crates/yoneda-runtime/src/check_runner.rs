@@ -33,71 +33,131 @@ pub struct CheckRequest {
     pub files: Vec<CheckFile>,
 }
 
-fn invalid(message: impl Into<String>) -> Error {
+pub(crate) fn invalid(message: impl Into<String>) -> Error {
     Error::new("INVALID_INPUT", message)
 }
 
-/// Writes the commit's files under `root`. Paths are validated like any untrusted
-/// archive: no absolute paths, `..`, `.git` or duplicate entries. Symlink targets stay
-/// inside `root`, and no written path may pass through a symlink an earlier entry planted.
-pub fn materialize(root: &Path, files: &[CheckFile]) -> Result<()> {
-    if files.len() > MAX_FILES {
-        return Err(invalid("Too many files for a check"));
-    }
-    let mut total = 0usize;
-    let mut seen = std::collections::HashSet::new();
-    for file in files {
-        yoneda_core::validate_path(&file.path)?;
-        if !seen.insert(file.path.as_str()) {
-            return Err(invalid(format!("{} appears twice", file.path)));
+/// The kind of a check file's entry.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EntryKind {
+    Blob,
+    Exec,
+    Symlink,
+}
+
+impl EntryKind {
+    fn parse(kind: &str) -> Result<EntryKind> {
+        match kind {
+            "blob" => Ok(EntryKind::Blob),
+            "exec" => Ok(EntryKind::Exec),
+            "symlink" => Ok(EntryKind::Symlink),
+            other => Err(invalid(format!("Unsupported entry type {other}"))),
         }
-        let data = STANDARD
-            .decode(&file.data_b64)
-            .map_err(|_| invalid("File content is not base64"))?;
-        total += data.len();
-        if total > MAX_BYTES {
+    }
+}
+
+/// Writes a commit's files under `root`, one at a time as they arrive. Paths are validated
+/// like any untrusted archive: no absolute paths, `..`, `.git` or duplicate entries.
+/// Symlink targets stay inside `root`, and no written path may pass through a symlink an
+/// earlier entry planted. The file count and total size are bounded.
+pub struct Materializer<'a> {
+    root: &'a Path,
+    total: usize,
+    seen: std::collections::HashSet<String>,
+}
+
+impl<'a> Materializer<'a> {
+    pub fn new(root: &'a Path) -> Self {
+        Materializer {
+            root,
+            total: 0,
+            seen: std::collections::HashSet::new(),
+        }
+    }
+
+    /// Files written so far.
+    pub fn files(&self) -> usize {
+        self.seen.len()
+    }
+
+    /// Bytes written so far.
+    pub fn bytes(&self) -> usize {
+        self.total
+    }
+
+    /// Whether `more` bytes would pass the size limit (checked before they are read).
+    pub fn would_exceed(&self, more: usize) -> bool {
+        self.total.saturating_add(more) > MAX_BYTES
+    }
+
+    pub fn write(&mut self, path: &str, kind: EntryKind, data: &[u8]) -> Result<()> {
+        if self.seen.len() >= MAX_FILES {
+            return Err(invalid("Too many files for a check"));
+        }
+        yoneda_core::validate_path(path)?;
+        if !self.seen.insert(path.to_owned()) {
+            return Err(invalid(format!("{path} appears twice")));
+        }
+        if self.would_exceed(data.len()) {
             return Err(invalid("Check files exceed the size limit"));
         }
-        let target = root.join(&file.path);
+        self.total += data.len();
+        let root = self.root;
+        let target = root.join(path);
         let mut at = root.to_path_buf();
-        for component in Path::new(&file.path).parent().unwrap_or(Path::new("")) {
+        for component in Path::new(path).parent().unwrap_or(Path::new("")) {
             at.push(component);
             if std::fs::symlink_metadata(&at)
                 .map(|m| m.file_type().is_symlink())
                 .unwrap_or(false)
             {
                 return Err(invalid(format!(
-                    "{} passes through the symlink {:?}",
-                    file.path, component
+                    "{path} passes through the symlink {component:?}"
                 )));
             }
         }
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent).map_err(err)?;
         }
-        match file.kind.as_str() {
-            "blob" | "exec" => {
-                std::fs::write(&target, &data).map_err(err)?;
+        match kind {
+            EntryKind::Blob | EntryKind::Exec => {
+                std::fs::write(&target, data).map_err(err)?;
                 #[cfg(unix)]
-                if file.kind == "exec" {
+                if kind == EntryKind::Exec {
                     use std::os::unix::fs::PermissionsExt;
                     std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o755))
                         .map_err(err)?;
                 }
             }
             #[cfg(unix)]
-            "symlink" => {
-                let link =
-                    String::from_utf8(data).map_err(|_| invalid("Symlink target is not UTF-8"))?;
-                if !yoneda_core::symlink_stays_inside(&file.path, &link) {
+            EntryKind::Symlink => {
+                let link = std::str::from_utf8(data)
+                    .map_err(|_| invalid("Symlink target is not UTF-8"))?;
+                if !yoneda_core::symlink_stays_inside(path, link) {
                     return Err(invalid(format!(
                         "Symlink target escapes the check root: {link:?}"
                     )));
                 }
                 std::os::unix::fs::symlink(link, &target).map_err(err)?;
             }
-            other => return Err(invalid(format!("Unsupported entry type {other}"))),
+            #[cfg(not(unix))]
+            EntryKind::Symlink => return Err(invalid("Symlinks need a Unix check executor")),
         }
+        Ok(())
+    }
+}
+
+/// Writes the commit's files (the JSON request's base64 form) under `root`.
+pub fn materialize(root: &Path, files: &[CheckFile]) -> Result<()> {
+    if files.len() > MAX_FILES {
+        return Err(invalid("Too many files for a check"));
+    }
+    let mut out = Materializer::new(root);
+    for file in files {
+        let data = STANDARD
+            .decode(&file.data_b64)
+            .map_err(|_| invalid("File content is not base64"))?;
+        out.write(&file.path, EntryKind::parse(&file.kind)?, &data)?;
     }
     Ok(())
 }
@@ -217,24 +277,39 @@ pub async fn execute(root: &Path, command: &[String], timeout: Duration) -> Resu
     }))
 }
 
-/// Materializes and runs one check in a fresh temporary directory.
-pub async fn run(request: CheckRequest) -> Result<Value> {
-    if !(1..=3600).contains(&request.timeout_seconds) {
-        return Err(invalid("timeout_seconds must be 1-3600"));
-    }
-    let dir = tempfile::Builder::new()
+/// A fresh temporary directory for one check.
+pub fn check_dir() -> Result<tempfile::TempDir> {
+    tempfile::Builder::new()
         .prefix("check-")
         .tempdir_in(
             std::env::var_os("YONEDA_CHECK_ROOT")
                 .map(std::path::PathBuf::from)
                 .unwrap_or_else(std::env::temp_dir),
         )
-        .map_err(err)?;
+        .map_err(err)
+}
+
+pub fn valid_timeout(timeout_seconds: u64) -> Result<Duration> {
+    if !(1..=3600).contains(&timeout_seconds) {
+        return Err(invalid("timeout_seconds must be 1-3600"));
+    }
+    Ok(Duration::from_secs(timeout_seconds))
+}
+
+/// Materializes and runs one check in a fresh temporary directory. `setup_ms` (in the
+/// result) is the time from the request's arrival to its files written: what a check pays
+/// before its command starts.
+pub async fn run(request: CheckRequest, arrived: Instant) -> Result<Value> {
+    let timeout = valid_timeout(request.timeout_seconds)?;
+    let dir = check_dir()?;
     materialize(dir.path(), &request.files)?;
-    execute(
-        dir.path(),
-        &request.command,
-        Duration::from_secs(request.timeout_seconds),
-    )
-    .await
+    let setup_ms = since(arrived);
+    let mut result = execute(dir.path(), &request.command, timeout).await?;
+    result["setup_ms"] = json!(setup_ms);
+    Ok(result)
+}
+
+/// Milliseconds since `at`.
+pub fn since(at: Instant) -> u64 {
+    u64::try_from(at.elapsed().as_millis()).unwrap_or(u64::MAX)
 }

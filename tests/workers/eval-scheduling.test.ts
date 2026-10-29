@@ -17,7 +17,7 @@ const CART = 'export function total(items: number[]): number {\n  return items.l
 
 /** Combined check: every price() call passes as many arguments as price() declares. */
 function arityCheck(job: any) {
-  const text = job.files.map((f: any) => atob(f.data_b64)).join('\n');
+  const text = job.files.map((f: any) => new TextDecoder().decode(f.data)).join('\n');
   const declared = /function price\(([^)]*)\)/.exec(text)?.[1].split(',').length ?? 0;
   const calls = [...text.matchAll(/(?<!function )price\(([^)]*)\)/g)].map((m) => m[1].split(',').length);
   const ok = calls.every((n) => n === declared);
