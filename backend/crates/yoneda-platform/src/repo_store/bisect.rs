@@ -77,7 +77,12 @@ pub fn step_bisect<S: SqlStore>(
         row["hi"].as_u64().unwrap_or(0) as usize,
     );
     if row["status"] != "running" {
-        return Ok(json!({ "id": id, "status": row["status"], "result": row["result"] }));
+        // `result` is stored as JSON text; answer the object, as the step that found it did.
+        let result: Value = match row["result"].as_str() {
+            Some(text) => serde_json::from_str(text).map_err(|_| rows::corrupt("bisect result"))?,
+            None => Value::Null,
+        };
+        return Ok(json!({ "id": id, "status": row["status"], "result": result }));
     }
     // Invariant: candidates[hi] is bad; the first bad commit is in [lo, hi].
     while lo < hi {

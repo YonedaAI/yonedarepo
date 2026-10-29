@@ -162,3 +162,26 @@ test('the function is found breadth first through tree listings and the first fi
   assert.ok(!asked.some((u) => u.includes('path=test') || u.includes('.github')), 'tests and dot directories are not walked');
   await assert.rejects(findFunction({ get: async () => ({ entries: [], symbols: [] }) }, '/repos/r1'), /no Rust, TypeScript or JavaScript function in 0 source files/);
 });
+
+test('a bisect that does not name the breaking commit reports its final record and every check run', async () => {
+  const { bisectReport } = await import('../../tools/staging/agent-tools-plan.mjs');
+  const commits = ['c1', 'c2', 'c3'].map((c) => c.padEnd(40, '0'));
+  const details = [
+    { check_runs: [{ id: 'cr_1', name: 'realuser-1-bisect', status: 'passed', result: JSON.stringify({ exit_code: 0, duration_ms: 4100 }) }] },
+    { check_runs: [] },
+    { check_runs: [{ id: 'cr_3', name: 'realuser-1-bisect', status: 'failed', result: { exit_code: 1, duration_ms: 3900 } }, { id: 'cr_x', name: 'unit', status: 'passed' }] },
+  ];
+  // The platform once answered a found bisect's result as its stored JSON text.
+  const done = { id: 'bi_1', status: 'found', result: '{"first_bad":"c3"}' };
+  const report = bisectReport(done, commits, details, 'realuser-1-bisect');
+  assert.deepEqual(report.record, done);
+  assert.equal(report.first_bad, undefined, 'a result that is not an object names no commit');
+  assert.deepEqual(report.runs, [
+    { commit: 'c1'.padEnd(40, '0').slice(0, 10), step: 1, status: 'passed', exit_code: 0, duration_ms: 4100 },
+    { commit: 'c3'.padEnd(40, '0').slice(0, 10), step: 3, status: 'failed', exit_code: 1, duration_ms: 3900 },
+  ]);
+  assert.match(report.text, /"status":"found"/);
+  assert.match(report.text, /step 3 c300000000 failed exit 1 3\.9 s/);
+  const named = bisectReport({ status: 'found', result: { first_bad: commits[2] } }, commits, details, 'realuser-1-bisect');
+  assert.equal(named.first_bad, commits[2]);
+});

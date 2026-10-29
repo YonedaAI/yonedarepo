@@ -20,6 +20,7 @@ import { appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   bisectPlan,
+  bisectReport,
   bisectRunner,
   checkSeconds,
   contractListed,
@@ -191,11 +192,13 @@ export async function realuserAgentTools(ctx, metrics, { headed = false } = {}) 
           },
           { timeoutMs: BISECT_TIMEOUT_MS, intervalMs: 10_000, what: `bisect ${started.id}` },
         );
-        assert.equal(done.status, 'found', `bisect ended ${done.status}`);
-        assert.equal(done.result?.first_bad, shown.bisect.breaking, 'bisect names exactly the breaking commit');
         const details = await Promise.all(commits.map((c) => rest.get(`${path}/commits/${c}`)));
         const used = checkSeconds(details, name);
-        Object.assign(metrics, { bisect: started.id, bisect_s: Math.round((performance.now() - began) / 1000), check_runs: used.runs, check_minutes: (used.seconds / 60).toFixed(2) });
+        const report = bisectReport(done, commits, details, name);
+        // The whole final record and every check run go to the evidence, pass or fail.
+        Object.assign(metrics, { bisect: started.id, bisect_s: Math.round((performance.now() - began) / 1000), check_runs: used.runs, check_minutes: (used.seconds / 60).toFixed(2), bisect_record: report.record, bisect_runs: report.runs });
+        assert.equal(done.status, 'found', `bisect ended ${done.status}: ${report.text}`);
+        assert.equal(report.first_bad, shown.bisect.breaking, `bisect names exactly the breaking commit: ${report.text}`);
         Object.assign(shown.bisect, { id: started.id });
       }],
       ['browser: Agents → contracts, pins and bisects show the rows', () =>
