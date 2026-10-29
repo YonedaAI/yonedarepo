@@ -1,9 +1,10 @@
 // Kit item 29's agent sandbox (tools/staging/agent-sandbox.mjs, agent-sandbox-host.mjs): the
 // docker command mounts the clone and nothing else, the container's environment is the
-// allowlist (no host variable, no gh or SSH agent), secrets never reach the command line, a
-// loopback platform is reached through the one allowed host port, only the model's provider
-// credential is passed, and the host snapshots catch what an escaped agent did on 2026-10-28
-// (commits on main, a switched branch, a nested worktree, a push to the host's remote).
+// allowlist (no host variable, no gh or SSH agent), secrets never reach the command line, the
+// agent is on the egress-limited network and its proxy forwards to the platform and the model
+// provider's API by exact name only, only the model's provider credential is passed, and the
+// host snapshots catch what an escaped agent did on 2026-10-28 (commits on main, a switched
+// branch, a nested worktree, a push to the host's remote).
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
@@ -11,7 +12,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { hostState } from '../../tools/staging/agent-sandbox-host.mjs';
-import { clientEnv, credentialFor, HOOK_LOG, hostDrift, IMAGE, sandboxArgs, sandboxEnv, sandboxOrigin, WORKDIR } from '../../tools/staging/agent-sandbox.mjs';
+import { clientEnv, credentialFor, EGRESS_PROXY, egressAllowlist, egressArgs, HOOK_LOG, hostDrift, IMAGE, sandboxArgs, sandboxEnv, sandboxOrigin, WORKDIR } from '../../tools/staging/agent-sandbox.mjs';
+import { allowed, parseAllow, targetOf } from '../../tools/staging/agent-sandbox/egress-proxy.mjs';
 
 const HOST = {
   PATH: '/opt/homebrew/bin:/usr/bin',
@@ -25,8 +27,8 @@ const HOST = {
   DOCKER_CONTEXT: 'desktop-linux',
 };
 const clone = '/private/var/folders/x/T/yoneda-kit-cli-abc/agent-w1a1';
-const env = sandboxEnv({ origin: 'http://host.docker.internal:8787', token: 'repo-token-secret', remote: 'yoneda::http://host.docker.internal:8787/r1', hostPort: '8787', credential: '[{"integrationID":"zai-coding-plan"}]' });
-const args = sandboxArgs({ name: 'yoneda-kit-w1a1', clone, env, command: ['opencode', 'run', '--standalone', 'task'] });
+const env = sandboxEnv({ origin: 'http://host.docker.internal:8787', token: 'repo-token-secret', remote: 'yoneda::http://host.docker.internal:8787/r1', credential: '[{"integrationID":"zai-coding-plan"}]' });
+const args = sandboxArgs({ name: 'yoneda-kit-w1a1', clone, env, command: ['opencode', 'run', '--standalone', 'task'], network: 'yoneda-sandbox-run1' });
 
 test('the container mounts the clone at /work and no other host path', () => {
   assert.ok(!args.includes('-v') && !args.includes('--volume'), 'no -v mounts');
@@ -37,8 +39,8 @@ test('the container mounts the clone at /work and no other host path', () => {
   assert.deepEqual(hostPaths, [`type=bind,source=${clone},target=${WORKDIR}`]);
   assert.equal(args[args.indexOf('--workdir') + 1], WORKDIR);
   assert.ok(HOOK_LOG.startsWith(`${WORKDIR}/.git/`), 'the hook log lives inside the clone');
-  assert.throws(() => sandboxArgs({ name: 'x', clone: 'relative/dir', env, command: [] }));
-  assert.throws(() => sandboxArgs({ name: 'x', clone: '/tmp/a,readonly=false', env, command: [] }));
+  assert.throws(() => sandboxArgs({ name: 'x', clone: 'relative/dir', env, command: [], network: 'n' }));
+  assert.throws(() => sandboxArgs({ name: 'x', clone: '/tmp/a,readonly=false', env, command: [], network: 'n' }));
 });
 
 test('the container is locked down: read-only root, no capabilities kept, no IPv6, the pinned image', () => {
@@ -47,7 +49,7 @@ test('the container is locked down: read-only root, no capabilities kept, no IPv
   assert.deepEqual(args.filter((_, i) => args[i - 1] === '--cap-add').sort(), ['NET_ADMIN', 'SETGID', 'SETPCAP', 'SETUID']);
   assert.equal(args[args.indexOf('--security-opt') + 1], 'no-new-privileges');
   assert.equal(args[args.indexOf('--sysctl') + 1], 'net.ipv6.conf.all.disable_ipv6=1');
-  assert.ok(!args.includes('--privileged') && !args.includes('--network') && !args.some((a) => a.startsWith('--net=')));
+  assert.ok(!args.includes('--privileged') && !args.some((a) => a.startsWith('--net=')));
   assert.deepEqual(args.slice(args.indexOf(IMAGE)), [IMAGE, 'opencode', 'run', '--standalone', 'task']);
 });
 
@@ -62,22 +64,28 @@ test("the container's environment is the allowlist, by name only", () => {
     'GIT_CONFIG_VALUE_1',
     'GIT_CONFIG_VALUE_2',
     'GIT_TERMINAL_PROMPT',
+    'HTTPS_PROXY',
+    'HTTP_PROXY',
+    'NO_PROXY',
     'OPENCODE_CONFIG_CONTENT',
     'SANDBOX_CREDENTIAL',
+    'SANDBOX_EGRESS_PROXY',
     'SANDBOX_EXPECTED_ORIGIN',
-    'SANDBOX_HOST_PORT',
     'YONEDA_AGENT_WORKDIR',
     'YONEDA_HOOK_LOG',
     'YONEDA_ORIGIN',
     'YONEDA_TOKEN',
+    'http_proxy',
+    'https_proxy',
+    'no_proxy',
   ]);
   const named = args.filter((_, i) => args[i - 1] === '-e');
   assert.deepEqual(named, Object.keys(env).sort(), 'every -e names a variable, none carries a value');
   assert.ok(!args.join(' ').includes('repo-token-secret'), 'the token is not on the command line');
   assert.equal(env.SANDBOX_CREDENTIAL, 'stdin', 'the credential travels on stdin, not in the environment');
   assert.deepEqual(JSON.parse(env.OPENCODE_CONFIG_CONTENT), { plugins: [{ package: '/opt/yoneda/plugin' }] });
-  const bare = sandboxEnv({ origin: 'https://api.example', token: 't', remote: 'yoneda::https://api.example/r1', hostPort: null, credential: null });
-  assert.ok(!('SANDBOX_HOST_PORT' in bare) && !('SANDBOX_CREDENTIAL' in bare));
+  const bare = sandboxEnv({ origin: 'https://api.example', token: 't', remote: 'yoneda::https://api.example/r1', credential: null });
+  assert.ok(!('SANDBOX_CREDENTIAL' in bare));
 });
 
 test("the docker client gets the daemon's settings and the -e values, nothing else of the host", () => {
@@ -91,9 +99,47 @@ test("the docker client gets the daemon's settings and the -e values, nothing el
 });
 
 test('a loopback platform is reached through the host gateway; a hosted one directly', () => {
-  assert.deepEqual(sandboxOrigin('http://127.0.0.1:8787'), { origin: 'http://host.docker.internal:8787', hostPort: '8787' });
-  assert.deepEqual(sandboxOrigin('http://localhost:9000/'), { origin: 'http://host.docker.internal:9000', hostPort: '9000' });
-  assert.deepEqual(sandboxOrigin('https://api-dev.yonedarepo.com'), { origin: 'https://api-dev.yonedarepo.com', hostPort: null });
+  assert.deepEqual(sandboxOrigin('http://127.0.0.1:8787'), { origin: 'http://host.docker.internal:8787' });
+  assert.deepEqual(sandboxOrigin('http://localhost:9000/'), { origin: 'http://host.docker.internal:9000' });
+  assert.deepEqual(sandboxOrigin('https://api-dev.yonedarepo.com'), { origin: 'https://api-dev.yonedarepo.com' });
+});
+
+test('the agent is on the internal network and every client goes through the egress proxy', () => {
+  assert.equal(args[args.indexOf('--network') + 1], 'yoneda-sandbox-run1');
+  assert.throws(() => sandboxArgs({ name: 'x', clone, env, command: [] }), /egress-limited network/);
+  for (const name of ['HTTPS_PROXY', 'HTTP_PROXY', 'https_proxy', 'http_proxy']) assert.equal(env[name], `http://${EGRESS_PROXY}`);
+  assert.equal(env.SANDBOX_EGRESS_PROXY, EGRESS_PROXY);
+  // The proxy: no mount, no capabilities, its allowlist by name only.
+  const proxy = egressArgs({ name: 'yoneda-egress-run1' });
+  assert.ok(!proxy.includes('--mount') && !proxy.includes('-v') && !proxy.includes('--network'));
+  assert.equal(proxy[proxy.indexOf('--cap-drop') + 1], 'ALL');
+  assert.deepEqual(proxy.filter((_, i) => proxy[i - 1] === '-e'), ['SANDBOX_EGRESS_ALLOW']);
+  assert.deepEqual(proxy.slice(proxy.indexOf(IMAGE)), [IMAGE, '/opt/yoneda/egress-proxy.mjs']);
+});
+
+test('egress is the platform and the model provider, by exact host:port', () => {
+  assert.deepEqual(egressAllowlist({ origin: 'https://api-dev.yonedarepo.com', model: 'zai-coding-plan/glm-5.3' }), ['api-dev.yonedarepo.com:443', 'api.z.ai:443']);
+  assert.deepEqual(egressAllowlist({ origin: 'http://host.docker.internal:8787', model: null }), ['host.docker.internal:8787']);
+  assert.throws(() => egressAllowlist({ origin: 'https://api-dev.yonedarepo.com', model: 'unknown-provider/m' }), /no egress host is known/);
+  const allow = parseAllow('api.z.ai:443, API-DEV.yonedarepo.com:443,host.docker.internal:8787');
+  assert.ok(allowed('CONNECT', 'api.z.ai:443', allow));
+  assert.ok(allowed('CONNECT', 'API.Z.AI:443', allow));
+  assert.ok(allowed('GET', 'http://host.docker.internal:8787/api/v1/repos/r1', allow));
+  for (const [method, url] of [
+    ['CONNECT', 'api.z.ai:80'],
+    ['CONNECT', 'evil.api.z.ai:443'],
+    ['CONNECT', 'z.ai:443'],
+    ['CONNECT', 'example.com:443'],
+    ['CONNECT', '1.1.1.1:443'],
+    ['GET', 'http://example.com/'],
+    ['GET', 'https://api.z.ai/'],
+    ['GET', '/relative'],
+    ['CONNECT', 'api.z.ai:443@example.com:443'],
+  ])
+    assert.ok(!allowed(method, url, allow), `${method} ${url}`);
+  assert.equal(targetOf('GET', 'http://host.docker.internal:8787/x'), 'host.docker.internal:8787');
+  assert.equal(parseAllow('').size, 0, 'no allowlist forwards nothing');
+  assert.throws(() => parseAllow('*.z.ai:443'), /not host:port/);
 });
 
 test("only the model's provider credential is passed", () => {
