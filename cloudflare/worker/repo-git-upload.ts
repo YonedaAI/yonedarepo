@@ -7,21 +7,31 @@
 // (partial and shallow clones) is `repo-git-v2.ts`, which shares the pack stream.
 
 import { transient } from './durable';
-import { ReadStats, type Wanted } from './repo-bundles';
+import type { ReadStats, Wanted } from './repo-bundles';
 import { compute } from './repo-compute';
 import { rawObjects, SeenTrees, treesFor } from './repo-git-objects';
+import { PackWriter, packCacheOn, packKey, storedPack } from './repo-pack-cache';
+import {
+  concat,
+  end,
+  failed,
+  PackStats,
+  RESULT,
+  Storing,
+  sendStored,
+  sideBand,
+} from './repo-pack-stream';
 
 type Read = Wanted & { data: Uint8Array | null };
 
 import { UploadSession } from './repo-git-sessions';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
+import { timed } from './repo-timing';
 
-export const RESULT = {
-  'content-type': 'application/x-git-upload-pack-result',
-  'cache-control': 'no-cache',
-};
 export const REQUEST_BYTES = 8 * 1024 * 1024;
+export { PackStats, RESULT };
+
 const WALK_ROUNDS = 64;
 /** Commits read while the walk runs, at most (each is held until the pack is written). */
 const EARLY_COMMITS = 20_000;
@@ -33,16 +43,6 @@ export const pkt = (text: string) => {
   const head = new TextEncoder().encode((bytes.length + 4).toString(16).padStart(4, '0'));
   return concat([head, bytes]);
 };
-
-function concat(parts: Uint8Array[]) {
-  const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
-  let at = 0;
-  for (const part of parts) {
-    out.set(part, at);
-    at += part.length;
-  }
-  return out;
-}
 
 export async function readAll(body: ReadableStream<Uint8Array>, limit: number) {
   const parts: Uint8Array[] = [];
@@ -83,21 +83,40 @@ export async function uploadPack(
   if (!request.done) return new Response(ack, { headers: RESULT });
   const band = caps.includes('side-band-64k') ? CHUNK : caps.includes('side-band') ? 995 : 0;
   const commits = (walk.commits ?? []).map((c: Json) => String(c.commit));
-  return sendPack(ack, UploadSession.open(walk), objects, band, stats, commits);
+  const full = request.haves.length === 0;
+  return sendPack(ack, () => UploadSession.open(walk), objects, band, stats, commits, {
+    full,
+    wants: request.wants,
+  });
 }
+
+/** What a fetch asked for: every object its `wants` reach (`full`: no haves, filter or
+ * depth), whose pack may then come from or go to the store (repo-pack-cache). */
+export type Asked = { full: boolean; wants: string[] };
 
 /** `head`, then the pack the session lists, on side-band `band` (none when 0) and ending
  * with a flush when banded. A failure before the pack starts is an ERR line after `head`
  * (Git prints it as `remote error: <message>`); an overloaded authority is rethrown, so Git
- * gets an HTTP 503 it can retry. */
+ * gets an HTTP 503 it can retry. A full clone's pack is streamed from the store when held
+ * there, else stored as it streams (PACK_CACHE=on); the session is opened only to build. */
 export async function sendPack(
   head: Uint8Array,
-  session: UploadSession,
+  open: () => UploadSession,
   objects: RepoObjects,
   band: number,
   stats?: PackStats,
   commits: string[] = [],
+  asked?: Asked,
 ): Promise<Response> {
+  let writer: PackWriter | undefined;
+  if (asked?.full && packCacheOn(objects.env)) {
+    const key = await packKey(objects.repo, asked.wants);
+    const stored = await timed('git.pack_cached', () => storedPack(objects.env, key));
+    if (stored) return sendStored(head, stored.body, band, stats);
+    writer = new PackWriter(objects.env, objects.repo, key);
+    if (stats) stats.cache = 'miss';
+  }
+  const session = open();
   let listed: Json;
   // The commits the walk names are read while their trees are walked.
   const early: Promise<Read[]> =
@@ -119,6 +138,7 @@ export async function sendPack(
     return errLine(head, e);
   }
   const chunks = packChunks(session, objects, listed, early, stats);
+  const store = new Storing(writer, stats);
   const out = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(head);
@@ -127,18 +147,19 @@ export async function sendPack(
       try {
         const next = await chunks.next();
         if (next.done) {
-          if (band && stats) controller.enqueue(sideBand(2, stats.line(), band));
-          if (band) controller.enqueue(new TextEncoder().encode('0000'));
-          controller.close();
-        } else controller.enqueue(band ? sideBand(1, next.value, band) : next.value);
+          await store.finish();
+          end(controller, band, stats);
+        } else {
+          await store.add(next.value);
+          controller.enqueue(band ? sideBand(1, next.value, band) : next.value);
+        }
       } catch (e: any) {
-        if (!band) return controller.error(e);
-        const message = `${e?.code ?? 'ERROR'}: ${String(e?.message ?? e)}`.slice(0, 500);
-        controller.enqueue(sideBand(3, new TextEncoder().encode(`${message}\n`), band));
-        controller.close();
+        await store.abort();
+        failed(controller, band, e);
       }
     },
     async cancel() {
+      await store.abort();
       await chunks.return(undefined);
     },
   });
@@ -227,60 +248,4 @@ async function* packChunks(
   } finally {
     session.close();
   }
-}
-
-/**
- * Where a fetch's time went, sent after the pack as a progress line (Git prints it as
- * `remote: yoneda-timing ...`) to a client that asks with `x-yoneda-timing: 1` (Git's
- * http.extraHeader). Workers clocks advance only across I/O, so these are waits: `walk`
- * (enumerating, before the pack), `read_wait` (the pack waiting on ranged reads) and
- * `stream` (the pack, start to end). CPU (hashing, zlib, deltas) is in the Worker's
- * metrics; `stream` less `read_wait` is mostly that and the client taking the bytes.
- */
-export class PackStats {
-  private readonly started = performance.now();
-  walk = 0;
-  waited = 0;
-  raw = 0;
-  /** The walk's ranged reads (trees) and the pack's (commits and files). */
-  readonly walkReads = new ReadStats();
-  readonly reads = new ReadStats();
-  private entries = 0;
-  private deltas = 0;
-  private bytes = 0;
-
-  /** Counts a pack entry (REF_DELTA entries are type 7). */
-  sent(entry: Uint8Array) {
-    this.entries++;
-    this.bytes += entry.length;
-    if (((entry[0] >> 4) & 7) === 7) this.deltas++;
-  }
-
-  line() {
-    const ms = (n: number) => Math.round(n);
-    const mib = (n: number) => (n / 1048576).toFixed(1);
-    const fields = [
-      `walk=${ms(this.walk)}ms`,
-      `entries=${this.entries}`,
-      `deltas=${this.deltas}`,
-      `raw=${mib(this.raw)}MiB`,
-      `sent=${mib(this.bytes)}MiB`,
-      ...this.walkReads.fields('walk_'),
-      ...this.reads.fields(),
-      `read_wait=${ms(this.waited)}ms`,
-      `stream=${ms(performance.now() - this.started - this.walk)}ms`,
-    ];
-    return new TextEncoder().encode(`yoneda-timing ${fields.join(' ')}\n`);
-  }
-}
-
-/** `data` as side-band packets on `band`, each carrying at most `max` bytes. */
-function sideBand(band: number, data: Uint8Array, max: number) {
-  const parts: Uint8Array[] = [];
-  for (let at = 0; at < data.length; at += max) {
-    const piece = data.subarray(at, at + max);
-    const head = new TextEncoder().encode((piece.length + 5).toString(16).padStart(4, '0'));
-    parts.push(head, Uint8Array.of(band), piece);
-  }
-  return concat(parts);
 }
