@@ -11,6 +11,7 @@ import {
   type SessionList,
   type SessionRecord,
   sessionsPath,
+  summaryText,
   transcriptLabel,
 } from './agentModel';
 import { Failure, Loading } from './SourceStatus';
@@ -82,7 +83,7 @@ function SessionRow({
       <a className="agent-session-link" {...linkTo({ view: 'session', repo, id: s.id }, navigate)}>
         <span className="chip">{s.cli}</span>
         {s.model && <span className="source-meta">{s.model}</span>}
-        <span className="agent-summary">{s.summary}</span>
+        <span className="agent-summary">{summaryText(s)}</span>
       </a>
       <span className="source-meta">
         {recorder(s.recorded_by)} · {when(s.at)} · {reads} declared read{reads === 1 ? '' : 's'}

@@ -21,6 +21,8 @@ export const factsKey = (repo: string, path: string, id: string) =>
 
 /** Symbols, node digests, derived contracts and references of one blob (cached by id). */
 export async function factsOf(ctx: RepoContext, path: string, id: string): Promise<Json> {
+  // Cached by blob id: a quarantined blob's facts are withheld like its bytes.
+  await (await ctx.objects()).refuse(id);
   const key = factsKey(ctx.repo, path, id);
   const cached = await ctx.env.OBJECTS.get(key);
   if (cached) return cached.json<Json>();

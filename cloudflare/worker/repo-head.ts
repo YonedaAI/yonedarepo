@@ -13,7 +13,7 @@ import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
 import { accessOf, fetchHead, withoutTokens } from './repo-head-holder';
 import type { TreeEntry } from './repo-objects';
-import { ApiError, type Json, noteWrite, type RepoContext } from './repo-ops';
+import { ApiError, caller, type Json, noteWrite, type RepoContext } from './repo-ops';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
@@ -205,10 +205,30 @@ export async function refreshHead(env: Env, repo: string, access = false) {
  * retried), and every other isolate's copy was fetched before that, so it has expired once
  * ACCESS_MS has passed: no read that starts after the answer decides on a live head. */
 export async function dropDeletedHead(env: Env, repo: string) {
+  await accessEverywhere(env, repo);
+}
+
+/** After an access change no read may miss (a deletion, a quarantine): the holder reloads
+ * (a failure fails the change's answer, which is retried) and every isolate's copy, fetched
+ * before that, has expired once ACCESS_MS has passed. */
+export async function accessEverywhere(env: Env, repo: string) {
   noteWrite(repo);
   heads.delete(repo);
   await holder(env, repo)?.refresh(repo, true);
   await new Promise((resolve) => setTimeout(resolve, ACCESS_MS));
+}
+
+/** The blobs `repo` withholds (quarantine), from main's published head (at most ACCESS_MS
+ * old), or from its authority when it has no main. */
+export async function withheldOf(env: Env, repo: string): Promise<unknown> {
+  try {
+    return (await headOf(env, repo, 0)).quarantined ?? [];
+  } catch (e: any) {
+    if (e?.code !== 'NOT_FOUND') throw e;
+    return (
+      (await caller(env, repo, { _system: 'projection' })({ op: 'repo_status' })).quarantined ?? []
+    );
+  }
 }
 
 /** The trees along `paths` from root tree `root`, from the repository's head holder in

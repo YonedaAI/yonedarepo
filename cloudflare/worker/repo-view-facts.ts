@@ -15,7 +15,7 @@ import { grantOf, keepAllowed } from './repo-grants';
 import { withObjects } from './repo-object-compute';
 import { blobWaves } from './repo-object-waves';
 import { toBase64 } from './repo-objects';
-import { type Json, type RepoContext, SHA } from './repo-ops';
+import type { Json, RepoContext } from './repo-ops';
 import { timed } from './repo-timing';
 
 /** Per-file cache reads and writes in flight. */
@@ -40,18 +40,24 @@ const nameOf = (f: ViewFile) => factsName(f.path, f.id);
  */
 export async function viewFacts(ctx: RepoContext, tree: string): Promise<ViewFacts> {
   const whole = (await grantOf(ctx)) === null;
+  // Quarantined files never enter a view either; a revision's stored view is keyed by the
+  // quarantine epoch, so one built while the withheld set differed is never read.
+  const epoch = Number((await ctx.status()).quarantine_epoch ?? 0);
+  const name = epoch ? `q${epoch}-${tree}` : tree;
   if (whole) {
-    const stored = await timed('view.facts', () => ctx.env.OBJECTS.get(viewKey(ctx.repo, tree)));
+    const stored = await timed('view.facts', () => ctx.env.OBJECTS.get(viewKey(ctx.repo, name)));
     if (stored) return stored.json<ViewFacts>();
   }
   const { changes } = await timed('view.tree', () =>
     withObjects(ctx, { op: 'tree_diff', old: null, new: tree }),
   );
-  const listed = (changes as Json[]).map((c) => ({
+  const all = (changes as Json[]).map((c) => ({
     path: c.path,
     id: c.new?.id,
     type: c.new?.type,
   }));
+  const held = await (await ctx.objects()).withheldAmong(all.map((f) => String(f.id)));
+  const listed = all.filter((f) => !held.has(String(f.id)));
   const plan = compute({ op: 'view_files', files: await keepAllowed(ctx, listed) });
   const wanted = plan.files as ViewFile[];
   const known = await timed('view.known', () =>
@@ -72,7 +78,7 @@ export async function viewFacts(ctx: RepoContext, tree: string): Promise<ViewFac
   };
   // After the answer: a lost write only costs the next view its speed.
   await afterAnswer(() =>
-    (whole ? storeRevision(ctx, tree, built) : storeFiles(ctx, wanted, fresh)).catch((e) =>
+    (whole ? storeRevision(ctx, name, built) : storeFiles(ctx, wanted, fresh)).catch((e) =>
       console.warn(`view facts not stored: ${e?.message ?? e}`),
     ),
   );
@@ -97,7 +103,10 @@ export async function revisionFiles(ctx: RepoContext, tree: string, at?: unknown
 async function latestFacts(ctx: RepoContext) {
   const known = new Map<string, Json>();
   const tree = await (await ctx.env.OBJECTS.get(viewKey(ctx.repo, 'latest')))?.text();
-  const base = tree && SHA.test(tree) ? await ctx.env.OBJECTS.get(viewKey(ctx.repo, tree)) : null;
+  const base =
+    tree && /^(q\d+-)?[0-9a-f]{40}$/.test(tree)
+      ? await ctx.env.OBJECTS.get(viewKey(ctx.repo, tree))
+      : null;
   if (base) for (const f of (await base.json<ViewFacts>()).files) known.set(nameOf(f), f.facts);
   return known;
 }
@@ -128,10 +137,11 @@ async function computeFacts(ctx: RepoContext, files: ViewFile[]) {
   return fresh;
 }
 
-/** The revision's facts, then the pointer a later revision starts from. */
-async function storeRevision(ctx: RepoContext, tree: string, built: ViewFacts) {
-  await ctx.env.OBJECTS.put(viewKey(ctx.repo, tree), JSON.stringify(built));
-  await ctx.env.OBJECTS.put(viewKey(ctx.repo, 'latest'), tree);
+/** The revision's facts (under `name`: its tree, with the quarantine epoch), then the
+ * pointer a later revision starts from. */
+async function storeRevision(ctx: RepoContext, name: string, built: ViewFacts) {
+  await ctx.env.OBJECTS.put(viewKey(ctx.repo, name), JSON.stringify(built));
+  await ctx.env.OBJECTS.put(viewKey(ctx.repo, 'latest'), name);
 }
 
 async function storeFiles(ctx: RepoContext, files: ViewFile[], fresh: Map<string, Json>) {

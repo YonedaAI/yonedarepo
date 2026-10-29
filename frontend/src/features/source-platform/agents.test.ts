@@ -12,6 +12,7 @@ import {
   recorder,
   type SessionRecord,
   sessionsPath,
+  summaryText,
   transcriptUrl,
 } from './agentModel';
 import { RepoAgents } from './RepoAgents';
@@ -20,6 +21,13 @@ import { formatSourceRoute, parseSourceRoute, routeTab } from './sourceRoute';
 const repo = 'r0123456789abcdef0123';
 
 describe('agent pages', () => {
+  it('shows a marker in place of a quarantined summary', () => {
+    expect(summaryText({ summary: 'renamed a to b' })).toBe('renamed a to b');
+    expect(summaryText({ summary: null, quarantined: true })).toBe(
+      'Withheld by the repository owner (quarantined).',
+    );
+  });
+
   it('reads sessions with only the filters that are set', () => {
     expect(sessionsPath(repo, NO_FILTERS)).toBe(`/repos/${repo}/sessions`);
     expect(sessionsPath(repo, { cli: 'opencode', model: ' ', ref: 'feat/x' }, 42)).toBe(

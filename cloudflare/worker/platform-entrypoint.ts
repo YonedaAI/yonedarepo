@@ -12,6 +12,7 @@ import { deriveAfterLanding } from './repo-derived';
 import { hookJob } from './repo-hooks';
 import { lfsSweepJob } from './repo-lfs-sweep';
 import { projectObjects, projectRefs } from './repo-projection';
+import { quarantineJob } from './repo-quarantine';
 import type { Env, Envelope } from './types';
 
 export async function platformJob(env: Env, message: Message<Envelope>) {
@@ -35,6 +36,9 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
     else message.ack();
   } else if (envelope.kind === 'platform_lfs_sweep') {
     await lfsSweepJob(env, envelope);
+    message.ack();
+  } else if (envelope.kind === 'platform_quarantine') {
+    await quarantineJob(env, envelope);
     message.ack();
   } else if (envelope.kind === 'platform_purge') {
     await purgeRepository(env, envelope.repo_id);

@@ -67,6 +67,7 @@ pub(crate) mod prepare;
 mod projection;
 mod projection_plan;
 mod pushed;
+mod quarantine;
 mod reads;
 mod rebase;
 mod record;

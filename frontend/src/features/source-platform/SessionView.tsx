@@ -3,7 +3,7 @@
 // (otherwise a reference may name where one is kept, linked when it is a web address).
 import { ArrowLeft } from 'lucide-react';
 import { linkTo, type Navigate } from '../shell/useRoute';
-import { recorder, type SessionDetail, transcriptUrl } from './agentModel';
+import { recorder, type SessionDetail, summaryText, transcriptUrl } from './agentModel';
 import { SessionTranscript } from './SessionTranscript';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha, when } from './sourceApi';
@@ -48,7 +48,7 @@ export function SessionView({
       <h2 id="session-title">
         <span className="chip">{s.cli}</span> {s.model ?? 'model not recorded'}
       </h2>
-      <p className="source-session-summary">{s.summary}</p>
+      <p className="source-session-summary">{summaryText(s)}</p>
       <dl className="agent-facts">
         <dt>Recorded by</dt>
         <dd>

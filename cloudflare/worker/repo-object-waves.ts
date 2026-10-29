@@ -5,6 +5,7 @@
 import { RANGE, readBundled, WIDE_GAP } from './repo-bundles';
 import { inBatches } from './repo-git-objects';
 import type { RepoObjects } from './repo-objects';
+import { quarantined } from './repo-quarantine-guard';
 
 /** Tiered reads in flight at a time. */
 const WIDTH = 32;
@@ -12,9 +13,11 @@ const WIDTH = 32;
 const WAVE = 512;
 
 /** The content of `ids` (each once), a wave at a time, as `[id, bytes]` pairs. Throws as
- * the tiers do when no tier holds one. */
+ * the tiers do when no tier holds one, and QUARANTINED for a withheld blob, before reading. */
 export async function* blobWaves(objects: RepoObjects, ids: string[]) {
   const unique = [...new Set(ids)];
+  const [held] = await objects.withheldAmong(unique);
+  if (held) throw quarantined(held[0], held[1]);
   for (let i = 0; i < unique.length; i += WAVE) {
     const wave = unique.slice(i, i + WAVE);
     // Only a repository this isolate knows holds bundles is asked where they are.
