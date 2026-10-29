@@ -10,12 +10,14 @@ use std::collections::BTreeMap;
 use yoneda_core::git_object::ObjectId;
 use yoneda_refmodel::{CommitId, MAIN, Op, Outcome, Plan, Repo, Rng, Tree, generate};
 
+mod adapter;
 mod git;
 
 /// What the platform answered for one operation.
 #[derive(Debug, PartialEq, Eq)]
 enum Seen {
     Committed(String),
+    Rebased(Vec<String>),
     Moved,
     Already,
     Refused(String),
@@ -51,59 +53,8 @@ impl Driver {
             .map_or(Value::Null, |id| json!(self.ids[id]))
     }
 
-    /// Commits `changes` on `branch`'s tip at the current version and lands it there.
-    fn commit_on(&self, branch: &str, changes: Value, reads: Value) -> Seen {
-        let parent = self.ids[self.model.refs[branch]].clone();
-        let version = self.model.version;
-        match self.h.commit(OWNER, Some(&parent), version, changes, reads) {
-            Err(e) => Seen::Refused(e.code),
-            Ok(id) => match self
-                .h
-                .run(OWNER, json!({"op":"repo_land","ref":branch,"commit":id}))
-            {
-                Err(e) => Seen::Refused(e.code),
-                Ok(v) if v["already"] == true => Seen::Already,
-                Ok(_) => Seen::Committed(id),
-            },
-        }
-    }
-
-    /// `replay_changes` reverting `old` -> `new` (tree ids), its tree requests answered from
-    /// the object store double, as the adapter does.
-    fn replay(&self, old: &Value, new: &Value) -> Value {
-        let mut trees = serde_json::Map::new();
-        loop {
-            let step = crate::platform_compute(json!({"op":"replay_changes","direction":"revert",
-                "old":old,"new":new,"trees":trees}))
-            .unwrap();
-            let Some(need) = step["need_trees"].as_array() else {
-                return step["changes"].clone();
-            };
-            let objects = self.h.objects.borrow();
-            for id in need.iter().filter_map(Value::as_str) {
-                let entries = decode_tree(&objects[id].1).unwrap();
-                let listed: Vec<Value> = entries
-                    .iter()
-                    .map(|e| {
-                        json!({"name": e.name, "id": e.id,
-                    "type": if e.mode == FileMode::Tree { "tree" } else { "blob" }})
-                    })
-                    .collect();
-                trees.insert(id.into(), json!(listed));
-            }
-        }
-    }
-
     /// Runs `op` on the platform: its outcome, and for a landing its merge plan first.
     fn platform(&self, op: &Op) -> (Seen, Option<Plan>) {
-        let answer = |result: yoneda_core::Result<Value>| match result {
-            Err(e) => Seen::Refused(e.code),
-            Ok(v) if v["stale"].as_array().is_some_and(|s| !s.is_empty()) => {
-                Seen::Refused("STALE_HEAD".into())
-            }
-            Ok(v) if v["already"] == true || v["refs"][0]["already"] == true => Seen::Already,
-            Ok(_) => Seen::Moved,
-        };
         match op {
             Op::Commit {
                 branch,
@@ -120,7 +71,7 @@ impl Driver {
             }
             Op::Revert { branch, back } => {
                 let tip = self.model.refs[branch];
-                let Some(source) = self.model.ancestry(tip).get(*back).copied() else {
+                let Some(source) = self.model.first_parents(tip).get(*back).copied() else {
                     return (Seen::Refused("NOT_FOUND".into()), None);
                 };
                 let row = |id: &Value| self.h.ok(OWNER, json!({"op":"repo_commit","commit":id}));
@@ -164,19 +115,18 @@ impl Driver {
             ),
             Op::Land { branch } => {
                 let commit = self.git_id(branch);
-                let plan = self.h.ok(
-                    OWNER,
-                    json!({"op":"repo_merge_plan","ref":MAIN,"commit":commit}),
-                );
-                let plan = Plan {
-                    kind: leak(plan["outcome"].as_str().unwrap_or_default()),
-                    paths: serde_json::from_value(plan["paths"].clone()).unwrap_or_default(),
-                };
+                let plan = self.plan(&commit);
                 let landed = self
                     .h
                     .run(OWNER, json!({"op":"repo_land","ref":MAIN,"commit":commit}));
                 (answer(landed), Some(plan))
             }
+            Op::MergeLand { branch } => {
+                let commit = self.git_id(branch);
+                let plan = self.plan(&commit);
+                (self.merge_land(&commit), Some(plan))
+            }
+            Op::Rebase { branch } => (self.rebase(branch), None),
         }
     }
 
@@ -194,6 +144,18 @@ impl Driver {
             (Seen::Committed(id), Outcome::Committed(model)) if *model == self.ids.len() => {
                 self.ids.push(id.clone());
                 self.same_files(*model)?;
+            }
+            (Seen::Rebased(ids), Outcome::Rebased(model))
+                if model.len() == ids.len()
+                    && model
+                        .iter()
+                        .enumerate()
+                        .all(|(i, m)| *m == self.ids.len() + i) =>
+            {
+                self.ids.extend(ids.iter().cloned());
+                for id in model {
+                    self.same_files(*id)?;
+                }
             }
             (Seen::Moved, Outcome::Moved) | (Seen::Already, Outcome::Already) => {}
             (Seen::Refused(code), Outcome::Refused(model)) if code == model => {}
@@ -269,8 +231,21 @@ fn label(op: &Op, outcome: &Outcome) -> String {
     let kind = kind.split([' ', '{']).next().unwrap_or_default();
     match outcome {
         Outcome::Committed(_) => format!("{kind} Committed"),
+        Outcome::Rebased(_) => format!("{kind} Rebased"),
         Outcome::Refused(code) => format!("{kind} {code}"),
         other => format!("{kind} {other:?}"),
+    }
+}
+
+/// A ref move's answer: moved, already there, or refused (a batch's stale refs too).
+fn answer(result: yoneda_core::Result<Value>) -> Seen {
+    match result {
+        Err(e) => Seen::Refused(e.code),
+        Ok(v) if v["stale"].as_array().is_some_and(|s| !s.is_empty()) => {
+            Seen::Refused("STALE_HEAD".into())
+        }
+        Ok(v) if v["already"] == true || v["refs"][0]["already"] == true => Seen::Already,
+        Ok(_) => Seen::Moved,
     }
 }
 
@@ -333,6 +308,11 @@ fn the_platform_matches_the_reference_model() {
             "Tag ALREADY_EXISTS",
             "Revert Committed",
             "Revert CONFLICT",
+            "MergeLand Committed",
+            "MergeLand CONFLICT",
+            "Rebase Rebased",
+            "Rebase Already",
+            "Rebase CONFLICT",
         ] {
             assert!(tally.contains_key(label), "no {label} in {tally:?}");
         }

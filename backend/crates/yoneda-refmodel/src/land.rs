@@ -33,7 +33,8 @@ impl Repo {
         let paths = match head {
             None => self.commits[commit].writes.clone(),
             Some(head)
-                if self.commits[commit].parent == Some(head) || self.is_ancestor(head, commit) =>
+                if self.commits[commit].parents.first() == Some(&head)
+                    || self.is_ancestor(head, commit) =>
             {
                 Self::changed(&self.commits[head].tree, &self.commits[commit].tree)
             }
@@ -54,7 +55,9 @@ impl Repo {
     pub(crate) fn plan(&self, commit: CommitId) -> Plan {
         let head = self.tip(MAIN);
         let (kind, paths) = match self.occ(commit, MAIN) {
-            Occ::FastForward if self.commits[commit].parent == head => ("fast_forward", vec![]),
+            Occ::FastForward if self.commits[commit].parents.first() == head.as_ref() => {
+                ("fast_forward", vec![])
+            }
             Occ::FastForward => ("stale", vec![]),
             Occ::Rebase => ("rebase", vec![]),
             Occ::Merge(paths) => ("merge", paths),
