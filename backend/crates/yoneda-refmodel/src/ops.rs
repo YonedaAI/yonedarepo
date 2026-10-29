@@ -113,12 +113,20 @@ pub enum Op {
         path: String,
         content: String,
         read: bool,
+        /// Built on this earlier shard commit (an index into `shard`) instead of the head.
+        on: Option<usize>,
     },
     /// The combiner submits these shard commits (indexes into `shard`, in order) to land
     /// on main, then the projector builds main's Git commit for what landed.
     Submit {
         picks: Vec<usize>,
+        /// Each pick sent with its chain of shard commits the authority lacks.
+        chained: bool,
+        /// The projector runs right after (else the changesets wait for `Project`).
+        project: bool,
     },
+    /// The projector builds main's Git commits for every changeset landed so far.
+    Project,
     /// Forks the repository (once).
     Fork,
     /// A one-file commit on the fork's `feature` branch, landed there.
@@ -144,8 +152,10 @@ pub enum Outcome {
     Queued(u64),
     /// What a combiner run settled.
     Batch(Batch),
-    /// What a submission answered for each landing, and the commit projection made.
+    /// What a submission answered for each landing, and the commits projection made.
     Submitted(Submitted),
+    /// The commits a projector run made, oldest first.
+    Projected(Vec<CommitId>),
     /// Done, moving no ref (an access check, visibility, membership).
     Done,
     /// Refused with the platform's error code (`STALE_HEAD` also for a stale batch delete).
@@ -225,8 +235,14 @@ impl Repo {
                 path,
                 content,
                 read,
-            } => (self.shard_commit(path, content, *read), None),
-            Op::Submit { picks } => (self.submit(picks), None),
+                on,
+            } => (self.shard_commit(path, content, *read, *on), None),
+            Op::Submit {
+                picks,
+                chained,
+                project,
+            } => (self.submit(picks, *chained, *project), None),
+            Op::Project => (Outcome::Projected(self.project()), None),
             Op::Fork => (self.fork_repo(), None),
             Op::ForkCommit { path, content } => (self.fork_commit(path, content), None),
             Op::Carry => (self.carry(), None),

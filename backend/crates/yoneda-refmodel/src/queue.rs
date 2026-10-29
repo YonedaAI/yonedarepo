@@ -46,13 +46,14 @@ struct Item {
 }
 
 impl Repo {
-    /// Whether landings wait in `refname`'s queue (only main's is used).
+    /// Whether landings wait in `refname`'s queue, or changesets for the projector (only
+    /// main's are used).
     pub(crate) fn busy(&self, refname: &str) -> bool {
-        refname == MAIN
-            && self
-                .tickets
-                .iter()
-                .any(|t| t.status == TicketStatus::Pending)
+        let queued = self
+            .tickets
+            .iter()
+            .any(|t| t.status == TicketStatus::Pending);
+        refname == MAIN && (queued || !self.unprojected.is_empty())
     }
 
     /// Lands `branch`'s tip on main, or, where that needs a merge, queues it (`repo_land`
@@ -100,6 +101,10 @@ impl Repo {
             .filter(|t| self.tickets[*t].status == TicketStatus::Pending)
             .take(BATCH)
             .collect();
+        // Claiming reads main's Git head, refused until the projector caught up.
+        if !pending.is_empty() && !self.unprojected.is_empty() {
+            return Outcome::Refused("PROJECTION_PENDING");
+        }
         let (mut fast, mut items) = (None, Vec::new());
         for ticket in pending {
             let commit = self.tickets[ticket].commit;
