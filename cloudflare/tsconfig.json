@@ -17,6 +17,7 @@
   "include": [
     "worker/**/*.ts",
     "superfan/**/*.ts",
-    "eval/**/*.ts"
+    "eval/**/*.ts",
+    "managed/**/*.ts"
   ]
 }

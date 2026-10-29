@@ -13,6 +13,7 @@ export const REPO_SETTINGS_SECTIONS = [
   'checks',
   'secrets',
   'webhooks',
+  'plugins',
   'members',
   'tokens',
   'lfs',
@@ -31,6 +32,13 @@ export type SourceRoute =
   /** The contact email's confirmation page (the emailed link; its button confirms). */
   | { view: 'verify-email'; account: string; token: string }
   | { view: 'org'; org: string }
+  /** The workspace's managed agents (`/agents`); `workspace` (an org) defaults to the account. */
+  | { view: 'agents-home'; workspace?: string }
+  /** One agent's settings (`/agents/<id>`), or a new custom agent (`/agents/new`). */
+  | { view: 'agent-settings'; agent: string; workspace?: string }
+  | { view: 'agent-runs'; agent?: string; workspace?: string }
+  /** One run's detail; `runRepo`, not `repo`, so the repository shell stays out of it. */
+  | { view: 'agent-run'; runRepo: string; run: string; workspace?: string }
   | { view: 'site'; site: SitePage }
   | { view: 'files'; repo: string; path: string; ref: string; at?: number }
   | { view: 'overview'; repo: string; path: string; ref: string; at?: number }
@@ -69,6 +77,9 @@ const REPO = /^r[0-9a-f]{20}$/;
 /** An organization's name: an account name without email (the two share one namespace). */
 export const ORG_NAME = /^[a-z][a-z0-9_]{2,31}$/;
 const SHA = /^[0-9a-f]{40}$/;
+const AGENT_ID = /^[a-z][a-z0-9-]{1,40}$/;
+const RUN_ID = /^[A-Za-z0-9_-]{1,120}$/;
+const WORKSPACE = /^[A-Za-z0-9._:-]{1,100}$/;
 const isSection = (value: string | undefined): value is RepoSettingsSection =>
   (REPO_SETTINGS_SECTIONS as readonly string[]).includes(value ?? '');
 const isAgentSection = (value: string | undefined): value is AgentSection =>
@@ -89,6 +100,7 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
   if (root === 'settings' && !repo) return { view: 'settings' };
   if (root === 'repositories' && !repo) return { view: 'repositories' };
   if (root === 'orgs' && repo && ORG_NAME.test(repo) && !view) return { view: 'org', org: repo };
+  if (root === 'agents') return parseAgentsRoute(parts.slice(1), params);
   if (root === 'source' && repo === 'tokens' && !view) return { view: 'settings' };
   if ((root === 'source' && repo === 'explore' && !view) || (root === 'explore' && !repo))
     return { view: 'explore' };
@@ -141,7 +153,48 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
   };
 }
 
+/** `/agents[/new|/<agent>|/runs[/<repo>/<run>]]`, with `?workspace=` for an org. */
+function parseAgentsRoute(parts: string[], params: URLSearchParams): SourceRoute {
+  const named = params.get('workspace');
+  const space = named && WORKSPACE.test(named) ? { workspace: named } : {};
+  const [first, repo, run] = parts;
+  if (first === 'runs') {
+    if (repo && REPO.test(repo) && run && RUN_ID.test(run))
+      return { view: 'agent-run', runRepo: repo, run, ...space };
+    const agent = params.get('agent');
+    return agent && AGENT_ID.test(agent)
+      ? { view: 'agent-runs', agent, ...space }
+      : { view: 'agent-runs', ...space };
+  }
+  if (first && AGENT_ID.test(first) && !repo)
+    return { view: 'agent-settings', agent: first, ...space };
+  return { view: 'agents-home', ...space };
+}
+
+export type AgentsRoute = Extract<
+  SourceRoute,
+  { view: 'agents-home' | 'agent-settings' | 'agent-runs' | 'agent-run' }
+>;
+const AGENT_VIEWS: readonly string[] = ['agents-home', 'agent-settings', 'agent-runs', 'agent-run'];
+/** The workspace Agents pages (one Browse entry holds them all). */
+export const isAgentsRoute = (route: SourceRoute): route is AgentsRoute =>
+  AGENT_VIEWS.includes(route.view);
+
+function formatAgentsRoute(route: AgentsRoute): string {
+  const query = new URLSearchParams();
+  let path: string;
+  if (route.view === 'agents-home') path = '/agents';
+  else if (route.view === 'agent-settings') path = `/agents/${route.agent}`;
+  else if (route.view === 'agent-runs') {
+    path = '/agents/runs';
+    if (route.agent) query.set('agent', route.agent);
+  } else path = `/agents/runs/${route.runRepo}/${route.run}`;
+  if (route.workspace) query.set('workspace', route.workspace);
+  return query.size ? `${path}?${query}` : path;
+}
+
 export function formatSourceRoute(route: SourceRoute): string {
+  if (isAgentsRoute(route)) return formatAgentsRoute(route);
   if (route.view === 'home') return '/';
   if (route.view === 'settings') return '/settings';
   if (route.view === 'repositories') return '/repositories';

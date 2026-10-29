@@ -18,6 +18,14 @@
 // Requests, CPU, Durable Object calls and R2 operations are not metered: they are part of
 // the free platform.
 
+import {
+  AGENT_MARGIN,
+  MANAGED_AGENTS,
+  MODEL_RATES,
+  type ModelRate,
+  STARTING_CREDIT_USD,
+} from '../../../../shared/managed-agents';
+
 /** Price = Cloudflare cost × MARGIN, rounded up by `roundUpClean`, unless `price` is set. */
 export const MARGIN = 1.3;
 
@@ -95,8 +103,9 @@ export const METERS: Meter[] = [
 ];
 
 export const PRICING = {
-  /** Credit on a new account; no card is asked for. */
-  startingCreditUsd: 5,
+  /** Credit on a new account; no card is asked for. The managed agents grant the same
+   * amount (shared/managed-agents.ts), so there is one number. */
+  startingCreditUsd: STARTING_CREDIT_USD,
   /** Automatic top-up: when the balance falls below `belowUsd`, add `addUsd`. */
   topUp: { belowUsd: 5, addUsd: 20 },
   /** Where Enterprise enquiries go (a `mailto:` or https URL); the legal and privacy address
@@ -119,4 +128,26 @@ export function formatUsd(value: number): string {
   if (Number.isInteger(value)) return `$${value}`;
   const decimals = String(Number(value.toPrecision(6))).split('.')[1]?.length ?? 0;
   return `$${value.toFixed(Math.max(2, decimals))}`;
+}
+
+/** A rated model the managed agents can run, with its price and the agents that use it by
+ * default, as the pricing page lists it. */
+export type AgentUsageRow = ModelRate & {
+  input_price: number;
+  output_price: number;
+  agents: string[];
+};
+
+/** Agent usage rates: each model's provider list rate × the agent margin, per million tokens,
+ * default models first. */
+export function agentUsageRows(): AgentUsageRow[] {
+  const price = (usd: number) => Number((usd * AGENT_MARGIN).toFixed(6));
+  return MODEL_RATES.map((rate) => ({
+    ...rate,
+    input_price: price(rate.input),
+    output_price: price(rate.output),
+    agents: MANAGED_AGENTS.filter(
+      (a) => a.defaults.provider === rate.provider && a.defaults.model === rate.model,
+    ).map((a) => a.defaults.name),
+  })).sort((a, b) => Number(b.agents.length > 0) - Number(a.agents.length > 0));
 }

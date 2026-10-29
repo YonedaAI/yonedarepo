@@ -16,6 +16,9 @@ fn committed(file: &str) -> Value {
         "wrangler.dev-agents.jsonc" => {
             include_str!("../../../cloudflare/wrangler.dev-agents.jsonc")
         }
+        "wrangler.dev-agents-managed.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-agents-managed.jsonc")
+        }
         "wrangler.dev-superfan.jsonc" => {
             include_str!("../../../cloudflare/wrangler.dev-superfan.jsonc")
         }
@@ -30,6 +33,9 @@ fn committed(file: &str) -> Value {
         }
         "wrangler.prod-agents.jsonc" => {
             include_str!("../../../cloudflare/wrangler.prod-agents.jsonc")
+        }
+        "wrangler.prod-agents-managed.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.prod-agents-managed.jsonc")
         }
         other => panic!("no golden for {other}"),
     };
@@ -56,10 +62,11 @@ fn dev_spec_regenerates_the_committed_dev_configs() {
         [
             "wrangler.dev-superfan.jsonc",
             "wrangler.dev-platform.jsonc",
+            "wrangler.dev-agents-managed.jsonc",
             "wrangler.dev-agents.jsonc",
             "wrangler.dev-bench.jsonc"
         ],
-        "the platform's tail consumer first, then cutover order: platform, agents; the bench client last"
+        "the platform's tail consumer first, then cutover order: platform, the managed agents the front binds, agents; the bench client last"
     );
     for (worker, config) in spec.configs(&lock(DEV_LOCK)).unwrap() {
         assert_eq!(
@@ -87,9 +94,10 @@ fn prod_spec_regenerates_the_committed_prod_configs() {
         [
             "yonedarepo-prod-superfan",
             "yonedarepo-prod-platform",
+            "yonedarepo-prod-agents-managed",
             "yonedarepo-prod-agents"
         ],
-        "the platform's tail consumer first, then platform, agents; no bench in prod"
+        "the platform's tail consumer first, then platform, managed agents, agents; no bench in prod"
     );
     let files: Vec<&str> = spec.workers.iter().map(|w| w.file.as_str()).collect();
     assert!(
@@ -116,6 +124,16 @@ fn ephemeral_env_shares_nothing_with_dev() {
     assert!(spec.retired.is_empty(), "an ephemeral stack never prunes");
     assert_eq!(spec.git_ref, None);
     assert_eq!(spec.secrets_file, ".local/infra/ephemeral-t1/secrets.env");
+    assert!(
+        !spec.workers.iter().any(|w| w.role == "agents-managed"),
+        "the managed agents Worker (one custom hostname per env) is not copied"
+    );
+    let front = spec.workers.iter().find(|w| w.role == "agents").unwrap();
+    assert_eq!(
+        front.config["services"],
+        json!([{"binding": "PLATFORM", "service": "{prefix}-platform"}]),
+        "no binding to a Worker the copy leaves out"
+    );
     let mut ephemeral_lock = Lock::default();
     ephemeral_lock.d1.insert(
         "yonedarepo-eph-t1-platform-index".into(),
