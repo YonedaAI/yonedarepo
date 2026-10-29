@@ -1,7 +1,7 @@
 //! Contracts the TypeScript side shares, as JSON Schemas derived from the Rust types that
 //! produce them. `cargo xtask contracts` writes each as `shared/contracts/<name>.ts` (its
 //! types and the schema itself); a test there fails while a committed file is stale.
-use crate::repo_store::status::RepoStatus;
+use crate::repo_store::{policy::Policy, status::RepoStatus};
 use serde_json::{Value, json};
 use yoneda_core::account::{ACCOUNT_IDENTIFIER_HELP, MAX_ACCOUNT_IDENTIFIER_BYTES};
 
@@ -10,7 +10,17 @@ pub fn schemas() -> Vec<(&'static str, Value)> {
     vec![
         ("account", account_identifier()),
         ("repo-status", response::<RepoStatus>()),
+        ("policy", request::<Policy>()),
     ]
+}
+
+/// The schema of `T` as it deserializes: what a client may send (defaulted fields optional).
+fn request<T: schemars::JsonSchema>() -> Value {
+    schemars::generate::SchemaSettings::draft2020_12()
+        .for_deserialize()
+        .into_generator()
+        .into_root_schema_for::<T>()
+        .to_value()
 }
 
 /// The schema of `T` as it serializes: an `Option` field is always present (maybe null),

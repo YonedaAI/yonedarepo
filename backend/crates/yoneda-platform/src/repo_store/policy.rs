@@ -14,19 +14,23 @@ use yoneda_core::{Error, Result};
 #[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Policy {
+    #[schemars(extend("items" = {"type": "string", "pattern": CHECK_NAME_PATTERN}))]
     pub required_checks: Vec<String>,
     pub approvals: u32,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[schemars(extend("propertyNames" = {"pattern": CHECK_NAME_PATTERN}))]
     pub runners: BTreeMap<String, Runner>,
     /// Review classes that satisfy the approval requirement without a human (semantic
     /// approval). Only `docs`, `formatting` and `comment_only` may be listed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(extend("items" = {"enum": crate::platform_review::ReviewClass::AUTO_APPROVABLE}))]
     pub auto_approve: Vec<String>,
     /// Who may post each required check by hand: `owner` or `token:<name>` (token names are
     /// never reused). A required check named by a runner comes only from the platform's run;
     /// any other required check defaults to the owner alone. Omitted when empty, so policies
     /// that never bind posters keep their digest.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[schemars(extend("propertyNames" = {"pattern": CHECK_NAME_PATTERN}))]
     pub check_posters: BTreeMap<String, Vec<String>>,
     /// Secret-scan false positives the owner accepted, by path and rule. Omitted when empty.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -114,6 +118,10 @@ impl Policy {
         }
     }
 }
+
+/// The rule `check_name` applies, as an ECMAScript pattern (valid with the `v` flag the
+/// browser uses for `pattern` attributes); the policy contract carries it to the editor.
+pub const CHECK_NAME_PATTERN: &str = r"^[a-z0-9][a-z0-9._\-]{0,63}$";
 
 pub fn check_name(name: &str) -> Result<()> {
     let valid = !name.is_empty()

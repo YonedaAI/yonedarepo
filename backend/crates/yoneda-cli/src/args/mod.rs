@@ -225,10 +225,18 @@ mod tests {
                     summary: "done".into(),
                     model: None,
                     transcript_ref: None,
-                    session_id: None
+                    session_id: None,
+                    transcript: None,
                 }
             })
         );
+        assert!(matches!(
+            parsed("session record --cli codex --summary done --transcript t.jsonl"),
+            Ok(Command::Session {
+                command: SessionCommand::Record { transcript: Some(file), .. },
+                ..
+            }) if file == "t.jsonl"
+        ));
     }
 
     #[test]
@@ -432,6 +440,26 @@ mod tests {
                 command: ChangeCommand::Land { number: 2 }
             })
         );
+        for (line, command) in [
+            ("change close #4", ChangeCommand::Close { number: 4 }),
+            ("change reopen 4", ChangeCommand::Reopen { number: 4 }),
+        ] {
+            assert_eq!(
+                parsed(line).ok(),
+                Some(Command::Change {
+                    target: Target::default(),
+                    command
+                }),
+                "{line}"
+            );
+        }
+        assert_eq!(
+            parsed("change delete #4").ok(),
+            Some(Command::Change {
+                target: Target::default(),
+                command: ChangeCommand::Delete { number: 4 }
+            })
+        );
         assert_eq!(
             parsed("release create v1 --title First -m notes --asset dist/app.zip").ok(),
             Some(Command::Release {
@@ -573,6 +601,10 @@ mod tests {
             "change show",
             "change show 0",
             "change land x",
+            "change delete",
+            "change delete 0",
+            "change close",
+            "change reopen x",
             "change comment 1",
             "change comment 1 -m hi --path a.rs --line 2",
             "change comment 1 -m hi --path a.rs --line 2 --side left",

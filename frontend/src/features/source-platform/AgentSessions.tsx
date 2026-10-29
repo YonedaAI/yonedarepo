@@ -11,6 +11,7 @@ import {
   type SessionList,
   type SessionRecord,
   sessionsPath,
+  transcriptLabel,
 } from './agentModel';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha, sourceApi, when } from './sourceApi';
@@ -22,11 +23,12 @@ export function HowSessionsAreRecorded() {
     <div className="source-empty-state">
       <p>
         <strong>No sessions recorded yet.</strong> A session record says which coding session
-        produced a commit: the CLI, the model and a short summary (never the transcript).
+        produced a commit: the CLI, the model, a short summary and its transcript (credentials
+        redacted).
       </p>
       <p>
-        The Yoneda plugin for Claude Code records one for each commit pushed in a turn. From any
-        other agent, after pushing:{' '}
+        The Yoneda plugins for Claude Code and opencode record one for each commit pushed in a turn.
+        From any other agent, after pushing:{' '}
         <code>
           yoneda session record --cli &lt;cli&gt; --summary &lt;text&gt; --model &lt;model&gt;
         </code>{' '}
@@ -84,12 +86,14 @@ function SessionRow({
       </a>
       <span className="source-meta">
         {recorder(s.recorded_by)} · {when(s.at)} · {reads} declared read{reads === 1 ? '' : 's'}
-        {s.transcript_ref && (
-          <>
-            {' · '}
-            <code>{s.transcript_ref}</code>
-          </>
-        )}
+        {s.transcript
+          ? ` · ${transcriptLabel(s)}`
+          : s.transcript_ref && (
+              <>
+                {' · '}
+                <code>{s.transcript_ref}</code>
+              </>
+            )}
       </span>
       <span className="agent-commits">
         {records.length} commit{records.length === 1 ? '' : 's'}:{' '}

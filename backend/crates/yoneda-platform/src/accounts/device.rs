@@ -32,10 +32,12 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: DeviceOp, now: i64) -> 
             {
                 return Err(bad("client_name must be 1-64 printable characters"));
             }
+            // The machine the CLI runs on, labelling the token it receives.
+            let host = label(c, "host")?;
             db.query("DELETE FROM device_codes WHERE user_code=?", &[json!(code)])?;
             db.query(
-                "INSERT INTO device_codes(user_code,secret_hash,client_name,created_at,expires_at,interval_ms,status) VALUES(?,?,?,?,?,?,'pending')",
-                &[json!(code), json!(hash(c, "secret_hash", &[64])?), json!(client), json!(now), json!(now + LIFETIME_MS), json!(INTERVAL_MS)],
+                "INSERT INTO device_codes(user_code,secret_hash,client_name,host,created_at,expires_at,interval_ms,status) VALUES(?,?,?,?,?,?,?,'pending')",
+                &[json!(code), json!(hash(c, "secret_hash", &[64])?), json!(client), json!(host), json!(now), json!(now + LIFETIME_MS), json!(INTERVAL_MS)],
             )?;
             Ok(json!({"user_code":code,"expires_at":now+LIFETIME_MS,"interval":INTERVAL_MS/1000}))
         }
@@ -119,7 +121,7 @@ fn poll<S: SqlStore>(
     let grant: Value = serde_json::from_str(row["grant_json"].as_str().unwrap_or("null"))
         .map_err(|_| bad("Corrupt device grant"))?;
     Ok(
-        json!({"status":"APPROVED","account":row["account"],"grant":grant,"client_name":row["client_name"]}),
+        json!({"status":"APPROVED","account":row["account"],"grant":grant,"client_name":row["client_name"],"host":row["host"]}),
     )
 }
 

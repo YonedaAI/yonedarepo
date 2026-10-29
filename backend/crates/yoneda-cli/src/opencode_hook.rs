@@ -2,19 +2,23 @@
 //! opencode plugin (`plugins/opencode/index.ts`) with a JSON payload it assembles from
 //! opencode 2's plugin events. Same behaviour as the Claude Code hooks:
 //! - `opencode-start` `{sessionID, cwd}`: prints the repository's context, which the plugin
-//!   adds to the session's system prompt.
+//!   adds to the session's system prompt, and keeps it for the session's transcript.
 //! - `opencode-read` `{tool, input, result, cwd}` (tool `execute.after`): a read tool's
 //!   file, or the files a search tool's output names, join the declared reads.
 //! - `opencode-shell` `{tool, input, cwd}` (tool `execute.before`): prints why a plain
 //!   `git push` must go through `yoneda push`; the plugin then refuses the call.
-//! - `opencode-stop` `{sessionID, cwd, model, summary, prompts}` (the session's run ended):
-//!   a session record for each commit the session pushed. opencode runs every shell
+//! - `opencode-stop` `{sessionID, cwd, model, summary, prompts, messages}` (the session's run
+//!   ended): a session record for each commit the session pushed, with the transcript made
+//!   from the session's messages and its context packet. opencode runs every shell
 //!   command with `OPENCODE_SESSION_ID`, so its pushes are noted under
 //!   `opencode:<sessionID>`.
 use crate::agent_hook::{self, Record};
+use crate::agent_transcript::{document, render_input, subject};
 use crate::command::OpencodeEvent;
 use crate::error::Result;
-use serde_json::Value;
+use crate::session_files::SessionFiles;
+use serde_json::{Value, json};
+use yoneda_core::transcript::Turn;
 
 /// Lines of a search tool's output examined for file names.
 const SEARCH_LINES: usize = 500;
@@ -26,7 +30,10 @@ pub async fn run(event: OpencodeEvent, hook: &Value) -> Result<()> {
     };
     match event {
         OpencodeEvent::Start => {
-            println!("{}", agent_hook::context_at(&cwd).await?);
+            let text = agent_hook::context_at(&cwd).await?;
+            let session = format!("opencode:{}", session_id(hook));
+            SessionFiles::new(&at.git_dir).save_context(&session, &text)?;
+            println!("{text}");
         }
         OpencodeEvent::Read => {
             let read = paths_read(hook, &|p| cwd.join(p).is_file());
@@ -50,6 +57,8 @@ pub async fn run(event: OpencodeEvent, hook: &Value) -> Result<()> {
                 .flatten()
                 .filter_map(|p| p.as_str().map(str::to_owned))
                 .collect();
+            let context = SessionFiles::new(&at.git_dir).context(&session);
+            let transcript = document(context, transcript_turns(&hook["messages"]));
             let record = Record {
                 cli: "opencode",
                 model: hook["model"].as_str().filter(|m| !m.is_empty()),
@@ -59,6 +68,7 @@ pub async fn run(event: OpencodeEvent, hook: &Value) -> Result<()> {
                     .unwrap_or("opencode session"),
                 prompts: &prompts,
                 session: &session,
+                transcript: transcript.as_ref(),
             };
             let posted = agent_hook::record_pushed(&at, &cwd, &record).await?;
             if posted > 0 {
@@ -98,6 +108,80 @@ fn result_texts(result: &Value) -> Vec<&str> {
         texts.push(text);
     }
     texts
+}
+
+/// A tool call's output: its result texts, and its error's message when it failed.
+fn tool_output(state: &Value) -> Option<String> {
+    let mut texts = result_texts(state);
+    texts.extend(
+        state["error"]["message"]
+            .as_str()
+            .or_else(|| state["error"].as_str()),
+    );
+    let text = texts.join("\n");
+    (!text.is_empty()).then_some(text)
+}
+
+/// The turns of an opencode session from its messages (opencode 2's session messages, as
+/// the plugin's `session.context` returns them): the person's prompts, the assistant's
+/// replies and tool calls, and shell commands the person ran. Reasoning is left out.
+pub fn transcript_turns(messages: &Value) -> Vec<Turn> {
+    let mut turns = Vec::new();
+    for raw in messages.as_array().into_iter().flatten() {
+        let message = if raw["info"].is_object() {
+            &raw["info"]
+        } else {
+            raw
+        };
+        match message["type"].as_str() {
+            Some("user") => {
+                if let Some(text) = message["text"].as_str().filter(|t| !t.trim().is_empty()) {
+                    turns.push(Turn::Prompt {
+                        text: text.to_owned(),
+                    });
+                }
+            }
+            Some("assistant") => {
+                for part in message["content"].as_array().into_iter().flatten() {
+                    match part["type"].as_str() {
+                        Some("text") => {
+                            if let Some(text) =
+                                part["text"].as_str().filter(|t| !t.trim().is_empty())
+                            {
+                                turns.push(Turn::Reply {
+                                    text: text.to_owned(),
+                                });
+                            }
+                        }
+                        Some("tool") => {
+                            let state = &part["state"];
+                            turns.push(Turn::Tool {
+                                name: part["name"].as_str().unwrap_or("tool").to_owned(),
+                                subject: subject(&state["input"]),
+                                input: render_input(&state["input"]),
+                                output: tool_output(state),
+                                error: state["status"] == "error",
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            Some("shell") => {
+                let input = json!({ "command": message["command"] });
+                let output = result_texts(&message["output"]).join("\n");
+                turns.push(Turn::Tool {
+                    name: "shell".into(),
+                    subject: subject(&input),
+                    input: render_input(&input),
+                    output: (!output.is_empty()).then_some(output),
+                    error: message["exit"].as_i64().is_some_and(|code| code != 0),
+                });
+            }
+            _ => {}
+        }
+    }
+    turns
 }
 
 /// The files a tool call read: a read tool's path argument; for a search tool, each output
@@ -164,5 +248,60 @@ mod tests {
         assert_eq!(session_id(&json!({"sessionID":"ses_1"})), "ses_1");
         assert_eq!(session_id(&json!({"sessionID":"a b"})), "ab");
         assert_eq!(session_id(&json!({})), "unknown");
+    }
+
+    #[test]
+    fn turns_opencode_messages_into_prompts_tool_calls_and_replies() {
+        use yoneda_core::transcript::Turn;
+        // opencode 2's session messages (Session.Message.*), one wrapped in `info`.
+        let messages = json!([
+            {"type":"user","text":"Add jitter"},
+            {"type":"assistant","model":{"providerID":"zai-coding-plan","id":"glm-5.3"},"content":[
+                {"type":"reasoning","text":"hm"},
+                {"type":"text","text":"Reading the retry code."},
+                {"type":"tool","id":"c1","name":"read","state":{"status":"completed",
+                    "input":{"path":"src/retry.ts"},"content":[{"type":"text","text":"export function retry() {}"}]}},
+                {"type":"tool","id":"c2","name":"shell","state":{"status":"error",
+                    "input":{"command":"npm test"},"error":{"message":"exit 1"}}}]},
+            {"info":{"type":"assistant","content":[{"type":"text","text":"Added jitter and pushed."}]}},
+            {"type":"shell","command":"git status","output":"clean"},
+            {"type":"agent-switched","agent":"build"}
+        ]);
+        assert_eq!(
+            transcript_turns(&messages),
+            [
+                Turn::Prompt {
+                    text: "Add jitter".into()
+                },
+                Turn::Reply {
+                    text: "Reading the retry code.".into()
+                },
+                Turn::Tool {
+                    name: "read".into(),
+                    subject: Some("src/retry.ts".into()),
+                    input: Some("path: src/retry.ts".into()),
+                    output: Some("export function retry() {}".into()),
+                    error: false,
+                },
+                Turn::Tool {
+                    name: "shell".into(),
+                    subject: Some("npm test".into()),
+                    input: Some("command: npm test".into()),
+                    output: Some("exit 1".into()),
+                    error: true,
+                },
+                Turn::Reply {
+                    text: "Added jitter and pushed.".into()
+                },
+                Turn::Tool {
+                    name: "shell".into(),
+                    subject: Some("git status".into()),
+                    input: Some("command: git status".into()),
+                    output: Some("clean".into()),
+                    error: false,
+                },
+            ]
+        );
+        assert!(transcript_turns(&Value::Null).is_empty());
     }
 }

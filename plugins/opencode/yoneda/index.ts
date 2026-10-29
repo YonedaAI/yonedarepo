@@ -11,9 +11,11 @@
 //     recorded is refused with the `yoneda push` that declares them (a yoneda:: remote's
 //     helper declares them itself)
 //   - session execution ended (and plugin cleanup): a session record (cli opencode, the
-//     session's model, the last assistant text as summary) on each commit the session
-//     pushed. opencode runs shell commands with OPENCODE_SESSION_ID, so pushes are noted
-//     under `opencode:<sessionID>`.
+//     session's model, the last assistant text as summary, and the transcript: the
+//     session's messages, prompts, tool calls with their input and output, and replies,
+//     with the context it started with) on each commit the session pushed. opencode runs
+//     shell commands with OPENCODE_SESSION_ID, so pushes are noted under
+//     `opencode:<sessionID>`.
 // Outside such a clone, or without the yoneda CLI on PATH, it does nothing. A hook failure
 // never blocks the session (only a push refusal does, by design).
 // With YONEDA_AGENT_WORKDIR set (the staging kit's agent sandbox), a session whose directory
@@ -189,6 +191,8 @@ export default {
           model: seen.model ?? models.get(sessionID) ?? DEFAULT_MODEL,
           summary: seen.summary ?? '',
           prompts: seen.prompts,
+          // The hook makes the uploaded transcript from these (opencode_hook.rs).
+          messages,
         });
       };
       const next = (stops.get(sessionID) ?? Promise.resolve()).then(run, run);

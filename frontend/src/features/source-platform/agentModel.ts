@@ -18,7 +18,78 @@ export type SessionRecord = {
   subject: string;
   /** How many reads the commit declared. */
   reads: number;
+  /** The transcript the platform stores for this record; null when none was uploaded. */
+  transcript: TranscriptMeta | null;
 };
+
+/** What a record keeps about its stored transcript. */
+export type TranscriptMeta = {
+  sha256: string;
+  bytes: number;
+  /** Prompts, replies and tool calls kept (not counting left-out turns). */
+  turns: number;
+  /** Credentials replaced by `[REDACTED:<rule>]` before storing. */
+  redactions: number;
+  /** Texts cut or turns left out to fit 1 MiB. */
+  truncated: boolean;
+  /** Whether the context packet given at session start was recorded. */
+  context: boolean;
+};
+
+export type TranscriptTurn =
+  | { kind: 'prompt'; text: string }
+  | { kind: 'reply'; text: string }
+  | {
+      kind: 'tool';
+      name: string;
+      subject?: string;
+      input?: string;
+      output?: string;
+      error?: boolean;
+    }
+  | { kind: 'omitted'; turns: number };
+
+/** `GET sessions/:id/transcript`. */
+export type StoredTranscript = {
+  session: number;
+  transcript: TranscriptMeta;
+  document: {
+    format: string;
+    context: string | null;
+    turns: TranscriptTurn[];
+    redactions: Record<string, number>;
+    truncated: boolean;
+  };
+};
+
+export const transcriptPath = (repo: string, id: number) =>
+  `/repos/${repo}/sessions/${id}/transcript`;
+
+/** A tool call named by its tool and what it acted on. */
+export function toolLabel(turn: Extract<TranscriptTurn, { kind: 'tool' }>) {
+  return turn.subject ? `${turn.name} · ${turn.subject}` : turn.name;
+}
+
+/** Where a record's transcript is, for a listing: stored (with its size in turns), the
+ * reference the agent gave, or null. */
+export function transcriptLabel(s: Pick<SessionRecord, 'transcript' | 'transcript_ref'>) {
+  if (s.transcript) return `transcript stored · ${s.transcript.turns} turns`;
+  return s.transcript_ref;
+}
+
+/** What was changed in a transcript before it was stored, in words. */
+export function transcriptNotes(meta: TranscriptMeta): string[] {
+  const notes: string[] = [];
+  if (meta.redactions > 0)
+    notes.push(
+      `${meta.redactions} credential${meta.redactions === 1 ? '' : 's'} redacted before storing.`,
+    );
+  if (meta.truncated)
+    notes.push(
+      'Cut to fit 1 MiB: long texts keep their start and end, and turns left out are counted.',
+    );
+  return notes;
+}
 
 export type SessionList = {
   sessions: SessionRecord[];
@@ -87,7 +158,8 @@ export function sessionsPath(repo: string, filters: SessionFilters, before?: num
   return query.size ? `/repos/${repo}/sessions?${query}` : `/repos/${repo}/sessions`;
 }
 
-/** A transcript reference is a URL (linked) or an opaque id (shown as text). */
+/** A transcript reference is a URL (linked) or an opaque id (shown as text); a stored
+ * transcript's own reference (`transcript:sha256:…`) is shown by the transcript itself. */
 export function transcriptUrl(ref: string | null): string | null {
   if (!ref) return null;
   try {

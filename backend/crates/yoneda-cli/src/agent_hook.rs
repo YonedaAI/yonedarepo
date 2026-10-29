@@ -3,16 +3,18 @@
 //! (`plugins/opencode`, events in `opencode_hook`). They act only in a clone with a platform
 //! remote, and never fail the session: a problem is reported on stderr.
 //! - `claude-start` (SessionStart): the repository's context (`yoneda context`) as the
-//!   session's additional context, and `YONEDA_SESSION_ID=claude-code:<id>` exported to
-//!   the session's shell (`CLAUDE_ENV_FILE`), so its pushes are noted as its own.
+//!   session's additional context (kept for its transcript), and
+//!   `YONEDA_SESSION_ID=claude-code:<id>` exported to the session's shell
+//!   (`CLAUDE_ENV_FILE`), so its pushes are noted as its own.
 //! - `claude-read` (PostToolUse on Read and Grep): the files the agent read (Grep: the
 //!   files that matched) join this session's declared reads.
 //! - `claude-bash` (PreToolUse on Bash): a plain `git push` to a smart-HTTP remote while
 //!   reads are recorded is denied with the `yoneda push` that declares them. A `yoneda::`
 //!   remote needs nothing: its helper declares them.
 //! - `claude-stop` (Stop): a session record for each commit this session pushed, summarised
-//!   by the transcript's last assistant message (truncated; the transcript is not uploaded).
-use crate::agent_transcript::{Transcript, transcript};
+//!   by the transcript's last assistant message (truncated), with the transcript itself
+//!   (fitted to the upload bounds; the platform redacts credentials) and the context packet.
+use crate::agent_transcript::{claude_turns, document, transcript};
 use crate::command::{HookEvent, Target};
 use crate::error::{Context, Result};
 use crate::session_cmd::{Here, here, record_body, relative};
@@ -69,8 +71,18 @@ pub async fn context_at(cwd: &Path) -> Result<String> {
     Ok(context_cmd::for_hook(context_cmd::DEFAULT_BYTES).await)
 }
 
+/// The Claude Code session a hook runs for (`claude-code:<id>`).
+fn claude_session(hook: &Value) -> String {
+    let id: String = hook["session_id"]
+        .as_str()
+        .unwrap_or("unknown")
+        .split_whitespace()
+        .collect();
+    format!("claude-code:{id}")
+}
+
 async fn start(hook: &Value) -> Result<()> {
-    let Some((_, cwd)) = clone_at(hook) else {
+    let Some((at, cwd)) = clone_at(hook) else {
         return Ok(());
     };
     if let (Some(id), Ok(file)) = (
@@ -87,6 +99,7 @@ async fn start(hook: &Value) -> Result<()> {
             .context("writing CLAUDE_ENV_FILE")?;
     }
     let text = context_at(&cwd).await?;
+    SessionFiles::new(&at.git_dir).save_context(&claude_session(hook), &text)?;
     println!(
         "{}",
         json!({ "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": text } })
@@ -193,6 +206,8 @@ pub struct Record<'a> {
     pub summary: &'a str,
     pub prompts: &'a [String],
     pub session: &'a str,
+    /// The transcript to upload with each record (`agent_transcript::document`).
+    pub transcript: Option<&'a Value>,
 }
 
 /// Posts a session record for each commit `record.session` pushed from the clone `at` (and
@@ -226,7 +241,7 @@ async fn post_records(
     let mut done = Vec::new();
     let mut posted = 0;
     for push in pushed {
-        let body = record_body(
+        let mut body = record_body(
             record.cli,
             record.model,
             &summary,
@@ -235,6 +250,9 @@ async fn post_records(
             push.reads.as_deref(),
             Some(record.session),
         );
+        if let Some(transcript) = record.transcript {
+            body["transcript"] = transcript.clone();
+        }
         match api
             .post(&format!("/commits/{}/sessions", push.commit), &body)
             .await
@@ -261,20 +279,21 @@ async fn claude_stop(hook: &Value) -> Result<()> {
     let Some((at, cwd)) = clone_at(hook) else {
         return Ok(());
     };
-    let seen = match hook["transcript_path"].as_str() {
-        Some(path) => transcript(&std::fs::read_to_string(Path::new(path)).unwrap_or_default()),
-        None => Transcript::default(),
-    };
-    let session = format!(
-        "claude-code:{}",
-        hook["session_id"].as_str().unwrap_or("unknown")
-    );
+    let lines = hook["transcript_path"]
+        .as_str()
+        .and_then(|path| std::fs::read_to_string(Path::new(path)).ok())
+        .unwrap_or_default();
+    let seen = transcript(&lines);
+    let session = claude_session(hook);
+    let context = SessionFiles::new(&at.git_dir).context(&session);
+    let uploaded = document(context, claude_turns(&lines));
     let record = Record {
         cli: "claude-code",
         model: seen.model.as_deref(),
         summary: seen.last_text.as_deref().unwrap_or("Claude Code session"),
         prompts: &seen.prompts,
         session: &session,
+        transcript: uploaded.as_ref(),
     };
     record_pushed(&at, &cwd, &record).await.map(|_| ())
 }
@@ -303,6 +322,7 @@ mod tests {
             summary: "Added clamp.",
             prompts: &[],
             session: "opencode:s1",
+            transcript: None,
         };
         // The clone cannot be entered: nothing is posted, and nothing may be forgotten.
         let gone = dir.path().join("gone");

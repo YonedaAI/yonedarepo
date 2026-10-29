@@ -5,6 +5,8 @@
 //!   <reads digest, or - when none were declared> [<session id>]` per line. The agent's
 //!   turn-end hook posts a session record for each of its own session's (and for
 //!   unattributed ones), and only then removes the line.
+//! - `context-<digest>`: the context packet a session started with (`yoneda context`, which
+//!   the start hooks inject), one file per session, kept for its transcript.
 //!
 //! The session id comes from the agent's environment: `YONEDA_SESSION_ID` (the Claude
 //! Code plugin exports it at session start), else opencode's `OPENCODE_SESSION_ID`, which
@@ -141,6 +143,25 @@ impl SessionFiles {
 
     pub fn clear_reads(&self) -> Result<()> {
         self.remove("reads")
+    }
+
+    /// The file holding `session`'s context packet (named by a digest: ids hold `:`).
+    fn context_file(&self, session: &str) -> PathBuf {
+        let digest = yoneda_core::digest(session.as_bytes());
+        self.dir.join(format!("context-{}", &digest[..16]))
+    }
+
+    /// Keeps the context packet `session` started with (replacing an earlier one: a resumed
+    /// or compacted session starts again with fresh context).
+    pub fn save_context(&self, session: &str, text: &str) -> Result<()> {
+        std::fs::create_dir_all(&self.dir).context(format!("creating {}", self.dir.display()))?;
+        let path = self.context_file(session);
+        std::fs::write(&path, text).context(format!("writing {}", path.display()))
+    }
+
+    /// The context packet `session` started with, when one was kept.
+    pub fn context(&self, session: &str) -> Option<String> {
+        std::fs::read_to_string(self.context_file(session)).ok()
     }
 
     /// Notes `commits` as pushed with `reads` declared, by `session` when known.

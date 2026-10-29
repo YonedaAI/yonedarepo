@@ -20,6 +20,7 @@ import { plan } from './repo-plan';
 import { dispatchProjection } from './repo-projection';
 import { rebase } from './repo-rebase';
 import { releaseOperations } from './repo-releases';
+import { recordSession } from './repo-session-records';
 import { mergeOutboxes, shardOutboxes } from './repo-shards';
 import { readRefs } from './repo-snapshots';
 import { agentView } from './repo-views';
@@ -86,18 +87,7 @@ export const operations: Record<string, Operation> = {
     await dispatchRuns(ctx.env, ctx.repo, requested.runs);
     return requested;
   },
-  git_session_record: (ctx, a) =>
-    ctx.call({
-      op: 'repo_session_record',
-      commit: a.commit,
-      cli: a.cli,
-      summary: a.summary,
-      model: a.model ?? null,
-      prompt_digest: a.prompt_digest ?? null,
-      transcript_ref: a.transcript_ref ?? null,
-      read_set_digest: a.read_set_digest ?? null,
-      session_id: a.session_id ?? null,
-    }),
+  git_session_record: recordSession,
   git_sessions: (ctx, a) => ctx.call({ op: 'repo_sessions', commit: a.commit }),
   // The listing the web's Sessions page reads (GET /sessions, repo-agent-records.ts).
   git_sessions_recent: (ctx, a) =>

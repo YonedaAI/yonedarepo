@@ -50,11 +50,9 @@ function CommandField({
 }
 
 function ModelFields({
-  id,
   runner,
   onChange,
 }: {
-  id: string;
   runner: ModelRunner;
   onChange: (next: ModelRunner) => void;
 }) {
@@ -72,20 +70,19 @@ function ModelFields({
       </label>
       <label className="source-field">
         Model
-        <input
-          list={`${id}-models`}
-          value={runner.model ?? ''}
-          placeholder={REVIEW_MODELS[0]}
+        <select
+          value={runner.model ?? REVIEW_MODELS[0]}
           onChange={(e) => {
-            const { model: _, ...rest } = runner;
-            onChange(e.target.value ? { ...rest, model: e.target.value } : rest);
+            const model = REVIEW_MODELS.find((m) => m === e.target.value);
+            if (model) onChange({ ...runner, model });
           }}
-        />
-        <datalist id={`${id}-models`}>
+        >
           {REVIEW_MODELS.map((m) => (
-            <option key={m} value={m} />
+            <option key={m} value={m}>
+              {m}
+            </option>
           ))}
-        </datalist>
+        </select>
       </label>
       <label className="settings-inline">
         <input
@@ -137,7 +134,7 @@ export function RunnerEditor({
         </button>
       </div>
       {isModel(runner) ? (
-        <ModelFields id={id} runner={runner} onChange={onChange} />
+        <ModelFields runner={runner} onChange={onChange} />
       ) : (
         <>
           <CommandField id={`${id}-command`} runner={runner} onChange={onChange} />

@@ -77,7 +77,11 @@ export async function verifyPat(env: Env, token: string): Promise<PatGrant | nul
 
 /** Issues a token to `account` (the caller authenticated the account itself) and returns
  * its secret, once. The authority validates the grant; the lookup row follows its commit. */
-export async function issuePat(env: Env, account: string, request: Json) {
+/** How a token was made: `yoneda login` on `host` (the device flow only; never a caller's
+ * claim), or on the website (no label). */
+export type PatLabel = { origin: 'login'; host: string | null };
+
+export async function issuePat(env: Env, account: string, request: Json, label?: PatLabel) {
   const token = `ypat_${base64url(crypto.getRandomValues(new Uint8Array(32)))}`;
   const id = `pat_${hex(crypto.getRandomValues(new Uint8Array(8)))}`;
   const tokenHash = await sha(token);
@@ -90,6 +94,8 @@ export async function issuePat(env: Env, account: string, request: Json) {
     repos: request.repos ?? null,
     org: request.org ?? null,
     expires_days: request.expires_days ?? 30,
+    origin: label?.origin ?? null,
+    host: label?.host ?? null,
   });
   await env.INDEX.prepare(
     'INSERT INTO platform_tokens(token_hash,workspace,id,expires_at) VALUES(?,?,?,?)',
@@ -103,6 +109,8 @@ export async function issuePat(env: Env, account: string, request: Json) {
     scopes: created.scopes,
     repos: created.repos,
     org: created.org ?? null,
+    origin: created.origin ?? null,
+    host: created.host ?? null,
     expires_at: created.expires_at,
   };
 }
