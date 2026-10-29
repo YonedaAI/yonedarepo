@@ -432,6 +432,19 @@ mod tests {
                 command: ChangeCommand::Land { number: 2 }
             })
         );
+        for (line, command) in [
+            ("change close #4", ChangeCommand::Close { number: 4 }),
+            ("change reopen 4", ChangeCommand::Reopen { number: 4 }),
+        ] {
+            assert_eq!(
+                parsed(line).ok(),
+                Some(Command::Change {
+                    target: Target::default(),
+                    command
+                }),
+                "{line}"
+            );
+        }
         assert_eq!(
             parsed("change delete #4").ok(),
             Some(Command::Change {
@@ -582,6 +595,8 @@ mod tests {
             "change land x",
             "change delete",
             "change delete 0",
+            "change close",
+            "change reopen x",
             "change comment 1",
             "change comment 1 -m hi --path a.rs --line 2",
             "change comment 1 -m hi --path a.rs --line 2 --side left",
