@@ -45,6 +45,8 @@ describe('personal access tokens', () => {
     created_at: now - day,
     expires_at: now + 7 * day,
     last_used_at: null,
+    origin: null,
+    host: null,
   };
   it('shows loading, failure, empty and populated states', () => {
     const props = { repos, onRevoke: () => {}, now };
@@ -73,14 +75,26 @@ describe('personal access tokens', () => {
     expect(html(AccountSettings, { identity, repos })).toContain('Loading signed-in CLIs');
     state.value = signedOut;
     expect(html(AccountSettings, { identity, repos })).toContain('You are signed out');
-    const cli = { ...pat, id: 'pat_cli', name: 'yoneda-cli', repos: null };
-    state.value = loaded({ data: { tokens: [pat, cli] } });
+    // A login is known by its origin (with the host it ran on), not by its name.
+    const cli = {
+      ...pat,
+      id: 'pat_cli',
+      name: 'yoneda-cli',
+      repos: null,
+      origin: 'login' as const,
+      host: 'ada-mbp',
+    };
+    const older = { ...cli, id: 'pat_old', host: null };
+    const named = { ...pat, id: 'pat_named', name: 'yoneda-cli' };
+    state.value = loaded({ data: { tokens: [pat, cli, older, named] } });
     const page = html(AccountSettings, { identity, repos });
     expect(page).toContain('<code>ada</code>');
     expect(page).toContain('Signed-in CLIs');
-    expect(page).toContain('<td>yoneda-cli</td>');
-    expect(page).toContain('>Sign out</button>');
-    expect(page.match(/<td>yoneda-cli<\/td>/g)).toHaveLength(1);
+    expect(page).toContain('<td>ada-mbp</td>');
+    expect(page).toContain('<td>unknown host</td>');
+    expect(page.match(/>Sign out<\/button>/g)).toHaveLength(2);
+    // A website token that happens to share the name stays with the personal tokens.
+    expect(page).toContain('aria-label="Revoke yoneda-cli"');
     expect(page).toContain('<td>ci</td>');
     // Default scopes are read, write and land; admin is opt-in.
     expect(page.match(/type="checkbox" checked=""/g)?.length).toBeGreaterThanOrEqual(3);
