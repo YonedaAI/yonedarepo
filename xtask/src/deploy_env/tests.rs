@@ -254,8 +254,8 @@ fn prod_checks_active_runs_right_before_each_container_rollout() {
             );
         }
     }
-    assert!(workers[1].has_containers);
-    assert!(!workers[0].has_containers && !workers[2].has_containers && !workers[3].has_containers);
+    assert!(workers[1].has_containers && workers[2].has_containers);
+    assert!(!workers[0].has_containers && !workers[3].has_containers);
 }
 
 #[test]

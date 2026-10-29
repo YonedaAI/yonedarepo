@@ -128,6 +128,50 @@ export class CreditLedger extends DurableObject<ManagedEnv> {
     });
   }
 
+  /** A charge with no hold (a run's container time), once per key. */
+  charge(key: string, amount: number, meta: CallMeta, note: string) {
+    if (!Number.isSafeInteger(amount) || amount <= 0) return;
+    this.#tx((sql) => this.#insert(sql, `charge:${key}`, 'charge', -amount, { ...meta, note }));
+  }
+
+  /**
+   * Closes a finished run attempt's holds that never settled (a stream cut off, an isolate
+   * lost mid-call): each is charged whole, since the provider may have billed it.
+   */
+  closeRun(run: string, attempt: number): number {
+    return this.#tx((sql) => {
+      const open = sql
+        .exec<{ key: string; amount: number; repo: string; agent: string; model: string }>(
+          `SELECT h.key, h.amount, h.repo, h.agent, h.model FROM entries h
+           WHERE h.kind = 'hold' AND h.run = ? AND h.key LIKE ?
+             AND NOT EXISTS (SELECT 1 FROM entries r WHERE r.key = 'release:' || substr(h.key, 6))`,
+          run,
+          `hold:${run}:${attempt}:%`,
+        )
+        .toArray();
+      for (const h of open) {
+        const k = h.key.slice('hold:'.length);
+        const meta = { repo: h.repo, run, agent: h.agent, model: h.model };
+        this.#insert(sql, `release:${k}`, 'release', -h.amount, meta);
+        this.#insert(sql, `charge:${k}`, 'charge', h.amount, {
+          ...meta,
+          note: 'Call outcome unknown: charged its hold',
+        });
+      }
+      return open.length;
+    });
+  }
+
+  /** A run's entries, oldest first (its cost breakdown). */
+  runEntries(run: string) {
+    return this.ctx.storage.sql
+      .exec(
+        "SELECT kind, amount, model, input_tokens, output_tokens, cost_microusd, note, at FROM entries WHERE run = ? AND kind = 'charge' ORDER BY id",
+        run,
+      )
+      .toArray();
+  }
+
   /** Adds credit and hands back the runs that were waiting for it (now forgotten here). */
   grant(key: string, amount: number, note: string): { balance: Balance; resume: Paused[] } {
     return this.#tx((sql) => {
