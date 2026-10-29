@@ -1,11 +1,15 @@
 // An R2 object written as its bytes stream through the Worker: parts of `PART` bytes go up
 // one at a time while the next fills (at most two parts held), so memory stays two parts
 // whatever the size; an object under one part is one put at the end. Nothing is visible
-// until `finish`; `abort` (a failed or cancelled stream) leaves nothing behind.
+// until `finish`; `abort` (a failed or cancelled stream) leaves nothing behind. A writer
+// that must never wait (a clone's stored pack) uses `offer`: two parts go up at once while
+// a third fills, and past that it refuses instead of waiting.
 import type { Env } from './types';
 
 /** Bytes per multipart part (R2: every part but the last the same size, at least 5 MiB). */
 export const PART = 8 * 1024 * 1024;
+/** Parts `offer` keeps on their way up at once. */
+const OFFERED = 2;
 
 export class R2Parts {
   #parts: R2UploadedPart[] = [];
@@ -14,6 +18,8 @@ export class R2Parts {
   #total = 0;
   #upload?: Promise<R2MultipartUpload>;
   #uploading: Promise<void> = Promise.resolve();
+  /** Parts on their way up (a failed one never leaves). */
+  #sending = 0;
 
   constructor(
     private readonly env: Env,
@@ -41,15 +47,41 @@ export class R2Parts {
     }
   }
 
+  /** Adds `bytes` at once, never waiting: false when a part fills while `OFFERED` are
+   * still on their way up (or one failed), and the object is then to be aborted. */
+  offer(bytes: Uint8Array) {
+    this.#total += bytes.length;
+    for (let at = 0; at < bytes.length; ) {
+      const take = Math.min(bytes.length - at, this.part - this.#filled);
+      this.#buffer.set(bytes.subarray(at, at + take), this.#filled);
+      this.#filled += take;
+      at += take;
+      if (this.#filled === this.part) {
+        if (this.#sending >= OFFERED) return false;
+        this.#start(this.#buffer);
+      }
+    }
+    return true;
+  }
+
   async #send(part: Uint8Array) {
     await this.#uploading;
+    this.#start(part);
+  }
+
+  /** Starts `part`'s upload once the multipart upload exists; the buffer starts afresh.
+   * `#uploading` settles when every part started so far has. */
+  #start(part: Uint8Array) {
+    this.#sending++;
     this.#upload ??= this.env.OBJECTS.createMultipartUpload(this.key, this.options);
-    const upload = await this.#upload;
     const number = this.#parts.length + 1;
-    const sending = upload.uploadPart(number, part);
-    this.#uploading = sending.then((uploaded) => {
-      this.#parts[number - 1] = uploaded;
-    });
+    const sent = this.#upload
+      .then((upload) => upload.uploadPart(number, part))
+      .then((uploaded) => {
+        this.#parts[number - 1] = uploaded;
+        this.#sending--;
+      });
+    this.#uploading = Promise.all([this.#uploading, sent]).then(() => {});
     this.#parts.length = number;
     this.#buffer = new Uint8Array(this.part);
     this.#filled = 0;
