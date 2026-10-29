@@ -9,6 +9,8 @@ import type { RepoAgents } from './repo-agents';
 import type { WorkspaceAgents } from './workspace-agents';
 
 export interface ManagedEnv {
+  /** The deployed commit, set by `cargo xtask deploy`; /health reports it. */
+  BUILD_REVISION?: string;
   REPOS: DurableObjectNamespace<RepoAgents>;
   WORKSPACES: DurableObjectNamespace<WorkspaceAgents>;
   LEDGER: DurableObjectNamespace<CreditLedger>;

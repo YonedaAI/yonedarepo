@@ -59,7 +59,12 @@ async function grantCredit(req: Request, env: ManagedEnv, account: string) {
 export async function managedFetch(req: Request, env: ManagedEnv): Promise<Response> {
   const url = new URL(req.url);
   const parts = url.pathname.split('/').filter(Boolean);
-  if (url.pathname === '/health') return json({ service: 'yonedarepo-agents-managed', v: 1 });
+  if (url.pathname === '/health')
+    return json({
+      service: 'yonedarepo-agents-managed',
+      v: 1,
+      revision: env.BUILD_REVISION ?? 'development',
+    });
   if (parts[0] === 'hooks' && parts.length === 2 && req.method === 'POST') {
     if (!REPO_ID.test(parts[1])) return refuse('NOT_FOUND', 'Unknown repository', 404);
     return receiveHook(req, env, parts[1]);
