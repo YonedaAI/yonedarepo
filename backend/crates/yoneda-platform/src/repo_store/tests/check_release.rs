@@ -52,3 +52,52 @@ fn released_claims_requeue_the_run_without_spending_attempts() {
     let shown = h.ok(SYSTEM, json!({"op":"repo_check_run","run_id":run}));
     assert_eq!(shown["status"], "passed");
 }
+
+/// A command runner's sparse scope: validated paths, handed to the executor with the claim,
+/// and invisible to a policy without one (its digest is the one recorded before scopes).
+#[test]
+fn a_runner_scope_is_validated_claimed_and_leaves_old_policies_alone() {
+    let (h, root) = seeded();
+    for paths in [
+        json!(["../out"]),
+        json!(["/abs"]),
+        json!([".git"]),
+        json!((0..33).map(|i| format!("d{i}")).collect::<Vec<_>>()),
+    ] {
+        let policy = json!({"required_checks":["unit"],"approvals":0,
+            "runners":{"unit":{"command":["true"],"paths":paths}}});
+        let refused = code(h.run(OWNER, json!({"op":"repo_set_policy","policy":policy})));
+        assert!(
+            ["INVALID_INPUT", "UNSAFE_PATH"].contains(&refused.as_str()),
+            "{paths}: {refused}"
+        );
+    }
+    let plain = json!({"required_checks":["unit"],"approvals":0,
+        "runners":{"unit":{"command":["true"],"timeout_seconds":60}}});
+    let before =
+        h.ok(OWNER, json!({"op":"repo_set_policy","policy":plain}))["policy_digest"].clone();
+    let again = json!({"required_checks":["unit"],"approvals":0,
+        "runners":{"unit":{"command":["true"],"timeout_seconds":60,"paths":[]}}});
+    assert_eq!(
+        h.ok(OWNER, json!({"op":"repo_set_policy","policy":again}))["policy_digest"],
+        before
+    );
+    let scoped = json!({"required_checks":["unit"],"approvals":0,
+        "runners":{"unit":{"command":["true"],"timeout_seconds":60,"paths":["src","docs/api.md"]}}});
+    h.ok(OWNER, json!({"op":"repo_set_policy","policy":scoped}));
+    let id = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("src/a.rs", "a\n")]),
+            json!([]),
+        )
+        .unwrap();
+    let run = h.ok(OWNER, json!({"op":"repo_commit","commit":id}))["check_runs"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let claimed = h.ok(SYSTEM, json!({"op":"repo_check_claim","run_id":run}));
+    assert_eq!(claimed["paths"], json!(["src", "docs/api.md"]));
+}
