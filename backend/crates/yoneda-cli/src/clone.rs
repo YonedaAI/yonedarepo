@@ -131,8 +131,10 @@ async fn offline(repo: &str, origin: &str, path: &Path, target: &Path) -> Result
             git_clone(&access, target)?;
             true
         }
-        // Tokens and R2-backed repositories cannot `git clone`: take the API snapshot.
-        Err(f) if f.code == "FORBIDDEN" || f.code == "NOT_SUPPORTED" => {
+        // Tokens and R2-backed repositories cannot `git clone`, nor can a repository that
+        // withholds quarantined content (the object store would serve it): take the API
+        // snapshot, which refuses only a quarantined file it needs.
+        Err(f) if ["FORBIDDEN", "NOT_SUPPORTED", "QUARANTINED"].contains(&f.code.as_str()) => {
             std::fs::create_dir_all(target).context(format!("creating {}", target.display()))?;
             Git::new(target).run(&["init", "-q", "-b", BRANCH])?;
             false
