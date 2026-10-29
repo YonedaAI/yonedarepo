@@ -49,9 +49,9 @@ YonedaRepo is a Git-compatible source platform for agents and API clients, built
 ## Development process (owner rules)
 
 Branches and worktrees
-- All work happens in a worktree on its own `claude/<slice>` branch (`git worktree add ../yonedarepo-<slice> -b claude/<slice> dev`). Merge into `dev` with `--no-ff` only after its gates pass, then remove the worktree (keep the branch).
+- All work happens in a worktree on its own `claude/<slice>` branch, **inside the repo root's `.worktrees/` folder** (`git worktree add .worktrees/<slice> -b claude/<slice> dev`; `.worktrees/` is git-ignored). Never create worktrees beside the repo (no `../yonedarepo-*`). Merge into `dev` with `--no-ff` only after its gates pass, then remove the worktree the same turn (`git worktree remove .worktrees/<slice>`; keep the branch). A finished builder's worktree is removed even before its branch merges.
 - `dev` stays clean: no untracked or uncommitted files. Uncommitted code found anywhere goes onto its own branch as a WIP commit; never merge it unreviewed.
-- Fast worktree start: APFS-clone `target/` (`cp -cR target/debug target/wasm32-unknown-unknown <wt>/target/`), symlink `node_modules` and `frontend/node_modules`, and run `worker-build --release` in the worktree's own build folder (a shared build folder ships a stale Wasm).
+- Fast worktree start: APFS-clone `target/` (`cp -cR target/debug target/wasm32-unknown-unknown .worktrees/<slice>/target/`), symlink `node_modules` and `frontend/node_modules`, and run `worker-build --release` in the worktree's own build folder (a shared build folder ships a stale Wasm).
 - GitHub: `origin` is the private YonedaAI/yonedarepo (`dev` deploys dev, `main` is promoted to prod with owner approval). Never push private history to the archived public MagnetonIO/yonedarepo. Run a secret scan (`gitleaks git --redact`) before pushing new history.
 
 Tests
