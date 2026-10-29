@@ -18,6 +18,17 @@ export function deferred(work: () => Promise<unknown>) {
   return true;
 }
 
+/** `deferred` bound to the request running now, for work begun later outside its context
+ * (a response stream's callbacks). */
+export function deferrer(): (work: () => Promise<unknown>) => boolean {
+  const waitUntil = lent.getStore();
+  return (work) => {
+    if (!waitUntil) return false;
+    waitUntil(work().catch((e) => console.warn(`deferred work failed: ${e?.message ?? e}`)));
+    return true;
+  };
+}
+
 /** `work` after the response when the request lent its waitUntil, else now: the returned
  * promise is what the answer must wait for (nothing, when deferred). */
 export function afterAnswer(work: () => Promise<unknown>): Promise<unknown> {

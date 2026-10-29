@@ -1,6 +1,8 @@
 // How a pack goes out: side-band packets, the closing timing line (PackStats), a failure
 // midway, and the full-clone pack the store holds (repo-pack-cache), streamed as it is or
 // copied into the store while a built one streams.
+
+import { deferrer } from './background';
 import { ReadStats } from './repo-bundles';
 import type { PackWriter } from './repo-pack-cache';
 
@@ -19,32 +21,30 @@ export const RESULT = {
   'cache-control': 'no-cache',
 };
 
-/** The pack held in the store, streamed after `head` as a built one would be. */
+/** The pack held in the store (already in side-band packets of `CHUNK`), piped after
+ * `head` with no JavaScript between R2 and the client, then the timing line and flush. */
 export function sendStored(
   head: Uint8Array,
-  body: ReadableStream<Uint8Array>,
+  stored: R2ObjectBody,
   band: number,
   stats?: PackStats,
 ) {
   if (stats) stats.cache = 'hit';
-  const reader = body.getReader();
-  const out = new ReadableStream<Uint8Array>({
-    start(controller) {
-      controller.enqueue(head);
-    },
-    async pull(controller) {
-      try {
-        const next = await reader.read();
-        if (next.done) return end(controller, band, stats);
-        stats?.streamed(next.value.length);
-        controller.enqueue(band ? sideBand(1, next.value, band) : next.value);
-      } catch (e: any) {
-        failed(controller, band, e);
-      }
-    },
-    cancel: (reason) => reader.cancel(reason),
-  });
-  return new Response(out, { headers: RESULT });
+  const { readable, writable } = new IdentityTransformStream();
+  const write = async (bytes: Uint8Array) => {
+    const writer = writable.getWriter();
+    await writer.write(bytes);
+    writer.releaseLock();
+  };
+  (async () => {
+    await write(head);
+    await stored.body.pipeTo(writable, { preventClose: true });
+    stats?.streamed(stored.size);
+    if (stats) await write(sideBand(2, stats.line(), band));
+    await write(new TextEncoder().encode('0000'));
+    await writable.close();
+  })().catch((e) => writable.abort(e).catch(() => {}));
+  return new Response(readable, { headers: RESULT });
 }
 
 /** A banded pack ends with the timing line (when asked) and a flush. */
@@ -70,37 +70,63 @@ export function failed(
   controller.close();
 }
 
-/** Copies a built pack into the store (`writer`), if any. Storing is best effort: a failed
- * write is dropped, never the clone. */
+/** Pack bytes waiting for the store before storing is given up: the client never waits
+ * on R2 (a clone that outruns the store is served whole, its pack just not kept). */
+const STORE_BACKLOG = 16 * 1024 * 1024;
+
+/** Copies a built pack into the store (`writer`), if any, behind the response: `add`
+ * never waits, and `finish` completes after the answer when the request lent waitUntil.
+ * Storing is best effort: a failed or lagging write is dropped, never the clone. */
 export class Storing {
+  #queue: Promise<void> = Promise.resolve();
+  #backlog = 0;
+  readonly #defer = deferrer();
+
   constructor(
     private writer: PackWriter | undefined,
     private readonly stats?: PackStats,
   ) {}
 
-  async add(bytes: Uint8Array) {
-    await this.writer?.add(bytes).catch((e) => this.drop(e));
+  add(bytes: Uint8Array) {
+    const writer = this.writer;
+    if (!writer) return;
+    if (this.#backlog + bytes.length > STORE_BACKLOG) {
+      this.#drop('the store fell behind the clone');
+      return;
+    }
+    this.#backlog += bytes.length;
+    this.#queue = this.#queue.then(() =>
+      writer.add(bytes).then(() => void (this.#backlog -= bytes.length)),
+    );
+    this.#queue.catch((e) => this.#drop(e?.message ?? e));
   }
 
   async finish() {
     const writer = this.writer;
-    this.writer = undefined;
-    const kept = await writer?.finish().catch((e) => {
-      console.warn(`pack not stored: ${e?.message ?? e}`);
-      return false;
-    });
-    if (kept && this.stats) this.stats.cache = 'stored';
+    if (!writer) return;
+    const queue = this.#queue;
+    const work = async () => {
+      await queue;
+      if (this.writer !== writer) return;
+      const kept = await writer.finish();
+      if (kept && this.stats) this.stats.cache = 'stored';
+    };
+    if (this.#defer(work)) {
+      if (this.stats) this.stats.cache = 'storing';
+    } else await work().catch((e) => this.#drop(e?.message ?? e));
   }
 
   async abort() {
     const writer = this.writer;
     this.writer = undefined;
+    await this.#queue.catch(() => {});
     await writer?.abort().catch(() => {});
   }
 
-  private async drop(e: any) {
-    console.warn(`pack not stored: ${e?.message ?? e}`);
-    await this.abort();
+  #drop(why: string) {
+    if (!this.writer) return;
+    console.warn(`pack not stored: ${why}`);
+    void this.abort();
   }
 }
 
@@ -121,7 +147,7 @@ export class PackStats {
   readonly walkReads = new ReadStats();
   readonly reads = new ReadStats();
   /** Whether the pack came from the store (`hit`), was stored (`stored`), or neither. */
-  cache: 'off' | 'hit' | 'miss' | 'stored' = 'off';
+  cache: 'off' | 'hit' | 'miss' | 'storing' | 'stored' = 'off';
   private entries = 0;
   private deltas = 0;
   private bytes = 0;
