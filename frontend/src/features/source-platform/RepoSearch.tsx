@@ -61,7 +61,7 @@ export function RepoSearch({
             {found.data.memories.map((m) => (
               <li key={m.id}>
                 <span>
-                  <span className="chip">{m.memory.kind}</span>
+                  <span className="chip">{m.memory.kind}</span>{' '}
                   {m.stale && <span className="chip memory-stale">stale</span>}{' '}
                   <a
                     href={`/source/${repo}/agents/memories`}
