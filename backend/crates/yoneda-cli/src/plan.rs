@@ -3,7 +3,7 @@
 use crate::changes::{self, Change};
 use crate::chunk::{self, Limits};
 use crate::error::{Error, Result};
-use crate::git::Git;
+use crate::git::{Git, Trees};
 use crate::replay::replay;
 use crate::state::State;
 use serde_json::{Value, json};
@@ -95,6 +95,7 @@ pub fn plan(git: &Git, mapping: &dyn Mapping, commits: &[String], limits: &Limit
         None => String::new(),
     };
     let mut steps = Vec::new();
+    let trees = Trees::new(git);
     for local in &commits[first..] {
         let parent = git
             .first_parent_of(local)?
@@ -117,8 +118,11 @@ pub fn plan(git: &Git, mapping: &dyn Mapping, commits: &[String], limits: &Limit
         let author = json!({ "name": authored.name, "email": authored.email });
         let mut tree = parent.clone();
         for (index, changes) in chunks.into_iter().enumerate() {
-            let info: Vec<u8> = changes.iter().flat_map(Change::index_info).collect();
-            tree = git.tree_with(&tree, &info)?;
+            let edits = changes
+                .iter()
+                .map(Change::path_change)
+                .collect::<Result<Vec<_>>>()?;
+            tree = trees.with(&tree, &edits)?;
             let (message, author, committer) = match &exact {
                 Some(r) => (
                     r.message.clone(),
