@@ -244,12 +244,11 @@
   background: var(--site-surface);
   border: 1px solid var(--site-line);
 }
-.mock-rows > .mock-coming {
+.mock-rows > .mock-transcript {
   flex-direction: row;
   align-items: center;
   gap: 8px;
   color: var(--site-muted);
-  border-style: dashed;
 }
 .mock-rows strong {
   display: inline-flex;

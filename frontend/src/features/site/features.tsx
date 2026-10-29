@@ -1,6 +1,6 @@
 // The platform's built features as the site describes them, each with a small static mock
 // of its real output (CLI text and UI states copied from the product, with sample names).
-import { Check, CircleDashed, GitBranch, GitPullRequest, Search } from 'lucide-react';
+import { Check, GitBranch, GitPullRequest, ScrollText, Search } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 export type Feature = {
@@ -115,13 +115,13 @@ export const FEATURES: Feature[] = [
   {
     id: 'sessions',
     title: 'Agent sessions',
-    summary: 'Which coding session produced which commit, and what it read.',
+    summary: 'Which coding session produced which commit, what it read and what it said.',
     points: [
       'Each commit can carry its session: the agent CLI, model, summary and session id.',
       'Hooks for coding agents record the files a session read and declare them with the push.',
+      'Full transcripts: prompts, tool calls and replies, with credentials redacted before storage.',
       'Browse sessions per repository, filtered by CLI, model or branch.',
     ],
-    coming: 'Full session transcripts are in progress.',
     mock: (
       <figure className="site-mock site-panel" aria-label="Sessions recorded on a repository">
         <ul className="mock-rows">
@@ -133,8 +133,8 @@ export const FEATURES: Feature[] = [
             <strong>Document backoff limits</strong>
             <span>claude-code · 2 declared reads</span>
           </li>
-          <li className="mock-coming">
-            <CircleDashed size={15} aria-hidden="true" /> Transcript: coming
+          <li className="mock-transcript">
+            <ScrollText size={15} aria-hidden="true" /> Transcript: 38 turns, 1 redacted
           </li>
         </ul>
       </figure>
