@@ -140,7 +140,7 @@ test('the browser rows are named by what is missing from the page text', () => {
 });
 
 test('the function is found breadth first through tree listings and the first file with one', async () => {
-  const { findFunction } = await import('../../tools/staging/realuser-agent-tools.mjs');
+  const { findFunction } = await import('../../tools/staging/agent-tools-plan.mjs');
   const trees = {
     '': [{ name: 'lib', type: 'tree' }, { name: 'test', type: 'tree' }, { name: 'index.js', type: 'blob' }, { name: '.github', type: 'tree' }],
     lib: [{ name: 'parse.js', type: 'blob' }],
@@ -196,4 +196,11 @@ test('yoneda context --json is read from its v1 envelope (and from a bare read o
   assert.deepEqual(contextContracts(JSON.stringify(read)), [contract]);
   assert.deepEqual(contextContracts(JSON.stringify({ ...envelope, data: { ...envelope.data, context: { ...read, contracts: undefined } } })), []);
   assert.throws(() => contextContracts(JSON.stringify({ schema: 'yoneda.cli.status.v1', data: {} })), /yoneda\.cli\.status\.v1/);
+});
+
+test('the plan module imports nothing, so these tests never load the browser or the network stack', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const source = await readFile(new URL('../../tools/staging/agent-tools-plan.mjs', import.meta.url), 'utf8');
+  assert.deepEqual(source.match(/^\s*import\b.*$/gm) ?? [], []);
+  assert.doesNotMatch(source, /\bimport\(/);
 });
