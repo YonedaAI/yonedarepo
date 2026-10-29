@@ -155,9 +155,10 @@ const { values } = parseArgs({
     // The Git LFS gate alone (items 0 and 25), and item 25's file size in MiB.
     lfs: { type: 'boolean', default: false },
     'lfs-mb': { type: 'string', default: '200' },
-    // The Git over SSH gate alone (items 0 and 26), at the SSH front door's host and port.
+    // The Git over SSH gate alone (items 0 and 26), at the SSH front door's host (default: the
+    // target environment's) and port.
     ssh: { type: 'boolean', default: false },
-    'ssh-host': { type: 'string', default: 'ssh.dev.yonedarepo.com' },
+    'ssh-host': { type: 'string' },
     'ssh-port': { type: 'string', default: '22' },
     // The declared-reads and session-records gate alone (items 0 and reads).
     'reads-sessions': { type: 'boolean', default: false },
@@ -233,6 +234,7 @@ if (values.prod)
     api: 'https://api.yonedarepo.com',
     platform: 'https://yonedarepo-prod-platform.mlong-f01.workers.dev',
   });
+values['ssh-host'] ??= values.prod ? 'ssh.yonedarepo.com' : 'ssh.dev.yonedarepo.com';
 if (values.realuser || values.dogfood || values['agent-tools']) {
   assert.ok(!values.prod, '--realuser runs on dev only');
   const code = await realuser(values, root);
