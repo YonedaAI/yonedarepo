@@ -45,6 +45,9 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
   change show <n>                     a change: gates, reviews, comments and files
   change comment <n> -m <text> [--path <p> --line <n> --side old|new] [--resolve]
   change land <n>                     land the change's head on its base
+  change close <n>                    close a change without landing it (the branch stays)
+  change reopen <n>                   reopen a closed change
+  change delete <n>                   delete a closed change and its comments (author or owner)
   release create <tag> [--title <t>] [-m <notes>] [--asset <file>]   publish a tag's release
   release list | release show <tag>   releases; a release's notes and assets (with sha256)
   policy show | policy set '<json>'
@@ -59,6 +62,8 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
   status [--brief]                    one line, no network: commits not on the platform yet
   session record [<sha>] --cli <c> --summary <text> [--model <m>] [--transcript-ref <r>]
                  [--session-id <id>]  (default id: $YONEDA_SESSION_ID or opencode's session)
+                 [--transcript <file>] uploads it (Claude Code JSONL, opencode messages or
+                                      {context, turns}); readers see it, credentials redacted
   session list [<sha>]                the coding sessions recorded for a commit (default HEAD)
   context [--max-bytes <n>] [--json]  what a new coding session here should know: recent
                                       sessions, open changes, landing rules, contracts
