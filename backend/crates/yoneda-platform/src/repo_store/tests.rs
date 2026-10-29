@@ -1645,6 +1645,7 @@ mod land_shapes;
 mod lfs;
 mod lfs_sweep;
 mod members;
+mod memories;
 mod model_runner;
 mod ops;
 mod orgs;

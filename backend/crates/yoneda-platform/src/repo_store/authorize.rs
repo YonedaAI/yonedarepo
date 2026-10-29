@@ -12,6 +12,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         StoreOp::Lfs(op) => return lfs::authorize(actor, op, c),
         StoreOp::Fork(op) => return forks::authorize(actor, op),
         StoreOp::Quarantine(op) => return quarantine::authorize(actor, op),
+        StoreOp::Memory(op) => return super::memory::authorize(actor, op),
         StoreOp::Repo(op) => op,
     };
     match op {
