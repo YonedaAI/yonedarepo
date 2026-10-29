@@ -28,6 +28,7 @@ mod branches;
 mod break_glass;
 mod change_comments;
 mod change_delete;
+pub(crate) mod change_gates;
 mod change_hooks;
 mod change_records;
 mod changes;

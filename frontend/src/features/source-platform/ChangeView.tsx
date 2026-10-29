@@ -1,6 +1,7 @@
 // One change request: what it proposes, its gates and actions, the conversation (comments and
 // branch pushes) and the diff from the merge base with main, with threads on its lines.
 import { useMemo } from 'react';
+import type { ChangeGates as Gates } from '../../../../shared/contracts/change-gates';
 import type { Navigate } from '../shell/useRoute';
 import { ChangeDiff } from './ChangeDiff';
 import { ChangeGates } from './ChangeGates';
@@ -14,6 +15,7 @@ import {
   groupComments,
   who,
 } from './changeModel';
+import { MergeGates } from './MergeGates';
 import { RebaseButton } from './RebaseButton';
 import { ChangeStatusChip } from './RepoChanges';
 import { useReadOnly } from './repoAccess';
@@ -70,6 +72,7 @@ export function ChangeView({
   navigate?: Navigate;
 }) {
   const detail = useSource<ChangeDetail>(`/repos/${repo}/changes/${number}?patch=1`);
+  const gates = useSource<Gates>(`/repos/${repo}/changes/${number}/gates`);
   const readOnly = useReadOnly();
   const c = detail.data;
   const grouped = useMemo(
@@ -80,6 +83,7 @@ export function ChangeView({
   if (!c || !grouped) return <Loading what={`change #${number}`} />;
   const refresh = () => {
     detail.reload();
+    gates.reload();
     onChanged?.();
   };
   const submit = (input: Parameters<typeof postComment>[2]) => postComment(repo, number, input);
@@ -138,6 +142,7 @@ export function ChangeView({
         )}
         {c.body && <p className="source-change-body">{c.body}</p>}
       </header>
+      {c.status === 'open' && <MergeGates gates={gates} />}
       <ChangeGates
         repo={repo}
         change={c}

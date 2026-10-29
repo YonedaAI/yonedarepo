@@ -1,7 +1,7 @@
 //! Contracts the TypeScript side shares, as JSON Schemas derived from the Rust types that
 //! produce them. `cargo xtask contracts` writes each as `shared/contracts/<name>.ts` (its
 //! types and the schema itself); a test there fails while a committed file is stale.
-use crate::repo_store::{policy::Policy, status::RepoStatus};
+use crate::repo_store::{change_gates::ChangeGates, policy::Policy, status::RepoStatus};
 use serde_json::{Value, json};
 use yoneda_core::account::{ACCOUNT_IDENTIFIER_HELP, MAX_ACCOUNT_IDENTIFIER_BYTES};
 
@@ -11,6 +11,7 @@ pub fn schemas() -> Vec<(&'static str, Value)> {
         ("account", account_identifier()),
         ("repo-status", response::<RepoStatus>()),
         ("policy", request::<Policy>()),
+        ("change-gates", response::<ChangeGates>()),
     ]
 }
 

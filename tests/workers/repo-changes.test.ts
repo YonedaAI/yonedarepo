@@ -1,7 +1,7 @@
 // Change requests through the real authority (workerd): a stock push of a branch suggests
 // opening a change; the change follows the branch's pushes; anchored comments; approval is
 // a review of the head commit; landing the head on main lands the change in the same
-// transaction; close and reopen; the same operations over MCP; change hooks get events. A
+// transaction; its gates in one read; close and reopen; the same operations over MCP; change hooks get events. A
 // change on another base branch diffs against it and lands on it with only `write`.
 import { expect, it } from 'vitest';
 import { compute } from '../../cloudflare/worker/repo-compute';
@@ -92,6 +92,12 @@ it('opens, discusses, approves and lands a change with its branch head', async (
   expect(shown.status, JSON.stringify(shown.body)).toBe(200);
   expect(shown.body.head).toBe(head);
   expect(shown.body.head_commit.gates).toMatchObject({ ready: false, approvals: 0, approvals_required: 1 });
+  // The gates in one read: what the head still needs, agreeing with the head's own gates.
+  const gates = async () => (await api(`/repos/${repo}/changes/1/gates`, { token: reader })).body;
+  const before = await gates();
+  expect(before).toMatchObject({ number: 1, status: 'open', base: 'main', head, base_protected: true, ready: false });
+  const kinds = (g: any) => Object.fromEntries(g.requirements.map((r: any) => [r.kind, [r.state, r.enforced]]));
+  expect(kinds(before)).toMatchObject({ approvals: ['waiting', true], comments: ['ready', false], freshness: ['ready', false] });
   expect(shown.body.timeline.map((m: any) => m.action)).toEqual(['moved', 'created']);
   expect(shown.body.diff.base.commit).toBe(main);
   expect(shown.body.diff.changes.map((c: any) => c.path)).toEqual(['retry.ts']);
@@ -106,9 +112,12 @@ it('opens, discusses, approves and lands a change with its branch head', async (
   const done = await api(comments, { token: agent }, { body: { body: 'Measured.', resolve: true, ...anchor } });
   expect(done.body.resolved).toBe(2);
   expect((await api(comments, { token: reader }, { body: { body: 'x' } })).status).toBe(403);
+  expect(kinds(await gates()).comments).toEqual(['ready', false]);
 
   // Approve the head (git_review), then land it on main: the change lands with it.
   expect((await api(`/repos/${repo}/commits/${head}/reviews`, { cookie }, { body: { decision: 'approve' } })).status).toBe(200);
+  const approved = await gates();
+  expect([approved.ready, kinds(approved).approvals]).toEqual([true, ['ready', true]]);
   const landed = await api(`/repos/${repo}/land`, { cookie }, { body: { ref: 'main', commit: head } });
   expect(landed.status, JSON.stringify(landed.body)).toBe(200);
   const after = await api(`/repos/${repo}/changes/1`, { token: reader });
@@ -123,6 +132,8 @@ it('opens, discusses, approves and lands a change with its branch head', async (
     api(`/repos/${repo}/mcp`, { token }, { body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } } });
   const reopened = await mcp('git_change_create', { branch: 'fix', title: 'Follow-up' });
   expect(reopened.body.result.structuredContent).toMatchObject({ number: 2, status: 'open' });
+  const viaMcp = (await mcp('git_change_gates', { number: 2 })).body.result.structuredContent;
+  expect([viaMcp.number, viaMcp.status, viaMcp.requirements.length > 0]).toEqual([2, 'open', true]);
   expect((await mcp('git_change_close', { number: 2 })).body.result.structuredContent.status).toBe('closed');
   expect((await mcp('git_change_reopen', { number: 2 })).body.result.structuredContent.status).toBe('open');
   expect((await mcp('git_change_close', { number: 2 }, reader)).body.result.isError).toBe(true);

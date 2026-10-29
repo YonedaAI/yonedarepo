@@ -127,6 +127,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::BundleIndex
         | R::BundleLocate
         | R::ChangeRecords
+        | R::ChangeGates
         | R::ChangeShow
         | R::Changes
         | R::CheckRun
