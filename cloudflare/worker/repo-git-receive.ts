@@ -12,7 +12,7 @@
 
 import { deferred } from './background';
 import { transient } from './durable';
-import { bundlesOn, locate, storeBundle } from './repo-bundles';
+import { bundlesOn, storeBundle } from './repo-bundles';
 import { dispatchRuns } from './repo-checks';
 import { compute } from './repo-compute';
 import {
@@ -24,9 +24,10 @@ import {
   refusal,
   target,
 } from './repo-git-moves';
-import { inBatches, rawObject, treeFor, treesFor } from './repo-git-objects';
+import { supply } from './repo-git-objects';
 import { ReceiveSession } from './repo-git-sessions';
 import { notifyHooks } from './repo-hooks';
+import { largeWarnings, SpilledFiles } from './repo-large-files';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 import { dispatchObjects, dispatchProjection } from './repo-projection';
@@ -42,8 +43,9 @@ const VERIFY_ROUNDS = 64;
 const STAGE_OBJECTS = 256;
 const STAGE_BYTES = 1024 * 1024;
 const WRITE_BUDGET = 4 * 1024 * 1024;
+/** Body bytes fed to the session at once: what it holds of a spilled file's pack bytes. */
+const FEED_BYTES = 1024 * 1024;
 const RECORD_COMMITS = 100;
-const READS = 16;
 const WRITES = 64;
 
 export async function receivePack(
@@ -53,8 +55,9 @@ export async function receivePack(
   secretAllow: Json[],
 ): Promise<Response> {
   const session = ReceiveSession.open();
+  const files = new SpilledFiles(ctx.env, ctx.repo, (id) => objects.rawKey(id));
   try {
-    let failure = await timed('git.unpack', () => unpack(session, body));
+    let failure = await timed('git.unpack', () => unpack(session, body, files));
     if (!failure) {
       // A body that ended early (a truncated pack) fails here.
       try {
@@ -83,7 +86,7 @@ export async function receivePack(
     try {
       if (tips.length > 0)
         fresh = await timed('git.store', () =>
-          store(ctx, objects, session, tips, secretAllow, reads ?? []),
+          store(ctx, objects, session, tips, secretAllow, reads ?? [], files, messages),
         );
     } catch (e) {
       // Nothing moved: an overloaded authority is an HTTP 503 Git can retry; otherwise
@@ -115,12 +118,18 @@ export async function receivePack(
     return report(commands, outcomes, null, sideBand, messages);
   } finally {
     session.close();
+    await files.abort();
   }
 }
 
-/** Feeds the whole body to the session; after a failure the rest is read and dropped, so
- * Git (which sends everything before it reads) gets the report. */
-async function unpack(session: ReceiveSession, body: ReadableStream<Uint8Array>) {
+/** Feeds the whole body to the session, storing the files it spills as they come (the
+ * pack waits while one's content is pending); after a failure the rest is read and
+ * dropped, so Git (which sends everything before it reads) gets the report. */
+async function unpack(
+  session: ReceiveSession,
+  body: ReadableStream<Uint8Array>,
+  files: SpilledFiles,
+) {
   let failure: string | null = null;
   const reader = body.getReader();
   for (;;) {
@@ -128,12 +137,26 @@ async function unpack(session: ReceiveSession, body: ReadableStream<Uint8Array>)
     if (done) break;
     if (failure) continue;
     try {
-      session.feed(value);
+      for (let at = 0; at < value.length; at += FEED_BYTES) {
+        session.feed(value.subarray(at, at + FEED_BYTES));
+        await takeSpilled(session, files);
+      }
     } catch (e) {
       failure = reason(e);
+      await files.abort();
     }
   }
   return failure;
+}
+
+/** Spilled files' content after a feed, the pack resuming while it waited for it. */
+async function takeSpilled(session: ReceiveSession, files: SpilledFiles) {
+  for (let paused = true; paused; ) {
+    const frames = session.spilled();
+    paused = frames[0] === 1;
+    await files.take(frames.subarray(1));
+    if (paused) session.feed(new Uint8Array());
+  }
 }
 
 function refuseAll(outcomes: Outcome, why: string) {
@@ -155,6 +178,8 @@ async function store(
   tips: string[],
   secretAllow: Json[],
   reads: string[],
+  files: SpilledFiles,
+  messages: string[],
 ) {
   let input: Json = { op: 'verify', tips, secret_allow: secretAllow };
   let verified: Json | null = null;
@@ -169,6 +194,7 @@ async function store(
     } else verified = step;
   }
   if (!verified) throw new ApiError('INVALID_INPUT', 'Directories are nested too deeply');
+  messages.push(...largeWarnings(files.stored, verified.commits as Json[]));
   let frames = session.objects(WRITE_BUDGET);
   let batch = framed(frames);
   const bytes = batch.reduce((n, o) => n + o.data.length, 0);
@@ -216,54 +242,6 @@ async function store(
   // Undispatched runs stay queued in the authority and are sent again on request.
   await timed('git.runs', () => dispatchRuns(ctx.env, ctx.repo, runs).catch(() => {}));
   return new Set(commits.map((c) => c.commit as string));
-}
-
-/** What verification asked for: recorded parents' trees, repository trees, and proof that
- * files the pack leaves out are held here. Anything missing refuses the push. */
-async function supply(ctx: RepoContext, objects: RepoObjects, need: Json): Promise<Json> {
-  const missing = (what: string) =>
-    new ApiError('NOT_FOUND', `missing necessary objects: ${what} is not in this repository`);
-  if (need.commits) {
-    const commits: Json = {};
-    await inBatches(need.commits as string[], READS, async (id) => {
-      const found = await ctx.call({ op: 'repo_commit', commit: id, brief: true }).catch((e) => {
-        if (e?.code === 'NOT_FOUND') throw missing(`commit ${id}`);
-        throw e;
-      });
-      commits[id] = found.tree;
-    });
-    return { commits };
-  }
-  if (need.trees) {
-    const trees = await treesFor(objects, need.trees as string[], (id) =>
-      treeFor(objects, id).catch((e) => {
-        if (e?.code === 'NOT_FOUND') throw missing(`tree ${id}`);
-        throw e;
-      }),
-    );
-    return { trees };
-  }
-  // Files a bundle holds are present without reading them.
-  const asked = need.objects as string[];
-  const held = await locate(
-    ctx.env,
-    ctx.repo,
-    asked.map((id) => ({ id, kind: 'blob' })),
-  );
-  const present = [...held.keys()];
-  present.push(
-    ...(await inBatches(
-      asked.filter((id) => !held.has(id)),
-      READS,
-      async (id) => {
-        const head = await ctx.env.OBJECTS.head(objects.rawKey(id));
-        if (head?.customMetadata?.kind === 'blob' || (await rawObject(objects, id, 'blob')))
-          return id;
-        throw missing(`file ${id}`);
-      },
-    )),
-  );
-  return { present };
 }
 
 const KINDS = ['', 'commit', 'tree', 'blob'];

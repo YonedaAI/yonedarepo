@@ -10,6 +10,7 @@ import { transient } from './durable';
 import type { ReadStats, Wanted } from './repo-bundles';
 import { compute } from './repo-compute';
 import { rawObjects, SeenTrees, treesFor } from './repo-git-objects';
+import { isLarge, type LargeBody } from './repo-large-files';
 import { PackWriter, packCacheOn, packKey, storedPack } from './repo-pack-cache';
 import {
   concat,
@@ -22,7 +23,7 @@ import {
   sideBand,
 } from './repo-pack-stream';
 
-type Read = Wanted & { data: Uint8Array | null };
+type Read = Wanted & { data: Uint8Array | LargeBody | null };
 
 import { UploadSession } from './repo-git-sessions';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
@@ -199,6 +200,28 @@ async function readWhole(objects: RepoObjects, wanted: Wanted[], stats?: ReadSta
   return read;
 }
 
+/** A large file's zlib stream for its pack entry, from its R2 body, never held whole: the
+ * session hashes its content (checked against its id at `largeEnd`) and the bytes written
+ * (into the pack's trailer). */
+async function* deflated(session: UploadSession, file: LargeBody) {
+  const zlib = new CompressionStream('deflate');
+  const writer = zlib.writable.getWriter();
+  const none = new Uint8Array();
+  const feeding = (async () => {
+    for await (const chunk of file.body as unknown as AsyncIterable<Uint8Array>) {
+      session.largeData(chunk, none);
+      await writer.write(chunk);
+    }
+    await writer.close();
+  })();
+  feeding.catch(() => {});
+  for await (const packed of zlib.readable as unknown as AsyncIterable<Uint8Array>) {
+    session.largeData(none, packed);
+    yield packed;
+  }
+  await feeding;
+}
+
 /** The pack, in pieces of about `CHUNK` bytes: header, trees and tag objects (from the
  * session), then the commits read `early`, then the other commits and blobs read in
  * groups (`rawObjects`), then the trailer. Closes the session. */
@@ -212,17 +235,21 @@ async function* packChunks(
   try {
     let pending: Uint8Array[] = [session.start()];
     let size = pending[0].length;
-    const add = function* (entry: Uint8Array) {
-      stats?.sent(entry);
-      pending.push(entry);
-      size += entry.length;
+    /** Pack bytes, sent once about `CHUNK` gathered. */
+    const push = function* (bytes: Uint8Array) {
+      pending.push(bytes);
+      size += bytes.length;
       if (size >= CHUNK) {
         yield concat(pending);
         pending = [];
         size = 0;
       }
     };
-    const write = function* (group: Read[]) {
+    const add = function* (entry: Uint8Array) {
+      stats?.sent(entry);
+      yield* push(entry);
+    };
+    const write = async function* (group: Read[]) {
       for (const { id, kind, data } of group) {
         if (!data)
           throw new ApiError(
@@ -231,6 +258,16 @@ async function* packChunks(
               ? `Commit ${id} is held only as imported history, which HTTPS does not serve yet; use git-remote-yoneda`
               : `${kind} ${id} is missing from the object store`,
           );
+        if (isLarge(data)) {
+          if (stats) stats.raw += data.size;
+          yield* add(session.largeStart(id, data.size));
+          for await (const packed of deflated(session, data)) {
+            stats?.streamed(packed.length);
+            yield* push(packed);
+          }
+          session.largeEnd();
+          continue;
+        }
         if (stats) stats.raw += data.length;
         yield* add(session.entry(kind, id, data));
       }

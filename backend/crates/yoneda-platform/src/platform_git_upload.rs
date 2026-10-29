@@ -15,10 +15,12 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 use yoneda_core::{
     Error, Result,
     git_object::{
-        FileMode, ObjectId, ObjectKind, PackWriter, TreeEntry, Walk, diff_trees, encode_delta,
-        encode_tree, hash_object,
+        FileMode, ObjectHasher, ObjectId, ObjectKind, PackWriter, TreeEntry, Walk, diff_trees,
+        encode_delta, encode_tree, hash_object,
     },
 };
+
+mod large;
 
 /// Files one sent commit may introduce (a root lists every file).
 const MAX_FILES: usize = 200_000;
@@ -65,6 +67,8 @@ pub struct UploadSession {
     bases: HashMap<ObjectId, (Vec<u8>, u8)>,
     base_bytes: usize,
     written: HashSet<ObjectId>,
+    /// A file streamed through the adapter (`large_start`): its id and its content's hash.
+    large: Option<(ObjectId, ObjectHasher)>,
 }
 
 impl UploadSession {
@@ -272,8 +276,19 @@ impl UploadSession {
             Some((base, delta, depth)) => (writer.delta_entry(&base, &delta), depth),
             None => (writer.entry(ObjectKind::Blob, data), 0),
         };
+        self.wrote(id, &partners);
+        let awaited = partners.iter().any(|p| !self.written.contains(p));
+        if awaited && data.len() <= MAX_DELTA_BYTES && self.base_bytes + data.len() <= BASE_BYTES {
+            self.base_bytes += data.len();
+            self.bases.insert(id, (data.to_vec(), depth));
+        }
+        Ok(entry)
+    }
+
+    /// Records `id` written and lets go of partners' bases no version still needs.
+    fn wrote(&mut self, id: ObjectId, partners: &[ObjectId]) {
         self.written.insert(id);
-        for p in &partners {
+        for p in partners {
             let done = self
                 .partners
                 .get(p)
@@ -282,12 +297,6 @@ impl UploadSession {
                 self.base_bytes -= bytes.len();
             }
         }
-        let awaited = partners.iter().any(|p| !self.written.contains(p));
-        if awaited && data.len() <= MAX_DELTA_BYTES && self.base_bytes + data.len() <= BASE_BYTES {
-            self.base_bytes += data.len();
-            self.bases.insert(id, (data.to_vec(), depth));
-        }
-        Ok(entry)
     }
 
     /// The pack trailer; the session is spent.

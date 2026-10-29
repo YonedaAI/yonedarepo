@@ -98,6 +98,22 @@ pub fn git_receive_feed(handle: u32, chunk: &[u8]) -> String {
     }))
 }
 
+/// Spilled files' content since the last call (see `ReceiveSession::spilled`), led by one
+/// byte: 1 when the pack waits for it to be taken (feed an empty chunk next), else 0.
+#[wasm_bindgen(js_name = gitReceiveSpilled, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_receive_spilled(handle: u32) -> Result<Vec<u8>, JsError> {
+    RECEIVING
+        .with_borrow_mut(|s| {
+            s.with(handle, |r| {
+                // Asked before taking: taking the content is what resumes the walk.
+                let mut out = vec![u8::from(r.paused())];
+                out.extend_from_slice(&r.spilled());
+                Ok(out)
+            })
+        })
+        .map_err(thrown)
+}
+
 /// `{op: "finish" | "commands" | "verify", ...}` (see `ReceiveSession`).
 #[wasm_bindgen(js_name = gitReceiveCall, wasm_bindgen = ::worker::wasm_bindgen)]
 pub fn git_receive_call(handle: u32, input: &str) -> String {
@@ -169,6 +185,28 @@ pub fn git_upload_entry(
         .map_err(thrown)
 }
 
+/// Starts a file the adapter streams (see `UploadSession::large_start`): its entry header.
+#[wasm_bindgen(js_name = gitUploadLargeStart, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_upload_large_start(handle: u32, id: &str, size: f64) -> Result<Vec<u8>, JsError> {
+    UPLOADING
+        .with_borrow_mut(|s| s.with(handle, |u| u.large_start(id, size as usize)))
+        .map_err(thrown)
+}
+
+#[wasm_bindgen(js_name = gitUploadLargeData, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_upload_large_data(handle: u32, content: &[u8], packed: &[u8]) -> Result<(), JsError> {
+    UPLOADING
+        .with_borrow_mut(|s| s.with(handle, |u| u.large_data(content, packed)))
+        .map_err(thrown)
+}
+
+#[wasm_bindgen(js_name = gitUploadLargeEnd, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_upload_large_end(handle: u32) -> Result<(), JsError> {
+    UPLOADING
+        .with_borrow_mut(|s| s.with(handle, |u| u.large_end()))
+        .map_err(thrown)
+}
+
 /// The trailer; closes the session.
 #[wasm_bindgen(js_name = gitUploadFinish, wasm_bindgen = ::worker::wasm_bindgen)]
 pub fn git_upload_finish(handle: u32) -> Result<Vec<u8>, JsError> {
@@ -182,4 +220,13 @@ pub fn git_upload_finish(handle: u32) -> Result<Vec<u8>, JsError> {
 #[wasm_bindgen(js_name = gitUploadClose, wasm_bindgen = ::worker::wasm_bindgen)]
 pub fn git_upload_close(handle: u32) {
     UPLOADING.with_borrow_mut(|s| s.open.remove(&handle));
+}
+
+/// This isolate's Wasm memory in bytes (it only grows): what tests bound for large files.
+#[wasm_bindgen(js_name = wasmMemoryBytes, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn wasm_memory_bytes() -> f64 {
+    #[cfg(target_arch = "wasm32")]
+    return (core::arch::wasm32::memory_size(0) * 65_536) as f64;
+    #[cfg(not(target_arch = "wasm32"))]
+    0.0
 }

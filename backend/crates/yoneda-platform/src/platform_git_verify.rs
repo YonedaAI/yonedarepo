@@ -6,7 +6,7 @@
 //! read through the adapter (which proves they exist), and files outside the pack are
 //! confirmed by the adapter one by one. The same diff yields each commit's path touches.
 use crate::platform_objects::new_trees;
-use crate::secret_scan::{SecretAllow, scan};
+use crate::secret_scan::{SecretAllow, refuse, scan};
 use serde_json::{Value, json};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use yoneda_core::{
@@ -34,6 +34,8 @@ pub struct Verifier {
     /// The repository policy's accepted false positives, and the (path, blob) pairs scanned.
     pub secret_allow: Vec<SecretAllow>,
     scanned: HashSet<(String, ObjectId)>,
+    /// Files too large to hold, scanned as they streamed in: each rule's first line.
+    pub streamed: HashMap<ObjectId, Vec<(&'static str, usize)>>,
 }
 
 /// A verified new commit, ready to record.
@@ -142,9 +144,11 @@ impl Verifier {
                 if claim(pack, &mut assigned, &mut objects, blob, ObjectKind::Blob)? {
                     // Every file the push carries is scanned at each path it lands on.
                     if self.scanned.insert((change.path.clone(), blob)) {
-                        let content = pack.content(&blob)?;
-                        scan(&change.path, &content, &self.secret_allow)
-                            .map_err(|e| secret_found(&change.path, e))?;
+                        let found = match self.streamed.get(&blob) {
+                            Some(hits) => refuse(&change.path, hits, &self.secret_allow),
+                            None => scan(&change.path, &pack.content(&blob)?, &self.secret_allow),
+                        };
+                        found.map_err(|e| secret_found(&change.path, e))?;
                     }
                     continue;
                 }
