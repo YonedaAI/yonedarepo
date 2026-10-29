@@ -5,7 +5,7 @@
 // Like `platformCompute`, worker-build publishes these `#[wasm_bindgen]` functions as
 // methods of the Rust module's default entrypoint class; none uses `this`.
 import RustWorker from '../../backend/crates/yoneda-worker/build/worker/shim.mjs';
-import { compute } from './repo-compute';
+import { compute, rustCall } from './repo-compute';
 import { ApiError, type Json } from './repo-ops';
 
 type Exported = Record<string, (...args: unknown[]) => unknown>;
@@ -17,7 +17,7 @@ function fn<T>(name: string): (...args: unknown[]) => T {
     throw Object.assign(new Error('Git sessions are unavailable in this build'), {
       code: 'COMPUTE_UNAVAILABLE',
     });
-  return found as (...args: unknown[]) => T;
+  return (...args: unknown[]) => rustCall(() => found(...args) as T);
 }
 
 /** A JSON answer (`{value}` or `{error}`) as its value, or the error as an ApiError. */

@@ -14,3 +14,12 @@ pub fn platform_compute(input: &str) -> String {
     }
     .to_string()
 }
+
+/// Takes nothing and does nothing: the adapter calls it at once after a call into Rust
+/// failed, so the fresh instance a trap scheduled (a panic, the stack or memory exhausted)
+/// starts here. wasm-bindgen's glue copies a call's string and byte arguments into memory
+/// before it switches instances, and only exports returning a string switch on the way
+/// out: after a trap in one returning bytes, the next call carrying a string handed the
+/// fresh instance a pointer into the old one's memory (`memory access out of bounds`).
+#[wasm_bindgen(js_name = wasmSettle, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn wasm_settle() {}
