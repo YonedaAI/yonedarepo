@@ -239,7 +239,7 @@ export async function signup(username: string) {
   const response = await bindings.SELF.fetch('https://yoneda/api/auth/signup', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username, password: 'long platform test password' }),
+    body: JSON.stringify({ username, email: `${username}@example.com`, password: 'long platform test password' }),
   });
   expect(response.status).toBe(200);
   return (response.headers.get('set-cookie') ?? '').split(';')[0];
