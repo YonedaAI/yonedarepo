@@ -1,5 +1,6 @@
-// Account settings (`/settings`, from the account menu): the account, its sign-in methods,
-// the theme, the CLIs signed in with `yoneda login`, personal access tokens and organizations.
+// Account settings (`/settings`, from the account menu): the account, its email, its sign-in
+// methods, the theme, the CLIs signed in with `yoneda login`, personal access tokens and
+// organizations.
 import { useState } from 'react';
 import type { AccountIdentity } from '../../lib/types';
 import { ThemePicker } from '../shell/ThemePicker';
@@ -19,6 +20,7 @@ import { SshKeys } from '../source-platform/SshKeys';
 import { when } from '../source-platform/sourceApi';
 import type { RepoSummary } from '../source-platform/TokenParts';
 import { type Loaded, useSource } from '../source-platform/useSource';
+import { EmailSettings } from './EmailSettings';
 import { SignInMethods } from './SignInMethods';
 
 export function CliTable({
@@ -117,6 +119,7 @@ export function AccountSettings({
           <p className="source-meta">Sign in to see it.</p>
         )}
       </section>
+      {identity && <EmailSettings />}
       {identity && <SignInMethods />}
       <section aria-labelledby="appearance-heading">
         <h2 id="appearance-heading">Appearance</h2>

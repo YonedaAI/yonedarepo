@@ -12,7 +12,11 @@ import {
   RESEND_EMAILS,
   welcomeJob,
 } from '../../cloudflare/worker/platform-welcome-email';
-import { renderWelcome, WELCOME_DOCS } from '../../cloudflare/worker/platform-welcome-template';
+import {
+  renderVerify,
+  renderWelcome,
+  WELCOME_DOCS,
+} from '../../cloudflare/worker/platform-welcome-template';
 import { sha } from '../../cloudflare/worker/storage';
 import type { Env, Envelope } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
@@ -81,6 +85,22 @@ function resend(answers: { status: number; name?: string }[] = []) {
   return { got, send };
 }
 
+it('renders the confirmation link in the welcome email and its own email (snapshots)', async () => {
+  const config = { origin: 'https://yonedarepo.com', contact: 'hello@yonedarepo.com' };
+  const verifyUrl = `https://yonedarepo.com/verify-email?account=ada&token=${'ab'.repeat(32)}`;
+  const welcome = renderWelcome({ ...config, verifyUrl });
+  await expect(welcome.text).toMatchFileSnapshot('./__snapshots__/welcome-email-confirm.txt');
+  const confirm = renderVerify({ ...config, verifyUrl });
+  expect(confirm.subject).toBe('Confirm your email for YonedaRepo');
+  await expect(confirm.text).toMatchFileSnapshot('./__snapshots__/confirm-email.txt');
+  await expect(confirm.html).toMatchFileSnapshot('./__snapshots__/confirm-email.html');
+  for (const email of [welcome, confirm]) {
+    expect(email.text).toContain(verifyUrl);
+    expect(email.html).toContain(`href="${verifyUrl.replaceAll('&', '&amp;')}"`);
+    expect(email.text).toContain('The link works once, for 24 hours.');
+  }
+});
+
 it('renders the welcome email (text and HTML snapshots)', async () => {
   const email = renderWelcome({ origin: 'https://yonedarepo.com', contact: 'hello@yonedarepo.com' });
   expect(email.subject).toBe('Welcome to YonedaRepo');
@@ -103,7 +123,14 @@ it('enqueues exactly one welcome job when an account is created, and none otherw
   expect(target.PLATFORM_QUEUE).toBeUndefined();
   expect((await auth(target, 'signup', 'ada@example.com')).status).toBe(200);
   expect(queued).toEqual([
-    { v: 1, kind: 'account_welcome', repo_id: '', job_id: 'welcome', workspace: 'ada@example.com' },
+    {
+      v: 1,
+      kind: 'account_welcome',
+      repo_id: '',
+      job_id: 'welcome',
+      workspace: 'ada@example.com',
+      token: expect.stringMatching(/^[0-9a-f]{64}$/),
+    },
   ]);
   // A username account's welcome goes to its contact email.
   expect((await auth(target, 'signup', 'ada_user', 'Ada.Lovelace@Example.org')).status).toBe(200);
@@ -142,7 +169,12 @@ it('posts the welcome email to Resend with its key and a per-account idempotency
   const key = request.headers.get('idempotency-key');
   expect(key).toBe(`welcome/${await sha('grace@example.com')}`);
   expect(key).not.toContain('grace');
-  const email = renderWelcome({ origin: 'https://yonedarepo.test', contact: 'hello@yonedarepo.test' });
+  // The confirmation link carries the job's token.
+  const email = renderWelcome({
+    origin: 'https://yonedarepo.test',
+    contact: 'hello@yonedarepo.test',
+    verifyUrl: `https://yonedarepo.test/verify-email?account=grace%40example.com&token=${queued[0].token}`,
+  });
   expect(request.json).toEqual({
     from: 'YonedaRepo <hello@yonedarepo.test>',
     to: ['grace@example.com'],
@@ -269,6 +301,7 @@ it('sends nothing for an account without a contact email', async () => {
 it('serves accountCreated as an entrypoint method (RPC), not over HTTP', async () => {
   // The combined Worker's own entrypoint, the way the platform reaches itself over SELF.
   const self = bindings.SELF as unknown as { accountCreated(account: string): Promise<void> };
+  expect((await auth(scoped(), 'signup', 'rpc_only')).status).toBe(200);
   await expect(self.accountCreated('rpc_only')).resolves.toBeUndefined();
   const res = await bindings.SELF.fetch('https://yoneda/api/accountCreated', { method: 'POST' });
   expect(res.status).toBe(404);
