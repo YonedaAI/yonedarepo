@@ -15,9 +15,9 @@ This policy covers YonedaRepo, the source platform at yonedarepo.com operated by
 - **Recovery code**, stored only as a hash. It is shown to you once.
 - **Signed-in sessions**, stored by a hash of the session cookie, with an expiry. Older sessions are removed when you sign in from many places.
 
-### Sign-in with GitHub or Google
+### When you sign in with GitHub or Google
 
-If you sign in with GitHub or Google, we store:
+This applies only when you sign in with GitHub or Google. We then store:
 
 - which provider it was;
 - the provider's stable user id for you;
