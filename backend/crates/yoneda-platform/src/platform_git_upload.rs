@@ -172,7 +172,7 @@ impl UploadSession {
                     if sent.base != Some(sent.tree) {
                         add(sent.tree, ObjectKind::Tree, &mut objects);
                     }
-                    for tree in new_trees(sent.tree, &changes, &self.trees) {
+                    for tree in new_trees(sent.tree, &changes, &mut &self.trees)? {
                         add(tree, ObjectKind::Tree, &mut objects);
                     }
                     for change in changes.iter().filter(|_| !self.omit_blobs) {

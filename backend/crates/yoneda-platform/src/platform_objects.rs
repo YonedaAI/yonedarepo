@@ -114,8 +114,8 @@ pub fn object_json(id: ObjectId, kind: ObjectKind, data: &[u8]) -> Result<Value>
 pub fn new_trees(
     root: ObjectId,
     changes: &[TreeChange],
-    trees: &HashMap<ObjectId, Vec<TreeEntry>>,
-) -> Vec<ObjectId> {
+    trees: &mut impl TreeLookup,
+) -> Result<Vec<ObjectId>> {
     let mut found = Vec::new();
     let mut seen = HashSet::new();
     if !changes.is_empty() && seen.insert(root) {
@@ -125,15 +125,18 @@ pub fn new_trees(
         let mut at = root;
         let parts: Vec<&str> = change.path.split('/').collect();
         for dir in &parts[..parts.len() - 1] {
-            let next = trees
-                .get(&at)
-                .and_then(|entries| entries.iter().find(|e| e.name == *dir && e.mode.is_tree()));
-            let Some(entry) = next else { break };
-            at = entry.id;
+            let next = trees.entries(&at)?.and_then(|entries| {
+                entries
+                    .iter()
+                    .find(|e| e.name == *dir && e.mode.is_tree())
+                    .map(|e| e.id)
+            });
+            let Some(next) = next else { break };
+            at = next;
             if seen.insert(at) {
                 found.push(at);
             }
         }
     }
-    found
+    Ok(found)
 }

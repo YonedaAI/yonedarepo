@@ -1,8 +1,9 @@
 //! Tree-to-tree diff that descends only into subtrees whose ids differ, so its cost
-//! follows the size of the change. Trees come from a caller-supplied map; when some are
-//! missing the walk reports exactly which ids it needs next instead of failing.
+//! follows the size of the change. Trees come from a caller-supplied map or source; when
+//! some are missing the walk reports exactly which ids it needs next instead of failing.
 use super::{FileMode, ObjectId, TreeEntry};
 use crate::{Error, Result};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 /// A file-level difference. Directories never appear; their contents do.
@@ -20,17 +21,29 @@ pub enum Walk<T> {
     Done(T),
 }
 
+/// Where a walk reads trees: by id, or `None` when the tree is not held there (the walk
+/// then names it as needed). A source may decode on demand, so a lookup can fail.
+pub trait TreeLookup {
+    fn entries(&mut self, id: &ObjectId) -> Result<Option<Cow<'_, [TreeEntry]>>>;
+}
+
+impl TreeLookup for &HashMap<ObjectId, Vec<TreeEntry>> {
+    fn entries(&mut self, id: &ObjectId) -> Result<Option<Cow<'_, [TreeEntry]>>> {
+        Ok(self.get(id).map(|list| Cow::Borrowed(list.as_slice())))
+    }
+}
+
 type Side = Option<(FileMode, ObjectId)>;
 
 fn entries(
     id: Option<ObjectId>,
-    trees: &HashMap<ObjectId, Vec<TreeEntry>>,
+    trees: &mut impl TreeLookup,
     need: &mut BTreeSet<ObjectId>,
-) -> Option<BTreeMap<String, (FileMode, ObjectId)>> {
+) -> Result<Option<BTreeMap<String, (FileMode, ObjectId)>>> {
     let Some(id) = id else {
-        return Some(BTreeMap::new());
+        return Ok(Some(BTreeMap::new()));
     };
-    match trees.get(&id) {
+    Ok(match trees.entries(&id)? {
         Some(list) => Some(
             list.iter()
                 .map(|e| (e.name.clone(), (e.mode, e.id)))
@@ -40,7 +53,7 @@ fn entries(
             need.insert(id);
             None
         }
-    }
+    })
 }
 
 /// Differences from `old` to `new` (either may be absent: an empty tree), sorted by path.
@@ -51,6 +64,16 @@ pub fn diff_trees(
     trees: &HashMap<ObjectId, Vec<TreeEntry>>,
     limit: usize,
 ) -> Result<Walk<Vec<TreeChange>>> {
+    diff_trees_in(old, new, &mut { trees }, limit)
+}
+
+/// `diff_trees` reading trees from `trees` as the walk reaches them.
+pub fn diff_trees_in(
+    old: Option<ObjectId>,
+    new: Option<ObjectId>,
+    trees: &mut impl TreeLookup,
+    limit: usize,
+) -> Result<Walk<Vec<TreeChange>>> {
     let mut changes = Vec::new();
     let mut need = BTreeSet::new();
     let mut stack = vec![(String::new(), old, new)];
@@ -59,8 +82,8 @@ pub fn diff_trees(
             continue;
         }
         let (Some(before), Some(after)) = (
-            entries(old, trees, &mut need),
-            entries(new, trees, &mut need),
+            entries(old, trees, &mut need)?,
+            entries(new, trees, &mut need)?,
         ) else {
             continue;
         };
