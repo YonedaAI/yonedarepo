@@ -1,12 +1,12 @@
 // Stored packs built by jobs (repo-pack-jobs) in the repository's PackBuilder container
-// (pack-builder.ts; a test double here, answering with what the platform builds): a clone
+// (platform-pack-builder.ts; a test double here, answering with what the platform builds): a clone
 // that cannot store its pack hands it over, and a push to main builds that tip's full,
 // partial and shallow clone packs after a debounce, one build at a time, deleting the
 // earlier tip's. The container answers its Git remotes only for its own repository. Counts
 // are of R2 reads in local workerd.
 import { beforeEach, expect, it, vi } from 'vitest';
 import { withWaitUntil } from '../../cloudflare/worker/background';
-import { buildPacks, mirrorSource, platformSource } from '../../cloudflare/worker/pack-builder';
+import { buildPacks, mirrorSource, platformSource } from '../../cloudflare/worker/platform-pack-builder';
 import { packKey } from '../../cloudflare/worker/repo-pack-cache';
 import { DEBOUNCE_S } from '../../cloudflare/worker/repo-pack-jobs';
 import type { Env } from '../../cloudflare/worker/types';
@@ -118,7 +118,7 @@ it('builds one pack at a time per repository: a busy job comes back later', asyn
   expect(await bindings.OBJECTS.head(`derived/v1/${repo}/packs/v2/building`)).toBeNull();
 });
 
-it('builds nothing for a repository under PACK_BUILD_MIN_OBJECTS, or without containers', async () => {
+it('builds nothing for a repository under PACK_BUILD_MIN_OBJECTS', async () => {
   const small = { ...jobs, PACK_BUILD_MIN_OBJECTS: '5000' } as unknown as Env;
   const { repo, tip } = await pushedRepo('pack_small', small);
   take('platform_derive');
@@ -126,27 +126,48 @@ it('builds nothing for a repository under PACK_BUILD_MIN_OBJECTS, or without con
   expect(await packs(repo)).toEqual([]);
   expect(builders.record.calls).toEqual(['/fetch']);
   expect(builders.record.destroyed).toBe(1);
-  // Without a PackBuilder binding a push schedules nothing.
-  const send = vi.spyOn(fakeQueue, 'send');
-  const { schedulePackBuild } = await import('../../cloudflare/worker/repo-pack-jobs');
-  await schedulePackBuild(on, repo, tip);
-  expect(send).not.toHaveBeenCalled();
+  // The Worker's fallback build holds to it too.
+  const bare = { ...on, PACK_BUILD_MIN_OBJECTS: '5000' } as unknown as Env;
+  await runJob(bare, { v: 1, kind: 'platform_pack_build', repo_id: repo, job_id: `push-${tip}` });
+  expect(await packs(repo)).toEqual([]);
 });
 
-it('never keeps a pack the container cut short, and destroys the container whatever happens', async () => {
+/** Main's three packs after a push, built by `env`'s job; the first clone of each hits. */
+async function builtAfterPush(name: string, env: Env) {
+  const { repo, token, tip } = await pushedRepo(name, env);
+  take('platform_derive');
+  await runJob(env, { v: 1, kind: 'platform_pack_build', repo_id: repo, job_id: `push-${tip}` });
+  expect(await packs(repo)).toHaveLength(3);
+  for (const [kind, args] of Object.entries(kinds(tip, []))) {
+    if (kind === 'checkout') continue;
+    let pack: Uint8Array | string = '';
+    const hit = await reads(repo, async () => (pack = await fetchV2(env, repo, token, args)));
+    expect(hit, kind).toEqual({ bundles: 0, packs: 1 });
+    expect(count(pack), kind).toBeGreaterThan(0);
+  }
+  return repo;
+}
+
+it('builds in the Worker when the platform has no containers', async () => {
+  const logs = vi.spyOn(console, 'log');
+  await builtAfterPush('pack_no_container', { ...on, PACK_BUILD_MIN_OBJECTS: '0' } as unknown as Env);
+  expect(logs.mock.calls.some(([line]) => String(line).includes('"why":"no builder"'))).toBe(true);
+});
+
+it('builds in the Worker when the container does not start or sends a broken pack, and destroys it', async () => {
+  const down = fakeBuilders(() => noStart, { start: async () => Promise.reject(new Error('no container capacity')) });
+  const noStart = { ...jobs, PACK_BUILDERS: down.namespace } as unknown as Env;
+  await builtAfterPush('pack_no_start', noStart);
+  expect([down.record.started, down.record.destroyed, down.record.calls.length]).toEqual([1, 1, 0]);
+
+  // A pack cut short is never kept; the Worker builds the packs instead.
   const cut = fakeBuilders(() => broken, { packs: (_, pack) => pack.subarray(0, pack.length - 7) });
   const broken = { ...jobs, PACK_BUILDERS: cut.namespace } as unknown as Env;
-  const { repo, tip } = await pushedRepo('pack_cut', broken);
-  take('platform_derive');
-  // The job fails (the queue retries it) with nothing kept and the lease released.
-  await expect(runJob(broken, { v: 1, kind: 'platform_pack_build', repo_id: repo, job_id: `push-${tip}` })).rejects.toThrow('incomplete pack');
-  expect(await bindings.OBJECTS.head(`derived/v1/${repo}/packs/v2/building`)).toBeNull();
-  expect(await packs(repo)).toEqual([]);
+  const logs = vi.spyOn(console, 'log');
+  const repo = await builtAfterPush('pack_cut', broken);
   expect(cut.record.destroyed).toBe(1);
-  // A container that does not start is destroyed too, and the job fails (the queue retries).
-  const instance = { startAndWaitForPorts: async () => Promise.reject(new Error('no capacity')), containerFetch: async () => new Response(), destroy: vi.fn(async () => {}) };
-  await expect(buildPacks(instance, jobs, { repo, packs: [], minObjects: 0 }, async () => false)).rejects.toThrow('no capacity');
-  expect(instance.destroy).toHaveBeenCalledTimes(1);
+  expect(logs.mock.calls.some(([line]) => String(line).includes('incomplete pack'))).toBe(true);
+  expect(await bindings.OBJECTS.head(`derived/v1/${repo}/packs/v2/building`)).toBeNull();
 });
 
 it('keeps no pack once a blob is withheld while it was built', async () => {

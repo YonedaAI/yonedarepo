@@ -100,9 +100,9 @@ export interface Env {
   SSH_HOST_ECDSA_KEY?: string;
   /** SSH gateway containers (platform-ssh-gateway.ts); absent where not deployed. */
   SSH_GATEWAYS?: DurableObjectNamespace<import('./platform-ssh-gateway').SshGateway>;
-  /** Clone-pack builders, one container per repository (pack-builder.ts); absent where not
+  /** Clone-pack builders, one container per repository (platform-pack-builder.ts); absent where not
    * deployed (then no pack is handed off or built by a job). */
-  PACK_BUILDERS?: DurableObjectNamespace<import('./pack-builder').PackBuilder>;
+  PACK_BUILDERS?: DurableObjectNamespace<import('./platform-pack-builder').PackBuilder>;
   /** How clients reach the SSH gateway: `tunnel` (Cloudflare Tunnel, cloudflared in its
    * container), `connect` (inbound TCP to this Worker, private beta) or `off`. */
   SSH_FRONT_DOOR?: string;
