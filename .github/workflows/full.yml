@@ -1,0 +1,180 @@
+name: Full suite
+# The slow half of `cargo xtask check` (xtask/src/commands.rs), by hand before a prod ship:
+# the workerd suite in four shards plus their total, the platform-only and superfan Workers'
+# suites, the frontend build, and the runtime (CheckContainer) image when its inputs changed
+# since main or when asked. "Check" (ci.yml) runs the fast half on every PR and push to main;
+# keep both in step with the `check` arm.
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Build the runtime image even if cloudflare/containers and yoneda-runtime are unchanged since main
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: full-${{ github.ref }}
+  cancel-in-progress: true
+# An explicit bash shell runs with -eo pipefail, so `cmd | tee` fails when cmd fails.
+defaults:
+  run:
+    shell: bash
+jobs:
+  wasm:
+    name: Worker Wasm build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: wasm
+          # The pinned build tool lives in ~/.cargo/bin, which the cache keeps.
+          cache-bin: true
+      - name: Install Worker build tool
+        run: command -v worker-build >/dev/null || cargo install worker-build --version 0.8.7 --locked
+      - name: worker-build --release
+        working-directory: backend/crates/yoneda-worker
+        run: worker-build --release
+      # The workerd suites below test this build.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: worker-wasm
+          path: backend/crates/yoneda-worker/build
+          if-no-files-found: error
+          retention-days: 1
+
+  # The workerd suite split by file across four runners (vitest --shard), each with the
+  # config's own worker cap. workers-total adds up the counts.
+  workers:
+    name: Workers suite (workerd ${{ matrix.shard }}/4)
+    needs: wasm
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/node
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: worker-wasm
+          path: backend/crates/yoneda-worker/build
+      # Naming reporters replaces the CI defaults, so default and github-actions are listed.
+      - run: >-
+          pnpm test --shard=${{ matrix.shard }}/4
+          --reporter=default --reporter=github-actions --reporter=json
+          --outputFile.json="$RUNNER_TEMP/workers-${{ matrix.shard }}.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: workers-results-${{ matrix.shard }}
+          path: ${{ runner.temp }}/workers-${{ matrix.shard }}.json
+          if-no-files-found: warn
+          retention-days: 1
+
+  workers-total:
+    name: Workers suite total
+    needs: workers
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: workers-results-*
+          path: results
+          merge-multiple: true
+      - name: Add up the shards in the job summary
+        run: |
+          shopt -s nullglob
+          files=(results/workers-*.json)
+          counts='{files: (.testResults | length), tests: .numTotalTests, passed: .numPassedTests,
+            failed: .numFailedTests, skipped: (.numPendingTests + .numTodoTests)}'
+          row='"| \(.files) | \(.tests) | \(.passed) | \(.failed) | \(.skipped) |"'
+          {
+            echo "### Workers suite (workerd): ${#files[@]} of 4 shards reported"
+            echo
+            echo '| Shard | Files | Tests | Passed | Failed | Skipped |'
+            echo '| --- | --- | --- | --- | --- | --- |'
+            for f in "${files[@]}"; do
+              shard=${f##*workers-}; shard=${shard%.json}
+              echo "| $shard/4 $(jq -r "$counts | $row" "$f")"
+            done
+            if [ "${#files[@]}" -gt 0 ]; then
+              echo "| **total** $(jq -rs "map($counts) | reduce .[] as \$x ({}; reduce (\$x | keys[]) as \$k (.; .[\$k] += \$x[\$k])) | $row" "${files[@]}")"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ "${#files[@]}" -ne 4 ]; then
+            echo "::error::Only ${#files[@]} of 4 workerd shards reported results."
+            exit 1
+          fi
+          # The summary must never look green while a shard failed.
+          if [ "${{ needs.workers.result }}" != success ]; then
+            echo "::error::A workerd shard failed (${{ needs.workers.result }})."
+            exit 1
+          fi
+
+  suites:
+    name: Platform and superfan Workers, frontend build
+    needs: wasm
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/node
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: worker-wasm
+          path: backend/crates/yoneda-worker/build
+      # The source platform must pass on its own, in its platform-only test Worker.
+      - run: pnpm test:platform
+      - run: pnpm test:superfan
+      - run: pnpm --dir frontend build
+
+  # The CheckContainer image must build. Layers are cached in the GitHub Actions cache; the
+  # image is checked, not kept (no load, no push). It builds only when its directories
+  # changed since main (cloudflare/containers, backend/crates/yoneda-runtime) or `image` is set.
+  image:
+    name: Runtime image
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Full history: the change check needs main's merge base.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Decide whether the image needs a build
+        id: wanted
+        env:
+          ASKED: ${{ inputs.image }}
+        run: |
+          if [ "$ASKED" = "true" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if git diff --quiet origin/main...HEAD -- cloudflare/containers backend/crates/yoneda-runtime; then
+            echo "::notice::The runtime image's directories are unchanged since main; not building it (run with image to force)."
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+        if: steps.wanted.outputs.build == 'true'
+      - name: Build check image
+        if: steps.wanted.outputs.build == 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        env:
+          DOCKER_BUILD_RECORD_UPLOAD: 'false'
+        with:
+          context: .
+          file: cloudflare/containers/Dockerfile
+          platforms: linux/amd64
+          # The same flags wrangler builds with.
+          provenance: false
+          outputs: type=cacheonly
+          cache-from: type=gha,scope=runtime
+          cache-to: type=gha,scope=runtime,mode=max,ignore-error=true

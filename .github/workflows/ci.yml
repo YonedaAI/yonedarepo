@@ -1,307 +1,64 @@
-name: CI
-# The parts of `cargo xtask check` (the local gate) as parallel jobs, plus the runtime image,
-# then (pushes to dev only) the dev deploy + smoke. The deploy reuses the Wasm, frontend and
-# image these jobs built and tested (`deploy --prebuilt`, each artifact stamped with REVISION). Keep the job list in step with the `check`
-# arm in xtask/src/commands.rs. The deploy lives here because workflow_run, schedule and
-# workflow_dispatch triggers fire only for workflow files on the default branch (main).
+name: Check
+# The fast gate, on every pull request and push to main (and by hand): one job, one runner,
+# warm cargo and pnpm caches, about ten minutes. Lint, types and the unit tests of each crate,
+# the Worker Wasm build, the frontend and runtime suites. The workerd suites, the platform and
+# superfan Workers, the frontend build and the runtime image run in "Full suite" (full.yml),
+# by hand before a prod ship; together they are `cargo xtask check` (xtask/src/commands.rs),
+# so keep both workflows in step with its arm. Nothing here deploys: dev and prod deploy from
+# the owner's checkout (deploy-dev.yml and deploy-prod.yml are manual and off).
 on:
-  push:
-    branches: [dev, main]
+  # Documentation-only changes (docs/, Markdown anywhere, the site's content) run nothing.
   pull_request:
+    paths-ignore: ['docs/**', '**/*.md', 'frontend/src/content/**']
+  push:
+    branches: [main]
+    paths-ignore: ['docs/**', '**/*.md', 'frontend/src/content/**']
+  workflow_dispatch:
 permissions:
   contents: read
-# Push runs never wait for or cancel each other (a shared group queued them 13 min behind
-# the previous push); deploy-dev deploys only the tip of dev. PR runs supersede.
+# One run per branch or PR: a newer push cancels the older run of the same ref.
 concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  group: check-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 # An explicit bash shell runs with -eo pipefail, so `cmd | tee` fails when cmd fails.
 defaults:
   run:
     shell: bash
 jobs:
-  rust:
-    name: Rust fmt, clippy, tests
+  check:
+    name: Check
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      # Registry, git deps, target/ (both workspaces) and ~/.cargo/bin (worker-build), saved
+      # after every run so the next builds only what changed.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: rust-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: rust-${{ runner.os }}-
+          shared-key: check
+          cache-bin: true
+          workspaces: |
+            .
+            backend/crates/yoneda-ssh-gateway
+      - uses: ./.github/actions/node
       - run: cargo xtask layers
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
-      - run: cargo test --workspace
+      # Unit tests only: no ignored tests and no integration tests (those start workerd).
+      - run: cargo test -p yoneda-core -p yoneda-store -p yoneda-platform -p yoneda-cli -p yoneda-refmodel --lib
+      - run: cargo test -p xtask --bins
       # The SSH gateway is its own workspace (backend/crates/yoneda-ssh-gateway/Cargo.toml).
       - run: cargo fmt --check --manifest-path backend/crates/yoneda-ssh-gateway/Cargo.toml
       - run: cargo clippy --manifest-path backend/crates/yoneda-ssh-gateway/Cargo.toml --all-targets -- -D warnings
       - run: cargo test --manifest-path backend/crates/yoneda-ssh-gateway/Cargo.toml
-
-  wasm:
-    name: Worker Wasm build
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            ~/.cargo/bin/worker-build
-            target
-          key: wasm-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
-          restore-keys: wasm-${{ runner.os }}-
       - name: Install Worker build tool
         run: command -v worker-build >/dev/null || cargo install worker-build --version 0.8.7 --locked
+      # Before the TypeScript checks: the Worker types import its build.
       - name: worker-build --release
         working-directory: backend/crates/yoneda-worker
         run: worker-build --release
-      # `deploy --prebuilt` refuses an output whose REVISION is not the deployed commit.
-      - name: Stamp the build with its commit
-        run: echo "$GITHUB_SHA" > backend/crates/yoneda-worker/build/REVISION
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: worker-wasm
-          path: backend/crates/yoneda-worker/build
-          if-no-files-found: error
-          retention-days: 1
-
-  # The workerd suite split by file across four runners (vitest --shard), each with the
-  # config's own worker cap; deploy-dev needs every shard. workers-total adds up the counts.
-  workers:
-    name: Workers suite (workerd ${{ matrix.shard }}/4)
-    needs: wasm
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4]
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/node
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: worker-wasm
-          path: backend/crates/yoneda-worker/build
-      # Naming reporters replaces the CI defaults, so default and github-actions are listed.
-      - run: >-
-          pnpm test --shard=${{ matrix.shard }}/4
-          --reporter=default --reporter=github-actions --reporter=json
-          --outputFile.json="$RUNNER_TEMP/workers-${{ matrix.shard }}.json"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: always()
-        with:
-          name: workers-results-${{ matrix.shard }}
-          path: ${{ runner.temp }}/workers-${{ matrix.shard }}.json
-          if-no-files-found: warn
-          retention-days: 1
-
-  workers-total:
-    name: Workers suite total
-    needs: workers
-    if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: workers-results-*
-          path: results
-          merge-multiple: true
-      - name: Add up the shards in the job summary
-        run: |
-          shopt -s nullglob
-          files=(results/workers-*.json)
-          counts='{files: (.testResults | length), tests: .numTotalTests, passed: .numPassedTests,
-            failed: .numFailedTests, skipped: (.numPendingTests + .numTodoTests)}'
-          row='"| \(.files) | \(.tests) | \(.passed) | \(.failed) | \(.skipped) |"'
-          {
-            echo "### Workers suite (workerd): ${#files[@]} of 4 shards reported"
-            echo
-            echo '| Shard | Files | Tests | Passed | Failed | Skipped |'
-            echo '| --- | --- | --- | --- | --- | --- |'
-            for f in "${files[@]}"; do
-              shard=${f##*workers-}; shard=${shard%.json}
-              echo "| $shard/4 $(jq -r "$counts | $row" "$f")"
-            done
-            if [ "${#files[@]}" -gt 0 ]; then
-              echo "| **total** $(jq -rs "map($counts) | reduce .[] as \$x ({}; reduce (\$x | keys[]) as \$k (.; .[\$k] += \$x[\$k])) | $row" "${files[@]}")"
-            fi
-          } >> "$GITHUB_STEP_SUMMARY"
-          if [ "${#files[@]}" -ne 4 ]; then
-            echo "::error::Only ${#files[@]} of 4 workerd shards reported results."
-            exit 1
-          fi
-          # The summary must never look green while a shard failed.
-          if [ "${{ needs.workers.result }}" != success ]; then
-            echo "::error::A workerd shard failed (${{ needs.workers.result }})."
-            exit 1
-          fi
-
-  suites:
-    name: Types, lint, other suites, frontend build
-    needs: wasm
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/node
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: worker-wasm
-          path: backend/crates/yoneda-worker/build
+      # tsc of the Workers and biome, then tsc of the frontend.
       - run: pnpm check
-      # The source platform must pass on its own, in its platform-only test Worker.
-      - run: pnpm test:platform
-      - run: pnpm test:superfan
-      - run: pnpm test:runtime
+      - run: pnpm --dir frontend exec tsc -b
       - run: pnpm test:frontend
-      # The dev deploy installs this build: point its Git, CLI and MCP lines at the dev platform
-      # host (infra/api_origin.rs; `deploy --prebuilt` refuses a build for another origin).
-      - name: Frontend build for the dev platform API
-        run: |
-          host=$(jq -re '.workers[] | select(.role == "platform") | .config.routes[] | select(.custom_domain) | .pattern' infra/envs/dev.json)
-          VITE_YONEDA_API_ORIGIN="https://$host" pnpm --dir frontend build
-      - name: Stamp the frontend build with its commit
-        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
-        run: echo "$GITHUB_SHA" > frontend/dist/REVISION
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
-        with:
-          name: frontend-dist
-          path: frontend/dist
-          if-no-files-found: error
-          retention-days: 1
-
-  # Layers are cached in the GitHub Actions cache, so unchanged layers rebuild instantly and
-  # come out byte-identical (the registry push then skips them). On pushes to dev the tested
-  # image is saved for deploy-dev, which pushes it instead of letting wrangler rebuild it.
-  image:
-    name: Runtime image
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # The image is built in buildx, loaded into Docker and saved for the deploy: three copies of
-      # the ~2 GB image can overflow the runner's free disk, so drop preinstalled toolchains we never use.
-      - name: Free runner disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
-          df -h /
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - name: Build check image
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        env:
-          DOCKER_BUILD_RECORD_UPLOAD: 'false'
-        with:
-          context: .
-          file: cloudflare/containers/Dockerfile
-          platforms: linux/amd64
-          # The same flags wrangler builds with.
-          provenance: false
-          load: true
-          tags: yonedarepo-runtime:ci
-          cache-from: type=gha,scope=runtime
-          cache-to: type=gha,scope=runtime,mode=max,ignore-error=true
-      - name: Save the tested image for the dev deploy
-        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
-        run: |
-          out="$RUNNER_TEMP/runtime-image"
-          mkdir -p "$out"
-          echo "$GITHUB_SHA" > "$out/REVISION"
-          docker image inspect --format '{{.Id}}' yonedarepo-runtime:ci > "$out/IMAGE_ID"
-          docker save yonedarepo-runtime:ci | zstd -q -T0 -3 -o "$out/image.tar.zst"
-          ls -lh "$out"
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
-        with:
-          name: runtime-image
-          path: ${{ runner.temp }}/runtime-image
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 1
-
-  deploy-dev:
-    name: Deploy dev + smoke
-    needs: [rust, wasm, workers, suites, image]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/dev'
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    environment: dev
-    concurrency:
-      group: deploy-dev
-      cancel-in-progress: false
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Fetch the tip of dev for the deploy guard
-        run: git fetch --no-tags --depth=1 origin +dev:refs/remotes/origin/dev
-      # A newer push has its own CI run and deploy; skip quietly instead of failing the guard.
-      - name: Skip unless this commit is still the tip of dev
-        id: tip
-        run: |
-          if [ "$(git rev-parse HEAD)" = "$(git rev-parse refs/remotes/origin/dev)" ]; then
-            echo "current=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::$(git rev-parse --short HEAD) is no longer the tip of dev; its successor deploys."
-          fi
-      - uses: ./.github/actions/setup
-        if: steps.tip.outputs.current == 'true'
-      # dev fixes are usually deployed from the owner's Mac (`cargo xtask deploy --env dev`)
-      # before the push; when both Workers' /health already shows this commit, skip the rest
-      # with a summary line instead of redeploying (and rolling out) the same commit.
-      - name: Skip when dev already runs this commit
-        id: live
-        if: steps.tip.outputs.current == 'true'
-        run: cargo xtask live-check --env dev
-      - name: Write the dev secrets file (0600, outside the tree)
-        if: steps.live.outputs.deploy == 'true'
-        env:
-          OWNER_TOKEN: ${{ secrets.OWNER_TOKEN }}
-          VAULT_KEY: ${{ secrets.VAULT_KEY }}
-        run: |
-          install -d -m 700 ~/.config/yonedarepo
-          umask 077
-          printf 'OWNER_TOKEN=%s\nVAULT_KEY=%s\n' "$OWNER_TOKEN" "$VAULT_KEY" > ~/.config/yonedarepo/staging.env
-      # The tested outputs; xtask refuses any whose REVISION is not HEAD (fail closed).
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: steps.live.outputs.deploy == 'true'
-        with:
-          name: worker-wasm
-          path: ${{ runner.temp }}/prebuilt/worker-wasm
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: steps.live.outputs.deploy == 'true'
-        with:
-          name: frontend-dist
-          path: ${{ runner.temp }}/prebuilt/frontend-dist
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        if: steps.live.outputs.deploy == 'true'
-        with:
-          name: runtime-image
-          path: ${{ runner.temp }}/prebuilt/runtime-image
-      - name: Deploy dev
-        if: steps.live.outputs.deploy == 'true'
-        run: cargo xtask deploy --env dev --prebuilt "$RUNNER_TEMP/prebuilt" | tee "$RUNNER_TEMP/deploy.txt"
-      - name: Smoke
-        if: steps.live.outputs.deploy == 'true'
-        run: cargo xtask infra smoke --env dev | tee "$RUNNER_TEMP/smoke.txt"
-      # The deploy and smoke tables reach the job summary from xtask itself; on a failure
-      # before them, the last log lines do.
-      - name: Log tail on failure
-        if: failure()
-        run: |
-          set +e  # report whatever exists; a missing file is not a failure
-          { echo '### Deploy dev: log tail'; echo '```'; tail -n 20 "$RUNNER_TEMP/deploy.txt" 2>/dev/null; tail -n 20 "$RUNNER_TEMP/smoke.txt" 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-      - name: Remove the secrets file
-        if: always()
-        run: rm -f ~/.config/yonedarepo/staging.env
+      - run: pnpm test:runtime
