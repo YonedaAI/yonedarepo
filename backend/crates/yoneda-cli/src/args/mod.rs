@@ -225,10 +225,18 @@ mod tests {
                     summary: "done".into(),
                     model: None,
                     transcript_ref: None,
-                    session_id: None
+                    session_id: None,
+                    transcript: None,
                 }
             })
         );
+        assert!(matches!(
+            parsed("session record --cli codex --summary done --transcript t.jsonl"),
+            Ok(Command::Session {
+                command: SessionCommand::Record { transcript: Some(file), .. },
+                ..
+            }) if file == "t.jsonl"
+        ));
     }
 
     #[test]

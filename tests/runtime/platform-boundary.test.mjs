@@ -61,8 +61,9 @@ function topLevel(source, start) {
 test('platform Rust modules use only platform code and core contracts', async () => {
   // `account`: members are named by account identifier, the same contract signup validates.
   // `PLATFORM_MCP_TOOLS`: the MCP tool schemas (a core contract) the platform's tests pin
-  // against its own event and role lists.
-  const allowed = ['git_object', 'transport', 'txlog', 'textdiff', 'merge', 'search', 'blame', 'account', 'Error', 'Result', 'digest', 'fingerprint', 'validate_path', 'validate_symlink', 'hex', 'PLATFORM_MCP_TOOLS'];
+  // against its own event and role lists. `transcript`: the session transcript shape and
+  // truncation rule, which the CLI fits uploads to as well.
+  const allowed = ['git_object', 'transport', 'txlog', 'textdiff', 'merge', 'search', 'blame', 'account', 'transcript', 'Error', 'Result', 'digest', 'fingerprint', 'validate_path', 'validate_symlink', 'hex', 'PLATFORM_MCP_TOOLS'];
   const root = `${crates}/yoneda-platform/src`;
   const files = (await readdir(root, { recursive: true })).filter((f) => f.endsWith('.rs'));
   assert.ok(files.length >= 20, files.join());

@@ -1,5 +1,5 @@
 import { linkTo, type Navigate } from '../shell/useRoute';
-import { recorder, type SessionRecord } from './agentModel';
+import { recorder, type SessionRecord, transcriptLabel } from './agentModel';
 import { when } from './sourceApi';
 import { useSource } from './useSource';
 
@@ -24,18 +24,22 @@ export function SessionItem({
       </a>{' '}
       · {recorder(s.recorded_by)} · {when(s.at)}
       <p className="source-session-summary">{s.summary}</p>
-      {s.transcript_ref && (
-        <p className="source-meta">
-          Transcript: <code>{s.transcript_ref}</code>
-        </p>
+      {s.transcript ? (
+        <p className="source-meta">{transcriptLabel(s)}</p>
+      ) : (
+        s.transcript_ref && (
+          <p className="source-meta">
+            Transcript: <code>{s.transcript_ref}</code>
+          </p>
+        )
       )}
     </li>
   );
 }
 
 /** The coding sessions that produced a commit (CLI, model, summary), as their pushers
- * recorded them, each linking to its session page. Transcripts are not on the platform; a
- * reference names where one is. */
+ * recorded them, each linking to its session page (with its transcript, when one was
+ * stored). */
 export function CommitSessions({
   repo,
   commit,

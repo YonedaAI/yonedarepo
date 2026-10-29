@@ -40,6 +40,7 @@ import {
   setVisibility,
 } from './repo-public';
 import { releaseDownload, releasesRoute } from './repo-releases';
+import { SESSION_BODY_LIMIT } from './repo-session-records';
 import { timed, withTimings } from './repo-timing';
 import { branchesRoute, operations } from './repo-tools';
 import { vacuum } from './repo-vacuum';
@@ -192,7 +193,7 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   if (resource === 'commits' && sha && sub === 'checks' && post)
     return run('git_check', { ...(await bodyOf(req)), commit: sha });
   if (resource === 'commits' && sha && sub === 'sessions' && post)
-    return run('git_session_record', { ...(await bodyOf(req)), commit: sha });
+    return run('git_session_record', { ...(await bodyOf(req, SESSION_BODY_LIMIT)), commit: sha });
   if (resource === 'commits' && sha && sub === 'sessions' && get)
     return run('git_sessions', { commit: sha });
   if (resource === 'context' && !sha && get) return run('git_context', query);

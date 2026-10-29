@@ -265,11 +265,17 @@ pub async fn session(target: &Target, command: SessionCommand) -> Result<()> {
             model,
             transcript_ref,
             session_id,
+            transcript,
         } => {
             let commit = commit_of(commit)?;
+            let transcript = match transcript {
+                Some(path) => crate::agent_transcript::from_file(&path)?,
+                None => None,
+            };
             let body = json!({ "cli": cli, "summary": summary, "model": model,
                                "transcript_ref": transcript_ref,
-                               "session_id": session_id.or_else(current_session) });
+                               "session_id": session_id.or_else(current_session),
+                               "transcript": transcript });
             let posted = resolved
                 .api
                 .post(&format!("/commits/{commit}/sessions"), &body)

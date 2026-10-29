@@ -168,3 +168,40 @@ fn scans_a_mebibyte_quickly() {
         );
     }
 }
+
+#[test]
+fn redacts_every_credential_whole_and_keeps_the_rest() {
+    for (expected, secret) in shapes() {
+        let text = format!("before {secret} after\n{secret}");
+        let (clean, rules) = redact(&text);
+        assert_eq!(rules, [expected, expected], "{expected}");
+        assert!(
+            scan("t", clean.as_bytes(), &[]).is_ok(),
+            "{expected}: {clean}"
+        );
+        assert!(clean.starts_with("before ") && clean.contains(&format!("[REDACTED:{expected}]")));
+        // No fragment of the credential's body survives (AWS: neither the id nor the secret).
+        let tail = secret.trim_end();
+        assert!(
+            !clean.contains(&tail[tail.len() - 12..]),
+            "{expected}: {clean}"
+        );
+        assert!(
+            clean.trim_end().ends_with(']')
+                || expected == "private-key"
+                || expected == "aws-access-key",
+            "{expected}: {clean}"
+        );
+    }
+    // A PEM block goes from its header through its footer.
+    let pem = ["-----BEGIN ", "EC PRIVATE", " KEY-----\n"].concat()
+        + &cycle(64, "MHcCAQEEIAbc0123")
+        + "\n"
+        + &["-----END ", "EC PRIVATE", " KEY-----"].concat();
+    let (clean, rules) = redact(&format!("key:\n{pem}\nnext line"));
+    assert_eq!(rules, ["private-key"]);
+    assert_eq!(clean, "key:\n[REDACTED:private-key]\nnext line");
+    // Text without credentials comes back as it was.
+    let plain = "sk-ant- in prose, ghp_short, AKIAEXAMPLE and é";
+    assert_eq!(redact(plain), (plain.to_owned(), vec![]));
+}

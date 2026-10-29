@@ -178,6 +178,69 @@
 .agent-sections a + a {
   border-left: 1px solid #c5d6e1;
 }
+/* A session's transcript: the context packet, then its turns in order */
+.agent-transcript pre {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 8px;
+  max-height: 480px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}
+.agent-turns {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.agent-turn {
+  display: grid;
+  gap: 4px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.agent-turn-role {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.agent-turn-text {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.agent-turn-reply .agent-turn-text {
+  white-space: normal;
+}
+.agent-turn-reply .agent-turn-text > :first-child {
+  margin-top: 0;
+}
+.agent-turn-prompt {
+  border-left: 3px solid var(--blue);
+  padding-left: 10px;
+}
+/* A list item, so it keeps the disclosure marker that says it opens. */
+.agent-turn-tool summary {
+  padding: 2px 0;
+  overflow-wrap: anywhere;
+}
+.agent-turn-tool summary .chip {
+  margin-left: 8px;
+}
+.agent-turn-tool h4 {
+  margin: 8px 0 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.agent-turn-failed {
+  color: #a3261b;
+  border-color: #f0c2bd;
+}
+.agent-turn-omitted {
+  font-style: italic;
+}
 @media (max-width: 800px) {
   .agent-facts {
     grid-template-columns: 1fr;

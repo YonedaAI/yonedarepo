@@ -274,6 +274,153 @@ fn upgrades_from_the_lfs_schema_with_session_ids_null() {
     assert!(rows[0]["session_id"].is_null());
 }
 
+fn stored_meta(sha: char) -> Value {
+    json!({"sha256": sha.to_string().repeat(64), "bytes": 2048, "turns": 12,
+           "redactions": 1, "truncated": false, "context": true})
+}
+
+#[test]
+fn a_record_names_the_transcript_stored_for_it() {
+    let (h, root) = seeded();
+    let mine = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("src/lib.rs", "pub fn t() {}\n")]),
+            json!([]),
+        )
+        .unwrap();
+    let mut with = session(&mine, "With a transcript.");
+    with["transcript_ref"] = Value::Null;
+    with["transcript"] = stored_meta('a');
+    // A dry run checks the record without keeping it (the adapter uploads in between).
+    let mut dry = with.clone();
+    dry["dry_run"] = json!(true);
+    assert_eq!(h.ok(AGENT, dry.clone())["dry_run"], true);
+    assert!(
+        h.ok(CI, json!({"op":"repo_sessions","commit":mine}))["sessions"]
+            .as_array()
+            .unwrap()
+            .is_empty()
+    );
+    let posted = h.ok(AGENT, with.clone());
+    // A dry run of a record already kept answers it, so nothing is uploaded again.
+    let again = h.ok(AGENT, dry);
+    assert_eq!(
+        (again["session"].clone(), again["already"].clone()),
+        (posted["session"].clone(), json!(true))
+    );
+    let listed = &h.ok(CI, json!({"op":"repo_sessions","commit":mine}))["sessions"][0];
+    assert_eq!(listed["transcript"], stored_meta('a'));
+    // The stored transcript fills an absent transcript_ref.
+    assert_eq!(
+        listed["transcript_ref"],
+        format!("transcript:sha256:{}", "a".repeat(64))
+    );
+    let id = posted["session"].clone();
+    let shown = h.ok(CI, json!({"op":"repo_session_show","id":id}));
+    assert_eq!(shown["session"]["transcript"], stored_meta('a'));
+    let found = h.ok(CI, json!({"op":"repo_session_transcript","id":id}));
+    assert_eq!(
+        found,
+        json!({"session": id, "transcript": stored_meta('a')})
+    );
+    // A record without one, and a record that does not exist, have none to read.
+    let plain = h.ok(AGENT, session(&mine, "Without one."));
+    let none = h.run(
+        CI,
+        json!({"op":"repo_session_transcript","id":plain["session"]}),
+    );
+    assert_eq!(code(none), "NOT_FOUND");
+    assert_eq!(
+        code(h.run(CI, json!({"op":"repo_session_transcript","id":999}))),
+        "NOT_FOUND"
+    );
+    assert!(h.ok(CI, json!({"op":"repo_session_list"}))["sessions"][0]["transcript"].is_null());
+    // The metadata is the adapter's: anything else is refused.
+    for (key, bad) in [
+        ("sha256", json!("A".repeat(64))),
+        ("bytes", json!(0)),
+        ("bytes", json!(2 * 1024 * 1024)),
+        ("turns", json!(-1)),
+        ("truncated", json!("no")),
+    ] {
+        let mut wrong = with.clone();
+        wrong["summary"] = json!("other");
+        wrong["transcript"][key] = bad;
+        assert_eq!(code(h.run(AGENT, wrong)), "INVALID_INPUT", "{key}");
+    }
+    // A path-restricted token reads no transcript, as it reads no session.
+    h.ok(
+        OWNER,
+        json!({"op":"repo_token_create","name":"docs","scopes":["read"],"paths":["docs/"],
+        "_secret":"docs-secret-0123456789abcdef0123456789"}),
+    );
+    assert_eq!(
+        code(h.run(
+            "token:docs",
+            json!({"op":"repo_session_transcript","id":id})
+        )),
+        "FORBIDDEN"
+    );
+}
+
+#[test]
+fn a_private_repository_hides_transcripts_from_non_members() {
+    let (h, root) = seeded();
+    let mine = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("src/lib.rs", "pub fn t() {}\n")]),
+            json!([]),
+        )
+        .unwrap();
+    let mut with = session(&mine, "With a transcript.");
+    with["transcript"] = stored_meta('b');
+    let id = h.ok(AGENT, with)["session"].clone();
+    let read = |credentials: Value| {
+        let mut c = json!({"op":"repo_session_transcript","id":id,"now":1});
+        for (key, value) in credentials.as_object().unwrap() {
+            c[key] = value.clone();
+        }
+        crate::repo_store::execute_repo_store(&h.db, c)
+    };
+    let stranger =
+        json!({"_session": {"workspace": "stranger", "principal": "user:stranger", "human": true}});
+    for who in [json!({"_anonymous": true}), stranger.clone()] {
+        assert_eq!(code(read(who)), "NOT_FOUND");
+    }
+    h.ok(
+        OWNER,
+        json!({"op":"repo_set_visibility","visibility":"public"}),
+    );
+    assert_eq!(read(stranger).unwrap()["transcript"], stored_meta('b'));
+}
+
+#[test]
+fn upgrades_from_the_visibility_schema_with_no_transcripts() {
+    use crate::storage::SqlStore;
+    let db = crate::native::NativeStore::memory().unwrap();
+    let migrations = &super::super::migration::MIGRATIONS;
+    let before = migrations
+        .iter()
+        .position(|(version, _)| *version == 37)
+        .unwrap();
+    super::super::migration::migrate_with(&db, "repo_schema_migrations", &migrations[..before])
+        .unwrap();
+    db.query("INSERT INTO sessions(commit_id,cli,summary,recorded_by,at) VALUES('c','x','old','user:owner',1)", &[]).unwrap();
+    super::super::migrate_repo_store(&db).unwrap();
+    super::super::migrate_repo_store(&db).unwrap();
+    let rows = db
+        .query("SELECT summary,transcript FROM sessions", &[])
+        .unwrap();
+    assert_eq!(rows[0]["summary"], "old");
+    assert!(rows[0]["transcript"].is_null());
+}
+
 /// A placeholder is no model: "none", "" and the like are stored as null, never shown as a
 /// model or offered by the Model filter, also for rows recorded before this rule; a real
 /// model id is kept as given.
