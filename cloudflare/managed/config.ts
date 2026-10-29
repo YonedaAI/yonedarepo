@@ -27,6 +27,8 @@ export interface ManagedEnv {
   AI_GATEWAY_PROVIDERS: string;
   /** Worker secret, optional: the gateway's token when it is authenticated. */
   AI_GATEWAY_TOKEN?: string;
+  /** Worker secret: 64 hex characters sealing stored repository tokens and hook secrets. */
+  MANAGED_VAULT_KEY?: string;
   /** Worker secret, optional: bearer for granting credit; unset means nobody may. */
   MANAGED_ADMIN_TOKEN?: string;
   CLAUDE_KEY?: SecretsStoreSecret;
