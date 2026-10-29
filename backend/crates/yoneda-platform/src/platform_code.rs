@@ -71,12 +71,9 @@ pub fn symbol_edit(c: &Value) -> Result<Value> {
             format!("{symbol_path} changed since the handle was issued"),
         ));
     }
-    let replacement = String::from_utf8(
-        STANDARD
-            .decode(string(c, "replacement_b64")?)
-            .map_err(|_| bad("replacement is not base64"))?,
-    )
-    .map_err(|_| bad("replacement is not UTF-8"))?;
+    let replacement =
+        String::from_utf8(crate::platform_objects::base64_field(c, "replacement_b64")?)
+            .map_err(|_| bad("replacement is not UTF-8"))?;
     let updated = format!(
         "{}{}{}",
         &source[..symbol.start],

@@ -151,9 +151,7 @@ pub fn index_files(c: &Value) -> Result<Value> {
 /// `search_segment`: of a stored segment (`segment_b64`) under `prefix`, the files that may
 /// hold `query` and the files whose content is not searched, with why.
 pub fn search_segment(c: &Value) -> Result<Value> {
-    let bytes = STANDARD
-        .decode(string(c, "segment_b64")?)
-        .map_err(|_| bad("segment_b64 is not base64"))?;
+    let bytes = crate::platform_objects::base64_field(c, "segment_b64")?;
     let segment = StoredSegment::open(&bytes)?;
     let prefix = c["prefix"].as_str().unwrap_or_default();
     let at = |path: &str| match prefix {
