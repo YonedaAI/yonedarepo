@@ -4,11 +4,11 @@
 // are workspace sessions (owners) or repository tokens (agents, CI, scripts) — all the
 // same to us.
 
-import { accountActivity } from './account-activity';
 import { accountMcp } from './account-mcp';
 import { authenticate } from './auth';
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { error, readJson, response } from './http';
+import { accountActivity } from './platform-account-activity';
 import { orgAccess } from './platform-org-access';
 import { orgsRoute } from './platform-orgs';
 import { sshKeyRoute } from './platform-ssh-keys';
