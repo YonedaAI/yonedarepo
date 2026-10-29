@@ -26,7 +26,7 @@ import { lfsRoute } from './repo-lfs';
 import { repoMcp } from './repo-mcp';
 import { membersRoute } from './repo-members';
 import { contextRoute, memoriesRoute } from './repo-memories';
-import { downloadBlob } from './repo-object-fetch';
+import { downloadBlob, streamObjects } from './repo-object-fetch';
 import { parseStore } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { verifyPat } from './repo-pat';
@@ -79,6 +79,8 @@ const STATUS: Record<string, number> = {
 export const statusOf = (code: string, known: boolean) => STATUS[code] ?? (known ? 400 : 500);
 const COMMIT_BODY_LIMIT = 64 * 1024 * 1024;
 const BLOB = /^\/api\/v1\/repos\/(r[0-9a-f]{20})\/objects\/([0-9a-f]{40})$/;
+const PAGE = /^\/api\/v1\/repos\/(r[0-9a-f]{20})\/objects$/;
+const OBJECTS_BODY_LIMIT = 2 * 1024 * 1024;
 const bodyOf = (req: Request, limit?: number) =>
   readJson(req, limit).catch((e) => {
     throw new ApiError('INVALID_INPUT', String(e?.message ?? e));
@@ -386,6 +388,14 @@ async function handle(req: Request, env: Env): Promise<Response> {
       url.searchParams,
       req.headers.get('range'),
     ).catch(failure);
+  // A page of objects streams as it is read (repo-object-fetch.ts), as REST alone.
+  const page = PAGE.exec(url.pathname);
+  if (page && req.method === 'POST')
+    return bodyOf(req, OBJECTS_BODY_LIMIT)
+      .then((body) =>
+        streamObjects(new RepoContext(env, page[1], caller(env, page[1], auth)), body),
+      )
+      .catch(failure);
   return answer(() => route(req, env, url, auth));
 }
 
