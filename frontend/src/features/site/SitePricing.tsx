@@ -1,6 +1,7 @@
 // Pricing (`/pricing`): preview pricing from `pricing.ts`. Billing is not built, so nothing
 // here can be bought yet and the page says so first.
 import { Check } from 'lucide-react';
+import { CONTAINER_USD_PER_MINUTE } from '../../../../shared/managed-agents';
 import type { Navigate } from '../shell/useRoute';
 import { agentUsageRows, formatUsd, MARGIN, METERS, meterPrice, PRICING } from './pricing';
 import { siteLink } from './SiteLayout';
@@ -83,11 +84,12 @@ export function SitePricing({ navigate }: { navigate: Navigate }) {
       <section aria-labelledby="agent-usage-heading" className="site-section">
         <h2 id="agent-usage-heading">Agent usage: pay as you go</h2>
         <p>
-          The managed agents (code review and security review) are paid for by the model calls they
-          make: the tokens each call reads and writes, at the provider&apos;s rate plus {margin}%.
-          Every platform feature stays free. Agent usage comes out of the same{' '}
-          {formatUsd(PRICING.startingCreditUsd)} starting credit, and agents pause at a $0 balance
-          until credit is added. Setting up billing is coming.
+          The managed agents (code, security and slop review) are paid for by what each run uses:
+          the tokens its model calls read and write, at the provider&apos;s list rate plus {margin}
+          %, and the minutes its review container runs, at {formatUsd(CONTAINER_USD_PER_MINUTE)} a
+          minute. Every platform feature stays free. Your first runs come out of the{' '}
+          {formatUsd(PRICING.startingCreditUsd)} promotional credit, and agents pause at a $0
+          balance until credit is added. Setting up billing is coming.
         </p>
         <div className="site-table">
           <table>
@@ -105,17 +107,16 @@ export function SitePricing({ navigate }: { navigate: Navigate }) {
               {agentUsageRows().map((row) => (
                 <tr key={`${row.provider}/${row.model}`}>
                   <th scope="row">
-                    {row.model}
-                    <small>{row.provider}</small>
+                    {row.label}
+                    <small>{row.model}</small>
                   </th>
-                  <td>{row.agents.join(', ')}</td>
-                  <td className="site-rate">{formatUsd(row.input_price_per_million)}</td>
-                  <td className="site-rate">{formatUsd(row.output_price_per_million)}</td>
+                  <td>{row.agents.length ? row.agents.join(', ') : 'Available'}</td>
+                  <td className="site-rate">{formatUsd(row.input_price)}</td>
+                  <td className="site-rate">{formatUsd(row.output_price)}</td>
                   <td>
-                    Provider list rate
+                    Provider list rate, read {row.verified_at}
                     <small>
-                      {formatUsd(row.input_cost_per_million)} in /{' '}
-                      {formatUsd(row.output_cost_per_million)} out × {MARGIN}
+                      {formatUsd(row.input)} in / {formatUsd(row.output)} out × {MARGIN}
                     </small>
                   </td>
                 </tr>

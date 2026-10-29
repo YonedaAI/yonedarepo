@@ -1,6 +1,7 @@
-// The shell's sidebar: Browse (Home, Repositories, Explore, the account's repositories and
-// organizations), then Repository: the switcher and the open repository's pages. On a
-// phone it is the navigation menu the top bar opens.
+// The shell's sidebar: Browse (Home, Repositories, Explore, Agents: the workspace's managed
+// agents, their runs and settings), the account's repositories and organizations, then
+// Repository: the switcher and the open repository's pages. On a phone it is the navigation
+// menu the top bar opens.
 import {
   BookOpenText,
   Bot,
@@ -17,12 +18,14 @@ import {
   ScrollText,
   Search,
   Settings,
+  Sparkles,
   Tag,
 } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
 import type { OrgSummary } from '../source-platform/orgModel';
 import { Failure } from '../source-platform/SourceStatus';
 import {
+  isAgentsRoute,
   type RepoTab,
   routeRepo,
   routeTab,
@@ -129,6 +132,21 @@ export function AppSidebar({
           <Compass size={16} aria-hidden="true" />
           <span className="side-text">Explore</span>
         </a>
+        {authenticated && (
+          <a
+            {...current(isAgentsRoute(route))}
+            {...linkTo(
+              {
+                view: 'agents-home',
+                ...(isAgentsRoute(route) && route.workspace ? { workspace: route.workspace } : {}),
+              },
+              navigate,
+            )}
+          >
+            <Sparkles size={16} aria-hidden="true" />
+            <span className="side-text">Agents</span>
+          </a>
+        )}
       </nav>
       {authenticated && (
         <nav className="side-nav side-repos" aria-label="Repositories" onKeyDown={arrowKeys}>

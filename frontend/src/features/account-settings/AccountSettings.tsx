@@ -1,6 +1,6 @@
 // Account settings (`/settings`, from the account menu): the account, its email, its sign-in
-// methods, the theme, the CLIs signed in with `yoneda login`, personal access tokens and
-// organizations.
+// methods, the theme, billing (agent credit and usage), the CLIs signed in with
+// `yoneda login`, personal access tokens and organizations.
 import { useState } from 'react';
 import type { AccountIdentity } from '../../lib/types';
 import { ThemePicker } from '../shell/ThemePicker';
@@ -20,6 +20,7 @@ import { SshKeys } from '../source-platform/SshKeys';
 import { when } from '../source-platform/sourceApi';
 import type { RepoSummary } from '../source-platform/TokenParts';
 import { type Loaded, useSource } from '../source-platform/useSource';
+import { BillingSettings } from './BillingSettings';
 import { EmailSettings } from './EmailSettings';
 import { SignInMethods } from './SignInMethods';
 
@@ -128,6 +129,7 @@ export function AccountSettings({
         </p>
         <ThemePicker />
       </section>
+      {identity && <BillingSettings workspace={identity.username} />}
       <section aria-labelledby="cli-heading">
         <h2 id="cli-heading">Signed-in CLIs</h2>
         <p className="source-meta">

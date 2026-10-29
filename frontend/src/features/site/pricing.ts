@@ -19,9 +19,10 @@
 // the free platform.
 
 import {
-  type AgentRate,
-  defaultAgentRates,
+  AGENT_MARGIN,
   MANAGED_AGENTS,
+  MODEL_RATES,
+  type ModelRate,
   STARTING_CREDIT_USD,
 } from '../../../../shared/managed-agents';
 
@@ -129,15 +130,24 @@ export function formatUsd(value: number): string {
   return `$${value.toFixed(Math.max(2, decimals))}`;
 }
 
-/** A model the managed agents use, with the agents that use it, as the pricing page lists it. */
-export type AgentUsageRow = AgentRate & { agents: string[] };
+/** A rated model the managed agents can run, with its price and the agents that use it by
+ * default, as the pricing page lists it. */
+export type AgentUsageRow = ModelRate & {
+  input_price: number;
+  output_price: number;
+  agents: string[];
+};
 
-/** Agent usage rates: each default model's provider rate × the agent margin, per million tokens. */
+/** Agent usage rates: each model's provider list rate × the agent margin, per million tokens,
+ * default models first. */
 export function agentUsageRows(): AgentUsageRow[] {
-  return defaultAgentRates().map((rate) => ({
+  const price = (usd: number) => Number((usd * AGENT_MARGIN).toFixed(6));
+  return MODEL_RATES.map((rate) => ({
     ...rate,
+    input_price: price(rate.input),
+    output_price: price(rate.output),
     agents: MANAGED_AGENTS.filter(
-      (a) => a.provider === rate.provider && a.model === rate.model,
-    ).map((a) => a.label),
-  }));
+      (a) => a.defaults.provider === rate.provider && a.defaults.model === rate.model,
+    ).map((a) => a.defaults.name),
+  })).sort((a, b) => Number(b.agents.length > 0) - Number(a.agents.length > 0));
 }
