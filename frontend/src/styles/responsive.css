@@ -59,9 +59,6 @@
   .topbar-start {
     min-width: 0;
   }
-  .getting-started-label {
-    display: none;
-  }
   .getting-started-panel {
     position: fixed;
     top: 60px;

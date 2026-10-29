@@ -128,7 +128,9 @@ export function RepoPage({
             landed branch and is no longer updated: {p.detail}
           </p>
         ))}
-        {status.error && <Failure error={status.error} onRetry={status.reload} />}
+        {status.error && (
+          <Failure error={status.error} what="this repository" onRetry={status.reload} />
+        )}
         {!status.error && (
           <div className="repo-view">
             {route.view === 'files' && (

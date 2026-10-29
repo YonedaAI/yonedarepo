@@ -32,7 +32,7 @@ export function WorkspaceHeader({
   /** The phone navigation menu is open. */
   menuOpen?: boolean;
   onMenu?: () => void;
-  /** The Getting started meter, while steps remain. */
+  /** The Getting started meter, while steps remain (in the account menu on a phone). */
   progress?: ReactNode;
   onConnect?: () => void;
   onSignIn: () => void;
@@ -61,7 +61,7 @@ export function WorkspaceHeader({
         <p className="topbar-title">{title}</p>
       </div>
       <div className="header-actions">
-        {progress}
+        {progress && <span className="topbar-progress">{progress}</span>}
         <button
           type="button"
           className="icon-button"
@@ -84,6 +84,7 @@ export function WorkspaceHeader({
         {authenticated ? (
           <AccountMenu
             identity={identity}
+            progress={progress}
             navigate={navigate}
             onConnect={onConnect}
             onSignOut={onSignOut}

@@ -144,6 +144,7 @@ export function App() {
           setMenuOpen(false);
           setCreating(true);
         }}
+        onRetry={platform.reload}
       />
       <main id="workspace">
         <WorkspaceHeader

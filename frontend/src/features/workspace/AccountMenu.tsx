@@ -1,17 +1,20 @@
 import { ChevronDown, LogOut, PlugZap, Settings, UserRound } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { type ReactNode, useRef, useState } from 'react';
 import type { AccountIdentity } from '../../lib/types';
 import { ThemePicker } from '../shell/ThemePicker';
 import { linkTo, type Navigate } from '../shell/useRoute';
 
 export function AccountMenu({
   identity,
+  progress,
   navigate,
   onConnect,
   onSignOut,
   onError,
 }: {
   identity: AccountIdentity | null;
+  /** Getting started, shown here where the top bar is too narrow for it. */
+  progress?: ReactNode;
   /** Account settings and the CLI/MCP help; absent where the shell offers neither. */
   navigate?: Navigate;
   onConnect?: () => void;
@@ -67,6 +70,7 @@ export function AccountMenu({
             Connect agents (CLI, MCP)
           </button>
         )}
+        {progress && <div className="menu-progress">{progress}</div>}
         <ThemePicker />
         <button
           type="button"

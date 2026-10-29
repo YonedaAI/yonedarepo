@@ -88,9 +88,6 @@
 .account-dropdown button:hover {
   background: var(--surface-2);
 }
-.topbar-start {
-  min-width: 0;
-}
 .header-actions {
   flex: none;
 }
@@ -147,4 +144,22 @@
 }
 .account-settings .theme-picker {
   max-width: 340px;
+}
+.menu-progress {
+  display: none;
+}
+@media (max-width: 800px) {
+  /* The top bar keeps the page title; Getting started moves into the account menu. */
+  .topbar-progress {
+    display: none;
+  }
+  .menu-progress {
+    display: block;
+    margin: 4px 0;
+  }
+}
+@media (max-width: 480px) {
+  .account-label {
+    display: none;
+  }
 }

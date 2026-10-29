@@ -171,6 +171,10 @@ main {
   top: 0;
   z-index: 10;
 }
+.topbar-start {
+  flex: 1;
+  min-width: 0;
+}
 .topbar-start,
 .header-actions {
   display: flex;

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
 import type { OrgSummary } from '../source-platform/orgModel';
+import { Failure } from '../source-platform/SourceStatus';
 import {
   type RepoTab,
   routeRepo,
@@ -78,6 +79,7 @@ export function AppSidebar({
   settings = false,
   navigate = () => {},
   onNew,
+  onRetry,
 }: {
   authenticated: boolean;
   loading: boolean;
@@ -92,6 +94,8 @@ export function AppSidebar({
   settings?: boolean;
   navigate?: Navigate;
   onNew?: () => void;
+  /** Reads the repositories again after a failed read. */
+  onRetry?: () => void;
 }) {
   const repo = routeRepo(route);
   const page = routeTab(route);
@@ -144,11 +148,14 @@ export function AppSidebar({
                 )}
               </a>
             ))}
-            {!rows.length && (
-              <span className="side-empty">
-                {rowsError || (loading ? 'Loading repositories…' : 'No repositories yet')}
-              </span>
-            )}
+            {!rows.length &&
+              (rowsError ? (
+                <Failure error={rowsError} what="your repositories" onRetry={onRetry} />
+              ) : (
+                <span className="side-empty">
+                  {loading ? 'Loading repositories…' : 'No repositories yet'}
+                </span>
+              ))}
           </div>
           {onNew && (
             <button type="button" className="side-new" onClick={onNew}>
