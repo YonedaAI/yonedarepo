@@ -3,7 +3,7 @@
 # the repository root (wrangler image_build_context ".."). It runs as an unprivileged user on
 # port 8080, holds no credentials and has no internet: its Worker reaches it, and it reaches
 # the repository's mirror and the platform only at http://mirror.internal and
-# http://platform.internal, which the Worker answers (pack-builder.ts).
+# http://platform.internal, which the Worker answers (platform-pack-builder.ts).
 FROM rust:1.99.1-trixie@sha256:e259494b14672950a909b4c54527e19d29cae6ebf980672114c8bb85e5594e4a AS build
 WORKDIR /source
 COPY backend/crates/yoneda-pack-builder ./

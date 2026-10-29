@@ -2,7 +2,7 @@
 // pushed history of a few MiB, Git requests against it, and R2 reads counted in a fresh
 // isolate.
 import { expect, vi } from 'vitest';
-import { type BuildPlan, buildPacks } from '../../cloudflare/worker/pack-builder';
+import { type BuildPlan, buildPacks } from '../../cloudflare/worker/platform-pack-builder';
 import { platformJob } from '../../cloudflare/worker/platform-entrypoint';
 import { isolateLocations } from '../../cloudflare/worker/repo-bundles';
 import { compute } from '../../cloudflare/worker/repo-compute';
@@ -172,13 +172,14 @@ export async function platformPack(env: Env, repo: string, fresh: Fresh) {
 /** Test double of the PackBuilder container (the image itself is tested with Git in its
  * crate and in Docker): it answers /fetch, /pack and /stats with what the platform's
  * upload-pack builds. `calls` records each request; `destroyed` counts kills. */
-export function fakeBuilders(env: () => Env, options: { packs?: (fresh: Fresh, pack: Uint8Array) => Uint8Array; withheld?: () => Promise<boolean> } = {}) {
+export function fakeBuilders(env: () => Env, options: { packs?: (fresh: Fresh, pack: Uint8Array) => Uint8Array; withheld?: () => Promise<boolean>; start?: () => Promise<void> } = {}) {
   const record = { calls: [] as string[], started: 0, destroyed: 0 };
   const instance = (repo: string) => {
     let last = 0;
     return {
       async startAndWaitForPorts(start: any) {
         record.started++;
+        await options.start?.();
         expect(start.startOptions.envVars.MIRROR_URL).toBe(`http://mirror.internal/${repo}.git`);
       },
       async destroy() {
