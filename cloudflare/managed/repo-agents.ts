@@ -11,19 +11,20 @@ import type {
   RunStatus,
 } from '../../shared/managed-agents';
 import type { ManagedEnv } from './config';
+import {
+  type Connection,
+  readConnection,
+  signatureMatches,
+  writeConnection,
+} from './repo-connection';
+import { agentSummary, listRuns, runById, runFindings } from './repo-runs';
 import { migrate, REPO_SCHEMA } from './schema';
-import { open, seal } from './vault';
+
+export type { Connection } from './repo-connection';
 
 const OPEN: RunStatus[] = ['queued', 'running', 'paused'];
 const OPEN_SQL = `('${OPEN.join("','")}')`;
 
-export type Connection = {
-  account: string;
-  token_name: string;
-  token: string;
-  hook_id: number;
-  hook_secret: string;
-};
 export interface Claim {
   run: string;
   attempt: number;
@@ -32,11 +33,6 @@ export interface Claim {
   queued: boolean;
   superseded: string[];
 }
-type RunRow = Omit<ManagedRun, 'cost_usd'> & {
-  charged_microusd: number;
-  attempt: number;
-  findings_json: string | null;
-};
 export type PostedFinding = RunFinding;
 
 const shortAgent: Record<ManagedAgentId, string> = {
@@ -44,23 +40,6 @@ const shortAgent: Record<ManagedAgentId, string> = {
   'security-review': 'sr',
   'slop-review': 'sl',
 };
-
-function toRun(row: RunRow): ManagedRun {
-  const { charged_microusd, attempt: _attempt, findings_json: _findings, ...rest } = row;
-  return { ...rest, cost_usd: charged_microusd / 1_000_000 };
-}
-
-async function hmacHex(secret: string, body: string) {
-  const key = await crypto.subtle.importKey(
-    'raw',
-    new TextEncoder().encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign'],
-  );
-  const mac = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(body));
-  return [...new Uint8Array(mac)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
 
 export class RepoAgents extends DurableObject<ManagedEnv> {
   constructor(ctx: DurableObjectState, env: ManagedEnv) {
@@ -79,46 +58,12 @@ export class RepoAgents extends DurableObject<ManagedEnv> {
   }
 
   /** The connection with its token and hook secret opened (they are sealed at rest). */
-  async connection(): Promise<Connection | null> {
-    const row = this.#sql
-      .exec<{
-        repo: string;
-        account: string;
-        token_name: string;
-        token_sealed: string;
-        hook_id: number;
-        hook_secret_sealed: string;
-      }>(
-        'SELECT repo, account, token_name, token_sealed, hook_id, hook_secret_sealed FROM connection WHERE id = 1',
-      )
-      .toArray()[0];
-    if (!row) return null;
-    return {
-      account: row.account,
-      token_name: row.token_name,
-      token: await open(this.env, row.repo, 'token', row.token_sealed),
-      hook_id: row.hook_id,
-      hook_secret: await open(this.env, row.repo, 'hook_secret', row.hook_secret_sealed),
-    };
+  connection(): Promise<Connection | null> {
+    return readConnection(this.#sql, this.env);
   }
 
-  async link(repo: string, c: Connection) {
-    const token = await seal(this.env, repo, 'token', c.token);
-    const hookSecret = await seal(this.env, repo, 'hook_secret', c.hook_secret);
-    this.#sql.exec(
-      `INSERT INTO connection (id, repo, account, token_name, token_sealed, hook_id, hook_secret_sealed, created_at)
-       VALUES (1, ?, ?, ?, ?, ?, ?, ?)
-       ON CONFLICT(id) DO UPDATE SET account = excluded.account, token_name = excluded.token_name,
-         token_sealed = excluded.token_sealed, hook_id = excluded.hook_id,
-         hook_secret_sealed = excluded.hook_secret_sealed`,
-      repo,
-      c.account,
-      c.token_name,
-      token,
-      c.hook_id,
-      hookSecret,
-      Date.now(),
-    );
+  link(repo: string, c: Connection) {
+    return writeConnection(this.#sql, this.env, repo, c);
   }
 
   /** Forgets the connection (its token and webhook were revoked, or the platform refused them). */
@@ -129,10 +74,7 @@ export class RepoAgents extends DurableObject<ManagedEnv> {
   /** Whether `signature` (`sha256=<hex>`) is this repository's webhook signature of `body`. */
   async verify(body: string, signature: string): Promise<boolean> {
     const secret = (await this.connection().catch(() => null))?.hook_secret;
-    if (!secret || !signature.startsWith('sha256=')) return false;
-    const expected = new TextEncoder().encode(`sha256=${await hmacHex(secret, body)}`);
-    const supplied = new TextEncoder().encode(signature);
-    return expected.length === supplied.length && crypto.subtle.timingSafeEqual(expected, supplied);
+    return Boolean(secret) && signatureMatches(secret as string, body, signature);
   }
 
   enabled(): ManagedAgentId[] {
@@ -348,43 +290,20 @@ export class RepoAgents extends DurableObject<ManagedEnv> {
 
   /** A run's posted findings (the detail page). */
   findings(id: string): PostedFinding[] {
-    const row = this.#sql
-      .exec<{ findings_json: string | null }>('SELECT findings_json FROM runs WHERE id = ?', id)
-      .toArray()[0];
-    return row?.findings_json ? (JSON.parse(row.findings_json) as PostedFinding[]) : [];
+    return runFindings(this.#sql, id);
   }
 
   run(id: string): ManagedRun | null {
-    const row = this.#sql.exec<RunRow>('SELECT * FROM runs WHERE id = ?', id).toArray()[0];
-    return row ? toRun(row) : null;
+    return runById(this.#sql, id);
   }
 
   runs(agent: string | null, limit: number): ManagedRun[] {
-    const n = Math.min(Math.max(Math.trunc(limit) || 50, 1), 200);
-    const rows = agent
-      ? this.#sql
-          .exec<RunRow>(
-            'SELECT * FROM runs WHERE agent = ? ORDER BY created_at DESC, id LIMIT ?',
-            agent,
-            n,
-          )
-          .toArray()
-      : this.#sql
-          .exec<RunRow>('SELECT * FROM runs ORDER BY created_at DESC, id LIMIT ?', n)
-          .toArray();
-    return rows.map(toRun);
+    return listRuns(this.#sql, agent, limit);
   }
 
   /** Each agent's switch and newest run. */
-  summary(): { agent: string; enabled: boolean; last_run: ManagedRun | null }[] {
-    const switches = this.#sql
-      .exec<{ agent: string; enabled: number }>('SELECT agent, enabled FROM agents')
-      .toArray();
-    return switches.map((s) => ({
-      agent: s.agent,
-      enabled: s.enabled === 1,
-      last_run: this.runs(s.agent, 1)[0] ?? null,
-    }));
+  summary() {
+    return agentSummary(this.#sql);
   }
 }
 
