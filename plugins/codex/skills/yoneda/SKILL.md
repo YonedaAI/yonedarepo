@@ -36,7 +36,7 @@ Landing checks more than overlapping writes. A push may declare the files its ch
 
 1. The session's reads live in `.git/yoneda/reads` (never committed). In Claude Code the yoneda plugin records every Read and Grep result there. Elsewhere, declare the files your change relies on: `yoneda reads add <path>` (a directory as `dir/`). `yoneda reads list` shows them, `yoneda reads clear` drops them.
 2. Push. With a `yoneda::` remote, `git push` declares them by itself. With an HTTPS remote (`https://…/git/r….git`), use `yoneda push <git push arguments>` (e.g. `yoneda push origin main`): it adds `-o yoneda.reads=…`. Either clears them after a clean push. In Claude Code, a plain `git push` to an HTTPS remote is stopped while reads are recorded.
-3. Record the session. The Claude Code plugin does it at the end of each turn that pushed: the CLI, model and your last message, truncated, never the transcript. Elsewhere, after pushing: `yoneda session record --cli <cli> --summary <text> --model <m>` for HEAD (a short summary, never secrets). `yoneda session list` shows a commit's records.
+3. Record the session. The Claude Code and opencode plugins do it at the end of each turn that pushed: the CLI, model, your last message (truncated) and the session's transcript with the context it started with. The platform redacts credentials in the transcript and the repository's readers can see it. Elsewhere, after pushing: `yoneda session record --cli <cli> --summary <text> --model <m> [--transcript <file>]` for HEAD (a short summary, never secrets). `yoneda session list` shows a commit's records.
 
 ## Read on the server instead of opening many files
 

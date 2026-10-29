@@ -46,6 +46,8 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
   status [--brief]                    one line, no network: commits not on the platform yet
   session record [<sha>] --cli <c> --summary <text> [--model <m>] [--transcript-ref <r>]
                  [--session-id <id>]  (default id: $YONEDA_SESSION_ID or opencode's session)
+                 [--transcript <file>] uploads it (Claude Code JSONL, opencode messages or
+                                      {context, turns}); readers see it, credentials redacted
   session list [<sha>]                the coding sessions recorded for a commit (default HEAD)
   context [--max-bytes <n>] [--json]  what a new coding session here should know: recent
                                       sessions, open changes, landing rules, contracts

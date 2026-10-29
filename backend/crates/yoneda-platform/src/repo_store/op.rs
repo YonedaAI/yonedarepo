@@ -100,6 +100,7 @@ op_names! {
         SessionList = "repo_session_list",
         SessionRecord = "repo_session_record",
         SessionShow = "repo_session_show",
+        SessionTranscript = "repo_session_transcript",
         Sessions = "repo_sessions",
         SetPolicy = "repo_set_policy",
         SetVisibility = "repo_set_visibility",

@@ -65,6 +65,7 @@ fn public_read(op: StoreOp) -> bool {
                 | R::Sessions
                 | R::SessionList
                 | R::SessionShow
+                | R::SessionTranscript
                 | R::PinList
                 | R::BisectList
                 | R::AgentContext

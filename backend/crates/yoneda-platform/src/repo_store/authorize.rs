@@ -154,6 +154,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::Releases
         | R::SessionList
         | R::SessionShow
+        | R::SessionTranscript
         | R::Sessions
         | R::Snapshot
         | R::StagedObjects
