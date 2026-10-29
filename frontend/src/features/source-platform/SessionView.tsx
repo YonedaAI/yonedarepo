@@ -1,9 +1,11 @@
 // One recorded session: what the agent said it did, the commit it produced, the reads that
-// commit declared, the session's other commits, and its transcript when one was stored
-// (otherwise a reference may name where one is kept, linked when it is a web address).
+// commit declared, the context it was given (start packet and each injection), the
+// session's other commits, and its transcript when one was stored (otherwise a reference
+// may name where one is kept, linked when it is a web address).
 import { ArrowLeft } from 'lucide-react';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { recorder, type SessionDetail, summaryText, transcriptUrl } from './agentModel';
+import { SessionDeliveries } from './SessionDeliveries';
 import { SessionTranscript } from './SessionTranscript';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha, when } from './sourceApi';
@@ -107,6 +109,9 @@ export function SessionView({
         )}
         {reads_truncated && <p className="source-meta">Showing the first {reads.length}.</p>}
       </section>
+      {s.session_id && (
+        <SessionDeliveries repo={repo} sessionId={s.session_id} navigate={navigate} />
+      )}
       <SessionTranscript repo={repo} session={s} />
       <section aria-labelledby="session-related-heading">
         <h3 id="session-related-heading">Other commits from this session</h3>

@@ -5,6 +5,8 @@ import { useSource } from './useSource';
 
 type Result = { path: string; lines: { line: number; text: string }[] };
 type Skipped = { path: string; reason: string };
+/** A memory whose text holds the query's words (the search API's memories group). */
+type MemoryHit = { id: number; text: string; stale: boolean | null; memory: { kind: string } };
 /** Files not content-searched named in the note; the rest are counted. */
 const NAMED = 5;
 
@@ -18,7 +20,12 @@ export function RepoSearch({
   onNavigate: (r: SourceRoute) => void;
 }) {
   const [draft, setDraft] = useState(query);
-  const found = useSource<{ results: Result[]; skipped_files: Skipped[]; skipped_count: number }>(
+  const found = useSource<{
+    results: Result[];
+    skipped_files: Skipped[];
+    skipped_count: number;
+    memories?: MemoryHit[] | null;
+  }>(
     query.length >= 2
       ? `/repos/${repo}/search?query=${encodeURIComponent(query)}&ignore_case=true`
       : null,
@@ -44,9 +51,34 @@ export function RepoSearch({
       </form>
       {query.length >= 2 && found.loading && <Loading what="results" />}
       {found.error && <Failure error={found.error} onRetry={found.reload} />}
-      {found.data && found.data.results.length === 0 && (
+      {found.data && found.data.results.length === 0 && !found.data.memories?.length && (
         <p className="source-empty">No matches for “{query}”.</p>
       )}
+      {found.data?.memories?.length ? (
+        <section aria-labelledby="search-memories-heading" className="search-memories">
+          <h3 id="search-memories-heading">Memories</h3>
+          <ul className="agent-list">
+            {found.data.memories.map((m) => (
+              <li key={m.id}>
+                <span>
+                  <span className="chip">{m.memory.kind}</span>
+                  {m.stale && <span className="chip memory-stale">stale</span>}{' '}
+                  <a
+                    href={`/source/${repo}/agents/memories`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      onNavigate({ view: 'agents', repo, section: 'memories' });
+                    }}
+                  >
+                    #{m.id}
+                  </a>
+                </span>
+                <p className="memory-text">{m.text}</p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       {found.data?.skipped_count ? (
         <p className="source-note">
           Content not searched (matched by path only) for {found.data.skipped_count}{' '}

@@ -258,3 +258,75 @@
 .agent-head .agent-subtitle {
   margin: 4px 0 0;
 }
+/* Agents → Memories, and the context a session was given */
+.memory-chips,
+.memory-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.memory-text {
+  margin: 0;
+  color: #152436;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.memory-anchors {
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin: 0;
+  padding: 0;
+  font-size: 13px;
+}
+.memory-anchors a {
+  color: var(--blue);
+}
+.chip.memory-stale {
+  background: #fff4e0;
+  color: #7a4b00;
+}
+.chip.memory-draft {
+  background: #eef2ff;
+}
+.chip.memory-retired,
+.chip.memory-superseded {
+  color: var(--muted);
+}
+.memory-retire {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.memory-composer {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  margin-bottom: 16px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--surface);
+}
+.memory-composer h3 {
+  margin: 0;
+}
+.memory-composer-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: end;
+}
+.memory-anchors-input,
+.memory-text-input {
+  display: grid;
+  gap: 4px;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.memory-text-input textarea {
+  width: 100%;
+  font: inherit;
+}
