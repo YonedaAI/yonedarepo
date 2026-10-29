@@ -87,6 +87,15 @@ pub(crate) async fn wait_for_grant(
     }
 }
 
+/// `POST /device/code`'s body: the client, and this machine's name (up to the 64 printable
+/// characters the platform accepts) so the token it grants says where it was signed in.
+fn code_request(host: Option<String>) -> Value {
+    let host: Option<String> = host
+        .map(|h| h.chars().filter(|c| !c.is_control()).take(64).collect())
+        .filter(|h: &String| !h.trim().is_empty());
+    json!({ "client_name": "yoneda-cli", "host": host })
+}
+
 /// The device flow against the platform's account API.
 pub(crate) struct HttpFlow(pub Api);
 
@@ -101,7 +110,10 @@ impl DeviceFlow for HttpFlow {
     async fn code(&self) -> Result<DeviceCode> {
         let value = self
             .0
-            .post("/device/code", &json!({ "client_name": "yoneda-cli" }))
+            .post(
+                "/device/code",
+                &code_request(crate::ssh_key_cmd::host_name()),
+            )
             .await?;
         Ok(DeviceCode {
             device_code: field(&value, "device_code")?,
@@ -213,6 +225,18 @@ pub fn logout(origin: Option<&str>) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_code_request_names_this_machine_within_the_platform_limits() {
+        let long = format!("{}\n", "h".repeat(80));
+        assert_eq!(code_request(Some(long))["host"], json!("h".repeat(64)));
+        assert_eq!(
+            code_request(Some("ada-mbp".into())),
+            json!({"client_name":"yoneda-cli","host":"ada-mbp"})
+        );
+        assert_eq!(code_request(Some(" \t".into()))["host"], Value::Null);
+        assert_eq!(code_request(None)["host"], Value::Null);
+    }
+
     use super::*;
     use std::cell::RefCell;
 

@@ -138,6 +138,16 @@ fn create<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         return Err(bad("Token names are 1-64 printable characters"));
     }
     let grant = grant(c)?;
+    // Only the device flow labels a token as a login (with the CLI's host).
+    let origin = match &c["origin"] {
+        Value::Null => None,
+        Value::String(origin) if origin == "login" => Some("login"),
+        _ => return Err(bad("origin must be login, or null")),
+    };
+    let host = label(c, "host")?;
+    if origin.is_none() && host.is_some() {
+        return Err(bad("Only a login token names its host"));
+    }
     let live = db.query(
         "SELECT COUNT(*) AS n FROM account_tokens WHERE revoked_at IS NULL AND expires_at>?",
         &[json!(now)],
@@ -147,7 +157,7 @@ fn create<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     }
     let expires_at = now + grant["expires_days"].as_i64().unwrap_or(30) * DAY;
     db.query(
-        "INSERT INTO account_tokens(id,name,token_hash,scopes,repos,org,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?)",
+        "INSERT INTO account_tokens(id,name,token_hash,scopes,repos,org,origin,host,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?)",
         &[
             json!(id),
             json!(name),
@@ -155,6 +165,8 @@ fn create<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             json!(grant["scopes"].to_string()),
             json!((!grant["repos"].is_null()).then(|| grant["repos"].to_string())),
             grant["org"].clone(),
+            json!(origin),
+            json!(host),
             json!(now),
             json!(expires_at),
         ],
@@ -163,7 +175,7 @@ fn create<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         db,
         "pat.created",
         now,
-        json!({"id":id,"scopes":grant["scopes"],"repos":grant["repos"],"org":grant["org"]}),
+        json!({"id":id,"scopes":grant["scopes"],"repos":grant["repos"],"org":grant["org"],"origin":origin,"host":host}),
     )?;
     let row = db.query("SELECT * FROM account_tokens WHERE id=?", &[json!(id)])?;
     public(row.first().ok_or_else(|| bad("Token was not stored"))?)
@@ -189,6 +201,7 @@ fn public(row: &Value) -> Result<Value> {
     Ok(json!({
         "id": row["id"], "name": row["name"], "scopes": parse("scopes")?, "repos": parse("repos")?,
         "org": row["org"],
+        "origin": row["origin"], "host": row["host"],
         "created_at": row["created_at"], "expires_at": row["expires_at"],
         "last_used_at": row["last_used_at"],
     }))
