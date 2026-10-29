@@ -111,3 +111,23 @@ export function checkSeconds(details, name) {
 
 /** The expected strings a page's text does not contain. */
 export const missingText = (text, expected) => expected.filter((e) => !String(text).includes(e));
+
+/**
+ * What a finished bisect shows, for its evidence and its failure message: the final record
+ * as answered, the first bad commit only when `result` is an object naming one, and every
+ * run of check `name` on the candidates (step = 1-based position on the branch) with its
+ * status, exit code and duration.
+ */
+export function bisectReport(done, commits, details, name) {
+  const runs = [];
+  commits.forEach((commit, i) => {
+    for (const run of details[i]?.check_runs ?? []) {
+      if (run.name !== name) continue;
+      const result = typeof run.result === 'string' ? JSON.parse(run.result) : run.result;
+      runs.push({ commit: commit.slice(0, 10), step: i + 1, status: run.status, exit_code: result?.exit_code, duration_ms: result?.duration_ms });
+    }
+  });
+  const first_bad = typeof done?.result === 'object' && done.result ? done.result.first_bad : undefined;
+  const lines = runs.map((r) => `step ${r.step} ${r.commit} ${r.status} exit ${r.exit_code ?? '?'} ${((r.duration_ms ?? 0) / 1000).toFixed(1)} s`);
+  return { record: done, first_bad, runs, text: `bisect ${JSON.stringify(done)}; check runs: ${lines.join('; ') || 'none'}` };
+}
