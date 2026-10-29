@@ -5,6 +5,7 @@
 // Like `platformCompute`, worker-build publishes these `#[wasm_bindgen]` functions as
 // methods of the Rust module's default entrypoint class; none uses `this`.
 import RustWorker from '../../backend/crates/yoneda-worker/build/worker/shim.mjs';
+import { compute } from './repo-compute';
 import { ApiError, type Json } from './repo-ops';
 
 type Exported = Record<string, (...args: unknown[]) => unknown>;
@@ -115,8 +116,8 @@ export class UploadSession {
   }
 }
 
-/** This isolate's Wasm memory in bytes (it only grows). */
-export const wasmMemoryBytes = () => fn<number>('wasmMemoryBytes')();
+/** This isolate's Wasm memory in bytes (it only grows; the `memory` compute probe). */
+export const wasmMemoryBytes = () => Number(compute({ op: 'memory' }).wasm_bytes);
 
 /** A pack the adapter writes piece by piece (`PackStream`): for pushes carrying files too
  * large to hold, whose zlib streams the adapter writes from R2. */
