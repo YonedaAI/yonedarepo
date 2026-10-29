@@ -51,7 +51,19 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
         rng.pick(&refs).to_string()
     };
     match rng.below(100) {
-        0..40 => {
+        0..8 => {
+            let branch = rng.pick(&existing).to_string();
+            // Any commit but the root (it has no parent to go back to), a few back at most.
+            let depth = repo.ancestry(repo.refs[&branch]).len();
+            if depth < 2 {
+                return generate(rng, repo, step);
+            }
+            Op::Revert {
+                back: rng.below((depth - 1).min(4)),
+                branch,
+            }
+        }
+        8..40 => {
             let branch = rng.pick(&existing).to_string();
             let tree = &repo.commits[repo.refs[&branch]].tree;
             let path = rng.pick(&PATHS).to_string();
