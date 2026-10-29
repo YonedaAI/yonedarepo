@@ -2,7 +2,7 @@
 //! the outcome it names, under the same model, platform and Git checks.
 use super::{Driver, git};
 use std::collections::BTreeSet;
-use yoneda_refmodel::{Access, Caller, MAIN, Op, Scope};
+use yoneda_refmodel::{Access, Caller, MAIN, MIRROR, Op, Role, Scope};
 
 const B1: &str = "refs/heads/b1";
 
@@ -119,7 +119,11 @@ fn a_public_repository_asks_callers_without_credentials_to_sign_in() {
             access: Access::Push,
         },
     ];
-    run("public anonymous", &script, "Probe UNAUTHORIZED");
+    run_reaching(
+        "public anonymous",
+        &script,
+        &["Probe UNAUTHORIZED", "Probe FORBIDDEN"],
+    );
 }
 
 #[test]
@@ -274,4 +278,216 @@ fn tags_are_created_once_annotated_or_not() {
         &script,
         &["Tag Moved", "Tag Already", "Tag ALREADY_EXISTS"],
     );
+}
+
+fn shard(path: &str, text: &str, read: bool) -> Op {
+    Op::ShardCommit {
+        path: path.into(),
+        content: format!("{text}\n"),
+        read,
+    }
+}
+
+/// Commits begun from a published head that trails the log (the race CI met): each lands
+/// as what the log since its base allows, never as if main had not moved.
+#[test]
+fn shard_commits_on_a_trailing_published_head_land_as_the_log_allows() {
+    let script = [
+        Op::Publish,
+        // Main moves past the published head on a.txt and README.md.
+        put(MAIN, "a.txt", "main moved", false),
+        put(MAIN, "README.md", "main moved", false),
+        // Begun on the trailing head: a new path lands as a changeset, projected as a
+        // merge with main; a path main since wrote takes the merge path; a path it read
+        // that main since wrote is a conflict.
+        shard("src/b.rs", "on the trailing head", false),
+        Op::Submit { picks: vec![0] },
+        shard("a.txt", "on the trailing head", false),
+        Op::Submit { picks: vec![1] },
+        shard("README.md", "read on the trailing head", true),
+        Op::Submit { picks: vec![2] },
+        Op::RunQueue,
+        // Two members of one submission writing one file: the second waits, and on its
+        // own later it meets the first's changeset and takes the merge path.
+        Op::Publish,
+        shard("docs.md", "first", false),
+        shard("docs.md", "second", false),
+        Op::Submit { picks: vec![3, 4] },
+        Op::Submit { picks: vec![4] },
+        // A landed member submitted again answers with its version.
+        Op::Submit { picks: vec![3] },
+        Op::RunQueue,
+    ];
+    run_reaching(
+        "trailing head",
+        &script,
+        &[
+            "Submit landed",
+            "Submit queued",
+            "Submit failed",
+            "Submit deferred+landed",
+            "Submit already",
+        ],
+    );
+}
+
+fn land_on(branch: &str, onto: &str) -> Op {
+    Op::LandOn {
+        branch: branch.into(),
+        onto: onto.into(),
+    }
+}
+
+/// Working branches land without gates; off their head, concurrency counts from where the
+/// landed work's parent landed on the branch, not from the (later) version it read.
+#[test]
+fn landings_on_working_branches_count_from_the_parents_landing() {
+    let (b2, b3) = ("refs/heads/b2", "refs/heads/b3");
+    let script = [
+        branch_off_main(),
+        off_main(b2),
+        put(b2, "src/b.rs", "first", false),
+        // b1 is at b2's parent: a fast-forward.
+        land_on(b2, B1),
+        // b1 moves on; b3 starts from b2, whose tip landed on b1.
+        put(B1, "a.txt", "b1 moved", false),
+        Op::CreateBranch {
+            name: b3.into(),
+            from: b2.into(),
+        },
+        // Built on what landed, reading a later version: b1's write after that landing is
+        // concurrent. Another path needs a merge; a path it read conflicts.
+        put(b2, "src/b.rs", "second", false),
+        land_on(b2, B1),
+        put(b3, "a.txt", "b3 read it", true),
+        land_on(b3, B1),
+        // A parent that never landed on b1: nothing there is concurrent, but b1 is not
+        // its parent either.
+        put(b2, "README.md", "third", false),
+        land_on(b2, B1),
+    ];
+    run_reaching(
+        "working branches",
+        &script,
+        &[
+            "LandOn Moved",
+            "LandOn MERGE_REQUIRED",
+            "LandOn CONFLICT",
+            "LandOn STALE_PARENT",
+        ],
+    );
+}
+
+fn member(by: &Caller, account: &str, role: Option<Role>) -> Op {
+    Op::Member {
+        by: by.clone(),
+        account: account.into(),
+        role,
+    }
+}
+
+/// Admins manage read and write members and act as the owner, but never grant or change
+/// an admin, nor the repository's visibility.
+#[test]
+fn admins_manage_members_but_not_admins_or_visibility() {
+    let (rita, will) = (
+        Caller::Account("rita".into()),
+        Caller::Account("will".into()),
+    );
+    let push = |caller: &Caller| Op::Probe {
+        caller: caller.clone(),
+        access: Access::Push,
+    };
+    let script = [
+        member(&Caller::Owner, "rita", Some(Role::Admin)),
+        member(&rita, "will", Some(Role::Write)),
+        member(&rita, "will", Some(Role::Admin)),
+        member(&rita, "rita", None),
+        member(&rita, "stranger", None),
+        Op::SetVisibility {
+            caller: rita.clone(),
+            public: true,
+        },
+        push(&rita),
+        member(&will, "stranger", Some(Role::Read)),
+        member(&Caller::Account("stranger".into()), "will", None),
+        member(&Caller::Owner, "rita", Some(Role::Read)),
+        push(&rita),
+        member(&rita, "will", None),
+    ];
+    run_reaching(
+        "admins",
+        &script,
+        &[
+            "Member Done",
+            "Member FORBIDDEN",
+            "Member NOT_FOUND",
+            "SetVisibility FORBIDDEN",
+        ],
+    );
+}
+
+fn fork_put(path: &str, text: &str) -> Op {
+    Op::ForkCommit {
+        path: path.into(),
+        content: format!("{text}\n"),
+    }
+}
+
+/// Fork work carried back lands on the parent as of where its history landed there: the
+/// parent's later writes count against it, whatever the fork's own log says.
+#[test]
+fn carried_fork_work_is_based_where_its_history_landed_in_the_parent() {
+    let script = [
+        Op::Fork,
+        Op::Fork,
+        put(MAIN, "README.md", "parent moved", false),
+        fork_put("src/fork.rs", "from the fork"),
+        Op::Carry,
+        Op::Carry,
+        // Its base is main's root landing (version 1), so main's README.md write is
+        // concurrent: a merge is required, and a merge landing builds one.
+        Op::Land {
+            branch: MIRROR.into(),
+        },
+        Op::MergeLand {
+            branch: MIRROR.into(),
+        },
+        // More fork work moves the mirror forward.
+        fork_put("src/fork.rs", "more from the fork"),
+        Op::Carry,
+    ];
+    run_reaching(
+        "fork",
+        &script,
+        &[
+            "Fork Done",
+            "Fork Already",
+            "ForkCommit Committed",
+            "Carry Moved",
+            "Carry Already",
+            "Land MERGE_REQUIRED",
+            "MergeLand Committed",
+        ],
+    );
+}
+
+/// Found by the long differential run (seed 31), fixed on claude/fix-fork-mirror: when a
+/// parent writer moves the mirror branch off the fork's head and the unchanged fork
+/// branch is carried again, the mirror moves back.
+#[test]
+fn carrying_again_moves_the_mirror_back_to_the_fork_head() {
+    let script = [
+        Op::Fork,
+        fork_put("src/fork.rs", "from the fork"),
+        Op::Carry,
+        // A writer of the parent moves the mirror elsewhere.
+        Op::MoveBranch {
+            name: MIRROR.into(),
+            to: MAIN.into(),
+            expected: MIRROR.into(),
+        },
+        Op::Carry,
+    ];
+    run("mirror back", &script, "Carry Moved");
 }

@@ -21,21 +21,33 @@
 //!   of the independent clean merges (`queue`); while any wait, direct landings on main
 //!   are refused as MERGE_REQUIRED.
 //! - Repository tokens act within their scopes and path grant (`tokens`).
+//! - Commits may begin from a published head that trails the log and land through the
+//!   combiner as changesets, or the merge path, decided against everything landed since
+//!   (`shards`).
+//! - A fork shares the commits; carrying its work back records what the parent lacks and
+//!   moves the parent's mirror branch (`forks`).
 //! - Files are one line each (the generator keeps them so), so a three-way merge is decided
 //!   per file: a side that left a file alone takes the other's version; two different
 //!   changes conflict.
 mod access;
+mod branches;
 mod cases;
 mod commits;
+mod forks;
 mod graph;
 mod land;
 mod merge;
+mod ops;
 mod queue;
+mod shards;
 mod tokens;
 
 pub use access::{Access, Caller, Role};
 pub use cases::{PATHS, Rng, generate};
+pub use forks::{FEATURE, FORK_ID, Fork, MIRROR};
+pub use ops::{Op, Outcome, Plan};
 pub use queue::{Batch, Ticket, TicketStatus};
+pub use shards::{Item, Submitted};
 use std::collections::{BTreeMap, BTreeSet};
 pub use tokens::{Scope, Token};
 
@@ -66,130 +78,8 @@ pub struct Entry {
     pub refname: String,
     pub paths: BTreeSet<String>,
     pub landing: bool,
-}
-
-/// An operation; refs are named in full (`refs/heads/b1`, `refs/tags/v1`).
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Op {
-    /// Puts (`Some`) or deletes one file on `branch`'s tip, reading `path` when `read`, and
-    /// lands the commit on `branch`.
-    Commit {
-        branch: String,
-        path: String,
-        content: Option<String>,
-        read: bool,
-    },
-    /// Creates working branch `name` at `from`'s tip, expecting it absent.
-    CreateBranch {
-        name: String,
-        from: String,
-    },
-    /// Moves `name` to `to`'s tip, expecting it at `expected`'s tip.
-    MoveBranch {
-        name: String,
-        to: String,
-        expected: String,
-    },
-    /// Deletes `name`, expecting it at `expected`'s tip.
-    DeleteBranch {
-        name: String,
-        expected: String,
-    },
-    /// Creates tag `name` at `at`'s tip.
-    Tag {
-        name: String,
-        at: String,
-        /// With a message, an annotated tag (a tag object the platform builds).
-        message: Option<String>,
-    },
-    /// Lands `branch`'s tip on main.
-    Land {
-        branch: String,
-    },
-    /// Reverts the commit `back` first parents below `branch`'s tip onto that tip and lands
-    /// the revert on `branch`.
-    Revert {
-        branch: String,
-        back: usize,
-    },
-    /// Lands `branch`'s tip on main; where main moved (merge required), through a platform
-    /// merge commit of the two, as the adapter builds one.
-    MergeLand {
-        branch: String,
-    },
-    /// Replays working branch `branch`'s own commits onto main's head and moves it there.
-    Rebase {
-        branch: String,
-    },
-    /// `caller` tries `access`.
-    Probe {
-        caller: Caller,
-        access: Access,
-    },
-    /// `caller` makes the repository public or private.
-    SetVisibility {
-        caller: Caller,
-        public: bool,
-    },
-    /// The owner grants `account` `role`, or removes it (`None`).
-    Member {
-        account: String,
-        role: Option<Role>,
-    },
-    /// Lands `branch`'s tip on main, queuing it where a merge is required.
-    Enqueue {
-        branch: String,
-    },
-    /// The combiner settles one batch of main's queue.
-    RunQueue,
-    /// The owner mints repository token `name` with `scopes` and an optional path grant.
-    MintToken {
-        name: String,
-        scopes: BTreeSet<Scope>,
-        grant: Option<Vec<String>>,
-    },
-    RevokeToken {
-        name: String,
-    },
-    /// A one-file commit on `branch` as token `token`, landed there.
-    TokenCommit {
-        token: String,
-        branch: String,
-        path: String,
-        content: Option<String>,
-    },
-    /// Token `token` reads `path`'s history on main.
-    TokenRead {
-        token: String,
-        path: String,
-    },
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Outcome {
-    /// A new commit, landed on its branch (or main, for a merge).
-    Committed(CommitId),
-    /// A rebase moved its branch, through these replayed commits (oldest first).
-    Rebased(Vec<CommitId>),
-    /// A ref moved, was created or deleted.
-    Moved,
-    /// Nothing to do: the ref is already there (or already gone).
-    Already,
-    /// A landing ticket (new, or the one already pending for the commit).
-    Queued(u64),
-    /// What a combiner run settled.
-    Batch(Batch),
-    /// Done, moving no ref (an access check, visibility, membership).
-    Done,
-    /// Refused with the platform's error code (`STALE_HEAD` also for a stale batch delete).
-    Refused(&'static str),
-}
-
-/// What `repo_merge_plan` decides for landing a commit on main.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Plan {
-    pub kind: &'static str,
-    pub paths: Vec<String>,
+    /// The ref's commit after it (`None`: deleted, or a changeset not projected yet).
+    pub head: Option<CommitId>,
 }
 
 #[derive(Clone, Debug)]
@@ -198,8 +88,8 @@ pub struct Repo {
     pub commits: Vec<Commit>,
     pub refs: BTreeMap<String, CommitId>,
     pub log: Vec<Entry>,
-    /// Commits recorded as landed on a ref.
-    pub(crate) landings: BTreeSet<(CommitId, String)>,
+    /// Commits recorded as landed on a ref, with the version they first landed at.
+    pub(crate) landings: BTreeMap<(CommitId, String), u64>,
     pub public: bool,
     /// Member accounts and their roles (the owner is not one).
     pub members: BTreeMap<String, Role>,
@@ -209,6 +99,14 @@ pub struct Repo {
     pub tokens: BTreeMap<String, Token>,
     /// Annotated tags' messages, by tag ref.
     pub annotated: BTreeMap<String, String>,
+    /// Main's published head as last taken: its commit and the version it reflects.
+    pub published: (CommitId, u64),
+    /// Shard commits, in the order they were built.
+    pub shard: Vec<CommitId>,
+    /// The fork, once made.
+    pub fork: Option<Fork>,
+    /// Commits carried in from the fork (recorded as pushed).
+    pub carried: BTreeSet<CommitId>,
 }
 
 impl Repo {
@@ -231,13 +129,18 @@ impl Repo {
                 refname: MAIN.to_owned(),
                 paths,
                 landing: true,
+                head: Some(0),
             }],
-            landings: BTreeSet::from([(0, MAIN.to_owned())]),
+            landings: BTreeMap::from([((0, MAIN.to_owned()), 1)]),
             public: false,
             members: BTreeMap::new(),
             tickets: Vec::new(),
             tokens: BTreeMap::new(),
             annotated: BTreeMap::new(),
+            published: (0, 1),
+            shard: Vec::new(),
+            fork: None,
+            carried: BTreeSet::new(),
         }
     }
 
@@ -250,125 +153,6 @@ impl Repo {
         refname == MAIN
             || refname == "refs/heads/release"
             || refname.starts_with("refs/heads/release/")
-    }
-
-    /// Applies `op`; a landing also answers its merge plan, taken before it lands.
-    pub fn apply(&mut self, op: &Op) -> (Outcome, Option<Plan>) {
-        match op {
-            Op::Commit {
-                branch,
-                path,
-                content,
-                read,
-            } => (self.commit(branch, path, content.as_deref(), *read), None),
-            Op::CreateBranch { name, from } => match self.tip(from) {
-                Some(target) => (self.set(name, target, None), None),
-                None => (Outcome::Refused("NOT_FOUND"), None),
-            },
-            Op::MoveBranch { name, to, expected } => match self.tip(to) {
-                Some(target) => (self.set(name, target, self.tip(expected)), None),
-                None => (Outcome::Refused("NOT_FOUND"), None),
-            },
-            Op::DeleteBranch { name, expected } => (self.delete(name, self.tip(expected)), None),
-            Op::Tag { name, at, message } => match self.tip(at) {
-                Some(target) => (self.tag(name, target, message.as_deref()), None),
-                None => (Outcome::Refused("NOT_FOUND"), None),
-            },
-            Op::Land { branch } => match self.tip(branch) {
-                Some(commit) => {
-                    let plan = self.plan(commit);
-                    (self.land(commit), Some(plan))
-                }
-                None => (Outcome::Refused("NOT_FOUND"), None),
-            },
-            Op::Revert { branch, back } => (self.revert(branch, *back), None),
-            Op::MergeLand { branch } => match self.tip(branch) {
-                Some(commit) => {
-                    let plan = self.plan(commit);
-                    (self.merge_land(commit), Some(plan))
-                }
-                None => (Outcome::Refused("NOT_FOUND"), None),
-            },
-            Op::Rebase { branch } => (self.rebase(branch), None),
-            Op::Probe { caller, access } => (self.access(caller, *access), None),
-            Op::SetVisibility { caller, public } => (self.set_visibility(caller, *public), None),
-            Op::Member { account, role } => (self.set_member(account, *role), None),
-            Op::Enqueue { branch } => (self.enqueue(branch), None),
-            Op::RunQueue => (self.run_queue(), None),
-            Op::MintToken {
-                name,
-                scopes,
-                grant,
-            } => (self.mint(name, scopes, grant), None),
-            Op::RevokeToken { name } => (self.revoke(name), None),
-            Op::TokenCommit {
-                token,
-                branch,
-                path,
-                content,
-            } => (
-                self.token_commit(token, branch, path, content.as_deref()),
-                None,
-            ),
-            Op::TokenRead { token, path } => (self.token_read(token, path), None),
-        }
-    }
-
-    /// `repo_branch_set`: a working branch moves to `target` if it is at `expected`.
-    pub(crate) fn set(
-        &mut self,
-        name: &str,
-        target: CommitId,
-        expected: Option<CommitId>,
-    ) -> Outcome {
-        if Self::protected(name) {
-            return Outcome::Refused("FORBIDDEN");
-        }
-        let current = self.tip(name);
-        if current == Some(target) {
-            return Outcome::Already;
-        }
-        if current != expected {
-            return Outcome::Refused("STALE_HEAD");
-        }
-        self.move_ref(name, Some(target), BTreeSet::new(), false);
-        Outcome::Moved
-    }
-
-    /// A deletion through `repo_branch_batch` (a null commit).
-    fn delete(&mut self, name: &str, expected: Option<CommitId>) -> Outcome {
-        if Self::protected(name) {
-            return Outcome::Refused("FORBIDDEN");
-        }
-        match self.tip(name) {
-            None => Outcome::Already,
-            Some(current) if Some(current) != expected => Outcome::Refused("STALE_HEAD"),
-            Some(_) => {
-                self.move_ref(name, None, BTreeSet::new(), false);
-                Outcome::Moved
-            }
-        }
-    }
-
-    /// A tag is created once. Asking again for the same lightweight tag is a no-op; any
-    /// other second request is refused, an annotated one too (its tag object, tagged
-    /// later, is a different object).
-    fn tag(&mut self, name: &str, target: CommitId, message: Option<&str>) -> Outcome {
-        match self.tip(name) {
-            Some(current)
-                if current == target && message.is_none() && !self.annotated.contains_key(name) =>
-            {
-                Outcome::Already
-            }
-            Some(_) => Outcome::Refused("ALREADY_EXISTS"),
-            None => {
-                self.move_ref(name, Some(target), BTreeSet::new(), false);
-                if let Some(text) = message {
-                    self.annotated.insert(name.to_owned(), text.to_owned());
-                }
-                Outcome::Moved
-            }
-        }
     }
 
     /// Appends the log entry for `refname` moving to `target` (`None`: deleted) and moves it.
@@ -385,11 +169,20 @@ impl Repo {
             refname: refname.to_owned(),
             paths,
             landing,
+            head: target,
         });
         match target {
             Some(id) => self.refs.insert(refname.to_owned(), id),
             None => self.refs.remove(refname),
         };
+    }
+
+    /// Records `commit` as landed on `refname` at the current version (the first landing
+    /// counts).
+    pub(crate) fn landed(&mut self, commit: CommitId, refname: String) {
+        self.landings
+            .entry((commit, refname))
+            .or_insert(self.version);
     }
 
     /// Paths whose content differs between two trees.

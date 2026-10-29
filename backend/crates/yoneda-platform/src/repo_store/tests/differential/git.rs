@@ -84,11 +84,16 @@ pub(super) fn check(driver: &Driver) -> Checked {
         &["fsck", "--strict", "--no-dangling", "--no-progress"],
         b"",
     )?;
+    // One ref per distinct commit: refs at the same commit answer the same.
+    let mut distinct = BTreeMap::new();
     for (name, tip) in &driver.model.refs {
+        distinct.entry(*tip).or_insert(name.as_str());
+    }
+    for (tip, name) in &distinct {
         same_history(driver, dir, name, *tip)?;
         same_files(dir, name, &driver.model.commits[*tip].tree)?;
     }
-    same_merge_bases(driver, dir)
+    same_merge_bases(driver, dir, &distinct)
 }
 
 /// Each annotated tag's object as the authority keeps it (`repo_tag_show`), by tag ref.
@@ -196,10 +201,10 @@ fn same_files(dir: &Path, name: &str, tree: &Tree) -> Checked {
     Ok(())
 }
 
-/// For each pair of refs, `git merge-base --all`, the model's and the authority's
+/// For each pair of distinct ref commits, `git merge-base --all`, the model's and the authority's
 /// `repo_merge_base` name the same commits.
-fn same_merge_bases(driver: &Driver, dir: &Path) -> Checked {
-    let refs: Vec<(&String, &usize)> = driver.model.refs.iter().collect();
+fn same_merge_bases(driver: &Driver, dir: &Path, distinct: &BTreeMap<usize, &str>) -> Checked {
+    let refs: Vec<(&&str, &usize)> = distinct.iter().map(|(tip, name)| (name, tip)).collect();
     for (i, (left, l)) in refs.iter().enumerate() {
         for (right, r) in &refs[i + 1..] {
             let found = text(git(dir, &["merge-base", "--all", left, right], b"")?);
