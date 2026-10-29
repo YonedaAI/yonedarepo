@@ -81,6 +81,9 @@ pub enum SessionCommand {
         transcript_ref: Option<String>,
         /// The coding session's id (default: from the environment).
         session_id: Option<String>,
+        /// A transcript file to upload: Claude Code's JSON lines, opencode's messages, or a
+        /// YonedaRepo transcript (`agent_transcript::from_file`).
+        transcript: Option<String>,
     },
     List {
         commit: Option<String>,

@@ -886,7 +886,7 @@
   },
   {
     "name": "git_session_record",
-    "description": "Record which coding session produced a commit you pushed (needs write; only the commit's pusher or the repository owner): the CLI (e.g. claude-code, codex, opencode), the model, a summary of at most 4 KiB (refused if it holds a credential), optional SHA-256 hex digests of the prompts and of the declared read set, and an optional transcript_ref (a URL or opaque id; transcripts are never uploaded), and an optional session_id naming the coding session (e.g. opencode:ses_…) so its records across commits tie together. Posting the same record again answers the first.",
+    "description": "Record which coding session produced a commit you pushed (needs write; only the commit's pusher or the repository owner): the CLI (e.g. claude-code, codex, opencode), the model, a summary of at most 4 KiB (refused if it holds a credential), optional SHA-256 hex digests of the prompts and of the declared read set, an optional transcript_ref (a URL or opaque id of a transcript kept elsewhere), an optional transcript the platform stores and shows to the repository's readers (credentials in it are redacted, never refused), and an optional session_id naming the coding session (e.g. opencode:ses_…) so its records across commits tie together. Posting the same record again answers the first.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -919,6 +919,62 @@
         "session_id": {
           "type": "string",
           "maxLength": 128
+        },
+        "transcript": {
+          "type": "object",
+          "description": "The session's transcript: the context packet it started with and its turns in order. Stored at most 1 MiB: each text keeps its first 12 KiB and last 4 KiB; past that the opening prompt and the latest turns stay and the turns between are counted in one omitted turn.",
+          "properties": {
+            "context": {
+              "type": "string"
+            },
+            "turns": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "prompt",
+                      "reply",
+                      "tool",
+                      "omitted"
+                    ]
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "subject": {
+                    "type": "string"
+                  },
+                  "input": {
+                    "type": "string"
+                  },
+                  "output": {
+                    "type": "string"
+                  },
+                  "error": {
+                    "type": "boolean"
+                  },
+                  "turns": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                },
+                "required": [
+                  "kind"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "turns"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
@@ -931,7 +987,7 @@
   },
   {
     "name": "git_sessions",
-    "description": "The session records of a commit, oldest first: cli, model, summary, prompt and read-set digests, transcript_ref, session_id, who recorded each and when.",
+    "description": "The session records of a commit, oldest first: cli, model, summary, prompt and read-set digests, transcript_ref, the stored transcript's metadata (null when none was stored), session_id, who recorded each and when.",
     "inputSchema": {
       "type": "object",
       "properties": {

@@ -47,6 +47,7 @@ pub fn compute(c: Value) -> Result<Value> {
         "symbol_contract" => crate::platform_symbol_graph::contract_view(&c),
         "agent_view" => crate::platform_symbol_graph::agent_view(&c),
         "human_view" => crate::platform_views::human_view(&c),
+        "session_transcript" => crate::platform_transcript::session_transcript(&c),
         "ref_update" => ref_update(&c),
         "ref_delete" => ref_delete(&c),
         "push_report" => push_report(&c),
