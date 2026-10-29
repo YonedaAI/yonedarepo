@@ -1,15 +1,28 @@
 // Browser gate, agent pages (part of kit item `browser`): one session is recorded on main's
-// head by API (as the Yoneda plugin or `yoneda session record` would), then the Agents tab
+// head by API (as the Yoneda plugin or `yoneda session record` would), then the Sessions page
 // lists it, the CLI filter keeps it, its page shows the summary, commit and declared reads,
 // and the commit page links back to it and, main's head having landed, shows only where it
-// landed and Revert. The Contracts, Pins and Bisects sections show their
-// empty states (the kit records none).
+// landed and Revert. Memories, then Agent tools and its Contracts, Kept commits and Find a
+// breaking commit tabs show their empty states (the kit records none). On every page the
+// sidebar highlights exactly one entry: that page's.
 import assert from 'node:assert/strict';
 import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 import { missingText } from './agent-tools-plan.mjs';
 import { see } from './browser-collab-flow.mjs';
 import { sleep } from './client.mjs';
+
+/** The Repository navigation's highlighted entries (exactly one on every repository page). */
+export const highlighted = (page) =>
+  page.getByRole('navigation', { name: 'Repository' }).locator('a[aria-current="page"]').allInnerTexts();
+
+async function onlyHighlighted(page, entry) {
+  for (const deadline = Date.now() + 10_000; ; await sleep(200)) {
+    const shown = (await highlighted(page)).map((t) => t.trim());
+    if (shown.length === 1 && shown[0] === entry) return;
+    if (Date.now() > deadline) assert.deepEqual(shown, [entry], `the sidebar highlights ${entry} only`);
+  }
+}
 
 export async function agentPages(page, { account, repo: { id, name }, shot }, m) {
   const api = (path) => `/api/v1/repos/${id}${path}`;
@@ -28,6 +41,8 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
   await page.waitForURL(`**/source/${id}`);
   await tabs.getByRole('link', { name: 'Sessions' }).click();
   await page.waitForURL(`**/source/${id}/agents`);
+  await onlyHighlighted(page, 'Sessions');
+  assert.equal(await page.getByRole('navigation', { name: 'Agent tools' }).count(), 0, 'Sessions shows the Agent tools tabs');
   const list = page.getByRole('list', { name: 'Sessions' });
   const row = list.getByRole('listitem').filter({ hasText: summary });
   await see(row, 'the recorded session in the Sessions list');
@@ -38,6 +53,7 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
 
   await row.getByRole('link', { name: new RegExp(summary.slice(0, 30)) }).click();
   await page.waitForURL(`**/source/${id}/agents/sessions/${posted.session}`);
+  await onlyHighlighted(page, 'Sessions');
   const detail = page.locator('article.agent-session');
   await see(detail.getByRole('heading', { name: /opencode/ }), 'the session page heading');
   await see(detail.getByText(summary), 'the session summary');
@@ -61,23 +77,40 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
   assert.equal(await gates.getByText(/Ready to land|Review class|Approvals \d+\/\d+/).count(), 0, 'a landed commit shows landing gates');
   m.landed_commit_panel = 'landed line, Revert only';
 
-  for (const [section, empty] of [
-    ['contracts', /^No contracts yet\./],
-    ['pins', /^No kept commits\./],
-    ['bisects', /^No searches yet\./],
+  await tabs.getByRole('link', { name: 'Memories', exact: true }).click();
+  await page.waitForURL(`**/source/${id}/agents/memories`);
+  await onlyHighlighted(page, 'Memories');
+  assert.equal(await page.getByRole('navigation', { name: 'Agent tools' }).count(), 0, 'Memories shows the Agent tools tabs');
+  await shot('agents-memories');
+
+  await tabs.getByRole('link', { name: 'Agent tools', exact: true }).click();
+  await page.waitForURL(`**/source/${id}/agents/contracts`);
+  const tools = page.getByRole('navigation', { name: 'Agent tools' });
+  assert.deepEqual(
+    (await tools.getByRole('link').allInnerTexts()).map((t) => t.trim()),
+    ['Contracts', 'Kept commits', 'Find a breaking commit'],
+    'the Agent tools tabs',
+  );
+  for (const [tab, section, empty] of [
+    ['Contracts', 'contracts', /^No contracts yet\./],
+    ['Kept commits', 'pins', /^No kept commits\./],
+    ['Find a breaking commit', 'bisects', /^No searches yet\./],
   ]) {
-    await page.goto(new URL(`/source/${id}/agents/${section}`, page.url()).href);
+    await tools.getByRole('link', { name: tab, exact: true }).click();
+    await page.waitForURL(`**/source/${id}/agents/${section}`);
     await see(page.getByText(empty), `the ${section} empty state`);
+    await onlyHighlighted(page, 'Agent tools');
   }
+  m.agent_nav = 'one highlighted entry per page';
   await shot('agents-bisects-empty');
   assert.ok(m.agent_session > 0, 'the session was recorded');
 }
 
 /**
  * Kit item 30.6's browser half (realuser-agent-tools.mjs): with the run's own signed-in
- * session (`cookie`, no second sign-in), the Agents sections of `repo` show the rows the run
- * made: `expect` maps a section route (contracts, pins, bisects) to the texts its page must
- * contain. Sections are opened by route, not by tab label (the labels are being renamed).
+ * session (`cookie`, no second sign-in), the Agent tools tabs of `repo` show the rows the run
+ * made, with Agent tools the one highlighted sidebar entry: `expect` maps a section route
+ * (contracts, pins, bisects) to the texts its page must contain. Sections are opened by route.
  */
 export async function agentToolPages({ origin, cookie, repo, expect, dir, headed = false }, m) {
   const browser = await chromium.launch({ channel: 'chrome', headless: !headed });
@@ -89,6 +122,7 @@ export async function agentToolPages({ origin, cookie, repo, expect, dir, headed
     page.setDefaultTimeout(30_000);
     for (const [section, texts] of Object.entries(expect)) {
       await page.goto(new URL(`/source/${repo}/agents/${section}`, origin).href);
+      await onlyHighlighted(page, 'Agent tools');
       let missing = texts;
       for (const deadline = Date.now() + 30_000; missing.length && Date.now() < deadline; await sleep(1000))
         missing = missingText(await page.locator('body').innerText().catch(() => ''), texts);

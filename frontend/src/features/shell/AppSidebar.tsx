@@ -39,11 +39,11 @@ export const labelled = (name: string, label?: string) => (label ? `${name}, ${l
 export const REPO_PAGES: { id: RepoTab; label: string; Icon: typeof House }[] = [
   { id: 'overview', label: 'Overview', Icon: LayoutDashboard },
   { id: 'changes', label: 'Changes', Icon: GitPullRequest },
-  { id: 'agents', label: 'Agents', Icon: Bot },
   { id: 'commits', label: 'Commits', Icon: GitCommitHorizontal },
   { id: 'sessions', label: 'Sessions', Icon: ScrollText },
-  { id: 'context', label: 'Context', Icon: BookOpenText },
   { id: 'memories', label: 'Memories', Icon: NotebookPen },
+  { id: 'context', label: 'Context', Icon: BookOpenText },
+  { id: 'agents', label: 'Agent tools', Icon: Bot },
   { id: 'releases', label: 'Releases', Icon: Tag },
   { id: 'search', label: 'Search', Icon: Search },
   { id: 'settings', label: 'Settings', Icon: Settings },

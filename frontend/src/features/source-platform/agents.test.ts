@@ -2,6 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import {
+  type AgentSection,
   appendPage,
   type ContractRecord,
   changeSessionsPath,
@@ -142,9 +143,10 @@ describe('agent pages', () => {
     ]);
   });
 
-  it('addresses every agent page, sessions under Sessions and the rest under Agents', () => {
+  it('addresses every agent page: Sessions, Memories, and the rest under Agent tools', () => {
     for (const route of [
       { view: 'agents', repo, section: 'sessions' },
+      { view: 'agents', repo, section: 'memories' },
       { view: 'agents', repo, section: 'contracts' },
       { view: 'agents', repo, section: 'pins' },
       { view: 'agents', repo, section: 'bisects' },
@@ -152,9 +154,13 @@ describe('agent pages', () => {
     ] as const) {
       const url = formatSourceRoute(route);
       expect(parseSourceRoute(url, '')).toEqual(route);
-      // Sessions have their own sidebar page; the other records stay under Agents.
+      // Sessions and Memories have their own sidebar pages; the rest are Agent tools.
       expect(routeTab(route)).toBe(
-        route.view === 'session' || route.section === 'sessions' ? 'sessions' : 'agents',
+        route.view === 'session' || route.section === 'sessions'
+          ? 'sessions'
+          : route.section === 'memories'
+            ? 'memories'
+            : 'agents',
       );
     }
     expect(formatSourceRoute({ view: 'agents', repo, section: 'sessions' })).toBe(
@@ -173,19 +179,29 @@ describe('agent pages', () => {
   });
 });
 
-describe('agent record tabs', () => {
-  it('name the records in plain words and keep the API slugs in the address', () => {
-    const html = renderToStaticMarkup(
-      createElement(RepoAgents, { repo, section: 'pins', branches: [], navigate: () => {} }),
+describe('agent tool tabs', () => {
+  const render = (section: AgentSection) =>
+    renderToStaticMarkup(
+      createElement(RepoAgents, { repo, section, branches: [], navigate: () => {} }),
     );
+
+  it('offer only the agent tools, in plain words, with the API slugs in the address', () => {
+    const html = render('pins');
     const tabs = [...html.matchAll(/href="([^"]+)"[^>]*>([^<]+)</g)].map((m) => [m[1], m[2]]);
     expect(tabs).toEqual([
-      [`/source/${repo}/agents`, 'Sessions'],
-      [`/source/${repo}/agents/memories`, 'Memories'],
       [`/source/${repo}/agents/contracts`, 'Contracts'],
       [`/source/${repo}/agents/pins`, 'Kept commits'],
       [`/source/${repo}/agents/bisects`, 'Find a breaking commit'],
     ]);
+    expect(html).toContain('aria-label="Agent tools"');
     expect(html).toMatch(/aria-current="page" href="[^"]+\/pins"/);
+  });
+
+  it('leave Sessions and Memories to their own sidebar pages, with no tab row', () => {
+    for (const section of ['sessions', 'memories'] as const) {
+      const html = render(section);
+      expect(html).not.toContain('aria-label="Agent tools"');
+      expect(html).not.toContain(`href="/source/${repo}/agents/contracts"`);
+    }
   });
 });

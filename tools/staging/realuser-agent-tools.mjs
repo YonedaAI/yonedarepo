@@ -178,7 +178,7 @@ export async function realuserAgentTools(ctx, metrics, { headed = false } = {}) 
         assert.equal(report.first_bad, shown.bisect.breaking, `bisect names exactly the breaking commit: ${report.text}`);
         Object.assign(shown.bisect, { id: started.id });
       }],
-      ['browser: Agents → contracts, pins and bisects show the rows', () =>
+      ['browser: Agent tools → contracts, pins and bisects show the rows', () =>
         agentToolPages(
           {
             origin: ctx.origin,
