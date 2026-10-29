@@ -1,0 +1,67 @@
+name: Deploy dev
+# For later, when development slows: today dev deploys from the owner's checkout
+# (`cargo xtask deploy --env dev`, AGENTS.md), and this workflow stays disabled on GitHub
+# until the owner turns it on (`gh workflow enable deploy-dev.yml`). By hand only. It builds
+# everything from source at the tip of dev (Wasm, frontend, and the runtime image unless its
+# inputs match what dev runs), deploys with the same command and guards as a local deploy
+# (xtask refuses unless HEAD is the tip of dev), then runs the smoke.
+on:
+  workflow_dispatch:
+    inputs:
+      allow_active:
+        description: Roll containers out even if instances are busy (kills their runs)
+        type: boolean
+        default: false
+permissions:
+  contents: read
+# A deploy is never cancelled part-way: a second dispatch waits for the first.
+concurrency:
+  group: deploy-dev
+  cancel-in-progress: false
+# An explicit bash shell runs with -eo pipefail, so `cmd | tee` fails when cmd fails.
+defaults:
+  run:
+    shell: bash
+jobs:
+  deploy:
+    name: Deploy dev + smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: dev
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: dev
+      - name: Fetch the tip of dev for the deploy guard
+        run: git fetch --no-tags --depth=1 origin +dev:refs/remotes/origin/dev
+      - uses: ./.github/actions/setup
+      - name: Write the dev secrets file (0600, outside the tree)
+        env:
+          OWNER_TOKEN: ${{ secrets.OWNER_TOKEN }}
+          VAULT_KEY: ${{ secrets.VAULT_KEY }}
+        run: |
+          install -d -m 700 ~/.config/yonedarepo
+          umask 077
+          printf 'OWNER_TOKEN=%s\nVAULT_KEY=%s\n' "$OWNER_TOKEN" "$VAULT_KEY" > ~/.config/yonedarepo/staging.env
+      - name: Deploy dev
+        env:
+          ALLOW_ACTIVE: ${{ inputs.allow_active }}
+        run: |
+          flags=""
+          if [ "$ALLOW_ACTIVE" = "true" ]; then flags="--allow-active"; fi
+          cargo xtask deploy --env dev $flags | tee "$RUNNER_TEMP/deploy.txt"
+      - name: Smoke
+        run: cargo xtask infra smoke --env dev | tee "$RUNNER_TEMP/smoke.txt"
+      # The deploy and smoke tables reach the job summary from xtask itself; on a failure
+      # before them, the last log lines do.
+      - name: Log tail on failure
+        if: failure()
+        run: |
+          set +e  # report whatever exists; a missing file is not a failure
+          { echo '### Deploy dev: log tail'; echo '```'; tail -n 20 "$RUNNER_TEMP/deploy.txt" 2>/dev/null; tail -n 20 "$RUNNER_TEMP/smoke.txt" 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove the secrets file
+        if: always()
+        run: rm -f ~/.config/yonedarepo/staging.env

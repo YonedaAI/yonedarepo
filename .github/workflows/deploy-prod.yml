@@ -1,11 +1,20 @@
 name: Deploy prod
-# Manual only, for the owner (MagnetonIO) from main, in the "production" Environment.
-# `cargo xtask deploy --env prod --confirm` refuses unless HEAD is the tip of main, every dev
-# Worker already runs it, the real-world kit passed for it (evidence from the Kit workflow)
-# and no container instance is busy (rollouts kill runs).
+# For later, when development slows: today prod deploys from the owner's checkout
+# (`cargo xtask deploy --env prod --confirm`), and this workflow stays disabled on GitHub until
+# the owner turns it on (`gh workflow enable deploy-prod.yml`). Manual only, for the owner
+# (MagnetonIO) from main, in the "production" Environment; it builds everything from source.
+# xtask refuses unless HEAD is the tip of main, every dev Worker already runs it, the
+# real-world kit passed for it and no container instance is busy (rollouts kill runs). Kits
+# run locally now, so the kit evidence (`realworld-<sha>.json`, in .local/staging/) must
+# reach the runner as an artifact named `realworld-<sha>` of the run given as `evidence_run`
+# (any workflow run that uploaded it); without it the deploy refuses.
 on:
   workflow_dispatch:
     inputs:
+      evidence_run:
+        description: Run id holding the realworld-<sha> kit evidence artifact for main's tip
+        type: string
+        default: 
       dry_run:
         description: Plan and check the guards only (wrangler --dry-run)
         type: boolean
@@ -46,14 +55,14 @@ jobs:
       - name: Fetch the tip of main for the deploy guard
         run: git fetch --no-tags --depth=1 origin +main:refs/remotes/origin/main
       - name: Download kit evidence for this commit
+        if: inputs.evidence_run != ''
         env:
           GH_TOKEN: ${{ github.token }}
+          RUN: ${{ inputs.evidence_run }}
         run: |
           sha=$(git rev-parse HEAD)
-          run=$(gh run list --workflow kit.yml --status success --json databaseId,headSha \
-            --jq "map(select(.headSha == \"$sha\")) | .[0].databaseId // empty")
           mkdir -p .local/staging
-          if [ -n "$run" ]; then gh run download "$run" -n "realworld-$sha" -D .local/staging; fi
+          gh run download "$RUN" -n "realworld-$sha" -D .local/staging
       - uses: ./.github/actions/setup
       - name: Deploy prod
         run: |
