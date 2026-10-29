@@ -21,11 +21,27 @@ export function rustCall<T>(call: () => T): T {
   try {
     return call();
   } catch (e) {
-    try {
-      if (typeof settle === 'function') settle();
-    } catch {}
+    settleRust();
     throw e;
   }
+}
+
+/** Starts a fresh instance a failure or a reset scheduled, if any (`wasmSettle`). */
+export function settleRust() {
+  try {
+    if (typeof settle === 'function') settle();
+  } catch {}
+}
+
+/** `call` (a JSON answer from Rust), once more after settling when the instance answered
+ * WASM_RESET: its stack had been cut short by a call terminated midway (stack.rs), and it
+ * scheduled its own reinitialization. */
+export function resetOnce(call: () => string): Json {
+  const first = JSON.parse(rustCall(call));
+  if (first.error?.code !== 'WASM_RESET') return first;
+  console.error(`wasm reset: ${first.error.message}`);
+  settleRust();
+  return JSON.parse(rustCall(call));
 }
 
 /** Bytes this isolate has passed into Wasm (each call's JSON input): Wasm memory grows to
@@ -40,7 +56,7 @@ export function compute(input: Json): Json {
   const text = JSON.stringify(input);
   computeInput.bytes += text.length;
   computeInput.calls++;
-  const result = JSON.parse(rustCall(() => entry(text)));
+  const result = resetOnce(() => entry(text));
   if (result.error)
     throw Object.assign(new Error(result.error.message), { code: result.error.code });
   return result.value;

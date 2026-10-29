@@ -5,8 +5,11 @@ use worker::wasm_bindgen::prelude::wasm_bindgen;
 /// JSON in, JSON out: `{"value": ...}` or `{"error": {"code", "message"}}`.
 #[wasm_bindgen(js_name = platformCompute, wasm_bindgen = ::worker::wasm_bindgen)]
 pub fn platform_compute(input: &str) -> String {
-    let result = serde_json::from_str(input)
-        .map_err(|_| yoneda_core::Error::new("INVALID_INPUT", "Compute input must be JSON"))
+    let result = crate::stack::check()
+        .and_then(|()| {
+            serde_json::from_str(input)
+                .map_err(|_| yoneda_core::Error::new("INVALID_INPUT", "Compute input must be JSON"))
+        })
         .and_then(yoneda_platform::platform_compute);
     match result {
         Ok(value) => serde_json::json!({ "value": value }),
