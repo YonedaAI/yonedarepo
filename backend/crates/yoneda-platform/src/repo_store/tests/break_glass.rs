@@ -354,3 +354,38 @@ fn clone_access_is_only_for_a_person_reading_the_whole_repository() {
     assert_eq!(code(as_caller(&h, script, access.clone())), "FORBIDDEN");
     assert_eq!(code(h.run(AGENT, access)), "FORBIDDEN");
 }
+
+/// A working branch moved back below a revert it already landed takes that revert again
+/// through break-glass: the ref moves, and the revert keeps its first landing there.
+#[test]
+fn a_revert_lands_again_on_a_branch_moved_back_below_it() {
+    let (h, root) = seeded();
+    let edit = child_of(&h, &root, "pub fn a() { 2 }\n");
+    let blob = |t: &[u8]| yoneda_core::git_object::hash_object(ObjectKind::Blob, t);
+    let inverse = json!([{"path": "src/lib.rs", "blob": blob(b"pub fn a() {}\n"), "type": "blob",
+        "expect": blob(b"pub fn a() { 2 }\n")}]);
+    let undo = h.commit(OWNER, Some(&edit), 1, inverse, json!([])).unwrap();
+    let set = |commit: &str, expected: Value| {
+        h.ok(
+            AGENT,
+            json!({"op":"repo_branch_set","ref":"team","commit":commit,"expected":expected}),
+        )
+    };
+    set(&root, Value::Null);
+    for commit in [&edit, &undo] {
+        h.ok(
+            AGENT,
+            json!({"op":"repo_land","ref":"team","commit":commit}),
+        );
+    }
+    set(&edit, json!(undo));
+    let landed = human(
+        &h,
+        json!({"op":"repo_break_glass","action":"revert","ref":"team","commit":edit,
+            "expected_old":edit,"revert_commit":undo,"reason":"undo again"}),
+    );
+    let landed = landed.unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!(landed["reverted"], json!(edit));
+    let refs = h.ok(OWNER, json!({"op":"repo_refs"}));
+    assert_eq!(refs["refs"]["refs/heads/team"], json!(undo));
+}
