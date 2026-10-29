@@ -1,0 +1,52 @@
+{
+  "$defs": {
+    "Context": {
+      "additionalProperties": false,
+      "description": "`context`: what a coding session starting in this clone should know.",
+      "properties": {
+        "branch": {
+          "description": "The checked-out branch.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "brief": {
+          "description": "This clone's one-line status (`status --brief`), if it could be made.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "context": {
+          "description": "The platform's context read (`GET /context`), unchanged."
+        }
+      },
+      "required": [
+        "brief",
+        "branch",
+        "context"
+      ],
+      "title": "Context",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `context`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/Context"
+    },
+    "schema": {
+      "const": "yoneda.cli.context.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.context.v1",
+  "type": "object"
+}

@@ -47,7 +47,9 @@ fn backoff(failure: &Failure, attempt: u64) -> std::time::Duration {
 
 impl From<Failure> for Error {
     fn from(failure: Failure) -> Self {
-        Error::new(failure.to_string())
+        let mut error = Error::new(failure.to_string()).from_platform(&failure.code);
+        error.code = crate::output::error_code(failure.status, &failure.code);
+        error
     }
 }
 

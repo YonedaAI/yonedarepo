@@ -1,0 +1,39 @@
+{
+  "$defs": {
+    "ReadsClear": {
+      "additionalProperties": false,
+      "description": "`reads clear`.",
+      "properties": {
+        "cleared": {
+          "description": "Declared reads removed.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "cleared"
+      ],
+      "title": "ReadsClear",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `reads-clear`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/ReadsClear"
+    },
+    "schema": {
+      "const": "yoneda.cli.reads-clear.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.reads-clear.v1",
+  "type": "object"
+}

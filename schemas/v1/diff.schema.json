@@ -1,0 +1,65 @@
+{
+  "$defs": {
+    "Diff": {
+      "additionalProperties": false,
+      "description": "`diff`.",
+      "properties": {
+        "changes": {
+          "items": {
+            "$ref": "#/$defs/DiffEntry"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "changes"
+      ],
+      "title": "Diff",
+      "type": "object"
+    },
+    "DiffEntry": {
+      "additionalProperties": false,
+      "description": "A changed file.",
+      "properties": {
+        "patch": {
+          "description": "The unified diff, when the platform made one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "type": "string"
+        },
+        "status": {
+          "description": "`A`, `M`, `D`, ... as the platform names the change.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "status",
+        "patch"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `diff`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/Diff"
+    },
+    "schema": {
+      "const": "yoneda.cli.diff.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.diff.v1",
+  "type": "object"
+}

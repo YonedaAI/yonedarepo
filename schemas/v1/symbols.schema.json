@@ -1,0 +1,36 @@
+{
+  "$defs": {
+    "Symbols": {
+      "additionalProperties": false,
+      "description": "`symbols`.",
+      "properties": {
+        "symbols": {
+          "description": "The platform's symbol outline of the file, unchanged."
+        }
+      },
+      "required": [
+        "symbols"
+      ],
+      "title": "Symbols",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `symbols`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/Symbols"
+    },
+    "schema": {
+      "const": "yoneda.cli.symbols.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.symbols.v1",
+  "type": "object"
+}

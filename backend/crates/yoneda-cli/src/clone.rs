@@ -5,6 +5,8 @@ use crate::api::Api;
 use crate::credentials;
 use crate::error::{Context, Error, Result};
 use crate::git::Git;
+use crate::human;
+use crate::output::{self, CloneMethod, Cloned};
 use crate::snapshot;
 use crate::state::{self, State};
 use std::path::{Path, PathBuf};
@@ -82,11 +84,21 @@ pub async fn clone(repo: &str, dir: Option<&str>, origin: Option<&str>) -> Resul
     let root = std::fs::canonicalize(&target).context(format!("resolving {}", target.display()))?;
     state.save(&root)?;
     state::exclude(&root.join(git.run(&["rev-parse", "--git-dir"])?))?;
-    println!(
+    human!(
         "Cloned {repo} into {} at version {version} ({})",
         target.display(),
         if cloned { "git clone" } else { "API snapshot" }
     );
+    output::emit(&Cloned {
+        repo: repo.to_owned(),
+        dir: target.display().to_string(),
+        version,
+        method: if cloned {
+            CloneMethod::GitClone
+        } else {
+            CloneMethod::ApiSnapshot
+        },
+    });
     Ok(())
 }
 

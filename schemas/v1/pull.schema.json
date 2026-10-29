@@ -1,0 +1,70 @@
+{
+  "$defs": {
+    "Pull": {
+      "additionalProperties": false,
+      "description": "`pull`.",
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "outcome": {
+          "$ref": "#/$defs/PullOutcome"
+        },
+        "rebased": {
+          "description": "Commits rebased (0 unless `rebased`).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "version": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "branch",
+        "version",
+        "outcome",
+        "rebased"
+      ],
+      "title": "Pull",
+      "type": "object"
+    },
+    "PullOutcome": {
+      "description": "What `pull` did.",
+      "oneOf": [
+        {
+          "enum": [
+            "up_to_date",
+            "fast_forwarded"
+          ],
+          "type": "string"
+        },
+        {
+          "const": "rebased",
+          "description": "Pending local commits were rebased onto the new base.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `pull`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/Pull"
+    },
+    "schema": {
+      "const": "yoneda.cli.pull.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.pull.v1",
+  "type": "object"
+}
