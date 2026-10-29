@@ -70,8 +70,8 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
   policy show | policy set '<json>'
   token create <name> [--scopes read,write] [--paths a/,b/] | token list | token revoke <name>
   log [path] [--ref <b>] [--limit <n>] [--at <version>]
-  grep <query> [--path <p>] [-i] [--at <version>]
-  search <query> [--in code,memories,commits,sessions,changes] [--limit <n>] [--path <p>]
+  grep <query> [--path <p>] [-i] [-w|--word] [--at <version>]
+  search <query> [--in code,memories,commits,sessions,changes] [--limit <n>] [--path <p>] [-w|--word]
          [--ref <b>] [--at <version>]   code, memories, commits, sessions and changes at once
   blame <path> [--ref <b>] [--at <version>]
   diff [<base>] [<head>] [--path <p>] [--at <version>]
