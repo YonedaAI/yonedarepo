@@ -163,8 +163,14 @@ export async function getObjects(ctx: RepoContext, args: Json) {
 }
 
 /** `GET /repos/:id/objects/<id>` (`?commit=&path=` for a path-restricted caller): one blob's
- * bytes, for the stubs `getObjects` serves. */
-export async function downloadBlob(ctx: RepoContext, id: string, query: URLSearchParams) {
+ * bytes, for the stubs `getObjects` serves. A single `Range: bytes=N-[M]` is honored (206),
+ * so a client whose download was cut resumes from the bytes it has. */
+export async function downloadBlob(
+  ctx: RepoContext,
+  id: string,
+  query: URLSearchParams,
+  range: string | null = null,
+) {
   if (!SHA.test(id)) throw new ApiError('INVALID_INPUT', 'id must be a blob id');
   const objects = await ctx.objects();
   guardInherited(ctx, objects);
@@ -186,12 +192,38 @@ export async function downloadBlob(ctx: RepoContext, id: string, query: URLSearc
     );
     throw e;
   });
-  return new Response(bytes, {
+  const headers = {
+    'content-type': 'application/octet-stream',
+    'x-yoneda-object': id,
+    'cache-control': 'no-store',
+    'accept-ranges': 'bytes',
+  };
+  const span = byteRange(range, bytes.length);
+  if (span === 'unsatisfiable')
+    return new Response(null, {
+      status: 416,
+      headers: { ...headers, 'content-range': `bytes */${bytes.length}` },
+    });
+  if (!span)
+    return new Response(bytes, { headers: { ...headers, 'content-length': String(bytes.length) } });
+  const [first, last] = span;
+  return new Response(bytes.subarray(first, last + 1), {
+    status: 206,
     headers: {
-      'content-type': 'application/octet-stream',
-      'content-length': String(bytes.length),
-      'x-yoneda-object': id,
-      'cache-control': 'no-store',
+      ...headers,
+      'content-length': String(last + 1 - first),
+      'content-range': `bytes ${first}-${last}/${bytes.length}`,
     },
   });
+}
+
+/** The inclusive span one `bytes=N-` or `bytes=N-M` range names in `size` bytes; null for no
+ * range or one this endpoint serves whole (several spans, a suffix, malformed). */
+function byteRange(header: string | null, size: number): [number, number] | 'unsatisfiable' | null {
+  const match = /^bytes=(\d+)-(\d*)$/.exec(header?.trim() ?? '');
+  if (!match) return null;
+  const first = Number(match[1]);
+  const last = match[2] ? Math.min(Number(match[2]), size - 1) : size - 1;
+  if (!Number.isSafeInteger(first) || first >= size) return 'unsatisfiable';
+  return last < first ? null : [first, last];
 }

@@ -374,6 +374,7 @@ async function handle(req: Request, env: Env): Promise<Response> {
       new RepoContext(env, blob[1], caller(env, blob[1], auth)),
       blob[2],
       url.searchParams,
+      req.headers.get('range'),
     ).catch(failure);
   return answer(() => route(req, env, url, auth));
 }

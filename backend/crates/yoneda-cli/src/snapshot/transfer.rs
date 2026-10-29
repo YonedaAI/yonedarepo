@@ -1,0 +1,306 @@
+//! Moving objects from the platform: batched `POST /objects` pages and large-blob downloads
+//! that survive a broken stream, shared between concurrent callers.
+//!
+//! - A page cut off mid-body keeps every object that arrived whole; the next request asks
+//!   from the first incomplete one (the platform serves in request order, so the ids it
+//!   skipped before the last whole object are the ones it lacks).
+//! - A large blob's download cut off resumes with `Range` from the bytes it has.
+//! - Concurrent callers of one `Api` wanting the same object share one request.
+//!
+//! Every object is still verified against its id before it is written (`verified`,
+//! `commits`); a download is also checked here, so corrupt resumed bytes never leave it.
+use super::object_id;
+use crate::api::{self, Api, Received};
+use crate::error::{Error, Result};
+use base64::Engine;
+use serde_json::{Value, json};
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
+use yoneda_core::git_object::{ObjectKind, hash_object};
+
+/// Ids per `POST /objects` request (the platform takes up to 10 000).
+const REQUEST_OBJECTS: usize = 2_000;
+/// Consecutive attempts that brought nothing new before a request is given up (or, for a
+/// page, asked again for half as many ids).
+const ATTEMPTS: u64 = 3;
+
+/// The served objects among `wanted`, in request order, and the ids the platform does not
+/// have. `raw` asks for commits as their exact Git content. Large blobs come as stubs
+/// (`large`: base64 in a JSON page costs the platform several copies of a blob) and are
+/// downloaded one by one.
+pub(super) async fn request(
+    api: &Api,
+    wanted: &[(String, ObjectKind)],
+    raw: bool,
+) -> Result<(Vec<Value>, Vec<String>)> {
+    let key = |id: &str, kind: ObjectKind| format!("{}:{}:{id}", u8::from(raw), kind.name());
+    let keys: Vec<String> = wanted.iter().map(|(id, kind)| key(id, *kind)).collect();
+    let (mut lead, waits) = api.objects().claim(&keys);
+    // Each key this caller owns, fetched once however often it was asked for.
+    let mut own: HashSet<&String> = lead.keys().collect();
+    let mine: Vec<(String, ObjectKind)> = wanted
+        .iter()
+        .zip(&keys)
+        .filter(|(_, k)| own.remove(k))
+        .map(|(object, _)| object.clone())
+        .collect();
+    let mut outcomes: HashMap<String, Option<Arc<Value>>> = HashMap::new();
+    if !mine.is_empty() {
+        // On failure `lead` is dropped unfinished: its waiters fail with this caller.
+        let (fetched, absent) = pages(api, &mine, raw).await?;
+        let absent: HashSet<String> = absent.into_iter().collect();
+        let mut fetched: HashMap<String, Value> = fetched
+            .into_iter()
+            .map(|o| (o["id"].as_str().unwrap_or_default().to_owned(), o))
+            .collect();
+        for (id, kind) in &mine {
+            let object = fetched.remove(id).map(Arc::new);
+            if object.is_none() && !absent.contains(id) {
+                return Err(Error::new(format!("the platform's answer left out {id}")));
+            }
+            lead.finish(&key(id, *kind), Ok(object.clone()));
+            outcomes.insert(key(id, *kind), object);
+        }
+    }
+    drop(lead);
+    for (k, wait) in waits {
+        outcomes.insert(k, wait.outcome().await.map_err(Error::new)?);
+    }
+    let mut served = Vec::with_capacity(wanted.len());
+    let mut missing = Vec::new();
+    for ((id, _), k) in wanted.iter().zip(&keys) {
+        // `remove`: a duplicate id is answered once.
+        match outcomes.remove(k) {
+            Some(Some(object)) => {
+                served.push(Arc::try_unwrap(object).unwrap_or_else(|shared| (*shared).clone()));
+            }
+            Some(None) => missing.push(id.clone()),
+            None => {}
+        }
+    }
+    Ok((served, missing))
+}
+
+/// `wanted` (distinct) fetched page by page. A page the platform cannot answer (a gateway
+/// error left after retries, such as a Worker over its limits) is asked again for half as
+/// many ids, down to one; a page cut off resumes after its last whole object.
+async fn pages(
+    api: &Api,
+    wanted: &[(String, ObjectKind)],
+    raw: bool,
+) -> Result<(Vec<Value>, Vec<String>)> {
+    let mut fetched = Vec::with_capacity(wanted.len());
+    let mut absent = Vec::new();
+    for batch in wanted.chunks(REQUEST_OBJECTS) {
+        let mut pos = 0;
+        let mut window = batch.len();
+        let mut failures = 0;
+        while pos < batch.len() {
+            let part = &batch[pos..(pos + window).min(batch.len())];
+            let ids: Vec<Value> = part
+                .iter()
+                .map(|(id, kind)| json!({ "id": id, "kind": kind.name() }))
+                .collect();
+            let body = json!({ "objects": ids, "after": 0, "raw": raw, "large": true });
+            let (objects, done, stopped) = match api.post_read_once("/objects", &body).await {
+                Ok(Received {
+                    bytes, cut: None, ..
+                }) => {
+                    let page: Value = serde_json::from_slice(&bytes)
+                        .map_err(|e| Error::new(format!("an unreadable object page: {e}")))?;
+                    absent.extend(
+                        page["missing"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|m| m.as_str().map(str::to_owned)),
+                    );
+                    // `next`: where the page stopped within `part` (none: it served all).
+                    let done = page["next"]
+                        .as_u64()
+                        .map_or(part.len(), |n| usize::try_from(n).unwrap_or(0));
+                    if done == 0 {
+                        return Err(Error::new("the platform's object paging did not advance"));
+                    }
+                    let objects = page["objects"].as_array().cloned().unwrap_or_default();
+                    (objects, done, None)
+                }
+                Ok(Received {
+                    bytes,
+                    cut: Some(cut),
+                    ..
+                }) => {
+                    let whole = whole_objects(&bytes);
+                    let (done, skipped) = aligned(part, &whole)?;
+                    absent.extend(skipped);
+                    (whole, done, Some(cut))
+                }
+                Err(failure) if api::transient(&failure) => (Vec::new(), 0, Some(failure)),
+                Err(failure) => return Err(failure.into()),
+            };
+            for object in objects {
+                fetched.push(if object["large"] == true {
+                    download(api, &object).await?
+                } else {
+                    object
+                });
+            }
+            pos += done;
+            match stopped {
+                Some(failure) if done == 0 => {
+                    failures += 1;
+                    if failures <= ATTEMPTS {
+                        api::pause(&failure, failures).await;
+                    } else if window > 1 {
+                        window = window.div_ceil(2);
+                        failures = 0;
+                    } else {
+                        return Err(failure.into());
+                    }
+                }
+                _ => failures = 0,
+            }
+        }
+    }
+    Ok((fetched, absent))
+}
+
+/// The objects a page's body holds whole, from the start of a body cut off part way: the
+/// platform writes `{"objects":[...` first, so each object that closed before the cut is
+/// intact. Any other layout yields none (the page is asked again in full).
+fn whole_objects(body: &[u8]) -> Vec<Value> {
+    let mut rest = body;
+    let mut objects = Vec::new();
+    if ![&b"{"[..], b"\"objects\"", b":", b"["]
+        .iter()
+        .all(|token| take(token, &mut rest))
+    {
+        return objects;
+    }
+    loop {
+        let mut stream = serde_json::Deserializer::from_slice(rest).into_iter::<Value>();
+        match stream.next() {
+            Some(Ok(object)) if object.is_object() => {
+                rest = &rest[stream.byte_offset()..];
+                objects.push(object);
+            }
+            _ => return objects,
+        }
+        if !take(b",", &mut rest) {
+            return objects;
+        }
+    }
+}
+
+/// Skips whitespace and then `token` at the start of `rest`, if it is there.
+fn take(token: &[u8], rest: &mut &[u8]) -> bool {
+    *rest = rest.trim_ascii_start();
+    let found = rest.starts_with(token);
+    if found {
+        *rest = &rest[token.len()..];
+    }
+    found
+}
+
+/// How far into `part` the whole objects of a cut page reach (the positions after the last
+/// one), and the ids before it that the platform skipped (it lacks them).
+fn aligned(part: &[(String, ObjectKind)], whole: &[Value]) -> Result<(usize, Vec<String>)> {
+    let mut at = 0;
+    let mut skipped = Vec::new();
+    for object in whole {
+        let id = object["id"].as_str().unwrap_or_default();
+        while part.get(at).is_some_and(|(wanted, _)| wanted != id) {
+            skipped.push(part[at].0.clone());
+            at += 1;
+        }
+        if at == part.len() {
+            return Err(Error::new(format!("the platform sent {id}, not asked for")));
+        }
+        at += 1;
+    }
+    Ok((at, skipped))
+}
+
+/// A large blob's stub as the served blob: its bytes downloaded on their own, resuming a
+/// cut download from the bytes already here, and verified against the id.
+async fn download(api: &Api, stub: &Value) -> Result<Value> {
+    let id = object_id(stub, "id")?;
+    let path = format!("/objects/{id}");
+    let mut bytes: Vec<u8> = Vec::new();
+    let mut failures = 0;
+    loop {
+        let have = bytes.len() as u64;
+        let stopped = match api.get_bytes_from(&path, have).await {
+            Ok(received) => {
+                // A 206 continues these bytes; any other answer is the blob from its start.
+                if received.status != 206 {
+                    bytes.clear();
+                } else if received.offset != have {
+                    return Err(Error::new(format!(
+                        "the platform resumed {id} at byte {} instead of {have}",
+                        received.offset
+                    )));
+                }
+                let progressed = bytes.len() as u64 + received.bytes.len() as u64 > have;
+                bytes.extend_from_slice(&received.bytes);
+                match received.cut {
+                    None => break,
+                    Some(_) if progressed => None,
+                    Some(cut) => Some(cut),
+                }
+            }
+            Err(failure) if api::transient(&failure) => Some(failure),
+            Err(failure) => return Err(failure.into()),
+        };
+        match stopped {
+            Some(failure) => {
+                failures += 1;
+                if failures > ATTEMPTS {
+                    return Err(failure.into());
+                }
+                api::pause(&failure, failures).await;
+            }
+            None => failures = 0,
+        }
+    }
+    if hash_object(ObjectKind::Blob, &bytes) != id {
+        return Err(Error::new(format!(
+            "the platform sent {id} with different content"
+        )));
+    }
+    Ok(json!({
+        "id": id.hex(),
+        "kind": "blob",
+        "data_b64": base64::engine::general_purpose::STANDARD.encode(bytes),
+    }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn keeps_the_objects_a_cut_page_holds_whole() {
+        let body = br#"{"objects":[{"id":"a","n":1}, {"id":"b","s":"x,]}"},{"id":"c","s":"tru"#;
+        let ids: Vec<Value> = whole_objects(body)
+            .iter()
+            .map(|o| o["id"].clone())
+            .collect();
+        assert_eq!(ids, vec![json!("a"), json!("b")]);
+        assert!(whole_objects(br#"{"missing":[],"objects":[{"id":"a"}"#).is_empty());
+        assert!(whole_objects(b"").is_empty());
+    }
+
+    #[test]
+    fn a_cut_page_resumes_after_its_last_whole_object() -> Result<()> {
+        let part: Vec<(String, ObjectKind)> = ["a", "x", "b", "c"]
+            .iter()
+            .map(|id| (id.to_string(), ObjectKind::Blob))
+            .collect();
+        let whole = vec![json!({ "id": "a" }), json!({ "id": "b" })];
+        assert_eq!(aligned(&part, &whole)?, (3, vec!["x".to_owned()]));
+        assert_eq!(aligned(&part, &[])?, (0, vec![]));
+        assert!(aligned(&part, &[json!({ "id": "z" })]).is_err());
+        Ok(())
+    }
+}
