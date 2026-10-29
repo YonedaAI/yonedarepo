@@ -13,6 +13,7 @@ const { DeliveryTable, HookTable } = await import('./HookParts');
 const { RepoSettings } = await import('./RepoSettings');
 const { PolicyForm } = await import('./PolicyForm');
 const { ChecksSettings } = await import('./ChecksSettings');
+const { RunnerEditor } = await import('./RunnerEditor');
 
 const html = (type: any, props: any) => renderToStaticMarkup(createElement(type, props));
 const loaded = (value: Partial<Loaded<any>>): Loaded<any> => ({
@@ -34,6 +35,26 @@ beforeEach(() => {
 });
 
 describe('policy editing', () => {
+  it('offers the review catalog and secret rules the Rust policy contract lists', () => {
+    const editor = html(RunnerEditor, {
+      name: 'review',
+      runner: { kind: 'model', rubric: 'No secrets' },
+      required: true,
+      onChange: () => {},
+      onRequired: () => {},
+      onRemove: () => {},
+    });
+    for (const model of policy.REVIEW_MODELS)
+      expect(editor).toContain(`<option value="${model}" selected="">${model}</option>`);
+    expect(policy.SECRET_RULES).toContain('yonedarepo-pat');
+    expect(policy.AUTO_APPROVABLE.map((c) => c.label)).toEqual([
+      'Documentation only',
+      'Formatting only',
+      'Comments only',
+    ]);
+    expect(policy.DEFAULT_TIMEOUT_SECONDS).toBe(600);
+    expect(new RegExp(`^${policy.CHECK_NAME}$`).test('unit.v2')).toBe(true);
+  });
   it('changes only what it knows and keeps unknown fields for the round trip', () => {
     const next = policy.withRunner(base, 'tests', { command: ['cargo', 'test'] });
     expect(next.future_field).toEqual({ kept: true });
