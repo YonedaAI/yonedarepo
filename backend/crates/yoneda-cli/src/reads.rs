@@ -52,10 +52,13 @@ fn print_hits(found: &Value) -> Vec<GrepFile> {
             hits.push(GrepLine {
                 line: number,
                 text: text.map(str::to_owned),
+                ranges: serde_json::from_value(line["ranges"].clone()).unwrap_or_default(),
             });
         }
         files.push(GrepFile {
             path: path.to_owned(),
+            matched: result["match"].as_str().map(str::to_owned),
+            hits: result["hits"].as_u64(),
             lines: hits,
         });
     }
@@ -172,12 +175,14 @@ pub async fn read(t: &Resolved, command: ReadCommand) -> Result<()> {
             query: needle,
             path,
             ignore_case,
+            word,
             at: version,
         } => {
             let q = query(&[
                 ("query", Some(needle)),
                 ("path", path),
                 ("ignore_case", ignore_case.then(|| "true".to_owned())),
+                ("word", word.then(|| "true".to_owned())),
                 ("at", at(version)),
             ]);
             let results = print_hits(&t.api.get(&format!("/search{q}")).await?);
@@ -189,10 +194,12 @@ pub async fn read(t: &Resolved, command: ReadCommand) -> Result<()> {
             path,
             branch,
             limit,
+            word,
             at: version,
         } => {
             let q = query(&[
                 ("query", Some(needle)),
+                ("word", word.then(|| "true".to_owned())),
                 ("groups", groups.map(|g| g.join(","))),
                 ("path", path),
                 ("ref", branch),

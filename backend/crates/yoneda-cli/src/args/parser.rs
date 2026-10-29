@@ -9,7 +9,7 @@ pub struct Parsed {
 }
 
 impl Parsed {
-    /// `values` take an argument; `switches` do not. `-m` and `-i` are short forms.
+    /// `values` take an argument; `switches` do not. `-m`, `-i` and `-w` are short forms.
     pub fn new(args: &[String], values: &[&str], switches: &[&str]) -> Result<Self> {
         let (mut flags, mut positional) = (HashMap::new(), Vec::new());
         let mut rest = args.iter();
@@ -17,6 +17,7 @@ impl Parsed {
             let name = match arg.as_str() {
                 "-m" => "message",
                 "-i" => "ignore-case",
+                "-w" => "word",
                 other => match other.strip_prefix("--") {
                     Some(name) => name,
                     None => {

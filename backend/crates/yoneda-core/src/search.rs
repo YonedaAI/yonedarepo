@@ -10,7 +10,9 @@ use crate::textdiff::is_binary;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod grep;
 pub mod stored;
+pub use grep::{Grep, LineMatch, binary_path, grep};
 pub use stored::StoredSegment;
 
 /// Files larger than this are listed but not indexed (searched only by path).
@@ -111,42 +113,6 @@ fn candidates(
         .collect())
 }
 
-/// A matching line: 1-based number and text.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub struct LineMatch {
-    pub line: u32,
-    pub text: String,
-}
-
-/// Lines of `data` containing `query` (optionally case-insensitive), up to `max`.
-pub fn grep(data: &[u8], query: &str, ignore_case: bool, max: usize) -> Vec<LineMatch> {
-    if is_binary(data) || query.is_empty() {
-        return Vec::new();
-    }
-    let needle = if ignore_case {
-        fold(query.as_bytes())
-    } else {
-        query.as_bytes().to_vec()
-    };
-    data.split(|b| *b == b'\n')
-        .enumerate()
-        .filter(|(_, line)| {
-            let hay = if ignore_case {
-                fold(line)
-            } else {
-                line.to_vec()
-            };
-            hay.windows(needle.len().max(1))
-                .any(|w| w == needle.as_slice())
-        })
-        .take(max)
-        .map(|(i, line)| LineMatch {
-            line: i as u32 + 1,
-            text: String::from_utf8_lossy(line).chars().take(500).collect(),
-        })
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,19 +158,5 @@ mod tests {
         assert_eq!(moved[0].path, "lib/retry.rs");
         assert_eq!(s.candidates("", "Backoff").unwrap()[0].path, "retry.rs");
         assert!(!s.files[2].indexed, "binary files are not content-indexed");
-    }
-
-    #[test]
-    fn grep_finds_lines_with_case_control() {
-        let data = b"one\nRetry here\nretry there\n";
-        assert_eq!(
-            grep(data, "retry", false, 10),
-            vec![LineMatch {
-                line: 3,
-                text: "retry there".into()
-            }]
-        );
-        assert_eq!(grep(data, "retry", true, 10).len(), 2);
-        assert_eq!(grep(data, "retry", true, 1).len(), 1);
     }
 }

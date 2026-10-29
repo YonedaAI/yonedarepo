@@ -46,6 +46,8 @@ pub enum ReadCommand {
         query: String,
         path: Option<String>,
         ignore_case: bool,
+        /// Whole words only (identifier boundaries).
+        word: bool,
         at: Option<u64>,
     },
     /// One query across code, memories, commits, sessions and changes (`groups`: some).
@@ -55,6 +57,7 @@ pub enum ReadCommand {
         path: Option<String>,
         branch: Option<String>,
         limit: Option<u64>,
+        word: bool,
         at: Option<u64>,
     },
     Blame {
