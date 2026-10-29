@@ -6,18 +6,21 @@ use crate::checkout::Checkout;
 use crate::chunk;
 use crate::conflict;
 use crate::error::{Error, Result};
+use crate::human;
+use crate::output::SyncLanding;
 use crate::plan::{self, Step};
 use crate::reconcile;
 use crate::snapshot;
 use crate::state::{Landed, Pushed};
 use serde_json::Value;
 
-/// Pushes every pending commit; returns how many platform commits were made or adopted.
-pub async fn push(co: &mut Checkout) -> Result<usize> {
+/// Pushes every pending commit; returns how many platform commits were made or adopted,
+/// and how many of those an interrupted earlier sync had made.
+pub async fn push(co: &mut Checkout) -> Result<(usize, usize)> {
     let commits = co.git.first_parent_since(&co.state.local_base)?;
     let plan = plan::plan(&co.git, &co.state, &commits, &chunk::API)?;
     if plan.steps.is_empty() {
-        return Ok(0);
+        return Ok((0, 0));
     }
     let trees = plan.trees();
     // Recorded parts of a commit that was interrupted midway, then anything the branch
@@ -43,7 +46,7 @@ pub async fn push(co: &mut Checkout) -> Result<usize> {
     let unrecorded_count = tail.len();
     let adopted = reconcile::adopt(&[known, tail].concat(), &plan.start, &trees)?;
     if unrecorded_count > 0 {
-        println!(
+        human!(
             "Adopted {unrecorded_count} commit(s) an earlier sync made before it was interrupted"
         );
     }
@@ -112,7 +115,7 @@ pub async fn push(co: &mut Checkout) -> Result<usize> {
         parent = commit;
         co.save()?;
     }
-    Ok(made)
+    Ok((made, unrecorded_count))
 }
 
 /// The offline branch's commits after the recorded head (oldest first), walking back
@@ -150,20 +153,27 @@ async fn unrecorded(
 /// or merges it onto a moved head, and a retried landing is a no-op. A server that only
 /// fast-forwards a commit whose parent is the head refuses the tip with STALE_PARENT;
 /// then the series lands one commit at a time, oldest first. Re-pins the checkout after.
-pub async fn land(co: &mut Checkout) -> Result<()> {
+pub async fn land(co: &mut Checkout) -> Result<SyncLanding> {
     let commits = co.git.first_parent_since(&co.state.local_base)?;
+    let branch = co.state.branch.clone();
+    let nothing = SyncLanding {
+        commits: 0,
+        branch: branch.clone(),
+        version: None,
+        git_commit: None,
+        fast_forwarded: false,
+    };
     let Some(tip_local) = commits.last().cloned() else {
-        println!(
+        human!(
             "Nothing to land: no local commits since version {}",
             co.state.base_version
         );
-        return Ok(());
+        return Ok(nothing);
     };
     let Some(tip) = co.state.series.last().cloned() else {
-        println!("Nothing to land: the pending commits change nothing");
-        return Ok(());
+        human!("Nothing to land: the pending commits change nothing");
+        return Ok(nothing);
     };
-    let branch = co.state.branch.clone();
     let landed = match co.api.land(&branch, &tip.commit).await {
         Err(failure) if failure.code == "STALE_PARENT" && co.state.series.len() > 1 => {
             let mut landed = Value::Null;
@@ -197,17 +207,27 @@ pub async fn land(co: &mut Checkout) -> Result<()> {
     });
     co.state.rebase(latest, &head, &local);
     co.save()?;
-    println!(
+    human!(
         "Landed {} commit(s) on {branch} at version {version} (Git commit {})",
         commits.len(),
         git_commit.as_deref().unwrap_or("not projected yet")
     );
-    if co.git.run(&["rev-parse", "HEAD"])? == tip_local
-        && let Err(e) = co.fast_forward(&local)
-    {
-        println!("Could not fast-forward to {local} ({e}); run `git merge --ff-only {local}`");
+    let mut fast_forwarded = false;
+    if co.git.run(&["rev-parse", "HEAD"])? == tip_local {
+        match co.fast_forward(&local) {
+            Ok(()) => fast_forwarded = true,
+            Err(e) => {
+                human!("Could not fast-forward to {local} ({e}); run `git merge --ff-only {local}`")
+            }
+        }
     }
-    Ok(())
+    Ok(SyncLanding {
+        commits: commits.len() as u64,
+        branch,
+        version: Some(version),
+        git_commit,
+        fast_forwarded,
+    })
 }
 
 /// A landing's answer, or the error to stop with (a conflict is reported with its sides).

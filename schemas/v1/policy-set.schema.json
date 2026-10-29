@@ -1,0 +1,36 @@
+{
+  "$defs": {
+    "PolicySet": {
+      "additionalProperties": false,
+      "description": "`policy set`.",
+      "properties": {
+        "result": {
+          "description": "The platform's answer: the policy now in force."
+        }
+      },
+      "required": [
+        "result"
+      ],
+      "title": "PolicySet",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `policy-set`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/PolicySet"
+    },
+    "schema": {
+      "const": "yoneda.cli.policy-set.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.policy-set.v1",
+  "type": "object"
+}

@@ -1,0 +1,60 @@
+{
+  "$defs": {
+    "SshKeyAdd": {
+      "additionalProperties": false,
+      "description": "`ssh-key add`.",
+      "properties": {
+        "fingerprint": {
+          "type": "string"
+        },
+        "id": {
+          "type": "string"
+        },
+        "ssh_config": {
+          "description": "The `~/.ssh/config` entry the host needs (Cloudflare Tunnel), if any.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "ssh_host": {
+          "description": "The SSH host to clone from; null while Git over SSH is not open.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "fingerprint",
+        "title",
+        "ssh_host",
+        "ssh_config"
+      ],
+      "title": "SshKeyAdd",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `ssh-key-add`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/SshKeyAdd"
+    },
+    "schema": {
+      "const": "yoneda.cli.ssh-key-add.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.ssh-key-add.v1",
+  "type": "object"
+}

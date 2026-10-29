@@ -4,6 +4,7 @@
 //! when the agent runs; no token is ever written into a file.
 use crate::command::Agent;
 use crate::error::{Context, Error, Result};
+use crate::{human, output};
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 
@@ -216,20 +217,27 @@ pub fn setup(agent: Agent, origin: &str, at: &Places) -> Result<Vec<PathBuf>> {
 }
 
 pub fn run(agent: Agent, origin: &str) -> Result<()> {
-    for path in setup(agent, origin, &Places::from_env()?)? {
-        println!("Wrote {}", path.display());
+    let written = setup(agent, origin, &Places::from_env()?)?;
+    for path in &written {
+        human!("Wrote {}", path.display());
     }
-    println!("MCP server: {}", mcp_url(origin));
-    println!("The agent reads the token from ${TOKEN_ENV} (`yoneda login`, then export it).");
+    human!("MCP server: {}", mcp_url(origin));
+    human!("The agent reads the token from ${TOKEN_ENV} (`yoneda login`, then export it).");
     if agent == Agent::Claude {
-        println!("Install the skill and session hook inside Claude Code:");
-        println!("  /plugin marketplace add {CLAUDE_MARKETPLACE}");
-        println!("  /plugin install {CLAUDE_PLUGIN}");
-        println!(
+        human!("Install the skill and session hook inside Claude Code:");
+        human!("  /plugin marketplace add {CLAUDE_MARKETPLACE}");
+        human!("  /plugin install {CLAUDE_PLUGIN}");
+        human!(
             "Per-person MCP instead of .mcp.json: claude mcp add --transport http --scope user yoneda {} --header \"Authorization: Bearer ${{{TOKEN_ENV}}}\"",
             mcp_url(origin)
         );
     }
+    output::emit(&output::Setup {
+        agent: format!("{agent:?}").to_lowercase(),
+        written: written.iter().map(|p| p.display().to_string()).collect(),
+        mcp_url: mcp_url(origin),
+        token_env: TOKEN_ENV.to_owned(),
+    });
     Ok(())
 }
 

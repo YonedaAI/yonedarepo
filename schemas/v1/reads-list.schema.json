@@ -1,0 +1,40 @@
+{
+  "$defs": {
+    "ReadsList": {
+      "additionalProperties": false,
+      "description": "`reads list`.",
+      "properties": {
+        "reads": {
+          "description": "The declared reads (repository-relative paths; a trailing `/` is a directory).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "reads"
+      ],
+      "title": "ReadsList",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `reads-list`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/ReadsList"
+    },
+    "schema": {
+      "const": "yoneda.cli.reads-list.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.reads-list.v1",
+  "type": "object"
+}

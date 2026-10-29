@@ -1,0 +1,161 @@
+{
+  "$defs": {
+    "AttemptCommit": {
+      "additionalProperties": false,
+      "description": "A local commit contributed through an MCP attempt.",
+      "properties": {
+        "commit": {
+          "type": "string"
+        },
+        "local": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "local",
+        "commit"
+      ],
+      "type": "object"
+    },
+    "SyncLanding": {
+      "additionalProperties": false,
+      "description": "The landing `sync --land` made.",
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "commits": {
+          "description": "Local commits landed (0: nothing to land).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "fast_forwarded": {
+          "description": "Whether HEAD moved to the landed snapshot (else `git merge --ff-only` it).",
+          "type": "boolean"
+        },
+        "git_commit": {
+          "description": "The landing's Git commit, null until projected.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "commits",
+        "branch",
+        "version",
+        "git_commit",
+        "fast_forwarded"
+      ],
+      "type": "object"
+    },
+    "Synced": {
+      "description": "`sync`.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "`sync` (and the push half of `sync --land`).",
+          "properties": {
+            "adopted": {
+              "description": "Of those, adopted from an interrupted earlier sync.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "landing": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/SyncLanding"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "The landing, with `--land`."
+            },
+            "mode": {
+              "const": "push",
+              "type": "string"
+            },
+            "offline_branch": {
+              "type": "string"
+            },
+            "pushed": {
+              "description": "Platform commits made or adopted.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "mode",
+            "pushed",
+            "adopted",
+            "offline_branch",
+            "landing"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "`sync --attempt <id>`.",
+          "properties": {
+            "attempt": {
+              "type": "string"
+            },
+            "committed": {
+              "items": {
+                "$ref": "#/$defs/AttemptCommit"
+              },
+              "type": "array"
+            },
+            "mode": {
+              "const": "attempt",
+              "type": "string"
+            },
+            "status": {
+              "description": "The attempt's status after submitting.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "mode",
+            "attempt",
+            "committed",
+            "status"
+          ],
+          "type": "object"
+        }
+      ],
+      "title": "Synced"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `sync`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/Synced"
+    },
+    "schema": {
+      "const": "yoneda.cli.sync.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.sync.v1",
+  "type": "object"
+}

@@ -1,0 +1,36 @@
+{
+  "$defs": {
+    "PolicyShow": {
+      "additionalProperties": false,
+      "description": "`policy show`.",
+      "properties": {
+        "policy": {
+          "description": "The landing policy (approvals, required checks, path rules), as the platform holds it."
+        }
+      },
+      "required": [
+        "policy"
+      ],
+      "title": "PolicyShow",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `policy-show`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/PolicyShow"
+    },
+    "schema": {
+      "const": "yoneda.cli.policy-show.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.policy-show.v1",
+  "type": "object"
+}

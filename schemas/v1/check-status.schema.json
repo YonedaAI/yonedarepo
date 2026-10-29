@@ -1,0 +1,74 @@
+{
+  "$defs": {
+    "CheckStatus": {
+      "description": "`check status`: one check run, or a commit's checks and gates.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "`check status <run>`.",
+          "properties": {
+            "kind": {
+              "const": "run",
+              "type": "string"
+            },
+            "run": {
+              "description": "The check run, as the platform records it."
+            }
+          },
+          "required": [
+            "kind",
+            "run"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "`check status [--commit <sha>]`.",
+          "properties": {
+            "check_runs": true,
+            "checks": {
+              "description": "Reported check results by name."
+            },
+            "commit": {
+              "type": "string"
+            },
+            "gates": {
+              "description": "Whether the commit may land, and why not."
+            },
+            "kind": {
+              "const": "commit",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "commit",
+            "checks",
+            "check_runs",
+            "gates"
+          ],
+          "type": "object"
+        }
+      ],
+      "title": "CheckStatus"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `check-status`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/CheckStatus"
+    },
+    "schema": {
+      "const": "yoneda.cli.check-status.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.check-status.v1",
+  "type": "object"
+}

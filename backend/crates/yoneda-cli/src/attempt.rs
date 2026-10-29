@@ -6,6 +6,8 @@ use crate::checkout::Checkout;
 use crate::chunk;
 use crate::credentials::{Header, Token};
 use crate::error::{Error, Result};
+use crate::human;
+use crate::output::{self, AttemptCommit, Synced};
 use serde_json::{Value, json};
 
 struct Mcp {
@@ -88,6 +90,7 @@ pub async fn sync(co: &mut Checkout, attempt: &str, mcp_url: Option<&str>) -> Re
         .get(attempt)
         .and_then(|last| commits.iter().position(|c| c == last));
     let todo = &commits[done.map_or(0, |i| i + 1)..];
+    let mut committed = Vec::new();
     for local in todo {
         let parent = co.git.first_parent(local)?;
         let message = co.git.authored(local)?.message;
@@ -99,11 +102,12 @@ pub async fn sync(co: &mut Checkout, attempt: &str, mcp_url: Option<&str>) -> Re
                     json!({ "attempt_id": attempt, "changes": changes, "message": message }),
                 )
                 .await?;
-            println!(
-                "committed {} as {}",
-                short(local),
-                made["commit"].as_str().unwrap_or("?")
-            );
+            let commit = made["commit"].as_str().unwrap_or("?");
+            human!("committed {} as {commit}", short(local));
+            committed.push(AttemptCommit {
+                local: local.clone(),
+                commit: commit.to_owned(),
+            });
         }
         co.state.attempts.insert(attempt.to_owned(), local.clone());
         co.save()?;
@@ -114,10 +118,13 @@ pub async fn sync(co: &mut Checkout, attempt: &str, mcp_url: Option<&str>) -> Re
     let submitted = mcp
         .call("attempt_submit", json!({ "attempt_id": attempt }))
         .await?;
-    println!(
-        "Submitted {attempt}: {} (a human decides on the website)",
-        submitted["status"].as_str().unwrap_or("submitted")
-    );
+    let status = submitted["status"].as_str().unwrap_or("submitted");
+    human!("Submitted {attempt}: {status} (a human decides on the website)");
+    output::emit(&Synced::Attempt {
+        attempt: attempt.to_owned(),
+        committed,
+        status: status.to_owned(),
+    });
     Ok(())
 }
 

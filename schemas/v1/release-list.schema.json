@@ -1,0 +1,70 @@
+{
+  "$defs": {
+    "ReleaseList": {
+      "additionalProperties": false,
+      "description": "`release list`.",
+      "properties": {
+        "releases": {
+          "items": {
+            "$ref": "#/$defs/ReleaseSummary"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "releases"
+      ],
+      "title": "ReleaseList",
+      "type": "object"
+    },
+    "ReleaseSummary": {
+      "additionalProperties": false,
+      "description": "A release in one line.",
+      "properties": {
+        "asset_count": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "commit_id": {
+          "type": "string"
+        },
+        "created_by": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tag",
+        "title",
+        "commit_id",
+        "created_by",
+        "asset_count"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `release-list`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/ReleaseList"
+    },
+    "schema": {
+      "const": "yoneda.cli.release-list.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.release-list.v1",
+  "type": "object"
+}

@@ -1,0 +1,40 @@
+{
+  "$defs": {
+    "OrgTeamCreate": {
+      "additionalProperties": false,
+      "description": "`org team create`; a repository grants it as `team:<org>/<team>`.",
+      "properties": {
+        "org": {
+          "type": "string"
+        },
+        "team": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "org",
+        "team"
+      ],
+      "title": "OrgTeamCreate",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `org-team-create`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/OrgTeamCreate"
+    },
+    "schema": {
+      "const": "yoneda.cli.org-team-create.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.org-team-create.v1",
+  "type": "object"
+}

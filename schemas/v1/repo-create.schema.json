@@ -1,0 +1,72 @@
+{
+  "$defs": {
+    "RepoCreate": {
+      "additionalProperties": false,
+      "description": "`repo create`.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "owner": {
+          "description": "The organization that owns it (`--owner`), else the caller's account.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "remote": {
+          "description": "The URL to `git clone` (`yoneda::<origin>/<id>`).",
+          "type": "string"
+        },
+        "visibility": {
+          "$ref": "#/$defs/Visibility"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "visibility",
+        "owner",
+        "remote"
+      ],
+      "title": "RepoCreate",
+      "type": "object"
+    },
+    "Visibility": {
+      "description": "Who may read a repository.",
+      "oneOf": [
+        {
+          "const": "public",
+          "description": "Anyone, signed in or not.",
+          "type": "string"
+        },
+        {
+          "const": "private",
+          "description": "Its owner and members.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `repo-create`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/RepoCreate"
+    },
+    "schema": {
+      "const": "yoneda.cli.repo-create.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.repo-create.v1",
+  "type": "object"
+}

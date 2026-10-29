@@ -1,0 +1,44 @@
+{
+  "$defs": {
+    "OrgTeamRemove": {
+      "additionalProperties": false,
+      "description": "`org team remove`.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "org": {
+          "type": "string"
+        },
+        "team": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "org",
+        "team",
+        "account"
+      ],
+      "title": "OrgTeamRemove",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `org-team-remove`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/OrgTeamRemove"
+    },
+    "schema": {
+      "const": "yoneda.cli.org-team-remove.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.org-team-remove.v1",
+  "type": "object"
+}

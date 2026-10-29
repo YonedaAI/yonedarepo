@@ -1,0 +1,102 @@
+{
+  "$defs": {
+    "Asset": {
+      "additionalProperties": false,
+      "description": "A release asset.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "size": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "size",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "ReleaseCreate": {
+      "additionalProperties": false,
+      "description": "`release create`.",
+      "properties": {
+        "asset": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Asset"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "The asset uploaded with `--asset`."
+        },
+        "release": {
+          "$ref": "#/$defs/ReleaseSummary"
+        }
+      },
+      "required": [
+        "release",
+        "asset"
+      ],
+      "title": "ReleaseCreate",
+      "type": "object"
+    },
+    "ReleaseSummary": {
+      "additionalProperties": false,
+      "description": "A release in one line.",
+      "properties": {
+        "asset_count": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "commit_id": {
+          "type": "string"
+        },
+        "created_by": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "tag",
+        "title",
+        "commit_id",
+        "created_by",
+        "asset_count"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `release-create`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/ReleaseCreate"
+    },
+    "schema": {
+      "const": "yoneda.cli.release-create.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.release-create.v1",
+  "type": "object"
+}

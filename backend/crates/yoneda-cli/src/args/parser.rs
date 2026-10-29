@@ -25,6 +25,10 @@ impl Parsed {
                     }
                 },
             };
+            // `--json` (any command; see `output::requested`) is read from argv in `run`.
+            if name == "json" {
+                continue;
+            }
             if switches.contains(&name) {
                 flags.insert(name.to_owned(), String::new());
             } else if values.contains(&name) {

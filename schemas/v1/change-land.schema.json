@@ -1,0 +1,59 @@
+{
+  "$defs": {
+    "ChangeLand": {
+      "additionalProperties": false,
+      "description": "`change land`.",
+      "properties": {
+        "base": {
+          "type": "string"
+        },
+        "head": {
+          "type": "string"
+        },
+        "merged": {
+          "type": "boolean"
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "version": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "number",
+        "head",
+        "base",
+        "version",
+        "merged"
+      ],
+      "title": "ChangeLand",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `change-land`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/ChangeLand"
+    },
+    "schema": {
+      "const": "yoneda.cli.change-land.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.change-land.v1",
+  "type": "object"
+}

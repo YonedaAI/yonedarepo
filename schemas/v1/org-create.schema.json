@@ -1,0 +1,36 @@
+{
+  "$defs": {
+    "OrgCreate": {
+      "additionalProperties": false,
+      "description": "`org create` (the caller becomes its owner).",
+      "properties": {
+        "org": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "org"
+      ],
+      "title": "OrgCreate",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `org-create`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/OrgCreate"
+    },
+    "schema": {
+      "const": "yoneda.cli.org-create.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.org-create.v1",
+  "type": "object"
+}

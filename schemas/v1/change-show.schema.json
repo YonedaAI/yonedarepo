@@ -1,0 +1,36 @@
+{
+  "$defs": {
+    "ChangeShow": {
+      "additionalProperties": false,
+      "description": "`change show`.",
+      "properties": {
+        "change": {
+          "description": "The change with its gates, reviews, diff and comments, as the platform returns it."
+        }
+      },
+      "required": [
+        "change"
+      ],
+      "title": "ChangeShow",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `change-show`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/ChangeShow"
+    },
+    "schema": {
+      "const": "yoneda.cli.change-show.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.change-show.v1",
+  "type": "object"
+}

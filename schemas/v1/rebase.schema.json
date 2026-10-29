@@ -1,0 +1,60 @@
+{
+  "$defs": {
+    "Rebase": {
+      "additionalProperties": false,
+      "description": "`rebase`.",
+      "properties": {
+        "branch": {
+          "type": "string"
+        },
+        "head": {
+          "description": "The branch's new head (null when up to date).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "onto": {
+          "type": "string"
+        },
+        "replayed": {
+          "description": "Commits replayed.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "up_to_date": {
+          "description": "The branch was on `onto` already; nothing moved.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "branch",
+        "onto",
+        "up_to_date",
+        "replayed",
+        "head"
+      ],
+      "title": "Rebase",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `rebase`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/Rebase"
+    },
+    "schema": {
+      "const": "yoneda.cli.rebase.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.rebase.v1",
+  "type": "object"
+}
