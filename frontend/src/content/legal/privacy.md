@@ -53,11 +53,21 @@ When a coding agent, or you, records a session on a commit, we store:
 - the session's summary and its own session id;
 - digests of the prompt and of the files it read;
 - a transcript reference;
-- the account or token that recorded it.
+- the account or token that recorded it;
+- the stored transcript's size, turn count and number of redactions, when a transcript was uploaded.
 
 Files a session declares as read are recorded by path in the repository's transaction log.
 
-**Transcripts are coming.** The platform does not store session transcripts today. Before it does, transcripts will be redacted for secrets before they are stored, and this policy will be updated first.
+### Session transcripts
+
+A session record can carry the session's transcript: the context the session started with (from `yoneda context`), then its prompts, tool calls with their input and output, and replies. Transcripts can hold anything that appeared in the session, including code and text from your files.
+
+- **When.** The Claude Code and opencode plugins upload the transcript when a session ends, with the session record. `yoneda session record --transcript <file>` uploads one by hand. Without one of these, no transcript is stored.
+- **Redaction.** Before storing a transcript, the platform replaces every credential its 11 rules recognize with `[REDACTED:<rule>]`. These are the same rules that scan pushes, and they cover keys and tokens from common providers, private keys and YonedaRepo tokens. **Known limit:** a credential written in JSON-escaped form can slip past redaction. Do not rely on redaction alone to keep secrets out of a session.
+- **Size.** A stored transcript is at most 1 MiB and 2,000 turns. Each text keeps its start and end, and the middle is cut. Past that, the opening prompt and the latest turns are kept and the rest is counted as omitted.
+- **Where.** Transcripts are stored in R2 under the repository, named by their SHA-256.
+- **Who can read them.** Anyone who can read the repository. For a private repository, non-members get "not found". For a public repository, that means anyone.
+- **Deletion.** Transcripts are deleted with the repository.
 
 ### Logs
 
@@ -126,4 +136,4 @@ Privacy questions and requests go to [privacy@yonedarepo.com](mailto:privacy@yon
 
 ## Changes
 
-We will change this policy as the platform changes. Each version is dated at the top. Before we store a new kind of personal data, such as transcripts, we will update this page.
+We will change this policy as the platform changes. Each version is dated at the top. Before we store a new kind of personal data, we will update this page.
