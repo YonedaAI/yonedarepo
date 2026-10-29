@@ -12,6 +12,7 @@ import type {
 } from '../../shared/managed-agents';
 import type { ManagedEnv } from './config';
 import { migrate, REPO_SCHEMA } from './schema';
+import { open, seal } from './vault';
 
 const OPEN: RunStatus[] = ['queued', 'running', 'paused'];
 const OPEN_SQL = `('${OPEN.join("','")}')`;
@@ -77,39 +78,57 @@ export class RepoAgents extends DurableObject<ManagedEnv> {
     return this.ctx.storage.transactionSync(() => fn(this.#sql));
   }
 
-  connection(): Connection | null {
-    return (
-      this.#sql
-        .exec<Connection>(
-          'SELECT account, token_name, token, hook_id, hook_secret FROM connection WHERE id = 1',
-        )
-        .toArray()[0] ?? null
-    );
+  /** The connection with its token and hook secret opened (they are sealed at rest). */
+  async connection(): Promise<Connection | null> {
+    const row = this.#sql
+      .exec<{
+        repo: string;
+        account: string;
+        token_name: string;
+        token_sealed: string;
+        hook_id: number;
+        hook_secret_sealed: string;
+      }>(
+        'SELECT repo, account, token_name, token_sealed, hook_id, hook_secret_sealed FROM connection WHERE id = 1',
+      )
+      .toArray()[0];
+    if (!row) return null;
+    return {
+      account: row.account,
+      token_name: row.token_name,
+      token: await open(this.env, row.repo, 'token', row.token_sealed),
+      hook_id: row.hook_id,
+      hook_secret: await open(this.env, row.repo, 'hook_secret', row.hook_secret_sealed),
+    };
   }
 
-  link(c: Connection) {
+  async link(repo: string, c: Connection) {
+    const token = await seal(this.env, repo, 'token', c.token);
+    const hookSecret = await seal(this.env, repo, 'hook_secret', c.hook_secret);
     this.#sql.exec(
-      `INSERT INTO connection (id, account, token_name, token, hook_id, hook_secret, created_at)
-       VALUES (1, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO connection (id, repo, account, token_name, token_sealed, hook_id, hook_secret_sealed, created_at)
+       VALUES (1, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET account = excluded.account, token_name = excluded.token_name,
-         token = excluded.token, hook_id = excluded.hook_id, hook_secret = excluded.hook_secret`,
+         token_sealed = excluded.token_sealed, hook_id = excluded.hook_id,
+         hook_secret_sealed = excluded.hook_secret_sealed`,
+      repo,
       c.account,
       c.token_name,
-      c.token,
+      token,
       c.hook_id,
-      c.hook_secret,
+      hookSecret,
       Date.now(),
     );
   }
 
-  /** Forgets the connection (the platform answered that its token is gone). */
+  /** Forgets the connection (its token and webhook were revoked, or the platform refused them). */
   unlink() {
     this.#sql.exec('DELETE FROM connection');
   }
 
   /** Whether `signature` (`sha256=<hex>`) is this repository's webhook signature of `body`. */
   async verify(body: string, signature: string): Promise<boolean> {
-    const secret = this.connection()?.hook_secret;
+    const secret = (await this.connection().catch(() => null))?.hook_secret;
     if (!secret || !signature.startsWith('sha256=')) return false;
     const expected = new TextEncoder().encode(`sha256=${await hmacHex(secret, body)}`);
     const supplied = new TextEncoder().encode(signature);

@@ -118,13 +118,28 @@ async function connect(env: ManagedEnv, req: Request, repo: string, workspace: s
     `${env.PUBLIC_URL.replace(/\/$/, '')}/hooks/${repo}`,
     HOOK_EVENTS,
   );
-  await stub.link({
+  await stub.link(repo, {
     account: workspace,
     token_name: name,
     token: String(minted.token),
     hook_id: Number(hook.id),
     hook_secret: String(hook.secret),
   });
+}
+
+/** Revokes a repository's agent token and deletes its webhook once no agent runs there. A token
+ * or hook already gone is fine; the connection is forgotten either way. */
+async function disconnect(env: ManagedEnv, req: Request, repo: string) {
+  const stub = repoStub(env, repo);
+  const connection = await stub.connection().catch(() => null);
+  if (!connection) return;
+  const owner = new Platform(env, { forward: req });
+  const gone = (e: unknown) => {
+    if (!(e instanceof PlatformError && (e.status === 404 || e.code === 'NOT_FOUND'))) throw e;
+  };
+  await owner.revokeToken(repo, connection.token_name).catch(gone);
+  await owner.deleteHook(repo, connection.hook_id).catch(gone);
+  await stub.unlink();
 }
 
 async function update(
@@ -171,8 +186,11 @@ async function update(
       await connect(env, req, repo, workspace);
       await repoStub(env, repo).setEnabled(agent.id, true, by);
     }
-    for (const repo of stored.enabled.filter((r) => !wanted.includes(r)))
-      await repoStub(env, repo).setEnabled(agent.id, false, by);
+    for (const repo of stored.enabled.filter((r) => !wanted.includes(r))) {
+      const stub = repoStub(env, repo);
+      await stub.setEnabled(agent.id, false, by);
+      if ((await stub.enabled()).length === 0) await disconnect(env, req, repo);
+    }
     await ws.setEnabled(agent.id, wanted);
     if (wanted.length) await ledgerStub(env, workspace).ensureStartingCredit();
   }

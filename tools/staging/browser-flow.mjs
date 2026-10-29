@@ -20,6 +20,7 @@ import { join, relative } from 'node:path';
 import { chromium } from 'playwright-core';
 import { adminPages, deletedRepoPage } from './browser-admin-flow.mjs';
 import { agentPages } from './browser-agent-flow.mjs';
+import { managedAgentPages } from './browser-managed-agents-flow.mjs';
 import { forkPages, orgPages, releasePages } from './browser-collab-flow.mjs';
 import { b64, Session, secondAccount, sleep, until } from './client.mjs';
 
@@ -79,6 +80,7 @@ export async function browserFlow({ origin, api, kit, root, headed = false }, m)
     const landed = await changeLanded(page, { origin, kit, account, repo, shot }, m);
     await changeRebased(page, { origin, account, repo, shot, ...landed }, m);
     await agentPages(page, { account, repo, shot }, m);
+    await managedAgentPages(page, { repo, shot }, m);
     await releasePages(page, { account, repo, shot }, m);
     await forkPages(page, { account, repo, shot, cleanup }, m);
     await orgPages(page, { account, member: landed.member, shot, cleanup }, m);
