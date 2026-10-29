@@ -48,7 +48,7 @@ export async function websiteAssets(req: Request, env: Env): Promise<Response> {
     .transform(html);
 }
 
-function publicOrigin(req: Request, configured?: string): string | null {
+export function publicOrigin(req: Request, configured?: string): string | null {
   try {
     const url = new URL(configured || new URL(req.url).origin);
     const localHttp =

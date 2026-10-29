@@ -57,6 +57,10 @@ pub(crate) struct WorkerSpec {
     /// Secret names this Worker needs; values come from `secrets_file`.
     #[serde(default)]
     pub secrets: Vec<String>,
+    /// Secret names that switch a feature on (sign-in providers): uploaded when the secrets
+    /// file has them, skipped without failing the deploy when it does not.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub optional_secrets: Vec<String>,
     /// The `service` its `/health` reports, when it serves one.
     #[serde(default)]
     pub health: Option<String>,

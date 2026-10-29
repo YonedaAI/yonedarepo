@@ -51,10 +51,13 @@ export function SiteRoot({
   site,
   session,
   navigate,
+  signInError = '',
 }: {
   site: SitePage;
   session: Session;
   navigate: Navigate;
+  /** Why a provider sign-in came back refused (shown on the sign-in page). */
+  signInError?: string;
 }) {
   const title = pageTitle(site);
   useEffect(() => {
@@ -83,6 +86,7 @@ export function SiteRoot({
           <AccountPanel
             key={site.mode}
             initialMode={site.mode}
+            initialError={signInError}
             onConnected={() => {
               signedInHint(true);
               void session.discover();

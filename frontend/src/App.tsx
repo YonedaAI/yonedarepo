@@ -25,10 +25,31 @@ import type { OrgSummary } from './features/source-platform/orgModel';
 import { RepoPage } from './features/source-platform/RepoPage';
 import { routeRepo } from './features/source-platform/sourceRoute';
 import { useSource } from './features/source-platform/useSource';
+import {
+  type AuthResult,
+  PROVIDER_LABEL,
+  readAuthResult,
+  withoutAuthResult,
+} from './features/workspace/oauthModel';
 import { SessionEnded } from './features/workspace/SessionEnded';
 import { WorkspaceHeader } from './features/workspace/WorkspaceHeader';
 import { type WorkspacePanel, WorkspacePanels } from './features/workspace/WorkspacePanels';
 import { useSession } from './hooks/useSession';
+
+let authResult: AuthResult | null | undefined;
+/** A provider callback's outcome in the address, read once (per page load) and then dropped
+ * from it. */
+function takeAuthResult() {
+  if (authResult !== undefined || typeof window === 'undefined') return authResult ?? null;
+  authResult = readAuthResult(window.location.search);
+  if (authResult)
+    window.history.replaceState(
+      null,
+      '',
+      withoutAuthResult(window.location.pathname, window.location.search),
+    );
+  return authResult;
+}
 
 export function App() {
   const session = useSession();
@@ -43,9 +64,22 @@ export function App() {
     },
     [go],
   );
-  const [panel, setPanel] = useState<WorkspacePanel>(null);
+  const [returned] = useState(takeAuthResult);
+  // A refused provider sign-in reopens the sign-in panel with the reason; a link is a notice.
+  const [signInError, setSignInError] = useState(
+    returned && 'error' in returned ? returned.error : '',
+  );
+  const [panel, setPanel] = useState<WorkspacePanel>(
+    signInError && route.view !== 'settings' && route.view !== 'site' ? 'account' : null,
+  );
   const [creating, setCreating] = useState(false);
-  const [notice, setNotice] = useState('');
+  const [notice, setNotice] = useState(
+    returned && 'linked' in returned
+      ? `${PROVIDER_LABEL[returned.linked]} is linked: you can sign in with it now.`
+      : route.view === 'settings'
+        ? signInError
+        : '',
+  );
   const [tick, setTick] = useState(0);
   // The open repository's name as its status gives it (another account's public repository
   // is in no sidebar row), and whether the viewer may change its settings.
@@ -113,7 +147,16 @@ export function App() {
   };
   // The public site (its own pages, and `/` while signed out) renders in its own frame.
   const site = siteView(route, session, signedInHint());
-  if (site) return <SiteRoot site={site} session={session} navigate={navigate} />;
+  if (site)
+    return (
+      <SiteRoot
+        // A refused provider sign-in that landed on the public home shows the sign-in page.
+        site={signInError && site.page === 'home' ? { page: 'signin', mode: 'login' } : site}
+        session={session}
+        navigate={navigate}
+        signInError={signInError}
+      />
+    );
   return (
     <div className={`app${collapsed ? ' sidebar-collapsed' : ''}${menuOpen ? ' menu-open' : ''}`}>
       <a className="skip-link" href="#workspace">
@@ -281,8 +324,12 @@ export function App() {
       <WorkspacePanels
         panel={panel}
         authenticated={session.authenticated}
+        accountError={signInError}
         onSignedIn={() => void session.discover()}
-        onClose={() => setPanel(null)}
+        onClose={() => {
+          setPanel(null);
+          setSignInError('');
+        }}
       />
       {creating && (
         <NewRepositoryDialog

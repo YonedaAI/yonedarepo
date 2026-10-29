@@ -401,10 +401,21 @@
         "The exact route keeps dev.yonedarepo.com on this Worker (a route takes precedence over a",
         "Custom Domain on one hostname, and the most specific route pattern wins).",
         "v4 deletes the agent layer's Durable Object classes (RepositoryAuthority, LiveRoom,",
-        "AgentSandbox) and their data; the agent-run code is on the agent-run-workspaces branch."
+        "AgentSandbox) and their data; the agent-run code is on the agent-run-workspaces branch.",
+        "Sign-in with GitHub and Google (worker/oauth.ts): optional secrets GITHUB_OAUTH_CLIENT_ID /",
+        "GITHUB_OAUTH_CLIENT_SECRET (a GitHub OAuth App) and GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET",
+        "(a Google OAuth web client). A provider whose two secrets are unset is off: hidden on the sign-in",
+        "page, its /auth/<provider>/* routes answer 404. Callback URLs: https://dev.yonedarepo.com/auth/github/callback",
+        "and https://dev.yonedarepo.com/auth/google/callback. Deploy uploads them when the secrets file has them."
       ],
       "secrets": [
         "OWNER_TOKEN"
+      ],
+      "optional_secrets": [
+        "GITHUB_OAUTH_CLIENT_ID",
+        "GITHUB_OAUTH_CLIENT_SECRET",
+        "GOOGLE_OAUTH_CLIENT_ID",
+        "GOOGLE_OAUTH_CLIENT_SECRET"
       ],
       "health": "yonedarepo",
       "config": {
