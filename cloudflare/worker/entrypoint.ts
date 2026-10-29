@@ -9,12 +9,13 @@ import type { Env, Envelope } from './types';
 
 export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
   async fetch(req: Request): Promise<Response> {
-    if (new URL(req.url).pathname.startsWith('/api/v1/'))
-      return withWaitUntil(
-        (work) => this.ctx.waitUntil(work),
-        () => repoApi(req, this.env),
-      );
-    return frontFetch(req, this.env);
+    return withWaitUntil(
+      (work) => this.ctx.waitUntil(work),
+      () =>
+        new URL(req.url).pathname.startsWith('/api/v1/')
+          ? repoApi(req, this.env)
+          : frontFetch(req, this.env),
+    );
   }
   async queue(batch: MessageBatch<Envelope>) {
     await Promise.all(

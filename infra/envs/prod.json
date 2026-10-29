@@ -113,7 +113,11 @@
         "`cloudflared access ssh` connects without a login); the cron below keeps it running (about $7 a",
         "month on basic). connect: inbound TCP to this Worker (Spectrum, private beta). off: no container.",
         "Secrets: SSH_GATEWAY_SECRET (32+ random characters), SSH_HOST_ED25519_KEY / SSH_HOST_ECDSA_KEY",
-        "(base64 of OpenSSH host key files, generated once and kept). SSH_TUNNEL_TOKEN joins the secrets when prod turns the tunnel on."
+        "(base64 of OpenSSH host key files, generated once and kept). SSH_TUNNEL_TOKEN joins the secrets when prod turns the tunnel on.",
+        "Welcome email (account-email.ts): the platform-jobs consumer sends one per new account through",
+        "Resend (EMAIL_FROM, EMAIL_CONTACT; secret RESEND_API_KEY, a sending-only Resend key, from",
+        "~/.config/yonedarepo/prod.env). An empty or missing key turns email off; sign-up never depends on it.",
+        "The sending domain has open and click tracking off in Resend."
       ],
       "secrets": [
         "OWNER_TOKEN",
@@ -121,7 +125,8 @@
         "LFS_S3_SECRET_ACCESS_KEY",
         "SSH_GATEWAY_SECRET",
         "SSH_HOST_ED25519_KEY",
-        "SSH_HOST_ECDSA_KEY"
+        "SSH_HOST_ECDSA_KEY",
+        "RESEND_API_KEY"
       ],
       "health": "yonedarepo-platform",
       "always_on": {
@@ -167,7 +172,9 @@
           "LFS_S3_ENDPOINT": "https://{account_id}.r2.cloudflarestorage.com",
           "LFS_S3_BUCKET": "{prefix}-platform-objects",
           "SSH_FRONT_DOOR": "off",
-          "SSH_HOST": "ssh.yonedarepo.com"
+          "SSH_HOST": "ssh.yonedarepo.com",
+          "EMAIL_FROM": "YonedaRepo <hello@yonedarepo.com>",
+          "EMAIL_CONTACT": "hello@yonedarepo.com"
         },
         "secrets_store_secrets": [
           {
@@ -377,7 +384,7 @@
         "browser app on yonedarepo.com and www, account sign-in (/api/auth/*) and the owner session,",
         "and proxies /api/v1 to the production platform through the PLATFORM service binding on the",
         "same origin. Accounts live in the platform's WorkspaceAuthority (WORKSPACES script binding).",
-        "It has no stores, containers or queues of its own. Secrets, set from stdin:",
+        "It has no stores or containers; it only sends new accounts' welcome-email jobs to the platform-jobs queue. Secrets, set from stdin:",
         "OWNER_TOKEN  production owner credential (~/.config/yonedarepo/prod.env)",
         "The exact www route keeps www on this Worker; the apex is a Custom Domain.",
         "v4 deletes the agent layer's Durable Object classes (RepositoryAuthority, LiveRoom,",
@@ -485,7 +492,15 @@
               "period": 60
             }
           }
-        ]
+        ],
+        "queues": {
+          "producers": [
+            {
+              "binding": "PLATFORM_QUEUE",
+              "queue": "{prefix}-platform-jobs"
+            }
+          ]
+        }
       }
     }
   ],
