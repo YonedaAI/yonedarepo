@@ -22,6 +22,12 @@ export function username(value: unknown) {
   if (!name) throw new Error(ACCOUNT_IDENTIFIER_HELP);
   return name;
 }
+/** A sign-up's contact email (required for new accounts; the welcome email goes there). */
+function contactEmail(value: unknown) {
+  const email = typeof value === 'string' ? normalizeAccountIdentifier(value) : null;
+  if (!email?.includes('@')) throw new Error('Enter a valid email address');
+  return email;
+}
 function cookie(req: Request, value = '') {
   return `${cookieName}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${value ? 604800 : 0}${new URL(req.url).protocol === 'https:' ? '; Secure' : ''}`;
 }
@@ -90,6 +96,7 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
         (action !== 'login' && body.password.length < 12)
       )
         throw new Error('Use a password of 12–128 characters');
+      const email = action === 'signup' ? contactEmail(body.email) : null;
       const token = randomToken();
       const recovery = randomToken();
       const command =
@@ -97,6 +104,7 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
           ? {
               op: action,
               username: name,
+              email,
               password: body.password,
               salt: randomToken(16),
               session_hash: await sha(token),
@@ -118,7 +126,7 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
           'Credentials did not match; wait a minute after repeated attempts',
           401,
         );
-      if (action === 'signup') await accountCreated(env, name);
+      if (action === 'signup') await accountCreated(env, name, email);
       result = response({ ...account, ...(action !== 'login' ? { recovery_code: recovery } : {}) });
       if (action !== 'recover')
         result.headers.set('set-cookie', cookie(req, `${encodeAccountIdentifier(name)}.${token}`));

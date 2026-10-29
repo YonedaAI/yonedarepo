@@ -2,6 +2,7 @@ import { useId, useState } from 'react';
 import {
   isValidAccountIdentifier,
   MAX_ACCOUNT_IDENTIFIER_LENGTH,
+  normalizeAccountIdentifier,
 } from '../../../../shared/account';
 import { api } from '../../lib/api';
 export function AccountPanel({
@@ -17,6 +18,7 @@ export function AccountPanel({
   const [recovery, setRecovery] = useState('');
   const [recovered, setRecovered] = useState(false);
   const identifierHelp = useId();
+  const emailHelp = useId();
   if (recovery)
     return (
       <section className="account-panel">
@@ -76,6 +78,12 @@ export function AccountPanel({
             const identifier = data.get('username');
             if (typeof identifier !== 'string' || !isValidAccountIdentifier(identifier))
               throw new Error('Enter a valid username or email address.');
+            const email = data.get('email');
+            if (
+              mode === 'signup' &&
+              (typeof email !== 'string' || !normalizeAccountIdentifier(email)?.includes('@'))
+            )
+              throw new Error('Enter a valid email address.');
             const result = await api<{ recovery_code?: string }>(
               `auth/${mode}`,
               Object.fromEntries(data),
@@ -111,6 +119,26 @@ export function AccountPanel({
             ? 'Choose a username or use your email address.'
             : 'Enter the username or email you registered with.'}
         </p>
+        {mode === 'signup' && (
+          <>
+            <label>
+              Email
+              <input
+                type="email"
+                name="email"
+                required
+                autoComplete="email"
+                maxLength={MAX_ACCOUNT_IDENTIFIER_LENGTH}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                aria-describedby={emailHelp}
+                placeholder="you@example.com"
+              />
+            </label>
+            <p id={emailHelp}>We send one welcome email here. It is never shown to others.</p>
+          </>
+        )}
         {mode === 'recover' && (
           <label>
             Recovery code

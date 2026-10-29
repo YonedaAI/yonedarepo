@@ -38,11 +38,21 @@ const configured: Partial<Env> = {
 const scoped = (extra: Partial<Env> = {}) =>
   ({ ...bindings, PLATFORM_QUEUE: fakeQueue, ...extra }) as unknown as Env;
 
-async function auth(target: Env, action: string, username: string) {
+/** A sign-up gives `email` (the account name when it is an address); null leaves it out. */
+async function auth(
+  target: Env,
+  action: string,
+  username: string,
+  email: string | null = username.includes('@') ? username : `${username}@example.com`,
+) {
   const req = new Request(`https://yoneda/api/auth/${action}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username, password: 'a long test password' }),
+    body: JSON.stringify({
+      username,
+      password: 'a long test password',
+      ...(action === 'signup' && email !== null ? { email } : {}),
+    }),
   });
   return (await accountRoute(req, target)) as Response;
 }
@@ -82,11 +92,20 @@ it('enqueues exactly one welcome job when an account is created, and none otherw
   expect(queued).toEqual([
     { v: 1, kind: 'account_welcome', repo_id: '', job_id: 'welcome', workspace: 'ada@example.com', to: 'ada@example.com' },
   ]);
-  // A repeated sign-up (refused), a login and a username-only account add nothing.
+  // A username account's welcome goes to its contact email.
+  expect((await auth(target, 'signup', 'ada_user', 'Ada.Lovelace@Example.org')).status).toBe(200);
+  expect(queued[1]).toMatchObject({ workspace: 'ada_user', to: 'ada.lovelace@example.org' });
+  // A repeated sign-up and a login add nothing; a sign-up without a valid email is refused
+  // and creates no account.
   expect((await auth(target, 'signup', 'ada@example.com')).status).toBe(400);
   expect((await auth(target, 'login', 'ada@example.com')).status).toBe(200);
-  expect((await auth(target, 'signup', 'ada_user')).status).toBe(200);
-  expect(queued).toHaveLength(1);
+  for (const email of [null, '', 'not-an-address', 'a@b']) {
+    const refused = await auth(target, 'signup', 'no_email', email);
+    expect(refused.status, String(email)).toBe(400);
+    expect((await refused.json<any>()).error.message).toMatch(/email/i);
+  }
+  expect((await auth(target, 'login', 'no_email')).status).toBe(401);
+  expect(queued).toHaveLength(2);
 });
 
 it('posts the welcome email to Resend with its key and a per-account idempotency key', async () => {
@@ -143,7 +162,7 @@ it('skips the send when email is not configured, and sign-up still succeeds', as
   const res = await bindings.SELF.fetch('https://yoneda/api/auth/signup', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: 'self@example.com', password: 'a long test password' }),
+    body: JSON.stringify({ username: 'self', email: 'self@example.com', password: 'a long test password' }),
   });
   expect(res.status).toBe(200);
 });

@@ -30,13 +30,13 @@ export function maskAddress(address: string) {
 
 /**
  * The account-created hook, for every path that creates an account: enqueues the welcome
- * email after the response where the request lends its waitUntil. `email` is the verified
- * address (OAuth); without it, an account named by an email address uses that, and a
- * username-only account gets no email. Never throws.
+ * email after the response where the request lends its waitUntil. `email` is the account's
+ * contact email (password sign-up) or the provider's verified address (OAuth); without one,
+ * no email. Never throws.
  */
-export function accountCreated(env: Env, account: string, email?: string | null) {
+export function accountCreated(env: Env, account: string, email: string | null) {
   return afterAnswer(async () => {
-    const to = email ?? (account.includes('@') ? account : null);
+    const to = email;
     if (!to) return;
     if (!env.PLATFORM_QUEUE) return off('PLATFORM_QUEUE is not bound');
     const job: Envelope = {
