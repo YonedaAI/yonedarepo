@@ -79,3 +79,44 @@ fn a_pending_ticket_for_a_landed_commit_settles_and_frees_the_queue() {
     );
     lands_directly(&h, &root, 1);
 }
+
+/// On the changeset path (`repo_land_changesets`) such a ticket never appends a second
+/// landing: it is handed to the merge path, whose batch settles it as landed (already).
+#[test]
+fn the_changeset_path_hands_a_landed_commits_ticket_to_the_merge_path() {
+    let (h, root) = open();
+    let landed = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("a.txt", "a\n")]),
+            json!([]),
+        )
+        .unwrap();
+    h.ok(
+        OWNER,
+        json!({"op":"repo_land","ref":"main","commit":landed}),
+    );
+    h.db.query(
+        "INSERT INTO land_queue(refname,commit_id,principal,status,requested_at) VALUES('refs/heads/main',?,'user:owner','pending',0)",
+        &[json!(landed)],
+    )
+    .unwrap();
+    let ticket = h.db.query("SELECT ticket FROM land_queue", &[]).unwrap()[0]["ticket"].clone();
+    let routed = h.run(MERGER, json!({"op":"repo_land_changesets","ref":"main"}));
+    assert!(routed.is_ok(), "{routed:?}");
+    let settled = land_fast_forward(&h).unwrap();
+    assert_eq!(settled["already"], true, "{settled}");
+    let status = h.ok(OWNER, json!({"op":"repo_land_status","ticket":ticket}));
+    assert_eq!(
+        (
+            status["status"].clone(),
+            status["result"]["already"].clone()
+        ),
+        (json!("landed"), json!(true))
+    );
+    let refs = h.ok(OWNER, json!({"op":"repo_refs"}));
+    assert_eq!(refs["version"], json!(2));
+    lands_directly(&h, &landed, 2);
+}

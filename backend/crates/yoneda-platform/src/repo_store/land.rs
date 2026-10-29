@@ -86,8 +86,17 @@ pub(super) fn write_entry_with<S: SqlStore>(
         ],
     )?;
     super::changesets::index_paths(db, &entry)?;
+    // A ref may move back to a commit it held: the fork's mirror carried again after a
+    // writer moved it, or a break-glass revert on a branch moved back below it. The commit
+    // keeps its first landing there. New work (commits, merges, changesets, imports) lands
+    // once; callers answer `already` first, and a second row stays an error.
+    let returns = matches!(kind, TxKind::RefMove | TxKind::Revert);
     db.query(
-        "INSERT INTO landings(commit_id,refname,version,landed_at) VALUES(?,?,?,?)",
+        if returns {
+            "INSERT INTO landings(commit_id,refname,version,landed_at) VALUES(?,?,?,?) ON CONFLICT DO NOTHING"
+        } else {
+            "INSERT INTO landings(commit_id,refname,version,landed_at) VALUES(?,?,?,?)"
+        },
         &[
             json!(commit.id.hex()),
             json!(refname),
