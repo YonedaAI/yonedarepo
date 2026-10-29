@@ -110,12 +110,11 @@ export function SitePricing({ navigate }: { navigate: Navigate }) {
       <section aria-labelledby="enterprise-heading" className="site-section site-enterprise">
         <h2 id="enterprise-heading">Enterprise</h2>
         <p>
-          For custom terms, Enterprise is by contact.{' '}
-          {PRICING.enterpriseContact ? (
-            <a href={PRICING.enterpriseContact}>Contact us</a>
-          ) : (
-            'Contact details will be published here.'
-          )}
+          For custom terms, Enterprise is by contact. Email{' '}
+          <a href={PRICING.enterpriseContact}>
+            {PRICING.enterpriseContact.replace(/^mailto:/, '')}
+          </a>
+          .
         </p>
         <p>
           <a className="site-button" {...siteLink({ page: 'signin', mode: 'signup' }, navigate)}>

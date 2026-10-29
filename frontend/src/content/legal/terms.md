@@ -58,13 +58,13 @@ To the extent the law allows, Yoneda Labs is not liable for indirect, incidental
 
 ## Ending your use
 
-- You can stop using YonedaRepo at any time. You can delete your repositories yourself. Account deletion is on request until it is self-service.
+- You can stop using YonedaRepo at any time. You can delete your repositories yourself. Account deletion is on request ([privacy@yonedarepo.com](mailto:privacy@yonedarepo.com)) until it is self-service.
 - We may suspend or close an account that breaks these terms, or if we stop offering the service. Where we can, we give notice and time to export your repositories.
 
 ## Changes to these terms
 
 We will update these terms as the service changes and date each version. If a change materially affects you, we will tell you before it applies. Using the service after that means you accept the new terms.
 
-## Governing law and contact
+## Contact
 
-The governing law and the venue for disputes will be set during legal review. Contact details for Yoneda Labs will be published on this page.
+Questions about these terms, and legal requests, go to [privacy@yonedarepo.com](mailto:privacy@yonedarepo.com).

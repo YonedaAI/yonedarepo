@@ -99,8 +99,9 @@ export const PRICING = {
   startingCreditUsd: 5,
   /** Automatic top-up: when the balance falls below `belowUsd`, add `addUsd`. */
   topUp: { belowUsd: 5, addUsd: 20 },
-  /** Where Enterprise enquiries go (a `mailto:` or https URL); none is published yet. */
-  enterpriseContact: null as string | null,
+  /** Where Enterprise enquiries go (a `mailto:` or https URL); the legal and privacy address
+   * until the owner names a sales one. */
+  enterpriseContact: 'mailto:privacy@yonedarepo.com',
 };
 
 /** Rounds up to two significant figures: 0.0016037 → 0.0017, 0.6695 → 0.67. */

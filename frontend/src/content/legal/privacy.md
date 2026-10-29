@@ -118,7 +118,11 @@ You can do these in the app, the CLI or the API at any time:
 - unlink a sign-in provider;
 - delete repositories.
 
-For anything else, including account deletion or a copy of your account data, contact us. Contact details will be published on this page.
+For anything else, including account deletion or a copy of your account data, email [privacy@yonedarepo.com](mailto:privacy@yonedarepo.com).
+
+## Contact
+
+Privacy questions and requests go to [privacy@yonedarepo.com](mailto:privacy@yonedarepo.com).
 
 ## Changes
 
