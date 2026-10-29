@@ -70,7 +70,7 @@ export function HomeDashboard({
           New repository
         </button>
       </header>
-      {error && !activity && <Failure error={error} onRetry={onRetry} />}
+      {error && !activity && <Failure error={error} what="your activity" onRetry={onRetry} />}
       {loading && !activity && !error && <Loading what="your activity" />}
       {activity && grid && (
         <>
