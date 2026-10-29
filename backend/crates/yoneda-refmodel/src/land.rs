@@ -27,7 +27,7 @@ impl Repo {
     /// the concurrency base is always the commit's base version.
     pub(crate) fn land_on(&mut self, refname: &str, commit: CommitId) -> Outcome {
         let head = self.tip(refname);
-        if head == Some(commit) || self.landings.contains(&(commit, refname.to_owned())) {
+        if head == Some(commit) || self.landings.contains_key(&(commit, refname.to_owned())) {
             return Outcome::Already;
         }
         // While landings are queued on the branch, direct ones join the queue.
@@ -51,7 +51,7 @@ impl Repo {
             }
         };
         self.move_ref(refname, Some(commit), paths, true);
-        self.landings.insert((commit, refname.to_owned()));
+        self.landed(commit, refname.to_owned());
         Outcome::Moved
     }
 

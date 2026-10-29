@@ -21,6 +21,9 @@
 //!   of the independent clean merges (`queue`); while any wait, direct landings on main
 //!   are refused as MERGE_REQUIRED.
 //! - Repository tokens act within their scopes and path grant (`tokens`).
+//! - Commits may begin from a published head that trails the log and land through the
+//!   combiner as changesets, or the merge path, decided against everything landed since
+//!   (`shards`).
 //! - Files are one line each (the generator keeps them so), so a three-way merge is decided
 //!   per file: a side that left a file alone takes the other's version; two different
 //!   changes conflict.
@@ -31,11 +34,13 @@ mod graph;
 mod land;
 mod merge;
 mod queue;
+mod shards;
 mod tokens;
 
 pub use access::{Access, Caller, Role};
 pub use cases::{PATHS, Rng, generate};
 pub use queue::{Batch, Ticket, TicketStatus};
+pub use shards::{Item, Submitted};
 use std::collections::{BTreeMap, BTreeSet};
 pub use tokens::{Scope, Token};
 
@@ -66,6 +71,8 @@ pub struct Entry {
     pub refname: String,
     pub paths: BTreeSet<String>,
     pub landing: bool,
+    /// The ref's commit after it (`None`: deleted, or a changeset not projected yet).
+    pub head: Option<CommitId>,
 }
 
 /// An operation; refs are named in full (`refs/heads/b1`, `refs/tags/v1`).
@@ -163,6 +170,21 @@ pub enum Op {
         token: String,
         path: String,
     },
+    /// Takes main's published head (its commit and the version it reflects), as a cache
+    /// holds it; later shard commits begin there, however far main has moved since.
+    Publish,
+    /// A commit built statelessly on the published head and kept only in its commit
+    /// shard (the authority knows nothing of it yet).
+    ShardCommit {
+        path: String,
+        content: String,
+        read: bool,
+    },
+    /// The combiner submits these shard commits (indexes into `shard`, in order) to land
+    /// on main, then the projector builds main's Git commit for what landed.
+    Submit {
+        picks: Vec<usize>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -179,6 +201,8 @@ pub enum Outcome {
     Queued(u64),
     /// What a combiner run settled.
     Batch(Batch),
+    /// What a submission answered for each landing, and the commit projection made.
+    Submitted(Submitted),
     /// Done, moving no ref (an access check, visibility, membership).
     Done,
     /// Refused with the platform's error code (`STALE_HEAD` also for a stale batch delete).
@@ -198,8 +222,8 @@ pub struct Repo {
     pub commits: Vec<Commit>,
     pub refs: BTreeMap<String, CommitId>,
     pub log: Vec<Entry>,
-    /// Commits recorded as landed on a ref.
-    pub(crate) landings: BTreeSet<(CommitId, String)>,
+    /// Commits recorded as landed on a ref, with the version they first landed at.
+    pub(crate) landings: BTreeMap<(CommitId, String), u64>,
     pub public: bool,
     /// Member accounts and their roles (the owner is not one).
     pub members: BTreeMap<String, Role>,
@@ -209,6 +233,10 @@ pub struct Repo {
     pub tokens: BTreeMap<String, Token>,
     /// Annotated tags' messages, by tag ref.
     pub annotated: BTreeMap<String, String>,
+    /// Main's published head as last taken: its commit and the version it reflects.
+    pub published: (CommitId, u64),
+    /// Shard commits, in the order they were built.
+    pub shard: Vec<CommitId>,
 }
 
 impl Repo {
@@ -231,13 +259,16 @@ impl Repo {
                 refname: MAIN.to_owned(),
                 paths,
                 landing: true,
+                head: Some(0),
             }],
-            landings: BTreeSet::from([(0, MAIN.to_owned())]),
+            landings: BTreeMap::from([((0, MAIN.to_owned()), 1)]),
             public: false,
             members: BTreeMap::new(),
             tickets: Vec::new(),
             tokens: BTreeMap::new(),
             annotated: BTreeMap::new(),
+            published: (0, 1),
+            shard: Vec::new(),
         }
     }
 
@@ -311,6 +342,13 @@ impl Repo {
                 None,
             ),
             Op::TokenRead { token, path } => (self.token_read(token, path), None),
+            Op::Publish => (self.publish(), None),
+            Op::ShardCommit {
+                path,
+                content,
+                read,
+            } => (self.shard_commit(path, content, *read), None),
+            Op::Submit { picks } => (self.submit(picks), None),
         }
     }
 
@@ -385,11 +423,20 @@ impl Repo {
             refname: refname.to_owned(),
             paths,
             landing,
+            head: target,
         });
         match target {
             Some(id) => self.refs.insert(refname.to_owned(), id),
             None => self.refs.remove(refname),
         };
+    }
+
+    /// Records `commit` as landed on `refname` at the current version (the first landing
+    /// counts).
+    pub(crate) fn landed(&mut self, commit: CommitId, refname: String) {
+        self.landings
+            .entry((commit, refname))
+            .or_insert(self.version);
     }
 
     /// Paths whose content differs between two trees.

@@ -80,8 +80,8 @@ impl Repo {
             writes: writes.clone(),
         });
         self.move_ref(MAIN, Some(id), writes, true);
-        self.landings.insert((id, MAIN.to_owned()));
-        self.landings.insert((commit, MAIN.to_owned()));
+        self.landed(id, MAIN.to_owned());
+        self.landed(commit, MAIN.to_owned());
         Outcome::Committed(id)
     }
 

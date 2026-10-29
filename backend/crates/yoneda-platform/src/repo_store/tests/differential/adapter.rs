@@ -343,4 +343,50 @@ impl Driver {
             Ok(_) => Seen::Batch(landed, failed, Some(merge)),
         }
     }
+
+    /// A commit begun from the published head with stateless compute and built there, as
+    /// an isolate does (`repo-commit-shard.ts`); its record stays in the shard.
+    pub(super) fn shard_commit(&self, path: &str, content: &str, read: bool) -> Seen {
+        let begin = json!({"op":"head_begin","head":*self.published.borrow(),
+            "credentials":super::credentials(OWNER),"paths":[path]});
+        let begun = match crate::platform_compute(begin) {
+            Err(e) => return Seen::Refused(e.code),
+            Ok(begun) => begun,
+        };
+        let reads = if read { json!([path]) } else { json!([]) };
+        let record = self.h.shard_commit_from(&begun, path, content, reads);
+        let id = record["commit"]["id"]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        self.shard.borrow_mut().push(record);
+        Seen::Committed(id)
+    }
+
+    /// The combiner submits the picked shard commits as the owner's landings, then the
+    /// projector builds main's Git commits.
+    pub(super) fn submit(&self, picks: &[usize]) -> Seen {
+        let shard = self.shard.borrow();
+        let records: Vec<&Value> = picks.iter().filter_map(|p| shard.get(*p)).collect();
+        let answered = self.h.submit(records.iter().map(|r| (OWNER, *r)).collect());
+        let items = answered["items"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|item| match item["status"].as_str().unwrap_or_default() {
+                "landed" if item["already"] == true => {
+                    ("already".to_owned(), item["version"].clone())
+                }
+                "queued" => ("queued".to_owned(), item["ticket"].clone()),
+                "failed" => ("failed".to_owned(), item["code"].clone()),
+                status => (status.to_owned(), item["version"].clone()),
+            })
+            .collect();
+        self.h.project_all();
+        let head = self.h.ok(OWNER, json!({"op":"repo_refs"}))["refs"][MAIN]
+            .as_str()
+            .unwrap_or_default()
+            .to_owned();
+        Seen::Submitted(items, head)
+    }
 }
