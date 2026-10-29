@@ -3,7 +3,10 @@
 //! term (`memory_text`, full-text), and with `fill` the newest ones (each source at most
 //! `PER_SOURCE`); each symbol's newest contract record (those on requested files first);
 //! the newest `RECENT` session records and open changes. Memories and contracts are read
-//! as of the request's log version; session records and changes as they are now.
+//! as of the request's log version; session records and changes as they are now. Nothing
+//! quarantine withholds is a candidate: neither a masked memory nor a withheld session
+//! record.
+use super::super::quarantine::{WithheldMemories, withheld_sessions};
 use super::anchors::Anchor;
 use super::records;
 use super::relevance::Request;
@@ -114,9 +117,16 @@ fn memories<S: SqlStore>(db: &S, req: &Request, out: &mut Vec<Candidate>) -> Res
         ));
     }
     let found: Vec<i64> = found.into_iter().collect();
+    let withheld = WithheldMemories::read(db)?;
     let mut scored: Vec<(u32, Value, Vec<Anchor>)> = records::load(db, &found, req.at)?
         .into_iter()
         .filter(|(row, _)| records::status(row) == "active")
+        .filter(|(row, anchors)| {
+            !withheld.masks(
+                row["session_id"].as_str(),
+                anchors.iter().filter_map(|a| a.blob.as_deref()),
+            )
+        })
         .map(|(row, anchors)| {
             let place = anchors
                 .iter()
@@ -216,6 +226,11 @@ fn sessions<S: SqlStore>(db: &S, req: &Request, out: &mut Vec<Candidate>) -> Res
          FROM sessions s JOIN commits c ON c.id=s.commit_id ORDER BY s.id DESC LIMIT ?",
         &[json!(RECENT)],
     )?;
+    let withheld = withheld_sessions(db)?;
+    let rows: Vec<Value> = rows
+        .into_iter()
+        .filter(|r| r["id"].as_i64().is_none_or(|id| !withheld.contains(&id)))
+        .collect();
     let commits: Vec<&Value> = rows.iter().map(|r| &r["commit_id"]).collect();
     let paths = changed(db, &commits)?;
     for row in &rows {

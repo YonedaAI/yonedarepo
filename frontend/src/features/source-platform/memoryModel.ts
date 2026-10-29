@@ -29,7 +29,9 @@ export type MemoryAnchor = {
 export type Memory = {
   id: number;
   kind: MemoryKind;
-  text: string;
+  /** Null while quarantine withholds it (`quarantined`). */
+  text: string | null;
+  quarantined?: true;
   commit: string;
   author: string;
   session_id: string | null;

@@ -141,8 +141,8 @@ pub(crate) const MIGRATIONS: [(i64, &str); 39] = [
         include_str!("../migrations/repo_store/0038_quarantine.sql"),
     ),
     (
-        40,
-        include_str!("../migrations/repo_store/0040_memories.sql"),
+        39,
+        include_str!("../migrations/repo_store/0039_memories.sql"),
     ),
 ];
 

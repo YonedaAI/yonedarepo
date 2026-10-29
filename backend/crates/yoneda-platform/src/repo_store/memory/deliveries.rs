@@ -6,6 +6,7 @@
 //! per-session cap.
 //! A prompt is never kept: a prompt delivery's subject is the prompt's SHA-256.
 use super::super::auth::Actor;
+use super::super::quarantine::{WithheldMemories, withheld_sessions};
 use super::relevance::TYPES;
 use crate::storage::{SqlStore, bad, number};
 use serde_json::{Value, json};
@@ -147,11 +148,13 @@ fn cut(text: &str) -> String {
     }
 }
 
-/// Short labels for the delivered items of one type, by id.
+/// Short labels for the delivered items of one type, by id; none for what quarantine
+/// withholds (a masked memory, a withheld session record).
 fn labels<S: SqlStore>(db: &S, kind: &str, ids: &[i64]) -> Result<Vec<(i64, String)>> {
     if ids.is_empty() {
         return Ok(Vec::new());
     }
+    let hidden = hidden(db, kind, ids)?;
     let sql = match kind {
         "memory" => "SELECT id, kind||': '||body AS label FROM memories",
         "contract" => {
@@ -172,7 +175,36 @@ fn labels<S: SqlStore>(db: &S, kind: &str, ids: &[i64]) -> Result<Vec<(i64, Stri
         )?
         .iter()
         .filter_map(|r| Some((r["id"].as_i64()?, cut(r["label"].as_str()?))))
+        .filter(|(id, _)| !hidden.contains(id))
         .collect())
+}
+
+/// The ids among `ids` of one type that quarantine withholds.
+fn hidden<S: SqlStore>(db: &S, kind: &str, ids: &[i64]) -> Result<BTreeSet<i64>> {
+    match kind {
+        "session" => Ok(withheld_sessions(db)?
+            .into_iter()
+            .filter(|id| ids.contains(id))
+            .collect()),
+        "memory" => {
+            let withheld = WithheldMemories::read(db)?;
+            let rows = db.query(
+                "SELECT m.id,m.session_id,(SELECT json_group_array(blob) FROM memory_anchors a                  WHERE a.memory_id=m.id AND a.blob IS NOT NULL) AS blobs FROM memories m                  WHERE m.id IN (SELECT value FROM json_each(?))",
+                &[json!(json!(ids).to_string())],
+            )?;
+            Ok(rows
+                .iter()
+                .filter(|r| {
+                    let blobs: Vec<String> =
+                        serde_json::from_str(r["blobs"].as_str().unwrap_or("[]"))
+                            .unwrap_or_default();
+                    withheld.masks(r["session_id"].as_str(), blobs.iter().map(String::as_str))
+                })
+                .filter_map(|r| r["id"].as_i64())
+                .collect())
+        }
+        _ => Ok(BTreeSet::new()),
+    }
 }
 
 /// `repo_context_deliveries {session_id}`: what the session was shown, oldest first.

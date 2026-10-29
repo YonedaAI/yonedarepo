@@ -5,8 +5,10 @@
 //! at that commit; callers never supply them. A memory may name the coding session it came
 //! from, and may supersede a live one (which then stops being current); retiring one keeps
 //! it, with who retired it and why. A draft is a summary offered for a person to publish
-//! (by superseding it) and is never delivered to agents.
+//! (by superseding it) and is never delivered to agents. Quarantine masks a memory's text
+//! (`quarantine::WithheldMemories`).
 use super::super::auth::Actor;
+use super::super::quarantine::WithheldMemories;
 use super::super::rows::{self, object_id};
 use super::anchors::{Anchor, anchors};
 use super::stale::Staleness;
@@ -282,6 +284,7 @@ pub fn show<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         )
     })?;
     let mut check = Staleness::new(db, &refname, at);
-    Ok(json!({ "version": at, "ref": refname,
-               "memory": memory_json(&row, &anchors, Some(&mut check))? }))
+    let mut memory = memory_json(&row, &anchors, Some(&mut check))?;
+    WithheldMemories::read(db)?.mask(&mut memory);
+    Ok(json!({ "version": at, "ref": refname, "memory": memory }))
 }

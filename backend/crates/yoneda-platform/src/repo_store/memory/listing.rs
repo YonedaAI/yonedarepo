@@ -1,5 +1,6 @@
 //! `repo_memory_list`: memories newest first, filtered by anchored path, kind, status and
 //! source session, each with its staleness; paged by id.
+use super::super::quarantine::WithheldMemories;
 use super::super::rows;
 use super::anchors::anchor_path;
 use super::records::{MEMORY, judged_ref, kind, memory_json, session_id, version_at, with_anchors};
@@ -87,6 +88,7 @@ pub fn list<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         status_clause(&status)
     );
     let mut check = Staleness::new(db, &refname, at);
+    let withheld = WithheldMemories::read(db)?;
     let mut memories = Vec::new();
     let mut scanned = 0;
     // Where the next page starts, when more may remain.
@@ -118,7 +120,8 @@ pub fn list<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         let page = rows.len();
         scanned += page;
         for (row, anchors) in with_anchors(db, rows)? {
-            let memory = memory_json(&row, &anchors, Some(&mut check))?;
+            let mut memory = memory_json(&row, &anchors, Some(&mut check))?;
+            withheld.mask(&mut memory);
             if status == "stale" && memory["stale"] != true {
                 continue;
             }

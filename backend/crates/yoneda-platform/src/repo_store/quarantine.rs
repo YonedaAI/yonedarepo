@@ -1,7 +1,8 @@
 //! Quarantine: the owner (or an admin) withholds content without rewriting any id. A blob
 //! keeps its place in every tree, but no read serves its bytes: every access answer lists
 //! it (`withheld`), and the adapter refuses it on each read path. A session record keeps its
-//! row, but its text reads masked. Purge deletes what is withheld: the bytes (by the
+//! row, but its text reads masked, as do the memories of its session and those anchored to
+//! a withheld blob (`memories`). Purge deletes what is withheld: the bytes (by the
 //! adapter, in R2 and the caches) and a session record's text (here). It runs after the
 //! record's retention window (the platform's quarantine job), or at once when the owner
 //! confirms with the target's id. The record itself outlives the content: target, state,
@@ -15,9 +16,11 @@ use super::op::QuarantineOp as Q;
 use crate::storage::{SqlStore, bad, number};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
+mod memories;
 mod purge;
 mod sessions;
-pub(super) use sessions::{mask_sessions, refuse_transcript};
+pub(super) use memories::Withheld as WithheldMemories;
+pub(super) use sessions::{mask_sessions, refuse_transcript, withheld as withheld_sessions};
 
 /// What a record withholds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -49,6 +49,9 @@ fn line(memory: &Value) -> String {
     if memory["stale"] == true {
         out.push_str(" [stale]");
     }
+    if memory["quarantined"] == true {
+        out.push_str(" [withheld by the owner]");
+    }
     let first = text(memory, "text");
     let _ = write!(out, " {}", first.lines().next().unwrap_or_default());
     let at = anchors(memory);
