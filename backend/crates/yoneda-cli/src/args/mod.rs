@@ -513,7 +513,6 @@ mod tests {
                     path: Some("src/".into()),
                     kind: None,
                     status: Some("stale".into()),
-                    json: true,
                 }
             })
         );

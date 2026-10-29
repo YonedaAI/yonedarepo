@@ -6,6 +6,8 @@
 use crate::api::encode;
 use crate::command::MemoryCommand;
 use crate::error::Result;
+use crate::human;
+use crate::output;
 use crate::session_files::{SessionFiles, current_session};
 use crate::target::Resolved;
 use serde_json::{Value, json};
@@ -76,23 +78,21 @@ pub async fn run(t: &Resolved, command: MemoryCommand) -> Result<()> {
             if let (Some(session), Some(clone)) = (&session, &t.clone) {
                 SessionFiles::new(&clone.git_dir).note_memory_added(session)?;
             }
-            let already = if added["already"] == true {
-                " (already recorded)"
-            } else {
-                ""
-            };
-            println!(
-                "Memory #{} at {}{already}",
+            let already = added["already"] == true;
+            let commit = self::text(&added, "commit");
+            human!(
+                "Memory #{} at {}{}",
                 added["memory"],
-                &self::text(&added, "commit")[..self::text(&added, "commit").len().min(7)]
+                &commit[..commit.len().min(7)],
+                if already { " (already recorded)" } else { "" }
             );
+            output::emit(&output::MemoryAdd {
+                memory: added["memory"].clone(),
+                commit,
+                already,
+            });
         }
-        MemoryCommand::List {
-            path,
-            kind,
-            status,
-            json,
-        } => {
+        MemoryCommand::List { path, kind, status } => {
             let mut query = String::from("/memories?limit=200");
             for (key, value) in [("path", path), ("kind", kind), ("status", status)] {
                 if let Some(value) = value {
@@ -100,28 +100,24 @@ pub async fn run(t: &Resolved, command: MemoryCommand) -> Result<()> {
                 }
             }
             let listed = t.api.get(&query).await?;
-            if json {
-                println!("{listed}");
-                return Ok(());
-            }
             let memories = listed["memories"].as_array().cloned().unwrap_or_default();
             if memories.is_empty() {
-                println!("No memories.");
+                human!("No memories.");
             }
             for memory in &memories {
-                println!("{}", line(memory));
+                human!("{}", line(memory));
             }
+            output::emit(&output::MemoryList {
+                memories,
+                next: listed["next"].clone(),
+            });
         }
-        MemoryCommand::Show { id, json } => {
+        MemoryCommand::Show { id } => {
             let shown = t.api.get(&format!("/memories/{id}")).await?;
-            if json {
-                println!("{shown}");
-                return Ok(());
-            }
             let memory = &shown["memory"];
-            println!("{}", line(memory));
-            println!("\n  {}\n", text(memory, "text").replace('\n', "\n  "));
-            println!(
+            human!("{}", line(memory));
+            human!("\n  {}\n", text(memory, "text").replace('\n', "\n  "));
+            human!(
                 "commit {} · session {}",
                 text(memory, "commit"),
                 memory["session_id"].as_str().unwrap_or("-")
@@ -132,11 +128,14 @@ pub async fn run(t: &Resolved, command: MemoryCommand) -> Result<()> {
                     Some(false) => "unchanged",
                     None => "unknown",
                 };
-                println!("  {} ({state})", anchors(&json!({ "anchors": [a] })));
+                human!("  {} ({state})", anchors(&json!({ "anchors": [a] })));
             }
             if let Some(newer) = memory["superseded_by"].as_i64() {
-                println!("superseded by #{newer}");
+                human!("superseded by #{newer}");
             }
+            output::emit(&output::MemoryShow {
+                memory: memory.clone(),
+            });
         }
         MemoryCommand::Retire { id, reason } => {
             let retired = t
@@ -146,11 +145,16 @@ pub async fn run(t: &Resolved, command: MemoryCommand) -> Result<()> {
                     &json!({ "reason": reason }),
                 )
                 .await?;
-            if retired["already"] == true {
-                println!("Memory #{id} was retired already");
+            let already = retired["already"] == true;
+            if already {
+                human!("Memory #{id} was retired already");
             } else {
-                println!("Retired memory #{id}");
+                human!("Retired memory #{id}");
             }
+            output::emit(&output::MemoryRetire {
+                memory: id,
+                already,
+            });
         }
     }
     Ok(())

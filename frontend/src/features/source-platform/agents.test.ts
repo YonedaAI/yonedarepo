@@ -169,6 +169,7 @@ describe('agent record tabs', () => {
     const tabs = [...html.matchAll(/href="([^"]+)"[^>]*>([^<]+)</g)].map((m) => [m[1], m[2]]);
     expect(tabs).toEqual([
       [`/source/${repo}/agents`, 'Sessions'],
+      [`/source/${repo}/agents/memories`, 'Memories'],
       [`/source/${repo}/agents/contracts`, 'Contracts'],
       [`/source/${repo}/agents/pins`, 'Kept commits'],
       [`/source/${repo}/agents/bisects`, 'Find a breaking commit'],
