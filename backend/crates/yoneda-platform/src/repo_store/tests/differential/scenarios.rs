@@ -275,3 +275,54 @@ fn tags_are_created_once_annotated_or_not() {
         &["Tag Moved", "Tag Already", "Tag ALREADY_EXISTS"],
     );
 }
+
+fn shard(path: &str, text: &str, read: bool) -> Op {
+    Op::ShardCommit {
+        path: path.into(),
+        content: format!("{text}\n"),
+        read,
+    }
+}
+
+/// Commits begun from a published head that trails the log (the race CI met): each lands
+/// as what the log since its base allows, never as if main had not moved.
+#[test]
+fn shard_commits_on_a_trailing_published_head_land_as_the_log_allows() {
+    let script = [
+        Op::Publish,
+        // Main moves past the published head on a.txt and README.md.
+        put(MAIN, "a.txt", "main moved", false),
+        put(MAIN, "README.md", "main moved", false),
+        // Begun on the trailing head: a new path lands as a changeset, projected as a
+        // merge with main; a path main since wrote takes the merge path; a path it read
+        // that main since wrote is a conflict.
+        shard("src/b.rs", "on the trailing head", false),
+        Op::Submit { picks: vec![0] },
+        shard("a.txt", "on the trailing head", false),
+        Op::Submit { picks: vec![1] },
+        shard("README.md", "read on the trailing head", true),
+        Op::Submit { picks: vec![2] },
+        Op::RunQueue,
+        // Two members of one submission writing one file: the second waits, and on its
+        // own later it meets the first's changeset and takes the merge path.
+        Op::Publish,
+        shard("docs.md", "first", false),
+        shard("docs.md", "second", false),
+        Op::Submit { picks: vec![3, 4] },
+        Op::Submit { picks: vec![4] },
+        // A landed member submitted again answers with its version.
+        Op::Submit { picks: vec![3] },
+        Op::RunQueue,
+    ];
+    run_reaching(
+        "trailing head",
+        &script,
+        &[
+            "Submit landed",
+            "Submit queued",
+            "Submit failed",
+            "Submit deferred+landed",
+            "Submit already",
+        ],
+    );
+}
