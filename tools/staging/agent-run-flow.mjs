@@ -20,8 +20,8 @@ import { spawn, spawnSync } from 'node:child_process';
 import { appendFileSync, existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { costOf, opencodeArgs, printable, prompt, tasks, verdict } from './agent-run-plan.mjs';
-import { clientEnv, FAKE_OPENCODE, GUARD_EXIT, HOOK_LOG, hostDrift, sandboxArgs, sandboxEnv, sandboxOrigin, WORKDIR } from './agent-sandbox.mjs';
-import { buildSandbox, dockerAvailable, hostState, modelCredential } from './agent-sandbox-host.mjs';
+import { clientEnv, egressAllowlist, FAKE_OPENCODE, GUARD_EXIT, HOOK_LOG, hostDrift, sandboxArgs, sandboxEnv, sandboxOrigin, WORKDIR } from './agent-sandbox.mjs';
+import { buildSandbox, dockerAvailable, hostState, modelCredential, startEgress } from './agent-sandbox-host.mjs';
 
 const author = { name: 'Staging kit', email: 'kit@yonedarepo.invalid' };
 const b64 = (text) => Buffer.from(text).toString('base64');
@@ -116,10 +116,15 @@ export async function agentRun(kit, { root, agents = 4, wave2 = 2, model, timeou
   metrics.host_checkouts = Object.keys(before.checkouts).length;
   metrics.host_remotes = Object.keys(before.remotes).length;
   const containers = [];
+  // The agents' only way out: the platform and (for a real model) its provider's API.
+  const allow = egressAllowlist({ origin: sandboxOrigin(kit.api).origin, model: fake ? null : model });
+  const egress = await startEgress({ image: sandbox.image, allow, run: Date.now().toString(36) });
+  metrics.egress_allow = allow.join(',');
   try {
-    await agentWaves(kit, { root, agents, wave2, model, timeoutS, budgetUsd, fake, credential, image: sandbox.image, containers }, metrics);
+    await agentWaves(kit, { root, agents, wave2, model, timeoutS, budgetUsd, fake, credential, image: sandbox.image, network: egress.network, containers }, metrics);
   } finally {
     for (const name of containers) spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
+    metrics.egress_refused = (await egress.stop()).join(',') || 'none';
     const drift = await hostProblems(before, watched);
     metrics.host_unchanged = drift.length === 0;
     if (drift.length) {
@@ -129,7 +134,7 @@ export async function agentRun(kit, { root, agents = 4, wave2 = 2, model, timeou
   }
 }
 
-async function agentWaves(kit, { root, agents, wave2, model, timeoutS, budgetUsd, fake, credential, image, containers }, metrics) {
+async function agentWaves(kit, { root, agents, wave2, model, timeoutS, budgetUsd, fake, credential, image, network, containers }, metrics) {
   const api = kit.pat();
   const name = `kit-agents-${Date.now()}`;
   const files = [
@@ -142,7 +147,7 @@ async function agentWaves(kit, { root, agents, wave2, model, timeoutS, budgetUsd
   const evidence = join(root, `.local/staging/agents-${Date.now()}`);
   mkdirSync(evidence, { recursive: true });
   metrics.evidence = evidence;
-  const { origin, hostPort } = sandboxOrigin(kit.api);
+  const { origin } = sandboxOrigin(kit.api);
   const remote = kit.remote(repo, origin);
   const budget = spendBudget(budgetUsd);
   const secrets = credential ? JSON.parse(credential).map((e) => e.value?.key ?? e.value?.access).filter(Boolean) : [];
@@ -160,11 +165,11 @@ async function agentWaves(kit, { root, agents, wave2, model, timeoutS, budgetUsd
       await kit.gitOk(dir, 'remote', 'set-url', 'origin', remote);
       const minted = await api.post(`/repos/${repo}/tokens`, { name: `kit-${task.agent}`, scopes: ['read', 'write', 'land'] });
       secrets.push(minted.token);
-      const env = sandboxEnv({ origin, token: minted.token, remote, hostPort, credential });
+      const env = sandboxEnv({ origin, token: minted.token, remote, credential });
       const container = `yoneda-kit-${task.agent}-${Date.now().toString(36)}`;
       containers.push(container);
       const command = [...(fake ? FAKE_OPENCODE : ['opencode']), ...opencodeArgs({ model, title: `kit ${task.agent}`, text: prompt(task) })];
-      const args = sandboxArgs({ name: container, clone: realpathSync(dir), env, command, image });
+      const args = sandboxArgs({ name: container, clone: realpathSync(dir), env, command, network, image });
       const line = printable(['docker', ...args]);
       writeFileSync(join(evidence, `${task.agent}.command.txt`), `${line}\n`);
       console.log(`  ${task.agent}: ${line.slice(0, 300)}…`);
