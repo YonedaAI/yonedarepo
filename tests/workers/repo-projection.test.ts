@@ -207,3 +207,74 @@ it('projects one huge pushed commit in bounded packs: its files under carriers, 
   expect(made.filter((r) => !deleted.has(r))).toEqual([`refs/yoneda/c/${commit.id}`]);
   expect((await api(`/repos/${id}`, owner, {}, on)).body.projections[0]).toMatchObject({ status: 'ok', projected_commit: commit.id });
 });
+
+it('projects a push of large files in packs bounded by bytes, not only by objects', async () => {
+  // Ten commits of one 3 MiB file each: 30 objects, so a 400-object chunk would carry all
+  // 30 MiB in one pack (svelte: a 45 MiB chunk, and jobs killed for memory).
+  const on = { ...scoped, PUSH_BUNDLES: 'on' } as unknown as Env;
+  const owner = { cookie: await signup('bytes') };
+  const created = await api('/repos', owner, { body: { name: 'b', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', '0\n')], author } }, on);
+  const id = created.body.id as string;
+  await drain(on);
+  const { token } = (await api(`/repos/${id}/tokens`, owner, { body: { name: 'git', scopes: ['read', 'write', 'land'] } }, on)).body;
+  let parent = (await api(`/repos/${id}/refs`, owner, {}, on)).body.refs['refs/heads/main'] as string;
+  const main = parent;
+  const objects: Raw[] = [];
+  const random = (size: number) => {
+    const out = new Uint8Array(size);
+    for (let at = 0; at < size; at += 65536) crypto.getRandomValues(out.subarray(at, at + 65536));
+    return out;
+  };
+  for (let c = 0; c < 10; c++) {
+    const blob = await object('blob', random(3 * 1024 * 1024));
+    const root = await tree([['100644', `f${c}.bin`, blob.id]]);
+    const who = `${author.name} <${author.email}> ${1700000000 + c} +0000`;
+    const commit = await object('commit', text.encode(`tree ${root.id}\nparent ${parent}\nauthor ${who}\ncommitter ${who}\n\nc${c}\n`));
+    objects.unshift(commit, root, blob);
+    parent = commit.id;
+  }
+  const { push_b64 } = compute({
+    op: 'branch_push',
+    refname: 'refs/heads/main',
+    old: main,
+    new: parent,
+    objects: objects.map((o) => ({ id: o.id, kind: o.kind, data_b64: toBase64(o.data) })),
+  });
+  const pushed = await platformFetch(
+    new Request(`https://yoneda/git/${id}.git/git-receive-pack`, { method: 'POST', headers: { authorization: `Basic ${btoa(`git:${token}`)}` }, body: fromBase64(push_b64) }),
+    on,
+  );
+  expect(new TextDecoder().decode(await pushed.arrayBuffer())).toContain('ok refs/heads/main');
+  const sizes: number[] = [];
+  const push = vi.spyOn(RepoObjects.prototype, 'push');
+  push.mockImplementation(async function (this: RepoObjects, body: Uint8Array) {
+    sizes.push(body.length);
+    return this.store.push(body);
+  });
+  try {
+    while (queued.length > 0) await drain(on);
+  } finally {
+    push.mockRestore();
+  }
+  expect(sizes.length).toBeGreaterThanOrEqual(4);
+  expect(Math.max(...sizes)).toBeLessThan(12 * 1024 * 1024);
+  const held = artifacts.get(`yr-${id}`);
+  for (const o of objects) expect(held?.get(o.id)?.kind, o.id).toBe(o.kind);
+  expect((await api(`/repos/${id}`, owner, {}, on)).body.projections[0]).toMatchObject({ status: 'ok', projected_commit: parent });
+});
+
+it('names what the object store refused in a backlog push, not just unreadable commits', async () => {
+  const owner = { cookie: await signup('refusedbacklog') };
+  const created = await api('/repos', owner, { body: { name: 'r', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', '0\n')], author } });
+  const repo = `/repos/${created.body.id}`;
+  await drain(scoped);
+  const landed: string[] = [];
+  for (let i = 0; i < 12; i++)
+    landed.push(await landOnMain(repo, owner, Array.from({ length: 40 }, (_, k) => file(`b${i}/${k}.txt`, `${i}.${k}\n`))));
+  refusals.add(`refs/yoneda/c/${landed[0]}`);
+  try {
+    await expect(drain(scoped)).rejects.toThrow(`refs/yoneda/c/${landed[0]}: stale info`);
+  } finally {
+    refusals.clear();
+  }
+});
