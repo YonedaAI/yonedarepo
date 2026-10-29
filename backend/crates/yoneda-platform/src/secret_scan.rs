@@ -28,6 +28,7 @@ pub const RULES: [&str; 11] = [
 #[serde(deny_unknown_fields)]
 pub struct SecretAllow {
     pub path: String,
+    #[schemars(extend("enum" = RULES))]
     pub rule: String,
 }
 

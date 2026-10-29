@@ -1,51 +1,40 @@
-// The repository policy as `GET /repos/:id` returns it and `PUT /repos/:id/policy` takes it
-// (yoneda-platform repo_store/policy.rs). The server rejects unknown fields, so the editor
-// changes only the fields it knows and sends every other field back untouched; the server
-// validates the result and its message is shown as is.
+// The repository policy as `PUT /repos/:id/policy` takes it (and `GET /repos/:id` returns
+// it). Types and catalogs come from the Rust policy (shared/contracts/policy.ts, `cargo
+// xtask contracts`); the server still validates every change and its message is shown as is.
+import {
+  type Policy as GeneratedPolicy,
+  type Runner as GeneratedRunner,
+  type SecretAllow as GeneratedSecretAllow,
+  policySchema,
+} from '../../../../shared/contracts/policy';
 
-export type CommandRunner = { kind?: 'command'; command: string[]; timeout_seconds?: number };
-export type ModelRunner = {
-  kind: 'model';
-  rubric: string;
-  model?: string;
-  allow_truncated?: boolean;
-};
-export type Runner = CommandRunner | ModelRunner;
-export type SecretAllow = { path: string; rule: string };
-export type Policy = {
-  required_checks: string[];
-  approvals: number;
-  runners?: Record<string, Runner>;
-  auto_approve?: string[];
-  check_posters?: Record<string, string[]>;
-  secret_allow?: SecretAllow[];
-  [unknown: string]: unknown;
-};
+/** Fields this browser does not know yet (a newer server) are kept and sent back as is:
+ * the editor changes only the fields it knows. */
+export type Policy = GeneratedPolicy & { [unknown: string]: unknown };
+export type Runner = GeneratedRunner;
+export type ModelRunner = Extract<Runner, { kind: 'model' }>;
+export type CommandRunner = Exclude<Runner, ModelRunner>;
+export type SecretAllow = GeneratedSecretAllow;
+type AutoApprovable = NonNullable<Policy['auto_approve']>[number];
 
+const [commandRunner, modelRunner] = policySchema.$defs.Runner.anyOf;
+const LABELS: Record<AutoApprovable, string> = {
+  docs: 'Documentation only',
+  formatting: 'Formatting only',
+  comment_only: 'Comments only',
+};
 /** Review classes a policy may auto-approve (platform_review::ReviewClass::AUTO_APPROVABLE). */
-export const AUTO_APPROVABLE = [
-  { id: 'docs', label: 'Documentation only' },
-  { id: 'formatting', label: 'Formatting only' },
-  { id: 'comment_only', label: 'Comments only' },
-] as const;
+export const AUTO_APPROVABLE = policySchema.properties.auto_approve.items.enum.map((id) => ({
+  id,
+  label: LABELS[id],
+}));
 /** The secret-scan rules `secret_allow` may name (secret_scan::RULES). */
-export const SECRET_RULES = [
-  'aws-access-key',
-  'github-token',
-  'github-pat',
-  'anthropic-key',
-  'openai-key',
-  'mimo-key',
-  'slack-token',
-  'stripe-live-key',
-  'private-key',
-  'yonedarepo-token',
-  'yonedarepo-pat',
-] as const;
+export const SECRET_RULES = policySchema.$defs.SecretAllow.properties.rule.enum;
 /** The platform's model review catalog (platform_model_check::MODELS); the default first. */
-export const REVIEW_MODELS = ['glm-5.3-flash'] as const;
-export const DEFAULT_TIMEOUT_SECONDS = 600;
-export const CHECK_NAME = '[a-z0-9][a-z0-9._\\-]{0,63}';
+export const REVIEW_MODELS = modelRunner.properties.model.enum;
+export const DEFAULT_TIMEOUT_SECONDS = commandRunner.properties.timeout_seconds.default;
+/** The check-name rule (policy::CHECK_NAME_PATTERN) for a `pattern` attribute, unanchored. */
+export const CHECK_NAME = policySchema.properties.required_checks.items.pattern.slice(1, -1);
 
 export const isModel = (runner: Runner): runner is ModelRunner => runner.kind === 'model';
 
