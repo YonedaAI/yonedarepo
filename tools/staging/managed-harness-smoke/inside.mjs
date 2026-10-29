@@ -1,11 +1,12 @@
-// Runs inside the harness image (managed-harness-smoke.mjs pipes it to `node -`), with no
+// Runs inside the harness image (managed-harness-smoke.mjs pipes it to `node -`, once per
+// SMOKE_CASE=harness/provider/model), with no
 // network: a fake AI Gateway on 127.0.0.1 answers Anthropic Messages and OpenAI Responses with a
 // fixed review result, and each pinned CLI is driven exactly as the runner drives it
 // (commands.mjs). It checks that every CLI starts, sends its model traffic to the gateway base
 // URL with the placeholder key, and that the runner's extraction finds the result. No real model
 // is called and no key exists here.
-import { spawnSync } from 'node:child_process';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { dirname, join } from 'node:path';
 import { buildCommand, extractResult, finalMessage, PLACEHOLDER_KEY } from '/opt/yoneda/harness/commands.mjs';
@@ -27,7 +28,7 @@ function anthropicStream(model) {
 
 function responsesStream(model) {
   const item = { id: 'msg_smoke', type: 'message', role: 'assistant', status: 'completed', content: [{ type: 'output_text', text: RESULT, annotations: [] }] };
-  const response = (status, output) => ({ id: 'resp_smoke', object: 'response', model, status, output, usage: { input_tokens: 10, output_tokens: 40, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } } });
+  const response = (status, output) => ({ id: 'resp_smoke', object: 'response', model, status, output, usage: { input_tokens: 10, output_tokens: 40, total_tokens: 50, input_tokens_details: { cached_tokens: 0 }, output_tokens_details: { reasoning_tokens: 0 } } });
   const events = [
     ['response.created', { type: 'response.created', response: response('in_progress', []) }],
     ['response.output_item.added', { type: 'response.output_item.added', output_index: 0, item: { ...item, status: 'in_progress', content: [] } }],
@@ -62,13 +63,25 @@ const server = createServer(async (req, res) => {
 await new Promise((r) => server.listen(8787, '127.0.0.1', r));
 
 const gateway = { base: 'http://127.0.0.1:8787/v1/acct/gw', slugs: { claude: 'anthropic', codex: 'openai', zai: 'custom-zai', mimo: 'custom-mimo' } };
-const cases = [
-  ['claude-code', 'claude', 'claude-sonnet-5-5'],
-  ['claude-code', 'zai', 'glm-5.3-flash'],
-  ['codex', 'codex', 'gpt-5.6-luna'],
-  ['opencode', 'zai', 'glm-5.3-flash'],
-  ['opencode', 'mimo', 'mimo-v2.6-flash'],
-];
+// One case per container, as in production (one CLI run per harness container).
+const cases = [String(process.env.SMOKE_CASE ?? '').split('/')];
+/** Runs a CLI without blocking this process's event loop, which serves the fake gateway. */
+function runCli(argv, { cwd, env, input, timeout }) {
+  return new Promise((resolve) => {
+    const child = spawn(argv[0], argv.slice(1), { cwd, env });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (c) => (stdout += c));
+    child.stderr.on('data', (c) => (stderr += c));
+    const timer = setTimeout(() => child.kill('SIGKILL'), timeout);
+    child.on('close', (status, signal) => {
+      clearTimeout(timer);
+      resolve({ status, signal, stdout, stderr });
+    });
+    child.stdin.end(input ?? '');
+  });
+}
+
 const work = '/tmp/smoke-repo';
 mkdirSync(work, { recursive: true });
 spawnSync('git', ['init', '-q', work]);
@@ -84,10 +97,10 @@ for (const [harness, provider, model] of cases) {
   }
   const env = { PATH: process.env.PATH, HOME: home, ...command.env };
   if (env.OPENCODE_CONFIG) env.OPENCODE_CONFIG = join(home, env.OPENCODE_CONFIG);
-  const run = spawnSync(command.argv[0], command.argv.slice(1), { cwd: work, env, input: command.stdin, encoding: 'utf8', timeout: 120_000 });
+  const run = await runCli(command.argv, { cwd: work, env, input: command.stdin, timeout: 120_000 });
   let fileText = null;
   try {
-    fileText = command.resultFile ? (await import('node:fs')).readFileSync(command.resultFile, 'utf8') : null;
+    fileText = command.resultFile ? readFileSync(command.resultFile, 'utf8') : null;
   } catch {}
   const result = extractResult(finalMessage(harness, run.stdout ?? '', fileText));
   const calls = seen.slice(before).filter((s) => s.method === 'POST');
@@ -105,7 +118,7 @@ for (const [harness, provider, model] of cases) {
       ok,
       exit: run.status,
       calls: calls.map((c) => `${c.url} ${c.model}`),
-      stderr: ok ? undefined : String(run.stderr ?? run.error ?? '').slice(-1500),
+      stderr: ok ? undefined : String(run.stderr ?? '').slice(-1500),
       stdout: ok ? undefined : String(run.stdout ?? '').slice(-800),
     }),
   );
