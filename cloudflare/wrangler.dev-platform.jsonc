@@ -13,6 +13,7 @@
 // Batched landing, with commits beginning from and main reads served by the published
 // head. No LAND_MODE_OVERRIDE: per-request mode headers are for benches only.
 // PUSH_BUNDLES=on writes a large push's objects as bundles (one R2 object per batch, indexed by the repository authority). Turn it off before rolling back below the bundle reader.
+// PACK_CACHE=on serves a full clone's pack from a stored copy (derived/v1/<repo>/packs/), stored by the first full clone of each set of tips; off builds every pack from the bundles.
 // BLOB_WRITE_THROUGH=on writes each API commit's blobs to R2 after the commit's own I/O, so burst read-backs skip the commit shards; off leaves them to the shard drain. Off since 2026-10-28: 6 interleaved dev bursts gave land p95 1.7-2.1 s off vs 2.7-3.2 s on, with read p95 0.18-0.32 s off (target < 2 s).
 // Check runs take minutes (container start, the check): one per invocation, up to
 // the container limit (4) at once, apart from the derive and projection jobs above.
@@ -260,6 +261,7 @@
     "LAND_MODE": "batch",
     "LFS_S3_BUCKET": "yonedarepo-dev-platform-objects",
     "LFS_S3_ENDPOINT": "https://f011d0ee02b23cad26b4b38151b204ad.r2.cloudflarestorage.com",
+    "PACK_CACHE": "on",
     "PUSH_BUNDLES": "on",
     "SSH_FRONT_DOOR": "tunnel",
     "SSH_HOST": "ssh.dev.yonedarepo.com",
