@@ -150,9 +150,7 @@ export function RepoPlugins({ repo, navigate }: { repo: string; navigate: Naviga
                 )}
               </div>
               {plugin.id === 'managed' ? (
-                <a {...linkTo({ view: 'agents', repo, section: 'managed' }, navigate)}>
-                  Manage agents
-                </a>
+                <a {...linkTo({ view: 'agents-home' }, navigate)}>Manage agents</a>
               ) : (
                 <button type="button" className="quiet" onClick={() => uninstall(plugin)}>
                   Uninstall

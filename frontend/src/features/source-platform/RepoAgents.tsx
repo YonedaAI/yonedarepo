@@ -1,8 +1,7 @@
 // What agents record on the repository, under /agents. Sessions (which coding session
 // produced which commit) and memories (what later sessions should know) are sidebar pages
-// of their own; the Agent tools page tabs between the agents YonedaRepo manages (and their
-// runs), contracts (notes on functions and types), kept commits (pins) and searches for a
-// breaking commit (bisects). The URL slugs keep the
+// of their own; the Agent tools page tabs between contracts (notes on functions and types),
+// kept commits (pins) and searches for a breaking commit (bisects). The URL slugs keep the
 // API names. Plans (`git_plan`) and
 // codemods (`git_codemod`) have no page: a plan is computed per request and never stored,
 // and a codemod's result is an ordinary commit, shown in History like any other.
@@ -12,51 +11,34 @@ import { AgentMemories } from './AgentMemories';
 import { AgentSessions } from './AgentSessions';
 import { AgentBisects, AgentPins } from './AgentUpkeep';
 import type { AgentSection } from './agentModel';
-import { ManagedAgents, ManagedRuns } from './ManagedAgents';
 
 /** The Agent tools page's tabs. */
-const TOOLS = [
-  'managed',
-  'contracts',
-  'pins',
-  'bisects',
-] as const satisfies readonly AgentSection[];
+const TOOLS = ['contracts', 'pins', 'bisects'] as const satisfies readonly AgentSection[];
 const LABELS: Record<(typeof TOOLS)[number], string> = {
-  managed: 'Managed',
   contracts: 'Contracts',
   pins: 'Kept commits',
   bisects: 'Find a breaking commit',
 };
 
-/** The tab a section sits under: the runs list belongs to Managed. */
-const tabOf = (section: AgentSection): AgentSection => (section === 'runs' ? 'managed' : section);
-
 export function RepoAgents({
   repo,
   section,
-  agent,
-  admin = false,
   branches,
   navigate,
 }: {
   repo: string;
   section: AgentSection;
-  /** The managed agent whose runs are listed. */
-  agent?: string;
-  /** The viewer is the owner or an admin (turns managed agents on and off). */
-  admin?: boolean;
   branches: string[];
   navigate: Navigate;
 }) {
-  const tab = tabOf(section);
   return (
     <div className="repo-agents">
-      {(TOOLS as readonly AgentSection[]).includes(tab) && (
+      {(TOOLS as readonly AgentSection[]).includes(section) && (
         <nav className="segmented agent-sections" aria-label="Agent tools">
           {TOOLS.map((s) => (
             <a
               key={s}
-              aria-current={s === tab ? 'page' : undefined}
+              aria-current={s === section ? 'page' : undefined}
               {...linkTo({ view: 'agents', repo, section: s }, navigate)}
             >
               {LABELS[s]}
@@ -68,8 +50,6 @@ export function RepoAgents({
         <AgentSessions repo={repo} branches={branches} navigate={navigate} />
       )}
       {section === 'memories' && <AgentMemories repo={repo} navigate={navigate} />}
-      {section === 'managed' && <ManagedAgents repo={repo} admin={admin} navigate={navigate} />}
-      {section === 'runs' && <ManagedRuns repo={repo} agent={agent} navigate={navigate} />}
       {section === 'contracts' && <AgentContracts repo={repo} navigate={navigate} />}
       {section === 'pins' && <AgentPins repo={repo} navigate={navigate} />}
       {section === 'bisects' && <AgentBisects repo={repo} navigate={navigate} />}

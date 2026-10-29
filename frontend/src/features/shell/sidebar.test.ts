@@ -66,6 +66,7 @@ describe('sidebar', () => {
       'Home',
       'Repositories',
       'Explore',
+      'Agents',
       'Overview',
       'Changes',
       'Commits',
@@ -106,8 +107,6 @@ describe('the highlighted page', () => {
     [{ view: 'session', repo: a, id: 3 }, 'Sessions'],
     [{ view: 'agents', repo: a, section: 'memories' }, 'Memories'],
     [{ view: 'context', repo: a }, 'Context'],
-    [{ view: 'agents', repo: a, section: 'managed' }, 'Agent tools'],
-    [{ view: 'agents', repo: a, section: 'runs', agent: 'code-review' }, 'Agent tools'],
     [{ view: 'agents', repo: a, section: 'contracts' }, 'Agent tools'],
     [{ view: 'agents', repo: a, section: 'pins' }, 'Agent tools'],
     [{ view: 'agents', repo: a, section: 'bisects' }, 'Agent tools'],
@@ -118,6 +117,25 @@ describe('the highlighted page', () => {
     it(`is ${page} on ${formatSourceRoute(route)}`, () => {
       expect(active(route)).toEqual([page]);
     });
+});
+
+describe('the workspace Agents entry', () => {
+  it('holds every Agents page in Browse, keeping the workspace, and is signed-in only', () => {
+    const browse = (route: SourceRoute, authenticated = true) =>
+      sidebar({ route, authenticated }).split('aria-label="Repositories"')[0];
+    for (const route of [
+      { view: 'agents-home' },
+      { view: 'agent-settings', agent: 'code-review' },
+      { view: 'agent-runs', agent: 'slop-review' },
+      { view: 'agent-run', runRepo: a, run: `${a}-cr-1-aaaaaaaaaaaa` },
+    ] as SourceRoute[])
+      expect(browse(route)).toMatch(/aria-current="page" class="active" href="\/agents"/);
+    expect(browse({ view: 'agents-home', workspace: 'acme' })).toContain(
+      'href="/agents?workspace=acme"',
+    );
+    expect(browse(home)).toMatch(/href="\/agents"><svg/);
+    expect(browse(home, false)).not.toContain('href="/agents"');
+  });
 });
 
 describe('a repository that is gone', () => {

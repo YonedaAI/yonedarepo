@@ -9,6 +9,7 @@ import transcriptSource from '../../../../backend/crates/yoneda-core/src/transcr
 import scanSource from '../../../../backend/crates/yoneda-platform/src/secret_scan.rs?raw';
 import {
   AGENT_MARGIN,
+  CONTAINER_USD_PER_MINUTE,
   MANAGED_AGENTS,
   STARTING_CREDIT_USD,
 } from '../../../../shared/managed-agents';
@@ -164,22 +165,25 @@ describe('pricing', () => {
     expect(AGENT_MARGIN).toBe(MARGIN);
     expect(PRICING.startingCreditUsd).toBe(STARTING_CREDIT_USD);
     const rows = agentUsageRows();
-    expect(rows.map((r) => r.model).sort()).toEqual(
-      [...new Set(MANAGED_AGENTS.map((a) => a.model))].sort(),
-    );
+    for (const agent of MANAGED_AGENTS)
+      expect(
+        rows.some(
+          (r) => r.model === agent.defaults.model && r.agents.includes(agent.defaults.name),
+        ),
+      ).toBe(true);
     for (const row of rows) {
-      expect(row.input_price_per_million).toBeCloseTo(row.input_cost_per_million * MARGIN, 6);
-      expect(row.output_price_per_million).toBeCloseTo(row.output_cost_per_million * MARGIN, 6);
-      expect(row.agents.length).toBeGreaterThan(0);
+      expect(row.input_price).toBeCloseTo(row.input * MARGIN, 6);
+      expect(row.output_price).toBeCloseTo(row.output * MARGIN, 6);
     }
     const glm = rows.find((r) => r.model === 'glm-5.3-flash');
-    expect(glm).toMatchObject({ input_price_per_million: 0.195, output_price_per_million: 0.65 });
+    expect(glm).toMatchObject({ input_price: 0.195, output_price: 0.65 });
     const html = render(createElement(SitePricing, { navigate }));
     expect(html).toContain('Agent usage: pay as you go');
     for (const row of rows) {
-      expect(html).toContain(row.model);
-      expect(html).toContain(formatUsd(row.output_price_per_million));
+      expect(html).toContain(row.label);
+      expect(html).toContain(formatUsd(row.output_price));
     }
+    expect(html).toContain(`${formatUsd(CONTAINER_USD_PER_MINUTE)} a`);
     expect(html).toContain('agents pause at a $0');
   });
 });

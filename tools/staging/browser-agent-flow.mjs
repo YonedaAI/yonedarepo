@@ -84,11 +84,11 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
   await shot('agents-memories');
 
   await tabs.getByRole('link', { name: 'Agent tools', exact: true }).click();
-  await page.waitForURL(`**/source/${id}/agents/managed`);
+  await page.waitForURL(`**/source/${id}/agents/contracts`);
   const tools = page.getByRole('navigation', { name: 'Agent tools' });
   assert.deepEqual(
     (await tools.getByRole('link').allInnerTexts()).map((t) => t.trim()),
-    ['Managed', 'Contracts', 'Kept commits', 'Find a breaking commit'],
+    ['Contracts', 'Kept commits', 'Find a breaking commit'],
     'the Agent tools tabs',
   );
   for (const [tab, section, empty] of [
