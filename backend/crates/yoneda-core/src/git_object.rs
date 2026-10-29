@@ -21,7 +21,7 @@ mod tree;
 pub use commit::{Commit, CommitHeader};
 pub use delta::{apply_delta, delta_result_size};
 pub use delta_encode::encode_delta;
-pub use diff::{TreeChange, Walk, diff_trees};
+pub use diff::{TreeChange, TreeLookup, Walk, diff_trees, diff_trees_in};
 pub use graph::{CommitGraph, is_ancestor, merge_bases, next_generation};
 pub use id::{ObjectHasher, ObjectId, ObjectKind, hash_object};
 pub use pack::{PackLimits, PackWriter, read_pack, write_pack};

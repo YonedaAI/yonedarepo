@@ -5,15 +5,18 @@
 //! in the pack (and of the right kind) or held by the repository: trees the walk needs are
 //! read through the adapter (which proves they exist), and files outside the pack are
 //! confirmed by the adapter one by one. The same diff yields each commit's path touches.
+//! Pack trees are decoded as the walk reaches them, never all at once: a tree-heavy push's
+//! directories decode to several times the pack's own size.
 use crate::platform_objects::new_trees;
 use crate::secret_scan::{SecretAllow, refuse, scan};
 use serde_json::{Value, json};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::borrow::Cow;
+use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use yoneda_core::{
     Error, Result,
     git_object::{
-        Commit, FileMode, ObjectId, ObjectKind, PackReader, TreeChange, TreeEntry, Walk,
-        decode_tree, diff_trees,
+        Commit, FileMode, ObjectId, ObjectKind, PackReader, TreeChange, TreeEntry, TreeLookup,
+        Walk, decode_tree, diff_trees_in,
     },
     txlog::{PathOp, PathTouch},
 };
@@ -22,12 +25,18 @@ use yoneda_core::{
 const MAX_FILES: usize = 100_000;
 /// Files outside the pack the adapter may be asked to confirm, per push.
 const MAX_CONFIRM: usize = 10_000;
+/// Decoded pack tree entries kept for the next lookups (about 64 bytes each).
+const DECODED_ENTRIES: usize = 50_000;
 
 /// What verification learned from the adapter so far.
 #[derive(Default)]
 pub struct Verifier {
+    /// Trees outside the pack, as the adapter supplied them.
     trees: HashMap<ObjectId, Vec<TreeEntry>>,
-    pack_trees: bool,
+    decoded: Decoded,
+    /// Each new commit's diffs against its parents, once every tree they read was held:
+    /// later rounds walk only the commits still waiting for trees.
+    diffs: HashMap<ObjectId, Vec<Vec<TreeChange>>>,
     present: HashSet<ObjectId>,
     /// Recorded commits outside the pack that new commits name as parents: their trees.
     external: HashMap<ObjectId, ObjectId>,
@@ -70,20 +79,6 @@ impl Verifier {
     }
 
     pub fn verify(&mut self, pack: &mut PackReader, tips: &[ObjectId]) -> Result<Step> {
-        if !self.pack_trees {
-            let ids: Vec<ObjectId> = pack
-                .objects()
-                .filter(|(_, kind)| *kind == ObjectKind::Tree)
-                .map(|(id, _)| id)
-                .collect();
-            for id in ids {
-                let data = pack.kept(&id).ok_or_else(|| invalid_object(&id))?;
-                let entries = decode_tree(data)
-                    .map_err(|e| Error::new(&e.code, format!("Tree {id}: {}", e.message)))?;
-                self.trees.insert(id, entries);
-            }
-            self.pack_trees = true;
-        }
         let (order, parsed) = new_commits(pack, tips)?;
         let unknown: BTreeSet<ObjectId> = parsed
             .values()
@@ -100,10 +95,17 @@ impl Verifier {
                 .map(|p| p.tree)
                 .or(self.external.get(id).copied())
         };
+        let mut trees = PackTrees {
+            supplied: &self.trees,
+            pack,
+            decoded: &mut self.decoded,
+        };
         // Every diff first, so one round asks for every tree any commit needs.
         let mut need = BTreeSet::new();
-        let mut diffs: HashMap<ObjectId, Vec<Vec<TreeChange>>> = HashMap::new();
         for id in &order {
+            if self.diffs.contains_key(id) {
+                continue;
+            }
             let commit = &parsed[id];
             let bases: Vec<Option<ObjectId>> = if commit.parents.is_empty() {
                 vec![None]
@@ -111,13 +113,15 @@ impl Verifier {
                 commit.parents.iter().map(tree_of).collect()
             };
             let mut sides = Vec::new();
-            for base in bases {
-                match diff_trees(base, Some(commit.tree), &self.trees, MAX_FILES)? {
+            for base in &bases {
+                match diff_trees_in(*base, Some(commit.tree), &mut trees, MAX_FILES)? {
                     Walk::Need(ids) => need.extend(ids),
                     Walk::Done(changes) => sides.push(changes),
                 }
             }
-            diffs.insert(*id, sides);
+            if sides.len() == bases.len() {
+                self.diffs.insert(*id, sides);
+            }
         }
         if !need.is_empty() {
             return Ok(Step::Need(json!({ "trees": need })));
@@ -127,12 +131,18 @@ impl Verifier {
         let mut verified = Vec::with_capacity(order.len());
         for id in &order {
             let commit = &parsed[id];
-            let sides = &diffs[id];
+            let sides = &self.diffs[id];
             let mut objects = vec![(*id, ObjectKind::Commit)];
             assigned.insert(*id);
-            for tree in new_trees(commit.tree, &sides[0], &self.trees) {
+            for tree in new_trees(commit.tree, &sides[0], &mut trees)? {
                 // Trees outside the pack were read from the repository: they exist.
-                claim(pack, &mut assigned, &mut objects, tree, ObjectKind::Tree)?;
+                claim(
+                    trees.pack,
+                    &mut assigned,
+                    &mut objects,
+                    tree,
+                    ObjectKind::Tree,
+                )?;
             }
             for change in &sides[0] {
                 let Some((mode, blob)) = change.new else {
@@ -141,12 +151,22 @@ impl Verifier {
                 if mode == FileMode::Gitlink {
                     continue;
                 }
-                if claim(pack, &mut assigned, &mut objects, blob, ObjectKind::Blob)? {
+                if claim(
+                    trees.pack,
+                    &mut assigned,
+                    &mut objects,
+                    blob,
+                    ObjectKind::Blob,
+                )? {
                     // Every file the push carries is scanned at each path it lands on.
                     if self.scanned.insert((change.path.clone(), blob)) {
                         let found = match self.streamed.get(&blob) {
                             Some(hits) => refuse(&change.path, hits, &self.secret_allow),
-                            None => scan(&change.path, &pack.content(&blob)?, &self.secret_allow),
+                            None => scan(
+                                &change.path,
+                                &trees.pack.content(&blob)?,
+                                &self.secret_allow,
+                            ),
                         };
                         found.map_err(|e| secret_found(&change.path, e))?;
                     }
@@ -179,6 +199,62 @@ impl Verifier {
     }
 }
 
+/// Pack trees decoded lately, first in, first out by entries: a commit's diff reads the
+/// trees its parent's diff decoded.
+#[derive(Default)]
+struct Decoded {
+    map: HashMap<ObjectId, Vec<TreeEntry>>,
+    order: VecDeque<ObjectId>,
+    entries: usize,
+}
+
+impl Decoded {
+    fn put(&mut self, id: ObjectId, entries: Vec<TreeEntry>) {
+        self.entries += entries.len();
+        self.map.insert(id, entries);
+        self.order.push_back(id);
+        // The newest stays, however large: the caller reads it next.
+        while self.entries > DECODED_ENTRIES && self.order.len() > 1 {
+            let Some(old) = self.order.pop_front() else {
+                break;
+            };
+            if let Some(gone) = self.map.remove(&old) {
+                self.entries -= gone.len();
+            }
+        }
+    }
+}
+
+/// Trees the walk reads: those the adapter supplied, else the pack's, decoded on demand.
+struct PackTrees<'a> {
+    supplied: &'a HashMap<ObjectId, Vec<TreeEntry>>,
+    pack: &'a mut PackReader,
+    decoded: &'a mut Decoded,
+}
+
+impl TreeLookup for PackTrees<'_> {
+    fn entries(&mut self, id: &ObjectId) -> Result<Option<Cow<'_, [TreeEntry]>>> {
+        let supplied = self.supplied;
+        if let Some(entries) = supplied.get(id) {
+            return Ok(Some(Cow::Borrowed(entries)));
+        }
+        if self.pack.kind(id) != Some(ObjectKind::Tree) {
+            return Ok(None);
+        }
+        if !self.decoded.map.contains_key(id) {
+            let data = self.pack.content(id)?;
+            let entries = decode_tree(&data)
+                .map_err(|e| Error::new(&e.code, format!("Tree {id}: {}", e.message)))?;
+            self.decoded.put(*id, entries);
+        }
+        Ok(self
+            .decoded
+            .map
+            .get(id)
+            .map(|e| Cow::Borrowed(e.as_slice())))
+    }
+}
+
 /// `SECRET_DETECTED` naming only the path and line (the scanner's message names the rule
 /// and how to allow it, never the secret).
 fn secret_found(path: &str, e: Error) -> Error {
@@ -188,10 +264,6 @@ fn secret_found(path: &str, e: Error) -> Error {
         .and_then(|rest| rest.split(' ').next())
         .unwrap_or("?");
     Error::new(&e.code, format!("secret detected in {path}:{line}"))
-}
-
-fn invalid_object(id: &ObjectId) -> Error {
-    Error::new("GIT_OBJECT_INVALID", format!("Object {id} is unreadable"))
 }
 
 /// Whether `id` is in the pack (as `kind`, or the push is refused); the first commit to
@@ -220,7 +292,7 @@ fn claim(
 
 /// The pack's commits reachable from `tips` through pack commits, parents first.
 fn new_commits(
-    pack: &PackReader,
+    pack: &mut PackReader,
     tips: &[ObjectId],
 ) -> Result<(Vec<ObjectId>, HashMap<ObjectId, Parsed>)> {
     let mut parsed: HashMap<ObjectId, Parsed> = HashMap::new();
@@ -251,8 +323,8 @@ fn new_commits(
                 order.push(id);
                 continue;
             }
-            let data = pack.kept(&id).ok_or_else(|| invalid_object(&id))?;
-            let commit = Commit::decode(data)
+            let data = pack.content(&id)?;
+            let commit = Commit::decode(&data)
                 .map_err(|e| Error::new(&e.code, format!("Commit {id}: {}", e.message)))?;
             let parents = commit.parents()?;
             stack.push((id, true));

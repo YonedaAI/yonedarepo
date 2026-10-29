@@ -47,6 +47,9 @@ const VERIFY_READS = 16;
 const READ_AHEAD = 2;
 /** Tree bytes a walk keeps from the ranges it read beyond the trees it asked for. */
 const SEEN_BYTES = 32 * 1024 * 1024;
+/** Commits the upload session walks together (platform_git_upload.rs WAVE_COMMITS): a
+ * walk of more waves comes back to bundles it read, for trees an earlier wave dropped. */
+const WAVE_COMMITS = 256;
 
 /** A Git object's exact content: the store of record (R2), the authority's staged copy,
  * or (blobs only) the object store; `null` when none holds it. A large file comes as its
@@ -152,11 +155,32 @@ export async function treeFor(objects: RepoObjects, id: string): Promise<Json> {
 }
 
 /** Trees a walk has read, by id: with each round's trees, every other tree in the ranges
- * read for them (up to `SEEN_BYTES`), where later rounds find most of theirs unread. */
+ * read for them (up to `SEEN_BYTES`), where later rounds find most of theirs unread. They
+ * stay for the whole fetch: the session drops its own past TREE_BYTES, a wave's diffs
+ * read trees earlier waves used, and the sending pass walks every wave again. */
 export class SeenTrees {
   readonly trees = new Map<string, Uint8Array>();
   private bytes = 0;
-  keep = (kind: string, id: string, data: Uint8Array) => {
+  /** Reads per bundle, and the file bytes and other bytes they held. */
+  private readonly bundles = new Map<string, { reads: number; files: number; others: number }>();
+  private readonly waves: boolean;
+
+  /** `commits`: how many the walk sends. */
+  constructor(commits = 0) {
+    this.waves = commits > WAVE_COMMITS;
+  }
+
+  /** In a walk of several waves, a bundle it comes back to is read whole, once, when what
+   * it read of it was mostly commits and trees (a large push keeps those in bundles of
+   * their own). A small fetch reads ranges only: a small push's files follow its trees. */
+  whole = (bundle: string) => {
+    const b = this.bundles.get(bundle) ?? { reads: 0, files: 0, others: 0 };
+    this.bundles.set(bundle, { ...b, reads: b.reads + 1 });
+    return this.waves && b.reads === 1 && b.files <= b.others;
+  };
+  keep = (kind: string, id: string, data: Uint8Array, bundle: string) => {
+    const b = this.bundles.get(bundle);
+    if (b) b[kind === 'blob' ? 'files' : 'others'] += data.length;
     if (kind !== 'tree' || this.trees.has(id) || this.bytes + data.length > SEEN_BYTES) return;
     this.trees.set(id, data.slice());
     this.bytes += data.length;
@@ -164,8 +188,8 @@ export class SeenTrees {
 }
 
 /** Trees `ids` for a walk: those `seen` holds, bundled ones in a few ranged reads (with
- * `seen`, bridging `WIDE_GAP` and keeping every tree they hold), the rest through `read`
- * (`treeFor`), `READS` at a time. */
+ * `seen`, bridging `WIDE_GAP`, reading a bundle the walk comes back to whole, and keeping
+ * every tree they hold), the rest through `read` (`treeFor`), `READS` at a time. */
 export async function treesFor(
   objects: RepoObjects,
   ids: string[],
@@ -178,18 +202,14 @@ export async function treesFor(
   for (const id of ids) {
     const data = seen?.trees.get(id);
     if (!data) asked.push(id);
-    else {
-      // The session keeps what it is given.
-      known.push({ id, data_b64: toBase64(data) });
-      seen?.trees.delete(id);
-    }
+    else known.push({ id, data_b64: toBase64(data) });
   }
   const bundled = await fromBundles(
     objects.env,
     objects.repo,
     asked.map((id) => ({ id, kind: 'tree' })),
     RANGE,
-    seen ? { gap: WIDE_GAP, copy: true, frame: seen.keep, stats } : { stats },
+    seen ? { gap: WIDE_GAP, copy: true, frame: seen.keep, whole: seen.whole, stats } : { stats },
   );
   const rest = await inBatches(
     asked.filter((id) => !bundled.has(id)),

@@ -8,8 +8,25 @@
 import RustWorker from '../../backend/crates/yoneda-worker/build/worker/shim.mjs';
 
 type Json = Record<string, any>;
-const entry = (RustWorker as unknown as { prototype?: { platformCompute?: unknown } }).prototype
-  ?.platformCompute;
+const exported = (
+  RustWorker as unknown as { prototype?: { platformCompute?: unknown; wasmSettle?: unknown } }
+).prototype;
+const entry = exported?.platformCompute;
+const settle = exported?.wasmSettle;
+
+/** Runs `call`, a call into Rust; when it fails, `wasmSettle` (compute.rs) runs before
+ * anything else goes in, so a fresh instance a trap scheduled never receives pointers into
+ * the old one's memory. */
+export function rustCall<T>(call: () => T): T {
+  try {
+    return call();
+  } catch (e) {
+    try {
+      if (typeof settle === 'function') settle();
+    } catch {}
+    throw e;
+  }
+}
 
 /** Bytes this isolate has passed into Wasm (each call's JSON input): Wasm memory grows to
  * a few times a call's input and never shrinks, so large inputs are what to watch. */
@@ -23,7 +40,7 @@ export function compute(input: Json): Json {
   const text = JSON.stringify(input);
   computeInput.bytes += text.length;
   computeInput.calls++;
-  const result = JSON.parse(entry(text));
+  const result = JSON.parse(rustCall(() => entry(text)));
   if (result.error)
     throw Object.assign(new Error(result.error.message), { code: result.error.code });
   return result.value;

@@ -24,6 +24,7 @@ import {
   concat,
   end,
   failed,
+  logPack,
   PackStats,
   RESULT,
   Storing,
@@ -33,7 +34,7 @@ import {
 
 type Read = Wanted & { data: Uint8Array | LargeBody | null };
 
-import { UploadSession } from './repo-git-sessions';
+import { UploadSession, wasmMemoryBytes } from './repo-git-sessions';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 import { quarantined } from './repo-quarantine-guard';
@@ -48,6 +49,10 @@ const EARLY_COMMITS = 20_000;
 const PACK_MS = 15 * 60_000;
 /** Pack bytes gathered before they are sent (one side-band packet at most). */
 export const CHUNK = 65515;
+/** A clone stores its pack only while this isolate's Wasm memory (which never shrinks; a
+ * large push leaves 60-80 MiB) is at most this: the stored parts and the clone's reads are
+ * JavaScript memory on top of it, under the isolate's 128 MB. The next clone stores it. */
+const STORE_WASM = 48 * 1024 * 1024;
 
 export const pkt = (text: string) => {
   const bytes = new TextEncoder().encode(text);
@@ -121,7 +126,10 @@ export async function sendPack(
   commits: string[] = [],
   asked?: Asked,
 ): Promise<Response> {
+  // Every built pack is logged; the client gets the timing line only when it asked.
+  const tally = stats ?? new PackStats(false);
   let writer: PackWriter | undefined;
+  let store = 'off';
   // A stored pack carries every blob: never served or stored while any is withheld. Stored
   // packs are side-band packets of CHUNK (what version 2 always asks for).
   if (
@@ -133,11 +141,12 @@ export async function sendPack(
     const key = await packKey(objects.repo, asked.wants);
     const stored = await timed('git.pack_cached', () => storedPack(objects.env, key));
     if (stored) return sendStored(head, stored, band, stats);
-    writer = new PackWriter(objects.env, objects.repo, key);
-    if (stats) stats.cache = 'miss';
+    tally.cache = 'miss';
+    store = wasmMemoryBytes() <= STORE_WASM ? 'on' : 'skipped';
+    if (store === 'on') writer = new PackWriter(objects.env, objects.repo, key);
   }
   const session = open();
-  const seen = new SeenTrees();
+  const seen = new SeenTrees(commits.length);
   const budget = new ReadBudget();
   // The commits the walk names are read while their trees are walked.
   const early: Promise<Read[]> =
@@ -145,15 +154,16 @@ export async function sendPack(
       ? readWhole(
           objects,
           commits.map((id) => ({ id, kind: 'commit' })),
-          stats?.reads,
+          tally.reads,
           budget,
         )
       : Promise.resolve([]);
   early.catch(() => {});
+  let count = 0;
   try {
     const started = performance.now();
-    const { count } = await enumerate(session, objects, stats?.walkReads, seen);
-    if (stats) stats.walk = performance.now() - started;
+    ({ count } = await enumerate(session, objects, tally.walkReads, seen));
+    tally.walk = performance.now() - started;
     // Without bundles every object is a read of its own: refused before the pack starts.
     if (count > FETCH_READS && !holdsBundles(objects.repo))
       throw overBudget(`${count} objects read one at a time`);
@@ -166,8 +176,9 @@ export async function sendPack(
     if (transient(e)) throw e;
     return errLine(head, e);
   }
-  const chunks = packChunks(session, objects, seen, early, budget, stats);
-  const store = new Storing(writer, stats);
+  logPack('git.pack.start', objects.repo, tally, { objects: count, store });
+  const chunks = packChunks(session, objects, seen, early, budget, tally);
+  const storing = new Storing(writer, tally);
   const out = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(head);
@@ -176,21 +187,26 @@ export async function sendPack(
       try {
         const next = await chunks.next();
         if (next.done) {
-          await store.finish();
-          end(controller, band, stats);
+          await storing.finish();
+          logPack('git.pack.end', objects.repo, tally);
+          end(controller, band, tally);
         } else {
           const sent = band ? sideBand(1, next.value, band) : next.value;
-          // A copy: the client's stream may take the bytes enqueued before the store does.
-          store.add(sent.slice());
+          storing.add(sent);
           controller.enqueue(sent);
         }
       } catch (e: any) {
-        await store.abort();
+        logPack('git.pack.failed', objects.repo, tally, {
+          error: `${e?.code ?? 'ERROR'}: ${String(e?.message ?? e).slice(0, 300)}`,
+        });
+        await storing.abort();
         failed(controller, band, e);
       }
     },
     async cancel() {
-      await store.abort();
+      // The client went away (or the pack was cut off) before the end.
+      logPack('git.pack.cancelled', objects.repo, tally);
+      await storing.abort();
       await chunks.return(undefined);
     },
   });
