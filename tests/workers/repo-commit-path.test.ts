@@ -143,5 +143,6 @@ it('refuses a removed member within 1 s where another isolate removed it', async
   expect((await commitOn(repo, bob, 'm.txt')).status).toBe(200);
   await changedElsewhere(id, owner, { op: 'repo_member_remove', account: 'pathbob' });
   later();
-  expect((await commitOn(repo, bob, 'm2.txt')).status).toBe(403);
+  // No longer a member of a private repository: it is not found (its existence is not leaked).
+  expect((await commitOn(repo, bob, 'm2.txt')).status).toBe(404);
 });
