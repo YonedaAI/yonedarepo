@@ -71,6 +71,7 @@ export async function browserFlow({ origin, api, kit, root, headed = false }, m)
   let shots = 0;
   const shot = (name) => page.screenshot({ path: join(dir, `${String(++shots).padStart(2, '0')}-${name}.png`), fullPage: true });
   try {
+    await publicHome(page, origin, shot, m);
     await signIn(page, origin, kit);
     await shot('signed-in');
     const account = new Session(origin, { cookie: cookieHeader(await context.cookies(origin)) });
@@ -96,9 +97,28 @@ export async function browserFlow({ origin, api, kit, root, headed = false }, m)
   }
 }
 
-/** The real login form on the welcome page; the kit password is typed only here. */
-export async function signIn(page, origin, { KIT_USERNAME, KIT_PASSWORD }) {
+/** The public site's top nav, in order, as a signed-out visitor sees it at `/`. */
+export const PUBLIC_NAV = ['Features', 'Pricing', 'Docs', 'Blog', 'Company'];
+/** Where the login form lives since `/` became the public home for signed-out visitors. */
+export const signInUrl = (origin) => new URL('/signin', origin).href;
+
+/** The signed-out home: one h1, the public nav, and a Sign in link that reaches the form. */
+export async function publicHome(page, origin, shot, m) {
   await page.goto(origin);
+  await page.getByRole('heading', { level: 1 }).waitFor();
+  const nav = page.getByRole('navigation', { name: 'Main' });
+  const links = await nav.getByRole('listitem').getByRole('link').allInnerTexts();
+  assert.deepEqual(links.map((l) => l.trim()), PUBLIC_NAV, 'the public home nav');
+  await shot('public-home');
+  await nav.getByRole('link', { name: 'Sign in', exact: true }).click();
+  await page.waitForURL(signInUrl(origin));
+  await page.getByRole('navigation', { name: 'Account access' }).waitFor();
+  m.public_home = 'nav and sign-in link';
+}
+
+/** The real login form at `/signin`; the kit password is typed only here. */
+export async function signIn(page, origin, { KIT_USERNAME, KIT_PASSWORD }) {
+  await page.goto(signInUrl(origin));
   await page.getByRole('navigation', { name: 'Account access' }).getByRole('button', { name: 'Sign in' }).click();
   await page.getByLabel('Username or email').fill(KIT_USERNAME);
   const password = page.getByLabel('Password', { exact: true });

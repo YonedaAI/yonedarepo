@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { see } from '../../tools/staging/browser-collab-flow.mjs';
-import { cookieHeader, scrub, settle } from '../../tools/staging/browser-flow.mjs';
+import { SITE_NAV } from '../../frontend/src/features/site/siteRoute.ts';
+import { cookieHeader, PUBLIC_NAV, scrub, settle, signInUrl } from '../../tools/staging/browser-flow.mjs';
 
 test('cookie header joins every cookie', () => {
   assert.equal(cookieHeader([{ name: 'a', value: '1' }, { name: 'b', value: '2' }]), 'a=1; b=2');
@@ -29,4 +30,10 @@ test('see names what is missing instead of the selector dump', async () => {
   const missing = { first: () => ({ waitFor: async () => Promise.reject(new Error('Timeout 10ms exceeded.\nCall log: …')) }) };
   await assert.rejects(see(missing, 'the Releases empty state', 10), /^Error: the Releases empty state is not shown \(Timeout 10ms exceeded\.\)$/);
   await see({ first: () => ({ waitFor: async () => {} }) }, 'anything');
+});
+
+test('the gate expects the public nav the site renders, and signs in at /signin', () => {
+  assert.deepEqual(PUBLIC_NAV, SITE_NAV.map((item) => item.label));
+  assert.equal(signInUrl('https://dev.yonedarepo.com'), 'https://dev.yonedarepo.com/signin');
+  assert.equal(signInUrl('http://127.0.0.1:8787/'), 'http://127.0.0.1:8787/signin');
 });
