@@ -472,14 +472,10 @@ fn carried_fork_work_is_based_where_its_history_landed_in_the_parent() {
     );
 }
 
-/// Found by the long differential run (seed 31): when a parent writer moves the mirror
-/// branch off the fork's head and the fork's branch is carried again unchanged, the
-/// mirror move logs the head landing on the mirror a second time and breaks the landings
-/// key. Random cases leave the mirror to the carry until this is fixed.
+/// Found by the long differential run (seed 31), fixed on claude/fix-fork-mirror: when a
+/// parent writer moves the mirror branch off the fork's head and the unchanged fork
+/// branch is carried again, the mirror moves back.
 #[test]
-#[ignore = "known-failing: repo_fork_mirror answers DATABASE (UNIQUE constraint failed: \
-            landings.commit_id, landings.refname) moving the mirror back to a head it held; \
-            target: the mirror moves (the model's Moved)"]
 fn carrying_again_moves_the_mirror_back_to_the_fork_head() {
     let script = [
         Op::Fork,

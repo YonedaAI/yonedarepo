@@ -31,11 +31,13 @@ impl Rng {
 /// Files the generator writes: none is another's directory.
 pub const PATHS: [&str; 4] = ["README.md", "src/lib.rs", "src/b.rs", "a.txt"];
 /// Working branches (and main), and tags.
-const BRANCHES: [&str; 4] = [
+const BRANCHES: [&str; 5] = [
     MAIN,
     "refs/heads/b1",
     "refs/heads/b2",
     "refs/heads/feature/x",
+    // The parent's mirror of the fork's branch, once carried: writers may move it too.
+    MIRROR,
 ];
 const TAGS: [&str; 3] = ["refs/tags/v1", "refs/tags/v2", "refs/tags/v3"];
 /// Signed-in accounts, members or not.
@@ -115,15 +117,6 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
         })
         .to_string()
     };
-    // What lands on main: a working branch, or the parent's mirror of the fork's branch
-    // (only the carry moves the mirror here).
-    let landable = |rng: &mut Rng| -> String {
-        if repo.tip(MIRROR).is_some() && rng.below(3) == 0 {
-            MIRROR.to_owned()
-        } else {
-            working(rng)
-        }
-    };
     match rng.below(100) {
         20..23 => Op::Publish,
         23..30 if repo.shard.is_empty() || rng.below(5) < 3 => {
@@ -200,14 +193,14 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
             message: (rng.below(2) == 0).then(|| format!("Release at step {step}")),
         },
         55..61 => Op::Land {
-            branch: landable(rng),
+            branch: working(rng),
         },
         61..65 => Op::LandOn {
             branch: working(rng),
             onto: working(rng),
         },
         65..74 => Op::MergeLand {
-            branch: landable(rng),
+            branch: working(rng),
         },
         74..77 => Op::Rebase {
             branch: working(rng),
