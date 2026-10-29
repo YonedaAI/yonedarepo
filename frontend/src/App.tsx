@@ -1,6 +1,7 @@
 // The one app shell: sidebar, header and account menu around every page (home, Explore, a
 // repository's tabs, account settings and device login). A signed-out visitor may open
-// Explore and any public repository; nothing there asks them to sign in first.
+// Explore and any public repository; nothing there asks them to sign in first. The public
+// site (its own pages, and `/` while signed out) renders in its own frame instead.
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { AccountSettings } from './features/account-settings/AccountSettings';
@@ -9,6 +10,8 @@ import { HomePage } from './features/shell/HomePage';
 import { type Created, NewRepositoryDialog } from './features/shell/NewRepositoryDialog';
 import { type PlatformRepo, repoRows } from './features/shell/repoRows';
 import { useRoute } from './features/shell/useRoute';
+import { SiteRoot, signedInHint } from './features/site/SiteRoot';
+import { siteView } from './features/site/siteRoute';
 import { DevicePage } from './features/source-platform/DevicePage';
 import { OrgPage } from './features/source-platform/OrgPage';
 import type { OrgSummary } from './features/source-platform/orgModel';
@@ -48,6 +51,12 @@ export function App() {
     setPanel(null);
     setCreating(false);
   }, [session.sessionEnded]);
+  useEffect(() => {
+    if (!session.loading && !session.error) signedInHint(session.authenticated);
+  }, [session.loading, session.error, session.authenticated]);
+
+  const site = siteView(route, session, signedInHint());
+  if (site) return <SiteRoot site={site} session={session} navigate={navigate} />;
 
   async function created(result: Created) {
     platform.reload();

@@ -1,0 +1,265 @@
+/* Pricing, docs, blog, company and sign-in pages of the public site. */
+/* Pricing */
+.site-notice {
+  max-width: 680px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--site-accent);
+  background: var(--site-accent-soft);
+}
+.site-checklist {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px 24px;
+  padding: 0;
+  list-style: none;
+}
+.site-checklist li {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.site-checklist svg {
+  flex: none;
+  margin-top: 5px;
+  color: var(--site-good);
+}
+.site-table,
+.markdown-table {
+  overflow-x: auto;
+  border: 1px solid var(--site-line);
+  border-radius: 10px;
+  background: var(--site-surface);
+}
+.site-table table,
+.markdown-table table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.site-table caption {
+  text-align: left;
+  padding: 12px 16px 0;
+  color: var(--site-muted);
+  font-size: 14px;
+}
+.site table th,
+.site table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 12px 16px;
+  border-top: 1px solid var(--site-line);
+}
+.site table thead th {
+  border-top: 0;
+  font-size: 13px;
+  color: var(--site-muted);
+  font-weight: 600;
+}
+.site-table small {
+  display: block;
+  font-weight: 400;
+  color: var(--site-muted);
+  font-size: 13px;
+  margin-top: 2px;
+}
+.site-rate {
+  font-weight: 600;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.site-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+}
+.site-cards > h2 {
+  grid-column: 1 / -1;
+  margin-bottom: 0;
+}
+.site-card {
+  padding: 20px;
+  border: 1px solid var(--site-line);
+  border-radius: 12px;
+  background: var(--site-surface);
+}
+.site-card h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--site-muted);
+}
+.site-card p {
+  margin: 8px 0 0;
+}
+.site-figure {
+  font-size: 26px;
+  font-weight: 600;
+}
+
+/* Docs, blog and company prose */
+.site-docs {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 48px;
+  padding-top: 40px;
+}
+.site-docs-nav {
+  position: sticky;
+  top: 80px;
+  align-self: start;
+  font-size: 15px;
+}
+.site-docs-section {
+  margin: 20px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--site-muted);
+}
+.site-docs-nav div:first-child .site-docs-section {
+  margin-top: 0;
+}
+.site-docs-nav ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.site-docs-link {
+  display: block;
+  padding: 4px 10px;
+  border-radius: 6px;
+  color: var(--site-muted);
+}
+.site-docs-link:hover,
+.site-docs-link[aria-current="page"] {
+  color: var(--site-text);
+  background: var(--site-accent-soft);
+}
+.site-prose {
+  max-width: 760px;
+  min-width: 0;
+}
+.site-prose h1 {
+  font-size: clamp(30px, 4.6vw, 42px);
+  margin: 0 0 12px;
+}
+.site-prose h2 {
+  font-size: 24px;
+  margin: 40px 0 12px;
+  scroll-margin-top: 80px;
+}
+.site-prose h3 {
+  font-size: 19px;
+  margin: 28px 0 8px;
+}
+.site-prose pre {
+  overflow-x: auto;
+  padding: 14px 16px;
+  border-radius: 10px;
+  background: var(--site-code-bg);
+  color: var(--site-code-text);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.site-prose pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+.site-prose :not(pre) > code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--site-accent-soft);
+  color: var(--site-text);
+}
+.site-prose blockquote {
+  margin: 16px 0;
+  padding: 4px 16px;
+  border-left: 3px solid var(--site-line);
+  color: var(--site-muted);
+}
+.site-prose :where(li + li) {
+  margin-top: 4px;
+}
+.site-byline {
+  color: var(--site-muted);
+  margin: 0 0 24px;
+}
+.site-post {
+  margin: 0 auto;
+  padding-top: 40px;
+}
+.site-posts {
+  list-style: none;
+  padding: 0;
+  max-width: 760px;
+}
+.site-posts li {
+  padding: 24px 0;
+  border-top: 1px solid var(--site-line);
+}
+.site-posts time {
+  color: var(--site-muted);
+  font-size: 14px;
+}
+.site-posts h2 {
+  margin: 6px 0;
+  font-size: 24px;
+}
+.site-posts p {
+  margin: 0;
+  color: var(--site-muted);
+}
+.site-company {
+  padding-top: 40px;
+  max-width: 760px;
+  margin: 0 auto;
+}
+.site-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 0 0 32px;
+  padding: 0;
+  list-style: none;
+  border-bottom: 1px solid var(--site-line);
+}
+.site-tab {
+  display: block;
+  padding: 8px 14px;
+  color: var(--site-muted);
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.site-tab[aria-current="page"] {
+  color: var(--site-text);
+  border-bottom-color: var(--site-accent);
+}
+
+/* Sign in: the app's account panel, in the site's colors */
+.site-signin {
+  max-width: 440px;
+  margin: 0 auto;
+  padding: 56px 0;
+}
+.site-signin h1 {
+  font-size: 32px;
+  margin: 0 0 20px;
+}
+.site .account-panel {
+  background: var(--site-surface);
+  border-color: var(--site-line);
+  color: var(--site-text);
+}
+.site .account-tabs {
+  background: var(--site-bg);
+}
+.site .account-tabs button.selected {
+  background: var(--site-accent-soft);
+  color: var(--site-text);
+}
+.site input {
+  background: var(--site-surface);
+  color: var(--site-text);
+  border-color: var(--site-line);
+}
