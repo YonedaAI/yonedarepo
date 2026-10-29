@@ -1,0 +1,85 @@
+{
+  "$defs": {
+    "ChangeCreate": {
+      "additionalProperties": false,
+      "description": "`change create`.",
+      "properties": {
+        "change": {
+          "$ref": "#/$defs/ChangeSummary"
+        },
+        "repo": {
+          "description": "The repository it was opened on (a fork's parent with `--to-parent`).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "change"
+      ],
+      "title": "ChangeCreate",
+      "type": "object"
+    },
+    "ChangeSummary": {
+      "additionalProperties": false,
+      "description": "A change request in one line.",
+      "properties": {
+        "author": {
+          "type": "string"
+        },
+        "base": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "head": {
+          "description": "The branch's current commit (null once the branch is gone).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "description": "`open`, `landed` or `closed`.",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "number",
+        "status",
+        "title",
+        "branch",
+        "base",
+        "author",
+        "head"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `change-create`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/ChangeCreate"
+    },
+    "schema": {
+      "const": "yoneda.cli.change-create.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.change-create.v1",
+  "type": "object"
+}

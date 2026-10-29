@@ -1,0 +1,44 @@
+{
+  "$defs": {
+    "TokenCreate": {
+      "additionalProperties": false,
+      "description": "`token create`: the secret is shown once.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "repo": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "name",
+        "token"
+      ],
+      "title": "TokenCreate",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `token-create`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/TokenCreate"
+    },
+    "schema": {
+      "const": "yoneda.cli.token-create.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.token-create.v1",
+  "type": "object"
+}

@@ -3,23 +3,31 @@ use crate::args::{self, Command, SyncMode};
 use crate::checkout::Checkout;
 use crate::error::{Error, Result};
 use crate::{
-    account, agent_hook, attempt, brief, change_cmd, clone, context_cmd, login, pull, reads,
-    release_cmd, repo_ops, session_cmd, setup, status, sync, target,
+    account, agent_hook, attempt, brief, change_cmd, clone, context_cmd, declared_reads, login,
+    pull, reads, release_cmd, repo_ops, session_cmd, setup, status, sync, target,
 };
+use crate::{human, output};
 
 async fn sync_checkout(mode: SyncMode) -> Result<()> {
     let mut co = Checkout::open()?;
     match mode {
         SyncMode::Attempt { id, mcp_url } => attempt::sync(&mut co, &id, mcp_url.as_deref()).await,
         SyncMode::Push | SyncMode::Land => {
-            let made = sync::push(&mut co).await?;
-            println!(
+            let (made, adopted) = sync::push(&mut co).await?;
+            human!(
                 "Pushed {made} platform commit(s) to {}",
                 co.state.offline_branch
             );
-            if mode == SyncMode::Land {
-                sync::land(&mut co).await?;
-            }
+            let landing = match mode {
+                SyncMode::Land => Some(sync::land(&mut co).await?),
+                _ => None,
+            };
+            output::emit(&output::Synced::Push {
+                pushed: made as u64,
+                adopted: adopted as u64,
+                offline_branch: co.state.offline_branch.clone(),
+                landing,
+            });
             Ok(())
         }
     }
@@ -30,16 +38,22 @@ async fn show_status(brief_only: bool) -> Result<()> {
     if let Ok(co) = Checkout::open() {
         if brief_only {
             let s = &co.state;
-            println!(
+            human!(
                 "yoneda {} at {} | {} version {} (offline checkout)",
-                s.repo, s.origin, s.branch, s.base_version
+                s.repo,
+                s.origin,
+                s.branch,
+                s.base_version
             );
+            output::emit(&status::brief(&co));
             return Ok(());
         }
         return status::status(&co).await;
     }
     let clone = target::current_clone().ok_or_else(|| Error::new("not inside a Git repository"))?;
-    println!("{}", brief::line(&clone)?);
+    let brief = brief::Brief::of(&clone)?;
+    human!("{}", brief.line());
+    output::emit(&brief.report());
     Ok(())
 }
 
@@ -114,7 +128,7 @@ async fn run(command: Command) -> Result<()> {
         Command::Status { brief } => show_status(brief).await,
         Command::Pull => pull::pull(&mut Checkout::open()?).await,
         Command::Sync(mode) => sync_checkout(mode).await,
-        Command::Reads(command) => session_cmd::reads(command),
+        Command::Reads(command) => declared_reads::run(command),
         Command::Push(args) => session_cmd::push(args),
         Command::Session { target, command } => session_cmd::session(&target, command).await,
         Command::Change { target, command } => {
@@ -124,13 +138,14 @@ async fn run(command: Command) -> Result<()> {
             release_cmd::run(&target::resolve(&target)?, command).await
         }
         Command::Hook(event) => agent_hook::run(event).await,
-        Command::Context { max_bytes, json } => context_cmd::run(max_bytes, json).await,
+        Command::Context { max_bytes } => context_cmd::run(max_bytes).await,
     }
 }
 
 /// The `yoneda` entry point.
 pub fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
+    output::set_json(output::requested(&argv));
     let outcome = args::parse(&argv).and_then(|command| {
         tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -139,7 +154,11 @@ pub fn main() {
             .block_on(run(command))
     });
     if let Err(error) = outcome {
-        eprintln!("yoneda: {error}");
+        if output::json() {
+            println!("{}", output::document(&output::ErrorReport::from(&error)));
+        } else {
+            eprintln!("yoneda: {error}");
+        }
         std::process::exit(error.exit_code);
     }
 }

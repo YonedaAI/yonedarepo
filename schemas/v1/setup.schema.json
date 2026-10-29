@@ -1,0 +1,53 @@
+{
+  "$defs": {
+    "Setup": {
+      "additionalProperties": false,
+      "description": "`setup <agent>`.",
+      "properties": {
+        "agent": {
+          "type": "string"
+        },
+        "mcp_url": {
+          "type": "string"
+        },
+        "token_env": {
+          "description": "The environment variable the agent reads the token from.",
+          "type": "string"
+        },
+        "written": {
+          "description": "Files written.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "agent",
+        "written",
+        "mcp_url",
+        "token_env"
+      ],
+      "title": "Setup",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `setup`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/Setup"
+    },
+    "schema": {
+      "const": "yoneda.cli.setup.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.setup.v1",
+  "type": "object"
+}

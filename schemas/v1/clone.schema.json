@@ -1,0 +1,66 @@
+{
+  "$defs": {
+    "CloneMethod": {
+      "description": "How `clone` brought the repository in.",
+      "oneOf": [
+        {
+          "const": "git_clone",
+          "description": "`git clone` with a short-lived read token.",
+          "type": "string"
+        },
+        {
+          "const": "api_snapshot",
+          "description": "A snapshot of the branch through the API.",
+          "type": "string"
+        }
+      ]
+    },
+    "Cloned": {
+      "additionalProperties": false,
+      "description": "`clone` (an offline checkout).",
+      "properties": {
+        "dir": {
+          "type": "string"
+        },
+        "method": {
+          "$ref": "#/$defs/CloneMethod"
+        },
+        "repo": {
+          "type": "string"
+        },
+        "version": {
+          "description": "The log version the checkout is pinned to.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "repo",
+        "dir",
+        "version",
+        "method"
+      ],
+      "title": "Cloned",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `clone`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/Cloned"
+    },
+    "schema": {
+      "const": "yoneda.cli.clone.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.clone.v1",
+  "type": "object"
+}

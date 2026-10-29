@@ -1,0 +1,105 @@
+{
+  "$defs": {
+    "ErrorCode": {
+      "description": "Why a command failed, as a stable code a script can branch on (the message is for\npeople and may change).",
+      "oneOf": [
+        {
+          "const": "usage",
+          "description": "A malformed command line (exit code 64).",
+          "type": "string"
+        },
+        {
+          "const": "conflict",
+          "description": "Concurrent work collided: a refused landing or rebase (exit code 2 for those).",
+          "type": "string"
+        },
+        {
+          "const": "auth",
+          "description": "No usable credential: the platform answered 401.",
+          "type": "string"
+        },
+        {
+          "const": "forbidden",
+          "description": "The credential may not do this: the platform answered 403.",
+          "type": "string"
+        },
+        {
+          "const": "not_found",
+          "description": "The platform has no such repository, branch, change or record (404).",
+          "type": "string"
+        },
+        {
+          "const": "unreachable",
+          "description": "The platform could not be reached.",
+          "type": "string"
+        },
+        {
+          "const": "unavailable",
+          "description": "The platform or its gateway is over its limits or down (502/503/504); retry later.",
+          "type": "string"
+        },
+        {
+          "const": "platform",
+          "description": "The platform refused the request for another reason (`platform_code` says which).",
+          "type": "string"
+        },
+        {
+          "const": "failed",
+          "description": "Anything else: local state, files, unexpected answers.",
+          "type": "string"
+        }
+      ]
+    },
+    "ErrorReport": {
+      "additionalProperties": false,
+      "description": "A failed command.",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "exit_code": {
+          "description": "The process exit code (also set under `--json`).",
+          "format": "int32",
+          "type": "integer"
+        },
+        "message": {
+          "description": "The same message the human mode prints after `yoneda: `.",
+          "type": "string"
+        },
+        "platform_code": {
+          "description": "The platform's own error code (`NOT_FOUND`, `STALE_PARENT`, ...), when the platform\nrefused the request.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "code",
+        "message",
+        "exit_code",
+        "platform_code"
+      ],
+      "title": "ErrorReport",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `error`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/ErrorReport"
+    },
+    "schema": {
+      "const": "yoneda.cli.error.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.error.v1",
+  "type": "object"
+}

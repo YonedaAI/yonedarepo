@@ -101,13 +101,14 @@ pub async fn gather() -> Result<(Local, Value)> {
 }
 
 /// `yoneda context [--max-bytes n] [--json]`.
-pub async fn run(max_bytes: usize, json: bool) -> Result<()> {
+pub async fn run(max_bytes: usize) -> Result<()> {
     let (local, read) = gather().await?;
-    if json {
-        println!("{read}");
-    } else {
-        println!("{}", render(&read, &local, max_bytes, now_ms()));
-    }
+    crate::human!("{}", render(&read, &local, max_bytes, now_ms()));
+    crate::output::emit(&crate::output::Context {
+        brief: local.brief,
+        branch: local.branch,
+        context: read,
+    });
     Ok(())
 }
 

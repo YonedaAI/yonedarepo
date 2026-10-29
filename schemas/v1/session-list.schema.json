@@ -1,0 +1,71 @@
+{
+  "$defs": {
+    "Session": {
+      "additionalProperties": false,
+      "description": "A coding session recorded on a commit.",
+      "properties": {
+        "cli": {
+          "type": "string"
+        },
+        "model": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "recorded_by": {
+          "type": "string"
+        },
+        "summary": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "cli",
+        "model",
+        "recorded_by",
+        "summary"
+      ],
+      "type": "object"
+    },
+    "SessionList": {
+      "additionalProperties": false,
+      "description": "`session list`.",
+      "properties": {
+        "commit": {
+          "type": "string"
+        },
+        "sessions": {
+          "items": {
+            "$ref": "#/$defs/Session"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "commit",
+        "sessions"
+      ],
+      "title": "SessionList",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `session-list`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/SessionList"
+    },
+    "schema": {
+      "const": "yoneda.cli.session-list.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.session-list.v1",
+  "type": "object"
+}

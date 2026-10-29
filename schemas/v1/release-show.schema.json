@@ -1,0 +1,36 @@
+{
+  "$defs": {
+    "ReleaseShow": {
+      "additionalProperties": false,
+      "description": "`release show`.",
+      "properties": {
+        "release": {
+          "description": "The release with its notes, tag and assets, as the platform returns it."
+        }
+      },
+      "required": [
+        "release"
+      ],
+      "title": "ReleaseShow",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `release-show`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/ReleaseShow"
+    },
+    "schema": {
+      "const": "yoneda.cli.release-show.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.release-show.v1",
+  "type": "object"
+}

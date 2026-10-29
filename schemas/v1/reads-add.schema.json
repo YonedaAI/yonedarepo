@@ -1,0 +1,46 @@
+{
+  "$defs": {
+    "ReadsAdd": {
+      "additionalProperties": false,
+      "description": "`reads add`.",
+      "properties": {
+        "added": {
+          "description": "Paths newly declared.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "description": "Paths declared in all.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "added",
+        "total"
+      ],
+      "title": "ReadsAdd",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `reads-add`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/ReadsAdd"
+    },
+    "schema": {
+      "const": "yoneda.cli.reads-add.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.reads-add.v1",
+  "type": "object"
+}

@@ -2,6 +2,8 @@
 //! `yoneda_platform::shared_contracts`, so the browser's types come from the Rust types that
 //! produce the JSON. Each file holds the types and the schema itself. Only the schema
 //! subset those types use is rendered; anything else is an error, never a silent `unknown`.
+//! It also writes the `yoneda --json` schemas (`schemas/v1`, `yoneda_cli::output::schema`),
+//! whose staleness test lives with the CLI.
 use serde_json::{Map, Value};
 use std::path::{Path, PathBuf};
 
@@ -16,6 +18,12 @@ pub fn write(root: &Path) -> Result<()> {
         std::fs::write(path(root, name), render(name, &schema)?)?;
         println!("wrote {DIR}/{name}.ts");
     }
+    let cli = root.join(yoneda_cli::output::schema::DIR);
+    std::fs::create_dir_all(&cli)?;
+    for (name, text) in yoneda_cli::output::schema::files() {
+        std::fs::write(cli.join(&name), text)?;
+    }
+    println!("wrote {}/*.schema.json", yoneda_cli::output::schema::DIR);
     Ok(())
 }
 

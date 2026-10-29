@@ -1,0 +1,40 @@
+{
+  "$defs": {
+    "TokenRevoke": {
+      "additionalProperties": false,
+      "description": "`token revoke`.",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "repo": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "repo",
+        "name"
+      ],
+      "title": "TokenRevoke",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `token-revoke`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/TokenRevoke"
+    },
+    "schema": {
+      "const": "yoneda.cli.token-revoke.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.token-revoke.v1",
+  "type": "object"
+}

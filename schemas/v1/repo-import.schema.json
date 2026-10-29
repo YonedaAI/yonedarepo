@@ -1,0 +1,52 @@
+{
+  "$defs": {
+    "RepoImport": {
+      "additionalProperties": false,
+      "description": "`repo import`.",
+      "properties": {
+        "files": {
+          "description": "Files imported (landed on main).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "remote": {
+          "description": "The URL to `git clone`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "files",
+        "remote"
+      ],
+      "title": "RepoImport",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `repo-import`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/RepoImport"
+    },
+    "schema": {
+      "const": "yoneda.cli.repo-import.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.repo-import.v1",
+  "type": "object"
+}

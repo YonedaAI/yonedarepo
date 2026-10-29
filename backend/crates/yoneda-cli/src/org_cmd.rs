@@ -3,6 +3,8 @@
 use crate::api::encode;
 use crate::command::OrgCommand;
 use crate::error::Result;
+use crate::human;
+use crate::output::{self, OrgMember, OrgMembership, OrgRepo, OrgTeam};
 use crate::target;
 use serde_json::{Value, json};
 
@@ -17,18 +19,23 @@ fn path(org: &str, rest: &[&str]) -> String {
         .collect()
 }
 
+/// A field for `--json` (empty when absent, where the human text shows `?`).
+fn owned(value: &Value) -> String {
+    value.as_str().unwrap_or_default().to_owned()
+}
+
 fn show(org: &Value) {
-    println!(
+    human!(
         "{}  (you: {}, created by {})",
         text(&org["org"]),
         text(&org["role"]),
         text(&org["created_by"])
     );
-    println!("members:");
+    human!("members:");
     for m in org["members"].as_array().into_iter().flatten() {
-        println!("  {}  {}", text(&m["account"]), text(&m["role"]));
+        human!("  {}  {}", text(&m["account"]), text(&m["role"]));
     }
-    println!("teams:");
+    human!("teams:");
     for t in org["teams"].as_array().into_iter().flatten() {
         let members: Vec<&str> = t["members"]
             .as_array()
@@ -36,8 +43,33 @@ fn show(org: &Value) {
             .flatten()
             .map(text)
             .collect();
-        println!("  {}  [{}]", text(&t["name"]), members.join(", "));
+        human!("  {}  [{}]", text(&t["name"]), members.join(", "));
     }
+    let list = |key: &str| org[key].as_array().cloned().unwrap_or_default();
+    output::emit(&output::OrgShow {
+        org: owned(&org["org"]),
+        role: owned(&org["role"]),
+        created_by: owned(&org["created_by"]),
+        members: list("members")
+            .iter()
+            .map(|m| OrgMember {
+                account: owned(&m["account"]),
+                role: owned(&m["role"]),
+            })
+            .collect(),
+        teams: list("teams")
+            .iter()
+            .map(|t| OrgTeam {
+                name: owned(&t["name"]),
+                members: t["members"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(owned)
+                    .collect(),
+            })
+            .collect(),
+    });
 }
 
 pub async fn run(origin: Option<&str>, command: OrgCommand) -> Result<()> {
@@ -49,15 +81,24 @@ pub async fn run(origin: Option<&str>, command: OrgCommand) -> Result<()> {
                 .cloned()
                 .unwrap_or_default();
             if orgs.is_empty() {
-                println!("No organizations");
+                human!("No organizations");
             }
-            for o in orgs {
-                println!("{}  {}", text(&o["org"]), text(&o["role"]));
+            for o in &orgs {
+                human!("{}  {}", text(&o["org"]), text(&o["role"]));
             }
+            let orgs = orgs
+                .iter()
+                .map(|o| OrgMembership {
+                    org: owned(&o["org"]),
+                    role: owned(&o["role"]),
+                })
+                .collect();
+            output::emit(&output::OrgList { orgs });
         }
         OrgCommand::Create { name } => {
             api.post("/orgs", &json!({ "name": name })).await?;
-            println!("Created organization {name} (you are its owner)");
+            human!("Created organization {name} (you are its owner)");
+            output::emit(&output::OrgCreate { org: name });
         }
         OrgCommand::Show { org } => show(&api.get(&path(&org, &[])).await?),
         OrgCommand::Repos { org } => {
@@ -66,45 +107,60 @@ pub async fn run(origin: Option<&str>, command: OrgCommand) -> Result<()> {
                 .cloned()
                 .unwrap_or_default();
             if repos.is_empty() {
-                println!("No repositories");
+                human!("No repositories");
             }
-            for r in repos {
-                println!("{}  {}", text(&r["id"]), text(&r["name"]));
+            for r in &repos {
+                human!("{}  {}", text(&r["id"]), text(&r["name"]));
             }
+            let repos = repos
+                .iter()
+                .map(|r| OrgRepo {
+                    id: owned(&r["id"]),
+                    name: owned(&r["name"]),
+                })
+                .collect();
+            output::emit(&output::OrgRepos { org, repos });
         }
         OrgCommand::Delete { org, confirm } => {
             let query = format!("?confirm={}", crate::api::encode(&confirm));
             api.delete(&format!("{}{query}", path(&org, &[]))).await?;
-            println!("Deleted organization {org}; its name is retired");
+            human!("Deleted organization {org}; its name is retired");
+            output::emit(&output::OrgDelete { org });
         }
         OrgCommand::MemberAdd { org, account, role } => {
             let body = json!({ "account": account, "role": role });
             api.post(&path(&org, &["members"]), &body).await?;
-            println!("{account} is now {role} of {org}");
+            human!("{account} is now {role} of {org}");
+            output::emit(&output::OrgMemberAdd { org, account, role });
         }
         OrgCommand::MemberRemove { org, account } => {
             api.delete(&path(&org, &["members", &account])).await?;
-            println!("Removed {account} from {org} (and its teams)");
+            human!("Removed {account} from {org} (and its teams)");
+            output::emit(&output::OrgMemberRemove { org, account });
         }
         OrgCommand::TeamCreate { org, team } => {
             api.post(&path(&org, &["teams"]), &json!({ "name": team }))
                 .await?;
-            println!("Created team {org}/{team}; grant it on a repository as team:{org}/{team}");
+            human!("Created team {org}/{team}; grant it on a repository as team:{org}/{team}");
+            output::emit(&output::OrgTeamCreate { org, team });
         }
         OrgCommand::TeamDelete { org, team } => {
             api.delete(&path(&org, &["teams", &team])).await?;
-            println!("Deleted team {org}/{team}");
+            human!("Deleted team {org}/{team}");
+            output::emit(&output::OrgTeamDelete { org, team });
         }
         OrgCommand::TeamAdd { org, team, account } => {
             let body = json!({ "account": account });
             api.post(&path(&org, &["teams", &team, "members"]), &body)
                 .await?;
-            println!("Added {account} to {org}/{team}");
+            human!("Added {account} to {org}/{team}");
+            output::emit(&output::OrgTeamAdd { org, team, account });
         }
         OrgCommand::TeamRemove { org, team, account } => {
             api.delete(&path(&org, &["teams", &team, "members", &account]))
                 .await?;
-            println!("Removed {account} from {org}/{team}");
+            human!("Removed {account} from {org}/{team}");
+            output::emit(&output::OrgTeamRemove { org, team, account });
         }
     }
     Ok(())

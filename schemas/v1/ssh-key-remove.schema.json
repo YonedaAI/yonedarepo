@@ -1,0 +1,36 @@
+{
+  "$defs": {
+    "SshKeyRemove": {
+      "additionalProperties": false,
+      "description": "`ssh-key remove`.",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id"
+      ],
+      "title": "SshKeyRemove",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `ssh-key-remove`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/SshKeyRemove"
+    },
+    "schema": {
+      "const": "yoneda.cli.ssh-key-remove.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.ssh-key-remove.v1",
+  "type": "object"
+}

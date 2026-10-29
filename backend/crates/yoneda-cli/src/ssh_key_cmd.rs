@@ -4,6 +4,8 @@
 use crate::api::encode;
 use crate::command::SshKeyCommand;
 use crate::error::{Context, Error, Result};
+use crate::human;
+use crate::output::{self, SshKey};
 use crate::target;
 use serde_json::{Value, json};
 use std::io::Read;
@@ -13,6 +15,11 @@ const TITLE_CHARS: usize = 64;
 
 fn text(value: &Value) -> &str {
     value.as_str().unwrap_or("?")
+}
+
+/// A field for `--json` (empty when absent, where the human text shows `?`).
+fn owned(value: &Value) -> String {
+    value.as_str().unwrap_or_default().to_owned()
 }
 
 /// One OpenSSH public key line (`<type> <base64> [comment]`) and its comment.
@@ -137,13 +144,20 @@ pub async fn run(origin: Option<&str>, command: SshKeyCommand) -> Result<()> {
             let added = api
                 .post("/ssh-keys", &json!({ "title": title, "key": key.line }))
                 .await?;
-            println!(
+            human!(
                 "Added {} {}  {}",
                 text(&added["id"]),
                 text(&added["fingerprint"]),
                 text(&added["title"])
             );
-            println!("{}", setup(&added["ssh"]));
+            human!("{}", setup(&added["ssh"]));
+            output::emit(&output::SshKeyAdd {
+                id: owned(&added["id"]),
+                fingerprint: owned(&added["fingerprint"]),
+                title: owned(&added["title"]),
+                ssh_host: added["ssh"]["host"].as_str().map(str::to_owned),
+                ssh_config: added["ssh"]["ssh_config"].as_str().map(str::to_owned),
+            });
         }
         SshKeyCommand::List => {
             let keys = api.get("/ssh-keys").await?["keys"]
@@ -151,10 +165,10 @@ pub async fn run(origin: Option<&str>, command: SshKeyCommand) -> Result<()> {
                 .cloned()
                 .unwrap_or_default();
             if keys.is_empty() {
-                println!("No SSH keys (add one with: yoneda ssh-key add ~/.ssh/id_ed25519.pub)");
+                human!("No SSH keys (add one with: yoneda ssh-key add ~/.ssh/id_ed25519.pub)");
             }
-            for k in keys {
-                println!(
+            for k in &keys {
+                human!(
                     "{}  {}  {}  last used {}",
                     text(&k["id"]),
                     text(&k["fingerprint"]),
@@ -162,10 +176,21 @@ pub async fn run(origin: Option<&str>, command: SshKeyCommand) -> Result<()> {
                     when(&k["last_used_at"])
                 );
             }
+            let keys = keys
+                .iter()
+                .map(|k| SshKey {
+                    id: owned(&k["id"]),
+                    fingerprint: owned(&k["fingerprint"]),
+                    title: owned(&k["title"]),
+                    last_used_at: k["last_used_at"].as_i64(),
+                })
+                .collect();
+            output::emit(&output::SshKeyList { keys });
         }
         SshKeyCommand::Remove { id } => {
             api.delete(&format!("/ssh-keys/{}", encode(&id))).await?;
-            println!("Removed SSH key {id}; Git over SSH with it stops at once");
+            human!("Removed SSH key {id}; Git over SSH with it stops at once");
+            output::emit(&output::SshKeyRemove { id });
         }
     }
     Ok(())
