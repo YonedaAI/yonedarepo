@@ -281,10 +281,13 @@ export async function changeLanded(page, { origin, kit, account, repo: { id, nam
   await page.getByRole('navigation', { name: 'Repository' }).getByRole('link', { name: 'Changes' }).click();
   await page.getByRole('link', { name: /Browser gate change/ }).click();
   await page.waitForURL(`**/source/${id}/changes/${change.number}`);
-  await page.getByRole('heading', { name: 'Not ready to land' }).waitFor();
+  // The Gates panel (MergeGates) summarizes what the head still needs; its actions sit in
+  // the Landing gates region below it, whose approval reloads the panel.
+  const merge = page.getByRole('region', { name: 'Gates', exact: true });
+  await merge.getByText(/^Not ready to land/).waitFor();
   const gates = page.getByRole('region', { name: 'Landing gates' });
   await gates.getByRole('button', { name: 'Approve', exact: true }).click();
-  await settle(gates.getByRole('heading', { name: 'Ready to land' }), [gates.getByRole('alert')], { timeoutMs: 30_000, what: 'approval' });
+  await settle(merge.getByText('Ready to land', { exact: true }), [gates.getByRole('alert'), merge.getByRole('alert')], { timeoutMs: 30_000, what: 'approval' });
   await shot('change-approved');
   const started = performance.now();
   await gates.getByRole('button', { name: 'Land on main' }).click();
