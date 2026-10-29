@@ -2,7 +2,7 @@
 //! global log version, and the operations the differential tests drive (a one-file commit
 //! landed on its branch, working-branch create, move and delete by compare-and-swap, tags,
 //! landing a branch on main with its merge-plan outcome, reverts, platform merge commits
-//! and rebases). It has no dependencies, so
+//! and rebases, and who may read and write). It has no dependencies, so
 //! it shares no code with the platform it checks; commits are numbered in creation order
 //! and the test maps those numbers to Git ids.
 //!
@@ -14,15 +14,19 @@
 //!   Otherwise optimistic concurrency decides against main's entries after the commit's base
 //!   version: one writing a path the commit read is a conflict; none is a stale parent;
 //!   entries writing other paths need a rebase, the same paths a merge.
+//! - A private repository exists only for its owner and members; a public one is read by
+//!   anyone, and written only by write members and the owner (`access`).
 //! - Files are one line each (the generator keeps them so), so a three-way merge is decided
 //!   per file: a side that left a file alone takes the other's version; two different
 //!   changes conflict.
+mod access;
 mod cases;
 mod commits;
 mod graph;
 mod land;
 mod merge;
 
+pub use access::{Access, Caller, Role};
 pub use cases::{PATHS, Rng, generate};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -88,6 +92,12 @@ pub enum Op {
     MergeLand { branch: String },
     /// Replays working branch `branch`'s own commits onto main's head and moves it there.
     Rebase { branch: String },
+    /// `caller` tries `access`.
+    Probe { caller: Caller, access: Access },
+    /// `caller` makes the repository public or private.
+    SetVisibility { caller: Caller, public: bool },
+    /// The owner grants `account` `role`, or removes it (`None`).
+    Member { account: String, role: Option<Role> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -100,6 +110,8 @@ pub enum Outcome {
     Moved,
     /// Nothing to do: the ref is already there (or already gone).
     Already,
+    /// Done, moving no ref (an access check, visibility, membership).
+    Done,
     /// Refused with the platform's error code (`STALE_HEAD` also for a stale batch delete).
     Refused(&'static str),
 }
@@ -119,6 +131,9 @@ pub struct Repo {
     pub log: Vec<Entry>,
     /// Commits recorded as landed on a ref.
     pub(crate) landings: BTreeSet<(CommitId, String)>,
+    pub public: bool,
+    /// Member accounts and their roles (the owner is not one).
+    pub members: BTreeMap<String, Role>,
 }
 
 impl Repo {
@@ -143,6 +158,8 @@ impl Repo {
                 landing: true,
             }],
             landings: BTreeSet::from([(0, MAIN.to_owned())]),
+            public: false,
+            members: BTreeMap::new(),
         }
     }
 
@@ -195,6 +212,9 @@ impl Repo {
                 None => (Outcome::Refused("NOT_FOUND"), None),
             },
             Op::Rebase { branch } => (self.rebase(branch), None),
+            Op::Probe { caller, access } => (self.access(caller, *access), None),
+            Op::SetVisibility { caller, public } => (self.set_visibility(caller, *public), None),
+            Op::Member { account, role } => (self.set_member(account, *role), None),
         }
     }
 

@@ -1,5 +1,5 @@
 //! Seeded random operation sequences: every case is reproducible from its seed.
-use crate::{MAIN, Op, Repo};
+use crate::{Access, Caller, MAIN, Op, Repo, Role};
 
 /// SplitMix64: small, fast and good enough to drive test cases deterministically.
 pub struct Rng(u64);
@@ -37,6 +37,16 @@ const BRANCHES: [&str; 4] = [
     "refs/heads/feature/x",
 ];
 const TAGS: [&str; 3] = ["refs/tags/v1", "refs/tags/v2", "refs/tags/v3"];
+/// Signed-in accounts, members or not.
+const ACCOUNTS: [&str; 3] = ["rita", "will", "stranger"];
+
+fn caller(rng: &mut Rng) -> Caller {
+    match rng.below(5) {
+        0 => Caller::Owner,
+        1 => Caller::Anonymous,
+        _ => Caller::Account(rng.pick(&ACCOUNTS).to_string()),
+    }
+}
 
 /// The next operation for `repo` at `step`: mostly valid, with stale expectations, protected
 /// refs and moved tags mixed in. File contents are one line.
@@ -73,7 +83,7 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
                 branch,
             }
         }
-        8..36 => {
+        8..34 => {
             let branch = rng.pick(&existing).to_string();
             let tree = &repo.commits[repo.refs[&branch]].tree;
             let path = rng.pick(&PATHS).to_string();
@@ -94,16 +104,16 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
                 read: rng.below(3) == 0,
             }
         }
-        36..46 => Op::CreateBranch {
+        34..42 => Op::CreateBranch {
             name: rng.pick(&BRANCHES).to_string(),
             from: any_ref(rng),
         },
-        46..54 => Op::MoveBranch {
+        42..50 => Op::MoveBranch {
             name: rng.pick(&existing).to_string(),
             to: any_ref(rng),
             expected: any_ref(rng),
         },
-        54..60 => {
+        50..56 => {
             let name = rng.pick(&BRANCHES).to_string();
             // Mostly the right expectation, so deletions happen.
             let expected = if rng.below(3) == 0 {
@@ -113,18 +123,40 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
             };
             Op::DeleteBranch { name, expected }
         }
-        60..68 => Op::Tag {
+        56..62 => Op::Tag {
             name: rng.pick(&TAGS).to_string(),
             at: any_ref(rng),
         },
-        68..80 => Op::Land {
+        62..74 => Op::Land {
             branch: working(rng),
         },
-        80..92 => Op::MergeLand {
+        74..84 => Op::MergeLand {
             branch: working(rng),
         },
-        _ => Op::Rebase {
+        84..90 => Op::Rebase {
             branch: working(rng),
+        },
+        90..96 => Op::Probe {
+            caller: caller(rng),
+            access: *rng.pick(&[
+                Access::Status,
+                Access::Refs,
+                Access::Log,
+                Access::Fetch,
+                Access::Push,
+            ]),
+        },
+        96..98 => Op::SetVisibility {
+            caller: if rng.below(2) == 0 {
+                Caller::Owner
+            } else {
+                caller(rng)
+            },
+            public: rng.below(2) == 0,
+        },
+        _ => Op::Member {
+            account: rng.pick(&ACCOUNTS).to_string(),
+            role: [None, Some(Role::Read), Some(Role::Write)][rng.below(3)],
         },
     }
 }
