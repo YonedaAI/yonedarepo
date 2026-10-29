@@ -16,20 +16,30 @@ import { projectObjects, projectRefs } from './repo-projection';
 import { quarantineJob } from './repo-quarantine';
 import type { Env, Envelope } from './types';
 
+/** Jobs that hold a large push's objects (projection to the object stores, derived data)
+ * run one at a time in an isolate: side by side, a batch of them exceeded its 128 MB (dev,
+ * 2026-10-29: 17 queue invocations killed for memory in ten minutes of size-ladder pushes). */
+let heavy: Promise<unknown> = Promise.resolve();
+function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
+  const run = heavy.then(work, work);
+  heavy = run.catch(() => {});
+  return run;
+}
+
 export async function platformJob(env: Env, message: Message<Envelope>) {
   const envelope = message.body;
   if (envelope.kind === 'platform_check') {
     await executeCheckRun(env, envelope);
     message.ack();
   } else if (envelope.kind === 'platform_project') {
-    const outcome = await projectRefs(env, envelope, message.attempts);
+    const outcome = await oneAtATime(() => projectRefs(env, envelope, message.attempts));
     if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
     else message.ack();
   } else if (envelope.kind === 'platform_objects') {
-    await projectObjects(env, envelope.repo_id, envelope.job_id);
+    await oneAtATime(() => projectObjects(env, envelope.repo_id, envelope.job_id));
     message.ack();
   } else if (envelope.kind === 'platform_derive') {
-    await deriveAfterLanding(env, envelope);
+    await oneAtATime(() => deriveAfterLanding(env, envelope));
     message.ack();
   } else if (envelope.kind === 'platform_hooks') {
     const outcome = await hookJob(env, envelope);
@@ -76,7 +86,8 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
   scheduled() {
     return sshKeepAlive(this.env, 'cron');
   }
-  /** Jobs of a batch run side by side (they wait on I/O, not CPU); each settles alone. */
+  /** Jobs of a batch run side by side (they wait on I/O, not CPU; heavy ones one at a
+   * time: `oneAtATime`); each settles alone. */
   async queue(batch: MessageBatch<Envelope>) {
     await Promise.all(
       batch.messages.map((message) =>

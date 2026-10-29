@@ -189,20 +189,21 @@ export class SeenTrees {
 
 /** Trees `ids` for a walk: those `seen` holds, bundled ones in a few ranged reads (with
  * `seen`, bridging `WIDE_GAP`, reading a bundle the walk comes back to whole, and keeping
- * every tree they hold), the rest through `read` (`treeFor`), `READS` at a time. */
-export async function treesFor(
+ * every tree they hold), the rest through `read` (`treeFor`), `READS` at a time: the raw
+ * ones by id, and those `read` answered. */
+export async function gather(
   objects: RepoObjects,
   ids: string[],
-  read = (id: string) => treeFor(objects, id),
+  read: (id: string) => Promise<Json>,
   seen?: SeenTrees,
   stats?: ReadStats,
 ) {
-  const known: Json[] = [];
+  const raw = new Map<string, Uint8Array>();
   const asked: string[] = [];
   for (const id of ids) {
     const data = seen?.trees.get(id);
-    if (!data) asked.push(id);
-    else known.push({ id, data_b64: toBase64(data) });
+    if (data) raw.set(id, data);
+    else asked.push(id);
   }
   const bundled = await fromBundles(
     objects.env,
@@ -211,16 +212,53 @@ export async function treesFor(
     RANGE,
     seen ? { gap: WIDE_GAP, copy: true, frame: seen.keep, whole: seen.whole, stats } : { stats },
   );
+  for (const [id, data] of bundled) raw.set(id, data);
   const rest = await inBatches(
     asked.filter((id) => !bundled.has(id)),
     READS,
     read,
   );
-  return [
-    ...known,
-    ...[...bundled].map(([id, data]) => ({ id, data_b64: toBase64(data) })),
-    ...rest,
-  ];
+  return { raw, rest };
+}
+
+/** `gather`'s trees as JSON (`{id, data_b64}` or `{id, entries}`), for verification. */
+export async function treesFor(
+  objects: RepoObjects,
+  ids: string[],
+  read = (id: string) => treeFor(objects, id),
+  seen?: SeenTrees,
+  stats?: ReadStats,
+) {
+  const { raw, rest } = await gather(objects, ids, read, seen, stats);
+  return [...[...raw].map(([id, data]) => ({ id, data_b64: toBase64(data) })), ...rest];
+}
+
+/** `gather`'s trees for an upload session: the raw ones framed (20-byte id, 4-byte
+ * big-endian length, content: no base64 or JSON on the way into Rust), the rest as JSON. */
+export async function treeFrames(
+  objects: RepoObjects,
+  ids: string[],
+  seen?: SeenTrees,
+  stats?: ReadStats,
+) {
+  const { raw, rest } = await gather(objects, ids, (id) => treeFor(objects, id), seen, stats);
+  return { frames: framed(raw), trees: rest };
+}
+
+/** Trees as frames: 20-byte id, 4-byte big-endian length, content. */
+export function framed(raw: Map<string, Uint8Array>) {
+  let size = 0;
+  for (const data of raw.values()) size += 24 + data.length;
+  const frames = new Uint8Array(size);
+  const view = new DataView(frames.buffer);
+  let at = 0;
+  for (const [id, data] of raw) {
+    for (let i = 0; i < 20; i++) frames[at + i] = Number.parseInt(id.slice(2 * i, 2 * i + 2), 16);
+    view.setUint32(at + 20, data.length);
+    frames.set(data, at + 24);
+    at += 24 + data.length;
+  }
+  return frames;
 }
 
 /** Runs `work` over `items`, `width` at a time. */
@@ -289,27 +327,23 @@ export async function enumerate(
 ) {
   let step = session.step({});
   while (step.need_trees) {
-    const trees = await treesFor(objects, step.need_trees as string[], undefined, seen, stats);
-    step = session.step({ trees });
+    const { frames, trees } = await treeFrames(objects, step.need_trees as string[], seen, stats);
+    step = session.step({ trees }, frames);
   }
   return step;
 }
 
 /** The session's sending pass: each wave's trees to write and objects to read, the last
- * with the tag objects (`done`). */
-export async function* waves(
-  session: UploadSession,
-  objects: RepoObjects,
-  seen = new SeenTrees(),
-  stats?: ReadStats,
-) {
+ * with the tag objects (`done`). The counting pass walked them all: nothing is read here. */
+export function* waves(session: UploadSession) {
   for (;;) {
-    let wave = session.send({});
-    while (wave.need_trees) {
-      const trees = await treesFor(objects, wave.need_trees as string[], undefined, seen, stats);
-      wave = session.send({ trees });
-    }
-    yield wave as { trees: string[]; fetch: Wanted[]; tags?: string[]; done: boolean };
+    const wave = session.send({}) as {
+      trees: string[];
+      fetch: Wanted[];
+      tags?: string[];
+      done: boolean;
+    };
+    yield wave;
     if (wave.done) return;
   }
 }

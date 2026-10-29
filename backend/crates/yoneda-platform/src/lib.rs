@@ -62,7 +62,7 @@ pub mod shared_contracts;
 
 pub use accounts::execute_workspace;
 pub use commit_store::{execute_commit_store, migrate_commit_store};
-pub use platform_compute::compute as platform_compute;
+pub use platform_compute::{compute as platform_compute, stack_left};
 pub use repo_store::{execute_migrated, execute_repo_store, migrate_repo_store};
 
 /// The store contract under the name the modules were written against.
