@@ -5,19 +5,34 @@
       "oneOf": [
         {
           "const": "git_clone",
-          "description": "`git clone` with a short-lived read token.",
+          "description": "An offline checkout by `git clone` with a short-lived read token.",
           "type": "string"
         },
         {
           "const": "api_snapshot",
-          "description": "A snapshot of the branch through the API.",
+          "description": "An offline checkout from a snapshot of the branch through the API.",
+          "type": "string"
+        },
+        {
+          "const": "lazy",
+          "description": "A lazy `yoneda::` clone: commits and trees; file contents when Git needs them.",
+          "type": "string"
+        },
+        {
+          "const": "full",
+          "description": "A `yoneda::` clone holding every object (`--full`).",
+          "type": "string"
+        },
+        {
+          "const": "sparse",
+          "description": "A lazy `yoneda::` clone checked out only under `scope` (`--sparse`).",
           "type": "string"
         }
       ]
     },
     "Cloned": {
       "additionalProperties": false,
-      "description": "`clone` (an offline checkout).",
+      "description": "`clone`.",
       "properties": {
         "dir": {
           "type": "string"
@@ -28,8 +43,15 @@
         "repo": {
           "type": "string"
         },
+        "scope": {
+          "description": "The directories a sparse clone checks out (with the files at its top).",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "version": {
-          "description": "The log version the checkout is pinned to.",
+          "description": "The log version of main the clone was made at (an offline checkout is pinned to it;\n0 for a repository without main).",
           "format": "uint64",
           "minimum": 0,
           "type": "integer"

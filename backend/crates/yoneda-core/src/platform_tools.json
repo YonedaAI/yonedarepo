@@ -978,6 +978,16 @@
             "turns"
           ],
           "additionalProperties": false
+        },
+        "fetched_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Bytes the session's clone fetched from the platform (a lazy clone fetches file contents on first use)."
+        },
+        "read_bytes": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Bytes of the files the session's agent read, for fetch efficiency against fetched_bytes."
         }
       },
       "required": [

@@ -5,6 +5,7 @@ import {
   appendPage,
   type ContractRecord,
   changeSessionsPath,
+  fetchEfficiency,
   groupByCommit,
   groupContracts,
   groupSessions,
@@ -40,6 +41,17 @@ describe('agent pages', () => {
     expect(transcriptUrl('claude-code:3f2a')).toBeNull();
     expect(transcriptUrl('javascript:alert(1)')).toBeNull();
     expect(transcriptUrl(null)).toBeNull();
+  });
+
+  it('shows what a session fetched against what it read', () => {
+    expect(fetchEfficiency({ fetched_bytes: 440_402, read_bytes: 104_858 })).toBe(
+      'fetched 0.42 of 0.10 MiB read (4.2×)',
+    );
+    expect(fetchEfficiency({ fetched_bytes: 3 * 1024 * 1024, read_bytes: 0 })).toBe(
+      'fetched 3.0 of 0.00 MiB read',
+    );
+    expect(fetchEfficiency({ fetched_bytes: null, read_bytes: 7 })).toBeNull();
+    expect(fetchEfficiency({})).toBeNull();
   });
 
   it('names who recorded a session', () => {

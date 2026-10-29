@@ -158,12 +158,14 @@ pub fn paths_read(hook: &Value) -> Vec<String> {
     }
 }
 
-/// Records `paths` (absolute, or relative to `cwd`) as read in the clone `at`.
+/// Records `paths` (absolute, or relative to `cwd`) as read in the clone `at`, and their
+/// sizes for its fetch efficiency.
 pub fn record_reads(at: &Here, cwd: &Path, paths: &[String]) -> Result<usize> {
     let entries: Vec<String> = paths
         .iter()
         .filter_map(|p| relative(&at.top, cwd, p))
         .collect();
+    crate::efficiency::note_reads(&at.git_dir, &at.top, &entries)?;
     SessionFiles::new(&at.git_dir).add_reads(&entries)
 }
 
@@ -308,7 +310,7 @@ pub async fn record_pushed(at: &Here, cwd: &Path, record: &Record<'_>) -> Result
     if pushed.is_empty() {
         return Ok(0);
     }
-    let (posted, done) = post_records(cwd, record, &pushed).await?;
+    let (posted, done) = post_records(&at.git_dir, cwd, record, &pushed).await?;
     files.forget_pushed(&done)?;
     Ok(posted)
 }
@@ -316,11 +318,14 @@ pub async fn record_pushed(at: &Here, cwd: &Path, record: &Record<'_>) -> Result
 /// Posts `record` on each of `pushed`: how many were posted, and the commits done with
 /// (posted, or refused for a reason a retry would not change).
 async fn post_records(
+    git_dir: &Path,
     cwd: &Path,
     record: &Record<'_>,
     pushed: &[crate::session_files::Pushed],
 ) -> Result<(usize, Vec<String>)> {
     let summary = truncate(record.summary, SUMMARY_BYTES - 3);
+    let fetched = crate::efficiency::fetched(git_dir)?;
+    let read_bytes = crate::efficiency::read_bytes(git_dir)?;
     let prompts = (!record.prompts.is_empty())
         .then(|| yoneda_core::digest(record.prompts.join("\n").as_bytes()));
     std::env::set_current_dir(cwd).context("entering the clone")?;
@@ -339,6 +344,11 @@ async fn post_records(
         );
         if let Some(transcript) = record.transcript {
             body["transcript"] = transcript.clone();
+        }
+        // The clone's fetch efficiency (`efficiency`), when it fetched anything.
+        if fetched.objects > 0 {
+            body["fetched_bytes"] = json!(fetched.bytes);
+            body["read_bytes"] = json!(read_bytes);
         }
         match api
             .post(&format!("/commits/{}/sessions", push.commit), &body)

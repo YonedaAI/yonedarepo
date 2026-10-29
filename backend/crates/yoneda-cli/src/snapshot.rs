@@ -1,7 +1,8 @@
 //! Bringing a platform commit's tree into the local repository through the API (no
 //! `git clone` credential needed): the missing trees and blobs are fetched by id, each
 //! verified against its id, and added as one pack per batch. The local commit made on
-//! it has the platform's exact tree.
+//! it has the platform's exact tree. A lazy clone brings commits and trees only (`walk`):
+//! Git asks for each blob when it first needs it (`fetch_by_id`).
 use crate::api::Api;
 use crate::error::{Error, Result};
 use crate::git::Git;
@@ -9,12 +10,14 @@ use base64::Engine;
 use serde_json::Value;
 use std::collections::HashSet;
 use transfer::request;
+pub use walk::{Filter, fetch_by_id, fetch_trees, normalize_scope};
 use yoneda_core::git_object::{
     FileMode, ObjectId, ObjectKind, TreeEntry, encode_tree, hash_object, write_pack,
 };
 
 mod page;
 mod transfer;
+mod walk;
 
 /// Fetched bytes held before they are written out as a pack.
 const PACK_BYTES: usize = 64 * 1024 * 1024;
@@ -48,8 +51,23 @@ fn object_id(value: &Value, field: &str) -> Result<ObjectId> {
     ObjectId::parse(hex).map_err(|e| Error::new(format!("bad object id {hex:?}: {}", e.message)))
 }
 
-/// An object's kind and Git bytes, plus the ids (and kinds) of what it references.
-type Verified = (ObjectKind, Vec<u8>, Vec<(String, ObjectKind)>);
+/// What a tree entry references: its id, kind and name.
+type Ref = (String, ObjectKind, String);
+
+/// An object's kind and Git bytes, plus what it references.
+type Verified = (ObjectKind, Vec<u8>, Vec<Ref>);
+
+/// The objects `entries` reference (a submodule's commit is not the repository's).
+fn refs(entries: &[TreeEntry]) -> Vec<Ref> {
+    entries
+        .iter()
+        .filter_map(|e| match e.mode {
+            FileMode::Tree => Some((e.id.hex(), ObjectKind::Tree, e.name.clone())),
+            FileMode::Gitlink => None,
+            _ => Some((e.id.hex(), ObjectKind::Blob, e.name.clone())),
+        })
+        .collect()
+}
 
 /// A fetched object as verified Git bytes, plus the ids of what it references.
 fn verified(object: &Value) -> Result<Verified> {
@@ -68,14 +86,7 @@ fn verified(object: &Value) -> Result<Verified> {
                     })
                 })
                 .collect::<Result<Vec<_>>>()?;
-            let refs = entries
-                .iter()
-                .filter_map(|e| match e.mode {
-                    FileMode::Tree => Some((e.id.hex(), ObjectKind::Tree)),
-                    FileMode::Gitlink => None,
-                    _ => Some((e.id.hex(), ObjectKind::Blob)),
-                })
-                .collect();
+            let refs = refs(&entries);
             let data = encode_tree(&entries)
                 .map_err(|e| Error::new(format!("tree {id}: {}", e.message)))?;
             (ObjectKind::Tree, data, refs)
@@ -168,38 +179,17 @@ pub async fn present(api: &Api, ids: &[String]) -> Result<HashSet<String>> {
 }
 
 /// Adds `objects` to the local repository as one pack (all or nothing).
-pub fn write_objects(git: &Git, objects: Vec<(ObjectKind, Vec<u8>)>) -> Result<()> {
-    write(git, &mut { objects })
+pub fn write_objects(
+    git: &Git,
+    objects: Vec<(ObjectKind, Vec<u8>)>,
+    filter: &Filter,
+) -> Result<()> {
+    write(git, &mut { objects }, filter)
 }
 
 /// Fetches every object under `root` that the local repository lacks.
 pub async fn fetch_tree(api: &Api, git: &Git, root: &str) -> Result<()> {
-    fetch_trees(api, git, &[root.to_owned()]).await
-}
-
-/// Fetches every object under any of `roots` that the local repository lacks, as one
-/// walk (shared subtrees are fetched once) written as one pack per 64 MiB.
-pub async fn fetch_trees(api: &Api, git: &Git, roots: &[String]) -> Result<()> {
-    let mut seen: HashSet<String> = roots.iter().cloned().collect();
-    let first = seen.iter().map(|r| (r.clone(), ObjectKind::Tree)).collect();
-    let mut wanted = missing(git, first)?;
-    let mut pending: Vec<(ObjectKind, Vec<u8>)> = Vec::new();
-    let mut pending_bytes = 0usize;
-    while !wanted.is_empty() {
-        let mut next = Vec::new();
-        for object in fetch(api, &wanted).await? {
-            let (kind, data, refs) = verified(&object)?;
-            next.extend(refs.into_iter().filter(|(id, _)| seen.insert(id.clone())));
-            pending_bytes += data.len();
-            pending.push((kind, data));
-        }
-        if pending_bytes > PACK_BYTES {
-            write(git, &mut pending)?;
-            pending_bytes = 0;
-        }
-        wanted = missing(git, next)?;
-    }
-    write(git, &mut pending)
+    fetch_trees(api, git, &[root.to_owned()], &Filter::Full).await
 }
 
 /// A platform commit's tree and parents (what `/objects` serves for a commit).
@@ -239,16 +229,9 @@ fn text_id(value: &Value) -> Result<ObjectId> {
     ObjectId::parse(hex).map_err(|e| Error::new(format!("bad object id {hex:?}: {}", e.message)))
 }
 
-fn missing(git: &Git, candidates: Vec<(String, ObjectKind)>) -> Result<Vec<(String, ObjectKind)>> {
-    let ids: Vec<String> = candidates.iter().map(|(id, _)| id.clone()).collect();
-    let absent: HashSet<String> = git.missing(&ids)?.into_iter().collect();
-    Ok(candidates
-        .into_iter()
-        .filter(|(id, _)| absent.contains(id))
-        .collect())
-}
-
-fn write(git: &Git, pending: &mut Vec<(ObjectKind, Vec<u8>)>) -> Result<()> {
+/// Adds `pending` as one pack (marked as the promisor's in a lazy clone) and counts it
+/// as fetched (`efficiency`).
+fn write(git: &Git, pending: &mut Vec<(ObjectKind, Vec<u8>)>, filter: &Filter) -> Result<()> {
     if pending.is_empty() {
         return Ok(());
     }
@@ -256,7 +239,8 @@ fn write(git: &Git, pending: &mut Vec<(ObjectKind, Vec<u8>)>) -> Result<()> {
         pending.iter().map(|(k, d)| (*k, d.as_slice())).collect();
     let pack =
         write_pack(&objects).map_err(|e| Error::new(format!("building a pack: {}", e.message)))?;
-    git.unpack(&pack)?;
+    git.add_pack(&pack, filter.lazy())?;
+    crate::efficiency::count_fetched(git, &objects)?;
     pending.clear();
     Ok(())
 }

@@ -90,21 +90,38 @@ pub struct Context {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CloneMethod {
-    /// `git clone` with a short-lived read token.
+    /// An offline checkout by `git clone` with a short-lived read token.
     GitClone,
-    /// A snapshot of the branch through the API.
+    /// An offline checkout from a snapshot of the branch through the API.
     ApiSnapshot,
+    /// A lazy `yoneda::` clone: commits and trees; file contents when Git needs them.
+    Lazy,
+    /// A `yoneda::` clone holding every object (`--full`).
+    Full,
+    /// A lazy `yoneda::` clone checked out only under `scope` (`--sparse`).
+    Sparse,
 }
 
-/// `clone` (an offline checkout).
+/// `clone`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Cloned {
     pub repo: String,
     pub dir: String,
-    /// The log version the checkout is pinned to.
+    /// The log version of main the clone was made at (an offline checkout is pinned to it;
+    /// 0 for a repository without main).
     pub version: u64,
     pub method: CloneMethod,
+    /// The directories a sparse clone checks out (with the files at its top).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scope: Vec<String>,
+}
+
+/// `sparse`: the directories the clone now checks out (with the files at its top).
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SparseScope {
+    pub scope: Vec<String>,
 }
 
 /// The last landing from an offline checkout.
@@ -249,6 +266,7 @@ super::report! {
     Conflicts => "conflicts",
     Context => "context",
     Cloned => "clone",
+    SparseScope => "sparse",
     Status => "status",
     Pull => "pull",
     Synced => "sync",
