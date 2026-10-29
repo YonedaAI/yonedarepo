@@ -56,6 +56,7 @@ impl Harness {
             None if principal == "platform:commits" => c["_system"] = json!("commits"),
             None if principal == "platform:hooks" => c["_system"] = json!("hooks"),
             None if principal == "platform:fork" => c["_system"] = json!("fork"),
+            None if principal == "platform:lfs" => c["_system"] = json!("lfs"),
             None if principal.starts_with("member:") => {
                 let account = &principal["member:".len()..];
                 c["_session"] = json!({"workspace": account, "principal": format!("user:{account}"), "human": true})
@@ -1618,6 +1619,7 @@ mod hooks;
 mod land_cas;
 mod land_shapes;
 mod lfs;
+mod lfs_sweep;
 mod members;
 mod model_runner;
 mod ops;
