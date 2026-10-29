@@ -162,6 +162,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::ReleaseAsset
         | R::ReleaseShow
         | R::Releases
+        | R::SearchRecords
         | R::SessionList
         | R::SessionShow
         | R::SessionTranscript

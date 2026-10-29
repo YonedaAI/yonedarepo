@@ -48,6 +48,15 @@ pub enum ReadCommand {
         ignore_case: bool,
         at: Option<u64>,
     },
+    /// One query across code, memories, commits, sessions and changes (`groups`: some).
+    Search {
+        query: String,
+        groups: Option<Vec<String>>,
+        path: Option<String>,
+        branch: Option<String>,
+        limit: Option<u64>,
+        at: Option<u64>,
+    },
     Blame {
         path: String,
         branch: Option<String>,

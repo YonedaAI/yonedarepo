@@ -4,7 +4,7 @@ use crate::api::encode;
 use crate::command::ReadCommand;
 use crate::error::Result;
 use crate::human;
-use crate::output::{self, DiffEntry, GrepFile, GrepLine, LogEntry};
+use crate::output::{self, DiffEntry, GrepFile, GrepLine, LogEntry, Search, SearchGroup};
 use crate::target::Resolved;
 use serde_json::Value;
 
@@ -62,6 +62,78 @@ fn print_hits(found: &Value) -> Vec<GrepFile> {
     files
 }
 
+/// A record group of a search answer (null: not asked for, or not readable by this token).
+fn search_group<T: serde::de::DeserializeOwned>(
+    found: &Value,
+    key: &str,
+) -> Result<Option<SearchGroup<T>>> {
+    if found[key].is_null() {
+        return Ok(None);
+    }
+    serde_json::from_value(found[key].clone())
+        .map(Some)
+        .map_err(|e| crate::error::Error::new(format!("the platform's {key} group: {e}")))
+}
+
+/// Prints a search answer group by group; returns its `--json` report.
+fn print_search(found: &Value) -> Result<Search> {
+    let groups: Vec<String> = found["groups"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|g| g.as_str().map(str::to_owned))
+        .collect();
+    let mut report = Search {
+        query: found["query"].as_str().unwrap_or_default().to_owned(),
+        code: Vec::new(),
+        memories: found["memories"].as_array().cloned(),
+        commits: search_group(found, "commits")?,
+        sessions: search_group(found, "sessions")?,
+        changes: search_group(found, "changes")?,
+        groups,
+    };
+    if report.groups.iter().any(|g| g == "code") {
+        human!("code");
+        report.code = print_hits(found);
+    }
+    if let Some(memories) = &report.memories {
+        human!("memories ({})", memories.len());
+        for m in memories {
+            human!(
+                "  #{} {}",
+                m["id"],
+                first_line(m["text"].as_str().unwrap_or_default())
+            );
+        }
+    }
+    if let Some(commits) = &report.commits {
+        human!("commits ({})", commits.count);
+        for c in &commits.results {
+            let short = c.commit.get(..12).unwrap_or(&c.commit);
+            human!("  {short} {} ({})", c.subject, c.principal);
+        }
+    }
+    if let Some(sessions) = &report.sessions {
+        human!("sessions ({})", sessions.count);
+        for s in &sessions.results {
+            let short = s.commit.get(..12).unwrap_or(&s.commit);
+            human!(
+                "  #{} {} on {short}: {}",
+                s.id,
+                s.cli,
+                first_line(&s.summary)
+            );
+        }
+    }
+    if let Some(changes) = &report.changes {
+        human!("changes ({})", changes.count);
+        for c in &changes.results {
+            human!("  #{} [{}] {}", c.number, c.status, c.title);
+        }
+    }
+    Ok(report)
+}
+
 pub async fn read(t: &Resolved, command: ReadCommand) -> Result<()> {
     let at = |v: Option<u64>| v.map(|v| v.to_string());
     match command {
@@ -110,6 +182,25 @@ pub async fn read(t: &Resolved, command: ReadCommand) -> Result<()> {
             ]);
             let results = print_hits(&t.api.get(&format!("/search{q}")).await?);
             output::emit(&output::Grep { results });
+        }
+        ReadCommand::Search {
+            query: needle,
+            groups,
+            path,
+            branch,
+            limit,
+            at: version,
+        } => {
+            let q = query(&[
+                ("query", Some(needle)),
+                ("groups", groups.map(|g| g.join(","))),
+                ("path", path),
+                ("ref", branch),
+                ("limit", limit.map(|l| l.to_string())),
+                ("at", at(version)),
+            ]);
+            let found = t.api.get(&format!("/search{q}")).await?;
+            output::emit(&print_search(&found)?);
         }
         ReadCommand::Blame {
             path,
@@ -177,5 +268,31 @@ mod tests {
             ]),
             "?query=fn%20main&at=7"
         );
+    }
+
+    #[test]
+    fn a_search_answer_becomes_its_groups() -> Result<()> {
+        let answer = serde_json::json!({
+            "query": "retry", "groups": ["code", "commits", "sessions", "changes"],
+            "results": [{"path": "src/retry.rs", "lines": [{"line": 1, "text": "fn retry()"}]}],
+            "memories": null,
+            "commits": {"count": 2, "capped": false, "results": [{"commit": "a".repeat(40),
+                "subject": "Retry fetches", "principal": "token:agent", "recorded_at": 5,
+                "matched": ["subject"], "paths": ["src/fetch.rs"], "unknown": 1}]},
+            "sessions": null,
+            "changes": {"count": 0, "capped": false, "results": []},
+        });
+        let report = print_search(&answer)?;
+        assert_eq!(report.code[0].path, "src/retry.rs");
+        let commits = report
+            .commits
+            .as_ref()
+            .map(|c| (c.count, c.results[0].subject.clone()));
+        assert_eq!(commits, Some((2, "Retry fetches".to_owned())));
+        assert!(report.memories.is_none() && report.sessions.is_none());
+        assert_eq!(report.changes.map(|c| c.count), Some(0));
+        let broken = serde_json::json!({"groups": [], "commits": {"count": "x"}});
+        assert!(print_search(&broken).is_err());
+        Ok(())
     }
 }

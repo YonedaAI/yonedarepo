@@ -99,7 +99,7 @@ pub fn token(rest: &[String]) -> Result<Command> {
 pub fn read(command: &str, rest: &[String]) -> Result<Command> {
     let p = Parsed::new(
         rest,
-        &with(&["ref", "limit", "at", "path"]),
+        &with(&["ref", "limit", "at", "path", "in"]),
         &["ignore-case"],
     )?;
     let at = p.number("at")?;
@@ -117,6 +117,14 @@ pub fn read(command: &str, rest: &[String]) -> Result<Command> {
             query: p.exactly(1, "grep <query>")?[0].clone(),
             path: p.flag("path"),
             ignore_case: p.on("ignore-case"),
+            at,
+        },
+        "search" => ReadCommand::Search {
+            query: p.exactly(1, "search <query>")?[0].clone(),
+            groups: list(p.flag("in")),
+            path: p.flag("path"),
+            branch: p.flag("ref"),
+            limit: p.number("limit")?,
             at,
         },
         "blame" => ReadCommand::Blame {

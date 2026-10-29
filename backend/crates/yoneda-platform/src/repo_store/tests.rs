@@ -1666,6 +1666,7 @@ mod quarantine;
 mod rebase;
 mod ref_chain;
 mod releases;
+mod search_records;
 mod secrets;
 mod self_review;
 mod sessions;
