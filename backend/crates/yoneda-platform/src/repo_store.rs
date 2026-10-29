@@ -26,6 +26,7 @@ mod bisect;
 mod branches;
 mod break_glass;
 mod change_comments;
+mod change_delete;
 mod change_hooks;
 mod change_records;
 mod changes;

@@ -129,6 +129,23 @@ it('opens, discusses, approves and lands a change with its branch head', async (
   const listed = await mcp('git_change_list', { status: 'all' }, reader);
   expect(listed.body.result.structuredContent.changes.map((c: any) => c.number)).toEqual([2, 1]);
   expect((await api(`/repos/${repo}/changes/9`, { token: reader })).status).toBe(404);
+
+  // Delete: a closed change only (a landed one stays), by its author or the owner.
+  const remove = (n: number, auth: { cookie?: string; token?: string }) =>
+    api(`/repos/${repo}/changes/${n}`, auth, { method: 'DELETE' });
+  expect((await remove(1, { cookie })).body.error.code).toBe('CONFLICT');
+  expect((await remove(2, { token: agent })).body.error.code).toBe('CONFLICT');
+  expect((await mcp('git_change_close', { number: 2 })).body.result.structuredContent.status).toBe('closed');
+  expect((await remove(2, { token: reader })).status).toBe(403);
+  const gone = await remove(2, { token: agent });
+  expect([gone.status, gone.body]).toEqual([200, { number: 2, deleted: true }]);
+  expect((await api(`/repos/${repo}/changes/2`, { token: reader })).status).toBe(404);
+  const third = await mcp('git_change_create', { branch: 'fix', title: 'Third' });
+  expect(third.body.result.structuredContent.number).toBe(3);
+  await mcp('git_change_close', { number: 3 });
+  expect((await mcp('git_change_delete', { number: 3 })).body.result.structuredContent).toEqual({ number: 3, deleted: true });
+  const left = await mcp('git_change_list', { status: 'all' }, reader);
+  expect(left.body.result.structuredContent.changes.map((c: any) => c.number)).toEqual([1]);
 });
 
 it('lands a change on its own base branch, leaving main alone', async () => {

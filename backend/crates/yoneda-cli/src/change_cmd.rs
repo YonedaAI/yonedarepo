@@ -209,6 +209,10 @@ pub async fn run(t: &Resolved, command: ChangeCommand) -> Result<()> {
             let base = change["base"].as_str().unwrap_or("main");
             land_head(t, &format!("change #{number}"), head, base).await?;
         }
+        ChangeCommand::Delete { number } => {
+            t.api.delete(&format!("/changes/{number}")).await?;
+            println!("Deleted change #{number}");
+        }
     }
     Ok(())
 }

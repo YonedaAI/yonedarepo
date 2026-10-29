@@ -256,6 +256,17 @@ describe('change page', () => {
     expect(page).toContain('Comment on this change');
   });
 
+  it('offers delete on a closed change only: an open one is closed first, a landed one stays', () => {
+    for (const [status, offered] of [
+      ['closed', true],
+      ['open', false],
+      ['landed', false],
+    ] as const) {
+      state.value = loaded({ data: detail({ status }) });
+      expect(view().includes('Delete change'), status).toBe(offered);
+    }
+  });
+
   it('offers reopen on a closed change and explains a deleted branch', () => {
     state.value = loaded({ data: detail({ status: 'closed' }) });
     expect(view()).toContain('Reopen change');
