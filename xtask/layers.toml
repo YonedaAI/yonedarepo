@@ -23,8 +23,9 @@ yoneda-cli = ["yoneda-core"]
 yoneda-ssh-gateway = []
 # The reference model shares no code with what it checks (see [isolated]).
 yoneda-refmodel = []
-# `cargo xtask contracts` writes shared/contracts/*.ts from the platform's Rust types.
-xtask = ["yoneda-platform"]
+# `cargo xtask contracts` writes shared/contracts/*.ts from the platform's Rust types and
+# schemas/v1/*.schema.json from the CLI's `--json` types.
+xtask = ["yoneda-cli", "yoneda-platform"]
 
 # Crates with no dependency of any kind (workspace or external; normal, build or dev): the
 # reference model is an independent oracle, so a shared bug cannot make both sides agree.
