@@ -1,6 +1,6 @@
 // How a pack goes out: side-band packets, the closing timing line (PackStats), a failure
-// midway, and the full-clone pack the store holds (repo-pack-cache), streamed as it is or
-// copied into the store while a built one streams.
+// midway, and the clone pack the store holds (repo-pack-cache), streamed as it is or copied
+// into the store while a built one streams.
 
 import { deferrer } from './background';
 import { ReadStats } from './repo-bundles';
@@ -8,6 +8,8 @@ import { wasmMemoryBytes } from './repo-git-sessions';
 import type { PackWriter } from './repo-pack-cache';
 
 const MiB = 1024 * 1024;
+/** Pack bytes gathered before they are sent (one side-band packet at most). */
+export const CHUNK = 65515;
 
 /** One log line per event of a built pack, with this isolate's Wasm memory (it only grows).
  * A pack cut off with its isolate (CPU or memory limit) logs `git.pack.start` and no end:
@@ -83,14 +85,16 @@ export function failed(
 
 /** Copies a built pack into the store (`writer`), if any, behind the response: `add`
  * copies the bytes at once and never waits, and `finish` completes after the answer when
- * the request lent waitUntil. Storing is best effort and holds three parts at most: a
- * write that fails or falls two parts behind the clone is dropped, never the clone. */
+ * the request lent waitUntil. Storing holds three parts at most: a write that fails or
+ * falls two parts behind the clone is dropped, never the clone, and `dropped` (a job then
+ * builds the pack: repo-pack-jobs) runs behind the answer. */
 export class Storing {
   readonly #defer = deferrer();
 
   constructor(
     private writer: PackWriter | undefined,
     private readonly stats?: PackStats,
+    private readonly dropped?: () => Promise<unknown>,
   ) {}
 
   add(bytes: Uint8Array) {
@@ -119,6 +123,9 @@ export class Storing {
     if (!this.writer) return;
     console.warn(`pack not stored: ${why}`);
     void this.abort();
+    const dropped = this.dropped;
+    if (dropped && !this.#defer(dropped))
+      dropped().catch((e) => console.warn(`pack hand-off failed: ${e?.message ?? e}`));
   }
 }
 

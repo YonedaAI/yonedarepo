@@ -1,6 +1,6 @@
 // Worker entrypoint for the source platform alone: HTTP, Git over SSH's front doors (inbound
 // TCP and the tunnel gateway's keep-alive cron; platform-ssh-gateway.ts), plus its own queue
-// jobs (checks, object and ref projection, derived data, webhooks, account emails). No agent runs, harnesses, providers or budgets.
+// jobs (checks, object and ref projection, derived data, clone packs, webhooks, account emails). No agent runs, harnesses, providers or budgets.
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { withWaitUntil } from './background';
 import { queueWelcome, verifyEmail } from './platform-email-verify';
@@ -12,12 +12,13 @@ import { executeCheckRun } from './repo-checks';
 import { deriveAfterLanding } from './repo-derived';
 import { hookJob } from './repo-hooks';
 import { lfsSweepJob } from './repo-lfs-sweep';
+import { PACK_BUILD, packBuildJob } from './repo-pack-jobs';
 import { projectObjects, projectRefs } from './repo-projection';
 import { quarantineJob } from './repo-quarantine';
 import type { Env, Envelope } from './types';
 
-/** Jobs that hold a large push's objects (projection to the object stores, derived data)
- * run one at a time in an isolate: side by side, a batch of them exceeded its 128 MB (dev,
+/** Jobs that hold a large push's objects (projection to the object stores, derived data,
+ * clone packs) run one at a time in an isolate: side by side, a batch of them exceeded its 128 MB (dev,
  * 2026-10-29: 17 queue invocations killed for memory in ten minutes of size-ladder pushes). */
 let heavy: Promise<unknown> = Promise.resolve();
 function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
@@ -40,6 +41,9 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
     message.ack();
   } else if (envelope.kind === 'platform_derive') {
     await oneAtATime(() => deriveAfterLanding(env, envelope));
+    message.ack();
+  } else if (envelope.kind === PACK_BUILD) {
+    await oneAtATime(() => packBuildJob(env, envelope));
     message.ack();
   } else if (envelope.kind === 'platform_hooks') {
     const outcome = await hookJob(env, envelope);
