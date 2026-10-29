@@ -253,30 +253,46 @@ it("withholds a blob a fork inherits once its parent quarantines it", async () =
   expect((await api(`/repos/${fork}/blob?path=a.md`, bob, {}, local)).body.content).toBe('a\n');
 });
 
-it('never serves a stored full-clone pack while a blob is withheld, and purge deletes it', async () => {
-  const cached = { ...scoped, PACK_CACHE: 'on' } as unknown as Env;
+it('never serves or builds a stored pack of any kind while a blob is withheld, and purge deletes them', async () => {
+  const cached = { ...scoped, PACK_CACHE: 'on', PACK_BUILD_MIN_OBJECTS: '0' } as unknown as Env;
   const { cookie, id, reader } = await setUp('quarantine_packs', cached);
   const main = (await api(`/repos/${id}/refs`, { cookie }, {}, cached)).body.refs['refs/heads/main'];
-  // Test-only stand-in for a pack an earlier full clone stored (it holds the blob's bytes).
-  const key = await packKey(id, [main]);
-  await bindings.OBJECTS.put(key, new TextEncoder().encode(`PACK stand-in ${SECRET}`));
-  const clone = async () => {
+  const secret = await blobId(SECRET);
+  const none = { omit_blobs: false, depth: null, deepen_relative: false };
+  // A full, a partial and a shallow clone, and a partial clone's checkout of the file.
+  const kinds = [
+    { fresh: { ...none, wants: [main] }, args: [`want ${main}`, 'done'] },
+    { fresh: { ...none, wants: [main], omit_blobs: true }, args: [`want ${main}`, 'filter blob:none', 'done'] },
+    { fresh: { ...none, wants: [main], depth: 1 }, args: [`want ${main}`, 'deepen 1', 'done'] },
+    { fresh: { ...none, wants: [secret], omit_blobs: true }, args: [`want ${secret}`, 'filter blob:none', 'done'] },
+  ];
+  const clone = async (args: string[]) => {
     const response = await platformFetch(
       new Request(`https://yoneda/git/${id}.git/git-upload-pack`, {
         method: 'POST',
         headers: { authorization: `Basic ${btoa(`git:${reader.token}`)}`, 'git-protocol': 'version=2' },
-        body: fetchCommand([`want ${main}`, 'done']),
+        body: fetchCommand(args),
       }),
       cached,
     );
     return new TextDecoder('latin1').decode(new Uint8Array(await response.arrayBuffer()));
   };
-  expect(await clone()).toContain('hunter2');
+  // Test-only stand-ins for packs earlier clones stored (each holds the blob's bytes).
+  for (const { fresh } of kinds) await bindings.OBJECTS.put(await packKey(id, fresh), new TextEncoder().encode(`PACK stand-in ${SECRET}`));
+  for (const { args } of kinds) expect(await clone(args)).toContain('hunter2');
   const made = await api(`/repos/${id}/quarantine`, { cookie }, { body: { path: 'config/staging.txt', reason: 'leak' } }, cached);
-  const refused = await clone();
-  expect(refused).toContain('ERR QUARANTINED');
-  expect(refused).not.toContain('hunter2');
+  for (const { args } of kinds) {
+    const answer = await clone(args);
+    expect(answer, args.join(' ')).not.toContain('stand-in');
+    expect(answer, args.join(' ')).not.toContain('hunter2');
+  }
+  expect(await clone(kinds[0].args)).toContain('ERR QUARANTINED');
   const blob = made.body.record.target.id;
   await api(`/repos/${id}/quarantine/${made.body.record.id}/purge`, { cookie }, { body: { confirm: blob } }, cached);
+  expect(await keys(`derived/v1/${id}/packs/`)).toEqual([]);
+  // A pack-build job (after a push, or handed a clone's fetch) stores nothing while the
+  // blob is withheld.
+  const job = { v: 1, kind: 'platform_pack_build', repo_id: id, job_id: `push-0-${main}` };
+  await platformJob(cached, { body: job, attempts: 1, ack: () => {}, retry: () => {} } as unknown as Message<any>);
   expect(await keys(`derived/v1/${id}/packs/`)).toEqual([]);
 });

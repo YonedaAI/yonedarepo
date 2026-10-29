@@ -225,7 +225,6 @@ export async function gather(
     if (data) raw.set(id, data);
     else asked.push(id);
   }
-  if ((globalThis as any).__DBG) console.log(`DBGGATHER ${(globalThis as any).__DBG} ${ids.length} ${asked.length}`);
   const bundled = await fromBundles(
     objects.env,
     objects.repo,

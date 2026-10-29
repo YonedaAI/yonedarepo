@@ -103,7 +103,7 @@
         "Batched landing, with commits beginning from and main reads served by the published",
         "head. No LAND_MODE_OVERRIDE: per-request mode headers are for benches only.",
         "PUSH_BUNDLES=on writes a large push's objects as bundles (one R2 object per batch, indexed by the repository authority). Turn it off before rolling back below the bundle reader.",
-        "PACK_CACHE=on serves a full clone's pack from a stored copy (derived/v1/<repo>/packs/), stored by the first full clone of each set of tips; off builds every pack from the bundles.",
+        "PACK_CACHE=on serves a clone's pack (full, partial, shallow, or a partial clone's checkout) from a stored copy (derived/v1/<repo>/packs/), stored by the first such clone or by a pack-build job it hands off to, and built for main's tip by a job a minute after a push (repositories of 5,000+ objects; PACK_BUILD_MIN_OBJECTS); off builds every pack from the bundles.",
         "BLOB_WRITE_THROUGH=on writes each API commit's blobs to R2 after the commit's own I/O, so burst read-backs skip the commit shards; off leaves them to the shard drain. Off since 2026-10-28: 6 interleaved dev bursts gave land p95 1.7-2.1 s off vs 2.7-3.2 s on, with read p95 0.18-0.32 s off (target < 2 s).",
         "Check runs take minutes (container start, the check): one per invocation, up to",
         "the container limit (4) at once, apart from the derive and projection jobs above.",
