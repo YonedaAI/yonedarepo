@@ -2,7 +2,7 @@
 //! the outcome it names, under the same model, platform and Git checks.
 use super::{Driver, git};
 use std::collections::BTreeSet;
-use yoneda_refmodel::{Access, Caller, MAIN, Op, Scope};
+use yoneda_refmodel::{Access, Caller, MAIN, Op, Role, Scope};
 
 const B1: &str = "refs/heads/b1";
 
@@ -374,6 +374,55 @@ fn landings_on_working_branches_count_from_the_parents_landing() {
             "LandOn MERGE_REQUIRED",
             "LandOn CONFLICT",
             "LandOn STALE_PARENT",
+        ],
+    );
+}
+
+fn member(by: &Caller, account: &str, role: Option<Role>) -> Op {
+    Op::Member {
+        by: by.clone(),
+        account: account.into(),
+        role,
+    }
+}
+
+/// Admins manage read and write members and act as the owner, but never grant or change
+/// an admin, nor the repository's visibility.
+#[test]
+fn admins_manage_members_but_not_admins_or_visibility() {
+    let (rita, will) = (
+        Caller::Account("rita".into()),
+        Caller::Account("will".into()),
+    );
+    let push = |caller: &Caller| Op::Probe {
+        caller: caller.clone(),
+        access: Access::Push,
+    };
+    let script = [
+        member(&Caller::Owner, "rita", Some(Role::Admin)),
+        member(&rita, "will", Some(Role::Write)),
+        member(&rita, "will", Some(Role::Admin)),
+        member(&rita, "rita", None),
+        member(&rita, "stranger", None),
+        Op::SetVisibility {
+            caller: rita.clone(),
+            public: true,
+        },
+        push(&rita),
+        member(&will, "stranger", Some(Role::Read)),
+        member(&Caller::Account("stranger".into()), "will", None),
+        member(&Caller::Owner, "rita", Some(Role::Read)),
+        push(&rita),
+        member(&rita, "will", None),
+    ];
+    run_reaching(
+        "admins",
+        &script,
+        &[
+            "Member Done",
+            "Member FORBIDDEN",
+            "Member NOT_FOUND",
+            "SetVisibility FORBIDDEN",
         ],
     );
 }

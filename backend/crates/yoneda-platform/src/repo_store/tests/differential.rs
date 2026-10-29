@@ -228,13 +228,19 @@ impl Driver {
                 let read = json!({"op":"repo_path_history","ref":MAIN,"path":path});
                 (done(self.h.run(&format!("token:{token}"), read)), None)
             }
-            Op::Member { account, role } => {
+            Op::Member { by, account, role } => {
                 let command = match role {
-                    Some(role) => json!({"op":"repo_member_put","account":account,
-                        "role":if *role == Role::Read { "read" } else { "write" }}),
+                    Some(role) => {
+                        let role = match role {
+                            Role::Read => "read",
+                            Role::Write => "write",
+                            Role::Admin => "admin",
+                        };
+                        json!({"op":"repo_member_put","account":account,"role":role})
+                    }
                     None => json!({"op":"repo_member_remove","account":account}),
                 };
-                (done(self.h.run(OWNER, command)), None)
+                (done(self.as_caller(by, command)), None)
             }
         }
     }

@@ -143,8 +143,9 @@ pub enum Op {
         caller: Caller,
         public: bool,
     },
-    /// The owner grants `account` `role`, or removes it (`None`).
+    /// `by` grants `account` `role`, or removes it (`None`).
     Member {
+        by: Caller,
         account: String,
         role: Option<Role>,
     },
@@ -329,7 +330,7 @@ impl Repo {
             Op::Rebase { branch } => (self.rebase(branch), None),
             Op::Probe { caller, access } => (self.access(caller, *access), None),
             Op::SetVisibility { caller, public } => (self.set_visibility(caller, *public), None),
-            Op::Member { account, role } => (self.set_member(account, *role), None),
+            Op::Member { by, account, role } => (self.set_member(by, account, *role), None),
             Op::Enqueue { branch } => (self.enqueue(branch), None),
             Op::RunQueue => (self.run_queue(), None),
             Op::MintToken {

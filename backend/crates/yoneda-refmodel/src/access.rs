@@ -1,7 +1,7 @@
 //! Who may read and write: a private repository exists only for its owner and members (to
 //! anyone else it is NOT_FOUND); a public one is read by anyone, while writing still needs
 //! a write member or the owner (a caller without credentials is asked to sign in). Only
-//! the owner's account changes visibility or membership here.
+//! the owner's account changes visibility; the owner and admins manage members.
 use crate::{Outcome, Repo};
 
 /// Who calls.
@@ -28,6 +28,8 @@ pub enum Access {
 pub enum Role {
     Read,
     Write,
+    /// Acts as the owner, except on visibility and on admins (granting or changing one).
+    Admin,
 }
 
 impl Repo {
@@ -70,8 +72,25 @@ impl Repo {
         }
     }
 
-    /// The owner grants `account` `role`, or removes it (`None`; NOT_FOUND for a non-member).
-    pub(crate) fn set_member(&mut self, account: &str, role: Option<Role>) -> Outcome {
+    /// `caller` grants `account` `role`, or removes it (`None`): the owner, or an admin
+    /// for read and write members (only the owner grants admin or changes an admin);
+    /// removing a non-member is NOT_FOUND.
+    pub(crate) fn set_member(
+        &mut self,
+        caller: &Caller,
+        account: &str,
+        role: Option<Role>,
+    ) -> Outcome {
+        match self.member(caller) {
+            None => return self.outsider(caller),
+            Some(Some(Role::Read | Role::Write)) => return Outcome::Refused("FORBIDDEN"),
+            Some(_) => {}
+        }
+        let owner = *caller == Caller::Owner;
+        let admin = |role: Option<&Role>| role == Some(&Role::Admin);
+        if !owner && (admin(role.as_ref()) || admin(self.members.get(account))) {
+            return Outcome::Refused("FORBIDDEN");
+        }
         match role {
             Some(role) => {
                 self.members.insert(account.to_owned(), role);

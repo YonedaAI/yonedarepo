@@ -227,8 +227,13 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
             public: rng.below(2) == 0,
         },
         _ => Op::Member {
+            by: if rng.below(2) == 0 {
+                Caller::Owner
+            } else {
+                caller(rng)
+            },
             account: rng.pick(&ACCOUNTS).to_string(),
-            role: [None, Some(Role::Read), Some(Role::Write)][rng.below(3)],
+            role: [None, Some(Role::Read), Some(Role::Write), Some(Role::Admin)][rng.below(4)],
         },
     }
 }
