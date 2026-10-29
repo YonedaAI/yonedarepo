@@ -121,7 +121,8 @@
     ]
   },
   "limits": {
-    "subrequests": 50000
+    "subrequests": 50000,
+    "cpu_ms": 300000
   },
   "main": "worker/platform-index.ts",
   "migrations": [
