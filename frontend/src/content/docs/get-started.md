@@ -9,7 +9,7 @@ Open [yonedarepo.com/signup](/signup), choose a user name and a password of at l
 
 ## 2. Create a repository
 
-Choose **New repository** in the sidebar. Each repository has Code, History, Changes, Agents, Releases, Search and Settings tabs. Repositories are private unless you make them public.
+Choose **New repository** in the sidebar. Each repository has Overview, Changes, Commits, Sessions, Memories, Context, Agent tools, Releases, Search and Settings pages. Repositories are private unless you make them public.
 
 ## 3. Install the CLI
 

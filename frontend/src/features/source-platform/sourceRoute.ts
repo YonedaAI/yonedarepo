@@ -50,8 +50,9 @@ export type SourceRoute =
 
 /** The repository's sidebar pages. Overview is the code browser (`files`, `overview`);
  * Commits holds `history`, `transactions`, `branches` and `commit`; Changes holds `change`;
- * Releases holds `release`; Sessions holds the agent sessions and each `session`; Agents
- * the other agent records (contracts, pins, bisects). */
+ * Releases holds `release`; Sessions holds the agent sessions and each `session`; Memories
+ * the agent memories; Agent tools (`agents`) the other agent records (contracts, pins,
+ * bisects). Each page has one sidebar entry, highlighted on every route it holds. */
 export type RepoTab =
   | 'overview'
   | 'changes'
