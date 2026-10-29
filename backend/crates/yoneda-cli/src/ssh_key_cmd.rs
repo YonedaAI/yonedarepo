@@ -66,7 +66,7 @@ pub fn default_title(title: Option<String>, key: &PublicKey, host: Option<String
         .unwrap_or_else(|| "ssh key".into())
 }
 
-fn host_name() -> Option<String> {
+pub(crate) fn host_name() -> Option<String> {
     std::env::var("HOSTNAME")
         .ok()
         .or_else(|| {
