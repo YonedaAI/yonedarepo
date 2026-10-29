@@ -1,11 +1,11 @@
-// The site's written pages: Docs (`/docs/...`, left navigation), Blog (index and posts) and
-// Company (About, Vision), each rendered from its Markdown content file.
+// The site's written pages: Docs (`/docs/...`, left navigation), Blog (index and posts),
+// Company (About, Vision) and the Terms and Privacy pages, each from its Markdown file.
 
 import { linkTo, type Navigate } from '../shell/useRoute';
 import type { LinkResolver } from '../source-platform/markdown';
 import { inline, Markdown } from '../source-platform/markdown';
 import { parseSourceRoute } from '../source-platform/sourceRoute';
-import { BLOG_POSTS, COMPANY_PAGES, DOCS_NAV, DOCS_PAGES } from './content';
+import { BLOG_POSTS, COMPANY_PAGES, DOCS_NAV, DOCS_PAGES, LEGAL_PAGES } from './content';
 import { siteLink } from './SiteLayout';
 import { DOCS_HOME } from './siteRoute';
 
@@ -144,5 +144,22 @@ export function SiteCompany({ page, navigate }: { page: 'about' | 'vision'; navi
         <Markdown source={content.body} shift={0} link={contentLinks(navigate)} anchors />
       </article>
     </div>
+  );
+}
+
+/** Terms (`/terms`) or Privacy (`/privacy`), with its status (a draft notice) above it. */
+export function SiteLegal({ doc, navigate }: { doc: 'terms' | 'privacy'; navigate: Navigate }) {
+  const content = LEGAL_PAGES[doc];
+  return (
+    <article className="site-prose site-post">
+      {content.status && (
+        <p className="site-notice" role="note">
+          {content.status}
+        </p>
+      )}
+      <h1>{content.title}</h1>
+      {content.summary && <p className="site-lead">{inline(content.summary, 's')}</p>}
+      <Markdown source={content.body} shift={0} link={contentLinks(navigate)} anchors />
+    </article>
   );
 }

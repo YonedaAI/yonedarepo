@@ -6,14 +6,15 @@ import { describe, expect, it } from 'vitest';
 import usageSource from '../../../../backend/crates/yoneda-cli/src/command/usage.rs?raw';
 import tools from '../../../../backend/crates/yoneda-core/src/platform_tools.json';
 import { formatSourceRoute, parseSourceRoute } from '../source-platform/sourceRoute';
-import { BLOG_POSTS, COMPANY_PAGES, DOCS_NAV, DOCS_PAGES } from './content';
+import { BLOG_POSTS, COMPANY_PAGES, DOCS_NAV, DOCS_PAGES, LEGAL_PAGES } from './content';
 import { formatUsd, MARGIN, METERS, meterPrice, PRICING, roundUpClean } from './pricing';
 import { SiteFeatures } from './SiteFeatures';
 import { SiteHome } from './SiteHome';
 import { SiteLayout } from './SiteLayout';
-import { SiteBlog, SiteCompany, SiteDocs } from './SitePages';
+import { SiteBlog, SiteCompany, SiteDocs, SiteLegal } from './SitePages';
 import { SitePricing } from './SitePricing';
 import { siteView } from './siteRoute';
+import { nextTheme, THEMES } from './theme';
 
 const navigate = () => {};
 const render = (element: React.ReactElement) => renderToStaticMarkup(element);
@@ -32,6 +33,8 @@ describe('site routes', () => {
     ['/company/vision', { page: 'vision' }],
     ['/signin', { page: 'signin', mode: 'login' }],
     ['/signup', { page: 'signin', mode: 'signup' }],
+    ['/terms', { page: 'legal', doc: 'terms' }],
+    ['/privacy', { page: 'legal', doc: 'privacy' }],
   ])('%s parses to a site page and formats back', (path, site) => {
     const route = parse(path);
     expect(route).toEqual({ view: 'site', site });
@@ -81,6 +84,18 @@ describe('site nav', () => {
       expect(parse(href).view).toBe('site');
     }
     expect(html).toContain('Yoneda Labs');
+    expect(html).toContain('href="/terms"');
+    expect(html).toContain('href="/privacy"');
+    expect(html).toMatch(/<button[^>]*aria-label="Theme: System[^"]*"/);
+  });
+
+  it('cycles the theme System → Light → Dark → System', () => {
+    expect(THEMES).toEqual(['system', 'light', 'dark']);
+    expect(['system', 'light', 'dark'].map((t) => nextTheme(t as never))).toEqual([
+      'light',
+      'dark',
+      'system',
+    ]);
   });
 
   it('offers the app instead of sign-in when signed in', () => {
@@ -183,6 +198,16 @@ describe('content', () => {
     expect(COMPANY_PAGES[page].title).not.toBe('');
     const html = render(createElement(SiteCompany, { page, navigate }));
     expect(html).toContain('<h1');
+    expect(html).not.toContain('](');
+  });
+
+  it.each(['terms', 'privacy'] as const)('renders %s as a draft pending legal review', (doc) => {
+    expect(LEGAL_PAGES[doc].status).toBe('Draft, pending legal review');
+    const html = render(createElement(SiteLegal, { doc, navigate }));
+    expect(html.match(/<h1/g)).toHaveLength(1);
+    expect(html).toContain('Draft, pending legal review');
+    expect(html).toContain('Yoneda Labs');
+    expect(html).toContain('YonedaRepo');
     expect(html).not.toContain('](');
   });
 

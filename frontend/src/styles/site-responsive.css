@@ -5,8 +5,13 @@
     padding: 10px 16px;
     gap: 12px;
   }
+  .site-theme {
+    order: 0;
+    margin-left: auto;
+  }
   .site-menu-button {
     display: inline-flex;
+    margin-left: 0;
   }
   .site-sections {
     display: none;

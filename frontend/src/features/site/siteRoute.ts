@@ -1,5 +1,5 @@
 // The public site's addresses (`/features`, `/pricing`, `/docs/...`, `/blog/...`,
-// `/company/...`, `/signin`, `/signup`) and when `/` shows the public home instead of the app.
+// `/company/...`, `/signin`, `/signup`, `/terms`, `/privacy`) and when `/` shows the public home instead of the app.
 import type { SourceRoute } from '../source-platform/sourceRoute';
 
 export type SitePage =
@@ -11,6 +11,7 @@ export type SitePage =
   | { page: 'post'; slug: string }
   | { page: 'about' }
   | { page: 'vision' }
+  | { page: 'legal'; doc: 'terms' | 'privacy' }
   | { page: 'signin'; mode: 'login' | 'signup' };
 
 export const DOCS_HOME = 'get-started';
@@ -31,6 +32,7 @@ export function parseSitePath(parts: string[]): SitePage | undefined {
   if (root === 'company' && (!rest.length || (rest.length === 1 && rest[0] === 'about')))
     return { page: 'about' };
   if (root === 'company' && rest.length === 1 && rest[0] === 'vision') return { page: 'vision' };
+  if ((root === 'terms' || root === 'privacy') && !rest.length) return { page: 'legal', doc: root };
   return undefined;
 }
 
@@ -47,6 +49,8 @@ export function formatSitePage(site: SitePage): string {
       return `/company/${site.page}`;
     case 'signin':
       return site.mode === 'login' ? '/signin' : '/signup';
+    case 'legal':
+      return `/${site.doc}`;
     default:
       return `/${site.page}`;
   }

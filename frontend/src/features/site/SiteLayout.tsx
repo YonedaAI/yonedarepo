@@ -1,9 +1,13 @@
 // The public site's frame: top nav (sections, then Sign in / Get started, or Open app when
 // signed in), the page, and a footer. At phone width the sections fold into a menu button.
-import { GitBranch, Menu, X } from 'lucide-react';
+import { GitBranch, Menu, Monitor, Moon, Sun, X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { navSection, SITE_NAV, type SitePage } from './siteRoute';
+import { nextTheme, readTheme, type Theme, writeTheme } from './theme';
+
+const THEME_LABEL: Record<Theme, string> = { system: 'System', light: 'Light', dark: 'Dark' };
+const THEME_ICON = { system: Monitor, light: Sun, dark: Moon };
 
 export const siteLink = (page: SitePage, navigate: Navigate) =>
   linkTo({ view: 'site', site: page }, navigate);
@@ -20,6 +24,8 @@ export function SiteLayout({
   children?: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
+  const [theme, setTheme] = useState<Theme>(readTheme);
+  const ThemeIcon = THEME_ICON[theme];
   const current = navSection(page);
   // Following a link closes the phone menu.
   const go: Navigate = (next, options) => {
@@ -37,6 +43,19 @@ export function SiteLayout({
             <GitBranch size={20} aria-hidden="true" />
             YonedaRepo
           </a>
+          <button
+            type="button"
+            className="site-theme"
+            aria-label={`Theme: ${THEME_LABEL[theme]} (switch to ${THEME_LABEL[nextTheme(theme)]})`}
+            title={`Theme: ${THEME_LABEL[theme]}`}
+            onClick={() => {
+              const next = nextTheme(theme);
+              writeTheme(next);
+              setTheme(next);
+            }}
+          >
+            <ThemeIcon size={18} aria-hidden="true" />
+          </button>
           <button
             type="button"
             className="site-menu-button"
@@ -99,6 +118,12 @@ export function SiteLayout({
             </li>
             <li>
               <a {...linkTo({ view: 'explore' }, go)}>Explore public repositories</a>
+            </li>
+            <li>
+              <a {...siteLink({ page: 'legal', doc: 'terms' }, go)}>Terms</a>
+            </li>
+            <li>
+              <a {...siteLink({ page: 'legal', doc: 'privacy' }, go)}>Privacy</a>
             </li>
           </ul>
         </nav>

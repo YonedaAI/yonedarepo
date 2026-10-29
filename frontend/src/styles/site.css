@@ -13,6 +13,7 @@
   --site-bad: #b4232c;
   --site-code-bg: #0f1b2b;
   --site-code-text: #dbe5f3;
+  color-scheme: light;
   /* App components on site pages (the account panel) take the site's theme. */
   --muted: var(--site-muted);
   --line: var(--site-line);
@@ -26,8 +27,9 @@
   font-size: 16px;
   line-height: 1.55;
 }
+/* Dark: the system's choice unless Light is chosen, or Dark chosen explicitly. */
 @media (prefers-color-scheme: dark) {
-  .site {
+  :root:not([data-theme="light"]) .site {
     --site-bg: #0d1520;
     --site-surface: #142030;
     --site-text: #e4ebf5;
@@ -40,7 +42,23 @@
     --site-bad: #ff8a8f;
     --site-code-bg: #08101a;
     --site-code-text: #dbe5f3;
+    color-scheme: dark;
   }
+}
+:root[data-theme="dark"] .site {
+  --site-bg: #0d1520;
+  --site-surface: #142030;
+  --site-text: #e4ebf5;
+  --site-muted: #9aa8bb;
+  --site-line: #26354a;
+  --site-accent: #6f9bff;
+  --site-accent-text: #08111d;
+  --site-accent-soft: #1b2b48;
+  --site-good: #4cc5b3;
+  --site-bad: #ff8a8f;
+  --site-code-bg: #08101a;
+  --site-code-text: #dbe5f3;
+  color-scheme: dark;
 }
 .site :where(p) {
   /* The app's paragraphs are small and muted; the site's read at body size. */
@@ -122,6 +140,17 @@
   display: flex;
   align-items: center;
   gap: 12px;
+}
+.site-theme {
+  order: 3;
+  padding: 7px;
+  min-height: 0;
+  background: transparent;
+  color: var(--site-muted);
+  border: 1px solid var(--site-line);
+}
+.site-theme:hover {
+  color: var(--site-text);
 }
 .site-menu-button {
   display: none;
