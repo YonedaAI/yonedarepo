@@ -6,11 +6,12 @@
 export const REPO_SCHEMA: string[] = [
   `CREATE TABLE connection (
      id INTEGER PRIMARY KEY CHECK (id = 1),
+     repo TEXT NOT NULL,
      account TEXT NOT NULL,
      token_name TEXT NOT NULL,
-     token TEXT NOT NULL,
+     token_sealed TEXT NOT NULL,
      hook_id INTEGER NOT NULL,
-     hook_secret TEXT NOT NULL,
+     hook_secret_sealed TEXT NOT NULL,
      created_at INTEGER NOT NULL
    );
    CREATE TABLE agents (

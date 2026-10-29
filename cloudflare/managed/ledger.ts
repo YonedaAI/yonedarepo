@@ -9,6 +9,8 @@ import type { ManagedEnv } from './config';
 import { LEDGER_SCHEMA, migrate } from './schema';
 
 export const STARTING_CREDIT_MICROUSD = STARTING_CREDIT_USD * 1_000_000;
+/** Past the longest run (30 minute timeout, polling and posting), a hold nobody settled is stale. */
+export const STALE_HOLD_MS = 2 * 60 * 60_000;
 
 export interface CallMeta {
   repo: string;
@@ -88,8 +90,12 @@ export class CreditLedger extends DurableObject<ManagedEnv> {
   }
 
   /** Holds `amount` for one call unless the balance cannot cover it (then nothing is held). */
-  hold(key: string, amount: number, meta: CallMeta): { held: boolean; balance: number } {
-    return this.#tx((sql) => {
+  async hold(
+    key: string,
+    amount: number,
+    meta: CallMeta,
+  ): Promise<{ held: boolean; balance: number }> {
+    const answer = this.#tx((sql) => {
       const existing = sql.exec('SELECT 1 FROM entries WHERE key = ?', `hold:${key}`).toArray();
       if (existing.length) return { held: true, balance: this.#balance(sql).balance };
       const { balance } = this.#balance(sql);
@@ -97,6 +103,52 @@ export class CreditLedger extends DurableObject<ManagedEnv> {
       this.#insert(sql, `hold:${key}`, 'hold', -amount, meta);
       return { held: true, balance: balance - amount };
     });
+    if (answer.held && (await this.ctx.storage.getAlarm()) === null)
+      await this.ctx.storage.setAlarm(Date.now() + STALE_HOLD_MS);
+    return answer;
+  }
+
+  /** Holds nobody settled within STALE_HOLD_MS (an isolate lost mid-call, a run that never
+   * closed) are released, so a lost request cannot keep credit locked. */
+  releaseStale(now = Date.now()): number {
+    const released = this.#tx((sql) => {
+      const stale = sql
+        .exec<{
+          key: string;
+          amount: number;
+          repo: string;
+          run: string;
+          agent: string;
+          model: string;
+        }>(
+          `SELECT h.key, h.amount, h.repo, h.run, h.agent, h.model FROM entries h
+           WHERE h.kind = 'hold' AND h.at <= ?
+             AND NOT EXISTS (SELECT 1 FROM entries r WHERE r.key = 'release:' || substr(h.key, 6))`,
+          now - STALE_HOLD_MS,
+        )
+        .toArray();
+      for (const h of stale)
+        this.#insert(sql, `release:${h.key.slice('hold:'.length)}`, 'release', -h.amount, {
+          repo: h.repo,
+          run: h.run,
+          agent: h.agent,
+          model: h.model,
+          note: 'Stale hold released',
+        });
+      return stale.length;
+    });
+    return released;
+  }
+
+  override async alarm() {
+    this.releaseStale();
+    const open = this.ctx.storage.sql
+      .exec<{ n: number }>(
+        `SELECT COUNT(*) AS n FROM entries h WHERE h.kind = 'hold'
+           AND NOT EXISTS (SELECT 1 FROM entries r WHERE r.key = 'release:' || substr(h.key, 6))`,
+      )
+      .one().n;
+    if (open > 0) await this.ctx.storage.setAlarm(Date.now() + STALE_HOLD_MS);
   }
 
   /**
