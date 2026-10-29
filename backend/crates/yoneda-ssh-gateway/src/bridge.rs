@@ -16,6 +16,7 @@ use bytes::{Bytes, BytesMut};
 use futures_util::StreamExt;
 use russh::server::Msg;
 use russh::{ChannelMsg, ChannelReadHalf, ChannelWriteHalf};
+use std::time::Instant;
 
 /// The largest single request (pkt-lines up to a flush) the gateway forwards.
 const REQUEST_LIMIT: usize = 8 * 1024 * 1024;
@@ -122,13 +123,53 @@ impl Input {
 /// The client's side of the channel for output.
 pub type Output = ChannelWriteHalf<Msg>;
 
-/// Streams a platform answer to the client.
-async fn relay(output: &Output, response: reqwest::Response) -> Result<(), BridgeError> {
+/// What one command moved to the client, and where it waited: on the platform's answer or
+/// on the client's window (its side of the SSH connection, through the front door). Reported
+/// to the platform's log when the command ends, so a slow or cut transfer says which side.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct Relayed {
+    pub bytes: u64,
+    /// From the first platform request to its first answer byte.
+    pub first_byte_ms: Option<u64>,
+    pub platform_ms: u64,
+    pub client_ms: u64,
+}
+
+fn ms(since: Instant) -> u64 {
+    u64::try_from(since.elapsed().as_millis()).unwrap_or(u64::MAX)
+}
+
+impl Relayed {
+    /// The fields of the `gateway.command` report.
+    pub fn report(&self, command: &GitCommand, outcome: &str, total_ms: u64) -> serde_json::Value {
+        serde_json::json!({
+            "repo": command.repo.to_string(), "service": command.service.name(), "outcome": outcome,
+            "bytes": self.bytes, "first_byte_ms": self.first_byte_ms,
+            "platform_ms": self.platform_ms, "client_ms": self.client_ms, "total_ms": total_ms,
+        })
+    }
+}
+
+/// Streams a platform answer to the client, counting into `relayed`; `asked` is when the
+/// request that answered was sent.
+async fn relay(
+    output: &Output,
+    response: reqwest::Response,
+    asked: Instant,
+    relayed: &mut Relayed,
+) -> Result<(), BridgeError> {
     let mut body = response.bytes_stream();
-    while let Some(chunk) = body.next().await {
-        output
-            .data_bytes(chunk.map_err(PlatformError::from)?)
-            .await?;
+    loop {
+        let waiting = Instant::now();
+        let next = body.next().await;
+        relayed.platform_ms += ms(waiting);
+        let Some(chunk) = next else { break };
+        let chunk = chunk.map_err(PlatformError::from)?;
+        relayed.first_byte_ms.get_or_insert_with(|| ms(asked));
+        relayed.bytes += chunk.len() as u64;
+        let waiting = Instant::now();
+        output.data_bytes(chunk).await?;
+        relayed.client_ms += ms(waiting);
     }
     Ok(())
 }
@@ -184,19 +225,37 @@ pub async fn run(
     input: Input,
     output: &Output,
 ) -> u32 {
+    if command.service == Service::UploadPack && !v2 {
+        say(
+            output,
+            "ERROR: YonedaRepo serves fetches over SSH with Git protocol version 2 only.\n\
+             Run `git config --global protocol.version 2` (the default since Git 2.26) and retry.",
+        )
+        .await;
+        return 128;
+    }
+    let started = Instant::now();
+    let mut relayed = Relayed::default();
     let outcome = match command.service {
-        Service::UploadPack if !v2 => {
-            say(
-                output,
-                "ERROR: YonedaRepo serves fetches over SSH with Git protocol version 2 only.\n\
-                 Run `git config --global protocol.version 2` (the default since Git 2.26) and retry.",
-            )
-            .await;
-            return 128;
+        Service::UploadPack => {
+            fetch(platform, identity, command, input, output, &mut relayed).await
         }
-        Service::UploadPack => fetch(platform, identity, command, input, output).await,
-        Service::ReceivePack => push(platform, identity, command, input, output).await,
+        Service::ReceivePack => {
+            push(platform, identity, command, input, output, &mut relayed).await
+        }
     };
+    // What the transfer moved and where it waited, in the platform's log (`ssh.gateway.command`).
+    let (label, error) = match &outcome {
+        Ok(()) => ("ok", None),
+        Err(BridgeError::Ssh(e)) => ("client_failed", Some(e.to_string())),
+        Err(e) => ("failed", Some(e.to_string())),
+    };
+    let mut detail = relayed.report(command, label, ms(started));
+    if let Some(error) = error {
+        detail["error"] = serde_json::json!(error.chars().take(300).collect::<String>());
+    }
+    tracing::info!(detail = %detail, "ssh.command");
+    platform.report("gateway.command", detail).await;
     match outcome {
         Ok(()) => 0,
         Err(e) => {
@@ -217,6 +276,7 @@ async fn fetch(
     command: &GitCommand,
     mut input: Input,
     output: &Output,
+    relayed: &mut Relayed,
 ) -> Result<(), BridgeError> {
     let mut session = Session::open(platform, identity, command).await?;
     let advertised = platform
@@ -237,6 +297,7 @@ async fn fetch(
             break; // the client is done
         }
         let token = session.token().await?;
+        let asked = Instant::now();
         let answer = platform
             .rpc(
                 token,
@@ -246,7 +307,7 @@ async fn fetch(
                 request.into(),
             )
             .await?;
-        relay(output, answer).await?;
+        relay(output, answer, asked, relayed).await?;
     }
     Ok(())
 }
@@ -257,6 +318,7 @@ async fn push(
     command: &GitCommand,
     mut input: Input,
     output: &Output,
+    relayed: &mut Relayed,
 ) -> Result<(), BridgeError> {
     let mut session = Session::open(platform, identity, command).await?;
     let advertised = platform
@@ -299,8 +361,35 @@ async fn push(
     } else {
         head.into()
     };
+    let asked = Instant::now();
     let answer = platform
         .rpc(&token, &command.repo, Service::ReceivePack, false, body)
         .await?;
-    relay(output, answer).await
+    relay(output, answer, asked, relayed).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The report names the command and splits the time between the platform and the client.
+    #[test]
+    fn a_command_report_says_what_moved_and_where_it_waited() {
+        let command = crate::command::parse(b"git-upload-pack 'r0123456789abcdef0123.git'")
+            .unwrap_or_else(|| unreachable!("a valid command"));
+        let relayed = Relayed {
+            bytes: 38_000_000,
+            first_byte_ms: Some(900),
+            platform_ms: 2_100,
+            client_ms: 450_000,
+        };
+        assert_eq!(
+            relayed.report(&command, "client_failed", 600_000),
+            serde_json::json!({
+                "repo": "r0123456789abcdef0123", "service": "git-upload-pack",
+                "outcome": "client_failed", "bytes": 38_000_000, "first_byte_ms": 900,
+                "platform_ms": 2_100, "client_ms": 450_000, "total_ms": 600_000,
+            })
+        );
+    }
 }
