@@ -11,12 +11,19 @@ type Json = Record<string, any>;
 const entry = (RustWorker as unknown as { prototype?: { platformCompute?: unknown } }).prototype
   ?.platformCompute;
 
+/** Bytes this isolate has passed into Wasm (each call's JSON input): Wasm memory grows to
+ * a few times a call's input and never shrinks, so large inputs are what to watch. */
+export const computeInput = { bytes: 0, calls: 0 };
+
 export function compute(input: Json): Json {
   if (typeof entry !== 'function')
     throw Object.assign(new Error('Rust compute is unavailable in this build'), {
       code: 'COMPUTE_UNAVAILABLE',
     });
-  const result = JSON.parse(entry(JSON.stringify(input)));
+  const text = JSON.stringify(input);
+  computeInput.bytes += text.length;
+  computeInput.calls++;
+  const result = JSON.parse(entry(text));
   if (result.error)
     throw Object.assign(new Error(result.error.message), { code: result.error.code });
   return result.value;
