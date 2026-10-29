@@ -21,13 +21,22 @@ export async function connect(url, client) {
   });
   assert.equal(login.status, 200, 'Login failed; set YONEDA_USERNAME and YONEDA_PASSWORD');
   const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0];
+  // A read is retried when the connection itself fails (a reset or connect timeout on the
+  // machine running the bench), never on an HTTP answer; writes are never retried.
   const call = async (method, path, body) => {
-    const response = await fetch(`${url}/api/v1${path}`, {
-      method,
-      headers: { 'content-type': 'application/json', cookie },
-      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    });
-    return { status: response.status, body: await response.json().catch(() => ({})) };
+    for (let attempt = 1; ; attempt++) {
+      try {
+        const response = await fetch(`${url}/api/v1${path}`, {
+          method,
+          headers: { 'content-type': 'application/json', cookie },
+          ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+        });
+        return { status: response.status, body: await response.json().catch(() => ({})) };
+      } catch (e) {
+        if (method !== 'GET' || attempt >= 5) throw e;
+        await pause(500 * attempt);
+      }
+    }
   };
   const post = async (path, body) => {
     const { status, body: value } = await call('POST', path, body);
