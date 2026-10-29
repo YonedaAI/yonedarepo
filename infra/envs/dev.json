@@ -120,8 +120,8 @@
         "Secrets: SSH_GATEWAY_SECRET (32+ random characters), SSH_HOST_ED25519_KEY / SSH_HOST_ECDSA_KEY",
         "(base64 of OpenSSH host key files, generated once and kept), SSH_TUNNEL_TOKEN (the tunnel's token).",
         "Welcome email (account-email.ts): the platform-jobs consumer sends one per new account through",
-        "Resend (EMAIL_FROM, EMAIL_CONTACT; secret RESEND_API_KEY, a sending-only Resend key, from",
-        "~/.config/yonedarepo/staging.env). An empty or missing key turns email off; sign-up never depends on it.",
+        "Resend (EMAIL_FROM, EMAIL_CONTACT). Its key is RESEND_API_KEY, the Secrets Store secret",
+        "Resend-Yoneda, read at send time; without it email is off and sign-up never depends on it.",
         "The sending domain has open and click tracking off in Resend."
       ],
       "secrets": [
@@ -131,8 +131,7 @@
         "SSH_GATEWAY_SECRET",
         "SSH_HOST_ED25519_KEY",
         "SSH_HOST_ECDSA_KEY",
-        "SSH_TUNNEL_TOKEN",
-        "RESEND_API_KEY"
+        "SSH_TUNNEL_TOKEN"
       ],
       "health": "yonedarepo-platform",
       "always_on": {
@@ -187,6 +186,11 @@
             "binding": "REVIEW_MODEL_KEY",
             "store_id": "3d9115d4fe864c54a792bcb790a763e3",
             "secret_name": "ZAI"
+          },
+          {
+            "binding": "RESEND_API_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "Resend-Yoneda"
           }
         ],
         "artifacts": [

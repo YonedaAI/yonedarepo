@@ -20,8 +20,17 @@ afterEach(async () => {
 const queued: Envelope[] = [];
 const fakeQueue = { send: async (body: Envelope) => void queued.push(body) };
 afterEach(() => void queued.splice(0));
+/** The Secrets Store binding: counts reads, so the key is shown to be read at send time. */
+const keyReads = { count: 0 };
+const storeKey = (value: () => string) => ({
+  get: async () => {
+    keyReads.count++;
+    return value();
+  },
+});
+afterEach(() => void (keyReads.count = 0));
 const configured: Partial<Env> = {
-  RESEND_API_KEY: 're_test_key',
+  RESEND_API_KEY: storeKey(() => 're_test_key'),
   EMAIL_FROM: 'YonedaRepo <hello@yonedarepo.test>',
   EMAIL_CONTACT: 'hello@yonedarepo.test',
   WEB_ORIGIN: 'https://yonedarepo.test',
@@ -84,7 +93,9 @@ it('posts the welcome email to Resend with its key and a per-account idempotency
   const target = scoped(configured);
   await auth(target, 'signup', 'grace@example.com');
   const { got, send } = resend();
+  expect(keyReads.count).toBe(0);
   expect(await welcomeJob(target, queued[0], 1, send)).toEqual({});
+  expect(keyReads.count).toBe(1);
   expect(got).toHaveLength(1);
   const [request] = got;
   expect(request.url).toBe(RESEND_EMAILS);
@@ -135,6 +146,27 @@ it('skips the send when email is not configured, and sign-up still succeeds', as
     body: JSON.stringify({ username: 'self@example.com', password: 'a long test password' }),
   });
   expect(res.status).toBe(200);
+});
+
+it('treats an unreadable or empty Secrets Store key as email off, without logging it', async () => {
+  const logs = [
+    vi.spyOn(console, 'warn').mockImplementation(() => {}),
+    vi.spyOn(console, 'error').mockImplementation(() => {}),
+  ];
+  for (const [i, key] of [
+    storeKey(() => {
+      throw new Error('store unavailable re_leaked_value');
+    }),
+    storeKey(() => ''),
+  ].entries()) {
+    const target = scoped({ ...configured, RESEND_API_KEY: key });
+    expect((await auth(target, 'signup', `nokey${i}@example.com`)).status).toBe(200);
+    const { got, send } = resend();
+    expect(await welcomeJob(target, queued[i], 1, send)).toEqual({});
+    expect(got).toHaveLength(0);
+  }
+  expect(keyReads.count).toBe(2);
+  expect(JSON.stringify(logs.map((l) => l.mock.calls))).not.toContain('re_leaked_value');
 });
 
 it('retries a 5xx with backoff through the queue job, and stops on a 4xx', async () => {

@@ -52,10 +52,10 @@ export interface Env {
   /** Requests without credentials (public repositories), per client address. */
   PUBLIC_LIMITER?: RateLimit;
   OWNER_TOKEN?: string;
-  /** The welcome email (account-email.ts): a Resend API key (secret), the sender
-   * (`YonedaRepo <hello@yonedarepo.com>`) and the contact address it names. Any missing:
-   * email is off. */
-  RESEND_API_KEY?: string;
+  /** The welcome email (account-email.ts): the Resend API key (Secrets Store, read at send
+   * time), the sender (`YonedaRepo <hello@yonedarepo.com>`) and the contact address it
+   * names. Any missing or unreadable: email is off. */
+  RESEND_API_KEY?: { get(): Promise<string> };
   EMAIL_FROM?: string;
   EMAIL_CONTACT?: string;
   ACCESS_TEAM_DOMAIN?: string;
