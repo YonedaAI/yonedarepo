@@ -297,7 +297,7 @@
     "LFS_S3_BUCKET": "yonedarepo-prod-platform-objects",
     "LFS_S3_ENDPOINT": "https://f011d0ee02b23cad26b4b38151b204ad.r2.cloudflarestorage.com",
     "PUSH_BUNDLES": "on",
-    "SSH_FRONT_DOOR": "off",
+    "SSH_FRONT_DOOR": "tunnel",
     "SSH_HOST": "ssh.yonedarepo.com",
     "WEB_ORIGIN": "https://yonedarepo.com",
     "WORKERS_SUBDOMAIN": "mlong-f01"
