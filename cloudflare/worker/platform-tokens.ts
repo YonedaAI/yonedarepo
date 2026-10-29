@@ -77,6 +77,8 @@ function newUserCode() {
 export async function deviceCode(req: Request, env: Env, body: Json, url: URL) {
   await limited(req, env);
   const client = typeof body.client_name === 'string' ? body.client_name : '';
+  // The CLI's machine name labels the token it receives (the authority validates it).
+  const host = body.host ?? null;
   for (let attempt = 0; ; attempt++) {
     const code = newUserCode();
     const secret = base64url(crypto.getRandomValues(new Uint8Array(32)));
@@ -85,6 +87,7 @@ export async function deviceCode(req: Request, env: Env, body: Json, url: URL) {
         op: 'device_create',
         secret_hash: await sha(secret),
         client_name: client,
+        host,
       });
       const shown = `${code.slice(0, 4)}-${code.slice(4)}`;
       const site = (env.WEB_ORIGIN || url.origin).replace(/\/$/, '');
@@ -145,13 +148,18 @@ export async function deviceToken(req: Request, env: Env, body: Json) {
     );
   }
   const grant = polled.grant;
-  const issued = await issuePat(env, polled.account, {
-    name: polled.client_name,
-    scopes: grant.scopes,
-    repos: grant.repos,
-    org: grant.org ?? null,
-    expires_days: grant.expires_days,
-  });
+  const issued = await issuePat(
+    env,
+    polled.account,
+    {
+      name: polled.client_name,
+      scopes: grant.scopes,
+      repos: grant.repos,
+      org: grant.org ?? null,
+      expires_days: grant.expires_days,
+    },
+    { origin: 'login', host: polled.host ?? null },
+  );
   return {
     token: issued.token,
     scopes: issued.scopes,

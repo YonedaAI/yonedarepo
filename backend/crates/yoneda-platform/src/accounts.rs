@@ -17,6 +17,8 @@ mod ssh_keys_tests;
 mod teams;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod token_origin_tests;
 mod tokens;
 #[cfg(test)]
 mod tokens_tests;
@@ -42,7 +44,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
     }))
 }
 /// Digest-pinned, forward-only account migrations (version, SQL), applied in order.
-const MIGRATIONS: [(i64, &str); 5] = [
+const MIGRATIONS: [(i64, &str); 6] = [
     (1, include_str!("accounts/migrations/0001_accounts.sql")),
     (
         2,
@@ -51,6 +53,7 @@ const MIGRATIONS: [(i64, &str); 5] = [
     (3, include_str!("accounts/migrations/0003_orgs.sql")),
     (4, include_str!("accounts/migrations/0004_team_ids.sql")),
     (5, include_str!("accounts/migrations/0005_ssh_keys.sql")),
+    (6, include_str!("accounts/migrations/0006_token_origin.sql")),
 ];
 fn migrate<S: SqlStore>(store: &S) -> Result<()> {
     store.query("CREATE TABLE IF NOT EXISTS workspace_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)", &[])?;
@@ -99,6 +102,20 @@ fn audit<S: SqlStore>(db: &S, kind: &str, now: i64, data: Value) -> Result<()> {
         &[json!(kind), json!(now), json!(data.to_string())],
     )?;
     Ok(())
+}
+/// An optional short label (`key`): absent or null, or 1-64 printable characters.
+fn label(c: &Value, key: &str) -> Result<Option<String>> {
+    match &c[key] {
+        Value::Null => Ok(None),
+        Value::String(text)
+            if !text.trim().is_empty()
+                && text.chars().count() <= 64
+                && !text.chars().any(char::is_control) =>
+        {
+            Ok(Some(text.clone()))
+        }
+        _ => Err(bad(&format!("{key} must be 1-64 printable characters"))),
+    }
 }
 /// A stored record by id (`account`, `session:<digest>`, `login_rate`).
 fn get<S: SqlStore>(db: &S, id: &str) -> Result<Value> {

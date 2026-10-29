@@ -31,6 +31,10 @@ export type Pat = {
   created_at: number;
   expires_at: number | null;
   last_used_at: number | null;
+  /** `login`: made by `yoneda login` (the device flow); null: made on the website. */
+  origin?: 'login' | null;
+  /** The machine a login token was signed in on (null when unknown). */
+  host?: string | null;
 };
 
 export function PatTable({
@@ -93,9 +97,9 @@ export function PatTable({
   );
 }
 
-/** Token names `yoneda login` gives the tokens it creates (its device `client_name`). */
-export const DEVICE_CLIENTS = ['yoneda-cli'];
-export const isDeviceLogin = (token: Pat) => DEVICE_CLIENTS.includes(token.name);
+/** A token `yoneda login` made (the platform records its origin; older ones were marked by
+ * their client name when origins began to be recorded). */
+export const isDeviceLogin = (token: Pat) => token.origin === 'login';
 
 /** Only `which` of the account's tokens, keeping the read's state. */
 export const onlyTokens = (
