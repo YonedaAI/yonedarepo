@@ -12,6 +12,7 @@ import { withObjects } from './repo-object-compute';
 import { blobWaves } from './repo-object-waves';
 import { toBase64 } from './repo-objects';
 import { ApiError, caller, type Json, RepoContext, target } from './repo-ops';
+import { schedulePackBuild } from './repo-pack-jobs';
 import { searchSegments, segmentsIn } from './repo-search-index';
 import { writeSeed } from './repo-seed';
 import { timed } from './repo-timing';
@@ -250,8 +251,16 @@ export async function deriveAfterLanding(env: Env, envelope: Envelope) {
     throw e;
   });
   if (!head) return null;
-  // A push's bundles are then read in bulk, not one staged read per file.
-  if ((await ctx.status()).bundled) noteBundles(envelope.repo_id);
+  // A push's bundles are then read in bulk, not one staged read per file. Main's clone
+  // packs are built ahead of its next clones (a repository pushed only through the API
+  // holds no bundles and clones quickly); a lost message costs the next clone its speed.
+  if ((await ctx.status()).bundled) {
+    noteBundles(envelope.repo_id);
+    if (head.ref === 'refs/heads/main')
+      await schedulePackBuild(env, envelope.repo_id, String(head.commit)).catch((e) =>
+        console.warn(`pack build not scheduled: ${e?.message ?? e}`),
+      );
+  }
   const segments = await searchSegments(ctx, head.tree);
   // The head's overview facts; a failure only costs the first view its speed.
   await viewFacts(ctx, String(head.tree)).catch(() => {});

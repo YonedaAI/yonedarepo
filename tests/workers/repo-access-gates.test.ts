@@ -8,6 +8,7 @@
 // names today's measured ratio and its target, and starts passing (so failing as
 // `it.fails`) once a fix meets the target.
 import { expect, it, vi } from 'vitest';
+import { SEEN } from '../../cloudflare/worker/repo-git-objects';
 import { blob, commitObject, fetchTimed, objectReads, pushHistory, type Raw, sorted, tree } from './pushed-history';
 import { api, scoped, usePlatformFixture } from './repo-fixture';
 
@@ -166,6 +167,48 @@ it('a partial clone whose trees the session cannot keep reads each tree bundle a
   // A read per tree bundle, a second reading it whole, and a few for the levels.
   expect(timing.walk_reads).toBeLessThanOrEqual(2 * spanned(trees) + LEVELS);
   expect(timing.walk_read).toBeLessThanOrEqual(3 * (trees / 1048576) + 1.1);
+});
+
+/** `commits` commits on `parent` under a root of `dirs` unchanging directories and d/e/f/,
+ * each commit rewriting d/e/f/f.txt: a wide root and three small trees per commit (four
+ * walk rounds a wave), newest first. */
+async function deepWide(parent: string, commits: number, dirs: number) {
+  const objects: Raw[] = [];
+  const file = await blob('still\n');
+  const still = await tree([['100644', 'f.txt', file.id]]);
+  objects.push(still, file);
+  const names = Array.from({ length: dirs }, (_, d) => ['40000', `c${String(d).padStart(4, '0')}`, still.id] as [string, string, string]);
+  for (let i = 0; i < commits; i++) {
+    const content = await blob(`version ${i}\n`);
+    const f = await tree([['100644', 'f.txt', content.id]]);
+    const e = await tree([['40000', 'f', f.id]]);
+    const d = await tree([['40000', 'e', e.id]]);
+    const root = await tree([...names, ['40000', 'd', d.id]]);
+    const commit = await commitObject(root.id, parent, i);
+    objects.unshift(commit, root, d, e, f, content);
+    parent = commit.id;
+  }
+  return objects;
+}
+
+it('a partial clone whose trees outgrow the walk memory reads each tree bundle about once', async () => {
+  // 2,000 roots of 300 entries (about 18 MiB of trees) in 8 waves of commits, the walk
+  // keeping 6 MiB of what it read: as svelte (150 MiB of trees, 45 waves, 32 MiB kept),
+  // each wave's rounds need trees its first round's ranges held. Before the walk let its
+  // oldest trees go, it kept the first 6 MiB and read the ranges again every round.
+  let objects: Raw[] = [];
+  const { repo, token, tip } = await pushHistory('gate_deep_wide', async (main) => (objects = await deepWide(main, 2000, 300)));
+  const kept = SEEN.bytes;
+  SEEN.bytes = 6 * 1048576;
+  try {
+    const { timing } = await clone(repo, token, [`want ${tip}`, 'filter blob:none', 'done']);
+    const trees = frames(objects.filter((o) => o.kind !== 'blob'));
+    console.log(`partial clone, deep wide roots, 6 MiB kept (${mib(trees)} of trees): ${JSON.stringify(timing)}`);
+    // Both passes read each wave's ranges about once.
+    expect(timing.walk_read).toBeLessThanOrEqual(3 * (trees / 1048576) + 1.1);
+  } finally {
+    SEEN.bytes = kept;
+  }
 });
 
 // Known-failing. Blame reads its versions with the 1 MiB gap a clone bridges, so it reads

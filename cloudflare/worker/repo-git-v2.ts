@@ -18,6 +18,7 @@ import {
 } from './repo-git-upload';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import type { Json, RepoContext } from './repo-ops';
+import type { Fresh } from './repo-pack-cache';
 
 const ADVERTISEMENT = {
   'content-type': 'application/x-git-upload-pack-advertisement',
@@ -91,12 +92,16 @@ async function serveFetch(
     unshallow: walked.unshallow,
   });
   const commits = (walked.commits as Json[]).map((c) => String(c.commit));
-  const full =
-    request.haves.length === 0 &&
-    !request.omit_blobs &&
-    request.depth == null &&
-    request.shallows.length === 0 &&
-    !request.deepen_relative;
+  // A fetch that has nothing gets what its wants, filter and depth name, whoever asks.
+  const fresh: Fresh | undefined =
+    request.haves.length === 0 && request.shallows.length === 0
+      ? {
+          wants: request.wants,
+          omit_blobs: !!request.omit_blobs,
+          depth: request.depth ?? null,
+          deepen_relative: !!request.deepen_relative,
+        }
+      : undefined;
   return sendPack(
     fromBase64(head.body_b64),
     () => UploadSession.open({ ...walked, omit_blobs: request.omit_blobs }),
@@ -104,6 +109,6 @@ async function serveFetch(
     CHUNK,
     stats,
     commits,
-    { full, wants: request.wants },
+    fresh,
   );
 }
