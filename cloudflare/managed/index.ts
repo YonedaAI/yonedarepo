@@ -9,9 +9,12 @@ import { consume, receiveHook } from './dispatch';
 import { ledgerStub } from './ledger';
 import { PlatformError } from './platform';
 
+export { ContainerProxy } from '@cloudflare/containers';
+export { HarnessContainer } from './harness';
 export { CreditLedger } from './ledger';
 export { RepoAgents } from './repo-agents';
 export { ManagedReviewWorkflow } from './workflow';
+export { WorkspaceAgents } from './workspace-agents';
 
 const json = (value: unknown, status = 200) =>
   Response.json(value, { status, headers: { 'cache-control': 'no-store' } });

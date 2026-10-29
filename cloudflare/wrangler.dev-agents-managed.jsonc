@@ -1,25 +1,44 @@
 // Generated from infra/envs/dev.json by `cargo xtask infra up`; edit the spec, not this file.
-// Dev managed agents Worker (cloudflare/managed): YonedaRepo's predefined reviewers (code review,
-// security review), run as an ordinary API client of the platform. A repository owner enables an
-// agent from the browser (front Worker /api/managed -> MANAGED service binding); the owner's own
-// session mints a scoped repository token (yoneda-managed-agents: read, review, check) and a
-// webhook (change, branch) to https://managed.dev.yonedarepo.com/hooks/<repo>. That hostname serves only signed
-// webhooks and /health. Runs are queued (RUNS, at least once) and run as one Workflow instance per
-// run (REVIEWS): load the change over the platform API, 3-6 model calls, then anchored comments,
-// a summary and a code-review / security-review check on the head commit.
-// Model calls go through AI Gateway {prefix}-managed-agents (AI_GATEWAY_URL; provider slugs in
-// AI_GATEWAY_PROVIDERS: anthropic, custom-zai and custom-mimo, custom providers with base URLs
-// https://api.z.ai and https://api.xiaomimimo.com). Keys: Secrets Store secrets Claude, ZAI, MiMo.
-// Credit: one CreditLedger Durable Object per billed account (repository owner), $5 starting credit,
-// runs pause at $0. Models: CODE_REVIEW_MODEL / SECURITY_REVIEW_MODEL (provider/model; price from the
-// provider registry x 1.3).
+// Dev managed agents Worker (cloudflare/managed): YonedaRepo's maintained reviewers (code, security,
+// slop review), run as an ordinary API client of the platform. A workspace owner enables an agent
+// from the browser (front Worker /api/managed -> MANAGED service binding); the owner's own session
+// mints each chosen repository's token (yoneda-managed-agents: read, review, check) and webhook
+// (change, branch) to https://managed.dev.yonedarepo.com/hooks/<repo>. That hostname serves only signed webhooks and
+// /health. Runs are queued (RUNS, at least once) and run as one Workflow instance per run (REVIEWS):
+// a HarnessContainer (cloudflare/containers/harness: Claude Code, Codex, opencode, pinned) with no
+// internet clones the change lazily and runs the agent's CLI; its only ways out are the Worker's
+// outbound handlers (platform reads with the token added, AI Gateway with the key added, metered
+// per request). The Worker posts anchored comments, a summary and the agent's check.
+// Model calls go through AI Gateway {prefix}-managed-agents (AI_GATEWAY_URL; slugs in
+// AI_GATEWAY_PROVIDERS: anthropic and openai built in; custom-zai and custom-mimo are custom
+// providers with base URLs https://api.z.ai and https://api.xiaomimimo.com). Keys: Secrets Store
+// secrets Claude, Codex, ZAI and MiMo. Agent models and fallbacks: shared/managed-agents.ts.
+// Credit: one CreditLedger per workspace, $5 promotional credit, runs pause at $0; container time
+// is billed at the check-minute rate. Transcripts (redacted) in R2 {prefix}-managed-transcripts.
 // Secrets (both optional): AI_GATEWAY_TOKEN, the gateway's token when it is authenticated;
-// MANAGED_ADMIN_TOKEN, bearer for POST /admin/accounts/<account>/credit (unset: nobody may grant).
+// MANAGED_ADMIN_TOKEN, bearer for POST /admin/accounts/<workspace>/credit (unset: nobody may grant).
 // Deployed before the front Worker, which binds it as MANAGED.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
   "compatibility_date": "2026-10-07",
+  "containers": [
+    {
+      "class_name": "HarnessContainer",
+      "constraints": {
+        "regions": [
+          "ENAM"
+        ]
+      },
+      "image": "./containers/harness/Dockerfile",
+      "image_build_context": "..",
+      "instance_type": "standard-1",
+      "max_instances": 5,
+      "rollout_step_percentage": [
+        100
+      ]
+    }
+  ],
   "durable_objects": {
     "bindings": [
       {
@@ -27,8 +46,16 @@
         "name": "REPOS"
       },
       {
+        "class_name": "WorkspaceAgents",
+        "name": "WORKSPACES"
+      },
+      {
         "class_name": "CreditLedger",
         "name": "LEDGER"
+      },
+      {
+        "class_name": "HarnessContainer",
+        "name": "HARNESS"
       }
     ]
   },
@@ -37,7 +64,9 @@
     {
       "new_sqlite_classes": [
         "RepoAgents",
-        "CreditLedger"
+        "WorkspaceAgents",
+        "CreditLedger",
+        "HarnessContainer"
       ],
       "tag": "v1"
     }
@@ -64,6 +93,12 @@
       }
     ]
   },
+  "r2_buckets": [
+    {
+      "binding": "TRANSCRIPTS",
+      "bucket_name": "yonedarepo-dev-managed-transcripts"
+    }
+  ],
   "routes": [
     {
       "custom_domain": true,
@@ -74,6 +109,11 @@
     {
       "binding": "CLAUDE_KEY",
       "secret_name": "Claude",
+      "store_id": "3d9115d4fe864c54a792bcb790a763e3"
+    },
+    {
+      "binding": "CODEX_KEY",
+      "secret_name": "Codex",
       "store_id": "3d9115d4fe864c54a792bcb790a763e3"
     },
     {
@@ -94,11 +134,9 @@
     }
   ],
   "vars": {
-    "AI_GATEWAY_PROVIDERS": "claude=anthropic,zai=custom-zai,mimo=custom-mimo",
+    "AI_GATEWAY_PROVIDERS": "claude=anthropic,codex=openai,zai=custom-zai,mimo=custom-mimo",
     "AI_GATEWAY_URL": "https://gateway.ai.cloudflare.com/v1/f011d0ee02b23cad26b4b38151b204ad/yonedarepo-dev-managed-agents",
-    "CODE_REVIEW_MODEL": "zai/glm-5.3-flash",
-    "PUBLIC_URL": "https://managed.dev.yonedarepo.com",
-    "SECURITY_REVIEW_MODEL": "claude/claude-sonnet-5-5"
+    "PUBLIC_URL": "https://managed.dev.yonedarepo.com"
   },
   "workers_dev": false,
   "workflows": [

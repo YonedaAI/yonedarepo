@@ -1,25 +1,27 @@
-// The browser's `/api/managed/*`, reached through the front Worker on the site's own origin.
-// Every request is authorized by the platform with the caller's own credential: reading needs
-// read access to the repository, and enabling or disabling an agent needs its owner (who alone
-// may mint the scoped token and register the webhook the agents use). The billed account is
-// the repository's owner.
+// The browser's `/api/managed/*`, reached through the front Worker on the site's own origin and
+// scoped to a workspace (a personal account or an org). The platform authorizes every request
+// with the caller's own credential: only a workspace owner (who can mint repository tokens and
+// register webhooks) sees or changes its agents, runs and billing. The workspace is the billed
+// account.
 import {
+  type AgentState,
   MANAGED_AGENTS,
+  type ManagedAgentDefinition,
   type ManagedAgentId,
-  type ManagedRepoState,
+  type ManagedCredit,
   STARTING_CREDIT_USD,
 } from '../../shared/managed-agents';
 import {
-  agentConfig,
-  HOOK_EVENTS,
-  type ManagedEnv,
-  REPO_ID,
-  TOKEN_NAME,
-  TOKEN_SCOPES,
-} from './config';
+  customizedFields,
+  resolveSettings,
+  SettingsError,
+  validateOverrides,
+} from '../../shared/managed-settings';
+import { HOOK_EVENTS, type ManagedEnv, REPO_ID, TOKEN_NAME, TOKEN_SCOPES } from './config';
 import { ledgerStub } from './ledger';
 import { type Json, Platform, PlatformError } from './platform';
 import { repoStub } from './repo-agents';
+import { WORKSPACE_SCOPE, workspaceStub } from './workspace-agents';
 
 export class ApiRefusal extends Error {
   constructor(
@@ -31,50 +33,75 @@ export class ApiRefusal extends Error {
   }
 }
 
-async function state(env: ManagedEnv, repo: string, status: Json): Promise<ManagedRepoState> {
-  const account = String(status.owner);
-  const stub = repoStub(env, repo);
-  const [summary, connection, balance] = await Promise.all([
-    stub.summary(),
-    stub.connection(),
-    ledgerStub(env, account).balance(),
+const WORKSPACE = /^[A-Za-z0-9._:-]{1,100}$/;
+
+/** The caller's standing in `workspace`: whether they own it, and its repositories they own. */
+async function access(caller: Platform, workspace: string) {
+  const [listed, orgs] = await Promise.all([
+    caller.repos(),
+    caller.orgs().catch(() => ({ orgs: [] as Json[] })),
   ]);
-  // An account that never used an agent shows the starting credit it gets on first enable.
-  const fresh = balance.granted === 0 && balance.used === 0;
-  const granted = fresh ? STARTING_CREDIT_USD * 1_000_000 : balance.granted;
-  const left = fresh ? granted : balance.balance;
+  const repos = ((listed.repos ?? []) as Json[])
+    .filter((r) => r.owner === workspace && r.role === 'owner')
+    .map((r) => ({ id: String(r.id), name: String(r.name) }));
+  const orgOwner = ((orgs.orgs ?? []) as Json[]).some(
+    (o) => o.org === workspace && o.role === 'owner',
+  );
+  if (!orgOwner && repos.length === 0)
+    throw new ApiRefusal('FORBIDDEN', 'Only a workspace owner can manage its agents', 403);
+  return repos;
+}
+
+async function credit(env: ManagedEnv, workspace: string): Promise<ManagedCredit> {
+  const b = await ledgerStub(env, workspace).balance();
+  // A workspace that never ran an agent shows the starting credit its first run adds.
+  const fresh = b.granted === 0 && b.used === 0;
+  const granted = fresh ? STARTING_CREDIT_USD * 1_000_000 : b.granted;
+  const left = fresh ? granted : b.balance;
   return {
-    repo,
-    account,
-    agents: MANAGED_AGENTS.map((definition) => {
-      const row = summary.find((s) => s.agent === definition.id);
-      let model = { provider: definition.provider, model: definition.model };
-      try {
-        const deployed = agentConfig(env, definition.id);
-        model = { provider: deployed.provider, model: deployed.model };
-      } catch {
-        // A misconfigured agent shows its default; enabling it is refused below.
-      }
-      return {
-        ...definition,
-        ...model,
-        enabled: row?.enabled ?? false,
-        last_run: row?.last_run ?? null,
-      };
-    }),
-    credit: {
-      granted_usd: granted / 1_000_000,
-      used_usd: balance.used / 1_000_000,
-      balance_usd: left / 1_000_000,
-      paused: left <= 0,
-    },
-    billing: 'coming',
-    token_name: connection?.token_name ?? TOKEN_NAME,
+    granted_usd: granted / 1e6,
+    used_usd: b.used / 1e6,
+    balance_usd: left / 1e6,
+    paused: left <= 0,
+  };
+}
+
+async function runsOf(env: ManagedEnv, repos: string[], agent: string | null, limit: number) {
+  const lists = await Promise.all(repos.map((r) => repoStub(env, r).runs(agent, limit)));
+  return lists.flat().sort((a, b) => b.created_at - a.created_at);
+}
+
+async function agentState(
+  env: ManagedEnv,
+  workspace: string,
+  agent: ManagedAgentDefinition,
+): Promise<AgentState> {
+  const stored = await workspaceStub(env, workspace).settings(agent.id);
+  const runs = await runsOf(env, stored.enabled, agent.id, 200);
+  return {
+    ...agent,
+    settings: resolveSettings(agent, stored.workspace),
+    customized: customizedFields(stored.workspace),
+    repo_overrides: Object.fromEntries(
+      Object.entries(stored.repos).map(([r, o]) => [r, customizedFields(o)]),
+    ),
+    enabled_repos: stored.enabled,
+    history: runs.slice(0, 6).map(({ id, repo, change, value, status, created_at }) => ({
+      id,
+      repo,
+      change,
+      value,
+      status,
+      created_at,
+    })),
+    runs: runs.length,
   };
 }
 
 /** Mints the agents' repository token and registers their webhook, as the owner. */
-async function connect(env: ManagedEnv, req: Request, repo: string, account: string) {
+async function connect(env: ManagedEnv, req: Request, repo: string, workspace: string) {
+  const stub = repoStub(env, repo);
+  if (await stub.connection()) return;
   const owner = new Platform(env, { forward: req });
   let name = TOKEN_NAME;
   let minted: Json;
@@ -91,8 +118,8 @@ async function connect(env: ManagedEnv, req: Request, repo: string, account: str
     `${env.PUBLIC_URL.replace(/\/$/, '')}/hooks/${repo}`,
     HOOK_EVENTS,
   );
-  await repoStub(env, repo).link({
-    account,
+  await stub.link({
+    account: workspace,
     token_name: name,
     token: String(minted.token),
     hook_id: Number(hook.id),
@@ -100,41 +127,128 @@ async function connect(env: ManagedEnv, req: Request, repo: string, account: str
   });
 }
 
-export async function managedApi(req: Request, env: ManagedEnv, parts: string[]): Promise<Json> {
-  const [repos, repo, resource, agentId] = parts;
-  if (repos !== 'repos' || !REPO_ID.test(repo ?? ''))
-    throw new ApiRefusal('NOT_FOUND', 'Unknown managed API path', 404);
-  const caller = new Platform(env, { forward: req });
-  const status = await caller.status(repo);
-  const url = new URL(req.url);
-  if (!resource && req.method === 'GET') return state(env, repo, status);
-  if (resource === 'runs' && !agentId && req.method === 'GET') {
-    const agent = url.searchParams.get('agent');
-    const limit = Number(url.searchParams.get('limit') ?? 50);
-    return { runs: await repoStub(env, repo).runs(agent, limit) };
-  }
-  if (resource === 'agents' && agentId && req.method === 'POST') {
-    if (!MANAGED_AGENTS.some((a) => a.id === agentId))
-      throw new ApiRefusal('NOT_FOUND', 'Unknown agent', 404);
-    if (status.viewer?.owner !== true)
-      throw new ApiRefusal('FORBIDDEN', 'Only the repository owner can turn agents on or off', 403);
-    const body = (await req.json().catch(() => null)) as { enabled?: unknown } | null;
-    if (typeof body?.enabled !== 'boolean')
-      throw new ApiRefusal('INVALID_INPUT', 'Send {"enabled": true} or {"enabled": false}', 400);
-    const id = agentId as ManagedAgentId;
-    const stub = repoStub(env, repo);
-    const account = String(status.owner);
-    if (body.enabled) {
-      try {
-        agentConfig(env, id);
-      } catch (e: any) {
-        throw new ApiRefusal('NOT_CONFIGURED', String(e?.message ?? e), 503);
-      }
-      if (!(await stub.connection())) await connect(env, req, repo, account);
-      await ledgerStub(env, account).ensureStartingCredit();
+async function update(
+  env: ManagedEnv,
+  req: Request,
+  workspace: string,
+  agent: ManagedAgentDefinition,
+  owned: { id: string }[],
+) {
+  const body = (await req.json().catch(() => null)) as Json | null;
+  if (!body || typeof body !== 'object')
+    throw new ApiRefusal('INVALID_INPUT', 'Send a JSON object', 400);
+  const ws = workspaceStub(env, workspace);
+  const stored = await ws.settings(agent.id);
+  const by = 'workspace owner';
+  if (body.settings !== undefined) {
+    const scope = body.scope ? String(body.scope) : WORKSPACE_SCOPE;
+    if (scope && !owned.some((r) => r.id === scope))
+      throw new ApiRefusal('FORBIDDEN', 'That repository is not one you own here', 403);
+    const current = scope ? (stored.repos[scope] ?? {}) : stored.workspace;
+    try {
+      const base = scope ? resolveSettings(agent, stored.workspace) : agent.defaults;
+      const overrides = validateOverrides({ ...agent, defaults: base }, current, body.settings);
+      await ws.save(agent.id, scope, overrides, by);
+    } catch (e) {
+      if (e instanceof SettingsError) throw new ApiRefusal('INVALID_INPUT', e.message, 400);
+      throw e;
     }
-    await stub.setEnabled(id, body.enabled, String(status.viewer?.principal ?? 'owner'));
-    return state(env, repo, status);
+  }
+  if (body.repos !== undefined) {
+    if (
+      !Array.isArray(body.repos) ||
+      !body.repos.every((r: unknown) => typeof r === 'string' && REPO_ID.test(r))
+    )
+      throw new ApiRefusal('INVALID_INPUT', 'repos lists repository ids', 400);
+    const wanted = [...new Set(body.repos as string[])];
+    if (!wanted.every((r) => owned.some((o) => o.id === r)))
+      throw new ApiRefusal(
+        'FORBIDDEN',
+        'Agents run only on repositories you own in this workspace',
+        403,
+      );
+    for (const repo of wanted) {
+      await connect(env, req, repo, workspace);
+      await repoStub(env, repo).setEnabled(agent.id, true, by);
+    }
+    for (const repo of stored.enabled.filter((r) => !wanted.includes(r)))
+      await repoStub(env, repo).setEnabled(agent.id, false, by);
+    await ws.setEnabled(agent.id, wanted);
+    if (wanted.length) await ledgerStub(env, workspace).ensureStartingCredit();
+  }
+  return agentState(env, workspace, agent);
+}
+
+export async function managedApi(req: Request, env: ManagedEnv, parts: string[]): Promise<Json> {
+  const [scope, workspace, resource, id, sub] = parts;
+  if (scope !== 'workspaces' || !WORKSPACE.test(workspace ?? ''))
+    throw new ApiRefusal('NOT_FOUND', 'Unknown managed API path', 404);
+  const owned = await access(new Platform(env, { forward: req }), workspace);
+  const url = new URL(req.url);
+  const get = req.method === 'GET';
+  if (!resource && get)
+    return {
+      workspace,
+      agents: await Promise.all(MANAGED_AGENTS.map((a) => agentState(env, workspace, a))),
+      credit: await credit(env, workspace),
+      billing: 'coming',
+      repos: owned,
+      token_name: TOKEN_NAME,
+    };
+  if (resource === 'agents' && id) {
+    const agent = MANAGED_AGENTS.find((a) => a.id === id);
+    if (!agent) throw new ApiRefusal('NOT_FOUND', 'Unknown agent', 404);
+    if (get) return agentState(env, workspace, agent);
+    if (req.method === 'PUT') return update(env, req, workspace, agent, owned);
+  }
+  const repos = owned.map((r) => r.id);
+  if (resource === 'runs' && !id && get) {
+    const agent = url.searchParams.get('agent') as ManagedAgentId | null;
+    const repo = url.searchParams.get('repo');
+    const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 200);
+    const runs = await runsOf(env, repo ? repos.filter((r) => r === repo) : repos, agent, limit);
+    return { runs: runs.slice(0, limit) };
+  }
+  if (resource === 'runs' && id && sub && get) {
+    if (!repos.includes(id)) throw new ApiRefusal('NOT_FOUND', 'Unknown run', 404);
+    const stub = repoStub(env, id);
+    const run = await stub.run(sub);
+    if (!run) throw new ApiRefusal('NOT_FOUND', 'Unknown run', 404);
+    const listed = env.TRANSCRIPTS
+      ? await env.TRANSCRIPTS.list({ prefix: `transcripts/${id}/${sub}/` })
+      : null;
+    const newest = listed?.objects.sort((a, b) => b.uploaded.getTime() - a.uploaded.getTime())[0];
+    const transcript = newest ? await (await env.TRANSCRIPTS?.get(newest.key))?.text() : null;
+    return {
+      run,
+      findings: await stub.findings(sub),
+      transcript: transcript ?? null,
+      cost: await ledgerStub(env, workspace).runEntries(sub),
+    };
+  }
+  if (resource === 'billing' && !id && get) {
+    const runs = await runsOf(env, repos, null, 200);
+    const usage = new Map<
+      string,
+      { repo: string; agent: string; runs: number; cost_usd: number }
+    >();
+    for (const r of runs) {
+      const key = `${r.repo}:${r.agent}`;
+      const row = usage.get(key) ?? { repo: r.repo, agent: r.agent, runs: 0, cost_usd: 0 };
+      row.runs++;
+      row.cost_usd += r.cost_usd;
+      usage.set(key, row);
+    }
+    return {
+      workspace,
+      credit: await credit(env, workspace),
+      payment_method: null,
+      billing: 'coming',
+      usage: [...usage.values()].map((u) => ({
+        ...u,
+        repo_name: owned.find((o) => o.id === u.repo)?.name ?? u.repo,
+      })),
+    };
   }
   throw new ApiRefusal('NOT_FOUND', 'Unknown managed API path', 404);
 }

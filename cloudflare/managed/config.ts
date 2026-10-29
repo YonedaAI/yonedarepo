@@ -1,37 +1,36 @@
-// Managed agents Worker configuration. Each agent's model is deployment config (a `*_MODEL`
-// var, `provider/model`), validated here against the provider registry: only Anthropic
-// Messages providers with verified pricing are allowed, and there is no fallback to another
-// model. Caps bound every run's worst-case spend before any call is made.
-
-import {
-  MANAGED_AGENTS,
-  type ManagedAgentDefinition,
-  type ManagedAgentId,
-} from '../../shared/managed-agents';
-import { providerDefinition } from '../../shared/providers';
+// Managed agents Worker configuration: bindings, the gateway's provider slugs and the run and
+// queue shapes. Which harness and model each agent uses is the agent's settings
+// (shared/managed-agents.ts defaults, overridden per workspace or repository), validated
+// against the billing rate table; a fallback model is only ever one the agent lists.
+import type { ManagedAgentId, ModelProvider } from '../../shared/managed-agents';
+import type { HarnessContainer } from './harness';
 import type { CreditLedger } from './ledger';
 import type { RepoAgents } from './repo-agents';
+import type { WorkspaceAgents } from './workspace-agents';
 
 export interface ManagedEnv {
   REPOS: DurableObjectNamespace<RepoAgents>;
+  WORKSPACES: DurableObjectNamespace<WorkspaceAgents>;
   LEDGER: DurableObjectNamespace<CreditLedger>;
+  HARNESS: DurableObjectNamespace<HarnessContainer>;
   REVIEWS: Workflow<RunParams>;
   RUNS: Queue<QueueMessage>;
-  /** The platform Worker: its public API (`/api/v1`) only. */
+  /** Run transcripts (redacted, capped); optional, a run without it keeps none. */
+  TRANSCRIPTS?: R2Bucket;
+  /** The platform Worker: its public API (`/api/v1`) and Git only. */
   PLATFORM: Fetcher;
   /** This Worker's public origin; webhooks are registered at `${PUBLIC_URL}/hooks/<repo>`. */
   PUBLIC_URL: string;
   /** `https://gateway.ai.cloudflare.com/v1/<account>/<gateway>` (one gateway per env). */
   AI_GATEWAY_URL: string;
-  /** Provider id → the gateway's provider slug, `claude=anthropic,zai=custom-zai,…`. */
+  /** Provider → the gateway's provider slug: `claude=anthropic,codex=openai,zai=custom-zai,…`. */
   AI_GATEWAY_PROVIDERS: string;
-  CODE_REVIEW_MODEL: string;
-  SECURITY_REVIEW_MODEL: string;
   /** Worker secret, optional: the gateway's token when it is authenticated. */
   AI_GATEWAY_TOKEN?: string;
   /** Worker secret, optional: bearer for granting credit; unset means nobody may. */
   MANAGED_ADMIN_TOKEN?: string;
   CLAUDE_KEY?: SecretsStoreSecret;
+  CODEX_KEY?: SecretsStoreSecret;
   ZAI_KEY?: SecretsStoreSecret;
   MIMO_KEY?: SecretsStoreSecret;
 }
@@ -59,65 +58,10 @@ export type QueueMessage =
     }
   | { kind: 'resume'; repo: string; run: string };
 
-export type Provider = 'zai' | 'claude' | 'mimo';
-
-/** Per-run caps; a run's worst case is `maxCalls` calls at these sizes. */
-export interface Caps {
-  maxCalls: number;
-  maxOutputTokens: number;
-  /** Prompt bytes per call (a token is never shorter than one UTF-8 byte). */
-  maxPromptBytes: number;
-  maxFiles: number;
-  maxComments: number;
-}
-
-export interface AgentConfig extends ManagedAgentDefinition {
-  provider: Provider;
-  caps: Caps;
-  price: { input_microusd_per_million: number; output_microusd_per_million: number };
-}
-
-const CAPS: Record<ManagedAgentId, Caps> = {
-  'code-review': {
-    maxCalls: 6,
-    maxOutputTokens: 1500,
-    maxPromptBytes: 96_000,
-    maxFiles: 40,
-    maxComments: 15,
-  },
-  'security-review': {
-    maxCalls: 5,
-    maxOutputTokens: 1500,
-    maxPromptBytes: 48_000,
-    maxFiles: 30,
-    maxComments: 10,
-  },
-};
-const PROVIDERS = new Set<Provider>(['zai', 'claude', 'mimo']);
-const MODEL_VARS: Record<ManagedAgentId, 'CODE_REVIEW_MODEL' | 'SECURITY_REVIEW_MODEL'> = {
-  'code-review': 'CODE_REVIEW_MODEL',
-  'security-review': 'SECURITY_REVIEW_MODEL',
-};
-
 export class ConfigError extends Error {}
 
-/** The agent's deployed configuration; throws ConfigError naming the bad var. */
-export function agentConfig(env: ManagedEnv, id: string): AgentConfig {
-  const base = MANAGED_AGENTS.find((a) => a.id === id);
-  if (!base) throw new ConfigError(`Unknown agent ${id}`);
-  const name = MODEL_VARS[base.id];
-  const [provider, model] = String(env[name] ?? '').split('/');
-  if (!PROVIDERS.has(provider as Provider) || !model)
-    throw new ConfigError(`${name} must be zai/<model>, claude/<model> or mimo/<model>`);
-  const definition = providerDefinition(provider);
-  const price = definition.models.find((m) => m.id === model)?.conservative_pricing;
-  if (definition.protocol !== 'anthropic_messages' || !price)
-    throw new ConfigError(`${name}: ${model} has no verified pricing`);
-  return { ...base, provider: provider as Provider, model, caps: CAPS[base.id], price };
-}
-
-/** The gateway slug for a provider, from AI_GATEWAY_PROVIDERS (`claude=anthropic,zai=custom-zai`). */
-export function gatewaySlug(env: ManagedEnv, provider: Provider): string {
+/** The gateway slug for a provider, from AI_GATEWAY_PROVIDERS. */
+export function gatewaySlug(env: ManagedEnv, provider: ModelProvider): string {
   const pairs = String(env.AI_GATEWAY_PROVIDERS ?? '')
     .split(',')
     .map((pair) => pair.trim().split('='));
@@ -127,9 +71,15 @@ export function gatewaySlug(env: ManagedEnv, provider: Provider): string {
   return slug;
 }
 
+export function gatewaySlugs(env: ManagedEnv): Record<ModelProvider, string> {
+  const out = {} as Record<ModelProvider, string>;
+  for (const p of ['claude', 'codex', 'zai', 'mimo'] as const) out[p] = gatewaySlug(env, p);
+  return out;
+}
+
 export const REPO_ID = /^r[0-9a-f]{20}$/;
 export const COMMIT_ID = /^[0-9a-f]{40}$/;
-/** The repository token the agents post with; a landing policy names it as check poster. */
+/** The repository token the agents use; a landing policy names it as check poster. */
 export const TOKEN_NAME = 'yoneda-managed-agents';
 export const TOKEN_SCOPES = ['read', 'review', 'check'];
 export const HOOK_EVENTS = ['change', 'branch'];
