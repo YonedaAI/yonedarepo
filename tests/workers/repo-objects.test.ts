@@ -1,7 +1,8 @@
 // Batch, resumable object fetch through the tiered cache (Scion S11/S12).
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
-import { gitObjectId } from '../../cloudflare/worker/repo-objects';
+import { DOWNLOAD_DEADLINE } from '../../cloudflare/worker/repo-object-fetch';
+import { gitObjectId, RepoObjects } from '../../cloudflare/worker/repo-objects';
 import { api, author, file, misses, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
@@ -102,6 +103,31 @@ it('resumes a large blob download from a byte offset (HTTP Range)', async () => 
   const whole = await SELF_FETCH(`${repo}/objects/${big}`, owner.cookie, { range: 'bytes=0-1,5-6' });
   expect(whole.status).toBe(200);
   expect((await whole.text()).length).toBe(text.length);
+});
+
+it('answers a large-blob download with a retryable 503 when its store read never settles', async () => {
+  const owner = { cookie: await signup('stallowner') };
+  const created = await api('/repos', owner, {
+    body: { name: 'stalls', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', 'a\n')], author },
+  });
+  const repo = `/repos/${created.body.id}`;
+  const tree = await api(`${repo}/objects`, owner, { body: { objects: [{ id: created.body.tree, kind: 'tree' }] } });
+  const blob = tree.body.objects[0].entries[0].id;
+  const spy = vi.spyOn(RepoObjects.prototype, 'blob').mockImplementation(() => new Promise<Uint8Array>(() => {}));
+  const saved = DOWNLOAD_DEADLINE.ms;
+  DOWNLOAD_DEADLINE.ms = 300;
+  try {
+    const began = Date.now();
+    const download = await SELF_FETCH(`${repo}/objects/${blob}`, owner.cookie);
+    expect(download.status).toBe(503);
+    expect((await download.json<any>()).error.code).toBe('TIMEOUT');
+    expect(Date.now() - began).toBeLessThan(5_000);
+  } finally {
+    DOWNLOAD_DEADLINE.ms = saved;
+    spy.mockRestore();
+  }
+  // The deadline only bounds a stuck read: the download works again.
+  expect(await (await SELF_FETCH(`${repo}/objects/${blob}`, owner.cookie)).text()).toBe('a\n');
 });
 
 /** A raw (non-JSON) GET of the platform API. */

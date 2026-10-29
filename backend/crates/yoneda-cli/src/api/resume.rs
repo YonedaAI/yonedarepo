@@ -15,8 +15,24 @@ pub struct Received {
     pub cut: Option<Failure>,
 }
 
-/// A 2xx answer's body, read until it ends or the connection breaks.
-pub(super) async fn received(mut response: reqwest::Response, status: u16) -> Received {
+/// No bytes of `what` for `idle`: a retryable failure, like a dropped connection.
+pub(super) fn stalled(what: &str, idle: std::time::Duration) -> Failure {
+    Failure {
+        status: 0,
+        code: "STALLED".into(),
+        message: format!("no bytes of {what} for {} ms", idle.as_millis()),
+        details: Value::Null,
+        retry_after: None,
+    }
+}
+
+/// A 2xx answer's body, read until it ends, the connection breaks or it sends nothing
+/// for `idle` (a stall counts as a cut: the bytes so far are kept).
+pub(super) async fn received(
+    mut response: reqwest::Response,
+    status: u16,
+    idle: std::time::Duration,
+) -> Received {
     let offset = response
         .headers()
         .get(reqwest::header::CONTENT_RANGE)
@@ -25,18 +41,21 @@ pub(super) async fn received(mut response: reqwest::Response, status: u16) -> Re
         .unwrap_or(0);
     let mut bytes = Vec::new();
     loop {
-        match response.chunk().await {
-            Ok(Some(chunk)) => bytes.extend_from_slice(&chunk),
-            Ok(None) => break,
-            Err(e) => {
-                return Received {
-                    status,
-                    bytes,
-                    offset,
-                    cut: Some(unreachable(e)),
-                };
+        let cut = match tokio::time::timeout(idle, response.chunk()).await {
+            Ok(Ok(Some(chunk))) => {
+                bytes.extend_from_slice(&chunk);
+                continue;
             }
-        }
+            Ok(Ok(None)) => break,
+            Ok(Err(e)) => unreachable(e),
+            Err(_) => stalled("the answer", idle),
+        };
+        return Received {
+            status,
+            bytes,
+            offset,
+            cut: Some(cut),
+        };
     }
     Received {
         status,
@@ -58,6 +77,16 @@ fn range_start(value: &str) -> Option<u64> {
 }
 
 impl Api {
+    /// This client with other idle and total waits (tests use milliseconds).
+    pub fn with_timeouts(mut self, idle: std::time::Duration, budget: std::time::Duration) -> Self {
+        self.timeouts = super::Timeouts { idle, budget };
+        self
+    }
+
+    pub(crate) fn timeouts(&self) -> super::Timeouts {
+        self.timeouts
+    }
+
     /// Object fetches in flight through this client.
     pub(crate) fn objects(&self) -> &Coalesce {
         &self.objects
@@ -74,7 +103,7 @@ impl Api {
         if offset > 0 {
             request = request.header(reqwest::header::RANGE, format!("bytes={offset}-"));
         }
-        self.receive(request).await
+        self.receive(request, true).await
     }
 
     /// One read-only POST, never retried: the caller resumes from what arrived.
@@ -84,6 +113,6 @@ impl Api {
         body: &Value,
     ) -> std::result::Result<Received, Failure> {
         let request = self.http.post(format!("{}{path}", self.base)).json(body);
-        self.receive(request).await
+        self.receive(request, true).await
     }
 }

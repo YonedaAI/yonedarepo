@@ -264,6 +264,8 @@ fn write(git: &Git, pending: &mut Vec<(ObjectKind, Vec<u8>)>) -> Result<()> {
 mod fake;
 #[cfg(test)]
 mod resume_tests;
+#[cfg(test)]
+mod stall_tests;
 
 #[cfg(test)]
 mod tests {
