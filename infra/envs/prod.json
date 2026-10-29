@@ -171,7 +171,7 @@
           "WORKERS_SUBDOMAIN": "{subdomain}",
           "LFS_S3_ENDPOINT": "https://{account_id}.r2.cloudflarestorage.com",
           "LFS_S3_BUCKET": "{prefix}-platform-objects",
-          "SSH_FRONT_DOOR": "off",
+          "SSH_FRONT_DOOR": "tunnel",
           "SSH_HOST": "ssh.yonedarepo.com",
           "EMAIL_FROM": "YonedaRepo <hello@yonedarepo.com>",
           "EMAIL_CONTACT": "hello@yonedarepo.com"
