@@ -40,6 +40,8 @@ Add accounts or organization teams under **Settings → Members** with a role: `
 }
 ```
 
+A command runner may name `paths` (up to 32): only files at or under them are shipped to its check container, and its evidence names that scope. Without `paths` the whole tree ships. The checked commit's tree is shipped without history either way.
+
 Unprotected branches move with `write`, like any Git branch. See [Changes](/docs/guides/changes) for reviews and checks.
 
 ## Forks

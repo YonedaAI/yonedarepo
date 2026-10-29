@@ -2,6 +2,7 @@
 // mode. It receives files and argv from the Worker and returns evidence; it holds no
 // platform credentials and has no network, so a check cannot reach or alter the platform.
 import { Container } from '@cloudflare/containers';
+import { jsonBody, STREAM_TYPE, streamBody } from './check-stream';
 import {
   type CheckReport,
   completeContainerCheck,
@@ -14,7 +15,8 @@ import type { Env } from './types';
 export type CheckJob = {
   command: string[];
   timeout_seconds: number;
-  files: { path: string; type: string; data_b64: string }[];
+  /** The files at the checked tree (within the runner's scope), content as raw bytes. */
+  files: { path: string; type: string; data: Uint8Array }[];
 };
 
 /** The container operations one check needs (the Durable Object, or a test double). */
@@ -61,17 +63,18 @@ export async function startCheck(instance: CheckInstance): Promise<Started> {
 export async function executeCheck(instance: CheckInstance, job: CheckJob, started: Started) {
   try {
     // The check server enforces the job's timeout; a stalled connection must not outlive it.
-    const result = await instance.containerFetch(
-      new Request('http://check/check', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${started.secret}`,
-        },
-        body: JSON.stringify(job),
-        signal: AbortSignal.timeout((job.timeout_seconds + 30) * 1000),
-      }),
-    );
+    const post = (path: string, type: string, body: BodyInit) =>
+      instance.containerFetch(
+        new Request(`http://check${path}`, {
+          method: 'POST',
+          headers: { 'content-type': type, authorization: `Bearer ${started.secret}` },
+          body,
+          signal: AbortSignal.timeout((job.timeout_seconds + 30) * 1000),
+        }),
+      );
+    let result = await post('/check/stream', STREAM_TYPE, streamBody(job));
+    // A runtime image from before the stream route (mid-rollout) takes the JSON form.
+    if (result.status === 404) result = await post('/check', 'application/json', jsonBody(job));
     const body = await result.json<Record<string, any>>();
     if (!result.ok)
       throw Object.assign(new Error(body.error?.message ?? 'Check executor failed'), {

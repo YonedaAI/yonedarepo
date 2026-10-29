@@ -30,7 +30,15 @@ pub struct CommandRunner {
     #[serde(default = "default_timeout")]
     #[schemars(range(min = 1, max = MAX_TIMEOUT_SECONDS))]
     pub timeout_seconds: u32,
+    /// The check's sparse scope: only files at or under these paths are shipped to its
+    /// container (none: the whole tree). Omitted when empty, so policies without it keep
+    /// their digest.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[schemars(length(max = MAX_SCOPE_PATHS))]
+    pub paths: Vec<String>,
 }
+/// Paths one command runner's scope may name.
+const MAX_SCOPE_PATHS: usize = 32;
 fn default_timeout() -> u32 {
     600
 }
@@ -127,6 +135,14 @@ impl Runner {
                         "Runners need 1-64 argv entries and a 1-3600 second timeout (at most 32 runners)",
                     ));
                 }
+                if r.paths.len() > MAX_SCOPE_PATHS {
+                    return Err(bad(&format!(
+                        "Runner {name} scopes at most {MAX_SCOPE_PATHS} paths"
+                    )));
+                }
+                for path in &r.paths {
+                    yoneda_core::validate_path(path)?;
+                }
             }
             Runner::Model(r) => {
                 let chars = r.rubric.trim().chars().count();
@@ -155,6 +171,7 @@ impl Runner {
         match self {
             Runner::Command(r) => json!({
                 "kind": "command", "command": r.command, "timeout_seconds": r.timeout_seconds,
+                "paths": r.paths,
             }),
             Runner::Model(r) => json!({
                 "kind": "model", "rubric": r.rubric, "model": r.model,

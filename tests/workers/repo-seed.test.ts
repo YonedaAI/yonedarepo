@@ -22,6 +22,10 @@ async function checked(owner: { cookie: string }, repo: string, changes: unknown
   return { job: executed.at(-1).job, evidence };
 }
 
+/** The shipped files as path → text (the job carries raw bytes). */
+const texts = (files: { path: string; data: Uint8Array }[]) =>
+  Object.fromEntries(files.map((f) => [f.path, new TextDecoder().decode(f.data)]));
+
 /** The digest of `files` (path → text) as Git sees them, recomputed independently. */
 async function expectedDigest(files: Record<string, string>) {
   const listed = await Promise.all(
@@ -49,7 +53,7 @@ it('ships a nearby commit from the seed plus the changed blobs only', async () =
   await deriveAfterLanding(local, { v: 1, kind: 'platform_derive', repo_id: created.body.id, job_id: 'main' } as any);
   const warm = await checked(owner, repo, [file('src/2.txt', 'two\n'), { path: 'src/3.txt', delete: true }]);
   expect(warm.evidence.seed).toEqual({ commit: created.body.commit, fetched: 1 });
-  const shipped = Object.fromEntries(warm.job.files.map((f: any) => [f.path, atob(f.data_b64)]));
+  const shipped = texts(warm.job.files);
   expect(Object.keys(shipped)).toHaveLength(200);
   expect(shipped['src/2.txt']).toBe('two\n');
   expect(shipped['src/3.txt']).toBeUndefined();
@@ -57,4 +61,38 @@ it('ships a nearby commit from the seed plus the changed blobs only', async () =
   // The seeded file set is the commit's tree exactly, and its digest says so.
   expect(warm.evidence.files_sha256).toBe(await expectedDigest(shipped));
   expect(cold.evidence.files_sha256).not.toBe(warm.evidence.files_sha256);
+});
+
+it('ships only a scoped runner\'s paths, cold and seeded, bound to the scoped file set', async () => {
+  const owner = { cookie: await signup('scoper') };
+  const scopedPolicy = { ...policy, runners: { unit: { ...policy.runners.unit, paths: ['src', 'docs/api.md'] } } };
+  const files = [
+    file('a.txt', 'good\n'),
+    file('docs/api.md', 'api\n'),
+    file('docs/other.md', 'other\n'),
+    file('src/a/b.txt', 'b\n'),
+    file('srcx/c.txt', 'c\n'),
+  ];
+  const created = await api('/repos', owner, { body: { name: 'scoped', policy: scopedPolicy, files, author } }, local);
+  const repo = `/repos/${created.body.id}`;
+
+  const cold = await checked(owner, repo, [file('src/new.txt', 'new\n')]);
+  expect(Object.keys(texts(cold.job.files)).sort()).toEqual(['docs/api.md', 'src/a/b.txt', 'src/new.txt']);
+  expect(cold.evidence.scope).toEqual(['src', 'docs/api.md']);
+  expect(cold.evidence.files_sha256).toBe(await expectedDigest(texts(cold.job.files)));
+
+  await deriveAfterLanding(local, { v: 1, kind: 'platform_derive', repo_id: created.body.id, job_id: 'main' } as any);
+  // Each change is checked against the seeded head; out-of-scope changes are not fetched.
+  const warm = await checked(owner, repo, [file('srcx/c.txt', 'c2\n'), file('src/a/b.txt', 'b2\n')]);
+  expect(warm.evidence.seed).toEqual({ commit: expect.any(String), fetched: 1 });
+  expect(texts(warm.job.files)).toEqual({ 'docs/api.md': 'api\n', 'src/a/b.txt': 'b2\n' });
+  expect(warm.evidence.files_sha256).toBe(await expectedDigest(texts(warm.job.files)));
+});
+
+it('ships the whole tree and names no scope for a runner without paths', async () => {
+  const owner = { cookie: await signup('unscoped') };
+  const created = await api('/repos', owner, { body: { name: 'whole', policy, files: [file('a.txt', 'good\n')], author } }, local);
+  const run = await checked(owner, `/repos/${created.body.id}`, [file('b/c.txt', 'c\n')]);
+  expect(Object.keys(texts(run.job.files)).sort()).toEqual(['a.txt', 'b/c.txt']);
+  expect(run.evidence.scope).toBeUndefined();
 });

@@ -106,7 +106,7 @@ export const runners = (run: (job: any, name: string) => Promise<any>) => ({
 export const fakeRunners = runners(async (job, name) => {
   executed.push({ name, job });
   const file = job.files.find((f: any) => f.path === 'a.txt');
-  const ok = file && atob(file.data_b64).startsWith('good');
+  const ok = file && new TextDecoder().decode(file.data).startsWith('good');
   return { outcome: ok ? 'pass' : 'fail', exit_code: ok ? 0 : 1, timed_out: false, duration_ms: 5,
     output_bytes: 4, output_sha256: 'f'.repeat(64), output_tail: ok ? 'ok\n' : 'bad\n' };
 });
