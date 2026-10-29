@@ -1,7 +1,9 @@
 //! What context a coding session was shown: the client records each delivery (the session
 //! start's packet, the items injected when a file was read, those refreshed for a prompt)
 //! with the items it rendered and their size. The session page lists them; a ranking for
-//! the same session and caller leaves delivered items out and reports the bytes so far.
+//! the same session and caller leaves delivered items out and reports the bytes injected
+//! after the start so far (the start's packet has its own cap), so a client keeps its
+//! per-session cap.
 //! A prompt is never kept: a prompt delivery's subject is the prompt's SHA-256.
 use super::super::auth::Actor;
 use super::relevance::TYPES;
@@ -17,7 +19,7 @@ const MAX_PER_SESSION: u64 = 1000;
 const MAX_LISTED: u64 = 500;
 const LABEL: usize = 160;
 
-/// What one caller has delivered to one session so far.
+/// What one caller has delivered to one session so far (`bytes`: after the start).
 pub struct Delivered {
     pub items: BTreeSet<String>,
     pub bytes: u64,
@@ -38,7 +40,7 @@ fn session_id(c: &Value) -> Result<String> {
 
 pub fn delivered<S: SqlStore>(db: &S, session: &str, principal: &str) -> Result<Delivered> {
     let rows = db.query(
-        "SELECT items,bytes FROM context_deliveries WHERE session_id=? AND principal=? \
+        "SELECT trigger,items,bytes FROM context_deliveries WHERE session_id=? AND principal=? \
          ORDER BY seq LIMIT ?",
         &[json!(session), json!(principal), json!(MAX_PER_SESSION)],
     )?;
@@ -48,7 +50,9 @@ pub fn delivered<S: SqlStore>(db: &S, session: &str, principal: &str) -> Result<
         count: rows.len() as u64,
     };
     for row in rows {
-        out.bytes += row["bytes"].as_u64().unwrap_or(0);
+        if row["trigger"] != "start" {
+            out.bytes += row["bytes"].as_u64().unwrap_or(0);
+        }
         let items: Vec<Value> =
             serde_json::from_str(row["items"].as_str().unwrap_or("[]")).unwrap_or_default();
         out.items.extend(

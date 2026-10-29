@@ -529,6 +529,15 @@ fn deliveries_are_recorded_per_session_and_left_out_of_later_rankings() {
     assert_eq!(second_read["items"].as_array().unwrap().len(), 1);
     assert_eq!(second_read["items"][0]["id"], b);
     assert_eq!(second_read["delivered"], json!({"bytes":120,"count":1}));
+    // What the start packet showed is left out too; its size is not an injection's.
+    h.ok(
+        AGENT,
+        json!({"op":"repo_context_deliver","session_id":"claude-code:s1","trigger":"start",
+               "items":[{"type":"memory","id":b}],"bytes":3000}),
+    );
+    let third_read = relevant(AGENT, "claude-code:s1");
+    assert!(third_read["items"].as_array().unwrap().is_empty());
+    assert_eq!(third_read["delivered"], json!({"bytes":120,"count":2}));
     // Another session, or another caller in the same session, starts afresh.
     assert_eq!(
         relevant(AGENT, "claude-code:s2")["items"]
@@ -554,7 +563,7 @@ fn deliveries_are_recorded_per_session_and_left_out_of_later_rankings() {
         shown["deliveries"][0]["items"][0]["label"],
         "gotcha: a() returns one."
     );
-    assert_eq!(shown["bytes"], 120);
+    assert_eq!(shown["bytes"], 3120);
     // Readers do not record deliveries; a prompt is kept only as its digest.
     let prompt = json!({"op":"repo_context_deliver","session_id":"claude-code:s1","trigger":"prompt",
                         "subject":"fix the retry","items":[],"bytes":0});
