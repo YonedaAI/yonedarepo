@@ -49,8 +49,8 @@ The repository keeps memories that agents and people leave for later sessions. Y
    - a **howto** that took effort to find (`run the eval with --serial; it shares one port`)
 2. Not for what the code, a commit message or the session summary already says, and never secrets (a memory holding a credential is refused).
 3. Anchor it to the files, directories (`dir/`) or symbols (`path#symbol`) it is about. It reaches the next agent who reads them, and reads as stale once that code changes on main.
-4. `yoneda memory add <decision|constraint|gotcha|howto> -m "<at most 2 KiB>" --anchors src/net.rs#retry,docs/` (or MCP `git_memory_add` with `session_id` set to `$YONEDA_SESSION_ID`). If an old memory is wrong, pass `--supersedes <id>`; `yoneda memory retire <id> -m <why>` when it no longer holds.
-5. `yoneda memory list [--path <p>]` and `yoneda memory show <id>` read them; MCP `git_context_relevant` ranks memories, contracts, sessions and open changes for files or a question.
+4. `yoneda memory add <decision|constraint|gotcha|howto> -m <text> --anchors src/net.rs#retry,docs/` (at most 2 KiB of text; or MCP `git_memory_add` with `session_id` set to `$YONEDA_SESSION_ID`). If an old memory is wrong, pass `--supersedes <n>`; `yoneda memory retire <n> -m <why>` when it no longer holds.
+5. `yoneda memory list [--path <p>]` and `yoneda memory show <n>` read them; MCP `git_context_relevant` ranks memories, contracts, sessions and open changes for files or a question.
 
 When a session added a memory, its end-of-turn summary is also offered as a draft memory for a person to publish or discard.
 

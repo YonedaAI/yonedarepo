@@ -40,8 +40,8 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
   memory add <decision|constraint|gotcha|howto> -m <text> [--anchors <path|path#symbol|dir/>,…]
              [--supersedes <id>] [--commit <sha>]   leave a memory for later sessions, shown
                                       when they read the anchored files (session: $YONEDA_SESSION_ID)
-  memory list [--path <p>] [--kind <k>] [--status current|stale|draft|retired|…] [--json]
-  memory show <id> [--json] | memory retire <id> [-m <reason>]
+  memory list [--path <p>] [--kind <k>] [--status current|stale|draft|retired|…]
+  memory show <id> | memory retire <id> [-m <reason>]
   policy show | policy set '<json>'
   token create <name> [--scopes read,write] [--paths a/,b/] | token list | token revoke <name>
   log [path] [--ref <b>] [--limit <n>] [--at <version>]

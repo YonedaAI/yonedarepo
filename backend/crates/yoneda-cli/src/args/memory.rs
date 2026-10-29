@@ -22,7 +22,7 @@ pub fn memory(rest: &[String]) -> Result<Command> {
             "kind",
             "status",
         ]),
-        &["json"],
+        &[],
     )?;
     let command = match sub.as_str() {
         "add" => MemoryCommand::Add {
@@ -41,12 +41,10 @@ pub fn memory(rest: &[String]) -> Result<Command> {
                 path: p.flag("path"),
                 kind: p.flag("kind"),
                 status: p.flag("status"),
-                json: p.on("json"),
             }
         }
         "show" => MemoryCommand::Show {
             id: id(&p, "memory show <id>")?,
-            json: p.on("json"),
         },
         "retire" => MemoryCommand::Retire {
             id: id(&p, "memory retire <id>")?,

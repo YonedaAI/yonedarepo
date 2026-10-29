@@ -120,11 +120,9 @@ pub enum MemoryCommand {
         path: Option<String>,
         kind: Option<String>,
         status: Option<String>,
-        json: bool,
     },
     Show {
         id: u64,
-        json: bool,
     },
     Retire {
         id: u64,
