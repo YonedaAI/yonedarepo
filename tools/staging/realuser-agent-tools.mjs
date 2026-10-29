@@ -213,7 +213,7 @@ export async function realuserAgentTools(ctx, metrics, { headed = false } = {}) 
             expect: {
               contracts: [`${shown.contract.path} · ${shown.contract.symbol_path}`, shown.contract.record.contract.summary],
               pins: [pinned.commit.slice(0, 10), pinned.reason],
-              bisects: [shown.bisect.name, `First bad commit: ${shown.bisect.breaking.slice(0, 10)}`],
+              bisects: [shown.bisect.name, `First breaking commit: ${shown.bisect.breaking.slice(0, 10)}`],
             },
           },
           metrics,
