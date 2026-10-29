@@ -7,6 +7,7 @@ YonedaRepo is a Git-compatible source platform for agents and API clients, built
 - `backend/crates/yoneda-core`: core contracts: the Git object model, transaction log rules, merge, derived data and pure validation. No Cloudflare or network dependencies.
 - `backend/crates/yoneda-store`: the SQL store trait shared by Durable Object and native SQLite adapters.
 - `backend/crates/yoneda-platform`: the source platform (SourceRepository and account authorities, their migrations, stateless compute). Depends only on `yoneda-core` and `yoneda-store` (enforced by `tests/runtime/platform-boundary.test.mjs`). Agent identity reaches it only as an API principal.
+- `backend/crates/yoneda-refmodel`: an independent reference model of a repository (refs, commits, landing rules), the oracle of `yoneda-platform`'s differential tests (`repo_store/tests/differential.rs`, which also checks against real Git). No dependencies of any kind.
 - `backend/crates/yoneda-cloudflare`: binding interoperability; no product policy.
 - `backend/crates/yoneda-worker`: Rust Durable Objects and Worker integration.
 - `backend/crates/yoneda-runtime`: the platform check server (`check-server`) that runs inside the CheckContainer image.

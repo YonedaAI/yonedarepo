@@ -2921,8 +2921,13 @@ dependencies = [
  "subtle",
  "syn 3.0.9",
  "yoneda-core",
+ "yoneda-refmodel",
  "yoneda-store",
 ]
+
+[[package]]
+name = "yoneda-refmodel"
+version = "0.1.0"
 
 [[package]]
 name = "yoneda-runtime"

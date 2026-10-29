@@ -1611,6 +1611,7 @@ mod checkpoints;
 mod compaction;
 mod compaction_writes;
 mod contract_paths;
+mod differential;
 mod forks;
 mod git_shallow;
 mod hooks;
