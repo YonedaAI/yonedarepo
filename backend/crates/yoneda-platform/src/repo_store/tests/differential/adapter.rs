@@ -409,10 +409,11 @@ impl Driver {
             })
             .collect();
         drop(shard);
-        let answered = self.h.ok(
-            "platform:merge",
-            json!({"op":"repo_land_submitted","ref":"main","items":items}),
-        );
+        let submitted = json!({"op":"repo_land_submitted","ref":"main","items":items});
+        let answered = match self.h.run("platform:merge", submitted) {
+            Err(e) => return Seen::Refused(e.code),
+            Ok(answered) => answered,
+        };
         let items = answered["items"]
             .as_array()
             .into_iter()

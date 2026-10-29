@@ -178,11 +178,16 @@ impl Driver {
                 }
             }
             Op::RunQueue => (self.run_queue(), None),
-            Op::Publish => {
-                let head = self.h.ok(PROJECTOR, json!({"op":"repo_head","ref":"main"}));
-                *self.published.borrow_mut() = head;
-                (Seen::Done, None)
-            }
+            Op::Publish => match self
+                .h
+                .run(PROJECTOR, json!({"op":"repo_head","ref":"main"}))
+            {
+                Err(e) => (Seen::Refused(e.code), None),
+                Ok(head) => {
+                    *self.published.borrow_mut() = head;
+                    (Seen::Done, None)
+                }
+            },
             Op::ShardCommit {
                 path,
                 content,
@@ -195,8 +200,23 @@ impl Driver {
                 project,
             } => (self.submit(picks, *chained, *project), None),
             Op::Project => {
+                if let Err(e) = self.h.run(PROJECTOR, json!({"op":"repo_changeset_plan"})) {
+                    return (Seen::Refused(e.code), None);
+                }
                 self.h.project_all();
                 (Seen::Projected(self.made_by_projection()), None)
+            }
+            Op::DeleteFork => (self.delete_fork(), None),
+            Op::DeleteRepo { confirmed } => {
+                let confirm = if *confirmed { "demo" } else { "not-demo" };
+                match self
+                    .h
+                    .run(OWNER, json!({"op":"repo_delete","confirm":confirm}))
+                {
+                    Err(e) => (Seen::Refused(e.code), None),
+                    Ok(v) if v["already"] == true => (Seen::Already, None),
+                    Ok(_) => (Seen::Done, None),
+                }
             }
             Op::Fork => (self.fork_repo(), None),
             Op::ForkCommit { path, content } => (self.fork_commit(path, content), None),
@@ -345,6 +365,7 @@ impl Driver {
     fn same_refs(&self) -> std::result::Result<(), String> {
         // Between a landing and its projection, reading refs is refused.
         let listed = match self.h.run(OWNER, json!({"op":"repo_refs"})) {
+            Err(e) if e.code == "GONE" && self.model.deleted => return self.same_fork(),
             Err(e) if e.code == "PROJECTION_PENDING" && !self.model.unprojected.is_empty() => {
                 return self.same_fork();
             }
@@ -525,10 +546,13 @@ fn case(seed: u64, steps: usize) -> std::result::Result<BTreeMap<String, usize>,
             .step(&op)
             .map_err(|e| format!("seed {seed}, step {step}, {op:?}: {e}\nops: {ops:#?}"))?;
     }
-    // The projector catches up before Git reads the repository.
+    // The projector catches up before Git reads the repository (unless it was deleted).
     driver
         .step(&Op::Project)
         .map_err(|e| format!("seed {seed}, final projection: {e}"))?;
+    if driver.model.deleted {
+        return Ok(driver.tally);
+    }
     git::check(&driver).map_err(|e| format!("seed {seed}, git: {e}"))?;
     Ok(driver.tally)
 }
