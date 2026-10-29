@@ -13,6 +13,7 @@ use yoneda_core::git_object::{
     FileMode, ObjectId, ObjectKind, TreeEntry, encode_tree, hash_object, write_pack,
 };
 
+mod page;
 mod transfer;
 
 /// Fetched bytes held before they are written out as a pack.
@@ -264,6 +265,8 @@ fn write(git: &Git, pending: &mut Vec<(ObjectKind, Vec<u8>)>) -> Result<()> {
 mod fake;
 #[cfg(test)]
 mod resume_tests;
+#[cfg(test)]
+mod stall_tests;
 
 #[cfg(test)]
 mod tests {

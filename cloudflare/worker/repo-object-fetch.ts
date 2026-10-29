@@ -18,6 +18,13 @@ const READ_WIDTH = 8;
 /** Blobs above this many bytes come as stubs to a client that downloads them separately. */
 export const LARGE_BLOB = 2 * 1024 * 1024;
 const OBJECT_KINDS = ['tree', 'blob', 'commit'];
+/**
+ * A blob download answers with the whole blob, so it never stops mid-body; but a store read
+ * that never settles would hold the answer back with the client's connection open and
+ * silent, for as long as the client waits. Past `ms` the download is a retryable TIMEOUT
+ * (503). Mutable only so tests can shorten it.
+ */
+export const DOWNLOAD_DEADLINE = { ms: 25_000 };
 
 /**
  * A path-restricted caller may fetch only objects it can name by path inside its grant at
@@ -180,7 +187,18 @@ export async function downloadBlob(
       [{ id, kind: 'blob', path: query.get('path') }],
       query.get('commit'),
     );
-  const bytes = await objects.blob(id).catch((e) => {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const late = new Promise<never>((_, refuse) => {
+    timer = setTimeout(
+      () =>
+        refuse(
+          new ApiError('TIMEOUT', `Reading blob ${id} took over ${DOWNLOAD_DEADLINE.ms} ms; retry`),
+        ),
+      DOWNLOAD_DEADLINE.ms,
+    );
+  });
+  const read = Promise.race([objects.blob(id), late]).finally(() => clearTimeout(timer));
+  const bytes = await read.catch((e) => {
     if (e?.code === 'NOT_FOUND') throw new ApiError('NOT_FOUND', `No blob ${id}`);
     console.log(
       JSON.stringify({
