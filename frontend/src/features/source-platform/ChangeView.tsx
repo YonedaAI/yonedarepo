@@ -138,7 +138,15 @@ export function ChangeView({
         )}
         {c.body && <p className="source-change-body">{c.body}</p>}
       </header>
-      <ChangeGates repo={repo} change={c} onChanged={refresh} />
+      <ChangeGates
+        repo={repo}
+        change={c}
+        onChanged={refresh}
+        onDeleted={() => {
+          onChanged?.();
+          onBack?.();
+        }}
+      />
       {!readOnly && c.status === 'open' && c.head && (
         <RebaseButton repo={repo} change={c} onChanged={refresh} />
       )}

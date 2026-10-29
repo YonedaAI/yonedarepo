@@ -4,7 +4,7 @@ use super::auth::{self, Actor};
 use super::op::{InitOp, Op, RepoOp as R, StoreOp};
 use super::rows::{self, Settings};
 use super::{
-    adopt, agent_context, agent_reads, annotated, bisect, branches, change_comments,
+    adopt, agent_context, agent_reads, annotated, bisect, branches, change_comments, change_delete,
     change_records, changes, changesets, checks, classes, contracts, git_http, head, history,
     history_import, hook_delivery, hook_events, hooks, land, land_queue, land_tickets, members,
     merging, prepare, projection, projection_plan, pushed, reads, rebase, record, releases,
@@ -96,6 +96,7 @@ fn run<S: SqlStore>(
         R::ChangeComment => change_comments::comment(db, c, actor),
         R::ChangeClose => changes::set_open(db, c, actor, false),
         R::ChangeReopen => changes::set_open(db, c, actor, true),
+        R::ChangeDelete => change_delete::delete(db, c, actor),
         R::CheckClaim => checks::claim(db, c),
         R::CheckRelease => checks::release(db, c),
         R::CheckRun => checks::run_op(db, c),
