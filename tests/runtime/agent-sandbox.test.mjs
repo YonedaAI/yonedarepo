@@ -4,16 +4,19 @@
 // agent is on the egress-limited network and its proxy forwards to the platform and the model
 // provider's API by exact name only, only the model's provider credential is passed, and the
 // host snapshots catch what an escaped agent did on 2026-10-28 (commits on main, a switched
-// branch, a nested worktree, a push to the host's remote).
+// branch, a nested worktree, a push to the host's remote), and the proxy outlives a client
+// that resets a refused tunnel.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
+import { once } from 'node:events';
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { hostState } from '../../tools/staging/agent-sandbox-host.mjs';
-import { clientEnv, credentialFor, EGRESS_PROXY, egressAllowlist, egressArgs, HOOK_LOG, hostDrift, IMAGE, sandboxArgs, sandboxEnv, sandboxOrigin, WORKDIR } from '../../tools/staging/agent-sandbox.mjs';
-import { allowed, parseAllow, targetOf } from '../../tools/staging/agent-sandbox/egress-proxy.mjs';
+import { clientEnv, credentialFor, EGRESS_PORT, egressAllowlist, egressArgs, HOOK_LOG, hostDrift, IMAGE, sandboxArgs, sandboxEnv, sandboxOrigin, WORKDIR } from '../../tools/staging/agent-sandbox.mjs';
+import { allowed, parseAllow, serve, targetOf } from '../../tools/staging/agent-sandbox/egress-proxy.mjs';
 
 const HOST = {
   PATH: '/opt/homebrew/bin:/usr/bin',
@@ -27,7 +30,8 @@ const HOST = {
   DOCKER_CONTEXT: 'desktop-linux',
 };
 const clone = '/private/var/folders/x/T/yoneda-kit-cli-abc/agent-w1a1';
-const env = sandboxEnv({ origin: 'http://host.docker.internal:8787', token: 'repo-token-secret', remote: 'yoneda::http://host.docker.internal:8787/r1', credential: '[{"integrationID":"zai-coding-plan"}]' });
+const proxy = `172.18.0.2:${EGRESS_PORT}`;
+const env = sandboxEnv({ origin: 'http://host.docker.internal:8787', token: 'repo-token-secret', remote: 'yoneda::http://host.docker.internal:8787/r1', credential: '[{"integrationID":"zai-coding-plan"}]', proxy });
 const args = sandboxArgs({ name: 'yoneda-kit-w1a1', clone, env, command: ['opencode', 'run', '--standalone', 'task'], network: 'yoneda-sandbox-run1' });
 
 test('the container mounts the clone at /work and no other host path', () => {
@@ -84,7 +88,7 @@ test("the container's environment is the allowlist, by name only", () => {
   assert.ok(!args.join(' ').includes('repo-token-secret'), 'the token is not on the command line');
   assert.equal(env.SANDBOX_CREDENTIAL, 'stdin', 'the credential travels on stdin, not in the environment');
   assert.deepEqual(JSON.parse(env.OPENCODE_CONFIG_CONTENT), { plugins: [{ package: '/opt/yoneda/plugin' }] });
-  const bare = sandboxEnv({ origin: 'https://api.example', token: 't', remote: 'yoneda::https://api.example/r1', credential: null });
+  const bare = sandboxEnv({ origin: 'https://api.example', token: 't', remote: 'yoneda::https://api.example/r1', credential: null, proxy });
   assert.ok(!('SANDBOX_CREDENTIAL' in bare));
 });
 
@@ -107,14 +111,56 @@ test('a loopback platform is reached through the host gateway; a hosted one dire
 test('the agent is on the internal network and every client goes through the egress proxy', () => {
   assert.equal(args[args.indexOf('--network') + 1], 'yoneda-sandbox-run1');
   assert.throws(() => sandboxArgs({ name: 'x', clone, env, command: [] }), /egress-limited network/);
-  for (const name of ['HTTPS_PROXY', 'HTTP_PROXY', 'https_proxy', 'http_proxy']) assert.equal(env[name], `http://${EGRESS_PROXY}`);
-  assert.equal(env.SANDBOX_EGRESS_PROXY, EGRESS_PROXY);
-  // The proxy: no mount, no capabilities, its allowlist by name only.
-  const proxy = egressArgs({ name: 'yoneda-egress-run1' });
-  assert.ok(!proxy.includes('--mount') && !proxy.includes('-v') && !proxy.includes('--network'));
-  assert.equal(proxy[proxy.indexOf('--cap-drop') + 1], 'ALL');
-  assert.deepEqual(proxy.filter((_, i) => proxy[i - 1] === '-e'), ['SANDBOX_EGRESS_ALLOW']);
-  assert.deepEqual(proxy.slice(proxy.indexOf(IMAGE)), [IMAGE, '/opt/yoneda/egress-proxy.mjs']);
+  for (const name of ['HTTPS_PROXY', 'HTTP_PROXY', 'https_proxy', 'http_proxy']) assert.equal(env[name], `http://${proxy}`);
+  assert.equal(env.SANDBOX_EGRESS_PROXY, proxy);
+  // By address: no client depends on Docker's DNS to find its way out.
+  for (const name of ['egress:3128', '172.18.0.2', 'http://172.18.0.2:3128', undefined])
+    assert.throws(() => sandboxEnv({ origin: 'https://api.example', token: 't', remote: 'r', credential: null, proxy: name }), /IPv4 address:port/);
+  // The proxy: no mount, no capabilities, its allowlist by name only; kept after it exits, so
+  // its log (what it refused, why it died) outlives it (startEgress's stop removes it).
+  const proxyArgs = egressArgs({ name: 'yoneda-egress-run1' });
+  assert.ok(!proxyArgs.includes('--mount') && !proxyArgs.includes('-v') && !proxyArgs.includes('--network'));
+  assert.ok(!proxyArgs.includes('--rm'));
+  assert.equal(proxyArgs[proxyArgs.indexOf('--cap-drop') + 1], 'ALL');
+  assert.deepEqual(proxyArgs.filter((_, i) => proxyArgs[i - 1] === '-e'), ['SANDBOX_EGRESS_ALLOW']);
+  assert.deepEqual(proxyArgs.slice(proxyArgs.indexOf(IMAGE)), [IMAGE, '/opt/yoneda/egress-proxy.mjs']);
+});
+
+/** The proxy's status line for `CONNECT target` on `port`; `reset` drops the connection with a
+ * TCP reset once it answers, as opencode's Bun runtime does with a refused tunnel. */
+function connectVia(port, target, { reset = false } = {}) {
+  return new Promise((resolve, reject) => {
+    const socket = connect({ host: '127.0.0.1', port }, () => socket.write(`CONNECT ${target} HTTP/1.1\r\n\r\n`));
+    socket.once('data', (chunk) => {
+      if (reset) socket.resetAndDestroy();
+      else socket.destroy();
+      resolve(String(chunk).split('\r\n')[0]);
+    });
+    socket.on('error', reject);
+  });
+}
+
+// Why: on 2026-10-28 the proxy died of the first reset (an unhandled ECONNRESET), and every
+// agent after it failed with "getaddrinfo EAI_AGAIN egress".
+test('the proxy outlives clients that reset refused tunnels', async () => {
+  const server = serve(parseAllow('example.org:443'), 0, () => {});
+  await once(server, 'listening');
+  const { port } = server.address();
+  try {
+    for (let i = 0; i < 20; i++) assert.match(await connectVia(port, 'example.com:443', { reset: true }), /^HTTP\/1\.1 403 /);
+    // A reset racing the proxy's answer, before it is read.
+    for (let i = 0; i < 20; i++) {
+      const socket = connect({ host: '127.0.0.1', port }, () => {
+        socket.write('CONNECT example.com:443 HTTP/1.1\r\n\r\n');
+        socket.resetAndDestroy();
+      });
+      socket.on('error', () => {});
+    }
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.match(await connectVia(port, 'example.com:443'), /^HTTP\/1\.1 403 /);
+  } finally {
+    server.close();
+  }
 });
 
 test('egress is the platform and the model provider, by exact host:port', () => {

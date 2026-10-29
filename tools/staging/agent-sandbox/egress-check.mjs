@@ -1,7 +1,9 @@
 // The agent sandbox's fail-closed egress check (sandbox-agent.sh runs it, as the agent user,
-// before the agent): the container must reach nothing directly, and its egress proxy must
-// refuse a target outside the allowlist. Any probe that gets through exits 97, so no agent
-// starts in a sandbox whose egress is wider than the proxy's allowlist.
+// before the agent): every client's proxy variables must name the proxy probed here, by
+// address (no DNS on the way out), the container must reach nothing directly, and the proxy
+// must refuse a target outside the allowlist and still answer after a client resets a refused
+// tunnel (as opencode does). Any failure exits 97, so no agent starts in a sandbox whose
+// egress is wider than the proxy's allowlist or whose proxy it could not use.
 import { connect } from 'node:net';
 
 /** Targets no allowlist names: a public name and a public address. */
@@ -23,7 +25,8 @@ function reachable(target) {
   });
 }
 
-/** The proxy's status line for `CONNECT target` ('' when it does not answer). */
+/** The proxy's status line for `CONNECT target` ('' when it does not answer); the connection
+ * then ends with a TCP reset. */
 function throughProxy(proxy, target) {
   const [host, port] = proxy.split(':');
   return new Promise((resolve) => {
@@ -32,7 +35,7 @@ function throughProxy(proxy, target) {
       socket.write(`CONNECT ${target} HTTP/1.1\r\nHost: ${target}\r\n\r\n`),
     );
     const done = () => {
-      socket.destroy();
+      if (!socket.destroyed) socket.resetAndDestroy();
       resolve(answer.split('\r\n')[0]);
     };
     socket.on('data', (chunk) => {
@@ -47,9 +50,12 @@ function throughProxy(proxy, target) {
 
 const proxy = process.env.SANDBOX_EGRESS_PROXY ?? '';
 const problems = [];
-if (!/^[a-z0-9.-]+:\d+$/.test(proxy)) problems.push(`no egress proxy configured (${proxy || 'unset'})`);
+if (!/^\d{1,3}(\.\d{1,3}){3}:\d+$/.test(proxy)) problems.push(`no egress proxy address configured (${proxy || 'unset'})`);
+for (const name of ['HTTPS_PROXY', 'HTTP_PROXY', 'https_proxy', 'http_proxy'])
+  if (process.env[name] !== `http://${proxy}`) problems.push(`${name} is ${process.env[name] || 'unset'}, not http://${proxy}`);
 for (const target of PROBES) if (await reachable(target)) problems.push(`${target} is reachable without the proxy`);
-for (const target of PROBES) {
+// The first probe again: the proxy must have outlived the resets.
+for (const target of [...PROBES, PROBES[0]]) {
   const status = proxy ? await throughProxy(proxy, target) : '';
   if (!/^HTTP\/1\.[01] 403 /.test(status)) problems.push(`the proxy answered "${status || 'nothing'}" for ${target}, not 403`);
 }
