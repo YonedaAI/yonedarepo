@@ -113,12 +113,20 @@ pub enum Op {
         path: String,
         content: String,
         read: bool,
+        /// Built on this earlier shard commit (an index into `shard`) instead of the head.
+        on: Option<usize>,
     },
     /// The combiner submits these shard commits (indexes into `shard`, in order) to land
     /// on main, then the projector builds main's Git commit for what landed.
     Submit {
         picks: Vec<usize>,
+        /// Each pick sent with its chain of shard commits the authority lacks.
+        chained: bool,
+        /// The projector runs right after (else the changesets wait for `Project`).
+        project: bool,
     },
+    /// The projector builds main's Git commits for every changeset landed so far.
+    Project,
     /// Forks the repository (once).
     Fork,
     /// A one-file commit on the fork's `feature` branch, landed there.
@@ -128,6 +136,18 @@ pub enum Op {
     },
     /// Carries the fork's `feature` into the parent's mirror branch.
     Carry,
+    /// The fork's owner deletes the fork; the parent forgets it.
+    DeleteFork,
+    /// The owner deletes the repository, with the right name (`confirmed`) or not.
+    DeleteRepo {
+        confirmed: bool,
+    },
+    /// The owner reads branch `name`'s head now (`repo_snapshot`).
+    ReadRef {
+        name: String,
+    },
+    /// The owner lists the refs that are readable now (`repo_refs` partial).
+    ListRefs,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -144,8 +164,10 @@ pub enum Outcome {
     Queued(u64),
     /// What a combiner run settled.
     Batch(Batch),
-    /// What a submission answered for each landing, and the commit projection made.
+    /// What a submission answered for each landing, and the commits projection made.
     Submitted(Submitted),
+    /// The commits a projector run made, oldest first.
+    Projected(Vec<CommitId>),
     /// Done, moving no ref (an access check, visibility, membership).
     Done,
     /// Refused with the platform's error code (`STALE_HEAD` also for a stale batch delete).
@@ -162,6 +184,14 @@ pub struct Plan {
 impl Repo {
     /// Applies `op`; a landing also answers its merge plan, taken before it lands.
     pub fn apply(&mut self, op: &Op) -> (Outcome, Option<Plan>) {
+        // A deleted repository answers GONE; shard and fork work never reach it.
+        let elsewhere = matches!(
+            op,
+            Op::DeleteRepo { .. } | Op::ShardCommit { .. } | Op::ForkCommit { .. }
+        );
+        if self.deleted && !elsewhere {
+            return (Outcome::Refused("GONE"), None);
+        }
         match op {
             Op::Commit {
                 branch,
@@ -225,11 +255,21 @@ impl Repo {
                 path,
                 content,
                 read,
-            } => (self.shard_commit(path, content, *read), None),
-            Op::Submit { picks } => (self.submit(picks), None),
+                on,
+            } => (self.shard_commit(path, content, *read, *on), None),
+            Op::Submit {
+                picks,
+                chained,
+                project,
+            } => (self.submit(picks, *chained, *project), None),
+            Op::Project => (Outcome::Projected(self.project()), None),
             Op::Fork => (self.fork_repo(), None),
             Op::ForkCommit { path, content } => (self.fork_commit(path, content), None),
             Op::Carry => (self.carry(), None),
+            Op::DeleteFork => (self.delete_fork(), None),
+            Op::DeleteRepo { confirmed } => (self.delete_repo(*confirmed), None),
+            Op::ReadRef { name } => (self.read_ref(name), None),
+            Op::ListRefs => (Outcome::Done, None),
         }
     }
 }

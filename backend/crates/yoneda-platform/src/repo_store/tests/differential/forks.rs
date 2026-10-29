@@ -11,6 +11,12 @@ impl Driver {
         if self.fork.borrow().is_some() {
             return Seen::Already;
         }
+        if let Err(e) = self
+            .h
+            .run(super::super::AGENT, json!({"op":"repo_fork_source"}))
+        {
+            return Seen::Refused(e.code);
+        }
         *self.fork.borrow_mut() = Some(fork(&self.h));
         Seen::Done
     }
@@ -21,7 +27,10 @@ impl Driver {
         let Some(f) = fork.as_ref() else {
             return Seen::Refused("NOT_FOUND".into());
         };
-        let refs = f.ok(OWNER, json!({"op":"repo_refs"}));
+        let refs = match f.run(OWNER, json!({"op":"repo_refs"})) {
+            Err(e) => return Seen::Refused(e.code),
+            Ok(refs) => refs,
+        };
         let mut parent = refs["refs"][FEATURE].clone();
         if parent.is_null() {
             parent = refs["refs"][MAIN].clone();
@@ -59,7 +68,11 @@ impl Driver {
         let Some(f) = fork.as_ref() else {
             return Seen::Refused("NOT_FOUND".into());
         };
-        let tips: Vec<Value> = self.h.ok(OWNER, json!({"op":"repo_refs"}))["refs"]
+        let refs = match self.h.run(OWNER, json!({"op":"repo_refs"})) {
+            Err(e) => return Seen::Refused(e.code),
+            Ok(refs) => refs,
+        };
+        let tips: Vec<Value> = refs["refs"]
             .as_object()
             .map(|refs| refs.values().cloned().collect())
             .unwrap_or_default();
@@ -102,6 +115,30 @@ impl Driver {
         answer(self.h.run(FORKER, mirror))
     }
 
+    /// The fork's owner deletes it, then the parent forgets it, as `deleteRepository` does.
+    pub(super) fn delete_fork(&self) -> Seen {
+        let fork = self.fork.borrow();
+        let Some(f) = fork.as_ref() else {
+            return Seen::Refused("NOT_FOUND".into());
+        };
+        let deleted = match f.run(OWNER, json!({"op":"repo_delete","confirm":"demo-fork"})) {
+            Err(e) => return Seen::Refused(e.code),
+            Ok(deleted) => deleted,
+        };
+        if deleted["parent"].is_string()
+            && let Err(e) = self
+                .h
+                .run(FORKER, json!({"op":"repo_fork_forget","fork":FORK_ID}))
+        {
+            return Seen::Refused(e.code);
+        }
+        if deleted["already"] == true {
+            Seen::Already
+        } else {
+            Seen::Done
+        }
+    }
+
     /// Copies the fork's objects into the parent's object double, as a carry copies them
     /// into the parent's store of record.
     fn share_objects(&self, fork: &Harness) {
@@ -127,7 +164,12 @@ impl Driver {
                 _ => Err("one side has a fork, the other not".into()),
             };
         };
-        let listed = f.ok(OWNER, json!({"op":"repo_refs"}));
+        let listed = match f.run(OWNER, json!({"op":"repo_refs"})) {
+            Err(e) if e.code == "GONE" && m.deleted => return Ok(()),
+            Err(e) => return Err(format!("fork repo_refs: {e}")),
+            Ok(_) if m.deleted => return Err("the fork answers, the model deleted it".into()),
+            Ok(listed) => listed,
+        };
         let refs: BTreeMap<String, String> = listed["refs"]
             .as_object()
             .into_iter()

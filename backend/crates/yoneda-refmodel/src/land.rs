@@ -63,6 +63,13 @@ impl Repo {
 
     /// `repo_merge_plan` for landing `commit` on main (decided whether or not it is on head).
     pub(crate) fn plan(&self, commit: CommitId) -> Plan {
+        // Main's Git head is unknown until the projector builds it.
+        if !self.unprojected.is_empty() {
+            return Plan {
+                kind: "PROJECTION_PENDING",
+                paths: vec![],
+            };
+        }
         let head = self.tip(MAIN);
         let (kind, paths) = match self.occ(commit, MAIN) {
             Occ::FastForward if self.commits[commit].parents.first() == head.as_ref() => {

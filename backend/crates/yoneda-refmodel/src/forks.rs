@@ -4,7 +4,8 @@
 //! (those reachable from the fork branch and from none of the parent's tips or the refs
 //! as copied), each based at its first-parent ancestry's earliest landing in the parent
 //! (or a carried ancestor's base, else 0), then moves the parent's mirror branch
-//! `forks/<fork>/feature` to the head, logged with the head's own paths.
+//! `forks/<fork>/feature` to the head, logged with the head's own paths. The parent
+//! cannot be deleted while the fork lives; deleting the fork makes the parent forget it.
 use crate::{Commit, CommitId, Outcome, Repo};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -18,6 +19,8 @@ pub const MIRROR: &str = "refs/heads/forks/r00000000000000000f01/feature";
 pub struct Fork {
     pub refs: BTreeMap<String, CommitId>,
     pub version: u64,
+    /// Deleted by its owner (and forgotten by the parent).
+    pub deleted: bool,
     /// The commits the refs named when copied.
     copied: BTreeSet<CommitId>,
 }
@@ -27,9 +30,14 @@ impl Repo {
         if self.fork.is_some() {
             return Outcome::Already;
         }
+        // The fork job starts from the parent's refs, refused until projected.
+        if !self.unprojected.is_empty() {
+            return Outcome::Refused("PROJECTION_PENDING");
+        }
         let refs: BTreeMap<String, CommitId> = self.refs.clone();
         self.fork = Some(Fork {
             version: refs.len() as u64,
+            deleted: false,
             copied: refs.values().copied().collect(),
             refs,
         });
@@ -41,6 +49,9 @@ impl Repo {
         let Some(fork) = self.fork.as_mut() else {
             return Outcome::Refused("NOT_FOUND");
         };
+        if fork.deleted {
+            return Outcome::Refused("GONE");
+        }
         if !fork.refs.contains_key(FEATURE) {
             let Some(main) = fork.refs.get(crate::MAIN).copied() else {
                 return Outcome::Refused("NOT_FOUND");
@@ -93,6 +104,13 @@ impl Repo {
         let Some(fork) = &self.fork else {
             return Outcome::Refused("NOT_FOUND");
         };
+        // The carry starts from the parent's refs, refused until projected.
+        if !self.unprojected.is_empty() {
+            return Outcome::Refused("PROJECTION_PENDING");
+        }
+        if fork.deleted {
+            return Outcome::Refused("GONE");
+        }
         let Some(head) = fork.refs.get(FEATURE).copied() else {
             return Outcome::Refused("NOT_FOUND");
         };
@@ -118,5 +136,34 @@ impl Repo {
         self.move_ref(MIRROR, Some(head), paths, false);
         self.landed(head, MIRROR.to_owned());
         Outcome::Moved
+    }
+
+    /// The fork's owner deletes it; the parent then forgets it (a second delete answers
+    /// already and forgets again).
+    pub(crate) fn delete_fork(&mut self) -> Outcome {
+        match self.fork.as_mut() {
+            None => Outcome::Refused("NOT_FOUND"),
+            Some(fork) if fork.deleted => Outcome::Already,
+            Some(fork) => {
+                fork.deleted = true;
+                Outcome::Done
+            }
+        }
+    }
+
+    /// The owner deletes the repository, confirming its name: refused while a fork reads
+    /// its objects (CONFLICT). Afterwards everything but the delete itself is GONE.
+    pub(crate) fn delete_repo(&mut self, confirmed: bool) -> Outcome {
+        if !confirmed {
+            return Outcome::Refused("INVALID_INPUT");
+        }
+        if self.deleted {
+            return Outcome::Already;
+        }
+        if self.fork.as_ref().is_some_and(|f| !f.deleted) {
+            return Outcome::Refused("CONFLICT");
+        }
+        self.deleted = true;
+        Outcome::Done
     }
 }

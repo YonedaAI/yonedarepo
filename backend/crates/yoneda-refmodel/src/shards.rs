@@ -7,7 +7,8 @@
 //! reads or writes what an earlier member of the same submission wrote waits (deferred).
 //! The projector then builds main's Git commit for the submission: the landed commit
 //! itself where it is the only one and sits on the head, else a commit whose parents are
-//! the head and every landed commit.
+//! the head and every landed commit. Until then only main waits: every other ref stays
+//! readable, and main is named pending, never shown at a commit that skips them.
 use crate::land::Occ;
 use crate::queue::{Ticket, TicketStatus};
 use crate::{Commit, CommitId, Entry, MAIN, Outcome, Repo};
@@ -18,7 +19,9 @@ use std::collections::BTreeSet;
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Submitted {
     pub items: Vec<Item>,
-    pub projected: Option<CommitId>,
+    /// Commits projection made, oldest first (none when not projected, or where a landed
+    /// commit itself became main's head).
+    pub projected: Vec<CommitId>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -31,19 +34,38 @@ pub enum Item {
     Deferred,
     /// On the merge path, as this ticket.
     Queued(u64),
+    /// Built on shard commits the authority does not hold: send the chain.
+    NeedChain,
     Failed(&'static str),
 }
 
 impl Repo {
+    /// `repo_head`: the last projected head, as of the version before the first changeset
+    /// not projected yet (work based there is checked against them when it lands).
     pub(crate) fn publish(&mut self) -> Outcome {
         if let Some(head) = self.tip(MAIN) {
-            self.published = (head, self.version);
+            let first = self.unprojected.first().and_then(|batch| batch.first());
+            self.published = (head, first.map_or(self.version, |(v, _)| v - 1));
         }
         Outcome::Done
     }
 
-    pub(crate) fn shard_commit(&mut self, path: &str, content: &str, read: bool) -> Outcome {
-        let (parent, base_version) = self.published;
+    /// A commit begun from the published head, on it or (`on`) on an earlier shard commit.
+    pub(crate) fn shard_commit(
+        &mut self,
+        path: &str,
+        content: &str,
+        read: bool,
+        on: Option<usize>,
+    ) -> Outcome {
+        let (head, base_version) = self.published;
+        let parent = match on {
+            Some(index) => match self.shard.get(index) {
+                Some(commit) => *commit,
+                None => return Outcome::Refused("NOT_FOUND"),
+            },
+            None => head,
+        };
         let mut tree = self.commits[parent].tree.clone();
         if tree.get(path).map(String::as_str) == Some(content) {
             return Outcome::Refused("NO_CHANGES");
@@ -63,6 +85,7 @@ impl Repo {
             writes: BTreeSet::from([path.to_owned()]),
         });
         self.shard.push(id);
+        self.unrecorded.insert(id);
         Outcome::Committed(id)
     }
 
@@ -85,7 +108,9 @@ impl Repo {
         })
     }
 
-    pub(crate) fn submit(&mut self, picks: &[usize]) -> Outcome {
+    /// The combiner submits `picks` (each with its chain of shard commits the authority
+    /// lacks when `chained`), then, with `project`, the projector runs.
+    pub(crate) fn submit(&mut self, picks: &[usize], chained: bool, project: bool) -> Outcome {
         let mut submitted = Submitted::default();
         let (mut written, mut landed) = (BTreeSet::new(), Vec::new());
         let commits: Vec<CommitId> = picks
@@ -93,18 +118,38 @@ impl Repo {
             .filter_map(|p| self.shard.get(*p).copied())
             .collect();
         for commit in commits {
-            let item = self.submit_one(commit, &mut written, &mut landed);
+            let item = self.submit_one(commit, chained, &mut written, &mut landed);
             submitted.items.push(item);
         }
-        submitted.projected = self.project(&landed);
+        if !landed.is_empty() {
+            self.unprojected.push(landed);
+        }
+        if project {
+            submitted.projected = self.project();
+        }
         Outcome::Submitted(submitted)
+    }
+
+    /// `commit` after the shard commits below it that the authority lacks, oldest first.
+    fn chain(&self, commit: CommitId) -> Vec<CommitId> {
+        let mut chain = vec![commit];
+        while let Some(parent) = chain
+            .last()
+            .and_then(|c| self.commits[*c].parents.first())
+            .filter(|p| self.unrecorded.contains(p))
+        {
+            chain.push(*parent);
+        }
+        chain.reverse();
+        chain
     }
 
     fn submit_one(
         &mut self,
         commit: CommitId,
+        chained: bool,
         written: &mut BTreeSet<String>,
-        landed: &mut Vec<CommitId>,
+        landed: &mut Vec<(u64, CommitId)>,
     ) -> Item {
         if let Some(version) = self.landings.get(&(commit, MAIN.to_owned())) {
             return Item::Already(*version);
@@ -127,6 +172,19 @@ impl Repo {
             }
         };
         if !changeset {
+            // The merge path adopts the records sent: the first's parents must be held.
+            let records = if chained {
+                self.chain(commit)
+            } else {
+                vec![commit]
+            };
+            let first = &self.commits[records[0]];
+            if first.parents.iter().any(|p| self.unrecorded.contains(p)) {
+                return Item::NeedChain;
+            }
+            for record in &records {
+                self.unrecorded.remove(record);
+            }
             return Item::Queued(self.queue(commit));
         }
         self.version += 1;
@@ -139,7 +197,7 @@ impl Repo {
         });
         self.landed(commit, MAIN.to_owned());
         written.extend(writes);
-        landed.push(commit);
+        landed.push((self.version, commit));
         Item::Landed(self.version)
     }
 
@@ -161,51 +219,76 @@ impl Repo {
         id
     }
 
-    /// Main's Git commit for the changesets `landed` by one submission; their log entries
-    /// then name it.
-    fn project(&mut self, landed: &[CommitId]) -> Option<CommitId> {
-        let head = self.tip(MAIN)?;
-        // The batch commit's base: the version before its first changeset.
-        let base_version = self
-            .log
-            .iter()
-            .find(|e| e.refname == MAIN && e.head.is_none())
-            .map_or(self.version, |e| e.version - 1);
-        let (target, made) = match landed {
-            [] => return None,
-            [only] if self.commits[*only].parents == [head] => (*only, None),
-            _ => {
-                let mut tree = self.commits[head].tree.clone();
-                for commit in landed {
-                    for path in &self.commits[*commit].writes {
-                        match self.commits[*commit].tree.get(path) {
-                            Some(text) => tree.insert(path.clone(), text.clone()),
-                            None => tree.remove(path),
-                        };
+    /// The projector: main's Git commit for each submission's changesets, in order. A
+    /// submission whose only changeset is a commit on the head makes it the head; any
+    /// other gets a commit whose parents are the head and its landed commits, based at the
+    /// version before its first changeset. The landed commits are recorded then.
+    pub(crate) fn project(&mut self) -> Vec<CommitId> {
+        let mut made = Vec::new();
+        for batch in std::mem::take(&mut self.unprojected) {
+            let Some(head) = self.tip(MAIN) else {
+                break;
+            };
+            let landed: Vec<CommitId> = batch.iter().map(|(_, c)| *c).collect();
+            let target = match landed.as_slice() {
+                [only] if self.commits[*only].parents == [head] => *only,
+                _ => {
+                    let mut tree = self.commits[head].tree.clone();
+                    for commit in &landed {
+                        for path in &self.commits[*commit].writes {
+                            match self.commits[*commit].tree.get(path) {
+                                Some(text) => tree.insert(path.clone(), text.clone()),
+                                None => tree.remove(path),
+                            };
+                        }
                     }
+                    let id = self.commits.len();
+                    let writes = Self::changed(&self.commits[head].tree, &tree);
+                    self.commits.push(Commit {
+                        parents: std::iter::once(head)
+                            .chain(landed.iter().copied())
+                            .collect(),
+                        tree,
+                        base_version: batch[0].0 - 1,
+                        read_set: BTreeSet::new(),
+                        writes,
+                    });
+                    made.push(id);
+                    id
                 }
-                let id = self.commits.len();
-                let writes = Self::changed(&self.commits[head].tree, &tree);
-                self.commits.push(Commit {
-                    parents: std::iter::once(head)
-                        .chain(landed.iter().copied())
-                        .collect(),
-                    tree,
-                    base_version,
-                    read_set: BTreeSet::new(),
-                    writes,
-                });
-                (id, Some(id))
+            };
+            for entry in self
+                .log
+                .iter_mut()
+                .filter(|e| batch.iter().any(|(v, _)| *v == e.version))
+            {
+                entry.head = Some(target);
             }
-        };
-        for entry in self
-            .log
-            .iter_mut()
-            .filter(|e| e.refname == MAIN && e.head.is_none())
-        {
-            entry.head = Some(target);
+            for commit in &landed {
+                self.unrecorded.remove(commit);
+            }
+            self.refs.insert(MAIN.to_owned(), target);
         }
-        self.refs.insert(MAIN.to_owned(), target);
         made
+    }
+
+    /// Refs waiting for the projector: main while it has changesets not projected.
+    pub fn pending(&self) -> Vec<&str> {
+        if self.unprojected.is_empty() {
+            vec![]
+        } else {
+            vec![MAIN]
+        }
+    }
+
+    /// A branch's head now: waiting only while that branch has unprojected changesets.
+    pub(crate) fn read_ref(&self, name: &str) -> Outcome {
+        if self.pending().contains(&name) {
+            return Outcome::Refused("PROJECTION_PENDING");
+        }
+        match self.tip(name) {
+            Some(_) => Outcome::Done,
+            None => Outcome::Refused("NOT_FOUND"),
+        }
     }
 }

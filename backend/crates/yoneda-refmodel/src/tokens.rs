@@ -78,6 +78,8 @@ impl Repo {
     /// `repo_path_history` of `path` on main, as token `name`.
     pub(crate) fn token_read(&self, name: &str, path: &str) -> Outcome {
         match self.token(name, Scope::Read, path) {
+            // Main's history waits for the projector.
+            Ok(_) if !self.unprojected.is_empty() => Outcome::Refused("PROJECTION_PENDING"),
             Ok(_) => Outcome::Done,
             Err(code) => Outcome::Refused(code),
         }

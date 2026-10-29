@@ -54,6 +54,10 @@ impl Repo {
             Outcome::Refused("MERGE_REQUIRED") => {}
             other => return other,
         }
+        // Building the merge reads main's plan, refused until the projector caught up.
+        if !self.unprojected.is_empty() {
+            return Outcome::Refused("PROJECTION_PENDING");
+        }
         let Some(head) = self.tip(MAIN) else {
             return Outcome::Refused("NOT_FOUND");
         };
@@ -92,6 +96,10 @@ impl Repo {
     pub(crate) fn rebase(&mut self, branch: &str) -> Outcome {
         if Self::protected(branch) {
             return Outcome::Refused("FORBIDDEN");
+        }
+        // The plan reads the refs, refused until the projector caught up.
+        if !self.unprojected.is_empty() {
+            return Outcome::Refused("PROJECTION_PENDING");
         }
         let (Some(head), Some(onto)) = (self.tip(branch), self.tip(MAIN)) else {
             return Outcome::Refused("NOT_FOUND");
