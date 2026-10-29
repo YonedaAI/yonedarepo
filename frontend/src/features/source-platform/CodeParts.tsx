@@ -86,7 +86,9 @@ function SshClone({ repo, name }: { repo: string; name?: string }) {
 }
 
 /** "Clone": whole `git clone` commands with copy buttons, each into a directory named after
- * the repository: the yoneda remote helper (recommended), HTTPS and SSH (when open). */
+ * the repository: the yoneda remote helper (recommended), HTTPS and SSH (when open). Until
+ * the repository's name is known (its status still loading) no command is shown: one copied
+ * then would clone into a directory named by the id. */
 export function CloneButton({
   repo,
   name,
@@ -113,8 +115,14 @@ export function CloneButton({
         Clone
       </summary>
       <div className="clone-dropdown">
-        <CloneCommands repo={repo} name={name} origin={origin} />
-        {open && <SshClone repo={repo} name={name} />}
+        {name ? (
+          <>
+            <CloneCommands repo={repo} name={name} origin={origin} />
+            {open && <SshClone repo={repo} name={name} />}
+          </>
+        ) : (
+          <p className="source-meta">Loading the clone commands…</p>
+        )}
       </div>
     </details>
   );

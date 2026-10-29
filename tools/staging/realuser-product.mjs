@@ -51,7 +51,7 @@ export async function realuserChange(ctx, metrics) {
         assert.equal(await headOf(refs.change, head), head);
       }],
       ['record a session on the head', async () => {
-        await ctx.tokenSession(token).post(`${path}/commits/${head}/sessions`, { cli: 'realuser', model: 'none', summary: `Real-user ${ts}: a scratch change on the owner repository.` });
+        await ctx.tokenSession(token).post(`${path}/commits/${head}/sessions`, { cli: 'realuser', summary: `Real-user ${ts}: a scratch change on the owner repository.` });
       }],
       ['open the change', async () => {
         const base = scratch(refs.changeBase, ts);

@@ -6,7 +6,7 @@
 import { execFile, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
-import { credentialFor, IMAGE, IMAGE_LABEL } from './agent-sandbox.mjs';
+import { credentialFor, EGRESS_LABEL, EGRESS_PROXY, egressArgs, IMAGE, IMAGE_LABEL } from './agent-sandbox.mjs';
 
 const run = promisify(execFile);
 /** `{ ok, out, err }` of a command; never rejects. */
@@ -29,6 +29,49 @@ export async function buildSandbox(root) {
   await exec('docker', ['image', 'prune', '-f', '--filter', `label=${IMAGE_LABEL}`]);
   const version = await exec('docker', ['run', '--rm', '--entrypoint', 'opencode', built.out, '--version']);
   return { image: built.out, opencode: version.out };
+}
+
+/**
+ * The agents' network and its egress proxy for one run: an internal Docker network (no route
+ * out) and the proxy container, on the default bridge and joined to that network as `egress`,
+ * forwarding to `allow` (`host:port` list) alone. `stop()` removes both and answers the
+ * targets the proxy refused (what agents tried to reach beyond the allowlist).
+ */
+export async function startEgress({ image, allow, run }) {
+  const network = `yoneda-sandbox-${run}`;
+  const proxy = `yoneda-egress-${run}`;
+  const must = async (args, env) => {
+    const done = await exec('docker', args, env ? { env: { ...process.env, ...env } } : undefined);
+    if (!done.ok) throw new Error(`docker ${args.slice(0, 3).join(' ')}: ${done.err.slice(-400)}`);
+    return done.out;
+  };
+  const stop = async () => {
+    const logs = await exec('docker', ['logs', proxy]);
+    await exec('docker', ['rm', '-f', proxy]);
+    await exec('docker', ['network', 'rm', network]);
+    return `${logs.out}\n${logs.err}`
+      .split('\n')
+      .map((line) => {
+        try {
+          return JSON.parse(line);
+        } catch {
+          return null;
+        }
+      })
+      .filter((e) => e?.event === 'egress.refused')
+      .map((e) => `${e.method} ${e.target}`);
+  };
+  try {
+    await must(['network', 'create', '--internal', '--label', EGRESS_LABEL, network]);
+    await must(egressArgs({ name: proxy, image }), { SANDBOX_EGRESS_ALLOW: allow.join(',') });
+    await must(['network', 'connect', '--alias', EGRESS_PROXY.split(':')[0], network, proxy]);
+    for (let i = 0; i < 50 && !(await exec('docker', ['logs', proxy])).out.includes('egress.listening'); i++)
+      await new Promise((resolve) => setTimeout(resolve, 100));
+  } catch (e) {
+    await stop();
+    throw e;
+  }
+  return { network, proxy, stop };
 }
 
 /** The host opencode's stored credential for `model`'s provider, as `opencode auth import`

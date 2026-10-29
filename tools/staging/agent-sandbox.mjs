@@ -2,7 +2,10 @@
 // tests/runtime/agent-sandbox.test.mjs). Every agent runs in its own container of the image
 // tools/staging/agent-sandbox/Dockerfile builds: the only host path it sees is its clone (at
 // /work), its environment is the allowlist below (nothing of the host's), the model credential
-// arrives on stdin, and egress reaches the internet but not the host or the LAN. Before and
+// arrives on stdin, and egress goes only to the model provider's API and the platform: the
+// container sits on an internal Docker network with no route out, and its one way out is an
+// egress proxy (agent-sandbox/egress-proxy.mjs) that forwards to those hosts by exact name;
+// the container refuses to start an agent unless that holds (egress-check.mjs). Before and
 // after the agents, the kit snapshots the host checkouts and their remotes; `hostDrift` is
 // what changed.
 // Why: on 2026-10-28 real agents spawned with `cwd` = their clone worked in the operator's
@@ -20,15 +23,37 @@ export const HOOK_LOG = `${WORKDIR}/.git/yoneda-hooks.jsonl`;
 export const GUARD_EXIT = 97;
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '[::1]']);
+/** The egress proxy's name on the agents' network, and its port. */
+export const EGRESS_PROXY = 'egress:3128';
+export const EGRESS_LABEL = 'yoneda.agent-sandbox-egress=1';
+/** Where each model provider's API is (opencode provider id → `host:port`). A provider not
+ * listed here is refused: add its API host after checking where opencode sends it. */
+export const PROVIDER_HOSTS = {
+  'zai-coding-plan': ['api.z.ai:443'],
+  anthropic: ['api.anthropic.com:443'],
+  openai: ['api.openai.com:443'],
+};
 
 /** Where an agent reaches the platform at `api`: a platform on the host's loopback (wrangler
- * dev) through Docker's host gateway, and `hostPort` the one host port egress allows. */
+ * dev) through Docker's host gateway (which the egress proxy reaches). */
 export function sandboxOrigin(api) {
   const url = new URL(api);
-  if (!LOOPBACK.has(url.hostname)) return { origin: api.replace(/\/$/, ''), hostPort: null };
-  const hostPort = url.port || (url.protocol === 'https:' ? '443' : '80');
-  url.hostname = 'host.docker.internal';
-  return { origin: url.toString().replace(/\/$/, ''), hostPort };
+  if (LOOPBACK.has(url.hostname)) url.hostname = 'host.docker.internal';
+  return { origin: url.toString().replace(/\/$/, '') };
+}
+
+/** The `host:port` targets the egress proxy forwards to: the platform at `origin` and, for a
+ * real model (`provider/model`; none for the scripted stand-in), its provider's API. */
+export function egressAllowlist({ origin, model }) {
+  const url = new URL(origin);
+  const allow = [`${url.hostname.toLowerCase()}:${url.port || (url.protocol === 'https:' ? '443' : '80')}`];
+  if (model) {
+    const provider = model.split('/')[0];
+    const hosts = PROVIDER_HOSTS[provider];
+    if (!hosts) throw new Error(`no egress host is known for model provider ${provider} (agent-sandbox.mjs PROVIDER_HOSTS)`);
+    allow.push(...hosts);
+  }
+  return [...new Set(allow)].sort();
 }
 
 /** The model credential for `model` (`provider/model`) out of `opencode auth export`'s JSON:
@@ -39,8 +64,10 @@ export function credentialFor(exported, model) {
   return entries.length ? JSON.stringify(entries) : null;
 }
 
-/** The container's whole environment (names and values); nothing else of the host reaches it. */
-export function sandboxEnv({ origin, token, remote, hostPort, credential }) {
+/** The container's whole environment (names and values); nothing else of the host reaches it.
+ * Every client in it (opencode, git, the `yoneda` remote helper) reads the proxy variables. */
+export function sandboxEnv({ origin, token, remote, credential }) {
+  const proxy = `http://${EGRESS_PROXY}`;
   return {
     YONEDA_ORIGIN: origin,
     YONEDA_TOKEN: token,
@@ -60,15 +87,23 @@ export function sandboxEnv({ origin, token, remote, hostPort, credential }) {
     GIT_CONFIG_KEY_2: 'core.trustctime',
     GIT_CONFIG_VALUE_2: 'false',
     SANDBOX_EXPECTED_ORIGIN: remote,
-    ...(hostPort ? { SANDBOX_HOST_PORT: hostPort } : {}),
+    SANDBOX_EGRESS_PROXY: EGRESS_PROXY,
+    HTTPS_PROXY: proxy,
+    HTTP_PROXY: proxy,
+    https_proxy: proxy,
+    http_proxy: proxy,
+    NO_PROXY: 'localhost,127.0.0.1',
+    no_proxy: 'localhost,127.0.0.1',
     ...(credential ? { SANDBOX_CREDENTIAL: 'stdin' } : {}),
   };
 }
 
-/** `docker run` arguments for one agent. Environment values never appear here (`-e NAME`
- * takes the docker client's value), so the printed command holds no secret. */
-export function sandboxArgs({ name, clone, env, command, image = IMAGE }) {
+/** `docker run` arguments for one agent on `network` (the internal one `egressArgs`'s proxy
+ * serves). Environment values never appear here (`-e NAME` takes the docker client's value),
+ * so the printed command holds no secret. */
+export function sandboxArgs({ name, clone, env, command, network, image = IMAGE }) {
   if (!clone.startsWith('/') || /[,\n]/.test(clone)) throw new Error(`unusable clone path for a bind mount: ${clone}`);
+  if (!network) throw new Error('an agent runs only on the egress-limited network');
   return [
     'run',
     '--rm',
@@ -76,6 +111,8 @@ export function sandboxArgs({ name, clone, env, command, image = IMAGE }) {
     '--init',
     '--name',
     name,
+    '--network',
+    network,
     '--read-only',
     '--tmpfs',
     '/tmp:rw,nosuid,nodev,size=1g',
@@ -113,6 +150,42 @@ export function sandboxArgs({ name, clone, env, command, image = IMAGE }) {
       .flatMap((n) => ['-e', n]),
     image,
     ...command,
+  ];
+}
+
+/** `docker run` arguments for the egress proxy: the sandbox image's proxy, on Docker's default
+ * bridge (the internet, and the host gateway for a loopback platform), with nothing mounted,
+ * no capabilities and the allowlist (`SANDBOX_EGRESS_ALLOW` in the client's environment). It
+ * joins the agents' internal network as `egress` afterwards. */
+export function egressArgs({ name, image = IMAGE }) {
+  return [
+    'run',
+    '-d',
+    '--rm',
+    '--init',
+    '--name',
+    name,
+    '--label',
+    EGRESS_LABEL,
+    '--read-only',
+    '--cap-drop',
+    'ALL',
+    '--security-opt',
+    'no-new-privileges',
+    '--user',
+    '1000:1000',
+    '--memory',
+    '256m',
+    '--pids-limit',
+    '128',
+    '--add-host',
+    'host.docker.internal:host-gateway',
+    '-e',
+    'SANDBOX_EGRESS_ALLOW',
+    '--entrypoint',
+    'node',
+    image,
+    '/opt/yoneda/egress-proxy.mjs',
   ];
 }
 

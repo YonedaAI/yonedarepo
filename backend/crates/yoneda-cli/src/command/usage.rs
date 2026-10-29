@@ -32,6 +32,7 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
   change show <n>                     a change: gates, reviews, comments and files
   change comment <n> -m <text> [--path <p> --line <n> --side old|new] [--resolve]
   change land <n>                     land the change's head on its base
+  change delete <n>                   delete a closed change and its comments (author or owner)
   release create <tag> [--title <t>] [-m <notes>] [--asset <file>]   publish a tag's release
   release list | release show <tag>   releases; a release's notes and assets (with sha256)
   policy show | policy set '<json>'

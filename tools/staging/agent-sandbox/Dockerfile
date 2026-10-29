@@ -2,6 +2,7 @@
 # Node, and this checkout's `yoneda` CLI and opencode plugin, but nothing of the host. The run
 # mounts only the agent's clone at /work, starts as root just long enough for sandbox-init to
 # install the egress rules, and then is the unprivileged `agent` user without capabilities.
+# The same image runs the egress proxy, the agents' only way out (egress-proxy.mjs).
 # Build context: the repository root (its .dockerignore keeps target/, .git and .local out).
 FROM node:24.22.0-trixie-slim@sha256:7f486cabe892bff8fef04c0f7da8dba84a560be3e4e2740b7a86afc57ebec315 AS node
 FROM rust:1.99.1-trixie@sha256:e259494b14672950a909b4c54527e19d29cae6ebf980672114c8bb85e5594e4a AS build
@@ -28,6 +29,8 @@ COPY plugins/opencode/yoneda /opt/yoneda/plugin
 # The scripted stand-in for opencode (tests/agents/e2e.mjs --fake-agents), in its source layout.
 COPY tests/agents/fake-opencode.mjs /opt/yoneda/fake/tests/agents/
 COPY tools/staging/opencode-fake.mjs /opt/yoneda/fake/tools/staging/
+# The egress proxy (run as its own container from this image) and the agent's egress check.
+COPY tools/staging/agent-sandbox/egress-proxy.mjs tools/staging/agent-sandbox/egress-check.mjs /opt/yoneda/
 COPY --chmod=755 tools/staging/agent-sandbox/sandbox-init.sh /usr/local/sbin/sandbox-init
 COPY --chmod=755 tools/staging/agent-sandbox/sandbox-agent.sh /usr/local/bin/sandbox-agent
 LABEL yoneda.agent-sandbox="1"

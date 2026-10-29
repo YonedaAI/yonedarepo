@@ -39,19 +39,8 @@ test('platform adapter modules import only platform and neutral modules', async 
   }
 });
 
+// Crate-to-crate dependencies are checked by `cargo xtask layers` against xtask/layers.toml.
 const crates = 'backend/crates';
-const dependencies = async (crate) => {
-  const manifest = await readFile(`${crates}/${crate}/Cargo.toml`, 'utf8');
-  // Normal dependencies only; dev-dependencies may pull in native test stores.
-  const section = manifest.split(/^\[dev-dependencies\]/m)[0];
-  return [...section.matchAll(/^(yoneda-[a-z-]+)\s*[=.]/gm)].map(([, name]) => name);
-};
-
-test('the platform depends on core contracts and the store only; core and the store are leaves', async () => {
-  assert.deepEqual((await dependencies('yoneda-platform')).sort(), ['yoneda-core', 'yoneda-store']);
-  assert.deepEqual(await dependencies('yoneda-store'), ['yoneda-core']);
-  assert.deepEqual(await dependencies('yoneda-core'), []);
-});
 
 /** First path segment of each top-level item in the braced import starting at `start`. */
 function topLevel(source, start) {

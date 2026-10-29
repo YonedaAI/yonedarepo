@@ -441,6 +441,13 @@ mod tests {
             })
         );
         assert_eq!(
+            parsed("change delete #4").ok(),
+            Some(Command::Change {
+                target: Target::default(),
+                command: ChangeCommand::Delete { number: 4 }
+            })
+        );
+        assert_eq!(
             parsed("release create v1 --title First -m notes --asset dist/app.zip").ok(),
             Some(Command::Release {
                 target: Target::default(),
@@ -581,6 +588,8 @@ mod tests {
             "change show",
             "change show 0",
             "change land x",
+            "change delete",
+            "change delete 0",
             "change comment 1",
             "change comment 1 -m hi --path a.rs --line 2",
             "change comment 1 -m hi --path a.rs --line 2 --side left",

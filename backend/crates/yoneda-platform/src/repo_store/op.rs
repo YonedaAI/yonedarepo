@@ -29,6 +29,7 @@ op_names! {
         ChangeClose = "repo_change_close",
         ChangeComment = "repo_change_comment",
         ChangeCreate = "repo_change_create",
+        ChangeDelete = "repo_change_delete",
         ChangeRecords = "repo_change_records",
         ChangeReopen = "repo_change_reopen",
         ChangeShow = "repo_change_show",
@@ -135,6 +136,8 @@ op_names! {
         Discard = "repo_lfs_discard",
         Usage = "repo_lfs_usage",
         SetQuota = "repo_lfs_set_quota",
+        SweepClaim = "repo_lfs_sweep_claim",
+        SweepDone = "repo_lfs_sweep_done",
     }
 }
 op_names! {

@@ -12,7 +12,7 @@ export function SecretExceptions({
 }) {
   const allow = draft.secret_allow ?? [];
   const [path, setPath] = useState('');
-  const [rule, setRule] = useState<string>(SECRET_RULES[0]);
+  const [rule, setRule] = useState<SecretAllow['rule']>(SECRET_RULES[0]);
   const set = (next: SecretAllow[]) => {
     const { secret_allow: _, ...rest } = draft;
     change(next.length ? { ...rest, secret_allow: next } : rest);
@@ -84,7 +84,10 @@ export function SecretExceptions({
         </label>
         <label className="source-field">
           Rule
-          <select value={rule} onChange={(e) => setRule(e.target.value)}>
+          <select
+            value={rule}
+            onChange={(e) => setRule(SECRET_RULES.find((r) => r === e.target.value) ?? rule)}
+          >
             {SECRET_RULES.map((r) => (
               <option key={r} value={r}>
                 {r}
