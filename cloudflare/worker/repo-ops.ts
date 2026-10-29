@@ -43,7 +43,8 @@ export type Credentials =
         | 'hooks'
         | 'compact'
         | 'fork'
-        | 'lfs';
+        | 'lfs'
+        | 'quarantine';
     };
 // Identity fields come only from the authenticating adapter, never from arguments.
 const CREDENTIAL_KEYS = ['_session', '_token', '_pat', '_anonymous', '_system'];
@@ -198,18 +199,20 @@ export class RepoContext {
     this.statusOnce = Promise.resolve({ object_store: head.object_store, ...access });
   }
   async objects() {
-    if (!this.cached) {
+    // Reads serve from a store only once it knows what the repository withholds.
+    if (!this.cached?.knowsWithheld) {
       const status = await this.status();
       // Its bundles are then read in bulk, not one staged read per object, in any isolate.
       if (status.bundled) noteBundles(this.repo);
-      this.adopt(status.object_store);
+      this.adopt(status.object_store, status.quarantined);
     }
     return this.cached as RepoObjects;
   }
-  /** Uses the store an authorized answer named, sparing a status read. */
-  adopt(spec: string) {
+  /** Uses the store an authorized answer named, sparing a status read; `quarantined`: the
+   * blobs that answer withholds (no read serves them). */
+  adopt(spec: string, quarantined?: unknown) {
     this.cached ??= new RepoObjects(this.env, this.repo, parseStore(this.env, spec));
-    return this.cached;
+    return this.cached.withhold(quarantined);
   }
 }
 
@@ -291,6 +294,11 @@ export async function diff(ctx: RepoContext, args: Json) {
     for (const change of changes.slice(0, PATCH_FILES)) {
       const files = [change.old, change.new].filter((s) => s && ['blob', 'exec'].includes(s.type));
       if (files.length === 0) continue;
+      // A quarantined side is not read: the change is listed, its patch marked withheld.
+      if ((await objects.withheldAmong(files.map((f) => f.id))).size) {
+        change.patch_omitted = 'quarantined';
+        continue;
+      }
       const input: Json = { op: 'file_patch' };
       for (const [side, value] of [
         ['old', change.old],

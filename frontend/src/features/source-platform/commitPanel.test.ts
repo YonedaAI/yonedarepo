@@ -60,6 +60,8 @@ const status = (viewer: Viewer, policy = noChecks): RepoStatus => ({
   parent: null,
   forks: 0,
   grant: null,
+  quarantined: [],
+  quarantine_epoch: 0,
   visibility: 'private',
 });
 const page = (d: CommitDetail, s: RepoStatus) =>

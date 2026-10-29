@@ -6,8 +6,10 @@
 // (forks.rs). Where a caller names object ids itself (`POST /objects`) or a push relies on
 // objects it omitted, `guardInherited` requires current read on the parent as well.
 import { cachedCopy } from './repo-cache-tiers';
+import { ACCESS_MS, withheldOf } from './repo-head';
 import type { ObjectKind, RepoObjects } from './repo-objects';
 import { ApiError, type Credentials, caller, type RepoContext } from './repo-ops';
+import { type Withheld, withheldMap } from './repo-quarantine-guard';
 import type { RawObject } from './repo-stores';
 
 /** A fork's parent objects, and the check this request must pass to be served them. */
@@ -15,7 +17,27 @@ export class Inherited {
   private checked?: Promise<void>;
   /** Set per request by `guardInherited`; none: reads reachable by construction. */
   guard?: () => Promise<void>;
+  private parentWithheld?: { at: number; map: Promise<Withheld> };
   constructor(readonly parent: RepoObjects) {}
+
+  /** The blobs the parent withholds (and its own parent, for a fork of a fork), from its
+   * published access snapshot, read again once ACCESS_MS old like every access decision. */
+  withheld(): Promise<Withheld> {
+    const now = Date.now();
+    if (!this.parentWithheld || now - this.parentWithheld.at >= ACCESS_MS) {
+      const { env, repo } = this.parent;
+      const map = Promise.all([
+        withheldOf(env, repo).then(withheldMap),
+        this.parent.inherited?.withheld() ?? new Map(),
+      ]).then(([own, above]) => new Map([...above, ...own]));
+      map.catch(() => {
+        // A failed read is not kept: the next read asks again (and fails closed meanwhile).
+        if (this.parentWithheld?.map === map) this.parentWithheld = undefined;
+      });
+      this.parentWithheld = { at: now, map };
+    }
+    return this.parentWithheld.map;
+  }
   /** Runs this request's guard once, before the first inherited object is served. */
   check() {
     if (!this.guard) return Promise.resolve();

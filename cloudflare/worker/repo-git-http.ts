@@ -30,6 +30,7 @@ const STATUS: Record<string, number> = {
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
   NOT_FOUND: 404,
+  QUARANTINED: 451,
   GONE: 404,
   RATE_LIMITED: 429,
   OVERLOADED: 503,
@@ -103,7 +104,7 @@ async function serve(req: Request, env: Env): Promise<Response> {
     if (anonymous) await admitAnonymous(env, repo);
     // Access first, so a refusal is an HTTP status Git reports, not a broken protocol.
     const access = await ctx.call({ op: 'repo_git_access', service });
-    const objects = ctx.adopt(access.object_store);
+    const objects = ctx.adopt(access.object_store, access.quarantined);
     const v2 = service === 'git-upload-pack' && wantsV2(req);
     if (action === 'info/refs') return v2 ? advertiseV2() : await advertise(ctx, service);
     const body = requestBody(req);

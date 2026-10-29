@@ -15,7 +15,14 @@ import { timed } from './repo-timing';
 // `search/v4`: segments are stored compact, not as JSON (under half the bytes for source).
 // v3: an index may be several chunk segments, and files up to 4 MiB are indexed. v2
 // indexed files up to 1 MiB and skipped a partition over 8 MiB whole.
-const segmentKey = (repo: string, key: string) => `derived/v1/${repo}/search/v4/${key}`;
+// Quarantined files are listed unread, and an index built while the withheld set differed
+// is never read: its keys carry the quarantine epoch (`q<epoch>/`, none before the first
+// quarantine). Purge deletes every index of the repository (repo-quarantine).
+export const searchPrefix = (repo: string) => `derived/v1/${repo}/search/`;
+const segmentKey = (repo: string, epoch: number, key: string) =>
+  `${searchPrefix(repo)}v4/${epoch ? `q${epoch}/` : ''}${key}`;
+/** The quarantine epoch this request's indexes are keyed by. */
+const epochOf = async (ctx: RepoContext) => Number((await ctx.status()).quarantine_epoch ?? 0);
 /** A stored segment starts with these bytes; a chunked index's count is JSON. */
 const SEGMENT_MAGIC = 'YSG1';
 
@@ -44,7 +51,7 @@ const chunkKey = (key: string, i: number) => `${key}/${i}`;
 /** A stored segment, or a chunked index's `{ chunks }`. */
 async function stored(ctx: RepoContext, key: string): Promise<Uint8Array | Json | null> {
   const bytes = await timed('search.segment', async () => {
-    const object = await ctx.env.OBJECTS.get(segmentKey(ctx.repo, key));
+    const object = await ctx.env.OBJECTS.get(segmentKey(ctx.repo, await epochOf(ctx), key));
     return object ? new Uint8Array(await object.arrayBuffer()) : null;
   });
   if (!bytes) return null;
@@ -78,10 +85,12 @@ function chunked(files: Json[], sizes: Json) {
 /** Segments of `files`: one, or (when their content outgrows CHUNK_BYTES, as files of
  * unknown size can) those of each half; a single file over the budget is listed unread. */
 async function segmentsOf(ctx: RepoContext, files: Json[], sizes: Json): Promise<Uint8Array[]> {
+  // Quarantined files are listed by path, unread (`withheld`).
+  const held = await (await ctx.objects()).withheldAmong(files.map((f) => String(f.id)));
   try {
     const { segment_b64 } = await withObjects(
       ctx,
-      { op: 'index_files', files },
+      { op: 'index_files', files, withheld: [...held.keys()] },
       [],
       CHUNK_BYTES,
       sizes,
@@ -122,9 +131,10 @@ async function build(ctx: RepoContext, p: Json): Promise<PartitionIndex> {
     files.map((f) => String(f.id)),
   );
   for (const [id, place] of places) sizes[id] = place.size;
+  const epoch = await epochOf(ctx);
   const put = (key: string, value: Uint8Array | Json) =>
     ctx.env.OBJECTS.put(
-      segmentKey(ctx.repo, key),
+      segmentKey(ctx.repo, epoch, key),
       isSegment(value) ? value : JSON.stringify(value),
     );
   let first: Uint8Array | undefined;

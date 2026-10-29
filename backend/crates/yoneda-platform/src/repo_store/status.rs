@@ -35,6 +35,17 @@ pub struct RepoStatus {
     pub viewer: Viewer,
     /// The paths a path-scoped token may read (null: the whole repository).
     pub grant: Option<Vec<String>>,
+    /// Blobs no read serves (quarantined or purged); trees still name them.
+    pub quarantined: Vec<Withheld>,
+    /// Changes whenever `quarantined` does: caches derived from content are keyed by it.
+    pub quarantine_epoch: u64,
+}
+
+/// A withheld blob and the path its owner named when quarantining it.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct Withheld {
+    pub id: String,
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
@@ -120,5 +131,14 @@ pub fn status<S: SqlStore>(db: &S, settings: &Settings, actor: &Actor) -> Result
             public: actor.public,
         },
         grant: actor.grant.clone(),
+        // A path-restricted caller learns which ids are withheld, never paths outside it.
+        quarantined: typed::<Withheld>(super::quarantine::withheld(db)?, "quarantine")?
+            .into_iter()
+            .map(|w| Withheld {
+                path: w.path.filter(|p| super::grants::allows(&actor.grant, p)),
+                ..w
+            })
+            .collect(),
+        quarantine_epoch: super::quarantine::epoch(db)?,
     })
 }

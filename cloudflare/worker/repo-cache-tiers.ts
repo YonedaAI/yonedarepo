@@ -34,6 +34,12 @@ export async function edgePut(
   }
 }
 
+/** Drops this colo's edge copy of `id` (a purge: other colos' copies are never served,
+ * since every read checks the quarantine first, and age out). */
+export async function edgeDelete(repo: string, id: string) {
+  await caches.default.delete(edgeKey(repo, id)).catch(() => false);
+}
+
 /** Resolves to `value` after `ms`; `stop` clears the timer. */
 function after<T>(ms: number, value: T) {
   let timer: ReturnType<typeof setTimeout> | null = null;

@@ -1,5 +1,5 @@
 import { linkTo, type Navigate } from '../shell/useRoute';
-import { recorder, type SessionRecord, transcriptLabel } from './agentModel';
+import { recorder, type SessionRecord, summaryText, transcriptLabel } from './agentModel';
 import { when } from './sourceApi';
 import { useSource } from './useSource';
 
@@ -23,7 +23,7 @@ export function SessionItem({
         {s.model && ` · ${s.model}`}
       </a>{' '}
       · {recorder(s.recorded_by)} · {when(s.at)}
-      <p className="source-session-summary">{s.summary}</p>
+      <p className="source-session-summary">{summaryText(s)}</p>
       {s.transcript ? (
         <p className="source-meta">{transcriptLabel(s)}</p>
       ) : (
