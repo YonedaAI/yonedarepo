@@ -6,6 +6,7 @@ pub mod auth;
 pub mod bridge;
 pub mod command;
 pub mod config;
+pub mod host_key;
 pub mod pkt;
 pub mod platform;
 pub mod server;
