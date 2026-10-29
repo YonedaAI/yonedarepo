@@ -71,7 +71,7 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
         .to_string()
     };
     match rng.below(100) {
-        0..8 => {
+        0..6 => {
             let branch = rng.pick(&existing).to_string();
             // Any commit but the root (it has no parent to go back to), a few back at most.
             let depth = repo.first_parents(repo.refs[&branch]).len();
@@ -83,7 +83,7 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
                 branch,
             }
         }
-        8..34 => {
+        6..30 => {
             let branch = rng.pick(&existing).to_string();
             let tree = &repo.commits[repo.refs[&branch]].tree;
             let path = rng.pick(&PATHS).to_string();
@@ -104,16 +104,16 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
                 read: rng.below(3) == 0,
             }
         }
-        34..42 => Op::CreateBranch {
+        30..38 => Op::CreateBranch {
             name: rng.pick(&BRANCHES).to_string(),
             from: any_ref(rng),
         },
-        42..50 => Op::MoveBranch {
+        38..45 => Op::MoveBranch {
             name: rng.pick(&existing).to_string(),
             to: any_ref(rng),
             expected: any_ref(rng),
         },
-        50..56 => {
+        45..50 => {
             let name = rng.pick(&BRANCHES).to_string();
             // Mostly the right expectation, so deletions happen.
             let expected = if rng.below(3) == 0 {
@@ -123,19 +123,23 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
             };
             Op::DeleteBranch { name, expected }
         }
-        56..62 => Op::Tag {
+        50..55 => Op::Tag {
             name: rng.pick(&TAGS).to_string(),
             at: any_ref(rng),
         },
-        62..74 => Op::Land {
+        55..65 => Op::Land {
             branch: working(rng),
         },
-        74..84 => Op::MergeLand {
+        65..74 => Op::MergeLand {
             branch: working(rng),
         },
-        84..90 => Op::Rebase {
+        74..80 => Op::Rebase {
             branch: working(rng),
         },
+        80..86 => Op::Enqueue {
+            branch: working(rng),
+        },
+        86..90 => Op::RunQueue,
         90..96 => Op::Probe {
             caller: caller(rng),
             access: *rng.pick(&[

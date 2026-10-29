@@ -3,7 +3,7 @@
 use crate::{CommitId, MAIN, Outcome, Plan, Repo};
 use std::collections::BTreeSet;
 
-enum Occ {
+pub(crate) enum Occ {
     /// An entry after the base wrote a path the commit read (or moved the ref opaquely).
     Conflict(Vec<String>),
     /// No entry after the base.
@@ -20,8 +20,8 @@ impl Repo {
         self.land_on(MAIN, commit)
     }
 
-    /// Lands `commit` on `refname`: a no-op where it is the head or landed there before; a
-    /// fast-forward (logging every path the head and the commit differ in) where the head
+    /// Lands `commit` on `refname`: a no-op where it is the head or landed there before;
+    /// refused while landings are queued there (`busy`); a fast-forward (logging every path the head and the commit differ in) where the head
     /// is its parent or an ancestor; otherwise refused as optimistic concurrency decides.
     /// Off-head landings happen on main only (commits are built on their branch's tip), so
     /// the concurrency base is always the commit's base version.
@@ -29,6 +29,10 @@ impl Repo {
         let head = self.tip(refname);
         if head == Some(commit) || self.landings.contains(&(commit, refname.to_owned())) {
             return Outcome::Already;
+        }
+        // While landings are queued on the branch, direct ones join the queue.
+        if self.busy(refname) {
+            return Outcome::Refused("MERGE_REQUIRED");
         }
         let paths = match head {
             None => self.commits[commit].writes.clone(),
@@ -68,7 +72,7 @@ impl Repo {
 
     /// Main's entries after the commit's base version against what it read and wrote. Paths
     /// here never nest (no file is another's directory), so overlapping means equal.
-    fn occ(&self, commit: CommitId, refname: &str) -> Occ {
+    pub(crate) fn occ(&self, commit: CommitId, refname: &str) -> Occ {
         let c = &self.commits[commit];
         let later: Vec<_> = self
             .log

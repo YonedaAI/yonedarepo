@@ -15,15 +15,29 @@ fn put(branch: &str, path: &str, text: &str, read: bool) -> Op {
 }
 
 fn branch_off_main() -> Op {
+    off_main(B1)
+}
+
+fn off_main(name: &str) -> Op {
     Op::CreateBranch {
-        name: B1.into(),
+        name: name.into(),
         from: MAIN.into(),
+    }
+}
+
+fn enqueue(branch: &str) -> Op {
+    Op::Enqueue {
+        branch: branch.into(),
     }
 }
 
 /// Runs `script`, then the Git checks; fails unless the model and platform agree at every
 /// step and the tally holds `reaches`.
 fn run(name: &str, script: &[Op], reaches: &str) {
+    run_reaching(name, script, &[reaches]);
+}
+
+fn run_reaching(name: &str, script: &[Op], reaches: &[&str]) {
     let mut driver = Driver::new();
     for (step, op) in script.iter().enumerate() {
         if let Err(e) = driver.step(op) {
@@ -33,11 +47,13 @@ fn run(name: &str, script: &[Op], reaches: &str) {
     if let Err(e) = git::check(&driver) {
         panic!("{name}, git: {e}");
     }
-    assert!(
-        driver.tally.contains_key(reaches),
-        "{name} did not reach {reaches}: {:?}",
-        driver.tally
-    );
+    for label in reaches {
+        assert!(
+            driver.tally.contains_key(*label),
+            "{name} did not reach {label}: {:?}",
+            driver.tally
+        );
+    }
 }
 
 #[test]
@@ -103,4 +119,97 @@ fn a_public_repository_asks_callers_without_credentials_to_sign_in() {
         },
     ];
     run("public anonymous", &script, "Probe UNAUTHORIZED");
+}
+
+#[test]
+fn queued_landings_settle_as_an_octopus_a_fast_forward_and_failures() {
+    let (b2, b3, b4, b5) = (
+        "refs/heads/b2",
+        "refs/heads/b3",
+        "refs/heads/b4",
+        "refs/heads/b5",
+    );
+    let x = "refs/heads/feature/x";
+    let script = [
+        branch_off_main(),
+        put(B1, "src/b.rs", "from b1", false),
+        off_main(b2),
+        put(b2, "a.txt", "from b2", false),
+        off_main(x),
+        put(x, "README.md", "from x", false),
+        off_main(b3),
+        put(b3, "src/b.rs", "from b3", false),
+        // b5 wrote src/b.rs and took it back: its merge changes only src/lib.rs, but it
+        // still wrote what b1 writes (write skew), so it waits.
+        off_main(b5),
+        put(b5, "src/b.rs", "transient", false),
+        Op::Commit {
+            branch: b5.into(),
+            path: "src/b.rs".into(),
+            content: None,
+            read: false,
+        },
+        put(b5, "src/lib.rs", "from b5", false),
+        // Main moves: every branch now needs a merge, so each landing queues.
+        put(MAIN, "README.md", "main moved", false),
+        enqueue(B1),
+        enqueue(b5),
+        enqueue(b2),
+        enqueue(x),
+        enqueue(b3),
+        // b1 and b2 land as one octopus; x conflicts on README.md; b5 and b3 write what
+        // b1 wrote and wait for the next batch.
+        Op::RunQueue,
+        // A branch on the new head queues behind b5 and b3 and lands alone as a
+        // fast-forward.
+        off_main(b4),
+        put(b4, "a.txt", "from b4", false),
+        enqueue(b4),
+        Op::RunQueue,
+        // b5 lands alone as a merge; b3 now conflicts with b1's src/b.rs and fails.
+        Op::RunQueue,
+        Op::RunQueue,
+    ];
+    run_reaching(
+        "queue",
+        &script,
+        &[
+            "Enqueue Queued",
+            "RunQueue octopus",
+            "RunQueue fast-forward",
+            "RunQueue merge",
+        ],
+    );
+}
+
+/// Found by the differential when it enqueued with `repo_land_enqueue` directly: a ticket
+/// for a commit that already landed on main is claimed as a fast-forward, and the batch's
+/// landing record then breaks the landings key. The adapter never sends such a ticket
+/// (`repo_land` answers `already` before it would queue), but the authority accepts it,
+/// and the queue then fails every claim the same way until someone releases it.
+#[test]
+#[ignore = "known-failing: land_batch answers DATABASE (UNIQUE constraint failed: \
+            landings.commit_id, landings.refname) and leaves the ticket pending; target: the \
+            ticket settles (landed, already) or enqueue refuses a landed commit"]
+fn a_queued_ticket_for_a_landed_commit_settles() {
+    use crate::repo_store::tests::{OWNER, batches::open};
+    use serde_json::json;
+    let (h, root) = open();
+    let ticket = h.ok(
+        OWNER,
+        json!({"op":"repo_land_enqueue","ref":"main","commit":root}),
+    )["ticket"]
+        .clone();
+    let claim = h.ok(
+        "platform:merge",
+        json!({"op":"repo_land_claim","ref":"main"}),
+    );
+    let landed = h.run(
+        "platform:merge",
+        json!({"op":"repo_land_batch","ref":"main","epoch":claim["epoch"],"head":claim["head"],
+            "landed":[ticket],"failed":[]}),
+    );
+    assert!(landed.is_ok(), "{landed:?}");
+    let status = h.ok(OWNER, json!({"op":"repo_land_status","ticket":ticket}));
+    assert_ne!(status["status"], "pending");
 }
