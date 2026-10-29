@@ -60,7 +60,14 @@ impl<'a> Scenario<'a> {
         };
         let out = client.ok(
             &home,
-            &["clone", &repo, "work", "--origin", &platform.origin],
+            &[
+                "clone",
+                &repo,
+                "work",
+                "--offline",
+                "--origin",
+                &platform.origin,
+            ],
         )?;
         check(
             out.contains("API snapshot"),

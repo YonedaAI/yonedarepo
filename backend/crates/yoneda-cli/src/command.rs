@@ -14,6 +14,19 @@ pub enum SyncMode {
     Attempt { id: String, mcp_url: Option<String> },
 }
 
+/// What `yoneda clone` brings.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum CloneMode {
+    /// A lazy `yoneda::` clone: commits and trees; blobs when Git needs them.
+    Lazy,
+    /// Every object of the history (`--full`).
+    Full,
+    /// A lazy clone checked out only under these directories (`--sparse a,b`).
+    Sparse(Vec<String>),
+    /// An offline checkout synced through the API (`--offline`).
+    Offline,
+}
+
 /// Which repository a command addresses (`None`: from the current clone).
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
 pub struct Target {
@@ -282,6 +295,12 @@ pub enum Command {
         repo: String,
         dir: Option<String>,
         origin: Option<String>,
+        mode: CloneMode,
+    },
+    /// Narrows (or widens) a lazy clone to these directories; `add`: to these as well.
+    Sparse {
+        dirs: Vec<String>,
+        add: bool,
     },
     Status {
         brief: bool,

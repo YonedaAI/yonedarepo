@@ -1,5 +1,5 @@
 //! The line protocol between Git and the helper (gitremote-helpers(7)).
-use super::{Options, Session, list, push};
+use super::{Options, Session, lazy, list, push};
 use crate::error::{Context, Error, Result};
 use std::io::{BufRead, Write};
 
@@ -14,8 +14,11 @@ pub enum Request {
     List {
         for_push: bool,
     },
+    /// `fetch <sha> <name>`; `by_id`: the name is the id itself (a lazy clone's Git
+    /// fetching an object it needs, which `list` never named).
     Fetch {
         sha: String,
+        by_id: bool,
     },
     Push(push::Spec),
     /// The blank line ending a batch, or the session.
@@ -34,8 +37,9 @@ pub fn parse(line: &str) -> Result<Request> {
             name: name.to_owned(),
             value: value.unwrap_or_default().to_owned(),
         },
-        (Some("fetch"), Some(sha), Some(_name)) => Request::Fetch {
+        (Some("fetch"), Some(sha), Some(name)) => Request::Fetch {
             sha: sha.to_owned(),
+            by_id: name == sha,
         },
         (Some("push"), Some(spec), None) => Request::Push(push::Spec::parse(spec)?),
         _ => return Err(Error::new(format!("unsupported helper command {line:?}"))),
@@ -63,8 +67,9 @@ pub fn option(options: &mut Options, name: &str, value: &str) -> &'static str {
             "ok"
         }
         // Accepted without effect: progress goes to stderr either way, and tags are
-        // lightweight, so `list` already names every one.
-        "progress" | "followtags" | "cloning" => "ok",
+        // lightweight, so `list` already names every one. Every fetch from the promisor
+        // remote is lazy (`filter`), whatever Git marks.
+        "progress" | "followtags" | "cloning" | "from-promisor" => "ok",
         _ => "unsupported",
     }
 }
@@ -84,6 +89,8 @@ pub fn serve(
 ) -> Result<()> {
     let mut pushes = Vec::new();
     let mut fetching = false;
+    // Objects Git asked for by id, fetched together at the end of the batch.
+    let mut wanted: Vec<String> = Vec::new();
     loop {
         let mut line = String::new();
         if input.read_line(&mut line).context("reading from git")? == 0 {
@@ -91,15 +98,27 @@ pub fn serve(
         }
         match parse(&line)? {
             Request::Capabilities => reply(out, "fetch\npush\noption\n\n")?,
+            // A partial clone or fetch (`git clone --filter`, Git's promisor fetches).
+            Request::Option { name, .. } if name == "filter" => {
+                lazy::requested(session);
+                reply(out, "ok\n")?;
+            }
             Request::Option { name, value } => {
                 let answer = option(&mut session.options, &name, &value);
                 reply(out, &format!("{answer}\n"))?;
             }
             Request::List { for_push } => {
+                if !for_push {
+                    lazy::adopt(session)?;
+                }
                 let listed = rt.block_on(list::list(session, for_push))?;
                 reply(out, &listed)?;
             }
-            Request::Fetch { sha } => {
+            Request::Fetch { sha, by_id: true } => {
+                wanted.push(sha);
+                fetching = true;
+            }
+            Request::Fetch { sha, .. } => {
                 // `list` already converted every branch; fetch only confirms it.
                 if !session
                     .git
@@ -114,6 +133,9 @@ pub fn serve(
             Request::Push(spec) => pushes.push(spec),
             Request::End if fetching => {
                 fetching = false;
+                if !wanted.is_empty() {
+                    rt.block_on(lazy::fetch_wanted(session, &std::mem::take(&mut wanted)))?;
+                }
                 reply(out, "\n")?;
             }
             Request::End if !pushes.is_empty() => {
@@ -143,7 +165,15 @@ mod tests {
         assert_eq!(
             parse(&format!("fetch {} refs/heads/main\n", "a".repeat(40)))?,
             Request::Fetch {
-                sha: "a".repeat(40)
+                sha: "a".repeat(40),
+                by_id: false
+            }
+        );
+        assert_eq!(
+            parse(&format!("fetch {0} {0}\n", "b".repeat(40)))?,
+            Request::Fetch {
+                sha: "b".repeat(40),
+                by_id: true
             }
         );
         assert_eq!(
@@ -165,6 +195,7 @@ mod tests {
         assert_eq!(option(&mut options, "atomic", "true"), "ok");
         assert_eq!(option(&mut options, "verbosity", "2"), "ok");
         assert_eq!(option(&mut options, "depth", "1"), "unsupported");
+        assert_eq!(option(&mut options, "from-promisor", "1"), "ok");
         assert_eq!(
             option(&mut options, "push-option", "yoneda.reads=a,b"),
             "ok"

@@ -89,9 +89,14 @@ pub async fn create_tag(
 /// `tag`): the tag object, written locally with its commit's history. A commit this clone
 /// holds under a converted id keeps the tag lightweight (the object names the other id).
 pub async fn listed(session: &mut Session, name: &str, commit: &str, tag: &str) -> Result<String> {
-    let local = Fetcher::new(&session.api, &session.git, &mut session.map)
-        .local(commit, None)
-        .await?;
+    let local = Fetcher::new(
+        &session.api,
+        &session.git,
+        &mut session.map,
+        &session.filter,
+    )
+    .local(commit, None)
+    .await?;
     if local != commit {
         return Ok(local);
     }
@@ -110,6 +115,6 @@ pub async fn listed(session: &mut Session, name: &str, commit: &str, tag: &str) 
             "tag {short}: the platform's tag object does not match {tag}"
         )));
     }
-    crate::snapshot::write_objects(&session.git, vec![(ObjectKind::Tag, data)])?;
+    crate::snapshot::write_objects(&session.git, vec![(ObjectKind::Tag, data)], &session.filter)?;
     Ok(tag.to_owned())
 }

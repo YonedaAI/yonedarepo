@@ -298,6 +298,25 @@ impl Client {
             .map_err(|e| e.to_string())
     }
 
+    /// Runs `yoneda` with `input` on stdin (an agent hook's JSON), whatever its exit code.
+    pub fn yoneda_input(&self, dir: &Path, args: &[&str], input: &str) -> TestResult<Output> {
+        use std::io::Write;
+        let mut child = self
+            .command(env!("CARGO_BIN_EXE_yoneda"), dir)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(input.as_bytes())
+                .map_err(|e| e.to_string())?;
+        }
+        child.wait_with_output().map_err(|e| e.to_string())
+    }
+
     /// Runs `yoneda`, requiring exit code 0; returns stdout.
     pub fn ok(&self, dir: &Path, args: &[&str]) -> TestResult<String> {
         let out = self.yoneda(dir, args)?;
