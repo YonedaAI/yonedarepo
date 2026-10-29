@@ -57,16 +57,27 @@ export function accountCreated(env: Env, account: string, email?: string | null)
 }
 
 function config(env: Env) {
-  const missing = (['RESEND_API_KEY', 'EMAIL_FROM', 'EMAIL_CONTACT', 'WEB_ORIGIN'] as const).filter(
+  const missing: string[] = (['EMAIL_FROM', 'EMAIL_CONTACT', 'WEB_ORIGIN'] as const).filter(
     (name) => !env[name]?.trim(),
   );
+  if (!env.RESEND_API_KEY) missing.unshift('RESEND_API_KEY');
   if (missing.length) return off(`missing ${missing.join(', ')}`);
   return {
-    key: env.RESEND_API_KEY as string,
     from: env.EMAIL_FROM as string,
     contact: env.EMAIL_CONTACT as string,
     origin: (env.WEB_ORIGIN as string).replace(/\/+$/, ''),
   };
+}
+
+/** The Resend key from the Secrets Store, at send time; never logged. */
+async function resendKey(env: Env) {
+  try {
+    const key = (await env.RESEND_API_KEY?.get())?.trim();
+    if (key) return key;
+  } catch {
+    // The store's error is not logged: only that the key could not be read.
+  }
+  off('RESEND_API_KEY is empty or unreadable');
 }
 
 /** Seconds before delivery `attempts + 1`: 30 s, 2 min, 8 min. */
@@ -94,6 +105,8 @@ export async function welcomeJob(
   const to = envelope.to;
   if (!settings || !account || !to) return {};
   if ((await workspace(env, account, { op: 'welcome_state' })).sent) return {};
+  const key = await resendKey(env);
+  if (!key) return {};
   const email = renderWelcome(settings);
   const failed = (detail: Record<string, unknown>) => {
     if (attempts < MAX_ATTEMPTS && detail.transient) return { retry: backoff(attempts) };
@@ -107,7 +120,7 @@ export async function welcomeJob(
     answer = await send(RESEND_EMAILS, {
       method: 'POST',
       headers: {
-        authorization: `Bearer ${settings.key}`,
+        authorization: `Bearer ${key}`,
         'content-type': 'application/json',
         // Per account, never the address itself.
         'idempotency-key': `welcome/${await sha(account)}`,

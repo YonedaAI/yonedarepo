@@ -150,11 +150,10 @@ impl Spec {
         for worker in &mut self.workers {
             worker.file = format!("wrangler.{}-{}.jsonc", env.name(), worker.role);
             // Its generated secrets file has no R2 S3 key pair: Git LFS answers 501 there. Git
-            // over SSH stays off: the host name, tunnel and host keys belong to one env. No
-            // Resend key either: the welcome email is off there.
-            worker.secrets.retain(|s| {
-                !s.starts_with("LFS_S3_") && !s.starts_with("SSH_") && s != "RESEND_API_KEY"
-            });
+            // over SSH stays off: the host name, tunnel and host keys belong to one env.
+            worker
+                .secrets
+                .retain(|s| !s.starts_with("LFS_S3_") && !s.starts_with("SSH_"));
             worker.notes = vec![format!(
                 "Ephemeral stack {}: removed by `cargo xtask infra down --env {} --confirm --purge`.",
                 env.name(),
