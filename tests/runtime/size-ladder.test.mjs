@@ -3,12 +3,14 @@ import { test } from 'node:test';
 import {
   aggregate,
   done,
+  gitError,
   markdownTable,
   mergePhases,
   parseCurlTrace,
   parseServerTiming,
   parseTimingLine,
   planCheckpoints,
+  readPath,
   record,
   requestCounts,
   stats,
@@ -123,4 +125,44 @@ test('finished results are skipped on resume, failed ones retried', () => {
   assert.equal(state.results.length, 1);
   assert.equal(done(state, 'a', 'clone', 1), true);
   assert.equal(done(state, 'a', 'clone', 2), false);
+});
+
+test("a failed git command's error is its last lines, not its progress", () => {
+  const stderr = [
+    "Cloning into '/tmp/c'...",
+    'Receiving objects:   0% (1/45787)\rReceiving objects:   1% (458/45787)\rReceiving objects:   7% (3206/45787), 1.61 MiB | 21.00 KiB/s',
+    'error: RPC failed; curl 18 transfer closed with outstanding read data remaining',
+    'error: 5023 bytes of body are still expected',
+    'fetch-pack: unexpected disconnect while reading sideband packet',
+    'fatal: early EOF',
+    'fatal: fetch-pack: invalid index-pack output',
+    '',
+  ].join('\n');
+  assert.equal(
+    gitError(stderr),
+    'error: RPC failed; curl 18 transfer closed with outstanding read data remaining | error: 5023 bytes of body are still expected | fetch-pack: unexpected disconnect while reading sideband packet | fatal: early EOF | fatal: fetch-pack: invalid index-pack output',
+  );
+  const refused = 'To https://x/git/r.git\n ! [remote rejected] aaa -> main (TOO_LARGE: too big)\nerror: failed to push some refs to \'https://x/git/r.git\'\n';
+  assert.equal(
+    gitError(refused),
+    "To https://x/git/r.git |  ! [remote rejected] aaa -> main (TOO_LARGE: too big) | error: failed to push some refs to 'https://x/git/r.git'",
+  );
+  // A remote progress line and a remote error: the error stays.
+  assert.equal(gitError('remote: Counting objects: 50% (1/2)\rremote: error: walk failed\n'), 'remote: error: walk failed');
+  assert.equal(gitError(''), '');
+});
+
+test('blame and history read a file the imported history holds', () => {
+  const tip = ['a.js', 'src/b.js', 'src/c.js'];
+  // The configured path when the imported tip holds it.
+  assert.equal(readPath('src/b.js', tip, ['src/c.js', 'src/c.js']), 'src/b.js');
+  // Else the file the imported history changed most that the tip still holds.
+  assert.equal(readPath('src/new.js', tip, ['gone.js', 'gone.js', 'gone.js', 'src/c.js', 'a.js', 'src/c.js']), 'src/c.js');
+  assert.equal(readPath('src/new.js', tip, []), 'a.js');
+  // Of the configured file's extension when the history changed one: source, not a manifest.
+  const withManifest = [...tip, 'package.json'];
+  const changes = ['package.json', 'package.json', 'package.json', 'src/b.js'];
+  assert.equal(readPath('src/new.js', withManifest, changes), 'src/b.js');
+  assert.equal(readPath('src/new.rs', withManifest, changes), 'package.json');
+  assert.equal(readPath('src/new.js', [], []), null);
 });

@@ -4,7 +4,18 @@
 
 import { deferrer } from './background';
 import { ReadStats } from './repo-bundles';
+import { wasmMemoryBytes } from './repo-git-sessions';
 import type { PackWriter } from './repo-pack-cache';
+
+const MiB = 1024 * 1024;
+
+/** One log line per event of a built pack, with this isolate's Wasm memory (it only grows).
+ * A pack cut off with its isolate (CPU or memory limit) logs `git.pack.start` and no end:
+ * the invocation's outcome in the tail names the limit. */
+export function logPack(event: string, repo: string, stats: PackStats, extra: object = {}) {
+  const wasm_mib = Math.round(wasmMemoryBytes() / MiB);
+  console.log(JSON.stringify({ event, repo, ...stats.summary(), wasm_mib, ...extra }));
+}
 
 export function concat(parts: Uint8Array[]) {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
@@ -40,7 +51,7 @@ export function sendStored(
     await write(head);
     await stored.body.pipeTo(writable, { preventClose: true });
     stats?.streamed(stored.size);
-    if (stats) await write(sideBand(2, stats.line(), band));
+    if (stats?.report) await write(sideBand(2, stats.line(), band));
     await write(new TextEncoder().encode('0000'));
     await writable.close();
   })().catch((e) => writable.abort(e).catch(() => {}));
@@ -53,7 +64,7 @@ export function end(
   band: number,
   stats?: PackStats,
 ) {
-  if (band && stats) controller.enqueue(sideBand(2, stats.line(), band));
+  if (band && stats?.report) controller.enqueue(sideBand(2, stats.line(), band));
   if (band) controller.enqueue(new TextEncoder().encode('0000'));
   controller.close();
 }
@@ -70,16 +81,11 @@ export function failed(
   controller.close();
 }
 
-/** Pack bytes waiting for the store before storing is given up: the client never waits
- * on R2 (a clone that outruns the store is served whole, its pack just not kept). */
-const STORE_BACKLOG = 16 * 1024 * 1024;
-
 /** Copies a built pack into the store (`writer`), if any, behind the response: `add`
- * never waits, and `finish` completes after the answer when the request lent waitUntil.
- * Storing is best effort: a failed or lagging write is dropped, never the clone. */
+ * copies the bytes at once and never waits, and `finish` completes after the answer when
+ * the request lent waitUntil. Storing is best effort and holds three parts at most: a
+ * write that fails or falls two parts behind the clone is dropped, never the clone. */
 export class Storing {
-  #queue: Promise<void> = Promise.resolve();
-  #backlog = 0;
   readonly #defer = deferrer();
 
   constructor(
@@ -88,27 +94,13 @@ export class Storing {
   ) {}
 
   add(bytes: Uint8Array) {
-    const writer = this.writer;
-    if (!writer) return;
-    if (this.#backlog + bytes.length > STORE_BACKLOG) {
-      this.#drop('the store fell behind the clone');
-      return;
-    }
-    this.#backlog += bytes.length;
-    this.#queue = this.#queue.then(async () => {
-      await writer.add(bytes);
-      this.#backlog -= bytes.length;
-    });
-    this.#queue.catch((e) => this.#drop(e?.message ?? e));
+    if (this.writer && !this.writer.offer(bytes)) this.#drop('the store fell behind the clone');
   }
 
   async finish() {
     const writer = this.writer;
     if (!writer) return;
-    const queue = this.#queue;
     const work = async () => {
-      await queue;
-      if (this.writer !== writer) return;
       const kept = await writer.finish();
       if (kept && this.stats) this.stats.cache = 'stored';
     };
@@ -120,7 +112,6 @@ export class Storing {
   async abort() {
     const writer = this.writer;
     this.writer = undefined;
-    await this.#queue.catch(() => {});
     await writer?.abort().catch(() => {});
   }
 
@@ -141,6 +132,8 @@ export class Storing {
  */
 export class PackStats {
   private readonly started = performance.now();
+  /** `report`: the client asked for the timing line; the server logs the pack either way. */
+  constructor(readonly report = true) {}
   walk = 0;
   waited = 0;
   raw = 0;
@@ -163,6 +156,19 @@ export class PackStats {
     this.entries++;
     this.bytes += entry.length;
     if (((entry[0] >> 4) & 7) === 7) this.deltas++;
+  }
+
+  /** The pack's log fields (`logPack`). */
+  summary() {
+    return {
+      cache: this.cache,
+      entries: this.entries,
+      sent_mib: Number((this.bytes / MiB).toFixed(1)),
+      raw_mib: Number((this.raw / MiB).toFixed(1)),
+      walk_ms: Math.round(this.walk),
+      read_wait_ms: Math.round(this.waited),
+      ms: Math.round(performance.now() - this.started),
+    };
   }
 
   line() {

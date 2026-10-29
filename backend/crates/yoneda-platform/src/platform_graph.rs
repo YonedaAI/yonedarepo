@@ -99,6 +99,9 @@ pub fn touched(path: &str, old: &str, new: &str) -> Option<Vec<String>> {
 
 /// Identifier tokens with their byte offsets; comments and string literals excluded.
 fn identifiers(path: &str, source: &str) -> Result<Vec<(usize, String)>, String> {
+    if language(path).is_some() {
+        crate::platform_facts::nesting(source)?;
+    }
     match language(path) {
         Some(Language::Rust) => {
             let result = source

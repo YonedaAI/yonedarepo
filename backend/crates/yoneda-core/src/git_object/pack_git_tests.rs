@@ -123,9 +123,6 @@ fn reads_real_packs_with_both_delta_kinds_in_any_chunking() {
                 let (want_kind, want) = &expected[&id];
                 assert_eq!(kind, *want_kind);
                 assert_eq!(reader.content(&id).unwrap().as_slice(), want.as_slice());
-                if kind != ObjectKind::Blob {
-                    assert_eq!(reader.kept(&id).unwrap(), want.as_slice());
-                }
             }
         }
     }

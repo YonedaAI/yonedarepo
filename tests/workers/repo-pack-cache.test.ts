@@ -157,7 +157,11 @@ it('stores a pack of several parts, nothing when aborted, and keeps the four mos
   const write = async (key: string, size: number) => {
     const writer = new PackWriter(scoped, 'rpackwriter', key);
     const data = new Uint8Array(size).map((_, i) => (i * 31 + size) % 251);
-    for (let i = 0; i < data.length; i += 65_515) await writer.add(data.subarray(i, i + 65_515));
+    for (let i = 0; i < data.length; i += 65_515) {
+      expect(writer.offer(data.subarray(i, i + 65_515))).toBe(true);
+      // R2 takes each part before the next one fills (a clone streams slower than that).
+      if ((i + 65_515) % PART < 65_515) await new Promise((r) => setTimeout(r, 200));
+    }
     return { writer, data };
   };
   const big = await write(at('big'), PART * 2 + 12_345);
@@ -176,6 +180,28 @@ it('stores a pack of several parts, nothing when aborted, and keeps the four mos
   for (const name of ['p1', 'p2', 'p3', 'p4']) await (await write(at(name), 300_000)).writer.finish();
   const kept = (await bindings.OBJECTS.list({ prefix: 'derived/v1/rpackwriter/packs/v2/' })).objects.map((o) => o.key);
   expect(kept.filter((k) => k.endsWith('.pack')).sort()).toEqual(['p1', 'p2', 'p3', 'p4'].map(at));
+});
+
+it('holds three parts of a pack at most: a store two parts behind the clone is given up', async () => {
+  const key = 'derived/v1/rpackslow/packs/v2/slow.pack';
+  // R2 starts the upload but never takes a part.
+  const create = vi.spyOn(scoped.OBJECTS, 'createMultipartUpload').mockImplementation((async () => ({
+    uploadPart: () => new Promise(() => {}),
+    abort: async () => {},
+  })) as any);
+  try {
+    const writer = new PackWriter(scoped, 'rpackslow', key);
+    const piece = new Uint8Array(65_515);
+    let taken = 0;
+    while (taken < 4 * PART && writer.offer(piece)) taken += piece.length;
+    // Two parts are on their way up; the third filled while they were: refused, not queued.
+    expect(taken).toBeLessThan(3 * PART);
+    expect(taken).toBeGreaterThanOrEqual(3 * PART - piece.length);
+    expect(create).toHaveBeenCalledTimes(1);
+  } finally {
+    create.mockRestore();
+  }
+  expect(await bindings.OBJECTS.head(key)).toBeNull();
 });
 
 it('never holds a clone back on the store: a stalled store is left behind the answer', async () => {

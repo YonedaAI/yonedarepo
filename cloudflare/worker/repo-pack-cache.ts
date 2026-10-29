@@ -8,10 +8,12 @@
 // only for tips the client may fetch now (a force-push that dropped history leaves its old
 // pack unreachable). Key: `derived/v1/<repo>/packs/v2/<sha256 of the sorted wants>.pack`;
 // v2 holds the pack as side-band packets (the hit path pipes them as they are), v1 raw.
-import { PART, R2Parts } from './repo-r2-parts';
+import { R2Parts } from './repo-r2-parts';
 import type { Env } from './types';
 
-export { PART };
+/** A stored pack's multipart parts: R2's smallest, so the three a clone holds at most
+ * while it stores its pack (`R2Parts.offer`) are 15 MiB. */
+export const PART = 5 * 1024 * 1024;
 
 /** Smaller packs build quickly anyway: not stored. */
 const MIN_STORED = 256 * 1024;
@@ -47,8 +49,9 @@ export class PackWriter {
     this.#parts = new R2Parts(env, key, {}, part);
   }
 
-  add(bytes: Uint8Array) {
-    return this.#parts.add(bytes);
+  /** Adds `bytes` without waiting, or false when the store fell behind (`R2Parts.offer`). */
+  offer(bytes: Uint8Array) {
+    return this.#parts.offer(bytes);
   }
 
   /** Completes the stored pack (unless it is too small to keep) and evicts old ones. */

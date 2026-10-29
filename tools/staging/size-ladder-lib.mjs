@@ -201,3 +201,32 @@ export function record(state, result) {
   state.results.push(result);
   return state;
 }
+
+/** Git's progress lines (local or `remote: `), which a failure's stderr is mostly made of. */
+const PROGRESS =
+  /^(remote: )?(Cloning into|Enumerating|Counting|Compressing|Receiving|Resolving|Writing|Total|Updating files|Checking out|Filtering content)\b/;
+
+/** What a failed Git command said: its last five lines that are not progress (`\r` ends
+ * progress updates as `\n` ends lines), joined by ` | `: a clone cut off says why in
+ * about five (curl's error, the bytes missing, then fetch-pack and index-pack). */
+export function gitError(stderr) {
+  return String(stderr)
+    .split(/[\r\n]/)
+    .filter((line) => line.trim() && !PROGRESS.test(line))
+    .slice(-5)
+    .join(' | ');
+}
+
+/** The file blame and history read: `configured` when the imported tip holds it (`tip`, its
+ * files), else the one its history changed most (`changed`, a path per change) that the tip
+ * holds, of `configured`'s extension when any is (source, not a manifest), else the tip's
+ * first file; null when it has none. An import that stopped early may predate `configured`. */
+export function readPath(configured, tip, changed) {
+  const held = new Set(tip);
+  if (held.has(configured)) return configured;
+  const counts = new Map();
+  for (const path of changed) if (held.has(path)) counts.set(path, (counts.get(path) ?? 0) + 1);
+  const extension = /\.[^./]+$/.exec(configured)?.[0];
+  const ranked = [...counts].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)).map(([p]) => p);
+  return ranked.find((p) => extension && p.endsWith(extension)) ?? ranked[0] ?? tip[0] ?? null;
+}
