@@ -6,16 +6,19 @@
 //!   skipped before the last whole object are the ones it lacks).
 //! - A large blob's download cut off resumes with `Range` from the bytes it has.
 //! - Concurrent callers of one `Api` wanting the same object share one request.
+//! - A request that goes quiet for the idle timeout counts as cut (`api::Timeouts`); a
+//!   fetch past its total budget ends naming the request it waited on and how far it got.
 //!
 //! Every object is still verified against its id before it is written (`verified`,
 //! `commits`); a download is also checked here, so corrupt resumed bytes never leave it.
 use super::object_id;
+use super::page::{aligned, whole_objects};
 use crate::api::{self, Api, Received};
 use crate::error::{Error, Result};
 use base64::Engine;
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use yoneda_core::git_object::{ObjectKind, hash_object};
 
 /// Ids per `POST /objects` request (the platform takes up to 10 000).
@@ -23,6 +26,27 @@ const REQUEST_OBJECTS: usize = 2_000;
 /// Consecutive attempts that brought nothing new before a request is given up (or, for a
 /// page, asked again for half as many ids).
 const ATTEMPTS: u64 = 3;
+
+/// How far a fetch got and what it is waiting on, for the error that ends it.
+#[derive(Default)]
+struct Progress {
+    arrived: usize,
+    doing: String,
+}
+
+type Tracker = Mutex<Progress>;
+
+fn note(tracker: &Tracker, update: impl FnOnce(&mut Progress)) {
+    if let Ok(mut progress) = tracker.lock() {
+        update(&mut progress);
+    }
+}
+
+/// `failure` ended the request `doing` names.
+fn failed(tracker: &Tracker, failure: api::Failure) -> Error {
+    let doing = tracker.lock().map(|p| p.doing.clone()).unwrap_or_default();
+    Error::new(format!("{doing}: {failure}"))
+}
 
 /// The served objects among `wanted`, in request order, and the ids the platform does not
 /// have. `raw` asks for commits as their exact Git content. Large blobs come as stubs
@@ -47,7 +71,23 @@ pub(super) async fn request(
     let mut outcomes: HashMap<String, Option<Arc<Value>>> = HashMap::new();
     if !mine.is_empty() {
         // On failure `lead` is dropped unfinished: its waiters fail with this caller.
-        let (fetched, absent) = pages(api, &mine, raw).await?;
+        let budget = api.timeouts().budget;
+        let tracker = Tracker::default();
+        let (fetched, absent) =
+            match tokio::time::timeout(budget, pages(api, &mine, raw, &tracker)).await {
+                Ok(fetched) => fetched?,
+                Err(_) => {
+                    let progress = tracker.lock().map(|p| (p.arrived, p.doing.clone()));
+                    let (arrived, doing) = progress.unwrap_or_default();
+                    return Err(Error::new(format!(
+                        "fetching objects took longer than its {} ms budget \
+                     (YONEDA_FETCH_BUDGET_SECS): {arrived} of {} objects arrived, \
+                     still waiting on {doing}",
+                        budget.as_millis(),
+                        mine.len()
+                    )));
+                }
+            };
         let absent: HashSet<String> = absent.into_iter().collect();
         let mut fetched: HashMap<String, Value> = fetched
             .into_iter()
@@ -88,10 +128,11 @@ async fn pages(
     api: &Api,
     wanted: &[(String, ObjectKind)],
     raw: bool,
+    tracker: &Tracker,
 ) -> Result<(Vec<Value>, Vec<String>)> {
     let mut fetched = Vec::with_capacity(wanted.len());
     let mut absent = Vec::new();
-    for batch in wanted.chunks(REQUEST_OBJECTS) {
+    for (n, batch) in wanted.chunks(REQUEST_OBJECTS).enumerate() {
         let mut pos = 0;
         let mut window = batch.len();
         let mut failures = 0;
@@ -102,6 +143,10 @@ async fn pages(
                 .map(|(id, kind)| json!({ "id": id, "kind": kind.name() }))
                 .collect();
             let body = json!({ "objects": ids, "after": 0, "raw": raw, "large": true });
+            let first = n * REQUEST_OBJECTS + pos;
+            note(tracker, |p| {
+                p.doing = format!("POST /objects ({} ids from #{first})", part.len());
+            });
             let (objects, done, stopped) = match api.post_read_once("/objects", &body).await {
                 Ok(Received {
                     bytes, cut: None, ..
@@ -136,14 +181,15 @@ async fn pages(
                     (whole, done, Some(cut))
                 }
                 Err(failure) if api::transient(&failure) => (Vec::new(), 0, Some(failure)),
-                Err(failure) => return Err(failure.into()),
+                Err(failure) => return Err(failed(tracker, failure)),
             };
             for object in objects {
                 fetched.push(if object["large"] == true {
-                    download(api, &object).await?
+                    download(api, &object, tracker).await?
                 } else {
                     object
                 });
+                note(tracker, |p| p.arrived += 1);
             }
             pos += done;
             match stopped {
@@ -155,7 +201,7 @@ async fn pages(
                         window = window.div_ceil(2);
                         failures = 0;
                     } else {
-                        return Err(failure.into());
+                        return Err(failed(tracker, failure));
                     }
                 }
                 _ => failures = 0,
@@ -165,71 +211,18 @@ async fn pages(
     Ok((fetched, absent))
 }
 
-/// The objects a page's body holds whole, from the start of a body cut off part way: the
-/// platform writes `{"objects":[...` first, so each object that closed before the cut is
-/// intact. Any other layout yields none (the page is asked again in full).
-fn whole_objects(body: &[u8]) -> Vec<Value> {
-    let mut rest = body;
-    let mut objects = Vec::new();
-    if ![&b"{"[..], b"\"objects\"", b":", b"["]
-        .iter()
-        .all(|token| take(token, &mut rest))
-    {
-        return objects;
-    }
-    loop {
-        let mut stream = serde_json::Deserializer::from_slice(rest).into_iter::<Value>();
-        match stream.next() {
-            Some(Ok(object)) if object.is_object() => {
-                rest = &rest[stream.byte_offset()..];
-                objects.push(object);
-            }
-            _ => return objects,
-        }
-        if !take(b",", &mut rest) {
-            return objects;
-        }
-    }
-}
-
-/// Skips whitespace and then `token` at the start of `rest`, if it is there.
-fn take(token: &[u8], rest: &mut &[u8]) -> bool {
-    *rest = rest.trim_ascii_start();
-    let found = rest.starts_with(token);
-    if found {
-        *rest = &rest[token.len()..];
-    }
-    found
-}
-
-/// How far into `part` the whole objects of a cut page reach (the positions after the last
-/// one), and the ids before it that the platform skipped (it lacks them).
-fn aligned(part: &[(String, ObjectKind)], whole: &[Value]) -> Result<(usize, Vec<String>)> {
-    let mut at = 0;
-    let mut skipped = Vec::new();
-    for object in whole {
-        let id = object["id"].as_str().unwrap_or_default();
-        while part.get(at).is_some_and(|(wanted, _)| wanted != id) {
-            skipped.push(part[at].0.clone());
-            at += 1;
-        }
-        if at == part.len() {
-            return Err(Error::new(format!("the platform sent {id}, not asked for")));
-        }
-        at += 1;
-    }
-    Ok((at, skipped))
-}
-
 /// A large blob's stub as the served blob: its bytes downloaded on their own, resuming a
 /// cut download from the bytes already here, and verified against the id.
-async fn download(api: &Api, stub: &Value) -> Result<Value> {
+async fn download(api: &Api, stub: &Value, tracker: &Tracker) -> Result<Value> {
     let id = object_id(stub, "id")?;
     let path = format!("/objects/{id}");
     let mut bytes: Vec<u8> = Vec::new();
     let mut failures = 0;
     loop {
         let have = bytes.len() as u64;
+        note(tracker, |p| {
+            p.doing = format!("GET /objects/{id} from byte {have}")
+        });
         let stopped = match api.get_bytes_from(&path, have).await {
             Ok(received) => {
                 // A 206 continues these bytes; any other answer is the blob from its start.
@@ -250,13 +243,13 @@ async fn download(api: &Api, stub: &Value) -> Result<Value> {
                 }
             }
             Err(failure) if api::transient(&failure) => Some(failure),
-            Err(failure) => return Err(failure.into()),
+            Err(failure) => return Err(failed(tracker, failure)),
         };
         match stopped {
             Some(failure) => {
                 failures += 1;
                 if failures > ATTEMPTS {
-                    return Err(failure.into());
+                    return Err(failed(tracker, failure));
                 }
                 api::pause(&failure, failures).await;
             }
@@ -273,34 +266,4 @@ async fn download(api: &Api, stub: &Value) -> Result<Value> {
         "kind": "blob",
         "data_b64": base64::engine::general_purpose::STANDARD.encode(bytes),
     }))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn keeps_the_objects_a_cut_page_holds_whole() {
-        let body = br#"{"objects":[{"id":"a","n":1}, {"id":"b","s":"x,]}"},{"id":"c","s":"tru"#;
-        let ids: Vec<Value> = whole_objects(body)
-            .iter()
-            .map(|o| o["id"].clone())
-            .collect();
-        assert_eq!(ids, vec![json!("a"), json!("b")]);
-        assert!(whole_objects(br#"{"missing":[],"objects":[{"id":"a"}"#).is_empty());
-        assert!(whole_objects(b"").is_empty());
-    }
-
-    #[test]
-    fn a_cut_page_resumes_after_its_last_whole_object() -> Result<()> {
-        let part: Vec<(String, ObjectKind)> = ["a", "x", "b", "c"]
-            .iter()
-            .map(|id| (id.to_string(), ObjectKind::Blob))
-            .collect();
-        let whole = vec![json!({ "id": "a" }), json!({ "id": "b" })];
-        assert_eq!(aligned(&part, &whole)?, (3, vec!["x".to_owned()]));
-        assert_eq!(aligned(&part, &[])?, (0, vec![]));
-        assert!(aligned(&part, &[json!({ "id": "z" })]).is_err());
-        Ok(())
-    }
 }
