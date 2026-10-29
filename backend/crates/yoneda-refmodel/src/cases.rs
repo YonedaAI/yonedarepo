@@ -1,5 +1,5 @@
 //! Seeded random operation sequences: every case is reproducible from its seed.
-use crate::{MAIN, Op, Repo};
+use crate::{Access, Caller, MAIN, Op, Repo, Role};
 
 /// SplitMix64: small, fast and good enough to drive test cases deterministically.
 pub struct Rng(u64);
@@ -37,9 +37,19 @@ const BRANCHES: [&str; 4] = [
     "refs/heads/feature/x",
 ];
 const TAGS: [&str; 3] = ["refs/tags/v1", "refs/tags/v2", "refs/tags/v3"];
+/// Signed-in accounts, members or not.
+const ACCOUNTS: [&str; 3] = ["rita", "will", "stranger"];
+
+fn caller(rng: &mut Rng) -> Caller {
+    match rng.below(5) {
+        0 => Caller::Owner,
+        1 => Caller::Anonymous,
+        _ => Caller::Account(rng.pick(&ACCOUNTS).to_string()),
+    }
+}
 
 /// The next operation for `repo` at `step`: mostly valid, with stale expectations, protected
-/// refs and moved tags mixed in. File contents name the step, so every put changes its file.
+/// refs and moved tags mixed in. File contents are one line.
 pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
     let existing: Vec<&str> = BRANCHES
         .iter()
@@ -50,30 +60,60 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
         let refs: Vec<&String> = repo.refs.keys().collect();
         rng.pick(&refs).to_string()
     };
+    // A working branch when there is one: main onto itself is always a no-op.
+    let working = |rng: &mut Rng| -> String {
+        let working: Vec<&str> = existing.iter().copied().filter(|b| *b != MAIN).collect();
+        rng.pick(if working.is_empty() {
+            &existing
+        } else {
+            &working
+        })
+        .to_string()
+    };
     match rng.below(100) {
-        0..40 => {
+        0..8 => {
+            let branch = rng.pick(&existing).to_string();
+            // Any commit but the root (it has no parent to go back to), a few back at most.
+            let depth = repo.first_parents(repo.refs[&branch]).len();
+            if depth < 2 {
+                return generate(rng, repo, step);
+            }
+            Op::Revert {
+                back: rng.below((depth - 1).min(4)),
+                branch,
+            }
+        }
+        8..34 => {
             let branch = rng.pick(&existing).to_string();
             let tree = &repo.commits[repo.refs[&branch]].tree;
             let path = rng.pick(&PATHS).to_string();
             // Deletes only an existing file, and never the last one.
             let delete = tree.contains_key(&path) && tree.len() > 1 && rng.below(4) == 0;
+            // Mostly new content; sometimes one two branches may both write, so merges
+            // meet equal changes, rebases drop replays already upstream, and a put can
+            // change nothing.
+            let content = if rng.below(4) == 0 {
+                format!("{path} shared {}\n", rng.below(2))
+            } else {
+                format!("{path} at step {step}\n")
+            };
             Op::Commit {
                 branch,
-                content: (!delete).then(|| format!("{path} at step {step}\n")),
+                content: (!delete).then_some(content),
                 path,
-                read: rng.below(4) == 0,
+                read: rng.below(3) == 0,
             }
         }
-        40..52 => Op::CreateBranch {
+        34..42 => Op::CreateBranch {
             name: rng.pick(&BRANCHES).to_string(),
             from: any_ref(rng),
         },
-        52..62 => Op::MoveBranch {
+        42..50 => Op::MoveBranch {
             name: rng.pick(&existing).to_string(),
             to: any_ref(rng),
             expected: any_ref(rng),
         },
-        62..70 => {
+        50..56 => {
             let name = rng.pick(&BRANCHES).to_string();
             // Mostly the right expectation, so deletions happen.
             let expected = if rng.below(3) == 0 {
@@ -83,22 +123,40 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
             };
             Op::DeleteBranch { name, expected }
         }
-        70..80 => Op::Tag {
+        56..62 => Op::Tag {
             name: rng.pick(&TAGS).to_string(),
             at: any_ref(rng),
         },
-        _ => {
-            // A working branch when there is one: main onto itself is always a no-op.
-            let working: Vec<&str> = existing.iter().copied().filter(|b| *b != MAIN).collect();
-            Op::Land {
-                branch: rng
-                    .pick(if working.is_empty() {
-                        &existing
-                    } else {
-                        &working
-                    })
-                    .to_string(),
-            }
-        }
+        62..74 => Op::Land {
+            branch: working(rng),
+        },
+        74..84 => Op::MergeLand {
+            branch: working(rng),
+        },
+        84..90 => Op::Rebase {
+            branch: working(rng),
+        },
+        90..96 => Op::Probe {
+            caller: caller(rng),
+            access: *rng.pick(&[
+                Access::Status,
+                Access::Refs,
+                Access::Log,
+                Access::Fetch,
+                Access::Push,
+            ]),
+        },
+        96..98 => Op::SetVisibility {
+            caller: if rng.below(2) == 0 {
+                Caller::Owner
+            } else {
+                caller(rng)
+            },
+            public: rng.below(2) == 0,
+        },
+        _ => Op::Member {
+            account: rng.pick(&ACCOUNTS).to_string(),
+            role: [None, Some(Role::Read), Some(Role::Write)][rng.below(3)],
+        },
     }
 }

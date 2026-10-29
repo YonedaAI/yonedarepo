@@ -1,7 +1,8 @@
 //! A reference model of one YonedaRepo repository: refs, commits as whole file trees, the
 //! global log version, and the operations the differential tests drive (a one-file commit
 //! landed on its branch, working-branch create, move and delete by compare-and-swap, tags,
-//! and landing a branch on main with its merge-plan outcome). It has no dependencies, so
+//! landing a branch on main with its merge-plan outcome, reverts, platform merge commits
+//! and rebases, and who may read and write). It has no dependencies, so
 //! it shares no code with the platform it checks; commits are numbered in creation order
 //! and the test maps those numbers to Git ids.
 //!
@@ -13,10 +14,19 @@
 //!   Otherwise optimistic concurrency decides against main's entries after the commit's base
 //!   version: one writing a path the commit read is a conflict; none is a stale parent;
 //!   entries writing other paths need a rebase, the same paths a merge.
+//! - A private repository exists only for its owner and members; a public one is read by
+//!   anyone, and written only by write members and the owner (`access`).
+//! - Files are one line each (the generator keeps them so), so a three-way merge is decided
+//!   per file: a side that left a file alone takes the other's version; two different
+//!   changes conflict.
+mod access;
 mod cases;
+mod commits;
 mod graph;
 mod land;
+mod merge;
 
+pub use access::{Access, Caller, Role};
 pub use cases::{PATHS, Rng, generate};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -29,12 +39,13 @@ pub const MAIN: &str = "refs/heads/main";
 
 #[derive(Clone, Debug)]
 pub struct Commit {
-    pub parent: Option<CommitId>,
+    /// First parent first; a platform merge commit has the merged commit second.
+    pub parents: Vec<CommitId>,
     pub tree: Tree,
     /// The log version its author read.
     pub base_version: u64,
     pub read_set: BTreeSet<String>,
-    /// Paths it changed against its parent.
+    /// Paths it changed against its first parent.
     pub writes: BTreeSet<String>,
 }
 
@@ -73,16 +84,34 @@ pub enum Op {
     Tag { name: String, at: String },
     /// Lands `branch`'s tip on main.
     Land { branch: String },
+    /// Reverts the commit `back` first parents below `branch`'s tip onto that tip and lands
+    /// the revert on `branch`.
+    Revert { branch: String, back: usize },
+    /// Lands `branch`'s tip on main; where main moved (merge required), through a platform
+    /// merge commit of the two, as the adapter builds one.
+    MergeLand { branch: String },
+    /// Replays working branch `branch`'s own commits onto main's head and moves it there.
+    Rebase { branch: String },
+    /// `caller` tries `access`.
+    Probe { caller: Caller, access: Access },
+    /// `caller` makes the repository public or private.
+    SetVisibility { caller: Caller, public: bool },
+    /// The owner grants `account` `role`, or removes it (`None`).
+    Member { account: String, role: Option<Role> },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Outcome {
-    /// A new commit, landed on its branch.
+    /// A new commit, landed on its branch (or main, for a merge).
     Committed(CommitId),
+    /// A rebase moved its branch, through these replayed commits (oldest first).
+    Rebased(Vec<CommitId>),
     /// A ref moved, was created or deleted.
     Moved,
     /// Nothing to do: the ref is already there (or already gone).
     Already,
+    /// Done, moving no ref (an access check, visibility, membership).
+    Done,
     /// Refused with the platform's error code (`STALE_HEAD` also for a stale batch delete).
     Refused(&'static str),
 }
@@ -101,7 +130,10 @@ pub struct Repo {
     pub refs: BTreeMap<String, CommitId>,
     pub log: Vec<Entry>,
     /// Commits recorded as landed on a ref.
-    landings: BTreeSet<(CommitId, String)>,
+    pub(crate) landings: BTreeSet<(CommitId, String)>,
+    pub public: bool,
+    /// Member accounts and their roles (the owner is not one).
+    pub members: BTreeMap<String, Role>,
 }
 
 impl Repo {
@@ -109,7 +141,7 @@ impl Repo {
     pub fn seeded(root: Tree) -> Self {
         let paths: BTreeSet<String> = root.keys().cloned().collect();
         let commit = Commit {
-            parent: None,
+            parents: vec![],
             tree: root,
             base_version: 0,
             read_set: BTreeSet::new(),
@@ -126,6 +158,8 @@ impl Repo {
                 landing: true,
             }],
             landings: BTreeSet::from([(0, MAIN.to_owned())]),
+            public: false,
+            members: BTreeMap::new(),
         }
     }
 
@@ -169,46 +203,28 @@ impl Repo {
                 }
                 None => (Outcome::Refused("NOT_FOUND"), None),
             },
-        }
-    }
-
-    fn commit(&mut self, branch: &str, path: &str, content: Option<&str>, read: bool) -> Outcome {
-        let Some(parent) = self.tip(branch) else {
-            return Outcome::Refused("NOT_FOUND");
-        };
-        let mut tree = self.commits[parent].tree.clone();
-        let changed = match content {
-            Some(text) => tree.insert(path.to_owned(), text.to_owned()).as_deref() != Some(text),
-            None => tree.remove(path).is_some(),
-        };
-        if !changed {
-            return Outcome::Refused(if content.is_some() {
-                "NO_CHANGES"
-            } else {
-                "NOT_FOUND"
-            });
-        }
-        let id = self.commits.len();
-        self.commits.push(Commit {
-            parent: Some(parent),
-            tree,
-            base_version: self.version,
-            read_set: if read {
-                BTreeSet::from([path.to_owned()])
-            } else {
-                BTreeSet::new()
+            Op::Revert { branch, back } => (self.revert(branch, *back), None),
+            Op::MergeLand { branch } => match self.tip(branch) {
+                Some(commit) => {
+                    let plan = self.plan(commit);
+                    (self.merge_land(commit), Some(plan))
+                }
+                None => (Outcome::Refused("NOT_FOUND"), None),
             },
-            writes: BTreeSet::from([path.to_owned()]),
-        });
-        // Built on the branch's tip, it always fast-forwards there.
-        match self.land_on(branch, id) {
-            Outcome::Moved => Outcome::Committed(id),
-            other => other,
+            Op::Rebase { branch } => (self.rebase(branch), None),
+            Op::Probe { caller, access } => (self.access(caller, *access), None),
+            Op::SetVisibility { caller, public } => (self.set_visibility(caller, *public), None),
+            Op::Member { account, role } => (self.set_member(account, *role), None),
         }
     }
 
     /// `repo_branch_set`: a working branch moves to `target` if it is at `expected`.
-    fn set(&mut self, name: &str, target: CommitId, expected: Option<CommitId>) -> Outcome {
+    pub(crate) fn set(
+        &mut self,
+        name: &str,
+        target: CommitId,
+        expected: Option<CommitId>,
+    ) -> Outcome {
         if Self::protected(name) {
             return Outcome::Refused("FORBIDDEN");
         }
@@ -250,7 +266,7 @@ impl Repo {
     }
 
     /// Appends the log entry for `refname` moving to `target` (`None`: deleted) and moves it.
-    fn move_ref(
+    pub(crate) fn move_ref(
         &mut self,
         refname: &str,
         target: Option<CommitId>,
