@@ -119,6 +119,15 @@ pub enum Op {
     Submit {
         picks: Vec<usize>,
     },
+    /// Forks the repository (once).
+    Fork,
+    /// A one-file commit on the fork's `feature` branch, landed there.
+    ForkCommit {
+        path: String,
+        content: String,
+    },
+    /// Carries the fork's `feature` into the parent's mirror branch.
+    Carry,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -218,6 +227,9 @@ impl Repo {
                 read,
             } => (self.shard_commit(path, content, *read), None),
             Op::Submit { picks } => (self.submit(picks), None),
+            Op::Fork => (self.fork_repo(), None),
+            Op::ForkCommit { path, content } => (self.fork_commit(path, content), None),
+            Op::Carry => (self.carry(), None),
         }
     }
 }

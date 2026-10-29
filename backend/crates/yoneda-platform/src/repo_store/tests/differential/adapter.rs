@@ -355,6 +355,8 @@ impl Driver {
         };
         let reads = if read { json!([path]) } else { json!([]) };
         let record = self.h.shard_commit_from(&begun, path, content, reads);
+        let built = record["objects"].as_array().into_iter().flatten();
+        self.remember_trees(built.filter_map(|o| o["id"].as_str().map(str::to_owned)));
         let id = record["commit"]["id"]
             .as_str()
             .unwrap_or_default()
@@ -388,5 +390,23 @@ impl Driver {
             .unwrap_or_default()
             .to_owned();
         Seen::Submitted(items, head)
+    }
+
+    /// Trees that reached the object double without a prepare (built in a shard, in the
+    /// fork) as the adapter's cache would hold them, so later commits read them.
+    pub(super) fn remember_trees(&self, ids: impl Iterator<Item = String>) {
+        for id in ids {
+            let tree = matches!(
+                self.h.objects.borrow().get(&id),
+                Some((ObjectKind::Tree, _))
+            );
+            if tree && !self.h.cached.borrow().contains_key(&id) {
+                let entries = self.listing(&id);
+                self.h
+                    .cached
+                    .borrow_mut()
+                    .insert(id, json!({"entries": entries}));
+            }
+        }
     }
 }

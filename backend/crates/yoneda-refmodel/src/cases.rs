@@ -1,5 +1,5 @@
 //! Seeded random operation sequences: every case is reproducible from its seed.
-use crate::{Access, Caller, MAIN, Op, Repo, Role, Scope};
+use crate::{Access, Caller, MAIN, MIRROR, Op, Repo, Role, Scope};
 use std::collections::BTreeSet;
 
 /// SplitMix64: small, fast and good enough to drive test cases deterministically.
@@ -115,6 +115,15 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
         })
         .to_string()
     };
+    // What lands on main: a working branch, or the parent's mirror of the fork's branch
+    // (only the carry moves the mirror here).
+    let landable = |rng: &mut Rng| -> String {
+        if repo.tip(MIRROR).is_some() && rng.below(3) == 0 {
+            MIRROR.to_owned()
+        } else {
+            working(rng)
+        }
+    };
     match rng.below(100) {
         20..23 => Op::Publish,
         23..30 if repo.shard.is_empty() || rng.below(5) < 3 => {
@@ -191,18 +200,27 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
             message: (rng.below(2) == 0).then(|| format!("Release at step {step}")),
         },
         55..61 => Op::Land {
-            branch: working(rng),
+            branch: landable(rng),
         },
         61..65 => Op::LandOn {
             branch: working(rng),
             onto: working(rng),
         },
         65..74 => Op::MergeLand {
+            branch: landable(rng),
+        },
+        74..77 => Op::Rebase {
             branch: working(rng),
         },
-        74..80 => Op::Rebase {
-            branch: working(rng),
-        },
+        77..80 if repo.fork.is_none() => Op::Fork,
+        77..80 if rng.below(3) == 0 => Op::Carry,
+        77..80 => {
+            let path = rng.pick(&PATHS).to_string();
+            Op::ForkCommit {
+                content: format!("{path} in the fork at step {step}\n"),
+                path,
+            }
+        }
         80..86 => Op::Enqueue {
             branch: working(rng),
         },
