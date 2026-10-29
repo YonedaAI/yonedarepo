@@ -1,9 +1,11 @@
-// The welcome email, platform side: the account_welcome job (queued by the platform's
-// `accountCreated` entrypoint method) and its consumer, which sends through Resend. The job
-// names only the account; the address is the contact email the account authority holds.
-// One email per account: the authority's sent marker, plus Resend's Idempotency-Key
-// (24 hours) for a redelivery that races the marker.
-import { renderWelcome } from './platform-welcome-template';
+// The account emails' consumer (platform side): the account_welcome and account_verify jobs
+// (platform-email-verify.ts queues them), sent through Resend. A job names the account and,
+// for a confirmation link, its token; the address is the contact email the account authority
+// holds now. One welcome per account: the authority's sent marker, plus Resend's
+// Idempotency-Key (24 hours) for a redelivery that races it. A confirmation email goes out
+// only while its token is live and the address unconfirmed.
+import { digest, verifyUrl } from './platform-email-verify';
+import { renderVerify, renderWelcome } from './platform-welcome-template';
 import type { Env, Envelope } from './types';
 import { workspace } from './workspace';
 
@@ -23,18 +25,6 @@ function off(reason: string) {
 export function maskAddress(address: string) {
   const at = address.lastIndexOf('@');
   return at > 0 ? `${address[0]}…${address.slice(at)}` : '…';
-}
-
-/** Queues the welcome job for a new account (its address is read when it runs). */
-export async function queueWelcome(env: Env, account: string) {
-  if (!env.PLATFORM_QUEUE) return off('PLATFORM_QUEUE is not bound');
-  await env.PLATFORM_QUEUE.send({
-    v: 1,
-    kind: 'account_welcome',
-    repo_id: '',
-    job_id: 'welcome',
-    workspace: account,
-  });
 }
 
 function config(env: Env) {
@@ -61,12 +51,6 @@ async function resendKey(env: Env) {
   off('RESEND_API_KEY is empty or unreadable');
 }
 
-/** The Idempotency-Key: per account, never the address or the account name itself. */
-async function idempotencyKey(account: string) {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(account));
-  return `welcome/${[...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
-}
-
 /** Seconds before delivery `attempts + 1`: 30 s, 2 min, 8 min. */
 const backoff = (attempts: number) => 30 * 4 ** Math.max(0, attempts - 1);
 
@@ -78,8 +62,9 @@ function transient(status: number, name: unknown) {
 }
 
 /**
- * The queue job: sends the welcome email unless it was sent or the account has no contact
- * email. `{ retry }` asks the queue to redeliver after that many seconds; a permanent
+ * The queue job (either kind): sends its email unless the account has no contact email, the
+ * welcome was sent, or the confirmation is moot (address confirmed, token replaced or
+ * expired). `{ retry }` asks the queue to redeliver after that many seconds; a permanent
  * failure is logged and settles the job.
  */
 export async function welcomeJob(
@@ -91,16 +76,38 @@ export async function welcomeJob(
   const settings = config(env);
   const account = envelope.workspace;
   if (!settings || !account) return {};
-  const state = await workspace(env, account, { op: 'welcome_state' });
+  const confirm = envelope.kind === 'account_verify';
+  const token = envelope.token;
+  const state = await workspace(env, account, {
+    op: 'email_status',
+    ...(token ? { token_hash: await digest(token) } : {}),
+  });
   const to = typeof state.email === 'string' ? state.email : null;
-  if (state.sent || !to) return {};
+  const link =
+    token && state.token_valid && !state.verified
+      ? verifyUrl(settings.origin, account, token)
+      : undefined;
+  if (!to || (confirm && !link)) return {};
+  if (!confirm && (await workspace(env, account, { op: 'welcome_state' })).sent) return {};
   const key = await resendKey(env);
   if (!key) return {};
-  const email = renderWelcome(settings);
+  const email =
+    link && confirm
+      ? renderVerify({ ...settings, verifyUrl: link })
+      : renderWelcome({ ...settings, verifyUrl: link });
+  // Per account (welcome) or per token (confirmation); never the address or the token.
+  const idempotency = confirm
+    ? `verify/${await digest(token ?? '')}`
+    : `welcome/${await digest(account)}`;
   const failed = (detail: Record<string, unknown>) => {
     if (attempts < MAX_ATTEMPTS && detail.transient) return { retry: backoff(attempts) };
     console.error(
-      JSON.stringify({ event: 'email.welcome.failed', to: maskAddress(to), attempts, ...detail }),
+      JSON.stringify({
+        event: confirm ? 'email.verify.failed' : 'email.welcome.failed',
+        to: maskAddress(to),
+        attempts,
+        ...detail,
+      }),
     );
     return {};
   };
@@ -111,7 +118,7 @@ export async function welcomeJob(
       headers: {
         authorization: `Bearer ${key}`,
         'content-type': 'application/json',
-        'idempotency-key': await idempotencyKey(account),
+        'idempotency-key': idempotency,
       },
       body: JSON.stringify({
         from: settings.from,
@@ -126,7 +133,7 @@ export async function welcomeJob(
     return failed({ transient: true, error: String(e?.message ?? e).slice(0, 200) });
   }
   if (answer.ok) {
-    await workspace(env, account, { op: 'welcome_sent' });
+    if (!confirm) await workspace(env, account, { op: 'welcome_sent' });
     return {};
   }
   const body = await answer.json<{ name?: string }>().catch(() => ({}) as { name?: string });
