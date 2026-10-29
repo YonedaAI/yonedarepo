@@ -4,7 +4,12 @@
 // A run is keyed by (agent, change, head), so one head gets one run per agent however often
 // its events arrive; a newer head on the same change supersedes the older runs.
 import { DurableObject } from 'cloudflare:workers';
-import type { ManagedAgentId, ManagedRun, RunStatus } from '../../shared/managed-agents';
+import type {
+  ManagedAgentId,
+  ManagedRun,
+  RunFinding,
+  RunStatus,
+} from '../../shared/managed-agents';
 import type { ManagedEnv } from './config';
 import { migrate, REPO_SCHEMA } from './schema';
 
@@ -26,12 +31,21 @@ export interface Claim {
   queued: boolean;
   superseded: string[];
 }
-type RunRow = Omit<ManagedRun, 'cost_usd'> & { charged_microusd: number; attempt: number };
+type RunRow = Omit<ManagedRun, 'cost_usd'> & {
+  charged_microusd: number;
+  attempt: number;
+  findings_json: string | null;
+};
+export type PostedFinding = RunFinding;
 
-const shortAgent: Record<ManagedAgentId, string> = { 'code-review': 'cr', 'security-review': 'sr' };
+const shortAgent: Record<ManagedAgentId, string> = {
+  'code-review': 'cr',
+  'security-review': 'sr',
+  'slop-review': 'sl',
+};
 
 function toRun(row: RunRow): ManagedRun {
-  const { charged_microusd, attempt: _attempt, ...rest } = row;
+  const { charged_microusd, attempt: _attempt, findings_json: _findings, ...rest } = row;
   return { ...rest, cost_usd: charged_microusd / 1_000_000 };
 }
 
@@ -140,8 +154,7 @@ export class RepoAgents extends DurableObject<ManagedEnv> {
     agent: ManagedAgentId,
     change: number,
     head: string,
-    provider: string,
-    model: string,
+    choice: { harness: string; provider: string; model: string },
   ): Claim | null {
     return this.#tx((sql) => {
       const on = sql
@@ -178,14 +191,16 @@ export class RepoAgents extends DurableObject<ManagedEnv> {
         .map((r) => r.id);
       const run = `${repo}-${shortAgent[agent]}-${change}-${head.slice(0, 12)}`;
       sql.exec(
-        `INSERT INTO runs (id, agent, change, head, status, provider, model, created_at)
-         VALUES (?, ?, ?, ?, 'queued', ?, ?, ?)`,
+        `INSERT INTO runs (id, repo, agent, change, head, status, harness, provider, model, created_at)
+         VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
         run,
+        repo,
         agent,
         change,
         head,
-        provider,
-        model,
+        choice.harness,
+        choice.provider,
+        choice.model,
         now,
       );
       return { run, attempt: 1, created: true, queued: true, superseded };
@@ -258,25 +273,66 @@ export class RepoAgents extends DurableObject<ManagedEnv> {
     );
   }
 
+  /** The model a run is using now; `fallback` says why it is not the configured one. */
+  useModel(
+    run: string,
+    choice: { harness: string; provider: string; model: string },
+    fallback: string | null,
+  ) {
+    this.#sql.exec(
+      'UPDATE runs SET harness = ?, provider = ?, model = ?, fallback = COALESCE(?, fallback) WHERE id = ?',
+      choice.harness,
+      choice.provider,
+      choice.model,
+      fallback ? fallback.slice(0, 300) : null,
+      run,
+    );
+  }
+
+  recordContainer(run: string, seconds: number, charged: number) {
+    this.#sql.exec(
+      `UPDATE runs SET container_seconds = container_seconds + ?,
+         charged_microusd = charged_microusd + ? WHERE id = ?`,
+      seconds,
+      charged,
+      run,
+    );
+  }
+
   finish(
     run: string,
     attempt: number,
     status: 'passed' | 'findings' | 'failed',
-    findings: number,
-    withheld: number,
-    error: string | null,
+    outcome: {
+      value?: string | null;
+      findings?: PostedFinding[];
+      withheld?: number;
+      error?: string | null;
+    },
   ) {
+    const findings = outcome.findings ?? [];
     this.#sql.exec(
-      `UPDATE runs SET status = ?, findings = ?, withheld = ?, error = ?, finished_at = ?
+      `UPDATE runs SET status = ?, value = ?, findings = ?, findings_json = ?, withheld = ?,
+         error = ?, finished_at = ?
        WHERE id = ? AND attempt = ? AND status IN ('queued','running')`,
       status,
-      findings,
-      withheld,
-      error ? error.slice(0, 300) : null,
+      outcome.value ?? null,
+      findings.length,
+      JSON.stringify(findings),
+      outcome.withheld ?? 0,
+      outcome.error ? outcome.error.slice(0, 300) : null,
       Date.now(),
       run,
       attempt,
     );
+  }
+
+  /** A run's posted findings (the detail page). */
+  findings(id: string): PostedFinding[] {
+    const row = this.#sql
+      .exec<{ findings_json: string | null }>('SELECT findings_json FROM runs WHERE id = ?', id)
+      .toArray()[0];
+    return row?.findings_json ? (JSON.parse(row.findings_json) as PostedFinding[]) : [];
   }
 
   run(id: string): ManagedRun | null {
