@@ -1661,6 +1661,7 @@ mod memories;
 mod model_runner;
 mod ops;
 mod orgs;
+mod pending_refs;
 mod pushed;
 mod quarantine;
 mod rebase;
