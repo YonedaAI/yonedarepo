@@ -5,7 +5,10 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use worker::wasm_bindgen::{JsError, prelude::wasm_bindgen};
-use yoneda_platform::{platform_git_receive::ReceiveSession, platform_git_upload::UploadSession};
+use yoneda_platform::{
+    platform_git_receive::ReceiveSession, platform_git_upload::UploadSession,
+    platform_pack_stream::PackStream,
+};
 
 /// A session idle this long belongs to a request that is gone.
 const STALE_MS: f64 = 10.0 * 60.0 * 1000.0;
@@ -13,6 +16,7 @@ const STALE_MS: f64 = 10.0 * 60.0 * 1000.0;
 const RECEIVE_BYTES: usize = 80 * 1024 * 1024;
 const RECEIVES: usize = 16;
 const UPLOADS: usize = 8;
+const STREAMS: usize = 4;
 
 struct Sessions<T> {
     next: u32,
@@ -55,6 +59,7 @@ impl<T> Sessions<T> {
 thread_local! {
     static RECEIVING: RefCell<Sessions<ReceiveSession>> = RefCell::new(Sessions::new());
     static UPLOADING: RefCell<Sessions<UploadSession>> = RefCell::new(Sessions::new());
+    static STREAMING: RefCell<Sessions<PackStream>> = RefCell::new(Sessions::new());
 }
 
 fn answer(result: yoneda_core::Result<serde_json::Value>) -> String {
@@ -247,4 +252,51 @@ pub fn wasm_memory_bytes() -> f64 {
     return (core::arch::wasm32::memory_size(0) * 65_536) as f64;
     #[cfg(not(target_arch = "wasm32"))]
     0.0
+}
+
+/// Opens a pack of `count` objects the adapter writes piece by piece (`PackStream`).
+#[wasm_bindgen(js_name = gitPackOpen, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_pack_open(now: f64, count: u32) -> String {
+    answer(
+        STREAMING
+            .with_borrow_mut(|s| s.add(now, STREAMS, PackStream::new(count)))
+            .map(Into::into),
+    )
+}
+
+/// One piece: `op` 0 the header, 1 a whole object (`kind`, `data`), 2 a streamed file's
+/// start (`kind` its id, `size`), 3 its content and packed bytes (`data`, `packed`),
+/// 4 its end, 5 the trailer (the stream closes).
+#[wasm_bindgen(js_name = gitPackPiece, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_pack_piece(
+    handle: u32,
+    op: u8,
+    kind: &str,
+    size: f64,
+    data: &[u8],
+    packed: &[u8],
+) -> Result<Vec<u8>, JsError> {
+    if op == 5 {
+        let stream = STREAMING.with_borrow_mut(|s| s.open.remove(&handle));
+        return stream
+            .map(|(_, p)| p.finish())
+            .ok_or_else(|| thrown(yoneda_core::Error::new("GONE", "The pack stream expired")));
+    }
+    STREAMING
+        .with_borrow_mut(|s| {
+            s.with(handle, |p| match op {
+                0 => Ok(p.header()),
+                1 => p.entry(kind, data),
+                2 => p.large_start(kind, size as usize),
+                3 => p.large_data(data, packed).map(|()| Vec::new()),
+                4 => p.large_end().map(|()| Vec::new()),
+                _ => Err(yoneda_core::Error::new("UNKNOWN_OP", "Unknown pack piece")),
+            })
+        })
+        .map_err(thrown)
+}
+
+#[wasm_bindgen(js_name = gitPackClose, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_pack_close(handle: u32) {
+    STREAMING.with_borrow_mut(|s| s.open.remove(&handle));
 }

@@ -7,9 +7,11 @@
 // goes to a temporary key first (the id is known only once the last byte hashed) and is
 // streamed to its id: twice the bytes through R2, once per pushed file.
 
-import type { UploadSession } from './repo-git-sessions';
+import { compute } from './repo-compute';
+import { PackStream } from './repo-git-sessions';
 import { ApiError, type Json } from './repo-ops';
 import { R2Parts } from './repo-r2-parts';
+import { fromBase64 } from './repo-stores';
 import type { Env } from './types';
 
 export const SPILL_BYTES = 8 * 1024 * 1024;
@@ -133,7 +135,10 @@ export function largeWarnings(stored: { id: string; size: number }[], commits: J
 /** A large file's zlib stream for its pack entry, from its R2 body, never held whole: the
  * session hashes its content (checked against its id at `largeEnd`) and the bytes written
  * (into the pack's trailer). */
-export async function* deflated(session: UploadSession, file: LargeBody) {
+export async function* deflated(
+  session: { largeData(content: Uint8Array, packed: Uint8Array): void },
+  file: LargeBody,
+) {
   const zlib = new CompressionStream('deflate');
   const writer = zlib.writable.getWriter();
   const none = new Uint8Array();
@@ -150,4 +155,43 @@ export async function* deflated(session: UploadSession, file: LargeBody) {
     yield packed;
   }
   await feeding;
+}
+
+/**
+ * A receive-pack request carrying large file `id` (`size` bytes, its R2 `body`) to an
+ * object store, never held: the hidden ref of the file's carrier (a tree naming it and a
+ * commit of that tree, `large_carrier`) and a pack of the file, streamed through
+ * CompressionStream, then the carrier tree and commit. Answers the body and the carrier.
+ */
+export function largeReceivePack(id: string, size: number, body: ReadableStream<Uint8Array>) {
+  const carrier = compute({ op: 'large_carrier', id });
+  async function* pieces() {
+    const pack = PackStream.open(3);
+    try {
+      yield fromBase64(carrier.head_b64);
+      yield pack.header();
+      yield pack.largeStart(id, size);
+      yield* deflated(pack, { large: true, size, body });
+      pack.largeEnd();
+      yield pack.entry('tree', fromBase64(carrier.tree_b64));
+      yield pack.entry('commit', fromBase64(carrier.commit_b64));
+      yield pack.finish();
+    } finally {
+      pack.close();
+    }
+  }
+  const out = pieces();
+  return {
+    carrier: String(carrier.commit),
+    body: new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        const next = await out.next();
+        if (next.done) controller.close();
+        else controller.enqueue(next.value);
+      },
+      async cancel() {
+        await out.return(undefined);
+      },
+    }),
+  };
 }
