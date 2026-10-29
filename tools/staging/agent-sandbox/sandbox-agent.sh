@@ -1,6 +1,7 @@
 #!/bin/sh
 # Agent half of the sandbox (no capabilities): refuses to start unless /work is the top level
-# of a clone whose only remote is $SANDBOX_EXPECTED_ORIGIN, imports the model credential the
+# of a clone whose only remote is $SANDBOX_EXPECTED_ORIGIN and egress reaches nothing but the
+# proxy's allowlist (egress-check.mjs), imports the model credential the
 # kit writes on stdin (if any) into this container's throwaway opencode store, and runs the
 # command in /work with PWD=/work: opencode takes its project directory from $PWD, not from
 # the process's working directory.
@@ -16,6 +17,7 @@ top=$(git rev-parse --show-toplevel 2>/dev/null) || fail "/work is not a Git clo
 [ "$(git remote)" = origin ] || fail "the clone's remotes are not exactly origin: $(git remote | tr '\n' ' ')"
 origin=$(git remote get-url origin)
 [ "$origin" = "${SANDBOX_EXPECTED_ORIGIN:-}" ] || fail "origin is $origin, expected ${SANDBOX_EXPECTED_ORIGIN:-(unset)}"
+node /opt/yoneda/egress-check.mjs || fail "egress reaches more than the proxy's allowlist"
 if [ "${SANDBOX_CREDENTIAL:-}" = stdin ]; then
   opencode auth import --standalone >/dev/null 2>&1 || fail "opencode auth import failed"
 fi

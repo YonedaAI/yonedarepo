@@ -16,8 +16,8 @@ import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { opencodeArgs, printable } from './agent-run-plan.mjs';
 import { runAgent, spendBudget } from './agent-run-flow.mjs';
-import { clientEnv, HOOK_LOG, sandboxArgs, sandboxEnv, sandboxOrigin, WORKDIR } from './agent-sandbox.mjs';
-import { buildSandbox, dockerAvailable, modelCredential } from './agent-sandbox-host.mjs';
+import { clientEnv, egressAllowlist, HOOK_LOG, sandboxArgs, sandboxEnv, sandboxOrigin, WORKDIR } from './agent-sandbox.mjs';
+import { buildSandbox, dockerAvailable, modelCredential, startEgress } from './agent-sandbox-host.mjs';
 import { agentProblems, agentTargets, agentTask, scratch, scratchRefs } from './realuser-plan.mjs';
 
 const q = (params) => new URLSearchParams(params).toString();
@@ -33,12 +33,16 @@ export async function realuserAgents(ctx, { repos, perRepo, model, timeoutS, bud
   for (const entry of JSON.parse(credential)) for (const v of [entry.value?.key, entry.value?.access]) if (v) secrets.add(v);
   const sandbox = await buildSandbox(root);
   Object.assign(metrics, { opencode: sandbox.opencode, sandbox: sandbox.image.slice(0, 19), model, repos: repos.map((r) => r.name).join(','), per_repo: perRepo, time_limit_s: timeoutS, budget_usd: budgetUsd });
-  const { origin, hostPort } = sandboxOrigin(ws.api);
+  const { origin } = sandboxOrigin(ws.api);
   const budget = spendBudget(budgetUsd);
   const containers = [];
   const runs = [];
+  // The agents' only way out: the platform and the model provider's API.
+  const allow = egressAllowlist({ origin, model });
+  const egress = await startEgress({ image: sandbox.image, allow, run: Date.now().toString(36) });
+  metrics.egress_allow = allow.join(',');
   try {
-    for (const repo of repos) runs.push(...(await prepareRepo(ctx, repo, { perRepo, origin, hostPort, credential, model, image: sandbox.image, budget, timeoutS, containers })));
+    for (const repo of repos) runs.push(...(await prepareRepo(ctx, repo, { perRepo, origin, credential, model, image: sandbox.image, network: egress.network, budget, timeoutS, containers })));
     const outcomes = await Promise.all(runs.map(runAgent));
     metrics.agent_ms = outcomes.map((o) => `${o.agent}:${o.ms}`).join(',');
     metrics.exits = outcomes.map((o) => `${o.agent}:${o.killed ?? o.code}`).join(',');
@@ -55,11 +59,12 @@ export async function realuserAgents(ctx, { repos, perRepo, model, timeoutS, bud
     assert.ok(problems.length === 0, problems.join('; '));
   } finally {
     for (const name of containers) spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
+    metrics.egress_refused = (await egress.stop()).join(',') || 'none';
   }
 }
 
 /** The repository's scratch base at main, and its agents' clones, tokens and containers. */
-async function prepareRepo(ctx, repo, { perRepo, origin, hostPort, credential, model, image, budget, timeoutS, containers }) {
+async function prepareRepo(ctx, repo, { perRepo, origin, credential, model, image, network, budget, timeoutS, containers }) {
   const { ws, ts, owner, mint, evidence } = ctx;
   ctx.touch(repo.id);
   const base = scratch(scratchRefs(ts).agentBase, ts);
@@ -83,10 +88,10 @@ async function prepareRepo(ctx, repo, { perRepo, origin, hostPort, credential, m
     await ws.git(dir, null, 'config', 'user.email', task.email);
     // The URL the platform has from inside the container; the sandbox refuses any other.
     await ws.git(dir, null, 'remote', 'set-url', 'origin', remote);
-    const env = sandboxEnv({ origin, token, remote, hostPort, credential });
+    const env = sandboxEnv({ origin, token, remote, credential });
     const name = `yoneda-realuser-${n}-${Date.now().toString(36)}`;
     containers.push(name);
-    const args = sandboxArgs({ name, clone: realpathSync(dir), env, command: ['opencode', ...opencodeArgs({ model, title: `realuser ${agent}`, text: task.text })], image });
+    const args = sandboxArgs({ name, clone: realpathSync(dir), env, command: ['opencode', ...opencodeArgs({ model, title: `realuser ${agent}`, text: task.text })], network, image });
     writeFileSync(join(evidence, `${agent}.command.txt`), `${printable(['docker', ...args])}\n`);
     runs.push({ task, name, cwd: ws.dir, env: clientEnv(process.env, env), credential, scrub: ws.scrub, args, evidence, timeoutMs: timeoutS * 1000, budget });
   }
