@@ -2271,6 +2271,24 @@
     }
   },
   {
+    "name": "git_change_gates",
+    "description": "What a change request's head still needs before it can land on its base, in one list: each required check, approvals, unresolved review comments, freshness against the base and a pause, each with state ready, waiting or blocked, one line of why, and whether landing enforces it (checks and approvals only on a protected base). ready is true when every enforced requirement is ready. REST: GET /changes/:number/gates.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The change number"
+        }
+      },
+      "required": [
+        "number"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "git_change_comment",
     "description": "Comment on a change request (body at most 8000 bytes; credentials are refused). path, line and side anchor it to a diff line at commit (default: the change's head). resolve marks every unresolved comment on that anchor resolved, with or without a new body. Needs the write or review scope and a whole-repository credential. REST: POST /changes/:number/comments.",
     "inputSchema": {

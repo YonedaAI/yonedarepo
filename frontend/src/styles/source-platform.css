@@ -102,6 +102,29 @@
 .source-gates h3 {
   margin: 0 0 6px;
 }
+.source-merge-gates ul {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+}
+.source-merge-gates li {
+  padding: 4px 0;
+  border-top: 1px solid var(--line);
+}
+.source-gate-state {
+  display: inline-block;
+  min-width: 64px;
+  font-weight: 600;
+}
+.source-merge-gates [data-state="ready"] .source-gate-state {
+  color: var(--success);
+}
+.source-merge-gates [data-state="waiting"] .source-gate-state {
+  color: var(--warn);
+}
+.source-merge-gates [data-state="blocked"] .source-gate-state {
+  color: var(--danger);
+}
 .source-actions {
   display: flex;
   flex-wrap: wrap;

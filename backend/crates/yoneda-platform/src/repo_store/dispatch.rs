@@ -5,11 +5,11 @@ use super::op::{InitOp, Op, RepoOp as R, StoreOp};
 use super::rows::{self, Settings};
 use super::{
     activity, adopt, agent_context, agent_reads, annotated, bisect, branches, change_comments,
-    change_delete, change_records, changes, changesets, checks, classes, contracts, git_http, head,
-    history, history_import, hook_delivery, hook_events, hooks, land, land_batch, land_queue,
-    land_tickets, members, merging, prepare, projection, projection_plan, pushed, reads, rebase,
-    record, releases, sessions, staging, store_lineage, submitted, symbols, tags, tokens,
-    version_projection,
+    change_delete, change_gates, change_records, changes, changesets, checks, classes, contracts,
+    git_http, head, history, history_import, hook_delivery, hook_events, hooks, land, land_batch,
+    land_queue, land_tickets, members, merging, prepare, projection, projection_plan, pushed,
+    reads, rebase, record, releases, sessions, staging, store_lineage, submitted, symbols, tags,
+    tokens, version_projection,
 };
 use super::{
     authorize::authorize, break_glass, deletion, forks, grants, lfs, maintenance, memory,
@@ -111,6 +111,7 @@ fn run<S: SqlStore>(
         R::ChangeClose => changes::set_open(db, c, actor, false),
         R::ChangeReopen => changes::set_open(db, c, actor, true),
         R::ChangeDelete => change_delete::delete(db, c, actor),
+        R::ChangeGates => change_gates::gates(db, c, actor, settings),
         R::CheckClaim => checks::claim(db, c),
         R::CheckRelease => checks::release(db, c),
         R::CheckRun => checks::run_op(db, c),
