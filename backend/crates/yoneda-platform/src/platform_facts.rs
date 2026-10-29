@@ -22,6 +22,32 @@ pub(crate) type Token = (usize, String);
 
 /// Files a revision-wide view analyses, so view cost stays bounded on large trees.
 pub const MAX_VIEW_FILES: usize = 400;
+/// Bracket nesting past which a file is not parsed. The parsers recurse once per level,
+/// and in Wasm (a 1 MiB stack) Rust blocks overflowed it from about 300 levels and script
+/// arrays from about 600: a trap (`memory access out of bounds`) failing the whole view.
+const MAX_NESTING: usize = 128;
+
+/// Refuses `source` nested deeper than MAX_NESTING, before any parser recurses into it.
+/// Brackets are counted lexically (strings and comments too): an over-count only leaves a
+/// file unanalysed.
+pub(crate) fn nesting(source: &str) -> std::result::Result<(), String> {
+    let mut depth = 0usize;
+    for byte in source.bytes() {
+        match byte {
+            b'(' | b'[' | b'{' => {
+                depth += 1;
+                if depth > MAX_NESTING {
+                    return Err(format!(
+                        "Brackets nest more than {MAX_NESTING} levels deep; not analysed"
+                    ));
+                }
+            }
+            b')' | b']' | b'}' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    Ok(())
+}
 
 /// The files of a tree listing (`files`: `{path, id, type}`) that views analyse: regular
 /// files in a supported language, in path order, at most `MAX_VIEW_FILES`.
@@ -123,6 +149,21 @@ mod tests {
             _ => crate::platform_facts_script::facts(path, source).unwrap(),
         };
         table(source, &symbols, &derived, &tokens)
+    }
+
+    #[test]
+    fn deeply_nested_files_are_refused_before_parsing() {
+        let nested = |depth: usize| format!("fn f() {}{}\n", "{".repeat(depth), "}".repeat(depth));
+        // Shallow here: a debug build's frames are larger (the Wasm build is gated at depth
+        // in tests/workers/repo-view-nesting.test.ts).
+        assert!(extract("src/lib.rs", &nested(8)).is_ok());
+        let refused = extract("src/lib.rs", &nested(MAX_NESTING + 1)).unwrap_err();
+        assert!(refused.contains("more than 128 levels"), "{refused}");
+        let array = format!("const a = {}1{};\n", "[".repeat(200), "]".repeat(200));
+        assert!(extract("src/a.js", &array).is_err());
+        // Closers never go below zero: earlier ones cannot hide later depth.
+        assert!(nesting(&format!("{}{}", ")".repeat(500), "(".repeat(129))).is_err());
+        assert!(nesting(&"()".repeat(10_000)).is_ok());
     }
 
     #[test]

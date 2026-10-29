@@ -69,6 +69,9 @@ fn symbol(
 
 /// Symbols in `source`, or the parser's error.
 pub fn extract(path: &str, source: &str) -> Result<Vec<Symbol>, String> {
+    if language(path).is_some() {
+        crate::platform_facts::nesting(source)?;
+    }
     match language(path) {
         Some(Language::Rust) => rust(source),
         Some(Language::Script) => script(path, source),
