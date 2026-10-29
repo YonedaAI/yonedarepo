@@ -57,6 +57,7 @@ Tests
 - Targeted tests only: the test files and crate filters for the code you changed, plus fmt/clippy/tsc/biome for touched languages. Never run full suites (whole `tests/workers`, `cargo test --workspace`) unless the lead or owner asks; never leave a suite running in the background.
 - Reproduce a defect with a failing test first. Prefer upgrading a tool or image over skipping or loosening a test; all dependencies stay on their newest versions unless blocked (say why).
 - Test data is "pure" repositories: imported open-source repos or the owner's dev test repos. Never use this codebase as test data.
+- Keep dev test repositories (the owner's repos and the OSS imports) for repeated tests. Never delete, re-import or repack them without the owner confirming exactly which repos; ask when an instruction is ambiguous.
 - Real coding agents (opencode, Claude Code, …) run only inside the Docker sandbox (`tools/staging/agent-sandbox*`): only the agent's clone mounted, a throwaway HOME, no host git config, `gh`, SSH or credentials, a fail-closed cwd/origin check, and a before/after check that the host checkout and every remote are unchanged. Never run them on the host.
 - Performance work: write the request budget first, put new paths behind a switch, bench with the 1,000-writer burst and real-history repos, at least 3 runs, server-side timing, min/median/max.
 
