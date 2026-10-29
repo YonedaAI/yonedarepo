@@ -23,7 +23,7 @@
 //   ranges) and 15 minutes;
 // - Worker isolate 128 MB (a 64 MiB push is verified in memory); 50,000 subrequests;
 // - repository DO SQLite 10 GB (bundle index rows, commit records and path changes grow
-//   with objects and commits); stored clone packs (PACK_CACHE) in 8 MiB parts, 4 per repo.
+//   with objects and commits); stored clone packs (PACK_CACHE) in 5 MiB parts, 4 per repo.
 // Request budget per op (server side): push = receive + one bundle put per batch + one
 // index call per 5,000 objects + commit records; clone = access + walk + one locate per
 // 2,000 ids + ranged bundle reads (or one GET of a stored pack); search = plan + one GET per
