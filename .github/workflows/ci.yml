@@ -34,6 +34,7 @@ jobs:
             target
           key: rust-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
           restore-keys: rust-${{ runner.os }}-
+      - run: cargo xtask layers
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
