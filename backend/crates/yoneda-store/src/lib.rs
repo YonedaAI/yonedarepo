@@ -15,6 +15,7 @@
 use serde_json::Value;
 use yoneda_core::{Error, Result};
 
+pub mod counted;
 #[cfg(feature = "native")]
 pub mod native;
 
