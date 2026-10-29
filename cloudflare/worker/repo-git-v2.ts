@@ -90,7 +90,20 @@ async function serveFetch(
     shallow: walked.shallow,
     unshallow: walked.unshallow,
   });
-  const session = UploadSession.open({ ...walked, omit_blobs: request.omit_blobs });
   const commits = (walked.commits as Json[]).map((c) => String(c.commit));
-  return sendPack(fromBase64(head.body_b64), session, objects, CHUNK, stats, commits);
+  const full =
+    request.haves.length === 0 &&
+    !request.omit_blobs &&
+    request.depth == null &&
+    request.shallows.length === 0 &&
+    !request.deepen_relative;
+  return sendPack(
+    fromBase64(head.body_b64),
+    () => UploadSession.open({ ...walked, omit_blobs: request.omit_blobs }),
+    objects,
+    CHUNK,
+    stats,
+    commits,
+    { full, wants: request.wants },
+  );
 }
