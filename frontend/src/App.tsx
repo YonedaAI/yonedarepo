@@ -7,6 +7,7 @@ import { X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { AccountSettings } from './features/account-settings/AccountSettings';
 import { VerifyEmailPage } from './features/account-settings/VerifyEmailPage';
+import { AgentsRoot } from './features/agents/AgentsRoot';
 import { ExplorePage } from './features/explore/ExplorePage';
 import { AppRail } from './features/shell/AppRail';
 import { AppSidebar } from './features/shell/AppSidebar';
@@ -24,7 +25,7 @@ import { DevicePage } from './features/source-platform/DevicePage';
 import { OrgPage } from './features/source-platform/OrgPage';
 import type { OrgSummary } from './features/source-platform/orgModel';
 import { RepoPage } from './features/source-platform/RepoPage';
-import { routeRepo } from './features/source-platform/sourceRoute';
+import { isAgentsRoute, routeRepo } from './features/source-platform/sourceRoute';
 import { useSource } from './features/source-platform/useSource';
 import {
   type AuthResult,
@@ -139,9 +140,11 @@ export function App() {
                 ? 'Confirm your email'
                 : route.view === 'org'
                   ? route.org
-                  : gone
-                    ? 'Repository not found'
-                    : (row?.name ?? loaded?.name ?? repo ?? '');
+                  : isAgentsRoute(route)
+                    ? 'Agents'
+                    : gone
+                      ? 'Repository not found'
+                      : (row?.name ?? loaded?.name ?? repo ?? '');
   const activityError = activity.error && !/Sign in/.test(activity.error) ? activity.error : '';
   const refresh = () => {
     setTick((t) => t + 1);
@@ -301,6 +304,15 @@ export function App() {
                   navigate({ view: 'settings' });
                   setNotice('Organization deleted.');
                 }}
+              />
+            )}
+            {isAgentsRoute(route) && (
+              <AgentsRoot
+                key={`${tick}:${session.identity?.username ?? ''}`}
+                route={route}
+                account={session.identity?.username}
+                orgs={orgs.data?.orgs ?? []}
+                navigate={navigate}
               />
             )}
             {'repo' in route && (

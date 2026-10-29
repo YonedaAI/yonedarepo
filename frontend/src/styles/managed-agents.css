@@ -1,58 +1,186 @@
-/* Agent tools → Managed (cards, credit meter, runs) and Settings → Plugins. Theme tokens only. */
-.managed-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-  gap: 12px;
-  margin: 12px 0;
+/* The workspace Agents pages (overview cards, agent settings, runs), Settings → Billing and
+   Settings → Plugins. Theme tokens only, so light and dark both work. */
+.agents-root {
+  padding: 28px 32px 48px;
+  min-width: 0;
 }
-.managed-card {
+@media (max-width: 800px) {
+  .agents-root {
+    padding: 16px;
+  }
+}
+.agents-page {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 16px 18px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--surface);
-}
-.managed-card h3 {
-  margin: 0;
-  font-size: 15px;
-}
-.managed-card p {
-  margin: 0;
-}
-.managed-card-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.managed-facts {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 4px 12px;
-  margin: 0;
-  font-size: 13px;
-}
-.managed-facts dt {
-  color: var(--muted);
-}
-.managed-facts dd {
-  margin: 0;
+  gap: 16px;
   min-width: 0;
-  overflow-wrap: anywhere;
 }
-.managed-actions,
-.plugin-actions {
+.agents-toolbar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 16px;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+.agents-toolbar-left,
+.agents-toolbar-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.agents-toolbar-right input[type="search"] {
+  width: min(220px, 100%);
+  padding: 7px 10px;
+}
+.agents-pill {
+  padding: 6px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 500;
+}
+.agents-menu {
+  position: relative;
+}
+.agents-menu summary {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  list-style: none;
+}
+.agents-menu summary::-webkit-details-marker {
+  display: none;
+}
+.agents-menu-list {
+  position: absolute;
+  z-index: 5;
+  top: 100%;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 200px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+.agents-menu-list a {
+  padding: 6px 8px;
+  border-radius: 5px;
+  color: var(--text);
+  text-decoration: none;
+}
+.agents-menu-list a[aria-current="page"] {
+  background: var(--accent-soft);
+}
+.agents-heading {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 500;
+}
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: none;
+}
+.button-link:hover {
+  border-color: var(--blue);
+}
+.button-link.agents-new {
+  color: var(--faint);
+}
+.button-link.agent-enable {
+  background: var(--text);
+  border-color: var(--text);
+  color: var(--bg);
+}
+.agents-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+@media (max-width: 1100px) {
+  .agents-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 640px) {
+  .agents-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.agent-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-2);
+}
+.agent-card h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--text);
+}
+.agent-card p {
+  margin: 0;
+}
+.agent-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.agent-icon-tile {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--text);
+}
+.agent-card-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.agent-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
   margin-top: auto;
 }
-.managed-figure {
-  font-size: 18px;
-  font-weight: 600;
+.agent-usage {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--muted);
 }
 .managed-meter {
   height: 8px;
@@ -68,12 +196,70 @@
 .managed-meter span.spent {
   background: var(--warn);
 }
+.agent-usage .managed-meter {
+  flex: 1;
+  height: 4px;
+}
 .managed-paused {
   padding: 8px 10px;
   border: 1px solid var(--warn-line);
   border-radius: 6px;
   background: var(--warn-soft);
   color: var(--warn);
+}
+.managed-figure {
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--text);
+}
+.managed-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 0;
+  font-size: 14px;
+}
+.managed-facts dt {
+  color: var(--muted);
+}
+.managed-facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.result-tile {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--surface-3);
+}
+.result-tile.tone-good {
+  border-color: var(--success-line);
+  background: var(--success);
+}
+.result-tile.tone-warn {
+  border-color: var(--warn-line);
+  background: var(--warn);
+}
+.result-tile.tone-bad {
+  border-color: var(--danger-line);
+  background: var(--danger);
+}
+.result-tile.tone-empty {
+  border-style: dashed;
+  background: transparent;
+}
+.history-strip {
+  display: flex;
+  gap: 6px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+.history-strip li {
+  display: flex;
 }
 .chip.run-good {
   border-color: var(--success-line);
@@ -89,6 +275,163 @@
   border-color: var(--danger-line);
   background: var(--danger-soft);
   color: var(--danger);
+}
+.agent-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  max-width: 820px;
+  min-width: 0;
+}
+.agent-settings h1 {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 500;
+}
+.agent-settings-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.agent-settings-head p {
+  margin: 2px 0 0;
+}
+.agent-maintained,
+.agents-billing-note {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.agents-billing-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.agents-billing-note p {
+  margin: 0;
+}
+.agent-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+.agent-field textarea {
+  font-family: var(--mono);
+  font-size: 13px;
+}
+.agent-field-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 16px;
+}
+.agent-field-row .agent-field {
+  flex: 1 1 240px;
+}
+.agent-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.agent-fieldset legend {
+  padding: 0 6px;
+  font-weight: 500;
+  color: var(--text);
+}
+.agent-repo-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.agent-repo-tools input {
+  flex: 1 1 200px;
+  padding: 7px 10px;
+}
+.agent-repo-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 260px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+.agent-repo-list label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+.agent-settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 18px;
+}
+.agent-findings {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.agent-findings li {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+.agent-findings p {
+  margin: 6px 0 0;
+}
+.agent-transcript {
+  max-height: 420px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.agent-run-filter a {
+  padding: 6px 12px;
+  color: var(--text);
+  text-decoration: none;
+}
+.agent-run-filter a[aria-current="page"] {
+  background: var(--accent-soft);
+}
+.agent-runs-table .chip {
+  margin-left: 4px;
+}
+.billing-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.plugin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  margin-top: auto;
 }
 .plugin-list {
   list-style: none;
@@ -115,4 +458,8 @@
 .repo-plugins h3 {
   margin: 16px 0 8px;
   font-size: 14px;
+}
+.agent-fieldset > .text-button,
+.agent-settings > .text-button {
+  align-self: flex-start;
 }
