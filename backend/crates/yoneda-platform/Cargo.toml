@@ -26,3 +26,5 @@ oxc_span = "0.155.0"
 
 [dev-dependencies]
 yoneda-store = { workspace = true, features = ["native"] }
+# The differential tests' oracle (repo_store/tests/differential.rs).
+yoneda-refmodel.workspace = true

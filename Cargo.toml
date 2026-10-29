@@ -1,5 +1,5 @@
 [workspace]
-members = ["backend/crates/yoneda-core", "backend/crates/yoneda-store", "backend/crates/yoneda-platform", "backend/crates/yoneda-cloudflare", "backend/crates/yoneda-worker", "backend/crates/yoneda-runtime", "backend/crates/yoneda-cli", "xtask"]
+members = ["backend/crates/yoneda-core", "backend/crates/yoneda-store", "backend/crates/yoneda-platform", "backend/crates/yoneda-cloudflare", "backend/crates/yoneda-worker", "backend/crates/yoneda-runtime", "backend/crates/yoneda-cli", "backend/crates/yoneda-refmodel", "xtask"]
 exclude = ["fixtures/retry-client"]
 resolver = "2"
 
@@ -19,6 +19,7 @@ yoneda-core = { path = "backend/crates/yoneda-core" }
 yoneda-store = { path = "backend/crates/yoneda-store" }
 yoneda-platform = { path = "backend/crates/yoneda-platform" }
 yoneda-cloudflare = { path = "backend/crates/yoneda-cloudflare" }
+yoneda-refmodel = { path = "backend/crates/yoneda-refmodel" }
 
 [profile.release]
 lto = true
