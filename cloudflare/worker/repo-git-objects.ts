@@ -45,8 +45,9 @@ export const overBudget = (what: string) =>
 const VERIFY_READS = 16;
 /** Groups read while the one before them is written into the pack. */
 const READ_AHEAD = 2;
-/** Tree bytes a walk keeps from the ranges it read beyond the trees it asked for. */
-const SEEN_BYTES = 32 * 1024 * 1024;
+/** Tree bytes a walk keeps from the ranges it read beyond the trees it asked for (mutable
+ * only so tests can shrink it). */
+export const SEEN = { bytes: 32 * 1024 * 1024 };
 /** Commits the upload session walks together (platform_git_upload.rs WAVE_COMMITS): a
  * walk of more waves comes back to bundles it read, for trees an earlier wave dropped. */
 const WAVE_COMMITS = 256;
@@ -155,11 +156,15 @@ export async function treeFor(objects: RepoObjects, id: string): Promise<Json> {
 }
 
 /** Trees a walk has read, by id: with each round's trees, every other tree in the ranges
- * read for them (up to `SEEN_BYTES`), where later rounds find most of theirs unread. They
- * stay for the whole fetch: the session drops its own past TREE_BYTES, a wave's diffs
- * read trees earlier waves used, and the sending pass walks every wave again. */
+ * read for them, where later rounds find most of theirs unread. They stay for the whole
+ * fetch while they fit `SEEN.bytes` (the session drops its own past TREE_BYTES, a wave's
+ * diffs read trees earlier waves used, and the sending pass walks every wave again); past
+ * it the least recently used leave. A walk moves through history and a push's trees lie
+ * in commit order, so the newest ranges hold the next rounds' trees: a memory that kept
+ * the first 32 MiB and refused the rest made svelte's walk (150 MiB of trees) read its
+ * ranges again every round, 1,903 MiB in 1,784 reads. */
 export class SeenTrees {
-  readonly trees = new Map<string, Uint8Array>();
+  private readonly trees = new Map<string, Uint8Array>();
   private bytes = 0;
   /** Reads per bundle, and the file bytes and other bytes they held. */
   private readonly bundles = new Map<string, { reads: number; files: number; others: number }>();
@@ -181,10 +186,25 @@ export class SeenTrees {
   keep = (kind: string, id: string, data: Uint8Array, bundle: string) => {
     const b = this.bundles.get(bundle);
     if (b) b[kind === 'blob' ? 'files' : 'others'] += data.length;
-    if (kind !== 'tree' || this.trees.has(id) || this.bytes + data.length > SEEN_BYTES) return;
+    if (kind !== 'tree' || this.trees.has(id) || data.length > SEEN.bytes) return;
     this.trees.set(id, data.slice());
     this.bytes += data.length;
+    for (const [old, kept] of this.trees) {
+      if (this.bytes <= SEEN.bytes) break;
+      this.trees.delete(old);
+      this.bytes -= kept.length;
+    }
   };
+
+  /** A kept tree, now the most recently used. */
+  get(id: string) {
+    const data = this.trees.get(id);
+    if (data) {
+      this.trees.delete(id);
+      this.trees.set(id, data);
+    }
+    return data;
+  }
 }
 
 /** Trees `ids` for a walk: those `seen` holds, bundled ones in a few ranged reads (with
@@ -201,7 +221,7 @@ export async function gather(
   const raw = new Map<string, Uint8Array>();
   const asked: string[] = [];
   for (const id of ids) {
-    const data = seen?.trees.get(id);
+    const data = seen?.get(id);
     if (data) raw.set(id, data);
     else asked.push(id);
   }
