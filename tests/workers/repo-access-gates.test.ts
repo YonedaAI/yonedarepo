@@ -7,9 +7,9 @@
 // Counts are of R2 reads in local workerd. Gates marked `it.fails` are known-failing: each
 // names today's measured ratio and its target, and starts passing (so failing as
 // `it.fails`) once a fix meets the target.
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { blob, commitObject, fetchTimed, objectReads, pushHistory, type Raw, sorted, tree } from './pushed-history';
-import { api, usePlatformFixture } from './repo-fixture';
+import { api, scoped, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -147,6 +147,30 @@ it('blame reads the versions of its file, not the history around them', async ()
     bounded.push(within(`blame log.txt, ${commits} commits`, read, frames(history.logs)));
   }
   expect(bounded).toEqual([true, true]);
+});
+
+it('blame reads small versions six at a time, not three', async () => {
+  const { cookie, repo } = await pushed('gate_blame_width', 60);
+  let open = 0;
+  let most = 0;
+  const get = scoped.OBJECTS.get.bind(scoped.OBJECTS);
+  const spy = vi.spyOn(scoped.OBJECTS, 'get').mockImplementation((async (key: string, options?: R2GetOptions) => {
+    if (!key.includes('/bundles/')) return get(key, options as any);
+    open++;
+    most = Math.max(most, open);
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      return await get(key, options as any);
+    } finally {
+      open--;
+    }
+  }) as any);
+  try {
+    expect((await api(`/repos/${repo}/blame?path=log.txt`, { cookie }, {})).body.versions).toBe(60);
+  } finally {
+    spy.mockRestore();
+  }
+  expect(most).toBeGreaterThanOrEqual(6);
 });
 
 it('search reads the head, not the history', async () => {
