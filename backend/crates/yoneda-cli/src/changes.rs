@@ -5,8 +5,7 @@ use crate::error::{Error, Result};
 use crate::git::Git;
 use base64::Engine;
 use serde_json::{Value, json};
-
-const ZERO: &str = "0000000000000000000000000000000000000000";
+use yoneda_core::git_object::{FileMode, ObjectId, PathChange};
 
 /// One path's change. `old_blob` is the parent's blob (the platform's `expect`
 /// precondition), `None` when the path was absent.
@@ -65,18 +64,27 @@ impl Change {
         }
     }
 
-    /// The `git update-index -z --index-info` record that applies this change.
-    pub fn index_info(&self) -> Vec<u8> {
-        let record = match &self.target {
+    /// This change as a tree edit (a delete has no target).
+    pub fn path_change(&self) -> Result<PathChange> {
+        let target = match &self.target {
             Target::Write {
                 blob, executable, ..
             } => {
-                let mode = if *executable { "100755" } else { "100644" };
-                format!("{mode} {blob}\t{}\0", self.path)
+                let mode = if *executable {
+                    FileMode::Executable
+                } else {
+                    FileMode::Blob
+                };
+                let id = ObjectId::parse(blob)
+                    .map_err(|e| Error::new(format!("{}: {}", self.path, e.message)))?;
+                Some((mode, id))
             }
-            Target::Delete => format!("0 {ZERO}\t{}\0", self.path),
+            Target::Delete => None,
         };
-        record.into_bytes()
+        Ok(PathChange {
+            path: self.path.clone(),
+            target,
+        })
     }
 }
 
@@ -286,7 +294,7 @@ mod tests {
         let gitlink = RawEntry {
             old_mode: "000000".into(),
             new_mode: "160000".into(),
-            old_blob: ZERO.into(),
+            old_blob: "0".repeat(40),
             new_blob: "1".repeat(40),
             path: "vendor/lib".into(),
         };
@@ -296,7 +304,7 @@ mod tests {
     }
 
     #[test]
-    fn index_records_rebuild_the_commit_tree() -> Result<()> {
+    fn path_changes_rebuild_the_commit_tree() -> Result<()> {
         let repo = Repo::new()?;
         repo.write("a.txt", b"a\n")?;
         repo.write("b/c.txt", b"c\n")?;
@@ -306,9 +314,12 @@ mod tests {
         repo.write("d/é.txt", b"d\n")?;
         let commit = repo.commit("work")?;
         let changes = between(&repo.git, &parent, &commit)?;
-        let info: Vec<u8> = changes.iter().flat_map(Change::index_info).collect();
+        let edits = changes
+            .iter()
+            .map(Change::path_change)
+            .collect::<Result<Vec<_>>>()?;
         assert_eq!(
-            repo.git.tree_with(&parent, &info)?,
+            crate::git::Trees::new(&repo.git).with(&parent, &edits)?,
             repo.git.tree_of(&commit)?
         );
         Ok(())

@@ -379,6 +379,183 @@ fn session_records_carry_fetch_efficiency(w: &World) -> TestResult {
     )
 }
 
+/// A repository with 240 historical blobs: `keep/` (two files) and `far/d0..d3/` (ten
+/// files each), then six commits that each rewrite every `far/` file.
+fn long_history(w: &World) -> TestResult<(String, String)> {
+    let far = |round: usize| -> Vec<(String, String)> {
+        (0..4)
+            .flat_map(|d| (0..10).map(move |f| (d, f)))
+            .map(|(d, f)| (format!("far/d{d}/f{f}.txt"), format!("{d}.{f} v{round}\n")))
+            .collect()
+    };
+    let mut seed = vec![
+        ("keep/a.txt".to_owned(), "a\n".to_owned()),
+        ("keep/b.txt".to_owned(), "b\n".to_owned()),
+    ];
+    seed.extend(far(0));
+    let files: Vec<(&str, &str)> = seed.iter().map(|(p, t)| (p.as_str(), t.as_str())).collect();
+    let (repo, token) = w.platform.repo(&files)?;
+    for round in 1..=6 {
+        let changed = far(round);
+        let files: Vec<(&str, &str)> = changed
+            .iter()
+            .map(|(p, t)| (p.as_str(), t.as_str()))
+            .collect();
+        w.platform.other_writer(&repo, &files)?;
+    }
+    Ok((repo, token))
+}
+
+/// Lazy clones edit one file and push: the push reads no other blob (none of the tip's
+/// files outside the cone, none of the history) and fetches nothing. `part` is `yoneda clone
+/// --sparse` (no trees outside the cone); `cone` is the real-user agents' clone (`git clone
+/// --no-checkout`, then Git's cone sparse-checkout: every tree, no blob outside the cone).
+fn push_from_a_sparse_clone_fetches_nothing(w: &World, repo: &str, c: &Client) -> TestResult {
+    let origin = w.proxy.origin.clone();
+    c.ok(
+        &c.home,
+        &[
+            "clone", repo, "part", "--sparse", "keep", "--origin", &origin,
+        ],
+    )?;
+    let url = w.url(repo);
+    c.git(&c.home, &["clone", "-q", "--no-checkout", &url, "cone"])?;
+    let cone = c.home.join("cone");
+    c.git(
+        &cone,
+        &["sparse-checkout", "set", "--cone", "--sparse-index", "keep"],
+    )?;
+    c.git(&cone, &["switch", "-q", "-c", "work", "origin/main"])?;
+    for name in ["cone", "part"] {
+        let dir = c.home.join(name);
+        check(
+            blobs(&dir) == 2,
+            &format!("{name}: the clone fetched {} blobs", blobs(&dir)),
+        )?;
+        let text = format!("a edited in {name}\n");
+        c.commit(&dir, "edit one file", &[("keep/a.txt", &text)])?;
+        let before = fetched(&dir);
+        let branch = format!("HEAD:refs/heads/edit-{name}");
+        let pushed = c.git_output(&dir, &["push", "origin", &branch])?;
+        check(
+            pushed.status.success(),
+            &format!("{name}: push: {}", String::from_utf8_lossy(&pushed.stderr)),
+        )?;
+        // Nothing arrived: no blob, and no tree outside the cone.
+        check(
+            fetched(&dir) == before,
+            &format!(
+                "{name}: the push fetched {:?} after {before:?}",
+                fetched(&dir)
+            ),
+        )?;
+        let edited = w.platform.owner_call(
+            "GET",
+            &format!("/repos/{repo}/blob?ref=edit-{name}&path=keep/a.txt"),
+            None,
+        )?;
+        check(
+            edited["content"] == text.as_str(),
+            &format!("{name}: edited on the platform: {edited}"),
+        )?;
+    }
+    Ok(())
+}
+
+/// A commit (built with plumbing, so the person's Git never reads the blob) copies a file
+/// from outside the cone into it: the push fetches exactly that blob, and sends it.
+fn push_of_an_unread_blob_fetches_only_it(w: &World, repo: &str, c: &Client) -> TestResult {
+    let dir = c.home.join("part");
+    c.git(&dir, &["checkout", "-q", "-b", "moved", "origin/main"])?;
+    let blob = c.git(&dir, &["rev-parse", "HEAD:far/d2/f7.txt"])?;
+    check(!holds(&dir, &blob)?, "the moved blob is not fetched yet")?;
+    c.git(
+        &dir,
+        &[
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            &format!("100644,{blob},keep/moved.txt"),
+        ],
+    )?;
+    let tree = c.git(&dir, &["write-tree", "--missing-ok"])?;
+    let commit = c.git(
+        &dir,
+        &[
+            "commit-tree",
+            &tree,
+            "-p",
+            "HEAD",
+            "-m",
+            "copy an unread file",
+        ],
+    )?;
+    c.git(&dir, &["update-ref", "HEAD", &commit])?;
+    check(!holds(&dir, &blob)?, "committing did not fetch the blob")?;
+    let before = blobs(&dir);
+    let pushed = c.git_output(&dir, &["push", "origin", "HEAD:refs/heads/moved"])?;
+    check(
+        pushed.status.success(),
+        &format!("push: {}", String::from_utf8_lossy(&pushed.stderr)),
+    )?;
+    check(
+        blobs(&dir) == before + 1,
+        &format!("the push fetched {} blobs", blobs(&dir) - before),
+    )?;
+    let moved = w.platform.owner_call(
+        "GET",
+        &format!("/repos/{repo}/blob?ref=moved&path=keep/moved.txt"),
+        None,
+    )?;
+    check(
+        moved["content"] == "2.7 v6\n",
+        &format!("moved on the platform: {moved}"),
+    )
+}
+
+/// Fifty historical blobs, each fetched alone by Git's lazy fetch through the helper.
+fn single_blob_fetches_are_reliable(w: &World, repo: &str, c: &Client) -> TestResult {
+    c.git(
+        &c.home,
+        &["clone", "-q", "--no-checkout", &w.url(repo), "fifty"],
+    )?;
+    let dir = c.home.join("fifty");
+    let listed = c.git(&dir, &["rev-list", "--objects", "--missing=print", "--all"])?;
+    let ids: Vec<&str> = listed
+        .lines()
+        .filter_map(|l| l.strip_prefix('?'))
+        .take(50)
+        .collect();
+    check(ids.len() == 50, &format!("{} absent blobs", ids.len()))?;
+    for (n, id) in ids.iter().enumerate() {
+        let out = c.git_output(&dir, &["cat-file", "-p", id])?;
+        check(
+            out.status.success() && holds(&dir, id)?,
+            &format!(
+                "lazy fetch {n} of {id}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            ),
+        )?;
+    }
+    check(
+        blobs(&dir) == 50,
+        &format!("fifty fetches brought {} blobs", blobs(&dir)),
+    )
+}
+
+#[test]
+#[ignore = "starts the local platform under workerd: cargo test -p yoneda-cli --test lazy -- --include-ignored"]
+fn lazy_pushes_send_only_their_own_commits() -> TestResult {
+    let platform = Platform::start()?;
+    let proxy = Proxy::start(&platform.origin)?;
+    let w = World { platform, proxy };
+    let (repo, token) = long_history(&w)?;
+    let c = w.client("push", &token)?;
+    push_from_a_sparse_clone_fetches_nothing(&w, &repo, &c).map_err(|e| format!("edit: {e}"))?;
+    push_of_an_unread_blob_fetches_only_it(&w, &repo, &c).map_err(|e| format!("move: {e}"))?;
+    single_blob_fetches_are_reliable(&w, &repo, &c).map_err(|e| format!("fifty: {e}"))
+}
+
 #[test]
 #[ignore = "starts the local platform under workerd: cargo test -p yoneda-cli --test lazy -- --include-ignored"]
 fn lazy_clones_fetch_only_what_git_needs() -> TestResult {
