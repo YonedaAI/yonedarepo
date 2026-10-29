@@ -28,6 +28,8 @@ export type SourceRoute =
   | { view: 'explore' }
   | { view: 'settings' }
   | { view: 'device'; code: string }
+  /** The contact email's confirmation page (the emailed link; its button confirms). */
+  | { view: 'verify-email'; account: string; token: string }
   | { view: 'org'; org: string }
   | { view: 'site'; site: SitePage }
   | { view: 'files'; repo: string; path: string; ref: string; at?: number }
@@ -77,6 +79,12 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
   const [root, repo, view, ...rest] = parts;
   if (root === 'device')
     return { view: 'device', code: normalizeUserCode(params.get('code') ?? '') };
+  if (root === 'verify-email' && !repo)
+    return {
+      view: 'verify-email',
+      account: params.get('account') ?? '',
+      token: params.get('token') ?? '',
+    };
   if (root === 'settings' && !repo) return { view: 'settings' };
   if (root === 'repositories' && !repo) return { view: 'repositories' };
   if (root === 'orgs' && repo && ORG_NAME.test(repo) && !view) return { view: 'org', org: repo };
@@ -136,6 +144,8 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'site') return formatSitePage(route.site);
   if (route.view === 'device')
     return route.code ? `/device?code=${encodeURIComponent(route.code)}` : '/device';
+  if (route.view === 'verify-email')
+    return `/verify-email?account=${encodeURIComponent(route.account)}&token=${encodeURIComponent(route.token)}`;
   const base = `/source/${route.repo}`;
   if (route.view === 'history')
     return route.ref === 'main'

@@ -3,8 +3,8 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { withWaitUntil } from './background';
 import { frontFetch } from './front-routes';
+import { queueWelcome, verifyEmail } from './platform-email-verify';
 import { platformJob } from './platform-entrypoint';
-import { queueWelcome } from './platform-welcome-email';
 import { repoApi } from './repo-api';
 import type { Env, Envelope } from './types';
 
@@ -21,6 +21,9 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
   /** The platform's account-created method (account-email.ts reaches it over SELF). */
   accountCreated(account: string) {
     return queueWelcome(this.env, account);
+  }
+  verifyEmail(account: string, change?: string) {
+    return verifyEmail(this.env, account, change);
   }
   async queue(batch: MessageBatch<Envelope>) {
     await Promise.all(

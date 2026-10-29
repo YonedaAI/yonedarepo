@@ -1,0 +1,14 @@
+Confirm your email
+
+Open the link and press Confirm to use this address for your YonedaRepo account. The link works once, for 24 hours.
+https://yonedarepo.com/verify-email?account=ada&token=abababababababababababababababababababababababababababababababab
+
+If you didn't ask for this, ignore this email: nothing changes until the link is used.
+
+Questions or feedback? Reply to this email or write to hello@yonedarepo.com.
+
+The YonedaRepo team at Yoneda Labs
+
+--
+You're getting this because someone asked to use this address for a YonedaRepo account at https://yonedarepo.com. If it wasn't you, ignore it or tell us at hello@yonedarepo.com.
+Yoneda Labs
