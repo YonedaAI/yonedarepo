@@ -118,13 +118,17 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
         .to_string()
     };
     match rng.below(100) {
-        20..23 => Op::Publish,
+        20..22 => Op::Publish,
+        22..23 => Op::Project,
         23..30 if repo.shard.is_empty() || rng.below(5) < 3 => {
             let path = rng.pick(&PATHS).to_string();
+            // Sometimes on the last shard commit, as a client's next commit builds on its own.
+            let on = (!repo.shard.is_empty() && rng.below(4) == 0).then(|| repo.shard.len() - 1);
             Op::ShardCommit {
                 content: format!("{path} from the shard at step {step}\n"),
                 path,
                 read: rng.below(3) == 0,
+                on,
             }
         }
         23..30 => {
@@ -133,7 +137,11 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
             let picks = (0..1 + rng.below(3))
                 .map(|_| repo.shard.len() - 1 - rng.below(recent))
                 .collect();
-            Op::Submit { picks }
+            Op::Submit {
+                picks,
+                chained: rng.below(2) == 0,
+                project: rng.below(3) != 0,
+            }
         }
         0..6 => {
             let branch = rng.pick(&existing).to_string();

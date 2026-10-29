@@ -11,6 +11,12 @@ impl Driver {
         if self.fork.borrow().is_some() {
             return Seen::Already;
         }
+        if let Err(e) = self
+            .h
+            .run(super::super::AGENT, json!({"op":"repo_fork_source"}))
+        {
+            return Seen::Refused(e.code);
+        }
         *self.fork.borrow_mut() = Some(fork(&self.h));
         Seen::Done
     }
@@ -59,7 +65,11 @@ impl Driver {
         let Some(f) = fork.as_ref() else {
             return Seen::Refused("NOT_FOUND".into());
         };
-        let tips: Vec<Value> = self.h.ok(OWNER, json!({"op":"repo_refs"}))["refs"]
+        let refs = match self.h.run(OWNER, json!({"op":"repo_refs"})) {
+            Err(e) => return Seen::Refused(e.code),
+            Ok(refs) => refs,
+        };
+        let tips: Vec<Value> = refs["refs"]
             .as_object()
             .map(|refs| refs.values().cloned().collect())
             .unwrap_or_default();

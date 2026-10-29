@@ -52,12 +52,18 @@ impl Repo {
     }
 
     pub(crate) fn access(&self, caller: &Caller, access: Access) -> Outcome {
-        match self.member(caller) {
+        let allowed = match self.member(caller) {
             None if self.public && access != Access::Push => Outcome::Done,
             None => self.outsider(caller),
             Some(Some(Role::Read)) if access == Access::Push => Outcome::Refused("FORBIDDEN"),
             Some(_) => Outcome::Done,
+        };
+        // Reading the refs waits for the projector once access is granted.
+        let reads_refs = matches!(access, Access::Refs | Access::Log);
+        if allowed == Outcome::Done && reads_refs && !self.unprojected.is_empty() {
+            return Outcome::Refused("PROJECTION_PENDING");
         }
+        allowed
     }
 
     /// `repo_set_visibility`, the owner's account only.

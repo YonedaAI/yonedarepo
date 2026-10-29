@@ -33,7 +33,9 @@ enum Seen {
     Batch(Vec<u64>, Vec<(u64, String)>, Option<String>),
     /// A submission: each member's status and version or ticket (or failure code), and
     /// main's head after projection.
-    Submitted(Vec<(String, Value)>, String),
+    Submitted(Vec<(String, Value)>, Vec<String>),
+    /// The commits a projector run made, oldest first.
+    Projected(Vec<String>),
     Refused(String),
 }
 
@@ -185,8 +187,17 @@ impl Driver {
                 path,
                 content,
                 read,
-            } => (self.shard_commit(path, content, *read), None),
-            Op::Submit { picks } => (self.submit(picks), None),
+                on,
+            } => (self.shard_commit(path, content, *read, *on), None),
+            Op::Submit {
+                picks,
+                chained,
+                project,
+            } => (self.submit(picks, *chained, *project), None),
+            Op::Project => {
+                self.h.project_all();
+                (Seen::Projected(self.made_by_projection()), None)
+            }
             Op::Fork => (self.fork_repo(), None),
             Op::ForkCommit { path, content } => (self.fork_commit(path, content), None),
             Op::Carry => (self.carry(), None),
@@ -298,18 +309,13 @@ impl Driver {
                 }
             }
             (Seen::Queued(ticket), Outcome::Queued(model)) if ticket == model => {}
-            (Seen::Submitted(items, head), Outcome::Submitted(model))
+            (Seen::Submitted(items, made), Outcome::Submitted(model))
                 if items.len() == model.items.len()
                     && items.iter().zip(&model.items).all(|(s, m)| same_item(s, m)) =>
             {
-                if let Some(made) = model.projected {
-                    if made != self.ids.len() {
-                        return Err(format!("projected {made}, expected {}", self.ids.len()));
-                    }
-                    self.ids.push(head.clone());
-                    self.same_files(made)?;
-                }
+                self.map_made(made, &model.projected)?;
             }
+            (Seen::Projected(made), Outcome::Projected(model)) => self.map_made(made, model)?,
             (Seen::Moved, Outcome::Moved)
             | (Seen::Already, Outcome::Already)
             | (Seen::Done, Outcome::Done) => {}
@@ -319,9 +325,37 @@ impl Driver {
         self.same_refs()
     }
 
+    /// Numbers the commits projection made (oldest first) as the model's `model` and
+    /// checks their files.
+    fn map_made(&mut self, made: &[String], model: &[CommitId]) -> std::result::Result<(), String> {
+        if made.len() != model.len() {
+            return Err(format!("projection made {made:?}, model {model:?}"));
+        }
+        for (id, number) in made.iter().zip(model) {
+            if *number != self.ids.len() {
+                return Err(format!("projected {number}, expected {}", self.ids.len()));
+            }
+            self.ids.push(id.clone());
+            self.same_files(*number)?;
+        }
+        Ok(())
+    }
+
     /// The platform's branches and tags and version are the model's.
     fn same_refs(&self) -> std::result::Result<(), String> {
-        let listed = self.h.ok(OWNER, json!({"op":"repo_refs"}));
+        // Between a landing and its projection, reading refs is refused.
+        let listed = match self.h.run(OWNER, json!({"op":"repo_refs"})) {
+            Err(e) if e.code == "PROJECTION_PENDING" && !self.model.unprojected.is_empty() => {
+                return self.same_fork();
+            }
+            Err(e) => return Err(format!("repo_refs: {e}")),
+            Ok(_) if !self.model.unprojected.is_empty() => {
+                return Err(
+                    "repo_refs answered while the model holds changesets unprojected".into(),
+                );
+            }
+            Ok(listed) => listed,
+        };
         let refs: BTreeMap<String, String> = listed["refs"]
             .as_object()
             .into_iter()
@@ -399,6 +433,10 @@ fn label(op: &Op, outcome: &Outcome) -> String {
         Outcome::Committed(_) => format!("{kind} Committed"),
         Outcome::Rebased(_) => format!("{kind} Rebased"),
         Outcome::Queued(_) => format!("{kind} Queued"),
+        Outcome::Projected(made) => format!(
+            "{kind} {}",
+            if made.is_empty() { "nothing" } else { "made" }
+        ),
         Outcome::Submitted(submitted) => {
             let mut kinds: Vec<&str> = submitted
                 .items
@@ -409,6 +447,7 @@ fn label(op: &Op, outcome: &Outcome) -> String {
                     Item::Deferred => "deferred",
                     Item::Queued(_) => "queued",
                     Item::Failed(_) => "failed",
+                    Item::NeedChain => "need_chain",
                 })
                 .collect();
             kinds.sort();
@@ -435,6 +474,7 @@ fn same_item((status, detail): &(String, Value), item: &Item) -> bool {
         Item::Deferred => status == "deferred",
         Item::Queued(t) => status == "queued" && detail == &json!(t),
         Item::Failed(code) => status == "failed" && detail == code,
+        Item::NeedChain => status == "need_chain",
     }
 }
 
@@ -460,10 +500,17 @@ fn done(result: yoneda_core::Result<Value>) -> Seen {
 
 /// A plan kind as the model's static names (the platform's set is small and fixed).
 fn leak(kind: &str) -> &'static str {
-    ["fast_forward", "stale", "rebase", "merge", "conflict"]
-        .into_iter()
-        .find(|k| *k == kind)
-        .unwrap_or("unknown")
+    [
+        "fast_forward",
+        "stale",
+        "rebase",
+        "merge",
+        "conflict",
+        "PROJECTION_PENDING",
+    ]
+    .into_iter()
+    .find(|k| *k == kind)
+    .unwrap_or("unknown")
 }
 
 /// Runs `steps` generated operations from `seed`, then the Git checks; answers the tally.
@@ -478,6 +525,10 @@ fn case(seed: u64, steps: usize) -> std::result::Result<BTreeMap<String, usize>,
             .step(&op)
             .map_err(|e| format!("seed {seed}, step {step}, {op:?}: {e}\nops: {ops:#?}"))?;
     }
+    // The projector catches up before Git reads the repository.
+    driver
+        .step(&Op::Project)
+        .map_err(|e| format!("seed {seed}, final projection: {e}"))?;
     git::check(&driver).map_err(|e| format!("seed {seed}, git: {e}"))?;
     Ok(driver.tally)
 }

@@ -27,6 +27,10 @@ impl Repo {
         if self.fork.is_some() {
             return Outcome::Already;
         }
+        // The fork job starts from the parent's refs, refused until projected.
+        if !self.unprojected.is_empty() {
+            return Outcome::Refused("PROJECTION_PENDING");
+        }
         let refs: BTreeMap<String, CommitId> = self.refs.clone();
         self.fork = Some(Fork {
             version: refs.len() as u64,
@@ -93,6 +97,10 @@ impl Repo {
         let Some(fork) = &self.fork else {
             return Outcome::Refused("NOT_FOUND");
         };
+        // The carry starts from the parent's refs, refused until projected.
+        if !self.unprojected.is_empty() {
+            return Outcome::Refused("PROJECTION_PENDING");
+        }
         let Some(head) = fork.refs.get(FEATURE).copied() else {
             return Outcome::Refused("NOT_FOUND");
         };
