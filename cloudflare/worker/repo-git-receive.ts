@@ -46,6 +46,8 @@ const WRITE_BUDGET = 4 * 1024 * 1024;
 /** Body bytes fed to the session at once: what it holds of a spilled file's pack bytes. */
 const FEED_BYTES = 1024 * 1024;
 const RECORD_COMMITS = 100;
+/** Verified commits the session lists at once (each with its touches and objects). */
+const VERIFIED_PAGE = 25;
 const WRITES = 64;
 
 export async function receivePack(
@@ -194,7 +196,6 @@ async function store(
     } else verified = step;
   }
   if (!verified) throw new ApiError('INVALID_INPUT', 'Directories are nested too deeply');
-  messages.push(...largeWarnings(files.stored, verified.commits as Json[]));
   let frames = session.objects(WRITE_BUDGET);
   let batch = framed(frames);
   const bytes = batch.reduce((n, o) => n + o.data.length, 0);
@@ -213,21 +214,29 @@ async function store(
     frames = session.objects(WRITE_BUDGET);
     batch = framed(frames);
   }
-  const commits: Json[] = (verified.commits as Json[]).map((c) => ({
-    ...c,
-    ...(staged
-      ? { objects: (c.objects as Json[]).map((o) => ({ ...o, data_b64: data.get(o.id) })) }
-      : {}),
-    check: tips.includes(c.commit),
-    ...(tips.includes(c.commit) && reads.length > 0 ? { read_set: reads } : {}),
-  }));
   const runs: Json[] = [];
+  const fresh = new Set<string>();
   let drain = false;
-  for (let i = 0; i < commits.length; i += RECORD_COMMITS) {
+  // The verified commits come a page at a time (the session holds them), recorded in
+  // batches of RECORD_COMMITS.
+  for (let i = 0; i < verified.verified; i += RECORD_COMMITS) {
+    const listed: Json[] = [];
+    for (let at = i; at < Math.min(i + RECORD_COMMITS, verified.verified); at += VERIFIED_PAGE)
+      listed.push(...session.call({ op: 'verified', from: at, count: VERIFIED_PAGE }).commits);
+    messages.push(...largeWarnings(files.stored, listed));
+    const commits: Json[] = listed.map((c) => ({
+      ...c,
+      ...(staged
+        ? { objects: (c.objects as Json[]).map((o) => ({ ...o, data_b64: data.get(o.id) })) }
+        : {}),
+      check: tips.includes(c.commit),
+      ...(tips.includes(c.commit) && reads.length > 0 ? { read_set: reads } : {}),
+    }));
+    for (const c of commits) fresh.add(c.commit);
     const recorded = await timed('git.record', () =>
       ctx.call({
         op: 'repo_record_pushed',
-        commits: commits.slice(i, i + RECORD_COMMITS),
+        commits,
         ...(staged ? { staged: true } : {}),
       }),
     );
@@ -241,7 +250,7 @@ async function store(
   if (drain && !deferred(send)) await timed('git.drain', send);
   // Undispatched runs stay queued in the authority and are sent again on request.
   await timed('git.runs', () => dispatchRuns(ctx.env, ctx.repo, runs).catch(() => {}));
-  return new Set(commits.map((c) => c.commit as string));
+  return fresh;
 }
 
 const KINDS = ['', 'commit', 'tree', 'blob'];

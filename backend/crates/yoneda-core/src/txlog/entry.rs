@@ -128,11 +128,56 @@ impl TxEntry {
     }
 }
 
-/// `sha256(previous chain ‖ entry without its own chain)`.
+/// `sha256(previous chain ‖ entry without its own chain)`: the `fingerprint` of
+/// `{"entry": <entry without chain>, "previous": <previous chain>}`, hashed as it is
+/// written, a path at a time. Built as one JSON value (twice: the canonical copy), a
+/// fast-forward of 200 pushed commits (40,000 paths) held about 75 MiB in a 128 MB isolate.
 pub fn chain_digest(previous_chain: &str, entry: &TxEntry) -> Result<String> {
-    let mut body = serde_json::to_value(entry).map_err(|e| invalid(e.to_string()))?;
-    if let Some(object) = body.as_object_mut() {
-        object.remove("chain");
+    use sha2::{Digest, Sha256};
+    let encode = |e: serde_json::Error| invalid(e.to_string());
+    let canonical = |v: &serde_json::Value| crate::canonical(v);
+    // The entry without its paths: a small value, its keys in order.
+    let light = TxEntry {
+        paths: Vec::new(),
+        read_set: entry.read_set.clone(),
+        refname: entry.refname.clone(),
+        actor: entry.actor.clone(),
+        intent_digest: entry.intent_digest.clone(),
+        checkpoint_refs: entry.checkpoint_refs.clone(),
+        chain: String::new(),
+        ..*entry
+    };
+    let body = canonical(&serde_json::to_value(&light).map_err(encode)?)?;
+    let serde_json::Value::Object(fields) = body else {
+        return Err(invalid("An entry is an object"));
+    };
+    let mut hasher = Sha256::new();
+    hasher.update(crate::FINGERPRINT_PREFIX);
+    hasher.update(b"{\"entry\":{");
+    let mut first = true;
+    for (key, value) in fields.iter().filter(|(key, _)| key.as_str() != "chain") {
+        if !first {
+            hasher.update(b",");
+        }
+        first = false;
+        hasher.update(serde_json::to_vec(key).map_err(encode)?);
+        hasher.update(b":");
+        if key == "paths" {
+            hasher.update(b"[");
+            for (i, touch) in entry.paths.iter().enumerate() {
+                if i > 0 {
+                    hasher.update(b",");
+                }
+                let touch = canonical(&serde_json::to_value(touch).map_err(encode)?)?;
+                hasher.update(serde_json::to_vec(&touch).map_err(encode)?);
+            }
+            hasher.update(b"]");
+        } else {
+            hasher.update(serde_json::to_vec(value).map_err(encode)?);
+        }
     }
-    crate::fingerprint(&serde_json::json!({ "previous": previous_chain, "entry": body }))
+    hasher.update(b"},\"previous\":");
+    hasher.update(serde_json::to_vec(previous_chain).map_err(encode)?);
+    hasher.update(b"}");
+    Ok(crate::hex(&hasher.finalize()))
 }

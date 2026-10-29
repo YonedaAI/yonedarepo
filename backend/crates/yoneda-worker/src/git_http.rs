@@ -123,6 +123,10 @@ pub fn git_receive_call(handle: u32, input: &str) -> String {
                 Some("finish") => r.finish(),
                 Some("commands") => Ok(r.commands()),
                 Some("verify") => r.verify(&c),
+                Some("verified") => r.verified_page(
+                    c["from"].as_u64().unwrap_or(0) as usize,
+                    c["count"].as_u64().unwrap_or(0) as usize,
+                ),
                 _ => Err(yoneda_core::Error::new("UNKNOWN_OP", "Unknown receive op")),
             })
         })
