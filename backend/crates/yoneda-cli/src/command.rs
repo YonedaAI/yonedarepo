@@ -129,6 +129,10 @@ pub enum ChangeCommand {
     Land {
         number: u64,
     },
+    /// A closed change and its comments (its author or the owner).
+    Delete {
+        number: u64,
+    },
 }
 
 /// A diff line a comment is anchored to (`side` is `old` or `new`).
