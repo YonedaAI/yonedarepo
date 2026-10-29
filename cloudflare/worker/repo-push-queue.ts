@@ -2,6 +2,8 @@
 // repository at a time (it answers `ERR artifacts_git_receive_pack_busy`), so concurrent
 // commits would fail or wait out one push each. Pushes that arrive while one is in flight
 // leave together as one combined receive-pack, and each caller gets its own ref's report.
+// A push that already carries several refs (a projection's backlog or its carriers'
+// deletes) leaves alone, with its whole report: combining is for single-ref pushes.
 // The queue holds no state worth keeping: callers retry if it is evicted mid-push.
 import { DurableObject } from 'cloudflare:workers';
 import { compute } from './repo-compute';
@@ -17,31 +19,44 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 export type Pushed = { report: Uint8Array; waited_ms: number; sent_ms: number; batch: number };
 type Waiting = {
   body: Uint8Array;
-  ref: string;
+  refs: string[];
   queued: number;
   resolve(pushed: Pushed): void;
   reject(error: unknown): void;
 };
 
-/** The ref named by a single-command receive-pack body this platform built. */
-function refOf(body: Uint8Array) {
-  const length = Number.parseInt(new TextDecoder().decode(body.subarray(0, 4)), 16);
-  const command = new TextDecoder().decode(body.subarray(4, length)).split('\0')[0];
-  return command.trim().split(' ')[2] ?? '';
+/** The refs a receive-pack body this platform built updates (its commands, to the flush). */
+function refsOf(body: Uint8Array) {
+  const refs: string[] = [];
+  for (let at = 0; at + 4 <= body.length; ) {
+    const length = Number.parseInt(new TextDecoder().decode(body.subarray(at, at + 4)), 16);
+    if (!length) break;
+    const command = new TextDecoder().decode(body.subarray(at + 4, at + length)).split('\0')[0];
+    refs.push(command.trim().split(' ')[2] ?? '');
+    at += length;
+  }
+  return refs;
 }
 
-/** Takes the oldest waiting pushes, at most one per ref (Git refuses duplicates). */
+/** Takes the oldest waiting pushes, at most one per ref (Git refuses duplicates); a push of
+ * several refs only alone. */
 function take(waiting: Waiting[]) {
   const batch: Waiting[] = [];
   const refs = new Set<string>();
   let bytes = 0;
   for (let i = 0; i < waiting.length && batch.length < MAX_BATCH; ) {
     const next = waiting[i];
-    if (refs.has(next.ref) || (batch.length > 0 && bytes + next.body.length > MAX_BATCH_BYTES)) {
+    const several = next.refs.length > 1;
+    if (several && batch.length === 0) return waiting.splice(i, 1);
+    if (
+      several ||
+      next.refs.some((ref) => refs.has(ref)) ||
+      (batch.length > 0 && bytes + next.body.length > MAX_BATCH_BYTES)
+    ) {
       i++;
       continue;
     }
-    refs.add(next.ref);
+    for (const ref of next.refs) refs.add(ref);
     bytes += next.body.length;
     batch.push(...waiting.splice(i, 1));
   }
@@ -68,7 +83,7 @@ export class PushBatcher {
   push(remote: string, token: string, body: Uint8Array): Promise<Pushed> {
     this.#remote = { url: remote, token };
     return new Promise((resolve, reject) => {
-      this.#waiting.push({ body, ref: refOf(body), queued: Date.now(), resolve, reject });
+      this.#waiting.push({ body, refs: refsOf(body), queued: Date.now(), resolve, reject });
       if (!this.#draining) void this.#drain();
     });
   }
@@ -95,8 +110,11 @@ export class PushBatcher {
                 batch.length === 1
                   ? report
                   : fromBase64(
-                      compute({ op: 'push_split', report_b64: toBase64(report), refname: w.ref })
-                        .report_b64,
+                      compute({
+                        op: 'push_split',
+                        report_b64: toBase64(report),
+                        refname: w.refs[0],
+                      }).report_b64,
                     ),
               waited_ms: sending - w.queued,
               sent_ms,
