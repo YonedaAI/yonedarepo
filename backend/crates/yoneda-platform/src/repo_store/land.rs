@@ -208,6 +208,7 @@ pub(super) fn append<S: SqlStore>(
         "INSERT INTO refs(name,commit_id,version) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET commit_id=excluded.commit_id,version=excluded.version",
         &[json!(refname), json!(commit.id.hex()), json!(version)],
     )?;
+    super::ref_chain::advance(db, refname, &commit.id)?;
     super::projection::target(db, refname, &commit.id, version, entry.committed_at_ms)?;
     rows::maybe_checkpoint(db, version, &entry.chain)?;
     Ok(

@@ -67,6 +67,7 @@ pub(super) fn move_ref<S: SqlStore>(
         "INSERT INTO refs(name,commit_id,version) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET commit_id=excluded.commit_id,version=excluded.version",
         &[json!(refname), json!(commit.id.hex()), json!(version)],
     )?;
+    super::ref_chain::advance(db, refname, &commit.id)?;
     super::projection::target(db, refname, &commit.id, version, number(c, "now")?)?;
     rows::maybe_checkpoint(db, version, &chain)?;
     Ok(version)
@@ -93,6 +94,7 @@ pub fn delete<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> 
     }
     let (version, chain) = log_move(db, c, &refname, current, None, &refname, principal)?;
     db.query("DELETE FROM refs WHERE name=?", &[json!(refname)])?;
+    super::ref_chain::forget(db, &refname)?;
     rows::maybe_checkpoint(db, version, &chain)?;
     Ok(json!({ "ref": refname, "deleted": true, "version": version }))
 }
