@@ -149,3 +149,10 @@ it('pre-builds search segments after landing so queries find them ready', async 
   const found = await api(`${repo}/search?query=beta`, owner);
   expect(found.body).toMatchObject({ partitions_built: 0, results: [{ path: 'b/y.txt' }] });
 });
+
+it('settles a derive job whose branch was deleted after it was queued', async () => {
+  const { deriveAfterLanding } = await import('../../cloudflare/worker/repo-derived');
+  const { repo } = await setup('derivegone', { required_checks: [], approvals: 0 }, [file('a.txt', 'a\n')]);
+  const job = { v: 1, kind: 'platform_derive', repo_id: repo.split('/').at(-1), job_id: 'refs/heads/scratch-gone' };
+  await expect(deriveAfterLanding(scoped, job as any)).resolves.toBeNull();
+});

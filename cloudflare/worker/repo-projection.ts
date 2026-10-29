@@ -4,7 +4,7 @@
 // exactly what landed: one receive-pack carries every object Artifacts lacks plus the ref
 // update, with the last projected value as an expected-old lease; a refusal is recorded
 // as drift and left for the owner, never forced.
-import { noteBundles, type Wanted } from './repo-bundles';
+import { bundledPlaces, noteBundles, type Wanted } from './repo-bundles';
 import { compute } from './repo-compute';
 import { fromBase64, parseStore, RepoObjects, toBase64 } from './repo-objects';
 import { caller, type Json } from './repo-ops';
@@ -75,8 +75,16 @@ export async function projectObjects(env: Env, repo: string, job = 'objects') {
 
 // Objects per receive-pack: reading each from R2 is a subrequest.
 const PACK_OBJECTS = 400;
+/** Object bytes per receive-pack, where the bundles tell sizes: a pack's objects are held
+ * several times over while it is built (raw, base64, the JSON into Rust, the pack and its
+ * base64), and a 400-object chunk of a big push's files (svelte: 45 MiB) and the queue's
+ * other jobs exceeded the isolate's 128 MB. */
+const PACK_BYTES = 8 * 1024 * 1024;
 /** File bytes one carrier pack holds at most (every one is in memory while it is built). */
-const CARRIER_BYTES = 32 * 1024 * 1024;
+const CARRIER_BYTES = 8 * 1024 * 1024;
+/** Packs one projection job sends before handing the rest to a fresh job (CPU and memory
+ * per invocation stay bounded however large the backlog). */
+const JOB_PACKS = 8;
 /** Files read from the tiers at a time while carriers fill. */
 const CARRIER_READS = 64;
 
@@ -86,8 +94,15 @@ const CARRIER_READS = 64;
  * read back. (Separate pushes could land a child before its parent and be refused.) A
  * single commit too large for one pack sends its files ahead in carriers.
  */
-async function storeAhead(call: (c: Json) => Promise<Json>, objects: RepoObjects, commits: Json[]) {
-  const huge = commits.length === 1 && commits[0].objects.length > PACK_OBJECTS;
+async function storeAhead(
+  call: (c: Json) => Promise<Json>,
+  objects: RepoObjects,
+  commits: Json[],
+  sizes: Map<string, number>,
+) {
+  const huge =
+    commits.length === 1 &&
+    (commits[0].objects.length > PACK_OBJECTS || bytesOf(commits, sizes) > PACK_BYTES);
   const { carriers, carried } = huge
     ? await carryFiles(objects, commits[0])
     : { carriers: [] as string[], carried: new Set<string>() };
@@ -105,13 +120,37 @@ async function storeAhead(call: (c: Json) => Promise<Json>, objects: RepoObjects
     if (read.some((o) => !o)) throw new Error(`Objects of ${c.commit} are not readable`);
     return compute({ op: 'staged_push', commit: c.commit, objects: read }).push_b64;
   });
-  await objects.push(fromBase64(combine(bodies)));
+  const report = await objects.push(fromBase64(combine(bodies)));
+  const why = refusal(
+    report,
+    commits.map((c) => hiddenRef(c.commit)),
+  );
+  if (why) throw new Error(`The object store refused ${commits.length} commits: ${why}`);
   const readback = await Promise.all(commits.map((c) => objects.store.readCommit(c.commit)));
   const missing = commits.filter((_, i) => !readback[i]);
   if (missing.length > 0)
     throw new Error(`${missing.length} commits are not readable from the object store`);
   await call({ op: 'repo_objects_stored', commits: commits.map((c) => c.commit) });
   if (carriers.length > 0) await dropCarriers(objects, carriers);
+}
+
+const hiddenRef = (commit: string) => `refs/yoneda/c/${commit}`;
+
+/** Why the object store did not take every one of `refs` from one receive-pack (its `ERR`,
+ * or a ref's refusal), or null: a push it answered is never assumed to have landed. */
+function refusal(report: Uint8Array, refs: string[]) {
+  const text = new TextDecoder().decode(report.subarray(0, 512));
+  const err = /^[0-9a-f]{4}ERR ([^\n]*)/.exec(text);
+  if (err) return err[1];
+  for (const refname of refs) {
+    const own =
+      refs.length === 1
+        ? toBase64(report)
+        : compute({ op: 'push_split', report_b64: toBase64(report), refname }).report_b64;
+    const outcome = compute({ op: 'push_outcome', refname, report_b64: own });
+    if (!outcome.accepted) return `${refname}: ${outcome.refused}`;
+  }
+  return null;
 }
 
 const combine = (bodies: string[]) =>
@@ -204,12 +243,31 @@ const owners = (commits: Json[]) =>
     commits.flatMap((c) => (c.objects as Json[]).map((o) => [o.id, c.commit] as [string, string])),
   );
 
-/** Commits from the front of `commits` holding at least `limit` objects. */
-function front(commits: Json[], limit: number) {
+/** Commits from the front of `commits` holding at least PACK_OBJECTS objects or about
+ * PACK_BYTES (at least one commit). */
+function front(commits: Json[], sizes: Map<string, number>) {
   let count = 0;
+  let bytes = 0;
   let n = 0;
-  while (n < commits.length && count < limit) count += commits[n++].objects.length;
+  while (n < commits.length && count < PACK_OBJECTS && bytes < PACK_BYTES) {
+    count += commits[n].objects.length;
+    bytes += bytesOf([commits[n]], sizes);
+    n++;
+  }
   return n;
+}
+
+const bytesOf = (commits: Json[], sizes: Map<string, number>) =>
+  commits.reduce(
+    (n, c) => n + (c.objects as Json[]).reduce((m, o) => m + (sizes.get(o.id) ?? 0), 0),
+    0,
+  );
+
+/** The sizes the bundles record for the planned objects (others are bounded by count). */
+async function planSizes(objects: RepoObjects, commits: Json[]) {
+  const ids = commits.flatMap((c) => (c.objects as Json[]).map((o) => String(o.id)));
+  const places = await bundledPlaces(objects, ids);
+  return new Map([...places].map(([id, place]) => [id, place.size]));
 }
 
 /**
@@ -235,12 +293,22 @@ export async function projectRefs(env: Env, envelope: Envelope, attempt = REFUSE
   const objects = new RepoObjects(env, envelope.repo_id, parseStore(env, status.object_store));
   let projected = 0;
   let retry = 0;
+  let packs = 0;
   for (const row of pending) {
     const plan = await call({ op: 'repo_projection_objects', refname: row.refname });
     let commits = plan.commits as Json[];
-    while (commits.reduce((n, c) => n + c.objects.length, 0) > PACK_OBJECTS) {
-      const n = front(commits, PACK_OBJECTS);
-      await storeAhead(call, objects, commits.slice(0, n));
+    const sizes = await planSizes(objects, commits);
+    while (
+      commits.reduce((n, c) => n + c.objects.length, 0) > PACK_OBJECTS ||
+      bytesOf(commits, sizes) > PACK_BYTES
+    ) {
+      if (packs++ >= JOB_PACKS) {
+        // The stored commits are recorded: a fresh job plans the rest.
+        await dispatchProjection(env, envelope.repo_id);
+        return { projected };
+      }
+      const n = front(commits, sizes);
+      await storeAhead(call, objects, commits.slice(0, n), sizes);
       commits = commits.slice(n);
     }
     const wanted = commits.flatMap((c) => c.objects);

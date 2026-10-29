@@ -5,7 +5,7 @@
 // Like `platformCompute`, worker-build publishes these `#[wasm_bindgen]` functions as
 // methods of the Rust module's default entrypoint class; none uses `this`.
 import RustWorker from '../../backend/crates/yoneda-worker/build/worker/shim.mjs';
-import { compute, rustCall } from './repo-compute';
+import { compute, resetOnce, rustCall } from './repo-compute';
 import { ApiError, type Json } from './repo-ops';
 
 type Exported = Record<string, (...args: unknown[]) => unknown>;
@@ -22,10 +22,17 @@ function fn<T>(name: string): (...args: unknown[]) => T {
 
 /** A JSON answer (`{value}` or `{error}`) as its value, or the error as an ApiError. */
 function value(answer: string): Json {
-  const parsed = JSON.parse(answer);
+  return answered(JSON.parse(answer));
+}
+
+function answered(parsed: Json): Json {
   if (parsed.error) throw new ApiError(parsed.error.code, parsed.error.message);
   return parsed.value;
 }
+
+/** A session's handle: opening checks the instance's stack and may reset it once. */
+const opened = (name: string, ...args: unknown[]) =>
+  answered(resetOnce(() => fn<string>(name)(...args))) as unknown as number;
 
 /** A thrown session error (its message is the JSON `{code, message}`) as an ApiError. */
 function bytes(run: () => Uint8Array): Uint8Array {
@@ -43,7 +50,7 @@ function bytes(run: () => Uint8Array): Uint8Array {
 export class ReceiveSession {
   private constructor(private readonly handle: number) {}
   static open() {
-    return new ReceiveSession(value(fn<string>('gitReceiveOpen')(Date.now())) as unknown as number);
+    return new ReceiveSession(opened('gitReceiveOpen', Date.now()));
   }
   feed(chunk: Uint8Array) {
     value(fn<string>('gitReceiveFeed')(this.handle, chunk));
@@ -68,13 +75,12 @@ export class ReceiveSession {
 export class UploadSession {
   private constructor(private readonly handle: number) {}
   static open(walk: Json) {
-    return new UploadSession(
-      value(fn<string>('gitUploadOpen')(Date.now(), JSON.stringify(walk))) as unknown as number,
-    );
+    return new UploadSession(opened('gitUploadOpen', Date.now(), JSON.stringify(walk)));
   }
-  /** The counting pass: `{need_trees}` or `{count}`. */
-  step(input: Json): Json {
-    return value(fn<string>('gitUploadStep')(this.handle, JSON.stringify(input)));
+  /** The counting pass: `{need_trees}` or `{count}`, given the trees read since (`trees`
+   * as entries, `raw` framed: see `treeFrames`). */
+  step(input: Json, raw = new Uint8Array()): Json {
+    return value(fn<string>('gitUploadStep')(this.handle, JSON.stringify(input), raw));
   }
   /** Which of `ids` the counted pack holds (after `step` answered `{count}`). */
   holds(ids: string[]): string[] {
@@ -83,6 +89,10 @@ export class UploadSession {
   /** The sending pass: `{need_trees}` or the next wave's `{trees, fetch, tags?, done}`. */
   send(input: Json): Json {
     return value(fn<string>('gitUploadSend')(this.handle, JSON.stringify(input)));
+  }
+  /** Trees for the wave being sent: as entries (`trees`) and `raw` frames (`treeFrames`). */
+  supply(trees: Json[], raw = new Uint8Array()) {
+    value(fn<string>('gitUploadTrees')(this.handle, JSON.stringify({ trees }), raw));
   }
   start() {
     return bytes(() => fn<Uint8Array>('gitUploadStart')(this.handle));
@@ -124,7 +134,7 @@ export const wasmMemoryBytes = () => Number(compute({ op: 'memory' }).wasm_bytes
 export class PackStream {
   private constructor(private readonly handle: number) {}
   static open(count: number) {
-    return new PackStream(value(fn<string>('gitPackOpen')(Date.now(), count)) as unknown as number);
+    return new PackStream(opened('gitPackOpen', Date.now(), count));
   }
   private piece(
     op: number,
