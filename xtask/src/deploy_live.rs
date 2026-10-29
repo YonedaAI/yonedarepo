@@ -11,11 +11,26 @@ use std::time::Duration;
 
 pub(crate) async fn live_revision(worker: &Deployable) -> Option<String> {
     let (origin, service) = worker.health.as_ref()?;
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
+    let body = match health_body(origin, None).await {
+        Some(body) => body,
+        // A hostname created minutes ago can still be cached as missing by the workstation's
+        // resolver; ask Cloudflare's resolver for it instead.
+        None => health_body(origin, Some(public_address(origin).await?)).await?,
+    };
+    (body["service"] == service.as_str())
+        .then(|| body["revision"].as_str().map(str::to_owned))
+        .flatten()
+}
+
+/// `origin/health` as JSON, connecting to `address` when one is given.
+async fn health_body(origin: &str, address: Option<std::net::SocketAddr>) -> Option<Value> {
+    let mut client = reqwest::Client::builder().timeout(Duration::from_secs(10));
+    if let Some(address) = address {
+        client = client.resolve(host_of(origin)?, address);
+    }
+    client
         .build()
-        .ok()?;
-    let body: Value = client
+        .ok()?
         .get(format!("{origin}/health"))
         .send()
         .await
@@ -24,10 +39,39 @@ pub(crate) async fn live_revision(worker: &Deployable) -> Option<String> {
         .ok()?
         .json()
         .await
+        .ok()
+}
+
+fn host_of(origin: &str) -> Option<&str> {
+    let host = origin.strip_prefix("https://")?;
+    Some(host.split(['/', ':']).next().unwrap_or(host))
+}
+
+/// The origin host's first A record from 1.1.1.1 (DNS over HTTPS, no local resolver).
+async fn public_address(origin: &str) -> Option<std::net::SocketAddr> {
+    let answer: Value = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .ok()?
+        .get(format!(
+            "https://1.1.1.1/dns-query?name={}&type=A",
+            host_of(origin)?
+        ))
+        .header("accept", "application/dns-json")
+        .send()
+        .await
+        .ok()?
+        .json()
+        .await
         .ok()?;
-    (body["service"] == service.as_str())
-        .then(|| body["revision"].as_str().map(str::to_owned))
-        .flatten()
+    let ip = answer["Answer"]
+        .as_array()?
+        .iter()
+        .find(|a| a["type"] == 1)?["data"]
+        .as_str()?
+        .parse::<std::net::Ipv4Addr>()
+        .ok()?;
+    Some((ip, 443).into())
 }
 
 /// New code can take a few seconds to reach every colo; poll for up to a minute.
