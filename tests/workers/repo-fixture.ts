@@ -213,7 +213,8 @@ beforeEach(async () => {
     const url = String(input instanceof Request ? input.url : input);
     if (!url.startsWith('https://artifacts.test/')) return original(input, init);
     expect(url).toMatch(/\/git-receive-pack$/);
-    const body = new Uint8Array(init?.body as ArrayBuffer);
+    // A large file's push streams its body (repo-large-files `largeReceivePack`).
+    const body = new Uint8Array(init?.body instanceof ReadableStream ? await new Response(init.body).arrayBuffer() : (init?.body as ArrayBuffer));
     receivePacks.requests++;
     if (receivePacks.hold) await receivePacks.hold;
     if (receivePacks.down) return new Response('unavailable', { status: 503 });

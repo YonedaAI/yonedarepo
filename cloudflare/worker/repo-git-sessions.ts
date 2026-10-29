@@ -117,3 +117,44 @@ export class UploadSession {
 
 /** This isolate's Wasm memory in bytes (it only grows). */
 export const wasmMemoryBytes = () => fn<number>('wasmMemoryBytes')();
+
+/** A pack the adapter writes piece by piece (`PackStream`): for pushes carrying files too
+ * large to hold, whose zlib streams the adapter writes from R2. */
+export class PackStream {
+  private constructor(private readonly handle: number) {}
+  static open(count: number) {
+    return new PackStream(value(fn<string>('gitPackOpen')(Date.now(), count)) as unknown as number);
+  }
+  private piece(
+    op: number,
+    kind = '',
+    size = 0,
+    data: Uint8Array = new Uint8Array(),
+    packed: Uint8Array = new Uint8Array(),
+  ) {
+    return bytes(() => fn<Uint8Array>('gitPackPiece')(this.handle, op, kind, size, data, packed));
+  }
+  header() {
+    return this.piece(0);
+  }
+  /** A whole object of `kind`. */
+  entry(kind: string, data: Uint8Array) {
+    return this.piece(1, kind, 0, data);
+  }
+  largeStart(id: string, size: number) {
+    return this.piece(2, id, size);
+  }
+  largeData(content: Uint8Array, packed: Uint8Array) {
+    this.piece(3, '', 0, content, packed);
+  }
+  largeEnd() {
+    this.piece(4);
+  }
+  /** The trailer; the stream closes. */
+  finish() {
+    return this.piece(5);
+  }
+  close() {
+    fn<void>('gitPackClose')(this.handle);
+  }
+}

@@ -2,11 +2,12 @@
 // back byte for byte without being held whole: a 90 MiB synthetic file streams into R2 as
 // it arrives and back out in packs and downloads, while this isolate's Wasm memory grows by
 // less than the file. The pack is built here in JavaScript, never in Rust compute.
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { wasmMemoryBytes } from '../../cloudflare/worker/repo-git-sessions';
 import type { Env } from '../../cloudflare/worker/types';
-import { api, author, bindings, file, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { projectObjects, projectRefs } from '../../cloudflare/worker/repo-projection';
+import { api, artifacts, author, bindings, file, pushes, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -212,4 +213,51 @@ it('refuses a file over 100 MiB, naming the limit', { timeout: 300_000 }, async 
   const report = await push(repo, token, main, commit.id, await pack([commit, root, big]));
   expect(report).toContain('the limit is 100 MiB per file');
   expect((await api(`/repos/${repo}/refs`, { cookie }, {}, on)).body.refs['refs/heads/main']).toBe(main);
+});
+
+it('mirrors a large file to the object store, streamed, never left out', { timeout: 300_000 }, async () => {
+  const cookie = await signup('large_mirror');
+  const { repo, token, main } = await repository('large-mirror', cookie);
+  const big = await object('blob', noise(12 * MiB));
+  const small = await object('blob', text.encode('small\n'));
+  const root = await object('tree', join([text.encode('100644 big.bin\0'), binary(big.id), text.encode('100644 small.txt\0'), binary(small.id)]));
+  const who = `${author.name} <${author.email}> 1700000000 +0000`;
+  const commit = await object('commit', text.encode(`tree ${root.id}\nparent ${main}\nauthor ${who}\ncommitter ${who}\n\nmirrored\n`));
+  expect(await push(repo, token, main, commit.id, await pack([commit, root, small, big]))).toContain('ok refs/heads/main');
+  const before = pushes.length;
+  // Wasm memory each push to the object store took while it was read whole (the fake store
+  // then unpacks it with Rust compute in this isolate, which is not the projection's cost).
+  let projecting = 0;
+  const fake = vi.mocked(globalThis.fetch).getMockImplementation() as typeof fetch;
+  vi.mocked(globalThis.fetch).mockImplementation(async (input, init) => {
+    if (!String(input instanceof Request ? input.url : input).startsWith('https://artifacts.test/')) return fake(input, init);
+    // What the push's own body cost, read whole (a streamed one is built as it is read).
+    const start = wasmMemoryBytes();
+    const body = init?.body instanceof ReadableStream ? await new Response(init.body).arrayBuffer() : init?.body;
+    projecting = Math.max(projecting, wasmMemoryBytes() - start);
+    return fake(input, { ...init, body });
+  });
+  try {
+    for (let round = 0; round < 3 && queued.length; round++)
+      for (const message of queued.splice(0)) {
+        if (message.kind === 'platform_objects') await projectObjects(on, message.repo_id, message.job_id);
+        if (message.kind === 'platform_project') await projectRefs(on, message);
+      }
+  } finally {
+    vi.mocked(globalThis.fetch).mockImplementation(fake);
+  }
+  const held = artifacts.get(`yr-${repo}`);
+  expect(held?.get(commit.id)?.kind).toBe('commit');
+  expect(held?.get(big.id)?.kind).toBe('blob');
+  expect(atob(held?.get(big.id)?.data_b64).length).toBe(12 * MiB);
+  // The file went under a carrier's hidden ref, deleted once main held it.
+  const sent = pushes.slice(before);
+  const carrier = sent.find((p) => p.startsWith('0'.repeat(40)) && p.includes('refs/yoneda/c/'))?.split(' ')[2];
+  expect(carrier).toBeDefined();
+  expect(sent.some((p) => p.split(' ')[1] === '0'.repeat(40) && p.endsWith(carrier as string))).toBe(true);
+  expect(sent.some((p) => p.endsWith('refs/heads/main'))).toBe(true);
+  expect((await api(`/repos/${repo}`, { cookie }, {}, on)).body.projections[0]).toMatchObject({ status: 'ok', projected_commit: commit.id });
+  // The projection never held the file: Wasm grew by less than it while every push was made.
+  console.log(`large mirror: projection grew wasm ${(projecting / MiB).toFixed(1)} MiB`);
+  expect(projecting).toBeLessThan(8 * MiB);
 });

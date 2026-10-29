@@ -308,16 +308,19 @@ export class RepoObjects {
    * commit shards (once for all; `owners` names the commit an object was staged with, so
    * only its shard is asked), and a fork's parent's every tier last. Missing ones are left
    * out. Bundled bytes come in ranges of `SMALL_RANGE`: callers hold every result at once.
+   * With `large`, files too large to hold are listed there (id → size), not read.
    */
   async raw(
     asked: { id: string; kind: string }[],
     owners?: Map<string, string>,
+    large?: Map<string, number>,
   ): Promise<RawObject[]> {
     const wanted = [...new Map(asked.map((w) => [w.id, w])).values()];
-    const found = new Map((await this.stored(wanted)).map((o) => [o.id, o]));
+    const found = new Map((await this.stored(wanted, large)).map((o) => [o.id, o]));
     const add = (w: { id: string; kind: string }, data: Uint8Array) =>
       found.set(w.id, { id: w.id, kind: w.kind as RawObject['kind'], data_b64: toBase64(data) });
-    const missing = (list: typeof wanted) => list.filter((w) => !found.has(w.id));
+    const missing = (list: typeof wanted) =>
+      list.filter((w) => !found.has(w.id) && !large?.has(w.id));
     for (const o of (await this.inherited?.raw(missing(wanted), false)) ?? []) found.set(o.id, o);
     const absent = missing(wanted);
     for (let i = 0; i < absent.length; i += 64) {
@@ -339,13 +342,16 @@ export class RepoObjects {
       : await stagedInShards(this.env, this.repo, ids, true);
     for (const o of sharded as RawObject[]) found.set(o.id, o);
     // A staged copy is dropped only after its R2 write: look in R2 once more.
-    for (const o of await this.stored(missing(absent))) found.set(o.id, o);
+    for (const o of await this.stored(missing(absent), large)) found.set(o.id, o);
     for (const o of (await this.inherited?.raw(missing(wanted), true)) ?? []) found.set(o.id, o);
     return [...found.values()];
   }
 
   /** Raw content of `wanted` the store of record holds: bundles, then one R2 object each. */
-  async stored(wanted: { id: string; kind: string }[]): Promise<RawObject[]> {
+  async stored(
+    wanted: { id: string; kind: string }[],
+    large?: Map<string, number>,
+  ): Promise<RawObject[]> {
     const found = new Map<string, RawObject>();
     const add = (w: { id: string; kind: string }, data: Uint8Array) =>
       found.set(w.id, { id: w.id, kind: w.kind as RawObject['kind'], data_b64: toBase64(data) });
@@ -359,7 +365,9 @@ export class RepoObjects {
           const stored = await this.env.OBJECTS.get(this.rawKey(w.id));
           if (stored && stored.size > SPILL_BYTES) {
             await stored.body.cancel();
-            throw tooLarge(w.id, stored.size);
+            if (!large) throw tooLarge(w.id, stored.size);
+            large.set(w.id, stored.size);
+            return;
           }
           if (stored) add(w, new Uint8Array(await stored.arrayBuffer()));
         }),

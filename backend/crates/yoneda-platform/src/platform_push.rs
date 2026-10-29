@@ -127,6 +127,23 @@ pub fn carrier_push(c: &Value) -> Result<Value> {
     // One entry per blob (a chunk may name one twice).
     let mut ids = std::collections::BTreeSet::new();
     objects.retain(|(k, d)| ids.insert(hash_object(*k, d)));
+    let (tree, commit, commit_id) = carrier(ids)?;
+    let mut packed: Vec<(ObjectKind, &[u8])> =
+        objects.iter().map(|(k, d)| (*k, d.as_slice())).collect();
+    packed.push((ObjectKind::Tree, &tree));
+    packed.push((ObjectKind::Commit, &commit));
+    let body = receive_pack_request(
+        &hidden_ref(&commit_id),
+        None,
+        commit_id,
+        &write_pack(&packed)?,
+    )?;
+    Ok(json!({ "push_b64": STANDARD.encode(body), "commit": commit_id }))
+}
+
+/// A carrier of `ids` (blobs): a tree naming each by its id and a commit of that tree,
+/// the same for the same blobs; their bytes and the commit's id.
+fn carrier(ids: std::collections::BTreeSet<ObjectId>) -> Result<(Vec<u8>, Vec<u8>, ObjectId)> {
     let entries: Vec<TreeEntry> = ids
         .into_iter()
         .map(|id| TreeEntry {
@@ -140,17 +157,20 @@ pub fn carrier_push(c: &Value) -> Result<Value> {
     let who = "YonedaRepo projection <projection@yoneda.invalid> 0 +0000";
     let commit = format!("tree {tree_id}\nauthor {who}\ncommitter {who}\n\ncarrier\n").into_bytes();
     let commit_id = hash_object(ObjectKind::Commit, &commit);
-    let mut packed: Vec<(ObjectKind, &[u8])> =
-        objects.iter().map(|(k, d)| (*k, d.as_slice())).collect();
-    packed.push((ObjectKind::Tree, &tree));
-    packed.push((ObjectKind::Commit, &commit));
-    let body = receive_pack_request(
-        &hidden_ref(&commit_id),
-        None,
-        commit_id,
-        &write_pack(&packed)?,
-    )?;
-    Ok(json!({ "push_b64": STANDARD.encode(body), "commit": commit_id }))
+    Ok((tree, commit, commit_id))
+}
+
+/// `large_carrier`: a carrier of one file too large to hold (`id`), for the adapter to
+/// stream: the receive-pack request's head (the hidden ref's creation), and the carrier
+/// tree and commit to write after the file in the pack (see `carrier_push`).
+pub fn large_carrier(c: &Value) -> Result<Value> {
+    let id = ObjectId::parse(&string(c, "id")?)?;
+    let (tree, commit, commit_id) = carrier([id].into_iter().collect())?;
+    let head = receive_pack_request(&hidden_ref(&commit_id), None, commit_id, &[])?;
+    Ok(json!({
+        "head_b64": STANDARD.encode(head), "commit": commit_id,
+        "tree_b64": STANDARD.encode(tree), "commit_b64": STANDARD.encode(commit),
+    }))
 }
 
 /// The structured form of raw objects read from the store of record (R2), verified.
@@ -196,5 +216,18 @@ mod tests {
         let trees = json!({ "objects": [{ "id": hash_object(ObjectKind::Tree, b""), "kind": "tree", "data_b64": "" }] });
         assert!(carrier_push(&trees).is_err(), "blobs only");
         assert!(carrier_push(&json!({ "objects": [] })).is_err());
+        // A large file's carrier is the same as if its bytes were pushed in one.
+        let one = carrier_push(&json!({ "objects": [blob("one\n")] })).unwrap();
+        let id = hash_object(ObjectKind::Blob, b"one\n");
+        let large = large_carrier(&json!({ "id": id })).unwrap();
+        assert_eq!(large["commit"], one["commit"]);
+        let head = STANDARD
+            .decode(large["head_b64"].as_str().unwrap())
+            .unwrap();
+        assert!(String::from_utf8_lossy(&head).contains(&format!(
+            "refs/yoneda/c/{}",
+            one["commit"].as_str().unwrap()
+        )));
+        assert!(head.ends_with(b"0000"));
     }
 }
