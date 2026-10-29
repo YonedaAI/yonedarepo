@@ -70,13 +70,61 @@ pub fn scan(path: &str, bytes: &[u8], allow: &[SecretAllow]) -> Result<()> {
         return Ok(());
     };
     let line = 1 + bytes[..at].iter().filter(|b| **b == b'\n').count();
-    Err(Error::new(
+    Err(detected(path, line, rule))
+}
+
+/// `scan` for a file scanned as it streamed by (`StreamScan`): its first line per rule.
+pub fn refuse(path: &str, hits: &[(&'static str, usize)], allow: &[SecretAllow]) -> Result<()> {
+    match hits
+        .iter()
+        .find(|(rule, _)| !allow.iter().any(|a| a.covers(path, rule)))
+    {
+        Some((rule, line)) => Err(detected(path, *line, rule)),
+        None => Ok(()),
+    }
+}
+
+/// Bytes kept from one piece to the next, so a credential split between them is seen whole
+/// (every rule's match is far shorter).
+const CARRY: usize = 4096;
+
+/// A file scanned piece by piece as it streams by (too large to hold): the first line each
+/// rule matches on, to be judged against `secret_allow` once the file's paths are known.
+#[derive(Default)]
+pub struct StreamScan {
+    carry: Vec<u8>,
+    /// Newlines before `carry`.
+    lines: usize,
+    hits: Vec<(&'static str, usize)>,
+}
+
+impl StreamScan {
+    pub fn feed(&mut self, piece: &[u8]) {
+        let mut window = std::mem::take(&mut self.carry);
+        window.extend_from_slice(piece);
+        while let Some((rule, at)) = find(&window, &|r| self.hits.iter().any(|(h, _)| *h == r)) {
+            let line = 1 + self.lines + window[..at].iter().filter(|b| **b == b'\n').count();
+            self.hits.push((rule, line));
+        }
+        let keep = window.len().saturating_sub(CARRY);
+        self.lines += window[..keep].iter().filter(|b| **b == b'\n').count();
+        self.carry = window.split_off(keep);
+    }
+
+    /// Each rule matched and its first line.
+    pub fn finish(self) -> Vec<(&'static str, usize)> {
+        self.hits
+    }
+}
+
+fn detected(path: &str, line: usize, rule: &str) -> Error {
+    Error::new(
         "SECRET_DETECTED",
         format!(
             "{path} line {line} looks like a credential ({rule}). Remove it and rotate it if it was real; \
              if it is not a secret, the repository owner can allow {{\"path\": \"{path}\", \"rule\": \"{rule}\"}} in policy secret_allow"
         ),
-    ))
+    )
 }
 
 /// A rule's name and the end of its match.

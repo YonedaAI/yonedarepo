@@ -152,7 +152,7 @@ export async function storeBundle(
 }
 
 /** Whether this isolate knows `repo` holds bundles (its status says so, or it read one). */
-const holdsBundles = (repo: string) => isolateLocations.holds(repo);
+export const holdsBundles = (repo: string) => isolateLocations.holds(repo);
 export const noteBundles = (repo: string) => isolateLocations.bundled(repo);
 
 /** Of `found` (locations answered for `wanted`), those of the kind asked, by id. */
@@ -231,6 +231,8 @@ export class ReadStats {
  * `stats` counts the reads. */
 export type ReadOptions = {
   gap?: number;
+  /** Bridge a gap only while the range's waste stays within what it wants (blob reads). */
+  bounded?: boolean;
   copy?: boolean;
   frame?: (kind: string, id: string, data: Uint8Array) => void;
   stats?: ReadStats;
@@ -244,15 +246,16 @@ export async function readLocated(
   repo: string,
   located: Location[],
   range = RANGE,
-  { gap = GAP, copy = false, frame, stats }: ReadOptions = {},
+  { gap = GAP, bounded = false, copy = false, frame, stats }: ReadOptions = {},
 ) {
   const sorted = [...located].sort((a, b) =>
     a.bundle === b.bundle ? a.at - b.at : a.bundle < b.bundle ? -1 : 1,
   );
-  // A neighbour joins a range only while the bytes bridged stay within what the range
-  // wants (or GAP): sparse objects among large ones (a file's versions between the files
-  // of each commit) are read on their own, at most about twice what is wanted, while a
-  // dense run (a clone's) still comes in one read.
+  // A neighbour within `gap` joins the range. `bounded` (blob reads: blame, search, the
+  // Overview) also requires the bytes bridged to stay within what the range wants (or
+  // GAP): a file's versions among each commit's other files are then read on their own, at
+  // most about twice what is wanted. Tree and commit walks keep bridging: what lies between
+  // their objects is mostly more of them, and each read saved is a round trip.
   type Range = { bundle: string; start: number; end: number; members: Location[]; wanted: number };
   const ranges: Range[] = [];
   for (const l of sorted) {
@@ -266,7 +269,7 @@ export async function readLocated(
       last &&
       last.bundle === l.bundle &&
       bridged <= gap &&
-      waste <= Math.max(GAP, wanted) &&
+      (!bounded || waste <= Math.max(GAP, wanted)) &&
       end - last.start <= range
     ) {
       last.end = Math.max(last.end, end);

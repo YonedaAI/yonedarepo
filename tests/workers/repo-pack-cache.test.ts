@@ -4,6 +4,7 @@
 // Fetches with haves, filters or depth are built as before. Counts are of R2 reads in
 // local workerd.
 import { expect, it, vi } from 'vitest';
+import { withWaitUntil } from '../../cloudflare/worker/background';
 import { isolateLocations } from '../../cloudflare/worker/repo-bundles';
 import { compute } from '../../cloudflare/worker/repo-compute';
 import { PART, PackWriter } from '../../cloudflare/worker/repo-pack-cache';
@@ -152,7 +153,7 @@ it('serves a full clone from the pack the first one stored', async () => {
 const digest = async (bytes: Uint8Array) => hex(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)));
 
 it('stores a pack of several parts, nothing when aborted, and keeps the four most recent', async () => {
-  const at = (name: string) => `derived/v1/rpackwriter/packs/v1/${name}.pack`;
+  const at = (name: string) => `derived/v1/rpackwriter/packs/v2/${name}.pack`;
   const write = async (key: string, size: number) => {
     const writer = new PackWriter(scoped, 'rpackwriter', key);
     const data = new Uint8Array(size).map((_, i) => (i * 31 + size) % 251);
@@ -173,6 +174,36 @@ it('stores a pack of several parts, nothing when aborted, and keeps the four mos
   expect(await bindings.OBJECTS.head(at('small'))).toBeNull();
 
   for (const name of ['p1', 'p2', 'p3', 'p4']) await (await write(at(name), 300_000)).writer.finish();
-  const kept = (await bindings.OBJECTS.list({ prefix: 'derived/v1/rpackwriter/packs/v1/' })).objects.map((o) => o.key);
+  const kept = (await bindings.OBJECTS.list({ prefix: 'derived/v1/rpackwriter/packs/v2/' })).objects.map((o) => o.key);
   expect(kept.filter((k) => k.endsWith('.pack')).sort()).toEqual(['p1', 'p2', 'p3', 'p4'].map(at));
+});
+
+it('never holds a clone back on the store: a stalled store is left behind the answer', async () => {
+  const cookie = await signup('pack_cache_stall');
+  const created = await api('/repos', { cookie }, { body: { name: 'pack-cache-stall', policy: { approvals: 0, required_checks: [] }, files: [file('a.md', 'a\n')], author } }, on);
+  const repo = created.body.id as string;
+  const { token } = (await api(`/repos/${repo}/tokens`, { cookie }, { body: { name: 'git', scopes: ['read', 'write', 'land'] } }, on)).body;
+  const main = (await api(`/repos/${repo}/refs`, { cookie }, {}, on)).body.refs['refs/heads/main'] as string;
+  const objects = await history(main, 6);
+  const { push_b64 } = compute({
+    op: 'branch_push',
+    refname: 'refs/heads/main',
+    old: main,
+    new: objects[0].id,
+    objects: objects.map((o) => ({ id: o.id, kind: o.kind, data_b64: toBase64(o.data) })),
+  });
+  expect(new TextDecoder().decode(await request(repo, token, 'git-receive-pack', fromBase64(push_b64)))).toContain('ok refs/heads/main');
+  // R2 never answers a write of a stored pack.
+  const put = scoped.OBJECTS.put.bind(scoped.OBJECTS);
+  const stall = vi.spyOn(scoped.OBJECTS, 'put').mockImplementation(((key: string, ...rest: unknown[]) =>
+    key.includes('/packs/') ? new Promise(() => {}) : (put as any)(key, ...rest)) as any);
+  const later: Promise<unknown>[] = [];
+  try {
+    const pack = await withWaitUntil((work) => void later.push(work), () => fetchV2(repo, token, [`want ${objects[0].id}`, 'done']));
+    expect(count(pack)).toBe(1 + 6 * 4 + 2);
+    expect(later).toHaveLength(1);
+  } finally {
+    stall.mockRestore();
+  }
+  expect((await bindings.OBJECTS.list({ prefix: `derived/v1/${repo}/packs/` })).objects).toEqual([]);
 });

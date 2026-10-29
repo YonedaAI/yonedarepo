@@ -1,7 +1,7 @@
 //! The pack reader against packs real `git pack-objects` writes: whole objects, OFS and
 //! REF deltas (chains included), fed in chunks of every size; thin, truncated and corrupt
 //! packs are refused.
-use super::{ObjectId, ObjectKind, PackLimits, PackReader, hash_object};
+use super::{ObjectId, ObjectKind, PackLimits, PackReader, Spill, hash_object};
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::path::Path;
@@ -167,4 +167,116 @@ fn deltas_against_missing(pack: &[u8]) -> bool {
         .unwrap()
         .status
         .success()
+}
+
+/// Bytes that do not compress (a large file's pack entry is about its own size).
+fn noise(n: usize) -> Vec<u8> {
+    let mut state = 0x9e37_79b9_7f4a_7c15u64;
+    (0..n)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state as u8
+        })
+        .collect()
+}
+
+/// `pack` read in `chunk`s with blobs over `spill` spilled: the reader, and each spilled
+/// blob's content (taken after every feed, as the adapter does).
+fn read_spilling(
+    pack: &[u8],
+    chunk: usize,
+    spill: usize,
+) -> crate::Result<(PackReader, Vec<Vec<u8>>, usize)> {
+    let limits = PackLimits {
+        spill_blob_bytes: spill,
+        ..PackLimits::default()
+    };
+    let mut reader = PackReader::new(limits, 64 << 20);
+    let (mut files, mut current, mut held) = (Vec::new(), Vec::new(), 0);
+    let mut take = |reader: &mut PackReader| {
+        for event in reader.take_spilled() {
+            match event {
+                Spill::Begin { size } => current = Vec::with_capacity(size),
+                Spill::Data(bytes) => current.extend_from_slice(&bytes),
+                Spill::End { id } => {
+                    assert_eq!(hash_object(ObjectKind::Blob, &current), id);
+                    files.push(std::mem::take(&mut current));
+                }
+            }
+        }
+    };
+    for piece in pack.chunks(chunk) {
+        reader.feed(piece)?;
+        take(&mut reader);
+        while reader.paused() {
+            reader.feed(&[])?;
+            take(&mut reader);
+        }
+        held = held.max(reader.received());
+    }
+    reader.finish()?;
+    take(&mut reader);
+    Ok((reader, files, held))
+}
+
+#[test]
+fn spills_large_files_without_holding_them_and_keeps_delta_offsets() {
+    let repo = history();
+    let large = noise(300 * 1024);
+    std::fs::write(repo.path().join("large.bin"), &large).unwrap();
+    git(repo.path(), &["add", "-A"], None);
+    git(repo.path(), &["commit", "-q", "-m", "large"], None);
+    // Another round of deltified edits after the spilled entry: their offsets must hold.
+    let mut text = std::fs::read_to_string(repo.path().join("big.txt")).unwrap();
+    text.push_str("one more line\n");
+    std::fs::write(repo.path().join("big.txt"), text).unwrap();
+    git(repo.path(), &["commit", "-q", "-am", "after"], None);
+    let expected = objects(repo.path());
+    let pack = pack(repo.path(), &["--delta-base-offset"], "main\n");
+    assert!(deltas(&pack) > 3);
+    for chunk in [7, 4096, pack.len()] {
+        let (mut reader, files, held) = read_spilling(&pack, chunk, 64 * 1024).unwrap();
+        assert_eq!(files, vec![large.clone()], "chunks of {chunk}");
+        let id = hash_object(ObjectKind::Blob, &large);
+        assert!(reader.spilled(&id));
+        assert!(
+            held < pack.len() - large.len() + 64 * 1024,
+            "held {held} of {}",
+            pack.len()
+        );
+        assert_eq!(reader.objects().count(), expected.len());
+        for (other, (_, want)) in &expected {
+            if *other != id {
+                assert_eq!(reader.content(other).unwrap().as_slice(), want.as_slice());
+            }
+        }
+        assert_eq!(reader.content(&id).unwrap_err().code, "TOO_LARGE");
+    }
+    // A delta whose base was spilled cannot be resolved: refused, saying why.
+    let refused = read_spilling(&pack, 4096, 1024).map(|_| ()).unwrap_err();
+    assert_eq!(refused.code, "TOO_LARGE");
+    assert!(
+        refused.message.contains("core.bigFileThreshold=8m"),
+        "{}",
+        refused.message
+    );
+    // What it says works: files over the threshold arrive whole, and the pack reads.
+    let whole = git(
+        repo.path(),
+        &[
+            "-c",
+            "core.bigFileThreshold=1k",
+            "pack-objects",
+            "--stdout",
+            "--revs",
+            "-q",
+            "--delta-base-offset",
+        ],
+        Some(b"main\n"),
+    );
+    let (reader, spilled, _) = read_spilling(&whole, 4096, 1024).unwrap();
+    assert_eq!(reader.objects().count(), expected.len());
+    assert!(spilled.len() > 1, "every version of big.txt spilled whole");
 }

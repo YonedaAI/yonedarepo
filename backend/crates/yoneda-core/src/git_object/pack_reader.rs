@@ -2,11 +2,13 @@
 //! applied to bases in the same pack; thin packs are refused), the commits, trees and tags
 //! kept for verification, and any object's content on demand, re-inflated from the pack
 //! when it is not cached. Memory stays near the pack's own size: blobs are hashed while
-//! they inflate and only small ones are cached as likely delta bases.
-use super::delta::apply_delta;
+//! they inflate and only small ones are cached as likely delta bases. Blobs over the
+//! limits' spill size are not held at all (`take_spilled`), so they cannot be delta bases,
+//! and deltas resolve to at most that size.
+use super::delta::{apply_delta, delta_result_size};
 use super::pack::inflate_exact;
 use super::pack_header::EntryKind;
-use super::pack_walk::{Content, PackWalker, Walked};
+use super::pack_walk::{Content, PackWalker, Spill, Walked};
 use super::{ObjectId, ObjectKind, PackLimits, hash_object, invalid};
 use crate::{Error, Result};
 use std::collections::{HashMap, VecDeque};
@@ -27,6 +29,7 @@ struct Slot {
     size: usize,
     span: Range<usize>,
     object: Option<(ObjectId, ObjectKind)>,
+    spilled: bool,
 }
 
 /// First in, first out by bytes: pack order puts deltas near their bases.
@@ -58,7 +61,8 @@ impl Cache {
 
 pub struct PackReader {
     walker: PackWalker,
-    max_object_bytes: usize,
+    /// What a delta may resolve to (deltas are applied in memory).
+    max_delta_result: usize,
     slots: Vec<Slot>,
     by_offset: HashMap<u64, usize>,
     by_id: HashMap<ObjectId, usize>,
@@ -72,7 +76,7 @@ impl PackReader {
     pub fn new(limits: PackLimits, max_pack_bytes: usize) -> Self {
         Self {
             walker: PackWalker::new(limits, max_pack_bytes),
-            max_object_bytes: limits.max_object_bytes,
+            max_delta_result: limits.max_object_bytes.min(limits.spill_blob_bytes),
             slots: Vec::new(),
             by_offset: HashMap::new(),
             by_id: HashMap::new(),
@@ -115,9 +119,24 @@ impl PackReader {
         Ok(())
     }
 
-    /// Pack bytes received so far.
+    /// Pack bytes held (spilled entries' bytes are not).
     pub fn received(&self) -> usize {
         self.walker.bytes().len()
+    }
+
+    /// Spilled blobs' content handed out since the last call (see `PackWalker`).
+    pub fn take_spilled(&mut self) -> Vec<Spill> {
+        self.walker.take_spilled()
+    }
+
+    /// Whether the walk paused for spilled content to be taken.
+    pub fn paused(&self) -> bool {
+        self.walker.paused()
+    }
+
+    /// Whether `id` is a spilled blob (its content was handed out, not kept).
+    pub fn spilled(&self, id: &ObjectId) -> bool {
+        self.by_id.get(id).is_some_and(|i| self.slots[*i].spilled)
     }
 
     /// Every object in pack order (after `finish`).
@@ -154,6 +173,7 @@ impl PackReader {
             size: walked.size,
             span: walked.span,
             object: None,
+            spilled: walked.spilled,
         });
         match (walked.kind, walked.content) {
             (EntryKind::Whole(kind), Content::Object { id, data }) => {
@@ -187,8 +207,9 @@ impl PackReader {
     }
 
     fn resolve_delta(&mut self, index: usize, base: usize, delta: &[u8]) -> Result<()> {
+        self.held_result(delta)?;
         let source = self.content_at(base)?;
-        let data = apply_delta(&source, delta, self.max_object_bytes)?;
+        let data = apply_delta(&source, delta, self.max_delta_result)?;
         let kind = self.slots[base]
             .object
             .map(|(_, kind)| kind)
@@ -221,9 +242,21 @@ impl PackReader {
         Ok(())
     }
 
+    /// Refuses a delta resolving past what is held in memory (`max_delta_result`).
+    fn held_result(&self, delta: &[u8]) -> Result<()> {
+        let size = delta_result_size(delta)?;
+        if size > self.max_delta_result {
+            return Err(large_delta(size));
+        }
+        Ok(())
+    }
+
     /// An entry's own inflated payload (a whole object, or a delta's instructions).
     fn inflated(&self, index: usize) -> Result<Vec<u8>> {
         let slot = &self.slots[index];
+        if slot.spilled {
+            return Err(large_delta(slot.size));
+        }
         let bytes = self
             .walker
             .bytes()
@@ -263,9 +296,22 @@ impl PackReader {
         };
         while let Some(next) = chain.pop() {
             let delta = self.inflated(next)?;
-            data = Rc::new(apply_delta(&data, &delta, self.max_object_bytes)?);
+            self.held_result(&delta)?;
+            data = Rc::new(apply_delta(&data, &delta, self.max_delta_result)?);
             self.cache.put(next, data.clone());
         }
         Ok(data)
     }
+}
+
+/// A delta on or to a file too large to hold (a pack carrying several versions of it):
+/// refused, with the client setting that sends such files whole.
+fn large_delta(size: usize) -> Error {
+    Error::new(
+        "TOO_LARGE",
+        format!(
+            "The push sends a file of {} MiB as a delta of another version; files over 8 MiB must arrive whole: push with `git -c core.bigFileThreshold=8m push`, or use Git LFS",
+            size >> 20
+        ),
+    )
 }

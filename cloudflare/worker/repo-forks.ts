@@ -5,10 +5,10 @@
 // recorded as pushed) and opens an ordinary change on the parent's mirror branch.
 import { dispatchRuns } from './repo-checks';
 import { listRepository, newRepoId, owning } from './repo-create';
-import { rawObjects } from './repo-git-objects';
+import { enumerate, rawObjects, waves } from './repo-git-objects';
 import { UploadSession } from './repo-git-sessions';
-import { enumerate } from './repo-git-upload';
 import { refreshHead } from './repo-head';
+import { isLarge, putLarge } from './repo-large-files';
 import { parseStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, type RepoContext } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
@@ -167,24 +167,28 @@ export async function carryForkBranch(env: Env, parent: string, fork: string, br
  * lists them) from `from` into `into`'s store of record; answers its pushed record. */
 async function copyCommit(from: RepoObjects, into: RepoObjects, commit: Json) {
   const session = UploadSession.open({ commits: [commit] });
-  let listed: Json;
+  const objects: { id: string; kind: string }[] = [];
   try {
-    listed = await enumerate(session, from);
+    await enumerate(session, from);
+    for await (const wave of waves(session, from)) {
+      objects.push(...wave.trees.map((id) => ({ id, kind: 'tree' })), ...wave.fetch);
+    }
   } finally {
     session.close();
   }
-  const objects: { id: string; kind: string }[] = [
-    ...listed.trees.map((id: string) => ({ id, kind: 'tree' })),
-    ...listed.fetch,
-  ];
   let data_b64 = '';
   for await (const group of rawObjects(from, objects)) {
     const lost = group.find((o) => !o.data);
     if (lost) throw new ApiError('NOT_FOUND', `${lost.kind} ${lost.id} of the fork is missing`);
+    // Large files stream across, one at a time.
+    for (const o of group)
+      if (isLarge(o.data)) await putLarge(into.env, into.rawKey(o.id), o.data.size, o.data.body);
     await putRawBytes(
       into.env,
       (id) => into.rawKey(id),
-      group.map((o) => ({ id: o.id, kind: o.kind, data: o.data as Uint8Array })),
+      group.flatMap((o) =>
+        o.data instanceof Uint8Array ? [{ id: o.id, kind: o.kind, data: o.data }] : [],
+      ),
     );
     const own = group.find((o) => o.id === commit.commit);
     if (own) data_b64 = toBase64(own.data as Uint8Array);

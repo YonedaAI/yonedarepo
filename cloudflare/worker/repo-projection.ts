@@ -91,9 +91,15 @@ async function storeAhead(call: (c: Json) => Promise<Json>, objects: RepoObjects
   const { carriers, carried } = huge
     ? await carryFiles(objects, commits[0])
     : { carriers: [] as string[], carried: new Set<string>() };
+  const ahead = await readCarryingLarge(
+    objects,
+    commits.flatMap((c) => (c.objects as Json[]).filter((o) => !carried.has(o.id))) as Wanted[],
+    owners(commits),
+  );
+  carriers.push(...ahead.carriers);
+  for (const id of ahead.files) carried.add(id);
   const own = (c: Json) => (c.objects as Json[]).filter((o) => !carried.has(o.id));
-  const raw = await objects.raw(commits.flatMap(own) as Wanted[], owners(commits));
-  const byId = new Map(raw.map((o) => [o.id, o]));
+  const byId = new Map(ahead.raw.map((o) => [o.id, o]));
   const bodies = commits.map((c) => {
     const read = own(c).map((o) => byId.get(o.id));
     if (read.some((o) => !o)) throw new Error(`Objects of ${c.commit} are not readable`);
@@ -135,8 +141,14 @@ async function carryFiles(objects: RepoObjects, commit: Json) {
   };
   for (let i = 0; i < files.length; i += CARRIER_READS) {
     const wave = files.slice(i, i + CARRIER_READS);
-    const raw = await objects.raw(wave, owners([commit]));
-    if (raw.length < new Set(wave.map((o) => o.id)).size)
+    const {
+      raw,
+      files: large,
+      carriers: own,
+    } = await readCarryingLarge(objects, wave, owners([commit]));
+    carriers.push(...own);
+    for (const id of large) carried.add(id);
+    if (raw.length + large.length < new Set(wave.map((o) => o.id)).size)
       throw new Error(`Objects of ${commit.commit} are not readable`);
     for (const object of raw) {
       chunk.push(object);
@@ -147,6 +159,34 @@ async function carryFiles(objects: RepoObjects, commit: Json) {
   }
   await send();
   return { carriers, carried };
+}
+
+/**
+ * `wanted`'s content, its files too large to hold sent ahead of it (`pushFile`: streamed
+ * from R2 into the object store, each under a carrier's hidden ref, read back): the other
+ * objects' raw content, the large files' ids and the carriers to drop once a commit holds
+ * them. The mirror never leaves a file out.
+ */
+async function readCarryingLarge(
+  objects: RepoObjects,
+  wanted: Wanted[],
+  owners: Map<string, string>,
+) {
+  const large = new Map<string, number>();
+  const raw = await objects.raw(wanted, owners, large);
+  const carriers: string[] = [];
+  for (const [id, size] of large) {
+    const open = async () => {
+      const stored = await objects.env.OBJECTS.get(objects.rawKey(id));
+      if (!stored) throw new Error(`File ${id} is not in the store of record`);
+      return stored.body;
+    };
+    const carrier = await objects.store.pushFile(id, size, open);
+    if (carrier && !(await objects.store.readCommit(carrier)))
+      throw new Error(`File ${id} is not readable from the object store`);
+    if (carrier) carriers.push(carrier);
+  }
+  return { raw, files: [...large.keys()], carriers };
 }
 
 /** Deletes carrier refs once the commit holding their files is stored (best effort: a
@@ -204,9 +244,9 @@ export async function projectRefs(env: Env, envelope: Envelope, attempt = REFUSE
       commits = commits.slice(n);
     }
     const wanted = commits.flatMap((c) => c.objects);
-    const raw = await objects.raw(wanted, owners(commits));
+    const { raw, files, carriers } = await readCarryingLarge(objects, wanted, owners(commits));
     // `raw` answers each object once; commits may share one (a batch's tree is its change's).
-    if (raw.length < new Set(wanted.map((o) => o.id)).size)
+    if (raw.length + files.length < new Set(wanted.map((o) => o.id)).size)
       throw new Error(`Objects for ${row.refname} are not readable`);
     const { push_b64 } = compute({
       op: 'branch_push',
@@ -233,6 +273,7 @@ export async function projectRefs(env: Env, envelope: Envelope, attempt = REFUSE
       ]);
       if (readback?.tree !== recorded.tree)
         throw new Error(`${row.refname} target is not readable from the object store`);
+      if (carriers.length > 0) await dropCarriers(objects, carriers);
     }
     await call({
       op: 'repo_projection_result',

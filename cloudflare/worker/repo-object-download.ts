@@ -1,9 +1,12 @@
 // The download of one large blob's bytes (`GET /objects/<id>`): the stubs `POST /objects`
 // serves with `large` (repo-object-fetch.ts) are fetched here, whole or from a byte range.
+// A file too large to hold (repo-large-files) streams from the store of record.
 
 import { decide } from './repo-grants';
 import { guardInherited } from './repo-inherit';
+import { SPILL_BYTES } from './repo-large-files';
 import { authorizeObjects } from './repo-object-fetch';
+import type { RepoObjects } from './repo-objects';
 import { ApiError, type RepoContext, SHA } from './repo-ops';
 
 /**
@@ -32,6 +35,10 @@ export async function downloadBlob(
       [{ id, kind: 'blob', path: query.get('path') }],
       query.get('commit'),
     );
+  // A large file streams from the store of record, never held (repo-large-files); a
+  // withheld one is refused first, before any byte.
+  const large = await largeDownload(objects, id, range);
+  if (large) return large;
   let timer: ReturnType<typeof setTimeout> | null = null;
   const late = new Promise<never>((_, refuse) => {
     timer = setTimeout(
@@ -89,4 +96,38 @@ function byteRange(header: string | null, size: number): [number, number] | 'uns
   const last = match[2] ? Math.min(Number(match[2]), size - 1) : size - 1;
   if (!Number.isSafeInteger(first) || first >= size) return 'unsatisfiable';
   return last < first ? null : [first, last];
+}
+
+/** A large file's download (whole, or the one `range` asks for) streamed from the store of
+ * record; null when `id` is not a large file there. A withheld blob is refused first. */
+async function largeDownload(objects: RepoObjects, id: string, range: string | null) {
+  await objects.refuse(id);
+  const key = objects.rawKey(id);
+  const head = await objects.env.OBJECTS.head(key);
+  if (!head || head.size <= SPILL_BYTES) return null;
+  const headers = {
+    'content-type': 'application/octet-stream',
+    'x-yoneda-object': id,
+    'cache-control': 'no-store',
+    'accept-ranges': 'bytes',
+  };
+  const span = byteRange(range, head.size);
+  if (span === 'unsatisfiable')
+    return new Response(null, {
+      status: 416,
+      headers: { ...headers, 'content-range': `bytes */${head.size}` },
+    });
+  const [first, last] = span ?? [0, head.size - 1];
+  const stored = await objects.env.OBJECTS.get(key, {
+    range: { offset: first, length: last + 1 - first },
+  });
+  if (!stored) throw new ApiError('NOT_FOUND', `No blob ${id}`);
+  return new Response((stored as R2ObjectBody).body, {
+    status: span ? 206 : 200,
+    headers: {
+      ...headers,
+      'content-length': String(last + 1 - first),
+      ...(span ? { 'content-range': `bytes ${first}-${last}/${head.size}` } : {}),
+    },
+  });
 }

@@ -7,9 +7,18 @@
 // (partial and shallow clones) is `repo-git-v2.ts`, which shares the pack stream.
 
 import { transient } from './durable';
-import type { ReadStats, Wanted } from './repo-bundles';
+import { holdsBundles, type ReadStats, type Wanted } from './repo-bundles';
 import { compute } from './repo-compute';
-import { rawObjects, SeenTrees, treesFor } from './repo-git-objects';
+import {
+  enumerate,
+  FETCH_READS,
+  overBudget,
+  ReadBudget,
+  rawObjects,
+  SeenTrees,
+  waves,
+} from './repo-git-objects';
+import { deflated, isLarge, type LargeBody } from './repo-large-files';
 import { PackWriter, packCacheOn, packKey, storedPack } from './repo-pack-cache';
 import {
   concat,
@@ -22,7 +31,7 @@ import {
   sideBand,
 } from './repo-pack-stream';
 
-type Read = Wanted & { data: Uint8Array | null };
+type Read = Wanted & { data: Uint8Array | LargeBody | null };
 
 import { UploadSession } from './repo-git-sessions';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
@@ -33,9 +42,10 @@ import { timed } from './repo-timing';
 export const REQUEST_BYTES = 8 * 1024 * 1024;
 export { PackStats, RESULT };
 
-const WALK_ROUNDS = 64;
 /** Commits read while the walk runs, at most (each is held until the pack is written). */
 const EARLY_COMMITS = 20_000;
+/** Time one pack may take to stream (the clock moves with its reads and the client). */
+const PACK_MS = 15 * 60_000;
 /** Pack bytes gathered before they are sent (one side-band packet at most). */
 export const CHUNK = 65515;
 
@@ -112,16 +122,23 @@ export async function sendPack(
   asked?: Asked,
 ): Promise<Response> {
   let writer: PackWriter | undefined;
-  // A stored pack carries every blob: never served or stored while any is withheld.
-  if (asked?.full && packCacheOn(objects.env) && !(await objects.withholdsAny())) {
+  // A stored pack carries every blob: never served or stored while any is withheld. Stored
+  // packs are side-band packets of CHUNK (what version 2 always asks for).
+  if (
+    asked?.full &&
+    band === CHUNK &&
+    packCacheOn(objects.env) &&
+    !(await objects.withholdsAny())
+  ) {
     const key = await packKey(objects.repo, asked.wants);
     const stored = await timed('git.pack_cached', () => storedPack(objects.env, key));
-    if (stored) return sendStored(head, stored.body, band, stats);
+    if (stored) return sendStored(head, stored, band, stats);
     writer = new PackWriter(objects.env, objects.repo, key);
     if (stats) stats.cache = 'miss';
   }
   const session = open();
-  let listed: Json;
+  const seen = new SeenTrees();
+  const budget = new ReadBudget();
   // The commits the walk names are read while their trees are walked.
   const early: Promise<Read[]> =
     commits.length <= EARLY_COMMITS
@@ -129,22 +146,27 @@ export async function sendPack(
           objects,
           commits.map((id) => ({ id, kind: 'commit' })),
           stats?.reads,
+          budget,
         )
       : Promise.resolve([]);
   early.catch(() => {});
   try {
     const started = performance.now();
-    listed = await enumerate(session, objects, stats?.walkReads);
+    const { count } = await enumerate(session, objects, stats?.walkReads, seen);
     if (stats) stats.walk = performance.now() - started;
-    const blobs = (listed.fetch as Wanted[]).filter((w) => w.kind === 'blob').map((w) => w.id);
-    const [held] = await objects.withheldAmong(blobs);
-    if (held) throw quarantined(held[0], held[1]);
+    // Without bundles every object is a read of its own: refused before the pack starts.
+    if (count > FETCH_READS && !holdsBundles(objects.repo))
+      throw overBudget(`${count} objects read one at a time`);
+    // So is a pack that would carry a withheld blob (the counting pass saw every id).
+    const withheld = await objects.withheldAll();
+    const [held] = withheld.size ? session.holds([...withheld.keys()]) : [];
+    if (held) throw quarantined(held, withheld.get(held) ?? null);
   } catch (e: any) {
     session.close();
     if (transient(e)) throw e;
     return errLine(head, e);
   }
-  const chunks = packChunks(session, objects, listed, early, stats);
+  const chunks = packChunks(session, objects, seen, early, budget, stats);
   const store = new Storing(writer, stats);
   const out = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -157,8 +179,10 @@ export async function sendPack(
           await store.finish();
           end(controller, band, stats);
         } else {
-          await store.add(next.value);
-          controller.enqueue(band ? sideBand(1, next.value, band) : next.value);
+          const sent = band ? sideBand(1, next.value, band) : next.value;
+          // A copy: the client's stream may take the bytes enqueued before the store does.
+          store.add(sent.slice());
+          controller.enqueue(sent);
         }
       } catch (e: any) {
         await store.abort();
@@ -179,50 +203,47 @@ export function errLine(head: Uint8Array, e: any) {
   return new Response(concat([head, pkt(`ERR ${message}\n`)]), { headers: RESULT });
 }
 
-/** Lists what to send, reading the trees each commit's diff needs. */
-export async function enumerate(session: UploadSession, objects: RepoObjects, stats?: ReadStats) {
-  const seen = new SeenTrees();
-  let step = session.step({});
-  for (let round = 0; step.need_trees; round++) {
-    if (round >= WALK_ROUNDS)
-      throw new ApiError('INVALID_INPUT', 'Directories are nested too deeply');
-    const trees = await treesFor(objects, step.need_trees as string[], undefined, seen, stats);
-    step = session.step({ trees });
-  }
-  return step;
-}
-
 /** `wanted` read whole (`rawObjects`). */
-async function readWhole(objects: RepoObjects, wanted: Wanted[], stats?: ReadStats) {
+async function readWhole(
+  objects: RepoObjects,
+  wanted: Wanted[],
+  stats?: ReadStats,
+  budget?: ReadBudget,
+) {
   const read: Read[] = [];
-  for await (const group of rawObjects(objects, wanted, stats)) read.push(...group);
+  for await (const group of rawObjects(objects, wanted, stats, budget)) read.push(...group);
   return read;
 }
 
-/** The pack, in pieces of about `CHUNK` bytes: header, trees and tag objects (from the
- * session), then the commits read `early`, then the other commits and blobs read in
+/** The pack, in pieces of about `CHUNK` bytes: header, then wave by wave (`waves`) its
+ * trees from the session, its commits read `early`, its other commits and blobs read in
  * groups (`rawObjects`), then the trailer. Closes the session. */
 async function* packChunks(
   session: UploadSession,
   objects: RepoObjects,
-  listed: Json,
+  seen: SeenTrees,
   early: Promise<Read[]>,
+  budget: ReadBudget,
   stats?: PackStats,
 ) {
   try {
     let pending: Uint8Array[] = [session.start()];
     let size = pending[0].length;
-    const add = function* (entry: Uint8Array) {
-      stats?.sent(entry);
-      pending.push(entry);
-      size += entry.length;
+    /** Pack bytes, sent once about `CHUNK` gathered. */
+    const push = function* (bytes: Uint8Array) {
+      pending.push(bytes);
+      size += bytes.length;
       if (size >= CHUNK) {
         yield concat(pending);
         pending = [];
         size = 0;
       }
     };
-    const write = function* (group: Read[]) {
+    const add = function* (entry: Uint8Array) {
+      stats?.sent(entry);
+      yield* push(entry);
+    };
+    const write = async function* (group: Read[]) {
       for (const { id, kind, data } of group) {
         if (!data)
           throw new ApiError(
@@ -231,24 +252,39 @@ async function* packChunks(
               ? `Commit ${id} is held only as imported history, which HTTPS does not serve yet; use git-remote-yoneda`
               : `${kind} ${id} is missing from the object store`,
           );
+        if (isLarge(data)) {
+          if (stats) stats.raw += data.size;
+          yield* add(session.largeStart(id, data.size));
+          for await (const packed of deflated(session, data)) {
+            stats?.streamed(packed.length);
+            yield* push(packed);
+          }
+          session.largeEnd();
+          continue;
+        }
         if (stats) stats.raw += data.length;
         yield* add(session.entry(kind, id, data));
       }
     };
-    for (const id of listed.trees as string[]) yield* add(session.entry('tree', id));
-    // Annotated tag objects travel with the walk.
-    for (const id of (listed.tags ?? []) as string[]) yield* add(session.entry('tag', id));
-    let asked = performance.now();
-    const ahead = await early;
+    const began = performance.now();
+    let asked = began;
+    const ahead = new Map((await early).map((o) => [o.id, o]));
     if (stats) stats.waited += performance.now() - asked;
-    yield* write(ahead);
-    const sent = new Set(ahead.map((o) => o.id));
-    asked = performance.now();
-    const rest = (listed.fetch as Wanted[]).filter((w) => !sent.has(w.id));
-    for await (const group of rawObjects(objects, rest, stats?.reads)) {
-      if (stats) stats.waited += performance.now() - asked;
-      yield* write(group);
+    // A wave at a time: its trees (held by the session), its commits read ahead, then its
+    // other commits and files read in groups; tag objects travel with the last.
+    for await (const wave of waves(session, objects, seen, stats?.walkReads)) {
+      for (const id of wave.trees) yield* add(session.entry('tree', id));
+      for (const id of wave.tags ?? []) yield* add(session.entry('tag', id));
+      yield* write(wave.fetch.flatMap((w) => ahead.get(w.id) ?? []));
+      const rest = wave.fetch.filter((w) => !ahead.delete(w.id));
       asked = performance.now();
+      for await (const group of rawObjects(objects, rest, stats?.reads, budget)) {
+        if (stats) stats.waited += performance.now() - asked;
+        yield* write(group);
+        asked = performance.now();
+        // Fails as Git shows it (side-band), never a pack cut short in silence.
+        if (asked - began > PACK_MS) throw overBudget(`more than ${PACK_MS / 60_000} minutes`);
+      }
     }
     pending.push(session.finish());
     yield concat(pending);

@@ -214,3 +214,47 @@ fn symbol_reads_conflict_only_with_writes_to_that_symbol() {
         OccOutcome::Conflict { .. }
     ));
 }
+
+/// The digest as it was first defined: the fingerprint of one JSON value.
+fn whole_value_digest(previous: &str, entry: &TxEntry) -> String {
+    let mut body = serde_json::to_value(entry).unwrap();
+    body.as_object_mut().unwrap().remove("chain");
+    crate::fingerprint(&serde_json::json!({ "previous": previous, "entry": body })).unwrap()
+}
+
+#[test]
+fn chain_digests_hashed_as_written_match_the_whole_value_digest() {
+    let mut e = entry(
+        "prev",
+        7,
+        Some(3),
+        4,
+        &["a.txt", "dir/b c.md", "ü/\"quoted\"\\x"],
+        &["dir/"],
+    );
+    e.paths[0].mode = Some(crate::git_object::FileMode::Executable);
+    e.paths[1].op = PathOp::Add;
+    e.paths[1].old_blob = None;
+    for checkpoint in [None, Some("abc".to_owned())] {
+        e.checkpoint_refs = checkpoint;
+        e.chain = "ignored".into();
+        assert_eq!(
+            chain_digest("prev", &e).unwrap(),
+            whole_value_digest("prev", &e)
+        );
+    }
+    let empty = entry("", 1, None, 1, &[], &[]);
+    assert_eq!(
+        chain_digest("", &empty).unwrap(),
+        whole_value_digest("", &empty)
+    );
+    // Recorded logs still verify.
+    for (i, e) in log().iter().enumerate() {
+        let previous = if i == 0 {
+            String::new()
+        } else {
+            log()[i - 1].chain.clone()
+        };
+        assert_eq!(e.chain, whole_value_digest(&previous, e));
+    }
+}

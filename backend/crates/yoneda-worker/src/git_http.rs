@@ -5,7 +5,10 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use worker::wasm_bindgen::{JsError, prelude::wasm_bindgen};
-use yoneda_platform::{platform_git_receive::ReceiveSession, platform_git_upload::UploadSession};
+use yoneda_platform::{
+    platform_git_receive::ReceiveSession, platform_git_upload::UploadSession,
+    platform_pack_stream::PackStream,
+};
 
 /// A session idle this long belongs to a request that is gone.
 const STALE_MS: f64 = 10.0 * 60.0 * 1000.0;
@@ -13,6 +16,7 @@ const STALE_MS: f64 = 10.0 * 60.0 * 1000.0;
 const RECEIVE_BYTES: usize = 80 * 1024 * 1024;
 const RECEIVES: usize = 16;
 const UPLOADS: usize = 8;
+const STREAMS: usize = 4;
 
 struct Sessions<T> {
     next: u32,
@@ -55,6 +59,7 @@ impl<T> Sessions<T> {
 thread_local! {
     static RECEIVING: RefCell<Sessions<ReceiveSession>> = RefCell::new(Sessions::new());
     static UPLOADING: RefCell<Sessions<UploadSession>> = RefCell::new(Sessions::new());
+    static STREAMING: RefCell<Sessions<PackStream>> = RefCell::new(Sessions::new());
 }
 
 fn answer(result: yoneda_core::Result<serde_json::Value>) -> String {
@@ -98,6 +103,22 @@ pub fn git_receive_feed(handle: u32, chunk: &[u8]) -> String {
     }))
 }
 
+/// Spilled files' content since the last call (see `ReceiveSession::spilled`), led by one
+/// byte: 1 when the pack waits for it to be taken (feed an empty chunk next), else 0.
+#[wasm_bindgen(js_name = gitReceiveSpilled, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_receive_spilled(handle: u32) -> Result<Vec<u8>, JsError> {
+    RECEIVING
+        .with_borrow_mut(|s| {
+            s.with(handle, |r| {
+                // Asked before taking: taking the content is what resumes the walk.
+                let mut out = vec![u8::from(r.paused())];
+                out.extend_from_slice(&r.spilled());
+                Ok(out)
+            })
+        })
+        .map_err(thrown)
+}
+
 /// `{op: "finish" | "commands" | "verify", ...}` (see `ReceiveSession`).
 #[wasm_bindgen(js_name = gitReceiveCall, wasm_bindgen = ::worker::wasm_bindgen)]
 pub fn git_receive_call(handle: u32, input: &str) -> String {
@@ -107,6 +128,10 @@ pub fn git_receive_call(handle: u32, input: &str) -> String {
                 Some("finish") => r.finish(),
                 Some("commands") => Ok(r.commands()),
                 Some("verify") => r.verify(&c),
+                Some("verified") => r.verified_page(
+                    c["from"].as_u64().unwrap_or(0) as usize,
+                    c["count"].as_u64().unwrap_or(0) as usize,
+                ),
                 _ => Err(yoneda_core::Error::new("UNKNOWN_OP", "Unknown receive op")),
             })
         })
@@ -144,6 +169,20 @@ pub fn git_upload_step(handle: u32, input: &str) -> String {
     answer(parse(input).and_then(|c| UPLOADING.with_borrow_mut(|s| s.with(handle, |u| u.step(&c)))))
 }
 
+/// Which of `ids` (a JSON list) the counted pack holds (`UploadSession::holds`).
+#[wasm_bindgen(js_name = gitUploadHolds, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_upload_holds(handle: u32, ids: &str) -> String {
+    answer(
+        parse(ids).and_then(|ids| UPLOADING.with_borrow_mut(|s| s.with(handle, |u| u.holds(&ids)))),
+    )
+}
+
+/// The sending pass (`UploadSession::send`): the next wave's objects to write.
+#[wasm_bindgen(js_name = gitUploadSend, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_upload_send(handle: u32, input: &str) -> String {
+    answer(parse(input).and_then(|c| UPLOADING.with_borrow_mut(|s| s.with(handle, |u| u.send(&c)))))
+}
+
 #[wasm_bindgen(js_name = gitUploadStart, wasm_bindgen = ::worker::wasm_bindgen)]
 pub fn git_upload_start(handle: u32) -> Result<Vec<u8>, JsError> {
     UPLOADING
@@ -169,6 +208,28 @@ pub fn git_upload_entry(
         .map_err(thrown)
 }
 
+/// Starts a file the adapter streams (see `UploadSession::large_start`): its entry header.
+#[wasm_bindgen(js_name = gitUploadLargeStart, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_upload_large_start(handle: u32, id: &str, size: f64) -> Result<Vec<u8>, JsError> {
+    UPLOADING
+        .with_borrow_mut(|s| s.with(handle, |u| u.large_start(id, size as usize)))
+        .map_err(thrown)
+}
+
+#[wasm_bindgen(js_name = gitUploadLargeData, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_upload_large_data(handle: u32, content: &[u8], packed: &[u8]) -> Result<(), JsError> {
+    UPLOADING
+        .with_borrow_mut(|s| s.with(handle, |u| u.large_data(content, packed)))
+        .map_err(thrown)
+}
+
+#[wasm_bindgen(js_name = gitUploadLargeEnd, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_upload_large_end(handle: u32) -> Result<(), JsError> {
+    UPLOADING
+        .with_borrow_mut(|s| s.with(handle, |u| u.large_end()))
+        .map_err(thrown)
+}
+
 /// The trailer; closes the session.
 #[wasm_bindgen(js_name = gitUploadFinish, wasm_bindgen = ::worker::wasm_bindgen)]
 pub fn git_upload_finish(handle: u32) -> Result<Vec<u8>, JsError> {
@@ -182,4 +243,51 @@ pub fn git_upload_finish(handle: u32) -> Result<Vec<u8>, JsError> {
 #[wasm_bindgen(js_name = gitUploadClose, wasm_bindgen = ::worker::wasm_bindgen)]
 pub fn git_upload_close(handle: u32) {
     UPLOADING.with_borrow_mut(|s| s.open.remove(&handle));
+}
+
+/// Opens a pack of `count` objects the adapter writes piece by piece (`PackStream`).
+#[wasm_bindgen(js_name = gitPackOpen, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_pack_open(now: f64, count: u32) -> String {
+    answer(
+        STREAMING
+            .with_borrow_mut(|s| s.add(now, STREAMS, PackStream::new(count)))
+            .map(Into::into),
+    )
+}
+
+/// One piece: `op` 0 the header, 1 a whole object (`kind`, `data`), 2 a streamed file's
+/// start (`kind` its id, `size`), 3 its content and packed bytes (`data`, `packed`),
+/// 4 its end, 5 the trailer (the stream closes).
+#[wasm_bindgen(js_name = gitPackPiece, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_pack_piece(
+    handle: u32,
+    op: u8,
+    kind: &str,
+    size: f64,
+    data: &[u8],
+    packed: &[u8],
+) -> Result<Vec<u8>, JsError> {
+    if op == 5 {
+        let stream = STREAMING.with_borrow_mut(|s| s.open.remove(&handle));
+        return stream
+            .map(|(_, p)| p.finish())
+            .ok_or_else(|| thrown(yoneda_core::Error::new("GONE", "The pack stream expired")));
+    }
+    STREAMING
+        .with_borrow_mut(|s| {
+            s.with(handle, |p| match op {
+                0 => Ok(p.header()),
+                1 => p.entry(kind, data),
+                2 => p.large_start(kind, size as usize),
+                3 => p.large_data(data, packed).map(|()| Vec::new()),
+                4 => p.large_end().map(|()| Vec::new()),
+                _ => Err(yoneda_core::Error::new("UNKNOWN_OP", "Unknown pack piece")),
+            })
+        })
+        .map_err(thrown)
+}
+
+#[wasm_bindgen(js_name = gitPackClose, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_pack_close(handle: u32) {
+    STREAMING.with_borrow_mut(|s| s.open.remove(&handle));
 }
