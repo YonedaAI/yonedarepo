@@ -89,7 +89,9 @@ async function containerJob(env: Env, repo: string, call: Call, run: Json) {
   const objects = new RepoObjects(env, repo, parseStore(env, status.object_store)).withhold(
     status.quarantined,
   );
-  const shipped = await checkFiles(env, repo, objects, run.tree);
+  // A runner's sparse scope: only its paths are read and shipped (none: the whole tree).
+  const scope: string[] | undefined = run.paths?.length ? run.paths : undefined;
+  const shipped = await checkFiles(env, repo, objects, run.tree, 'main', scope);
   const job: CheckJob = {
     command: run.command,
     timeout_seconds: run.timeout_seconds,
@@ -99,8 +101,11 @@ async function containerJob(env: Env, repo: string, call: Call, run: Json) {
     // What ran: the authority refuses a verdict whose evidence names another commit, tree
     // or no file set.
     ...ranOn(run),
+    // The digest covers exactly the scoped listing that shipped.
     files_sha256: shipped.files_sha256,
+    ...(scope ? { scope } : {}),
     queued_ms: run.queued_ms,
+    shipped_bytes: shipped.bytes,
     // Files came from the branch's warm-start seed plus this many fetched blobs.
     ...(shipped.seed ? { seed: shipped.seed } : {}),
     // Per-tier counts for S12: files served by the seed (the executor's warm tier; its
@@ -127,6 +132,8 @@ export async function completeContainerCheck(env: Env, report: CheckReport, resu
     timed_out: result.timed_out === true,
     duration_ms: result.duration_ms,
     start_ms: result.start_ms,
+    // Billed container time before the command ran: receiving and writing the files.
+    ...(typeof result.setup_ms === 'number' ? { setup_ms: result.setup_ms } : {}),
     output_bytes: result.output_bytes,
     output_sha256: result.output_sha256,
     log,

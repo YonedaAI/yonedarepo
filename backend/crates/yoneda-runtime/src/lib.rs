@@ -4,6 +4,9 @@ pub mod check_runner;
 #[cfg(all(test, unix))]
 mod check_runner_tests;
 mod check_server;
+pub mod check_stream;
+#[cfg(all(test, unix))]
+mod check_stream_tests;
 mod process_privileges;
 mod telemetry;
 pub use check_server::serve_checks;

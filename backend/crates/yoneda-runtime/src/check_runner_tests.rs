@@ -1,5 +1,9 @@
 //! Check executor: real processes on the exact files, bounded evidence, hard timeouts.
 use crate::check_runner::{CheckFile, CheckRequest, run};
+
+async fn run_now(request: CheckRequest) -> yoneda_core::Result<Value> {
+    run(request, std::time::Instant::now()).await
+}
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::Value;
 
@@ -18,7 +22,7 @@ fn request(command: &[&str], timeout_seconds: u64, files: Vec<CheckFile>) -> Che
     }
 }
 async fn check(command: &[&str], files: Vec<CheckFile>) -> Value {
-    run(request(command, 20, files)).await.unwrap()
+    run_now(request(command, 20, files)).await.unwrap()
 }
 
 #[tokio::test]
@@ -49,7 +53,7 @@ async fn runs_the_exact_files_and_reports_pass_or_fail() {
 #[tokio::test]
 async fn timeouts_kill_the_whole_process_group() {
     let started = std::time::Instant::now();
-    let result = run(request(&["sh", "-c", "sleep 30 & sleep 30"], 1, vec![]))
+    let result = run_now(request(&["sh", "-c", "sleep 30 & sleep 30"], 1, vec![]))
         .await
         .unwrap();
     assert_eq!(result["timed_out"], true);
@@ -101,15 +105,18 @@ async fn rejects_escaping_or_duplicate_paths_and_bad_limits() {
         vec![file("a", "blob", ""), file("a", "blob", "")],
         vec![file("a", "tree", "")],
     ] {
-        let code = run(request(&["true"], 5, files)).await.unwrap_err().code;
+        let code = run_now(request(&["true"], 5, files))
+            .await
+            .unwrap_err()
+            .code;
         assert!(
             ["INVALID_INPUT", "UNSAFE_PATH"].contains(&code.as_str()),
             "{code}"
         );
     }
-    assert!(run(request(&["true"], 0, vec![])).await.is_err());
+    assert!(run_now(request(&["true"], 0, vec![])).await.is_err());
     assert_eq!(
-        run(request(&["/no/such/binary"], 5, vec![]))
+        run_now(request(&["/no/such/binary"], 5, vec![]))
             .await
             .unwrap_err()
             .code,
@@ -136,11 +143,11 @@ async fn keeps_symlinks_inside_the_root() {
             "INVALID_INPUT",
         ),
     ] {
-        let error = run(request(&["true"], 5, files)).await.unwrap_err();
+        let error = run_now(request(&["true"], 5, files)).await.unwrap_err();
         assert_eq!(error.code, code, "{}", error.message);
     }
     // A target that resolves back inside the root is a plain tree entry.
-    let kept = run(request(
+    let kept = run_now(request(
         &["true"],
         5,
         vec![

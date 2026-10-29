@@ -76,6 +76,8 @@ export type Runner = {
   /** argv, executed without a shell unless the owner writes `["sh", "-c", ...]`. */
   command: string[];
   kind?: "command";
+  /** The check's sparse scope: only files at or under these paths are shipped to its container (none: the whole tree). Omitted when empty, so policies without it keep their digest. */
+  paths?: string[];
   timeout_seconds: number;
 } | {
   /** Review the first part of a diff over the budget instead of failing it. Omitted when false, the fail-closed default. */
@@ -306,6 +308,14 @@ export const repoStatusSchema = {
             },
             "kind": {
               "const": "command"
+            },
+            "paths": {
+              "description": "The check's sparse scope: only files at or under these paths are shipped to its\ncontainer (none: the whole tree). Omitted when empty, so policies without it keep\ntheir digest.",
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 32,
+              "type": "array"
             },
             "timeout_seconds": {
               "default": 600,
