@@ -106,6 +106,10 @@
         "Git LFS (/git/<repo>.git/info/lfs) hands out presigned R2 URLs on the OBJECTS bucket's S3 API",
         "(LFS_S3_ENDPOINT, LFS_S3_BUCKET). Secrets: LFS_S3_ACCESS_KEY_ID / LFS_S3_SECRET_ACCESS_KEY, the",
         "S3 key pair of an R2 API token with Object Read & Write on that bucket only. Without them LFS answers 501.",
+        "Clone packs (platform-pack-builder.ts): one PackBuilder container per repository (cloudflare/pack-builder/Dockerfile,",
+        "its own image: yoneda-pack-builder and stock Git), started for each pack-build job and destroyed after it.",
+        "No internet or credentials: it reaches the repository's Artifacts mirror and the platform's smart HTTP only",
+        "through this Worker. basic: svelte's three packs (168,943 objects) peak at 386 MiB, 675 MiB rebuilding every delta.",
         "Git over SSH (platform-ssh-gateway.ts): one SshGateway container (cloudflare/ssh-gateway/Dockerfile,",
         "its own image, never the runtime's) runs yoneda-ssh-gateway, reaching the platform only through SELF.",
         "SSH_FRONT_DOOR=tunnel. tunnel: the container also runs cloudflared (SSH_TUNNEL_TOKEN, a remotely",
@@ -225,6 +229,10 @@
             {
               "name": "SSH_GATEWAYS",
               "class_name": "SshGateway"
+            },
+            {
+              "name": "PACK_BUILDERS",
+              "class_name": "PackBuilder"
             }
           ]
         },
@@ -260,6 +268,12 @@
             "new_sqlite_classes": [
               "SshGateway"
             ]
+          },
+          {
+            "tag": "v6",
+            "new_sqlite_classes": [
+              "PackBuilder"
+            ]
           }
         ],
         "containers": [
@@ -283,6 +297,21 @@
             "image_build_context": "..",
             "instance_type": "basic",
             "max_instances": 2,
+            "rollout_step_percentage": [
+              100
+            ],
+            "constraints": {
+              "regions": [
+                "ENAM"
+              ]
+            }
+          },
+          {
+            "class_name": "PackBuilder",
+            "image": "./pack-builder/Dockerfile",
+            "image_build_context": "..",
+            "instance_type": "basic",
+            "max_instances": 4,
             "rollout_step_percentage": [
               100
             ],

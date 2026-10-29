@@ -1,8 +1,8 @@
 # Workspace layer allow-table, enforced by `cargo xtask layers` (part of `cargo xtask check`).
 #
-# [allow]: for every crate of the workspace (and of the separate SSH gateway workspace), the
-# workspace crates it may depend on as a normal or build dependency, on any target; optional
-# dependencies count. Dev-dependencies are not checked: tests may pull in native stores.
+# [allow]: for every crate of the workspace (and of the separate SSH gateway and pack builder
+# workspaces), the workspace crates it may depend on as a normal or build dependency, on any
+# target; optional dependencies count. Dev-dependencies are not checked: tests may pull in native stores.
 # The edges follow "Layout and boundaries" in AGENTS.md. Every crate must be listed.
 [allow]
 # Core contracts: no workspace dependency.
@@ -21,6 +21,8 @@ yoneda-runtime = ["yoneda-core"]
 yoneda-cli = ["yoneda-core"]
 # Its own workspace: the gateway image builds from its directory alone.
 yoneda-ssh-gateway = []
+# Its own workspace too: the PackBuilder image builds from its directory alone.
+yoneda-pack-builder = []
 # The reference model shares no code with what it checks (see [isolated]).
 yoneda-refmodel = []
 # `cargo xtask contracts` writes shared/contracts/*.ts from the platform's Rust types and

@@ -6,8 +6,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::process::Command;
 
 const TABLE: &str = "xtask/layers.toml";
-/// The main workspace, then the SSH gateway's own workspace.
-const WORKSPACES: [Option<&str>; 2] = [None, Some("backend/crates/yoneda-ssh-gateway/Cargo.toml")];
+/// The main workspace, then the SSH gateway's and the pack builder's own workspaces.
+const WORKSPACES: [Option<&str>; 3] = [
+    None,
+    Some("backend/crates/yoneda-ssh-gateway/Cargo.toml"),
+    Some("backend/crates/yoneda-pack-builder/Cargo.toml"),
+];
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

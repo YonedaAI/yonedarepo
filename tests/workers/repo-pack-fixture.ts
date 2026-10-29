@@ -2,10 +2,14 @@
 // pushed history of a few MiB, Git requests against it, and R2 reads counted in a fresh
 // isolate.
 import { expect, vi } from 'vitest';
+import { type BuildPlan, buildPacks } from '../../cloudflare/worker/platform-pack-builder';
 import { platformJob } from '../../cloudflare/worker/platform-entrypoint';
 import { isolateLocations } from '../../cloudflare/worker/repo-bundles';
 import { compute } from '../../cloudflare/worker/repo-compute';
+import { uploadPackV2 } from '../../cloudflare/worker/repo-git-v2';
 import { fromBase64, toBase64 } from '../../cloudflare/worker/repo-objects';
+import { caller, RepoContext } from '../../cloudflare/worker/repo-ops';
+import type { Fresh } from '../../cloudflare/worker/repo-pack-cache';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { isolateTrees } from '../../cloudflare/worker/repo-tree-memo';
 import type { Env } from '../../cloudflare/worker/types';
@@ -140,4 +144,72 @@ export async function drainPackBuilds(env: Env, limit = 20) {
       await runJob(env, message);
     }
   return ran;
+}
+
+/** The packfile a v2 fetch answer carries (its side-band data joined). */
+function packfile(bytes: Uint8Array) {
+  const at = new TextDecoder('latin1').decode(bytes).indexOf('packfile\n');
+  if (at < 0) throw new Error(new TextDecoder().decode(bytes).slice(0, 300));
+  const parts: number[] = [];
+  for (let i = at + 'packfile\n'.length; i + 4 <= bytes.length; ) {
+    const length = Number.parseInt(new TextDecoder().decode(bytes.subarray(i, i + 4)), 16);
+    if (length === 0) break;
+    if (bytes[i + 4] === 1) parts.push(...bytes.subarray(i + 5, i + length));
+    i += length;
+  }
+  return new Uint8Array(parts);
+}
+
+/** What the platform's own upload-pack sends for `fresh` (built, never from the store). */
+export async function platformPack(env: Env, repo: string, fresh: Fresh) {
+  const built = new RepoContext({ ...env, PACK_CACHE: 'off' } as Env, repo, caller(env, repo, { _system: 'derive' }));
+  const args = [...fresh.wants.map((w) => `want ${w}`), ...(fresh.omit_blobs ? ['filter blob:none'] : []), ...(fresh.depth ? [`deepen ${fresh.depth}`] : []), 'done'];
+  const body = `${pkt('command=fetch\n')}${pkt('object-format=sha1\n')}0001${args.map((a) => pkt(`${a}\n`)).join('')}0000`;
+  const answer = await uploadPackV2(built, await built.objects(), new Response(body).body as ReadableStream<Uint8Array>);
+  return packfile(new Uint8Array(await answer.arrayBuffer()));
+}
+
+/** Test double of the PackBuilder container (the image itself is tested with Git in its
+ * crate and in Docker): it answers /fetch, /pack and /stats with what the platform's
+ * upload-pack builds. `calls` records each request; `destroyed` counts kills. */
+export function fakeBuilders(env: () => Env, options: { packs?: (fresh: Fresh, pack: Uint8Array) => Uint8Array; withheld?: () => Promise<boolean>; start?: () => Promise<void> } = {}) {
+  const record = { calls: [] as string[], started: 0, destroyed: 0 };
+  const instance = (repo: string) => {
+    let last = 0;
+    return {
+      async startAndWaitForPorts(start: any) {
+        record.started++;
+        await options.start?.();
+        expect(start.startOptions.envVars.MIRROR_URL).toBe(`http://mirror.internal/${repo}.git`);
+      },
+      async destroy() {
+        record.destroyed++;
+      },
+      async containerFetch(req: Request) {
+        const url = new URL(req.url);
+        record.calls.push(`${url.pathname}${url.search}`);
+        const wants = (await req.text()).split('\n').filter(Boolean);
+        if (url.pathname === '/fetch') {
+          const full = await platformPack(env(), repo, { wants, omit_blobs: false, depth: null, deepen_relative: false });
+          return Response.json({ mirror: false, from_platform: wants.length, objects: new DataView(full.buffer, full.byteOffset + 8, 4).getUint32(0), ms: 1, cpu_ms: 1, peak_mib: 1 });
+        }
+        if (url.pathname === '/pack') {
+          const fresh = { wants, omit_blobs: url.searchParams.get('filter') === 'blob:none', depth: url.searchParams.get('depth') ? 1 : null, deepen_relative: false };
+          const pack = await platformPack(env(), repo, fresh);
+          last = pack.length;
+          return new Response(options.packs ? options.packs(fresh, pack) : pack);
+        }
+        return Response.json({ ok: true, bytes: last, ms: 1, cpu_ms: 1, peak_mib: 1 });
+      },
+    };
+  };
+  const namespace = {
+    idFromName: (name: string) => ({ toString: () => `id:${name}`, name }),
+    get: (id: { name: string }) => {
+      const repo = id.name.replace(/^packs:/, '');
+      const withheld = options.withheld ?? (async () => (await new RepoContext(env(), repo, caller(env(), repo, { _system: 'derive' })).objects()).withholdsAny());
+      return { build: (plan: BuildPlan) => buildPacks(instance(repo), env(), plan, withheld) };
+    },
+  };
+  return { namespace, record };
 }
