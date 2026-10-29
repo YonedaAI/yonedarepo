@@ -1,21 +1,31 @@
-// Stored packs built by jobs (repo-pack-jobs): a clone that cannot store its pack hands it
-// over, and a push to main builds that tip's full, partial and shallow clone packs after a
-// debounce, one build at a time, deleting the earlier tip's. Counts are of R2 reads in
-// local workerd.
-import { expect, it, vi } from 'vitest';
+// Stored packs built by jobs (repo-pack-jobs) in the repository's PackBuilder container
+// (platform-pack-builder.ts; a test double here, answering with what the platform builds): a clone
+// that cannot store its pack hands it over, and a push to main builds that tip's full,
+// partial and shallow clone packs after a debounce, one build at a time, deleting the
+// earlier tip's. The container answers its Git remotes only for its own repository. Counts
+// are of R2 reads in local workerd.
+import { beforeEach, expect, it, vi } from 'vitest';
 import { withWaitUntil } from '../../cloudflare/worker/background';
+import { buildPacks, mirrorSource, platformSource } from '../../cloudflare/worker/platform-pack-builder';
 import { packKey } from '../../cloudflare/worker/repo-pack-cache';
 import { DEBOUNCE_S } from '../../cloudflare/worker/repo-pack-jobs';
 import type { Env } from '../../cloudflare/worker/types';
 import { bindings, fakeQueue, usePlatformFixture } from './repo-fixture';
-import { count, drainPackBuilds, fetchV2, history, on, pushedRepo, reads, runJob, take } from './repo-pack-fixture';
+import { count, drainPackBuilds, fakeBuilders, fetchV2, history, on, pkt, pushedRepo, reads, runJob, take } from './repo-pack-fixture';
 
 usePlatformFixture();
 
+const builders = fakeBuilders(() => jobs);
 /** Jobs build packs of any size here (the fixtures' are a few dozen objects). */
-const jobs = { ...on, PACK_BUILD_MIN_OBJECTS: '0' } as unknown as Env;
+const jobs = { ...on, PACK_BUILD_MIN_OBJECTS: '0', PACK_BUILDERS: builders.namespace } as unknown as Env;
 /** This isolate's Wasm is over the clone's store limit: every clone hands its pack over. */
 const crowded = { ...jobs, PACK_STORE_WASM_MIB: '0' } as unknown as Env;
+
+beforeEach(() => {
+  builders.record.calls.length = 0;
+  builders.record.started = 0;
+  builders.record.destroyed = 0;
+});
 
 const packs = async (repo: string) =>
   (await bindings.OBJECTS.list({ prefix: `derived/v1/${repo}/packs/v2/` })).objects.map((o) => o.key).filter((k) => k.endsWith('.pack'));
@@ -29,7 +39,7 @@ const kinds = (tip: string, blobs: string[]) =>
     checkout: [...blobs.map((b) => `want ${b}`), 'filter blob:none', 'done'],
   }) as const;
 
-it('hands a pack it cannot store to a job, which stores it for the next clone of each kind', async () => {
+it('hands a pack it cannot store to a container job, which stores it for the next clone of each kind', async () => {
   const { repo, token, objects, tip } = await pushedRepo('pack_handoff', crowded);
   take('platform_derive');
   const blobs = objects.filter((o) => o.kind === 'blob').map((o) => o.id);
@@ -45,20 +55,21 @@ it('hands a pack it cannot store to a job, which stores it for the next clone of
     let again: Uint8Array | string = '';
     const hit = await reads(repo, async () => (again = await fetchV2(crowded, repo, token, args)));
     expect(hit, kind).toEqual({ bundles: 0, packs: 1 });
-    expect(again, kind).toEqual(first);
-    expect(count(again), kind).toBeGreaterThan(0);
+    expect(count(again), kind).toBe(count(first));
   }
+  // One container start per build, each destroyed after it.
+  expect([builders.record.started, builders.record.destroyed]).toEqual([4, 4]);
   // The job's records of what was asked are gone once it settled.
   const left = (await bindings.OBJECTS.list({ prefix: `derived/v1/${repo}/packs/v2/` })).objects.map((o) => o.key);
   expect(left.filter((k) => !k.endsWith('.pack') && !k.endsWith('/recent'))).toEqual([]);
 });
 
-it('builds main’s clone packs after a push, once the pushes settle, and deletes the earlier tip’s', async () => {
+it('builds main’s clone packs in one container start after a push, once the pushes settle, and deletes the earlier tip’s', async () => {
   const send = vi.spyOn(fakeQueue, 'send');
   const { repo, token, push, tip } = await pushedRepo('pack_after_push', jobs);
   // The derive job after the landing schedules main's build DEBOUNCE_S later.
   for (const derive of take('platform_derive')) await runJob(jobs, derive);
-  expect(send).toHaveBeenCalledWith(expect.objectContaining({ kind: 'platform_pack_build', job_id: `push-0-${tip}` }), { delaySeconds: DEBOUNCE_S });
+  expect(send).toHaveBeenCalledWith(expect.objectContaining({ kind: 'platform_pack_build', job_id: `push-${tip}` }), { delaySeconds: DEBOUNCE_S });
   const scheduled = take('platform_pack_build');
 
   // Main moves again before it runs: that job builds nothing; the later tip's builds.
@@ -67,9 +78,12 @@ it('builds main’s clone packs after a push, once the pushes settle, and delete
   for (const derive of take('platform_derive')) await runJob(jobs, derive);
   for (const message of scheduled) await runJob(jobs, message);
   expect(await packs(repo)).toEqual([]);
+  expect(builders.record.started).toBe(0);
   const later = more[0].id;
-  expect(await drainPackBuilds(jobs)).toEqual([0, 1, 2].map((step) => `push-${step}-${later}`));
+  expect(await drainPackBuilds(jobs)).toEqual([`push-${later}`]);
   expect(await packs(repo)).toHaveLength(3);
+  expect(builders.record.calls).toEqual(['/fetch', '/pack', '/stats', '/pack?filter=blob:none', '/stats', '/pack?depth=1', '/stats']);
+  expect([builders.record.started, builders.record.destroyed]).toEqual([1, 1]);
 
   // The first clone of each kind is already one R2 read.
   for (const [kind, args] of Object.entries(kinds(later, []))) {
@@ -94,20 +108,105 @@ it('builds one pack at a time per repository: a busy job comes back later', asyn
   const { repo, tip } = await pushedRepo('pack_busy', jobs);
   take('platform_derive');
   await bindings.OBJECTS.put(`derived/v1/${repo}/packs/v2/building`, 'held', { customMetadata: { until: String(Date.now() + 60_000) } });
-  await runJob(jobs, { v: 1, kind: 'platform_pack_build', repo_id: repo, job_id: `push-0-${tip}` });
+  await runJob(jobs, { v: 1, kind: 'platform_pack_build', repo_id: repo, job_id: `push-${tip}` });
   expect(await packs(repo)).toEqual([]);
-  expect(take('platform_pack_build').map((m) => m.job_id)).toEqual([`push-0-${tip}`]);
+  expect(take('platform_pack_build').map((m) => m.job_id)).toEqual([`push-${tip}`]);
   // An expired lease (its build died) is taken over.
   await bindings.OBJECTS.put(`derived/v1/${repo}/packs/v2/building`, 'held', { customMetadata: { until: String(Date.now() - 1) } });
-  await runJob(jobs, { v: 1, kind: 'platform_pack_build', repo_id: repo, job_id: `push-0-${tip}` });
-  expect(await packs(repo)).toHaveLength(1);
+  await runJob(jobs, { v: 1, kind: 'platform_pack_build', repo_id: repo, job_id: `push-${tip}` });
+  expect(await packs(repo)).toHaveLength(3);
   expect(await bindings.OBJECTS.head(`derived/v1/${repo}/packs/v2/building`)).toBeNull();
 });
 
 it('builds nothing for a repository under PACK_BUILD_MIN_OBJECTS', async () => {
-  const { repo, tip } = await pushedRepo('pack_small', on);
+  const small = { ...jobs, PACK_BUILD_MIN_OBJECTS: '5000' } as unknown as Env;
+  const { repo, tip } = await pushedRepo('pack_small', small);
   take('platform_derive');
-  await runJob(on, { v: 1, kind: 'platform_pack_build', repo_id: repo, job_id: `push-0-${tip}` });
-  expect(await drainPackBuilds(on)).toEqual([]);
+  await runJob(small, { v: 1, kind: 'platform_pack_build', repo_id: repo, job_id: `push-${tip}` });
   expect(await packs(repo)).toEqual([]);
+  expect(builders.record.calls).toEqual(['/fetch']);
+  expect(builders.record.destroyed).toBe(1);
+  // The Worker's fallback build holds to it too.
+  const bare = { ...on, PACK_BUILD_MIN_OBJECTS: '5000' } as unknown as Env;
+  await runJob(bare, { v: 1, kind: 'platform_pack_build', repo_id: repo, job_id: `push-${tip}` });
+  expect(await packs(repo)).toEqual([]);
+});
+
+/** Main's three packs after a push, built by `env`'s job; the first clone of each hits. */
+async function builtAfterPush(name: string, env: Env) {
+  const { repo, token, tip } = await pushedRepo(name, env);
+  take('platform_derive');
+  await runJob(env, { v: 1, kind: 'platform_pack_build', repo_id: repo, job_id: `push-${tip}` });
+  expect(await packs(repo)).toHaveLength(3);
+  for (const [kind, args] of Object.entries(kinds(tip, []))) {
+    if (kind === 'checkout') continue;
+    let pack: Uint8Array | string = '';
+    const hit = await reads(repo, async () => (pack = await fetchV2(env, repo, token, args)));
+    expect(hit, kind).toEqual({ bundles: 0, packs: 1 });
+    expect(count(pack), kind).toBeGreaterThan(0);
+  }
+  return repo;
+}
+
+it('builds in the Worker when the platform has no containers', async () => {
+  const logs = vi.spyOn(console, 'log');
+  await builtAfterPush('pack_no_container', { ...on, PACK_BUILD_MIN_OBJECTS: '0' } as unknown as Env);
+  expect(logs.mock.calls.some(([line]) => String(line).includes('"why":"no builder"'))).toBe(true);
+});
+
+it('builds in the Worker when the container does not start or sends a broken pack, and destroys it', async () => {
+  const down = fakeBuilders(() => noStart, { start: async () => Promise.reject(new Error('no container capacity')) });
+  const noStart = { ...jobs, PACK_BUILDERS: down.namespace } as unknown as Env;
+  await builtAfterPush('pack_no_start', noStart);
+  expect([down.record.started, down.record.destroyed, down.record.calls.length]).toEqual([1, 1, 0]);
+
+  // A pack cut short is never kept; the Worker builds the packs instead.
+  const cut = fakeBuilders(() => broken, { packs: (_, pack) => pack.subarray(0, pack.length - 7) });
+  const broken = { ...jobs, PACK_BUILDERS: cut.namespace } as unknown as Env;
+  const logs = vi.spyOn(console, 'log');
+  const repo = await builtAfterPush('pack_cut', broken);
+  expect(cut.record.destroyed).toBe(1);
+  expect(logs.mock.calls.some(([line]) => String(line).includes('incomplete pack'))).toBe(true);
+  expect(await bindings.OBJECTS.head(`derived/v1/${repo}/packs/v2/building`)).toBeNull();
+});
+
+it('keeps no pack once a blob is withheld while it was built', async () => {
+  const late = fakeBuilders(() => quarantined, { withheld: async () => true });
+  const quarantined = { ...jobs, PACK_BUILDERS: late.namespace } as unknown as Env;
+  const { repo, tip } = await pushedRepo('pack_late_quarantine', quarantined);
+  take('platform_derive');
+  const logs = vi.spyOn(console, 'log');
+  await runJob(quarantined, { v: 1, kind: 'platform_pack_build', repo_id: repo, job_id: `push-${tip}` });
+  expect(late.record.calls.filter((c) => c.startsWith('/pack'))).toHaveLength(3);
+  expect(await packs(repo)).toEqual([]);
+  const report = logs.mock.calls.map(([line]) => String(line)).find((line) => line.includes('"git.pack.build"'));
+  expect(JSON.parse(report ?? '{}').packs.map((p: { outcome: string }) => p.outcome)).toEqual(['withheld', 'withheld', 'withheld']);
+});
+
+it('answers a container’s Git remotes only for its own repository', async () => {
+  const { repo, tip } = await pushedRepo('pack_sources', jobs);
+  const own = { containerId: `id:packs:${repo}` };
+  const other = { containerId: 'id:packs:r00000000000000000000' };
+  const at = (host: string, path: string, init?: RequestInit) => new Request(`http://${host}/${repo}.git/${path}`, { headers: { 'git-protocol': 'version=2' }, ...init });
+  const refs = 'info/refs?service=git-upload-pack';
+  expect((await platformSource(at('platform.internal', refs), jobs, other)).status).toBe(403);
+  expect((await mirrorSource(at('mirror.internal', refs), jobs, other)).status).toBe(403);
+  // Only upload-pack's two requests.
+  expect((await platformSource(at('platform.internal', 'info/refs?service=git-receive-pack'), jobs, own)).status).toBe(403);
+  expect((await platformSource(at('platform.internal', refs), jobs, own)).status).toBe(200);
+  const body = `${pkt('command=fetch\n')}${pkt('object-format=sha1\n')}0001${pkt(`want ${tip}\n`)}${pkt('done\n')}0000`;
+  const fetched = await platformSource(at('platform.internal', 'git-upload-pack', { method: 'POST', body }), jobs, own);
+  expect(new TextDecoder('latin1').decode(new Uint8Array(await fetched.arrayBuffer()))).toContain('packfile');
+  // Git gzips a large request (a checkout's thousands of wanted blobs).
+  const gzipped = new Response(new Response(body).body?.pipeThrough(new CompressionStream('gzip')));
+  const zipped = { method: 'POST', body: await gzipped.arrayBuffer(), headers: { 'git-protocol': 'version=2', 'content-encoding': 'gzip' } };
+  const unzipped = await platformSource(at('platform.internal', 'git-upload-pack', zipped), jobs, own);
+  expect(new TextDecoder('latin1').decode(new Uint8Array(await unzipped.arrayBuffer()))).toContain('packfile');
+  // The mirror is the repository's Artifacts remote, with a read token the Worker minted.
+  const remote = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('refs'));
+  expect(await (await mirrorSource(at('mirror.internal', refs), jobs, own)).text()).toBe('refs');
+  const [target, init] = remote.mock.calls[0] as [string, RequestInit];
+  expect(target).toMatch(/^https:\/\/artifacts\.test\/.+\/info\/refs\?service=git-upload-pack$/);
+  expect(new Headers(init.headers).get('authorization')).toMatch(/^Bearer .+/);
+  expect(new Headers(init.headers).get('git-protocol')).toBe('version=2');
 });
