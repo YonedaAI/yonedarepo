@@ -3,7 +3,9 @@
 // beyond it, and it reaches only the `host:port` targets of $SANDBOX_EGRESS_ALLOW (the model
 // provider's API and the platform), by exact name. HTTPS goes through CONNECT, plain HTTP
 // (a platform on the host's loopback) as absolute-form requests. Every refusal is logged as
-// one JSON line, so a run shows what an agent tried to reach.
+// one JSON line, so a run shows what an agent tried to reach. Every socket has an error
+// handler: a client's reset (opencode drops a refused tunnel that way) must end that one
+// connection, never the proxy every agent depends on.
 import { connect } from 'node:net';
 import { createServer, request } from 'node:http';
 
@@ -40,9 +42,11 @@ export const allowed = (method, url, allow) => {
   return target !== null && allow.has(target);
 };
 
-const refuse = (target, method) => console.log(JSON.stringify({ event: 'egress.refused', method, target }));
+const logLine = (event) => console.log(JSON.stringify(event));
 
-export function serve(allow, port = PORT) {
+/** The proxy on `port` (0: any free one), logging its events through `log`. */
+export function serve(allow, port = PORT, log = logLine) {
+  const refuse = (target, method) => log({ event: 'egress.refused', method, target });
   const server = createServer((req, res) => {
     if (!allowed(req.method, req.url, allow)) {
       refuse(targetOf(req.method, req.url) ?? req.url, req.method);
@@ -54,13 +58,19 @@ export function serve(allow, port = PORT) {
       { host: url.hostname, port: url.port || 80, method: req.method, path: `${url.pathname}${url.search}`, headers: req.headers },
       (answer) => {
         res.writeHead(answer.statusCode ?? 502, answer.headers);
+        answer.on('error', () => res.destroy());
         answer.pipe(res);
       },
     );
-    upstream.on('error', () => res.writeHead(502).end());
+    // Once the answer has begun, a 502 can no longer be sent: the client sees the cut instead.
+    upstream.on('error', () => (res.headersSent ? res.destroy() : res.writeHead(502).end()));
+    req.on('error', () => upstream.destroy());
     req.pipe(upstream);
   });
+  // The http server stops handling a CONNECT socket's errors once it hands the socket here.
   server.on('connect', (req, socket, head) => {
+    let upstream = null;
+    socket.on('error', () => upstream?.destroy());
     if (!allowed('CONNECT', req.url, allow)) {
       refuse(targetOf('CONNECT', req.url) ?? req.url, 'CONNECT');
       socket.end('HTTP/1.1 403 Forbidden\r\n\r\n');
@@ -68,7 +78,7 @@ export function serve(allow, port = PORT) {
     }
     const [host, port] = targetOf('CONNECT', req.url).split(':');
     let open = false;
-    const upstream = connect(Number(port), host, () => {
+    upstream = connect(Number(port), host, () => {
       open = true;
       socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
       upstream.write(head);
@@ -76,9 +86,8 @@ export function serve(allow, port = PORT) {
       socket.pipe(upstream);
     });
     upstream.on('error', () => (open ? socket.destroy() : socket.end('HTTP/1.1 502 Bad Gateway\r\n\r\n')));
-    socket.on('error', () => upstream.destroy());
   });
-  return server.listen(port, () => console.log(JSON.stringify({ event: 'egress.listening', port, allow: [...allow] })));
+  return server.listen(port, () => log({ event: 'egress.listening', port: server.address().port, allow: [...allow] }));
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) serve(parseAllow(process.env.SANDBOX_EGRESS_ALLOW));
