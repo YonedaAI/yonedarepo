@@ -170,7 +170,16 @@ async function* readPage(page: Page): AsyncGenerator<Json> {
   const { objects, wanted, raw, large } = page;
   /** A blob as served: inline, or a stub the client downloads (never base64 of its bytes). */
   const blob = async (id: string) => {
-    const content = await objects.blob(id);
+    // A large file (repo-large-files) is never read into a page: a stub, if asked for.
+    const content = await objects.blob(id).catch((e) => {
+      if (large && e?.code === 'TOO_LARGE' && e.details?.size) return e.details.size as number;
+      throw e;
+    });
+    if (typeof content === 'number') {
+      page.read += LARGE_BLOB;
+      page.largest = Math.max(page.largest, content);
+      return { id, kind: 'blob', size: content, large: true };
+    }
     page.read += content.length;
     page.largest = Math.max(page.largest, content.length);
     return large && content.length > LARGE_BLOB

@@ -205,3 +205,38 @@ fn redacts_every_credential_whole_and_keeps_the_rest() {
     let plain = "sk-ant- in prose, ghp_short, AKIAEXAMPLE and é";
     assert_eq!(redact(plain), (plain.to_owned(), vec![]));
 }
+
+#[test]
+fn a_streamed_file_is_scanned_across_pieces_and_judged_by_path() {
+    let secret = token(&["gh", "p_"], 36);
+    let text = format!(
+        "{}line two holds {secret} here\n{}",
+        "x\n".repeat(5000),
+        "y\n".repeat(5000)
+    );
+    let bytes = text.as_bytes();
+    let line = 5001;
+    for piece in [1, 7, 4096, 65_536, bytes.len()] {
+        let mut scan = StreamScan::default();
+        for part in bytes.chunks(piece) {
+            scan.feed(part);
+        }
+        let hits = scan.finish();
+        assert_eq!(hits, vec![("github-token", line)], "pieces of {piece}");
+        let refused = refuse("big.txt", &hits, &[]).unwrap_err();
+        assert!(
+            refused
+                .message
+                .starts_with(&format!("big.txt line {line} "))
+        );
+        let allow = [SecretAllow {
+            path: "big.txt".into(),
+            rule: "github-token".into(),
+        }];
+        assert!(refuse("big.txt", &hits, &allow).is_ok());
+        assert!(refuse("other.txt", &hits, &allow).is_err());
+    }
+    let mut clean = StreamScan::default();
+    clean.feed(&"plain text\n".repeat(1000).into_bytes());
+    assert!(clean.finish().is_empty());
+}

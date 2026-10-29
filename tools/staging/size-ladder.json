@@ -12,11 +12,9 @@
       "query": "createEventDispatcher",
       "path": "packages/svelte/src/index-client.js",
       "expect": [
-        "Import: 8 pushes planned (--plan-only); push 3 carries strauss.mp3 (18.3 MB > 16 MiB per object) and is expected to be refused, so reads run on the first 2 pushes' history.",
-        "Full clone: refused, 169k objects > the 40,000 a fetch sends (even of the partial history, likely).",
-        "Partial clone: likely refused (11k commits plus their trees > 40,000).",
-        "Shallow clone: about 13k objects, served.",
-        "Search: first query builds the index cold (tens of seconds); later ones served. Blame, history, Overview: served."
+        "Import: 8 pushes planned (--plan-only); strauss.mp3 (18.3 MB) streams in as a large file.",
+        "Full clone: served (no object cap); the first stores its pack, later ones stream it. Partial and shallow clones: served.",
+        "Search: the first query builds the index cold (tens of seconds); later ones served. Blame, history, Overview: served."
       ]
     },
     {
@@ -29,10 +27,9 @@
       "query": "PodSpec",
       "path": "pkg/kubelet/kubelet.go",
       "expect": [
-        "Import: 40-60 pushes (about 1.5 GB / 40 MiB; objects likely over 1M / 30k), hours of pushing; any blob over 16 MiB stops it.",
-        "Full and partial clone: refused (objects far over 40,000).",
-        "Shallow clone: the tip's files and trees, near 40,000 (borderline: refused if over).",
-        "Search: cold index build over many partitions may exceed a request's limits (first break expected here after clones). Overview, blame, history: served; history and blame on 142k commits test the authority's log size."
+        "Import: 40-60 pushes (about 1.5 GB / 40 MiB; objects likely over 1M / 30k), hours of pushing; a file over 100 MiB stops it.",
+        "Full and partial clone: served in waves, within 40,000 object-store reads (bundled) and 15 minutes: the first full clone is the one to watch.",
+        "Search: cold index build over many partitions may exceed a request's limits. Overview, blame, history: served; path history from the chain index."
       ]
     },
     {
@@ -45,9 +42,9 @@
       "query": "favorite",
       "path": "README.md",
       "expect": [
-        "Import: about 130+ pushes by bytes (5 GB / 40 MiB) but only 318 commits: single first-parent steps of tens of thousands of icon files are expected to exceed one push (40,000 objects or 64 MiB): the import is expected to break here first.",
-        "Shallow clone: the tip holds far over 40,000 files: refused. Full and partial clone: refused.",
-        "Search: directories of more than 200,000 files are not indexed (named as refused); Overview lists the whole tree (large) but analyses at most 400 source files."
+        "Import: about 130+ pushes by bytes (5 GB / 40 MiB) but only 318 commits: single first-parent steps of tens of thousands of icon files are expected to exceed one push's 40,000 objects: the import is expected to break here first.",
+        "Clones: served in waves if imported; the 15-minute and read budgets are what to watch.",
+        "Search: directories of more than 200,000 files are not indexed (named as refused); Overview lists the whole tree but analyses at most 400 source files."
       ]
     },
     {

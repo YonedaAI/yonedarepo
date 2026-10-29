@@ -1,6 +1,7 @@
 // Object reads for Git over HTTPS: exact Git content for packs and trees for the walks
 // that verify a push or enumerate a fetch, from the store of record first (a push's
-// bundles in a few ranged reads, then one R2 object per key).
+// bundles in a few ranged reads, then one R2 object per key), and what a push's
+// verification asks of the repository (`supply`).
 import {
   fromBundles,
   HEADER,
@@ -12,22 +13,52 @@ import {
   type Wanted,
   WIDE_GAP,
 } from './repo-bundles';
+import type { UploadSession } from './repo-git-sessions';
+import { type LargeBody, largeBody } from './repo-large-files';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
-import type { Json } from './repo-ops';
+import { ApiError, type Json, type RepoContext } from './repo-ops';
 
 /** Objects outside bundles read at a time, one R2 object each. */
 const READS = 32;
+/** Object-store reads one fetch may make (a Worker request has 50,000 subrequests; the
+ * rest are its walk's and the authority's): past it the fetch fails, saying so. */
+export const FETCH_READS = 40_000;
+
+/** What a fetch has spent of FETCH_READS. */
+export class ReadBudget {
+  used = 0;
+  constructor(readonly limit = FETCH_READS) {}
+  spend(reads: number) {
+    this.used += reads;
+    if (this.used > this.limit) throw overBudget(`more than ${this.limit} object-store reads`);
+  }
+}
+
+/** A fetch past the server's budget: what to do instead. */
+export const overBudget = (what: string) =>
+  new ApiError(
+    'TOO_LARGE',
+    `This fetch needs ${what}, past the server's budget for one request; clone with --filter=blob:none or --depth, or use git-remote-yoneda`,
+  );
+
+/** Repository reads in flight while verifying a push. */
+const VERIFY_READS = 16;
 /** Groups read while the one before them is written into the pack. */
 const READ_AHEAD = 2;
 /** Tree bytes a walk keeps from the ranges it read beyond the trees it asked for. */
 const SEEN_BYTES = 32 * 1024 * 1024;
 
 /** A Git object's exact content: the store of record (R2), the authority's staged copy,
- * or (blobs only) the object store; `null` when none holds it. */
-export async function rawObject(objects: RepoObjects, id: string, kind: string) {
+ * or (blobs only) the object store; `null` when none holds it. A large file comes as its
+ * stream (`LargeBody`, repo-large-files), never read whole. */
+export async function rawObject(
+  objects: RepoObjects,
+  id: string,
+  kind: string,
+): Promise<Uint8Array | LargeBody | null> {
   const stored = await objects.env.OBJECTS.get(objects.rawKey(id));
   if (stored && (stored.customMetadata?.kind ?? kind) === kind)
-    return new Uint8Array(await stored.arrayBuffer());
+    return largeBody(stored) ?? new Uint8Array(await stored.arrayBuffer());
   const [staged] = await objects.raw([{ id, kind }]);
   if (staged?.kind === kind) return fromBase64(staged.data_b64);
   if (kind !== 'blob') return null;
@@ -51,7 +82,12 @@ const byPlace = (a?: Location, b?: Location) => {
  * bundle about once, not once per object it lists in commit order. `stats` counts the
  * ranged reads.
  */
-export async function* rawObjects(objects: RepoObjects, wanted: Wanted[], stats?: ReadStats) {
+export async function* rawObjects(
+  objects: RepoObjects,
+  wanted: Wanted[],
+  stats?: ReadStats,
+  budget?: ReadBudget,
+) {
   const where = await locate(objects.env, objects.repo, wanted);
   const order = [...wanted].sort((a, b) => byPlace(where.get(a.id), where.get(b.id)));
   const groups: Wanted[][] = [];
@@ -80,6 +116,8 @@ export async function* rawObjects(objects: RepoObjects, wanted: Wanted[], stats?
     start = end;
   }
   const read = async (group: Wanted[]) => {
+    // A ranged read, and one read per object outside the bundles.
+    budget?.spend(1 + group.filter((w) => !where.has(w.id)).length);
     const bundled = await readLocated(
       objects.env,
       objects.repo,
@@ -171,4 +209,87 @@ export async function inBatches<T, R>(items: T[], width: number, work: (item: T)
   for (let i = 0; i < items.length; i += width)
     out.push(...(await Promise.all(items.slice(i, i + width).map(work))));
   return out;
+}
+
+/** What verification asked for: recorded parents' trees, repository trees, and proof that
+ * files the pack leaves out are held here. Anything missing refuses the push. */
+export async function supply(ctx: RepoContext, objects: RepoObjects, need: Json): Promise<Json> {
+  const missing = (what: string) =>
+    new ApiError('NOT_FOUND', `missing necessary objects: ${what} is not in this repository`);
+  if (need.commits) {
+    const commits: Json = {};
+    await inBatches(need.commits as string[], VERIFY_READS, async (id) => {
+      const found = await ctx.call({ op: 'repo_commit', commit: id, brief: true }).catch((e) => {
+        if (e?.code === 'NOT_FOUND') throw missing(`commit ${id}`);
+        throw e;
+      });
+      commits[id] = found.tree;
+    });
+    return { commits };
+  }
+  if (need.trees) {
+    const trees = await treesFor(objects, need.trees as string[], (id) =>
+      treeFor(objects, id).catch((e) => {
+        if (e?.code === 'NOT_FOUND') throw missing(`tree ${id}`);
+        throw e;
+      }),
+    );
+    return { trees };
+  }
+  // Files a bundle holds are present without reading them.
+  const asked = need.objects as string[];
+  const held = await locate(
+    ctx.env,
+    ctx.repo,
+    asked.map((id) => ({ id, kind: 'blob' })),
+  );
+  const present = [...held.keys()];
+  present.push(
+    ...(await inBatches(
+      asked.filter((id) => !held.has(id)),
+      VERIFY_READS,
+      async (id) => {
+        const head = await ctx.env.OBJECTS.head(objects.rawKey(id));
+        if (head?.customMetadata?.kind === 'blob' || (await rawObject(objects, id, 'blob')))
+          return id;
+        throw missing(`file ${id}`);
+      },
+    )),
+  );
+  return { present };
+}
+
+/** Counts what the pack holds (the session's counting pass), reading the trees each
+ * wave of commits needs: `{count}`. */
+export async function enumerate(
+  session: UploadSession,
+  objects: RepoObjects,
+  stats?: ReadStats,
+  seen = new SeenTrees(),
+) {
+  let step = session.step({});
+  while (step.need_trees) {
+    const trees = await treesFor(objects, step.need_trees as string[], undefined, seen, stats);
+    step = session.step({ trees });
+  }
+  return step;
+}
+
+/** The session's sending pass: each wave's trees to write and objects to read, the last
+ * with the tag objects (`done`). */
+export async function* waves(
+  session: UploadSession,
+  objects: RepoObjects,
+  seen = new SeenTrees(),
+  stats?: ReadStats,
+) {
+  for (;;) {
+    let wave = session.send({});
+    while (wave.need_trees) {
+      const trees = await treesFor(objects, wave.need_trees as string[], undefined, seen, stats);
+      wave = session.send({ trees });
+    }
+    yield wave as { trees: string[]; fetch: Wanted[]; tags?: string[]; done: boolean };
+    if (wave.done) return;
+  }
 }

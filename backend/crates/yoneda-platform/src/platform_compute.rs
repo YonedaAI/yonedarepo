@@ -65,6 +65,7 @@ pub fn compute(c: Value) -> Result<Value> {
         "push_split" => crate::platform_push::push_split(&c),
         "staged_push" => crate::platform_push::staged_push(&c),
         "carrier_push" => crate::platform_push::carrier_push(&c),
+        "large_carrier" => crate::platform_push::large_carrier(&c),
         "branch_push" => crate::platform_push::branch_push(&c),
         "parse_objects" => crate::platform_push::parse_objects(&c),
         "memory" => Ok(json!({ "wasm_bytes": wasm_bytes() })),

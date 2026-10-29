@@ -110,24 +110,29 @@ pub fn digest(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     hex(&Sha256::digest(bytes))
 }
+/// What `fingerprint` hashes after its prefix: `v` with every object's keys in order.
+pub(crate) fn canonical(v: &Value) -> Result<Value> {
+    Ok(match v {
+        Value::Object(m) => {
+            let ordered: BTreeMap<_, _> = m
+                .iter()
+                .map(|(k, v)| Ok((k.clone(), canonical(v)?)))
+                .collect::<Result<_>>()?;
+            serde_json::to_value(ordered).map_err(|e| Error::new("ENCODING", e.to_string()))?
+        }
+        Value::Array(a) => Value::Array(a.iter().map(canonical).collect::<Result<_>>()?),
+        Value::Number(n) if n.is_f64() => {
+            return Err(Error::new("ENCODING", "Fingerprints forbid floating point"));
+        }
+        _ => v.clone(),
+    })
+}
+
+/// Bytes `fingerprint` hashes before the value.
+pub(crate) const FINGERPRINT_PREFIX: &[u8] = b"yonedarepo:json:v1\0";
+
 pub fn fingerprint(value: &Value) -> Result<String> {
-    fn canonical(v: &Value) -> Result<Value> {
-        Ok(match v {
-            Value::Object(m) => {
-                let ordered: BTreeMap<_, _> = m
-                    .iter()
-                    .map(|(k, v)| Ok((k.clone(), canonical(v)?)))
-                    .collect::<Result<_>>()?;
-                serde_json::to_value(ordered).map_err(|e| Error::new("ENCODING", e.to_string()))?
-            }
-            Value::Array(a) => Value::Array(a.iter().map(canonical).collect::<Result<_>>()?),
-            Value::Number(n) if n.is_f64() => {
-                return Err(Error::new("ENCODING", "Fingerprints forbid floating point"));
-            }
-            _ => v.clone(),
-        })
-    }
-    let mut bytes = b"yonedarepo:json:v1\0".to_vec();
+    let mut bytes = FINGERPRINT_PREFIX.to_vec();
     bytes.extend(
         serde_json::to_vec(&canonical(value)?)
             .map_err(|e| Error::new("ENCODING", e.to_string()))?,

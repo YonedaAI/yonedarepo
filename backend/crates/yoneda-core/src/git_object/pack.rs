@@ -15,6 +15,9 @@ pub struct PackLimits {
     pub max_objects: u32,
     pub max_object_bytes: usize,
     pub max_total_bytes: usize,
+    /// Whole blobs larger than this are spilled (`PackWalker::take_spilled`): handed out
+    /// as they inflate, never held. Deltas resolve to at most this many bytes.
+    pub spill_blob_bytes: usize,
 }
 
 impl Default for PackLimits {
@@ -23,6 +26,7 @@ impl Default for PackLimits {
             max_objects: 100_000,
             max_object_bytes: 32 * 1024 * 1024,
             max_total_bytes: 256 * 1024 * 1024,
+            spill_blob_bytes: usize::MAX,
         }
     }
 }
@@ -57,6 +61,7 @@ impl PackWriter {
     /// One whole object, zlib-compressed.
     pub fn entry(&mut self, kind: ObjectKind, data: &[u8]) -> Vec<u8> {
         let mut out = entry_header(kind.pack_code(), data.len());
+        out.reserve(data.len() / 2 + 32);
         out.extend_from_slice(&compress_to_vec_zlib(data, 6));
         self.hasher.update(&out);
         out
@@ -72,6 +77,19 @@ impl PackWriter {
         out
     }
 
+    /// The header of a whole object whose zlib stream the caller writes itself (`raw`),
+    /// for content too large to hold.
+    pub fn entry_start(&mut self, kind: ObjectKind, size: usize) -> Vec<u8> {
+        let out = entry_header(kind.pack_code(), size);
+        self.hasher.update(&out);
+        out
+    }
+
+    /// Pack bytes the caller wrote (a streamed entry's zlib stream).
+    pub fn raw(&mut self, bytes: &[u8]) {
+        self.hasher.update(bytes);
+    }
+
     /// The trailer: SHA-1 of everything written before it.
     pub fn finish(self) -> [u8; 20] {
         self.hasher.finalize().into()
@@ -80,7 +98,7 @@ impl PackWriter {
 
 /// An entry's type and size header.
 fn entry_header(code: u8, mut size: usize) -> Vec<u8> {
-    let mut out = Vec::with_capacity(size / 2 + 32);
+    let mut out = Vec::with_capacity(10);
     let mut byte = (code << 4) | (size & 15) as u8;
     size >>= 4;
     while size > 0 {

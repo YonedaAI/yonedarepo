@@ -105,6 +105,42 @@ impl ObjectKind {
 }
 
 /// Git's object id: SHA-1 over `"<kind> <len>\0" + data`.
+/// An object's id computed as its content streams by, for content too large to hold.
+pub struct ObjectHasher {
+    hasher: Sha1,
+    size: usize,
+    seen: usize,
+}
+
+impl ObjectHasher {
+    /// For an object of `kind` and `size` bytes.
+    pub fn new(kind: ObjectKind, size: usize) -> Self {
+        let mut hasher = Sha1::new();
+        hasher.update(format!("{} {size}\0", kind.name()).as_bytes());
+        Self {
+            hasher,
+            size,
+            seen: 0,
+        }
+    }
+
+    pub fn update(&mut self, bytes: &[u8]) {
+        self.seen += bytes.len();
+        self.hasher.update(bytes);
+    }
+
+    /// The id, once exactly `size` bytes went by.
+    pub fn finish(self) -> crate::Result<ObjectId> {
+        if self.seen != self.size {
+            return Err(super::invalid(format!(
+                "Object content is {} bytes, not the {} declared",
+                self.seen, self.size
+            )));
+        }
+        Ok(ObjectId(self.hasher.finalize().into()))
+    }
+}
+
 pub fn hash_object(kind: ObjectKind, data: &[u8]) -> ObjectId {
     let mut hasher = Sha1::new();
     hasher.update(format!("{} {}\0", kind.name(), data.len()).as_bytes());
