@@ -27,7 +27,7 @@ export async function* blobWaves(objects: RepoObjects, ids: string[]) {
       objects.repo,
       wave.map((id) => ({ id, kind: 'blob' })),
       RANGE,
-      { gap: WIDE_GAP, copy: true },
+      { gap: WIDE_GAP, bounded: true, copy: true },
     );
     const rest = wave.filter((id) => !bundled.has(id));
     const tiered = await inBatches(
