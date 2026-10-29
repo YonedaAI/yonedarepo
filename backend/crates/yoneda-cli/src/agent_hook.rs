@@ -7,15 +7,24 @@
 //!   `YONEDA_SESSION_ID=claude-code:<id>` exported to the session's shell
 //!   (`CLAUDE_ENV_FILE`), so its pushes are noted as its own.
 //! - `claude-read` (PostToolUse on Read and Grep): the files the agent read (Grep: the
-//!   files that matched) join this session's declared reads.
+//!   files that matched) join this session's declared reads, and the memories and
+//!   contracts anchored there that the session has not been shown come back as additional
+//!   context (`context_inject`: capped per injection and per session, recorded).
+//! - `claude-prompt` (UserPromptSubmit): what is relevant to the prompt's words and not
+//!   shown yet, the same way.
+//! - `claude-memory` (PostToolUse on the git_memory_add MCP tool): notes that the session
+//!   added a memory.
 //! - `claude-bash` (PreToolUse on Bash): a plain `git push` to a smart-HTTP remote while
 //!   reads are recorded is denied with the `yoneda push` that declares them. A `yoneda::`
 //!   remote needs nothing: its helper declares them.
 //! - `claude-stop` (Stop): a session record for each commit this session pushed, summarised
 //!   by the transcript's last assistant message (truncated), with the transcript itself
 //!   (fitted to the upload bounds; the platform redacts credentials) and the context packet.
+//!   When the session added a memory since the last turn ended, that summary is also
+//!   offered as a draft memory, for a person to publish or discard; nothing is generated.
 use crate::agent_transcript::{claude_turns, document, transcript};
 use crate::command::{HookEvent, Target};
+use crate::context_inject::{self, Trigger};
 use crate::error::{Context, Result};
 use crate::session_cmd::{Here, here, record_body, relative};
 use crate::session_files::SessionFiles;
@@ -27,6 +36,8 @@ use std::path::{Path, PathBuf};
 pub use crate::agent_transcript::truncate;
 
 const SUMMARY_BYTES: usize = 4096;
+/// A memory's text limit (the platform's `MAX_TEXT`).
+const MEMORY_BYTES: usize = 2048;
 
 pub async fn run(event: HookEvent) -> Result<()> {
     let mut input = String::new();
@@ -36,7 +47,9 @@ pub async fn run(event: HookEvent) -> Result<()> {
     let hook: Value = serde_json::from_str(&input).unwrap_or(Value::Null);
     let outcome = match event {
         HookEvent::ClaudeStart => start(&hook).await,
-        HookEvent::ClaudeRead => read(&hook),
+        HookEvent::ClaudeRead => read(&hook).await,
+        HookEvent::ClaudePrompt => prompt(&hook).await,
+        HookEvent::ClaudeMemory => memory_added(&hook),
         HookEvent::ClaudeBash => bash(&hook).map(|deny| {
             if let Some(reason) = deny {
                 println!("{}", denial(&reason));
@@ -65,10 +78,30 @@ fn clone_at(hook: &Value) -> Option<(Here, PathBuf)> {
     clone_in(hook["cwd"].as_str())
 }
 
-/// The context text for a session starting in the clone at `cwd`.
-pub async fn context_at(cwd: &Path) -> Result<String> {
+/// The context text for `session` starting in the clone at `cwd`, kept for its transcript;
+/// the items it carries are recorded as delivered, so later injections skip them.
+pub async fn context_at(at: &Here, cwd: &Path, session: &str) -> Result<String> {
     std::env::set_current_dir(cwd).context("entering the clone")?;
-    Ok(context_cmd::for_hook(context_cmd::DEFAULT_BYTES).await)
+    let packet = context_cmd::for_hook(context_cmd::DEFAULT_BYTES).await;
+    SessionFiles::new(&at.git_dir).save_context(session, &packet.text)?;
+    if !packet.items.is_empty() {
+        let recorded = async {
+            let api = target::resolve(&Target::default())?.api;
+            context_inject::record(
+                &api,
+                session,
+                "start",
+                None,
+                &packet.items,
+                packet.text.len(),
+            )
+            .await
+        };
+        if let Err(e) = recorded.await {
+            eprintln!("yoneda hook: {e}");
+        }
+    }
+    Ok(packet.text)
 }
 
 /// The Claude Code session a hook runs for (`claude-code:<id>`).
@@ -98,8 +131,7 @@ async fn start(hook: &Value) -> Result<()> {
         writeln!(env, "export YONEDA_SESSION_ID='claude-code:{id}'")
             .context("writing CLAUDE_ENV_FILE")?;
     }
-    let text = context_at(&cwd).await?;
-    SessionFiles::new(&at.git_dir).save_context(&claude_session(hook), &text)?;
+    let text = context_at(&at, &cwd, &claude_session(hook)).await?;
     println!(
         "{}",
         json!({ "hookSpecificOutput": { "hookEventName": "SessionStart", "additionalContext": text } })
@@ -135,11 +167,66 @@ pub fn record_reads(at: &Here, cwd: &Path, paths: &[String]) -> Result<usize> {
     SessionFiles::new(&at.git_dir).add_reads(&entries)
 }
 
-fn read(hook: &Value) -> Result<()> {
+/// Prints `text` as additional context for the hook `event`.
+fn add_context(event: &str, text: &str) {
+    println!(
+        "{}",
+        json!({ "hookSpecificOutput": { "hookEventName": event, "additionalContext": text } })
+    );
+}
+
+async fn read(hook: &Value) -> Result<()> {
     let Some((at, cwd)) = clone_at(hook) else {
         return Ok(());
     };
-    record_reads(&at, &cwd, &paths_read(hook)).map(|_| ())
+    let paths = paths_read(hook);
+    record_reads(&at, &cwd, &paths)?;
+    let session = claude_session(hook);
+    if let Some(text) = context_inject::inject(&at, &cwd, &session, Trigger::Read(&paths)).await? {
+        add_context("PostToolUse", &text);
+    }
+    Ok(())
+}
+
+async fn prompt(hook: &Value) -> Result<()> {
+    let Some((at, cwd)) = clone_at(hook) else {
+        return Ok(());
+    };
+    let prompt = hook["prompt"].as_str().unwrap_or_default();
+    let session = claude_session(hook);
+    if let Some(text) = context_inject::inject(&at, &cwd, &session, Trigger::Prompt(prompt)).await?
+    {
+        add_context("UserPromptSubmit", &text);
+    }
+    Ok(())
+}
+
+fn memory_added(hook: &Value) -> Result<()> {
+    let Some((at, _)) = clone_at(hook) else {
+        return Ok(());
+    };
+    SessionFiles::new(&at.git_dir).note_memory_added(&claude_session(hook))
+}
+
+/// When `session` added a memory since its last turn ended, offers `summary` (the agent's
+/// own last message) as a draft memory a person can publish or discard. Returns whether one
+/// was posted.
+pub async fn offer_draft(at: &Here, cwd: &Path, session: &str, summary: &str) -> Result<bool> {
+    let files = SessionFiles::new(&at.git_dir);
+    if summary.trim().is_empty() || !files.take_memory_added(session)? {
+        return Ok(false);
+    }
+    std::env::set_current_dir(cwd).context("entering the clone")?;
+    let api = target::resolve(&Target::default())?.api;
+    let body = json!({ "kind": "decision", "draft": true, "session_id": session,
+                       "text": truncate(summary.trim(), MEMORY_BYTES - 3) });
+    match api.post("/memories", &body).await {
+        Ok(_) => Ok(true),
+        Err(f) => {
+            eprintln!("yoneda hook: the session summary was not offered as a draft memory: {f}");
+            Ok(false)
+        }
+    }
 }
 
 /// Whether a shell command runs `git push` (`git [-C dir] [-c k=v] push`).
@@ -295,7 +382,16 @@ async fn claude_stop(hook: &Value) -> Result<()> {
         session: &session,
         transcript: uploaded.as_ref(),
     };
-    record_pushed(&at, &cwd, &record).await.map(|_| ())
+    let recorded = record_pushed(&at, &cwd, &record).await;
+    let offered = offer_draft(
+        &at,
+        &cwd,
+        &session,
+        seen.last_text.as_deref().unwrap_or_default(),
+    )
+    .await;
+    recorded?;
+    offered.map(|_| ())
 }
 
 #[cfg(test)]

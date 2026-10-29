@@ -4,7 +4,7 @@ use crate::checkout::Checkout;
 use crate::error::{Error, Result};
 use crate::{
     account, agent_hook, attempt, brief, change_cmd, clone, context_cmd, declared_reads, login,
-    pull, reads, release_cmd, repo_ops, session_cmd, setup, status, sync, target,
+    memory_cmd, pull, reads, release_cmd, repo_ops, session_cmd, setup, status, sync, target,
 };
 use crate::{human, output};
 
@@ -136,6 +136,9 @@ async fn run(command: Command) -> Result<()> {
         }
         Command::Release { target, command } => {
             release_cmd::run(&target::resolve(&target)?, command).await
+        }
+        Command::Memory { target, command } => {
+            memory_cmd::run(&target::resolve(&target)?, command).await
         }
         Command::Hook(event) => agent_hook::run(event).await,
         Command::Context { max_bytes } => context_cmd::run(max_bytes).await,

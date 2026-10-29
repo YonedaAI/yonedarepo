@@ -6,7 +6,12 @@
 //     context (`yoneda context`: landing rules, recent sessions, open changes, contracts)
 //     as a system part; later calls reuse it
 //   - tool execute.after (read, grep, glob): the files read become the next push's
-//     declared reads
+//     declared reads, and the memories and contracts anchored there that the session has
+//     not been shown yet are added to its next model calls (`opencode-read` prints them)
+//   - each new user prompt (seen on the next model call): what is relevant to its words and
+//     not shown yet is added the same way (`opencode-prompt`)
+//   - tool execute.after of git_memory_add: noted, so the session's summary is offered as
+//     a draft memory when its run ends
 //   - tool execute.before (shell): a plain `git push` over smart HTTP while reads are
 //     recorded is refused with the `yoneda push` that declares them (a yoneda:: remote's
 //     helper declares them itself)
@@ -69,6 +74,8 @@ type Context = {
 };
 
 const READ_TOOLS = new Set(['read', 'view', 'grep', 'glob', 'search']);
+/** The platform MCP tool that adds a memory, under any server prefix opencode gives it. */
+const MEMORY_TOOL = /(^|[_.])git_memory_add$/;
 const SHELL_TOOLS = new Set(['shell', 'bash']);
 const ENDED = ['session.execution.succeeded', 'session.execution.failed', 'session.execution.interrupted'];
 /** opencode's default when a session names no model: GLM on the Z.ai coding plan. */
@@ -138,6 +145,15 @@ export function summarise(messages: readonly Message[]) {
   return { model, summary, prompts };
 }
 
+/** The text of the session's latest user prompt, if any. */
+export function lastPrompt(messages: readonly Message[]): string | undefined {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i].info ?? messages[i];
+    if (m.type === 'user' && m.text) return m.text;
+  }
+  return undefined;
+}
+
 export default {
   id: 'yoneda',
   async setup(ctx: Context) {
@@ -157,6 +173,12 @@ export default {
     const contexts = new Map<string, Promise<string>>();
     const models = new Map<string, string>();
     const stops = new Map<string, Promise<void>>();
+    // Context added after the start (file reads, prompts), kept for every later model call.
+    const injected = new Map<string, string[]>();
+    const prompts = new Map<string, string>();
+    const remember = (sessionID: string, text: string) => {
+      if (text) injected.set(sessionID, [...(injected.get(sessionID) ?? []), text]);
+    };
 
     await ctx.session.hook('context', async (event) => {
       models.set(event.sessionID, `${event.model.providerID}/${event.model.id}`);
@@ -167,6 +189,13 @@ export default {
       }
       const context = await text;
       if (context) event.system.push({ type: 'text', text: context });
+      const messages = await ctx.session.context({ sessionID: event.sessionID }).catch(() => [] as Message[]);
+      const prompt = lastPrompt(messages);
+      if (prompt && prompts.get(event.sessionID) !== prompt) {
+        prompts.set(event.sessionID, prompt);
+        remember(event.sessionID, await runHook('opencode-prompt', { sessionID: event.sessionID, cwd, prompt }));
+      }
+      for (const added of injected.get(event.sessionID) ?? []) event.system.push({ type: 'text', text: added });
     });
 
     await ctx.tool.hook('execute.before', async (event) => {
@@ -176,8 +205,14 @@ export default {
     });
 
     await ctx.tool.hook('execute.after', async (event) => {
-      if (event.status === 'error' || !READ_TOOLS.has(event.tool)) return;
-      await runHook('opencode-read', { tool: event.tool, input: event.input, result: event.result, sessionID: event.sessionID, cwd });
+      if (event.status === 'error') return;
+      if (MEMORY_TOOL.test(event.tool)) {
+        await runHook('opencode-memory', { sessionID: event.sessionID, cwd });
+        return;
+      }
+      if (!READ_TOOLS.has(event.tool)) return;
+      const added = await runHook('opencode-read', { tool: event.tool, input: event.input, result: event.result, sessionID: event.sessionID, cwd });
+      remember(event.sessionID, added);
     });
 
     // One record pass per session at a time; a later end runs after the earlier one.
