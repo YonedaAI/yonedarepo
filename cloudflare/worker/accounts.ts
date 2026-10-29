@@ -4,6 +4,7 @@ import {
   encodeAccountIdentifier,
   normalizeAccountIdentifier,
 } from '../../shared/account';
+import { accountCreated } from './account-email';
 import { error, readJson, response } from './http';
 import { sha } from './storage';
 import type { Env, Principal } from './types';
@@ -117,6 +118,7 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
           'Credentials did not match; wait a minute after repeated attempts',
           401,
         );
+      if (action === 'signup') await accountCreated(env, name);
       result = response({ ...account, ...(action !== 'login' ? { recovery_code: recovery } : {}) });
       if (action !== 'recover')
         result.headers.set('set-cookie', cookie(req, `${encodeAccountIdentifier(name)}.${token}`));

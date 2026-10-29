@@ -1,5 +1,13 @@
 export type Json = Record<string, any>;
-export type Envelope = { v: 1; repo_id: string; job_id: string; kind: string; workspace?: string };
+export type Envelope = {
+  v: 1;
+  repo_id: string;
+  job_id: string;
+  kind: string;
+  workspace?: string;
+  /** The recipient of an account email job (account-email.ts); never logged in full. */
+  to?: string;
+};
 export interface Env {
   WORKSPACES: DurableObjectNamespace;
   /** Source platform authority: one SourceRepository per repository. */
@@ -44,6 +52,12 @@ export interface Env {
   /** Requests without credentials (public repositories), per client address. */
   PUBLIC_LIMITER?: RateLimit;
   OWNER_TOKEN?: string;
+  /** The welcome email (account-email.ts): a Resend API key (secret), the sender
+   * (`YonedaRepo <hello@yonedarepo.com>`) and the contact address it names. Any missing:
+   * email is off. */
+  RESEND_API_KEY?: string;
+  EMAIL_FROM?: string;
+  EMAIL_CONTACT?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   ARTIFACTS_NAMESPACE: string;

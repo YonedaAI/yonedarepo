@@ -94,10 +94,14 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
         vars,
         &json!({"PUBLIC_APP_ORIGIN": "https://yonedarepo.com"})
     );
+    // Its one queue binding sends welcome-email jobs to the platform's consumer.
+    assert_eq!(
+        agents["queues"],
+        json!({"producers": [{"binding": "PLATFORM_QUEUE", "queue": "yonedarepo-prod-platform-jobs"}]})
+    );
     for absent in [
         "secrets_store_secrets",
         "containers",
-        "queues",
         "d1_databases",
         "r2_buckets",
     ] {

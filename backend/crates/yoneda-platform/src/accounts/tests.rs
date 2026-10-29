@@ -57,6 +57,27 @@ fn account_exists_only_after_signup() {
     assert_eq!(exists(&db), true);
 }
 #[test]
+fn the_welcome_marker_is_set_once_and_only_on_an_account() {
+    let db = NativeStore::memory().unwrap();
+    let state = |db: &NativeStore| call(db, json!({"op":"welcome_state"})).unwrap()["sent"].clone();
+    assert_eq!(
+        call(&db, json!({"op":"welcome_sent"})).unwrap_err().code,
+        "NOT_FOUND"
+    );
+    signup(&db);
+    assert_eq!(state(&db), false);
+    assert_eq!(
+        call(&db, json!({"op":"welcome_sent"})).unwrap()["sent"],
+        true
+    );
+    assert_eq!(state(&db), true);
+    // A redelivered job marks it again without error.
+    assert_eq!(
+        call(&db, json!({"op":"welcome_sent"})).unwrap()["sent"],
+        true
+    );
+}
+#[test]
 fn recovery_rotates_password_code_and_revokes_all_existing_sessions() {
     let db = NativeStore::memory().unwrap();
     signup(&db);

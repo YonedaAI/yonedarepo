@@ -118,7 +118,11 @@
         "`cloudflared access ssh` connects without a login); the cron below keeps it running (about $7 a",
         "month on basic). connect: inbound TCP to this Worker (Spectrum, private beta). off: no container.",
         "Secrets: SSH_GATEWAY_SECRET (32+ random characters), SSH_HOST_ED25519_KEY / SSH_HOST_ECDSA_KEY",
-        "(base64 of OpenSSH host key files, generated once and kept), SSH_TUNNEL_TOKEN (the tunnel's token)."
+        "(base64 of OpenSSH host key files, generated once and kept), SSH_TUNNEL_TOKEN (the tunnel's token).",
+        "Welcome email (account-email.ts): the platform-jobs consumer sends one per new account through",
+        "Resend (EMAIL_FROM, EMAIL_CONTACT; secret RESEND_API_KEY, a sending-only Resend key, from",
+        "~/.config/yonedarepo/staging.env). An empty or missing key turns email off; sign-up never depends on it.",
+        "The sending domain has open and click tracking off in Resend."
       ],
       "secrets": [
         "OWNER_TOKEN",
@@ -127,7 +131,8 @@
         "SSH_GATEWAY_SECRET",
         "SSH_HOST_ED25519_KEY",
         "SSH_HOST_ECDSA_KEY",
-        "SSH_TUNNEL_TOKEN"
+        "SSH_TUNNEL_TOKEN",
+        "RESEND_API_KEY"
       ],
       "health": "yonedarepo-platform",
       "always_on": {
@@ -173,7 +178,9 @@
           "LFS_S3_ENDPOINT": "https://{account_id}.r2.cloudflarestorage.com",
           "LFS_S3_BUCKET": "{prefix}-platform-objects",
           "SSH_FRONT_DOOR": "tunnel",
-          "SSH_HOST": "ssh.dev.yonedarepo.com"
+          "SSH_HOST": "ssh.dev.yonedarepo.com",
+          "EMAIL_FROM": "YonedaRepo (dev) <hello@dev.yonedarepo.com>",
+          "EMAIL_CONTACT": "hello@yonedarepo.com"
         },
         "secrets_store_secrets": [
           {
@@ -382,8 +389,8 @@
         "Dev front Worker (name kept from the agent layer, removed 2026-10-27): it serves the browser",
         "app on dev.yonedarepo.com, account sign-in (/api/auth/*) and the owner session, and proxies",
         "/api/v1 to the dev platform through the PLATFORM service binding on the same origin. Accounts",
-        "live in the platform's WorkspaceAuthority (WORKSPACES script binding). It has no stores,",
-        "containers or queues of its own.",
+        "live in the platform's WorkspaceAuthority (WORKSPACES script binding). It has no stores or",
+        "containers; it only sends new accounts' welcome-email jobs to the platform-jobs queue.",
         "OWNER_TOKEN  dev-only owner credential (~/.config/yonedarepo/staging.env, name kept)",
         "The exact route keeps dev.yonedarepo.com on this Worker (a route takes precedence over a",
         "Custom Domain on one hostname, and the most specific route pattern wins).",
@@ -488,7 +495,15 @@
               "period": 60
             }
           }
-        ]
+        ],
+        "queues": {
+          "producers": [
+            {
+              "binding": "PLATFORM_QUEUE",
+              "queue": "{prefix}-platform-jobs"
+            }
+          ]
+        }
       }
     },
     {

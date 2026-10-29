@@ -13,6 +13,8 @@ op_names! {
         Logout = "logout",
         Recover = "recover",
         AccountExists = "account_exists",
+        WelcomeState = "welcome_state",
+        WelcomeSent = "welcome_sent",
     }
 }
 op_names! {

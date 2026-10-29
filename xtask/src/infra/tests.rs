@@ -134,6 +134,7 @@ fn ephemeral_env_shares_nothing_with_dev() {
         assert_eq!(config["workers_dev"], json!(true));
         assert!(!worker.secrets.iter().any(|s| s.starts_with("LFS_S3_")));
         assert!(!worker.secrets.iter().any(|s| s.starts_with("SSH_")));
+        assert!(!worker.secrets.iter().any(|s| s == "RESEND_API_KEY"));
         if let Some(door) = config["vars"].get("SSH_FRONT_DOOR") {
             assert_eq!(door, "off", "Git over SSH is off in {}", worker.role);
         }
