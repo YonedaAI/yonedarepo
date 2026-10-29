@@ -12,10 +12,12 @@ import { compute } from './repo-compute';
 import {
   enumerate,
   FETCH_READS,
+  gather,
   overBudget,
   ReadBudget,
   rawObjects,
   SeenTrees,
+  treeFor,
   waves,
 } from './repo-git-objects';
 import { deflated, isLarge, type LargeBody } from './repo-large-files';
@@ -286,10 +288,19 @@ async function* packChunks(
     let asked = began;
     const ahead = new Map((await early).map((o) => [o.id, o]));
     if (stats) stats.waited += performance.now() - asked;
-    // A wave at a time: its trees (held by the session), its commits read ahead, then its
-    // other commits and files read in groups; tag objects travel with the last.
-    for await (const wave of waves(session, objects, seen, stats?.walkReads)) {
-      for (const id of wave.trees) yield* add(session.entry('tree', id));
+    // A wave at a time: its trees (raw from what the walk kept: the session may have let
+    // them go; any read only as entries go to the session first), its commits read ahead,
+    // then its other commits and files read in groups; tag objects travel with the last.
+    for (const wave of waves(session)) {
+      const trees = await gather(
+        objects,
+        wave.trees,
+        (id) => treeFor(objects, id),
+        seen,
+        stats?.walkReads,
+      );
+      if (trees.rest.length > 0) session.supply(trees.rest);
+      for (const id of wave.trees) yield* add(session.entry('tree', id, trees.raw.get(id)));
       for (const id of wave.tags ?? []) yield* add(session.entry('tag', id));
       yield* write(wave.fetch.flatMap((w) => ahead.get(w.id) ?? []));
       const rest = wave.fetch.filter((w) => !ahead.delete(w.id));

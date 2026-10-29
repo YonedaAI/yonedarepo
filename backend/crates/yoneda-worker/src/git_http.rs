@@ -165,9 +165,18 @@ pub fn git_upload_open(now: f64, walk: &str) -> String {
     )
 }
 
+/// The counting pass (`UploadSession::step`), with the trees read raw since (`trees`,
+/// framed as `add_raw_trees` takes them).
 #[wasm_bindgen(js_name = gitUploadStep, wasm_bindgen = ::worker::wasm_bindgen)]
-pub fn git_upload_step(handle: u32, input: &str) -> String {
-    answer(parse(input).and_then(|c| UPLOADING.with_borrow_mut(|s| s.with(handle, |u| u.step(&c)))))
+pub fn git_upload_step(handle: u32, input: &str, trees: &[u8]) -> String {
+    answer(parse(input).and_then(|c| {
+        UPLOADING.with_borrow_mut(|s| {
+            s.with(handle, |u| {
+                u.add_raw_trees(trees)?;
+                u.step(&c)
+            })
+        })
+    }))
 }
 
 /// Which of `ids` (a JSON list) the counted pack holds (`UploadSession::holds`).
@@ -182,6 +191,17 @@ pub fn git_upload_holds(handle: u32, ids: &str) -> String {
 #[wasm_bindgen(js_name = gitUploadSend, wasm_bindgen = ::worker::wasm_bindgen)]
 pub fn git_upload_send(handle: u32, input: &str) -> String {
     answer(parse(input).and_then(|c| UPLOADING.with_borrow_mut(|s| s.with(handle, |u| u.send(&c)))))
+}
+
+/// Trees for the wave being sent (`UploadSession::supply`): JSON entries and raw frames.
+#[wasm_bindgen(js_name = gitUploadTrees, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn git_upload_trees(handle: u32, input: &str, trees: &[u8]) -> String {
+    answer(parse(input).and_then(|c| {
+        UPLOADING.with_borrow_mut(|s| {
+            s.with(handle, |u| u.supply(&c, trees))
+                .map(|()| serde_json::Value::Null)
+        })
+    }))
 }
 
 #[wasm_bindgen(js_name = gitUploadStart, wasm_bindgen = ::worker::wasm_bindgen)]
@@ -202,8 +222,9 @@ pub fn git_upload_entry(
     UPLOADING
         .with_borrow_mut(|s| {
             s.with(handle, |u| {
-                // Trees and tag objects are held by the session.
-                u.pack_entry(kind, id, (!matches!(kind, "tree" | "tag")).then_some(data))
+                // Tag objects are held by the session, and so are trees given no content.
+                let held = kind == "tag" || (kind == "tree" && data.is_empty());
+                u.pack_entry(kind, id, (!held).then_some(data))
             })
         })
         .map_err(thrown)

@@ -170,7 +170,7 @@ async function copyCommit(from: RepoObjects, into: RepoObjects, commit: Json) {
   const objects: { id: string; kind: string }[] = [];
   try {
     await enumerate(session, from);
-    for await (const wave of waves(session, from)) {
+    for (const wave of waves(session)) {
       objects.push(...wave.trees.map((id) => ({ id, kind: 'tree' })), ...wave.fetch);
     }
   } finally {
