@@ -412,6 +412,165 @@
       }
     },
     {
+      "role": "agents-managed",
+      "file": "wrangler.prod-agents-managed.jsonc",
+      "notes": [
+        "Production managed agents Worker (cloudflare/managed): YonedaRepo's maintained reviewers (code, security,",
+        "slop review), run as an ordinary API client of the platform. A workspace owner enables an agent",
+        "from the browser (front Worker /api/managed -> MANAGED service binding); the owner's own session",
+        "mints each chosen repository's token (yoneda-managed-agents: read, review, check) and webhook",
+        "(change, branch) to https://managed.yonedarepo.com/hooks/<repo>. That hostname serves only signed webhooks and",
+        "/health. Runs are queued (RUNS, at least once) and run as one Workflow instance per run (REVIEWS):",
+        "a HarnessContainer (cloudflare/containers/harness: Claude Code, Codex, opencode, pinned) with no",
+        "internet clones the change lazily and runs the agent's CLI; its only ways out are the Worker's",
+        "outbound handlers (platform reads with the token added, AI Gateway with the key added, metered",
+        "per request). The Worker posts anchored comments, a summary and the agent's check.",
+        "Model calls go through AI Gateway {prefix}-managed-agents (AI_GATEWAY_URL; slugs in",
+        "AI_GATEWAY_PROVIDERS: anthropic and openai built in; custom-zai and custom-mimo are custom",
+        "providers with base URLs https://api.z.ai and https://api.xiaomimimo.com). Keys: Secrets Store",
+        "secrets Claude, Codex, ZAI and MiMo. Agent models and fallbacks: shared/managed-agents.ts.",
+        "Credit: one CreditLedger per workspace, $5 promotional credit, runs pause at $0; container time",
+        "is billed at the check-minute rate. Transcripts (redacted) in R2 {prefix}-managed-transcripts.",
+        "Secrets (both optional): AI_GATEWAY_TOKEN, the gateway's token when it is authenticated;",
+        "MANAGED_ADMIN_TOKEN, bearer for POST /admin/accounts/<workspace>/credit (unset: nobody may grant).",
+        "Deployed before the front Worker, which binds it as MANAGED."
+      ],
+      "secrets": [],
+      "optional_secrets": [
+        "AI_GATEWAY_TOKEN",
+        "MANAGED_ADMIN_TOKEN"
+      ],
+      "health": "yonedarepo-agents-managed",
+      "ephemeral": false,
+      "config": {
+        "name": "{prefix}-agents-managed",
+        "main": "managed/index.ts",
+        "compatibility_date": "2026-10-07",
+        "workers_dev": false,
+        "preview_urls": false,
+        "observability": {
+          "enabled": true
+        },
+        "routes": [
+          {
+            "pattern": "managed.yonedarepo.com",
+            "custom_domain": true
+          }
+        ],
+        "vars": {
+          "PUBLIC_URL": "https://managed.yonedarepo.com",
+          "AI_GATEWAY_URL": "https://gateway.ai.cloudflare.com/v1/{account_id}/{prefix}-managed-agents",
+          "AI_GATEWAY_PROVIDERS": "claude=anthropic,codex=openai,zai=custom-zai,mimo=custom-mimo"
+        },
+        "secrets_store_secrets": [
+          {
+            "binding": "CLAUDE_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "Claude"
+          },
+          {
+            "binding": "CODEX_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "Codex"
+          },
+          {
+            "binding": "ZAI_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "ZAI"
+          },
+          {
+            "binding": "MIMO_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "MiMo"
+          }
+        ],
+        "services": [
+          {
+            "binding": "PLATFORM",
+            "service": "{prefix}-platform"
+          }
+        ],
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "REPOS",
+              "class_name": "RepoAgents"
+            },
+            {
+              "name": "WORKSPACES",
+              "class_name": "WorkspaceAgents"
+            },
+            {
+              "name": "LEDGER",
+              "class_name": "CreditLedger"
+            },
+            {
+              "name": "HARNESS",
+              "class_name": "HarnessContainer"
+            }
+          ]
+        },
+        "migrations": [
+          {
+            "tag": "v1",
+            "new_sqlite_classes": [
+              "RepoAgents",
+              "WorkspaceAgents",
+              "CreditLedger",
+              "HarnessContainer"
+            ]
+          }
+        ],
+        "containers": [
+          {
+            "class_name": "HarnessContainer",
+            "image": "./containers/harness/Dockerfile",
+            "image_build_context": "..",
+            "instance_type": "standard-1",
+            "max_instances": 20,
+            "rollout_step_percentage": [
+              100
+            ],
+            "constraints": {
+              "regions": [
+                "ENAM"
+              ]
+            }
+          }
+        ],
+        "r2_buckets": [
+          {
+            "binding": "TRANSCRIPTS",
+            "bucket_name": "{prefix}-managed-transcripts"
+          }
+        ],
+        "queues": {
+          "producers": [
+            {
+              "binding": "RUNS",
+              "queue": "{prefix}-managed-runs"
+            }
+          ],
+          "consumers": [
+            {
+              "queue": "{prefix}-managed-runs",
+              "max_batch_size": 10,
+              "max_batch_timeout": 5,
+              "max_retries": 5,
+              "dead_letter_queue": "{prefix}-managed-dead-letter"
+            }
+          ]
+        },
+        "workflows": [
+          {
+            "name": "{prefix}-managed-reviews",
+            "binding": "REVIEWS",
+            "class_name": "ManagedReviewWorkflow"
+          }
+        ]
+      }
+    },
+    {
       "role": "agents",
       "file": "wrangler.prod-agents.jsonc",
       "notes": [
@@ -428,7 +587,8 @@
         "GITHUB_OAUTH_CLIENT_SECRET (a GitHub OAuth App) and GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET",
         "(a Google OAuth web client). A provider whose two secrets are unset is off: hidden on the sign-in",
         "page, its /auth/<provider>/* routes answer 404. Callback URLs: https://yonedarepo.com/auth/github/callback",
-        "and https://yonedarepo.com/auth/google/callback. Deploy uploads them when the secrets file has them."
+        "and https://yonedarepo.com/auth/google/callback. Deploy uploads them when the secrets file has them.",
+        "/api/managed is proxied to the managed agents Worker (MANAGED service binding, deployed first)."
       ],
       "secrets": [
         "OWNER_TOKEN"
@@ -486,6 +646,10 @@
           {
             "binding": "PLATFORM",
             "service": "{prefix}-platform"
+          },
+          {
+            "binding": "MANAGED",
+            "service": "{prefix}-agents-managed"
           }
         ],
         "durable_objects": {

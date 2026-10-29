@@ -149,6 +149,22 @@ impl Spec {
         );
         self.prefix = prefix;
         self.workers.retain(|w| w.ephemeral);
+        // A service binding to a Worker the copy leaves out would fail its deploy; the binder
+        // treats a missing binding as the feature being off (the front's MANAGED).
+        let kept: Vec<Value> = self
+            .workers
+            .iter()
+            .map(|w| w.config["name"].clone())
+            .collect();
+        for worker in &mut self.workers {
+            if let Some(services) = worker
+                .config
+                .get_mut("services")
+                .and_then(Value::as_array_mut)
+            {
+                services.retain(|s| kept.contains(&s["service"]));
+            }
+        }
         self.retired = Retired::default();
         self.check_instances = self.check_instances.map(|_| 1);
         for worker in &mut self.workers {

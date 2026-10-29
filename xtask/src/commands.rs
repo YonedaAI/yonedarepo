@@ -67,6 +67,7 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
             // The source platform must pass on its own, in its platform-only test Worker.
             run("pnpm", &["test:platform"])?;
             run("pnpm", &["test:superfan"])?;
+            run("pnpm", &["test:managed"])?;
             run("pnpm", &["test:runtime"])?;
             run("pnpm", &["test:frontend"])?;
             run("pnpm", &["--dir", FRONTEND, "build"])?;
