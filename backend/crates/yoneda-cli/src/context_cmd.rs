@@ -1,13 +1,15 @@
 //! `yoneda context`: what a coding session starting in this clone should know, as compact
 //! text for the agent (the session-start hooks inject it). One platform read
-//! (`GET /context`) gives main's and the branch's heads, the landing rules, the newest
-//! session records, open changes and the contracts on the paths this clone is changing;
-//! the local status line says what is not pushed yet. The text is capped (6 KiB by
-//! default): sections fill in order and whatever does not fit is counted, not cut mid-line.
+//! (`GET /context`) gives main's and the branch's heads, the landing rules, the
+//! repository's memories ranked for the paths this clone is changing, the newest session
+//! records, open changes and the contracts on those paths; the local status line says what
+//! is not pushed yet. The text is capped (6 KiB by default): sections fill in order and
+//! whatever does not fit is counted, not cut mid-line. The hooks record which items the
+//! packet carried (`Rendered::items`), so later injections do not repeat them.
 use crate::command::Target;
 use crate::error::{Error, Result};
 use crate::target::{self, Clone};
-use serde_json::Value;
+use serde_json::{Value, json};
 use std::fmt::Write;
 use std::time::Duration;
 
@@ -15,6 +17,7 @@ pub const DEFAULT_BYTES: usize = 6 * 1024;
 const SESSIONS: u64 = 8;
 const CHANGES: u64 = 10;
 const CONTRACTS: u64 = 5;
+const MEMORIES: u64 = 8;
 const SUMMARY_BYTES: usize = 320;
 const POLICY_BYTES: usize = 400;
 const MAX_PATHS: usize = 100;
@@ -57,7 +60,9 @@ fn changing(clone: &Clone) -> Vec<String> {
 }
 
 fn query(local: &Local, paths: &[String]) -> String {
-    let mut q = format!("/context?sessions={SESSIONS}&changes={CHANGES}&contracts={CONTRACTS}");
+    let mut q = format!(
+        "/context?sessions={SESSIONS}&changes={CHANGES}&contracts={CONTRACTS}&memories={MEMORIES}"
+    );
     if let Some(branch) = &local.branch {
         let _ = write!(q, "&branch={}", encode(branch));
     }
@@ -112,13 +117,17 @@ pub async fn run(max_bytes: usize) -> Result<()> {
     Ok(())
 }
 
-/// The context text for a session-start hook; a failure becomes one line saying so.
-pub async fn for_hook(max_bytes: usize) -> String {
+/// The context for a session-start hook; a failure becomes one line saying so (and no
+/// items).
+pub async fn for_hook(max_bytes: usize) -> Rendered {
     match gather().await {
-        Ok((local, read)) => render(&read, &local, max_bytes, now_ms()),
-        Err(e) => format!(
-            "YonedaRepo: this clone's repository context is unavailable ({e}); `yoneda context` retries."
-        ),
+        Ok((local, read)) => render_items(&read, &local, max_bytes, now_ms()),
+        Err(e) => Rendered {
+            text: format!(
+                "YonedaRepo: this clone's repository context is unavailable ({e}); `yoneda context` retries."
+            ),
+            items: Vec::new(),
+        },
     }
 }
 
@@ -175,7 +184,26 @@ fn policy(p: &Value) -> String {
     line(&out, POLICY_BYTES)
 }
 
-fn sessions(read: &Value, now: u64) -> Vec<String> {
+/// One section entry: its line and the item it shows (`{type, id}`).
+type Entry = (String, Value);
+
+fn item(kind: &str, id: &Value) -> Value {
+    json!({ "type": kind, "id": id })
+}
+
+fn memories(read: &Value) -> Vec<Entry> {
+    read["memories"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|m| {
+            let line = crate::context_inject::item_line(m);
+            (line.trim_end().to_owned(), item("memory", &m["id"]))
+        })
+        .collect()
+}
+
+fn sessions(read: &Value, now: u64) -> Vec<Entry> {
     read["sessions"]
         .as_array()
         .into_iter()
@@ -189,7 +217,7 @@ fn sessions(read: &Value, now: u64) -> Vec<String> {
                 .as_str()
                 .map(|t| format!(" \"{}\"", line(t, 80)))
                 .unwrap_or_default();
-            format!(
+            let text = format!(
                 "- {} · {}{} · {}{}: {}",
                 age(&s["at"], now),
                 s["cli"].as_str().unwrap_or("?"),
@@ -197,13 +225,14 @@ fn sessions(read: &Value, now: u64) -> Vec<String> {
                 short(&s["commit"]),
                 subject,
                 line(s["summary"].as_str().unwrap_or_default(), SUMMARY_BYTES)
-            )
+            );
+            (text, item("session", &s["id"]))
         })
         .collect()
 }
 
 /// Open changes, the one for `branch` first.
-fn changes(read: &Value, branch: Option<&str>) -> Vec<String> {
+fn changes(read: &Value, branch: Option<&str>) -> Vec<Entry> {
     let mut rows: Vec<&Value> = read["changes"].as_array().into_iter().flatten().collect();
     rows.sort_by_key(|c| c["branch"].as_str() != branch);
     rows.into_iter()
@@ -213,19 +242,20 @@ fn changes(read: &Value, branch: Option<&str>) -> Vec<String> {
             } else {
                 ""
             };
-            format!(
+            let text = format!(
                 "- #{} {} [branch {} at {}, by {}]{mine}",
                 c["number"],
                 line(c["title"].as_str().unwrap_or_default(), 120),
                 c["branch"].as_str().unwrap_or("?"),
                 short(&c["head"]),
                 c["author"].as_str().unwrap_or("?")
-            )
+            );
+            (text, item("change", &c["number"]))
         })
         .collect()
 }
 
-fn contracts(read: &Value) -> Vec<String> {
+fn contracts(read: &Value) -> Vec<Entry> {
     read["contracts"]
         .as_array()
         .into_iter()
@@ -235,21 +265,33 @@ fn contracts(read: &Value) -> Vec<String> {
                 .as_str()
                 .map(|s| line(s, 160))
                 .unwrap_or_else(|| line(&c["contract"].to_string(), 160));
-            format!(
+            let text = format!(
                 "- {} `{}`: {summary} (at {})",
                 c["path"].as_str().unwrap_or("?"),
                 c["symbol_path"].as_str().unwrap_or("?"),
                 short(&c["commit"])
-            )
+            );
+            (text, item("contract", &c["seq"]))
         })
         .collect()
 }
 
-const RULES: &str = "- Push with plain `git push` (or `yoneda push`): the files you read are declared with it, and the platform refuses the push if one changed meanwhile or your change conflicts. On a refusal, `git pull --rebase`, re-check the named paths, then push again; never force-push main.\n- Before ending, make sure your commits are pushed; this session's summary is recorded on them.";
+const RULES: &str = "- Push with plain `git push` (or `yoneda push`): the files you read are declared with it, and the platform refuses the push if one changed meanwhile or your change conflicts. On a refusal, `git pull --rebase`, re-check the named paths, then push again; never force-push main.\n- Before ending, make sure your commits are pushed; this session's summary is recorded on them.\n- Leave what the code does not say (a decision, constraint or non-obvious fix) for later sessions: `yoneda memory add` or git_memory_add.";
 
-/// The context text, at most `max` bytes: the header and rules, then sessions, open changes
-/// and contracts while they fit, then a count of what was left out.
+/// The context text and the items it carries.
+pub struct Rendered {
+    pub text: String,
+    pub items: Vec<Value>,
+}
+
+/// The context text, at most `max` bytes.
 pub fn render(read: &Value, local: &Local, max: usize, now: u64) -> String {
+    render_items(read, local, max, now).text
+}
+
+/// The context text, at most `max` bytes: the header and rules, then memories, sessions,
+/// open changes and contracts while they fit, then a count of what was left out.
+pub fn render_items(read: &Value, local: &Local, max: usize, now: u64) -> Rendered {
     let mut out = String::from("# YonedaRepo context for this clone\n");
     if let Some(brief) = &local.brief {
         let _ = writeln!(out, "{}", line(brief, 300));
@@ -269,6 +311,10 @@ pub fn render(read: &Value, local: &Local, max: usize, now: u64) -> String {
         policy(&read["policy"])
     );
     let sections = [
+        (
+            "Memories (decisions, constraints, gotchas, how-tos) on the files you are changing, then the newest",
+            memories(read),
+        ),
         ("Recent sessions (newest first)", sessions(read, now)),
         (
             "Open change requests",
@@ -282,36 +328,38 @@ pub fn render(read: &Value, local: &Local, max: usize, now: u64) -> String {
     // Room kept for the omission note.
     let budget = max.saturating_sub(160);
     let mut omitted = 0;
+    let mut items = Vec::new();
     for (title, lines) in sections {
         if lines.is_empty() {
             continue;
         }
         let heading = format!("\n## {title}\n");
-        if out.len() + heading.len() + lines[0].len() + 1 > budget {
+        if out.len() + heading.len() + lines[0].0.len() + 1 > budget {
             omitted += lines.len();
             continue;
         }
         out.push_str(&heading);
-        for entry in lines {
+        for (entry, shown) in lines {
             if out.len() + entry.len() + 1 > budget {
                 omitted += 1;
             } else {
                 out.push_str(&entry);
                 out.push('\n');
+                items.push(shown);
             }
         }
     }
     if omitted > 0 {
         let _ = writeln!(
             out,
-            "\n({omitted} more entries left out to stay under {} bytes: `yoneda context --json`, or the MCP tools git_sessions_recent and git_context.)",
+            "\n({omitted} more entries left out to stay under {} bytes: `yoneda context --json`, or the MCP tools git_context_relevant and git_memory_list.)",
             max
         );
     }
     if out.len() > max {
         out = crate::agent_hook::truncate(&out, max.saturating_sub(3));
     }
-    out
+    Rendered { text: out, items }
 }
 
 #[cfg(test)]
@@ -334,8 +382,11 @@ mod tests {
             "changes": [
                 {"number": 2, "title": "Other", "branch": "other", "head": "c".repeat(40), "author": "token:b"},
                 {"number": 3, "title": "Retry", "branch": "fix", "head": "b".repeat(40), "author": "token:a"}],
-            "contracts": [{"path": "src/net.rs", "symbol_path": "retry",
+            "contracts": [{"seq": 4, "path": "src/net.rs", "symbol_path": "retry",
                 "commit": "d".repeat(40), "contract": {"summary": "Retries."}}],
+            "memories": [{"type": "memory", "id": 9, "stale": false,
+                "text": "retry() must stay idempotent.",
+                "memory": {"kind": "gotcha", "anchors": [{"path": "src/net.rs", "symbol_path": "retry"}]}}],
         })
     }
 
@@ -359,6 +410,14 @@ mod tests {
         assert!(text.find("#3 Retry").unwrap() < text.find("#2 Other").unwrap());
         assert!(text.contains("(this branch)"));
         assert!(text.contains("- src/net.rs `retry`: Retries. (at ddddddd)"));
+        assert!(text.contains("- [gotcha] retry() must stay idempotent. (src/net.rs#retry) #9"));
+        // Memories lead, before the sessions.
+        assert!(text.find("[gotcha]").unwrap() < text.find("Session 0").unwrap());
+        let items = render_items(&read(3), &local, DEFAULT_BYTES, NOW).items;
+        assert_eq!(items[0], json!({"type": "memory", "id": 9}));
+        assert_eq!(items.len(), 1 + 3 + 2 + 1);
+        assert!(items.contains(&json!({"type": "contract", "id": 4})));
+        assert!(items.contains(&json!({"type": "change", "id": 3})));
         // Summaries are one line and capped.
         let line = text.lines().find(|l| l.contains("Session 0")).unwrap();
         assert!(line.len() < SUMMARY_BYTES + 120);
@@ -368,7 +427,7 @@ mod tests {
     #[test]
     fn stays_under_the_cap_and_counts_what_it_left_out() {
         let local = Local::default();
-        for max in [600, 1500, 3000] {
+        for max in [800, 1500, 3000] {
             let text = render(&read(20), &local, max, NOW);
             assert!(text.len() <= max, "{} > {max}", text.len());
             assert!(text.contains("## Landing rules"));
@@ -388,11 +447,11 @@ mod tests {
         };
         assert_eq!(
             query(&local, &["src/a.rs".into(), "b c.rs".into()]),
-            "/context?sessions=8&changes=10&contracts=5&branch=feat/x%20y&paths=src/a.rs,b%20c.rs"
+            "/context?sessions=8&changes=10&contracts=5&memories=8&branch=feat/x%20y&paths=src/a.rs,b%20c.rs"
         );
         assert_eq!(
             query(&Local::default(), &[]),
-            "/context?sessions=8&changes=10&contracts=5"
+            "/context?sessions=8&changes=10&contracts=5&memories=8"
         );
     }
 }

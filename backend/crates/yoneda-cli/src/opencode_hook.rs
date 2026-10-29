@@ -3,18 +3,25 @@
 //! opencode 2's plugin events. Same behaviour as the Claude Code hooks:
 //! - `opencode-start` `{sessionID, cwd}`: prints the repository's context, which the plugin
 //!   adds to the session's system prompt, and keeps it for the session's transcript.
-//! - `opencode-read` `{tool, input, result, cwd}` (tool `execute.after`): a read tool's
-//!   file, or the files a search tool's output names, join the declared reads.
+//! - `opencode-read` `{tool, input, result, sessionID, cwd}` (tool `execute.after`): a read
+//!   tool's file, or the files a search tool's output names, join the declared reads; it
+//!   prints the memories and contracts anchored there that the session has not been shown
+//!   (`context_inject`), which the plugin adds to the session's next model call.
+//! - `opencode-prompt` `{sessionID, cwd, prompt}` (a new user prompt, seen by the plugin's
+//!   context hook): prints what is relevant to the prompt's words and not shown yet.
+//! - `opencode-memory` `{sessionID, cwd}` (tool `execute.after` of git_memory_add): notes
+//!   that the session added a memory.
 //! - `opencode-shell` `{tool, input, cwd}` (tool `execute.before`): prints why a plain
 //!   `git push` must go through `yoneda push`; the plugin then refuses the call.
 //! - `opencode-stop` `{sessionID, cwd, model, summary, prompts, messages}` (the session's run
 //!   ended): a session record for each commit the session pushed, with the transcript made
-//!   from the session's messages and its context packet. opencode runs every shell
-//!   command with `OPENCODE_SESSION_ID`, so its pushes are noted under
-//!   `opencode:<sessionID>`.
+//!   from the session's messages and its context packet, and the summary offered as a draft
+//!   memory when the session added one. opencode runs every shell command with
+//!   `OPENCODE_SESSION_ID`, so its pushes are noted under `opencode:<sessionID>`.
 use crate::agent_hook::{self, Record};
 use crate::agent_transcript::{document, render_input, subject};
 use crate::command::OpencodeEvent;
+use crate::context_inject::{self, Trigger};
 use crate::error::Result;
 use crate::session_files::SessionFiles;
 use serde_json::{Value, json};
@@ -30,14 +37,31 @@ pub async fn run(event: OpencodeEvent, hook: &Value) -> Result<()> {
     };
     match event {
         OpencodeEvent::Start => {
-            let text = agent_hook::context_at(&cwd).await?;
             let session = format!("opencode:{}", session_id(hook));
-            SessionFiles::new(&at.git_dir).save_context(&session, &text)?;
-            println!("{text}");
+            println!("{}", agent_hook::context_at(&at, &cwd, &session).await?);
         }
         OpencodeEvent::Read => {
             let read = paths_read(hook, &|p| cwd.join(p).is_file());
             agent_hook::record_reads(&at, &cwd, &read)?;
+            let session = format!("opencode:{}", session_id(hook));
+            if let Some(text) =
+                context_inject::inject(&at, &cwd, &session, Trigger::Read(&read)).await?
+            {
+                println!("{text}");
+            }
+        }
+        OpencodeEvent::Prompt => {
+            let session = format!("opencode:{}", session_id(hook));
+            let prompt = hook["prompt"].as_str().unwrap_or_default();
+            if let Some(text) =
+                context_inject::inject(&at, &cwd, &session, Trigger::Prompt(prompt)).await?
+            {
+                println!("{text}");
+            }
+        }
+        OpencodeEvent::Memory => {
+            let session = format!("opencode:{}", session_id(hook));
+            SessionFiles::new(&at.git_dir).note_memory_added(&session)?;
         }
         OpencodeEvent::Shell => {
             let workdir = hook["input"]["workdir"]
@@ -70,9 +94,15 @@ pub async fn run(event: OpencodeEvent, hook: &Value) -> Result<()> {
                 session: &session,
                 transcript: transcript.as_ref(),
             };
-            let posted = agent_hook::record_pushed(&at, &cwd, &record).await?;
+            let posted = agent_hook::record_pushed(&at, &cwd, &record).await;
+            let summary = hook["summary"].as_str().unwrap_or_default();
+            let offered = agent_hook::offer_draft(&at, &cwd, &session, summary).await;
+            let posted = posted?;
             if posted > 0 {
                 eprintln!("yoneda: recorded {session} on {posted} pushed commit(s)");
+            }
+            if offered? {
+                eprintln!("yoneda: offered {session}'s summary as a draft memory");
             }
         }
     }

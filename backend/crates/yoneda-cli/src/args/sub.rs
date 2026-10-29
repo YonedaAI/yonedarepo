@@ -260,16 +260,20 @@ pub fn hook(rest: &[String]) -> Result<Command> {
     Ok(Command::Hook(
         match p.exactly(
             1,
-            "hook claude-<start|read|bash|stop>|opencode-<start|read|shell|stop>",
+            "hook claude-<start|read|prompt|memory|bash|stop>|opencode-<start|read|prompt|memory|shell|stop>",
         )?[0]
             .as_str()
         {
             "claude-start" => HookEvent::ClaudeStart,
             "claude-read" => HookEvent::ClaudeRead,
+            "claude-prompt" => HookEvent::ClaudePrompt,
+            "claude-memory" => HookEvent::ClaudeMemory,
             "claude-bash" => HookEvent::ClaudeBash,
             "claude-stop" => HookEvent::ClaudeStop,
             "opencode-start" => HookEvent::Opencode(OpencodeEvent::Start),
             "opencode-read" => HookEvent::Opencode(OpencodeEvent::Read),
+            "opencode-prompt" => HookEvent::Opencode(OpencodeEvent::Prompt),
+            "opencode-memory" => HookEvent::Opencode(OpencodeEvent::Memory),
             "opencode-shell" => HookEvent::Opencode(OpencodeEvent::Shell),
             "opencode-stop" => HookEvent::Opencode(OpencodeEvent::Stop),
             other => return Err(Error::usage(format!("unknown hook {other:?}"))),

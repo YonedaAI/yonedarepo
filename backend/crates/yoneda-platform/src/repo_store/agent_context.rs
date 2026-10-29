@@ -56,7 +56,7 @@ fn contracts<S: SqlStore>(db: &S, paths: &[String], limit: u64) -> Result<Vec<Va
                 serde_json::from_str(row["contract"].as_str().unwrap_or_default())
                     .map_err(|_| rows::corrupt("contract record"))?;
             Ok(
-                json!({ "path": row["path"], "symbol_path": row["symbol_path"],
+                json!({ "seq": row["seq"], "path": row["path"], "symbol_path": row["symbol_path"],
                 "commit": row["commit_id"], "contract": contract,
                 "recorded_at": row["recorded_at"], "on_paths": row["wanted"] == 1 }),
             )
