@@ -1,6 +1,7 @@
 // Object reads for Git over HTTPS: exact Git content for packs and trees for the walks
 // that verify a push or enumerate a fetch, from the store of record first (a push's
-// bundles in a few ranged reads, then one R2 object per key).
+// bundles in a few ranged reads, then one R2 object per key), and what a push's
+// verification asks of the repository (`supply`).
 import {
   fromBundles,
   HEADER,
@@ -12,22 +13,30 @@ import {
   type Wanted,
   WIDE_GAP,
 } from './repo-bundles';
+import { type LargeBody, largeBody } from './repo-large-files';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
-import type { Json } from './repo-ops';
+import { ApiError, type Json, type RepoContext } from './repo-ops';
 
 /** Objects outside bundles read at a time, one R2 object each. */
 const READS = 32;
+/** Repository reads in flight while verifying a push. */
+const VERIFY_READS = 16;
 /** Groups read while the one before them is written into the pack. */
 const READ_AHEAD = 2;
 /** Tree bytes a walk keeps from the ranges it read beyond the trees it asked for. */
 const SEEN_BYTES = 32 * 1024 * 1024;
 
 /** A Git object's exact content: the store of record (R2), the authority's staged copy,
- * or (blobs only) the object store; `null` when none holds it. */
-export async function rawObject(objects: RepoObjects, id: string, kind: string) {
+ * or (blobs only) the object store; `null` when none holds it. A large file comes as its
+ * stream (`LargeBody`, repo-large-files), never read whole. */
+export async function rawObject(
+  objects: RepoObjects,
+  id: string,
+  kind: string,
+): Promise<Uint8Array | LargeBody | null> {
   const stored = await objects.env.OBJECTS.get(objects.rawKey(id));
   if (stored && (stored.customMetadata?.kind ?? kind) === kind)
-    return new Uint8Array(await stored.arrayBuffer());
+    return largeBody(stored) ?? new Uint8Array(await stored.arrayBuffer());
   const [staged] = await objects.raw([{ id, kind }]);
   if (staged?.kind === kind) return fromBase64(staged.data_b64);
   if (kind !== 'blob') return null;
@@ -171,4 +180,52 @@ export async function inBatches<T, R>(items: T[], width: number, work: (item: T)
   for (let i = 0; i < items.length; i += width)
     out.push(...(await Promise.all(items.slice(i, i + width).map(work))));
   return out;
+}
+
+/** What verification asked for: recorded parents' trees, repository trees, and proof that
+ * files the pack leaves out are held here. Anything missing refuses the push. */
+export async function supply(ctx: RepoContext, objects: RepoObjects, need: Json): Promise<Json> {
+  const missing = (what: string) =>
+    new ApiError('NOT_FOUND', `missing necessary objects: ${what} is not in this repository`);
+  if (need.commits) {
+    const commits: Json = {};
+    await inBatches(need.commits as string[], VERIFY_READS, async (id) => {
+      const found = await ctx.call({ op: 'repo_commit', commit: id, brief: true }).catch((e) => {
+        if (e?.code === 'NOT_FOUND') throw missing(`commit ${id}`);
+        throw e;
+      });
+      commits[id] = found.tree;
+    });
+    return { commits };
+  }
+  if (need.trees) {
+    const trees = await treesFor(objects, need.trees as string[], (id) =>
+      treeFor(objects, id).catch((e) => {
+        if (e?.code === 'NOT_FOUND') throw missing(`tree ${id}`);
+        throw e;
+      }),
+    );
+    return { trees };
+  }
+  // Files a bundle holds are present without reading them.
+  const asked = need.objects as string[];
+  const held = await locate(
+    ctx.env,
+    ctx.repo,
+    asked.map((id) => ({ id, kind: 'blob' })),
+  );
+  const present = [...held.keys()];
+  present.push(
+    ...(await inBatches(
+      asked.filter((id) => !held.has(id)),
+      VERIFY_READS,
+      async (id) => {
+        const head = await ctx.env.OBJECTS.head(objects.rawKey(id));
+        if (head?.customMetadata?.kind === 'blob' || (await rawObject(objects, id, 'blob')))
+          return id;
+        throw missing(`file ${id}`);
+      },
+    )),
+  );
+  return { present };
 }

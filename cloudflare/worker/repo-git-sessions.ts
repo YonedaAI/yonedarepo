@@ -50,6 +50,11 @@ export class ReceiveSession {
   call(input: Json): Json {
     return value(fn<string>('gitReceiveCall')(this.handle, JSON.stringify(input)));
   }
+  /** Spilled files' content since the last call (see `ReceiveSession::spilled`), led by
+   * one byte: 1 when the pack waits for it to be taken. */
+  spilled() {
+    return bytes(() => fn<Uint8Array>('gitReceiveSpilled')(this.handle));
+  }
   /** Verified objects to store, framed (see `next_objects`); empty when all are out. */
   objects(budget: number) {
     return bytes(() => fn<Uint8Array>('gitReceiveObjects')(this.handle, budget));
@@ -75,6 +80,24 @@ export class UploadSession {
   entry(kind: string, id: string, data: Uint8Array = new Uint8Array()) {
     return bytes(() => fn<Uint8Array>('gitUploadEntry')(this.handle, kind, id, data));
   }
+  /** A file too large to hold: its entry header (see `UploadSession::large_start`). */
+  largeStart(id: string, size: number) {
+    return bytes(() => fn<Uint8Array>('gitUploadLargeStart')(this.handle, id, size));
+  }
+  /** The streamed file's `content` and the `packed` bytes written for it. */
+  largeData(content: Uint8Array, packed: Uint8Array) {
+    bytes(() => {
+      fn<void>('gitUploadLargeData')(this.handle, content, packed);
+      return new Uint8Array();
+    });
+  }
+  /** Ends the streamed file (its content must hash to its id). */
+  largeEnd() {
+    bytes(() => {
+      fn<void>('gitUploadLargeEnd')(this.handle);
+      return new Uint8Array();
+    });
+  }
   finish() {
     return bytes(() => fn<Uint8Array>('gitUploadFinish')(this.handle));
   }
@@ -82,3 +105,6 @@ export class UploadSession {
     fn<void>('gitUploadClose')(this.handle);
   }
 }
+
+/** This isolate's Wasm memory in bytes (it only grows). */
+export const wasmMemoryBytes = () => fn<number>('wasmMemoryBytes')();

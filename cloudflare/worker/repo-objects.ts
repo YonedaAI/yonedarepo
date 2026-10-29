@@ -8,6 +8,7 @@ import { type Location, platformCall, readBundled, readKnown, SMALL_RANGE } from
 import { cachedCopy, edgePut } from './repo-cache-tiers';
 import { compute } from './repo-compute';
 import { Inherited } from './repo-inherit';
+import { SPILL_BYTES, tooLarge } from './repo-large-files';
 import { quarantined, type Withheld, withheldMap } from './repo-quarantine-guard';
 import { SharedShardAsk, stagedInShards, stagedWithCommits } from './repo-shard-reads';
 import { stagedInShardOf } from './repo-shards';
@@ -257,6 +258,11 @@ export class RepoObjects {
    * isolate has located; the authority locates the rest with the staged read), parsed. */
   async recorded(id: string, kind: ObjectKind): Promise<CachedObject | null> {
     const raw = await this.env.OBJECTS.get(this.rawKey(id));
+    // A large file is never parsed or held whole here (repo-large-files).
+    if (raw && raw.size > SPILL_BYTES) {
+      await raw.body.cancel();
+      throw tooLarge(id, raw.size);
+    }
     if (raw?.customMetadata?.kind === kind) return this.parsed(id, kind, await raw.arrayBuffer());
     const bundled = (await readKnown(this.env, this.repo, [{ id, kind }])).get(id);
     return bundled ? this.parsed(id, kind, bundled) : null;
@@ -345,6 +351,10 @@ export class RepoObjects {
       await Promise.all(
         rest.slice(i, i + CACHE_CHUNK).map(async (w) => {
           const stored = await this.env.OBJECTS.get(this.rawKey(w.id));
+          if (stored && stored.size > SPILL_BYTES) {
+            await stored.body.cancel();
+            throw tooLarge(w.id, stored.size);
+          }
           if (stored) add(w, new Uint8Array(await stored.arrayBuffer()));
         }),
       );

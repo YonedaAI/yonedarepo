@@ -1,7 +1,9 @@
 //! A pack walker fed in chunks as a push arrives: each entry is parsed and inflated as
 //! soon as its bytes are in, with zlib state kept across chunks, so a large object costs
 //! one pass and size limits fail the push early. Whole objects are hashed while they
-//! inflate and kept only when the caller asks; delta payloads are handed over whole.
+//! inflate and kept only when the caller asks; delta payloads are handed over whole. A
+//! whole blob over `spill_blob_bytes` is not held at all (`spill`). (Over 300 lines: an
+//! entry's header, limits and inflation share the buffer and offsets kept here.)
 use super::pack_header::{EntryKind, entry_header};
 use super::{ObjectId, ObjectKind, PackLimits, invalid};
 use crate::Result;
@@ -14,6 +16,9 @@ use std::ops::Range;
 
 const WINDOW: usize = 64 * 1024;
 
+mod spill;
+use spill::SPILL_OUT;
+pub use spill::Spill;
 /// One parsed entry: where it starts, its declared inflated size, its compressed bytes.
 #[derive(Clone, Debug)]
 pub struct Walked {
@@ -22,6 +27,8 @@ pub struct Walked {
     pub size: usize,
     pub span: Range<usize>,
     pub content: Content,
+    /// Handed out as `Spill`s: not in the pack's bytes, not a delta base.
+    pub spilled: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -41,6 +48,7 @@ struct Inflating {
     written: usize,
     hasher: Option<Sha1>,
     kept: Option<Vec<u8>>,
+    spill: bool,
 }
 
 pub struct PackWalker {
@@ -54,6 +62,11 @@ pub struct PackWalker {
     total: usize,
     current: Option<Inflating>,
     finished: bool,
+    /// Bytes dropped from `buf` (spilled entries' compressed bytes): a position's pack
+    /// offset is its index plus this, for everything after them.
+    dropped: usize,
+    spilled: Vec<Spill>,
+    spilled_bytes: usize,
 }
 
 impl PackWalker {
@@ -69,6 +82,9 @@ impl PackWalker {
             total: 0,
             current: None,
             finished: false,
+            dropped: 0,
+            spilled: Vec::new(),
+            spilled_bytes: 0,
         }
     }
 
@@ -172,29 +188,48 @@ impl PackWalker {
     /// Parses the next entry's header once all of it is here.
     fn start_entry(&mut self, keep: &dyn Fn(ObjectKind, usize) -> bool) -> Result<bool> {
         let offset = self.pos;
-        let Some((kind, size, at)) = entry_header(&self.buf[offset..], offset as u64)? else {
+        let logical = (offset + self.dropped) as u64;
+        let Some((kind, size, at)) = entry_header(&self.buf[offset..], logical)? else {
             return Ok(false);
         };
         self.total = self.total.saturating_add(size);
-        if size > self.limits.max_object_bytes || self.total > self.limits.max_total_bytes {
+        if size > self.limits.max_object_bytes {
             return Err(crate::Error::new(
                 "TOO_LARGE",
-                "Push exceeds the object size limit",
+                format!(
+                    "Push has an object of {} MiB; the limit is {} MiB per file (use Git LFS for larger files)",
+                    size >> 20,
+                    self.limits.max_object_bytes >> 20
+                ),
             ));
         }
+        if self.total > self.limits.max_total_bytes {
+            return Err(crate::Error::new(
+                "TOO_LARGE",
+                format!(
+                    "Push exceeds {} MiB of objects; push fewer commits at a time",
+                    self.limits.max_total_bytes >> 20
+                ),
+            ));
+        }
+        let spill =
+            kind == EntryKind::Whole(ObjectKind::Blob) && size > self.limits.spill_blob_bytes;
         let (hasher, kept) = match kind {
             EntryKind::Whole(kind) => {
                 let mut hasher = Sha1::new();
                 hasher.update(format!("{} {size}\0", kind.name()).as_bytes());
                 (
                     Some(hasher),
-                    keep(kind, size).then(|| Vec::with_capacity(size)),
+                    (!spill && keep(kind, size)).then(|| Vec::with_capacity(size)),
                 )
             }
             _ => (None, Some(Vec::with_capacity(size))),
         };
+        if spill {
+            self.spilled.push(Spill::Begin { size });
+        }
         self.current = Some(Inflating {
-            offset: offset as u64,
+            offset: logical,
             kind,
             size,
             start: offset + at,
@@ -202,6 +237,7 @@ impl PackWalker {
             written: 0,
             hasher,
             kept,
+            spill,
         });
         self.pos = offset + at;
         Ok(true)
@@ -213,7 +249,7 @@ impl PackWalker {
             return Ok(None);
         };
         let mut window = vec![0u8; WINDOW.min(entry.size + 1).max(1)];
-        loop {
+        let complete = loop {
             let input = &self.buf[self.pos..];
             let result = inflate(&mut entry.state, input, &mut window, MZFlush::None);
             self.pos += result.bytes_consumed;
@@ -228,15 +264,25 @@ impl PackWalker {
             if let Some(kept) = entry.kept.as_mut() {
                 kept.extend_from_slice(out);
             }
+            if entry.spill && !out.is_empty() {
+                self.spilled_bytes += out.len();
+                self.spilled.push(Spill::Data(out.to_vec()));
+            }
             let progress = result.bytes_written > 0 || result.bytes_consumed > 0;
             let starved = self.pos == self.buf.len();
             match result.status {
-                Ok(MZStatus::StreamEnd) => break,
+                Ok(MZStatus::StreamEnd) => break true,
+                // Spilled content waits to be taken: pause (the next feed resumes).
+                Ok(_) if entry.spill && self.spilled_bytes >= SPILL_OUT => break false,
                 Ok(_) if progress => {}
                 // Out of input mid-stream: wait for the next chunk.
-                Ok(_) | Err(MZError::Buf) if starved => return Ok(None),
+                Ok(_) | Err(MZError::Buf) if starved => break false,
                 _ => return Err(invalid("Pack object is not valid zlib data")),
             }
+        };
+        self.drop_spilled();
+        if !complete {
+            return Ok(None);
         }
         let Some(entry) = self.current.take() else {
             return Ok(None);
@@ -253,6 +299,9 @@ impl PackWalker {
             (None, Some(delta)) => Content::Delta(delta),
             (None, None) => return Err(invalid("Delta entry lost its payload")),
         };
+        if let (true, Content::Object { id, .. }) = (entry.spill, &content) {
+            self.spilled.push(Spill::End { id: *id });
+        }
         // Entries are hashed into the trailer check as they complete.
         self.hasher.update(&self.buf[self.hashed..self.pos]);
         self.hashed = self.pos;
@@ -262,6 +311,7 @@ impl PackWalker {
             size: entry.size,
             span: entry.start..self.pos,
             content,
+            spilled: entry.spill,
         }))
     }
 }
