@@ -5,9 +5,12 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import usageSource from '../../../../backend/crates/yoneda-cli/src/command/usage.rs?raw';
 import tools from '../../../../backend/crates/yoneda-core/src/platform_tools.json';
+import transcriptSource from '../../../../backend/crates/yoneda-core/src/transcript.rs?raw';
+import scanSource from '../../../../backend/crates/yoneda-platform/src/secret_scan.rs?raw';
 import { nextTheme, THEMES } from '../shell/theme';
 import { formatSourceRoute, parseSourceRoute } from '../source-platform/sourceRoute';
 import { BLOG_POSTS, COMPANY_PAGES, DOCS_NAV, DOCS_PAGES, LEGAL_PAGES } from './content';
+import { FEATURES } from './features';
 import { formatUsd, MARGIN, METERS, meterPrice, PRICING, roundUpClean } from './pricing';
 import { SiteFeatures } from './SiteFeatures';
 import { SiteHome } from './SiteHome';
@@ -227,3 +230,42 @@ describe('content', () => {
 
 const escapeHtml = (text: string) =>
   text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll("'", '&#x27;');
+
+// Claims about transcripts follow what the platform does, read from its own sources: once
+// `git_session_record` stores transcripts, no page may call them coming or unstored, and the
+// limits the pages quote must be the stored ones.
+describe('transcript claims', () => {
+  const stores = tools.some(
+    (t) => t.name === 'git_session_record' && /transcript the platform stores/.test(t.description),
+  );
+  const pages = [
+    ...Object.entries(DOCS_PAGES).map(([slug, p]) => [`docs/${slug}`, p.body] as const),
+    ...Object.entries(LEGAL_PAGES).map(([doc, p]) => [doc, p.body] as const),
+    ...FEATURES.map(
+      (f) => [`feature ${f.id}`, JSON.stringify([f.points, f.coming ?? ''])] as const,
+    ),
+  ];
+
+  it('never calls stored transcripts coming or unstored', () => {
+    expect(stores).toBe(true);
+    const stale =
+      /transcripts?\b[^.|]*\b(coming|in progress|not (yet )?stored|does not store|never stored)|(coming|in progress)[^.|]*\btranscripts?/i;
+    for (const [name, text] of pages) expect(`${name}: ${stale.test(text)}`).toBe(`${name}: false`);
+    expect(FEATURES.find((f) => f.id === 'sessions')?.coming).toBeUndefined();
+  });
+
+  it('quotes the stored limits and the redaction rule count from the source', () => {
+    const block =
+      /pub const STORED: Limits = Limits \{([\s\S]*?)\};/.exec(transcriptSource)?.[1] ?? '';
+    expect(block).toMatch(/total: 1024 \* 1024,/);
+    expect(block).toMatch(/turns: 2_000,/);
+    const rules = /pub const RULES: \[&str; (\d+)\]/.exec(scanSource)?.[1];
+    expect(rules).toBe('11');
+    for (const text of [LEGAL_PAGES.privacy.body, DOCS_PAGES['guides/sessions'].body]) {
+      expect(text).toContain('1 MiB');
+      expect(text).toContain('2,000 turns');
+      expect(text).toContain(`${rules} rules`);
+      expect(text).toContain('[REDACTED:');
+    }
+  });
+});

@@ -7,7 +7,7 @@ summary: Record which coding session produced a commit, what it read, and hand i
 
 A session record links a commit to the coding session that wrote it: the agent CLI, the model, a summary, the session's own id and how many files it declared as read. Records are listed newest first on the **Agents → Sessions** tab, filterable by CLI, model and branch.
 
-Full transcripts are **coming**: a record can already carry a `--transcript-ref`, but the platform does not store or show transcripts yet.
+A record can also carry the session's **transcript**: the context it started with, then its prompts, tool calls with input and output, and replies. The session's page shows it as turns, with tool calls collapsed and named by file or command.
 
 ## Record sessions automatically
 
@@ -20,14 +20,24 @@ The agent plugins record sessions for you:
 | Codex | `yoneda setup codex` (skill and MCP) |
 | Gemini CLI | `yoneda setup gemini` (extension and MCP) |
 
-With hooks installed, a session starts with the repository's context, records each file it reads, and records itself on its commits when it ends.
+With hooks installed, a session starts with the repository's context, records each file it reads, and records itself on its commits when it ends, uploading its transcript (Claude Code and opencode).
 
 ## Record by hand
 
 ```sh
 yoneda session record HEAD --cli my-agent --model my-model --summary "Add retry helper"
+yoneda session record HEAD --cli claude-code --summary "…" --transcript session.jsonl
 yoneda session list HEAD
 ```
+
+`--transcript` takes a Claude Code JSONL file, opencode messages, or `{context, turns}`. `--transcript-ref` instead names a transcript kept elsewhere (a URL or an id).
+
+## Transcripts
+
+- **Redacted before storage.** Every credential the platform's 11 rules recognize is replaced with `[REDACTED:<rule>]`. These are the same rules that scan pushes. A credential written JSON-escaped can slip through, so keep secrets out of sessions rather than relying on redaction.
+- **Bounded.** A stored transcript is at most 1 MiB and 2,000 turns. Each text keeps its start and end, and the middle is cut. Past that, the opening prompt and the latest turns stay, and the rest is counted as omitted. The CLI fits uploads to 3 MiB first.
+- **Readable by the repository's readers.** Anyone for a public repository; for a private one, non-members get "not found". Over the API: `GET /repos/<id>/sessions/<session>/transcript`.
+- **Stored with the repository** in object storage, named by SHA-256, and deleted with it.
 
 The default session id is `$YONEDA_SESSION_ID`, or opencode's session when it runs inside one.
 
