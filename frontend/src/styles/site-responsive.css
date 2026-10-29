@@ -1,0 +1,61 @@
+/* The public site at phone width: the nav folds into a menu, grids become one column. */
+@media (max-width: 800px) {
+  .site-nav {
+    flex-wrap: wrap;
+    padding: 10px 16px;
+    gap: 12px;
+  }
+  .site-menu-button {
+    display: inline-flex;
+  }
+  .site-sections {
+    display: none;
+    flex-basis: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+    padding-bottom: 8px;
+  }
+  .site-sections.open {
+    display: flex;
+  }
+  .site-sections ul {
+    flex-direction: column;
+  }
+  .site-nav-link {
+    padding: 10px;
+  }
+  .site-account {
+    justify-content: space-between;
+  }
+  .site-main {
+    padding: 0 16px 48px;
+  }
+  .site-hero {
+    padding: 56px 0 32px;
+  }
+  .site-feature {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+    padding: 20px;
+  }
+  .site-docs {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+    padding-top: 24px;
+  }
+  .site-docs-nav {
+    position: static;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--site-line);
+  }
+  .site-problems,
+  .site-proof,
+  .site-checklist,
+  .site-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .site-cta {
+    padding: 32px 20px;
+  }
+}

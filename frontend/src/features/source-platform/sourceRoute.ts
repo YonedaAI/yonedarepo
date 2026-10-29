@@ -2,7 +2,9 @@
 // repositories are listed at `/source/explore` (the platform host redirects `/explore` there;
 // the bare path parses too, for a host that does not). Older
 // addresses (`/source`, `/source/tokens`, a repository's `/connect`, `/members` and
-// `/settings/branches`) still parse, into the view that replaced them.
+// `/settings/branches`) still parse, into the view that replaced them. The public site's
+// pages (`site/siteRoute.ts`) parse here too, as one `site` view.
+import { formatSitePage, parseSitePath, type SitePage } from '../site/siteRoute';
 import { AGENT_SECTIONS, type AgentSection } from './agentModel';
 import { normalizeUserCode } from './connect';
 
@@ -26,6 +28,7 @@ export type SourceRoute =
   | { view: 'settings' }
   | { view: 'device'; code: string }
   | { view: 'org'; org: string }
+  | { view: 'site'; site: SitePage }
   | { view: 'files'; repo: string; path: string; ref: string; at?: number }
   | { view: 'overview'; repo: string; path: string; ref: string; at?: number }
   | { view: 'history'; repo: string; ref: string }
@@ -72,6 +75,8 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
   if (root === 'source' && repo === 'tokens' && !view) return { view: 'settings' };
   if ((root === 'source' && repo === 'explore' && !view) || (root === 'explore' && !repo))
     return { view: 'explore' };
+  const site = parseSitePath(parts);
+  if (site) return { view: 'site', site };
   if (root !== 'source' || !repo || !REPO.test(repo)) return { view: 'home' };
   const ref = params.get('ref') || 'main';
   if (view === 'history') return { view: 'history', repo, ref };
@@ -118,6 +123,7 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'settings') return '/settings';
   if (route.view === 'explore') return '/source/explore';
   if (route.view === 'org') return `/orgs/${route.org}`;
+  if (route.view === 'site') return formatSitePage(route.site);
   if (route.view === 'device')
     return route.code ? `/device?code=${encodeURIComponent(route.code)}` : '/device';
   const base = `/source/${route.repo}`;
