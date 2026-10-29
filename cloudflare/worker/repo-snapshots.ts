@@ -135,8 +135,20 @@ function holder(env: Env, repo: string): Holder | null {
   return typeof stub.refs === 'function' ? (stub as Holder) : null;
 }
 
-/** `git_refs`: every ref, now (a snapshot, see above) or at version `at` (exact). */
+/** `git_refs`: every ref, now (a snapshot, see above) or at version `at` (exact). A current
+ * read that still finds refs waiting for the projector after the retries (a lagging
+ * projector) answers every other ref, naming the waiting ones in `pending`. */
 export async function readRefs(ctx: RepoContext, args: Json) {
+  try {
+    return await readAllRefs(ctx, args);
+  } catch (e) {
+    if (!(e instanceof ApiError && e.code === 'PROJECTION_PENDING') || versionOf(args.at) !== null)
+      throw e;
+    return ctx.call({ op: 'repo_refs', partial: true });
+  }
+}
+
+async function readAllRefs(ctx: RepoContext, args: Json) {
   const at = versionOf(args.at);
   const head = await authorizeRead(ctx);
   if (!head) return ctx.call({ op: 'repo_refs', ...(at === null ? {} : { at }) });
