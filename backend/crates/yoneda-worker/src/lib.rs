@@ -18,6 +18,7 @@ mod commit_shard;
 mod compute;
 mod git_http;
 mod source_repository;
+mod stack;
 pub use commit_shard::CommitShard;
 pub use source_repository::SourceRepository;
 

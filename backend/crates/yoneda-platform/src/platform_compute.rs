@@ -29,6 +29,18 @@ fn wasm_bytes() -> Option<usize> {
     None
 }
 
+/// Stack below the caller (wasm32's stack grows down to address 0; null natively).
+#[inline(never)]
+pub fn stack_left() -> Option<usize> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        let marker = 0u8;
+        return Some(core::hint::black_box(&marker) as *const u8 as usize);
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    None
+}
+
 pub fn compute(c: Value) -> Result<Value> {
     match string(&c, "op")?.as_str() {
         "tree_diff" => tree_diff(&c),
@@ -68,7 +80,7 @@ pub fn compute(c: Value) -> Result<Value> {
         "large_carrier" => crate::platform_push::large_carrier(&c),
         "branch_push" => crate::platform_push::branch_push(&c),
         "parse_objects" => crate::platform_push::parse_objects(&c),
-        "memory" => Ok(json!({ "wasm_bytes": wasm_bytes() })),
+        "memory" => Ok(json!({ "wasm_bytes": wasm_bytes(), "stack_bytes": stack_left() })),
         "build_commit" => crate::platform_build::build_commit(&c),
         "project_changesets" => crate::platform_project::project_changesets(&c),
         "head_begin" => crate::platform_head::head_begin(&c),
