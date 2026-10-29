@@ -4,7 +4,8 @@
 //! a check runner or queue. Every action needs a reason and is recorded loudly: an audit
 //! row, plus a `break-glass:` actor on its log entry. No action rewrites a ref: recovery is
 //! a new commit fast-forwarded onto the head the human saw (expected old value).
-use super::land::{append, gates};
+use super::land::append;
+use super::land_gates::gates;
 use super::rows::{self, CommitRow, Settings, branch_ref, current_version, object_id};
 use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
