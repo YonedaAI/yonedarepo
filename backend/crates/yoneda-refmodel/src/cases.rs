@@ -118,7 +118,11 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
         .to_string()
     };
     match rng.below(100) {
-        20..22 => Op::Publish,
+        20..21 => Op::Publish,
+        21..22 if rng.below(2) == 0 => Op::ListRefs,
+        21..22 => Op::ReadRef {
+            name: rng.pick(&BRANCHES).to_string(),
+        },
         22..23 => Op::Project,
         23..30 if repo.shard.is_empty() || rng.below(5) < 3 => {
             let path = rng.pick(&PATHS).to_string();

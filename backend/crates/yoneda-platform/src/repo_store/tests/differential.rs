@@ -207,6 +207,11 @@ impl Driver {
                 (Seen::Projected(self.made_by_projection()), None)
             }
             Op::DeleteFork => (self.delete_fork(), None),
+            Op::ReadRef { name } => (
+                done(self.h.run(OWNER, json!({"op":"repo_snapshot","ref":name}))),
+                None,
+            ),
+            Op::ListRefs => (self.list_refs(), None),
             Op::DeleteRepo { confirmed } => {
                 let confirm = if *confirmed { "demo" } else { "not-demo" };
                 match self
@@ -343,6 +348,36 @@ impl Driver {
             _ => return Err(format!("outcome: platform {seen:?}, model {expected:?}")),
         }
         self.same_refs()
+    }
+
+    /// The partial listing: every model ref but the pending ones, which it names.
+    fn list_refs(&self) -> Seen {
+        let listed = match self.h.run(OWNER, json!({"op":"repo_refs","partial":true})) {
+            Err(e) => return Seen::Refused(e.code),
+            Ok(listed) => listed,
+        };
+        let pending = self.model.pending();
+        let refs: BTreeMap<String, String> = listed["refs"]
+            .as_object()
+            .into_iter()
+            .flatten()
+            .filter(|(name, _)| name.starts_with("refs/heads/") || name.starts_with("refs/tags/"))
+            .map(|(name, id)| (name.clone(), id.as_str().unwrap_or_default().to_owned()))
+            .collect();
+        let model: BTreeMap<String, String> = self
+            .model
+            .refs
+            .iter()
+            .filter(|(name, _)| !pending.contains(&name.as_str()))
+            .map(|(name, id)| (name.clone(), self.ids[*id].clone()))
+            .collect();
+        if refs != model || listed["pending"] != json!(pending) {
+            let shown = &listed["pending"];
+            return Seen::Refused(format!(
+                "LISTING {refs:?} pending {shown}, model {model:?} pending {pending:?}"
+            ));
+        }
+        Seen::Done
     }
 
     /// Numbers the commits projection made (oldest first) as the model's `model` and
