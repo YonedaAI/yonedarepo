@@ -60,7 +60,7 @@ mod merging;
 pub(crate) mod migration;
 pub(crate) mod op;
 mod org_access;
-mod policy;
+pub(crate) mod policy;
 pub(crate) mod prepare;
 mod projection;
 mod projection_plan;

@@ -13,6 +13,8 @@ use yoneda_core::Result;
 /// A model check's lease: two bounded model calls (one retry) plus the diff read.
 pub const MODEL_TIMEOUT_SECONDS: u32 = 120;
 const MAX_RUBRIC_CHARS: usize = 8_000;
+/// The longest a command runner may run, in seconds.
+const MAX_TIMEOUT_SECONDS: u32 = 3600;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Runner {
@@ -26,6 +28,7 @@ pub struct CommandRunner {
     /// argv, executed without a shell unless the owner writes `["sh", "-c", ...]`.
     pub command: Vec<String>,
     #[serde(default = "default_timeout")]
+    #[schemars(range(min = 1, max = MAX_TIMEOUT_SECONDS))]
     pub timeout_seconds: u32,
 }
 fn default_timeout() -> u32 {
@@ -39,6 +42,7 @@ fn default_timeout() -> u32 {
 pub struct ModelRunner {
     pub rubric: String,
     #[serde(default = "default_model")]
+    #[schemars(extend("enum" = crate::platform_model_check::model_ids()))]
     pub model: String,
     /// Review the first part of a diff over the budget instead of failing it. Omitted when
     /// false, the fail-closed default.
@@ -117,7 +121,7 @@ impl Runner {
                 if r.command.is_empty()
                     || r.command.len() > 64
                     || r.command.iter().any(|a| a.len() > 4096 || a.contains('\0'))
-                    || !(1..=3600).contains(&r.timeout_seconds)
+                    || !(1..=MAX_TIMEOUT_SECONDS).contains(&r.timeout_seconds)
                 {
                     return Err(bad(
                         "Runners need 1-64 argv entries and a 1-3600 second timeout (at most 32 runners)",
