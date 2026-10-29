@@ -7,6 +7,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 mod objects;
+mod trees;
+
+pub use trees::Trees;
 
 /// Identity of the commits this client makes for platform snapshots.
 const SNAPSHOT_IDENTITY: [(&str, &str); 4] = [
@@ -223,28 +226,6 @@ impl Git {
         }
         let out = self.output(&args, Some(message.as_bytes()), &SNAPSHOT_IDENTITY)?;
         Ok(String::from_utf8_lossy(&out).trim().to_owned())
-    }
-
-    /// The tree of `commit` with `index_info` (`git update-index -z --index-info`
-    /// records) applied, built in a private index so the person's index is untouched.
-    pub fn tree_with(&self, commit: &str, index_info: &[u8]) -> Result<String> {
-        let name = format!("yoneda-index-{}", std::process::id());
-        let path = self.run(&["rev-parse", "--git-path", &name])?;
-        let path = self.dir.join(path);
-        let index = path.to_string_lossy().into_owned();
-        let env = [("GIT_INDEX_FILE", index.as_str())];
-        let built = self
-            .output(&["read-tree", commit], None, &env)
-            .and_then(|_| {
-                self.output(
-                    &["update-index", "-z", "--index-info"],
-                    Some(index_info),
-                    &env,
-                )
-            })
-            .and_then(|_| self.output(&["write-tree"], None, &env));
-        let _ = std::fs::remove_file(&path);
-        Ok(String::from_utf8_lossy(&built?).trim().to_owned())
     }
 
     /// Whether the work tree and index match HEAD (ignored files aside).

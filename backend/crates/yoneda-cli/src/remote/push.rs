@@ -72,10 +72,20 @@ fn refusal(
     }
 }
 
+/// One status line. A reason spanning lines (Git's stderr: a warning, then the fatal
+/// error) is joined into one: Git reads each further line as the next ref's status and
+/// fails the whole push on it ("expected ok/error, helper said …").
 fn line(dst: &str, outcome: &std::result::Result<(), String>) -> String {
     match outcome {
         Ok(()) => format!("ok {dst}\n"),
-        Err(why) => format!("error {dst} {why}\n"),
+        Err(why) => {
+            let why: Vec<&str> = why
+                .lines()
+                .map(str::trim)
+                .filter(|l| !l.is_empty())
+                .collect();
+            format!("error {dst} {}\n", why.join("; "))
+        }
     }
 }
 
@@ -333,5 +343,15 @@ mod tests {
         assert!(Spec::parse("nocolon").is_err());
         assert_eq!(full_ref("x"), "refs/heads/x");
         Ok(())
+    }
+
+    #[test]
+    fn a_reason_spanning_lines_stays_one_status_line() {
+        let why = "git write-tree failed: warning: lazy fetching disabled\nfatal: could not fetch 1234 from promisor remote\n";
+        assert_eq!(
+            line("refs/heads/x", &Err(why.into())),
+            "error refs/heads/x git write-tree failed: warning: lazy fetching disabled; fatal: could not fetch 1234 from promisor remote\n"
+        );
+        assert_eq!(line("refs/heads/x", &Ok(())), "ok refs/heads/x\n");
     }
 }
