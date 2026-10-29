@@ -57,6 +57,54 @@ fn account_exists_only_after_signup() {
     assert_eq!(exists(&db), true);
 }
 #[test]
+fn signup_keeps_a_valid_contact_email_and_refuses_an_invalid_one() {
+    let with = |email: Value| {
+        let db = NativeStore::memory().unwrap();
+        let made = call(
+            &db,
+            json!({"op":"signup","username":"alice","email":email,"password":"a long test password","salt":"01".repeat(16),"recovery_hash":"b".repeat(64),"session_hash":"a".repeat(64)}),
+        );
+        (db, made)
+    };
+    let (db, made) = with(json!(" Alice@Example.COM "));
+    // Stored, normalized, and never part of the public account.
+    assert!(made.unwrap().get("email").is_none());
+    assert_eq!(
+        super::get(&db, "account").unwrap()["email"],
+        "alice@example.com"
+    );
+    for bad in [json!("alice"), json!("a@b"), json!(""), json!(7)] {
+        let (db, made) = with(bad.clone());
+        assert_eq!(made.unwrap_err().code, "INVALID_INPUT", "{bad}");
+        assert!(super::get(&db, "account").is_err(), "{bad}");
+    }
+    // Accounts made before the field have none.
+    let db = NativeStore::memory().unwrap();
+    signup(&db);
+    assert!(super::get(&db, "account").unwrap().get("email").is_none());
+}
+#[test]
+fn the_welcome_marker_is_set_once_and_only_on_an_account() {
+    let db = NativeStore::memory().unwrap();
+    let state = |db: &NativeStore| call(db, json!({"op":"welcome_state"})).unwrap()["sent"].clone();
+    assert_eq!(
+        call(&db, json!({"op":"welcome_sent"})).unwrap_err().code,
+        "NOT_FOUND"
+    );
+    signup(&db);
+    assert_eq!(state(&db), false);
+    assert_eq!(
+        call(&db, json!({"op":"welcome_sent"})).unwrap()["sent"],
+        true
+    );
+    assert_eq!(state(&db), true);
+    // A redelivered job marks it again without error.
+    assert_eq!(
+        call(&db, json!({"op":"welcome_sent"})).unwrap()["sent"],
+        true
+    );
+}
+#[test]
 fn recovery_rotates_password_code_and_revokes_all_existing_sessions() {
     let db = NativeStore::memory().unwrap();
     signup(&db);

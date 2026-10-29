@@ -6,13 +6,13 @@ const bindings = env as unknown as Env;
 afterEach(async () => { await reset(); });
 const request = (path: string, body?: unknown, cookie?: string) => bindings.SELF.fetch(`https://yoneda/api/${path}`, {method:body ? 'POST' : 'GET',headers:{...(body ? {'content-type':'application/json'} : {}),...(cookie ? {cookie} : {})},...(body ? {body:JSON.stringify(body)} : {})});
 async function signup(username: string) {
- const result = await request('auth/signup',{username,password:'a long test password'});
+ const result = await request('auth/signup',{username,email:`${username}@example.com`,password:'a long test password'});
  expect(result.status).toBe(200);
  return {cookie:(result.headers.get('set-cookie') ?? '').split(';')[0],account:await result.json<any>()};
 }
 it('reserves platform identities so a signup cannot become the administrator workspace',async()=>{
- expect((await request('auth/signup',{username:'_admin',password:'a long test password'})).status).toBe(400);
- expect((await request('auth/signup',{username:'_budget_claude',password:'a long test password'})).status).toBe(400);
+ expect((await request('auth/signup',{username:'_admin',email:'x@example.com',password:'a long test password'})).status).toBe(400);
+ expect((await request('auth/signup',{username:'_budget_claude',email:'x@example.com',password:'a long test password'})).status).toBe(400);
 });
 it('signs up, authenticates after eviction and revokes the opaque session on logout', async () => {
  const {cookie,account} = await signup('alice');

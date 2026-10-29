@@ -1232,6 +1232,13 @@ fn path_history_bisect_and_vacuum_follow_the_log() {
         tested += 1;
     }
     assert_eq!(step["result"]["first_bad"], json!(chain[5]));
+    // Read again once found (as the adapter's git_bisect {id} poll does): the same result
+    // object, not its stored JSON text.
+    let again = h.ok(CI, json!({"op":"repo_bisect_step","id":id}));
+    assert_eq!(
+        (&again["status"], &again["result"]["first_bad"]),
+        (&json!("found"), &json!(chain[5]))
+    );
     assert!(
         tested <= 4,
         "bisect halves the range ({tested} checks for 8 commits)"
@@ -1609,6 +1616,7 @@ fn contract_records_bind_to_commit_and_digest_and_respect_grants() {
 
 mod access_gates;
 mod account_access;
+mod activity;
 mod agent_reads;
 mod batches;
 mod bound_parameters;
@@ -1637,10 +1645,12 @@ mod land_shapes;
 mod lfs;
 mod lfs_sweep;
 mod members;
+mod memories;
 mod model_runner;
 mod ops;
 mod orgs;
 mod pushed;
+mod quarantine;
 mod rebase;
 mod releases;
 mod secrets;

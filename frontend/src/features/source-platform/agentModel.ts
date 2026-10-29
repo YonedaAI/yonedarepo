@@ -6,7 +6,8 @@ export type SessionRecord = {
   commit: string;
   cli: string;
   model: string | null;
-  summary: string;
+  /** Null while the record is quarantined (or after its purge). */
+  summary: string | null;
   prompt_digest: string | null;
   transcript_ref: string | null;
   read_set_digest: string | null;
@@ -20,7 +21,13 @@ export type SessionRecord = {
   reads: number;
   /** The transcript the platform stores for this record; null when none was uploaded. */
   transcript: TranscriptMeta | null;
+  /** The repository's owner withholds this record's text (quarantine). */
+  quarantined?: boolean;
 };
+
+/** A record's summary as the pages show it: a marker in place of quarantined text. */
+export const summaryText = (s: Pick<SessionRecord, 'summary' | 'quarantined'>) =>
+  s.quarantined ? 'Withheld by the repository owner (quarantined).' : (s.summary ?? '');
 
 /** What a record keeps about its stored transcript. */
 export type TranscriptMeta = {
@@ -146,7 +153,7 @@ export type Bisect = {
   remaining: number;
 };
 
-export const AGENT_SECTIONS = ['sessions', 'contracts', 'pins', 'bisects'] as const;
+export const AGENT_SECTIONS = ['sessions', 'memories', 'contracts', 'pins', 'bisects'] as const;
 export type AgentSection = (typeof AGENT_SECTIONS)[number];
 
 /** The sessions read for these filters, from the page after `before` when given. */

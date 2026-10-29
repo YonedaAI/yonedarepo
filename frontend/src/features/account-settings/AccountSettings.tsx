@@ -1,7 +1,8 @@
-// Account settings (`/settings`, from the account menu): the account, the CLIs signed in
-// with `yoneda login`, personal access tokens and organizations.
+// Account settings (`/settings`, from the account menu): the account, its sign-in methods,
+// the theme, the CLIs signed in with `yoneda login`, personal access tokens and organizations.
 import { useState } from 'react';
 import type { AccountIdentity } from '../../lib/types';
+import { ThemePicker } from '../shell/ThemePicker';
 import type { Navigate } from '../shell/useRoute';
 import { AccountOrgs } from '../source-platform/AccountOrgs';
 import { expiresIn } from '../source-platform/connect';
@@ -18,6 +19,7 @@ import { SshKeys } from '../source-platform/SshKeys';
 import { when } from '../source-platform/sourceApi';
 import type { RepoSummary } from '../source-platform/TokenParts';
 import { type Loaded, useSource } from '../source-platform/useSource';
+import { SignInMethods } from './SignInMethods';
 
 export function CliTable({
   tokens,
@@ -114,6 +116,14 @@ export function AccountSettings({
         ) : (
           <p className="source-meta">Sign in to see it.</p>
         )}
+      </section>
+      {identity && <SignInMethods />}
+      <section aria-labelledby="appearance-heading">
+        <h2 id="appearance-heading">Appearance</h2>
+        <p className="source-meta">
+          System follows your device's light or dark setting. The choice is kept in this browser.
+        </p>
+        <ThemePicker />
       </section>
       <section aria-labelledby="cli-heading">
         <h2 id="cli-heading">Signed-in CLIs</h2>

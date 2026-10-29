@@ -167,7 +167,7 @@ fn author(dir: &Path) -> Value {
     })
 }
 
-/// Creates repository `name` from `dir`; returns its id.
+/// Creates repository `name` from `dir`; returns its id and the number of files imported.
 pub async fn import(
     origin: &str,
     account: &Api,
@@ -175,7 +175,7 @@ pub async fn import(
     dir: &Path,
     name: &str,
     batch_files: usize,
-) -> Result<String> {
+) -> Result<(String, usize)> {
     let files = files_of(dir)?;
     let total = files.len();
     let mut parts = batches(files, batch_files, BATCH_BYTES).into_iter();
@@ -215,8 +215,8 @@ pub async fn import(
             .await
             .map_err(|f| Error::new(format!("landing the import on main: {f}")))?;
     }
-    println!("Imported {total} file(s) into {name} ({id})");
-    Ok(id)
+    crate::human!("Imported {total} file(s) into {name} ({id})");
+    Ok((id, total))
 }
 
 #[cfg(test)]

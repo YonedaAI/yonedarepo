@@ -1,4 +1,5 @@
-// A repository inside the shell: name, status chips, tabs and the current tab's view. A public
+// A repository inside the shell: name, status chips and the current page (the sidebar lists
+// the pages). A public
 // repository opens for anyone; a viewer who reads only because it is public (or is signed
 // out) gets the read views, with no write or admin controls.
 import { useEffect } from 'react';
@@ -12,17 +13,18 @@ import { PublicBadge } from './PublicBadge';
 import { ReleaseView } from './ReleaseView';
 import { RepoAgents } from './RepoAgents';
 import { RepoChanges } from './RepoChanges';
+import { RepoContext } from './RepoContext';
 import { RepoFiles } from './RepoFiles';
 import { RepoNotFound, repoMissing, useRepoGone } from './RepoNotFound';
 import { RepoOverview } from './RepoOverview';
 import { RepoReleases } from './RepoReleases';
 import { RepoSearch } from './RepoSearch';
-import { RepoTabs, StatusChips } from './RepoTabs';
 import { isPublic, ReadOnlyContext, repoAccess, type Visibility } from './repoAccess';
 import type { RepoStatus } from './repoStatus';
 import { SessionView } from './SessionView';
 import { Failure } from './SourceStatus';
-import { formatSourceRoute, routeTab, type SourceRoute } from './sourceRoute';
+import { StatusChips } from './StatusChips';
+import { formatSourceRoute, type SourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
 
 type RepoRoute = Extract<SourceRoute, { repo: string }>;
@@ -52,8 +54,14 @@ export function RepoPage({
   onMissing: () => void;
   onNew: () => void;
   onSignIn?: () => void;
-  /** The loaded name and visibility, for the shell's header. */
-  onLoaded?: (repo: { repo: string; name: string; visibility: Visibility }) => void;
+  /** The loaded name and visibility, and whether the viewer may change settings, for the
+   * shell's header and sidebar. */
+  onLoaded?: (repo: {
+    repo: string;
+    name: string;
+    visibility: Visibility;
+    settings: boolean;
+  }) => void;
 }) {
   const repo = route.repo;
   const status = useSource<RepoStatus>(`/repos/${repo}`);
@@ -68,8 +76,14 @@ export function RepoPage({
     if (missing) onMissing();
   }, [missing]);
   useEffect(() => {
-    if (data) onLoaded?.({ repo, name: data.name, visibility: data.visibility ?? 'private' });
-  }, [data, repo, onLoaded]);
+    if (data)
+      onLoaded?.({
+        repo,
+        name: data.name,
+        visibility: data.visibility ?? 'private',
+        settings: owner,
+      });
+  }, [data, repo, owner, onLoaded]);
   if (missing)
     return (
       <RepoNotFound
@@ -114,100 +128,95 @@ export function RepoPage({
             landed branch and is no longer updated: {p.detail}
           </p>
         ))}
-        {status.error && <Failure error={status.error} onRetry={status.reload} />}
+        {status.error && (
+          <Failure error={status.error} what="this repository" onRetry={status.reload} />
+        )}
         {!status.error && (
-          <>
-            <RepoTabs repo={repo} current={routeTab(route)} settings={owner} navigate={navigate} />
-            <div className="repo-view">
-              {route.view === 'files' && (
-                <RepoFiles route={route} status={data} navigate={navigate} />
-              )}
-              {route.view === 'overview' && <RepoOverview route={route} onNavigate={navigate} />}
-              {(route.view === 'history' ||
-                route.view === 'transactions' ||
-                route.view === 'branches') && (
-                <HistoryTab route={route} status={data} navigate={navigate} />
-              )}
-              {route.view === 'commit' && (
-                <CommitView
-                  key={route.commit}
-                  repo={repo}
-                  commit={route.commit}
-                  status={data}
-                  username={username}
-                  onNavigate={navigate}
-                  onChanged={status.reload}
-                />
-              )}
-              {route.view === 'changes' && (
-                <RepoChanges
-                  repo={repo}
-                  hrefOf={(number) => formatSourceRoute({ view: 'change', repo, number })}
-                  onOpen={(number) => navigate({ view: 'change', repo, number })}
-                />
-              )}
-              {route.view === 'change' && (
-                <ChangeView
-                  key={route.number}
-                  repo={repo}
-                  number={route.number}
-                  onBack={() => navigate({ view: 'changes', repo })}
-                  onCommit={(commit) => navigate({ view: 'commit', repo, commit })}
-                  onChanged={status.reload}
-                  navigate={navigate}
-                />
-              )}
-              {route.view === 'agents' && (
-                <RepoAgents
-                  repo={repo}
-                  section={route.section}
-                  branches={(data?.refs ?? [])
-                    .filter((r) => r.name.startsWith('refs/heads/'))
-                    .map((r) => r.name.slice('refs/heads/'.length))}
-                  navigate={navigate}
-                />
-              )}
-              {route.view === 'session' && (
-                <SessionView key={route.id} repo={repo} id={route.id} navigate={navigate} />
-              )}
-              {route.view === 'releases' && (
-                <RepoReleases
-                  repo={repo}
-                  owner={owner}
-                  hrefOf={(tag) => formatSourceRoute({ view: 'release', repo, tag })}
-                  onOpen={(tag) => navigate({ view: 'release', repo, tag })}
-                />
-              )}
-              {route.view === 'release' && (
-                <ReleaseView
-                  key={route.tag}
-                  repo={repo}
-                  tag={route.tag}
-                  owner={owner}
-                  onBack={() => navigate({ view: 'releases', repo })}
-                  onCommit={(commit) => navigate({ view: 'commit', repo, commit })}
-                />
-              )}
-              {route.view === 'search' && (
-                <RepoSearch
-                  key={route.query}
-                  repo={repo}
-                  query={route.query}
-                  onNavigate={navigate}
-                />
-              )}
-              {route.view === 'repo-settings' && (
-                <RepoSettings
-                  repo={repo}
-                  section={route.section}
-                  status={data}
-                  navigate={navigate}
-                  onPolicySaved={status.reload}
-                  onDeleted={onDeleted}
-                />
-              )}
-            </div>
-          </>
+          <div className="repo-view">
+            {route.view === 'files' && (
+              <RepoFiles route={route} status={data} navigate={navigate} />
+            )}
+            {route.view === 'overview' && <RepoOverview route={route} onNavigate={navigate} />}
+            {(route.view === 'history' ||
+              route.view === 'transactions' ||
+              route.view === 'branches') && (
+              <HistoryTab route={route} status={data} navigate={navigate} />
+            )}
+            {route.view === 'commit' && (
+              <CommitView
+                key={route.commit}
+                repo={repo}
+                commit={route.commit}
+                status={data}
+                username={username}
+                onNavigate={navigate}
+                onChanged={status.reload}
+              />
+            )}
+            {route.view === 'changes' && (
+              <RepoChanges
+                repo={repo}
+                hrefOf={(number) => formatSourceRoute({ view: 'change', repo, number })}
+                onOpen={(number) => navigate({ view: 'change', repo, number })}
+              />
+            )}
+            {route.view === 'change' && (
+              <ChangeView
+                key={route.number}
+                repo={repo}
+                number={route.number}
+                onBack={() => navigate({ view: 'changes', repo })}
+                onCommit={(commit) => navigate({ view: 'commit', repo, commit })}
+                onChanged={status.reload}
+                navigate={navigate}
+              />
+            )}
+            {route.view === 'agents' && (
+              <RepoAgents
+                repo={repo}
+                section={route.section}
+                branches={(data?.refs ?? [])
+                  .filter((r) => r.name.startsWith('refs/heads/'))
+                  .map((r) => r.name.slice('refs/heads/'.length))}
+                navigate={navigate}
+              />
+            )}
+            {route.view === 'context' && <RepoContext repo={repo} navigate={navigate} />}
+            {route.view === 'session' && (
+              <SessionView key={route.id} repo={repo} id={route.id} navigate={navigate} />
+            )}
+            {route.view === 'releases' && (
+              <RepoReleases
+                repo={repo}
+                owner={owner}
+                hrefOf={(tag) => formatSourceRoute({ view: 'release', repo, tag })}
+                onOpen={(tag) => navigate({ view: 'release', repo, tag })}
+              />
+            )}
+            {route.view === 'release' && (
+              <ReleaseView
+                key={route.tag}
+                repo={repo}
+                tag={route.tag}
+                owner={owner}
+                onBack={() => navigate({ view: 'releases', repo })}
+                onCommit={(commit) => navigate({ view: 'commit', repo, commit })}
+              />
+            )}
+            {route.view === 'search' && (
+              <RepoSearch key={route.query} repo={repo} query={route.query} onNavigate={navigate} />
+            )}
+            {route.view === 'repo-settings' && (
+              <RepoSettings
+                repo={repo}
+                section={route.section}
+                status={data}
+                navigate={navigate}
+                onPolicySaved={status.reload}
+                onDeleted={onDeleted}
+              />
+            )}
+          </div>
         )}
       </div>
     </ReadOnlyContext.Provider>

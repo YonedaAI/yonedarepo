@@ -1,7 +1,8 @@
 // Worker entrypoint for the source platform alone: HTTP, Git over SSH's front doors (inbound
 // TCP and the tunnel gateway's keep-alive cron; platform-ssh-gateway.ts), plus its own queue
-// jobs (checks, object and ref projection, derived data, webhooks). No agent runs, harnesses, providers or budgets.
+// jobs (checks, object and ref projection, derived data, webhooks, account emails). No agent runs, harnesses, providers or budgets.
 import { WorkerEntrypoint } from 'cloudflare:workers';
+import { welcomeJob } from './account-email';
 import { withWaitUntil } from './background';
 import { platformFetch } from './platform-routes';
 import { sshFrontDoor, sshKeepAlive } from './platform-ssh-gateway';
@@ -11,6 +12,7 @@ import { deriveAfterLanding } from './repo-derived';
 import { hookJob } from './repo-hooks';
 import { lfsSweepJob } from './repo-lfs-sweep';
 import { projectObjects, projectRefs } from './repo-projection';
+import { quarantineJob } from './repo-quarantine';
 import type { Env, Envelope } from './types';
 
 export async function platformJob(env: Env, message: Message<Envelope>) {
@@ -35,9 +37,16 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
   } else if (envelope.kind === 'platform_lfs_sweep') {
     await lfsSweepJob(env, envelope);
     message.ack();
+  } else if (envelope.kind === 'platform_quarantine') {
+    await quarantineJob(env, envelope);
+    message.ack();
   } else if (envelope.kind === 'platform_purge') {
     await purgeRepository(env, envelope.repo_id);
     message.ack();
+  } else if (envelope.kind === 'account_welcome') {
+    const outcome = await welcomeJob(env, envelope, message.attempts);
+    if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
+    else message.ack();
   } else message.ack(); // not a platform job
 }
 

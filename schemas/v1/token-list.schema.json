@@ -1,0 +1,38 @@
+{
+  "$defs": {
+    "TokenList": {
+      "additionalProperties": false,
+      "description": "`token list`.",
+      "properties": {
+        "tokens": {
+          "description": "The platform's token records (never the secrets).",
+          "items": true,
+          "type": "array"
+        }
+      },
+      "required": [
+        "tokens"
+      ],
+      "title": "TokenList",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `token-list`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/TokenList"
+    },
+    "schema": {
+      "const": "yoneda.cli.token-list.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.token-list.v1",
+  "type": "object"
+}

@@ -1,5 +1,5 @@
 {
-  "description": "YonedaRepo: in a clone with a YonedaRepo remote, the session starts with the repository's context (recent sessions, open changes, landing rules, contracts), the files read become the next push's declared reads, a plain git push over smart HTTP is sent to yoneda push while reads are recorded, and each commit this session pushed gets its session record at the end of the turn, with the session's transcript and the context it started with (credentials redacted by the platform; the repository's readers can see it).",
+  "description": "YonedaRepo: in a clone with a YonedaRepo remote, the session starts with the repository's context (memories, recent sessions, open changes, landing rules, contracts); the files read become the next push's declared reads, and the memories and contracts on them that the session has not seen are added as context, as is what is relevant to each new prompt (capped, recorded per session); a plain git push over smart HTTP is sent to yoneda push while reads are recorded; and each commit this session pushed gets its session record at the end of the turn, with the session's transcript and the context it started with (credentials redacted by the platform; the repository's readers can see it). When the session added a memory, its summary is offered as a draft memory.",
   "hooks": {
     "SessionStart": [
       {
@@ -13,6 +13,17 @@
         ]
       }
     ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/yoneda-hook.sh\" claude-prompt",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
     "PostToolUse": [
       {
         "matcher": "Read|Grep",
@@ -20,6 +31,16 @@
           {
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/yoneda-hook.sh\" claude-read",
+            "timeout": 10
+          }
+        ]
+      },
+      {
+        "matcher": "mcp__.*git_memory_add",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/yoneda-hook.sh\" claude-memory",
             "timeout": 10
           }
         ]

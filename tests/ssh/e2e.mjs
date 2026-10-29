@@ -9,7 +9,9 @@
 // its cloudflared ProxyCommand replaced by `nc` to the gateway (a live tunnel needs its token);
 // --direct connects to the gateway's port instead. The native gateway also starts a stand-in
 // cloudflared (TUNNEL_TOKEN set), which records how it was started.
-// Usage: node tests/ssh/e2e.mjs [--direct] [--docker]
+// --big N instead clones a generated ~N MiB repository over HTTPS and over SSH and requires
+// the SSH clone to finish in comparable time (tests/ssh/big-clone.mjs).
+// Usage: node tests/ssh/e2e.mjs [--direct] [--docker] [--big N]
 import { execFileSync, spawn } from 'node:child_process';
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -18,6 +20,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Session, sleep } from '../../tools/staging/client.mjs';
 import { sshFlow } from '../../tools/staging/ssh-flow.mjs';
+import { bigClone } from './big-clone.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const config = join(root, 'tests/ssh/wrangler.jsonc');
@@ -26,6 +29,8 @@ const crate = join(root, 'backend/crates/yoneda-ssh-gateway');
 const SECRET = 'local-ssh-e2e-gateway-secret-0123456789';
 const docker = process.argv.includes('--docker');
 const direct = process.argv.includes('--direct');
+const bigAt = process.argv.indexOf('--big');
+const big = bigAt > 0 ? Number(process.argv[bigAt + 1]) : 0;
 const SSH_HOST = 'ssh.e2e.invalid';
 const IMAGE = 'yoneda-ssh-gateway:e2e';
 
@@ -101,7 +106,7 @@ try {
     const response = await fetch(`${origin}/api/auth/signup`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ username: name, password: 'local ssh e2e password' }),
+      body: JSON.stringify({ username: name, email: `${name}@example.com`, password: 'local ssh e2e password' }),
     });
     if (!response.ok) throw new Error(`signup ${name}: ${response.status} ${await response.text()}`);
     return new Session(`${origin}/api/v1`, { cookie: (response.headers.get('set-cookie') ?? '').split(';')[0] });
@@ -109,9 +114,20 @@ try {
   const suffix = Date.now().toString(36);
   const metrics = {};
   const proxyOverride = direct ? undefined : `nc 127.0.0.1 ${ssh}`;
+  if (big) {
+    await bigClone({ origin, platform: await account(`ssh_big_${suffix}`), sshPort: ssh, proxyOverride, mb: big }, metrics);
+    // The gateway reports each command's transfer (bytes, waits on the platform and on the
+    // client) to the platform's log: what a slow or cut clone on dev needs to say where.
+    const platformLog = children.find((c) => c.cmd === wrangler).log();
+    const reports = [...platformLog.matchAll(/\{"event":"ssh\.gateway\.command"[^\n]*\}/g)].map((m) => JSON.parse(m[0]));
+    const clone = reports.find((r) => r.service === 'git-upload-pack' && r.outcome === 'ok' && r.bytes > metrics.pack_mib * 1024 * 1024 * 0.9);
+    if (!clone) throw new Error(`no ssh.gateway.command report of the clone: ${JSON.stringify(reports).slice(0, 500)}`);
+    Object.assign(metrics, { gateway_bytes: clone.bytes, gateway_first_byte_ms: clone.first_byte_ms, gateway_platform_ms: clone.platform_ms, gateway_client_ms: clone.client_ms, gateway_total_ms: clone.total_ms });
+  } else {
   await sshFlow({ platform: await account(`ssh_e2e_${suffix}`), other: await account(`ssh_e2e_o_${suffix}`), sshHost: '127.0.0.1', sshPort: ssh, proxyOverride }, metrics);
   if (!direct && !metrics.via.startsWith('ProxyCommand')) throw new Error(`expected the tunnel ssh_config, got ${metrics.via}`);
-  if (!docker) {
+  }
+  if (!big && !docker) {
     const args = existsSync(join(dir, 'cloudflared.args')) && readFileSync(join(dir, 'cloudflared.args'), 'utf8').trim();
     if (args !== 'tunnel --no-autoupdate run' || !existsSync(join(dir, 'cloudflared.token')))
       throw new Error(`cloudflared was not started as expected: ${args}`);

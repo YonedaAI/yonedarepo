@@ -1,0 +1,79 @@
+{
+  "$defs": {
+    "RepoFork": {
+      "additionalProperties": false,
+      "description": "`repo fork`.",
+      "properties": {
+        "commits": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "The new fork's id.",
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent": {
+          "description": "The repository forked.",
+          "type": "string"
+        },
+        "parent_version": {
+          "description": "The parent's log version the fork copies.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "refs": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "remote": {
+          "description": "The URL to `git clone` the fork.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "parent",
+        "id",
+        "name",
+        "parent_version",
+        "refs",
+        "commits",
+        "remote"
+      ],
+      "title": "RepoFork",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `repo-fork`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/RepoFork"
+    },
+    "schema": {
+      "const": "yoneda.cli.repo-fork.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.repo-fork.v1",
+  "type": "object"
+}

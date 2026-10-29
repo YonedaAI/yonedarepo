@@ -42,3 +42,14 @@ fn member_roles_match_the_authority() {
         assert!(Role::parse(role).is_ok(), "{role} is refused");
     }
 }
+
+#[test]
+fn memory_kinds_and_statuses_match_the_authority() {
+    let kinds = super::super::memory::records::KINDS.to_vec();
+    assert_eq!(tool_enum("git_memory_add", "/properties/kind/enum"), kinds);
+    assert_eq!(tool_enum("git_memory_list", "/properties/kind/enum"), kinds);
+    assert_eq!(
+        tool_enum("git_context_relevant", "/properties/types/items/enum"),
+        super::super::memory::relevance::TYPES.to_vec()
+    );
+}

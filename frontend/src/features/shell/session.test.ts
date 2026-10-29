@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { App } from '../../App';
 import { type Session, useSession } from '../../hooks/useSession';
 import { api, onUnauthorized } from '../../lib/api';
+import { SiteRoot } from '../site/SiteRoot';
 
 vi.mock('../../hooks/useSession', () => ({ useSession: vi.fn() }));
 afterEach(() => vi.unstubAllGlobals());
@@ -33,12 +34,21 @@ describe('ended session', () => {
     expect(html).not.toContain('role="alert"');
   });
 
-  it('keeps the ordinary welcome for a visitor who was never signed in', () => {
+  it('shows the public home to a visitor who was never signed in, with sign-in a page away', () => {
     vi.mocked(useSession).mockReturnValue(signedOut(false));
     const html = renderToStaticMarkup(createElement(App));
     expect(html).not.toContain('Your session ended');
-    expect(html).toContain('welcome-onboarding');
-    expect(html).toContain('class="account-tabs"');
+    expect(html).toContain('class="site"');
+    expect(html).toContain('href="/signin"');
+    const signIn = renderToStaticMarkup(
+      createElement(SiteRoot, {
+        site: { page: 'signin', mode: 'login' },
+        session: signedOut(false),
+        navigate: vi.fn(),
+      }),
+    );
+    expect(count(signIn, 'class="account-tabs"')).toBe(1);
+    expect(signIn).toContain('<h1 id="signin-heading">Sign in</h1>');
   });
 
   it('shows no agent-run controls anywhere in the signed-out shell', () => {

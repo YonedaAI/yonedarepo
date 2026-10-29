@@ -18,6 +18,13 @@ const READ_WIDTH = 8;
 /** Blobs above this many bytes come as stubs to a client that downloads them separately. */
 export const LARGE_BLOB = 2 * 1024 * 1024;
 const OBJECT_KINDS = ['tree', 'blob', 'commit'];
+/**
+ * A blob download answers with the whole blob, so it never stops mid-body; but a store read
+ * that never settles would hold the answer back with the client's connection open and
+ * silent, for as long as the client waits. Past `ms` the download is a retryable TIMEOUT
+ * (503). Mutable only so tests can shorten it.
+ */
+export const DOWNLOAD_DEADLINE = { ms: 25_000 };
 
 /**
  * A path-restricted caller may fetch only objects it can name by path inside its grant at
@@ -163,8 +170,14 @@ export async function getObjects(ctx: RepoContext, args: Json) {
 }
 
 /** `GET /repos/:id/objects/<id>` (`?commit=&path=` for a path-restricted caller): one blob's
- * bytes, for the stubs `getObjects` serves. */
-export async function downloadBlob(ctx: RepoContext, id: string, query: URLSearchParams) {
+ * bytes, for the stubs `getObjects` serves. A single `Range: bytes=N-[M]` is honored (206),
+ * so a client whose download was cut resumes from the bytes it has. */
+export async function downloadBlob(
+  ctx: RepoContext,
+  id: string,
+  query: URLSearchParams,
+  range: string | null = null,
+) {
   if (!SHA.test(id)) throw new ApiError('INVALID_INPUT', 'id must be a blob id');
   const objects = await ctx.objects();
   guardInherited(ctx, objects);
@@ -174,7 +187,18 @@ export async function downloadBlob(ctx: RepoContext, id: string, query: URLSearc
       [{ id, kind: 'blob', path: query.get('path') }],
       query.get('commit'),
     );
-  const bytes = await objects.blob(id).catch((e) => {
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const late = new Promise<never>((_, refuse) => {
+    timer = setTimeout(
+      () =>
+        refuse(
+          new ApiError('TIMEOUT', `Reading blob ${id} took over ${DOWNLOAD_DEADLINE.ms} ms; retry`),
+        ),
+      DOWNLOAD_DEADLINE.ms,
+    );
+  });
+  const read = Promise.race([objects.blob(id), late]).finally(() => clearTimeout(timer));
+  const bytes = await read.catch((e) => {
     if (e?.code === 'NOT_FOUND') throw new ApiError('NOT_FOUND', `No blob ${id}`);
     console.log(
       JSON.stringify({
@@ -186,12 +210,38 @@ export async function downloadBlob(ctx: RepoContext, id: string, query: URLSearc
     );
     throw e;
   });
-  return new Response(bytes, {
+  const headers = {
+    'content-type': 'application/octet-stream',
+    'x-yoneda-object': id,
+    'cache-control': 'no-store',
+    'accept-ranges': 'bytes',
+  };
+  const span = byteRange(range, bytes.length);
+  if (span === 'unsatisfiable')
+    return new Response(null, {
+      status: 416,
+      headers: { ...headers, 'content-range': `bytes */${bytes.length}` },
+    });
+  if (!span)
+    return new Response(bytes, { headers: { ...headers, 'content-length': String(bytes.length) } });
+  const [first, last] = span;
+  return new Response(bytes.subarray(first, last + 1), {
+    status: 206,
     headers: {
-      'content-type': 'application/octet-stream',
-      'content-length': String(bytes.length),
-      'x-yoneda-object': id,
-      'cache-control': 'no-store',
+      ...headers,
+      'content-length': String(last + 1 - first),
+      'content-range': `bytes ${first}-${last}/${bytes.length}`,
     },
   });
+}
+
+/** The inclusive span one `bytes=N-` or `bytes=N-M` range names in `size` bytes; null for no
+ * range or one this endpoint serves whole (several spans, a suffix, malformed). */
+function byteRange(header: string | null, size: number): [number, number] | 'unsatisfiable' | null {
+  const match = /^bytes=(\d+)-(\d*)$/.exec(header?.trim() ?? '');
+  if (!match) return null;
+  const first = Number(match[1]);
+  const last = match[2] ? Math.min(Number(match[2]), size - 1) : size - 1;
+  if (!Number.isSafeInteger(first) || first >= size) return 'unsatisfiable';
+  return last < first ? null : [first, last];
 }

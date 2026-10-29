@@ -1,0 +1,62 @@
+{
+  "$defs": {
+    "Land": {
+      "additionalProperties": false,
+      "description": "A landing on a branch.",
+      "properties": {
+        "base": {
+          "description": "The branch landed on.",
+          "type": "string"
+        },
+        "branch": {
+          "description": "The branch landed.",
+          "type": "string"
+        },
+        "head": {
+          "description": "The commit landed.",
+          "type": "string"
+        },
+        "merged": {
+          "description": "Whether the platform merged it onto a moved base (else it fast-forwarded).",
+          "type": "boolean"
+        },
+        "version": {
+          "description": "The log version of the landing.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "branch",
+        "head",
+        "base",
+        "version",
+        "merged"
+      ],
+      "title": "Land",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `land`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/Land"
+    },
+    "schema": {
+      "const": "yoneda.cli.land.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.land.v1",
+  "type": "object"
+}

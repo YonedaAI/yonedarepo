@@ -1,0 +1,50 @@
+{
+  "$defs": {
+    "ChangeComment": {
+      "additionalProperties": false,
+      "description": "`change comment`.",
+      "properties": {
+        "commented": {
+          "description": "Whether a comment was posted (`--resolve` alone posts none).",
+          "type": "boolean"
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "resolved": {
+          "description": "Comments resolved (with `--resolve`).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "number",
+        "commented",
+        "resolved"
+      ],
+      "title": "ChangeComment",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `change-comment`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/ChangeComment"
+    },
+    "schema": {
+      "const": "yoneda.cli.change-comment.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.change-comment.v1",
+  "type": "object"
+}

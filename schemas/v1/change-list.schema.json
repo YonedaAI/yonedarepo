@@ -1,0 +1,88 @@
+{
+  "$defs": {
+    "ChangeList": {
+      "additionalProperties": false,
+      "description": "`change list`.",
+      "properties": {
+        "changes": {
+          "items": {
+            "$ref": "#/$defs/ChangeSummary"
+          },
+          "type": "array"
+        },
+        "status": {
+          "description": "The status listed.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "changes"
+      ],
+      "title": "ChangeList",
+      "type": "object"
+    },
+    "ChangeSummary": {
+      "additionalProperties": false,
+      "description": "A change request in one line.",
+      "properties": {
+        "author": {
+          "type": "string"
+        },
+        "base": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "head": {
+          "description": "The branch's current commit (null once the branch is gone).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "number": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "description": "`open`, `landed` or `closed`.",
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "number",
+        "status",
+        "title",
+        "branch",
+        "base",
+        "author",
+        "head"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `change-list`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/ChangeList"
+    },
+    "schema": {
+      "const": "yoneda.cli.change-list.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.change-list.v1",
+  "type": "object"
+}

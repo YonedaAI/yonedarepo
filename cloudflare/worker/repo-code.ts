@@ -74,6 +74,8 @@ export async function fileAt(ctx: RepoContext, args: Json) {
 }
 
 async function symbolTable(ctx: RepoContext, path: string, id: string) {
+  // Cached by blob id: a quarantined blob's symbols are withheld like its bytes.
+  await (await ctx.objects()).refuse(id);
   const ext = path.includes('.') ? path.slice(path.lastIndexOf('.') + 1) : 'none';
   const key = `derived/v1/${ctx.repo}/symbols/v1/${ext}/${id}`;
   const cached = await ctx.env.OBJECTS.get(key);

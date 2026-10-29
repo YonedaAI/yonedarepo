@@ -3,6 +3,8 @@
 //! helper's commit map translates them) or by platform id anywhere.
 use crate::command::{CheckCommand, TokenCommand};
 use crate::error::{Error, Result};
+use crate::human;
+use crate::output::{self, CheckStatus, Decision};
 use crate::remote::map::CommitMap;
 use crate::target::{self, Resolved};
 use serde_json::{Value, json};
@@ -11,8 +13,9 @@ fn is_id(s: &str) -> bool {
     s.len() == 40 && s.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
+/// The human text of a platform record: the record as indented JSON.
 fn print(value: &Value) {
-    println!(
+    human!(
         "{}",
         serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
     );
@@ -61,23 +64,37 @@ pub async fn land(t: &Resolved, branch: Option<&str>) -> Result<()> {
             "the platform has no branch {branch}; git push it first"
         ))
     })?;
-    land_head(t, &branch, &head, "main").await
+    let landed = land_head(t, &branch, &head, "main").await?;
+    output::emit(&output::Land {
+        branch,
+        head,
+        base: "main".into(),
+        version: landed.version,
+        merged: landed.merged,
+    });
+    Ok(())
+}
+
+/// What a landing answered.
+pub struct Landed {
+    pub version: Option<u64>,
+    pub merged: bool,
 }
 
 /// Lands `head` on `base` (`what` names it in the report); a conflict names its paths.
-pub async fn land_head(t: &Resolved, what: &str, head: &str, base: &str) -> Result<()> {
+pub async fn land_head(t: &Resolved, what: &str, head: &str, base: &str) -> Result<Landed> {
     match t.api.land(base, head).await {
         Ok(landed) => {
-            println!(
+            let merged = landed.get("merge").is_some();
+            human!(
                 "Landed {what} ({head}) on {base} at version {}{}",
                 landed["version"],
-                if landed.get("merge").is_some() {
-                    " (merged)"
-                } else {
-                    ""
-                }
+                if merged { " (merged)" } else { "" }
             );
-            Ok(())
+            Ok(Landed {
+                version: landed["version"].as_u64(),
+                merged,
+            })
         }
         Err(f) if f.code == "CONFLICT" => {
             let paths = crate::remote::land_conflict_paths(&f.details);
@@ -85,7 +102,8 @@ pub async fn land_head(t: &Resolved, what: &str, head: &str, base: &str) -> Resu
                 "landing refused: {}\n  conflicting: {}",
                 f.message,
                 paths.join(", ")
-            )))
+            ))
+            .from_platform(&f.code))
         }
         Err(f) => Err(f.into()),
     }
@@ -98,22 +116,35 @@ pub async fn rebase(t: &Resolved, branch: &str, onto: Option<&str>) -> Result<()
     let path = format!("/branches/{}/rebase", crate::api::encode(branch));
     match t.api.post(&path, &json!({ "onto": onto })).await {
         Ok(done) if done["up_to_date"] == true => {
-            println!("{branch} is already on {onto}");
+            human!("{branch} is already on {onto}");
+            output::emit(&output::Rebase {
+                branch: branch.to_owned(),
+                onto: onto.to_owned(),
+                up_to_date: true,
+                replayed: 0,
+                head: None,
+            });
             Ok(())
         }
         Ok(done) => {
-            println!(
-                "Rebased {branch} onto {onto}: {} commit(s) replayed, now at {}",
-                done["commits"].as_array().map_or(0, Vec::len),
-                done["head"].as_str().unwrap_or_default()
-            );
+            let replayed = done["commits"].as_array().map_or(0, Vec::len);
+            let head = done["head"].as_str().unwrap_or_default();
+            human!("Rebased {branch} onto {onto}: {replayed} commit(s) replayed, now at {head}");
+            output::emit(&output::Rebase {
+                branch: branch.to_owned(),
+                onto: onto.to_owned(),
+                up_to_date: false,
+                replayed: replayed as u64,
+                head: Some(head.to_owned()),
+            });
             Ok(())
         }
         Err(f) if f.code == "CONFLICT" => Err(Error::conflict(format!(
             "rebase refused, {branch} unchanged: {}\n  conflicting: {}",
             f.message,
             crate::remote::land_conflict_paths(&f.details).join(", ")
-        ))),
+        ))
+        .from_platform(&f.code)),
         Err(f) => Err(f.into()),
     }
 }
@@ -125,17 +156,31 @@ pub async fn review(t: &Resolved, approve: bool, commit: &str, reason: Option<&s
     t.api
         .post(&format!("/commits/{sha}/reviews"), &body)
         .await?;
-    println!("Recorded {decision} on {sha}");
+    human!("Recorded {decision} on {sha}");
+    output::emit(&output::Review {
+        commit: sha,
+        decision: if approve {
+            Decision::Approve
+        } else {
+            Decision::Reject
+        },
+    });
     Ok(())
 }
 
 pub async fn policy(t: &Resolved, set: Option<&str>) -> Result<()> {
     match set {
-        None => print(&t.api.status().await?["policy"]),
+        None => {
+            let policy = t.api.status().await?["policy"].clone();
+            print(&policy);
+            output::emit(&output::PolicyShow { policy });
+        }
         Some(text) => {
             let policy: Value = serde_json::from_str(text)
                 .map_err(|e| Error::usage(format!("the policy is not JSON: {e}")))?;
-            print(&t.api.put("/policy", &json!({ "policy": policy })).await?);
+            let result = t.api.put("/policy", &json!({ "policy": policy })).await?;
+            print(&result);
+            output::emit(&output::PolicySet { result });
         }
     }
     Ok(())
@@ -154,14 +199,28 @@ pub async fn token(t: &Resolved, command: TokenCommand) -> Result<()> {
                 .as_str()
                 .ok_or_else(|| Error::new("the platform returned no token"))?;
             eprintln!("Repository token {name} for {} (shown once):", t.repo);
-            println!("{secret}");
+            human!("{secret}");
+            output::emit(&output::TokenCreate {
+                repo: t.repo.clone(),
+                token: secret.to_owned(),
+                name,
+            });
         }
-        TokenCommand::List => print(&t.api.get("/tokens").await?),
+        TokenCommand::List => {
+            let listed = t.api.get("/tokens").await?;
+            print(&listed);
+            let tokens = listed["tokens"].as_array().cloned().unwrap_or_default();
+            output::emit(&output::TokenList { tokens });
+        }
         TokenCommand::Revoke { name } => {
             t.api
                 .delete(&format!("/tokens/{}", crate::api::encode(&name)))
                 .await?;
-            println!("Revoked {name}");
+            human!("Revoked {name}");
+            output::emit(&output::TokenRevoke {
+                repo: t.repo.clone(),
+                name,
+            });
         }
     }
     Ok(())
@@ -179,13 +238,18 @@ pub async fn check(t: &Resolved, command: CheckCommand) -> Result<()> {
                 )
                 .await?;
             print(&made);
+            output::emit(&output::CheckRun {
+                commit: sha,
+                run: made,
+            });
         }
         CheckCommand::Status { run: Some(id), .. } => {
-            print(
-                &t.api
-                    .get(&format!("/check-runs/{}", crate::api::encode(&id)))
-                    .await?,
-            );
+            let run = t
+                .api
+                .get(&format!("/check-runs/{}", crate::api::encode(&id)))
+                .await?;
+            print(&run);
+            output::emit(&CheckStatus::Run { run });
         }
         CheckCommand::Status { run: None, commit } => {
             let sha = platform_commit(t, commit.as_deref()).await?;
@@ -193,6 +257,12 @@ pub async fn check(t: &Resolved, command: CheckCommand) -> Result<()> {
             print(
                 &json!({ "commit": sha, "checks": record["checks"], "check_runs": record["check_runs"], "gates": record["gates"] }),
             );
+            output::emit(&CheckStatus::Commit {
+                commit: sha,
+                checks: record["checks"].clone(),
+                check_runs: record["check_runs"].clone(),
+                gates: record["gates"].clone(),
+            });
         }
     }
     Ok(())
@@ -211,16 +281,32 @@ pub fn conflicts() -> Result<()> {
     match std::fs::read(&file) {
         Ok(raw) => {
             let record: Value = serde_json::from_slice(&raw).unwrap_or(Value::Null);
-            println!(
-                "{}",
-                record["message"].as_str().unwrap_or("landing refused")
-            );
-            for path in record["paths"].as_array().into_iter().flatten() {
-                println!("  {}", path.as_str().unwrap_or("?"));
+            let message = record["message"].as_str().unwrap_or("landing refused");
+            human!("{message}");
+            let paths: Vec<&str> = record["paths"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(|p| p.as_str().unwrap_or("?"))
+                .collect();
+            for path in &paths {
+                human!("  {path}");
             }
-            println!("next: git pull, resolve, commit, git push");
+            human!("next: git pull, resolve, commit, git push");
+            output::emit(&output::Conflicts {
+                refused: true,
+                message: Some(message.to_owned()),
+                paths: paths.into_iter().map(str::to_owned).collect(),
+            });
         }
-        Err(_) => println!("No refused landing recorded"),
+        Err(_) => {
+            human!("No refused landing recorded");
+            output::emit(&output::Conflicts {
+                refused: false,
+                message: None,
+                paths: Vec::new(),
+            });
+        }
     }
     Ok(())
 }

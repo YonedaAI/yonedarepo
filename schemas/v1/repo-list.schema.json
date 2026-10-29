@@ -1,0 +1,65 @@
+{
+  "$defs": {
+    "RepoList": {
+      "additionalProperties": false,
+      "description": "`repo list`.",
+      "properties": {
+        "repos": {
+          "items": {
+            "$ref": "#/$defs/RepoListed"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "repos"
+      ],
+      "title": "RepoList",
+      "type": "object"
+    },
+    "RepoListed": {
+      "additionalProperties": false,
+      "description": "One repository the caller can read.",
+      "properties": {
+        "created_at": {
+          "description": "When it was created, as the platform lists it (Unix milliseconds)."
+        },
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "visibility": {
+          "description": "`public` or `private`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "visibility",
+        "created_at"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `repo-list`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/RepoList"
+    },
+    "schema": {
+      "const": "yoneda.cli.repo-list.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.repo-list.v1",
+  "type": "object"
+}

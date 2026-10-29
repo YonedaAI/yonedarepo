@@ -5,7 +5,11 @@
 // landed and Revert. The Contracts, Pins and Bisects sections show their
 // empty states (the kit records none).
 import assert from 'node:assert/strict';
+import { join } from 'node:path';
+import { chromium } from 'playwright-core';
+import { missingText } from './agent-tools-plan.mjs';
 import { see } from './browser-collab-flow.mjs';
+import { sleep } from './client.mjs';
 
 export async function agentPages(page, { account, repo: { id, name }, shot }, m) {
   const api = (path) => `/api/v1/repos/${id}${path}`;
@@ -22,7 +26,7 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
   const tabs = page.getByRole('navigation', { name: 'Repository' });
   await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).click();
   await page.waitForURL(`**/source/${id}`);
-  await tabs.getByRole('link', { name: 'Agents' }).click();
+  await tabs.getByRole('link', { name: 'Sessions' }).click();
   await page.waitForURL(`**/source/${id}/agents`);
   const list = page.getByRole('list', { name: 'Sessions' });
   const row = list.getByRole('listitem').filter({ hasText: summary });
@@ -58,13 +62,41 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
   m.landed_commit_panel = 'landed line, Revert only';
 
   for (const [section, empty] of [
-    ['contracts', /^No contracts recorded yet\./],
-    ['pins', /^No pinned commits\./],
-    ['bisects', /^No bisects yet\./],
+    ['contracts', /^No contracts yet\./],
+    ['pins', /^No kept commits\./],
+    ['bisects', /^No searches yet\./],
   ]) {
     await page.goto(new URL(`/source/${id}/agents/${section}`, page.url()).href);
     await see(page.getByText(empty), `the ${section} empty state`);
   }
   await shot('agents-bisects-empty');
   assert.ok(m.agent_session > 0, 'the session was recorded');
+}
+
+/**
+ * Kit item 30.6's browser half (realuser-agent-tools.mjs): with the run's own signed-in
+ * session (`cookie`, no second sign-in), the Agents sections of `repo` show the rows the run
+ * made: `expect` maps a section route (contracts, pins, bisects) to the texts its page must
+ * contain. Sections are opened by route, not by tab label (the labels are being renamed).
+ */
+export async function agentToolPages({ origin, cookie, repo, expect, dir, headed = false }, m) {
+  const browser = await chromium.launch({ channel: 'chrome', headless: !headed });
+  try {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    const [name, ...value] = cookie.split('=');
+    await context.addCookies([{ name, value: value.join('='), url: origin }]);
+    const page = await context.newPage();
+    page.setDefaultTimeout(30_000);
+    for (const [section, texts] of Object.entries(expect)) {
+      await page.goto(new URL(`/source/${repo}/agents/${section}`, origin).href);
+      let missing = texts;
+      for (const deadline = Date.now() + 30_000; missing.length && Date.now() < deadline; await sleep(1000))
+        missing = missingText(await page.locator('body').innerText().catch(() => ''), texts);
+      await page.screenshot({ path: join(dir, `agent-tools-${section}.png`), fullPage: true });
+      assert.deepEqual(missing, [], `the ${section} page lacks ${missing.join(', ')}`);
+      m[`browser_${section}`] = 'rows shown';
+    }
+  } finally {
+    await browser.close();
+  }
 }

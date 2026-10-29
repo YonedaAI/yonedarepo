@@ -82,6 +82,7 @@ export async function deleteRepository(env: Env, auth: Credentials, repo: string
   await env.INDEX.batch([
     env.INDEX.prepare('DELETE FROM platform_repos WHERE id=?').bind(repo),
     env.INDEX.prepare('DELETE FROM platform_members WHERE repo=?').bind(repo),
+    env.INDEX.prepare('DELETE FROM platform_activity WHERE repo=?').bind(repo),
   ]);
   await dropDeletedHead(env, repo);
   await env.PLATFORM_QUEUE.send({
@@ -96,7 +97,7 @@ export async function deleteRepository(env: Env, auth: Credentials, repo: string
 const R2_PAGE = 1000;
 
 /** Deletes every R2 object under `prefix`, a page at a time. */
-async function purgePrefix(env: Env, prefix: string) {
+export async function purgePrefix(env: Env, prefix: string) {
   for (;;) {
     const page = await env.OBJECTS.list({ prefix, limit: R2_PAGE });
     if (page.objects.length > 0) await env.OBJECTS.delete(page.objects.map((o) => o.key));

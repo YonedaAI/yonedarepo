@@ -20,6 +20,7 @@ yoneda-store = { path = "backend/crates/yoneda-store" }
 yoneda-platform = { path = "backend/crates/yoneda-platform" }
 yoneda-cloudflare = { path = "backend/crates/yoneda-cloudflare" }
 yoneda-refmodel = { path = "backend/crates/yoneda-refmodel" }
+yoneda-cli = { path = "backend/crates/yoneda-cli" }
 
 [profile.release]
 lto = true

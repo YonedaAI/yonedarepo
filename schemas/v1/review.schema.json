@@ -1,0 +1,48 @@
+{
+  "$defs": {
+    "Decision": {
+      "description": "An approval or a rejection.",
+      "enum": [
+        "approve",
+        "reject"
+      ],
+      "type": "string"
+    },
+    "Review": {
+      "additionalProperties": false,
+      "description": "`review`.",
+      "properties": {
+        "commit": {
+          "type": "string"
+        },
+        "decision": {
+          "$ref": "#/$defs/Decision"
+        }
+      },
+      "required": [
+        "commit",
+        "decision"
+      ],
+      "title": "Review",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `review`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/Review"
+    },
+    "schema": {
+      "const": "yoneda.cli.review.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.review.v1",
+  "type": "object"
+}

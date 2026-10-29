@@ -1,0 +1,42 @@
+{
+  "$defs": {
+    "MemoryList": {
+      "additionalProperties": false,
+      "description": "`memory list`.",
+      "properties": {
+        "memories": {
+          "description": "The memories newest first, as the platform returns them (with anchors and staleness).",
+          "items": true,
+          "type": "array"
+        },
+        "next": {
+          "description": "The `before` cursor of the next page, when more remain."
+        }
+      },
+      "required": [
+        "memories",
+        "next"
+      ],
+      "title": "MemoryList",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `memory-list`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/MemoryList"
+    },
+    "schema": {
+      "const": "yoneda.cli.memory-list.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.memory-list.v1",
+  "type": "object"
+}

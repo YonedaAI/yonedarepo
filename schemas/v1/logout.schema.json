@@ -1,0 +1,41 @@
+{
+  "$defs": {
+    "Logout": {
+      "additionalProperties": false,
+      "description": "`logout`.",
+      "properties": {
+        "credentials": {
+          "type": "string"
+        },
+        "removed": {
+          "description": "Whether a stored token was removed.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "removed",
+        "credentials"
+      ],
+      "title": "Logout",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `logout`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/Logout"
+    },
+    "schema": {
+      "const": "yoneda.cli.logout.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.logout.v1",
+  "type": "object"
+}

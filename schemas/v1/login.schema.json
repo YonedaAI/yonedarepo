@@ -1,0 +1,56 @@
+{
+  "$defs": {
+    "Login": {
+      "additionalProperties": false,
+      "description": "`login`.",
+      "properties": {
+        "account": {
+          "description": "The signed-in account, when the platform names it (device login).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "credentials": {
+          "description": "The credentials file the token was stored in (mode 0600).",
+          "type": "string"
+        },
+        "expires_at": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "origin": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "origin",
+        "account",
+        "expires_at",
+        "credentials"
+      ],
+      "title": "Login",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `login`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/Login"
+    },
+    "schema": {
+      "const": "yoneda.cli.login.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.login.v1",
+  "type": "object"
+}

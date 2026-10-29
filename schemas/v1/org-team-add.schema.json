@@ -1,0 +1,44 @@
+{
+  "$defs": {
+    "OrgTeamAdd": {
+      "additionalProperties": false,
+      "description": "`org team add`.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "org": {
+          "type": "string"
+        },
+        "team": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "org",
+        "team",
+        "account"
+      ],
+      "title": "OrgTeamAdd",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `org-team-add`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/OrgTeamAdd"
+    },
+    "schema": {
+      "const": "yoneda.cli.org-team-add.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.org-team-add.v1",
+  "type": "object"
+}

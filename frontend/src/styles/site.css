@@ -1,0 +1,258 @@
+/* The public site: the app's colors and type, a light and a dark theme (the system's), and
+   a nav that folds into a menu at phone width. */
+.site {
+  --site-bg: #f6f8fb;
+  --site-surface: #fff;
+  --site-text: #152436;
+  --site-muted: #5b6a7e;
+  --site-line: #e1e6ed;
+  --site-accent: #245de8;
+  --site-accent-text: #fff;
+  --site-accent-soft: #e8efff;
+  --site-good: #157f72;
+  --site-bad: #b4232c;
+  --site-code-bg: #0f1b2b;
+  --site-code-text: #dbe5f3;
+  color-scheme: light;
+  /* App components on site pages (the account panel) take the site's theme. */
+  --muted: var(--site-muted);
+  --line: var(--site-line);
+  --surface: var(--site-surface);
+  --blue: var(--site-accent);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--site-bg);
+  color: var(--site-text);
+  font-size: 16px;
+  line-height: 1.55;
+}
+/* Dark: the system's choice unless Light is chosen, or Dark chosen explicitly. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .site {
+    --site-bg: #0d1520;
+    --site-surface: #142030;
+    --site-text: #e4ebf5;
+    --site-muted: #9aa8bb;
+    --site-line: #26354a;
+    --site-accent: #6f9bff;
+    --site-accent-text: #08111d;
+    --site-accent-soft: #1b2b48;
+    --site-good: #4cc5b3;
+    --site-bad: #ff8a8f;
+    --site-code-bg: #08101a;
+    --site-code-text: #dbe5f3;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] .site {
+  --site-bg: #0d1520;
+  --site-surface: #142030;
+  --site-text: #e4ebf5;
+  --site-muted: #9aa8bb;
+  --site-line: #26354a;
+  --site-accent: #6f9bff;
+  --site-accent-text: #08111d;
+  --site-accent-soft: #1b2b48;
+  --site-good: #4cc5b3;
+  --site-bad: #ff8a8f;
+  --site-code-bg: #08101a;
+  --site-code-text: #dbe5f3;
+  color-scheme: dark;
+}
+.site :where(p) {
+  /* The app's paragraphs are small and muted; the site's read at body size. */
+  color: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+.site :focus-visible {
+  outline-color: var(--site-accent);
+}
+.site .skip-link {
+  background: var(--site-surface);
+  color: var(--site-accent);
+}
+.site h1,
+.site h2,
+.site h3 {
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+.site code {
+  font-size: 0.9em;
+}
+
+/* Header and nav */
+.site-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: color-mix(in srgb, var(--site-bg) 92%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--site-line);
+}
+.site-nav {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.site-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 17px;
+}
+.site-brand svg {
+  color: var(--site-accent);
+}
+.site-sections {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 24px;
+}
+.site-sections ul {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  flex: 1;
+}
+.site-nav-link {
+  display: block;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--site-muted);
+  font-weight: 500;
+}
+.site-nav-link:hover,
+.site-nav-link[aria-current="page"] {
+  color: var(--site-text);
+  background: var(--site-accent-soft);
+}
+.site-account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.site-theme {
+  order: 3;
+  padding: 7px;
+  min-height: 0;
+  background: transparent;
+  color: var(--site-muted);
+  border: 1px solid var(--site-line);
+}
+.site-theme:hover {
+  color: var(--site-text);
+}
+.site-menu-button {
+  display: none;
+  margin-left: auto;
+  background: transparent;
+  color: var(--site-text);
+  border: 1px solid var(--site-line);
+}
+.site-quiet-link {
+  font-weight: 500;
+  color: var(--site-muted);
+}
+.site-quiet-link:hover {
+  color: var(--site-text);
+}
+.site-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-radius: 7px;
+  background: var(--site-accent);
+  color: var(--site-accent-text);
+  font-weight: 600;
+}
+.site-button:hover {
+  filter: brightness(1.06);
+}
+.site-button-large {
+  padding: 12px 22px;
+  font-size: 17px;
+}
+.site-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--site-accent);
+  font-weight: 600;
+}
+
+/* Page frame */
+.site-main {
+  flex: 1;
+  width: 100%;
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 24px 64px;
+}
+.site-main a:not([class]) {
+  color: var(--site-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.site-footer {
+  border-top: 1px solid var(--site-line);
+  padding: 32px 24px;
+  color: var(--site-muted);
+  font-size: 14px;
+}
+.site-footer > * {
+  max-width: 1072px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.site-footer ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 0 auto 12px;
+  padding: 0;
+  list-style: none;
+}
+.site-footer a:hover {
+  color: var(--site-text);
+}
+.site-lead {
+  font-size: 19px;
+  color: var(--site-muted);
+  max-width: 680px;
+}
+.site-badge {
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--site-accent-soft);
+  color: var(--site-accent);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 0;
+}
+.site-page-head {
+  padding: 56px 0 24px;
+}
+.site-page-head h1 {
+  font-size: clamp(32px, 5vw, 48px);
+  margin: 12px 0;
+}
+.site-section {
+  padding: 40px 0;
+}
+.site-section > h2,
+.site-cta h2 {
+  font-size: clamp(24px, 3.4vw, 32px);
+  margin: 0 0 24px;
+}

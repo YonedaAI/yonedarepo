@@ -4,7 +4,17 @@ use crate::error::{Error, Result};
 use serde_json::Value;
 use std::fmt;
 
+mod coalesce;
 mod repo;
+mod resume;
+mod retry;
+mod timeouts;
+
+pub(crate) use coalesce::Coalesce;
+pub use resume::Received;
+use retry::RETRIES;
+pub(crate) use retry::{pause, transient};
+pub use timeouts::Timeouts;
 
 /// A refused or failed API call, with the platform's error code and details.
 #[derive(Debug)]
@@ -23,31 +33,11 @@ impl fmt::Display for Failure {
     }
 }
 
-/// No answer, an unreadable one, a gateway error or an overloaded platform (503
-/// OVERLOADED): worth retrying a call that is safe to repeat.
-pub(crate) fn transient(failure: &Failure) -> bool {
-    matches!(failure.status, 0 | 502 | 503 | 504)
-}
-
-/// Retries after the first attempt, and the longest `Retry-After` honoured.
-const RETRIES: u64 = 3;
-const MAX_RETRY_AFTER_SECONDS: u64 = 10;
-
-/// The wait before retry `attempt` (1-based): the platform's `Retry-After` when it gave one,
-/// else a linear backoff, plus up to 250 ms of jitter so retrying clients spread out.
-fn backoff(failure: &Failure, attempt: u64) -> std::time::Duration {
-    let base = failure
-        .retry_after
-        .map_or(1000 * attempt, |s| 1000 * s.min(MAX_RETRY_AFTER_SECONDS));
-    let jitter = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |d| u64::from(d.subsec_nanos()) % 250);
-    std::time::Duration::from_millis(base + jitter)
-}
-
 impl From<Failure> for Error {
     fn from(failure: Failure) -> Self {
-        Error::new(failure.to_string())
+        let mut error = Error::new(failure.to_string()).from_platform(&failure.code);
+        error.code = crate::output::error_code(failure.status, &failure.code);
+        error
     }
 }
 
@@ -63,6 +53,10 @@ pub struct Api {
     http: reqwest::Client,
     base: String,
     header: Header,
+    /// Object fetches in flight through this client (see `coalesce`).
+    objects: std::sync::Arc<Coalesce>,
+    /// Idle and total waits (see `timeouts`).
+    timeouts: Timeouts,
 }
 
 pub fn valid_repo_id(repo: &str) -> bool {
@@ -90,6 +84,18 @@ fn malformed(what: &str) -> Failure {
     }
 }
 
+/// A transport failure: no answer, or one cut off (retryable, status 0).
+fn unreachable(e: reqwest::Error) -> Failure {
+    Failure {
+        status: 0,
+        code: "UNREACHABLE".into(),
+        // reqwest errors carry the URL, never request headers.
+        message: format!("cannot reach the platform: {e}"),
+        details: Value::Null,
+        retry_after: None,
+    }
+}
+
 fn client() -> Result<reqwest::Client> {
     reqwest::Client::builder()
         .user_agent(concat!("yoneda-cli/", env!("CARGO_PKG_VERSION")))
@@ -109,6 +115,8 @@ impl Api {
             http: client()?,
             base: format!("{origin}/api/v1/repos/{repo}"),
             header: token.header(),
+            objects: Default::default(),
+            timeouts: Timeouts::from_env(),
         })
     }
 
@@ -123,6 +131,8 @@ impl Api {
             http: client()?,
             base: format!("{origin}/api/v1/repos/{repo}"),
             header: Header::None,
+            objects: Default::default(),
+            timeouts: Timeouts::from_env(),
         })
     }
 
@@ -134,6 +144,8 @@ impl Api {
                 http: self.http.clone(),
                 base: format!("{parent}/{repo}"),
                 header: self.header.clone(),
+                objects: Default::default(),
+                timeouts: Timeouts::from_env(),
             }),
             _ => Err(Error::new(format!("{repo:?} is not a repository id"))),
         }
@@ -146,6 +158,8 @@ impl Api {
             http: client()?,
             base: format!("{origin}/api/v1"),
             header: token.map_or(Header::None, Token::header),
+            objects: Default::default(),
+            timeouts: Timeouts::from_env(),
         })
     }
 
@@ -191,44 +205,11 @@ impl Api {
         &self,
         request: reqwest::RequestBuilder,
     ) -> std::result::Result<Vec<u8>, Failure> {
-        let request = match &self.header {
-            Header::Authorization(value) => request.header("authorization", value),
-            Header::Cookie(value) => request.header("cookie", value),
-            Header::None => request,
-        };
-        let unreachable = |e: reqwest::Error| Failure {
-            status: 0,
-            code: "UNREACHABLE".into(),
-            // reqwest errors carry the URL, never request headers.
-            message: format!("cannot reach the platform: {e}"),
-            details: Value::Null,
-            retry_after: None,
-        };
-        let response = request.send().await.map_err(unreachable)?;
-        let status = response.status().as_u16();
-        // Named in the error, so a failure says which request it was (never a credential).
-        let path = response.url().path().to_owned();
-        let retry_after = response
-            .headers()
-            .get(reqwest::header::RETRY_AFTER)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.trim().parse::<u64>().ok());
-        let bytes = response.bytes().await.map_err(unreachable)?;
-        if (200..300).contains(&status) {
-            return Ok(bytes.to_vec());
+        let received = self.receive(request, false).await?;
+        match received.cut {
+            Some(cut) => Err(cut),
+            None => Ok(received.bytes),
         }
-        let value: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-        let error = &value["error"];
-        Err(Failure {
-            status,
-            code: error["code"].as_str().unwrap_or("HTTP_ERROR").to_owned(),
-            message: error["message"]
-                .as_str()
-                .map(str::to_owned)
-                .unwrap_or_else(|| format!("HTTP {status} from {path}")),
-            details: error["details"].clone(),
-            retry_after,
-        })
     }
 
     /// A GET whose answer is raw bytes (a large blob), retried like any read.
@@ -239,7 +220,7 @@ impl Api {
             match self.answer_bytes(request).await {
                 Err(failure) if attempt < RETRIES && transient(&failure) => {
                     attempt += 1;
-                    tokio::time::sleep(backoff(&failure, attempt)).await;
+                    pause(&failure, attempt).await;
                 }
                 result => return result,
             }
@@ -282,7 +263,7 @@ impl Api {
             match self.send(method.clone(), path, body).await {
                 Err(failure) if attempt < RETRIES && transient(&failure) => {
                     attempt += 1;
-                    tokio::time::sleep(backoff(&failure, attempt)).await;
+                    pause(&failure, attempt).await;
                 }
                 result => return result,
             }

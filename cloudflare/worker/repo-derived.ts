@@ -1,11 +1,13 @@
 // Derived data over immutable objects: code search (over repo-search-index), path history
 // and blame. Index builds run eagerly after landing (queue) and lazily on demand.
+import { touchActivity } from './repo-activity';
 import { noteBundles } from './repo-bundles';
 import { emitChangeLog } from './repo-changelog';
 import { compactAfterLanding } from './repo-compaction';
 import { compute } from './repo-compute';
 import { keepAllowed, requirePath } from './repo-grants';
 import { fanoutHooks } from './repo-hooks';
+import { memoryMatches } from './repo-memories';
 import { withObjects } from './repo-object-compute';
 import { blobWaves } from './repo-object-waves';
 import { toBase64 } from './repo-objects';
@@ -29,6 +31,15 @@ export async function search(ctx: RepoContext, args: Json) {
   const query = String(args.query ?? args.q ?? '');
   if (query.length < 2 || query.length > 200)
     throw new ApiError('INVALID_INPUT', 'query must be 2-200 characters');
+  // Memories whose text matches, read alongside the code (a separate group); a failure is
+  // raised once the code search has settled, not left unhandled.
+  const memories =
+    args.memories === false || args.memories === 'false'
+      ? Promise.resolve({ found: null })
+      : memoryMatches(ctx, query).then(
+          (found) => ({ found }),
+          (error: unknown) => ({ error }),
+        );
   const where = await target(ctx, args.commit ?? args.ref, args.at);
   const { indexes, built } = await searchSegments(ctx, where.tree);
   const objects = await ctx.objects();
@@ -96,6 +107,10 @@ export async function search(ctx: RepoContext, args: Json) {
     partitions_built: built,
     skipped_files: skipped,
     skipped_count: skippedCount,
+    memories: await memories.then((m) => {
+      if ('error' in m) throw m.error;
+      return m.found;
+    }),
   };
 }
 
@@ -131,10 +146,11 @@ export function pathHistory(ctx: RepoContext, args: Json) {
 
 /** Eager derived builds after a landing: the new head's search segments. */
 export async function deriveAfterLanding(env: Env, envelope: Envelope) {
-  // Change-log analytics and webhooks first and independent of the builds below; neither
-  // throws.
+  // Change-log analytics, webhooks and the Home's activity row first and independent of the
+  // builds below; none throws.
   await emitChangeLog(env, envelope.repo_id);
   await fanoutHooks(env, envelope.repo_id);
+  await touchActivity(env, envelope.repo_id);
   const ctx = new RepoContext(
     env,
     envelope.repo_id,

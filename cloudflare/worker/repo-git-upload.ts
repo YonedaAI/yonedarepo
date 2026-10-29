@@ -27,6 +27,7 @@ type Read = Wanted & { data: Uint8Array | null };
 import { UploadSession } from './repo-git-sessions';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
+import { quarantined } from './repo-quarantine-guard';
 import { timed } from './repo-timing';
 
 export const REQUEST_BYTES = 8 * 1024 * 1024;
@@ -98,7 +99,9 @@ export type Asked = { full: boolean; wants: string[] };
  * with a flush when banded. A failure before the pack starts is an ERR line after `head`
  * (Git prints it as `remote error: <message>`); an overloaded authority is rethrown, so Git
  * gets an HTTP 503 it can retry. A full clone's pack is streamed from the store when held
- * there, else stored as it streams (PACK_CACHE=on); the session is opened only to build. */
+ * there, else stored as it streams (PACK_CACHE=on); the session is opened only to build.
+ * A pack that would carry a quarantined blob is never started: the ERR names the blob
+ * (and its path), rather than a pack Git finds incomplete. */
 export async function sendPack(
   head: Uint8Array,
   open: () => UploadSession,
@@ -109,7 +112,8 @@ export async function sendPack(
   asked?: Asked,
 ): Promise<Response> {
   let writer: PackWriter | undefined;
-  if (asked?.full && packCacheOn(objects.env)) {
+  // A stored pack carries every blob: never served or stored while any is withheld.
+  if (asked?.full && packCacheOn(objects.env) && !(await objects.withholdsAny())) {
     const key = await packKey(objects.repo, asked.wants);
     const stored = await timed('git.pack_cached', () => storedPack(objects.env, key));
     if (stored) return sendStored(head, stored.body, band, stats);
@@ -132,6 +136,9 @@ export async function sendPack(
     const started = performance.now();
     listed = await enumerate(session, objects, stats?.walkReads);
     if (stats) stats.walk = performance.now() - started;
+    const blobs = (listed.fetch as Wanted[]).filter((w) => w.kind === 'blob').map((w) => w.id);
+    const [held] = await objects.withheldAmong(blobs);
+    if (held) throw quarantined(held[0], held[1]);
   } catch (e: any) {
     session.close();
     if (transient(e)) throw e;

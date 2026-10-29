@@ -29,3 +29,7 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 [profile.release]
 lto = true
 strip = "debuginfo"
+
+[dev-dependencies]
+# Synthetic P-256 host keys in tests (the version russh's ssh-key already uses).
+p256 = "0.14"

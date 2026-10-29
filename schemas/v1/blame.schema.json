@@ -1,0 +1,36 @@
+{
+  "$defs": {
+    "Blame": {
+      "additionalProperties": false,
+      "description": "`blame`.",
+      "properties": {
+        "blame": {
+          "description": "The platform's blame of the file, unchanged."
+        }
+      },
+      "required": [
+        "blame"
+      ],
+      "title": "Blame",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `blame`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/Blame"
+    },
+    "schema": {
+      "const": "yoneda.cli.blame.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.blame.v1",
+  "type": "object"
+}

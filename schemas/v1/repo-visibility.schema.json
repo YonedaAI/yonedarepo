@@ -1,0 +1,55 @@
+{
+  "$defs": {
+    "RepoVisibility": {
+      "additionalProperties": false,
+      "description": "`repo visibility`.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "visibility": {
+          "$ref": "#/$defs/Visibility"
+        }
+      },
+      "required": [
+        "id",
+        "visibility"
+      ],
+      "title": "RepoVisibility",
+      "type": "object"
+    },
+    "Visibility": {
+      "description": "Who may read a repository.",
+      "oneOf": [
+        {
+          "const": "public",
+          "description": "Anyone, signed in or not.",
+          "type": "string"
+        },
+        {
+          "const": "private",
+          "description": "Its owner and members.",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `repo-visibility`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/RepoVisibility"
+    },
+    "schema": {
+      "const": "yoneda.cli.repo-visibility.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.repo-visibility.v1",
+  "type": "object"
+}

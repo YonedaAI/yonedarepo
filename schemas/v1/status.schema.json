@@ -1,0 +1,262 @@
+{
+  "$defs": {
+    "LastLand": {
+      "additionalProperties": false,
+      "description": "The last landing from an offline checkout.",
+      "properties": {
+        "git_commit": {
+          "description": "Its Git commit, null until projected.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "version": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "git_commit"
+      ],
+      "type": "object"
+    },
+    "Projection": {
+      "additionalProperties": false,
+      "description": "The branch's object store projection.",
+      "properties": {
+        "projected_version": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "status": {
+          "type": "string"
+        },
+        "target_version": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "projected_version",
+        "target_version",
+        "status"
+      ],
+      "type": "object"
+    },
+    "RemoteStatus": {
+      "additionalProperties": false,
+      "description": "What the platform says about an offline checkout's branch.",
+      "properties": {
+        "awaiting_git_commit": {
+          "description": "Changesets landed after that version still without a Git commit (of the first 500).",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "behind": {
+          "description": "Versions after the checkout's base.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "error": {
+          "description": "Null when the platform answered; else why not (`unreachable`, or its error).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "projected_version": {
+          "description": "The version the branch's Git commit is projected at.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "store": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Projection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "version": {
+          "description": "The repository's log version.",
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "error",
+        "version",
+        "behind",
+        "projected_version",
+        "awaiting_git_commit",
+        "store"
+      ],
+      "type": "object"
+    },
+    "Status": {
+      "description": "`status`.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "A Git clone with a yoneda remote.",
+          "properties": {
+            "branch": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "clone",
+              "type": "string"
+            },
+            "landing_refused": {
+              "description": "The last landing through the remote helper was refused (see `conflicts`).",
+              "type": "boolean"
+            },
+            "origin": {
+              "type": "string"
+            },
+            "repo": {
+              "type": "string"
+            },
+            "unpushed": {
+              "description": "Local commits on the branch the platform does not have (`200+` past 200).",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "repo",
+            "origin",
+            "branch",
+            "unpushed",
+            "landing_refused"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "An offline checkout (`yoneda clone`); `--brief` leaves out the counts and remote.",
+          "properties": {
+            "base_commit": {
+              "type": "string"
+            },
+            "base_version": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "branch": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "checkout",
+              "type": "string"
+            },
+            "last_land": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/LastLand"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "offline_branch": {
+              "type": "string"
+            },
+            "origin": {
+              "type": "string"
+            },
+            "pending": {
+              "description": "Local commits since the base.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "pushed": {
+              "description": "Of those, pushed to the offline branch.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "remote": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/RemoteStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "repo": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "repo",
+            "origin",
+            "branch",
+            "base_version",
+            "base_commit",
+            "offline_branch",
+            "pending",
+            "pushed",
+            "last_land",
+            "remote"
+          ],
+          "type": "object"
+        }
+      ],
+      "title": "Status"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `status`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/Status"
+    },
+    "schema": {
+      "const": "yoneda.cli.status.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.status.v1",
+  "type": "object"
+}

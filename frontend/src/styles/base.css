@@ -1,24 +1,9 @@
-@import "@fontsource/ibm-plex-sans/400.css";
-@import "@fontsource/ibm-plex-sans/500.css";
-@import "@fontsource/ibm-plex-sans/600.css";
-@import "@fontsource/ibm-plex-mono/400.css";
-:root {
-  font-family: "IBM Plex Sans", sans-serif;
-  color: #152436;
-  background: #f6f8fb;
-  font-synthesis: none;
-  --line: #e1e6ed;
-  --muted: #637286;
-  --blue: #245de8;
-  --surface: #fff;
-  --success: #157f72;
-  font-size: 14px;
-}
 * {
   box-sizing: border-box;
 }
 body {
   margin: 0;
+  background: var(--bg);
 }
 button,
 input,
@@ -33,7 +18,7 @@ button {
   gap: 8px;
   border: 1px solid transparent;
   background: var(--blue);
-  color: #fff;
+  color: var(--on-accent);
   padding: 9px 16px;
   border-radius: 7px;
   cursor: pointer;
@@ -58,11 +43,11 @@ button.icon-button {
 input,
 textarea,
 select {
-  border: 1px solid #c5d6e1;
-  background: white;
+  border: 1px solid var(--line-strong);
+  background: var(--surface);
   border-radius: 5px;
   padding: 10px 12px;
-  color: #152436;
+  color: var(--text);
   min-width: 0;
 }
 input:focus-visible,
@@ -107,12 +92,12 @@ p {
   line-height: 1.6;
 }
 button.quiet {
-  background: #fff;
-  border-color: #8090a4;
-  color: #203a5b;
+  background: var(--surface);
+  border-color: var(--faint);
+  color: var(--text);
 }
 button.quiet:not(:disabled):hover {
-  background: #edf3ff;
+  background: var(--accent-soft);
   border-color: var(--blue);
 }
 button.text-button {
@@ -165,9 +150,9 @@ pre {
   overflow-wrap: anywhere;
 }
 .form-error {
-  border: 1px solid #edc5c5;
-  background: #fff5f4;
-  color: #98382e;
+  border: 1px solid var(--danger-line);
+  background: var(--danger-soft);
+  color: var(--danger);
   padding: 12px;
   border-radius: 6px;
 }
@@ -182,7 +167,7 @@ pre {
   top: -60px;
   left: 16px;
   z-index: 100;
-  background: white;
+  background: var(--surface);
   padding: 12px;
   color: var(--blue);
 }

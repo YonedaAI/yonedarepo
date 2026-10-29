@@ -13,6 +13,8 @@ op_names! {
         Logout = "logout",
         Recover = "recover",
         AccountExists = "account_exists",
+        WelcomeState = "welcome_state",
+        WelcomeSent = "welcome_sent",
     }
 }
 op_names! {
@@ -39,6 +41,27 @@ op_names! {
         Create = "device_create",
         Approve = "device_approve",
         Poll = "device_poll",
+    }
+}
+op_names! {
+    /// Sign-in provider identities on the account that holds them.
+    pub(crate) enum IdentityOp {
+        Signup = "identity_signup",
+        Signin = "identity_signin",
+        Link = "identity_link",
+        List = "identity_list",
+        Unlink = "identity_unlink",
+        Check = "identity_check",
+    }
+}
+op_names! {
+    /// OAuth sign-in attempts and identity claims, each on its own authority instance.
+    pub(crate) enum OAuthOp {
+        FlowPut = "oauth_flow_put",
+        FlowTake = "oauth_flow_take",
+        Claim = "identity_claim",
+        ClaimGet = "identity_claim_get",
+        ClaimRelease = "identity_claim_release",
     }
 }
 op_names! {
@@ -72,6 +95,8 @@ pub(crate) enum AccountOp {
     Token(TokenOp),
     Ssh(SshOp),
     Device(DeviceOp),
+    Identity(IdentityOp),
+    OAuth(OAuthOp),
     Org(OrgOp),
     OrgMember(OrgMemberOp),
 }
@@ -91,6 +116,8 @@ impl AccountOp {
             Self::Token(op) => op.name(),
             Self::Ssh(op) => op.name(),
             Self::Device(op) => op.name(),
+            Self::Identity(op) => op.name(),
+            Self::OAuth(op) => op.name(),
             Self::Org(op) => op.name(),
             Self::OrgMember(op) => op.name(),
         }
@@ -102,6 +129,8 @@ impl AccountOp {
         all.extend(TokenOp::ALL.iter().copied().map(Self::Token));
         all.extend(SshOp::ALL.iter().copied().map(Self::Ssh));
         all.extend(DeviceOp::ALL.iter().copied().map(Self::Device));
+        all.extend(IdentityOp::ALL.iter().copied().map(Self::Identity));
+        all.extend(OAuthOp::ALL.iter().copied().map(Self::OAuth));
         all.extend(OrgOp::ALL.iter().copied().map(Self::Org));
         all.extend(OrgMemberOp::ALL.iter().copied().map(Self::OrgMember));
         all

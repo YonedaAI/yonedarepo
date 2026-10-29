@@ -1,5 +1,13 @@
 export type Json = Record<string, any>;
-export type Envelope = { v: 1; repo_id: string; job_id: string; kind: string; workspace?: string };
+export type Envelope = {
+  v: 1;
+  repo_id: string;
+  job_id: string;
+  kind: string;
+  workspace?: string;
+  /** The recipient of an account email job (account-email.ts); never logged in full. */
+  to?: string;
+};
 export interface Env {
   WORKSPACES: DurableObjectNamespace;
   /** Source platform authority: one SourceRepository per repository. */
@@ -41,9 +49,21 @@ export interface Env {
   /** The platform's own review-model key (model checks); never an agent-layer key. */
   REVIEW_MODEL_KEY?: { get(): Promise<string> };
   AUTH_LIMITER?: RateLimit;
+  /** Sign-in with GitHub / Google (oauth.ts): each provider is on only while both of its
+   * secrets are set; otherwise its routes answer 404 and the sign-in page hides it. */
+  GITHUB_OAUTH_CLIENT_ID?: string;
+  GITHUB_OAUTH_CLIENT_SECRET?: string;
+  GOOGLE_OAUTH_CLIENT_ID?: string;
+  GOOGLE_OAUTH_CLIENT_SECRET?: string;
   /** Requests without credentials (public repositories), per client address. */
   PUBLIC_LIMITER?: RateLimit;
   OWNER_TOKEN?: string;
+  /** The welcome email (account-email.ts): the Resend API key (Secrets Store, read at send
+   * time), the sender (`YonedaRepo <hello@yonedarepo.com>`) and the contact address it
+   * names. Any missing or unreadable: email is off. */
+  RESEND_API_KEY?: { get(): Promise<string> };
+  EMAIL_FROM?: string;
+  EMAIL_CONTACT?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   ARTIFACTS_NAMESPACE: string;

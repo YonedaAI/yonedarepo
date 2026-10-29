@@ -1,0 +1,44 @@
+{
+  "$defs": {
+    "OrgMemberAdd": {
+      "additionalProperties": false,
+      "description": "`org member add`.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "org": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "org",
+        "account",
+        "role"
+      ],
+      "title": "OrgMemberAdd",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `org-member-add`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/OrgMemberAdd"
+    },
+    "schema": {
+      "const": "yoneda.cli.org-member-add.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.org-member-add.v1",
+  "type": "object"
+}

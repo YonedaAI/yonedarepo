@@ -6,6 +6,14 @@
     <meta name="theme-color" content="#245de8" />
     <title>YonedaRepo — Agent-First Repository</title>
     <meta name="description" content="An API-first, Git-like transactional model where agents fetch only what they need, coordinate changes, and preserve context." />
+    <script>
+      // The viewer's theme before the first paint (features/shell/theme.ts): an explicit
+      // Light or Dark choice; without one CSS follows prefers-color-scheme.
+      try {
+        var theme = localStorage.getItem('yoneda.theme');
+        if (theme === 'light' || theme === 'dark') document.documentElement.dataset.theme = theme;
+      } catch (e) {}
+    </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/x-icon" href="/favicon.ico" sizes="16x16 32x32 48x48 64x64" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />

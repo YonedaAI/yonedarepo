@@ -8,6 +8,7 @@ import listing from '../../cloudflare/migrations/0003_platform_repos.sql?raw';
 import tokens from '../../cloudflare/migrations/0004_platform_tokens.sql?raw';
 import members from '../../cloudflare/migrations/0005_platform_members.sql?raw';
 import visibility from '../../cloudflare/migrations/0006_platform_repo_visibility.sql?raw';
+import activity from '../../cloudflare/migrations/0007_platform_activity.sql?raw';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { type CheckReport, completeContainerCheck } from '../../cloudflare/worker/repo-checks';
 import { compute } from '../../cloudflare/worker/repo-compute';
@@ -188,7 +189,7 @@ afterEach(async () => {
 });
 beforeEach(async () => {
   // Every config running these tests gets the D1 schema (listing and personal-token lookup).
-  for (const migration of [listing, tokens, members, visibility])
+  for (const migration of [listing, tokens, members, visibility, activity])
     for (const statement of migration.split(';').filter((s) => s.replace(/--.*$/gm, '').trim()))
       await bindings.INDEX
         .exec(statement.replace(/--.*$/gm, '').replace(/\s+/g, ' ').trim())
@@ -239,7 +240,7 @@ export async function signup(username: string) {
   const response = await bindings.SELF.fetch('https://yoneda/api/auth/signup', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username, password: 'long platform test password' }),
+    body: JSON.stringify({ username, email: `${username}@example.com`, password: 'long platform test password' }),
   });
   expect(response.status).toBe(200);
   return (response.headers.get('set-cookie') ?? '').split(';')[0];

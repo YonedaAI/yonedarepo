@@ -1,0 +1,51 @@
+{
+  "$defs": {
+    "Conflicts": {
+      "additionalProperties": false,
+      "description": "`conflicts`: the last landing the remote helper saw refused in this clone.",
+      "properties": {
+        "message": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "paths": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "refused": {
+          "description": "Whether a refused landing is recorded.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "refused",
+        "message",
+        "paths"
+      ],
+      "title": "Conflicts",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `conflicts`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/Conflicts"
+    },
+    "schema": {
+      "const": "yoneda.cli.conflicts.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.conflicts.v1",
+  "type": "object"
+}
