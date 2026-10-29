@@ -1,10 +1,11 @@
 //! A received pack, resolved as it streams in: every entry's object id and kind (deltas
-//! applied to bases in the same pack; thin packs are refused), the commits, trees and tags
-//! kept for verification, and any object's content on demand, re-inflated from the pack
-//! when it is not cached. Memory stays near the pack's own size: blobs are hashed while
-//! they inflate and only small ones are cached as likely delta bases. Blobs over the
-//! limits' spill size are not held at all (`take_spilled`), so they cannot be delta bases,
-//! and deltas resolve to at most that size.
+//! applied to bases in the same pack; thin packs are refused), and any object's content on
+//! demand, re-inflated from the pack when it is not held. Memory stays near the pack's own
+//! size: blobs are hashed while they inflate and only small ones are cached as likely
+//! delta bases; commits, trees and tags are kept whole up to a budget (a tree-heavy
+//! history's directories inflate to many times their packed size), and re-inflated past
+//! it. Blobs over the limits' spill size are not held at all (`take_spilled`), so they
+//! cannot be delta bases, and deltas resolve to at most that size.
 use super::delta::{apply_delta, delta_result_size};
 use super::pack::inflate_exact;
 use super::pack_header::EntryKind;
@@ -19,8 +20,9 @@ use std::rc::Rc;
 /// bases closely); larger ones are re-inflated if a delta needs them.
 const CACHE_ITEM: usize = 256 * 1024;
 const CACHE_BYTES: usize = 8 * 1024 * 1024;
-/// Commits, trees and tags are kept whole for verification, up to this much.
-const KEPT_BYTES: usize = 16 * 1024 * 1024;
+/// Commits, trees and tags are kept whole, in pack order (commits first), up to this much;
+/// the rest are re-inflated when read.
+const KEPT_BYTES: usize = 4 * 1024 * 1024;
 /// Git writes chains of at most 50 by default (4095 at the most aggressive).
 const MAX_DEPTH: usize = 5000;
 
@@ -149,10 +151,6 @@ impl PackReader {
             .and_then(|i| self.slots[*i].object)
             .map(|(_, kind)| kind)
     }
-    /// A commit, tree or tag from the pack, whole.
-    pub fn kept(&self, id: &ObjectId) -> Option<&[u8]> {
-        self.kept.get(id).map(|data| data.as_slice())
-    }
     /// The content of any object in the pack.
     pub fn content(&mut self, id: &ObjectId) -> Result<Rc<Vec<u8>>> {
         if let Some(kept) = self.kept.get(id) {
@@ -228,14 +226,11 @@ impl PackReader {
         self.slots[index].object = Some((id, kind));
         self.by_id.entry(id).or_insert(index);
         let Some(data) = data else { return Ok(()) };
-        if kind != ObjectKind::Blob && !self.kept.contains_key(&id) {
+        if kind != ObjectKind::Blob
+            && self.kept_bytes + data.len() <= KEPT_BYTES
+            && !self.kept.contains_key(&id)
+        {
             self.kept_bytes += data.len();
-            if self.kept_bytes > KEPT_BYTES {
-                return Err(Error::new(
-                    "TOO_LARGE",
-                    "Push has too many commits and directories for one HTTPS push",
-                ));
-            }
             self.kept.insert(id, data.clone());
         }
         self.cache.put(index, data);
