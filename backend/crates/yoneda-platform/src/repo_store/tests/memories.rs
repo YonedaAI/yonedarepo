@@ -578,11 +578,12 @@ fn deliveries_are_recorded_per_session_and_left_out_of_later_rankings() {
 
 #[test]
 fn the_memory_tables_arrive_by_a_repeatable_forward_migration() {
+    // Upgrades from the schema just before 0040 (every earlier migration applied).
     let db = crate::native::NativeStore::memory().unwrap();
     let migrations = &super::super::migration::MIGRATIONS;
     let before = migrations
         .iter()
-        .position(|(version, _)| *version == 39)
+        .position(|(version, _)| *version == 40)
         .unwrap();
     super::super::migration::migrate_with(&db, "repo_schema_migrations", &migrations[..before])
         .unwrap();
