@@ -36,7 +36,7 @@ export type ForkParent = {
 export type Policy = {
   approvals: number;
   /** Review classes that satisfy the approval requirement without a human (semantic approval). Only `docs`, `formatting` and `comment_only` may be listed. */
-  auto_approve?: string[];
+  auto_approve?: ("docs" | "formatting" | "comment_only")[];
   /** Who may post each required check by hand: `owner` or `token:<name>` (token names are never reused). A required check named by a runner comes only from the platform's run; any other required check defaults to the owner alone. Omitted when empty, so policies that never bind posters keep their digest. */
   check_posters?: Record<string, string[]>;
   required_checks: string[];
@@ -77,14 +77,14 @@ export type Runner = {
   /** Review the first part of a diff over the budget instead of failing it. Omitted when false, the fail-closed default. */
   allow_truncated?: boolean;
   kind: "model";
-  model: string;
+  model: "glm-5.3-flash";
   rubric: string;
 };
 
 /** A false positive the owner accepted: `rule` may match in `path`, a file or a directory ending in `/`. */
 export type SecretAllow = {
   path: string;
-  rule: string;
+  rule: "aws-access-key" | "github-token" | "github-pat" | "anthropic-key" | "openai-key" | "mimo-key" | "slack-token" | "stripe-live-key" | "private-key" | "yonedarepo-token" | "yonedarepo-pat";
 };
 
 /** Who is asking: the owner, or a member's role (null: neither). */
@@ -129,7 +129,11 @@ export const repoStatusSchema = {
         "auto_approve": {
           "description": "Review classes that satisfy the approval requirement without a human (semantic\napproval). Only `docs`, `formatting` and `comment_only` may be listed.",
           "items": {
-            "type": "string"
+            "enum": [
+              "docs",
+              "formatting",
+              "comment_only"
+            ]
           },
           "type": "array"
         },
@@ -141,10 +145,14 @@ export const repoStatusSchema = {
             "type": "array"
           },
           "description": "Who may post each required check by hand: `owner` or `token:<name>` (token names are\nnever reused). A required check named by a runner comes only from the platform's run;\nany other required check defaults to the owner alone. Omitted when empty, so policies\nthat never bind posters keep their digest.",
+          "propertyNames": {
+            "pattern": "^[a-z0-9][a-z0-9._\\-]{0,63}$"
+          },
           "type": "object"
         },
         "required_checks": {
           "items": {
+            "pattern": "^[a-z0-9][a-z0-9._\\-]{0,63}$",
             "type": "string"
           },
           "type": "array"
@@ -152,6 +160,9 @@ export const repoStatusSchema = {
         "runners": {
           "additionalProperties": {
             "$ref": "#/$defs/Runner"
+          },
+          "propertyNames": {
+            "pattern": "^[a-z0-9][a-z0-9._\\-]{0,63}$"
           },
           "type": "object"
         },
@@ -289,7 +300,8 @@ export const repoStatusSchema = {
             "timeout_seconds": {
               "default": 600,
               "format": "uint32",
-              "minimum": 0,
+              "maximum": 3600,
+              "minimum": 1,
               "type": "integer"
             }
           },
@@ -312,6 +324,9 @@ export const repoStatusSchema = {
             },
             "model": {
               "default": "glm-5.3-flash",
+              "enum": [
+                "glm-5.3-flash"
+              ],
               "type": "string"
             },
             "rubric": {
@@ -335,6 +350,19 @@ export const repoStatusSchema = {
           "type": "string"
         },
         "rule": {
+          "enum": [
+            "aws-access-key",
+            "github-token",
+            "github-pat",
+            "anthropic-key",
+            "openai-key",
+            "mimo-key",
+            "slack-token",
+            "stripe-live-key",
+            "private-key",
+            "yonedarepo-token",
+            "yonedarepo-pat"
+          ],
           "type": "string"
         }
       },

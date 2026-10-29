@@ -53,7 +53,8 @@ fn session(row: &Value) -> Result<Value> {
     let reads: Vec<String> = serde_json::from_str(row["read_set"].as_str().unwrap_or("[]"))
         .map_err(|_| corrupt("read set"))?;
     Ok(json!({
-        "id": row["id"], "commit": row["commit_id"], "cli": row["cli"], "model": row["model"],
+        "id": row["id"], "commit": row["commit_id"], "cli": row["cli"],
+        "model": super::sessions::shown_model(&row["model"]),
         "summary": row["summary"], "prompt_digest": row["prompt_digest"],
         "transcript_ref": row["transcript_ref"], "read_set_digest": row["read_set_digest"],
         "recorded_by": row["recorded_by"], "at": row["at"], "session_id": row["session_id"],
@@ -144,6 +145,8 @@ pub fn session_list<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Val
             )?
             .into_iter()
             .map(|r| r["v"].clone())
+            // The Model filter offers real models only (no "none" from before real_model).
+            .filter(|v| column != "model" || !super::sessions::shown_model(v).is_null())
             .collect())
     };
     let next = more

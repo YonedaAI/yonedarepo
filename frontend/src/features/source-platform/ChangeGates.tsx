@@ -1,5 +1,6 @@
 // A change's landing gates and its actions: approve or reject the head, land it on its base
-// (gated when the base is protected), close or reopen. The server decides each one; the panel only offers what the status allows.
+// (gated when the base is protected), close, reopen or delete (a closed change, by its
+// author or the owner). The server decides each one; the panel only offers what the status allows.
 import { useState } from 'react';
 import { type Conflict, ConflictList, GateSummary, ReviewButtons } from './CommitGates';
 import { type ChangeDetail, who } from './changeModel';
@@ -11,10 +12,13 @@ export function ChangeGates({
   repo,
   change,
   onChanged,
+  onDeleted,
 }: {
   repo: string;
   change: ChangeDetail;
   onChanged: () => void;
+  /** After the change is deleted (it no longer exists to show). */
+  onDeleted?: () => void;
 }) {
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState('');
@@ -22,15 +26,16 @@ export function ChangeGates({
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
   // A public reader sees the gates and reviews, never the actions.
   const readOnly = useReadOnly();
-  async function act(label: string, path: string, body: unknown, done: string) {
+  async function act(label: string, path: string, body: unknown, done: string, method?: 'DELETE') {
     setBusy(label);
     setNotice('');
     setError('');
     setConflicts([]);
     try {
-      await sourceApi(`/repos/${repo}${path}`, { body });
+      await sourceApi(`/repos/${repo}${path}`, method ? { method } : { body });
       setNotice(done);
-      onChanged();
+      if (method) onDeleted?.();
+      else onChanged();
     } catch (e) {
       setError((e as Error).message);
       setConflicts((e as SourceApiError).details?.conflicts ?? []);
@@ -123,6 +128,19 @@ export function ChangeGates({
               onClick={() => act('reopen', `${base}/reopen`, {}, 'Reopened.')}
             >
               Reopen change
+            </button>
+          )}
+          {status === 'closed' && (
+            <button
+              type="button"
+              className="danger"
+              disabled={!!busy}
+              onClick={() => {
+                const what = `Delete change #${change.number} and its comments? The branch stays.`;
+                if (window.confirm(what)) act('delete', base, undefined, 'Deleted.', 'DELETE');
+              }}
+            >
+              {busy === 'delete' ? 'Deleting…' : 'Delete change'}
             </button>
           )}
         </div>

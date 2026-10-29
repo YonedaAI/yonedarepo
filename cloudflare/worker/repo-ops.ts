@@ -42,7 +42,8 @@ export type Credentials =
         | 'purge'
         | 'hooks'
         | 'compact'
-        | 'fork';
+        | 'fork'
+        | 'lfs';
     };
 // Identity fields come only from the authenticating adapter, never from arguments.
 const CREDENTIAL_KEYS = ['_session', '_token', '_pat', '_anonymous', '_system'];
@@ -94,6 +95,8 @@ const KEEPS_REFS = new Set([
   'repo_lfs_discard',
   'repo_lfs_usage',
   'repo_lfs_set_quota',
+  'repo_lfs_sweep_claim',
+  'repo_lfs_sweep_done',
 ]);
 const writes = new Map<string, number>();
 /** How many commands that may move refs this isolate has sent to `repo`. */

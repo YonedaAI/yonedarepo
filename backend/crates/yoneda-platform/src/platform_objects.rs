@@ -6,6 +6,19 @@ use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet};
 use yoneda_core::{Error, Result, git_object::*};
 
+/// The bytes of base64 field `key`. Not `string`, which takes short text fields only (at
+/// most 16 KiB): a search segment or a replacement body is a payload of any size the
+/// request body allows.
+pub fn base64_field(c: &Value, key: &str) -> Result<Vec<u8>> {
+    let text = c[key]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| bad(&format!("Missing or invalid {key}")))?;
+    STANDARD
+        .decode(text)
+        .map_err(|_| bad(&format!("{key} is not base64")))
+}
+
 pub fn mode(kind: &str) -> Result<FileMode> {
     FileMode::from_wire(kind).map_err(|_| bad("Unknown tree entry type"))
 }

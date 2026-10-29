@@ -1,5 +1,5 @@
 //! Webhook events for change requests (`change` subscriptions): `change.opened` (opened or
-//! reopened), `change.commented` and `change.closed` are queued as they happen, like check
+//! reopened), `change.commented`, `change.closed` and `change.deleted` are queued as they happen, like check
 //! results; `change.landed` is fanned out with the landing's log version, right after its
 //! `land` event. Payloads carry identifiers, refs and times; the title, body or comment text
 //! goes in `message`, which only hooks without a path grant receive.

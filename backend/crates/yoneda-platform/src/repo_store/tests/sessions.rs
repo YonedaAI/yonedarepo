@@ -420,3 +420,70 @@ fn upgrades_from_the_visibility_schema_with_no_transcripts() {
     assert_eq!(rows[0]["summary"], "old");
     assert!(rows[0]["transcript"].is_null());
 }
+
+/// A placeholder is no model: "none", "" and the like are stored as null, never shown as a
+/// model or offered by the Model filter, also for rows recorded before this rule; a real
+/// model id is kept as given.
+#[test]
+fn a_placeholder_model_is_stored_and_listed_as_none_at_all() {
+    use crate::storage::SqlStore;
+    let (h, root) = seeded();
+    let mut commits = Vec::new();
+    for (i, model) in [
+        json!("none"),
+        json!(""),
+        json!(" None "),
+        json!("unknown"),
+        Value::Null,
+        json!("zai-coding-plan/glm-5.3"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let id = h
+            .commit(
+                AGENT,
+                Some(&root),
+                1,
+                json!([file(&format!("src/m{i}.rs"), "x\n")]),
+                json!([]),
+            )
+            .unwrap();
+        let mut record = session(&id, &format!("session {i}"));
+        record["model"] = model;
+        h.ok(AGENT, record);
+        commits.push(id);
+    }
+    let models: Vec<Value> = commits
+        .iter()
+        .map(|c| h.ok(CI, json!({"op":"repo_sessions","commit":c}))["sessions"][0]["model"].clone())
+        .collect();
+    assert_eq!(
+        models,
+        [
+            Value::Null,
+            Value::Null,
+            Value::Null,
+            Value::Null,
+            Value::Null,
+            json!("zai-coding-plan/glm-5.3")
+        ]
+    );
+    // A row from before the rule still reads as no model, and is not a filter option.
+    h.db.query(
+        "UPDATE sessions SET model='none' WHERE summary='session 4'",
+        &[],
+    )
+    .unwrap();
+    let all = h.ok(CI, json!({"op":"repo_session_list"}));
+    assert_eq!(all["models"], json!(["zai-coding-plan/glm-5.3"]));
+    assert!(
+        all["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|s| s["model"] != "none")
+    );
+    let per_commit = h.ok(CI, json!({"op":"repo_sessions","commit":commits[4]}));
+    assert_eq!(per_commit["sessions"][0]["model"], Value::Null);
+}

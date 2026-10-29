@@ -40,7 +40,7 @@ it('issues personal tokens to a signed-in account, lists them without secrets an
   expect(listed.body.tokens.map((t: any) => t.name)).toEqual(['laptop', 'ci']);
   expect(JSON.stringify(listed.body)).not.toContain(issued.token);
   expect(Object.keys(listed.body.tokens[0]).sort()).toEqual(
-    ['created_at', 'expires_at', 'id', 'last_used_at', 'name', 'org', 'repos', 'scopes'],
+    ['created_at', 'expires_at', 'host', 'id', 'last_used_at', 'name', 'org', 'origin', 'repos', 'scopes'],
   );
   // Only a session issues tokens; a token cannot mint more, or list them without repo:admin.
   expect((await api('/tokens', { token: issued.token }, { body: { name: 'x', scopes: ['repo:read'] } })).status).toBe(401);
@@ -118,7 +118,8 @@ it('clones and lists with a personal token, and creates repositories with repo:a
 });
 
 async function deviceCode(target: Env = scoped) {
-  const started = await api('/device/code', {}, { body: { client_name: 'yoneda-cli' } }, target);
+  const body = { client_name: 'yoneda-cli', host: 'ada-mbp' };
+  const started = await api('/device/code', {}, { body }, target);
   expect(started.status).toBe(200);
   return started.body;
 }
@@ -155,7 +156,15 @@ it('logs a device in: pending, slow down, approved once', async () => {
   expect(granted.body.token).toMatch(/^ypat_/);
   expect(granted.body.expires_at - Date.now()).toBeGreaterThan(2 * DAY);
   expect((await api('/repos', { token: granted.body.token })).status).toBe(200);
-  expect((await api('/tokens', { cookie })).body.tokens.map((t: any) => t.name)).toEqual(['yoneda-cli']);
+  // The token says it came from `yoneda login` on that host; a website token does not,
+  // and a website caller cannot claim to be a login.
+  const listed = (await api('/tokens', { cookie })).body.tokens;
+  expect(listed.map((t: any) => [t.name, t.origin, t.host])).toEqual([['yoneda-cli', 'login', 'ada-mbp']]);
+  const made = await api('/tokens', { cookie }, { body: { name: 'ci', scopes: ['repo:read'], origin: 'login', host: 'x' } });
+  expect([made.status, made.body.origin ?? null, made.body.host ?? null]).toEqual([200, null, null]);
+  const both = (await api('/tokens', { cookie })).body.tokens;
+  expect(both.map((t: any) => [t.name, t.origin])).toEqual([['yoneda-cli', 'login'], ['ci', null]]);
+  await api(`/tokens/${made.body.id}`, { cookie }, { method: 'DELETE' });
   // Single use.
   await sql(`device:${compact(started.user_code)}`, 'UPDATE device_codes SET last_poll_at=NULL');
   const spent = await poll(started.device_code);

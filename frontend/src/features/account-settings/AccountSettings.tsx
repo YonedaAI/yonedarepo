@@ -43,6 +43,7 @@ export function CliTable({
         <thead>
           <tr>
             <th>Client</th>
+            <th>Host</th>
             <th>Signed in</th>
             <th>Last used</th>
             <th>Expires</th>
@@ -55,11 +56,17 @@ export function CliTable({
           {list.map((t) => (
             <tr key={t.id}>
               <td>{t.name}</td>
+              <td>{t.host ?? 'unknown host'}</td>
               <td>{when(t.created_at)}</td>
               <td>{t.last_used_at ? when(t.last_used_at) : 'never'}</td>
               <td>{expiresIn(t.expires_at, now)}</td>
               <td>
-                <button type="button" className="quiet" onClick={() => onSignOut(t)}>
+                <button
+                  type="button"
+                  className="quiet"
+                  aria-label={`Sign out ${t.host ?? t.name}`}
+                  onClick={() => onSignOut(t)}
+                >
                   Sign out
                 </button>
               </td>
@@ -111,8 +118,8 @@ export function AccountSettings({
       <section aria-labelledby="cli-heading">
         <h2 id="cli-heading">Signed-in CLIs</h2>
         <p className="source-meta">
-          Each <code>yoneda login</code> you approved holds a personal token named after the client.
-          Signing one out revokes its token.
+          Each <code>yoneda login</code> you approved holds a personal token, labelled with the
+          machine it signed in on. Signing one out revokes its token.
         </p>
         <CliTable
           tokens={clis}

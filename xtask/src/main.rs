@@ -14,6 +14,7 @@ mod deploy_registry;
 mod deploy_secrets;
 mod dev;
 mod infra;
+mod layers;
 mod layout;
 mod local_config;
 mod process;

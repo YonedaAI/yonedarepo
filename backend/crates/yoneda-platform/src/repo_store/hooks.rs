@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 
 /// `change` subscribes to every change request event (`change.opened`, `change.commented`,
-/// `change.landed`, `change.closed`); `release` to `release.published` and
+/// `change.landed`, `change.closed`, `change.deleted`); `release` to `release.published` and
 /// `release.deleted`.
 pub const EVENTS: [&str; 8] = [
     "land", "merged", "refused", "branch", "tag", "check", "change", "release",

@@ -27,6 +27,11 @@ const MODELS: &[ModelSpec] = &[ModelSpec {
     pricing_basis: "Z.ai GLM 5.3 Flash conservative metered rates, docs.z.ai/guides/overview/pricing (verified 2026-10-13)",
 }];
 
+/// The review catalog's model ids, the default first (the policy contract's `model` enum).
+pub fn model_ids() -> Vec<&'static str> {
+    MODELS.iter().map(|m| m.id).collect()
+}
+
 pub fn model_spec(id: &str) -> Result<&'static ModelSpec> {
     MODELS.iter().find(|m| m.id == id).ok_or_else(|| {
         let known: Vec<&str> = MODELS.iter().map(|m| m.id).collect();
