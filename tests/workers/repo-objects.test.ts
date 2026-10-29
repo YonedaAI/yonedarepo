@@ -1,7 +1,8 @@
 // Batch, resumable object fetch through the tiered cache (Scion S11/S12).
 import { expect, it, vi } from 'vitest';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
-import { DOWNLOAD_DEADLINE } from '../../cloudflare/worker/repo-object-fetch';
+import { DOWNLOAD_DEADLINE } from '../../cloudflare/worker/repo-object-download';
+import { nextBatch, PAGE_DEADLINE } from '../../cloudflare/worker/repo-object-fetch';
 import { gitObjectId, RepoObjects } from '../../cloudflare/worker/repo-objects';
 import { api, author, file, misses, scoped, signup, usePlatformFixture } from './repo-fixture';
 
@@ -9,7 +10,8 @@ usePlatformFixture();
 
 it('serves objects by id from the cache tiers and resumes across the response budget', async () => {
   const owner = { cookie: await signup('objectowner') };
-  const big = (fill: string) => ({ path: `${fill}.bin`, content_b64: btoa(fill.repeat(5 * 1024 * 1024)) });
+  // Each over half the 16 MiB response budget once base64'd: one per page.
+  const big = (fill: string) => ({ path: `${fill}.bin`, content_b64: btoa(fill.repeat(9 * 1024 * 1024)) });
   const created = await api('/repos', owner, {
     body: { name: 'objects', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', 'a\n'), big('x'), big('y')], author },
   });
@@ -191,9 +193,9 @@ it('checks a blob read from the store of record against its id without Rust comp
   // `git hash-object` of "hello\n".
   expect(await gitObjectId('blob', new TextEncoder().encode('hello\n'))).toBe('ce013625030ba8dba906f756967f9e9ca394464a');
   const owner = { cookie: await signup('pagesowner') };
-  // 12 blobs of 1 MiB: a page stops at its response budget (4 MiB of base64) and every blob
-  // still arrives, in order, across pages. (40 took over CI's 60 s on its 4-vCPU runners.)
-  const files = Array.from({ length: 12 }, (_, i) => file(`c${i}.md`, `${i}`.padEnd(1024 * 1024, 'x')));
+  // 12 blobs of 2 MB: a page stops at its response budget (16 MiB of base64, six of them)
+  // and every blob still arrives, in order, across pages. (Kept small for CI's runners.)
+  const files = Array.from({ length: 12 }, (_, i) => file(`c${i}.md`, `${i}`.padEnd(2_000_000, 'x')));
   const created = await api('/repos', owner, { body: { name: 'pages', policy: { required_checks: [], approvals: 0 }, files, author } });
   const repo = `/repos/${created.body.id}`;
   const tree = await api(`${repo}/objects`, owner, { body: { objects: [{ id: created.body.tree, kind: 'tree' }] } });
@@ -210,5 +212,91 @@ it('checks a blob read from the store of record against its id without Rust comp
     after = page.body.next;
   }
   expect(got.map((o) => o.id)).toEqual(blobs.map((b: any) => b.id));
-  expect(pages).toBeGreaterThanOrEqual(3);
+  expect(pages).toBeGreaterThanOrEqual(2);
+  expect(pages).toBeLessThanOrEqual(3);
+});
+
+it('reads trees and commits wide, blobs a few at a time', () => {
+  const id = (i: number) => i.toString(16).padStart(40, '0');
+  const of = (kind: 'tree' | 'blob' | 'commit', n: number, from = 0) =>
+    Array.from({ length: n }, (_, i) => ({ id: id(from + i), kind }));
+  expect(nextBatch(of('tree', 100), 0)).toHaveLength(64);
+  expect(nextBatch(of('blob', 100), 0)).toHaveLength(8);
+  // Mixed: trees run on until the ninth blob.
+  const mixed = [...of('tree', 5), ...of('blob', 10, 5), ...of('commit', 3, 15)];
+  expect(nextBatch(mixed, 0)).toHaveLength(13);
+  expect(nextBatch(mixed, 13)).toEqual(mixed.slice(13));
+});
+
+it('streams a page as JSON, a few large blobs in flight, every object whole and in order', async () => {
+  const owner = { cookie: await signup('streamowner') };
+  // 10 blobs just under the stub size: the page streams at most 8 of them at a time.
+  const files = Array.from({ length: 10 }, (_, i) => file(`s${i}.bin`, `${i}`.padEnd(1_900_000, 'y')));
+  const created = await api('/repos', owner, { body: { name: 'streamed', policy: { required_checks: [], approvals: 0 }, files, author } });
+  const repo = `/repos/${created.body.id}`;
+  const tree = await api(`${repo}/objects`, owner, { body: { objects: [{ id: created.body.tree, kind: 'tree' }] } });
+  const blobs = tree.body.objects[0].entries.map((e: any) => ({ id: e.id, kind: 'blob' }));
+  const page = await platformFetch(
+    new Request(`https://yoneda/api/v1${repo}/objects`, {
+      method: 'POST',
+      headers: { cookie: owner.cookie, 'content-type': 'application/json' },
+      body: JSON.stringify({ objects: blobs, large: true }),
+    }),
+    scoped,
+  );
+  expect(page.headers.get('content-type')).toBe('application/json');
+  const body = await page.json<any>();
+  // 16 MiB of base64 holds 6 of them: the next page starts after the sixth.
+  expect(body.objects.map((o: any) => o.id)).toEqual(blobs.slice(0, body.objects.length).map((b: any) => b.id));
+  expect(body.objects.length).toBeGreaterThanOrEqual(6);
+  expect(body.next).toBe(body.objects.length);
+  expect(body.objects.every((o: any) => atob(o.data_b64).length === 1_900_000)).toBe(true);
+});
+
+it('ends a page at its deadline with what it served, or answers 503 TIMEOUT before any object', async () => {
+  const owner = { cookie: await signup('deadlineowner') };
+  const files = Array.from({ length: 9 }, (_, i) => file(`d${i}.txt`, `${i}\n`));
+  const created = await api('/repos', owner, { body: { name: 'deadline', policy: { required_checks: [], approvals: 0 }, files, author } });
+  const repo = `/repos/${created.body.id}`;
+  const tree = await api(`${repo}/objects`, owner, { body: { objects: [{ id: created.body.tree, kind: 'tree' }] } });
+  const blobs = tree.body.objects[0].entries.map((e: any) => ({ id: e.id, kind: 'blob' }));
+  const slow = blobs[8].id;
+  const original = RepoObjects.prototype.blob;
+  // The ninth blob (the second batch) never settles; every other read is as usual.
+  const spy = vi
+    .spyOn(RepoObjects.prototype, 'blob')
+    .mockImplementation(function (this: RepoObjects, id: string) {
+      return id === slow ? new Promise<Uint8Array>(() => {}) : original.call(this, id);
+    });
+  const saved = PAGE_DEADLINE.ms;
+  PAGE_DEADLINE.ms = 1_500;
+  try {
+    const page = await api(`${repo}/objects`, owner, { body: { objects: blobs } });
+    expect(page.status).toBe(200);
+    expect(page.body.objects.map((o: any) => o.id)).toEqual(blobs.slice(0, 8).map((b: any) => b.id));
+    expect(page.body.next).toBe(8);
+    const stuck = await api(`${repo}/objects`, owner, { body: { objects: blobs, after: 8 } });
+    expect([stuck.status, stuck.body.error?.code]).toEqual([503, 'TIMEOUT']);
+  } finally {
+    PAGE_DEADLINE.ms = saved;
+    spy.mockRestore();
+  }
+});
+
+it('refuses a page holding a quarantined blob before it starts, wherever the blob is', async () => {
+  const cookie = await signup('withheldpages');
+  const files = Array.from({ length: 12 }, (_, i) => file(`w${i}.txt`, `${i}\n`));
+  const created = await api('/repos', { cookie }, { body: { name: 'withheld', policy: { required_checks: [], approvals: 0 }, files, author } });
+  const repo = `/repos/${created.body.id}`;
+  const tree = await api(`${repo}/objects`, { cookie }, { body: { objects: [{ id: created.body.tree, kind: 'tree' }] } });
+  const entries = tree.body.objects[0].entries;
+  const blobs = entries.map((e: any) => ({ id: e.id, kind: 'blob' }));
+  const last = entries.at(-1);
+  expect((await api(`${repo}/quarantine`, { cookie }, { body: { blob: last.id, path: last.name, reason: 'leak' } })).status).toBe(200);
+  // The withheld blob is the last of the page: the page is refused, not cut short after
+  // eleven objects of a streamed 200.
+  const page = await api(`${repo}/objects`, { cookie }, { body: { objects: blobs } });
+  expect([page.status, page.body.error?.code]).toEqual([451, 'QUARANTINED']);
+  // A page without it is served.
+  expect((await api(`${repo}/objects`, { cookie }, { body: { objects: blobs.slice(0, 11) } })).body.objects).toHaveLength(11);
 });

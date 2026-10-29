@@ -20,6 +20,15 @@ mod refs;
 use merge::{merge, replay_changes};
 use refs::{push_outcome, push_report, receive_pack, ref_delete, ref_update};
 
+/// This Wasm instance's linear memory in bytes (it only grows; null natively): what the
+/// object page probes measure (tests/workers/repo-objects-memory.test.ts).
+fn wasm_bytes() -> Option<usize> {
+    #[cfg(target_arch = "wasm32")]
+    return Some(core::arch::wasm32::memory_size::<0>() * 65_536);
+    #[cfg(not(target_arch = "wasm32"))]
+    None
+}
+
 pub fn compute(c: Value) -> Result<Value> {
     match string(&c, "op")?.as_str() {
         "tree_diff" => tree_diff(&c),
@@ -58,6 +67,7 @@ pub fn compute(c: Value) -> Result<Value> {
         "carrier_push" => crate::platform_push::carrier_push(&c),
         "branch_push" => crate::platform_push::branch_push(&c),
         "parse_objects" => crate::platform_push::parse_objects(&c),
+        "memory" => Ok(json!({ "wasm_bytes": wasm_bytes() })),
         "build_commit" => crate::platform_build::build_commit(&c),
         "project_changesets" => crate::platform_project::project_changesets(&c),
         "head_begin" => crate::platform_head::head_begin(&c),
