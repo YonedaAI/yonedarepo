@@ -1,6 +1,6 @@
 //! Landing tickets: a landing that cannot move its branch directly joins the branch's queue
 //! and is settled (landed or failed, with the reason) by whoever lands the batch it rides.
-use super::land::require_gates;
+use super::land_gates::require_gates;
 use super::rows::{self, Settings, branch_ref};
 use crate::storage::{SqlStore, bad, number};
 use serde_json::{Value, json};
