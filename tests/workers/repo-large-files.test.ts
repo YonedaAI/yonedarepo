@@ -180,6 +180,26 @@ it('pushes, clones and reads back a 90 MiB file without holding it', { timeout: 
   const grown = wasmMemoryBytes() - memory;
   console.log(`large file: wasm memory ${(memory / MiB).toFixed(0)} MiB, grew ${(grown / MiB).toFixed(1)} MiB`);
   expect(grown).toBeLessThan(48 * MiB);
+
+  // A resumed download asks for the rest: the range streams from the store.
+  const resumed = await platformFetch(new Request(`https://yoneda/api/v1/repos/${repo}/objects/${big.id}`, { headers: { cookie, range: `bytes=${80 * MiB}-` } }), on);
+  expect(resumed.status).toBe(206);
+  expect(resumed.headers.get('content-range')).toBe(`bytes ${80 * MiB}-${90 * MiB - 1}/${90 * MiB}`);
+  expect(hex(new Uint8Array(await resumed.arrayBuffer()))).toBe(hex(big.data.subarray(80 * MiB)));
+
+  // Quarantined, it is refused on every path before a byte streams.
+  const made = await api(`/repos/${repo}/quarantine`, { cookie }, { body: { path: 'big.bin', reason: 'test' } }, on);
+  expect(made.status, JSON.stringify(made.body)).toBe(200);
+  const withheld = await platformFetch(new Request(`https://yoneda/api/v1/repos/${repo}/objects/${big.id}`, { headers: { cookie } }), on);
+  expect(withheld.status).toBe(451);
+  expect((await withheld.json<any>()).error.code).toBe('QUARANTINED');
+  const stubbed = await api(`/repos/${repo}/objects`, { cookie }, { body: { objects: [{ id: big.id, kind: 'blob' }], large: true } }, on);
+  expect([stubbed.status, stubbed.body.error?.code]).toEqual([451, 'QUARANTINED']);
+  const clone = new TextDecoder('latin1').decode(
+    await git(repo, token, 'git-upload-pack', `${pkt('command=fetch\n')}${pkt('object-format=sha1\n')}0001${pkt(`want ${commit.id}\n`)}${pkt('done\n')}0000`, { 'git-protocol': 'version=2' }),
+  );
+  expect(clone).toContain('QUARANTINED');
+  expect(clone).not.toContain('PACK');
 });
 
 it('refuses a file over 100 MiB, naming the limit', { timeout: 300_000 }, async () => {
