@@ -129,6 +129,14 @@ pub enum ChangeCommand {
     Land {
         number: u64,
     },
+    /// Close an open change without landing it (its author, the owner or a lander).
+    Close {
+        number: u64,
+    },
+    /// Reopen a closed change whose branch still exists with no other open change.
+    Reopen {
+        number: u64,
+    },
     /// A closed change and its comments (its author or the owner).
     Delete {
         number: u64,
