@@ -4,13 +4,18 @@
 //! each step and every new commit's files; at the end of a case, real Git checks the
 //! objects, commit graph, trees and merge bases (`git`). A failure names its seed: rerun it
 //! with `YONEDA_DIFF_SEED=<seed>`.
-use super::batches::open;
+use super::batches::{credentials, open};
+
+const PROJECTOR: &str = "platform:projection";
 use super::*;
 use std::collections::BTreeMap;
 use yoneda_core::git_object::ObjectId;
-use yoneda_refmodel::{CommitId, MAIN, Op, Outcome, Plan, Repo, Rng, Role, Scope, Tree, generate};
+use yoneda_refmodel::{
+    CommitId, Item, MAIN, Op, Outcome, Plan, Repo, Rng, Role, Scope, Tree, generate,
+};
 
 mod adapter;
+mod forks;
 mod git;
 mod scenarios;
 
@@ -26,6 +31,9 @@ enum Seen {
     Queued(u64),
     /// A combiner run: tickets landed, tickets failed with why, and its merge commit.
     Batch(Vec<u64>, Vec<(u64, String)>, Option<String>),
+    /// A submission: each member's status and version or ticket (or failure code), and
+    /// main's head after projection.
+    Submitted(Vec<(String, Value)>, String),
     Refused(String),
 }
 
@@ -36,6 +44,12 @@ struct Driver {
     ids: Vec<String>,
     /// Outcomes seen, by operation (`label`).
     tally: BTreeMap<String, usize>,
+    /// Main's published head as last taken (`repo_head`), as a cache would hold it.
+    published: std::cell::RefCell<Value>,
+    /// Shard commits' records, in the order they were built (the model's `shard`).
+    shard: std::cell::RefCell<Vec<Value>>,
+    /// The fork's authority, once forked.
+    fork: std::cell::RefCell<Option<Harness>>,
 }
 
 impl Driver {
@@ -45,11 +59,15 @@ impl Driver {
             ("README.md".to_owned(), "# demo\n".to_owned()),
             ("src/lib.rs".to_owned(), "pub fn a() {}\n".to_owned()),
         ]);
+        let published = h.ok(PROJECTOR, json!({"op":"repo_head","ref":"main"}));
         Self {
             h,
             model: Repo::seeded(tree),
             ids: vec![root],
             tally: BTreeMap::new(),
+            published: published.into(),
+            shard: Vec::new().into(),
+            fork: None.into(),
         }
     }
 
@@ -128,6 +146,10 @@ impl Driver {
                     .run(OWNER, json!({"op":"repo_land","ref":MAIN,"commit":commit}));
                 (answer(landed), Some(plan))
             }
+            Op::LandOn { branch, onto } => {
+                let land = json!({"op":"repo_land","ref":onto,"commit":self.git_id(branch)});
+                (answer(self.h.run(OWNER, land)), None)
+            }
             Op::MergeLand { branch } => {
                 let commit = self.git_id(branch);
                 let plan = self.plan(&commit);
@@ -154,6 +176,20 @@ impl Driver {
                 }
             }
             Op::RunQueue => (self.run_queue(), None),
+            Op::Publish => {
+                let head = self.h.ok(PROJECTOR, json!({"op":"repo_head","ref":"main"}));
+                *self.published.borrow_mut() = head;
+                (Seen::Done, None)
+            }
+            Op::ShardCommit {
+                path,
+                content,
+                read,
+            } => (self.shard_commit(path, content, *read), None),
+            Op::Submit { picks } => (self.submit(picks), None),
+            Op::Fork => (self.fork_repo(), None),
+            Op::ForkCommit { path, content } => (self.fork_commit(path, content), None),
+            Op::Carry => (self.carry(), None),
             Op::MintToken {
                 name,
                 scopes,
@@ -199,13 +235,19 @@ impl Driver {
                 let read = json!({"op":"repo_path_history","ref":MAIN,"path":path});
                 (done(self.h.run(&format!("token:{token}"), read)), None)
             }
-            Op::Member { account, role } => {
+            Op::Member { by, account, role } => {
                 let command = match role {
-                    Some(role) => json!({"op":"repo_member_put","account":account,
-                        "role":if *role == Role::Read { "read" } else { "write" }}),
+                    Some(role) => {
+                        let role = match role {
+                            Role::Read => "read",
+                            Role::Write => "write",
+                            Role::Admin => "admin",
+                        };
+                        json!({"op":"repo_member_put","account":account,"role":role})
+                    }
                     None => json!({"op":"repo_member_remove","account":account}),
                 };
-                (done(self.h.run(OWNER, command)), None)
+                (done(self.as_caller(by, command)), None)
             }
         }
     }
@@ -256,6 +298,18 @@ impl Driver {
                 }
             }
             (Seen::Queued(ticket), Outcome::Queued(model)) if ticket == model => {}
+            (Seen::Submitted(items, head), Outcome::Submitted(model))
+                if items.len() == model.items.len()
+                    && items.iter().zip(&model.items).all(|(s, m)| same_item(s, m)) =>
+            {
+                if let Some(made) = model.projected {
+                    if made != self.ids.len() {
+                        return Err(format!("projected {made}, expected {}", self.ids.len()));
+                    }
+                    self.ids.push(head.clone());
+                    self.same_files(made)?;
+                }
+            }
             (Seen::Moved, Outcome::Moved)
             | (Seen::Already, Outcome::Already)
             | (Seen::Done, Outcome::Done) => {}
@@ -294,6 +348,7 @@ impl Driver {
                 "annotated tags: platform {annotated:?}, model {model:?}"
             ));
         }
+        self.same_fork()?;
         if listed["version"] != self.model.version {
             let version = &listed["version"];
             return Err(format!(
@@ -344,6 +399,22 @@ fn label(op: &Op, outcome: &Outcome) -> String {
         Outcome::Committed(_) => format!("{kind} Committed"),
         Outcome::Rebased(_) => format!("{kind} Rebased"),
         Outcome::Queued(_) => format!("{kind} Queued"),
+        Outcome::Submitted(submitted) => {
+            let mut kinds: Vec<&str> = submitted
+                .items
+                .iter()
+                .map(|i| match i {
+                    Item::Landed(_) => "landed",
+                    Item::Already(_) => "already",
+                    Item::Deferred => "deferred",
+                    Item::Queued(_) => "queued",
+                    Item::Failed(_) => "failed",
+                })
+                .collect();
+            kinds.sort();
+            kinds.dedup();
+            format!("{kind} {}", kinds.join("+"))
+        }
         Outcome::Batch(batch) => match (&batch.merge, batch.landed.len(), batch.failed.len()) {
             (Some(_), landed, _) if landed > 1 => format!("{kind} octopus"),
             (Some(_), _, _) => format!("{kind} merge"),
@@ -353,6 +424,17 @@ fn label(op: &Op, outcome: &Outcome) -> String {
         },
         Outcome::Refused(code) => format!("{kind} {code}"),
         other => format!("{kind} {other:?}"),
+    }
+}
+
+/// Whether a submitted member's answer (status, version/ticket/code) is the model's.
+fn same_item((status, detail): &(String, Value), item: &Item) -> bool {
+    match item {
+        Item::Landed(v) => status == "landed" && detail == &json!(v),
+        Item::Already(v) => status == "already" && detail == &json!(v),
+        Item::Deferred => status == "deferred",
+        Item::Queued(t) => status == "queued" && detail == &json!(t),
+        Item::Failed(code) => status == "failed" && detail == code,
     }
 }
 
@@ -441,7 +523,6 @@ fn the_platform_matches_the_reference_model() {
             "Rebase CONFLICT",
             "Probe Done",
             "Probe NOT_FOUND",
-            "Probe FORBIDDEN",
             "SetVisibility Done",
             "SetVisibility FORBIDDEN",
             "Member Done",

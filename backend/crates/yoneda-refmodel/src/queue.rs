@@ -132,7 +132,7 @@ impl Repo {
             let commit = self.tickets[ticket].commit;
             let paths = Self::changed(&self.commits[head].tree, &self.commits[commit].tree);
             self.move_ref(MAIN, Some(commit), paths, true);
-            self.landings.insert((commit, MAIN.to_owned()));
+            self.landed(commit, MAIN.to_owned());
             self.settle(ticket, TicketStatus::Landed, &mut batch);
             return Outcome::Batch(batch);
         }
@@ -183,9 +183,9 @@ impl Repo {
             writes: writes.clone(),
         });
         self.move_ref(MAIN, Some(id), writes, true);
-        self.landings.insert((id, MAIN.to_owned()));
+        self.landed(id, MAIN.to_owned());
         for (ticket, commit) in accepted {
-            self.landings.insert((commit, MAIN.to_owned()));
+            self.landed(commit, MAIN.to_owned());
             self.settle(ticket, TicketStatus::Landed, &mut batch);
         }
         batch.merge = Some(id);

@@ -1,5 +1,5 @@
 //! Seeded random operation sequences: every case is reproducible from its seed.
-use crate::{Access, Caller, MAIN, Op, Repo, Role, Scope};
+use crate::{Access, Caller, MAIN, MIRROR, Op, Repo, Role, Scope};
 use std::collections::BTreeSet;
 
 /// SplitMix64: small, fast and good enough to drive test cases deterministically.
@@ -31,11 +31,13 @@ impl Rng {
 /// Files the generator writes: none is another's directory.
 pub const PATHS: [&str; 4] = ["README.md", "src/lib.rs", "src/b.rs", "a.txt"];
 /// Working branches (and main), and tags.
-const BRANCHES: [&str; 4] = [
+const BRANCHES: [&str; 5] = [
     MAIN,
     "refs/heads/b1",
     "refs/heads/b2",
     "refs/heads/feature/x",
+    // The parent's mirror of the fork's branch, once carried: writers may move it too.
+    MIRROR,
 ];
 const TAGS: [&str; 3] = ["refs/tags/v1", "refs/tags/v2", "refs/tags/v3"];
 /// Signed-in accounts, members or not.
@@ -116,6 +118,23 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
         .to_string()
     };
     match rng.below(100) {
+        20..23 => Op::Publish,
+        23..30 if repo.shard.is_empty() || rng.below(5) < 3 => {
+            let path = rng.pick(&PATHS).to_string();
+            Op::ShardCommit {
+                content: format!("{path} from the shard at step {step}\n"),
+                path,
+                read: rng.below(3) == 0,
+            }
+        }
+        23..30 => {
+            // One to three shard commits, recent ones most (older ones landed already).
+            let recent = repo.shard.len().min(6);
+            let picks = (0..1 + rng.below(3))
+                .map(|_| repo.shard.len() - 1 - rng.below(recent))
+                .collect();
+            Op::Submit { picks }
+        }
         0..6 => {
             let branch = rng.pick(&existing).to_string();
             // Any commit but the root (it has no parent to go back to), a few back at most.
@@ -128,7 +147,7 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
                 branch,
             }
         }
-        6..30 => {
+        6..20 => {
             let branch = rng.pick(&existing).to_string();
             let tree = &repo.commits[repo.refs[&branch]].tree;
             let path = rng.pick(&PATHS).to_string();
@@ -173,15 +192,28 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
             at: any_ref(rng),
             message: (rng.below(2) == 0).then(|| format!("Release at step {step}")),
         },
-        55..65 => Op::Land {
+        55..61 => Op::Land {
             branch: working(rng),
+        },
+        61..65 => Op::LandOn {
+            branch: working(rng),
+            onto: working(rng),
         },
         65..74 => Op::MergeLand {
             branch: working(rng),
         },
-        74..80 => Op::Rebase {
+        74..77 => Op::Rebase {
             branch: working(rng),
         },
+        77..80 if repo.fork.is_none() => Op::Fork,
+        77..80 if rng.below(3) == 0 => Op::Carry,
+        77..80 => {
+            let path = rng.pick(&PATHS).to_string();
+            Op::ForkCommit {
+                content: format!("{path} in the fork at step {step}\n"),
+                path,
+            }
+        }
         80..86 => Op::Enqueue {
             branch: working(rng),
         },
@@ -206,8 +238,13 @@ pub fn generate(rng: &mut Rng, repo: &Repo, step: usize) -> Op {
             public: rng.below(2) == 0,
         },
         _ => Op::Member {
+            by: if rng.below(2) == 0 {
+                Caller::Owner
+            } else {
+                caller(rng)
+            },
             account: rng.pick(&ACCOUNTS).to_string(),
-            role: [None, Some(Role::Read), Some(Role::Write)][rng.below(3)],
+            role: [None, Some(Role::Read), Some(Role::Write), Some(Role::Admin)][rng.below(4)],
         },
     }
 }

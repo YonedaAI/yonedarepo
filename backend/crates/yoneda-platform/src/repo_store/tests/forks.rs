@@ -7,10 +7,10 @@
 use super::*;
 use crate::storage::SqlStore;
 
-const FORK_ID: &str = "r00000000000000000f01";
+pub(super) const FORK_ID: &str = "r00000000000000000f01";
 const PARENT_ID: &str = "r00000000000000000a01";
 const IMPORTER: &str = "platform:import";
-const FORKER: &str = "platform:fork";
+pub(super) const FORKER: &str = "platform:fork";
 
 /// The fork's authority: its own database, initialized with the parent, and the parent's
 /// objects visible (as the adapter's reads fall back to the parent's store).
@@ -35,7 +35,7 @@ fn fork_of(parent: &Harness, version: u64) -> Harness {
 }
 
 /// Runs the fork job: source, every export page, record, refs.
-fn fork(parent: &Harness) -> Harness {
+pub(super) fn fork(parent: &Harness) -> Harness {
     let source = parent.ok(AGENT, json!({"op":"repo_fork_source"}));
     let version = source["version"].as_u64().unwrap();
     let fork = fork_of(parent, version);
