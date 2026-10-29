@@ -1,7 +1,7 @@
 //! Snapshot-consistent reads. `at` pins a log version; refs at a past version are rebuilt
 //! by replaying the hash-chained log, so time travel also verifies history integrity.
 use super::{
-    land::gates,
+    land_gates::gates,
     rows::{self, Settings, branch_ref, current_version, object_id},
 };
 use crate::storage::SqlStore;
