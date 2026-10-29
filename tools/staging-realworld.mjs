@@ -84,6 +84,13 @@
 //          yonedarepo codebase: imports, clones, everyday Git, a change, reads and sandboxed agents
 //          on several repositories at once, on `realuser/<ts>-*` scratch branches only, cleaned up
 //          afterwards: tools/staging/realuser-flow.mjs)
+//        node tools/staging-realworld.mjs --agent-tools [--agent-tools-repo oss-commander] [--headed]
+//          (item 30.6 alone, dev only, the owner's account as for --realuser, which also runs it after
+//          30.4: an authored contract read back over MCP, REST, `yoneda context` and turned stale by a
+//          change; a pin through branch deletion and a vacuum, then released; a bisect over six scratch
+//          commits naming the breaking one (one tiny container check per step, check minutes
+//          recorded); Agents -> contracts, pins and bisects in Chrome. Needs the CLI build and Chrome:
+//          tools/staging/realuser-agent-tools.mjs)
 import assert from 'node:assert/strict';
 import { execFile, spawnSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -179,6 +186,10 @@ const { values } = parseArgs({
     'import-defaults': { type: 'boolean', default: false },
     // Tags cannot be deleted on the platform: pushing one leaves realuser/<ts>-tag for good.
     'realuser-tag': { type: 'boolean', default: false },
+    // Item 30.6 alone (with the owner's sign-in, repository lookup and cleanup), and its
+    // repository: one with Rust, TypeScript or JavaScript functions for the contracts.
+    'agent-tools': { type: 'boolean', default: false },
+    'agent-tools-repo': { type: 'string', default: 'oss-commander' },
   },
 });
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -222,7 +233,7 @@ if (values.prod)
     api: 'https://api.yonedarepo.com',
     platform: 'https://yonedarepo-prod-platform.mlong-f01.workers.dev',
   });
-if (values.realuser || values.dogfood) {
+if (values.realuser || values.dogfood || values['agent-tools']) {
   assert.ok(!values.prod, '--realuser runs on dev only');
   const code = await realuser(values, root);
   await new Promise((done) => process.stdout.write('', done));
