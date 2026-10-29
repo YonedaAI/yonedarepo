@@ -13,6 +13,7 @@ use yoneda_core::git_object::{
     FileMode, ObjectId, ObjectKind, TreeEntry, encode_tree, hash_object, write_pack,
 };
 
+mod page;
 mod transfer;
 
 /// Fetched bytes held before they are written out as a pack.

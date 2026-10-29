@@ -212,58 +212,6 @@ impl Api {
         }
     }
 
-    /// Sends `request` with this client's credentials; a success's body as far as it
-    /// arrived (see `Received`), or the API error. The body may go quiet for at most the
-    /// idle timeout; so may the wait for the answer itself when `prompt` (an object
-    /// transfer: other calls, such as a landing, may wait on the platform longer).
-    async fn receive(
-        &self,
-        request: reqwest::RequestBuilder,
-        prompt: bool,
-    ) -> std::result::Result<Received, Failure> {
-        let idle = self.timeouts.idle;
-        let request = match &self.header {
-            Header::Authorization(value) => request.header("authorization", value),
-            Header::Cookie(value) => request.header("cookie", value),
-            Header::None => request,
-        };
-        let response = if prompt {
-            tokio::time::timeout(idle, request.send())
-                .await
-                .map_err(|_| resume::stalled("an answer", idle))?
-        } else {
-            request.send().await
-        }
-        .map_err(unreachable)?;
-        let status = response.status().as_u16();
-        // Named in the error, so a failure says which request it was (never a credential).
-        let path = response.url().path().to_owned();
-        let retry_after = response
-            .headers()
-            .get(reqwest::header::RETRY_AFTER)
-            .and_then(|v| v.to_str().ok())
-            .and_then(|v| v.trim().parse::<u64>().ok());
-        if (200..300).contains(&status) {
-            return Ok(resume::received(response, status, idle).await);
-        }
-        let bytes = tokio::time::timeout(idle, response.bytes())
-            .await
-            .map_err(|_| resume::stalled("the error's body", idle))?
-            .map_err(unreachable)?;
-        let value: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
-        let error = &value["error"];
-        Err(Failure {
-            status,
-            code: error["code"].as_str().unwrap_or("HTTP_ERROR").to_owned(),
-            message: error["message"]
-                .as_str()
-                .map(str::to_owned)
-                .unwrap_or_else(|| format!("HTTP {status} from {path}")),
-            details: error["details"].clone(),
-            retry_after,
-        })
-    }
-
     /// A GET whose answer is raw bytes (a large blob), retried like any read.
     pub async fn get_bytes(&self, path: &str) -> std::result::Result<Vec<u8>, Failure> {
         let mut attempt = 0;
