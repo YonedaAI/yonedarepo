@@ -140,6 +140,7 @@ describe('pricing', () => {
     expect(html).toContain(formatUsd(PRICING.topUp.belowUsd));
     expect(html).toContain(formatUsd(PRICING.topUp.addUsd));
     expect(html).toContain('Enterprise');
+    expect(html).toContain('href="mailto:privacy@yonedarepo.com"');
     expect(html).not.toMatch(/buy now|add (a )?card now|pay now/i);
   });
 });
@@ -208,6 +209,8 @@ describe('content', () => {
     expect(html).toContain('Draft, pending legal review');
     expect(html).toContain('Yoneda Labs');
     expect(html).toContain('YonedaRepo');
+    expect(html).toContain('href="mailto:privacy@yonedarepo.com"');
+    expect(html).not.toMatch(/governing law|\bvenue\b|will be (set|published)|minimum age/i);
     expect(html).not.toContain('](');
   });
 
