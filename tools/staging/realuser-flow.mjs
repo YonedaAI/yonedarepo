@@ -4,7 +4,9 @@
 // credential file), on "pure" test repositories: open-source histories, never the yonedarepo
 // codebase. `--realuser-repo` (default claude-code) gets 30.1 clones (realuser-git.mjs), 30.2
 // everyday Git, 30.3 the change loop and 30.4 reads (realuser-product.mjs); 30.5 runs
-// sandboxed agents on several repositories at once (realuser-agents.mjs, opt-in). `--import
+// sandboxed agents on several repositories at once (realuser-agents.mjs, opt-in); 30.6 the
+// agent tools (contracts, pins, bisect; MCP, REST and the browser) on `--agent-tools-repo`
+// (realuser-agent-tools.mjs), also alone with `--agent-tools`. `--import
 // name=source` and `--import-defaults` first make test repositories (realuser-import.mjs).
 // Every write goes to a `realuser/<ts>-*` scratch branch; repository tokens are minted per step
 // and deleted after it. Cleanup always runs: changes closed, scratch branches deleted, tokens
@@ -18,6 +20,8 @@ import { resolve } from 'node:path';
 import { hostDrift } from './agent-sandbox.mjs';
 import { hostState } from './agent-sandbox-host.mjs';
 import { Recorder, Session } from './client.mjs';
+import { realuserItems } from './agent-tools-plan.mjs';
+import { realuserAgentTools } from './realuser-agent-tools.mjs';
 import { realuserAgents } from './realuser-agents.mjs';
 import { realuserClones, realuserEveryday, Workspace } from './realuser-git.mjs';
 import { importRepo } from './realuser-import.mjs';
@@ -69,7 +73,8 @@ export async function realuser(values, root) {
   mkdirSync(evidence, { recursive: true });
   const ws = new Workspace({ api: values.api, bin: values['cli-bin'] ?? resolve(root, 'target/release'), scrub });
   const tokens = [];
-  const ctx = { ws, ts, owner, secrets, evidence, root, changes: [], touched: new Set(), tag: values['realuser-tag'] };
+  const ctx = { ws, ts, owner, secrets, evidence, root, origin: values.origin, cookie, changes: [], touched: new Set(), tag: values['realuser-tag'] };
+  const items = realuserItems(values);
   ctx.touch = (repo) => ctx.touched.add(repo);
   ctx.tokenSession = (token) => new Session(`${ws.api}/api/v1`, { bearer: token });
   ctx.mint = async (step, scopes, repo = ctx.repo) => {
@@ -124,18 +129,30 @@ export async function realuser(values, root) {
         ctx.touch(repo.id);
         const named = values['agent-repos']?.split(',').filter(Boolean);
         agentRepos = named ? named.map((n) => pickRepo(repos, n)) : [repo, ...DEFAULT_IMPORTS.map((d) => repos.find((r) => r.name === d.name)).filter(Boolean)];
-        for (const r of [repo, ...agentRepos]) {
+        const tools = items.tools ? [pickRepo(repos, values['agent-tools-repo'])] : [];
+        if (tools.length) {
+          ctx.toolsRepo = tools[0].id;
+          ctx.touch(tools[0].id);
+          m.tools_repo = `${tools[0].name} (${tools[0].id})`;
+        }
+        for (const r of [repo, ...agentRepos, ...tools]) {
           const { version } = await owner.get(`/repos/${r.id}`);
           const refs = (await owner.get(`/repos/${r.id}/refs`)).refs;
           protectedBefore.set(r.id, { version, refs: Object.fromEntries(PROTECTED.map((p) => [p, refs[p] ?? null])) });
         }
         Object.assign(m, { repo: `${repo.name} (${repo.id})`, agent_repos: agentRepos.map((r) => r.name).join(','), main: protectedBefore.get(repo.id).refs['refs/heads/main'] });
       });
-    if (ctx.repo) {
+    if (ctx.repo && items.everyday) {
       await item('30.1', 'Clones: HTTPS full, partial + checkout, shallow + deepen, yoneda::, SSH; fsck', (m) => realuserClones(ctx, m));
       await item('30.2', 'Everyday Git: branch, commit, push, pull --rebase over a server commit, cherry-pick, revert, tag, delete', (m) => realuserEveryday(ctx, m));
       await item('30.3', 'Change loop: session, open, comment, approval, page data, land on scratch base, server rebase', (m) => realuserChange(ctx, m));
       await item('30.4', 'Reads: search, blame, history, Overview, file --at and at a commit, compare (latency)', (m) => realuserReads(ctx, m));
+    }
+    if (ctx.toolsRepo)
+      await item('30.6', 'Agent tools: contracts (stale after a change), pins (through a vacuum), bisect (names the breaking commit); MCP, REST and browser', (m) =>
+        realuserAgentTools({ ...ctx, repo: ctx.toolsRepo }, m, { headed: values.headed }),
+      );
+    if (ctx.repo && items.everyday) {
       const perRepo = Number(values['realuser-agents'] ?? 0);
       await item('30.5', `Agents: ${perRepo} per repository on ${agentRepos.length} repositories at once, changes landed on scratch bases`, (m) =>
         realuserAgents(ctx, { repos: agentRepos, perRepo, model: values['agent-model'], timeoutS: Number(values['agent-timeout']), budgetUsd: Number(values['agent-budget']) }, m),
