@@ -2,6 +2,8 @@
 //! the old base and rebases the pending local commits onto it, re-pinning the checkout.
 use crate::checkout::Checkout;
 use crate::error::{Error, Result};
+use crate::human;
+use crate::output::{self, Pull, PullOutcome};
 use crate::snapshot;
 
 pub async fn pull(co: &mut Checkout) -> Result<()> {
@@ -22,18 +24,25 @@ pub async fn pull(co: &mut Checkout) -> Result<()> {
         co.state.rebase(version, &head, &local);
     }
     co.save()?;
-    integrate(co, version)
+    let (outcome, rebased) = integrate(co, version)?;
+    output::emit(&Pull {
+        branch,
+        version,
+        outcome,
+        rebased,
+    });
+    Ok(())
 }
 
 /// Puts HEAD on the local base: fast-forward, or rebase the commits made on an older
 /// base (also after an aborted rebase, since the snapshot's parent is that older base).
-fn integrate(co: &Checkout, version: u64) -> Result<()> {
+fn integrate(co: &Checkout, version: u64) -> Result<(PullOutcome, u64)> {
     let base = co.state.local_base.clone();
     let branch = &co.state.branch;
     let upstream = co.git.run(&["merge-base", "HEAD", &base])?;
     if upstream == base {
-        println!("Up to date with {branch} at version {version}");
-        return Ok(());
+        human!("Up to date with {branch} at version {version}");
+        return Ok((PullOutcome::UpToDate, 0));
     }
     let range = format!("{upstream}..HEAD");
     let pending = co
@@ -41,8 +50,8 @@ fn integrate(co: &Checkout, version: u64) -> Result<()> {
         .run(&["rev-list", "--first-parent", "--count", &range])?;
     if pending == "0" {
         co.fast_forward(&base)?;
-        println!("Fast-forwarded to {branch} at version {version}");
-        return Ok(());
+        human!("Fast-forwarded to {branch} at version {version}");
+        return Ok((PullOutcome::FastForwarded, 0));
     }
     if let Err(e) = co.git.run(&["rebase", "-q", "--onto", &base, &upstream]) {
         return Err(Error::new(format!(
@@ -51,6 +60,6 @@ fn integrate(co: &Checkout, version: u64) -> Result<()> {
              (or `git rebase --abort` and run `yoneda pull` again later)"
         )));
     }
-    println!("Rebased {pending} pending commit(s) onto {branch} at version {version}");
-    Ok(())
+    human!("Rebased {pending} pending commit(s) onto {branch} at version {version}");
+    Ok((PullOutcome::Rebased, pending.parse().unwrap_or_default()))
 }

@@ -3,12 +3,13 @@
 //! yoneda.reads=…`, then clearing them) and `yoneda session` (a commit's session records).
 //! A `yoneda::` remote's helper declares the recorded reads itself, so `yoneda push` to one
 //! is a plain `git push`.
-use crate::command::{ReadsCommand, SessionCommand, Target};
+use crate::command::{SessionCommand, Target};
 use crate::error::{Context, Error, Result};
 use crate::git::Git;
 use crate::remote::url;
 use crate::session_files::{SessionFiles, current_session, push_options};
 use crate::target;
+use crate::{human, output};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use std::path::{Component, Path, PathBuf};
@@ -85,37 +86,6 @@ pub fn relative(top: &Path, cwd: &Path, path: &str) -> Option<String> {
         entry.push('/');
     }
     Some(entry)
-}
-
-pub fn reads(command: ReadsCommand) -> Result<()> {
-    let cwd = std::env::current_dir().context("current directory")?;
-    let at = here(&cwd)?;
-    let files = SessionFiles::new(&at.git_dir);
-    match command {
-        ReadsCommand::Add { paths } => {
-            let mut entries = Vec::new();
-            for path in &paths {
-                entries.push(relative(&at.top, &cwd, path).ok_or_else(|| {
-                    Error::usage(format!("{path} is not inside this repository's work tree"))
-                })?);
-            }
-            let added = files.add_reads(&entries)?;
-            println!(
-                "{added} new read(s) declared; {} in all",
-                files.reads()?.len()
-            );
-        }
-        ReadsCommand::List => {
-            for read in files.reads()? {
-                println!("{read}");
-            }
-        }
-        ReadsCommand::Clear => {
-            files.clear_reads()?;
-            println!("Declared reads cleared");
-        }
-    }
-    Ok(())
 }
 
 /// `git push` options that take a value as the next argument.
@@ -199,8 +169,8 @@ pub fn push(args: Vec<String>) -> Result<()> {
         .context("running git push")?;
     if !status.success() {
         return Err(Error {
-            message: "git push failed; the declared reads are kept for the next push".into(),
             exit_code: status.code().unwrap_or(1),
+            ..Error::new("git push failed; the declared reads are kept for the next push")
         });
     }
     if helper {
@@ -280,7 +250,11 @@ pub async fn session(target: &Target, command: SessionCommand) -> Result<()> {
                 .api
                 .post(&format!("/commits/{commit}/sessions"), &body)
                 .await?;
-            println!("Recorded session {} for {commit}", posted["session"]);
+            human!("Recorded session {} for {commit}", posted["session"]);
+            output::emit(&output::SessionRecord {
+                commit,
+                session: posted["session"].clone(),
+            });
         }
         SessionCommand::List { commit } => {
             let commit = commit_of(commit)?;
@@ -290,18 +264,29 @@ pub async fn session(target: &Target, command: SessionCommand) -> Result<()> {
                 .await?;
             let sessions = listed["sessions"].as_array().cloned().unwrap_or_default();
             if sessions.is_empty() {
-                println!("No session recorded for {commit}");
+                human!("No session recorded for {commit}");
             }
+            let mut listed = Vec::new();
             for s in sessions {
                 let text = |k: &str| s[k].as_str().unwrap_or_default().to_owned();
-                println!(
+                human!(
                     "{} {} by {}",
                     text("cli"),
                     text("model"),
                     text("recorded_by")
                 );
-                println!("  {}", text("summary").replace('\n', "\n  "));
+                human!("  {}", text("summary").replace('\n', "\n  "));
+                listed.push(output::Session {
+                    cli: text("cli"),
+                    model: s["model"].as_str().map(str::to_owned),
+                    recorded_by: text("recorded_by"),
+                    summary: text("summary"),
+                });
             }
+            output::emit(&output::SessionList {
+                commit,
+                sessions: listed,
+            });
         }
     }
     Ok(())

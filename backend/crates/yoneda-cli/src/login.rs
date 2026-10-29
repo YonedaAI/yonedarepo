@@ -5,6 +5,7 @@
 use crate::api::Api;
 use crate::credentials::{self, Token};
 use crate::error::{Error, Result};
+use crate::{human, note, output};
 use serde_json::{Value, json};
 use std::time::Duration;
 
@@ -176,10 +177,16 @@ pub async fn login(origin: &str, with_token: bool, browser: bool) -> Result<()> 
             .read_line(&mut line)
             .map_err(|e| Error::new(format!("reading the token from stdin: {e}")))?;
         credentials::store(&path, origin, &Token::new(&line)?)?;
-        println!(
+        human!(
             "Stored a token for {origin} in {} (mode 0600)",
             path.display()
         );
+        output::emit(&output::Login {
+            origin: origin.to_owned(),
+            account: None,
+            expires_at: None,
+            credentials: path.display().to_string(),
+        });
         return Ok(());
     }
     let flow = HttpFlow(Api::account(origin, None)?);
@@ -188,38 +195,52 @@ pub async fn login(origin: &str, with_token: bool, browser: bool) -> Result<()> 
         .verification_uri_complete
         .clone()
         .unwrap_or_else(|| code.verification_uri.clone());
-    println!(
+    note!(
         "Open {} and enter the code {}",
-        code.verification_uri, code.user_code
+        code.verification_uri,
+        code.user_code
     );
     if browser {
         open_browser(&link);
     }
     let grant = wait_for_grant(&flow, &mut RealClock, &code).await?;
     credentials::store(&path, origin, &Token::new(&grant.token)?)?;
-    println!(
+    human!(
         "Logged in to {origin}{}{}; token stored in {} (mode 0600)",
         grant
             .account
+            .as_ref()
             .map(|a| format!(" as {a}"))
             .unwrap_or_default(),
         grant
             .expires_at
+            .as_ref()
             .map(|e| format!(", expires {e}"))
             .unwrap_or_default(),
         path.display()
     );
+    output::emit(&output::Login {
+        origin: origin.to_owned(),
+        account: grant.account,
+        expires_at: grant.expires_at,
+        credentials: path.display().to_string(),
+    });
     Ok(())
 }
 
 /// `yoneda logout`.
 pub fn logout(origin: Option<&str>) -> Result<()> {
     let path = credentials::default_path()?;
-    if credentials::remove(&path, origin)? {
-        println!("Removed the stored token ({})", path.display());
+    let removed = credentials::remove(&path, origin)?;
+    if removed {
+        human!("Removed the stored token ({})", path.display());
     } else {
-        println!("No stored token to remove");
+        human!("No stored token to remove");
     }
+    output::emit(&output::Logout {
+        removed,
+        credentials: path.display().to_string(),
+    });
     Ok(())
 }
 

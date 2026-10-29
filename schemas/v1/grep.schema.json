@@ -1,0 +1,85 @@
+{
+  "$defs": {
+    "Grep": {
+      "additionalProperties": false,
+      "description": "`grep`.",
+      "properties": {
+        "results": {
+          "items": {
+            "$ref": "#/$defs/GrepFile"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "results"
+      ],
+      "title": "Grep",
+      "type": "object"
+    },
+    "GrepFile": {
+      "additionalProperties": false,
+      "description": "A file with matches.",
+      "properties": {
+        "lines": {
+          "description": "The matching lines (empty: the path itself matched).",
+          "items": {
+            "$ref": "#/$defs/GrepLine"
+          },
+          "type": "array"
+        },
+        "path": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "path",
+        "lines"
+      ],
+      "type": "object"
+    },
+    "GrepLine": {
+      "additionalProperties": false,
+      "description": "A matching line.",
+      "properties": {
+        "line": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "line",
+        "text"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `grep`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/Grep"
+    },
+    "schema": {
+      "const": "yoneda.cli.grep.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.grep.v1",
+  "type": "object"
+}

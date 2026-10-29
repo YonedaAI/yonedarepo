@@ -275,6 +275,5 @@ pub enum Command {
     /// `yoneda context`: what a coding session starting here should know.
     Context {
         max_bytes: usize,
-        json: bool,
     },
 }

@@ -1,0 +1,41 @@
+{
+  "$defs": {
+    "RepoDelete": {
+      "additionalProperties": false,
+      "description": "`repo delete`.",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "description": "The name given to `--confirm`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "title": "RepoDelete",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `repo-delete`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/RepoDelete"
+    },
+    "schema": {
+      "const": "yoneda.cli.repo-delete.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.repo-delete.v1",
+  "type": "object"
+}

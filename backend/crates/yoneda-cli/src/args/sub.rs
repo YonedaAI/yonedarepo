@@ -242,7 +242,7 @@ pub fn session(rest: &[String]) -> Result<Command> {
 }
 
 pub fn context(rest: &[String]) -> Result<Command> {
-    let p = Parsed::new(rest, &["max-bytes"], &["json"])?;
+    let p = Parsed::new(rest, &["max-bytes"], &[])?;
     p.at_most(0)?;
     let max_bytes = match p.flag("max-bytes") {
         None => crate::context_cmd::DEFAULT_BYTES,
@@ -252,10 +252,7 @@ pub fn context(rest: &[String]) -> Result<Command> {
             .filter(|n| (256..=65_536).contains(n))
             .ok_or_else(|| Error::usage("--max-bytes must be 256-65536"))?,
     };
-    Ok(Command::Context {
-        max_bytes,
-        json: p.on("json"),
-    })
+    Ok(Command::Context { max_bytes })
 }
 
 pub fn hook(rest: &[String]) -> Result<Command> {

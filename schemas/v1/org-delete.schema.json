@@ -1,0 +1,36 @@
+{
+  "$defs": {
+    "OrgDelete": {
+      "additionalProperties": false,
+      "description": "`org delete` (the name is retired for good).",
+      "properties": {
+        "org": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "org"
+      ],
+      "title": "OrgDelete",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `org-delete`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/OrgDelete"
+    },
+    "schema": {
+      "const": "yoneda.cli.org-delete.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.org-delete.v1",
+  "type": "object"
+}

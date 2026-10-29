@@ -1,0 +1,96 @@
+{
+  "$defs": {
+    "OrgMember": {
+      "additionalProperties": false,
+      "description": "An organization member.",
+      "properties": {
+        "account": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "account",
+        "role"
+      ],
+      "type": "object"
+    },
+    "OrgShow": {
+      "additionalProperties": false,
+      "description": "`org show`.",
+      "properties": {
+        "created_by": {
+          "type": "string"
+        },
+        "members": {
+          "items": {
+            "$ref": "#/$defs/OrgMember"
+          },
+          "type": "array"
+        },
+        "org": {
+          "type": "string"
+        },
+        "role": {
+          "description": "The caller's role.",
+          "type": "string"
+        },
+        "teams": {
+          "items": {
+            "$ref": "#/$defs/OrgTeam"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "org",
+        "role",
+        "created_by",
+        "members",
+        "teams"
+      ],
+      "title": "OrgShow",
+      "type": "object"
+    },
+    "OrgTeam": {
+      "additionalProperties": false,
+      "description": "A team and its members.",
+      "properties": {
+        "members": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "members"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `org-show`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/OrgShow"
+    },
+    "schema": {
+      "const": "yoneda.cli.org-show.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.org-show.v1",
+  "type": "object"
+}

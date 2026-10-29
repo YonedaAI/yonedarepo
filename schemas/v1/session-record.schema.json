@@ -1,0 +1,40 @@
+{
+  "$defs": {
+    "SessionRecord": {
+      "additionalProperties": false,
+      "description": "`session record`.",
+      "properties": {
+        "commit": {
+          "type": "string"
+        },
+        "session": {
+          "description": "The platform's id for the record."
+        }
+      },
+      "required": [
+        "commit",
+        "session"
+      ],
+      "title": "SessionRecord",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `session-record`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/SessionRecord"
+    },
+    "schema": {
+      "const": "yoneda.cli.session-record.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.session-record.v1",
+  "type": "object"
+}
