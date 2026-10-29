@@ -1642,6 +1642,7 @@ mod git_shallow;
 mod hooks;
 mod land_cas;
 mod land_shapes;
+mod landed_tickets;
 mod lfs;
 mod lfs_sweep;
 mod members;

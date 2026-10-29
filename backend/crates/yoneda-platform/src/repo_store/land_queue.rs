@@ -6,7 +6,7 @@
 //! blocks commits, reads or other branches.
 use super::changes;
 use super::land::append;
-use super::land_tickets::{finish, status};
+use super::land_tickets::{finish, landed_version, settle_already, status};
 use super::merging::{self, MERGE_PRINCIPAL};
 use super::rows::{self, CommitRow, RecordedGraph, branch_ref, current_version, object_id};
 use crate::storage::{SqlStore, bad, number, string};
@@ -178,6 +178,15 @@ pub fn land_batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Val
                 let [only] = landed_commits.as_slice() else {
                     return Err(bad("Several commits land only through a merge commit"));
                 };
+                // A ticket for a commit already on the branch (queued before enqueue
+                // answered `already`) settles; logging the landing again would break the
+                // landings key and fail every batch after it.
+                let landed_at = landed_version(db, &only.id, &refname)?;
+                if landed_at.is_some() || head == only.id {
+                    let settled = settle_already(db, &tickets, &only.id, &refname, landed_at, now)?;
+                    release(db, &json!({ "ref": refname, "epoch": epoch }))?;
+                    return Ok(settled);
+                }
                 if !merging::on_head(db, only, &head)? {
                     return Err(Error::new(
                         "STALE_PARENT",
