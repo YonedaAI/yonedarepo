@@ -74,6 +74,7 @@ mod quarantine;
 mod reads;
 mod rebase;
 mod record;
+mod ref_chain;
 mod releases;
 mod reviewers;
 mod rows;

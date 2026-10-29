@@ -140,6 +140,11 @@ pub(crate) const MIGRATIONS: [(i64, &str); 40] = [
         38,
         include_str!("../migrations/repo_store/0038_quarantine.sql"),
     ),
+    // Applied after 0040 on repositories that had 0040 first (they are independent).
+    (
+        39,
+        include_str!("../migrations/repo_store/0039_ref_chains.sql"),
+    ),
     (
         40,
         include_str!("../migrations/repo_store/0040_memories.sql"),
