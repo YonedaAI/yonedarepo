@@ -1,6 +1,8 @@
 // The platform's operation table, named after Git verbs. The HTTP API and MCP both
 // dispatch here, so an MCP client and a REST client can never see different behavior.
 
+import { afterAnswer } from './background';
+import { touchActivity } from './repo-activity';
 import { changeOperations } from './repo-changes';
 import { landMode } from './repo-changesets';
 import { dispatchRuns } from './repo-checks';
@@ -87,7 +89,12 @@ export const operations: Record<string, Operation> = {
     await dispatchRuns(ctx.env, ctx.repo, requested.runs);
     return requested;
   },
-  git_session_record: recordSession,
+  git_session_record: async (ctx, a) => {
+    const recorded = await recordSession(ctx, a);
+    // The Home lists sessions: its next view re-reads this repository.
+    await afterAnswer(() => touchActivity(ctx.env, ctx.repo));
+    return recorded;
+  },
   git_sessions: (ctx, a) => ctx.call({ op: 'repo_sessions', commit: a.commit }),
   // The listing the web's Sessions page reads (GET /sessions, repo-agent-records.ts).
   git_sessions_recent: (ctx, a) =>

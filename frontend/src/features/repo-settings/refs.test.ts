@@ -140,12 +140,12 @@ describe('branches and tags panel', () => {
       expect(canMoveBranches({ owner: false, role })).toBe(true);
     expect(canMoveBranches({ owner: true, role: null })).toBe(true);
   });
-  it('is a History view with its own address, not a settings section', () => {
+  it('is a Commits view with its own address, not a settings section', () => {
     const route = { view: 'branches' as const, repo };
     expect(formatSourceRoute(route)).toBe(`/source/${repo}/branches`);
     expect(parseSourceRoute(formatSourceRoute(route), '')).toEqual(route);
     expect(parseSourceRoute(`/source/${repo}/settings/branches`, '')).toEqual(route);
-    expect(routeTab(route)).toBe('history');
+    expect(routeTab(route)).toBe('commits');
     state.value = loaded({ data: { refs } });
     const status = (role: string) => ({
       name: 'demo',

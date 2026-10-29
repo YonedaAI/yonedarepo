@@ -3,7 +3,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { createBody, NewRepositoryDialog, readmeSeed } from './NewRepositoryDialog';
-import { repoRows, rowLabel } from './repoRows';
+import { matchRows, repoRows, rowLabel } from './repoRows';
 
 const a = 'r0000000000000000000a';
 const b = 'r0000000000000000000b';
@@ -101,5 +101,19 @@ describe('the New repository dialog', () => {
     expect(dialog).toContain('aria-describedby="visibility-private-help"');
     expect(dialog).toMatch(/<small id="visibility-private-help">Only the owner and members/);
     expect(dialog).toContain('<legend>Visibility</legend>');
+  });
+});
+
+describe('repository switcher', () => {
+  it('filters by name or owner, ignoring case and spaces around the query', () => {
+    const rows = repoRows([
+      { id: a, name: 'Parser', owner: 'me', role: 'owner' },
+      { id: b, name: 'docs', owner: 'ada', role: 'write' },
+      { id: 'r0000000000000000000c', name: 'parse-tools', owner: 'me', role: 'owner' },
+    ]);
+    expect(matchRows(rows, '  PARS ').map((r) => r.name)).toEqual(['parse-tools', 'Parser']);
+    expect(matchRows(rows, 'ada').map((r) => r.name)).toEqual(['docs']);
+    expect(matchRows(rows, '')).toBe(rows);
+    expect(matchRows(rows, 'zzz')).toEqual([]);
   });
 });

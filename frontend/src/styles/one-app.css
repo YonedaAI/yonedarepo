@@ -1,23 +1,5 @@
-/* The one app shell: sidebar repository links, header breadcrumb, home, a repository's head,
-   tabs and chips, the Code tab, History segments, Settings and the New repository dialog. */
-.repository-list a {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 40px;
-  padding: 9px 10px;
-  border-radius: 6px;
-  color: #526175;
-  font-size: 13px;
-}
-.repository-list a:hover {
-  background: #f3f6fa;
-}
-.repository-list a.active {
-  background: #edf3ff;
-  color: #244da1;
-  font-weight: 500;
-}
+/* The one app shell: sidebar repository rows, the repository list, a repository's head and
+   chips, the Code tab, History segments, Settings and the New repository dialog. */
 .rail-repo-name,
 .rail-repo-shared {
   overflow: hidden;
@@ -28,12 +10,6 @@
   margin-left: auto;
   color: var(--muted);
   font-size: 10px;
-}
-.workspace-breadcrumb > a {
-  color: var(--muted);
-}
-.workspace-breadcrumb > a:hover {
-  color: var(--blue);
 }
 /* Home */
 .home-repos {
@@ -124,36 +100,8 @@ a.chip:hover {
   font-size: 12px;
   line-height: inherit;
 }
-.repo-tabs {
-  display: flex;
-  gap: 4px;
-  border-bottom: 1px solid var(--line);
-  margin: 0 0 18px;
-  overflow-x: auto;
-}
-.repo-tabs a {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 12px;
-  color: var(--muted);
-  border-bottom: 2px solid transparent;
-  font-size: 13px;
-  white-space: nowrap;
-}
-.repo-tabs a:hover {
-  color: #152436;
-}
-.repo-tabs a[aria-current="page"] {
-  color: var(--blue);
-  border-bottom-color: var(--blue);
-  font-weight: 500;
-}
-.repo-tabs a:focus-visible {
-  outline-offset: -3px;
-}
 .source-empty-state {
-  border: 1px dashed #c5d6e1;
+  border: 1px dashed var(--line-strong);
   border-radius: 8px;
   padding: 20px;
   background: var(--surface);
@@ -205,7 +153,7 @@ a.chip:hover {
   padding: 7px 14px;
   border-radius: 7px;
   background: var(--blue);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 500;
 }
 .clone-menu > summary::-webkit-details-marker {
@@ -218,10 +166,10 @@ a.chip:hover {
   top: calc(100% + 6px);
   width: min(520px, calc(100vw - 32px));
   padding: 8px 12px;
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 10px;
-  box-shadow: 0 8px 28px #12243b18;
+  box-shadow: 0 8px 28px var(--shadow);
 }
 .clone-hint {
   margin: -4px 0 8px;
@@ -237,7 +185,7 @@ a.chip:hover {
   align-items: center;
   gap: 6px 12px;
   padding: 10px 14px;
-  background: #f8fafc;
+  background: var(--surface-2);
   border: 1px solid var(--line);
   border-bottom: 0;
   border-radius: 8px 8px 0 0;
@@ -279,7 +227,7 @@ a.chip:hover {
   border-top: 1px solid var(--line);
 }
 .file-table tr:hover td {
-  background: #f8fafc;
+  background: var(--surface-2);
 }
 .file-label {
   display: inline-flex;
@@ -336,10 +284,10 @@ a.chip:hover {
   font-size: 17px;
 }
 .readme-body p {
-  color: #152436;
+  color: var(--text);
 }
 .readme-body pre {
-  background: #f6f8fb;
+  background: var(--bg);
   padding: 12px;
   border-radius: 6px;
 }
@@ -355,23 +303,23 @@ a.chip:hover {
   padding: 0;
   min-width: 0;
   display: inline-flex;
-  border: 1px solid #c5d6e1;
+  border: 1px solid var(--line-strong);
   border-radius: 7px;
   overflow: hidden;
 }
 .segmented button {
-  background: #fff;
-  color: #203a5b;
+  background: var(--surface);
+  color: var(--text);
   border-radius: 0;
   min-height: 34px;
   padding: 6px 12px;
   font-size: 13px;
 }
 .segmented button + button {
-  border-left: 1px solid #c5d6e1;
+  border-left: 1px solid var(--line-strong);
 }
 .segmented button[aria-pressed="true"] {
-  background: #edf3ff;
+  background: var(--accent-soft);
   color: var(--blue);
 }
 .segmented button:focus-visible {
@@ -391,15 +339,15 @@ a.chip:hover {
 .settings-nav a {
   padding: 8px 10px;
   border-radius: 6px;
-  color: #526175;
+  color: var(--muted);
   font-size: 13px;
 }
 .settings-nav a:hover {
-  background: #f3f6fa;
+  background: var(--surface-2);
 }
 .settings-nav a[aria-current="page"] {
-  background: #edf3ff;
-  color: #244da1;
+  background: var(--accent-soft);
+  color: var(--accent-text);
   font-weight: 500;
 }
 .settings-body {
@@ -469,7 +417,7 @@ a.chip:hover {
   font-size: 13px;
 }
 .settings-problem {
-  color: #a0262f;
+  color: var(--danger);
   font-size: 12px;
 }
 .settings-url {
@@ -509,12 +457,12 @@ a.chip:hover {
   gap: 8px;
   padding: 9px 16px;
   border-radius: 7px;
-  color: #526175;
+  color: var(--muted);
   font-size: 12px;
   font-weight: 500;
 }
 .account-dropdown a.account-item:hover {
-  background: #f3f6fa;
+  background: var(--surface-2);
 }
 .new-repository-actions {
   display: flex;

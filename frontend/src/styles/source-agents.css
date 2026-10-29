@@ -8,11 +8,11 @@
   min-height: 30px;
   padding: 4px 12px;
   font-size: 13px;
-  color: #203a5b;
-  background: #fff;
+  color: var(--text);
+  background: var(--surface);
 }
 .agent-sections a[aria-current="page"] {
-  background: #edf3ff;
+  background: var(--accent-soft);
   color: var(--blue);
   font-weight: 500;
 }
@@ -75,7 +75,7 @@
   min-width: 0;
 }
 .agent-summary {
-  color: #152436;
+  color: var(--text);
   overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -163,20 +163,20 @@
 }
 .agent-contract-stale,
 .agent-bisect-running {
-  color: #8a5a00;
-  border-color: #f0dca8;
+  color: var(--warn);
+  border-color: var(--warn-line);
 }
 .agent-contract-authored,
 .agent-bisect-found {
-  color: #1d6b3a;
-  border-color: #b9dcc5;
+  color: var(--success);
+  border-color: var(--success-line);
 }
 .agent-session-link:hover .agent-summary {
   color: var(--blue);
   text-decoration: underline;
 }
 .agent-sections a + a {
-  border-left: 1px solid #c5d6e1;
+  border-left: 1px solid var(--line-strong);
 }
 /* A session's transcript: the context packet, then its turns in order */
 .agent-transcript pre {

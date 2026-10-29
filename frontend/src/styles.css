@@ -1,5 +1,6 @@
 @import "./styles/base.css";
 @import "./styles/shell.css";
+@import "./styles/home.css";
 @import "./styles/account-menu.css";
 @import "./styles/onboarding.css";
 @import "./styles/source-diff.css";
