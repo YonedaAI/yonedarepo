@@ -578,12 +578,12 @@ fn deliveries_are_recorded_per_session_and_left_out_of_later_rankings() {
 
 #[test]
 fn the_memory_tables_arrive_by_a_repeatable_forward_migration() {
-    // Upgrades from the schema just before 0039 (every earlier migration applied).
+    // Upgrades from the schema just before 0040 (every earlier migration applied).
     let db = crate::native::NativeStore::memory().unwrap();
     let migrations = &super::super::migration::MIGRATIONS;
     let before = migrations
         .iter()
-        .position(|(version, _)| *version == 39)
+        .position(|(version, _)| *version == 40)
         .unwrap();
     super::super::migration::migrate_with(&db, "repo_schema_migrations", &migrations[..before])
         .unwrap();
@@ -720,4 +720,78 @@ fn quarantine_masks_a_quarantined_sessions_memories_and_those_on_a_withheld_blob
         .is_empty()
     );
     assert!(is_masked(&shown(&h, &from_session, json!({}))));
+}
+
+#[test]
+fn the_quarantine_jobs_purge_clears_memories_of_a_purged_session_and_on_a_purged_blob() {
+    let (h, _, first) = landed();
+    let session = h.ok(
+        AGENT,
+        json!({"op":"repo_session_record","commit":first,"cli":"claude-code",
+               "summary":"pasted hunter2","session_id":"claude-code:s9"}),
+    )["session"]
+        .clone();
+    let mut from_session = memory(&first, "gotcha", "the password is hunter2", json!([]));
+    from_session["session_id"] = json!("claude-code:s9");
+    let from_session = h.ok(AGENT, from_session)["memory"].clone();
+    let on_blob = h.ok(
+        AGENT,
+        memory(
+            &first,
+            "gotcha",
+            "lib.rs embeds swordfish",
+            json!([lib_anchor(None)]),
+        ),
+    )["memory"]
+        .clone();
+    for (kind, id) in [("session", session.to_string()), ("blob", blob(LIB_V1))] {
+        h.ok(
+            OWNER,
+            json!({"op":"repo_quarantine","target":{"kind":kind,"id":id},"path":"src/lib.rs",
+                   "reason":"a leaked credential","retain_days":1}),
+        );
+    }
+    *h.now.borrow_mut() += 24 * 60 * 60 * 1000;
+    let job = |c: Value| {
+        let mut c = c;
+        *h.now.borrow_mut() += 1_000;
+        c["now"] = json!(*h.now.borrow());
+        c["_system"] = json!("quarantine");
+        execute_repo_store(&h.db, c).unwrap()
+    };
+    let claims = job(json!({"op":"repo_quarantine_claim","limit":10}))["claims"].clone();
+    assert_eq!(claims.as_array().unwrap().len(), 2);
+    let done: Vec<Value> = claims
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| json!({"id": c["id"], "epoch": c["epoch"]}))
+        .collect();
+    assert_eq!(
+        job(json!({"op":"repo_quarantine_purged","claims":done}))["purged"],
+        2
+    );
+    for (id, secret) in [(&from_session, "hunter2"), (&on_blob, "swordfish")] {
+        let stored =
+            h.db.query(
+                "SELECT body FROM memories WHERE id=?",
+                std::slice::from_ref(id),
+            )
+            .unwrap();
+        assert_eq!(stored[0]["body"], "", "memory {id}");
+        assert!(
+            h.db.query(
+                &format!("SELECT rowid FROM memory_text WHERE memory_text MATCH '\"{secret}\"'"),
+                &[]
+            )
+            .unwrap()
+            .is_empty()
+        );
+        // A purged target stays withheld: its memories stay masked.
+        let shown = shown(&h, id, json!({}));
+        assert!(
+            shown["text"].is_null() && shown["quarantined"] == true,
+            "{shown}"
+        );
+    }
 }

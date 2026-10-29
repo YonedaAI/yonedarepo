@@ -1,8 +1,10 @@
 //! Memories under quarantine: a memory from a quarantined session (its session id is that
 //! of a withheld session record) or anchored to a withheld blob reads masked (its text null,
 //! `quarantined` set), and rankings, the start packet, search and delivery labels leave it
-//! out. Purging a session record clears the text of its session's memories, and their
-//! full-text rows, in the same transaction.
+//! out. Purging a session record clears the text of its session's memories, and purging a
+//! blob clears the text of the memories anchored to it (a note may quote the content), with
+//! their full-text rows, in the same transaction. A purged target stays withheld, so its
+//! memories stay masked.
 use crate::storage::SqlStore;
 use serde_json::{Value, json};
 use std::collections::HashSet;
@@ -67,6 +69,21 @@ impl Withheld {
             memory["quarantined"] = json!(true);
         }
     }
+}
+
+/// Clears the text of the memories anchored to blob `id`: the purge of a blob target.
+pub(super) fn clear_on_blob<S: SqlStore>(db: &S, id: &str) -> Result<()> {
+    db.query(
+        "DELETE FROM memory_text WHERE rowid IN \
+         (SELECT memory_id FROM memory_anchors WHERE blob=?)",
+        &[json!(id)],
+    )?;
+    db.query(
+        "UPDATE memories SET body='' WHERE id IN \
+         (SELECT memory_id FROM memory_anchors WHERE blob=?)",
+        &[json!(id)],
+    )?;
+    Ok(())
 }
 
 /// Clears the text of the memories of session record `id`'s session: the purge of a
