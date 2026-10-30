@@ -14,15 +14,28 @@ You do not need the CLI to use YonedaRepo: stock Git over [HTTPS or SSH](/docs/g
 
 ## Install
 
-The CLI is a Rust program, built with Cargo (Rust's toolchain, from [rustup.rs](https://rustup.rs)). From a copy of the YonedaRepo source:
+On macOS or Linux:
 
 ```sh
-cargo install --path backend/crates/yoneda-cli
+curl -fsSL https://yonedarepo.com/install.sh | sh
 ```
 
-This installs both `yoneda` and `git-remote-yoneda` into `~/.cargo/bin`, which must be on your `PATH` for Git to find the helper.
+The script picks the build for your machine, downloads it from yonedarepo.com, checks it against the release's published SHA-256 sums, and only then installs `yoneda` and `git-remote-yoneda` into `~/.local/bin`. That directory must be on your `PATH` for Git to find the helper; the script says so when it is not. Nothing runs as root.
 
-> [!NOTE] Prebuilt downloads and a package-manager install are not published yet. Until they are, use stock Git, the web app and MCP, which need nothing installed.
+| Builds | |
+|---|---|
+| macOS | Apple silicon (arm64) and Intel (x86-64) |
+| Linux | x86-64 and arm64, statically linked (any distribution) |
+
+| Variable | Changes |
+|---|---|
+| `YONEDA_INSTALL_DIR` | Where to install (default `~/.local/bin`) |
+| `YONEDA_VERSION` | Which release (default the latest) |
+| `YONEDA_TARGET` | `darwin-arm64`, `darwin-x64`, `linux-x64` or `linux-arm64` instead of the detected one |
+
+For example `curl -fsSL https://yonedarepo.com/install.sh | YONEDA_INSTALL_DIR=/usr/local/bin sh`. Run the same command again to update. The release's files and sums are listed in [latest.json](https://yonedarepo.com/downloads/cli/latest.json).
+
+> [!NOTE] Windows has no prebuilt CLI. Use stock Git, the web app and MCP there, which need nothing installed.
 
 ## Sign in
 
@@ -44,7 +57,15 @@ yoneda login --with-token     # read a token from stdin instead
 | Platform | `--origin <url>`, else `YONEDA_ORIGIN`, else the origin you logged in to, else `https://api.yonedarepo.com` |
 | Stored token | `~/.config/yoneda/credentials` (or `$XDG_CONFIG_HOME/yoneda/credentials`), mode 0600, sent only to the origin it was stored for |
 
-The CLI never prints the stored token. To give a token to an agent or a script, create a personal access token in **Settings** and export it as `YONEDA_TOKEN`.
+## Hand the token to a script or an agent
+
+```sh
+export YONEDA_TOKEN=$(yoneda auth token)
+```
+
+`yoneda auth token` prints the token the CLI would send (`YONEDA_TOKEN` when set, else your login's) on stdout and nowhere else; nothing is sent to the platform. So that a token does not land in a terminal's scrollback or a screen share, it prints only into a pipe, a file or `$(…)`; to see it in the terminal, pass `--show`. It has no `--json` form.
+
+For an agent that should not hold your whole login, create a narrower personal access token in **Settings** instead; see [Tokens and access](/docs/guides/tokens).
 
 ## Which repository
 
@@ -73,7 +94,10 @@ Add `--json` to any command except `help`, `push` and `hook` to get one JSON doc
 
 | Symptom | What to do |
 |---|---|
-| `git: 'remote-yoneda' is not a git command` | `~/.cargo/bin` is not on your `PATH`; add it and open a new shell |
+| `git: 'remote-yoneda' is not a git command` | `~/.local/bin` (or your `YONEDA_INSTALL_DIR`) is not on your `PATH`; add it and open a new shell |
+| `checksum mismatch` while installing | The download was changed or cut off; nothing was installed. Run the command again |
+| `no prebuilt yoneda for …` | Your system is not one of the four builds; use stock Git, the web app and MCP |
+| `refusing to print a token to the terminal` | `yoneda auth token` prints into a pipe; add `--show` to see it |
 | `yoneda login` cannot open a browser | Use `yoneda login --no-browser` and open the printed link yourself |
 | A command answers 401 | The token expired or was revoked: run `yoneda login` again, or check `YONEDA_TOKEN` |
 | A command asks for `--repo` | You are outside a `yoneda::` clone; pass `--repo <id>` |

@@ -4,10 +4,10 @@ How agents and other clients reach the source platform (`api.dev.yonedarepo.com`
 
 ## Platform quick start
 
-1. Install the CLI (it also installs the `git-remote-yoneda` helper):
+1. Install the CLI (it also installs the `git-remote-yoneda` helper) from the site, which serves prebuilt macOS and Linux binaries checked against the release's SHA256SUMS (`https://dev.yonedarepo.com/install.sh` for dev); or from a checkout, `cargo install --path backend/crates/yoneda-cli`:
 
    ```sh
-   cargo install --path backend/crates/yoneda-cli
+   curl -fsSL https://yonedarepo.com/install.sh | sh
    ```
 
 2. Sign in: `yoneda login --origin https://api.dev.yonedarepo.com`. The CLI prints a code and opens `https://dev.yonedarepo.com/device`. Approve the code there with the scopes, expiry and repositories you choose. The CLI stores the resulting personal access token in `~/.config/yoneda/credentials` (mode 0600). `YONEDA_TOKEN` overrides it.
@@ -57,7 +57,7 @@ The platform tools dispatch through the same operation table as REST and the per
 
 | Client | Install |
 |---|---|
-| Claude Code | `/plugin marketplace add YonedaAI/yonedarepo`, then `/plugin install yoneda@yoneda`. `yoneda setup claude` prints these two commands and writes the project's `.mcp.json`. |
+| Claude Code | `/plugin marketplace add https://yonedarepo.com/downloads/claude/marketplace.json`, then `/plugin install yoneda@yonedarepo` (the public marketplace the site serves: no Git host account needed; Claude Code 2.1.224 or later). `yoneda setup claude` prints these two commands for its origin's site and writes the project's `.mcp.json`. Inside this repository, `.claude-plugin/marketplace.json` also works as a Git marketplace (`yoneda@yoneda`). |
 | Codex | `yoneda setup codex`: the skill (`plugins/codex/skills/yoneda/SKILL.md`) into `~/.agents/skills/yoneda/`, and `[mcp_servers.yoneda]` in `~/.codex/config.toml` (`$CODEX_HOME` moves the config) |
 | Gemini CLI | `yoneda setup gemini`: `plugins/gemini/` into `~/.gemini/extensions/yoneda/` with its MCP URL set to `--origin`, and the server in `~/.gemini/settings.json` |
 
@@ -69,7 +69,7 @@ The Claude Code plugin (`plugins/yoneda/`) adds:
 - the account MCP, with `Authorization: Bearer ${YONEDA_TOKEN}` read from the environment
 - a SessionStart hook that runs `yoneda status --brief`, only in checkouts with a `yoneda::` remote
 
-Set `YONEDA_TOKEN` before starting Claude Code. For production, also set `YONEDA_MCP_URL=https://api.yonedarepo.com/api/v1/mcp`.
+Set `YONEDA_TOKEN` before starting Claude Code (`export YONEDA_TOKEN=$(yoneda auth token)` reuses the CLI's login). The plugin's MCP is production by default; for dev, also set `YONEDA_MCP_URL=https://api.dev.yonedarepo.com/api/v1/mcp`.
 
 Without the plugin, use this `.mcp.json` (or the Codex block, appended to `~/.codex/config.toml`):
 
