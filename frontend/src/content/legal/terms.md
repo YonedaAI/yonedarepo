@@ -1,6 +1,5 @@
 ---
 title: Terms of Service
-status: Draft, pending legal review
 summary: The agreement between you and {{legalName}} for using YonedaRepo.
 ---
 
@@ -51,7 +50,7 @@ You can connect YonedaRepo to other services: sign-in with GitHub or Google, web
 
 ## Copyright complaints
 
-If you believe content on YonedaRepo infringes your copyright, send a notice to legal@yonedarepo.com, or by post to {{legalName}}, {{postalAddress}}. Include:
+If you believe content on YonedaRepo infringes your copyright, email a notice to [legal@yonedarepo.com](mailto:legal@yonedarepo.com). This address is how we receive copyright notices; we do not take them by post. Include:
 
 - your contact details and your physical or electronic signature;
 - the work you believe is infringed;
@@ -59,7 +58,7 @@ If you believe content on YonedaRepo infringes your copyright, send a notice to 
 - a statement that you believe in good faith the use is not authorized;
 - a statement, under penalty of perjury, that your notice is accurate and that you own the right or act for its owner.
 
-We may remove or disable the content and tell its owner, who can send a counter-notice to the same address with the same details about the removed content. We close the accounts of repeat infringers.
+We may remove or disable the content and tell its owner. The owner can email a counter-notice to the same address: identify the removed content, state under penalty of perjury that it was removed by mistake or misidentification, and give their contact details and signature. We close the accounts of repeat infringers.
 
 ## Our intellectual property
 
@@ -107,4 +106,4 @@ These terms and the Privacy Policy are the whole agreement between you and us ab
 
 ## Contact
 
-Questions about these terms go to [legal@yonedarepo.com](mailto:legal@yonedarepo.com), or by post to {{legalName}}, {{postalAddress}}.
+Questions about these terms, and legal notices, go to [legal@yonedarepo.com](mailto:legal@yonedarepo.com).
