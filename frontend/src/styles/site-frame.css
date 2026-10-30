@@ -10,6 +10,14 @@
 .site-main-flush {
   padding: 0;
 }
+/* Running text keeps a readable measure however wide the frame grows; product mocks, grid
+   cells (whose borders form the grid) and the comparison's bars keep their full width. */
+.site-main :where(p, li, dd) {
+  max-width: var(--site-measure);
+}
+.site-main :where(.site-mock, .site-mock *, .site-cells > li, .site-bar dd) {
+  max-width: none;
+}
 .site-main a:not([class]) {
   color: var(--site-muted);
   text-decoration: underline;
