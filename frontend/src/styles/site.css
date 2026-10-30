@@ -184,7 +184,7 @@
   align-items: center;
   gap: 24px;
 }
-.site-sections ul {
+.site-nav-list {
   display: flex;
   gap: 4px;
   margin: 0;

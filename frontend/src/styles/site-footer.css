@@ -1,5 +1,5 @@
-/* The public site's footer: inside the frame, four link columns and a faint wordmark, then
-   the live status pill and the copyright line. */
+/* The public site's footer: inside the frame, four equal link columns across its width and a
+   small faint wordmark, then the live status and the copyright line. */
 .site-footer {
   border-top: 1px solid var(--site-line);
   color: var(--site-muted);
@@ -18,9 +18,10 @@
   gap: var(--sp-6);
 }
 .site-footer-columns {
+  flex: 1;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, max-content));
-  gap: var(--sp-5) 56px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--sp-5) var(--sp-6);
 }
 .site-footer-heading {
   margin: 0 0 var(--sp-3);
@@ -29,7 +30,7 @@
 }
 .site-footer-columns ul {
   display: grid;
-  gap: var(--sp-2);
+  gap: var(--sp-3);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -37,24 +38,23 @@
 .site-footer-columns a:hover {
   color: var(--site-text);
 }
-/* Our own mark and name, large and barely there. */
+/* Our own mark and name, small and faint, at the top right. */
 .site-footer-mark {
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-3);
+  gap: var(--sp-2);
   color: var(--site-text);
-  opacity: 0.1;
+  opacity: 0.35;
   font-family: var(--font-display);
   font-weight: 600;
-  font-size: 56px;
-  letter-spacing: -0.03em;
+  font-size: var(--fs-md);
   line-height: 1;
   white-space: nowrap;
   user-select: none;
 }
 .site-footer-mark svg {
-  width: 48px;
-  height: 48px;
+  width: 18px;
+  height: 18px;
 }
 .site-footer-bottom {
   display: flex;
@@ -70,9 +70,6 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sp-2);
-  padding: 2px var(--sp-3);
-  border: 1px solid var(--site-line-strong);
-  border-radius: 999px;
 }
 .site-status-dot {
   width: 8px;
@@ -84,12 +81,10 @@
   background: var(--site-warn);
 }
 
-@media (max-width: 1000px) {
+@media (max-width: 800px) {
   .site-footer-mark {
     display: none;
   }
-}
-@media (max-width: 800px) {
   .site-footer-columns {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     width: 100%;
