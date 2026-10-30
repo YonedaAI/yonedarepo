@@ -175,7 +175,7 @@ export function shardOutboxes(env: Env, repo: string): Promise<Json[]> {
   if (!env.COMMIT_SHARDS) return Promise.resolve([]);
   return Promise.all(
     Array.from({ length: SHARDS }, (_, shard) =>
-      shardCall(env, repo, shard, { op: 'store_status' }),
+      timed('shard.status', () => shardCall(env, repo, shard, { op: 'store_status' })),
     ),
   );
 }
