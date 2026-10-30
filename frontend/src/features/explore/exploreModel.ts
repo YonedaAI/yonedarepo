@@ -1,16 +1,23 @@
 // Explore: every public repository, newest first (`GET /explore`, no account needed), read a
 // page at a time. The next page starts strictly before the oldest repository shown.
+import { accountName, HIDDEN_ACCOUNT } from '../source-platform/people';
+
 export const EXPLORE_PAGE = 50;
 
 export type ExploreRepo = {
   id: string;
   name: string;
-  owner: string;
+  /** The owner's handle; null while an email-named owner has none (its address is never sent). */
+  owner: string | null;
   /** The owner's handle; null while an email-named owner has none. */
   owner_handle?: string | null;
   created_at: number;
   visibility: 'public';
 };
+
+/** Who owns a listed repository, as anyone may read it: never an email address. */
+export const ownerName = (repo: ExploreRepo) =>
+  repo.owner_handle ?? (repo.owner ? accountName(repo.owner) : HIDDEN_ACCOUNT);
 
 export const explorePath = (before?: number) =>
   before === undefined
