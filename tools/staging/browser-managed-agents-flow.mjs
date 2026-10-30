@@ -45,7 +45,7 @@ export async function managedAgentPages(page, { repo: { name }, shot }, m) {
   await see(page.getByRole('heading', { name: 'New agent', level: 1 }), 'the New agent page');
   await see(page.getByText(/billing/i).first(), 'the billing notice on New agent');
 
-  await page.goto(new URL('/settings', page.url()).toString());
+  await page.goto(new URL('/settings/billing', page.url()).toString());
   const billing = page.getByRole('region', { name: 'Billing' });
   await see(billing, 'Settings → Billing');
   await see(billing.getByText('No card on file.'), 'the payment method placeholder');

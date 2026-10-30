@@ -173,7 +173,7 @@ export async function orgPages(page, { account, member, shot, cleanup }, m) {
     const done = await account.raw('DELETE', `/api/v1/orgs/${org}?confirm=${org}`);
     assert.ok(done.ok, `Delete org: ${done.status} ${done.body?.error?.code ?? ''}`);
   });
-  await accountSettings(page);
+  await accountSettings(page, 'Organizations');
   const orgs = page.getByRole('region', { name: 'Organizations', exact: true });
   await orgs.getByLabel('New organization').fill(org);
   await orgs.getByRole('button', { name: 'Create organization' }).click();
