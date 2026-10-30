@@ -4,12 +4,13 @@ import {
   encodeAccountIdentifier,
   normalizeAccountIdentifier,
 } from '../../shared/account';
-import { accountCreated, contactEmail, emailRoute } from './account-email';
+import { accountCreated, emailRoute } from './account-email';
+import { accountFor, signUpWithEmail, signupEmail } from './email-accounts';
 import { error, readJson, response } from './http';
 import { unlink } from './oauth-identity';
 import { configuredProviders } from './oauth-providers';
 import { sha } from './storage';
-import type { Env, Principal } from './types';
+import type { Env, Json, Principal } from './types';
 import { workspace } from './workspace';
 
 const cookieName = 'yoneda_account';
@@ -111,28 +112,33 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
       )
         return error('RATE_LIMITED', 'Wait before trying again', 429);
       const body = await readJson(req);
-      const name = username(body.username);
+      // A new account signs up with an email address only; sign-in takes a name or an address.
+      const email = action === 'signup' ? signupEmail(body) : null;
       if (
         typeof body.password !== 'string' ||
         body.password.length > 128 ||
         (action !== 'login' && body.password.length < 12)
       )
         throw new Error('Use a password of 12–128 characters');
-      const email = action === 'signup' ? contactEmail(body.email) : null;
       const token = randomToken();
       const recovery = randomToken();
-      const command =
-        action === 'signup'
-          ? {
-              op: action,
-              username: name,
-              email,
-              password: body.password,
-              salt: randomToken(16),
-              session_hash: await sha(token),
-              recovery_hash: await sha(recovery),
-            }
-          : action === 'login'
+      let name: string;
+      let account: Json;
+      if (email) {
+        account = await signUpWithEmail(env, email, {
+          op: 'signup',
+          password: body.password,
+          salt: randomToken(16),
+          session_hash: await sha(token),
+          recovery_hash: await sha(recovery),
+        });
+        name = String(account.username);
+      } else {
+        name = await accountFor(env, username(body.username));
+        account = await workspace(
+          env,
+          name,
+          action === 'login'
             ? { op: action, password: body.password, session_hash: await sha(token) }
             : {
                 op: action,
@@ -140,8 +146,9 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
                 salt: randomToken(16),
                 recovery_hash: await sha(String(body.recovery_code ?? '')),
                 new_recovery_hash: await sha(recovery),
-              };
-      const account = await workspace(env, name, command);
+              },
+        );
+      }
       if (!account.authenticated)
         return error(
           'UNAUTHORIZED',

@@ -62,7 +62,7 @@ try {
     await sleep(300);
   }
   const name = `bench_${Date.now().toString(36)}`;
-  const signup = await fetch(`${origin}/api/auth/signup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ username: name, email: `${name}@example.invalid`, password: 'local clone bench password' }) });
+  const signup = await fetch(`${origin}/api/auth/signup`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: `${name}@example.invalid`, password: 'local clone bench password' }) });
   const cookie = (signup.headers.get('set-cookie') ?? '').split(';')[0];
   const api = async (path, body) => {
     const r = await fetch(`${origin}/api/v1${path}`, { method: 'POST', headers: { 'content-type': 'application/json', cookie }, body: JSON.stringify(body) });

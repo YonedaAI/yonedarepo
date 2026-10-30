@@ -118,15 +118,15 @@ export function AccountPanel({
           setBusy(true);
           setError('');
           try {
-            const identifier = data.get('username');
-            if (typeof identifier !== 'string' || !isValidAccountIdentifier(identifier))
-              throw new Error('Enter a valid username or email address.');
-            const email = data.get('email');
-            if (
-              mode === 'signup' &&
-              (typeof email !== 'string' || !normalizeAccountIdentifier(email)?.includes('@'))
-            )
-              throw new Error('Enter a valid email address.');
+            if (mode === 'signup') {
+              const email = data.get('email');
+              if (typeof email !== 'string' || !normalizeAccountIdentifier(email)?.includes('@'))
+                throw new Error('Enter a valid email address.');
+            } else {
+              const identifier = data.get('username');
+              if (typeof identifier !== 'string' || !isValidAccountIdentifier(identifier))
+                throw new Error('Enter a valid username or email address.');
+            }
             const result = await api<{ recovery_code?: string }>(
               `auth/${mode}`,
               Object.fromEntries(data),
@@ -143,26 +143,7 @@ export function AccountPanel({
           }
         }}
       >
-        <label>
-          Username or email
-          <input
-            name="username"
-            required
-            autoComplete="username"
-            maxLength={MAX_ACCOUNT_IDENTIFIER_LENGTH}
-            autoCapitalize="none"
-            autoCorrect="off"
-            spellCheck={false}
-            aria-describedby={identifierHelp}
-            placeholder="your_name or you@example.com"
-          />
-        </label>
-        <p id={identifierHelp}>
-          {mode === 'signup'
-            ? 'Choose a username or use your email address.'
-            : 'Enter the username or email you registered with.'}
-        </p>
-        {mode === 'signup' && (
+        {mode === 'signup' ? (
           <>
             <label>
               Email
@@ -179,7 +160,29 @@ export function AccountPanel({
                 placeholder="you@example.com"
               />
             </label>
-            <p id={emailHelp}>We send one welcome email here. It is never shown to others.</p>
+            <p id={emailHelp} className="field-help">
+              Kept private. Your public name comes from the part before the @.
+            </p>
+          </>
+        ) : (
+          <>
+            <label>
+              Username or email
+              <input
+                name="username"
+                required
+                autoComplete="username"
+                maxLength={MAX_ACCOUNT_IDENTIFIER_LENGTH}
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                aria-describedby={identifierHelp}
+                placeholder="your_name or you@example.com"
+              />
+            </label>
+            <p id={identifierHelp} className="field-help">
+              The username or email you signed up with.
+            </p>
           </>
         )}
         {mode === 'recover' && (
@@ -199,7 +202,9 @@ export function AccountPanel({
             autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
           />
         </label>
-        {mode !== 'login' && <p>Use at least 12 characters. You will receive a recovery code.</p>}
+        {mode !== 'login' && (
+          <p className="field-help">At least 12 characters. You get a recovery code next.</p>
+        )}
         {error && <p role="alert">{error}</p>}
         <button disabled={busy || pending !== null} type="submit">
           {busy

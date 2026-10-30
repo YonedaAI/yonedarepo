@@ -10,7 +10,7 @@ This policy covers YonedaRepo, the source platform at yonedarepo.com operated by
 
 ### Your account
 
-- **User name.** You may use an email address as your user name.
+- **Email address and user name.** You sign up with an email address. Your public user name is made from the part before the `@`; the address itself is private and used only to sign you in and to send the welcome email. To stop two accounts claiming the same address, we keep a SHA-256 digest of it. Accounts made earlier may use a chosen user name, or an email address as their user name.
 - **Password**, stored only as an Argon2id hash with a per-account salt. We never store the password itself.
 - **Recovery code**, stored only as a hash. It is shown to you once.
 - **Signed-in sessions**, stored by a hash of the session cookie, with an expiry. Older sessions are removed when you sign in from many places.

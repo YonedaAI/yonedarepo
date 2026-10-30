@@ -1,5 +1,6 @@
-// The account form: sign-up asks for a contact email (the welcome email's address); sign-in
-// does not.
+// The account form: sign-up asks for an email address and a password only (the platform
+// names the account from the address and keeps the address private); sign-in takes an
+// existing username or email address.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -15,7 +16,16 @@ describe('account form', () => {
       expect(input).toContain(attribute);
   });
 
-  it('does not ask for one to sign in', () => {
-    expect(render('login')).not.toContain('name="email"');
+  it('asks for exactly an email address and a password to create an account', () => {
+    const names = [...render('signup').matchAll(/<input[^>]*name="([^"]+)"/g)].map((m) => m[1]);
+    expect(names).toEqual(['email', 'password']);
+    expect(render('signup')).not.toContain('Username');
+  });
+
+  it('signs in with a username or an email address, and does not ask for a second email', () => {
+    const html = render('login');
+    const names = [...html.matchAll(/<input[^>]*name="([^"]+)"/g)].map((m) => m[1]);
+    expect(names).toEqual(['username', 'password']);
+    expect(html).toContain('Username or email');
   });
 });
