@@ -112,34 +112,41 @@ export function SiteLayout({
           </div>
         </nav>
       </header>
-      <main id="site-main" className="site-main">
+      {/* The home page's bands run flush to the frame; other pages keep the gutter. */}
+      <main
+        id="site-main"
+        className={page.page === 'home' ? 'site-main site-main-flush' : 'site-main'}
+      >
         {children}
       </main>
       <footer className="site-footer">
-        <nav aria-label="Footer">
-          <ul>
-            {SITE_NAV.map((item) => (
-              <li key={item.label}>
-                <a {...siteLink(item.page, go)}>{item.label}</a>
+        <div className="site-footer-inner">
+          <nav aria-label="Footer">
+            <ul>
+              {SITE_NAV.map((item) => (
+                <li key={item.label}>
+                  <a {...siteLink(item.page, go)}>{item.label}</a>
+                </li>
+              ))}
+              <li>
+                <a {...siteLink({ page: 'vision' }, go)}>Vision</a>
               </li>
-            ))}
-            <li>
-              <a {...siteLink({ page: 'vision' }, go)}>Vision</a>
-            </li>
-            <li>
-              <a {...linkTo({ view: 'explore' }, go)}>Explore public repositories</a>
-            </li>
-            <li>
-              <a {...siteLink({ page: 'legal', doc: 'terms' }, go)}>Terms</a>
-            </li>
-            <li>
-              <a {...siteLink({ page: 'legal', doc: 'privacy' }, go)}>Privacy</a>
-            </li>
-          </ul>
-        </nav>
-        <p>
-          © {new Date().getFullYear()} Yoneda Labs. YonedaRepo is a Git-compatible source platform.
-        </p>
+              <li>
+                <a {...linkTo({ view: 'explore' }, go)}>Explore public repositories</a>
+              </li>
+              <li>
+                <a {...siteLink({ page: 'legal', doc: 'terms' }, go)}>Terms</a>
+              </li>
+              <li>
+                <a {...siteLink({ page: 'legal', doc: 'privacy' }, go)}>Privacy</a>
+              </li>
+            </ul>
+          </nav>
+          <p>
+            © {new Date().getFullYear()} Yoneda Labs. YonedaRepo is a Git-compatible source
+            platform.
+          </p>
+        </div>
       </footer>
     </div>
   );

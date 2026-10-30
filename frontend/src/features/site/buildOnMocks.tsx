@@ -1,6 +1,6 @@
-// The tour's own mocks: the transaction log, the network, a lazy clone, check runs, the review
-// agents' report, and session and context views with neutral sample names (the home page
-// names no other product).
+// The hero visual and the tour's own mocks: the transaction log, the network, a lazy clone,
+// check runs, the review agents' report, and session and context views with neutral sample
+// names (the home page names no other product).
 import {
   Bot,
   Check,
@@ -223,4 +223,19 @@ export const memoryMock = (
     {sessionsMock}
     {contextMock}
   </div>
+);
+
+/** The hero's visual: three writers push to main at once and each one lands. */
+export const heroMock = (
+  <Terminal
+    label="Three writers push to main at once, and each push lands"
+    lines={[
+      ['in', 'git push origin main   # writer-07'],
+      ['out', 'remote: main: landed with server merge, run git pull'],
+      ['in', 'git push origin main   # writer-31'],
+      ['out', 'remote: main: landed with server merge, run git pull'],
+      ['in', 'git push origin main   # writer-12'],
+      ['out', 'remote: main: landed with server merge, run git pull'],
+    ]}
+  />
 );
