@@ -613,7 +613,8 @@
         "into the Analytics Engine dataset yonedarepo_prod_site_events (created on first write; infra plan/prune do not track it;",
         "underscores, not hyphens: the dataset is a table name in Analytics Engine SQL).",
         "No IP, cookie or visitor id; signed-in requests (session cookie), /api, /auth and assets are skipped.",
-        "WEB_ANALYTICS_TOKEN: the Cloudflare Web Analytics site token; set, the front Worker adds the beacon to public pages; empty, none."
+        "WEB_ANALYTICS_TOKEN: the Cloudflare Web Analytics site token; set, the front Worker adds the beacon to public pages; empty, none.",
+        "SEO_INDEXING=on lets search engines index the site: robots.txt allows it, sitemap.xml lists it and HTML has no X-Robots-Tag (worker/seo-files.ts)."
       ],
       "secrets": [
         "OWNER_TOKEN"
@@ -666,7 +667,8 @@
         },
         "vars": {
           "PUBLIC_APP_ORIGIN": "{origin}",
-          "WEB_ANALYTICS_TOKEN": "fd30d727a0dc4d4c949dee535977d1b2"
+          "WEB_ANALYTICS_TOKEN": "fd30d727a0dc4d4c949dee535977d1b2",
+          "SEO_INDEXING": "on"
         },
         "services": [
           {

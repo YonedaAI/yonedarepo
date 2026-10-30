@@ -14,7 +14,7 @@ import { orgAccess } from './platform-org-access';
 import { orgsRoute } from './platform-orgs';
 import { sshKeyRoute } from './platform-ssh-keys';
 import { deviceApprove, deviceCode, deviceToken, tokenRoute } from './platform-tokens';
-import { forViewer } from './principal-privacy';
+import { forViewer } from './repo-principal-privacy';
 import { deleteRepository, listRepositories } from './repo-admin';
 import { agentRecords } from './repo-agent-records';
 import { breakGlass } from './repo-break-glass';

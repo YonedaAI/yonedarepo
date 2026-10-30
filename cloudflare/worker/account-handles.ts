@@ -6,7 +6,6 @@
 import { isReservedHandle, normalizeAccountIdentifier } from '../../shared/account';
 import { candidates } from './oauth-identity';
 import type { ProviderIdentity } from './oauth-providers';
-import { ownerOf } from './repo-paths';
 import type { Env, Json } from './types';
 import { workspace } from './workspace';
 
@@ -27,9 +26,17 @@ async function suggestion(env: Env, account: string): Promise<string | null> {
   const github = (identities as Json[]).find((i) => i.provider === 'github');
   if (!github?.login) return null;
   const tried = candidates({ provider: 'github', login: github.login } as ProviderIdentity);
-  for (const name of tried.slice(0, 3)) if (!(await ownerOf(env, name))) return name;
+  for (const name of tried.slice(0, 3)) if (!(await held(env, name))) return name;
   return null;
 }
+
+/** Whether `name` is a handle someone holds (repo-paths' ownerOf, asked directly so the front
+ * Worker, which serves sign-in, never imports the platform's repo modules). */
+const held = (env: Env, name: string) =>
+  workspace(env, name, { op: 'handle_lookup' }).then(
+    () => true,
+    (e) => (e?.code === 'NOT_FOUND' ? false : Promise.reject(e)),
+  );
 
 /** `PUT /api/auth/handle {handle}` for an email-named account: HANDLE_INVALID,
  * HANDLE_RESERVED, HANDLE_TAKEN, or HANDLE_FIXED for an account named by its handle. */

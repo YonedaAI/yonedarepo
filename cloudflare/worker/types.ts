@@ -103,6 +103,8 @@ export interface Env {
   CF_ACCOUNT_ID?: string;
   SITE_EVENTS_DATASET?: string;
   ANALYTICS_READ_TOKEN?: string;
+  /** `on` lets search engines index this environment (production only; seo-files.ts). */
+  SEO_INDEXING?: string;
   /** This Worker itself (service binding); the SSH gateway's container reaches the
    * platform through it (platform-ssh-gateway.ts). */
   SELF?: Fetcher;

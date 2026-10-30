@@ -21,6 +21,10 @@ const neutral = new Set([
   './hmac',
   // The account authority's command call (accounts, personal tokens); imports only types.
   './workspace',
+  // Picture URLs by handle and the account's avatar op; imports only shared, types, workspace.
+  './avatars',
+  // The readable repository addresses both Workers route; imports nothing.
+  './readable-paths',
   // Account identifier rules (yoneda-core::account's transport counterpart); imports nothing.
   '../../shared/account',
   '../../backend/crates/yoneda-worker/build/worker/shim.mjs',

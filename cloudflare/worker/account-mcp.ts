@@ -5,7 +5,7 @@
 // each with the caller's own credentials (session, personal access token or repository
 // token), so scopes and allowlists are enforced exactly where they are for REST.
 import platformTools from '../../backend/crates/yoneda-core/src/platform_tools.json';
-import { forViewer } from './principal-privacy';
+import { forViewer } from './repo-principal-privacy';
 import { operation, serveMcp } from './repo-mcp';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import type { Env } from './types';

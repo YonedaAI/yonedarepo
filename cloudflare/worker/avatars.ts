@@ -4,7 +4,6 @@
 // (platform-avatars.ts serves it). Public URLs name the handle, never the account
 // identifier: an email-named account's picture is reached by the handle it picked.
 import { normalizeHandle } from '../../shared/account';
-import type { HandleOwner } from './repo-paths';
 import type { Env } from './types';
 import { workspace } from './workspace';
 
@@ -23,8 +22,12 @@ export function publicAvatarUrl(handle: string, info: AvatarInfo | null) {
   return `/api/v1/avatars/${handle}?v=${info.version}`;
 }
 
-/** A profile's picture URL: a person's by handle; an organization has none. */
-export async function profileAvatarUrl(env: Env, owner: HandleOwner) {
+/** A profile's picture URL: a person's by handle; an organization has none. The owner is
+ * repo-paths' HandleOwner, typed here by shape so the front Worker never imports repo-paths. */
+export async function profileAvatarUrl(
+  env: Env,
+  owner: { kind: 'user' | 'org' | 'alias'; account: string; handle: string },
+) {
   if (owner.kind === 'org') return null;
   const info = await avatarInfo(env, owner.account).catch(() => null);
   return publicAvatarUrl(owner.handle, info);
