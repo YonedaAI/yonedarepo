@@ -200,7 +200,7 @@ fn an_unknown_account_or_an_organization_has_no_picture_to_serve() {
 }
 
 #[test]
-fn the_avatar_migration_is_fresh_repeatable_and_upgrades_a_version_seven_store() {
+fn the_avatar_migration_is_fresh_repeatable_and_upgrades_a_version_eight_store() {
     // Fresh: a new store migrates to the latest version; repeating is a no-op.
     let fresh = NativeStore::memory().unwrap();
     github_signup(&fresh, json!(GITHUB_AVATAR));
@@ -213,9 +213,9 @@ fn the_avatar_migration_is_fresh_repeatable_and_upgrades_a_version_seven_store()
         .unwrap()
         .len()
     };
-    assert_eq!(versions(&fresh), 8);
+    assert_eq!(versions(&fresh), 9);
 
-    // Upgrade: a version-7 store with an identity keeps it, with no picture yet.
+    // Upgrade: a version-8 store with an identity keeps it, with no picture yet.
     let db = NativeStore::memory().unwrap();
     db.query(
         "CREATE TABLE workspace_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)",
@@ -230,6 +230,7 @@ fn the_avatar_migration_is_fresh_repeatable_and_upgrades_a_version_seven_store()
         include_str!("migrations/0005_ssh_keys.sql"),
         include_str!("migrations/0006_token_origin.sql"),
         include_str!("migrations/0007_identities.sql"),
+        include_str!("migrations/0008_handles_repo_names.sql"),
     ];
     for (version, sql) in previous.iter().enumerate() {
         for statement in sql.split(';').filter(|s| !s.trim().is_empty()) {
@@ -257,7 +258,7 @@ fn the_avatar_migration_is_fresh_repeatable_and_upgrades_a_version_seven_store()
     )
     .unwrap();
     assert_eq!(get(&db), json!({"source":null,"version":null}));
-    assert_eq!(versions(&db), 8);
+    assert_eq!(versions(&db), 9);
     // The next sign-in brings the picture.
     at(
         &db,
@@ -267,5 +268,5 @@ fn the_avatar_migration_is_fresh_repeatable_and_upgrades_a_version_seven_store()
     .unwrap();
     assert_eq!(serve(&db), json!({"provider_url": GITHUB_AVATAR}));
     get(&db);
-    assert_eq!(versions(&db), 8);
+    assert_eq!(versions(&db), 9);
 }

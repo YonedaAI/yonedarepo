@@ -1,12 +1,15 @@
-// Account pictures on the platform API. `GET /api/v1/avatars/<name>` (public) and
+// Account pictures on the platform API. `GET /api/v1/avatars/<handle>` (public; the handle
+// resolves to its account, an email-named one's alias included) and
 // `GET /api/v1/account/avatar` (the signed-in person's own) serve an upload's bytes from R2
 // with the type the account authority recorded and `nosniff`, or redirect to the
 // provider's picture on its own image host; the platform never fetches one.
 // `PUT /api/v1/account/avatar` uploads (PNG, JPEG or WebP, at most 1 MiB: the authority
 // types it by its leading bytes) and `DELETE` removes it, falling back to the provider's.
-import { type AvatarInfo, isPublicHandle, ownAvatarUrl } from './avatars';
+import { normalizeHandle } from '../../shared/account';
+import { type AvatarInfo, ownAvatarUrl } from './avatars';
 import { error, response } from './http';
 import { ApiError, type Credentials, type Json } from './repo-ops';
+import { ownerOf } from './repo-paths';
 import type { Env } from './types';
 import { workspace } from './workspace';
 
@@ -16,7 +19,8 @@ const OWN = '/api/v1/account/avatar';
 /** Pictures change rarely and their URLs carry a version; five minutes bounds a stale one. */
 const MAX_AGE = 300;
 
-/** The account a public picture URL names, or undefined when it is not one. */
+/** The handle a public picture URL names: null when it is not a valid handle (an address
+ * never is), undefined when the URL is not a public picture's. */
 export function publicAvatarName(url: URL): string | null | undefined {
   const match = PUBLIC.exec(url.pathname);
   if (!match) return undefined;
@@ -26,16 +30,17 @@ export function publicAvatarName(url: URL): string | null | undefined {
   } catch {
     return null;
   }
-  return isPublicHandle(name) ? name : null;
+  return normalizeHandle(name) === name ? name : null;
 }
 
 export const isOwnAvatar = (url: URL) => url.pathname === OWN;
 
-/** `GET /api/v1/avatars/<name>`: anyone's picture; no picture, no account and an
- * email-named account all answer 404 alike. */
-export async function servePublicAvatar(env: Env, name: string | null): Promise<Response> {
-  if (!name) return none();
-  return serve(env, name, 'public');
+/** `GET /api/v1/avatars/<handle>`: a person's picture by handle; no handle, an organization
+ * and a person without a picture all answer 404 alike. */
+export async function servePublicAvatar(env: Env, handle: string | null): Promise<Response> {
+  const owner = handle ? await ownerOf(env, handle) : null;
+  if (!owner || owner.kind === 'org') return none();
+  return serve(env, owner.account, 'public');
 }
 
 /** `/api/v1/account/avatar` for a signed-in person: their picture, an upload or a removal. */

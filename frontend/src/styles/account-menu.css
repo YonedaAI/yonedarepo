@@ -200,6 +200,9 @@
 .avatar {
   position: relative;
   display: inline-grid;
+  width: var(--avatar-size, 20px);
+  height: var(--avatar-size, 20px);
+  font-size: calc(var(--avatar-size, 20px) * 0.42);
   place-items: center;
   flex: none;
   overflow: hidden;

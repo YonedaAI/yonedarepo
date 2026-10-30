@@ -1,13 +1,12 @@
 // A person's picture: their own (an upload, or their GitHub / Google picture) from the
-// platform, or the first letter of their name while it loads and when there is none. Only
-// a public account name has a picture URL: an email-named account's would carry the address.
-import { useState } from 'react';
-import { isCanonicalAccountIdentifier } from '../../../../shared/account';
+// platform, or the first letter of their name while it loads and when there is none. Pictures
+// are addressed by handle; an account address never is one, so it never reaches a URL.
+import { type CSSProperties, useState } from 'react';
+import { normalizeHandle } from '../../../../shared/account';
 
-/** The picture URL of an account name, or null when it has none to show. */
+/** The picture URL of a handle (an account's public name), or null: an address is no handle. */
 export function accountAvatar(name: string): string | null {
-  if (!name || name.includes('@') || !isCanonicalAccountIdentifier(name)) return null;
-  return `/api/v1/avatars/${name}`;
+  return name && normalizeHandle(name) === name ? `/api/v1/avatars/${name}` : null;
 }
 
 /** The picture URL of a principal: a person (`user:<name>`) only, never a token or agent. */
@@ -34,7 +33,8 @@ export function Avatar({
   return (
     <span
       className={`avatar ${className}`.trim()}
-      style={{ width: size, height: size, fontSize: Math.round(size * 0.42) }}
+      // A size a page's own class can still override (the profile's is smaller on a phone).
+      style={{ '--avatar-size': `${size}px` } as CSSProperties}
       aria-hidden="true"
     >
       {initialOf(name)}
