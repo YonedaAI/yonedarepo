@@ -124,9 +124,10 @@ pub(super) fn count<S: SqlStore>(db: &S, sql: &str, args: &[Value]) -> Result<i6
 fn create<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let name = org_name(&string(c, "org")?)?;
     let actor = yoneda_core::account::normalize_account_identifier(&string(c, "actor")?)?;
-    if get(db, "account").is_ok() {
-        return Err(Error::new("ALREADY_EXISTS", "That name is taken"));
-    }
+    super::handles::name_free(db, &name).map_err(|e| match e.code.as_str() {
+        "ALREADY_EXISTS" => Error::new("ALREADY_EXISTS", "That name is taken"),
+        _ => e,
+    })?;
     put(
         db,
         "account",

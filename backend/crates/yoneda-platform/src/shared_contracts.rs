@@ -3,7 +3,9 @@
 //! types and the schema itself); a test there fails while a committed file is stale.
 use crate::repo_store::{change_gates::ChangeGates, policy::Policy, status::RepoStatus};
 use serde_json::{Value, json};
-use yoneda_core::account::{ACCOUNT_IDENTIFIER_HELP, MAX_ACCOUNT_IDENTIFIER_BYTES};
+use yoneda_core::account::{
+    ACCOUNT_IDENTIFIER_HELP, MAX_ACCOUNT_IDENTIFIER_BYTES, RESERVED_HANDLES,
+};
 
 /// Every shared contract: (file name, JSON Schema). A root schema's `title` names its type.
 pub fn schemas() -> Vec<(&'static str, Value)> {
@@ -12,6 +14,7 @@ pub fn schemas() -> Vec<(&'static str, Value)> {
         ("repo-status", response::<RepoStatus>()),
         ("policy", request::<Policy>()),
         ("change-gates", response::<ChangeGates>()),
+        ("reserved-handles", reserved_handles()),
     ]
 }
 
@@ -43,5 +46,17 @@ fn account_identifier() -> Value {
         "description": ACCOUNT_IDENTIFIER_HELP,
         "type": "string",
         "maxLength": MAX_ACCOUNT_IDENTIFIER_BYTES,
+    })
+}
+
+/// The names no handle (account, org) may take: top-level paths of the site and the app
+/// (`yoneda_core::account::RESERVED_HANDLES`).
+fn reserved_handles() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "ReservedHandle",
+        "description": "A name reserved for the website's own pages: no handle may take it",
+        "type": "string",
+        "enum": RESERVED_HANDLES,
     })
 }

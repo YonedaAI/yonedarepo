@@ -289,13 +289,13 @@ fn the_org_migration_upgrades_a_version_two_store_and_keeps_its_tokens() {
             &[],
         )
         .unwrap();
-    assert_eq!(versions.len(), 7);
+    assert_eq!(versions.len(), 8);
     // Repeat application changes nothing.
     ok(&old, json!({"op":"org_hint_add","org":"acme"}));
     assert_eq!(
         old.query("SELECT COUNT(*) AS n FROM workspace_migrations", &[])
             .unwrap()[0]["n"],
-        7
+        8
     );
 }
 
