@@ -26,7 +26,6 @@ const { AgentsPage } = await import('./AgentsPage');
 const { AgentSettingsPage } = await import('./AgentSettingsPage');
 const { AgentRuns } = await import('./AgentRuns');
 const { RepoManagedAgents } = await import('./RepoManagedAgents');
-const { BillingSettings } = await import('../account-settings/BillingSettings');
 
 const repoA = 'r0000000000000000000a';
 const navigate = () => {};
