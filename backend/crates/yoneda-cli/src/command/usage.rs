@@ -21,6 +21,7 @@ account
   repo import <dir> [--name <name>] [--batch-files <n>]  files at HEAD (or a plain dir)
   repo fork <id> [--name <name>] [--owner <org>]         a fork on your account or org (needs read)
   setup claude|codex|gemini|opencode                     a coding agent's skill or plugin and MCP config
+  ssh setup [--origin <url>]             this machine's key, ~/.ssh/config and a clone line, once
   ssh-key add [--title <t>] <file.pub|->  | ssh-key list | ssh-key rm <id>   keys for Git over SSH
 
 organizations (owners manage members and teams; a repository grants a team by

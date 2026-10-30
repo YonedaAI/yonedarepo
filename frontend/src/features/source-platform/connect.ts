@@ -9,9 +9,12 @@ export const PAT_SCOPES = [
   { scope: 'repo:land', label: 'Land', hint: 'move main' },
   { scope: 'repo:review', label: 'Review', hint: 'approve or reject' },
   { scope: 'repo:admin', label: 'Admin', hint: 'create, delete, tokens, policy' },
+  { scope: 'account:ssh-keys', label: 'SSH keys', hint: 'add and remove keys on your account' },
 ] as const;
 export type PatScope = (typeof PAT_SCOPES)[number]['scope'];
 export const DEFAULT_PAT_SCOPES: PatScope[] = ['repo:read', 'repo:write', 'repo:land'];
+/** A CLI login: the same, with what `yoneda ssh setup` needs. Hand-made tokens start without. */
+export const DEVICE_PAT_SCOPES: PatScope[] = [...DEFAULT_PAT_SCOPES, 'account:ssh-keys'];
 export const REPO_TOKEN_SCOPES = ['read', 'write', 'check', 'review', 'land'] as const;
 export const EXPIRY_DAYS = [1, 7, 30, 90] as const;
 export const DEFAULT_EXPIRY_DAYS = 30;
@@ -48,6 +51,18 @@ export const siteOrigin = (origin: string) => origin.replace(/^(https?:\/\/)api\
 /** Installs yoneda and git-remote-yoneda; one line, so Copy gives exactly what to run. */
 export const installCommand = (origin: string) =>
   `curl -fsSL ${siteOrigin(origin)}/install.sh | sh`;
+
+/** The same in PowerShell, on Windows. */
+export const windowsInstallCommand = (origin: string) =>
+  `irm ${siteOrigin(origin)}/install.ps1 | iex`;
+
+/** Which installer a visitor's machine takes, from the browser's user agent. */
+export type InstallOs = 'unix' | 'windows';
+export const installOs = (userAgent: string | undefined): InstallOs =>
+  userAgent?.includes('Windows') ? 'windows' : 'unix';
+
+/** This machine's key, `~/.ssh/config` entry and clone line, once. */
+export const SSH_SETUP_COMMAND = 'yoneda ssh setup';
 
 /** The public marketplace the site serves (no Git host account needed). */
 export const claudeMarketplaceCommand = (origin: string) =>

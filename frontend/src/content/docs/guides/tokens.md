@@ -9,14 +9,15 @@ summary: Personal access tokens, repository tokens, SSH keys and device login, a
 |---|---|---|---|
 | Personal access token | `ypat_` | Your account, within its scopes | **Settings → Personal access tokens**, or `yoneda login` |
 | Repository token | `yrp_` | One repository, optionally some paths | Repository **Settings → Repository tokens**, or `yoneda token create` |
-| SSH key | | Your account, for Git over SSH | **Settings → SSH keys**, or `yoneda ssh-key add` |
+| SSH key | | Your account, for Git over SSH | `yoneda ssh setup`, **Settings → SSH keys**, or `yoneda ssh-key add` |
 | Browser session | | Your account, in the web app | Signing in |
 
 The server keeps only a hash of each token and checks it on every request. A token is shown once, when it is created. Revoking a token or removing an SSH key takes effect on the next request.
 
 ## Personal access tokens
 
-- **Scopes:** `repo:read`, `repo:write`, `repo:land`, `repo:review`, `repo:admin`.
+- **Scopes:** `repo:read`, `repo:write`, `repo:land`, `repo:review`, `repo:admin`, `account:ssh-keys`.
+- **`account:ssh-keys`** lists, adds and removes your SSH keys and reaches nothing else: alone, it opens no repository, token, organization or API route. `yoneda login` ticks it by default; the **Create token** form does not. An SSH key clones and pushes as your account, so adding one also needs `repo:read`, `repo:write` and `repo:land` (or `repo:admin`) on all repositories. `repo:admin` manages keys too.
 - **Expiry:** 1 to 90 days. The web app offers 1, 7, 30 or 90 days (default 30).
 - **Repositories:** all of yours, an allowlist of up to 100 repository ids, or one organization's.
 - Up to 50 live tokens per account.

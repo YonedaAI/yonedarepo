@@ -273,6 +273,9 @@ pub enum Command {
         origin: Option<String>,
         command: SshKeyCommand,
     },
+    SshSetup {
+        origin: Option<String>,
+    },
     Setup {
         agent: Agent,
         origin: Option<String>,

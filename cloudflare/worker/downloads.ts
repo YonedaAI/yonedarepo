@@ -1,10 +1,11 @@
-// The site's public downloads: /install.sh (frontend/public/install.sh, with this site's
-// origin filled in) and /downloads/<key> from the DOWNLOADS bucket, which
+// The site's public downloads: /install.sh and /install.ps1 (frontend/public, with this
+// site's origin filled in) and /downloads/<key> from the DOWNLOADS bucket, which
 // `cargo xtask downloads` stages and uploads:
 //   cli/LATEST                         the latest release's version, one line
 //   cli/latest.json                    the same as a manifest: each target's archive, size, sha256
 //   cli/<version>/SHA256SUMS           sha256sum lines for the release's archives
 //   cli/<version>/yoneda-<version>-<target>.tar.gz   yoneda and git-remote-yoneda
+//   cli/<version>/yoneda-<version>-windows-*.zip     the same as .exe files
 //   claude/marketplace.json            the public Claude Code marketplace (no Git host needed)
 //   claude/yoneda-<version>.zip        the plugin it lists, pinned there by sha256
 // Only these two prefixes are served; LATEST and the two JSON files change between
@@ -54,18 +55,27 @@ export async function serveDownload(req: Request, env: Env): Promise<Response> {
   return new Response(req.method === 'HEAD' ? null : object.body, { headers });
 }
 
-/** /install.sh: the installer with this site (`origin`) as its download base. */
+/** The installers by path, with the type each is served as. */
+const INSTALLERS: Record<string, string> = {
+  '/install.sh': 'text/x-shellscript; charset=utf-8',
+  '/install.ps1': 'text/plain; charset=utf-8',
+};
+
+export const isInstaller = (pathname: string) => Object.hasOwn(INSTALLERS, pathname);
+
+/** An installer, with this site (`origin`) as its download base. */
 export async function serveInstallScript(
   req: Request,
   env: Env,
   origin: string | null,
 ): Promise<Response> {
-  const asset = await env.ASSETS.fetch(new URL('/install.sh', req.url));
+  const { pathname } = new URL(req.url);
+  const asset = await env.ASSETS.fetch(new URL(pathname, req.url));
   if (!origin || !asset.ok) return notFound('The installer is not published on this site');
   const script = (await asset.text()).replace('__YONEDA_SITE__', origin);
   return new Response(script, {
     headers: {
-      'content-type': 'text/x-shellscript; charset=utf-8',
+      'content-type': INSTALLERS[pathname],
       'cache-control': 'public, max-age=300',
       'x-content-type-options': 'nosniff',
     },

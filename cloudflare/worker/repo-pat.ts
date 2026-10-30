@@ -2,20 +2,14 @@
 // The account's WorkspaceAuthority holds each token's digest, scopes, allowlist and expiry
 // and is asked on every request (strict: no cache), through a D1 lookup from digest to
 // account. The SourceRepository maps the scopes (`_pat` credentials) onto its own.
+import type { PatScope } from '../../shared/contracts/pat-scopes';
 import { type OrgAccess, orgAccess } from './platform-org-access';
 import { ApiError, type Json } from './repo-ops';
 import { toBase64 } from './repo-stores';
 import type { Env } from './types';
 import { workspace } from './workspace';
 
-export const PAT_SCOPES = [
-  'repo:read',
-  'repo:write',
-  'repo:land',
-  'repo:review',
-  'repo:admin',
-] as const;
-export type PatScope = (typeof PAT_SCOPES)[number];
+export type { PatScope };
 /** A verified personal token, as the adapter passes it to the platform. */
 export type PatGrant = {
   workspace: string;
@@ -129,8 +123,22 @@ export async function revokePat(env: Env, account: string, id: string) {
 const isPat = (auth: unknown): auth is Pat =>
   typeof auth === 'object' && auth !== null && '_pat' in auth;
 
+/** Whether `auth` is a personal token holding `scope`. */
+export const patHolds = (auth: unknown, scope: PatScope) =>
+  isPat(auth) && auth._pat.scopes.includes(scope);
+
 /** Refuses a personal token without `scope`; other credentials pass (the authority decides). */
 export function requirePatScope(auth: unknown, scope: PatScope) {
-  if (isPat(auth) && !auth._pat.scopes.includes(scope))
+  if (isPat(auth) && !patHolds(auth, scope))
     throw new ApiError('FORBIDDEN', `Token lacks the ${scope} scope`);
+}
+
+const SSH_KEYS_PATH = /^\/api\/v1\/ssh-keys(\/|$)/;
+
+/** Refuses a token that holds no repository scope anywhere but its account's SSH keys. Some
+ * routes check no scope (a token's listing is its account's), so this is the closed default:
+ * such a token reaches no REST, MCP or Git path, a future one included. */
+export function refuseOutsideKeys(grant: PatGrant, pathname: string) {
+  if (!grant.scopes.some((s) => s.startsWith('repo:')) && !SSH_KEYS_PATH.test(pathname))
+    throw new ApiError('FORBIDDEN', 'This token only manages SSH keys');
 }

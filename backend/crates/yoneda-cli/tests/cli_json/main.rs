@@ -15,6 +15,9 @@ use std::process::{Command, Output, Stdio};
 
 type TestResult<T = ()> = Result<T, String>;
 
+/// `ssh-keygen -lf` of the fixture key in `work/id.pub`.
+const SSH_FINGERPRINT: &str = "+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU";
+
 fn schemas_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../schemas/v1")
 }
@@ -50,7 +53,7 @@ impl World {
         let dir = tempfile::tempdir().map_err(|e| e.to_string())?;
         let root = std::fs::canonicalize(dir.path()).map_err(|e| e.to_string())?;
         let origin = mock::start()?;
-        for sub in ["config", "home", "work", "clone/src"] {
+        for sub in ["config", "home/.ssh", "work", "clone/src", "bin"] {
             std::fs::create_dir_all(root.join(sub)).map_err(|e| e.to_string())?;
         }
         let clone = root.join("clone");
@@ -87,6 +90,29 @@ impl World {
         )
         .map_err(|e| e.to_string())?;
         std::fs::write(root.join("work/app.zip"), "zip").map_err(|e| e.to_string())?;
+        std::fs::copy(
+            root.join("work/id.pub"),
+            root.join("home/.ssh/id_ed25519.pub"),
+        )
+        .map_err(|e| e.to_string())?;
+        // `ssh setup` finds these first, never the real clipboard, tunnel or network.
+        for (name, script) in [
+            ("pbcopy", "cat >/dev/null"),
+            ("cloudflared", "exit 0"),
+            (
+                "ssh",
+                "echo \"Hi ci! You've successfully authenticated\" >&2; exit 1",
+            ),
+        ] {
+            let path = root.join("bin").join(name);
+            std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).map_err(|e| e.to_string())?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
+                    .map_err(|e| e.to_string())?;
+            }
+        }
         Ok(Self {
             _dir: dir,
             root,
@@ -96,10 +122,16 @@ impl World {
 
     /// Runs `yoneda args` in `dir` (`work` or `clone`) with `stdin`.
     fn run(&self, dir: &str, args: &[String], stdin: &str) -> TestResult<Output> {
+        let path = format!(
+            "{}:{}",
+            self.root.join("bin").display(),
+            std::env::var("PATH").unwrap_or_default()
+        );
         let mut child = Command::new(env!("CARGO_BIN_EXE_yoneda"))
             .args(args)
             .current_dir(self.root.join(dir))
             .env("HOME", self.root.join("home"))
+            .env("PATH", path)
             .env("XDG_CONFIG_HOME", self.root.join("config"))
             .env("YONEDA_TOKEN", "ydt_fixture")
             .env_remove("YONEDA_ORIGIN")
@@ -242,6 +274,18 @@ fn cases() -> Vec<Case> {
             "ssh-key add id.pub --title ci --origin {ORIGIN}",
             "ssh-key-add",
             "Added k1 SHA256:abc  ci\nThen: git clone ssh://git@ssh.example/<repository id>.git\n",
+        ),
+        case(
+            "ssh setup --origin {ORIGIN}",
+            "ssh-setup",
+            format!(
+                "Added SHA256:{SSH_FINGERPRINT} to your account\n\
+                 Routed ssh.example in {{TMP}}/home/.ssh/config\n\
+                 Your public key, copied to the clipboard with pbcopy:\n\
+                 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl ci@box\n\
+                 ssh -T git@ssh.example: Hi ci! You've successfully authenticated\n\
+                 Clone: git clone ssh://git@ssh.example/{REPO}.git demo\n"
+            ),
         ),
         case(
             "ssh-key list --origin {ORIGIN}",

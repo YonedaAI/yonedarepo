@@ -14,7 +14,7 @@ summary: How access is checked, what a push is checked for, how checks are sandb
 
 | Token | Prefix | Scope |
 |---|---|---|
-| Personal access token | `ypat_` | Your account: scopes `repo:read`, `repo:write`, `repo:land`, `repo:review`, `repo:admin`; all repositories, an allowlist or one organization; expires in 1 to 90 days |
+| Personal access token | `ypat_` | Your account: scopes `repo:read`, `repo:write`, `repo:land`, `repo:review`, `repo:admin`, `account:ssh-keys`; all repositories, an allowlist or one organization; expires in 1 to 90 days |
 | Repository token | `yrp_` | One repository, optionally some paths; scopes `read`, `write`, `check`, `review`, `land` |
 | SSH key | | Acts as its account over Git |
 

@@ -241,6 +241,15 @@ describe('device approval', () => {
     const empty = html(DevicePage, { code: '' });
     expect(empty).toMatch(/<button type="submit" disabled="">Approve/);
   });
+  it('ticks SSH keys for a CLI login and says plainly what it does', () => {
+    state.value = loaded({ data: { repos } });
+    const page = html(DevicePage, { code: 'BCDF-GHJK' });
+    expect(page).toMatch(
+      /checked=""\/>SSH keys<span[^>]*> \(add and remove keys on your account\)/,
+    );
+    expect(page).toMatch(/checked=""\/>Read/);
+    expect(page).toMatch(/type="checkbox"\/>Admin/);
+  });
   it('explains unknown and expired codes, and the outcome', () => {
     expect(deviceFailure(new SourceApiError('NOT_FOUND', 'x', 404))).toMatch(
       /unknown or was already used/,
