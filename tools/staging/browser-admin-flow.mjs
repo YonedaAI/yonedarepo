@@ -46,14 +46,15 @@ export async function adminPages(page, { api, account, repo: { id, name }, shot,
   cleanup.push(async () => {
     if (!orgDeleted) await account.raw('DELETE', `/api/v1/orgs/${org}?confirm=${org}`);
   });
-  await accountSettings(page);
-  const orgs = page.getByRole('region', { name: 'Organizations', exact: true });
-  await orgs.getByLabel('New organization').fill(org);
-  await orgs.getByRole('button', { name: 'Create organization' }).click();
-  await settle(page.getByRole('heading', { level: 1, name: org }), [orgs.getByRole('alert')], { timeoutMs: 30_000, what: 'creating the organization to delete' });
+  await accountSettings(page, 'Organizations');
+  await page.getByRole('button', { name: 'Create organization' }).click();
+  const createOrg = page.getByRole('dialog', { name: 'Create organization' });
+  await createOrg.getByLabel('Organization name').fill(org);
+  await createOrg.getByRole('button', { name: 'Create organization' }).click();
+  await settle(page.getByRole('heading', { level: 1, name: org }), [createOrg.getByRole('alert')], { timeoutMs: 30_000, what: 'creating the organization to delete' });
 
   // Personal access token, limited to the org: shown once, used, revoked from its row.
-  await accountSettings(page);
+  await accountSettings(page, 'Tokens');
   const pats = page.getByRole('region', { name: 'Personal access tokens', exact: true });
   const patForm = pats.getByRole('form', { name: 'Create a personal access token' });
   const patName = `kit-pat-${Date.now().toString(36)}`;
@@ -119,7 +120,7 @@ export async function adminPages(page, { api, account, repo: { id, name }, shot,
   await shot('org-delete');
   await confirm.click();
   await settle(page.getByRole('status').filter({ hasText: 'Organization deleted.' }), [danger.getByRole('alert')], { timeoutMs: 30_000, what: 'deleting the organization' });
-  await page.waitForURL('**/settings');
+  await page.waitForURL('**/settings/organizations');
   orgDeleted = true;
   assert.notEqual((await account.raw('GET', `/api/v1/orgs/${org}`)).status, 200, 'the deleted org is still served');
   // Org access is cached up to 1 s per isolate: past that, a reload must not list it.
@@ -130,7 +131,7 @@ export async function adminPages(page, { api, account, repo: { id, name }, shot,
   });
   await sleep(1_000);
   await page.reload();
-  await page.getByRole('heading', { level: 1, name: 'Settings' }).waitFor();
+  await page.getByRole('heading', { level: 1, name: 'Organizations', exact: true }).waitFor();
   assert.equal(await railOrg(page, org).count(), 0, `${org} is still in the sidebar`);
   await shot('org-deleted');
   m.org_deleted_in_ui = org;

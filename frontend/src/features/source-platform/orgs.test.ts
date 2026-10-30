@@ -18,7 +18,7 @@ const { memberTarget, orgNameProblem, ownerOptions, teamNameProblem, teamOf, add
 const { createBody } = await import('../shell/NewRepositoryDialog');
 const { OrgPage } = await import('./OrgPage');
 const { MemberName } = await import('./RepoMembers');
-const { AccountOrgs } = await import('./AccountOrgs');
+const { AccountOrgs, CreateOrganization, CreateOrgDialog } = await import('./AccountOrgs');
 
 const html = (type: any, props: any) => renderToStaticMarkup(createElement(type, props));
 const loaded = (data: unknown): Loaded<any> => ({ data, loading: false, reload: () => {} });
@@ -119,15 +119,45 @@ describe('org page', () => {
 });
 
 describe('account organizations', () => {
-  it('lists orgs with links, or says there are none', () => {
-    const some = html(AccountOrgs, {
-      orgs: loaded({ orgs: [{ org: 'acme', role: 'owner' }] }),
+  it('lists each org as a row linking to its page, with the role', () => {
+    const page = html(AccountOrgs, {
+      orgs: loaded({
+        orgs: [
+          { org: 'zeta', role: 'member' },
+          { org: 'acme', role: 'owner' },
+        ],
+      }),
       navigate,
     });
-    expect(some).toContain('href="/orgs/acme"');
-    expect(some).toContain('Create organization');
-    expect(html(AccountOrgs, { orgs: loaded({ orgs: [] }), navigate })).toContain(
-      'You are in no organization',
+    const rows = [...page.matchAll(/<a class="org-row" href="([^"]+)"/g)].map((m) => m[1]);
+    expect(rows).toEqual(['/orgs/acme', '/orgs/zeta']);
+    expect(page).toContain('>owner<');
+    expect(page).not.toContain('No organizations yet');
+  });
+
+  it('says there are none in a card of its own', () => {
+    const page = html(AccountOrgs, { orgs: loaded({ orgs: [] }), navigate });
+    expect(page).toContain(
+      '<div class="settings-card settings-empty"><h2>No organizations yet</h2>',
     );
+    expect(page).not.toContain('class="org-row"');
+  });
+
+  it('shows a slow or failed read', () => {
+    expect(html(AccountOrgs, { orgs: pending, navigate })).toContain('Loading organizations');
+    const failed = { ...pending, loading: false, error: 'boom' };
+    expect(html(AccountOrgs, { orgs: failed, navigate })).toContain('Retry');
+  });
+
+  it('asks for the name only after Create organization is pressed', () => {
+    const orgs = loaded({ orgs: [] });
+    const button = html(CreateOrganization, { orgs, navigate });
+    expect(button).toContain('>Create organization</button>');
+    expect(button).not.toContain('<input');
+    expect(html(AccountOrgs, { orgs, navigate })).not.toContain('<input');
+    const dialog = html(CreateOrgDialog, { orgs, navigate, onClose: () => {} });
+    expect(dialog).toContain('Organization name');
+    expect(dialog).toMatch(/<button type="submit" disabled="">Create organization<\/button>/);
+    expect(dialog).toContain('>Cancel</button>');
   });
 });

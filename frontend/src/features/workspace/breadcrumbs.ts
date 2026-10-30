@@ -1,6 +1,7 @@
-// The top bar's breadcrumbs (`ada / Agents / Code review`): the account (home, or an org's
-// page), the Agents page, then the page itself. Every crumb but the last links (`to`); pages
-// without a parent get none and the top bar shows their title.
+// The top bar's breadcrumbs (`ada / Agents / Code review`, `Account / Billing`): the account
+// (home, or an org's page), the Agents page, then the page itself. Every crumb but the last
+// links (`to`); pages without a parent get none and the top bar shows their title.
+import { ACCOUNT_SECTION_TITLES } from '../account-settings/settingsRoute';
 import { agentName } from '../agents/agentsModel';
 import { isAgentsRoute, type SourceRoute } from '../source-platform/sourceRoute';
 
@@ -10,6 +11,11 @@ export interface Crumb {
 }
 
 export function breadcrumbs(route: SourceRoute, account: string | undefined): Crumb[] | null {
+  if (route.view === 'settings')
+    return [
+      { label: 'Account', to: { view: 'settings', section: 'general' } },
+      { label: ACCOUNT_SECTION_TITLES[route.section] },
+    ];
   if (!isAgentsRoute(route)) return null;
   const space = route.workspace ? { workspace: route.workspace } : {};
   const owner = route.workspace ?? account;

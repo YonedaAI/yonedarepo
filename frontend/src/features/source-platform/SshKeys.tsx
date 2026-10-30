@@ -126,8 +126,7 @@ export function SshKeys() {
   }
 
   return (
-    <section id="ssh-keys" aria-labelledby="ssh-heading">
-      <h2 id="ssh-heading">SSH keys</h2>
+    <div className="settings-card">
       <p className="source-meta">
         Clone, fetch and push over SSH as this account. Add the contents of a <code>.pub</code>{' '}
         file, for example <code>~/.ssh/id_ed25519.pub</code>, or run{' '}
@@ -171,6 +170,6 @@ export function SshKeys() {
         </button>
       </form>
       {error && <Failure error={error} />}
-    </section>
+    </div>
   );
 }

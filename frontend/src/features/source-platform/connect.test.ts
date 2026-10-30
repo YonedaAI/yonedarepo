@@ -51,7 +51,7 @@ describe('the Clone menu', () => {
       );
       expect(html).toContain(`Run once: <code>yoneda login --origin ${api}</code>`);
       expect(html).toContain('then pull/push use your login');
-      expect(html).toContain('href="/settings#personal-tokens"');
+      expect(html).toContain('href="/settings/tokens"');
       expect(html).toContain('Settings → Personal tokens');
       const order = copyBlocks(html).map(([label]) => label);
       expect(order.slice(0, 2)).toEqual([
@@ -152,7 +152,7 @@ describe('connect snippets', () => {
 describe('settings, connect and device routes', () => {
   it('round-trips the views', () => {
     for (const route of [
-      { view: 'settings' } as const,
+      { view: 'settings', section: 'general' } as const,
       { view: 'repo-settings', repo, section: 'connect' } as const,
       { view: 'device', code: 'BCDF-GHJK' } as const,
       { view: 'device', code: '' } as const,
@@ -160,13 +160,16 @@ describe('settings, connect and device routes', () => {
       const [path, search = ''] = formatSourceRoute(route).split('?');
       expect(parseSourceRoute(path, search ? `?${search}` : '')).toEqual(route);
     }
-    expect(formatSourceRoute({ view: 'settings' })).toBe('/settings');
+    expect(formatSourceRoute({ view: 'settings', section: 'general' })).toBe('/settings');
     expect(formatSourceRoute({ view: 'repo-settings', repo, section: 'connect' })).toBe(
       `/source/${repo}/settings/connect`,
     );
     expect(formatSourceRoute({ view: 'device', code: 'BCDF-GHJK' })).toBe('/device?code=BCDF-GHJK');
     // Older addresses still open the page that replaced them.
-    expect(parseSourceRoute('/source/tokens', '')).toEqual({ view: 'settings' });
+    expect(parseSourceRoute('/source/tokens', '')).toEqual({
+      view: 'settings',
+      section: 'tokens',
+    });
     expect(parseSourceRoute(`/source/${repo}/connect`, '')).toEqual({
       view: 'repo-settings',
       repo,

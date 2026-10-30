@@ -96,7 +96,7 @@ export function EmailSettings() {
     }
   };
   return (
-    <section aria-labelledby="email-heading">
+    <section className="settings-card" aria-labelledby="email-heading">
       <h2 id="email-heading">Email</h2>
       <p className="source-meta">
         Used only for account email (the welcome and confirmation emails). It is never shown to

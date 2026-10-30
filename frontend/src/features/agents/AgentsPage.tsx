@@ -220,7 +220,7 @@ export function AgentsPage({
               billing={state.billing}
               returnTo={agentsReturnPath(space.workspace)}
               // Settings → Billing is the signed-in account's own.
-              manageHref={workspace === account ? '/settings#billing' : undefined}
+              manageHref={workspace === account ? '/settings/billing' : undefined}
               saving={saving}
             />
             {agents.map((agent) => (
