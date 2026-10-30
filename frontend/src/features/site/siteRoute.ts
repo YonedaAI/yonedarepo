@@ -59,10 +59,10 @@ export function formatSitePage(site: SitePage): string {
 /** The top nav's sections, in order. */
 export const SITE_NAV: { label: string; page: SitePage }[] = [
   { label: 'Features', page: { page: 'features' } },
+  { label: 'Company', page: { page: 'about' } },
   { label: 'Pricing', page: { page: 'pricing' } },
   { label: 'Docs', page: { page: 'docs', slug: DOCS_HOME } },
   { label: 'Blog', page: { page: 'blog' } },
-  { label: 'Company', page: { page: 'about' } },
 ];
 
 /** Which nav section a page belongs to. */
