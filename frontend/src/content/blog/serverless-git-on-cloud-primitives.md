@@ -5,9 +5,9 @@ author: Matthew Long
 category: Research
 order: 3
 summary: Part III maps the transaction log onto cloud primitives and measures it on Cloudflare. Batched landing landed all 1,000 writers in each of six bursts, with no refused commit, landing or read.
-image: /blog/serverless-git-on-cloud-primitives/hero.svg
-imageAlt: Diagram of Workers request handlers sending each repository's commits and landings to one serialized authority, with an object store, a durable queue, container checks and a Git projection around it.
-caption: A diagram of the architecture described in the paper, showing its primitives and the Cloudflare product that realizes each.
+image: /blog/serverless-git-on-cloud-primitives/cover.webp
+imageAlt: Cover card of the paper A Cloud-Portable Architecture for Serverless Git, Part III of the series Source Code as a Transactional Abstraction, by Matthew Long.
+caption: Part III of Source Code as a Transactional Abstraction, by Matthew Long (YonedaAI).
 paper: https://yonedarepo-research.vercel.app/papers/serverless-git-on-cloudflare/
 ---
 
@@ -20,6 +20,8 @@ An agent writes a small change against a head that moves while it works, and man
 Every landing on a branch passes through something that serializes it. If that step is slow, or does too much work per landing, the whole fleet queues behind it.
 
 ## Six primitives, one job each
+
+![Diagram of Workers request handlers sending each repository's commits and landings to one serialized authority, with an object store, a durable queue, container checks and a Git projection around it.](/blog/serverless-git-on-cloud-primitives/hero.svg "A diagram of the architecture described in the paper, showing its primitives and the Cloudflare product that realizes each.")
 
 The architecture is written against contracts, not products. The paper names six primitives and maps each onto one Cloudflare product (Table 1):
 

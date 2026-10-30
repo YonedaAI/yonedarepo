@@ -5,9 +5,9 @@ author: Matthew Long
 category: Research
 order: 2
 summary: Search indexes and blame are views of a commit. Reusing them is correct exactly when the storage key determines the result. Our search key did not, and the proof found the bug.
-image: /blog/partitioned-derived-data/figure-1.webp
-imageAlt: Diagram of two commits, c0 and its child c1, each split into three partitions (src/, docs/ and root files) with arrows to stored segment keys, showing that c1 reuses two keys from c0 and builds one new key for its changed docs/ directory.
-caption: Partition reuse in the test repository. The child commit changes only docs/, so two of its three segments are already stored and one map task runs.
+image: /blog/partitioned-derived-data/cover.webp
+imageAlt: Cover card of the paper Partitioned Derived Data, Part II of the series Source Code as a Transactional Abstraction, by Matthew Long.
+caption: Part II of Source Code as a Transactional Abstraction, by Matthew Long (YonedaAI).
 paper: https://yonedarepo-research.vercel.app/papers/partitioned-derived-data/
 ---
 
@@ -34,6 +34,8 @@ Keying by content also reuses strictly more than deriving each commit's value fr
 YonedaRepo partitions a commit's root tree by top-level directory, plus one partition for the files in the root. Each directory's search segment is stored under the directory's Git tree id, a hash of its contents, so an unchanged directory finds its segment already built.
 
 A landing enqueues a derivation message naming the ref, and a query that finds a segment missing builds it on demand. Because messages name the ref rather than the commit, a burst of landings coalesces: later messages find their segments already built. Key sufficiency is what makes that safe.
+
+![Diagram of two commits, c0 and its child c1, each split into three partitions (src/, docs/ and root files) with arrows to stored segment keys, showing that c1 reuses two keys from c0 and builds one new key for its changed docs/ directory.](/blog/partitioned-derived-data/figure-1.webp "Partition reuse in the test repository. The child commit changes only docs/, so two of its three segments are already stored and one map task runs.")
 
 The test for this, from the figure above, uses a repository with `src/`, `docs/` and root files:
 

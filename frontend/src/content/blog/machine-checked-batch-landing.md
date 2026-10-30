@@ -5,9 +5,9 @@ author: Matthew Long
 category: Research
 order: 4
 summary: A Lean 4 proof that landing an accepted batch at once gives the same state as landing its members one at a time, the exact condition merged members need, and why neither hypothesis can go.
-image: /blog/machine-checked-batch-landing/hero.svg
-imageAlt: Diagram of a head state H with two paths to one result, the top path landing a batch through an octopus merge and the bottom path running the members one after another in ticket order, joined by an equals sign.
-caption: A diagram of the batch landing soundness theorem described in the paper, in which the octopus merge of an accepted batch equals serial execution of its members in ticket order.
+image: /blog/machine-checked-batch-landing/cover.webp
+imageAlt: Cover card of the paper Machine-Checked Batch Landing, Part IV of the series Source Code as a Transactional Abstraction, by Matthew Long.
+caption: Part IV of Source Code as a Transactional Abstraction, by Matthew Long (YonedaAI).
 paper: https://yonedarepo-research.vercel.app/papers/machine-checked-batch-landing/
 ---
 
@@ -24,6 +24,8 @@ Checked alone against the log, each change is a clean Rebase, and their write se
 Part I of the series showed this and proposed a pairwise rule, proved by hand for fast-forward and rebase members. Members validated as Merge, whose writes overlap something that landed meanwhile, were left out.
 
 ## The idea
+
+![Diagram of a head state H with two paths to one result, the top path landing a batch through an octopus merge and the bottom path running the members one after another in ticket order, joined by an equals sign.](/blog/machine-checked-batch-landing/hero.svg "A diagram of the batch landing soundness theorem described in the paper, in which the octopus merge of an accepted batch equals serial execution of its members in ticket order.")
 
 A change is a transaction with a declared read set `R`, a write set `W` and a function from states to states; locations are paths in a tree. Landing validates a change against everything written since its base: Conflict if something it read was written, FastForward if nothing landed, Merge if its writes overlap a later write, and Rebase otherwise.
 
