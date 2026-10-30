@@ -95,7 +95,11 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     let vars = &agents["vars"];
     assert_eq!(
         vars,
-        &json!({"PUBLIC_APP_ORIGIN": "https://yonedarepo.com"})
+        &json!({"PUBLIC_APP_ORIGIN": "https://yonedarepo.com", "WEB_ANALYTICS_TOKEN": ""})
+    );
+    assert_eq!(
+        agents["analytics_engine_datasets"],
+        json!([{"binding": "SITE_EVENTS", "dataset": "yonedarepo_prod_site_events"}])
     );
     for absent in [
         "secrets_store_secrets",
