@@ -314,7 +314,9 @@ export function App() {
             )}
             {route.view === 'settings' && (
               <AccountSettings
+                section={route.section}
                 identity={session.identity}
+                loading={session.loading}
                 repos={rows.map((r) => ({ id: r.repo, name: r.name }))}
                 orgs={orgs}
                 navigate={navigate}
@@ -358,7 +360,7 @@ export function App() {
                 navigate={navigate}
                 onDeleted={() => {
                   orgs.reload();
-                  navigate({ view: 'settings' });
+                  navigate({ view: 'settings', section: 'organizations' });
                   setNotice('Organization deleted.');
                 }}
               />

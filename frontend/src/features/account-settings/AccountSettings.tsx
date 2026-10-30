@@ -1,97 +1,27 @@
-// Account settings (`/settings`, from the account menu): the account, its email, its sign-in
-// methods, the theme, billing (agent credit and usage), the CLIs signed in with
-// `yoneda login`, personal access tokens and organizations.
-import { useEffect, useState } from 'react';
+// Account settings, one page per section (`settingsRoute.ts`; the sidebar's Account group moves
+// between them): General (the account, its email, its sign-in methods, the theme), Billing,
+// Tokens, SSH keys and Organizations. Each page is its title, then titled cards.
 import type { AccountIdentity } from '../../lib/types';
 import { ThemePicker } from '../shell/ThemePicker';
 import type { Navigate } from '../shell/useRoute';
 import { AccountOrgs } from '../source-platform/AccountOrgs';
-import { expiresIn } from '../source-platform/connect';
 import type { OrgSummary } from '../source-platform/orgModel';
-import {
-  isDeviceLogin,
-  onlyTokens,
-  type Pat,
-  PersonalTokens,
-  revokePat,
-} from '../source-platform/PersonalTokens';
-import { Failure, Loading } from '../source-platform/SourceStatus';
+import { Loading } from '../source-platform/SourceStatus';
 import { SshKeys } from '../source-platform/SshKeys';
-import { when } from '../source-platform/sourceApi';
 import type { RepoSummary } from '../source-platform/TokenParts';
-import { type Loaded, useSource } from '../source-platform/useSource';
+import type { Loaded } from '../source-platform/useSource';
 import { AvatarSettings } from './AvatarSettings';
 import { BillingSettings } from './BillingSettings';
 import { EmailSettings } from './EmailSettings';
 import { SignInMethods } from './SignInMethods';
+import { ACCOUNT_SECTION_TITLES, type AccountSection } from './settingsRoute';
+import { TokenSettings } from './TokenSettings';
 
-export function CliTable({
-  tokens,
-  onSignOut,
-  now = Date.now(),
-}: {
-  tokens: Loaded<{ tokens: Pat[] }>;
-  onSignOut: (token: Pat) => void;
-  now?: number;
-}) {
-  if (tokens.loading && !tokens.data) return <Loading what="signed-in CLIs" />;
-  if (tokens.error) return <Failure error={tokens.error} onRetry={tokens.reload} />;
-  const list = tokens.data?.tokens ?? [];
-  if (list.length === 0)
-    return (
-      <p className="source-empty">
-        No CLI is signed in. Run <code>yoneda login</code> and approve it here.
-      </p>
-    );
-  return (
-    <div className="source-table-wrap">
-      <table className="source-table">
-        <thead>
-          <tr>
-            <th>Client</th>
-            <th>Host</th>
-            <th>Signed in</th>
-            <th>Last used</th>
-            <th>Expires</th>
-            <th>
-              <span className="sr-only">Actions</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {list.map((t) => (
-            <tr key={t.id}>
-              <td>{t.name}</td>
-              <td>{t.host ?? 'unknown host'}</td>
-              <td>{when(t.created_at)}</td>
-              <td>{t.last_used_at ? when(t.last_used_at) : 'never'}</td>
-              <td>{expiresIn(t.expires_at, now)}</td>
-              <td>
-                <button
-                  type="button"
-                  className="quiet"
-                  aria-label={`Sign out ${t.host ?? t.name}`}
-                  onClick={() => onSignOut(t)}
-                >
-                  Sign out
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
-}
-
-export function AccountSettings({
-  identity,
-  repos,
-  orgs,
-  navigate,
-  onAvatar,
-}: {
+interface Props {
+  section: AccountSection;
   identity: AccountIdentity | null;
+  /** The session is still being read, so a null identity says nothing yet. */
+  loading?: boolean;
   /** The account's repositories by name, for a token's repository allowlist. */
   repos: RepoSummary[];
   /** The account's organizations (the shell's copy, so the sidebar follows a new one). */
@@ -99,21 +29,16 @@ export function AccountSettings({
   navigate?: Navigate;
   /** A new picture for the signed-in account (the shell's copy, so the menu follows it). */
   onAvatar?: (picture: Pick<AccountIdentity, 'avatar_url' | 'avatar_source'>) => void;
-}) {
-  // The account menu and the Agents page open a section by its id (`/settings#billing`). Most
-  // sections are drawn once the account is known, so the scroll waits for it.
-  const signedIn = identity !== null;
-  useEffect(() => {
-    const id = window.location.hash.slice(1);
-    if (signedIn && id) document.getElementById(id)?.scrollIntoView({ block: 'start' });
-  }, [signedIn]);
-  const tokens = useSource<{ tokens: Pat[] }>('/tokens');
-  const [error, setError] = useState('');
-  const clis = onlyTokens(tokens, isDeviceLogin);
+}
+
+/** Waiting for the session, or nobody signed in. */
+const NoAccount = ({ loading }: { loading?: boolean }) =>
+  loading ? <Loading what="your account" /> : <p className="source-meta">Sign in to see it.</p>;
+
+function General({ identity, loading, onAvatar }: Props) {
   return (
-    <div className="account-settings source-tokens">
-      <h1>Settings</h1>
-      <section id="account" aria-labelledby="account-heading">
+    <>
+      <section className="settings-card" aria-labelledby="account-heading">
         <h2 id="account-heading">Account</h2>
         {identity && onAvatar && <AvatarSettings identity={identity} onChange={onAvatar} />}
         {identity ? (
@@ -129,41 +54,43 @@ export function AccountSettings({
             </dd>
           </dl>
         ) : (
-          <p className="source-meta">Sign in to see it.</p>
+          <NoAccount loading={loading} />
         )}
       </section>
       {identity && <EmailSettings />}
       {identity && <SignInMethods />}
-      <section aria-labelledby="appearance-heading">
+      <section className="settings-card" aria-labelledby="appearance-heading">
         <h2 id="appearance-heading">Appearance</h2>
         <p className="source-meta">
           System follows your device's light or dark setting. The choice is kept in this browser.
         </p>
         <ThemePicker />
       </section>
-      {identity && <BillingSettings workspace={identity.username} />}
-      <section aria-labelledby="cli-heading">
-        <h2 id="cli-heading">Signed-in CLIs</h2>
-        <p className="source-meta">
-          Each <code>yoneda login</code> you approved holds a personal token, labelled with the
-          machine it signed in on. Signing one out revokes its token.
-        </p>
-        <CliTable
-          tokens={clis}
-          onSignOut={async (t) => {
-            setError('');
-            try {
-              await revokePat(t, tokens, 'That CLI and its agents');
-            } catch (e) {
-              setError((e as Error).message);
-            }
-          }}
-        />
-        {error && <Failure error={error} />}
-      </section>
-      <PersonalTokens repos={repos} orgs={orgs?.data?.orgs} tokens={tokens} />
-      <SshKeys />
-      {orgs && navigate && <AccountOrgs orgs={orgs} navigate={navigate} />}
-    </div>
+    </>
+  );
+}
+
+function Section(props: Props) {
+  const { section, identity, loading, repos, orgs, navigate } = props;
+  if (section === 'general') return <General {...props} />;
+  if (!identity) return <NoAccount loading={loading} />;
+  switch (section) {
+    case 'billing':
+      return <BillingSettings workspace={identity.username} />;
+    case 'tokens':
+      return <TokenSettings repos={repos} orgs={orgs?.data?.orgs} />;
+    case 'ssh-keys':
+      return <SshKeys />;
+    case 'organizations':
+      return orgs && navigate ? <AccountOrgs orgs={orgs} navigate={navigate} /> : null;
+  }
+}
+
+export function AccountSettings(props: Props) {
+  return (
+    <section className="account-settings" aria-labelledby="settings-title">
+      <h1 id="settings-title">{ACCOUNT_SECTION_TITLES[props.section]}</h1>
+      <Section {...props} />
+    </section>
   );
 }

@@ -13,7 +13,8 @@ const { ConnectPanel, DeleteRepository } = await import('./ConnectPanel');
 const { DeviceOutcome, DevicePage, deviceFailure } = await import('./DevicePage');
 const { PatTable } = await import('./PersonalTokens');
 const { RepoTokenTable, RepoTokens } = await import('./RepoTokens');
-const { AccountSettings, CliTable } = await import('../account-settings/AccountSettings');
+const { AccountSettings } = await import('../account-settings/AccountSettings');
+const { CliTable } = await import('../account-settings/TokenSettings');
 const { SourceApiError } = await import('./sourceApi');
 
 const html = (type: any, props: any) => renderToStaticMarkup(createElement(type, props));
@@ -70,11 +71,12 @@ describe('personal access tokens', () => {
     });
     expect(open).toContain('<td>all</td>');
   });
-  it('settles the account page: signed out, then CLIs apart from personal tokens', () => {
+  it('settles the Tokens page: signed out, then CLIs apart from personal tokens', () => {
     const identity = { role: 'user', username: 'ada' };
-    expect(html(AccountSettings, { identity, repos })).toContain('Loading signed-in CLIs');
+    const section = 'tokens';
+    expect(html(AccountSettings, { identity, repos, section })).toContain('Loading signed-in CLIs');
     state.value = signedOut;
-    expect(html(AccountSettings, { identity, repos })).toContain('You are signed out');
+    expect(html(AccountSettings, { identity, repos, section })).toContain('You are signed out');
     // A login is known by its origin (with the host it ran on), not by its name.
     const cli = {
       ...pat,
@@ -87,9 +89,11 @@ describe('personal access tokens', () => {
     const older = { ...cli, id: 'pat_old', host: null };
     const named = { ...pat, id: 'pat_named', name: 'yoneda-cli' };
     state.value = loaded({ data: { tokens: [pat, cli, older, named] } });
-    const page = html(AccountSettings, { identity, repos });
-    expect(page).toContain('<code>ada</code>');
+    const page = html(AccountSettings, { identity, repos, section });
+    expect(page).toContain('<h1 id="settings-title">Tokens</h1>');
     expect(page).toContain('Signed-in CLIs');
+    // Personal tokens first: an old `/settings#personal-tokens` link lands on them.
+    expect(page.indexOf('Personal access tokens')).toBeLessThan(page.indexOf('Signed-in CLIs'));
     expect(page).toContain('<td>ada-mbp</td>');
     expect(page).toContain('<td>unknown host</td>');
     expect(page.match(/>Sign out<\/button>/g)).toHaveLength(2);
@@ -103,6 +107,45 @@ describe('personal access tokens', () => {
     expect(
       html(CliTable, { tokens: loaded({ data: { tokens: [] } }), onSignOut: () => {}, now }),
     ).toContain('No CLI is signed in');
+  });
+});
+
+describe('the account settings pages', () => {
+  const identity = { role: 'user', username: 'ada' };
+  const page = (section: string, over: object = {}) =>
+    html(AccountSettings, { identity, repos, section, ...over });
+
+  it('holds each section on its own page, under its own title', () => {
+    state.value = loaded({ data: { tokens: [] } });
+    const general = page('general');
+    expect(general).toContain('<h1 id="settings-title">General</h1>');
+    for (const title of ['Account', 'Email', 'Sign-in methods', 'Appearance'])
+      expect(general).toContain(`>${title}</h2>`);
+    expect(general).toContain('<code>ada</code>');
+    expect(general).not.toContain('Personal access tokens');
+    expect(general).not.toContain('Credit balance');
+    const titled = {
+      billing: 'Billing',
+      tokens: 'Tokens',
+      'ssh-keys': 'SSH keys',
+      organizations: 'Organizations',
+    };
+    for (const [section, title] of Object.entries(titled)) {
+      const other = page(section, { orgs: loaded({ data: { orgs: [] } }), navigate: () => {} });
+      expect(other).toContain(`<h1 id="settings-title">${title}</h1>`);
+      expect(other).not.toContain('Sign-in methods');
+      // One name per page: a page of one section does not repeat its title.
+      expect(other).not.toContain(`>${title}</h2>`);
+    }
+  });
+
+  it('waits for the session, then asks a signed-out visitor to sign in', () => {
+    expect(page('billing', { identity: null, loading: true })).toContain('Loading your account');
+    const out = page('billing', { identity: null });
+    expect(out).toContain('Sign in to see it.');
+    expect(out).not.toContain('Loading');
+    // The theme is this browser's, so General still offers it.
+    expect(page('general', { identity: null })).toContain('Appearance');
   });
 });
 

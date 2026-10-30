@@ -72,7 +72,7 @@ describe('agent billing', () => {
   });
 
   it('returns from Stripe to the page the card was added from', () => {
-    expect(RETURN_PATH).toBe('/settings?billing=added');
+    expect(RETURN_PATH).toBe('/settings/billing?billing=added');
     expect(agentsReturnPath()).toBe('/agents?billing=added');
     expect(agentsReturnPath('acme')).toBe('/agents?workspace=acme&billing=added');
     expect(cardSavedText(credit({ card, promo: { usd: 100, granted: true } }))).toBe(
@@ -88,7 +88,7 @@ describe('agent billing', () => {
     expect(cardSaveState(true, null, 1)).toBe('waiting');
     expect(cardSaveState(true, card, 1)).toBe('saved');
     expect(cardSaveState(true, null, 5)).toBe('late');
-    expect(RETURN_PATH).toBe('/settings?billing=added');
+    expect(RETURN_PATH).toBe('/settings/billing?billing=added');
   });
 
   it('describes top-ups and their failure', () => {

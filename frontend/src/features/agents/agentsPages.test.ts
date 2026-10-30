@@ -121,7 +121,7 @@ describe('the Agents overview', () => {
     answers.byPath.set('/workspaces/ada', { data: { ...workspace, credit: credit({ card }) } });
     const carded = render(AgentsPage, { workspace: 'ada', account: 'ada', orgs: [], navigate });
     expect(carded).toContain('Visa •••• 4242 · Auto top-up on · ');
-    expect(carded).toContain('<a href="/settings#billing">Manage billing</a>');
+    expect(carded).toContain('<a href="/settings/billing">Manage billing</a>');
     answers.byPath.set('/workspaces/acme', { data: { ...workspace, credit: credit({ card }) } });
     expect(
       render(AgentsPage, { workspace: 'acme', account: 'ada', orgs: [], navigate }),

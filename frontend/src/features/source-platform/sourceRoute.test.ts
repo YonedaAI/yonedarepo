@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import type { AccountSection } from '../account-settings/settingsRoute';
+import { RETURN_PATH } from '../agents/billingModel';
 import { patchRows } from './patchRows';
 import { forgetRepoNames, rememberRepoName, repoBase } from './repoNames';
 import {
@@ -17,7 +19,12 @@ describe('source routes', () => {
     const routes: SourceRoute[] = [
       { view: 'home' },
       { view: 'explore' },
-      { view: 'settings' },
+      { view: 'settings', section: 'general' },
+      { view: 'settings', section: 'billing' },
+      { view: 'settings', section: 'billing', cardAdded: true },
+      { view: 'settings', section: 'tokens' },
+      { view: 'settings', section: 'ssh-keys' },
+      { view: 'settings', section: 'organizations' },
       { view: 'files', repo, path: '', ref: 'main' },
       { view: 'files', repo, path: 'src/a b.rs', ref: 'feature/x', at: 3 },
       { view: 'history', repo, ref: 'main' },
@@ -53,6 +60,49 @@ describe('source routes', () => {
     expect(parseSourceRoute('/source/explore/x', '')).toEqual({ view: 'home' });
     expect(routeTab({ view: 'explore' })).toBeUndefined();
   });
+  it('gives each account settings page its own address', () => {
+    const settings = (section: AccountSection) => ({ view: 'settings', section }) as const;
+    expect(formatSourceRoute(settings('general'))).toBe('/settings');
+    expect(formatSourceRoute(settings('billing'))).toBe('/settings/billing');
+    expect(formatSourceRoute(settings('tokens'))).toBe('/settings/tokens');
+    expect(formatSourceRoute(settings('ssh-keys'))).toBe('/settings/ssh-keys');
+    expect(formatSourceRoute(settings('organizations'))).toBe('/settings/organizations');
+    expect(parseSourceRoute('/settings/billing/', '')).toEqual(settings('billing'));
+    // Nothing else nests under it, and `general` has the bare address.
+    expect(parseSourceRoute('/settings/nope', '')).toEqual(settings('general'));
+    expect(parseSourceRoute('/settings/billing/x', '')).toEqual(settings('general'));
+    expect(parseSourceRoute('/settings/general', '')).toEqual(settings('general'));
+  });
+  it('sends the old single page anchors to the page that holds them', () => {
+    const at = (hash: string) => parseSourceRoute('/settings', '', hash);
+    expect(at('#billing')).toEqual({ view: 'settings', section: 'billing' });
+    expect(at('#personal-tokens')).toEqual({ view: 'settings', section: 'tokens' });
+    expect(at('#ssh-keys')).toEqual({ view: 'settings', section: 'ssh-keys' });
+    expect(at('#organizations')).toEqual({ view: 'settings', section: 'organizations' });
+    expect(at('#account')).toEqual({ view: 'settings', section: 'general' });
+    expect(at('#nope')).toEqual({ view: 'settings', section: 'general' });
+    // An anchor means nothing elsewhere.
+    expect(parseSourceRoute('/settings/tokens', '', '#billing')).toEqual({
+      view: 'settings',
+      section: 'tokens',
+    });
+    expect(parseSourceRoute('/repositories', '', '#billing')).toEqual({ view: 'repositories' });
+  });
+  it('keeps the Stripe return flag, old or new, so the page can wait for the card', () => {
+    const added = { view: 'settings', section: 'billing', cardAdded: true };
+    expect(parseSourceRoute('/settings', '?billing=added')).toEqual(added);
+    expect(parseSourceRoute('/settings/billing', '?billing=added')).toEqual(added);
+    expect(formatSourceRoute(parseSourceRoute('/settings', '?billing=added'))).toBe(RETURN_PATH);
+    // Only Billing takes it, and only with that value.
+    expect(parseSourceRoute('/settings/tokens', '?billing=added')).toEqual({
+      view: 'settings',
+      section: 'tokens',
+    });
+    expect(parseSourceRoute('/settings', '?billing=other')).toEqual({
+      view: 'settings',
+      section: 'general',
+    });
+  });
   it('falls back safely on malformed input', () => {
     expect(parseSourceRoute('/source/not-a-repo', '')).toEqual({ view: 'home' });
     expect(parseSourceRoute('/source', '')).toEqual({ view: 'home' });
@@ -85,7 +135,7 @@ describe('repository pages', () => {
     expect(routeTab({ view: 'repo-settings', repo, section: 'tokens' })).toBe('settings');
     expect(routeTab({ view: 'change', repo, number: 3 })).toBe('changes');
     expect(routeTab({ view: 'context', repo })).toBe('context');
-    expect(routeTab({ view: 'settings' })).toBeUndefined();
+    expect(routeTab({ view: 'settings', section: 'general' })).toBeUndefined();
     expect(routeTab({ view: 'repositories' })).toBeUndefined();
     for (const tab of [
       'overview',

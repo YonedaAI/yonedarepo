@@ -8,14 +8,14 @@ import {
 const current = (): SourceRoute =>
   typeof window === 'undefined'
     ? { view: 'home' }
-    : parseSourceRoute(window.location.pathname, window.location.search);
+    : parseSourceRoute(window.location.pathname, window.location.search, window.location.hash);
 
 export type Navigate = (next: SourceRoute, options?: { replace?: boolean }) => void;
 
 /**
  * The shell's address: parsed from the URL, pushed on navigation and followed on back and
- * forward. An older address (`/source/tokens`, `/source/<repo>/connect`) is rewritten to
- * the page that replaced it, so a reload lands on the current URL.
+ * forward. An older address (`/source/tokens`, `/source/<repo>/connect`, `/settings#billing`)
+ * is rewritten to the page that replaced it, so a reload lands on the current URL.
  */
 export function useRoute(): [SourceRoute, Navigate] {
   const [route, setRoute] = useState<SourceRoute>(current);

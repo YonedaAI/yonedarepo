@@ -116,7 +116,7 @@ export function SignInMethods() {
   }, []);
   useEffect(load, [load]);
   return (
-    <section aria-labelledby="signin-methods-heading">
+    <section className="settings-card" aria-labelledby="signin-methods-heading">
       <h2 id="signin-methods-heading">Sign-in methods</h2>
       <p className="source-meta">
         Sign in with a linked provider instead of a password. Linking never merges accounts: a
