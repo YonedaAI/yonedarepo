@@ -232,7 +232,6 @@ export function App() {
               />
             )
           }
-          onConnect={() => setPanel('cli')}
           onSignIn={() => {
             // The ended-session view already holds the sign-in form; never stack a second one.
             if (session.sessionEnded)
@@ -301,6 +300,7 @@ export function App() {
                 repos={rows.map((r) => ({ id: r.repo, name: r.name }))}
                 orgs={orgs}
                 navigate={navigate}
+                onAvatar={session.setAvatar}
               />
             )}
             {(route.view === 'profile' || route.view === 'repo-name') && (

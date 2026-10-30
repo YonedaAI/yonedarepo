@@ -64,7 +64,8 @@ it('stores an uploaded picture in R2, serves it with nosniff, and falls back on 
 
   const stored = await upload(cookie, PNG);
   expect(stored.status, await stored.clone().text()).toBe(200);
-  const { avatar_url } = await stored.json<{ avatar_url: string }>();
+  const { avatar_url, avatar_source } = await stored.json<{ avatar_url: string; avatar_source: string }>();
+  expect(avatar_source).toBe('upload');
   expect(avatar_url).toMatch(/^\/api\/v1\/account\/avatar\?v=[0-9a-f]{12}$/);
   expect((await session(cookie)).avatar_url).toBe(avatar_url);
 
@@ -90,7 +91,7 @@ it('stores an uploaded picture in R2, serves it with nosniff, and falls back on 
   // Removal deletes the bytes; with no provider picture there is none.
   const removed = await fetchApi('/account/avatar', { method: 'DELETE', cookie });
   expect(removed.status).toBe(200);
-  expect(await removed.json()).toEqual({ avatar_url: null });
+  expect(await removed.json()).toEqual({ avatar_url: null, avatar_source: null });
   expect(await listed()).toBe(0);
   expect((await fetchApi('/avatars/pic_owner')).status).toBe(404);
 });

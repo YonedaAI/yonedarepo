@@ -85,6 +85,7 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
               username: principal.workspace,
               ...(await handleState(env, principal.workspace)),
               avatar_url: ownAvatarUrl(avatar),
+              avatar_source: avatar?.source ?? null,
             }
           : { authenticated: false },
       );
