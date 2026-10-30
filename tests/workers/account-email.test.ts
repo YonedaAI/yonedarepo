@@ -167,7 +167,10 @@ it('posts the welcome email to Resend with its key and a per-account idempotency
   expect(request.headers.get('authorization')).toBe('Bearer re_test_key');
   expect(request.headers.get('content-type')).toBe('application/json');
   const key = request.headers.get('idempotency-key');
-  expect(key).toBe(`welcome/${await sha('grace@example.com')}`);
+  // Scoped to the deployment's origin: dev and prod share one Resend account, and the same
+  // username in both must not collide inside Resend's 24-hour idempotency window.
+  expect(key).toBe(`welcome/${await sha('https://yonedarepo.test\ngrace@example.com')}`);
+  expect(key).not.toBe(`welcome/${await sha('grace@example.com')}`);
   expect(key).not.toContain('grace');
   // The confirmation link carries the job's token.
   const email = renderWelcome({
