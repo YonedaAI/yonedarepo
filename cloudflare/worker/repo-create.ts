@@ -1,18 +1,28 @@
 // Creating platform repositories: the owner (or the operator for a named workspace) creates
 // a repository, optionally seeded with files or imported from a Git remote, and may issue its
 // first repository tokens in the same request.
+import { afterAnswer } from './background';
+import { bounded, boundedRetry, failureCode } from './durable';
 import { orgArg, orgCaller, orgCommand } from './platform-orgs';
 import { commit } from './repo-commit';
 import { refreshHead } from './repo-head';
-import { newStore, RepoObjects, toBase64 } from './repo-objects';
+import { newStore, type ObjectStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { requirePatScope } from './repo-pat';
 import { holdName, releaseNames } from './repo-paths';
-import { dispatchProjection } from './repo-projection';
+import { dispatchProjection, dispatchPurge } from './repo-projection';
 import { visibilityOf } from './repo-public';
 import { shardOutboxes } from './repo-shards';
 import { timed } from './repo-timing';
 import type { Env } from './types';
+
+// Bounds on what a create waits for, from dev's 20 creates of 2026-10-30 (slowest: store
+// 3.3 s, repo_init 0.7 s, shards 4.5 s). The dialog's own bound (CREATE_TIMEOUT_MS) sits
+// above their sum, so a stall reaches people as this code's answer, not as its timeout.
+export const STORE_ATTEMPT_MS = 10_000;
+const INIT_MS = 10_000;
+const SHARD_START_MS = 12_000;
+const TAKE_BACK_MS = 5_000;
 
 /**
  * Who owns a new repository: the signed-in workspace, its personal token with repo:admin
@@ -89,6 +99,65 @@ export function newRepoId() {
   return `r${[...random].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
+/** The object store of a new repository. A name is `yr-<new id>`, so on the retry
+ * ALREADY_EXISTS is this create's first attempt having landed late. Anything else left
+ * after the retry is an outage of the store, whatever code it carries. */
+function createStore(store: ObjectStore) {
+  return boundedRetry(STORE_ATTEMPT_MS, (retry) =>
+    store.create().catch((e) => {
+      if (!retry || e?.code !== 'ALREADY_EXISTS') throw e;
+    }),
+  ).catch((e) => {
+    throw unavailable(e);
+  });
+}
+
+function unavailable(cause: any) {
+  console.warn(`repository create failed: ${cause?.message ?? cause}`);
+  return new ApiError('CREATE_UNAVAILABLE', 'The repository could not be created now; try again');
+}
+
+/**
+ * Starts (migrates) a new repository's commit shards ahead of its first commits, after the
+ * answer: 64 cold starts cost a create 2 s at the median and 4.5 s at worst. A head start
+ * only: a shard that has not started starts on its first commit, so no failure here is
+ * the create's. `SHARD_START=request` waits for them instead, for comparing benches.
+ */
+function startShards(env: Env, id: string) {
+  const start = () =>
+    timed('create.shards', () => boundedRetry(SHARD_START_MS, () => shardOutboxes(env, id))).catch(
+      (e) => console.warn(`commit shards did not start: ${e?.message ?? e}`),
+    );
+  return env.SHARD_START === 'request' ? start() : afterAnswer(start);
+}
+
+/**
+ * Takes back a failed create, so that repeating it finds nothing in its way: the answer
+ * waits (boundedly) for the name and the listing, and a repository the authority accepted
+ * is deleted after it, tokens and objects with it. Nobody was told its id, so nothing
+ * refers to it. Never throws: the failure answered is the create's own. A store or
+ * authority whose create landed after its bound stays, unreachable by name or listing.
+ */
+async function takeBack(
+  env: Env,
+  ctx: RepoContext,
+  owner: string,
+  name: string,
+  accepted: boolean,
+) {
+  const left = (e: any) => console.warn(`failed create left behind: ${e?.message ?? e}`);
+  const repo = ctx.repo;
+  await bounded(
+    TAKE_BACK_MS,
+    Promise.all([releaseNames(env, owner, repo), unlistRepository(env, repo)]),
+  ).catch(left);
+  if (!accepted) return;
+  await afterAnswer(async () => {
+    await ctx.call({ op: 'repo_delete', confirm: name });
+    await dispatchPurge(env, repo);
+  }).catch(left);
+}
+
 export async function createRepository(env: Env, requester: Credentials, body: Json) {
   const auth = await timed('create.owner', () => owning(env, requester, body));
   const visibility = visibilityOf(body.visibility);
@@ -97,27 +166,42 @@ export async function createRepository(env: Env, requester: Credentials, body: J
   const owner = auth._session.workspace;
   await timed('create.name', () => holdName(env, owner, id, name));
   const ctx = new RepoContext(env, id, caller(env, id, auth));
-  let store: ReturnType<typeof newStore>;
+  let accepted = false;
   try {
-    store = newStore(env, `yr-${id}`);
-    await timed('create.store', () => store.create());
-    await ctx.call({
-      op: 'repo_init',
-      name,
-      object_store: store.spec,
-      policy: body.policy ?? { required_checks: [], approvals: 1 },
-      visibility,
-    });
+    const store = newStore(env, `yr-${id}`);
+    await timed('create.store', () => createStore(store));
+    await bounded(
+      INIT_MS,
+      ctx.call({
+        op: 'repo_init',
+        name,
+        object_store: store.spec,
+        policy: body.policy ?? { required_checks: [], approvals: 1 },
+        visibility,
+      }),
+    );
+    accepted = true;
+    const created = await populate(env, ctx, store, { name, visibility, owner }, body);
+    await startShards(env, id);
+    return created;
   } catch (e) {
-    await releaseNames(env, owner, id).catch(() => {});
-    throw e;
+    await takeBack(env, ctx, owner, name, accepted);
+    // Anything unexpected is an outage of a step, and nothing stands in the way of a retry.
+    throw failureCode(e) === 'INTERNAL' ? unavailable(e) : e;
   }
-  // Commit shards start (migrate) now rather than on the first commits' path.
-  await timed('create.shards', () => shardOutboxes(env, id));
+}
+
+/** All of a create after the authority accepted the repository. */
+async function populate(
+  env: Env,
+  ctx: RepoContext,
+  store: ObjectStore,
+  { name, visibility, owner }: { name: string; visibility: string; owner: string },
+  body: Json,
+) {
+  const id = ctx.repo;
   // Listing projection, written after the authority accepted the repository.
-  await timed('create.list', () =>
-    listRepository(env, id, auth._session.workspace, name, visibility),
-  );
+  await timed('create.list', () => listRepository(env, id, owner, name, visibility));
   const tokens = await timed('create.tokens', () => issueTokens(ctx, body.tokens));
   if (!Array.isArray(body.files) || body.files.length === 0) return { id, ...tokens };
   const seeded = await timed('create.commit', () =>
@@ -188,6 +272,15 @@ export function listRepository(
   )
     .bind(id, workspace, name, Date.now(), visibility)
     .run();
+}
+
+/** Removes a repository's rows from the listing's projection. */
+export function unlistRepository(env: Env, repo: string) {
+  return env.INDEX.batch([
+    env.INDEX.prepare('DELETE FROM platform_repos WHERE id=?').bind(repo),
+    env.INDEX.prepare('DELETE FROM platform_members WHERE repo=?').bind(repo),
+    env.INDEX.prepare('DELETE FROM platform_activity WHERE repo=?').bind(repo),
+  ]);
 }
 
 export function tokenSecret() {

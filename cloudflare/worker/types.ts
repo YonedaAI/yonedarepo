@@ -16,6 +16,9 @@ export interface Env {
   COMMIT_SHARDS?: DurableObjectNamespace;
   /** Land combiners, one per branch (platform write path); absent where not deployed. */
   LAND_COMBINERS?: DurableObjectNamespace;
+  /** "request" makes a create wait for its commit shards to start, for comparing benches
+   * (default: they start after the answer, see repo-create.ts). */
+  SHARD_START?: string;
   /** Landing mode: batch (default) or changeset (see repo-changesets.ts). */
   LAND_MODE?: string;
   /** "true" lets a request choose its landing mode (x-yoneda-land-mode), for benchmarks. */
