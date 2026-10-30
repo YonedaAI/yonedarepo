@@ -60,13 +60,21 @@ pub fn delete<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings
     Ok(answer(false))
 }
 
-/// `repo_purge_target`: the store a deleted repository's objects live in (purger only).
-pub fn purge_target(actor: &Actor, settings: &Settings) -> Result<Value> {
+/// `repo_purge_target`: the store a deleted repository's objects live in (purger only),
+/// and an Artifacts mirror retired from it but not deleted yet (`retired_mirror`).
+pub fn purge_target<S: SqlStore>(db: &S, actor: &Actor, settings: &Settings) -> Result<Value> {
     if !actor.can("system") {
         return Err(gone());
     }
     if settings.deleted_at.is_none() {
         return Err(Error::new("NOT_FOUND", "Repository is not deleted"));
     }
-    Ok(json!({ "name": settings.name, "object_store": settings.object_store }))
+    let retired = db.query(
+        "SELECT mirror FROM mirror_retirement WHERE state='switched'",
+        &[],
+    )?;
+    Ok(
+        json!({ "name": settings.name, "object_store": settings.object_store,
+               "retired_mirror": retired.first().map(|r| r["mirror"].clone()) }),
+    )
 }

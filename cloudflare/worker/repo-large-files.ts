@@ -54,7 +54,8 @@ export async function putLarge(
 /**
  * The files a push spills (`ReceiveSession.spilled` frames: 1 and an 8-byte size, 2 and a
  * 4-byte length and bytes, 3 and the 20-byte id), each written to R2 as it arrives and
- * moved to its raw key once its id is verified. `stored` lists them with their sizes.
+ * moved to its raw key once its id is verified, unless `skip` names it (a withheld blob in
+ * a copied pack). `stored` lists them with their sizes.
  */
 export class SpilledFiles {
   readonly stored: { id: string; size: number }[] = [];
@@ -65,6 +66,7 @@ export class SpilledFiles {
     private readonly env: Env,
     private readonly repo: string,
     private readonly rawKey: (id: string) => string,
+    private readonly skip: (id: string) => boolean = () => false,
   ) {}
 
   /** Takes `frames`; answers once every byte is on its way to R2. */
@@ -101,6 +103,7 @@ export class SpilledFiles {
     this.#current = null;
     await parts.finish();
     try {
+      if (this.skip(id)) return;
       const temp = await this.env.OBJECTS.get(parts.key);
       if (!temp) throw new ApiError('INTERNAL', `Spilled file ${id} was not stored`);
       await putLarge(this.env, this.rawKey(id), parts.size, temp.body);

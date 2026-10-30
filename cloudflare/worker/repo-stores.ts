@@ -1,10 +1,11 @@
 // The Git object stores behind repositories: Artifacts (production) or R2 (local
-// development and the fallback the plan keeps open). Each repository records which one
-// holds its objects; the tiered reads in front of them live in repo-objects.
+// development and the fallback the plan keeps open), or none beside the store of record
+// once a purge retired the Artifacts mirror (repo-platform-store). Each repository records
+// which one holds its objects; the tiered reads in front of them live in repo-objects.
 import { rpcValue } from './durable';
-import { compute } from './repo-compute';
-import { largeReceivePack, putLarge } from './repo-large-files';
-import { putObjects } from './repo-r2-writes';
+import { largeReceivePack } from './repo-large-files';
+import { PLATFORM_SPEC, PlatformStore } from './repo-platform-store';
+import { R2Store } from './repo-r2-store';
 import { record, timed } from './repo-timing';
 import type { Env } from './types';
 
@@ -156,85 +157,32 @@ class ArtifactsStore implements ObjectStore {
     return { remote: info.remote, token: token.plaintext, expires_in_seconds: CLONE_TOKEN_SECONDS };
   }
   async readCommit(id: string) {
-    using repo = await this.env.ARTIFACTS.get(this.name);
-    const commit = await rpcValue(repo.readCommit(id));
+    using repo = await this.held();
+    const commit = repo && (await rpcValue(repo.readCommit(id)));
     return commit ? { tree: commit.treeHash, parents: commit.parents } : null;
   }
   async readTree(id: string) {
-    using repo = await this.env.ARTIFACTS.get(this.name);
-    const entries = await rpcValue(repo.readTree(id));
+    using repo = await this.held();
+    const entries = repo && (await rpcValue(repo.readTree(id)));
     return entries ? entries.map((e) => ({ name: e.name, type: e.type, id: e.hash })) : null;
   }
   async readBlob(id: string) {
-    using repo = await this.env.ARTIFACTS.get(this.name);
+    using repo = await this.held();
+    if (!repo) return null;
     return rpcValue(repo.readBlob(id), async (blob) =>
       blob ? new Uint8Array(await blob.arrayBuffer()) : null,
     );
   }
-}
-
-/** Objects as R2 entries; pushes are unpacked and verified by Rust compute. */
-class R2Store implements ObjectStore {
-  constructor(
-    private readonly env: Env,
-    private readonly name: string,
-  ) {}
-  get spec() {
-    return `r2:${this.name}`;
-  }
-  private key(id: string) {
-    return `store/v1/${this.name}/objects/${id}`;
-  }
-  async create() {}
-  /** Like a Git server: store the pack, then update the ref only if `old` still holds. */
-  async push(body: Uint8Array) {
-    const received = compute({ op: 'receive_pack', body_b64: toBase64(body) });
-    const refuse = (refused: string) =>
-      fromBase64(compute({ op: 'push_report', refname: received.ref, refused }).report_b64);
-    // Hidden refs are not stored in R2 (objects never expire here): a delete is a no-op.
-    if (received.delete)
-      return fromBase64(compute({ op: 'push_report', refname: received.ref }).report_b64);
-    await putObjects(this.env, (id) => this.key(id), received.objects);
-    if (!received.contains_new && !(await this.readCommit(received.new)))
-      return refuse('missing necessary objects');
-    // Hidden per-commit refs only keep objects reachable; R2 objects never expire.
-    if (!received.ref.startsWith('refs/yoneda/')) {
-      const key = `store/v1/${this.name}/${received.ref}`;
-      const current = await this.env.OBJECTS.get(key);
-      const value = current ? await current.text() : null;
-      if (value !== (received.old ?? null)) return refuse('stale info');
-      // Updates are conditional on the etag read above; creation is unconditional (R2 has
-      // no create-only precondition), which only matters for two first projections racing.
-      const written = await this.env.OBJECTS.put(
-        key,
-        received.new,
-        current ? { onlyIf: { etagMatches: current.etag } } : {},
-      );
-      if (!written) return refuse('stale info');
+  /** The repository to read, or null once it is deleted (a mirror retired after a purge,
+   * still named by a fork's record of its parent or a head copy older than the switch:
+   * the store of record holds everything it did). */
+  private async held() {
+    try {
+      return await this.env.ARTIFACTS.get(this.name);
+    } catch (e: any) {
+      if (e?.code === 'NOT_FOUND' || /not.?found/i.test(String(e?.message ?? e))) return null;
+      throw e;
     }
-    return fromBase64(compute({ op: 'push_report', refname: received.ref }).report_b64);
-  }
-  /** A large file streamed into its object key (hidden refs are not kept here). */
-  async pushFile(id: string, size: number, open: () => Promise<ReadableStream<Uint8Array>>) {
-    await putLarge(this.env, this.key(id), size, await open());
-    return null;
-  }
-  /** A projected branch value (tests and drift investigation). */
-  async readRef(refname: string) {
-    const value = await this.env.OBJECTS.get(`store/v1/${this.name}/${refname}`);
-    return value ? value.text() : null;
-  }
-  async readCommit(id: string) {
-    const object = await this.env.OBJECTS.get(this.key(id));
-    return object ? object.json<CommitHeader>() : null;
-  }
-  async readTree(id: string) {
-    const object = await this.env.OBJECTS.get(this.key(id));
-    return object ? (await object.json<{ entries: TreeEntry[] }>()).entries : null;
-  }
-  async readBlob(id: string) {
-    const object = await this.env.OBJECTS.get(this.key(id));
-    return object ? new Uint8Array(await object.arrayBuffer()) : null;
   }
 }
 
@@ -245,12 +193,22 @@ export function newStore(env: Env, name: string): ObjectStore {
     : new ArtifactsStore(env, name);
 }
 
+/** A fork's own store before it is created: none beside the platform's when its parent
+ * has none (a mirror would need history the parent's purge withholds), else a store of
+ * this deployment's kind named `yr-<fork>`. */
+export function forkOwnStore(env: Env, parentSpec: string, fork: string): ObjectStore {
+  return PLATFORM_SPEC.test(ownSpec(parentSpec))
+    ? new PlatformStore(env, fork)
+    : newStore(env, `yr-${fork}`);
+}
+
 /**
- * A fork's own store, named `name`: an Artifacts fork of the parent's own store when that
- * is Artifacts (it then holds the parent's projected branches: `inherited`), else a new,
- * empty store of this deployment's kind.
+ * Fork `fork`'s own store: an Artifacts fork of the parent's own store when that is
+ * Artifacts (it then holds the parent's projected branches: `inherited`), else a new,
+ * empty store (`forkOwnStore`).
  */
-export async function forkStore(env: Env, parentSpec: string, name: string) {
+export async function forkStore(env: Env, parentSpec: string, fork: string) {
+  const name = `yr-${fork}`;
   const parent = /^artifacts:([^/]+)\/([A-Za-z0-9._-]+)$/.exec(ownSpec(parentSpec));
   if (parent && parent[1] === env.ARTIFACTS_NAMESPACE && env.PLATFORM_OBJECT_STORE !== 'r2') {
     using repo = await env.ARTIFACTS.get(parent[2]);
@@ -258,7 +216,7 @@ export async function forkStore(env: Env, parentSpec: string, name: string) {
     await rpcValue(repo.fork(name, { defaultBranchOnly: false }));
     return { spec: new ArtifactsStore(env, name).spec, inherited: true };
   }
-  const store = newStore(env, name);
+  const store = forkOwnStore(env, parentSpec, fork);
   await store.create();
   return { spec: store.spec, inherited: false };
 }
@@ -281,8 +239,9 @@ export function ownSpec(spec: string): string {
   return FORK.test(spec) ? String(JSON.parse(spec.slice(5)).own) : spec;
 }
 
-/** Parses a recorded store: `artifacts:<namespace>/<name>`, `r2:<name>`, or a fork's
- * (`forkSpec`): its own store, carrying the parent it inherits from. */
+/** Parses a recorded store: `artifacts:<namespace>/<name>`, `r2:<name>`, `platform:<repo>`
+ * (no mirror), or a fork's (`forkSpec`): its own store, carrying the parent it inherits
+ * from. */
 export function parseStore(env: Env, spec: string): ObjectStore {
   if (FORK.test(spec)) {
     const fork = JSON.parse(spec.slice(5));
@@ -296,5 +255,7 @@ export function parseStore(env: Env, spec: string): ObjectStore {
     return new ArtifactsStore(env, artifacts[2]);
   const r2 = /^r2:([A-Za-z0-9._-]+)$/.exec(spec);
   if (r2) return new R2Store(env, r2[1]);
+  const platform = PLATFORM_SPEC.exec(spec);
+  if (platform) return new PlatformStore(env, platform[1]);
   throw new Error('Repository object store is outside this deployment');
 }
