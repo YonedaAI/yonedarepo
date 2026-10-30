@@ -1,0 +1,102 @@
+/* The public site's footer: inside the frame, four link columns and a faint wordmark, then
+   the live status pill and the copyright line. */
+.site-footer {
+  border-top: 1px solid var(--site-line);
+  color: var(--site-muted);
+  font-size: var(--fs-sm);
+}
+.site-footer-inner {
+  max-width: var(--site-frame);
+  margin: 0 auto;
+  padding: var(--sp-6) var(--site-gutter) var(--sp-5);
+  border-inline: 1px solid var(--site-line);
+}
+.site-footer-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--sp-6);
+}
+.site-footer-columns {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, max-content));
+  gap: var(--sp-5) 56px;
+}
+.site-footer-heading {
+  margin: 0 0 var(--sp-3);
+  color: var(--site-text);
+  font-weight: 500;
+}
+.site-footer-columns ul {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.site-footer-columns a:hover {
+  color: var(--site-text);
+}
+/* Our own mark and name, large and barely there. */
+.site-footer-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  color: var(--site-text);
+  opacity: 0.1;
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 56px;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  white-space: nowrap;
+  user-select: none;
+}
+.site-footer-mark svg {
+  width: 48px;
+  height: 48px;
+}
+.site-footer-bottom {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: var(--sp-5);
+  margin-top: var(--sp-6);
+}
+.site-footer-bottom p {
+  margin: 0;
+}
+.site-status {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 2px var(--sp-3);
+  border: 1px solid var(--site-line-strong);
+  border-radius: 999px;
+}
+.site-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--site-good);
+}
+.site-status-degraded .site-status-dot {
+  background: var(--site-warn);
+}
+
+@media (max-width: 1000px) {
+  .site-footer-mark {
+    display: none;
+  }
+}
+@media (max-width: 800px) {
+  .site-footer-columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+  .site-footer-bottom {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-2);
+  }
+}

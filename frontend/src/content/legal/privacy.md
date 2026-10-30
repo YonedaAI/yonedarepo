@@ -62,12 +62,6 @@ We send a welcome email when your account is created, an email to confirm your a
 
 Our servers run on Cloudflare Workers, which log each request's outcome, errors and timing. Cloudflare may record request metadata with them, such as your IP address and browser user agent. Our code is written never to log passwords, tokens or authorization headers. An internal monitor counts these events to find faults.
 
-### In your browser
-
-- A signed, HttpOnly session cookie.
-- Two local-storage entries: whether this browser was signed in last time, and your theme choice.
-- No advertising or third-party tracking cookies.
-
 ## How we use it
 
 We use this information to:
@@ -130,6 +124,10 @@ Passwords, recovery codes, sessions and tokens are stored only as hashes. Every 
 | Xiaomi (MiMo) | Error counts and short error messages from our servers, with credentials removed | When our internal monitor summarizes a fault |
 
 Model calls pass through Cloudflare AI Gateway, which may keep a log of each request and its response under our account. Checks you write run in containers on Cloudflare, and their code is not sent anywhere else.
+
+## Cookies
+
+YonedaRepo sets only essential cookies, so there is nothing to opt into: a signed, HttpOnly session cookie that keeps you signed in for at most seven days, and, while you sign in with GitHub or Google, a short-lived cookie (ten minutes at most) that ties the sign-in to your browser. Your browser's local storage also keeps two settings for this site: whether this browser was signed in last time, and your theme. We use no advertising, analytics or third-party tracking cookies.
 
 ## Links to other sites
 
