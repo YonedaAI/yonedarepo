@@ -22,8 +22,13 @@
   --site-code-bad: #c0362c;
   color-scheme: light;
   /* One frame, one spacing scale and one type scale for every site page. */
-  --site-frame: 1200px;
+  /* The frame runs nearly edge to edge: --site-edge from the window to its side rules, and
+     --site-gutter from the rules to the content. Running text keeps its own measure. */
+  --site-edge: 32px;
+  --site-frame: min(100% - 2 * var(--site-edge), 1880px);
   --site-gutter: 40px;
+  --site-measure: 54ch;
+  --site-reading: 720px;
   --site-band: 48px;
   --sp-1: 4px;
   --sp-2: 8px;

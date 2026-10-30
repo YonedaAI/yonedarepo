@@ -1,7 +1,7 @@
 /* Pricing, docs, blog, company and sign-in pages of the public site. */
 /* Pricing */
 .site-notice {
-  max-width: 680px;
+  max-width: var(--site-measure);
   padding: 12px 16px;
   border-radius: 8px;
   border: 1px solid var(--site-line-strong);
@@ -101,6 +101,9 @@
   grid-template-columns: 220px minmax(0, 1fr);
   gap: 48px;
   padding-top: 40px;
+  /* The nav beside a reading column, centred in the wide frame. */
+  max-width: calc(220px + 48px + var(--site-reading));
+  margin-inline: auto;
 }
 .site-docs-nav {
   position: sticky;
@@ -136,7 +139,8 @@
   background: var(--site-accent-soft);
 }
 .site-prose {
-  max-width: 760px;
+  max-width: var(--site-reading);
+  font-size: var(--fs-md);
   min-width: 0;
 }
 .site-prose h1 {
@@ -192,7 +196,11 @@
 .site-posts {
   list-style: none;
   padding: 0;
-  max-width: 760px;
+}
+/* Blog index, company pages: one reading column, centred in the frame. */
+.site-reading {
+  max-width: var(--site-reading);
+  margin-inline: auto;
 }
 .site-posts li {
   padding: 24px 0;
@@ -212,7 +220,8 @@
 }
 .site-company {
   padding-top: 40px;
-  max-width: 760px;
+  max-width: var(--site-reading);
+  font-size: var(--fs-md);
   margin: 0 auto;
 }
 .site-tabs {

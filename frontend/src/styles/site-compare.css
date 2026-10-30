@@ -60,6 +60,9 @@
 .site-tiles {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
+.site-tiles li > span {
+  max-width: var(--site-measure);
+}
 .site-tiles li {
   color: var(--site-muted);
   font-size: var(--fs-sm);
