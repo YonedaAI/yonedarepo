@@ -1,7 +1,8 @@
 // The Changes tab: change requests (branches proposed for landing on a base branch, main by
 // default), filtered by status.
 import { useState } from 'react';
-import { CHANGE_FILTERS, type Change, type ChangeFilter, changesPath, who } from './changeModel';
+import { CHANGE_FILTERS, type Change, type ChangeFilter, changesPath } from './changeModel';
+import { usePeople } from './people';
 import { Failure, Loading } from './SourceStatus';
 import { when } from './sourceApi';
 import { type Loaded, useSource } from './useSource';
@@ -28,6 +29,7 @@ export function ChangeTable({
   hrefOf: (n: number) => string;
   onOpen: (n: number) => void;
 }) {
+  const people = usePeople();
   if (changes.loading && !changes.data) return <Loading what="changes" />;
   if (changes.error) return <Failure error={changes.error} onRetry={changes.reload} />;
   const rows = changes.data?.changes ?? [];
@@ -47,7 +49,7 @@ export function ChangeTable({
             <strong>{c.title}</strong> <span className="source-meta">#{c.number}</span>
           </a>
           <span className="source-meta">
-            <code>{c.branch}</code> → {c.base} · {who(c.author)} ·{' '}
+            <code>{c.branch}</code> → {c.base} · {people.principal(c.author)} ·{' '}
             {c.status === 'landed' && c.landed_version !== null
               ? `landed v${c.landed_version} · `
               : ''}

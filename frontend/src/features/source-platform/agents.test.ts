@@ -11,12 +11,12 @@ import {
   groupContracts,
   groupSessions,
   NO_FILTERS,
-  recorder,
   type SessionRecord,
   sessionsPath,
   summaryText,
   transcriptUrl,
 } from './agentModel';
+import { principalName as recorder } from './people';
 import { RepoAgents } from './RepoAgents';
 import { formatSourceRoute, parseSourceRoute, routeTab } from './sourceRoute';
 

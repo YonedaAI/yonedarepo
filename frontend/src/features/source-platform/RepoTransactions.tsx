@@ -1,3 +1,4 @@
+import { usePeople } from './people';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha, when } from './sourceApi';
 import type { SourceRoute } from './sourceRoute';
@@ -23,6 +24,7 @@ export function RepoTransactions({
   repo: string;
   onNavigate: (r: SourceRoute) => void;
 }) {
+  const people = usePeople();
   const log = useSource<{ entries: Entry[]; version: number }>(`/repos/${repo}/txlog?limit=500`);
   if (log.error) return <Failure error={log.error} onRetry={log.reload} />;
   if (!log.data) return <Loading what="transaction log" />;
@@ -83,7 +85,7 @@ export function RepoTransactions({
                 {e.actor.startsWith('break-glass:') && (
                   <span className="source-badge-danger">Break-glass</span>
                 )}{' '}
-                {e.actor.replace(/^break-glass:/, '')}
+                {people.principal(e.actor.replace(/^break-glass:/, ''))}
               </td>
               <td>{when(e.committed_at_ms)}</td>
               <td>

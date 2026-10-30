@@ -107,7 +107,7 @@ describe('repository search', () => {
       key: 'a'.repeat(40),
       route: { view: 'commit', repo, commit: 'a'.repeat(40) },
       label: `${'a'.repeat(12)} Retry fetches`,
-      detail: 'token:agent · src/fetch.rs',
+      detail: 'agent (token) · src/fetch.rs',
     });
     expect(sections[1].rows[0]).toMatchObject({
       route: { view: 'session', repo, id: 7 },

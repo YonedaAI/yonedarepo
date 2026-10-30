@@ -1,6 +1,7 @@
 // One search across the repository: matching files and lines, memories, and the commits,
 // session records and change requests whose text holds the query's words (searchModel).
 import { type FormEvent, useState } from 'react';
+import { usePeople } from './people';
 import { SearchCode } from './SearchCode';
 import { Failure, Loading } from './SourceStatus';
 import { foundNothing, recordSections, type SearchAnswer, searchPath } from './searchModel';
@@ -18,6 +19,7 @@ export function RepoSearch({
   word?: boolean;
   onNavigate: (r: SourceRoute) => void;
 }) {
+  const people = usePeople();
   const [draft, setDraft] = useState(query);
   const found = useSource<SearchAnswer>(query.length >= 2 ? searchPath(repo, query, word) : null);
   const go = (q: string, w: boolean) =>
@@ -57,7 +59,7 @@ export function RepoSearch({
         <p className="source-empty">No matches for “{query}”.</p>
       )}
       {found.data &&
-        recordSections(repo, found.data).map((section) => (
+        recordSections(repo, found.data, people.principal).map((section) => (
           <section
             key={section.key}
             aria-labelledby={`search-${section.key}-heading`}

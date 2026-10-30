@@ -4,13 +4,8 @@
 // may name where one is kept, linked when it is a web address).
 import { ArrowLeft } from 'lucide-react';
 import { linkTo, type Navigate } from '../shell/useRoute';
-import {
-  fetchEfficiency,
-  recorder,
-  type SessionDetail,
-  summaryText,
-  transcriptUrl,
-} from './agentModel';
+import { fetchEfficiency, type SessionDetail, summaryText, transcriptUrl } from './agentModel';
+import { usePeople } from './people';
 import { SessionDeliveries } from './SessionDeliveries';
 import { SessionTranscript } from './SessionTranscript';
 import { Failure, Loading } from './SourceStatus';
@@ -26,6 +21,7 @@ export function SessionView({
   id: number;
   navigate: Navigate;
 }) {
+  const people = usePeople();
   const loaded = useSource<SessionDetail>(`/repos/${repo}/sessions/${id}`);
   const back = (
     <a
@@ -61,12 +57,12 @@ export function SessionView({
       <dl className="agent-facts">
         <dt>Recorded by</dt>
         <dd>
-          {recorder(s.recorded_by)} · {when(s.at)}
+          {people.principal(s.recorded_by)} · {when(s.at)}
         </dd>
         <dt>Commit</dt>
         <dd>
           {commitLink(commit.id, commit.message.split('\n')[0])} · pushed by{' '}
-          {recorder(commit.principal)}
+          {people.principal(commit.principal)}
         </dd>
         <dt>Transcript</dt>
         <dd>

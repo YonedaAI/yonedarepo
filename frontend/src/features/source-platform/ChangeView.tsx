@@ -13,9 +13,9 @@ import {
   conversation,
   diffAnchors,
   groupComments,
-  who,
 } from './changeModel';
 import { MergeGates } from './MergeGates';
+import { usePeople } from './people';
 import { RebaseButton } from './RebaseButton';
 import { ChangeStatusChip } from './RepoChanges';
 import { useReadOnly } from './repoAccess';
@@ -33,9 +33,10 @@ function PushItem({
   push: Extract<ConversationItem, { kind: 'push' }>['push'];
   onCommit?: (sha: string) => void;
 }) {
+  const people = usePeople();
   return (
     <p className="source-push source-meta">
-      {who(push.actor)} {PUSHED[push.action]}
+      {people.principal(push.actor)} {PUSHED[push.action]}
       {push.after && (
         <>
           {' '}
@@ -71,6 +72,7 @@ export function ChangeView({
   /** Links the sessions behind the change's commits to their pages. */
   navigate?: Navigate;
 }) {
+  const people = usePeople();
   const detail = useSource<ChangeDetail>(`/repos/${repo}/changes/${number}?patch=1`);
   const gates = useSource<Gates>(`/repos/${repo}/changes/${number}/gates`);
   const readOnly = useReadOnly();
@@ -101,7 +103,7 @@ export function ChangeView({
           {c.title} <span className="source-meta">#{c.number}</span>
         </h2>
         <p className="source-meta">
-          <ChangeStatusChip status={c.status} /> {who(c.author)}{' '}
+          <ChangeStatusChip status={c.status} /> {people.principal(c.author)}{' '}
           {c.status === 'open' ? 'proposes' : 'proposed'} landing <code>{c.branch}</code> on{' '}
           <code>{c.base}</code> · opened {when(c.created_at)}
           {c.head && (

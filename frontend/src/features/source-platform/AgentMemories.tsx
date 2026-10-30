@@ -5,7 +5,6 @@
 // publish a session's draft, and retire; every change appends, nothing is edited away.
 import { useState } from 'react';
 import { linkTo, type Navigate } from '../shell/useRoute';
-import { recorder } from './agentModel';
 import { type ComposerStart, EMPTY_COMPOSER, MemoryComposer } from './MemoryComposer';
 import {
   anchorText,
@@ -20,6 +19,7 @@ import {
   NO_MEMORY_FILTERS,
   STATUS_LABELS,
 } from './memoryModel';
+import { usePeople } from './people';
 import { useReadOnly } from './repoAccess';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha, sourceApi, when } from './sourceApi';
@@ -82,6 +82,7 @@ function MemoryRow({
   onEdit: (start: ComposerStart) => void;
   onChanged: () => void;
 }) {
+  const people = usePeople();
   const readOnly = useReadOnly();
   const live = (m.status === 'active' || m.status === 'draft') && !m.quarantined;
   return (
@@ -114,7 +115,7 @@ function MemoryRow({
         </ul>
       )}
       <span className="source-meta">
-        #{m.id} · {recorder(m.author)} · {when(m.recorded_at)} · against{' '}
+        #{m.id} · {people.principal(m.author)} · {when(m.recorded_at)} · against{' '}
         <a {...linkTo({ view: 'commit', repo, commit: m.commit }, navigate)}>
           <code>{shortSha(m.commit)}</code>
         </a>
@@ -129,7 +130,7 @@ function MemoryRow({
         {m.retired && (
           <>
             {' '}
-            · retired by {recorder(m.retired.by)} {when(m.retired.at)}
+            · retired by {people.principal(m.retired.by)} {when(m.retired.at)}
             {m.retired.reason ? `: ${m.retired.reason}` : ''}
           </>
         )}
