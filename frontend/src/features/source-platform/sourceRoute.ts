@@ -43,8 +43,10 @@ export type SourceRoute =
   /** The contact email's confirmation page (the emailed link; its button confirms). */
   | { view: 'verify-email'; account: string; token: string }
   | { view: 'org'; org: string }
-  /** The workspace's managed agents (`/agents`); `workspace` (an org) defaults to the account. */
-  | { view: 'agents-home'; workspace?: string }
+  /** The workspace's managed agents (`/agents`); `workspace` (an org) defaults to the account.
+   * `cardAdded`: back from Stripe (`?billing=added`), kept here because the page reads it once
+   * the session is known, after the shell has rewritten the address. */
+  | { view: 'agents-home'; workspace?: string; cardAdded?: true }
   /** One agent's page (`/agents/<id>`): its runs and setup, or a new custom agent (`/agents/new`). */
   | { view: 'agent-settings'; agent: string; workspace?: string }
   /** Set up or configure one agent (`/agents/<id>/configure`). */
@@ -195,7 +197,9 @@ function parseAgentsRoute(parts: string[], params: URLSearchParams): SourceRoute
     return { view: 'agent-configure', agent: first, ...space };
   if (first && AGENT_ID.test(first) && !repo)
     return { view: 'agent-settings', agent: first, ...space };
-  return { view: 'agents-home', ...space };
+  return params.get('billing') === 'added'
+    ? { view: 'agents-home', ...space, cardAdded: true }
+    : { view: 'agents-home', ...space };
 }
 
 export type AgentsRoute = Extract<
@@ -224,6 +228,7 @@ function formatAgentsRoute(route: AgentsRoute): string {
     if (route.agent) query.set('agent', route.agent);
   } else path = `/agents/runs/${route.runRepo}/${route.run}`;
   if (route.workspace) query.set('workspace', route.workspace);
+  if (route.view === 'agents-home' && route.cardAdded) query.set('billing', 'added');
   return query.size ? `${path}?${query}` : path;
 }
 

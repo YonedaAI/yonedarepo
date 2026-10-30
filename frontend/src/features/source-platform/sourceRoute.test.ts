@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AccountSection } from '../account-settings/settingsRoute';
-import { RETURN_PATH } from '../agents/billingModel';
+import { agentsReturnPath, RETURN_PATH } from '../agents/billingModel';
 import { patchRows } from './patchRows';
 import { forgetRepoNames, rememberRepoName, repoBase } from './repoNames';
 import {
@@ -102,6 +102,24 @@ describe('source routes', () => {
       view: 'settings',
       section: 'general',
     });
+  });
+  it('keeps the Stripe return flag on the Agents page, an org\'s too', () => {
+    const at = (search: string) => parseSourceRoute('/agents', search);
+    expect(at('?billing=added')).toEqual({ view: 'agents-home', cardAdded: true });
+    expect(at('?workspace=acme&billing=added')).toEqual({
+      view: 'agents-home',
+      workspace: 'acme',
+      cardAdded: true,
+    });
+    // The shell rewrites to this address: what Stripe was given must survive it.
+    for (const path of [agentsReturnPath(), agentsReturnPath('acme')]) {
+      const url = new URL(path, 'https://x');
+      expect(formatSourceRoute(parseSourceRoute(url.pathname, url.search))).toBe(path);
+    }
+    expect(formatSourceRoute(at('?billing=added&workspace=acme'))).toBe(agentsReturnPath('acme'));
+    // Only the Agents page takes it, and only with that value.
+    expect(at('?billing=other')).toEqual({ view: 'agents-home' });
+    expect(parseSourceRoute('/agents/runs', '?billing=added')).toEqual({ view: 'agent-runs' });
   });
   it('falls back safely on malformed input', () => {
     expect(parseSourceRoute('/source/not-a-repo', '')).toEqual({ view: 'home' });
