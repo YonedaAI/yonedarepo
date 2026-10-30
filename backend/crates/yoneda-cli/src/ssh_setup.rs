@@ -21,14 +21,15 @@ fn valid_host(host: &str) -> bool {
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'.' || b == b'-')
 }
 
-/// A key API refusal; a token without the Admin scope for all repositories says what works.
+/// A key API refusal; a login from before the SSH keys scope, or one narrowed on the approval
+/// page, is told what works.
 fn refused(failure: Failure, origin: &str) -> Error {
     let forbidden = failure.code == "FORBIDDEN";
     let mut error = Error::from(failure);
     if forbidden {
         error.message = format!(
-            "Run `yoneda login --origin {origin}` and tick Admin on the approval page, then \
-             `yoneda ssh setup` again: this token cannot manage SSH keys ({})",
+            "Run `yoneda login --origin {origin}`, keep SSH keys ticked on the approval page, \
+             then `yoneda ssh setup` again: this token cannot manage SSH keys ({})",
             error.message
         );
     }

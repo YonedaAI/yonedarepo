@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { patScopesSchema } from '../../../../shared/contracts/pat-scopes';
 import { CloneButton } from './CodeParts';
 import { AgentConnectHelp, ConnectPanel } from './ConnectPanel';
 import {
@@ -8,6 +9,8 @@ import {
   claudeMcpJson,
   cloneCommand,
   codexToml,
+  DEFAULT_PAT_SCOPES,
+  DEVICE_PAT_SCOPES,
   expiresIn,
   httpsCloneCommand,
   installCommand,
@@ -16,6 +19,7 @@ import {
   loginCommand,
   mcpUrl,
   normalizeUserCode,
+  PAT_SCOPES,
   scopeList,
   windowsInstallCommand,
 } from './connect';
@@ -108,6 +112,11 @@ describe('connect snippets', () => {
       ],
       ['Claude Code: install the plugin', '/plugin install yoneda@yonedarepo'],
     ]);
+  });
+  it('offers every scope the platform knows, SSH keys ticked only for a CLI login', () => {
+    expect(PAT_SCOPES.map((s) => s.scope)).toEqual(patScopesSchema.enum);
+    expect(DEFAULT_PAT_SCOPES).not.toContain('account:ssh-keys');
+    expect(DEVICE_PAT_SCOPES).toEqual([...DEFAULT_PAT_SCOPES, 'account:ssh-keys']);
   });
   it('gives Windows its own one-line install, from the site not the API', () => {
     expect(installCommand(api)).toBe('curl -fsSL https://dev.yonedarepo.com/install.sh | sh');

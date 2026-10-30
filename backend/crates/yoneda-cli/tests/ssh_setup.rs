@@ -391,7 +391,7 @@ fn makes_no_key_while_ssh_is_off_or_the_token_cannot_manage_keys() -> TestResult
     let (origin, _) = Platform {
         list: (
             "403 Forbidden",
-            json!({"error": {"code": "FORBIDDEN", "message": "Token lacks the repo:admin scope"}}),
+            json!({"error": {"code": "FORBIDDEN", "message": "Token lacks the account:ssh-keys scope"}}),
         ),
         add: added(),
     }
@@ -400,7 +400,7 @@ fn makes_no_key_while_ssh_is_off_or_the_token_cannot_manage_keys() -> TestResult
     assert!(!out.status.success());
     let message = stderr(&out);
     assert!(
-        message.contains("yoneda login") && message.contains("Admin"),
+        message.contains("yoneda login") && message.contains("SSH keys ticked"),
         "says what works: {message}"
     );
     assert!(!world.ssh_dir().exists());

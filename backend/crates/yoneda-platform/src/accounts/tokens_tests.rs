@@ -27,6 +27,40 @@ fn check(db: &NativeStore, now: i64, hash: char) -> yoneda_core::Result<Value> {
 }
 
 #[test]
+fn the_ssh_keys_scope_is_a_scope_like_the_others() {
+    let db = account();
+    let made = create(
+        &db,
+        2000,
+        "pat_0123456789abcdef",
+        'c',
+        json!(["repo:read", "account:ssh-keys"]),
+    );
+    assert_eq!(made["scopes"], json!(["repo:read", "account:ssh-keys"]));
+    let checked = check(&db, 2001, 'c').unwrap();
+    assert_eq!(checked["scopes"], json!(["repo:read", "account:ssh-keys"]));
+    // Every scope at once fits the limit; a repeat and a stranger do not.
+    let all = json!([
+        "repo:read",
+        "repo:write",
+        "repo:land",
+        "repo:review",
+        "repo:admin",
+        "account:ssh-keys"
+    ]);
+    create(&db, 2002, "pat_0123456789abcde0", 'd', all);
+    let base = |scopes: Value| {
+        at(
+            &db,
+            2003,
+            json!({"op":"pat_create","id":"pat_0123456789abcde1","name":"ci","token_hash":"e".repeat(64),"scopes":scopes,"expires_days":30,"repos":null}),
+        )
+    };
+    assert!(base(json!(["account:ssh-keys", "account:ssh-keys"])).is_err());
+    assert!(base(json!(["account:everything"])).is_err());
+}
+
+#[test]
 fn workspace_schema_migrates_fresh_repeat_and_from_version_one() {
     let fresh = account();
     let versions = |db: &NativeStore| {

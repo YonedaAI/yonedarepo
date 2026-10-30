@@ -4,7 +4,7 @@
 import { type FormEvent, useState } from 'react';
 import {
   DEFAULT_EXPIRY_DAYS,
-  DEFAULT_PAT_SCOPES,
+  DEVICE_PAT_SCOPES,
   isUserCode,
   normalizeUserCode,
   PAT_SCOPES,
@@ -47,7 +47,7 @@ export function DeviceOutcome({ outcome }: { outcome: Outcome }) {
 export function DevicePage({ code: initial }: { code: string }) {
   const repos = useSource<{ repos: RepoSummary[] }>('/repos');
   const [code, setCode] = useState(initial);
-  const [scopes, setScopes] = useState<PatScope[]>(DEFAULT_PAT_SCOPES);
+  const [scopes, setScopes] = useState<PatScope[]>(DEVICE_PAT_SCOPES);
   const [days, setDays] = useState(DEFAULT_EXPIRY_DAYS);
   const [allow, setAllow] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);

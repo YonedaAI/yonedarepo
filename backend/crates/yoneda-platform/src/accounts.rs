@@ -38,6 +38,7 @@ mod token_origin_tests;
 mod tokens;
 #[cfg(test)]
 mod tokens_tests;
+pub(crate) use tokens::{SCOPES, SSH_KEYS_SCOPE};
 const TABLE: &str = "workspace_records";
 
 /// Apply the account schema and execute a command in one synchronous transaction.

@@ -9,9 +9,16 @@ export const PAT_SCOPES = [
   { scope: 'repo:land', label: 'Land', hint: 'move main' },
   { scope: 'repo:review', label: 'Review', hint: 'approve or reject' },
   { scope: 'repo:admin', label: 'Admin', hint: 'create, delete, tokens, policy' },
+  {
+    scope: 'account:ssh-keys',
+    label: 'SSH keys',
+    hint: 'add and remove keys on your account; a key clones and pushes as you',
+  },
 ] as const;
 export type PatScope = (typeof PAT_SCOPES)[number]['scope'];
 export const DEFAULT_PAT_SCOPES: PatScope[] = ['repo:read', 'repo:write', 'repo:land'];
+/** A CLI login: the same, with what `yoneda ssh setup` needs. Hand-made tokens start without. */
+export const DEVICE_PAT_SCOPES: PatScope[] = [...DEFAULT_PAT_SCOPES, 'account:ssh-keys'];
 export const REPO_TOKEN_SCOPES = ['read', 'write', 'check', 'review', 'land'] as const;
 export const EXPIRY_DAYS = [1, 7, 30, 90] as const;
 export const DEFAULT_EXPIRY_DAYS = 30;

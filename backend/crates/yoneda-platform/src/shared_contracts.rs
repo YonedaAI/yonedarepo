@@ -1,6 +1,7 @@
 //! Contracts the TypeScript side shares, as JSON Schemas derived from the Rust types that
 //! produce them. `cargo xtask contracts` writes each as `shared/contracts/<name>.ts` (its
 //! types and the schema itself); a test there fails while a committed file is stale.
+use crate::accounts::SCOPES;
 use crate::repo_store::{change_gates::ChangeGates, policy::Policy, status::RepoAnswer};
 use serde_json::{Value, json};
 use yoneda_core::account::{
@@ -15,6 +16,7 @@ pub fn schemas() -> Vec<(&'static str, Value)> {
         ("policy", request::<Policy>()),
         ("change-gates", response::<ChangeGates>()),
         ("reserved-handles", reserved_handles()),
+        ("pat-scopes", pat_scopes()),
     ]
 }
 
@@ -58,5 +60,16 @@ fn reserved_handles() -> Value {
         "description": "A name reserved for the website's own pages: no handle may take it",
         "type": "string",
         "enum": RESERVED_HANDLES,
+    })
+}
+
+/// What a personal access token may hold (`accounts::tokens`, which validates every grant).
+fn pat_scopes() -> Value {
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "title": "PatScope",
+        "description": "A scope a personal access token may hold",
+        "type": "string",
+        "enum": SCOPES,
     })
 }

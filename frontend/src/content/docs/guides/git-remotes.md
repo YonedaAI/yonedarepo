@@ -49,7 +49,7 @@ irm https://yonedarepo.com/install.ps1 | iex
 
 ### 2. Run the setup
 
-Sign in with `yoneda login`, ticking **Admin** on the approval page (only tokens with Admin for all repositories can add SSH keys), then:
+Sign in with `yoneda login` (the approval page ticks **SSH keys** for you; keep it, and leave the repositories at all), then:
 
 ```sh
 yoneda ssh setup

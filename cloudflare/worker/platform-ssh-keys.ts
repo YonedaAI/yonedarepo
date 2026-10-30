@@ -6,7 +6,7 @@
 // once, and a claim left behind by a failure grants nothing.
 import { frontDoor } from './platform-ssh-gateway';
 import { ApiError, type Credentials, type Json } from './repo-ops';
-import { requirePatScope } from './repo-pat';
+import { patHolds, requirePatScope } from './repo-pat';
 import type { Env } from './types';
 import { workspace } from './workspace';
 
@@ -25,14 +25,25 @@ async function index(env: Env, fingerprint: string, command: Json): Promise<Json
   return value;
 }
 
-/** The account whose keys `auth` manages: a signed-in person, or a `repo:admin` token. A key
- * reaches every repository of the account, so adding one with a token needs a token that
- * already does (no repository or organization limit). */
+/** What a key does on every repository of the account (`platform-ssh.ts`). */
+const KEY_REACH = ['repo:read', 'repo:write', 'repo:land'] as const;
+
+/** The account whose keys `auth` manages: a signed-in person, or a token with
+ * `account:ssh-keys` or `repo:admin`. A key reaches every repository of the account and
+ * outlives the token, so adding one needs a token that already does as much: no repository
+ * or organization limit, and every scope a key acts with. Without that rule the narrow scope
+ * alone would be full Git access. */
 function manager(auth: Credentials, adding: boolean): string {
   if ('_pat' in auth) {
-    requirePatScope(auth, 'repo:admin');
+    const admin = patHolds(auth, 'repo:admin');
+    if (!admin) requirePatScope(auth, 'account:ssh-keys');
     if (adding && (auth._pat.repos !== null || auth._pat.org !== null))
       throw new ApiError('FORBIDDEN', 'Adding an SSH key needs a token for all repositories');
+    if (adding && !admin && !KEY_REACH.every((scope) => patHolds(auth, scope)))
+      throw new ApiError(
+        'FORBIDDEN',
+        `Adding an SSH key needs ${KEY_REACH.join(', ')}: a key does all three`,
+      );
     return auth._pat.workspace;
   }
   if ('_session' in auth && auth._session.human) return auth._session.workspace;
