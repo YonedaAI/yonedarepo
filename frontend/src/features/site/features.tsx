@@ -13,7 +13,7 @@ export type Feature = {
   coming?: string;
 };
 
-function Terminal({
+export function Terminal({
   lines,
   label,
 }: {
