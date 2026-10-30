@@ -11,7 +11,7 @@ import { chromium } from 'playwright-core';
 import { missingText } from './agent-tools-plan.mjs';
 import { see } from './browser-collab-flow.mjs';
 import { sleep } from './client.mjs';
-import { atRepo } from './repo-urls.mjs';
+import { atRepo, openRepo } from './repo-urls.mjs';
 
 /** The Repository navigation's highlighted entries (exactly one on every repository page). */
 export const highlighted = (page) =>
@@ -38,7 +38,7 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
   m.agent_session = posted.session;
 
   const tabs = page.getByRole('navigation', { name: 'Repository' });
-  await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).click();
+  await openRepo(page, name);
   await atRepo(page, account, id);
   await tabs.getByRole('link', { name: 'Sessions' }).click();
   await atRepo(page, account, id, `/agents`);

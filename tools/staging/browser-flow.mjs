@@ -23,7 +23,7 @@ import { agentPages } from './browser-agent-flow.mjs';
 import { managedAgentPages } from './browser-managed-agents-flow.mjs';
 import { forkPages, orgPages, releasePages } from './browser-collab-flow.mjs';
 import { b64, Session, secondAccount, sleep, until } from './client.mjs';
-import { atRepo, repoPath } from './repo-urls.mjs';
+import { atRepo, openRepo, repoPath } from './repo-urls.mjs';
 
 const author = { name: 'Browser gate', email: 'kit@yonedarepo.invalid' };
 
@@ -282,7 +282,7 @@ export async function changeLanded(page, { origin, kit, account, repo: { id, nam
   Object.assign(m, { change: change.number, head: made.commit, author: member.name });
 
   // The source pages end on account settings: back to the repository through the sidebar.
-  await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).click();
+  await openRepo(page, name);
   await atRepo(page, account, id);
   await page.getByRole('navigation', { name: 'Repository' }).getByRole('link', { name: 'Changes' }).click();
   await page.getByRole('link', { name: /Browser gate change/ }).click();
