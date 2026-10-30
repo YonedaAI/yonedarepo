@@ -37,6 +37,7 @@ import {
 } from './pricing';
 import { COMPARISONS } from './SiteCompare';
 import { SiteFeatures } from './SiteFeatures';
+import { checkHealth, FOOTER_COLUMNS, SOCIAL_LINKS, StatusPill } from './SiteFooter';
 import { SiteHome } from './SiteHome';
 import { SiteLayout } from './SiteLayout';
 import { SiteBlog, SiteCompany, SiteDocs, SiteLegal } from './SitePages';
@@ -228,6 +229,92 @@ describe('home', () => {
   });
 });
 
+describe('footer', () => {
+  const layout = () =>
+    render(
+      createElement(SiteLayout, { page: { page: 'home' }, authenticated: false, navigate }, 'x'),
+    );
+
+  it('links only to routes and sections that exist', () => {
+    const links = FOOTER_COLUMNS.flatMap((c) => c.links);
+    expect(FOOTER_COLUMNS.map((c) => c.title)).toEqual(['Product', 'Company', 'Legal', 'Connect']);
+    const html = layout();
+    for (const link of links) {
+      if ('href' in link) {
+        expect(link.href).toMatch(/^(mailto:|https:\/\/)/);
+        expect(html).toContain(`href="${link.href}"`);
+        continue;
+      }
+      const path = formatSourceRoute(link.route);
+      expect(parse(path)).toEqual(link.route);
+      expect(html).toContain(`href="${path}${link.hash ? `#${link.hash}` : ''}"`);
+      if (!link.hash) continue;
+      // The anchor is a real section of the page it points to.
+      const target =
+        link.route.view === 'home'
+          ? render(createElement(SiteHome, { navigate }))
+          : link.route.view === 'site' && link.route.site.page === 'legal'
+            ? render(createElement(SiteLegal, { doc: link.route.site.doc, navigate }))
+            : render(createElement(SiteFeatures, { navigate }));
+      expect(target).toContain(`id="${link.hash}"`);
+    }
+  });
+
+  it('lists the set public profiles in order, each opening in a new tab', () => {
+    const connect = FOOTER_COLUMNS.find((c) => c.title === 'Connect')?.links ?? [];
+    expect(connect.map((l) => l.label)).toEqual(
+      SOCIAL_LINKS.filter((s) => s.url).map((s) => s.label),
+    );
+    expect(connect.map((l) => l.label)).toEqual([
+      'GitHub',
+      'X',
+      'LinkedIn',
+      'YouTube',
+      'Discord',
+      'Email us',
+    ]);
+    const html = layout();
+    for (const { url } of SOCIAL_LINKS.filter((s) => s.url))
+      expect(html).toContain(
+        url.startsWith('mailto:')
+          ? `href="${url}">`
+          : `href="${url}" target="_blank" rel="noopener noreferrer"`,
+      );
+  });
+
+  it('shows the copyright with the legal name and this year', () => {
+    expect(layout()).toContain(`© ${new Date().getFullYear()} ${LEGAL_ENTITY.legalName}`);
+  });
+
+  it('reports the front health: operational, degraded, or nothing while it loads', async () => {
+    const answer = (status: number, body: unknown) =>
+      (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
+    expect(await checkHealth(answer(200, { service: 'yonedarepo', v: 1 }))).toBe('operational');
+    expect(await checkHealth(answer(503, { service: 'yonedarepo' }))).toBe('degraded');
+    expect(await checkHealth(answer(200, { service: 'other' }))).toBe('degraded');
+    const failing = (async () => {
+      throw new TypeError('network');
+    }) as unknown as typeof fetch;
+    expect(await checkHealth(failing)).toBe('degraded');
+    // A slow answer is cut off and counts as degraded.
+    const slow = ((_: string, init?: RequestInit) =>
+      new Promise((_resolve, reject) =>
+        init?.signal?.addEventListener('abort', () => reject(new Error('aborted'))),
+      )) as unknown as typeof fetch;
+    expect(await checkHealth(slow, 10)).toBe('degraded');
+
+    expect(render(createElement(StatusPill, { health: null }))).toBe('');
+    const ok = render(createElement(StatusPill, { health: 'operational' }));
+    expect(ok).toContain('site-status-operational');
+    expect(ok).toContain('Operational');
+    const down = render(createElement(StatusPill, { health: 'degraded' }));
+    expect(down).toContain('site-status-degraded');
+    expect(down).toContain('Degraded');
+    // The footer never states a status before the check answers.
+    expect(layout()).not.toMatch(/Operational|Degraded/);
+  });
+});
+
 describe('pricing', () => {
   it('rounds cost × margin up to two significant figures', () => {
     expect(MARGIN).toBe(1.3);
@@ -358,6 +445,7 @@ describe('content', () => {
       'When we disclose it',
       'Security',
       'Service providers',
+      'Cookies',
       'Links to other sites',
       'Rights in the EEA and the UK',
       'Rights in US states',
