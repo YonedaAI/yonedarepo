@@ -3,11 +3,13 @@
 // the bare path parses too, for a host that does not). Older
 // addresses (`/source`, `/source/tokens`, a repository's `/connect`, `/members` and
 // `/settings/branches`) still parse, into the view that replaced them. The public site's
-// pages (`site/siteRoute.ts`) parse here too, as one `site` view.
+// pages (`site/siteRoute.ts`) parse here too, as one `site` view. A repository's readable
+// address (`/<handle>/<name>`) and a profile (`/<handle>`) parse and format in repoNames.ts.
 import { isCanonicalAccountIdentifier } from '../../../../shared/account';
 import { formatSitePage, parseSitePath, type SitePage } from '../site/siteRoute';
 import { AGENT_SECTIONS, type AgentSection } from './agentModel';
 import { normalizeUserCode } from './connect';
+import { formatNamedRoute, type NamedRoute, parseNamedPath, repoBase } from './repoNames';
 
 export const REPO_SETTINGS_SECTIONS = [
   'rules',
@@ -41,6 +43,7 @@ export type SourceRoute =
   /** One run's detail; `runRepo`, not `repo`, so the repository shell stays out of it. */
   | { view: 'agent-run'; runRepo: string; run: string; workspace?: string }
   | { view: 'site'; site: SitePage }
+  | NamedRoute
   | { view: 'files'; repo: string; path: string; ref: string; at?: number }
   | { view: 'overview'; repo: string; path: string; ref: string; at?: number }
   | { view: 'history'; repo: string; ref: string }
@@ -106,7 +109,8 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
     return { view: 'explore' };
   const site = parseSitePath(parts);
   if (site) return { view: 'site', site };
-  if (root !== 'source' || !repo || !REPO.test(repo)) return { view: 'home' };
+  if (root !== 'source') return parseNamedPath(parts, search) ?? { view: 'home' };
+  if (!repo || !REPO.test(repo)) return { view: 'home' };
   const ref = params.get('ref') || 'main';
   if (view === 'history') return { view: 'history', repo, ref };
   if (view === 'transactions') return { view: 'transactions', repo };
@@ -202,11 +206,12 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'explore') return '/source/explore';
   if (route.view === 'org') return `/orgs/${route.org}`;
   if (route.view === 'site') return formatSitePage(route.site);
+  if (route.view === 'profile' || route.view === 'repo-name') return formatNamedRoute(route);
   if (route.view === 'device')
     return route.code ? `/device?code=${encodeURIComponent(route.code)}` : '/device';
   if (route.view === 'verify-email')
     return `/verify-email?account=${encodeURIComponent(route.account)}&token=${encodeURIComponent(route.token)}`;
-  const base = `/source/${route.repo}`;
+  const base = repoBase(route.repo);
   if (route.view === 'history')
     return route.ref === 'main'
       ? `${base}/history`

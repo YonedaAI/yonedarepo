@@ -1,7 +1,7 @@
 import { usePeople } from './people';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha, when } from './sourceApi';
-import type { SourceRoute } from './sourceRoute';
+import { formatSourceRoute, type SourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
 
 type Entry = {
@@ -50,7 +50,13 @@ export function RepoTransactions({
             <tr key={e.version}>
               <td>
                 <a
-                  href={`/source/${repo}?at=${e.version}`}
+                  href={formatSourceRoute({
+                    view: 'files',
+                    repo,
+                    path: '',
+                    ref: e.refname.replace(/^refs\/heads\//, ''),
+                    at: e.version,
+                  })}
                   onClick={(event) => {
                     event.preventDefault();
                     onNavigate({
@@ -70,7 +76,7 @@ export function RepoTransactions({
               <td>
                 {e.new && (
                   <a
-                    href={`/source/${repo}/commit/${e.new}`}
+                    href={formatSourceRoute({ view: 'commit', repo, commit: e.new })}
                     onClick={(event) => {
                       event.preventDefault();
                       onNavigate({ view: 'commit', repo, commit: e.new as string });
