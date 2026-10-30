@@ -59,6 +59,10 @@
   .topbar-start {
     min-width: 0;
   }
+  /* A phone keeps the parent and the current page. */
+  .topbar-crumbs li:not(:nth-last-child(-n + 2)) {
+    display: none;
+  }
   .getting-started-panel {
     position: fixed;
     top: 60px;
