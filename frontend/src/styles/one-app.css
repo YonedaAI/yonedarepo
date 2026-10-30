@@ -451,19 +451,6 @@ a.chip:hover {
 .account-settings h1 {
   font-size: 24px;
 }
-.account-dropdown a.account-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 16px;
-  border-radius: 7px;
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 500;
-}
-.account-dropdown a.account-item:hover {
-  background: var(--surface-2);
-}
 .new-repository-actions {
   display: flex;
   justify-content: flex-end;

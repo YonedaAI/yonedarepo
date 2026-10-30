@@ -15,6 +15,7 @@ import {
   groupComments,
 } from './changeModel';
 import { MergeGates } from './MergeGates';
+import { Person } from './Person';
 import { usePeople } from './people';
 import { RebaseButton } from './RebaseButton';
 import { ChangeStatusChip } from './RepoChanges';
@@ -72,7 +73,6 @@ export function ChangeView({
   /** Links the sessions behind the change's commits to their pages. */
   navigate?: Navigate;
 }) {
-  const people = usePeople();
   const detail = useSource<ChangeDetail>(`/repos/${repo}/changes/${number}?patch=1`);
   const gates = useSource<Gates>(`/repos/${repo}/changes/${number}/gates`);
   const readOnly = useReadOnly();
@@ -103,7 +103,7 @@ export function ChangeView({
           {c.title} <span className="source-meta">#{c.number}</span>
         </h2>
         <p className="source-meta">
-          <ChangeStatusChip status={c.status} /> {people.principal(c.author)}{' '}
+          <ChangeStatusChip status={c.status} /> <Person principal={c.author} />{' '}
           {c.status === 'open' ? 'proposes' : 'proposed'} landing <code>{c.branch}</code> on{' '}
           <code>{c.base}</code> · opened {when(c.created_at)}
           {c.head && (

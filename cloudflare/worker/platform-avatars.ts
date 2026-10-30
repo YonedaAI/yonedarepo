@@ -4,7 +4,7 @@
 // provider's picture on its own image host; the platform never fetches one.
 // `PUT /api/v1/account/avatar` uploads (PNG, JPEG or WebP, at most 1 MiB: the authority
 // types it by its leading bytes) and `DELETE` removes it, falling back to the provider's.
-import { isPublicHandle, ownAvatarUrl } from './avatars';
+import { type AvatarInfo, isPublicHandle, ownAvatarUrl } from './avatars';
 import { error, response } from './http';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import type { Env } from './types';
@@ -116,8 +116,8 @@ async function upload(req: Request, env: Env, account: string) {
 }
 
 async function pictureNow(env: Env, account: string) {
-  const info = await workspace(env, account, { op: 'avatar_get' });
-  return response({ avatar_url: ownAvatarUrl(info as never) });
+  const info = (await workspace(env, account, { op: 'avatar_get' })) as AvatarInfo;
+  return response({ avatar_url: ownAvatarUrl(info), avatar_source: info.source });
 }
 
 const tooLarge = () => error('TOO_LARGE', 'Use a picture of at most 1 MB', 413);

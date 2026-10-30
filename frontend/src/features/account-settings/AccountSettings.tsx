@@ -1,7 +1,7 @@
 // Account settings (`/settings`, from the account menu): the account, its email, its sign-in
 // methods, the theme, billing (agent credit and usage), the CLIs signed in with
 // `yoneda login`, personal access tokens and organizations.
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { AccountIdentity } from '../../lib/types';
 import { ThemePicker } from '../shell/ThemePicker';
 import type { Navigate } from '../shell/useRoute';
@@ -20,6 +20,7 @@ import { SshKeys } from '../source-platform/SshKeys';
 import { when } from '../source-platform/sourceApi';
 import type { RepoSummary } from '../source-platform/TokenParts';
 import { type Loaded, useSource } from '../source-platform/useSource';
+import { AvatarSettings } from './AvatarSettings';
 import { BillingSettings } from './BillingSettings';
 import { EmailSettings } from './EmailSettings';
 import { SignInMethods } from './SignInMethods';
@@ -88,6 +89,7 @@ export function AccountSettings({
   repos,
   orgs,
   navigate,
+  onAvatar,
 }: {
   identity: AccountIdentity | null;
   /** The account's repositories by name, for a token's repository allowlist. */
@@ -95,15 +97,23 @@ export function AccountSettings({
   /** The account's organizations (the shell's copy, so the sidebar follows a new one). */
   orgs?: Loaded<{ orgs: OrgSummary[] }>;
   navigate?: Navigate;
+  /** A new picture for the signed-in account (the shell's copy, so the menu follows it). */
+  onAvatar?: (picture: Pick<AccountIdentity, 'avatar_url' | 'avatar_source'>) => void;
 }) {
+  // The account menu opens a section by its id (`/settings#organizations`).
+  useEffect(() => {
+    const id = window.location.hash.slice(1);
+    if (id) document.getElementById(id)?.scrollIntoView({ block: 'start' });
+  }, []);
   const tokens = useSource<{ tokens: Pat[] }>('/tokens');
   const [error, setError] = useState('');
   const clis = onlyTokens(tokens, isDeviceLogin);
   return (
     <div className="account-settings source-tokens">
       <h1>Settings</h1>
-      <section aria-labelledby="account-heading">
+      <section id="account" aria-labelledby="account-heading">
         <h2 id="account-heading">Account</h2>
+        {identity && onAvatar && <AvatarSettings identity={identity} onChange={onAvatar} />}
         {identity ? (
           <dl className="settings-facts">
             <dt>Account name</dt>

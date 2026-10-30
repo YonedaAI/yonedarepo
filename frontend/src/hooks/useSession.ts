@@ -43,6 +43,8 @@ export function useSession() {
               ...(result.handle_suggestion !== undefined
                 ? { handle_suggestion: result.handle_suggestion }
                 : {}),
+              avatar_url: result.avatar_url ?? null,
+              avatar_source: result.avatar_source ?? null,
             }
           : null;
       if (!next && signedIn.current) setSessionEnded(true);
@@ -61,6 +63,12 @@ export function useSession() {
     clear();
     setSessionEnded(false);
   }, [clear]);
+  /** A new picture (an upload or its removal), without reading the session again. */
+  const setAvatar = useCallback(
+    (avatar: Pick<AccountIdentity, 'avatar_url' | 'avatar_source'>) =>
+      setIdentity((current) => current && { ...current, ...avatar }),
+    [],
+  );
   useEffect(() => {
     void discover();
   }, [discover]);
@@ -73,5 +81,6 @@ export function useSession() {
     setError,
     discover,
     signOut,
+    setAvatar,
   };
 }
