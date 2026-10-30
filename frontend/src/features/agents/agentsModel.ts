@@ -99,11 +99,11 @@ export interface MenuItem {
   danger?: boolean;
 }
 
-/** Why "Create your own" is not open yet: custom agents need billing, which is coming. */
-export const CREATE_OWN_GATE = 'Set up billing to create your own agents';
+/** Why "Create your own" is not open yet: custom agents have no backend yet, card or not. */
+export const CREATE_OWN_GATE = 'Creating your own agents is coming';
 
 /** A set-up agent's ⋮ menu: Pause or Resume, Run now (active only), Configure, Create your own
- * (shown, but closed until billing exists) and Archive. */
+ * (shown, but closed until custom agents exist) and Archive. */
 export function menuItems(agent: Pick<AgentState, 'created_at' | 'active'>): MenuItem[] {
   const status = agentStatus(agent);
   if (status === 'off') return [];
