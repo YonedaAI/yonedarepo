@@ -1,6 +1,6 @@
 # Public brand assets and link previews
 
-The public app title is **YonedaRepo — Agent-First Repository**. Its description is **An API-first, Git-like transactional model where agents fetch only what they need, coordinate changes, and preserve context.** These describe the platform; no private repository, account, prompt, graph or screenshot is included in the public assets.
+The public app title is **YonedaRepo — The Git platform built for agents**. Its description is **Git-compatible hosting where agents and people commit, review and land on the server. Every session’s context stays with the code.** These describe the platform; no private repository, account, prompt, graph or screenshot is included in the public assets.
 
 `frontend/index.html` contains Open Graph, Twitter large-card and canonical metadata before React starts. The front Worker that serves the app replaces `__YONEDA_PUBLIC_ORIGIN__` with the absolute public URL and `__YONEDA_SOCIAL_IMAGE_URL__` with the absolute `/brand/social-card.png` URL. It escapes HTML attribute values and leaves static assets available without a session. Local Vite alone serves the template placeholders; the platform Worker supplies deployment origins.
 
@@ -10,14 +10,14 @@ Keep `assets.run_worker_first` set to `true`: serving HTML directly from Assets 
 
 | Public path | Source / purpose |
 | --- | --- |
-| `/favicon.svg` | Editable 64-unit SVG, matching the existing blue italic y mark |
+| `/favicon.svg` | Editable 64-unit SVG, a black italic y on a white rounded square |
 | `/favicon.ico` | 16, 32, 48 and 64 pixel fallback icon |
 | `/apple-touch-icon.png` | 180 × 180 touch icon |
 | `/brand/mark.svg` | Editable vector mark |
 | `/brand/social-card.svg` | Editable 1200 × 630 source, with IBM Plex Sans and Mono typography |
 | `/brand/social-card.png` | 1200 × 630 public sharing image |
 
-The SVG sources use plain vector geometry and text. They were rendered locally with `rsvg-convert`; the favicon fallback was encoded with ImageMagick. Social typography uses the repository's pinned IBM Plex font packages. To rerender with matching typography, install IBM Plex Sans (400/600) and Mono (400) for your local SVG renderer, then run:
+The SVG sources use plain vector geometry and text. They were rendered locally with `rsvg-convert`; the favicon fallback was encoded with ImageMagick. Social typography uses the repository's pinned IBM Plex font packages. To rerender with matching typography, install IBM Plex Sans (400/600/700) and Mono (400) for your local SVG renderer, then run:
 
 ```sh
 rsvg-convert -o frontend/public/brand/social-card.png frontend/public/brand/social-card.svg

@@ -1,9 +1,11 @@
 // Combined deployment (local development): the front Worker and the source platform in one
 // Worker. Platform routes and jobs go straight to the platform; everything else is the front.
 import { WorkerEntrypoint } from 'cloudflare:workers';
+import type { AccountCreated } from './account-index';
 import { withWaitUntil } from './background';
 import { frontFetch } from './front-routes';
-import { queueWelcome, verifyEmail } from './platform-email-verify';
+import { accountCreated } from './platform-accounts';
+import { verifyEmail } from './platform-email-verify';
 import { platformJob } from './platform-entrypoint';
 import { repoApi } from './repo-api';
 import type { Env, Envelope } from './types';
@@ -19,8 +21,8 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
     );
   }
   /** The platform's account-created method (account-email.ts reaches it over SELF). */
-  accountCreated(account: string) {
-    return queueWelcome(this.env, account);
+  accountCreated(account: string, details?: AccountCreated) {
+    return accountCreated(this.env, account, details);
   }
   verifyEmail(account: string, change?: string) {
     return verifyEmail(this.env, account, change);

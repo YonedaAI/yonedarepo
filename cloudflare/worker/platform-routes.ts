@@ -4,8 +4,10 @@ import { accountRoute } from './accounts';
 import { error, response } from './http';
 import { sshInternal } from './platform-ssh';
 import { frontDoor, sshWake } from './platform-ssh-gateway';
+import { GIT_PATH, legacyRedirect } from './readable-paths';
 import { repoApi } from './repo-api';
 import { gitHttp } from './repo-git-http';
+import { gitByPath } from './repo-git-paths';
 import type { Env } from './types';
 
 export async function platformFetch(req: Request, env: Env): Promise<Response> {
@@ -21,8 +23,11 @@ export async function platformFetch(req: Request, env: Env): Promise<Response> {
     });
   }
   if (url.pathname.startsWith('/api/v1/')) return repoApi(req, env);
-  // Stock Git over HTTPS: /git/<repository>.git (clone, fetch, push).
+  // Stock Git over HTTPS: /git/<repository>.git (clone, fetch, push), and the same by
+  // readable path, /<handle>/<name>.git.
   if (url.pathname.startsWith('/git/')) return gitHttp(req, env);
+  const gitPath = GIT_PATH.exec(url.pathname);
+  if (gitPath) return gitByPath(req, env, gitPath);
   // The SSH gateway's key lookups and session tokens (gateway credentials only).
   if (url.pathname.startsWith('/internal/ssh/')) return sshInternal(req, env);
   if (url.pathname.startsWith('/api/auth/')) {
@@ -36,5 +41,7 @@ export async function platformFetch(req: Request, env: Env): Promise<Response> {
   // The public repositories' listing lives in the web app.
   if (url.pathname === '/explore')
     return Response.redirect(new URL('/source/explore', url).toString(), 302);
+  const moved = await legacyRedirect(req, (ask) => repoApi(ask, env));
+  if (moved) return moved;
   return env.ASSETS.fetch(req);
 }

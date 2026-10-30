@@ -3,8 +3,8 @@ import type { Env } from '../../cloudflare/worker/types';
 import { websiteAssets } from '../../cloudflare/worker/website-metadata';
 
 const template = `<!doctype html><html><head>
-<title>YonedaRepo — Agent-First Repository</title>
-<meta name="description" content="An API-first, Git-like transactional model where agents fetch only what they need, coordinate changes, and preserve context.">
+<title>YonedaRepo — The Git platform built for agents</title>
+<meta name="description" content="Git-compatible hosting where agents and people commit, review and land on the server. Every session’s context stays with the code.">
 <link rel="canonical" href="__YONEDA_PUBLIC_ORIGIN__">
 <meta property="og:url" content="__YONEDA_PUBLIC_ORIGIN__">
 <meta property="og:image" content="__YONEDA_SOCIAL_IMAGE_URL__">
@@ -64,12 +64,15 @@ it('rewrites public metadata before JavaScript using the request origin without 
   );
   const response = await websiteAssets(request, bindings());
   const html = await response.text();
-  expect(await headAttributes(html)).toMatchObject({
-    canonical: 'https://preview.example/',
+  const head = await headAttributes(html);
+  expect(head).toMatchObject({
     'og:url': 'https://preview.example/',
     'og:image': 'https://preview.example/brand/social-card.png',
     'twitter:image': 'https://preview.example/brand/social-card.png',
+    robots: 'noindex',
   });
+  // A repository page nobody signed out may read claims no address of its own.
+  expect(head.canonical).toBeUndefined();
   expect(html).not.toContain('__YONEDA_');
   for (const privateValue of [
     'private-project',
@@ -153,8 +156,10 @@ it('recovers HTML from a stale static ETag without serving an unrewritten 304', 
   );
   expect(response.status).toBe(200);
   expect(await response.text()).not.toContain('__YONEDA_');
-  expect(requests).toHaveLength(2);
-  expect(requests[1].headers.has('if-none-match')).toBe(false);
+  // Besides the build's route manifest (seo-head.ts), asked once.
+  const pages = requests.filter((r) => !r.url.endsWith('/_site/routes.json'));
+  expect(pages).toHaveLength(2);
+  expect(pages[1].headers.has('if-none-match')).toBe(false);
 });
 
 it('preserves a non-HTML conditional response while discarding validators only for its probe', async () => {

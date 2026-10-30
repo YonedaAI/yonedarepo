@@ -1,0 +1,230 @@
+/* A profile (`/<handle>`): the avatar or initial beside the name and handle, the tabs, then
+   the top repositories as a grid of cards (Overview) or a ruled list (Repositories). */
+.profile {
+  max-width: 1100px;
+  padding: 32px;
+}
+.profile-head {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+.profile-head h1 {
+  margin: 0;
+  font-size: 1.6rem;
+  overflow-wrap: anywhere;
+}
+.profile-avatar {
+  flex: none;
+  width: 88px;
+  height: 88px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  object-fit: cover;
+}
+.profile-initial {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 2.25rem;
+  font-weight: 600;
+}
+.profile-handle {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 1.05rem;
+}
+.profile-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.1rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.78rem;
+}
+.profile-tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+.profile-tabs a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: -1px;
+  padding: 0.55rem 0.8rem;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  text-decoration: none;
+}
+.profile-tabs a:hover {
+  color: var(--text);
+}
+.profile-tabs a[aria-current="page"] {
+  border-bottom-color: var(--blue);
+  color: var(--text);
+  font-weight: 600;
+}
+.profile-count {
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+.profile-section {
+  margin: 0 0 0.75rem;
+  font-size: 1rem;
+}
+.profile-repos {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.profile-cards {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+.profile-cards .profile-repo {
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.profile-list .profile-repo {
+  padding: 0.9rem 0;
+}
+.profile-list .profile-repo + .profile-repo {
+  border-top: 1px solid var(--line);
+}
+.profile-repo p {
+  margin: 0;
+}
+.profile-repo-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.profile-repo-name a {
+  color: var(--blue-text);
+}
+.profile-repo-name svg {
+  color: var(--muted);
+}
+.profile-repo .profile-repo-description {
+  margin-top: 0.4rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.profile-repo .profile-repo-meta {
+  margin-top: 0.5rem;
+  color: var(--faint);
+  font-size: 0.8rem;
+}
+.profile-explore {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 800px) {
+  .profile {
+    padding: 16px;
+  }
+  .profile-head {
+    gap: 0.9rem;
+  }
+  .profile-avatar {
+    width: 64px;
+    height: 64px;
+  }
+  .profile-initial {
+    font-size: 1.6rem;
+  }
+  .profile-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* A repository's heading: its owner's handle (to the profile), a slash, then its name. */
+.repo-owner {
+  color: var(--muted);
+  font-weight: 500;
+  text-decoration: none;
+}
+.repo-owner:hover {
+  color: var(--blue-text);
+  text-decoration: underline;
+}
+.repo-owner-sep {
+  margin: 0 0.3em;
+  color: var(--faint);
+  font-weight: 400;
+}
+
+/* The handle prompt: "/" before the field, a status line (help, checking, available, taken). */
+.handle-picker {
+  display: grid;
+  gap: 0.75rem;
+}
+.handle-picker label {
+  display: grid;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+.handle-input {
+  display: flex;
+  align-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+}
+.handle-input:focus-within {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+.handle-input span {
+  padding-left: 0.6rem;
+  color: var(--faint);
+  font-family: var(--mono);
+}
+.handle-input input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.6rem 0.5rem 0.15rem;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--mono);
+  outline: none;
+}
+.handle-status {
+  margin: -0.4rem 0 0;
+}
+.handle-available {
+  color: var(--success);
+}
+.handle-taken,
+.handle-problem {
+  color: var(--danger);
+}
+.handle-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}

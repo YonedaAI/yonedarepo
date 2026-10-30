@@ -187,7 +187,8 @@ describe('agent tool tabs', () => {
 
   it('offer only the agent tools, in plain words, with the API slugs in the address', () => {
     const html = render('pins');
-    const tabs = [...html.matchAll(/href="([^"]+)"[^>]*>([^<]+)</g)].map((m) => [m[1], m[2]]);
+    const nav = html.slice(html.indexOf('<nav'), html.indexOf('</nav>'));
+    const tabs = [...nav.matchAll(/href="([^"]+)"[^>]*>([^<]+)</g)].map((m) => [m[1], m[2]]);
     expect(tabs).toEqual([
       [`/source/${repo}/agents/contracts`, 'Contracts'],
       [`/source/${repo}/agents/pins`, 'Kept commits'],
@@ -195,6 +196,10 @@ describe('agent tool tabs', () => {
     ]);
     expect(html).toContain('aria-label="Agent tools"');
     expect(html).toMatch(/aria-current="page" href="[^"]+\/pins"/);
+    // The managed agents reviewing the repository are a linked page, not a tab.
+    expect(html).toContain(
+      `href="/source/${repo}/agents/reviewers">Managed agents reviewing this repository<`,
+    );
   });
 
   it('leave Sessions and Memories to their own sidebar pages, with no tab row', () => {

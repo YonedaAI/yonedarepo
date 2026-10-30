@@ -15,6 +15,9 @@ export type ProviderIdentity = {
   subject: string;
   login: string;
   email: string | null;
+  /** The provider's picture URL as it reported it (GitHub `avatar_url`, Google `picture`);
+   * the account authority keeps it only on the provider's own image hosts. */
+  avatar: string | null;
 };
 
 /** A refusal from (or about) the provider, as the sign-in page names it. */
@@ -99,6 +102,7 @@ export async function exchange(
       subject: String(user.id),
       login: user.login,
       email: typeof email === 'string' ? email.toLowerCase() : null,
+      avatar: typeof user.avatar_url === 'string' ? user.avatar_url : null,
     };
   }
   const token = await call('https://oauth2.googleapis.com/token', {
@@ -119,7 +123,13 @@ export async function exchange(
   if (claims.email_verified !== true || typeof claims.email !== 'string')
     throw new ProviderError('unverified_email');
   const email = claims.email.toLowerCase();
-  return { provider, subject: claims.sub, login: email.split('@')[0] ?? '', email };
+  return {
+    provider,
+    subject: claims.sub,
+    login: email.split('@')[0] ?? '',
+    email,
+    avatar: typeof claims.picture === 'string' ? claims.picture : null,
+  };
 }
 
 // One key set per isolate: jose caches Google's keys and refetches on an unknown key id.

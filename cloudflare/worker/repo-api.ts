@@ -9,6 +9,8 @@ import { authenticate } from './auth';
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { error, readJson, response } from './http';
 import { accountActivity } from './platform-account-activity';
+import { adminRoute } from './platform-admin';
+import { isOwnAvatar, ownAvatar, publicAvatarName, servePublicAvatar } from './platform-avatars';
 import { orgAccess } from './platform-org-access';
 import { orgsRoute } from './platform-orgs';
 import { sshKeyRoute } from './platform-ssh-keys';
@@ -31,6 +33,8 @@ import { streamObjects } from './repo-object-fetch';
 import { parseStore } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { verifyPat } from './repo-pat';
+import { pathOf, profile, renameRepository, resolvePath, withPath } from './repo-paths';
+import { forViewer } from './repo-principal-privacy';
 import {
   ANONYMOUS,
   admitAnonymous,
@@ -64,6 +68,7 @@ const STATUS: Record<string, number> = {
   NOT_LANDED: 409,
   AUTOMATION_PAUSED: 423,
   ALREADY_EXISTS: 409,
+  NAME_TAKEN: 409,
   PUSH_FAILED: 502,
   NOT_SUPPORTED: 400,
   TIMEOUT: 503,
@@ -74,6 +79,8 @@ const STATUS: Record<string, number> = {
   RATE_LIMITED: 429,
   OVERLOADED: 503,
   INTERNAL: 500,
+  // An operator suspended the account (platform-admin.ts): its credentials are refused.
+  ACCOUNT_SUSPENDED: 403,
   // Withheld by the repository's owner (quarantine): known, deliberately not served.
   QUARANTINED: 451,
 };
@@ -122,7 +129,15 @@ export async function credentials(req: Request, env: Env): Promise<Credentials |
   };
 }
 
+/** A REST answer as its caller may see it: a repository's names no account address to a
+ * non-member (principal-privacy). The account MCP's management tools come through here too. */
 export async function route(req: Request, env: Env, url: URL, auth: Credentials): Promise<Json> {
+  const value = await routed(req, env, url, auth);
+  const repo = /^\/api\/v1\/repos\/(r[0-9a-f]{20})(?:\/|$)/.exec(url.pathname)?.[1];
+  return repo ? forViewer(env, value, () => caller(env, repo, auth)({ op: 'repo_status' })) : value;
+}
+
+async function routed(req: Request, env: Env, url: URL, auth: Credentials): Promise<Json> {
   const parts = url.pathname.split('/').filter(Boolean).slice(2); // after api/v1
   if (parts[0] === 'tokens' && parts.length <= 2)
     return tokenRoute(env, auth, req.method, parts[1], () => bodyOf(req));
@@ -137,6 +152,8 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
     return deviceApprove(env, auth, await bodyOf(req));
   if (parts[0] === 'activity' && parts.length === 1 && req.method === 'GET')
     return accountActivity(env, auth);
+  if (parts[0] === 'admin')
+    return adminRoute(env, auth, req.method, parts.slice(1), () => bodyOf(req), url.searchParams);
   if (parts[0] === 'orgs')
     return orgsRoute(env, auth, req.method, parts.slice(1), () => bodyOf(req), url.searchParams);
   if (parts[0] !== 'repos') throw new ApiError('NOT_FOUND', 'Unknown API path');
@@ -157,7 +174,9 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
     return deleteRepository(env, auth, repo, url.searchParams.get('confirm') ?? '');
   if (resource === 'refs' && sha === 'batch' && !sub && post)
     return batchRefs(ctx, await bodyOf(req));
-  if (!resource && get) return run('git_status', {});
+  if (!resource && get) return withPath(env, repo, await run('git_status', {}));
+  if (resource === 'name' && !sha && req.method === 'PUT')
+    return renameRepository(ctx, (await bodyOf(req)).name);
   if (resource === 'quarantine')
     return quarantineRoute(ctx, req.method, sha, sub, () => bodyOf(req));
   if (get && resource === 'refs') return run('git_refs', query);
@@ -349,7 +368,42 @@ async function handle(req: Request, env: Env): Promise<Response> {
         await limitAnonymous(env, req, url.pathname);
       return explore(env, url.searchParams);
     });
+  // Profiles are public listings, answered alike to everyone.
+  const profiled = /^\/api\/v1\/profiles\/([^/]+)$/.exec(url.pathname);
+  if (profiled && req.method === 'GET')
+    return answer(async () => {
+      if (!req.headers.has('cookie') && !req.headers.has('authorization'))
+        await limitAnonymous(env, req, url.pathname);
+      return profile(env, decodeURIComponent(profiled[1]));
+    });
+  // Anyone's picture, like the listing: no session check per image.
+  const avatar = publicAvatarName(url);
+  if (avatar !== undefined && req.method === 'GET')
+    return (async () => {
+      if (!req.headers.has('cookie') && !req.headers.has('authorization'))
+        await limitAnonymous(env, req, url.pathname);
+      return servePublicAvatar(env, avatar);
+    })().catch(failure);
   const signed = await timed('auth', () => credentials(req, env));
+  // A readable path, or the repository one names, for whoever asks (nobody signed in sees
+  // public repositories only); one that may not be read answers as one that is not there.
+  const resolving = /^\/api\/v1\/resolve\/([^/]+)\/([^/]+)$/.exec(url.pathname);
+  const pathing = /^\/api\/v1\/repos\/(r[0-9a-f]{20})\/path$/.exec(url.pathname);
+  if ((resolving || pathing) && req.method === 'GET') {
+    if (!signed && req.headers.has('authorization'))
+      return error('UNAUTHORIZED', 'Sign in or use a repository token', 401);
+    return answer(async () => {
+      if (!signed) await limitAnonymous(env, req, url.pathname);
+      return resolving
+        ? resolvePath(
+            env,
+            signed,
+            decodeURIComponent(resolving[1]),
+            decodeURIComponent(resolving[2]),
+          )
+        : pathOf(env, signed, (pathing as RegExpExecArray)[1]);
+    });
+  }
   // Without credentials, reads go on as anonymous (public repositories only, rate limited);
   // a token that is refused (expired, revoked, malformed) never falls back to anonymous.
   if (!signed && (req.headers.has('authorization') || !anonymousRead(req, url)))
@@ -377,6 +431,8 @@ async function handle(req: Request, env: Env): Promise<Response> {
       : auth;
   if (mcp) return repoMcp(req, new RepoContext(env, mcp[1], caller(env, mcp[1], machine)));
   if (url.pathname === '/api/v1/mcp') return accountMcp(req, env, machine, route);
+  // The signed-in person's picture: its bytes, an upload or a removal.
+  if (isOwnAvatar(url)) return ownAvatar(req, env, auth).catch(failure);
   // An asset download is the asset's bytes, not a JSON answer.
   const download = releaseDownload(req, env, url, auth);
   if (download) return download.catch(failure);

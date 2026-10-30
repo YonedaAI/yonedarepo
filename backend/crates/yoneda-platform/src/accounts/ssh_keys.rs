@@ -39,6 +39,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SshOp, now: i64) -> Res
             Ok(json!({"keys": rows.iter().map(public).collect::<Vec<_>>()}))
         }
         SshOp::KeyCheck => {
+            super::access::refuse_suspended(db)?;
             let id = key_id(c)?;
             let row = db
                 .query(

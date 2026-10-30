@@ -53,16 +53,7 @@ pub fn init<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     }
     let object_store = string(c, "object_store")?;
     let (_, policy_json, digest) = Policy::parse(&c["policy"])?;
-    let name = string(c, "name")?;
-    let valid = name.len() <= 100
-        && name
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
-    if !valid || name.starts_with('.') {
-        return Err(bad(
-            "Repository names are 1-100 characters of [A-Za-z0-9._-]",
-        ));
-    }
+    let name = repo_name(c)?;
     let (parent, parent_version) = super::forks::parent_of(c)?;
     let visibility = Visibility::from_command(c)?;
     db.query(
@@ -282,4 +273,19 @@ impl<S: SqlStore> CommitGraph for RecordedGraph<'_, S> {
     fn generation(&self, id: &ObjectId) -> Result<u64> {
         Ok(recorded(self.0, id)?.generation)
     }
+}
+
+/// A repository's `name`: 1-100 characters of [A-Za-z0-9._-], not starting with a dot.
+pub fn repo_name(c: &Value) -> Result<String> {
+    let name = string(c, "name")?;
+    let valid = name.len() <= 100
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
+    if !valid || name.starts_with('.') {
+        return Err(bad(
+            "Repository names are 1-100 characters of [A-Za-z0-9._-]",
+        ));
+    }
+    Ok(name)
 }

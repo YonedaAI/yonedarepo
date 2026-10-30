@@ -3,11 +3,15 @@
 // the bare path parses too, for a host that does not). Older
 // addresses (`/source`, `/source/tokens`, a repository's `/connect`, `/members` and
 // `/settings/branches`) still parse, into the view that replaced them. The public site's
-// pages (`site/siteRoute.ts`) parse here too, as one `site` view.
+// pages (`site/siteRoute.ts`) parse here too, as one `site` view. A repository's readable
+// address (`/<handle>/<name>`) and a profile (`/<handle>`) parse and format in repoNames.ts.
+// The operators' admin pages are `/admin/*` (`admin` is a reserved handle).
 import { isCanonicalAccountIdentifier } from '../../../../shared/account';
+import { type AdminSection, isAdminSection } from '../admin/adminModel';
 import { formatSitePage, parseSitePath, type SitePage } from '../site/siteRoute';
 import { AGENT_SECTIONS, type AgentSection } from './agentModel';
 import { normalizeUserCode } from './connect';
+import { formatNamedRoute, type NamedRoute, parseNamedPath, repoBase } from './repoNames';
 
 export const REPO_SETTINGS_SECTIONS = [
   'rules',
@@ -35,12 +39,17 @@ export type SourceRoute =
   | { view: 'org'; org: string }
   /** The workspace's managed agents (`/agents`); `workspace` (an org) defaults to the account. */
   | { view: 'agents-home'; workspace?: string }
-  /** One agent's settings (`/agents/<id>`), or a new custom agent (`/agents/new`). */
+  /** One agent's page (`/agents/<id>`): its runs and setup, or a new custom agent (`/agents/new`). */
   | { view: 'agent-settings'; agent: string; workspace?: string }
+  /** Set up or configure one agent (`/agents/<id>/configure`). */
+  | { view: 'agent-configure'; agent: string; workspace?: string }
   | { view: 'agent-runs'; agent?: string; workspace?: string }
   /** One run's detail; `runRepo`, not `repo`, so the repository shell stays out of it. */
   | { view: 'agent-run'; runRepo: string; run: string; workspace?: string }
+  /** The operators' admin pages (`/admin[/<section>]`, a user at `/admin/users/<account>`). */
+  | { view: 'admin'; section: AdminSection; account?: string }
   | { view: 'site'; site: SitePage }
+  | NamedRoute
   | { view: 'files'; repo: string; path: string; ref: string; at?: number }
   | { view: 'overview'; repo: string; path: string; ref: string; at?: number }
   | { view: 'history'; repo: string; ref: string }
@@ -101,12 +110,19 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
   if (root === 'repositories' && !repo) return { view: 'repositories' };
   if (root === 'orgs' && repo && ORG_NAME.test(repo) && !view) return { view: 'org', org: repo };
   if (root === 'agents') return parseAgentsRoute(parts.slice(1), params);
+  if (root === 'admin') {
+    if (!isAdminSection(repo)) return { view: 'admin', section: 'overview' };
+    return repo === 'users' && view && !rest.length
+      ? { view: 'admin', section: 'users', account: view }
+      : { view: 'admin', section: repo };
+  }
   if (root === 'source' && repo === 'tokens' && !view) return { view: 'settings' };
   if ((root === 'source' && repo === 'explore' && !view) || (root === 'explore' && !repo))
     return { view: 'explore' };
   const site = parseSitePath(parts);
   if (site) return { view: 'site', site };
-  if (root !== 'source' || !repo || !REPO.test(repo)) return { view: 'home' };
+  if (root !== 'source') return parseNamedPath(parts, search) ?? { view: 'home' };
+  if (!repo || !REPO.test(repo)) return { view: 'home' };
   const ref = params.get('ref') || 'main';
   if (view === 'history') return { view: 'history', repo, ref };
   if (view === 'transactions') return { view: 'transactions', repo };
@@ -153,7 +169,7 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
   };
 }
 
-/** `/agents[/new|/<agent>|/runs[/<repo>/<run>]]`, with `?workspace=` for an org. */
+/** `/agents[/new|/<agent>[/configure]|/runs[/<repo>/<run>]]`, with `?workspace=` for an org. */
 function parseAgentsRoute(parts: string[], params: URLSearchParams): SourceRoute {
   const named = params.get('workspace');
   // Any account identifier (an org, a username or an email-named account), as the API takes it.
@@ -167,6 +183,8 @@ function parseAgentsRoute(parts: string[], params: URLSearchParams): SourceRoute
       ? { view: 'agent-runs', agent, ...space }
       : { view: 'agent-runs', ...space };
   }
+  if (first && AGENT_ID.test(first) && repo === 'configure' && !run)
+    return { view: 'agent-configure', agent: first, ...space };
   if (first && AGENT_ID.test(first) && !repo)
     return { view: 'agent-settings', agent: first, ...space };
   return { view: 'agents-home', ...space };
@@ -174,9 +192,15 @@ function parseAgentsRoute(parts: string[], params: URLSearchParams): SourceRoute
 
 export type AgentsRoute = Extract<
   SourceRoute,
-  { view: 'agents-home' | 'agent-settings' | 'agent-runs' | 'agent-run' }
+  { view: 'agents-home' | 'agent-settings' | 'agent-configure' | 'agent-runs' | 'agent-run' }
 >;
-const AGENT_VIEWS: readonly string[] = ['agents-home', 'agent-settings', 'agent-runs', 'agent-run'];
+const AGENT_VIEWS: readonly string[] = [
+  'agents-home',
+  'agent-settings',
+  'agent-configure',
+  'agent-runs',
+  'agent-run',
+];
 /** The workspace Agents pages (one Browse entry holds them all). */
 export const isAgentsRoute = (route: SourceRoute): route is AgentsRoute =>
   AGENT_VIEWS.includes(route.view);
@@ -186,6 +210,7 @@ function formatAgentsRoute(route: AgentsRoute): string {
   let path: string;
   if (route.view === 'agents-home') path = '/agents';
   else if (route.view === 'agent-settings') path = `/agents/${route.agent}`;
+  else if (route.view === 'agent-configure') path = `/agents/${route.agent}/configure`;
   else if (route.view === 'agent-runs') {
     path = '/agents/runs';
     if (route.agent) query.set('agent', route.agent);
@@ -202,11 +227,16 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'explore') return '/source/explore';
   if (route.view === 'org') return `/orgs/${route.org}`;
   if (route.view === 'site') return formatSitePage(route.site);
+  if (route.view === 'admin') {
+    if (route.account) return `/admin/users/${encodeURIComponent(route.account)}`;
+    return route.section === 'overview' ? '/admin' : `/admin/${route.section}`;
+  }
+  if (route.view === 'profile' || route.view === 'repo-name') return formatNamedRoute(route);
   if (route.view === 'device')
     return route.code ? `/device?code=${encodeURIComponent(route.code)}` : '/device';
   if (route.view === 'verify-email')
     return `/verify-email?account=${encodeURIComponent(route.account)}&token=${encodeURIComponent(route.token)}`;
-  const base = `/source/${route.repo}`;
+  const base = repoBase(route.repo);
   if (route.view === 'history')
     return route.ref === 'main'
       ? `${base}/history`

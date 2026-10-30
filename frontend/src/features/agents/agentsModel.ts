@@ -1,27 +1,22 @@
 // The workspace's managed agents as the Agents pages read them (`/api/managed/workspaces/:ws`,
-// shared/managed-agents.ts): card state, the settings form and the body it saves, model options
-// with prices, history tiles, runs and billing figures. The managed Worker decides every
-// request; this module only shapes what the pages print and send.
+// shared/managed-agents.ts): card state, history tiles, runs and billing figures (the set-up
+// form is in ./setupForm). The managed Worker decides every request; this module only shapes
+// what the pages print and send.
 import {
-  AGENT_MARGIN,
-  type AgentSettings,
   type AgentState,
-  type AgentUpdate,
   type BillingState,
   type CostEntry,
-  HARNESS_LABELS,
-  type Harness,
-  harnessModels,
   MANAGED_AGENTS,
   type ManagedAgentDefinition,
   type ManagedCredit,
   type ManagedRun,
-  type ModelProvider,
+  type RepoAgentRow,
+  type RunNowResult,
   type RunStatus,
   type RunTile,
   type RunValue,
+  type Trigger,
 } from '../../../../shared/managed-agents';
-import { SettingsError, validateOverrides } from '../../../../shared/managed-settings';
 
 const ws = (workspace: string) => `/workspaces/${encodeURIComponent(workspace)}`;
 export const workspacePath = ws;
@@ -41,23 +36,159 @@ export function runsPath(
 export const runPath = (workspace: string, repo: string, run: string) =>
   `${ws(workspace)}/runs/${encodeURIComponent(repo)}/${encodeURIComponent(run)}`;
 export const billingPath = (workspace: string) => `${ws(workspace)}/billing`;
+export const runNowPath = (workspace: string, agent: string) =>
+  `${agentPath(workspace, agent)}/run`;
+export const archivePath = (workspace: string, agent: string) =>
+  `${agentPath(workspace, agent)}/archive`;
+export const repoAgentsPath = (workspace: string, repo: string) =>
+  `${ws(workspace)}/repos/${encodeURIComponent(repo)}/agents`;
+export const syncPath = (workspace: string) => `${ws(workspace)}/sync`;
 
-export const PROVIDER_LABELS: Record<ModelProvider, string> = {
-  claude: 'Anthropic',
-  codex: 'OpenAI',
-  zai: 'Z.ai',
-  mimo: 'Xiaomi MiMo',
-};
+/**
+ * Asks the managed Worker to connect repositories the workspace gained (for agents set to run
+ * on all repositories), with the owner's session: after the web app creates or imports one, and
+ * when the Agents page opens. Best effort: a workspace without agents, a non-owner (403) or a
+ * deployment without managed agents (404) answers nothing worth showing. Answers how many
+ * repositories it connected.
+ */
+export async function syncAgents(
+  workspace: string | undefined,
+  call: (path: string, init: { method: 'POST'; body: object }) => Promise<{ connected?: number }>,
+): Promise<number> {
+  if (!workspace) return 0;
+  try {
+    const answer = await call(syncPath(workspace), { method: 'POST', body: {} });
+    return Number(answer?.connected ?? 0) || 0;
+  } catch {
+    return 0;
+  }
+}
 
-/** What an overview card shows: off, or enabled with its newest result and run count. */
-export function cardState(agent: Pick<AgentState, 'enabled_repos' | 'history' | 'runs'>) {
+/** An agent's standing in the workspace: not set up (off), set up and paused, or active. */
+export function agentStatus(
+  agent: Pick<AgentState, 'created_at' | 'active'>,
+): 'off' | 'paused' | 'active' {
+  if (agent.created_at === null) return 'off';
+  return agent.active ? 'active' : 'paused';
+}
+export const STATUS_BADGES = { active: 'Active', paused: 'Paused', off: 'Off' } as const;
+
+/** What an overview card shows: not set up, or set up with its status, newest result and runs. */
+export function cardState(
+  agent: Pick<
+    AgentState,
+    'enabled_repos' | 'all_repos' | 'history' | 'runs' | 'created_at' | 'active'
+  >,
+) {
   return {
-    enabled: agent.enabled_repos.length > 0,
+    configured: agent.created_at !== null,
+    status: agentStatus(agent),
     last: agent.history[0] ?? null,
     runs: agent.runs,
-    repos: agent.enabled_repos.length,
+    repos: reposText(agent),
   };
 }
+
+export type MenuAction = 'pause' | 'resume' | 'run' | 'configure' | 'create-own' | 'archive';
+export interface MenuItem {
+  action: MenuAction;
+  label: string;
+  disabled?: boolean;
+  /** Why a disabled item is disabled. */
+  hint?: string;
+  danger?: boolean;
+}
+
+/** Why "Create your own" is not open yet: custom agents have no backend yet, card or not. */
+export const CREATE_OWN_GATE = 'Creating your own agents is coming';
+
+/** A set-up agent's ⋮ menu: Pause or Resume, Run now (active only), Configure, Create your own
+ * (shown, but closed until custom agents exist) and Archive. */
+export function menuItems(agent: Pick<AgentState, 'created_at' | 'active'>): MenuItem[] {
+  const status = agentStatus(agent);
+  if (status === 'off') return [];
+  return [
+    status === 'active'
+      ? { action: 'pause', label: 'Pause' }
+      : { action: 'resume', label: 'Resume' },
+    status === 'active'
+      ? { action: 'run', label: 'Run now' }
+      : { action: 'run', label: 'Run now', disabled: true, hint: 'Resume the agent to run it' },
+    { action: 'configure', label: 'Configure' },
+    { action: 'create-own', label: 'Create your own', disabled: true, hint: CREATE_OWN_GATE },
+    { action: 'archive', label: 'Archive', danger: true },
+  ];
+}
+
+/** `Started 2 reviews.` / `Every open change is already reviewed at its head.` */
+export function runNowText(result: RunNowResult): string {
+  if (result.started === 0)
+    return result.already
+      ? 'Every open change is already reviewed at its head.'
+      : 'There is no open change to review.';
+  const started = `Started ${result.started} review${result.started === 1 ? '' : 's'}`;
+  return result.already ? `${started}; ${result.already} already reviewed.` : `${started}.`;
+}
+
+/** `2026-10-30 12:19 UTC`. */
+export function formatUtc(ms: number): string {
+  const iso = new Date(ms).toISOString();
+  return `${iso.slice(0, 10)} ${iso.slice(11, 16)} UTC`;
+}
+
+/** `just now`, `5 minutes ago`, `3 hours ago`, `2 days ago`, then the UTC date. */
+export function relativeTime(ms: number, now = Date.now()): string {
+  const s = Math.max(0, Math.round((now - ms) / 1000));
+  if (s < 60) return 'just now';
+  const plural = (n: number, unit: string) => `${n} ${unit}${n === 1 ? '' : 's'} ago`;
+  if (s < 3600) return plural(Math.floor(s / 60), 'minute');
+  if (s < 86_400) return plural(Math.floor(s / 3600), 'hour');
+  if (s < 30 * 86_400) return plural(Math.floor(s / 86_400), 'day');
+  return new Date(ms).toISOString().slice(0, 10);
+}
+
+/** `Created by ada, 5 minutes ago`. */
+export const createdText = (agent: Pick<AgentState, 'created_by' | 'created_at'>, now?: number) =>
+  agent.created_at === null
+    ? 'Not set up yet'
+    : `Created by ${agent.created_by ?? 'someone'}, ${relativeTime(agent.created_at, now)}`;
+
+/** How "Ready for review" decides (shared readyForReview). */
+export const READY_HELP =
+  'A change counts as ready for review while it is open, unless its title starts with Draft: or WIP:.';
+
+/** `On every push` / `When marked ready`, then which changes and any filters. */
+export function triggerText(trigger: Trigger): string {
+  const when = trigger.when === 'push' ? 'On every push' : 'When marked ready';
+  const filters = [
+    trigger.paths.length ? `paths ${trigger.paths.join(', ')}` : '',
+    trigger.branches.length ? `branches ${trigger.branches.join(', ')}` : '',
+  ].filter(Boolean);
+  return `${when}, changes ready for review${filters.length ? `, ${filters.join('; ')}` : ''}`;
+}
+
+/** What a result looks like on a change, for the set-up page's check preview. */
+export function checkPreview(agent: Pick<ManagedAgentDefinition, 'check' | 'value_type'>) {
+  return agent.value_type === 'pass_fail'
+    ? [
+        { tone: 'good' as Tone, text: `${agent.check}: pass`, note: 'No problem found' },
+        {
+          tone: 'bad' as Tone,
+          text: `${agent.check}: fail`,
+          note: '2 findings, commented on their lines',
+        },
+      ]
+    : [
+        { tone: 'good' as Tone, text: `${agent.check}: low`, note: 'Little to tidy' },
+        { tone: 'warn' as Tone, text: `${agent.check}: medium`, note: '3 findings to look at' },
+      ];
+}
+
+export const REPO_STATUS_LABELS: Record<RepoAgentRow['status'], string> = {
+  active: 'Active',
+  paused: 'Paused',
+  off: 'Not on this repository',
+};
 
 export type Tone = 'good' | 'warn' | 'bad' | 'neutral';
 
@@ -93,39 +224,6 @@ export const statusLabel = (status: RunStatus) => STATUS_LABELS[status] ?? statu
 
 export const valueTypeLabel = (agent: Pick<ManagedAgentDefinition, 'value_type'>) =>
   agent.value_type === 'pass_fail' ? 'Pass or fail' : 'Low, medium or high';
-
-/** The harness choices, in a stable order. */
-export const harnessOptions = () =>
-  (Object.keys(HARNESS_LABELS) as Harness[]).map((h) => ({ value: h, label: HARNESS_LABELS[h] }));
-
-/** `0.195`: a provider list rate per million tokens with the agent margin. */
-export const priced = (usd: number) => Number((usd * AGENT_MARGIN).toFixed(6));
-
-export interface ModelOption {
-  /** `provider/model`, the select's value. */
-  value: string;
-  provider: ModelProvider;
-  model: string;
-  label: string;
-  /** `GLM-5.3 Flash · Z.ai · $0.195 / $0.65 per million tokens`. */
-  text: string;
-}
-
-export function modelOptions(harness: Harness): ModelOption[] {
-  return harnessModels(harness).map((r) => ({
-    value: `${r.provider}/${r.model}`,
-    provider: r.provider,
-    model: r.model,
-    label: r.label,
-    text: `${r.label} · ${PROVIDER_LABELS[r.provider]} · ${formatRate(priced(r.input))} in / ${formatRate(priced(r.output))} out per million tokens`,
-  }));
-}
-
-/** `$0.195`, `$13`: every significant digit of a per-million rate. */
-export function formatRate(usd: number): string {
-  if (Number.isInteger(usd)) return `$${usd}`;
-  return `$${Number(usd.toPrecision(6))}`;
-}
 
 /** `$0.0042`, `$1.25`, `$0.00`: cents for a dollar figure, two significant digits below a cent. */
 export function formatCost(usd: number): string {
@@ -174,124 +272,15 @@ export function usageTotals(billing: Pick<BillingState, 'usage'>) {
 export const agentName = (id: string) =>
   MANAGED_AGENTS.find((a) => a.id === id)?.defaults.name ?? id;
 
-const FIELD_LABELS: Record<keyof AgentSettings, string> = {
-  name: 'name',
-  description: 'description',
-  harness: 'harness',
-  provider: 'model',
-  model: 'model',
-  reasoning: 'reasoning',
-  timeout_minutes: 'timeout',
-  instructions: 'instructions',
-  trigger: 'trigger',
-  block_at: 'blocking level',
-};
-/** `model and instructions`: the customized fields as the maintained note names them. */
-export function customizedText(fields: string[]): string {
-  const names = [...new Set(fields.map((f) => FIELD_LABELS[f as keyof AgentSettings] ?? f))];
-  if (names.length <= 1) return names[0] ?? '';
-  return `${names.slice(0, -1).join(', ')} and ${names.at(-1)}`;
+/** "All repositories, including new ones", as the page and detail name it. */
+export const ALL_REPOS_LABEL = 'All repositories, including new ones';
+
+/** Where an agent runs, in short: all repositories, or how many. */
+export function reposText(agent: Pick<AgentState, 'all_repos' | 'enabled_repos'>): string {
+  if (agent.all_repos) return 'All repositories';
+  const n = agent.enabled_repos.length;
+  return n ? `${n} repositor${n === 1 ? 'y' : 'ies'}` : 'No repository';
 }
-
-/** The settings form's state. */
-export interface AgentForm extends AgentSettings {
-  repos: string[];
-}
-
-/** The form for an agent: its effective settings, and the repositories it runs on, or, the
- * first time it is enabled, every repository the caller owns here. */
-export function initialForm(agent: AgentState, repos: { id: string }[]): AgentForm {
-  return {
-    ...agent.settings,
-    trigger: { ...agent.settings.trigger },
-    repos: agent.enabled_repos.length ? [...agent.enabled_repos] : repos.map((r) => r.id),
-  };
-}
-
-/** A new custom agent's form: the Code review harness and model, no instructions. */
-export function newAgentForm(repos: { id: string }[]): AgentForm {
-  const base = MANAGED_AGENTS[0].defaults;
-  return {
-    ...base,
-    name: '',
-    description: '',
-    instructions: '',
-    trigger: { ...base.trigger },
-    repos: repos.map((r) => r.id),
-  };
-}
-
-/** Switching harness keeps the model when that harness runs it, else picks its first model. */
-export function withHarness(form: AgentForm, harness: Harness): AgentForm {
-  const options = modelOptions(harness);
-  const keep = options.find((o) => o.provider === form.provider && o.model === form.model);
-  const next = keep ?? options[0];
-  return { ...form, harness, provider: next.provider, model: next.model };
-}
-
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
-const SETTINGS_FIELDS: (keyof AgentSettings)[] = [
-  'name',
-  'description',
-  'harness',
-  'provider',
-  'model',
-  'reasoning',
-  'timeout_minutes',
-  'instructions',
-  'trigger',
-  'block_at',
-];
-
-/**
- * What saving the form sends: only fields that changed from the effective settings, with a
- * field set back to its maintained default sent as null (so it follows later updates), and
- * the repositories when they changed or the agent is enabled for the first time.
- */
-export function updateBody(agent: AgentState, form: AgentForm): AgentUpdate {
-  const settings: NonNullable<AgentUpdate['settings']> = {};
-  for (const field of SETTINGS_FIELDS) {
-    if (same(form[field], agent.settings[field])) continue;
-    (settings as Record<string, unknown>)[field] = same(form[field], agent.defaults[field])
-      ? null
-      : form[field];
-  }
-  const body: AgentUpdate = {};
-  if (Object.keys(settings).length) body.settings = settings;
-  const first = agent.enabled_repos.length === 0;
-  if (first || !same([...form.repos].sort(), [...agent.enabled_repos].sort()))
-    body.repos = [...form.repos];
-  return body;
-}
-
-/** The form's first problem (the server checks again), or '' when it looks valid. */
-export function formProblem(agent: ManagedAgentDefinition, form: AgentForm): string {
-  try {
-    const patch: Record<string, unknown> = {};
-    for (const field of SETTINGS_FIELDS) patch[field] = form[field];
-    validateOverrides(agent, {}, patch);
-  } catch (e) {
-    if (e instanceof SettingsError) return e.message;
-    throw e;
-  }
-  return '';
-}
-
-/** Repositories whose name or id contains `query` (case-insensitive). */
-export function filterRepos<T extends { id: string; name: string }>(repos: T[], query: string) {
-  const q = query.trim().toLowerCase();
-  return q ? repos.filter((r) => r.name.toLowerCase().includes(q) || r.id.includes(q)) : repos;
-}
-
-/** Paths or branches typed one per line or comma-separated. */
-export const parseFilters = (text: string) => [
-  ...new Set(
-    text
-      .split(/[\n,]/)
-      .map((s) => s.trim())
-      .filter(Boolean),
-  ),
-];
 
 /** The workspaces the caller can manage agents for: their account, then each org they own. */
 export function workspaceOptions(
@@ -309,7 +298,7 @@ export function workspaceOptions(
 }
 
 /** The overview's search and filter: agents whose name or pitch matches, optionally only
- * enabled ones. */
+ * set-up ones. */
 export function visibleAgents<T extends AgentState>(
   agents: T[],
   query: string,
@@ -318,7 +307,7 @@ export function visibleAgents<T extends AgentState>(
   const q = query.trim().toLowerCase();
   return agents.filter(
     (a) =>
-      (!enabledOnly || a.enabled_repos.length > 0) &&
+      (!enabledOnly || a.created_at !== null) &&
       (!q || a.settings.name.toLowerCase().includes(q) || a.pitch.toLowerCase().includes(q)),
   );
 }

@@ -1,13 +1,15 @@
 // Account email, front and platform alike (the platform sends; platform-email-verify.ts).
 // - The account-created hook: a new account (password sign-up, or a first sign-in with
-//   GitHub or Google) asks the platform, through its entrypoint's `accountCreated` method, to
-//   queue the welcome email. Sign-up never waits on it, and never fails because of email.
+//   GitHub or Google) tells the platform, through its entrypoint's `accountCreated` method,
+//   which indexes it for the operators, queues their sign-up notice and, when the account
+//   has an address, its welcome email. Sign-up never waits on it, and never fails for it.
 // - `/api/auth/email*`: Settings shows the contact email, resends the confirmation or changes
 //   the address (the entrypoint's `verifyEmail`), and the confirmation page POSTs its token.
 // The front reaches the platform over the PLATFORM service binding and the platform itself
 // over SELF, so the front binds no platform queue. Until confirmed, the address receives only
 // the welcome and confirmation emails.
 import { normalizeAccountIdentifier } from '../../shared/account';
+import type { AccountCreated, SignupProvider } from './account-index';
 import { afterAnswer } from './background';
 import { error, readJson, response } from './http';
 import { sha } from './storage';
@@ -17,7 +19,7 @@ import { workspace } from './workspace';
 type Outcome = { sent: true } | { sent: false; reason: string };
 /** The platform entrypoint's RPC surface used here. */
 type Platform = {
-  accountCreated(account: string): Promise<void>;
+  accountCreated(account: string, details: AccountCreated): Promise<void>;
   verifyEmail(account: string, change?: string): Promise<Outcome>;
 };
 const platformOf = (env: Env) => (env.PLATFORM ?? env.SELF) as unknown as Platform | undefined;
@@ -32,13 +34,17 @@ export function contactEmail(value: unknown) {
 }
 
 /**
- * Asks the platform to welcome `account`, after the response where the request lends its
+ * Tells the platform `account` is new, after the response where the request lends its
  * waitUntil. `email` is the address the account stored (password sign-up's contact email, or
- * the provider's verified address); without one, no email. Never throws.
+ * the provider's verified address); without one, no welcome email. Never throws.
  */
-export function accountCreated(env: Env, account: string, email: string | null) {
+export function accountCreated(
+  env: Env,
+  account: string,
+  email: string | null,
+  provider: SignupProvider,
+) {
   return afterAnswer(async () => {
-    if (!email) return;
     const platform = platformOf(env);
     if (typeof platform?.accountCreated !== 'function') {
       if (!warnedOff)
@@ -47,10 +53,10 @@ export function accountCreated(env: Env, account: string, email: string | null) 
       return;
     }
     try {
-      await platform.accountCreated(account);
+      await platform.accountCreated(account, { provider, welcome: Boolean(email) });
     } catch (e: any) {
       const error = String(e?.message ?? e).slice(0, 200);
-      console.error(JSON.stringify({ event: 'email.welcome.enqueue_failed', error }));
+      console.error(JSON.stringify({ event: 'account.created.enqueue_failed', error }));
     }
   });
 }

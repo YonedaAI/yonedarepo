@@ -128,3 +128,18 @@ pub fn set<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     )?;
     Ok(json!({ "visibility": next.as_str(), "changed": !changed.is_empty() }))
 }
+
+/// `repo_rename {name, check?}`: the owner's account only (authorized by the dispatcher).
+/// With `check`, validates the name and changes nothing: the adapter first has the owner's
+/// authority hold the name (unique per owner ignoring case: accounts/repo_names.rs).
+/// Answers the name, the one it replaces and the owner it is held under (`workspace`).
+pub fn rename<S: SqlStore>(db: &S, c: &Value, settings: &super::rows::Settings) -> Result<Value> {
+    let name = super::rows::repo_name(c)?;
+    if c["check"] != true {
+        db.query(
+            "UPDATE repo_settings SET name=? WHERE id='repository'",
+            &[json!(name)],
+        )?;
+    }
+    Ok(json!({ "name": name, "previous": settings.name, "workspace": settings.workspace }))
+}

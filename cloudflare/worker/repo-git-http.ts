@@ -29,6 +29,7 @@ const SERVICES = ['git-upload-pack', 'git-receive-pack'];
 const STATUS: Record<string, number> = {
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
+  ACCOUNT_SUSPENDED: 403,
   NOT_FOUND: 404,
   QUARANTINED: 451,
   GONE: 404,
@@ -66,6 +67,21 @@ export async function gitCredentials(req: Request, env: Env): Promise<Credential
     new Request(req.url, { headers: { authorization: `Bearer ${password}` } }),
     env,
   );
+}
+
+/** The answer to a request for a repository that is not there, or that the caller may not
+ * read (Git by readable path, repo-git-paths): credentials refused as `serve` refuses them,
+ * then 401 without any, else 404. */
+export async function unknownRepository(req: Request, env: Env): Promise<Response> {
+  let auth: Credentials | null;
+  try {
+    auth = await gitCredentials(req, env);
+  } catch (e: any) {
+    return refusal(STATUS[failureCode(e)] ?? 500, String(e?.message ?? e));
+  }
+  if (!auth || '_anonymous' in auth)
+    return refusal(401, 'Use a repository or personal access token as the password');
+  return refusal(404, 'NOT_FOUND: Repository not found');
 }
 
 /** Serves a `/git/` request, or answers why it cannot, with its phases in Server-Timing

@@ -2,8 +2,9 @@
 // queues the event; the queue consumer (at least once) finds the open change the event is
 // about, claims one run per enabled agent for its head (idempotent), and starts that run's
 // Workflow instance (also idempotent: the instance id is the run and attempt).
-import { managedAgent } from '../../shared/managed-agents';
+import { type ManagedAgentId, managedAgent, readyForReview } from '../../shared/managed-agents';
 import { resolveSettings, triggerMatches } from '../../shared/managed-settings';
+import { runTopUp } from './billing';
 import { COMMIT_ID, type ManagedEnv, type QueueMessage, type RunParams } from './config';
 import { Platform, PlatformError } from './platform';
 import { repoStub } from './repo-agents';
@@ -129,38 +130,72 @@ async function onEvent(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'event'
   const changes = open.filter(
     (c) => c.head === m.commit && (m.change ? c.number === m.change : c.branch === branch),
   );
-  const workspace = workspaceStub(env, connection.account);
+  await reviewChanges(
+    env,
+    m.repo,
+    { account: connection.account, platform },
+    enabled,
+    changes,
+    m.event === 'change',
+  );
+}
+
+/**
+ * Claims one run per agent for each change at its current head (idempotent: a head already
+ * claimed is counted as `already`) and starts its Workflow instance, as each agent's trigger
+ * allows: "when marked ready" only when the change opened (`opened`), "ready for review" never
+ * for a change marked as a draft, and the path and branch filters.
+ */
+export async function reviewChanges(
+  env: ManagedEnv,
+  repoId: string,
+  ctx: { account: string; platform: Platform },
+  agents: ManagedAgentId[],
+  changes: Record<string, any>[],
+  opened: boolean,
+) {
+  const repo = repoStub(env, repoId);
+  const workspace = workspaceStub(env, ctx.account);
+  const counts = { started: 0, already: 0 };
   for (const change of changes) {
     let paths: string[] | null = null;
-    for (const id of enabled) {
+    for (const id of agents) {
       const agent = managedAgent(id);
       if (!agent) continue;
       const stored = await workspace.settings(id);
-      const s = resolveSettings(agent, stored.workspace, stored.repos[m.repo]);
-      // "When marked ready": once, when the change opens; pushes to it do not re-run it.
-      if (s.trigger.when === 'ready' && m.event !== 'change') continue;
+      const s = resolveSettings(agent, stored.workspace, stored.repos[repoId]);
+      if (s.trigger.when === 'ready' && !opened) continue;
+      if (s.trigger.changes === 'ready_for_review' && !readyForReview(change)) continue;
       if (s.trigger.paths.length && paths === null)
         paths = (
-          ((await platform.change(m.repo, change.number)).diff?.changes ?? []) as { path: string }[]
+          ((await ctx.platform.change(repoId, change.number)).diff?.changes ?? []) as {
+            path: string;
+          }[]
         ).map((f) => String(f.path));
       if (!triggerMatches(s.trigger, String(change.branch), paths ?? [])) continue;
-      const claim = await repo.claim(m.repo, id, change.number, m.commit, {
+      const claim = await repo.claim(repoId, id, change.number, String(change.head), {
         harness: s.harness,
         provider: s.provider,
         model: s.model,
       });
-      if (!claim || (!claim.created && !claim.queued)) continue;
+      if (!claim) continue;
+      if (!claim.created) counts.already++;
+      // A head claimed before is started again only while it waits for its instance (a lost
+      // start); the instance id makes that a no-op otherwise.
+      if (!claim.created && !claim.queued) continue;
       await startInstance(env, {
-        repo: m.repo,
-        account: connection.account,
+        repo: repoId,
+        account: ctx.account,
         agent: id,
         run: claim.run,
         attempt: claim.attempt,
         change: change.number,
-        head: m.commit,
+        head: String(change.head),
       });
+      if (claim.created) counts.started++;
     }
   }
+  return counts;
 }
 
 async function onResume(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'resume' }>) {
@@ -187,6 +222,7 @@ export async function consume(batch: MessageBatch<QueueMessage>, env: ManagedEnv
       if (m.kind === 'event') await onEvent(env, m);
       else if (m.kind === 'resume') await onResume(env, m);
       else if (m.kind === 'deleted') await onDeleted(env, m);
+      else if (m.kind === 'topup') await runTopUp(env, m);
       message.ack();
     } catch (e: any) {
       console.error(

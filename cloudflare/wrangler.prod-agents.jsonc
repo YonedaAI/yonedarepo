@@ -15,9 +15,22 @@
 // and https://yonedarepo.com/auth/google/callback. Deploy uploads them when the secrets file has them.
 // /api/managed is proxied to the managed agents Worker (MANAGED service binding, deployed first).
 // /install.sh and /downloads/* (worker/downloads.ts): the CLI installer and releases and the public Claude Code marketplace, from the DOWNLOADS bucket that cargo xtask downloads stages and uploads.
+// Site analytics (worker/site-events.ts): one cookieless SITE_EVENTS data point per public HTML page view and per sign-up,
+// into the Analytics Engine dataset yonedarepo_prod_site_events (created on first write; infra plan/prune do not track it;
+// underscores, not hyphens: the dataset is a table name in Analytics Engine SQL).
+// No IP, cookie or visitor id; signed-in requests (session cookie), /api, /auth and assets are skipped.
+// WEB_ANALYTICS_TOKEN: the Cloudflare Web Analytics site token; set, the front Worker adds the beacon to public pages; empty, none.
+// SEO_INDEXING=on lets search engines index the site: robots.txt allows it, sitemap.xml lists it and HTML has no X-Robots-Tag (worker/seo-files.ts).
+// ADMIN_ACCOUNTS: the platform Worker's operator list, repeated here for the session answer's is_admin (the admin entry in the sidebar); keep the two equal.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
+  "analytics_engine_datasets": [
+    {
+      "binding": "SITE_EVENTS",
+      "dataset": "yonedarepo_prod_site_events"
+    }
+  ],
   "assets": {
     "binding": "ASSETS",
     "directory": "../frontend/dist",
@@ -123,7 +136,10 @@
     }
   ],
   "vars": {
-    "PUBLIC_APP_ORIGIN": "https://yonedarepo.com"
+    "ADMIN_ACCOUNTS": "",
+    "PUBLIC_APP_ORIGIN": "https://yonedarepo.com",
+    "SEO_INDEXING": "on",
+    "WEB_ANALYTICS_TOKEN": "fd30d727a0dc4d4c949dee535977d1b2"
   },
   "workers_dev": true
 }

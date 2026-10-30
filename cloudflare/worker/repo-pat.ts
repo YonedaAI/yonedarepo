@@ -53,6 +53,8 @@ export async function verifyPat(env: Env, token: string): Promise<PatGrant | nul
     token_hash: tokenHash,
   }).catch((e) => {
     if (e?.code === 'UNAUTHORIZED') return null;
+    // Refused, not revoked: the lookup row stays for the account's unsuspension.
+    if (e?.code === 'ACCOUNT_SUSPENDED') throw new ApiError(e.code, 'This account is suspended');
     throw e;
   });
   if (!checked) {

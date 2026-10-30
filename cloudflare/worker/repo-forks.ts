@@ -11,6 +11,7 @@ import { refreshHead } from './repo-head';
 import { isLarge, putLarge } from './repo-large-files';
 import { parseStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, type RepoContext } from './repo-ops';
+import { holdName } from './repo-paths';
 import { dispatchProjection } from './repo-projection';
 import { visibilityOf } from './repo-public';
 import { shardOutboxes } from './repo-shards';
@@ -44,6 +45,9 @@ export async function forkRepository(ctx: RepoContext, args: Json) {
     throw new ApiError('NOT_SUPPORTED', `Forks of forks nest at most ${FORK_DEPTH} deep`);
   const id = newRepoId();
   const name = typeof args.name === 'string' && args.name ? args.name : source.name;
+  // The fork's name among its owner's (a failed fork leaves it held: released with the
+  // repository id it names, which never lists).
+  await holdName(env, auth._session.workspace, id, name);
   await caller(
     env,
     id,

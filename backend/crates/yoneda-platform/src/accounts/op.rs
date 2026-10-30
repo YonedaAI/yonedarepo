@@ -18,6 +18,15 @@ op_names! {
     }
 }
 op_names! {
+    /// Operator access (trusted Worker adapters only): the account's summary for the admin
+    /// index, and suspension.
+    pub(crate) enum AccessOp {
+        Summary = "account_summary",
+        Suspend = "account_suspend",
+        Unsuspend = "account_unsuspend",
+    }
+}
+op_names! {
     /// The contact email's verification (tokens, the change, the confirmation).
     pub(crate) enum EmailOp {
         Status = "email_status",
@@ -64,6 +73,15 @@ op_names! {
     }
 }
 op_names! {
+    /// The account's picture: its source, what to serve, an upload and its removal.
+    pub(crate) enum AvatarOp {
+        Get = "avatar_get",
+        Serve = "avatar_serve",
+        Upload = "avatar_upload",
+        Remove = "avatar_remove",
+    }
+}
+op_names! {
     /// OAuth sign-in attempts and identity claims, each on its own authority instance.
     pub(crate) enum OAuthOp {
         FlowPut = "oauth_flow_put",
@@ -97,18 +115,36 @@ op_names! {
     }
 }
 
+op_names! {
+    /// Handles (on a handle's own instance, or the account's) and the repository names an
+    /// owner holds.
+    pub(crate) enum HandleOp {
+        Reserve = "handle_reserve",
+        Release = "handle_release",
+        Lookup = "handle_lookup",
+        Set = "handle_set",
+        Get = "handle_get",
+        RepoClaim = "owned_repo_claim",
+        RepoRelease = "owned_repo_release",
+        RepoResolve = "owned_repo_resolve",
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum AccountOp {
     Signin(SigninOp),
+    Access(AccessOp),
     Email(EmailOp),
     Token(TokenOp),
     Ssh(SshOp),
     Device(DeviceOp),
     Identity(IdentityOp),
+    Avatar(AvatarOp),
     OAuth(OAuthOp),
     Org(OrgOp),
     OrgMember(OrgMemberOp),
+    Handle(HandleOp),
 }
 
 impl AccountOp {
@@ -123,28 +159,34 @@ impl AccountOp {
     pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Signin(op) => op.name(),
+            Self::Access(op) => op.name(),
             Self::Email(op) => op.name(),
             Self::Token(op) => op.name(),
             Self::Ssh(op) => op.name(),
             Self::Device(op) => op.name(),
             Self::Identity(op) => op.name(),
+            Self::Avatar(op) => op.name(),
             Self::OAuth(op) => op.name(),
             Self::Org(op) => op.name(),
             Self::OrgMember(op) => op.name(),
+            Self::Handle(op) => op.name(),
         }
     }
 
     #[cfg(test)]
     pub(crate) fn all() -> Vec<Self> {
         let mut all: Vec<Self> = SigninOp::ALL.iter().copied().map(Self::Signin).collect();
+        all.extend(AccessOp::ALL.iter().copied().map(Self::Access));
         all.extend(EmailOp::ALL.iter().copied().map(Self::Email));
         all.extend(TokenOp::ALL.iter().copied().map(Self::Token));
         all.extend(SshOp::ALL.iter().copied().map(Self::Ssh));
         all.extend(DeviceOp::ALL.iter().copied().map(Self::Device));
         all.extend(IdentityOp::ALL.iter().copied().map(Self::Identity));
+        all.extend(AvatarOp::ALL.iter().copied().map(Self::Avatar));
         all.extend(OAuthOp::ALL.iter().copied().map(Self::OAuth));
         all.extend(OrgOp::ALL.iter().copied().map(Self::Org));
         all.extend(OrgMemberOp::ALL.iter().copied().map(Self::OrgMember));
+        all.extend(HandleOp::ALL.iter().copied().map(Self::Handle));
         all
     }
 }

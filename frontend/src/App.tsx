@@ -1,5 +1,6 @@
 // The one app shell: icon rail, sidebar, top bar and account menu around every page (Home,
-// Repositories, Explore, a repository's pages, account settings and device login). A
+// Repositories, Explore, a repository's pages, account settings, device login and, for
+// operators, the admin pages). A
 // signed-out visitor may open Explore and any public repository; nothing there asks them to
 // sign in first. The public site (its own pages, and `/` while signed out) renders in its
 // own frame instead.
@@ -7,8 +8,12 @@ import { X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { AccountSettings } from './features/account-settings/AccountSettings';
 import { VerifyEmailPage } from './features/account-settings/VerifyEmailPage';
+import { AdminRoot } from './features/admin/AdminRoot';
+import { readSeen, type Signups, saveSeen, signupsPath } from './features/admin/adminModel';
 import { AgentsRoot } from './features/agents/AgentsRoot';
+import { syncAgents } from './features/agents/agentsModel';
 import { ExplorePage } from './features/explore/ExplorePage';
+import { ReadablePage } from './features/profile/ReadablePage';
 import { AppRail } from './features/shell/AppRail';
 import { AppSidebar } from './features/shell/AppSidebar';
 import { GettingStarted } from './features/shell/GettingStarted';
@@ -25,8 +30,12 @@ import { DevicePage } from './features/source-platform/DevicePage';
 import { OrgPage } from './features/source-platform/OrgPage';
 import type { OrgSummary } from './features/source-platform/orgModel';
 import { RepoPage } from './features/source-platform/RepoPage';
+import { forgetRepoNames, rememberRepoName } from './features/source-platform/repoNames';
+import { managedApi } from './features/source-platform/sourceApi';
 import { isAgentsRoute, routeRepo } from './features/source-platform/sourceRoute';
 import { useSource } from './features/source-platform/useSource';
+import { breadcrumbs } from './features/workspace/breadcrumbs';
+import { HandlePrompt } from './features/workspace/HandlePicker';
 import {
   type AuthResult,
   PROVIDER_LABEL,
@@ -95,6 +104,16 @@ export function App() {
   const platform = useSource<{ repos: PlatformRepo[] }>(session.authenticated ? '/repos' : null);
   const orgs = useSource<{ orgs: OrgSummary[] }>(session.authenticated ? '/orgs' : null);
   const activity = useSource<AccountActivity>(session.authenticated ? '/activity' : null);
+  // Operators: the sign-up feed, badged in the sidebar with those since this browser looked.
+  const isAdmin = Boolean(session.identity?.is_admin);
+  const [signupsSeen, setSignupsSeen] = useState(readSeen);
+  const signups = useSource<Signups>(isAdmin ? signupsPath(signupsSeen) : null);
+  const onSignupsSeen = useCallback((at: number) => {
+    saveSeen(at);
+    setSignupsSeen(at);
+  }, []);
+  // Before anything renders a link, so repository links carry their readable address.
+  for (const r of platform.data?.repos ?? []) rememberRepoName(r.id, r.owner_handle, r.name);
   const rows = repoRows(platform.data?.repos ?? []);
   const rowsError = platform.error && !/Sign in/.test(platform.error) ? platform.error : '';
   const repo = routeRepo(route);
@@ -120,6 +139,8 @@ export function App() {
   }, [session.loading, session.error, session.authenticated]);
 
   async function created(result: Created) {
+    // Agents set to run on all repositories pick up the new one; best effort, never waited on.
+    void syncAgents(result.owner || session.identity?.username, managedApi);
     platform.reload();
     activity.reload();
     navigate({ view: 'files', repo: result.repo, path: '', ref: 'main' });
@@ -140,17 +161,24 @@ export function App() {
                 ? 'Confirm your email'
                 : route.view === 'org'
                   ? route.org
-                  : isAgentsRoute(route)
-                    ? 'Agents'
-                    : gone
-                      ? 'Repository not found'
-                      : (row?.name ?? loaded?.name ?? repo ?? '');
+                  : route.view === 'profile'
+                    ? route.handle
+                    : route.view === 'repo-name'
+                      ? route.name
+                      : isAgentsRoute(route)
+                        ? 'Agents'
+                        : route.view === 'admin'
+                          ? 'Admin'
+                          : gone
+                            ? 'Repository not found'
+                            : (row?.name ?? loaded?.name ?? repo ?? '');
   const activityError = activity.error && !/Sign in/.test(activity.error) ? activity.error : '';
   const refresh = () => {
     setTick((t) => t + 1);
     platform.reload();
     orgs.reload();
     activity.reload();
+    if (isAdmin) signups.reload();
     void session.discover();
   };
   // The public site (its own pages, and `/` while signed out) renders in its own frame.
@@ -198,10 +226,12 @@ export function App() {
           setCreating(true);
         }}
         onRetry={platform.reload}
+        admin={isAdmin ? { unread: signups.data?.unread ?? 0 } : undefined}
       />
       <main id="workspace">
         <WorkspaceHeader
           title={title}
+          crumbs={breadcrumbs(route, session.identity?.username)}
           loading={session.loading || platform.loading}
           authenticated={session.authenticated}
           identity={session.identity}
@@ -288,8 +318,35 @@ export function App() {
                 repos={rows.map((r) => ({ id: r.repo, name: r.name }))}
                 orgs={orgs}
                 navigate={navigate}
+                onAvatar={session.setAvatar}
               />
             )}
+            {(route.view === 'profile' || route.view === 'repo-name') && (
+              <ReadablePage
+                route={route}
+                tick={tick}
+                navigate={navigate}
+                authenticated={session.authenticated}
+                onSignIn={() => setPanel('account')}
+                onNew={() => setCreating(true)}
+              />
+            )}
+            {route.view === 'admin' &&
+              (isAdmin ? (
+                <AdminRoot
+                  section={route.section}
+                  account={route.account}
+                  self={session.identity?.username}
+                  signups={signups}
+                  seen={signupsSeen}
+                  onSeen={onSignupsSeen}
+                  navigate={navigate}
+                />
+              ) : (
+                !session.loading && (
+                  <p className="source-empty">The admin pages are for operators only.</p>
+                )
+              ))}
             {route.view === 'device' && <DevicePage code={route.code} />}
             {route.view === 'verify-email' && (
               <VerifyEmailPage account={route.account} token={route.token} />
@@ -313,6 +370,7 @@ export function App() {
                 account={session.identity?.username}
                 orgs={orgs.data?.orgs ?? []}
                 navigate={navigate}
+                onNewRepository={() => setCreating(true)}
               />
             )}
             {'repo' in route && (
@@ -357,11 +415,21 @@ export function App() {
         <NewRepositoryDialog
           account={session.identity?.username}
           orgs={orgs.data?.orgs ?? []}
-          initialOwner={route.view === 'org' ? route.org : undefined}
+          initialOwner={
+            route.view === 'org' ? route.org : isAgentsRoute(route) ? route.workspace : undefined
+          }
           onClose={() => setCreating(false)}
           onCreated={created}
         />
       )}
+      <HandlePrompt
+        identity={creating ? null : session.identity}
+        onSet={(handle) => {
+          setNotice(`Your handle is ${handle}. Your profile is at /${handle}.`);
+          forgetRepoNames();
+          refresh();
+        }}
+      />
     </div>
   );
 }

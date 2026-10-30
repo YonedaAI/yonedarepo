@@ -1,14 +1,22 @@
 //! The account authority (one WorkspaceAuthority Durable Object per account, one per
 //! device login code, SSH key fingerprint, OAuth sign-in attempt and identity claim): sign-in
-//! sessions, provider identities, personal access tokens, SSH keys and device login. Only trusted Worker adapters can call these commands.
+//! sessions, provider identities, the account's picture, personal access tokens, SSH keys and device login. Only trusted Worker adapters can call these commands.
 use crate::storage::{SqlStore, bad, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 mod access;
+#[cfg(test)]
+mod access_tests;
+mod avatars;
+#[cfg(test)]
+mod avatars_tests;
 mod device;
 mod email;
 #[cfg(test)]
 mod email_tests;
+mod handles;
+#[cfg(test)]
+mod handles_tests;
 mod identities;
 #[cfg(test)]
 mod identities_tests;
@@ -17,6 +25,7 @@ mod op;
 mod orgs;
 #[cfg(test)]
 mod orgs_tests;
+mod repo_names;
 mod signin;
 mod ssh_keys;
 #[cfg(test)]
@@ -42,19 +51,22 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             .ok_or_else(|| bad("Trusted clock required"))?;
         match op::AccountOp::parse(&command)? {
             op::AccountOp::Signin(op) => signin::handle(&db, &command, op, now),
+            op::AccountOp::Access(op) => access::handle(&db, op, now),
             op::AccountOp::Email(op) => email::handle(&db, &command, op, now),
             op::AccountOp::Token(op) => tokens::handle(&db, &command, op, now),
             op::AccountOp::Ssh(op) => ssh_keys::handle(&db, &command, op, now),
             op::AccountOp::Device(op) => device::handle(&db, &command, op, now),
             op::AccountOp::Identity(op) => identities::handle(&db, &command, op, now),
+            op::AccountOp::Avatar(op) => avatars::handle(&db, &command, op, now),
             op::AccountOp::OAuth(op) => oauth_flows::handle(&db, &command, op, now),
             op::AccountOp::Org(op) => orgs::handle(&db, &command, op, now),
             op::AccountOp::OrgMember(op) => orgs::member(&db, &command, op, now),
+            op::AccountOp::Handle(op) => handles::handle(&db, &command, op, now),
         }
     }))
 }
 /// Digest-pinned, forward-only account migrations (version, SQL), applied in order.
-const MIGRATIONS: [(i64, &str); 7] = [
+const MIGRATIONS: [(i64, &str); 9] = [
     (1, include_str!("accounts/migrations/0001_accounts.sql")),
     (
         2,
@@ -65,6 +77,11 @@ const MIGRATIONS: [(i64, &str); 7] = [
     (5, include_str!("accounts/migrations/0005_ssh_keys.sql")),
     (6, include_str!("accounts/migrations/0006_token_origin.sql")),
     (7, include_str!("accounts/migrations/0007_identities.sql")),
+    (
+        8,
+        include_str!("accounts/migrations/0008_handles_repo_names.sql"),
+    ),
+    (9, include_str!("accounts/migrations/0009_avatars.sql")),
 ];
 fn migrate<S: SqlStore>(store: &S) -> Result<()> {
     store.query("CREATE TABLE IF NOT EXISTS workspace_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)", &[])?;

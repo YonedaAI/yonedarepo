@@ -4,7 +4,7 @@
 // out) gets the read views, with no write or admin controls.
 import { useEffect } from 'react';
 import { RepoSettings } from '../repo-settings/RepoSettings';
-import { linkTo, type Navigate } from '../shell/useRoute';
+import { linkTo, type Navigate, showAddress } from '../shell/useRoute';
 import { ChangeView } from './ChangeView';
 import { CommitView } from './CommitView';
 import { ForkButton } from './ForkButton';
@@ -21,6 +21,7 @@ import { RepoOverview } from './RepoOverview';
 import { RepoReleases } from './RepoReleases';
 import { RepoSearch } from './RepoSearch';
 import { isPublic, ReadOnlyContext, repoAccess, type Visibility } from './repoAccess';
+import { rememberRepoName, repoNameOf } from './repoNames';
 import type { RepoStatus } from './repoStatus';
 import { SessionView } from './SessionView';
 import { Failure } from './SourceStatus';
@@ -65,7 +66,14 @@ export function RepoPage({
   }) => void;
 }) {
   const repo = route.repo;
-  const status = useSource<RepoStatus>(`/repos/${repo}`);
+  const status = useSource<RepoStatus & { owner_handle?: string | null }>(`/repos/${repo}`);
+  // Its readable address (`/<handle>/<name>`): the status names the owner's handle (null
+  // while an email-named owner has none: the id address keeps working).
+  if (status.data) rememberRepoName(repo, status.data.owner_handle, status.data.name);
+  const handle = repoNameOf(repo)?.owner;
+  useEffect(() => {
+    if (handle) showAddress(route);
+  }, [handle, route]);
   const gone = useRepoGone(repo);
   const missing = gone || repoMissing(status.code);
   const data = status.data;
@@ -101,7 +109,19 @@ export function RepoPage({
       <ReadOnlyContext.Provider value={access.readOnly}>
         <div className="repo-page">
           <div className="repo-head">
-            <h1>{name ?? data?.name ?? repo}</h1>
+            <h1>
+              {handle && (
+                <>
+                  <a className="repo-owner" {...linkTo({ view: 'profile', handle }, navigate)}>
+                    {handle}
+                  </a>
+                  <span className="repo-owner-sep" aria-hidden="true">
+                    /
+                  </span>
+                </>
+              )}
+              {name ?? data?.name ?? repoNameOf(repo)?.name ?? repo}
+            </h1>
             {isPublic(data?.visibility) && <PublicBadge />}
             {data?.parent && (
               <p className="source-meta">
@@ -184,6 +204,8 @@ export function RepoPage({
                   branches={(data?.refs ?? [])
                     .filter((r) => r.name.startsWith('refs/heads/'))
                     .map((r) => r.name.slice('refs/heads/'.length))}
+                  owner={data?.owner}
+                  account={username}
                   navigate={navigate}
                 />
               )}

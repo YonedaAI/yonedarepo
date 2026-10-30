@@ -344,13 +344,43 @@ export interface ManagedRun {
   finished_at: number | null;
 }
 
+/** Automatic top-up: with a card on file, a balance below `below_usd` adds `add_usd`, charged
+ * to the card (the pricing page's top-up). */
+export const AUTO_TOP_UP = { below_usd: 5, add_usd: 20 } as const;
+
+/** The saved card, as Stripe describes it: brand and last four digits only. */
+export interface CardOnFile {
+  brand: string;
+  last4: string;
+  added_at: number;
+}
+
 export interface ManagedCredit {
   granted_usd: number;
   used_usd: number;
   balance_usd: number;
   /** True when the balance is spent: runs wait (status paused) until credit exists. */
   paused: boolean;
+  /** The promotional credit a card on file unlocks (configured per deployment), once. */
+  promo: { usd: number; granted: boolean };
+  card: CardOnFile | null;
+  /** Why the last automatic top-up failed (null when it did not): runs stop at $0. */
+  top_up_failed: string | null;
+  /** Whether a saved card is charged when the balance runs low (on unless switched off). */
+  auto_top_up: boolean;
 }
+
+/** One automatic top-up charged to the card. */
+export interface TopUp {
+  id: string;
+  amount_usd: number;
+  status: 'pending' | 'succeeded' | 'failed';
+  error: string | null;
+  created_at: number;
+}
+
+/** Whether card billing is available here (`stripe`), or not set up yet (`coming`). */
+export type BillingMode = 'stripe' | 'coming';
 
 /** A posted finding, kept for the run's detail page. */
 export interface RunFinding {
@@ -378,6 +408,13 @@ export interface AgentState extends ManagedAgentDefinition {
   enabled_repos: string[];
   history: RunTile[];
   runs: number;
+  /** Set up in this workspace (Add agent was done): who and when; null until then. */
+  created_by: string | null;
+  created_at: number | null;
+  /** False while paused: set up and kept, but starts no run. */
+  active: boolean;
+  /** Runs on every repository the caller owns in the workspace, new ones included. */
+  all_repos: boolean;
 }
 
 /** The body of `PUT /api/managed/workspaces/:ws/agents/:agent`: settings to change (a field set to
@@ -387,6 +424,40 @@ export interface AgentUpdate {
   settings?: { [K in keyof AgentSettings]?: AgentSettings[K] | null };
   scope?: string;
   repos?: string[];
+  /** Pause (false) or resume (true): repositories and settings are kept either way. */
+  active?: boolean;
+  /** Run on all repositories, including ones created later (true), instead of `repos`. */
+  all_repos?: boolean;
+}
+
+/** `POST /api/managed/workspaces/:ws/sync`: repositories newly connected for agents set to run on
+ * all repositories (the web app asks after creating or importing one). */
+export interface SyncResult {
+  connected: number;
+}
+
+/** `POST /api/managed/workspaces/:ws/agents/:agent/run` (Run now): open changes reviewed at
+ * their heads now; a head already reviewed is not reviewed again. */
+export interface RunNowResult {
+  started: number;
+  already: number;
+}
+
+/** One row of a repository's Agents page (`GET /api/managed/workspaces/:ws/repos/:repo/agents`). */
+export interface RepoAgentRow {
+  id: ManagedAgentId;
+  name: string;
+  status: 'active' | 'paused' | 'off';
+  harness: Harness;
+  model: string;
+  latest: RunTile | null;
+}
+
+/** Whether a change counts as ready for review: open, and not marked a draft in its title
+ * (`Draft:`, `WIP:` or `[WIP]`, the common conventions; the platform has no draft state). */
+export function readyForReview(change: { status?: unknown; title?: unknown }): boolean {
+  if (change.status !== undefined && change.status !== 'open') return false;
+  return !/^\s*(draft:|wip:|\[wip\]|\[draft\])/i.test(String(change.title ?? ''));
 }
 
 /** `GET /api/managed/workspaces/:ws`: the Agents overview. */
@@ -394,7 +465,7 @@ export interface WorkspaceState {
   workspace: string;
   agents: AgentState[];
   credit: ManagedCredit;
-  billing: 'coming';
+  billing: BillingMode;
   /** Repositories the caller owns in this workspace (the Repositories checklist). */
   repos: { id: string; name: string }[];
   token_name: string;
@@ -425,8 +496,12 @@ export interface RunDetail {
 export interface BillingState {
   workspace: string;
   credit: ManagedCredit;
-  payment_method: null;
-  billing: 'coming';
+  /** The saved card (brand and last 4), or null. */
+  payment_method: CardOnFile | null;
+  billing: BillingMode;
+  /** The top-up rule, and whether it is on (switched off, the card stays saved). */
+  auto_top_up: { below_usd: number; add_usd: number; enabled: boolean };
+  top_ups: TopUp[];
   usage: {
     repo: string;
     repo_name: string;

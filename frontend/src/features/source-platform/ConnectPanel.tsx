@@ -2,12 +2,13 @@
 // with Claude Code and Codex configuration; and deleting a repository (type its name).
 import { type FormEvent, useState } from 'react';
 import {
+  CLAUDE_PLUGIN_COMMAND,
+  claudeMarketplaceCommand,
   claudeMcpJson,
-  claudePluginSteps,
   cloneCommand,
   codexToml,
   httpsCloneCommand,
-  installSteps,
+  installCommand,
   loginCommand,
   mcpUrl,
 } from './connect';
@@ -79,7 +80,13 @@ export function AgentConnectHelp({ origin }: { origin: string }) {
     <>
       <section aria-labelledby="connect-cli">
         <h2 id="connect-cli">The yoneda CLI</h2>
-        <CopyBlock label="install the yoneda CLI" text={installSteps(origin)} />
+        <p className="source-meta">
+          Installs <code>yoneda</code> and <code>git-remote-yoneda</code> into{' '}
+          <code>~/.local/bin</code> on macOS and Linux. Signing in opens your browser to approve;
+          the token is stored with mode 0600.
+        </p>
+        <CopyBlock label="Install the yoneda CLI" text={installCommand(origin)} />
+        <CopyBlock label="Sign in" text={loginCommand(origin)} />
       </section>
       <section aria-labelledby="connect-agents">
         <h2 id="connect-agents">Agents (MCP)</h2>
@@ -89,7 +96,11 @@ export function AgentConnectHelp({ origin }: { origin: string }) {
           <code>YONEDA_TOKEN</code> environment variable.
         </p>
         <CopyBlock label="MCP URL" text={mcpUrl(origin)} />
-        <CopyBlock label="Claude Code plugin" text={claudePluginSteps(origin)} />
+        <CopyBlock
+          label="Claude Code: add the marketplace"
+          text={claudeMarketplaceCommand(origin)}
+        />
+        <CopyBlock label="Claude Code: install the plugin" text={CLAUDE_PLUGIN_COMMAND} />
         <CopyBlock
           label="Claude Code .mcp.json (without the plugin)"
           text={claudeMcpJson(origin)}

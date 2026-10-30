@@ -12,6 +12,7 @@ import {
 } from '../../shared/managed-agents';
 import { RESULT_CONTRACT } from '../../shared/managed-instructions';
 import { resolveSettings } from '../../shared/managed-settings';
+import { requestTopUp } from './billing';
 import { gatewaySlugs, type ManagedEnv, type RunParams } from './config';
 import { promptDiff } from './diff-prompt';
 import { GATEWAY_HOST, type HarnessParams, harnessStub, PLATFORM_HOST } from './harness';
@@ -248,12 +249,13 @@ async function attempt(
     await box.end();
     const seconds = Math.max(1, Math.ceil((Date.now() - started.at) / 1000));
     const charged = Math.ceil((seconds / 60) * CONTAINER_USD_PER_MINUTE * 1_000_000);
-    await ledgerStub(env, p.account).charge(
+    const topUp = await ledgerStub(env, p.account).charge(
       `container:${name}`,
       charged,
       { repo: p.repo, run: p.run, agent: p.agent, model: choice.model },
       `Container ${seconds} s`,
     );
+    await requestTopUp(env, p.account, topUp);
     await repoStub(env, p.repo).recordContainer(p.run, seconds, charged);
     const transcript = typeof status.transcript === 'string' ? status.transcript : '';
     // A run whose repository was deleted (and cleared) meanwhile keeps no transcript.

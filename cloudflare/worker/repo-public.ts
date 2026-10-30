@@ -11,6 +11,7 @@
 // everywhere within ACCESS_MS.
 import { refreshHead } from './repo-head';
 import { ApiError, type Credentials, type Json, type RepoContext } from './repo-ops';
+import { withPaths } from './repo-paths';
 import type { Env } from './types';
 
 export const ANONYMOUS: Credentials = { _anonymous: true };
@@ -116,6 +117,8 @@ export async function explore(env: Env, query: URLSearchParams) {
        WHERE visibility='public' AND created_at<? ORDER BY created_at DESC LIMIT ?`,
   )
     .bind(before, limit)
-    .all();
-  return { repos: listed.results };
+    .all<{ id: string; name: string; owner: string; created_at: number; visibility: string }>();
+  // A public listing never shows an owner's address: owners appear by handle.
+  const repos = await withPaths(env, listed.results);
+  return { repos: repos.map((r) => ({ ...r, owner: r.owner_handle })) };
 }

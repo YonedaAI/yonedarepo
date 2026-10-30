@@ -1,115 +1,96 @@
 // Agents (`/agents`): the workspace's managed agents. A top row (All agents, workspace menu,
-// filter, search, View runs, New agent), then "Managed by YonedaRepo": the promotional credit
-// card and one card per agent YonedaRepo maintains. Enable opens the agent's settings page
-// pre-filled; an enabled card shows its newest result and run count, with Edit and Disable.
+// filter, search, View runs, New agent), then "Managed by YonedaRepo": the credit card and one
+// card per agent YonedaRepo maintains. A card added here returns here from Stripe
+// (`?billing=added`), and the credit card says once it is saved. An agent not set up offers Add agent (its set-up page);
+// a set-up one shows Active or Paused, its newest result and run count, and a ⋮ menu.
 import { Filter, MoreHorizontal, Search } from 'lucide-react';
-import { useState } from 'react';
-import type {
-  AgentState,
-  AgentUpdate,
-  ManagedCredit,
-  WorkspaceState,
-} from '../../../../shared/managed-agents';
+import { useEffect, useState } from 'react';
+import type { AgentState, WorkspaceState } from '../../../../shared/managed-agents';
 import { linkTo, type Navigate } from '../shell/useRoute';
-import { Failure } from '../source-platform/SourceStatus';
 import { managedApi } from '../source-platform/sourceApi';
 import { useSource } from '../source-platform/useSource';
+import { AgentMenu } from './AgentMenu';
+import { useAgentActions } from './agentActions';
 import { AgentIcon, loadState, ResultTile } from './agentParts';
 import {
-  agentPath,
+  CREATE_OWN_GATE,
   cardState,
-  creditPercent,
-  formatCost,
-  usedText,
+  type MenuAction,
+  menuItems,
+  STATUS_BADGES,
+  syncAgents,
   visibleAgents,
   workspaceOptions,
   workspacePath,
 } from './agentsModel';
+import { agentsReturnPath } from './billingModel';
+import { useCardReturn } from './billingParts';
+import { PromoCard } from './PromoCard';
 
 type Space = { workspace?: string };
-
-function PromoCard({ credit }: { credit: ManagedCredit }) {
-  return (
-    <section className="agent-card agent-promo" aria-labelledby="promo-heading">
-      <h3 id="promo-heading">This one is on us!</h3>
-      <p>
-        YonedaRepo adds {formatCost(credit.granted_usd)} of promotional credit for your first runs
-        of the agents it maintains. Set up billing to create agents of your own.
-      </p>
-      <div className="agent-usage">
-        <div className="managed-meter" aria-hidden="true">
-          <span
-            style={{ width: `${creditPercent(credit)}%` }}
-            className={credit.paused ? 'spent' : undefined}
-          />
-        </div>
-        <span>{usedText(credit)}</span>
-      </div>
-      {credit.paused && (
-        <p className="managed-paused" role="status">
-          The credit is used up, so runs are paused until credit is added.
-        </p>
-      )}
-      <div className="agent-card-actions">
-        <button type="button" className="quiet" disabled title="Billing is coming">
-          Set up billing
-        </button>
-        <span className="source-meta">Coming soon</span>
-      </div>
-    </section>
-  );
-}
 
 function AgentCard({
   agent,
   space,
   busy,
-  onDisable,
+  onAct,
   navigate,
 }: {
   agent: AgentState;
   space: Space;
   busy: boolean;
-  onDisable: (agent: AgentState) => void;
+  onAct: (agent: AgentState, action: MenuAction) => void;
   navigate: Navigate;
 }) {
   const card = cardState(agent);
-  const settings = linkTo({ view: 'agent-settings', agent: agent.id, ...space }, navigate);
   return (
     <section className="agent-card" aria-labelledby={`card-${agent.id}`}>
       <div className="agent-card-head">
-        <h3 id={`card-${agent.id}`}>{agent.settings.name}</h3>
+        <h3 id={`card-${agent.id}`}>
+          {card.configured ? (
+            <a {...linkTo({ view: 'agent-settings', agent: agent.id, ...space }, navigate)}>
+              {agent.settings.name}
+            </a>
+          ) : (
+            agent.settings.name
+          )}
+        </h3>
         <AgentIcon icon={agent.icon} />
       </div>
       <p>{agent.pitch}</p>
-      {card.enabled && (
+      {card.configured && (
         <p className="agent-card-status">
-          <span className="chip run-good">Enabled</span>
+          <span className={`chip ${card.status === 'active' ? 'run-good' : 'run-neutral'}`}>
+            {STATUS_BADGES[card.status]}
+          </span>
           {card.last && <ResultTile tile={card.last} />}
           <span className="source-meta">
-            {card.runs} run{card.runs === 1 ? '' : 's'} · {card.repos} repositor
-            {card.repos === 1 ? 'y' : 'ies'}
+            {card.runs} run{card.runs === 1 ? '' : 's'} · {card.repos}
           </span>
         </p>
       )}
       <div className="agent-card-actions">
-        {card.enabled ? (
+        {card.configured ? (
           <>
-            <a className="button-link quiet" {...settings}>
-              Edit
-            </a>
-            <button
-              type="button"
-              className="quiet"
-              disabled={busy}
-              onClick={() => onDisable(agent)}
+            <a
+              className="button-link quiet"
+              {...linkTo({ view: 'agent-settings', agent: agent.id, ...space }, navigate)}
             >
-              {busy ? 'Disabling…' : 'Disable'}
-            </button>
+              Open
+            </a>
+            <AgentMenu
+              label={`${agent.settings.name} actions`}
+              items={menuItems(agent)}
+              busy={busy}
+              onPick={(action) => onAct(agent, action)}
+            />
           </>
         ) : (
-          <a className="button-link agent-enable" {...settings}>
-            Enable
+          <a
+            className="button-link agent-enable"
+            {...linkTo({ view: 'agent-configure', agent: agent.id, ...space }, navigate)}
+          >
+            Add agent
           </a>
         )}
       </div>
@@ -132,27 +113,24 @@ export function AgentsPage({
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [enabledOnly, setEnabledOnly] = useState(false);
-  const [busy, setBusy] = useState('');
-  const [error, setError] = useState('');
   const space: Space = workspace === account ? {} : { workspace };
   const spaces = workspaceOptions(account, orgs);
-
-  async function disable(agent: AgentState) {
-    setBusy(agent.id);
-    setError('');
-    try {
-      const body: AgentUpdate = { repos: [] };
-      await managedApi(agentPath(workspace, agent.id), { method: 'PUT', body });
-      loaded.reload();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy('');
-    }
-  }
-
+  const actions = useAgentActions(workspace, space, navigate, loaded.reload);
   const state = loaded.data;
   const agents = state ? visibleAgents(state.agents, query, enabledOnly) : [];
+  const { reload } = loaded;
+  const saving = useCardReturn(state?.credit.card ?? null, loaded.loading, reload);
+  // Connect repositories made outside the web app (the CLI, an import) to agents set to run on
+  // all repositories; reload only when that changed something.
+  useEffect(() => {
+    let live = true;
+    syncAgents(workspace, managedApi).then((connected) => {
+      if (live && connected > 0) reload();
+    });
+    return () => {
+      live = false;
+    };
+  }, [workspace, reload]);
   return (
     <div className="agents-page">
       <div className="agents-toolbar">
@@ -188,7 +166,7 @@ export function AgentsPage({
           <button
             type="button"
             className="icon-button"
-            aria-label="Show only enabled agents"
+            aria-label="Show only agents you set up"
             aria-pressed={enabledOnly}
             onClick={() => setEnabledOnly(!enabledOnly)}
           >
@@ -218,15 +196,17 @@ export function AgentsPage({
           <a className="button-link quiet" {...linkTo({ view: 'agent-runs', ...space }, navigate)}>
             View runs
           </a>
-          <a
-            className="button-link agents-new"
+          <button
+            type="button"
+            className="agents-new"
+            disabled
             aria-describedby="new-agent-hint"
-            {...linkTo({ view: 'agent-settings', agent: 'new', ...space }, navigate)}
+            title={CREATE_OWN_GATE}
           >
             New agent
-          </a>
+          </button>
           <span id="new-agent-hint" className="sr-only">
-            Needs billing, which is coming
+            {CREATE_OWN_GATE}
           </span>
         </div>
       </div>
@@ -234,14 +214,22 @@ export function AgentsPage({
       {loadState(loaded, 'agents') ??
         (state && (
           <div className="agents-grid">
-            <PromoCard credit={state.credit} />
+            <PromoCard
+              workspace={workspace}
+              credit={state.credit}
+              billing={state.billing}
+              returnTo={agentsReturnPath(space.workspace)}
+              // Settings → Billing is the signed-in account's own.
+              manageHref={workspace === account ? '/settings#billing' : undefined}
+              saving={saving}
+            />
             {agents.map((agent) => (
               <AgentCard
                 key={agent.id}
                 agent={agent}
                 space={space}
-                busy={busy === agent.id}
-                onDisable={disable}
+                busy={actions.busy === agent.id}
+                onAct={actions.act}
                 navigate={navigate}
               />
             ))}
@@ -252,7 +240,8 @@ export function AgentsPage({
             )}
           </div>
         ))}
-      {error && <Failure error={error} />}
+      {actions.notices}
+      {actions.dialog}
     </div>
   );
 }

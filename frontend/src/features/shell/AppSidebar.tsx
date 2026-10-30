@@ -1,5 +1,5 @@
 // The shell's sidebar: Browse (Home, Repositories, Explore, Agents: the workspace's managed
-// agents, their runs and settings), the account's repositories and organizations, then
+// agents, their runs and settings; Admin for operators), the account's repositories and organizations, then
 // Repository: the switcher and the open repository's pages. On a phone it is the navigation
 // menu the top bar opens.
 import {
@@ -18,10 +18,12 @@ import {
   ScrollText,
   Search,
   Settings,
+  ShieldCheck,
   Sparkles,
   Tag,
 } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
+import { unreadLabel } from '../admin/adminModel';
 import type { OrgSummary } from '../source-platform/orgModel';
 import { Failure } from '../source-platform/SourceStatus';
 import {
@@ -86,6 +88,7 @@ export function AppSidebar({
   navigate = () => {},
   onNew,
   onRetry,
+  admin,
 }: {
   authenticated: boolean;
   loading: boolean;
@@ -104,6 +107,9 @@ export function AppSidebar({
   onNew?: () => void;
   /** Reads the repositories again after a failed read. */
   onRetry?: () => void;
+  /** The viewer is an operator (the session's hint): the Admin entry, with sign-ups since
+   * this browser last looked. */
+  admin?: { unread: number };
 }) {
   const repo = missing ? undefined : routeRepo(route);
   const page = routeTab(route);
@@ -145,6 +151,22 @@ export function AppSidebar({
           >
             <Sparkles size={16} aria-hidden="true" />
             <span className="side-text">Agents</span>
+          </a>
+        )}
+        {authenticated && admin && (
+          // biome-ignore lint/a11y/useAriaPropsSupportedByRole: linkTo spreads the href, so this is a link.
+          <a
+            {...current(route.view === 'admin')}
+            aria-label={admin.unread > 0 ? `Admin, ${admin.unread} new sign-ups` : undefined}
+            {...linkTo({ view: 'admin', section: 'overview' }, navigate)}
+          >
+            <ShieldCheck size={16} aria-hidden="true" />
+            <span className="side-text">Admin</span>
+            {admin.unread > 0 && (
+              <small className="side-badge" aria-hidden="true">
+                {unreadLabel(admin.unread)}
+              </small>
+            )}
           </a>
         )}
       </nav>

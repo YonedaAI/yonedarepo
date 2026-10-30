@@ -116,7 +116,7 @@ async function live(
     key_id: holder.key_id,
     fingerprint,
   }).catch((e) => {
-    if (e?.code === 'UNAUTHORIZED' || e?.code === 'NOT_FOUND') return null;
+    if (['UNAUTHORIZED', 'NOT_FOUND', 'ACCOUNT_SUSPENDED'].includes(e?.code)) return null;
     throw e;
   });
 }

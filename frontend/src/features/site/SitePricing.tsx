@@ -1,7 +1,7 @@
 // Pricing (`/pricing`): preview pricing from `pricing.ts`. Billing is not built, so nothing
 // here can be bought yet and the page says so first.
 import { Check } from 'lucide-react';
-import { CONTAINER_USD_PER_MINUTE } from '../../../../shared/managed-agents';
+import { AUTO_TOP_UP, CONTAINER_USD_PER_MINUTE } from '../../../../shared/managed-agents';
 import type { Navigate } from '../shell/useRoute';
 import { agentUsageRows, formatUsd, MARGIN, METERS, meterPrice, PRICING } from './pricing';
 import { siteLink } from './SiteLayout';
@@ -87,9 +87,11 @@ export function SitePricing({ navigate }: { navigate: Navigate }) {
           The managed agents (code, security and slop review) are paid for by what each run uses:
           the tokens its model calls read and write, at the provider&apos;s list rate plus {margin}
           %, and the minutes its review container runs, at {formatUsd(CONTAINER_USD_PER_MINUTE)} a
-          minute. Every platform feature stays free. Your first runs come out of the{' '}
-          {formatUsd(PRICING.startingCreditUsd)} promotional credit, and agents pause at a $0
-          balance until credit is added. Setting up billing is coming.
+          minute. Every platform feature stays free. Setting up your first agent adds{' '}
+          {formatUsd(PRICING.startingCreditUsd)} of credit, and adding a card unlocks more
+          promotional credit. With a card on file, a balance under{' '}
+          {formatUsd(AUTO_TOP_UP.below_usd)} is topped up by {formatUsd(AUTO_TOP_UP.add_usd)}; if a
+          top-up fails, agents pause at a $0 balance until the card is fixed.
         </p>
         <div className="site-table">
           <table>

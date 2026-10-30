@@ -98,7 +98,11 @@ export class FakePlatform {
     const base = `/repos/${this.repo}`;
     if (this.deleted && (path === base || path.startsWith(`${base}/`))) return refuse('GONE', 404);
     if (req.method === 'GET' && path === base)
-      return ok({ owner: this.account, automation: { paused: this.paused ? { by: 'user:owner' } : null } });
+      return ok({
+        owner: this.account,
+        viewer: { owner, principal: owner ? 'user:owner' : 'user:reader' },
+        automation: { paused: this.paused ? { by: 'user:owner' } : null },
+      });
     const del = /^\/repos\/(r[0-9a-f]{20})\/(tokens|hooks)\/([^/]+)$/.exec(path);
     if (req.method === 'DELETE' && del) {
       if (!owner) return refuse('FORBIDDEN', 403);
@@ -234,10 +238,70 @@ export class FakeHarness {
 export type GatewayCall = { url: string; headers: Record<string, string>; body: any };
 
 /** The real AI Gateway's place: answers each forwarded request with usage, JSON or SSE. */
-export function fakeGateway(usage = { input_tokens: 1000, output_tokens: 200 }) {
+/** Stripe in test mode, faked: no network. Records every call; `decline` makes the next
+ * off-session payment fail as a card decline. */
+export const STRIPE_BASE = 'https://stripe.test';
+export const STRIPE_KEY = ['sk', 'test', 'fixture'].join('_');
+export const STRIPE_WEBHOOK_SECRET = ['whsec', 'stripe', 'fixture'].join('_');
+export class FakeStripe {
+  calls: { method: string; path: string; form: Record<string, string>; idempotency: string | null; auth: string | null }[] = [];
+  intents = new Map<string, { id: string; status: string; amount: number }>();
+  decline = false;
+  detached: string[] = [];
+  card = { brand: 'visa', last4: '4242' };
+
+  async handle(req: Request): Promise<Response> {
+    const url = new URL(req.url);
+    const form = Object.fromEntries(new URLSearchParams(req.method === 'POST' ? await req.text() : ''));
+    const idempotency = req.headers.get('idempotency-key');
+    this.calls.push({ method: req.method, path: url.pathname, form, idempotency, auth: req.headers.get('authorization') });
+    const ok = (v: unknown) => Response.json(v);
+    if (url.pathname === '/v1/customers' && req.method === 'POST') return ok({ id: `cus_${this.calls.length}` });
+    if (url.pathname === '/v1/checkout/sessions' && req.method === 'POST')
+      return ok({ id: 'cs_test_1', url: 'https://checkout.stripe.test/c/pay/cs_test_1' });
+    const pm = /^\/v1\/payment_methods\/([^/]+)$/.exec(url.pathname);
+    if (pm && req.method === 'GET') return ok({ id: pm[1], card: this.card });
+    const detach = /^\/v1\/payment_methods\/([^/]+)\/detach$/.exec(url.pathname);
+    if (detach) {
+      this.detached.push(detach[1]);
+      return ok({ id: detach[1] });
+    }
+    if (url.pathname === '/v1/payment_intents' && req.method === 'POST') {
+      // Stripe's idempotency: the same key answers the same intent.
+      const known = idempotency ? this.intents.get(idempotency) : undefined;
+      if (known) return ok(known);
+      if (this.decline)
+        return Response.json(
+          { error: { type: 'card_error', code: 'card_declined', message: 'Your card was declined.', payment_intent: { id: 'pi_declined', status: 'requires_payment_method' } } },
+          { status: 402 },
+        );
+      const intent = { id: `pi_${this.intents.size + 1}`, status: 'succeeded', amount: Number(form.amount) };
+      if (idempotency) this.intents.set(idempotency, intent);
+      return ok(intent);
+    }
+    return Response.json({ error: { type: 'invalid_request_error', message: `no route ${url.pathname}` } }, { status: 404 });
+  }
+
+  /** A signed webhook request, as Stripe sends it. */
+  async webhook(event: Record<string, unknown>, opts: { secret?: string; at?: number } = {}) {
+    const body = JSON.stringify(event);
+    const t = Math.floor((opts.at ?? Date.now()) / 1000);
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(opts.secret ?? STRIPE_WEBHOOK_SECRET), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+    const mac = new Uint8Array(await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(`${t}.${body}`)));
+    const v1 = [...mac].map((b) => b.toString(16).padStart(2, '0')).join('');
+    return new Request('https://managed.example.com/stripe/webhook', {
+      method: 'POST',
+      headers: { 'stripe-signature': `t=${t},v1=${v1}`, 'content-type': 'application/json' },
+      body,
+    });
+  }
+}
+
+export function fakeGateway(usage = { input_tokens: 1000, output_tokens: 200 }, stripe?: FakeStripe) {
   const calls: GatewayCall[] = [];
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const req = new Request(input as RequestInfo, init);
+    if (stripe && req.url.startsWith(STRIPE_BASE)) return stripe.handle(req);
     if (!req.url.startsWith(GATEWAY)) throw new Error(`unexpected fetch ${req.url}`);
     const body = await req.json<any>();
     calls.push({ url: req.url, headers: Object.fromEntries(req.headers), body });
