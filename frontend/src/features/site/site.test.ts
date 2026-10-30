@@ -260,13 +260,26 @@ describe('footer', () => {
     }
   });
 
-  it('lists only the public profiles that are set, and always the email', () => {
+  it('lists the set public profiles in order, each opening in a new tab', () => {
     const connect = FOOTER_COLUMNS.find((c) => c.title === 'Connect')?.links ?? [];
+    expect(connect.map((l) => l.label)).toEqual(
+      SOCIAL_LINKS.filter((s) => s.url).map((s) => s.label),
+    );
     expect(connect.map((l) => l.label)).toEqual([
+      'GitHub',
+      'X',
+      'LinkedIn',
+      'YouTube',
+      'Discord',
       'Email us',
-      ...SOCIAL_LINKS.filter((s) => s.url).map((s) => s.label),
     ]);
-    expect(layout()).toContain('href="mailto:hello@yonedarepo.com"');
+    const html = layout();
+    for (const { url } of SOCIAL_LINKS.filter((s) => s.url))
+      expect(html).toContain(
+        url.startsWith('mailto:')
+          ? `href="${url}">`
+          : `href="${url}" target="_blank" rel="noopener noreferrer"`,
+      );
   });
 
   it('shows the copyright with the legal name and this year', () => {
