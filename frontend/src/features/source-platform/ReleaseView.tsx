@@ -2,7 +2,7 @@
 // each a download with its size and sha256. The owner attaches assets and deletes the
 // release (the tag stays: tags never move or disappear).
 import { type FormEvent, useState } from 'react';
-import { who } from './changeModel';
+import { usePeople } from './people';
 import {
   assetHref,
   assetName,
@@ -142,6 +142,7 @@ export function ReleaseBody({
   onChanged: () => void;
   onDeleted: () => void;
 }) {
+  const people = usePeople();
   if (release.loading && !release.data) return <Loading what="release" />;
   if (release.error) return <Failure error={release.error} onRetry={release.reload} />;
   const r = release.data;
@@ -150,7 +151,7 @@ export function ReleaseBody({
     <article aria-labelledby="release-heading">
       <h2 id="release-heading">{r.title}</h2>
       <p className="source-meta">
-        <span className="source-change-status">{r.tag}</span> · {who(r.created_by)} ·{' '}
+        <span className="source-change-status">{r.tag}</span> · {people.principal(r.created_by)} ·{' '}
         {when(r.created_at)}
         {r.commit_id && (
           <>

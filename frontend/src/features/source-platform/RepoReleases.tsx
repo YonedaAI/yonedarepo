@@ -1,7 +1,7 @@
 // The Releases tab: releases (a title, notes and assets attached to a tag), newest first, and
 // for the owner a form that publishes one for an existing tag.
 import { type FormEvent, useState } from 'react';
-import { who } from './changeModel';
+import { usePeople } from './people';
 import { publishRelease, type Release, releasesPath, tagNames } from './releaseModel';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha, when } from './sourceApi';
@@ -16,6 +16,7 @@ export function ReleaseTable({
   hrefOf: (tag: string) => string;
   onOpen: (tag: string) => void;
 }) {
+  const people = usePeople();
   if (releases.loading && !releases.data) return <Loading what="releases" />;
   if (releases.error) return <Failure error={releases.error} onRetry={releases.reload} />;
   const rows = releases.data?.releases ?? [];
@@ -46,7 +47,7 @@ export function ReleaseTable({
                 <code>{shortSha(r.commit_id)}</code> ·{' '}
               </>
             )}
-            {who(r.created_by)} · {when(r.created_at)}
+            {people.principal(r.created_by)} · {when(r.created_at)}
             {r.asset_count > 0 && ` · ${r.asset_count} asset${r.asset_count === 1 ? '' : 's'}`}
           </span>
         </li>

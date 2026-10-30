@@ -3,6 +3,7 @@ import type { CommitDetail } from './CommitGates';
 import { CommitLanding } from './CommitLanding';
 import { CommitRepairs } from './CommitRepairs';
 import { CommitSessions } from './CommitSessions';
+import { usePeople } from './people';
 import type { RepoStatus } from './repoStatus';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha, when } from './sourceApi';
@@ -26,6 +27,7 @@ export function CommitView({
   onNavigate: (r: SourceRoute) => void;
   onChanged: () => void;
 }) {
+  const people = usePeople();
   const detail = useSource<CommitDetail>(`/repos/${repo}/commits/${commit}`);
   if (detail.error) return <Failure error={detail.error} onRetry={detail.reload} />;
   if (!detail.data) return <Loading what="commit" />;
@@ -35,7 +37,7 @@ export function CommitView({
       <header>
         <h2>{d.message.split('\n')[0]}</h2>
         <p className="source-meta">
-          <code>{d.commit}</code> by {d.principal}
+          <code>{d.commit}</code> by {people.principal(d.principal)}
           {d.parents.map((p) => (
             <span key={p}>
               {' · parent '}
@@ -74,7 +76,7 @@ export function CommitView({
         <ul className="source-checks">
           {d.checks.map((c) => (
             <li key={c.name} className={`source-check-${c.status}`}>
-              {c.name}: {c.status} · {c.principal} · {when(c.recorded_at)}
+              {c.name}: {c.status} · {people.principal(c.principal)} · {when(c.recorded_at)}
             </li>
           ))}
           {d.check_runs
@@ -97,7 +99,7 @@ export function CommitView({
         <ul>
           {d.reviews.map((r) => (
             <li key={r.principal}>
-              {r.principal}: {r.decision}
+              {people.principal(r.principal)}: {r.decision}
               {r.reason && ` — ${r.reason}`} · {when(r.recorded_at)}
             </li>
           ))}

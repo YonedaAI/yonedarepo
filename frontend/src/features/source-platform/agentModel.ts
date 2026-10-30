@@ -193,13 +193,6 @@ export function fetchEfficiency(s: Pick<SessionRecord, 'fetched_bytes' | 'read_b
   return `fetched ${mib(fetched)} of ${mib(read)} MiB read${ratio}`;
 }
 
-/** `token:agent` → `agent (token)`, `user:ws` → `ws`: who recorded, as people read it. */
-export function recorder(principal: string) {
-  if (principal.startsWith('user:')) return principal.slice('user:'.length);
-  if (principal.startsWith('token:')) return `${principal.slice('token:'.length)} (token)`;
-  return principal;
-}
-
 /** The records of one symbol, newest first. */
 export type ContractGroup = { path: string; symbol: string; records: ContractRecord[] };
 

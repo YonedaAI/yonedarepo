@@ -3,7 +3,8 @@
 // author or the owner). The server decides each one; the panel only offers what the status allows.
 import { useState } from 'react';
 import { type Conflict, ConflictList, ReviewButtons } from './CommitGates';
-import { type ChangeDetail, who } from './changeModel';
+import type { ChangeDetail } from './changeModel';
+import { usePeople } from './people';
 import { useReadOnly } from './repoAccess';
 import { Failure } from './SourceStatus';
 import { type SourceApiError, shortSha, sourceApi, when } from './sourceApi';
@@ -20,6 +21,7 @@ export function ChangeGates({
   /** After the change is deleted (it no longer exists to show). */
   onDeleted?: () => void;
 }) {
+  const people = usePeople();
   const [busy, setBusy] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
@@ -70,7 +72,7 @@ export function ChangeGates({
         <ul className="source-reviews" aria-label="Reviews of the head commit">
           {commit.reviews.map((r) => (
             <li key={r.principal}>
-              {who(r.principal)} {r.decision === 'approve' ? 'approved' : 'rejected'}
+              {people.principal(r.principal)} {r.decision === 'approve' ? 'approved' : 'rejected'}
               {r.reason && `: ${r.reason}`} · {when(r.recorded_at)}
             </li>
           ))}

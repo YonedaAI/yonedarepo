@@ -4,6 +4,7 @@ import { ArrowRight, GitBranch } from 'lucide-react';
 import { useState } from 'react';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { PublicBadge } from '../source-platform/PublicBadge';
+import { usePeople } from '../source-platform/people';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { sourceApi } from '../source-platform/sourceApi';
 import { useSource } from '../source-platform/useSource';
@@ -18,6 +19,7 @@ export function ExplorePage({
   authenticated: boolean;
   navigate: Navigate;
 }) {
+  const people = usePeople();
   const first = useSource<Page>(explorePath());
   const [later, setLater] = useState<ExploreRepo[][]>([]);
   const [busy, setBusy] = useState(false);
@@ -69,7 +71,7 @@ export function ExplorePage({
                     {r.name} <PublicBadge />
                   </strong>
                   <small className="home-repo-meta">
-                    {r.owner} · created {createdOn(r.created_at)}
+                    {people.account(r.owner)} · created {createdOn(r.created_at)}
                   </small>
                 </span>
                 <ArrowRight size={16} aria-hidden="true" />

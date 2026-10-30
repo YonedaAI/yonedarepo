@@ -2,7 +2,8 @@
 import { CircleAlert, CircleCheck, CircleDashed, Copy } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { CloneCommands } from './ConnectPanel';
-import { ago, principalName } from './fileActivity';
+import { ago } from './fileActivity';
+import { usePeople } from './people';
 import { Failure } from './SourceStatus';
 import { shortSha } from './sourceApi';
 import { type SshAccess, sshCloneCommand } from './sshKeyModel';
@@ -173,6 +174,7 @@ export function LatestCommit({
   now?: number;
   commitLink: (commit: string, children: ReactNode) => ReactNode;
 }) {
+  const people = usePeople();
   const detail = useSource<Detail>(`/repos/${repo}/commits/${commit}`);
   if (detail.error) return <Failure error={detail.error} onRetry={detail.reload} />;
   const d = detail.data;
@@ -181,7 +183,7 @@ export function LatestCommit({
     <div className="latest-commit" aria-busy={!d || undefined}>
       {d ? (
         <>
-          <strong>{principalName(d.principal)}</strong>
+          <strong>{people.principal(d.principal)}</strong>
           <span className="latest-message">{commitLink(commit, d.message.split('\n')[0])}</span>
           <ChecksState detail={d} />
         </>

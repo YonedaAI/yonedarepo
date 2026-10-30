@@ -129,7 +129,5 @@ export function conversation(general: ChangeComment[], timeline: Push[]): Conver
 }
 
 /** A principal for display: `user:ada` reads as `ada`. */
-export const who = (principal: string) => principal.replace(/^user:/, '');
-
 export const changesPath = (repo: string, filter: ChangeFilter) =>
   `/repos/${repo}/changes?status=${filter}&limit=100`;

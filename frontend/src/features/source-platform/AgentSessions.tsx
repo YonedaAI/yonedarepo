@@ -6,7 +6,6 @@ import {
   appendPage,
   groupSessions,
   NO_FILTERS,
-  recorder,
   type SessionFilters,
   type SessionList,
   type SessionRecord,
@@ -14,6 +13,7 @@ import {
   summaryText,
   transcriptLabel,
 } from './agentModel';
+import { usePeople } from './people';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha, sourceApi, when } from './sourceApi';
 import { useSource } from './useSource';
@@ -76,6 +76,7 @@ function SessionRow({
   records: SessionRecord[];
   navigate: Navigate;
 }) {
+  const people = usePeople();
   const s = records[0];
   const reads = records.reduce((n, r) => n + r.reads, 0);
   return (
@@ -86,7 +87,8 @@ function SessionRow({
         <span className="agent-summary">{summaryText(s)}</span>
       </a>
       <span className="source-meta">
-        {recorder(s.recorded_by)} · {when(s.at)} · {reads} declared read{reads === 1 ? '' : 's'}
+        {people.principal(s.recorded_by)} · {when(s.at)} · {reads} declared read
+        {reads === 1 ? '' : 's'}
         {s.transcript
           ? ` · ${transcriptLabel(s)}`
           : s.transcript_ref && (

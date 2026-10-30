@@ -71,13 +71,3 @@ export function ago(ms: number, now = Date.now()): string {
     if (elapsed >= size) return relative.format(-Math.floor(elapsed / size), unit);
   return 'just now';
 }
-
-/** A principal as people read it: `user:ada` → `ada`, `token:ci` → `ci (token)`. */
-export function principalName(principal: string): string {
-  const [kind, ...rest] = principal.split(':');
-  const name = rest.join(':');
-  if (!name) return principal;
-  if (kind === 'user') return name;
-  if (kind === 'token') return `${name} (token)`;
-  return principal;
-}

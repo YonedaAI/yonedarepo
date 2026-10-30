@@ -1,5 +1,6 @@
 import { linkTo, type Navigate } from '../shell/useRoute';
-import { recorder, type SessionRecord, summaryText, transcriptLabel } from './agentModel';
+import { type SessionRecord, summaryText, transcriptLabel } from './agentModel';
+import { usePeople } from './people';
 import { when } from './sourceApi';
 import { useSource } from './useSource';
 
@@ -16,13 +17,14 @@ export function SessionItem({
   session: Listed;
   navigate: Navigate;
 }) {
+  const people = usePeople();
   return (
     <li>
       <a className="agent-session-ref" {...linkTo({ view: 'session', repo, id: s.id }, navigate)}>
         <strong>{s.cli}</strong>
         {s.model && ` · ${s.model}`}
       </a>{' '}
-      · {recorder(s.recorded_by)} · {when(s.at)}
+      · {people.principal(s.recorded_by)} · {when(s.at)}
       <p className="source-session-summary">{summaryText(s)}</p>
       {s.transcript ? (
         <p className="source-meta">{transcriptLabel(s)}</p>
