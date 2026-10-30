@@ -15,7 +15,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { b64, sleep, until } from './client.mjs';
 import { accountSettings, settle } from './browser-flow.mjs';
-import { atRepo, repoPath } from './repo-urls.mjs';
+import { atRepo, openRepo, repoPath } from './repo-urls.mjs';
 
 const author = { name: 'Browser gate', email: 'kit@yonedarepo.invalid' };
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -39,7 +39,7 @@ export const railOrg = (page, org) =>
 export async function releasePages(page, { account, repo: { id, name }, shot }, m) {
   const api = (path) => `/api/v1/repos/${id}${path}`;
   const tabs = page.getByRole('navigation', { name: 'Repository' });
-  await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).click();
+  await openRepo(page, name);
   await atRepo(page, account, id);
   await tabs.getByRole('link', { name: 'Releases' }).click();
   await atRepo(page, account, id, `/releases`);
@@ -107,7 +107,7 @@ export async function releasePages(page, { account, repo: { id, name }, shot }, 
 
 /** "Fork" under a new name; then "Open change" on a fork branch, targeting the parent. */
 export async function forkPages(page, { account, repo: { id, name }, shot, cleanup }, m) {
-  await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).click();
+  await openRepo(page, name);
   await atRepo(page, account, id);
   await page.locator('.repo-head').getByRole('button', { name: 'Fork', exact: true }).click();
   const form = page.getByRole('form', { name: 'Fork this repository' });
