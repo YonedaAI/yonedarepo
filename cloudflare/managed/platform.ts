@@ -27,14 +27,14 @@ export class Platform {
     private readonly credential: Credential,
   ) {}
 
-  async #call(method: string, path: string, body?: unknown): Promise<Json> {
+  async #call(method: string, path: string, body?: unknown, api = '/api/v1'): Promise<Json> {
     const headers = new Headers({ accept: 'application/json' });
-    let url = `${ORIGIN}/api/v1${path}`;
+    let url = `${ORIGIN}${api}${path}`;
     if ('token' in this.credential) headers.set('authorization', `Bearer ${this.credential.token}`);
     else {
       // The caller's session is checked by the platform against the origin it was issued for.
       const from = this.credential.forward;
-      url = `${new URL(from.url).origin}/api/v1${path}`;
+      url = `${new URL(from.url).origin}${api}${path}`;
       for (const name of ['cookie', 'authorization', 'origin']) {
         const value = from.headers.get(name);
         if (value) headers.set(name, value);
@@ -61,6 +61,10 @@ export class Platform {
     return answer ?? {};
   }
 
+  /** The signed-in account: its own personal workspace, owned even before its first repository. */
+  session() {
+    return this.#call('GET', '/session', undefined, '/api/auth');
+  }
   /** The caller's repositories (owner, role) and orgs: who owns which workspace. */
   repos() {
     return this.#call('GET', '/repos');
