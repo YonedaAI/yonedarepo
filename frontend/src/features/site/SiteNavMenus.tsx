@@ -4,7 +4,7 @@
 // menus are groups inside the folded menu.
 import { ArrowRight, ChevronDown } from 'lucide-react';
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react';
-import { linkTo, type Navigate } from '../shell/useRoute';
+import type { Navigate } from '../shell/useRoute';
 import { BUILD_ON } from './buildOn';
 import { logMock } from './buildOnMocks';
 import { featurePageFor } from './featurePages';
@@ -86,11 +86,6 @@ function CompanyPanel({ go }: { go: Navigate }) {
       <li>
         <a className="site-menu-item" href={EVENTS_URL} target="_blank" rel="noopener noreferrer">
           Events
-        </a>
-      </li>
-      <li>
-        <a className="site-menu-item" {...linkTo({ view: 'explore' }, go)}>
-          Explore public repositories
         </a>
       </li>
     </ul>
