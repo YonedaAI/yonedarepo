@@ -63,4 +63,12 @@ A failed check blocks landing only when the repository's [landing rules](/docs/g
 | Replaced by a newer push | A newer head is being reviewed instead |
 | Stopped, Failed | Cancelled, or the run could not finish |
 
-Pausing a repository's automation (see [Break glass](/docs/guides/break-glass)) stops new runs too.
+## Pause or turn off
+
+- **Disable** on an agent's card turns it off everywhere and cancels its open runs. To stop it on one repository, **Edit** it and untick the repository.
+- **Pausing a repository's automation** (owner only; see [Break glass and automation pause](/docs/guides/break-glass)) stops new runs on that repository, and a run that has not started reviewing stops.
+- When the credit runs out, runs pause on their own; see [Credit and usage](/docs/agents/review-credit).
+
+## Where the review runs
+
+Each run uses a fresh container on Cloudflare. Its model calls go through our Cloudflare AI Gateway to the model's provider, which receives the code and text the agent reads; see [Global network and data location](/docs/guides/global#what-leaves-cloudflare).
