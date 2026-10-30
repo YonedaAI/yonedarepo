@@ -312,7 +312,9 @@ export function AgentSettingsPage({
   const known = agent === 'new' || Boolean(managedAgent(agent));
   const loaded = useSource<WorkspaceState>(known ? workspacePath(workspace) : null, '/api/managed');
   const space: Space = workspace === account ? {} : { workspace };
-  useEffect(() => window.scrollTo?.({ top: 0 }), []);
+  useEffect(() => {
+    window.scrollTo?.({ top: 0 });
+  }, []);
   if (!known)
     return (
       <div className="source-empty-state">

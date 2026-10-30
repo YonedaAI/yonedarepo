@@ -17,7 +17,9 @@ export function DocsSearch({ onOpen }: { onOpen: (hit: SearchHit) => void }) {
   const listId = useId();
   const hits = useMemo(() => searchDocs(query), [query]);
   const [mac, setMac] = useState(false);
-  useEffect(() => setMac(isMac()), []);
+  useEffect(() => {
+    setMac(isMac());
+  }, []);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

@@ -20,15 +20,13 @@ export function useSession() {
     setError('');
     setLoading(false);
   }, []);
-  useEffect(
-    () =>
-      onUnauthorized(() => {
-        if (!signedIn.current) return;
-        clear();
-        setSessionEnded(true);
-      }),
-    [clear],
-  );
+  useEffect(() => {
+    return onUnauthorized(() => {
+      if (!signedIn.current) return;
+      clear();
+      setSessionEnded(true);
+    });
+  }, [clear]);
   const discover = useCallback(async () => {
     const current = ++generation.current;
     setLoading(true);

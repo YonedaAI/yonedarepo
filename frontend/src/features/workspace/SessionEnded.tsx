@@ -5,7 +5,9 @@ import { AccountPanel } from './AccountPanel';
 /** Replaces the whole workspace once the server rejects a previously valid session. */
 export function SessionEnded({ onConnected }: { onConnected: () => void }) {
   const heading = useRef<HTMLHeadingElement>(null);
-  useEffect(() => heading.current?.focus(), []);
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
   return (
     <section className="session-ended" aria-labelledby="session-ended-title">
       <div className="intent-symbol" aria-hidden="true">
