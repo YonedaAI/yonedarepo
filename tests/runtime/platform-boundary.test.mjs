@@ -34,6 +34,8 @@ const neutral = new Set([
   '../../shared/site-traffic',
   // Account identifier rules (yoneda-core::account's transport counterpart); imports nothing.
   '../../shared/account',
+  // Contact support's limits and attachment types, shared with the browser; imports nothing.
+  '../../shared/support',
   '../../backend/crates/yoneda-worker/build/worker/shim.mjs',
   '../../backend/crates/yoneda-core/src/platform_tools.json',
 ]);
