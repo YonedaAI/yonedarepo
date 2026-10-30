@@ -1,5 +1,5 @@
 // The account menu at the top right: the person's picture and name, then Account,
-// Organizations, Appearance (the theme picker, as a submenu), Support, Documentation and
+// Organizations, Connect agents (the CLI and MCP panel), Appearance (the theme picker, as a submenu), Support, Documentation and
 // About (new tabs), and Log out.
 import {
   ArrowUpRight,
@@ -12,6 +12,7 @@ import {
   LifeBuoy,
   LogOut,
   Palette,
+  PlugZap,
   UserRound,
 } from 'lucide-react';
 import { type MouseEvent, type ReactNode, useEffect, useRef, useState } from 'react';
@@ -38,6 +39,7 @@ export function AccountMenu({
   identity,
   progress,
   navigate,
+  onConnect,
   onSignOut,
   onError,
 }: {
@@ -46,6 +48,8 @@ export function AccountMenu({
   progress?: ReactNode;
   /** Account settings; absent where the shell has none. */
   navigate?: Navigate;
+  /** Opens the CLI and MCP panel (the only way to it once Getting started is done). */
+  onConnect?: () => void;
   onSignOut: () => Promise<void>;
   onError: (message: string) => void;
 }) {
@@ -131,6 +135,19 @@ export function AccountMenu({
                   {item}
                 </a>
               ))}
+            {onConnect && (
+              <button
+                type="button"
+                className="account-item"
+                onClick={() => {
+                  close();
+                  onConnect();
+                }}
+              >
+                <PlugZap size={15} aria-hidden="true" />
+                Connect agents (CLI, MCP)
+              </button>
+            )}
             <button
               ref={opener}
               type="button"
