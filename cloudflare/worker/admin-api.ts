@@ -1,9 +1,10 @@
 // `/api/v1/admin/*`: the operators' admin pages (admin-auth.ts says who). Reads come from the
-// D1 projections (admin-queries.ts) and each account's authority; actions are safe and
-// reversible: credit grants (the managed agents Worker's admin route, its bearer kept here),
-// suspension (the account authority refuses every credential until it is lifted), and
-// quarantining or releasing repository content as the repository's owner. Every action
-// writes admin_audit. Contact emails appear in these answers only.
+// D1 projections (admin-queries.ts), each account's authority and the site traffic report
+// (site-traffic.ts). Actions are safe and reversible: credit grants (the managed agents
+// Worker's admin route, its bearer kept here), suspension (the account authority refuses
+// every credential until it is lifted), and quarantining or releasing repository content as
+// the repository's owner. Every action writes admin_audit. Contact emails appear in these
+// answers only.
 import { normalizeAccountIdentifier } from '../../shared/account';
 import { requireOperator } from './admin-auth';
 import {
@@ -19,6 +20,7 @@ import {
 import { accountSummary, backfillAccounts, recordAccount } from './platform-accounts';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { quarantineRoute } from './repo-quarantine';
+import { siteTraffic } from './site-traffic';
 import type { Env } from './types';
 import { workspace } from './workspace';
 
@@ -38,6 +40,8 @@ export async function adminRoute(
   if (section === 'overview' && !id && get) return overview(env);
   if (section === 'signups' && !id && get) return signups(env, query.get('since'));
   if (section === 'audit' && !id && get) return auditLog(env, query.get('before'));
+  if (section === 'traffic' && !id && get)
+    return siteTraffic(env, query.get('days') === '7' ? 7 : 30);
   if (section === 'backfill' && !id && post) {
     const after = (await body().catch(() => ({}) as Json)).after;
     const done = await backfillAccounts(env, typeof after === 'string' ? after : '');

@@ -14,6 +14,8 @@ import { AdminRoot } from './AdminRoot';
 import {
   accountsPath,
   barHeights,
+  countryName,
+  lastThirtyDays,
   providerLabel,
   readSeen,
   reposPath,
@@ -76,6 +78,17 @@ describe('admin model', () => {
     expect(barHeights([1, 200])[0]).toBe(4);
   });
 
+  it('fills the 30 days of page views ending today, and names countries', () => {
+    const now = Date.UTC(2026, 9, 30, 12);
+    const days = lastThirtyDays([{ day: '2026-10-29', views: 5 }], now);
+    expect(days).toHaveLength(30);
+    expect(days[0].day).toBe('2026-10-01');
+    expect(days.at(-1)).toEqual({ day: '2026-10-30', count: 0 });
+    expect(days.at(-2)).toEqual({ day: '2026-10-29', count: 5 });
+    expect(countryName('DE')).toBe('Germany');
+    expect(countryName('xx-not')).toBe('xx-not');
+  });
+
   it('keeps the last look at the sign-ups, and survives storage that throws', () => {
     const store = new Map<string, string>();
     const storage = {
@@ -131,10 +144,11 @@ describe('admin pages', () => {
         ...props,
       }),
     );
-  it('marks the open tab and holds Traffic for analytics', () => {
+  it('marks the open tab and loads traffic for the 7-day window first', () => {
     const html = page({ section: 'traffic' });
     expect(html).toMatch(/aria-current="page" class="active" href="\/admin\/traffic"/);
-    expect(html).toContain('Coming with analytics');
+    expect(html).toContain('Loading site traffic');
+    expect(html).toContain('aria-pressed="true">7 days');
     expect(page({})).toContain('Loading the overview');
   });
 

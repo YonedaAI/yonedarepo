@@ -5,6 +5,7 @@ import { linkTo, type Navigate } from '../shell/useRoute';
 import type { Loaded } from '../source-platform/useSource';
 import { AdminAudit, AdminRepos, AdminSignups, AdminUsers } from './AdminLists';
 import { AdminOverview } from './AdminOverview';
+import { AdminTraffic } from './AdminTraffic';
 import { AdminUser } from './AdminUser';
 import {
   ADMIN_SECTIONS,
@@ -71,11 +72,7 @@ export function AdminRoot({
       )}
       {section === 'repos' && <AdminRepos navigate={navigate} />}
       {section === 'audit' && <AdminAudit />}
-      {section === 'traffic' && (
-        <p className="source-empty">
-          Coming with analytics: visitors, top pages, referrers and sign-ups by source.
-        </p>
-      )}
+      {section === 'traffic' && <AdminTraffic />}
     </section>
   );
 }

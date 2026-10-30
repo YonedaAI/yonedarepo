@@ -1,14 +1,8 @@
 // Admin overview: account, activity and repository totals, and sign-ups per day for 30 days.
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { useSource } from '../source-platform/useSource';
-import { barHeights, type Overview } from './adminModel';
-
-const dayLabel = (day: string) =>
-  new Date(`${day}T00:00:00Z`).toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    timeZone: 'UTC',
-  });
+import { DayChart } from './AdminParts';
+import type { Overview } from './adminModel';
 
 export function AdminOverview() {
   const overview = useSource<Overview>('/admin/overview');
@@ -27,8 +21,6 @@ export function AdminOverview() {
       caption: `${repos.public} public`,
     },
   ];
-  const heights = barHeights(days.map((d) => d.count));
-  const total = days.reduce((sum, d) => sum + d.count, 0);
   return (
     <>
       <ul className="stat-cards admin-tiles">
@@ -40,30 +32,12 @@ export function AdminOverview() {
           </li>
         ))}
       </ul>
-      <section className="home-section" aria-labelledby="admin-signups-chart">
-        <div className="home-section-head">
-          <h2 id="admin-signups-chart" className="home-label">
-            Sign-ups, last 30 days
-          </h2>
-          <span className="home-total">
-            <span className="stat-number">{total.toLocaleString('en-US')}</span> sign-ups
-          </span>
-        </div>
-        <ol className="admin-bars">
-          {days.map((d, i) => (
-            <li key={d.day} title={`${dayLabel(d.day)}: ${d.count}`}>
-              <span className="sr-only">
-                {dayLabel(d.day)}: {d.count} sign-ups
-              </span>
-              <span className="admin-bar" style={{ height: `${heights[i]}%` }} aria-hidden="true" />
-            </li>
-          ))}
-        </ol>
-        <p className="admin-axis" aria-hidden="true">
-          <span>{dayLabel(days[0]?.day ?? '')}</span>
-          <span>{dayLabel(days.at(-1)?.day ?? '')}</span>
-        </p>
-      </section>
+      <DayChart
+        id="admin-signups-chart"
+        title="Sign-ups, last 30 days"
+        unit="sign-ups"
+        days={days}
+      />
       <p className="source-meta">
         The index holds every sign-up since it started, and older accounts that own a repository,
         picked a handle, joined one or hold a token. Other older accounts appear when they next sign
