@@ -1,18 +1,24 @@
-/* The public site: the app's colors and type, a light and a dark theme (the system's), and
-   a nav that folds into a menu at phone width. */
+/* The public site: a neutral palette (charcoal and white, green for ok, orange for
+   warnings; values from entire.com's neutral scale and status colors), the app's type, a
+   light and a dark theme (the system's), and a nav that folds into a menu at phone width. */
 .site {
-  --site-bg: #f6f8fb;
-  --site-surface: #fff;
-  --site-text: #152436;
-  --site-muted: #5b6a7e;
-  --site-line: #e1e6ed;
-  --site-accent: #245de8;
+  --site-bg: #f6f6f6;
+  --site-surface: #fcfcfc;
+  --site-text: #0f0f0f;
+  --site-muted: #6b6b6b;
+  --site-line: #0a0a0a1f;
+  --site-line-strong: #bbb;
+  --site-accent: #0f0f0f;
   --site-accent-text: #fff;
-  --site-accent-soft: #e8efff;
-  --site-good: #157f72;
-  --site-bad: #b4232c;
-  --site-code-bg: #0f1b2b;
-  --site-code-text: #dbe5f3;
+  --site-accent-soft: #f2f2f2;
+  --site-focus: #0f0f0f;
+  --site-good: #008236;
+  --site-warn: #ca3500;
+  --site-bad: #c0362c;
+  --site-code-bg: #f2f2f2;
+  --site-code-text: #1e1e1e;
+  --site-code-muted: #6b6b6b;
+  --site-code-bad: #c0362c;
   color-scheme: light;
   /* App components on site pages (the account panel) take the site's theme. */
   --muted: var(--site-muted);
@@ -30,34 +36,44 @@
 /* Dark: the system's choice unless Light is chosen, or Dark chosen explicitly. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) .site {
-    --site-bg: #0d1520;
-    --site-surface: #142030;
-    --site-text: #e4ebf5;
-    --site-muted: #9aa8bb;
-    --site-line: #26354a;
-    --site-accent: #6f9bff;
-    --site-accent-text: #08111d;
-    --site-accent-soft: #1b2b48;
-    --site-good: #4cc5b3;
-    --site-bad: #ff8a8f;
-    --site-code-bg: #08101a;
-    --site-code-text: #dbe5f3;
+    --site-bg: #161616;
+    --site-surface: #1c1c1c;
+    --site-text: #f3f3f3;
+    --site-muted: #b9b9b9;
+    --site-line: #ffffff1a;
+    --site-line-strong: #4e4e4e;
+    --site-accent: #f3f3f3;
+    --site-accent-text: #070707;
+    --site-accent-soft: #222;
+    --site-focus: #f3f3f3;
+    --site-good: #05df72;
+    --site-warn: #ff8904;
+    --site-bad: #ff6467;
+    --site-code-bg: #111;
+    --site-code-text: #e7e7e7;
+    --site-code-muted: #949494;
+    --site-code-bad: #f0908a;
     color-scheme: dark;
   }
 }
 :root[data-theme="dark"] .site {
-  --site-bg: #0d1520;
-  --site-surface: #142030;
-  --site-text: #e4ebf5;
-  --site-muted: #9aa8bb;
-  --site-line: #26354a;
-  --site-accent: #6f9bff;
-  --site-accent-text: #08111d;
-  --site-accent-soft: #1b2b48;
-  --site-good: #4cc5b3;
-  --site-bad: #ff8a8f;
-  --site-code-bg: #08101a;
-  --site-code-text: #dbe5f3;
+  --site-bg: #161616;
+  --site-surface: #1c1c1c;
+  --site-text: #f3f3f3;
+  --site-muted: #b9b9b9;
+  --site-line: #ffffff1a;
+  --site-line-strong: #4e4e4e;
+  --site-accent: #f3f3f3;
+  --site-accent-text: #070707;
+  --site-accent-soft: #222;
+  --site-focus: #f3f3f3;
+  --site-good: #05df72;
+  --site-warn: #ff8904;
+  --site-bad: #ff6467;
+  --site-code-bg: #111;
+  --site-code-text: #e7e7e7;
+  --site-code-muted: #949494;
+  --site-code-bad: #f0908a;
   color-scheme: dark;
 }
 .site :where(p) {
@@ -67,7 +83,8 @@
   line-height: inherit;
 }
 .site :focus-visible {
-  outline-color: var(--site-accent);
+  outline: 2px solid var(--site-focus);
+  outline-offset: 2px;
 }
 .site .skip-link {
   background: var(--site-surface);
@@ -187,8 +204,14 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--site-accent);
+  padding: 6px 14px;
+  border: 1px solid var(--site-line-strong);
+  border-radius: 7px;
+  color: var(--site-text);
   font-weight: 600;
+}
+.site-more:hover {
+  background: var(--site-accent-soft);
 }
 
 /* Page frame */

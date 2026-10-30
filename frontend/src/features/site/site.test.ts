@@ -15,6 +15,7 @@ import {
 } from '../../../../shared/managed-agents';
 import { nextTheme, THEMES } from '../shell/theme';
 import { formatSourceRoute, parseSourceRoute } from '../source-platform/sourceRoute';
+import { BUILD_ON, mockOf, pickActive } from './buildOn';
 import { BLOG_POSTS, COMPANY_PAGES, DOCS_NAV, DOCS_PAGES, LEGAL_PAGES } from './content';
 import { FEATURES } from './features';
 import {
@@ -26,6 +27,7 @@ import {
   PRICING,
   roundUpClean,
 } from './pricing';
+import { COMPARISONS } from './SiteCompare';
 import { SiteFeatures } from './SiteFeatures';
 import { SiteHome } from './SiteHome';
 import { SiteLayout } from './SiteLayout';
@@ -122,6 +124,73 @@ describe('site nav', () => {
     expect(html).toContain('Open app');
     expect(html).not.toContain('>Sign in<');
     expect(html).toContain('aria-current="page"');
+  });
+});
+
+describe('home', () => {
+  const home = () => render(createElement(SiteHome, { navigate }));
+
+  it('tours every Build on YonedaRepo feature: a nav item, its panel and a visual', () => {
+    const html = home();
+    expect(BUILD_ON.map((b) => [b.title, b.subtitle])).toEqual([
+      ['Code as Transactions', 'Every commit lands, first try'],
+      ['Global by default', 'One network, no regions to pick'],
+      ['Git hosting', 'Stock Git, nothing new to learn'],
+      ['Fetch only what you need', 'Clone in seconds, load files on demand'],
+      ['Changes & gates', 'Ship when every gate is green'],
+      ['Continuous integration', 'Checks that keep pace with agents'],
+      ['Review agents', 'Code, security and slop review on tap'],
+      ['Continuous Memory', 'Every agent picks up where the last one left off'],
+      ['Code search', 'Search, blame and history, no clone'],
+    ]);
+    expect(BUILD_ON.find((b) => b.id === 'memory')?.feature).toBe('sessions');
+    expect(html).toContain('Build on YonedaRepo.');
+    expect(html).toContain('aria-label="Build on YonedaRepo"');
+    expect(new Set(BUILD_ON.map((b) => b.id)).size).toBe(BUILD_ON.length);
+    for (const item of BUILD_ON) {
+      expect(html).toContain(`href="#build-${item.id}"`);
+      expect(html).toContain(`id="build-${item.id}"`);
+      expect(html).toContain(escapeHtml(item.title));
+      expect(mockOf(item)).toBeTruthy();
+      if (item.feature) {
+        expect(FEATURES.map((f) => f.id)).toContain(item.feature);
+        expect(html).toContain(`href="/features#${item.feature}"`);
+      }
+    }
+    // The first item is current before any scrolling, and only one is.
+    expect(html.match(/aria-current="true"/g)).toHaveLength(1);
+    expect(html).toContain(`href="#build-${BUILD_ON[0].id}" aria-current="true"`);
+  });
+
+  it('highlights the first panel in page order that is in view', () => {
+    const order = BUILD_ON.map((b) => b.id);
+    expect(pickActive(order, new Set(['code', 'git-hosting']), 'transactions')).toBe('git-hosting');
+    expect(pickActive(order, new Set(), 'context')).toBe('context');
+  });
+
+  it('names every managed review agent the platform runs', () => {
+    const html = home();
+    for (const agent of MANAGED_AGENTS) expect(html).toContain(agent.defaults.name);
+  });
+
+  it('compares with plain Git using only measured figures, and no internal test details', () => {
+    const html = home();
+    expect(COMPARISONS.map((c) => c.id)).toContain('first-try');
+    for (const c of COMPARISONS) {
+      expect(html).toContain(escapeHtml(c.question));
+      expect(html).toContain(c.ours.label);
+      expect(html).toContain(`${c.theirs.name}</dt>`);
+      expect(html).toContain(c.theirs.label);
+    }
+    expect(html).not.toMatch(
+      /measured|promised|development environment|\bp95\b|how we test|not yet shown|\b20\d\d-\d\d-\d\d\b/i,
+    );
+  });
+
+  it('names no other company or product, and nothing as coming', () => {
+    expect(home()).not.toMatch(
+      /anthropic|claude|scion|openai|codex|opencode|\bglm|mimo|github|gitlab|cloudflare|coming soon/i,
+    );
   });
 });
 

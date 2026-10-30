@@ -1,0 +1,84 @@
+/* The home page's comparison with plain Git: bar pairs and qualitative tiles. */
+.site-compare {
+  margin: 8px 0 24px;
+  padding: 28px;
+  background: var(--site-surface);
+  border: 1px solid var(--site-line);
+  border-radius: 14px;
+}
+.site-compare figcaption {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+.site-compare dl {
+  display: grid;
+  gap: 14px;
+  margin: 0 0 20px;
+}
+.site-bar {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+}
+.site-bar dt {
+  font-weight: 600;
+}
+.site-bar dd {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+}
+.site-bar-track {
+  flex: 1;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--site-bg);
+  overflow: hidden;
+}
+.site-bar-fill {
+  display: block;
+  height: 100%;
+  min-width: 4px;
+  border-radius: 6px;
+  background: var(--site-muted);
+}
+.site-bar-ours .site-bar-fill {
+  background: var(--site-good);
+}
+.site-bar strong {
+  min-width: 112px;
+  font-variant-numeric: tabular-nums;
+}
+.site-compare > p {
+  color: var(--site-muted);
+  margin: 0;
+  max-width: 760px;
+}
+.site-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.site-tiles li {
+  color: var(--site-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 20px;
+  background: var(--site-surface);
+  border: 1px solid var(--site-line);
+  border-radius: 12px;
+}
+.site-tiles svg {
+  color: var(--site-text);
+  margin-bottom: 4px;
+}
+.site-tiles strong {
+  color: var(--site-text);
+}
