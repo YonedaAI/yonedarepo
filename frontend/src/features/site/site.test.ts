@@ -132,16 +132,18 @@ describe('home', () => {
 
   it('tours every Build on YonedaRepo feature: a nav item, its panel and a visual', () => {
     const html = home();
-    expect(BUILD_ON.map((b) => b.title)).toEqual([
-      'Code as Transactions',
-      'Git hosting',
-      'Changes & gates',
-      'Review agents',
-      'Sessions',
-      'Context',
-      'Code search',
-      'Teams & tools',
+    expect(BUILD_ON.map((b) => [b.title, b.subtitle])).toEqual([
+      ['Code as Transactions', 'Every commit lands, first try'],
+      ['Global by default', 'One network, no regions to pick'],
+      ['Git hosting', 'Stock Git, nothing new to learn'],
+      ['Fetch only what you need', 'Clone in seconds, load files on demand'],
+      ['Changes & gates', 'Ship when every gate is green'],
+      ['Continuous integration', 'Checks that keep pace with agents'],
+      ['Review agents', 'Code, security and slop review on tap'],
+      ['Continuous Memory', 'Every agent picks up where the last one left off'],
+      ['Code search', 'Search, blame and history, no clone'],
     ]);
+    expect(BUILD_ON.find((b) => b.id === 'memory')?.feature).toBe('sessions');
     expect(html).toContain('Build on YonedaRepo.');
     expect(html).toContain('aria-label="Build on YonedaRepo"');
     expect(new Set(BUILD_ON.map((b) => b.id)).size).toBe(BUILD_ON.length);
