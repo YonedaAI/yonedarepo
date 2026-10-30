@@ -5,7 +5,7 @@
   "contextFileName": "GEMINI.md",
   "mcpServers": {
     "yoneda": {
-      "httpUrl": "https://api.dev.yonedarepo.com/api/v1/mcp",
+      "httpUrl": "https://api.yonedarepo.com/api/v1/mcp",
       "headers": {
         "Authorization": "Bearer ${YONEDA_TOKEN}"
       }

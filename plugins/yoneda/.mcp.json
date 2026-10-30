@@ -2,7 +2,7 @@
   "mcpServers": {
     "yoneda": {
       "type": "http",
-      "url": "${YONEDA_MCP_URL:-https://api.dev.yonedarepo.com/api/v1/mcp}",
+      "url": "${YONEDA_MCP_URL:-https://api.yonedarepo.com/api/v1/mcp}",
       "headers": {
         "Authorization": "Bearer ${YONEDA_TOKEN}"
       }

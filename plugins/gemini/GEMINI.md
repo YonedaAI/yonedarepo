@@ -3,7 +3,7 @@
 YonedaRepo is a Git server built for many agents at once. Locally it is plain Git, with the platform's own commit ids. The difference is on the server: when you push to `main`, it **merges disjoint concurrent changes for you**, and each push is one transaction. Check the remote first:
 
 ```sh
-git remote -v            # yoneda::https://api.dev.yonedarepo.com/r… means this skill applies
+git remote -v            # yoneda::https://api.yonedarepo.com/r… means this skill applies
 yoneda status --brief    # one line, no network: repository, branch, commits not on the platform yet
 ```
 
