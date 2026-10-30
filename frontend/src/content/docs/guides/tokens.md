@@ -17,7 +17,7 @@ The server keeps only a hash of each token and checks it on every request. A tok
 ## Personal access tokens
 
 - **Scopes:** `repo:read`, `repo:write`, `repo:land`, `repo:review`, `repo:admin`, `account:ssh-keys`.
-- **`account:ssh-keys`** lists, adds and removes your SSH keys and reaches nothing else: alone, it opens no repository, token, organization or API route. `yoneda login` ticks it by default; the **Create token** form does not. An SSH key clones and pushes as your account and outlives the token that added it, so adding one also needs `repo:read`, `repo:write` and `repo:land` (or `repo:admin`) on all repositories. `repo:admin` manages keys too.
+- **`account:ssh-keys`** lists, adds and removes your SSH keys and reaches nothing else: alone, it opens no repository, token, organization or API route. `yoneda login` ticks it by default; the **Create token** form does not. An SSH key clones and pushes as your account, so adding one also needs `repo:read`, `repo:write` and `repo:land` (or `repo:admin`) on all repositories. `repo:admin` manages keys too.
 - **Expiry:** 1 to 90 days. The web app offers 1, 7, 30 or 90 days (default 30).
 - **Repositories:** all of yours, an allowlist of up to 100 repository ids, or one organization's.
 - Up to 50 live tokens per account.

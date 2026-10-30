@@ -9,11 +9,7 @@ export const PAT_SCOPES = [
   { scope: 'repo:land', label: 'Land', hint: 'move main' },
   { scope: 'repo:review', label: 'Review', hint: 'approve or reject' },
   { scope: 'repo:admin', label: 'Admin', hint: 'create, delete, tokens, policy' },
-  {
-    scope: 'account:ssh-keys',
-    label: 'SSH keys',
-    hint: 'add and remove keys on your account; a key clones and pushes as you',
-  },
+  { scope: 'account:ssh-keys', label: 'SSH keys', hint: 'add and remove keys on your account' },
 ] as const;
 export type PatScope = (typeof PAT_SCOPES)[number]['scope'];
 export const DEFAULT_PAT_SCOPES: PatScope[] = ['repo:read', 'repo:write', 'repo:land'];
