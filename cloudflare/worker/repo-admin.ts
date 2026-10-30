@@ -36,17 +36,23 @@ type Listed = {
 
 const RANK = ['read', 'write', 'land', 'admin', 'owner'];
 
-/** `GET /repos`: the account's own repositories, those of the orgs it owns, and those
- * shared with it or one of its teams, newest first, each with its owner and the account's
- * highest role (a token's allowlist and org limit narrow them). */
-export async function listRepositories(env: Env, auth: Credentials) {
+/** Who `auth`'s repositories belong to: `owners` (the account and the orgs it owns) own theirs
+ * outright, and `entries` (the account and its teams) are members of the rest. */
+export function reachOf(auth: Credentials) {
   const account = accountOf(auth);
   const orgs =
     '_session' in auth ? auth._session.orgs : '_pat' in auth ? auth._pat.orgs : undefined;
   const owned = Object.entries(orgs ?? {})
     .filter(([, a]) => a.role === 'owner')
     .map(([org]) => org);
-  const entries = [account, ...teamEntries(orgs)];
+  return { owners: [account, ...owned], entries: [account, ...teamEntries(orgs)] };
+}
+
+/** `GET /repos`: the account's own repositories, those of the orgs it owns, and those
+ * shared with it or one of its teams, newest first, each with its owner and the account's
+ * highest role (a token's allowlist and org limit narrow them). */
+export async function listRepositories(env: Env, auth: Credentials) {
+  const { owners, entries } = reachOf(auth);
   // Each list is one JSON parameter: D1 binds at most 100 per statement, and an account's
   // orgs and teams can outnumber that.
   const listed = await env.INDEX.prepare(
@@ -57,7 +63,7 @@ export async function listRepositories(env: Env, auth: Credentials) {
        JOIN platform_repos r ON r.id=m.repo WHERE m.account IN (SELECT value FROM json_each(?2))
      ORDER BY created_at DESC LIMIT 400`,
   )
-    .bind(JSON.stringify([account, ...owned]), JSON.stringify(entries))
+    .bind(JSON.stringify(owners), JSON.stringify(entries))
     .all<Listed>();
   // A repository reached several ways (directly and through teams) is listed once, by its
   // highest role.
