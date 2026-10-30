@@ -1,56 +1,4 @@
-/* The public home and features pages: problems, feature cards and their mocks. */
-/* Home */
-.site-hero {
-  padding: 96px 0 56px;
-  max-width: 820px;
-}
-.site-hero h1 {
-  font-size: clamp(38px, 7vw, 64px);
-  margin: 0 0 20px;
-}
-.site-hero .site-lead {
-  margin: 0 0 32px;
-}
-.site-problems {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 16px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.site-problems li {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 20px;
-  background: var(--site-surface);
-  border: 1px solid var(--site-line);
-  border-radius: 12px;
-}
-.site-problems p {
-  margin: 0;
-}
-.site-problem {
-  font-weight: 600;
-  font-size: 17px;
-}
-.site-answer {
-  color: var(--site-muted);
-  flex: 1;
-}
-.site-tag {
-  align-self: flex-start;
-  padding: 2px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--site-line-strong);
-  color: var(--site-text);
-  font-size: 13px;
-  font-weight: 600;
-}
-.site-tag:hover {
-  background: var(--site-accent-soft);
-}
+/* The features page's cards, the feature mocks shared with the home page, and the CTA. */
 .site-feature {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr);
@@ -107,8 +55,8 @@
   border-color: var(--site-accent);
 }
 .site-cta {
-  margin: 40px 0 0;
-  padding: 48px 32px;
+  margin: var(--sp-6) 0 0;
+  padding: var(--site-band) var(--sp-6);
   text-align: center;
   background: var(--site-accent-soft);
   border: 1px solid var(--site-line);

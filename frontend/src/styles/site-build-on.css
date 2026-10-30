@@ -1,41 +1,43 @@
-/* The home page's "Build on YonedaRepo" tour: a sticky feature list beside scrolling panels. */
-.site-build {
+/* The home page's "Build on YonedaRepo" tour: a sticky feature list in the frame's first
+   column; one panel per feature in the rest, divided by rules, copy beside its visual. */
+.site-build.site-band {
   display: grid;
-  grid-template-columns: minmax(0, 370px) minmax(0, 1fr);
-  gap: 56px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2.2fr);
   align-items: start;
+  padding: 0;
 }
 .site-build-aside {
   position: sticky;
   /* Clears the sticky site header; scrolls itself on a short window. */
-  top: 88px;
-  max-height: calc(100vh - 104px);
+  top: 62px;
+  max-height: calc(100vh - 62px);
   overflow-y: auto;
+  padding: var(--sp-6) var(--sp-5) var(--sp-6) var(--site-gutter);
 }
 .site-eyebrow {
-  margin: 0 0 8px;
+  margin: 0 0 var(--sp-2);
   color: var(--site-muted);
-  font-size: 14px;
+  font-size: var(--fs-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 .site-build-aside h2 {
-  font-size: clamp(30px, 3.6vw, 40px);
-  margin: 0 0 16px;
+  font-size: var(--fs-2xl);
+  margin: 0 0 var(--sp-4);
 }
 .site-build-nav {
   display: grid;
   gap: 2px;
-  margin: 0 0 20px;
+  margin: 0 0 var(--sp-4);
   padding: 0;
   list-style: none;
 }
 .site-build-link {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
-  padding: 7px 12px;
+  gap: var(--sp-3);
+  padding: 6px var(--sp-3);
   border-radius: 10px;
   border: 1px solid transparent;
   color: var(--site-muted);
@@ -65,44 +67,51 @@
   gap: 2px;
 }
 .site-build-nav strong {
-  font-size: 15.5px;
+  font-size: var(--fs-sm);
 }
 .site-build-nav small {
-  font-size: 13.5px;
+  font-size: var(--fs-xs);
   color: var(--site-muted);
 }
 .site-build-panels {
-  display: grid;
-  gap: 32px;
+  border-left: 1px solid var(--site-line);
 }
 .site-build-panel {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-  padding: 32px;
-  background: var(--site-surface);
-  border: 1px solid var(--site-line);
-  border-radius: 16px;
-  scroll-margin-top: 88px;
+  display: grid;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
+  scroll-margin-top: 62px;
+}
+.site-build-panel + .site-build-panel {
+  border-top: 1px solid var(--site-line);
 }
 .site-build-panel:focus {
   outline: none;
 }
 .site-build-panel:focus-visible {
   outline: 2px solid var(--site-focus);
-  outline-offset: 4px;
+  outline-offset: -2px;
 }
-.site-build-headline {
-  font-size: clamp(20px, 2.2vw, 24px);
+.site-build-copy {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-4);
+  padding: var(--sp-6) var(--sp-5) var(--sp-6) var(--sp-6);
+}
+.site-build-copy h3 {
+  font-size: var(--fs-xl);
   line-height: 1.35;
   margin: 0;
 }
-.site-build-headline > span {
-  color: var(--site-muted);
-  font-weight: 500;
-}
-.site-build-panel > .site-more {
-  align-self: flex-start;
+.site-build-visual {
+  min-width: 0;
+  padding: var(--sp-5);
+  border-left: 1px solid var(--site-line);
+  background: var(--site-surface);
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 .mock-checks {
   margin: 12px 0 0;
@@ -161,6 +170,7 @@
   display: block;
   width: 100%;
   height: auto;
+  max-height: 200px;
   fill: none;
   stroke: var(--site-line-strong);
   stroke-width: 1;
@@ -185,41 +195,56 @@
   }
 }
 
-@media (max-width: 800px) {
-  .site-build {
+@media (max-width: 1100px) {
+  .site-build-panel {
     grid-template-columns: minmax(0, 1fr);
-    gap: 24px;
+  }
+  .site-build-copy {
+    padding-bottom: var(--sp-5);
+  }
+  .site-build-visual {
+    border-left: 0;
+    border-top: 1px solid var(--site-line);
+  }
+}
+
+@media (max-width: 800px) {
+  .site-build.site-band {
+    grid-template-columns: minmax(0, 1fr);
   }
   .site-build-aside {
     position: static;
     max-height: none;
     overflow: visible;
+    padding: var(--sp-6) var(--site-gutter) var(--sp-5);
+  }
+  .site-build-panels {
+    border-left: 0;
+    border-top: 1px solid var(--site-line);
   }
   .site-build-nav {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
+    gap: var(--sp-2);
   }
   .site-build-link {
     align-items: center;
     gap: 6px;
-    padding: 4px 12px;
+    padding: var(--sp-1) var(--sp-3);
     border: 1px solid var(--site-line);
     border-radius: 999px;
     background: var(--site-surface);
-    font-size: 14px;
   }
   .site-build-link[aria-current="true"] {
     border-color: var(--site-text);
   }
-  .site-build-nav strong {
-    font-size: 14px;
-  }
   .site-build-nav small {
     display: none;
   }
-  .site-build-panel {
-    padding: 20px;
-    scroll-margin-top: 72px;
+  .site-build-copy {
+    padding: var(--sp-5) var(--site-gutter);
+  }
+  .site-build-visual {
+    padding: var(--sp-4) var(--site-gutter);
   }
 }

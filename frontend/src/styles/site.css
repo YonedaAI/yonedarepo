@@ -20,6 +20,23 @@
   --site-code-muted: #6b6b6b;
   --site-code-bad: #c0362c;
   color-scheme: light;
+  /* One frame, one spacing scale and one type scale for every site page. */
+  --site-frame: 1200px;
+  --site-gutter: 40px;
+  --site-band: 48px;
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+  --fs-xs: 13px;
+  --fs-sm: 14px;
+  --fs-base: 16px;
+  --fs-lg: 18px;
+  --fs-xl: 20px;
+  --fs-2xl: 28px;
+  --fs-hero: clamp(32px, 3.8vw, 46px);
   /* App components on site pages (the account panel) take the site's theme. */
   --muted: var(--site-muted);
   --line: var(--site-line);
@@ -110,9 +127,9 @@
   border-bottom: 1px solid var(--site-line);
 }
 .site-nav {
-  max-width: 1120px;
+  max-width: var(--site-frame);
   margin: 0 auto;
-  padding: 12px 24px;
+  padding: 10px var(--site-gutter);
   display: flex;
   align-items: center;
   gap: 24px;
@@ -214,43 +231,8 @@
   background: var(--site-accent-soft);
 }
 
-/* Page frame */
-.site-main {
-  flex: 1;
-  width: 100%;
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 0 24px 64px;
-}
-.site-main a:not([class]) {
-  color: var(--site-accent);
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-.site-footer {
-  border-top: 1px solid var(--site-line);
-  padding: 32px 24px;
-  color: var(--site-muted);
-  font-size: 14px;
-}
-.site-footer > * {
-  max-width: 1072px;
-  margin-left: auto;
-  margin-right: auto;
-}
-.site-footer ul {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 24px;
-  margin: 0 auto 12px;
-  padding: 0;
-  list-style: none;
-}
-.site-footer a:hover {
-  color: var(--site-text);
-}
 .site-lead {
-  font-size: 19px;
+  font-size: var(--fs-lg);
   color: var(--site-muted);
   max-width: 680px;
 }
@@ -265,17 +247,17 @@
   margin: 0;
 }
 .site-page-head {
-  padding: 56px 0 24px;
+  padding: var(--site-band) 0 var(--sp-5);
 }
 .site-page-head h1 {
-  font-size: clamp(32px, 5vw, 48px);
-  margin: 12px 0;
+  font-size: var(--fs-hero);
+  margin: var(--sp-3) 0;
 }
 .site-section {
-  padding: 40px 0;
+  padding: var(--sp-6) 0;
 }
 .site-section > h2,
 .site-cta h2 {
-  font-size: clamp(24px, 3.4vw, 32px);
-  margin: 0 0 24px;
+  font-size: var(--fs-2xl);
+  margin: 0 0 var(--sp-4);
 }

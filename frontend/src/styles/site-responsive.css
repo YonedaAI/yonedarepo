@@ -2,7 +2,6 @@
 @media (max-width: 800px) {
   .site-nav {
     flex-wrap: wrap;
-    padding: 10px 16px;
     gap: 12px;
   }
   .site-theme {
@@ -33,11 +32,9 @@
   .site-account {
     justify-content: space-between;
   }
-  .site-main {
-    padding: 0 16px 48px;
-  }
-  .site-hero {
-    padding: 56px 0 32px;
+  .site {
+    --site-gutter: 16px;
+    --site-band: 32px;
   }
   .site-feature {
     grid-template-columns: minmax(0, 1fr);
@@ -54,8 +51,6 @@
     padding-bottom: 16px;
     border-bottom: 1px solid var(--site-line);
   }
-  .site-problems,
-  .site-tiles,
   .site-checklist,
   .site-cards {
     grid-template-columns: minmax(0, 1fr);
@@ -63,8 +58,12 @@
   .site-cta {
     padding: 32px 20px;
   }
-  .site-compare {
-    padding: 20px;
+  .site-tiles {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .site-tiles > li + li {
+    border-left: 0;
+    border-top: 1px solid var(--site-line);
   }
   .site-bar {
     grid-template-columns: minmax(0, 1fr);
