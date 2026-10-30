@@ -130,7 +130,7 @@ function render(contact: string, email: Email): WelcomeEmail {
   return { subject: email.subject, text, html: html(contact, email) };
 }
 
-const escapeHtml = (value: string) =>
+export const escapeHtml = (value: string) =>
   value.replace(
     /[&<>"']/g,
     (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string,

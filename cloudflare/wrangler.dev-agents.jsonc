@@ -16,6 +16,7 @@
 // and https://dev.yonedarepo.com/auth/google/callback. Deploy uploads them when the secrets file has them.
 // /api/managed is proxied to the managed agents Worker (MANAGED service binding, deployed first).
 // /install.sh and /downloads/* (worker/downloads.ts): the CLI installer and releases and the public Claude Code marketplace, from the DOWNLOADS bucket that cargo xtask downloads stages and uploads.
+// ADMIN_ACCOUNTS: the platform Worker's operator list, repeated here for the session answer's is_admin (the admin entry in the sidebar); keep the two equal.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
@@ -120,6 +121,7 @@
     }
   ],
   "vars": {
+    "ADMIN_ACCOUNTS": "",
     "PUBLIC_APP_ORIGIN": "https://dev.yonedarepo.com"
   },
   "workers_dev": true

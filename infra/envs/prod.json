@@ -121,7 +121,8 @@
         "Welcome email (account-email.ts): the platform-jobs consumer sends one per new account through",
         "Resend (EMAIL_FROM, EMAIL_CONTACT). Its key is RESEND_API_KEY, the Secrets Store secret",
         "Resend-Yoneda, read at send time; without it email is off and sign-up never depends on it.",
-        "The sending domain has open and click tracking off in Resend."
+        "The sending domain has open and click tracking off in Resend.",
+        "Admin pages (/api/v1/admin, admin-api.ts): ADMIN_ACCOUNTS lists the operator accounts (comma separated; empty: only OWNER_TOKEN/Access). The sign-up notice goes to ADMIN_NOTIFY_EMAIL (empty: EMAIL_CONTACT). Credit grants and balances call the managed Worker's /admin/accounts/<account>/credit over MANAGED with MANAGED_ADMIN_TOKEN (optional secret, the managed Worker's own value; unset: grants are refused). MANAGED binds the managed Worker, which binds this one as PLATFORM: a fresh environment deploys this Worker once without MANAGED first."
       ],
       "secrets": [
         "OWNER_TOKEN",
@@ -131,6 +132,9 @@
         "SSH_HOST_ED25519_KEY",
         "SSH_HOST_ECDSA_KEY",
         "SSH_TUNNEL_TOKEN"
+      ],
+      "optional_secrets": [
+        "MANAGED_ADMIN_TOKEN"
       ],
       "health": "yonedarepo-platform",
       "always_on": {
@@ -179,7 +183,9 @@
           "SSH_FRONT_DOOR": "tunnel",
           "SSH_HOST": "ssh.yonedarepo.com",
           "EMAIL_FROM": "YonedaRepo <hello@yonedarepo.com>",
-          "EMAIL_CONTACT": "hello@yonedarepo.com"
+          "EMAIL_CONTACT": "hello@yonedarepo.com",
+          "ADMIN_ACCOUNTS": "",
+          "ADMIN_NOTIFY_EMAIL": ""
         },
         "secrets_store_secrets": [
           {
@@ -392,6 +398,10 @@
           {
             "binding": "SELF",
             "service": "{prefix}-platform"
+          },
+          {
+            "binding": "MANAGED",
+            "service": "{prefix}-agents-managed"
           }
         ],
         "routes": [
@@ -600,7 +610,8 @@
         "page, its /auth/<provider>/* routes answer 404. Callback URLs: https://yonedarepo.com/auth/github/callback",
         "and https://yonedarepo.com/auth/google/callback. Deploy uploads them when the secrets file has them.",
         "/api/managed is proxied to the managed agents Worker (MANAGED service binding, deployed first).",
-        "/install.sh and /downloads/* (worker/downloads.ts): the CLI installer and releases and the public Claude Code marketplace, from the DOWNLOADS bucket that cargo xtask downloads stages and uploads."
+        "/install.sh and /downloads/* (worker/downloads.ts): the CLI installer and releases and the public Claude Code marketplace, from the DOWNLOADS bucket that cargo xtask downloads stages and uploads.",
+        "ADMIN_ACCOUNTS: the platform Worker's operator list, repeated here for the session answer's is_admin (the admin entry in the sidebar); keep the two equal."
       ],
       "secrets": [
         "OWNER_TOKEN"
@@ -652,7 +663,8 @@
           "run_worker_first": true
         },
         "vars": {
-          "PUBLIC_APP_ORIGIN": "{origin}"
+          "PUBLIC_APP_ORIGIN": "{origin}",
+          "ADMIN_ACCOUNTS": ""
         },
         "services": [
           {

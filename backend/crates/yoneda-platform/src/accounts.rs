@@ -5,6 +5,8 @@ use crate::storage::{SqlStore, bad, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 mod access;
+#[cfg(test)]
+mod access_tests;
 mod avatars;
 #[cfg(test)]
 mod avatars_tests;
@@ -49,6 +51,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             .ok_or_else(|| bad("Trusted clock required"))?;
         match op::AccountOp::parse(&command)? {
             op::AccountOp::Signin(op) => signin::handle(&db, &command, op, now),
+            op::AccountOp::Access(op) => access::handle(&db, op, now),
             op::AccountOp::Email(op) => email::handle(&db, &command, op, now),
             op::AccountOp::Token(op) => tokens::handle(&db, &command, op, now),
             op::AccountOp::Ssh(op) => ssh_keys::handle(&db, &command, op, now),
