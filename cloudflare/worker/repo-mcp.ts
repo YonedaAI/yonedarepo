@@ -5,7 +5,7 @@
 import tools from '../../backend/crates/yoneda-core/src/platform_tools.json';
 import { RETRY_AFTER_SECONDS, transient } from './durable';
 import { error, readJson, response } from './http';
-import { forViewer } from './principal-privacy';
+import { forViewer } from './repo-principal-privacy';
 import type { Json, RepoContext } from './repo-ops';
 import { operations } from './repo-tools';
 

@@ -97,7 +97,8 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     // The Web Analytics site token is public (it ships in the page); prod has its own site.
     let beacon = vars["WEB_ANALYTICS_TOKEN"].as_str().unwrap_or_default();
     assert!(beacon.len() == 32 && beacon.bytes().all(|b| b.is_ascii_hexdigit()));
-    assert_eq!(vars.as_object().map(|v| v.len()), Some(2));
+    assert_eq!(vars["SEO_INDEXING"], "on");
+    assert_eq!(vars.as_object().map(|v| v.len()), Some(3));
     assert_eq!(
         agents["analytics_engine_datasets"],
         json!([{"binding": "SITE_EVENTS", "dataset": "yonedarepo_prod_site_events"}])
