@@ -19,6 +19,10 @@ pub fn target<S: SqlStore>(
     if !super::rows::protected(refname) && !super::rows::is_tag(refname) {
         return Ok(());
     }
+    // A retired mirror is projected to no more.
+    if super::quarantine::mirror::switched(db)? {
+        return Ok(());
+    }
     db.query(
         "INSERT INTO ref_projections(refname,target_commit,target_version,status,updated_at) VALUES(?,?,?,'pending',?) \
          ON CONFLICT(refname) DO UPDATE SET target_commit=excluded.target_commit,target_version=excluded.target_version,\
@@ -35,8 +39,12 @@ pub fn list<S: SqlStore>(db: &S) -> Result<Vec<Value>> {
     )
 }
 
-/// Targets not yet projected (drifted refs wait for an owner to resolve them).
+/// Targets not yet projected (drifted refs wait for an owner to resolve them); none once
+/// the mirror is retired.
 pub fn pending<S: SqlStore>(db: &S) -> Result<Value> {
+    if super::quarantine::mirror::switched(db)? {
+        return Ok(json!({ "pending": [] }));
+    }
     let rows = db.query(
         "SELECT refname,target_commit,target_version,projected_commit FROM ref_projections WHERE status='pending' ORDER BY refname",
         &[],
@@ -46,6 +54,10 @@ pub fn pending<S: SqlStore>(db: &S) -> Result<Value> {
 
 pub fn result<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let refname = string(c, "refname")?;
+    // A projection that ran into the mirror's retirement reports to no one.
+    if super::quarantine::mirror::switched(db)? {
+        return Ok(json!({ "refname": refname, "ignored": true }));
+    }
     let now = number(c, "now")?;
     let version = c["version"]
         .as_u64()

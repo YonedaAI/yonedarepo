@@ -83,6 +83,13 @@ fn run<S: SqlStore>(
         R::PrepareCommit => {
             prepare::prepare(db, c, principal, settings).and_then(|mut prepared| {
                 prepared["object_store"] = json!(settings.object_store);
+                // While the mirror is retired, a commit too large to stage is pushed to
+                // the store replacing it (reads still use the mirror).
+                if prepared.get("push_b64").is_some()
+                    && let Some(store) = quarantine::mirror::push_store(db)?
+                {
+                    prepared["push_store"] = json!(store);
+                }
                 prepared["quarantined"] = json!(quarantine::withheld(db)?);
                 Ok(prepared)
             })
@@ -153,7 +160,7 @@ fn run<S: SqlStore>(
             pushed::bundles::require_system(actor).and_then(|()| pushed::bundles::locate(db, c))
         }
         R::Delete => deletion::delete(db, c, actor, settings),
-        R::PurgeTarget => deletion::purge_target(actor, settings),
+        R::PurgeTarget => deletion::purge_target(db, actor, settings),
         // `enqueue`: a landing that needs a merge joins the branch's queue in this call.
         R::Land => land::land(db, c, principal, settings).or_else(|e| {
             if e.code == "MERGE_REQUIRED" && c["enqueue"] == true {

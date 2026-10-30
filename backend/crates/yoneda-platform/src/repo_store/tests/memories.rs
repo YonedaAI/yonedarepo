@@ -702,7 +702,7 @@ fn quarantine_masks_a_quarantined_sessions_memories_and_those_on_a_withheld_blob
         .clone();
     h.ok(
         OWNER,
-        json!({"op":"repo_quarantine_purged","claims":[{"id":record,"epoch":claim["epoch"]}]}),
+        json!({"op":"repo_quarantine_purged","claims":[{"id":record,"epoch":claim["epoch"]}],"replacement":"platform:demo"}),
     );
     let stored =
         h.db.query(
@@ -768,7 +768,7 @@ fn the_quarantine_jobs_purge_clears_memories_of_a_purged_session_and_on_a_purged
         .map(|c| json!({"id": c["id"], "epoch": c["epoch"]}))
         .collect();
     assert_eq!(
-        job(json!({"op":"repo_quarantine_purged","claims":done}))["purged"],
+        job(json!({"op":"repo_quarantine_purged","claims":done,"replacement":"platform:demo"}))["purged"],
         2
     );
     for (id, secret) in [(&from_session, "hunter2"), (&on_blob, "swordfish")] {

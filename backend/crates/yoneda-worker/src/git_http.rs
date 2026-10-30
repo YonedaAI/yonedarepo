@@ -119,7 +119,7 @@ pub fn git_receive_spilled(handle: u32) -> Result<Vec<u8>, JsError> {
         .map_err(thrown)
 }
 
-/// `{op: "finish" | "commands" | "verify", ...}` (see `ReceiveSession`).
+/// `{op: "finish" | "commands" | "verify" | "verified" | "copy", ...}` (see `ReceiveSession`).
 #[wasm_bindgen(js_name = gitReceiveCall, wasm_bindgen = ::worker::wasm_bindgen)]
 pub fn git_receive_call(handle: u32, input: &str) -> String {
     answer(parse(input).and_then(|c| {
@@ -128,6 +128,7 @@ pub fn git_receive_call(handle: u32, input: &str) -> String {
                 Some("finish") => r.finish(),
                 Some("commands") => Ok(r.commands()),
                 Some("verify") => r.verify(&c),
+                Some("copy") => r.copy(&c),
                 Some("verified") => r.verified_page(
                     c["from"].as_u64().unwrap_or(0) as usize,
                     c["count"].as_u64().unwrap_or(0) as usize,

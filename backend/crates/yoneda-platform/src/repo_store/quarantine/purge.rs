@@ -94,10 +94,12 @@ pub(super) fn claim<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     }))
 }
 
-/// `repo_quarantine_purged {claims: [{id, epoch}]}`: the claimed content is deleted. Each
-/// record still at its claim's epoch becomes purged (a session record's text and its
-/// session's memories' text, or the text of memories anchored to a blob, are cleared here,
-/// in the same transaction); `purged` counts them.
+/// `repo_quarantine_purged {claims: [{id, epoch}], replacement}`: the claimed content is
+/// deleted. Each record still at its claim's epoch becomes purged (a session record's text
+/// and its session's memories' text, or the text of memories anchored to a blob, are
+/// cleared here, in the same transaction); `purged` counts them. A purged blob requests
+/// the retirement of the repository's Artifacts mirror, whose objects cannot be deleted
+/// one by one (`mirror`: one waits; `replacement` names the store taking its place).
 pub(super) fn done<S: SqlStore>(db: &S, c: &Value, actor: &super::Actor) -> Result<Value> {
     let now = number(c, "now")?;
     let claims = c["claims"]
@@ -105,6 +107,7 @@ pub(super) fn done<S: SqlStore>(db: &S, c: &Value, actor: &super::Actor) -> Resu
         .filter(|list| list.len() <= MAX_CLAIM as usize)
         .ok_or_else(|| bad(&format!("claims must be a list of at most {MAX_CLAIM}")))?;
     let mut purged = 0;
+    let mut mirror = false;
     for claim in claims {
         let (Some(id), Some(epoch)) = (claim["id"].as_i64(), claim["epoch"].as_i64()) else {
             return Err(bad("each claim needs its id and epoch"));
@@ -116,14 +119,18 @@ pub(super) fn done<S: SqlStore>(db: &S, c: &Value, actor: &super::Actor) -> Resu
         )?;
         let Some(row) = rows.first() else { continue };
         purged += 1;
+        let record = id;
         let id = row["target_id"].as_str().unwrap_or_default();
         match Target::parse(row["target_kind"].as_str().unwrap_or_default())? {
             Target::Session => {
                 super::sessions::clear(db, id)?;
                 super::memories::clear(db, id)?;
             }
-            Target::Blob => super::memories::clear_on_blob(db, id)?,
+            Target::Blob => {
+                super::memories::clear_on_blob(db, id)?;
+                mirror |= super::mirror::request(db, c, record, now)?;
+            }
         }
     }
-    Ok(json!({ "purged": purged }))
+    Ok(json!({ "purged": purged, "mirror": mirror }))
 }
