@@ -8,6 +8,7 @@
   --site-muted: #6b6b6b;
   --site-line: #0a0a0a1f;
   --site-line-strong: #bbb;
+  --site-faint: #707070;
   --site-accent: #0f0f0f;
   --site-accent-text: #fff;
   --site-accent-soft: #f2f2f2;
@@ -30,13 +31,16 @@
   --sp-4: 16px;
   --sp-5: 24px;
   --sp-6: 32px;
-  --fs-xs: 13px;
+  --fs-xs: 12px;
   --fs-sm: 14px;
-  --fs-base: 16px;
-  --fs-lg: 18px;
-  --fs-xl: 20px;
-  --fs-2xl: 28px;
-  --fs-hero: clamp(32px, 3.8vw, 46px);
+  --fs-base: 15px;
+  --fs-md: 17px;
+  --fs-xl: 24px;
+  --fs-2xl: 30px;
+  --fs-3xl: 36px;
+  --fs-hero: clamp(36px, 4.2vw, 54px);
+  --font-body: "Inter", "IBM Plex Sans", system-ui, sans-serif;
+  --font-display: "Inter Tight", "Inter", system-ui, sans-serif;
   /* App components on site pages (the account panel) take the site's theme. */
   --muted: var(--site-muted);
   --line: var(--site-line);
@@ -46,9 +50,13 @@
   display: flex;
   flex-direction: column;
   background: var(--site-bg);
-  color: var(--site-text);
-  font-size: 16px;
-  line-height: 1.55;
+  /* Running text is muted; white is kept for headings, the active item and key words. */
+  color: var(--site-muted);
+  font-family: var(--font-body);
+  font-size: var(--fs-base);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 /* Dark: the system's choice unless Light is chosen, or Dark chosen explicitly. */
 @media (prefers-color-scheme: dark) {
@@ -59,6 +67,7 @@
     --site-muted: #b9b9b9;
     --site-line: #ffffff1a;
     --site-line-strong: #4e4e4e;
+    --site-faint: #8a8a8a;
     --site-accent: #f3f3f3;
     --site-accent-text: #070707;
     --site-accent-soft: #222;
@@ -80,6 +89,7 @@
   --site-muted: #b9b9b9;
   --site-line: #ffffff1a;
   --site-line-strong: #4e4e4e;
+  --site-faint: #8a8a8a;
   --site-accent: #f3f3f3;
   --site-accent-text: #070707;
   --site-accent-soft: #222;
@@ -109,9 +119,22 @@
 }
 .site h1,
 .site h2,
-.site h3 {
-  letter-spacing: -0.02em;
-  line-height: 1.2;
+.site h3,
+.site h4 {
+  color: var(--site-text);
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+}
+/* Only page and section headings are heavy, in the display face. */
+.site h1,
+.site h2 {
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+.site h3,
+.site h4,
+.site :where(strong, b, th, dt) {
+  font-weight: 500;
 }
 .site code {
   font-size: 0.9em;
@@ -138,8 +161,11 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  /* The wordmark: the one white, display-weight item in the header. */
+  color: var(--site-text);
+  font-family: var(--font-display);
   font-weight: 600;
-  font-size: 17px;
+  font-size: var(--fs-md);
 }
 .site-brand svg {
   color: var(--site-accent);
@@ -208,14 +234,14 @@
   border-radius: 7px;
   background: var(--site-accent);
   color: var(--site-accent-text);
-  font-weight: 600;
+  font-weight: 500;
 }
 .site-button:hover {
   filter: brightness(1.06);
 }
 .site-button-large {
   padding: 12px 22px;
-  font-size: 17px;
+  font-size: var(--fs-md);
 }
 .site-more {
   display: inline-flex;
@@ -224,15 +250,16 @@
   padding: 6px 14px;
   border: 1px solid var(--site-line-strong);
   border-radius: 7px;
-  color: var(--site-text);
-  font-weight: 600;
+  color: var(--site-muted);
+  font-weight: 500;
 }
 .site-more:hover {
+  color: var(--site-text);
   background: var(--site-accent-soft);
 }
 
 .site-lead {
-  font-size: var(--fs-lg);
+  font-size: var(--fs-md);
   color: var(--site-muted);
   max-width: 680px;
 }
@@ -242,15 +269,15 @@
   border-radius: 999px;
   background: var(--site-accent-soft);
   color: var(--site-accent);
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--fs-xs);
+  font-weight: 500;
   margin: 0;
 }
 .site-page-head {
   padding: var(--site-band) 0 var(--sp-5);
 }
 .site-page-head h1 {
-  font-size: var(--fs-hero);
+  font-size: var(--fs-3xl);
   margin: var(--sp-3) 0;
 }
 .site-section {
@@ -258,6 +285,6 @@
 }
 .site-section > h2,
 .site-cta h2 {
-  font-size: var(--fs-2xl);
+  font-size: var(--fs-xl);
   margin: 0 0 var(--sp-4);
 }

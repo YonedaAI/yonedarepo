@@ -7,7 +7,7 @@
 }
 .site-compare figcaption {
   font-size: var(--fs-base);
-  font-weight: 600;
+  font-weight: 500;
   margin-bottom: var(--sp-4);
 }
 .site-compare dl {
@@ -22,7 +22,7 @@
   gap: 16px;
 }
 .site-bar dt {
-  font-weight: 600;
+  font-weight: 500;
 }
 .site-bar dd {
   display: flex;
@@ -69,9 +69,6 @@
   padding: var(--sp-4) var(--site-gutter) var(--sp-5);
 }
 .site-tiles svg {
-  color: var(--site-text);
+  color: var(--site-muted);
   margin-bottom: 4px;
-}
-.site-tiles strong {
-  color: var(--site-text);
 }

@@ -1,0 +1,90 @@
+/* The home hero: a short bold headline and a muted paragraph side by side, then the button
+   with the "works with any agent" strip. On a phone: headline, paragraph, then the row. */
+.site-hero.site-band {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-areas:
+    "title lead"
+    "actions actions";
+  gap: var(--sp-6) 56px;
+  align-items: start;
+  padding-block: 88px;
+}
+.site-hero h1 {
+  grid-area: title;
+  margin: 0;
+  max-width: 13ch;
+  font-size: var(--fs-hero);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+}
+.site-hero-lead {
+  grid-area: lead;
+  margin: 0;
+  /* Optical alignment with the headline's cap height. */
+  padding-top: 6px;
+  color: var(--site-muted);
+  font-size: var(--fs-md);
+  line-height: 1.5;
+}
+.site-hero-actions {
+  grid-area: actions;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-4) var(--sp-6);
+}
+.site-works {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3) var(--sp-4);
+  color: var(--site-muted);
+}
+.site-works-label {
+  font-size: var(--fs-sm);
+}
+.site-works-with {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.site-works-with li {
+  display: flex;
+  align-items: center;
+}
+.site-works-mark {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+.site-works-chip {
+  padding: 1px var(--sp-2);
+  border: 1px solid var(--site-line-strong);
+  border-radius: 5px;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.site-works-any {
+  display: inline-flex;
+}
+
+@media (max-width: 800px) {
+  .site-hero.site-band {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "title"
+      "lead"
+      "actions";
+    gap: var(--sp-5);
+    padding-block: 48px;
+  }
+  .site-hero-lead {
+    padding-top: 0;
+  }
+}
