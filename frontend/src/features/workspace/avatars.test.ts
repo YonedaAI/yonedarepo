@@ -49,16 +49,18 @@ describe('the account menu', () => {
       createElement(AccountMenu, {
         identity: { username: 'ada', avatar_url, avatar_source: avatar_url ? 'upload' : null },
         navigate: vi.fn(),
+        onConnect: vi.fn(),
         onSignOut: async () => {},
         onError: () => {},
       }),
     );
 
-  it('lists Account, Organizations, Appearance, Support, Documentation, About and Log out, in order', () => {
+  it('lists Account, Organizations, Connect agents, Appearance, Support, Documentation, About and Log out, in order', () => {
     const html = menu(null);
     const order = [
       'Account',
       'Organizations',
+      'Connect agents (CLI, MCP)',
       'Appearance',
       'Support',
       'Documentation',

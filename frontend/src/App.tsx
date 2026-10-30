@@ -232,6 +232,7 @@ export function App() {
               />
             )
           }
+          onConnect={() => setPanel('cli')}
           onSignIn={() => {
             // The ended-session view already holds the sign-in form; never stack a second one.
             if (session.sessionEnded)

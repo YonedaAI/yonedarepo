@@ -17,6 +17,7 @@ export function WorkspaceHeader({
   menuOpen = false,
   onMenu,
   progress,
+  onConnect,
   onSignIn,
   onSignOut,
   onError,
@@ -33,6 +34,7 @@ export function WorkspaceHeader({
   onMenu?: () => void;
   /** The Getting started meter, while steps remain (in the account menu on a phone). */
   progress?: ReactNode;
+  onConnect?: () => void;
   onSignIn: () => void;
   onSignOut: () => Promise<void>;
   onError: (message: string) => void;
@@ -84,6 +86,7 @@ export function WorkspaceHeader({
             identity={identity}
             progress={progress}
             navigate={navigate}
+            onConnect={onConnect}
             onSignOut={onSignOut}
             onError={onError}
           />
