@@ -9,6 +9,7 @@ import { GitBranch, Menu, Monitor, Moon, Sun, X } from 'lucide-react';
 import { type MouseEvent, type ReactNode, useState } from 'react';
 import { nextTheme, type Theme, useTheme } from '../shell/theme';
 import { linkTo, type Navigate } from '../shell/useRoute';
+import { SiteFooter } from './SiteFooter';
 import { navSection, SITE_NAV, type SitePage } from './siteRoute';
 
 const THEME_LABEL: Record<Theme, string> = { system: 'System', light: 'Light', dark: 'Dark' };
@@ -124,35 +125,7 @@ export function SiteLayout({
       >
         {children}
       </main>
-      <footer className="site-footer">
-        <div className="site-footer-inner">
-          <nav aria-label="Footer">
-            <ul>
-              {SITE_NAV.map((item) => (
-                <li key={item.label}>
-                  <a {...siteLink(item.page, go)}>{item.label}</a>
-                </li>
-              ))}
-              <li>
-                <a {...siteLink({ page: 'vision' }, go)}>Vision</a>
-              </li>
-              <li>
-                <a {...linkTo({ view: 'explore' }, go)}>Explore public repositories</a>
-              </li>
-              <li>
-                <a {...siteLink({ page: 'legal', doc: 'terms' }, go)}>Terms</a>
-              </li>
-              <li>
-                <a {...siteLink({ page: 'legal', doc: 'privacy' }, go)}>Privacy</a>
-              </li>
-            </ul>
-          </nav>
-          <p>
-            © {new Date().getFullYear()} Yoneda Labs. YonedaRepo is a Git-compatible source
-            platform.
-          </p>
-        </div>
-      </footer>
+      <SiteFooter navigate={go} />
     </div>
   );
 }
