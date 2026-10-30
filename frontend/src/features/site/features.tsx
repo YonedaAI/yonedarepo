@@ -1,6 +1,6 @@
 // The platform's built features as the site describes them, each with a small static mock
 // of its real output (CLI text and UI states copied from the product, with sample names).
-import { Check, GitBranch, GitPullRequest, ScrollText, Search } from 'lucide-react';
+import { Check, GitBranch, GitPullRequest, ScrollText, Search, ShieldCheck } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 export type Feature = {
@@ -53,8 +53,10 @@ export const FEATURES: Feature[] = [
         lines={[
           ['in', 'git clone yoneda::https://api.yonedarepo.com/r3f1…  demo'],
           ['in', 'git commit -am "Retry on 503" && git push origin main'],
-          ['out', 'remote: main: landed with server merge, run git pull'],
-          ['out', ' * [new branch]      main -> main'],
+          ['out', '[main 9d1e0a7] Retry on 503'],
+          ['out', ' 1 file changed, 4 insertions(+), 1 deletion(-)'],
+          ['out', 'To yoneda::https://api.yonedarepo.com/r3f1…'],
+          ['out', '   4be81c2..9d1e0a7  main -> main'],
         ]}
       />
     ),
@@ -70,16 +72,27 @@ export const FEATURES: Feature[] = [
       'A same-line overlap is refused with the path, never overwritten.',
     ],
     mock: (
-      <Terminal
-        label="A refused landing names the conflicting path"
-        lines={[
-          ['in', 'git push origin main'],
-          ['bad', 'remote: conflict in src/retry.ts'],
-          ['bad', ' ! [remote rejected] main -> main (conflict in src/retry.ts: run git pull)'],
-          ['in', 'git pull --rebase && git push origin main'],
-          ['out', ' * [new branch]      main -> main'],
-        ]}
-      />
+      <div className="mock-stack">
+        <Terminal
+          label="Two writers push to main from the same base, and both land"
+          lines={[
+            ['in', 'git push origin main          # writer 1'],
+            ['out', 'To yoneda::https://api.yonedarepo.com/r3f1…'],
+            ['out', '   4be81c2..9d1e0a7  main -> main'],
+            ['in', 'git push origin main          # writer 2, at the same moment'],
+            ['out', 'remote: main: landed with server merge, run git pull'],
+            ['out', 'To yoneda::https://api.yonedarepo.com/r3f1…'],
+            ['out', '   4be81c2..2c5f9e1  main -> main'],
+          ]}
+        />
+        <p className="mock-note">
+          <ShieldCheck size={15} aria-hidden="true" />
+          <span>
+            Same-line overlap? The push is refused with <code>conflict in src/retry.ts</code>:
+            protected, never overwritten.
+          </span>
+        </p>
+      </div>
     ),
   },
   {
@@ -156,8 +169,10 @@ export const FEATURES: Feature[] = [
           ['in', 'yoneda context'],
           ['out', '# YonedaRepo context for this clone'],
           ['out', 'main at 4be81c2 (log version 212).'],
+          ['out', ''],
           ['out', '## Landing rules'],
           ['out', '- approvals required: 1; required checks: test'],
+          ['out', '…'],
           ['out', '## Recent sessions (newest first)'],
           ['out', '- 2h ago · opencode glm-5.3 · 9d1e0a7 "Add retry helper": …'],
         ]}
