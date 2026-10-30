@@ -13,6 +13,7 @@ mod deploy_prebuilt;
 mod deploy_registry;
 mod deploy_secrets;
 mod dev;
+mod downloads;
 mod infra;
 mod layers;
 mod layout;

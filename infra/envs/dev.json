@@ -600,7 +600,8 @@
         "(a Google OAuth web client). A provider whose two secrets are unset is off: hidden on the sign-in",
         "page, its /auth/<provider>/* routes answer 404. Callback URLs: https://dev.yonedarepo.com/auth/github/callback",
         "and https://dev.yonedarepo.com/auth/google/callback. Deploy uploads them when the secrets file has them.",
-        "/api/managed is proxied to the managed agents Worker (MANAGED service binding, deployed first)."
+        "/api/managed is proxied to the managed agents Worker (MANAGED service binding, deployed first).",
+        "/install.sh and /downloads/* (worker/downloads.ts): the CLI installer and releases and the public Claude Code marketplace, from the DOWNLOADS bucket that cargo xtask downloads stages and uploads."
       ],
       "secrets": [
         "OWNER_TOKEN"
@@ -658,6 +659,12 @@
           {
             "binding": "MANAGED",
             "service": "{prefix}-agents-managed"
+          }
+        ],
+        "r2_buckets": [
+          {
+            "binding": "DOWNLOADS",
+            "bucket_name": "{prefix}-downloads"
           }
         ],
         "durable_objects": {

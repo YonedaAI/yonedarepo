@@ -173,9 +173,13 @@ describe('connect panel', () => {
     expect(panel).toContain(`git clone ${api}/git/${repo}.git demo`);
     expect(panel).toContain(`git clone yoneda::${api}/${repo} demo`);
     expect(panel).toContain(`Repository id <code>${repo}</code>`);
-    expect(panel).toContain('cargo install --path backend/crates/yoneda-cli');
+    expect(panel).toContain('curl -fsSL https://dev.yonedarepo.com/install.sh | sh');
+    expect(panel).not.toContain('cargo install');
     expect(panel).toContain(`${api}/api/v1/mcp`);
-    expect(panel).toContain('/plugin install yoneda@yoneda');
+    expect(panel).toContain(
+      '/plugin marketplace add https://dev.yonedarepo.com/downloads/claude/marketplace.json',
+    );
+    expect(panel).toContain('/plugin install yoneda@yonedarepo');
     expect(panel).toContain('bearer_token_env_var = &quot;YONEDA_TOKEN&quot;');
     // biome-ignore lint/suspicious/noTemplateCurlyInString: the literal the client expands.
     expect(panel).toContain('Bearer ${YONEDA_TOKEN}');
