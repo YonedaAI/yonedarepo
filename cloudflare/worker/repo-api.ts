@@ -13,6 +13,7 @@ import { orgAccess } from './platform-org-access';
 import { orgsRoute } from './platform-orgs';
 import { sshKeyRoute } from './platform-ssh-keys';
 import { deviceApprove, deviceCode, deviceToken, tokenRoute } from './platform-tokens';
+import { forViewer } from './principal-privacy';
 import { deleteRepository, listRepositories } from './repo-admin';
 import { agentRecords } from './repo-agent-records';
 import { breakGlass } from './repo-break-glass';
@@ -124,7 +125,15 @@ export async function credentials(req: Request, env: Env): Promise<Credentials |
   };
 }
 
+/** A REST answer as its caller may see it: a repository's names no account address to a
+ * non-member (principal-privacy). The account MCP's management tools come through here too. */
 export async function route(req: Request, env: Env, url: URL, auth: Credentials): Promise<Json> {
+  const value = await routed(req, env, url, auth);
+  const repo = /^\/api\/v1\/repos\/(r[0-9a-f]{20})(?:\/|$)/.exec(url.pathname)?.[1];
+  return repo ? forViewer(env, value, () => caller(env, repo, auth)({ op: 'repo_status' })) : value;
+}
+
+async function routed(req: Request, env: Env, url: URL, auth: Credentials): Promise<Json> {
   const parts = url.pathname.split('/').filter(Boolean).slice(2); // after api/v1
   if (parts[0] === 'tokens' && parts.length <= 2)
     return tokenRoute(env, auth, req.method, parts[1], () => bodyOf(req));

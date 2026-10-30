@@ -42,7 +42,8 @@ export async function handleOf(env: Env, owner: string): Promise<string | null> 
   return (await handlesOf(env, [owner])).get(owner) ?? null;
 }
 
-async function handlesOf(env: Env, owners: string[]) {
+/** The handles email-named `owners` picked (from the listing's projection), by owner. */
+export async function handlesOf(env: Env, owners: string[]) {
   const emails = [...new Set(owners.filter((o) => o.includes('@')))];
   const handles = new Map<string, string>();
   if (emails.length === 0) return handles;
