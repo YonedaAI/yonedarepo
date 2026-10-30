@@ -7,16 +7,19 @@
 // the store of record and cache keys, its frame in any push bundle (zeroed in place, so
 // the bundle's index stays valid), and every derived cache and warm-start seed of the
 // repository (search indexes, stored packs, symbols, facts and views hold file content;
-// all are rebuilt on demand). Other colos' edge copies and an Artifacts store's Git
-// objects cannot be deleted per object from here; no read reaches them, since a purged
-// blob stays withheld. A session record's text is cleared by the authority itself, and
-// its stored transcript document is deleted here. A purge runs once the record's
-// retention passes (the quarantine job, leased and fenced like the LFS sweep), or at once
-// when the owner repeats the target id as `confirm`.
+// all are rebuilt on demand). Other colos' edge copies cannot be deleted from here; no
+// read reaches them, since a purged blob stays withheld. An Artifacts mirror deletes no
+// single object: a blob's purge retires the repository's mirror instead, its history
+// copied into the store of record first (repo-mirror-retire, run by the quarantine job;
+// the records show it: `mirror`). A session record's text is cleared by the authority
+// itself, and its stored transcript document is deleted here. A purge runs once the
+// record's retention passes (the quarantine job, leased and fenced like the LFS sweep), or
+// at once when the owner repeats the target id as `confirm`.
 import { purgePrefix } from './repo-admin';
 import { bundleKey, type Location, locate } from './repo-bundles';
 import { edgeDelete } from './repo-cache-tiers';
 import { accessEverywhere } from './repo-head';
+import { retireMirror } from './repo-mirror-retire';
 import { RepoObjects } from './repo-objects';
 import { ApiError, caller, type Json, type RepoContext, target, walk } from './repo-ops';
 import { seedPrefix } from './repo-seed';
@@ -100,11 +103,19 @@ async function purgeNow(ctx: RepoContext, id: number, confirm: unknown) {
   const { claims } = await ctx.call({ op: 'repo_quarantine_purge', id, confirm });
   const { object_store } = await ctx.status();
   await purgeContent(ctx.env, ctx.repo, String(object_store ?? ''), claims);
-  const reported = { op: 'repo_quarantine_purged', claims: fenced(claims) };
-  return ctx.call(reported);
+  const reported = await ctx.call(purged(ctx.repo, claims));
+  // The mirror's retirement runs in the quarantine job, from now.
+  if (reported.mirror) await schedulePurge(ctx.env, ctx.repo, Date.now());
+  return reported;
 }
 
-const fenced = (claims: Claim[]) => claims.map(({ id, epoch }) => ({ id, epoch }));
+/** The report of finished claims; a blob's purge names the store that replaces the
+ * repository's Artifacts mirror (the platform's own, repo-platform-store). */
+const purged = (repo: string, claims: Claim[]) => ({
+  op: 'repo_quarantine_purged',
+  claims: claims.map(({ id, epoch }) => ({ id, epoch })),
+  replacement: `platform:${repo}`,
+});
 
 /** Deletes the bytes `claims` name (see the header): blobs, and the transcript documents
  * of session records (the authority clears their text). Idempotent. */
@@ -181,8 +192,17 @@ export async function schedulePurge(env: Env, repo: string, at: unknown) {
   await env.PLATFORM_QUEUE.send(envelope, delaySeconds > 0 ? { delaySeconds } : undefined);
 }
 
-/** Purges `repo`'s due records; answers when the job is next due (null: nothing waits). */
+/** Purges `repo`'s due records and works on its mirror's retirement; answers when the job
+ * is next due (null: nothing waits). */
 export async function purgeDue(env: Env, repo: string): Promise<number | null> {
+  const due = await purgeRecords(env, repo);
+  const retiring = await retireMirror(env, repo);
+  const next = [due, retiring].filter((at): at is number => typeof at === 'number');
+  return next.length ? Math.min(...next) : null;
+}
+
+/** Purges `repo`'s due records; answers when they are next due (null: none waits). */
+async function purgeRecords(env: Env, repo: string): Promise<number | null> {
   const call = caller(env, repo, { _system: 'quarantine' });
   const { object_store } = await call({ op: 'repo_status' });
   for (let round = 0; round < ROUNDS; round++) {
@@ -192,7 +212,7 @@ export async function purgeDue(env: Env, repo: string): Promise<number | null> {
     // Too little lease left (a slow claim): let it run out; the next run claims again.
     if (claimed.lease_until - Date.now() < MARGIN_MS) return claimed.lease_until;
     await purgeContent(env, repo, String(object_store ?? ''), claims);
-    await call({ op: 'repo_quarantine_purged', claims: fenced(claims) });
+    await call(purged(repo, claims));
     if (claims.length < CLAIM) return claimed.next_at ?? null;
   }
   return Date.now();

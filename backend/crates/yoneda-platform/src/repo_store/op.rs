@@ -167,6 +167,11 @@ op_names! {
         Purge = "repo_quarantine_purge",
         Claim = "repo_quarantine_claim",
         Purged = "repo_quarantine_purged",
+        MirrorClaim = "repo_mirror_claim",
+        MirrorCopied = "repo_mirror_copied",
+        MirrorSwitch = "repo_mirror_switch",
+        MirrorRetired = "repo_mirror_retired",
+        MirrorFailed = "repo_mirror_failed",
     }
 }
 

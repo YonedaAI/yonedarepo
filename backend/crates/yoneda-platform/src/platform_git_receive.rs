@@ -253,6 +253,33 @@ impl ReceiveSession {
         }
     }
 
+    /// Instead of `verify`: every commit, tree and blob in the pack becomes a write, in
+    /// the same order, except `skip` (`{skip: [id]}`, withheld blobs). For a pack copied
+    /// whole into the store of record (a retired mirror's history, a commit pushed to a
+    /// repository without one); annotated tags are not stored. Answers the writes' count.
+    pub fn copy(&mut self, input: &Value) -> Result<Value> {
+        let skip = input["skip"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .map(|id| ObjectId::parse(id.as_str().unwrap_or_default()))
+            .collect::<Result<std::collections::HashSet<_>>>()?;
+        let Some(pack) = self.pack.as_ref() else {
+            return Ok(json!({ "objects": 0 }));
+        };
+        self.writes = pack
+            .objects()
+            .filter(|(id, kind)| *kind != ObjectKind::Tag && !skip.contains(id))
+            .collect();
+        self.writes.sort_by_key(|(_, kind)| match kind {
+            ObjectKind::Commit => 0,
+            ObjectKind::Tree => 1,
+            _ => 2,
+        });
+        self.written = 0;
+        Ok(json!({ "objects": self.writes.len() }))
+    }
+
     /// Verified commits `from..from + count` to record: each with its exact bytes, its
     /// path touches and the objects it introduced.
     pub fn verified_page(&mut self, from: usize, count: usize) -> Result<Value> {

@@ -14,7 +14,14 @@ import { ApiError, type Credentials, caller, type Json, type RepoContext } from 
 import { dispatchProjection } from './repo-projection';
 import { visibilityOf } from './repo-public';
 import { shardOutboxes } from './repo-shards';
-import { FORK_DEPTH, forkDepth, forkSpec, forkStore, newStore, putRawBytes } from './repo-stores';
+import {
+  FORK_DEPTH,
+  forkDepth,
+  forkOwnStore,
+  forkSpec,
+  forkStore,
+  putRawBytes,
+} from './repo-stores';
 import type { Env } from './types';
 
 const REPO = /^r[0-9a-f]{20}$/;
@@ -44,7 +51,11 @@ export async function forkRepository(ctx: RepoContext, args: Json) {
   )({
     op: 'repo_init',
     name,
-    object_store: forkSpec(ctx.repo, source.object_store, newStore(env, `yr-${id}`).spec),
+    object_store: forkSpec(
+      ctx.repo,
+      source.object_store,
+      forkOwnStore(env, source.object_store, id).spec,
+    ),
     parent: { repo: ctx.repo, version: source.version },
     policy: args.policy ?? { required_checks: [], approvals: 1 },
     visibility,
@@ -60,7 +71,7 @@ export async function forkRepository(ctx: RepoContext, args: Json) {
   } while (after);
   // After the export: every commit it named as held by the parent's Artifacts store is in
   // an Artifacts fork of that store, whose branches lease the fork's first projections.
-  const store = await forkStore(env, source.object_store, `yr-${id}`);
+  const store = await forkStore(env, source.object_store, id);
   const held = store.inherited ? source.projections : [];
   await platform({
     op: 'repo_fork_refs',

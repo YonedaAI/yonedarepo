@@ -144,12 +144,18 @@ fn a_quarantined_blob_is_withheld_until_purged_and_its_record_kept() {
     // A stale epoch is fenced; the current one marks it purged.
     let stale = json!([{"id": id, "epoch": claim["epoch"].as_i64().unwrap() - 1}]);
     assert_eq!(
-        h.ok(OWNER, json!({"op":"repo_quarantine_purged","claims":stale}))["purged"],
+        h.ok(
+            OWNER,
+            json!({"op":"repo_quarantine_purged","claims":stale,"replacement":"platform:demo"})
+        )["purged"],
         0
     );
     let done = json!([{"id": id, "epoch": claim["epoch"]}]);
     assert_eq!(
-        h.ok(OWNER, json!({"op":"repo_quarantine_purged","claims":done}))["purged"],
+        h.ok(
+            OWNER,
+            json!({"op":"repo_quarantine_purged","claims":done,"replacement":"platform:demo"})
+        )["purged"],
         1
     );
     let kept = &h.ok(OWNER, json!({"op":"repo_quarantines"}))["records"][0];
@@ -221,7 +227,7 @@ fn the_quarantine_job_purges_due_records_under_a_fenced_lease() {
     let report = |epoch: &Value| {
         as_quarantine_job(
             &h,
-            json!({"op":"repo_quarantine_purged","claims":[{"id":record["id"],"epoch":epoch}]}),
+            json!({"op":"repo_quarantine_purged","claims":[{"id":record["id"],"epoch":epoch}],"replacement":"platform:demo"}),
         )
         .unwrap()["purged"]
             .clone()
@@ -304,7 +310,7 @@ fn a_quarantined_session_record_reads_masked_and_purge_clears_its_text() {
         .clone();
     h.ok(
         OWNER,
-        json!({"op":"repo_quarantine_purged","claims":[{"id":id,"epoch":claim["epoch"]}]}),
+        json!({"op":"repo_quarantine_purged","claims":[{"id":id,"epoch":claim["epoch"]}],"replacement":"platform:demo"}),
     );
     let stored =
         h.db.query(
@@ -430,7 +436,7 @@ fn a_quarantined_session_withholds_its_stored_transcript_and_purge_names_it() {
     assert_eq!(claim["transcript_sha256"], "a".repeat(64));
     h.ok(
         OWNER,
-        json!({"op":"repo_quarantine_purged","claims":[{"id":id,"epoch":claim["epoch"]}]}),
+        json!({"op":"repo_quarantine_purged","claims":[{"id":id,"epoch":claim["epoch"]}],"replacement":"platform:demo"}),
     );
     let row =
         h.db.query(

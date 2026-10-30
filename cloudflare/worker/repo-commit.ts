@@ -10,7 +10,8 @@ import {
   type CachedObject,
   fromBase64,
   OVERLAP_CACHE_OBJECTS,
-  type RepoObjects,
+  parseStore,
+  RepoObjects,
   type TreeEntry,
   toBase64,
 } from './repo-objects';
@@ -123,8 +124,12 @@ export async function commit(
       const cached = timed('cache', () =>
         Promise.all([store.cache(written), putRaw(ctx.env, (id) => store.rawKey(id), [raw])]),
       );
+      // While the mirror is retired, the commit goes to the store replacing it.
+      const target = prepared.push_store
+        ? new RepoObjects(ctx.env, ctx.repo, parseStore(ctx.env, prepared.push_store))
+        : store;
       const { report, readback } = await timed('push', () =>
-        pushCommit(store, fromBase64(prepared.push_b64), prepared.commit, cached),
+        pushCommit(target, fromBase64(prepared.push_b64), prepared.commit, cached),
       );
       record = {
         op: 'repo_record_commit',
