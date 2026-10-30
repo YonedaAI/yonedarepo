@@ -6,7 +6,8 @@
 // pages (`site/siteRoute.ts`) parse here too, as one `site` view. A repository's readable
 // address (`/<handle>/<name>`) and a profile (`/<handle>`) parse and format in repoNames.ts.
 // The operators' admin pages are `/admin/*` (`admin` is a reserved handle). Account settings
-// are `/settings[/<section>]` (`account-settings/settingsRoute.ts`, old anchors included).
+// are `/settings[/<section>]` (`account-settings/settingsRoute.ts`, old anchors included). The
+// Search page across repositories is `/search` (`search/searchRoute.ts`).
 import { isCanonicalAccountIdentifier } from '../../../../shared/account';
 import {
   formatSettingsRoute,
@@ -14,10 +15,11 @@ import {
   type SettingsRoute,
 } from '../account-settings/settingsRoute';
 import { type AdminSection, isAdminSection } from '../admin/adminModel';
+import { formatSearchRoute, parseSearchParams, type SearchRoute } from '../search/searchRoute';
 import { formatSitePage, parseSitePath, type SitePage } from '../site/siteRoute';
 import { AGENT_SECTIONS, type AgentSection } from './agentModel';
 import { normalizeUserCode } from './connect';
-import { formatNamedRoute, type NamedRoute, parseNamedPath, repoBase } from './repoNames';
+import { formatNamedRoute, type NamedRoute, parseNamedPath, REPO_ID, repoBase } from './repoNames';
 
 export const REPO_SETTINGS_SECTIONS = [
   'rules',
@@ -39,6 +41,7 @@ export type SourceRoute =
   | { view: 'repositories' }
   | { view: 'explore' }
   | SettingsRoute
+  | SearchRoute
   | { view: 'device'; code: string }
   /** The contact email's confirmation page (the emailed link; its button confirms). */
   | { view: 'verify-email'; account: string; token: string }
@@ -58,7 +61,8 @@ export type SourceRoute =
   | { view: 'admin'; section: AdminSection; account?: string }
   | { view: 'site'; site: SitePage }
   | NamedRoute
-  | { view: 'files'; repo: string; path: string; ref: string; at?: number }
+  /** `line`: that line of the file is marked and scrolled to. */
+  | { view: 'files'; repo: string; path: string; ref: string; at?: number; line?: number }
   | { view: 'overview'; repo: string; path: string; ref: string; at?: number }
   | { view: 'history'; repo: string; ref: string }
   | { view: 'commit'; repo: string; commit: string }
@@ -91,7 +95,6 @@ export type RepoTab =
   | 'search'
   | 'settings';
 
-const REPO = /^r[0-9a-f]{20}$/;
 /** An organization's name: an account name without email (the two share one namespace). */
 export const ORG_NAME = /^[a-z][a-z0-9_]{2,31}$/;
 const SHA = /^[0-9a-f]{40}$/;
@@ -117,6 +120,7 @@ export function parseSourceRoute(pathname: string, search: string, hash = ''): S
     };
   if (root === 'settings') return parseSettingsPath(parts.slice(1), params, hash);
   if (root === 'repositories' && !repo) return { view: 'repositories' };
+  if (root === 'search' && !repo) return parseSearchParams(params);
   if (root === 'orgs' && repo && ORG_NAME.test(repo) && !view) return { view: 'org', org: repo };
   if (root === 'agents') return parseAgentsRoute(parts.slice(1), params);
   if (root === 'admin') {
@@ -132,7 +136,7 @@ export function parseSourceRoute(pathname: string, search: string, hash = ''): S
   const site = parseSitePath(parts);
   if (site) return { view: 'site', site };
   if (root !== 'source') return parseNamedPath(parts, search) ?? { view: 'home' };
-  if (!repo || !REPO.test(repo)) return { view: 'home' };
+  if (!repo || !REPO_ID.test(repo)) return { view: 'home' };
   const ref = params.get('ref') || 'main';
   if (view === 'history') return { view: 'history', repo, ref };
   if (view === 'transactions') return { view: 'transactions', repo };
@@ -169,6 +173,7 @@ export function parseSourceRoute(pathname: string, search: string, hash = ''): S
   if (view === 'commit' && rest[0] && SHA.test(rest[0]))
     return { view: 'commit', repo, commit: rest[0] };
   const at = Number(params.get('at'));
+  const line = params.get('line') ?? '';
   const path = view === 'files' || view === 'overview' ? rest.join('/') : '';
   return {
     view: view === 'overview' ? 'overview' : 'files',
@@ -176,6 +181,9 @@ export function parseSourceRoute(pathname: string, search: string, hash = ''): S
     path,
     ref,
     ...(params.has('at') && Number.isSafeInteger(at) && at >= 0 ? { at } : {}),
+    ...(view === 'files' && path && /^[1-9][0-9]*$/.test(line) && Number.isSafeInteger(+line)
+      ? { line: +line }
+      : {}),
   };
 }
 
@@ -186,7 +194,7 @@ function parseAgentsRoute(parts: string[], params: URLSearchParams): SourceRoute
   const space = named && isCanonicalAccountIdentifier(named) ? { workspace: named } : {};
   const [first, repo, run] = parts;
   if (first === 'runs') {
-    if (repo && REPO.test(repo) && run && RUN_ID.test(run))
+    if (repo && REPO_ID.test(repo) && run && RUN_ID.test(run))
       return { view: 'agent-run', runRepo: repo, run, ...space };
     const agent = params.get('agent');
     return agent && AGENT_ID.test(agent)
@@ -237,6 +245,7 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'home') return '/';
   if (route.view === 'settings') return formatSettingsRoute(route);
   if (route.view === 'repositories') return '/repositories';
+  if (route.view === 'global-search') return formatSearchRoute(route);
   if (route.view === 'explore') return '/source/explore';
   if (route.view === 'org') return `/orgs/${route.org}`;
   if (route.view === 'site') return formatSitePage(route.site);
@@ -272,9 +281,10 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'session') return `${base}/agents/sessions/${route.id}`;
   if (route.view === 'context') return `${base}/context`;
   const query = new URLSearchParams();
+  const path = route.path.split('/').filter(Boolean).map(encodeURIComponent).join('/');
   if (route.ref !== 'main') query.set('ref', route.ref);
   if (route.at !== undefined) query.set('at', String(route.at));
-  const path = route.path.split('/').filter(Boolean).map(encodeURIComponent).join('/');
+  if (route.view === 'files' && route.line && path) query.set('line', String(route.line));
   const suffix = query.size ? `?${query}` : '';
   if (route.view === 'overview')
     return path ? `${base}/overview/${path}${suffix}` : `${base}/overview${suffix}`;

@@ -163,7 +163,7 @@ it('describes a blog post from its front matter, and the home and docs with stru
 });
 
 it('marks signed-in app pages noindex and names a public repository, never a private one', async () => {
-  for (const path of ['/settings', '/settings/billing', '/agents', '/admin', '/source/explore']) {
+  for (const path of ['/settings', '/settings/billing', '/agents', '/admin', '/search', '/source/explore']) {
     const app = await page(path);
     expect(app.head.robots, path).toBe('noindex');
     expect(app.head.canonical, path).toBeUndefined();
@@ -199,7 +199,7 @@ it('lets production be indexed and keeps dev out of every index', async () => {
   const robots = async (env: Env) => (await frontFetch(new Request(`${ORIGIN}/robots.txt`), env)).text();
   const prodRobots = await robots(prod);
   expect(prodRobots).toContain('Allow: /\n');
-  for (const line of ['Disallow: /api/', 'Disallow: /settings$', 'Disallow: /admin$', 'Disallow: /auth/', 'Disallow: /source/', `Sitemap: ${ORIGIN}/sitemap.xml`])
+  for (const line of ['Disallow: /api/', 'Disallow: /settings$', 'Disallow: /admin$', 'Disallow: /search$', 'Disallow: /auth/', 'Disallow: /source/', `Sitemap: ${ORIGIN}/sitemap.xml`])
     expect(prodRobots).toContain(line);
   expect(await robots(dev)).toBe('User-agent: *\nDisallow: /\n');
 

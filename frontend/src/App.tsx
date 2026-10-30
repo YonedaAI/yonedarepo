@@ -14,6 +14,7 @@ import { AgentsRoot } from './features/agents/AgentsRoot';
 import { syncAgents } from './features/agents/agentsModel';
 import { ExplorePage } from './features/explore/ExplorePage';
 import { ReadablePage } from './features/profile/ReadablePage';
+import { SearchPage } from './features/search/SearchPage';
 import { AppRail } from './features/shell/AppRail';
 import { AppSidebar } from './features/shell/AppSidebar';
 import { GettingStarted } from './features/shell/GettingStarted';
@@ -153,25 +154,27 @@ export function App() {
         ? 'Repositories'
         : route.view === 'explore'
           ? 'Explore'
-          : route.view === 'settings'
-            ? 'Settings'
-            : route.view === 'device'
-              ? 'Approve a device'
-              : route.view === 'verify-email'
-                ? 'Confirm your email'
-                : route.view === 'org'
-                  ? route.org
-                  : route.view === 'profile'
-                    ? route.handle
-                    : route.view === 'repo-name'
-                      ? route.name
-                      : isAgentsRoute(route)
-                        ? 'Agents'
-                        : route.view === 'admin'
-                          ? 'Admin'
-                          : gone
-                            ? 'Repository not found'
-                            : (row?.name ?? loaded?.name ?? repo ?? '');
+          : route.view === 'global-search'
+            ? 'Search'
+            : route.view === 'settings'
+              ? 'Settings'
+              : route.view === 'device'
+                ? 'Approve a device'
+                : route.view === 'verify-email'
+                  ? 'Confirm your email'
+                  : route.view === 'org'
+                    ? route.org
+                    : route.view === 'profile'
+                      ? route.handle
+                      : route.view === 'repo-name'
+                        ? route.name
+                        : isAgentsRoute(route)
+                          ? 'Agents'
+                          : route.view === 'admin'
+                            ? 'Admin'
+                            : gone
+                              ? 'Repository not found'
+                              : (row?.name ?? loaded?.name ?? repo ?? '');
   const activityError = activity.error && !/Sign in/.test(activity.error) ? activity.error : '';
   const refresh = () => {
     setTick((t) => t + 1);
@@ -311,6 +314,26 @@ export function App() {
             )}
             {route.view === 'explore' && (
               <ExplorePage authenticated={session.authenticated} navigate={navigate} />
+            )}
+            {route.view === 'global-search' && (
+              <SearchPage
+                key={tick}
+                route={route}
+                authenticated={session.authenticated}
+                repos={platform.data?.repos ?? []}
+                sessions={activity.data?.sessions ?? []}
+                // First reads only: a later reload keeps the search that is on the page.
+                loading={
+                  session.loading ||
+                  (session.authenticated &&
+                    ((!platform.data && !platform.error) || (!activity.data && !activity.error)))
+                }
+                reposError={rowsError}
+                onRetry={platform.reload}
+                navigate={navigate}
+                onSignIn={() => setPanel('account')}
+                onNew={() => setCreating(true)}
+              />
             )}
             {route.view === 'settings' && (
               <AccountSettings

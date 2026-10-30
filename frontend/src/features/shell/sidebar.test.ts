@@ -252,20 +252,32 @@ describe('icon rail', () => {
       }),
     );
 
-  it("offers Browse, the open repository's Changes and Search, New and the collapse toggle", () => {
+  it("offers Browse, the open repository's Changes, Search, New and the collapse toggle", () => {
     const html = rail({ route: { view: 'files', repo: a, path: '', ref: 'main' } });
     expect(html).toContain('aria-label="Browse"');
     expect(html).toContain(`href="/source/${a}/changes"`);
-    expect(html).toContain(`href="/source/${a}/search"`);
+    expect(html).toContain('href="/search"');
     expect(html).toContain('aria-label="New repository"');
     expect(html).toContain('aria-label="Collapse sidebar"');
     expect(html).toContain('aria-expanded="true"');
     expect(rail({ collapsed: true })).toContain('aria-label="Expand sidebar"');
   });
 
-  it('sends Changes and Search to the repository list when no repository is open', () => {
+  it('sends Changes to the repository list when no repository is open, Search to its page', () => {
     const html = rail({});
-    expect(html.match(/href="\/repositories"/g)).toHaveLength(2);
+    expect(html.match(/href="\/repositories"/g)).toHaveLength(1);
+    expect(html).toContain('href="/search"');
+    expect(rail({ authenticated: false })).toContain('href="/search"');
     expect(rail({ authenticated: false })).not.toContain('New repository');
+  });
+
+  it("marks Search alone on the Search page, and not on a repository's own search", () => {
+    const active = (route: SourceRoute) =>
+      [...rail({ route }).matchAll(/class="rail-item active"[^>]*aria-label="([^"]+)"/g)].map(
+        (m) => m[1],
+      );
+    expect(active({ view: 'global-search', q: 'retry' })).toEqual(['Search']);
+    expect(active({ view: 'search', repo: a, query: '' })).toEqual([]);
+    expect(active(home)).toEqual(['Browse']);
   });
 });
