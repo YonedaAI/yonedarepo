@@ -20,6 +20,7 @@
 
 import {
   AGENT_MARGIN,
+  AUTO_TOP_UP,
   MANAGED_AGENTS,
   MODEL_RATES,
   type ModelRate,
@@ -107,7 +108,7 @@ export const PRICING = {
    * amount (shared/managed-agents.ts), so there is one number. */
   startingCreditUsd: STARTING_CREDIT_USD,
   /** Automatic top-up: when the balance falls below `belowUsd`, add `addUsd`. */
-  topUp: { belowUsd: 5, addUsd: 20 },
+  topUp: { belowUsd: AUTO_TOP_UP.below_usd, addUsd: AUTO_TOP_UP.add_usd },
   /** Where Enterprise enquiries go (a `mailto:` or https URL); the legal and privacy address
    * until the owner names a sales one. */
   enterpriseContact: 'mailto:privacy@yonedarepo.com',

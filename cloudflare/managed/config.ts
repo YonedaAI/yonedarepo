@@ -31,6 +31,14 @@ export interface ManagedEnv {
   AI_GATEWAY_TOKEN?: string;
   /** Worker secret: 64 hex characters sealing stored repository tokens and hook secrets. */
   MANAGED_VAULT_KEY?: string;
+  /** Worker secrets, optional together: Stripe's secret key and its webhook signing secret.
+   * Without them card billing is off ("coming"). */
+  STRIPE_SECRET_KEY?: string;
+  STRIPE_WEBHOOK_SECRET?: string;
+  /** Stripe's API origin (tests point it at a fake). */
+  STRIPE_API_BASE?: string;
+  /** The promotional credit a card on file unlocks, in USD (default 100). */
+  PROMO_CREDIT_USD?: string;
   /** Worker secret, optional: bearer for granting credit; unset means nobody may. */
   MANAGED_ADMIN_TOKEN?: string;
   CLAUDE_KEY?: SecretsStoreSecret;
@@ -62,7 +70,9 @@ export type QueueMessage =
     }
   | { kind: 'resume'; repo: string; run: string }
   /** The platform's repo.deleted: clear the repository's reviews. */
-  | { kind: 'deleted'; repo: string };
+  | { kind: 'deleted'; repo: string }
+  /** Charge the workspace's card for the pending top-up `key`. */
+  | { kind: 'topup'; account: string; key: string };
 
 export class ConfigError extends Error {}
 
@@ -91,3 +101,11 @@ export const TOKEN_SCOPES = ['read', 'review', 'check'];
 export const HOOK_EVENTS = ['change', 'branch', 'repo'];
 /** What stays subscribed once no agent runs on a repository: its deletion. */
 export const NOTICE_EVENTS = ['repo'];
+
+/** The promotional credit a card unlocks, micro-USD (PROMO_CREDIT_USD, default $100). */
+export function promoMicrousd(env: ManagedEnv): number {
+  const usd = Number(env.PROMO_CREDIT_USD ?? '100');
+  return Number.isFinite(usd) && usd >= 0 && usd <= 10_000
+    ? Math.round(usd * 1_000_000)
+    : 100_000_000;
+}

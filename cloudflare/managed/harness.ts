@@ -15,6 +15,7 @@ import {
   usageCostMicrousd,
 } from '../../shared/managed-agents';
 import harnessVersion from '../containers/harness/version.json';
+import { requestTopUp } from './billing';
 import { gatewaySlug, type ManagedEnv } from './config';
 import { type CallMeta, ledgerStub, type Usage } from './ledger';
 import { repoStub } from './repo-agents';
@@ -200,7 +201,7 @@ async function gatewayOutbound(
   if (env.AI_GATEWAY_TOKEN) headers.set('cf-aig-authorization', `Bearer ${env.AI_GATEWAY_TOKEN}`);
   const settle = async (usage: TokenUsage | null, sent: boolean) => {
     const priced = usage ? asUsage(rate, usage) : null;
-    await ledger.settle(key, priced, sent, meta);
+    await requestTopUp(env, p.account, await ledger.settle(key, priced, sent, meta));
     if (priced)
       await repo.recordCall(p.run, priced.inputTokens, priced.outputTokens, priced.chargeMicrousd);
   };

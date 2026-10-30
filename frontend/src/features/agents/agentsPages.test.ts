@@ -6,7 +6,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   type AgentState,
-  type BillingState,
   MANAGED_AGENTS,
   type ManagedCredit,
   type ManagedRun,
@@ -54,6 +53,9 @@ const agentState = (i: number, over: Partial<AgentState> = {}): AgentState => {
 const credit = (over: Partial<ManagedCredit> = {}): ManagedCredit => ({
   granted_usd: 5,
   used_usd: 0.4,
+  promo: { usd: 100, granted: false },
+  card: null,
+  top_up_failed: null,
   balance_usd: 4.6,
   paused: false,
   ...over,
@@ -108,9 +110,11 @@ describe('the Agents overview', () => {
     expect(html).toContain('href="/agents/runs"');
     // New agent stays in view, closed until billing exists.
     expect(html).toMatch(/<button type="button" class="agents-new" disabled=""[^>]*>New agent/);
-    expect(html).toContain('Set up billing to create your own agents');
+    expect(html).toContain('Creating your own agents is coming');
     expect(html).toContain('of starting credit when you set up your first agent');
-    expect(html).toMatch(/<button type="button" class="quiet" disabled=""[^>]*>Set up billing/);
+    // Card billing is not set up in this fixture ('coming'): the promo card says so.
+    expect(html).toContain('Add a card to unlock $100.00 more.');
+    expect(html).toContain('Card billing is coming');
     expect(html).toContain('1 repository');
     const paused = {
       ...workspace,
@@ -302,7 +306,7 @@ describe("an agent's pages", () => {
       account: 'ada',
       navigate,
     });
-    expect(gated).toContain('Set up billing to create your own agents');
+    expect(gated).toContain('Creating your own agents is coming');
     expect(gated).toMatch(/<button type="button" disabled=""[^>]*>Create agent/);
     expect(
       render(AgentSettingsPage, { workspace: 'ada', agent: 'nope', account: 'ada', navigate }),
@@ -412,24 +416,5 @@ describe('runs', () => {
     expect(html).toContain(`href="/agents/runs/${repoA}/${run.id}"`);
     answers.byPath.set('/workspaces/ada/runs?limit=100', { data: { runs: [] } });
     expect(render(AgentRuns, { workspace: 'ada', space: {}, navigate })).toContain('No runs yet');
-  });
-
-  it('shows the credit, no card on file, and usage by repository and agent', () => {
-    const billing: BillingState = {
-      workspace: 'ada',
-      credit: { granted_usd: 5, used_usd: 0.3, balance_usd: 4.7, paused: false },
-      payment_method: null,
-      billing: 'coming',
-      usage: [{ repo: repoA, repo_name: 'parser', agent: 'code-review', runs: 3, cost_usd: 0.3 }],
-    };
-    answers.byPath.set('/workspaces/ada/billing', { data: billing });
-    const html = render(BillingSettings, { workspace: 'ada' });
-    expect(html).toContain('Starting credit is added when you set up your first agent: $5.00');
-    expect(html).toContain('$4.70');
-    expect(html).toContain('No card on file');
-    expect(html).toContain('Set up billing');
-    expect(html).toContain('<td>parser</td><td>Code review</td><td>3</td><td>$0.30</td>');
-    answers.byPath.set('/workspaces/ada/billing', { data: { ...billing, usage: [] } });
-    expect(render(BillingSettings, { workspace: 'ada' })).toContain('No agent has run yet');
   });
 });

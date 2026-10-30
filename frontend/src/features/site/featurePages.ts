@@ -190,7 +190,7 @@ export const FEATURE_PAGES: FeaturePage[] = [
       ...MANAGED_AGENTS.map((a) => ({ title: a.defaults.name, text: a.defaults.description })),
       {
         title: 'A check you can require',
-        text: `Each agent runs on every push to an open change and records its check (${MANAGED_AGENTS.map((a) => `\`${a.check}\``).join(', ')}) on the head. Runs are billed per use from your credit; setting up a workspace’s first agent adds $${STARTING_CREDIT_USD} of credit.`,
+        text: `Each agent runs on every push to an open change and records its check (${MANAGED_AGENTS.map((a) => `\`${a.check}\``).join(', ')}) on the head. Runs are billed per use from your credit; setting up a workspace’s first agent adds $${STARTING_CREDIT_USD} of credit, and adding a card unlocks more.`,
       },
     ],
     related: ['changes', 'ci', 'memory'],

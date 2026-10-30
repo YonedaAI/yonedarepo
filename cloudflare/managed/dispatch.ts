@@ -4,6 +4,7 @@
 // Workflow instance (also idempotent: the instance id is the run and attempt).
 import { type ManagedAgentId, managedAgent, readyForReview } from '../../shared/managed-agents';
 import { resolveSettings, triggerMatches } from '../../shared/managed-settings';
+import { runTopUp } from './billing';
 import { COMMIT_ID, type ManagedEnv, type QueueMessage, type RunParams } from './config';
 import { Platform, PlatformError } from './platform';
 import { repoStub } from './repo-agents';
@@ -221,6 +222,7 @@ export async function consume(batch: MessageBatch<QueueMessage>, env: ManagedEnv
       if (m.kind === 'event') await onEvent(env, m);
       else if (m.kind === 'resume') await onResume(env, m);
       else if (m.kind === 'deleted') await onDeleted(env, m);
+      else if (m.kind === 'topup') await runTopUp(env, m);
       message.ack();
     } catch (e: any) {
       console.error(
