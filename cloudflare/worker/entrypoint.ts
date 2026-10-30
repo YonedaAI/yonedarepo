@@ -1,9 +1,10 @@
 // Combined deployment (local development): the front Worker and the source platform in one
 // Worker. Platform routes and jobs go straight to the platform; everything else is the front.
 import { WorkerEntrypoint } from 'cloudflare:workers';
+import type { AccountCreated } from './account-index';
 import { withWaitUntil } from './background';
 import { frontFetch } from './front-routes';
-import { type AccountCreated, accountCreated } from './platform-accounts';
+import { accountCreated } from './platform-accounts';
 import { verifyEmail } from './platform-email-verify';
 import { platformJob } from './platform-entrypoint';
 import { repoApi } from './repo-api';

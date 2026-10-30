@@ -1,7 +1,7 @@
 // Site traffic reports (platform Worker): the Analytics Engine SQL the admin Traffic page runs,
 // and how its answers and failures come back. The SQL API is simulated; no token is real.
 import { expect, it, vi } from 'vitest';
-import { siteTraffic, trafficQueries } from '../../cloudflare/worker/site-traffic';
+import { siteTraffic, trafficQueries } from '../../cloudflare/worker/platform-site-traffic';
 import type { Env } from '../../cloudflare/worker/types';
 
 const configured = {

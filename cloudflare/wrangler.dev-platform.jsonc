@@ -303,7 +303,7 @@
     ]
   },
   "vars": {
-    "ADMIN_ACCOUNTS": "",
+    "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
     "ADMIN_NOTIFY_EMAIL": "",
     "ARTIFACTS_NAMESPACE": "yonedarepo-dev",
     "BLOB_WRITE_THROUGH": "off",
