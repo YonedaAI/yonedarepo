@@ -222,9 +222,17 @@ button.oauth-button svg {
   border-top: 1px solid var(--line);
 }
 .oauth-terms {
-  margin: 16px 0 0;
-  font-size: 12px;
+  margin: 0;
+  font-size: 13px;
   color: var(--muted);
+}
+.oauth-terms a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.oauth-terms a:hover {
+  color: var(--text);
 }
 .oauth-method {
   display: inline-flex;

@@ -1,0 +1,27 @@
+/* Legal pages: the date line and the contents list above the text. */
+.site-updated {
+  margin: 0 0 var(--sp-5);
+  font-size: var(--fs-sm);
+}
+.site-contents {
+  margin: 0 0 var(--sp-6);
+  padding: var(--sp-4) var(--sp-5);
+  border: 1px solid var(--site-line);
+  border-radius: 10px;
+}
+.site-prose .site-contents h2 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-base);
+}
+.site-contents ol {
+  margin: 0;
+  padding-left: var(--sp-5);
+  columns: 2;
+  column-gap: var(--sp-6);
+  font-size: var(--fs-sm);
+}
+@media (max-width: 800px) {
+  .site-contents ol {
+    columns: 1;
+  }
+}
