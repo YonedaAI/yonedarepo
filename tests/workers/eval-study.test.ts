@@ -10,9 +10,12 @@ const SEED = 20261019;
 
 async function arm(owner: { cookie: string }, layout: (typeof LAYOUTS)[number], iface: string, dropRate = 0): Promise<ArmResult> {
   const symbols = codebase(SEED);
+  // Names are unique per owner (readable paths): the fault arms reuse a layout and interface.
+  const name = `${layout}-${iface}${dropRate ? `-drop${Math.round(dropRate * 100)}` : ''}`;
   const created = await call('/repos', owner, {
-    body: { name: `${layout}-${iface}`, policy: { required_checks: [], approvals: 0 }, files: render(layout, symbols).map(([p, t]) => file(p, t)), author },
+    body: { name, policy: { required_checks: [], approvals: 0 }, files: render(layout, symbols).map(([p, t]) => file(p, t)), author },
   });
+  expect(created.status, name).toBe(200);
   const repo = `/repos/${created.body.id}`;
   const token = (await call(`${repo}/tokens`, owner, { body: { name: 'agent', scopes: ['read', 'write', 'land'] } })).body.token;
   const api: Api = (path, init) => call(`${repo}${path}`, { token }, init);
