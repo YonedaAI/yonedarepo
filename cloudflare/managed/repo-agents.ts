@@ -266,6 +266,7 @@ export class RepoAgents extends DurableObject<ManagedEnv> {
     status: 'passed' | 'findings' | 'failed',
     outcome: {
       value?: string | null;
+      summary?: string | null;
       findings?: PostedFinding[];
       withheld?: number;
       error?: string | null;
@@ -273,11 +274,12 @@ export class RepoAgents extends DurableObject<ManagedEnv> {
   ) {
     const findings = outcome.findings ?? [];
     this.#sql.exec(
-      `UPDATE runs SET status = ?, value = ?, findings = ?, findings_json = ?, withheld = ?,
-         error = ?, finished_at = ?
+      `UPDATE runs SET status = ?, value = ?, summary = ?, findings = ?, findings_json = ?,
+         withheld = ?, error = ?, finished_at = ?
        WHERE id = ? AND attempt = ? AND status IN ('queued','running')`,
       status,
       outcome.value ?? null,
+      outcome.summary ?? null,
       findings.length,
       JSON.stringify(findings),
       outcome.withheld ?? 0,
