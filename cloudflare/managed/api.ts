@@ -52,11 +52,13 @@ export function workspaceName(segment: string | undefined): string | null {
   return isCanonicalAccountIdentifier(name) ? name : null;
 }
 
-/** The caller's standing in `workspace`: whether they own it, and its repositories they own. */
+/** The caller's standing in `workspace`: whether they own it, and its repositories they own. A
+ * personal workspace belongs to its account from sign-up, before it has any repository. */
 async function access(caller: Platform, workspace: string) {
-  const [listed, orgs] = await Promise.all([
+  const [listed, orgs, session] = await Promise.all([
     caller.repos(),
     caller.orgs().catch(() => ({ orgs: [] as Json[] })),
+    caller.session().catch(() => null),
   ]);
   const repos = ((listed.repos ?? []) as Json[])
     .filter((r) => r.owner === workspace && r.role === 'owner')
@@ -64,7 +66,8 @@ async function access(caller: Platform, workspace: string) {
   const orgOwner = ((orgs.orgs ?? []) as Json[]).some(
     (o) => o.org === workspace && o.role === 'owner',
   );
-  if (!orgOwner && repos.length === 0)
+  const personal = session?.authenticated === true && session.username === workspace;
+  if (!personal && !orgOwner && repos.length === 0)
     throw new ApiRefusal('FORBIDDEN', 'Only a workspace owner can manage its agents', 403);
   return repos;
 }
