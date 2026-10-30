@@ -46,11 +46,16 @@ export class FakePlatform {
   /** The owner's break-glass automation pause (repo status `automation.paused`). */
   paused = false;
   /** The workspace (the billed account): one per test, since ledgers outlive a test. */
-  readonly account = `ws-${crypto.randomUUID().slice(0, 8)}`;
+  readonly account: string;
   readonly repos: string[];
 
-  constructor(readonly repo: string) {
+  constructor(
+    readonly repo: string,
+    // A username the platform could give (a-z, 0-9, _): the managed API refuses anything else.
+    account = `ws_${crypto.randomUUID().slice(0, 8)}`,
+  ) {
     this.repos = [repo];
+    this.account = account;
   }
 
   change(c: Partial<FakeChange> = {}) {
@@ -251,8 +256,12 @@ export interface Harness {
 
 /** An env with the real Durable Objects and fakes for the platform, queue, workflows, harness
  * containers, transcripts store and keys. */
-export function harness(repo = newRepo(), overrides: Partial<ManagedEnv> = {}): Harness {
-  const platform = new FakePlatform(repo);
+export function harness(
+  repo = newRepo(),
+  overrides: Partial<ManagedEnv> = {},
+  account?: string,
+): Harness {
+  const platform = new FakePlatform(repo, account);
   const sent: QueueMessage[] = [];
   const created: RunParams[] = [];
   const ids = new Set<string>();

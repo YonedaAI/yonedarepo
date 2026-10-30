@@ -3,6 +3,8 @@
 // with the caller's own credential: only a workspace owner (who can mint repository tokens and
 // register webhooks) sees or changes its agents, runs and billing. The workspace is the billed
 // account.
+
+import { isCanonicalAccountIdentifier } from '../../shared/account';
 import {
   type AgentState,
   MANAGED_AGENTS,
@@ -33,7 +35,22 @@ export class ApiRefusal extends Error {
   }
 }
 
-const WORKSPACE = /^[A-Za-z0-9._:-]{1,100}$/;
+/**
+ * The workspace a path segment names: decoded once, and accepted only when it is a canonical
+ * account identifier (yoneda-core::account: a username, an org name, or an email address
+ * for accounts made before email-only sign-up), so `@`, `+` and the rest of an email's local
+ * part arrive intact and nothing else gets through. Null otherwise.
+ */
+export function workspaceName(segment: string | undefined): string | null {
+  if (!segment) return null;
+  let name: string;
+  try {
+    name = decodeURIComponent(segment);
+  } catch {
+    return null;
+  }
+  return isCanonicalAccountIdentifier(name) ? name : null;
+}
 
 /** The caller's standing in `workspace`: whether they own it, and its repositories they own. */
 async function access(caller: Platform, workspace: string) {
@@ -198,8 +215,9 @@ async function update(
 }
 
 export async function managedApi(req: Request, env: ManagedEnv, parts: string[]): Promise<Json> {
-  const [scope, workspace, resource, id, sub] = parts;
-  if (scope !== 'workspaces' || !WORKSPACE.test(workspace ?? ''))
+  const [scope, segment, resource, id, sub] = parts;
+  const workspace = workspaceName(segment);
+  if (scope !== 'workspaces' || !workspace)
     throw new ApiRefusal('NOT_FOUND', 'Unknown managed API path', 404);
   const owned = await access(new Platform(env, { forward: req }), workspace);
   const url = new URL(req.url);

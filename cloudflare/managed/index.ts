@@ -2,7 +2,7 @@
 // an ordinary API client of the platform. Its public hostname takes only signed webhooks and
 // /health; the browser API is served to the front Worker's service binding on the site's own
 // origin. The platform itself never runs, schedules or knows about agents.
-import { ApiRefusal, managedApi } from './api';
+import { ApiRefusal, managedApi, workspaceName } from './api';
 import type { ManagedEnv, QueueMessage } from './config';
 import { REPO_ID } from './config';
 import { consume, receiveHook } from './dispatch';
@@ -77,7 +77,9 @@ export async function managedFetch(req: Request, env: ManagedEnv): Promise<Respo
   ) {
     if (req.method !== 'POST') return refuse('METHOD_NOT_ALLOWED', 'POST only', 405);
     if (!(await admin(req, env))) return refuse('UNAUTHORIZED', 'Admin token required', 401);
-    return grantCredit(req, env, decodeURIComponent(parts[2]));
+    const account = workspaceName(parts[2]);
+    if (!account) return refuse('NOT_FOUND', 'Unknown account', 404);
+    return grantCredit(req, env, account);
   }
   // The browser API only on the site's origin (through the front Worker), never on this
   // Worker's own hostname, so a session cookie is only ever checked for the site it belongs to.
