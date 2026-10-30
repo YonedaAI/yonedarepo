@@ -23,7 +23,7 @@
   .site-sections.open {
     display: flex;
   }
-  .site-sections ul {
+  .site-nav-list {
     flex-direction: column;
   }
   .site-nav-link {
