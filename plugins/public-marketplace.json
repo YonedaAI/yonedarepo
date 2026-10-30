@@ -1,0 +1,20 @@
+{
+  "name": "yonedarepo",
+  "description": "YonedaRepo's plugins for Claude Code, served from yonedarepo.com: no Git host account needed.",
+  "owner": {
+    "name": "YonedaAI",
+    "url": "https://yonedarepo.com"
+  },
+  "plugins": [
+    {
+      "name": "yoneda",
+      "description": "The yoneda:: git workflow skill, the account MCP server and session hooks for YonedaRepo repositories.",
+      "category": "development",
+      "source": {
+        "source": "archive",
+        "url": "{site}/downloads/claude/yoneda-{version}.zip",
+        "sha256": "{sha256}"
+      }
+    }
+  ]
+}
