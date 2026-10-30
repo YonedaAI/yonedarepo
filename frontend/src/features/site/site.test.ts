@@ -411,13 +411,13 @@ describe('transcript claims', () => {
 // every text pair the site uses must reach WCAG AA in both themes.
 describe('site palette', async () => {
   const fs = await import(`node:${'fs'}`);
-  const siteCss: string = fs.readFileSync(
-    new URL('../../styles/site.css', import.meta.url),
-    'utf8',
-  );
-  const block = (selector: string) => {
-    const at = siteCss.indexOf(selector);
-    const body = siteCss.slice(siteCss.indexOf('{', at) + 1, siteCss.indexOf('}', at));
+  const read = (name: string): string =>
+    fs.readFileSync(new URL(`../../styles/${name}`, import.meta.url), 'utf8');
+  const siteCss = read('site.css');
+  const themeCss = read('theme.css');
+  const block = (selector: string, css = siteCss) => {
+    const at = css.indexOf(selector);
+    const body = css.slice(css.indexOf('{', at) + 1, css.indexOf('}', at));
     return Object.fromEntries(
       [...body.matchAll(/--([\w-]+):\s*([^;]+);/g)].map(([, name, value]) => [name, value.trim()]),
     );
@@ -443,6 +443,42 @@ describe('site palette', async () => {
   it('maps the app button pair to the site accent pair', () => {
     expect(light.blue).toBe('var(--site-accent)');
     expect(light['on-accent']).toBe('var(--site-accent-text)');
+    expect(light['blue-text']).toBe('var(--site-accent)');
+  });
+
+  // The signed-in app's own tokens (theme.css): a button's label on its fill, blue text and
+  // links, and the muted and faint labels, on the surfaces they sit on.
+  it.each([
+    ['light', block(':root {', themeCss)],
+    ['dark', block(':root[data-theme="dark"] {', themeCss)],
+  ])('keeps the app %s palette at AA', (_theme, t) => {
+    const pairs: [string, string][] = [
+      ['on-accent', 'blue'],
+      ['blue-text', 'bg'],
+      ['blue-text', 'surface'],
+      ['blue-text', 'surface-2'],
+      ['blue-text', 'accent-soft'],
+      ['text', 'bg'],
+      ['text', 'surface'],
+      ['muted', 'bg'],
+      ['muted', 'surface'],
+      ['muted', 'surface-2'],
+      ['faint', 'bg'],
+      ['faint', 'surface'],
+      ['faint', 'surface-2'],
+      ['success', 'success-soft'],
+      ['success', 'surface'],
+      ['danger', 'surface'],
+      ['warn', 'surface'],
+    ];
+    for (const [fg, bg] of pairs)
+      expect(`${fg} on ${bg}: ${contrast(t[fg], t[bg]) >= 4.5}`).toBe(`${fg} on ${bg}: true`);
+  });
+
+  it('defines the same app dark palette for the system choice and the explicit choice', () => {
+    expect(block(':root:not([data-theme="light"]) {', themeCss)).toEqual(
+      block(':root[data-theme="dark"] {', themeCss),
+    );
   });
 
   it.each([

@@ -20,7 +20,7 @@
 }
 .source-subsystem h2 button.quiet {
   background: transparent;
-  color: var(--blue);
+  color: var(--blue-text);
   min-height: 28px;
   padding: 2px 4px;
   font: inherit;
@@ -46,5 +46,5 @@
 }
 .source-details summary {
   cursor: pointer;
-  color: var(--blue);
+  color: var(--blue-text);
 }
