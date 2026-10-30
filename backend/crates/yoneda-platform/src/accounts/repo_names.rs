@@ -20,7 +20,7 @@ fn repo_name(c: &Value) -> Result<String> {
     Ok(name)
 }
 
-fn repo_id(c: &Value) -> Result<String> {
+pub(super) fn repo_id(c: &Value) -> Result<String> {
     let repo = string(c, "repo")?;
     let valid = repo.len() == 21
         && repo.starts_with('r')

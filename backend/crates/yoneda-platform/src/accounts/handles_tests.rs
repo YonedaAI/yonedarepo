@@ -222,7 +222,7 @@ fn the_handles_migration_applies_fresh_repeatedly_and_over_version_seven() {
         let versions = db
             .query("SELECT MAX(version) AS v FROM workspace_migrations", &[])
             .unwrap();
-        assert_eq!(versions[0]["v"], 9);
+        assert_eq!(versions[0]["v"], 10);
     }
     ok(&old, json!({"op":"handle_set","handle":"grace"}));
     ok(

@@ -85,6 +85,14 @@ op_names! {
     }
 }
 op_names! {
+    /// The repositories the account keeps at the top of its picker.
+    pub(crate) enum FavoriteOp {
+        List = "favorite_list",
+        Put = "favorite_put",
+        Remove = "favorite_remove",
+    }
+}
+op_names! {
     /// OAuth sign-in attempts and identity claims, each on its own authority instance.
     pub(crate) enum OAuthOp {
         FlowPut = "oauth_flow_put",
@@ -144,6 +152,7 @@ pub(crate) enum AccountOp {
     Device(DeviceOp),
     Identity(IdentityOp),
     Avatar(AvatarOp),
+    Favorite(FavoriteOp),
     OAuth(OAuthOp),
     Org(OrgOp),
     OrgMember(OrgMemberOp),
@@ -169,6 +178,7 @@ impl AccountOp {
             Self::Device(op) => op.name(),
             Self::Identity(op) => op.name(),
             Self::Avatar(op) => op.name(),
+            Self::Favorite(op) => op.name(),
             Self::OAuth(op) => op.name(),
             Self::Org(op) => op.name(),
             Self::OrgMember(op) => op.name(),
@@ -186,6 +196,7 @@ impl AccountOp {
         all.extend(DeviceOp::ALL.iter().copied().map(Self::Device));
         all.extend(IdentityOp::ALL.iter().copied().map(Self::Identity));
         all.extend(AvatarOp::ALL.iter().copied().map(Self::Avatar));
+        all.extend(FavoriteOp::ALL.iter().copied().map(Self::Favorite));
         all.extend(OAuthOp::ALL.iter().copied().map(Self::OAuth));
         all.extend(OrgOp::ALL.iter().copied().map(Self::Org));
         all.extend(OrgMemberOp::ALL.iter().copied().map(Self::OrgMember));
