@@ -1,6 +1,8 @@
 // Settings → SSH keys: the account's public keys for Git over SSH. Adding one makes
 // clone, fetch and push over SSH act as this account; deleting it refuses that key at once.
 import { type FormEvent, useState } from 'react';
+import { Dialog } from '../../components/Dialog';
+import { SettingsRow, SettingsSection } from '../../components/SettingsSection';
 import { Failure, Loading } from './SourceStatus';
 import { sourceApi, when } from './sourceApi';
 import { publicKeyProblem, type SshAccess, type SshKey, suggestedTitle } from './sshKeyModel';
@@ -16,7 +18,7 @@ export function SshKeyTable({
   if (keys.loading && !keys.data) return <Loading what="SSH keys" />;
   if (keys.error) return <Failure error={keys.error} onRetry={keys.reload} />;
   const list = keys.data?.keys ?? [];
-  if (list.length === 0) return <p className="source-empty">No SSH keys. Add one below.</p>;
+  if (list.length === 0) return <p className="source-empty">No SSH keys yet.</p>;
   return (
     <div className="source-table-wrap">
       <table className="source-table">
@@ -86,9 +88,8 @@ export function SshSetup({ access }: { access?: SshAccess }) {
   );
 }
 
-export function SshKeys() {
-  const keys = useSource<{ keys: SshKey[]; ssh?: SshAccess }>('/ssh-keys');
-  const access = keys.data?.ssh;
+/** The new-key form; `onAdded` re-reads the list. */
+export function SshKeyDialog({ onAdded, onClose }: { onAdded: () => void; onClose: () => void }) {
   const [title, setTitle] = useState('');
   const [key, setKey] = useState('');
   const [busy, setBusy] = useState(false);
@@ -104,37 +105,21 @@ export function SshKeys() {
       await sourceApi<SshKey>('/ssh-keys', {
         body: { title: title.trim() || suggestedTitle(key) || 'ssh key', key: key.trim() },
       });
-      setTitle('');
-      setKey('');
-      keys.reload();
+      onAdded();
     } catch (e) {
       setError((e as Error).message);
-    } finally {
       setBusy(false);
-    }
-  }
-  async function remove(k: SshKey) {
-    if (!window.confirm(`Delete SSH key ${k.title}? Git over SSH with it stops immediately.`))
-      return;
-    setError('');
-    try {
-      await sourceApi(`/ssh-keys/${encodeURIComponent(k.id)}`, { method: 'DELETE' });
-      keys.reload();
-    } catch (e) {
-      setError((e as Error).message);
     }
   }
 
   return (
-    <div className="settings-card">
-      <p className="source-meta">
-        Clone, fetch and push over SSH as this account. Add the contents of a <code>.pub</code>{' '}
-        file, for example <code>~/.ssh/id_ed25519.pub</code>, or run{' '}
-        <code>yoneda ssh-key add ~/.ssh/id_ed25519.pub</code>.
-      </p>
-      <SshSetup access={access} />
-      <SshKeyTable keys={keys} onDelete={remove} />
+    <Dialog title="Add SSH key" onClose={onClose} locked={busy} initialFocus="#ssh-key">
       <form onSubmit={add} className="source-token-form">
+        <p className="source-meta">
+          Paste the contents of a <code>.pub</code> file, for example{' '}
+          <code>~/.ssh/id_ed25519.pub</code>, or run{' '}
+          <code>yoneda ssh-key add ~/.ssh/id_ed25519.pub</code>.
+        </p>
         <label htmlFor="ssh-title" className="source-field">
           Title
           <input
@@ -165,11 +150,70 @@ export function SshKeys() {
             {problem}
           </p>
         )}
-        <button type="submit" disabled={busy || !key.trim() || Boolean(problem)}>
-          {busy ? 'Adding…' : 'Add SSH key'}
-        </button>
+        {error && <Failure error={error} />}
+        <div className="run-actions">
+          <button type="submit" disabled={busy || !key.trim() || Boolean(problem)}>
+            {busy ? 'Adding…' : 'Add SSH key'}
+          </button>
+        </div>
       </form>
-      {error && <Failure error={error} />}
-    </div>
+    </Dialog>
+  );
+}
+
+export function SshKeys() {
+  const keys = useSource<{ keys: SshKey[]; ssh?: SshAccess }>('/ssh-keys');
+  const access = keys.data?.ssh;
+  const [adding, setAdding] = useState(false);
+  const [error, setError] = useState('');
+
+  async function remove(k: SshKey) {
+    if (!window.confirm(`Delete SSH key ${k.title}? Git over SSH with it stops immediately.`))
+      return;
+    setError('');
+    try {
+      await sourceApi(`/ssh-keys/${encodeURIComponent(k.id)}`, { method: 'DELETE' });
+      keys.reload();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  }
+
+  return (
+    <>
+      <SettingsSection id="ssh" title="Your keys">
+        <SettingsRow
+          title="Git over SSH"
+          detail="Clone, fetch and push over SSH as this account."
+          action={
+            <button type="button" className="quiet" onClick={() => setAdding(true)}>
+              Add SSH key
+            </button>
+          }
+        />
+        {adding && (
+          <SshKeyDialog
+            onClose={() => setAdding(false)}
+            onAdded={() => {
+              setAdding(false);
+              keys.reload();
+            }}
+          />
+        )}
+        <SshKeyTable keys={keys} onDelete={remove} />
+        {error && (
+          <div className="settings-block">
+            <Failure error={error} />
+          </div>
+        )}
+      </SettingsSection>
+      {access && (
+        <SettingsSection id="ssh-setup" title="Set up">
+          <div className="settings-block">
+            <SshSetup access={access} />
+          </div>
+        </SettingsSection>
+      )}
+    </>
   );
 }

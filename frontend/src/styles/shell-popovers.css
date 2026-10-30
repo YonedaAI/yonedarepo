@@ -11,7 +11,7 @@
   border: 1px solid var(--line);
   background: var(--surface);
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .switcher-button:hover {
   background: var(--surface-2);
@@ -41,7 +41,7 @@
 }
 .switcher-panel input {
   padding: 7px 9px;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .switcher-list {
   max-height: 280px;
@@ -56,7 +56,7 @@
   gap: 8px;
   padding: 7px 8px;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .switcher-list a:hover,
 .switcher-list a:focus-visible {
@@ -65,7 +65,7 @@
 .switcher-list small {
   margin-left: auto;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-sm);
 }
 .switcher-row-name {
   overflow: hidden;
@@ -75,7 +75,7 @@
 .switcher-empty {
   margin: 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .getting-started {
   position: relative;
@@ -88,7 +88,7 @@
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
   cursor: pointer;
   list-style: none;
 }
@@ -143,7 +143,7 @@
   align-items: center;
   gap: 9px;
   min-height: 36px;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .getting-started-panel li > span {
   flex: 1;
@@ -156,7 +156,7 @@
 }
 .getting-started-panel li a {
   color: var(--accent-text);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .getting-started-panel li button {
   min-height: 28px;
@@ -164,7 +164,7 @@
   border: 1px solid var(--line-strong);
   background: transparent;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 /* A failure's platform reference: small and muted under the plain message. */
 .failure-reference {
@@ -172,10 +172,10 @@
   margin-top: 2px;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .sidebar .source-error {
   flex-wrap: wrap;
   margin: 4px 6px 8px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }

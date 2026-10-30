@@ -29,7 +29,7 @@
 }
 .dialog-heading h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--text-xl);
   font-weight: 600;
 }
 .dialog-body {
@@ -76,7 +76,7 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 .support-file > span {
   overflow-wrap: anywhere;
@@ -89,7 +89,7 @@
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  font-size: 13px;
+  font-size: var(--text-sm);
 }
 .support-consent input {
   flex: none;
@@ -100,7 +100,7 @@
 }
 .support-consent a {
   color: var(--blue-text);
-  font-size: 13px;
+  font-size: var(--text-sm);
   text-decoration: underline;
 }
 .support-actions {
@@ -112,4 +112,11 @@
   margin: 0 0 18px;
   color: var(--text);
   overflow-wrap: anywhere;
+}
+.dialog .source-token-form {
+  margin-top: 0;
+}
+.dialog form .source-checks label {
+  display: flex;
+  gap: 8px;
 }

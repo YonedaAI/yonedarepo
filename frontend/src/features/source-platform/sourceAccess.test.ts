@@ -11,7 +11,7 @@ vi.mock('./useSource', () => ({ useSource: () => state.value }));
 
 const { ConnectPanel, DeleteRepository } = await import('./ConnectPanel');
 const { DeviceOutcome, DevicePage, deviceFailure } = await import('./DevicePage');
-const { PatTable } = await import('./PersonalTokens');
+const { PatDialog, PatTable } = await import('./PersonalTokens');
 const { RepoTokenTable, RepoTokens } = await import('./RepoTokens');
 const { AccountSettings } = await import('../account-settings/AccountSettings');
 const { CliTable } = await import('../account-settings/TokenSettings');
@@ -100,13 +100,20 @@ describe('personal access tokens', () => {
     // A website token that happens to share the name stays with the personal tokens.
     expect(page).toContain('aria-label="Revoke yoneda-cli"');
     expect(page).toContain('<td>ci</td>');
-    // Default scopes are read, write and land; admin is opt-in.
-    expect(page.match(/type="checkbox" checked=""/g)?.length).toBeGreaterThanOrEqual(3);
-    expect(page).toContain('All repositories, including ones created later.');
-    expect(page).toContain('<option value="30" selected="">30 days</option>');
+    // The form waits behind Create token.
+    expect(page).toContain('>Create token</button>');
+    expect(page).not.toContain('<form');
     expect(
       html(CliTable, { tokens: loaded({ data: { tokens: [] } }), onSignOut: () => {}, now }),
     ).toContain('No CLI is signed in');
+  });
+  it('creates a token in a dialog: default scopes, all repositories, thirty days', () => {
+    const form = html(PatDialog, { repos, orgs: [], onCreated: () => {}, onClose: () => {} });
+    expect(form).toContain('aria-label="Create a personal access token"');
+    // Default scopes are read, write and land; admin is opt-in.
+    expect(form.match(/type="checkbox" checked=""/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(form).toContain('All repositories, including ones created later.');
+    expect(form).toContain('<option value="30" selected="">30 days</option>');
   });
 });
 
@@ -119,9 +126,11 @@ describe('the account settings pages', () => {
     state.value = loaded({ data: { tokens: [] } });
     const general = page('general');
     expect(general).toContain('<h1 id="settings-title">General</h1>');
-    for (const title of ['Account', 'Email', 'Sign-in methods', 'Appearance'])
+    for (const title of ['Profile', 'Email', 'Connected accounts', 'Appearance', 'Billing'])
       expect(general).toContain(`>${title}</h2>`);
-    expect(general).toContain('<code>ada</code>');
+    expect(general).toContain('>ada<');
+    expect(general).toContain('href="/settings/billing"');
+    expect(general).toContain('>Manage billing<');
     expect(general).not.toContain('Personal access tokens');
     expect(general).not.toContain('Credit balance');
     const titled = {
@@ -133,9 +142,21 @@ describe('the account settings pages', () => {
     for (const [section, title] of Object.entries(titled)) {
       const other = page(section, { orgs: loaded({ data: { orgs: [] } }), navigate: () => {} });
       expect(other).toContain(`<h1 id="settings-title">${title}</h1>`);
-      expect(other).not.toContain('Sign-in methods');
+      expect(other).not.toContain('Connected accounts');
       // One name per page: a page of one section does not repeat its title.
       expect(other).not.toContain(`>${title}</h2>`);
+    }
+  });
+
+  it('puts each heading above its card, and leaves no form open', () => {
+    state.value = loaded({ data: { tokens: [], keys: [] } });
+    for (const section of ['general', 'tokens', 'ssh-keys']) {
+      const shown = page(section);
+      expect(shown).toMatch(
+        /<section class="settings-section"[^>]*><h2[^>]*>[^<]+<\/h2><div class="settings-card">/,
+      );
+      expect(shown).not.toContain('<form');
+      expect(shown).not.toContain('<textarea');
     }
   });
 

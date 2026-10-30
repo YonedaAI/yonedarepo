@@ -1,0 +1,140 @@
+/* Account settings: one centered column as wide as an agent's Configure page, of sections: each
+   a heading above a card of rows (text on the left, one action on the right, a thin rule between
+   them). */
+.account-settings {
+  width: 100%;
+  max-width: 1024px;
+  margin: 0 auto;
+  padding: 28px 32px 48px;
+}
+.settings-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin: 0 0 24px;
+}
+.settings-head > div {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.settings-head p {
+  margin: 4px 0 0;
+}
+.account-settings h1 {
+  margin: 0;
+}
+.account-settings > .source-meta {
+  margin: 0 0 20px;
+}
+.settings-section {
+  min-width: 0;
+  margin: 0 0 28px;
+}
+.settings-section > h2 {
+  margin: 0 0 10px;
+}
+.settings-card {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+}
+.settings-card > * + * {
+  border-top: 1px solid var(--line);
+}
+.settings-card p {
+  margin: 0;
+}
+.settings-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  padding: 56px 22px;
+  text-align: center;
+}
+.settings-empty h2 {
+  margin: 0;
+}
+/* The text wraps below the action rather than narrow past reading. */
+.settings-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  min-width: 0;
+  padding: 14px 20px;
+}
+.settings-row > svg {
+  flex: none;
+}
+.settings-row-text {
+  display: grid;
+  flex: 1 1 220px;
+  gap: 2px;
+  min-width: 0;
+}
+.settings-row-title {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.settings-row-mono {
+  font-family: var(--mono);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+.settings-row-action {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
+  min-width: 0;
+}
+.settings-row-action :is(button, .button-link, .avatar-upload) {
+  min-height: 36px;
+  padding: 6px 14px;
+  font-size: var(--text-md);
+}
+.settings-card :is(button.quiet, .button-link, .avatar-upload) {
+  border-color: var(--line-strong);
+}
+.settings-row-action .theme-picker {
+  margin: 0;
+}
+.settings-row-action .theme-picker legend {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+}
+/* What is not a row: a note, a shown-once token, a loading or empty line, a failure. */
+.settings-block,
+.settings-card > .source-empty {
+  margin: 0;
+  padding: 14px 20px;
+}
+.settings-block code {
+  overflow-wrap: anywhere;
+}
+.settings-card > .source-error {
+  margin: 14px 20px;
+}
+/* Holds a table's absolutely placed sr-only labels inside its scroller; past it they widen the page. */
+.settings-card .source-table-wrap {
+  position: relative;
+}
+.settings-card .source-table :is(th, td):first-child {
+  padding-left: 20px;
+}
+.settings-card .source-table :is(th, td):last-child {
+  padding-right: 20px;
+}
+.settings-card .source-table tbody tr:last-child :is(th, td) {
+  border-bottom: 0;
+}

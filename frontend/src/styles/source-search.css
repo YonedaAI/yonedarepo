@@ -15,22 +15,22 @@
 }
 .search-file header .source-meta {
   margin-left: auto;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .search-file .search-more {
   display: block;
   padding: 0 12px 10px;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .search-skipped {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
   margin: 4px 0 12px;
 }
 .search-word {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--text-md);
   color: var(--muted);
 }

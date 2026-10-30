@@ -1,6 +1,7 @@
 // Settings → Tokens (`/settings/tokens`): personal access tokens, then the CLIs signed in with
 // `yoneda login`. A login is a personal token too, so both read one list.
 import { useState } from 'react';
+import { SettingsSection } from '../../components/SettingsSection';
 import { expiresIn } from '../source-platform/connect';
 import type { OrgSummary } from '../source-platform/orgModel';
 import {
@@ -88,11 +89,10 @@ export function TokenSettings({
   return (
     <>
       <PersonalTokens repos={repos} orgs={orgs} tokens={tokens} />
-      <section className="settings-card" aria-labelledby="cli-heading">
-        <h2 id="cli-heading">Signed-in CLIs</h2>
-        <p className="source-meta">
-          Each <code>yoneda login</code> you approved holds a personal token, labelled with the
-          machine it signed in on. Signing one out revokes its token.
+      <SettingsSection id="cli" title="Signed-in CLIs">
+        <p className="source-meta settings-block">
+          Each <code>yoneda login</code> you approved holds a personal token, labelled with its
+          machine. Signing one out revokes its token.
         </p>
         <CliTable
           tokens={clis}
@@ -105,8 +105,12 @@ export function TokenSettings({
             }
           }}
         />
-        {error && <Failure error={error} />}
-      </section>
+        {error && (
+          <div className="settings-block">
+            <Failure error={error} />
+          </div>
+        )}
+      </SettingsSection>
     </>
   );
 }
