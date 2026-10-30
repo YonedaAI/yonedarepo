@@ -11,6 +11,8 @@
 //   set -a; . ~/.config/yonedarepo/dev-owner.env; set +a
 //   node tools/staging/managed-live.mjs [--origin https://dev.yonedarepo.com] [--only code]
 //        [--keep] [--pause-test]
+//   Recall eval (PAID, one change per round, all seeded files in each):
+//   node tools/staging/managed-live.mjs --only security --seed all --repeat 5 --eval
 import assert from 'node:assert/strict';
 import { parseArgs } from 'node:util';
 import { b64, Recorder, Session, sleep } from './client.mjs';
@@ -21,6 +23,11 @@ const { values } = parseArgs({
     only: { type: 'string' },
     keep: { type: 'boolean', default: false },
     'pause-test': { type: 'boolean', default: false },
+    // Recall evaluation: --seed all puts every seeded file in each change, --repeat opens that
+    // many changes in a row, and --eval counts a missed seeded problem instead of stopping.
+    seed: { type: 'string', default: 'agents' },
+    repeat: { type: 'string', default: '1' },
+    eval: { type: 'boolean', default: false },
     'timeout-min': { type: 'string', default: '10' },
   },
 });
@@ -34,6 +41,11 @@ const AGENTS = {
 const chosen = values.only ? values.only.split(',').map((s) => s.trim()) : Object.keys(AGENTS);
 for (const name of chosen)
   assert.ok(AGENTS[name], `--only takes code, security, slop (got ${name})`);
+const REPEAT = Number(values.repeat);
+assert.ok(Number.isInteger(REPEAT) && REPEAT >= 1 && REPEAT <= 20, '--repeat takes 1 to 20');
+assert.ok(['agents', 'all'].includes(values.seed), '--seed takes agents or all');
+/** The seeded file each agent must flag (its anchored comment proves it caught the problem). */
+const SEED_FILE = { code: 'src/window.js', security: 'src/users.js', slop: 'src/cart.js' };
 const TERMINAL = new Set(['passed', 'findings', 'failed', 'superseded', 'cancelled', 'paused']);
 const TIMEOUT_MS = Number(values['timeout-min']) * 60_000;
 const author = { name: 'Managed live test', email: 'managed-live@yonedarepo.invalid' };
@@ -166,155 +178,172 @@ async function main() {
       });
     });
 
-    await step('3', 'PAID: open one change seeded for every enabled agent', async (m) => {
-      const files = ctx.agents.map(
-        (a) => ({ code: 'src/window.js', security: 'src/users.js', slop: 'src/cart.js' })[a.key],
-      );
-      const made = await platform.post(`/repos/${ctx.repo.id}/commits`, {
-        ref: 'main',
-        changes: files.map((path) => ({ path, content_b64: b64(SEEDED[path].join('\n')) })),
-        message: 'Managed live test: seeded change',
-        author,
-      });
-      await platform.post(`/repos/${ctx.repo.id}/branches`, {
-        ref: 'managed-live',
-        commit: made.commit,
-        expected: null,
-      });
-      const change = await platform.post(`/repos/${ctx.repo.id}/changes`, {
-        branch: 'managed-live',
-        title: 'Seeded change for the managed agents',
-        body: 'Live test fixture: each file carries one problem.',
-      });
-      paid(
-        `change #${change.number} starts ${ctx.agents.length} run(s): ${ctx.agents.map((a) => a.id).join(', ')}`,
-      );
-      Object.assign(ctx, { change: change.number, head: made.commit });
-      Object.assign(m, {
-        change: change.number,
-        head: made.commit.slice(0, 12),
-        files: files.join(' '),
-      });
-    });
-
-    await step(
-      '4',
-      `PAID: wait for every run to finish (timeout ${values['timeout-min']} min)`,
-      async (m) => {
-        const started = Date.now();
-        for (;;) {
-          const runs = (await managed.get(`/runs?repo=${ctx.repo.id}&limit=50`)).runs.filter(
-            (r) => r.change === ctx.change && r.head === ctx.head,
-          );
-          for (const agent of ctx.agents)
-            ctx.runs[agent.key] = runs.find((r) => r.agent === agent.id);
-          const done = ctx.agents.filter((a) => TERMINAL.has(ctx.runs[a.key]?.status));
-          m.progress = ctx.agents
-            .map((a) => `${a.key}:${ctx.runs[a.key]?.status ?? 'none'}`)
-            .join(' ');
-          if (done.length === ctx.agents.length) break;
-          if (Date.now() - started > TIMEOUT_MS) {
-            const deliveries = await platform
-              .get(`/repos/${ctx.repo.id}/hooks/${ctx.hook.id}/deliveries`)
-              .catch((e) => ({ error: e.message }));
-            m.deliveries = JSON.stringify(deliveries).slice(0, 300);
-            throw new Error(
-              `runs not finished after ${values['timeout-min']} min: ${m.progress}; hook deliveries ${m.deliveries}`,
-            );
-          }
-          await sleep(10_000);
-        }
-        m.wait_s = Math.round((Date.now() - started) / 1000);
-      },
+    ctx.recall = Object.fromEntries(
+      ctx.agents.map((a) => [a.key, { caught: 0, runs: 0, cost: 0 }]),
     );
+    for (let round = 1; round <= REPEAT; round++) {
+      const sid = (id) => (REPEAT > 1 ? `${id}.r${round}` : id);
+      const branch = REPEAT > 1 ? `managed-live-${round}` : 'managed-live';
+      ctx.creditRound = (await managed.get('')).credit;
+      await step(sid('3'), 'PAID: open one change seeded for every enabled agent', async (m) => {
+        const files =
+          values.seed === 'all'
+            ? Object.values(SEED_FILE)
+            : ctx.agents.map((a) => SEED_FILE[a.key]);
+        const made = await platform.post(`/repos/${ctx.repo.id}/commits`, {
+          ref: 'main',
+          changes: files.map((path) => ({ path, content_b64: b64(SEEDED[path].join('\n')) })),
+          message: 'Managed live test: seeded change',
+          author,
+        });
+        await platform.post(`/repos/${ctx.repo.id}/branches`, {
+          ref: branch,
+          commit: made.commit,
+          expected: null,
+        });
+        const change = await platform.post(`/repos/${ctx.repo.id}/changes`, {
+          branch,
+          title: 'Seeded change for the managed agents',
+          body: 'Live test fixture: each file carries one problem.',
+        });
+        paid(
+          `change #${change.number} starts ${ctx.agents.length} run(s): ${ctx.agents.map((a) => a.id).join(', ')}`,
+        );
+        Object.assign(ctx, { change: change.number, head: made.commit });
+        Object.assign(m, {
+          change: change.number,
+          head: made.commit.slice(0, 12),
+          files: files.join(' '),
+        });
+      });
 
-    const change = await platform.get(`/repos/${ctx.repo.id}/changes/${ctx.change}`);
-    for (const agent of ctx.agents)
       await step(
-        `5.${agent.key}`,
-        `${agent.id}: result, comments, check, transcript, cost`,
+        sid('4'),
+        `PAID: wait for every run to finish (timeout ${values['timeout-min']} min)`,
         async (m) => {
-          const run = ctx.runs[agent.key];
-          Object.assign(m, {
-            status: run.status,
-            value: run.value,
-            harness: run.harness,
-            model: `${run.provider}/${run.model}`,
-            fallback: run.fallback ?? 'none',
-            duration_s: run.finished_at
-              ? Math.round((run.finished_at - run.created_at) / 1000)
-              : null,
-            container_s: run.container_seconds,
-            // The container is billed from its start to its destroy, so it started this long before the run ended.
-            container_started: run.finished_at
-              ? new Date(run.finished_at - run.container_seconds * 1000).toISOString()
-              : null,
-            calls: run.calls,
-            tokens_in: run.input_tokens,
-            tokens_out: run.output_tokens,
-            cost_usd: run.cost_usd,
-            cap_usd: agent.cap,
-            findings: run.findings,
-            withheld: run.withheld,
-          });
-          assert.ok(
-            ['passed', 'findings'].includes(run.status),
-            `run ended ${run.status}: ${run.error ?? ''}`,
-          );
-          assert.ok(
-            run.cost_usd > 0 && run.cost_usd <= agent.cap + 0.05,
-            `cost $${run.cost_usd} against the $${agent.cap} cap`,
-          );
-          assert.ok(run.container_seconds > 0, 'no container time was recorded');
-          assert.ok(run.input_tokens > 0 && run.calls > 0, 'no model call was metered');
-          const mine = change.comments.filter((c) => String(c.body).includes(run.id));
-          const anchored = mine.filter((c) => c.path && c.line);
-          m.comments = `${anchored.length} anchored + ${mine.length - anchored.length} summary`;
-          assert.ok(mine.length - anchored.length >= 1, 'no summary comment from this run');
-          assert.ok(
-            anchored.length >= 1,
-            'no comment anchored to a path and line (the seeded problem was missed)',
-          );
-          m.anchors = anchored.map((c) => `${c.path}:${c.line}`).join(' ');
-          const check = (change.head_commit?.checks ?? []).find((c) => c.name === agent.check);
-          assert.ok(check, `no ${agent.check} check on the head`);
-          m.check = check.status;
-          if (agent.valueType === 'pass_fail')
-            assert.equal(
-              check.status,
-              run.value === 'fail' ? 'fail' : 'pass',
-              'the check matches the value',
+          const started = Date.now();
+          for (;;) {
+            const runs = (await managed.get(`/runs?repo=${ctx.repo.id}&limit=50`)).runs.filter(
+              (r) => r.change === ctx.change && r.head === ctx.head,
             );
-          else assert.equal(check.status, 'pass', 'Slop never blocks by default');
-          const detail = await managed.get(`/runs/${ctx.repo.id}/${encodeURIComponent(run.id)}`);
-          assert.ok(
-            typeof detail.transcript === 'string' && detail.transcript.length > 0,
-            'no transcript through the API',
-          );
-          m.transcript_bytes = detail.transcript.length;
-          m.cost_lines = detail.cost.length;
-          assert.ok(
-            detail.cost.some((c) => /^Container/.test(c.note ?? '')),
-            'no container line in the cost breakdown',
-          );
+            for (const agent of ctx.agents)
+              ctx.runs[agent.key] = runs.find((r) => r.agent === agent.id);
+            const done = ctx.agents.filter((a) => TERMINAL.has(ctx.runs[a.key]?.status));
+            m.progress = ctx.agents
+              .map((a) => `${a.key}:${ctx.runs[a.key]?.status ?? 'none'}`)
+              .join(' ');
+            if (done.length === ctx.agents.length) break;
+            if (Date.now() - started > TIMEOUT_MS) {
+              const deliveries = await platform
+                .get(`/repos/${ctx.repo.id}/hooks/${ctx.hook.id}/deliveries`)
+                .catch((e) => ({ error: e.message }));
+              m.deliveries = JSON.stringify(deliveries).slice(0, 300);
+              throw new Error(
+                `runs not finished after ${values['timeout-min']} min: ${m.progress}; hook deliveries ${m.deliveries}`,
+              );
+            }
+            await sleep(10_000);
+          }
+          m.wait_s = Math.round((Date.now() - started) / 1000);
         },
       );
 
-    await step('6', 'The workspace credit went down by the runs’ cost', async (m) => {
-      const after = (await managed.get('')).credit;
-      const spent = ctx.agents.reduce((sum, a) => sum + ctx.runs[a.key].cost_usd, 0);
-      const delta = after.used_usd - ctx.creditBefore.used_usd;
-      Object.assign(m, {
-        balance_after: after.balance_usd,
-        used_delta: delta.toFixed(6),
-        runs_cost: spent.toFixed(6),
+      const change = await platform.get(`/repos/${ctx.repo.id}/changes/${ctx.change}`);
+      for (const agent of ctx.agents)
+        await step(
+          sid(`5.${agent.key}`),
+          `${agent.id}: result, comments, check, transcript, cost`,
+          async (m) => {
+            const run = ctx.runs[agent.key];
+            Object.assign(m, {
+              status: run.status,
+              value: run.value,
+              harness: run.harness,
+              model: `${run.provider}/${run.model}`,
+              fallback: run.fallback ?? 'none',
+              duration_s: run.finished_at
+                ? Math.round((run.finished_at - run.created_at) / 1000)
+                : null,
+              container_s: run.container_seconds,
+              // The container is billed from its start to its destroy, so it started this long before the run ended.
+              container_started: run.finished_at
+                ? new Date(run.finished_at - run.container_seconds * 1000).toISOString()
+                : null,
+              calls: run.calls,
+              tokens_in: run.input_tokens,
+              tokens_out: run.output_tokens,
+              cost_usd: run.cost_usd,
+              cap_usd: agent.cap,
+              findings: run.findings,
+              withheld: run.withheld,
+            });
+            assert.ok(
+              ['passed', 'findings'].includes(run.status),
+              `run ended ${run.status}: ${run.error ?? ''}`,
+            );
+            assert.ok(
+              run.cost_usd > 0 && run.cost_usd <= agent.cap + 0.05,
+              `cost $${run.cost_usd} against the $${agent.cap} cap`,
+            );
+            assert.ok(run.container_seconds > 0, 'no container time was recorded');
+            assert.ok(run.input_tokens > 0 && run.calls > 0, 'no model call was metered');
+            const mine = change.comments.filter((c) => String(c.body).includes(run.id));
+            const anchored = mine.filter((c) => c.path && c.line);
+            m.comments = `${anchored.length} anchored + ${mine.length - anchored.length} summary`;
+            assert.ok(mine.length - anchored.length >= 1, 'no summary comment from this run');
+            m.anchors = anchored.map((c) => `${c.path}:${c.line}`).join(' ');
+            const caught = anchored.some((c) => c.path === SEED_FILE[agent.key]);
+            m.caught = caught;
+            Object.assign(ctx.recall[agent.key], {
+              caught: ctx.recall[agent.key].caught + (caught ? 1 : 0),
+              runs: ctx.recall[agent.key].runs + 1,
+              cost: ctx.recall[agent.key].cost + run.cost_usd,
+            });
+            if (!values.eval)
+              assert.ok(
+                caught,
+                `no comment anchored in ${SEED_FILE[agent.key]} (the seeded problem was missed)`,
+              );
+            const check = (change.head_commit?.checks ?? []).find((c) => c.name === agent.check);
+            assert.ok(check, `no ${agent.check} check on the head`);
+            m.check = check.status;
+            if (agent.valueType === 'pass_fail')
+              assert.equal(
+                check.status,
+                run.value === 'fail' ? 'fail' : 'pass',
+                'the check matches the value',
+              );
+            else assert.equal(check.status, 'pass', 'Slop never blocks by default');
+            const detail = await managed.get(`/runs/${ctx.repo.id}/${encodeURIComponent(run.id)}`);
+            assert.ok(
+              typeof detail.transcript === 'string' && detail.transcript.length > 0,
+              'no transcript through the API',
+            );
+            m.transcript_bytes = detail.transcript.length;
+            m.cost_lines = detail.cost.length;
+            assert.ok(
+              detail.cost.some((c) => /^Container/.test(c.note ?? '')),
+              'no container line in the cost breakdown',
+            );
+          },
+        );
+
+      await step(sid('6'), 'The workspace credit went down by the runs’ cost', async (m) => {
+        const after = (await managed.get('')).credit;
+        const spent = ctx.agents.reduce((sum, a) => sum + ctx.runs[a.key].cost_usd, 0);
+        const delta = after.used_usd - ctx.creditRound.used_usd;
+        Object.assign(m, {
+          balance_after: after.balance_usd,
+          used_delta: delta.toFixed(6),
+          runs_cost: spent.toFixed(6),
+        });
+        // Another run in this workspace during the test would also count; this test expects none.
+        assert.ok(
+          Math.abs(delta - spent) < 0.0001,
+          `credit used grew by $${delta}, the runs cost $${spent}`,
+        );
       });
-      // Another run in this workspace during the test would also count; this test expects none.
-      assert.ok(
-        Math.abs(delta - spent) < 0.0001,
-        `credit used grew by $${delta}, the runs cost $${spent}`,
-      );
-    });
+    }
 
     if (values['pause-test'])
       await step('7', 'Automation pause: a change opened while paused starts no run', async (m) => {
@@ -397,6 +426,15 @@ async function main() {
     }
   }
   process.stdout.write(`\n${rec.table()}\n`);
+  if (ctx.recall && (REPEAT > 1 || values.eval)) {
+    const rows = Object.entries(ctx.recall).map(
+      ([key, r]) =>
+        `| ${AGENTS[key].id} | ${r.caught}/${r.runs} | $${(r.runs ? r.cost / r.runs : 0).toFixed(4)} |`,
+    );
+    process.stdout.write(
+      `\n| Agent | Caught its seeded problem | Mean cost |\n|---|---|---|\n${rows.join('\n')}\n`,
+    );
+  }
   return failed || rec.items.some((i) => i.status === 'fail') ? 1 : 0;
 }
 
