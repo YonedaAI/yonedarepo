@@ -36,29 +36,6 @@ h2.site-band-head,
   border-left: 1px solid var(--site-line);
 }
 
-/* Hero */
-.site-hero.site-band {
-  padding-block: var(--sp-6) var(--site-band);
-}
-.site-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-  gap: var(--sp-6);
-  align-items: center;
-}
-.site-hero h1 {
-  font-size: var(--fs-hero);
-  line-height: 1.08;
-  margin: 0 0 var(--sp-5);
-}
-.site-hero h1 > span {
-  font-weight: 400;
-}
-.site-hero .site-terminal pre {
-  padding: var(--sp-5);
-  font-size: var(--fs-sm);
-}
-
 /* Problems: five equal cells on a wide screen, rows of a list below that. */
 .site-problems {
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -130,14 +107,6 @@ h2.site-band-head,
 }
 
 @media (max-width: 800px) {
-  .site-hero {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--sp-5);
-  }
-  .site-hero .site-terminal pre {
-    padding: var(--sp-4);
-    font-size: var(--fs-xs);
-  }
   .site-problems li {
     display: flex;
   }
