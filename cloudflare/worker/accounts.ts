@@ -6,13 +6,13 @@ import {
 } from '../../shared/account';
 import { accountCreated, emailRoute } from './account-email';
 import { handleState, setHandle } from './account-handles';
+import { noteSeen } from './account-index';
 import { isAdminAccount } from './admin-auth';
 import { avatarInfo, ownAvatarUrl } from './avatars';
 import { accountFor, signUpWithEmail, signupEmail } from './email-accounts';
 import { error, readJson, response } from './http';
 import { unlink } from './oauth-identity';
 import { configuredProviders } from './oauth-providers';
-import { noteSeen } from './platform-accounts';
 import { readSignupSource, recordSignup } from './site-events';
 import { sha } from './storage';
 import type { Env, Json, Principal } from './types';

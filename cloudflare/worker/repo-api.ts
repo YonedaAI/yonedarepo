@@ -5,11 +5,11 @@
 // same to us.
 
 import { accountMcp } from './account-mcp';
-import { adminRoute } from './admin-api';
 import { authenticate } from './auth';
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { error, readJson, response } from './http';
 import { accountActivity } from './platform-account-activity';
+import { adminRoute } from './platform-admin';
 import { isOwnAvatar, ownAvatar, publicAvatarName, servePublicAvatar } from './platform-avatars';
 import { orgAccess } from './platform-org-access';
 import { orgsRoute } from './platform-orgs';
@@ -79,7 +79,7 @@ const STATUS: Record<string, number> = {
   RATE_LIMITED: 429,
   OVERLOADED: 503,
   INTERNAL: 500,
-  // An operator suspended the account (admin-api.ts): its credentials are refused.
+  // An operator suspended the account (platform-admin.ts): its credentials are refused.
   ACCOUNT_SUSPENDED: 403,
   // Withheld by the repository's owner (quarantine): known, deliberately not served.
   QUARANTINED: 451,

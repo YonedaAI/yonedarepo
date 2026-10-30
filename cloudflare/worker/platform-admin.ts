@@ -1,12 +1,14 @@
 // `/api/v1/admin/*`: the operators' admin pages (admin-auth.ts says who). Reads come from the
 // D1 projections (admin-queries.ts), each account's authority and the site traffic report
-// (site-traffic.ts). Actions are safe and reversible: credit grants (the managed agents
+// (platform-site-traffic.ts). Actions are safe and reversible: credit grants (the managed agents
 // Worker's admin route, its bearer kept here), suspension (the account authority refuses
 // every credential until it is lifted), and quarantining or releasing repository content as
 // the repository's owner. Every action writes admin_audit. Contact emails appear in these
 // answers only.
 import { normalizeAccountIdentifier } from '../../shared/account';
-import { requireOperator } from './admin-auth';
+import { accountSummary, recordAccount } from './account-index';
+import { isAdminAccount } from './admin-auth';
+import { backfillAccounts } from './platform-accounts';
 import {
   accountRowOf,
   audit,
@@ -16,13 +18,29 @@ import {
   overview,
   repoRowOf,
   signups,
-} from './admin-queries';
-import { accountSummary, backfillAccounts, recordAccount } from './platform-accounts';
+} from './platform-admin-queries';
+import { siteTraffic } from './platform-site-traffic';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { quarantineRoute } from './repo-quarantine';
-import { siteTraffic } from './site-traffic';
 import type { Env } from './types';
 import { workspace } from './workspace';
+
+/** The operator behind `auth` (its account, or `_admin`), or null when it is none. */
+export function operatorOf(env: Env, auth: Credentials): string | null {
+  if (!('_session' in auth)) return null;
+  const { workspace, principal, human } = auth._session;
+  if (workspace === '_admin' && principal === 'admin') return '_admin';
+  if (human && principal === `user:${workspace}` && isAdminAccount(env, workspace))
+    return workspace;
+  return null;
+}
+
+/** The operator behind `auth`, or FORBIDDEN. */
+export function requireOperator(env: Env, auth: Credentials): string {
+  const operator = operatorOf(env, auth);
+  if (!operator) throw new ApiError('FORBIDDEN', 'Operators only');
+  return operator;
+}
 
 /** Routes after `/api/v1/admin/`. */
 export async function adminRoute(

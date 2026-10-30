@@ -3,8 +3,9 @@
 // jobs (checks, object and ref projection, derived data, clone packs, webhooks, account emails,
 // the operators' sign-up notice). No agent runs, harnesses, providers or budgets.
 import { WorkerEntrypoint } from 'cloudflare:workers';
+import type { AccountCreated } from './account-index';
 import { withWaitUntil } from './background';
-import { type AccountCreated, accountCreated, SIGNUP_NOTICE } from './platform-accounts';
+import { accountCreated, SIGNUP_NOTICE } from './platform-accounts';
 import { verifyEmail } from './platform-email-verify';
 import { platformFetch } from './platform-routes';
 import { signupNoticeJob } from './platform-signup-notice';
@@ -65,7 +66,7 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
     const outcome = await signupNoticeJob(env, envelope, message.attempts);
     if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
     else message.ack();
-  } else if (envelope.kind === 'account_welcome') {
+  } else if (envelope.kind === 'account_welcome' || envelope.kind === 'account_verify') {
     const outcome = await welcomeJob(env, envelope, message.attempts);
     if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
     else message.ack();

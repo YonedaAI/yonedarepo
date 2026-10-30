@@ -3,7 +3,7 @@
 // with later sign-ups rolled into the next ("+N more"), retry on Resend's transient
 // answers, and nothing at all while email is unconfigured. No real Resend calls.
 import { expect, it } from 'vitest';
-import { recordAccount } from '../../cloudflare/worker/platform-accounts';
+import { recordAccount } from '../../cloudflare/worker/account-index';
 import { NOTICE_WINDOW_MS, signupNoticeJob } from '../../cloudflare/worker/platform-signup-notice';
 import type { Env, Envelope } from '../../cloudflare/worker/types';
 import { bindings, delayed, scoped, usePlatformFixture } from './repo-fixture';
