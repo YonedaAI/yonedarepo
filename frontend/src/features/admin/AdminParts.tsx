@@ -1,11 +1,11 @@
 // Pieces the admin pages share: a paged listing (the first page read like any page, later
-// ones appended by "Load more"), its search box and its button.
+// ones appended by "Load more"), its search box and its button, and the 30-day bar chart.
 import { Search } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { sourceApi } from '../source-platform/sourceApi';
 import { useSource } from '../source-platform/useSource';
-import type { Page } from './adminModel';
+import { barHeights, type Page } from './adminModel';
 
 /** The listing `pathOf(before)` pages through, newest first. */
 export function usePaged<T>(pathOf: (before?: number) => string) {
@@ -105,5 +105,57 @@ export function SearchBox({
         Search
       </button>
     </form>
+  );
+}
+
+const dayLabel = (day: string) =>
+  day
+    ? new Date(`${day}T00:00:00Z`).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        timeZone: 'UTC',
+      })
+    : '';
+
+/** Counts per UTC day as bars scaled to the busiest day, each day also read out as text. */
+export function DayChart({
+  id,
+  title,
+  unit,
+  days,
+}: {
+  id: string;
+  title: string;
+  /** What is counted ("sign-ups", "page views"). */
+  unit: string;
+  days: { day: string; count: number }[];
+}) {
+  const heights = barHeights(days.map((d) => d.count));
+  const total = days.reduce((sum, d) => sum + d.count, 0);
+  return (
+    <section className="home-section" aria-labelledby={id}>
+      <div className="home-section-head">
+        <h2 id={id} className="home-label">
+          {title}
+        </h2>
+        <span className="home-total">
+          <span className="stat-number">{total.toLocaleString('en-US')}</span> {unit}
+        </span>
+      </div>
+      <ol className="admin-bars">
+        {days.map((d, i) => (
+          <li key={d.day} title={`${dayLabel(d.day)}: ${d.count}`}>
+            <span className="sr-only">
+              {dayLabel(d.day)}: {d.count} {unit}
+            </span>
+            <span className="admin-bar" style={{ height: `${heights[i]}%` }} aria-hidden="true" />
+          </li>
+        ))}
+      </ol>
+      <p className="admin-axis" aria-hidden="true">
+        <span>{dayLabel(days[0]?.day ?? '')}</span>
+        <span>{dayLabel(days.at(-1)?.day ?? '')}</span>
+      </p>
+    </section>
   );
 }

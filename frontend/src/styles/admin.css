@@ -243,6 +243,44 @@
   gap: 8px;
   margin-top: 16px;
 }
+.admin-window {
+  display: flex;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.admin-window button {
+  padding: 6px 12px;
+}
+.admin-window button[aria-pressed="true"] {
+  border-color: var(--blue);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+}
+.admin-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+.source-table th.admin-num,
+.source-table td.admin-num {
+  text-align: right;
+}
+.source-table td.admin-num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.admin-key {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (max-width: 1100px) {
+  .admin-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 @media (max-width: 800px) {
   .admin {
     padding: 16px;

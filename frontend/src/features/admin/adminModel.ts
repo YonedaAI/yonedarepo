@@ -137,3 +137,22 @@ export function saveSeen(at: number, store: Store | undefined = browserStore()) 
     // Blocked storage only means the badge counts from the start again.
   }
 }
+
+/** The last 30 UTC days ending today (oldest first), each with its count or 0. */
+export function lastThirtyDays(rows: { day: string; views: number }[], now = Date.now()) {
+  const counts = new Map(rows.map((r) => [r.day, r.views]));
+  const today = Math.floor(now / 86_400_000);
+  return Array.from({ length: 30 }, (_, i) => {
+    const day = new Date((today - 29 + i) * 86_400_000).toISOString().slice(0, 10);
+    return { day, count: counts.get(day) ?? 0 };
+  });
+}
+
+/** A country's name from its ISO code, else the code (unknown or unsupported). */
+export function countryName(code: string) {
+  try {
+    return new Intl.DisplayNames(['en'], { type: 'region' }).of(code.toUpperCase()) ?? code;
+  } catch {
+    return code;
+  }
+}

@@ -241,3 +241,29 @@ it('backfills accounts the other projections know, once', async () => {
     ['_admin', 'accounts.backfill'],
   ]);
 });
+
+it('reports site traffic to operators only, and says when it is not configured', async () => {
+  const boss = await signup('boss');
+  const user = await signup('plain_user');
+  const target = operators();
+  expect((await api('/admin/traffic?days=7', { cookie: user }, {}, target)).status).toBe(403);
+  // No account id, dataset or read token here.
+  const off = await api('/admin/traffic?days=30', { cookie: boss }, {}, target);
+  expect([off.status, off.body]).toEqual([200, { ok: false, reason: 'not_configured' }]);
+  const configured = operators({
+    CF_ACCOUNT_ID: '0123456789abcdef0123456789abcdef',
+    SITE_EVENTS_DATASET: 'site_events_test',
+    ANALYTICS_READ_TOKEN: 'read-token',
+  });
+  const sql: string[] = [];
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (_url, init) => {
+    sql.push(String(init?.body));
+    return Response.json({ data: [] });
+  });
+  const on = await api('/admin/traffic?days=7', { cookie: boss }, {}, configured);
+  expect(on.status).toBe(200);
+  expect(on.body).toMatchObject({ ok: true, traffic: { days: 7 } });
+  expect(sql.some((q) => q.includes("INTERVAL '7' DAY"))).toBe(true);
+  // Any other window answers 30 days.
+  expect((await api('/admin/traffic?days=9', { cookie: boss }, {}, configured)).body.traffic.days).toBe(30);
+});
