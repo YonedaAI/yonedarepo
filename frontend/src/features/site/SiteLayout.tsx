@@ -1,5 +1,7 @@
 // The public site's frame: top nav (sections, then Sign in / Get started, or Open app when
 // signed in), the page, and a footer. At phone width the sections fold into a menu button.
+// The hero's display face, self-hosted from its npm package (latin, 700 only).
+import '@fontsource/inter-tight/latin-700.css';
 import { GitBranch, Menu, Monitor, Moon, Sun, X } from 'lucide-react';
 import { type MouseEvent, type ReactNode, useState } from 'react';
 import { nextTheme, type Theme, useTheme } from '../shell/theme';

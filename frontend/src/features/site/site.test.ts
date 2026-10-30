@@ -187,8 +187,18 @@ describe('home', () => {
     );
   });
 
-  it('names no other company or product, and nothing as coming', () => {
-    expect(home()).not.toMatch(
+  it('names other products only in the works-with strip, and nothing as coming', () => {
+    const html = home();
+    const strip = /<ul class="site-works-with"[^>]*>[\s\S]*?<\/ul>/.exec(html)?.[0] ?? '';
+    // Nominative "works with": the agents we run against, by their own names.
+    for (const mark of [
+      'aria-label="Claude Code"',
+      '>Codex<',
+      'aria-label="OpenCode"',
+      'aria-label="Any Git client"',
+    ])
+      expect(strip).toContain(mark);
+    expect(html.replace(strip, '')).not.toMatch(
       /anthropic|claude|scion|openai|codex|opencode|\bglm|mimo|github|gitlab|cloudflare|coming soon/i,
     );
   });
