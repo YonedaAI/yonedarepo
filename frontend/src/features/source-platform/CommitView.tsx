@@ -3,6 +3,7 @@ import type { CommitDetail } from './CommitGates';
 import { CommitLanding } from './CommitLanding';
 import { CommitRepairs } from './CommitRepairs';
 import { CommitSessions } from './CommitSessions';
+import { Person } from './Person';
 import { usePeople } from './people';
 import type { RepoStatus } from './repoStatus';
 import { Failure, Loading } from './SourceStatus';
@@ -37,7 +38,7 @@ export function CommitView({
       <header>
         <h2>{d.message.split('\n')[0]}</h2>
         <p className="source-meta">
-          <code>{d.commit}</code> by {people.principal(d.principal)}
+          <code>{d.commit}</code> by <Person principal={d.principal} />
           {d.parents.map((p) => (
             <span key={p}>
               {' · parent '}

@@ -19,6 +19,7 @@ function signedOut(sessionEnded: boolean): Session {
     setError: vi.fn(),
     discover: vi.fn(),
     signOut: vi.fn(),
+    setAvatar: vi.fn(),
   };
 }
 const count = (html: string, text: string) => html.split(text).length - 1;
