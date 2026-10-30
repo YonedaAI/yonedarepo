@@ -82,6 +82,7 @@ async fn run(command: Command) -> Result<()> {
                 .transpose()?;
             login::logout(origin.as_deref())
         }
+        Command::AuthToken { origin, show } => crate::auth_token::print(origin.as_deref(), show),
         Command::Repo { origin, command } => account::run(origin.as_deref(), command).await,
         Command::Org { origin, command } => crate::org_cmd::run(origin.as_deref(), command).await,
         Command::SshKey { origin, command } => {
