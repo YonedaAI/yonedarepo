@@ -173,3 +173,17 @@
 .mock-rows span {
   color: var(--site-muted);
 }
+/* A mock's safety note: smaller, in the warning color. */
+.mock-stack > .mock-note {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  margin: 0;
+  color: var(--site-warn);
+  font-size: var(--fs-sm);
+  line-height: 1.45;
+}
+.mock-stack > .mock-note svg {
+  flex: none;
+  margin-top: 2px;
+}
