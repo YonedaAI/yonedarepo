@@ -15,6 +15,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { b64, sleep, until } from './client.mjs';
 import { accountSettings, settle } from './browser-flow.mjs';
+import { atRepo, repoPath } from './repo-urls.mjs';
 
 const author = { name: 'Browser gate', email: 'kit@yonedarepo.invalid' };
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -39,9 +40,9 @@ export async function releasePages(page, { account, repo: { id, name }, shot }, 
   const api = (path) => `/api/v1/repos/${id}${path}`;
   const tabs = page.getByRole('navigation', { name: 'Repository' });
   await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).click();
-  await page.waitForURL(`**/source/${id}`);
+  await atRepo(page, account, id);
   await tabs.getByRole('link', { name: 'Releases' }).click();
-  await page.waitForURL(`**/source/${id}/releases`);
+  await atRepo(page, account, id, `/releases`);
   await see(page.getByText(/^No releases yet\. Push a tag/), 'the Releases empty state with its next action');
   await shot('releases-empty');
 
@@ -72,7 +73,7 @@ export async function releasePages(page, { account, repo: { id, name }, shot }, 
   await form.getByRole('button', { name: 'Publish release' }).click();
   const view = page.locator('section.source-release');
   await settle(view.getByRole('heading', { name: title }), [form.getByRole('alert')], { timeoutMs: 30_000, what: 'publishing the release' });
-  await page.waitForURL(`**/source/${id}/releases/${tag}`);
+  await atRepo(page, account, id, `/releases/${tag}`);
   await see(view.getByText(notes), 'the release notes');
   await see(view.getByRole('region', { name: 'Tag message', exact: true }).getByText('Browser gate tag'), 'the annotated tag message');
   await see(view.getByText('No assets.'), 'the release assets empty state');
@@ -97,7 +98,7 @@ export async function releasePages(page, { account, repo: { id, name }, shot }, 
 
   await view.getByRole('button', { name: 'Delete release…' }).click();
   await view.getByRole('button', { name: 'Delete release', exact: true }).click();
-  await page.waitForURL(`**/source/${id}/releases`);
+  await atRepo(page, account, id, `/releases`);
   await see(page.getByText(/^No releases yet\./), 'the Releases empty state after deleting the release');
   await shot('release-deleted');
   assert.equal((await account.raw('GET', api(`/releases/${tag}`))).status, 404, 'the deleted release is still served');
@@ -107,7 +108,7 @@ export async function releasePages(page, { account, repo: { id, name }, shot }, 
 /** "Fork" under a new name; then "Open change" on a fork branch, targeting the parent. */
 export async function forkPages(page, { account, repo: { id, name }, shot, cleanup }, m) {
   await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).click();
-  await page.waitForURL(`**/source/${id}`);
+  await atRepo(page, account, id);
   await page.locator('.repo-head').getByRole('button', { name: 'Fork', exact: true }).click();
   const form = page.getByRole('form', { name: 'Fork this repository' });
   const forkName = `${name}-fork`;
@@ -124,7 +125,7 @@ export async function forkPages(page, { account, repo: { id, name }, shot, clean
     const done = await account.raw('DELETE', `/api/v1/repos/${fork}?confirm=${encodeURIComponent(forkName)}`);
     assert.ok(done.ok, `Delete fork: ${done.status} ${done.body?.error?.code ?? ''}`);
   });
-  await page.waitForURL(`**/source/${fork}`);
+  await atRepo(page, account, fork);
   const head = page.locator('.repo-head');
   await see(head.getByText(`forked from ${id}`), `"forked from ${id}" on the fork`);
   await see(head.getByRole('link', { name: id, exact: true }), 'the link to the parent');
@@ -145,7 +146,8 @@ export async function forkPages(page, { account, repo: { id, name }, shot, clean
   await history.getByLabel('Branch').selectOption('kit-fork').catch((e) => {
     throw new Error(`the History Branch picker does not offer kit-fork: ${e.message.split('\n')[0]}`);
   });
-  await page.waitForURL((url) => url.pathname === `/source/${fork}/history` && url.searchParams.get('ref') === 'kit-fork');
+  const forkPath = await repoPath(account, fork);
+  await page.waitForURL((url) => url.pathname === `${forkPath}/history` && url.searchParams.get('ref') === 'kit-fork');
   await history.getByRole('button', { name: 'Open change' }).click();
   const open = page.getByRole('form', { name: 'Open a change for kit-fork' });
   await open.getByRole('button', { name: `Parent ${id}` }).click();
@@ -154,7 +156,7 @@ export async function forkPages(page, { account, repo: { id, name }, shot, clean
   await shot('fork-open-change');
   await open.getByRole('button', { name: 'Open change' }).click();
   await settle(page.getByRole('heading', { name: /Browser gate fork change/ }), [open.getByRole('alert')], { timeoutMs: 60_000, what: 'opening the change on the parent' });
-  assert.match(page.url(), new RegExp(`/source/${id}/changes/\\d+$`), `the change did not open on the parent: ${page.url()}`);
+  assert.ok(new URL(page.url()).pathname.startsWith(`${await repoPath(account, id)}/changes/`), `the change did not open on the parent: ${page.url()}`);
   await see(page.getByText(`${fork}:kit-fork`), 'the change naming its fork branch');
   await shot('fork-change');
   const number = Number(page.url().split('/').at(-1));
@@ -218,7 +220,7 @@ export async function orgPages(page, { account, member, shot, cleanup }, m) {
     const done = await account.raw('DELETE', `/api/v1/repos/${id}?confirm=${encodeURIComponent(name)}`);
     assert.ok(done.ok, `Delete org repository: ${done.status} ${done.body?.error?.code ?? ''}`);
   });
-  await page.waitForURL(`**/source/${id}`);
+  await atRepo(page, account, id);
 
   // Repository Members: grant the team.
   await page.getByRole('navigation', { name: 'Repository' }).getByRole('link', { name: 'Settings' }).click();
