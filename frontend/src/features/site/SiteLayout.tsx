@@ -1,7 +1,7 @@
 // The public site's frame: top nav (sections, then Sign in / Get started, or Open app when
 // signed in), the page, and a footer. At phone width the sections fold into a menu button.
 import { GitBranch, Menu, Monitor, Moon, Sun, X } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { type MouseEvent, type ReactNode, useState } from 'react';
 import { nextTheme, type Theme, useTheme } from '../shell/theme';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { navSection, SITE_NAV, type SitePage } from './siteRoute';
@@ -11,6 +11,18 @@ const THEME_ICON = { system: Monitor, light: Sun, dark: Moon };
 
 export const siteLink = (page: SitePage, navigate: Navigate) =>
   linkTo({ view: 'site', site: page }, navigate);
+
+/** A link to one feature's section of `/features`. */
+export const featureLink = (id: string, navigate: Navigate) => ({
+  href: `/features#${id}`,
+  onClick: (event: MouseEvent<HTMLAnchorElement>) => {
+    if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+    event.preventDefault();
+    navigate({ view: 'site', site: { page: 'features' } });
+    // The features page scrolls to the hash when it mounts.
+    window.history.replaceState(null, '', `/features#${id}`);
+  },
+});
 
 export function SiteLayout({
   page,

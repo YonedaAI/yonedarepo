@@ -20,5 +20,7 @@
 @import "./styles/visibility.css";
 @import "./styles/site.css";
 @import "./styles/site-home.css";
+@import "./styles/site-build-on.css";
+@import "./styles/site-compare.css";
 @import "./styles/site-pages.css";
 @import "./styles/site-responsive.css";

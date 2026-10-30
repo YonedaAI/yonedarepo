@@ -1,0 +1,225 @@
+/* The home page's "Build on YonedaRepo" tour: a sticky feature list beside scrolling panels. */
+.site-build {
+  display: grid;
+  grid-template-columns: minmax(0, 370px) minmax(0, 1fr);
+  gap: 56px;
+  align-items: start;
+}
+.site-build-aside {
+  position: sticky;
+  /* Clears the sticky site header; scrolls itself on a short window. */
+  top: 88px;
+  max-height: calc(100vh - 104px);
+  overflow-y: auto;
+}
+.site-eyebrow {
+  margin: 0 0 8px;
+  color: var(--site-muted);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.site-build-aside h2 {
+  font-size: clamp(30px, 3.6vw, 40px);
+  margin: 0 0 16px;
+}
+.site-build-nav {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 20px;
+  padding: 0;
+  list-style: none;
+}
+.site-build-link {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 7px 12px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  color: var(--site-muted);
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+.site-build-nav svg {
+  flex: none;
+  margin-top: 2px;
+}
+.site-build-link:hover {
+  background: var(--site-surface);
+  color: var(--site-text);
+}
+.site-build-link[aria-current="true"] {
+  background: var(--site-surface);
+  border-color: var(--site-line);
+  color: var(--site-text);
+}
+.site-build-link[aria-current="true"] svg {
+  color: var(--site-good);
+}
+.site-build-nav span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.site-build-nav strong {
+  font-size: 15.5px;
+}
+.site-build-nav small {
+  font-size: 13.5px;
+  color: var(--site-muted);
+}
+.site-build-panels {
+  display: grid;
+  gap: 32px;
+}
+.site-build-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 32px;
+  background: var(--site-surface);
+  border: 1px solid var(--site-line);
+  border-radius: 16px;
+  scroll-margin-top: 88px;
+}
+.site-build-panel:focus {
+  outline: none;
+}
+.site-build-panel:focus-visible {
+  outline: 2px solid var(--site-focus);
+  outline-offset: 4px;
+}
+.site-build-headline {
+  font-size: clamp(20px, 2.2vw, 24px);
+  line-height: 1.35;
+  margin: 0;
+}
+.site-build-headline > span {
+  color: var(--site-muted);
+  font-weight: 500;
+}
+.site-build-panel > .site-more {
+  align-self: flex-start;
+}
+.mock-checks {
+  margin: 12px 0 0;
+  color: var(--site-muted);
+}
+
+.mock-log {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mock-log li {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--site-surface);
+  border: 1px solid var(--site-line);
+}
+.mock-log span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--site-muted);
+  font-family: "IBM Plex Mono", monospace;
+}
+.mock-log .mock-ok {
+  color: var(--site-good);
+}
+.mock-checks .mock-warn,
+.mock-rows .mock-warn {
+  color: var(--site-warn);
+}
+
+.mock-files > li {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mock-files span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.mock-stack {
+  display: grid;
+  gap: 12px;
+}
+.mock-globe {
+  display: block;
+  width: 100%;
+  height: auto;
+  fill: none;
+  stroke: var(--site-line-strong);
+  stroke-width: 1;
+}
+.mock-globe .mock-globe-link {
+  stroke: var(--site-muted);
+  stroke-width: 1.5;
+}
+.mock-globe .mock-globe-node {
+  fill: var(--site-good);
+  stroke: var(--site-bg);
+  stroke-width: 3;
+}
+.site-panel > .mock-caption {
+  margin-top: 12px;
+  color: var(--site-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-build-link {
+    transition: none;
+  }
+}
+
+@media (max-width: 800px) {
+  .site-build {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  .site-build-aside {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
+  .site-build-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .site-build-link {
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border: 1px solid var(--site-line);
+    border-radius: 999px;
+    background: var(--site-surface);
+    font-size: 14px;
+  }
+  .site-build-link[aria-current="true"] {
+    border-color: var(--site-text);
+  }
+  .site-build-nav strong {
+    font-size: 14px;
+  }
+  .site-build-nav small {
+    display: none;
+  }
+  .site-build-panel {
+    padding: 20px;
+    scroll-margin-top: 72px;
+  }
+}
