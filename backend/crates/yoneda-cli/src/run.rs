@@ -88,6 +88,7 @@ async fn run(command: Command) -> Result<()> {
         Command::SshKey { origin, command } => {
             crate::ssh_key_cmd::run(origin.as_deref(), command).await
         }
+        Command::SshSetup { origin } => crate::ssh_setup::run(origin.as_deref()).await,
         Command::Setup { agent, origin } => {
             setup::run(agent, &target::account_origin(origin.as_deref())?)
         }
