@@ -1,5 +1,6 @@
 // The one app shell: icon rail, sidebar, top bar and account menu around every page (Home,
-// Repositories, Explore, a repository's pages, account settings and device login). A
+// Repositories, Explore, a repository's pages, account settings, device login and, for
+// operators, the admin pages). A
 // signed-out visitor may open Explore and any public repository; nothing there asks them to
 // sign in first. The public site (its own pages, and `/` while signed out) renders in its
 // own frame instead.
@@ -7,6 +8,8 @@ import { X } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { AccountSettings } from './features/account-settings/AccountSettings';
 import { VerifyEmailPage } from './features/account-settings/VerifyEmailPage';
+import { AdminRoot } from './features/admin/AdminRoot';
+import { readSeen, type Signups, saveSeen, signupsPath } from './features/admin/adminModel';
 import { AgentsRoot } from './features/agents/AgentsRoot';
 import { syncAgents } from './features/agents/agentsModel';
 import { ExplorePage } from './features/explore/ExplorePage';
@@ -101,6 +104,14 @@ export function App() {
   const platform = useSource<{ repos: PlatformRepo[] }>(session.authenticated ? '/repos' : null);
   const orgs = useSource<{ orgs: OrgSummary[] }>(session.authenticated ? '/orgs' : null);
   const activity = useSource<AccountActivity>(session.authenticated ? '/activity' : null);
+  // Operators: the sign-up feed, badged in the sidebar with those since this browser looked.
+  const isAdmin = Boolean(session.identity?.is_admin);
+  const [signupsSeen, setSignupsSeen] = useState(readSeen);
+  const signups = useSource<Signups>(isAdmin ? signupsPath(signupsSeen) : null);
+  const onSignupsSeen = useCallback((at: number) => {
+    saveSeen(at);
+    setSignupsSeen(at);
+  }, []);
   // Before anything renders a link, so repository links carry their readable address.
   for (const r of platform.data?.repos ?? []) rememberRepoName(r.id, r.owner_handle, r.name);
   const rows = repoRows(platform.data?.repos ?? []);
@@ -156,15 +167,18 @@ export function App() {
                       ? route.name
                       : isAgentsRoute(route)
                         ? 'Agents'
-                        : gone
-                          ? 'Repository not found'
-                          : (row?.name ?? loaded?.name ?? repo ?? '');
+                        : route.view === 'admin'
+                          ? 'Admin'
+                          : gone
+                            ? 'Repository not found'
+                            : (row?.name ?? loaded?.name ?? repo ?? '');
   const activityError = activity.error && !/Sign in/.test(activity.error) ? activity.error : '';
   const refresh = () => {
     setTick((t) => t + 1);
     platform.reload();
     orgs.reload();
     activity.reload();
+    if (isAdmin) signups.reload();
     void session.discover();
   };
   // The public site (its own pages, and `/` while signed out) renders in its own frame.
@@ -212,6 +226,7 @@ export function App() {
           setCreating(true);
         }}
         onRetry={platform.reload}
+        admin={isAdmin ? { unread: signups.data?.unread ?? 0 } : undefined}
       />
       <main id="workspace">
         <WorkspaceHeader
@@ -316,6 +331,22 @@ export function App() {
                 onNew={() => setCreating(true)}
               />
             )}
+            {route.view === 'admin' &&
+              (isAdmin ? (
+                <AdminRoot
+                  section={route.section}
+                  account={route.account}
+                  self={session.identity?.username}
+                  signups={signups}
+                  seen={signupsSeen}
+                  onSeen={onSignupsSeen}
+                  navigate={navigate}
+                />
+              ) : (
+                !session.loading && (
+                  <p className="source-empty">The admin pages are for operators only.</p>
+                )
+              ))}
             {route.view === 'device' && <DevicePage code={route.code} />}
             {route.view === 'verify-email' && (
               <VerifyEmailPage account={route.account} token={route.token} />

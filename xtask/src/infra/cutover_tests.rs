@@ -98,7 +98,9 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     let beacon = vars["WEB_ANALYTICS_TOKEN"].as_str().unwrap_or_default();
     assert!(beacon.len() == 32 && beacon.bytes().all(|b| b.is_ascii_hexdigit()));
     assert_eq!(vars["SEO_INDEXING"], "on");
-    assert_eq!(vars.as_object().map(|v| v.len()), Some(3));
+    // The operator list (the session's is_admin hint); filled per env by the lead.
+    assert!(vars["ADMIN_ACCOUNTS"].is_string());
+    assert_eq!(vars.as_object().map(|v| v.len()), Some(4));
     assert_eq!(
         agents["analytics_engine_datasets"],
         json!([{"binding": "SITE_EVENTS", "dataset": "yonedarepo_prod_site_events"}])

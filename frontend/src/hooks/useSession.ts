@@ -45,6 +45,7 @@ export function useSession() {
                 : {}),
               avatar_url: result.avatar_url ?? null,
               avatar_source: result.avatar_source ?? null,
+              ...(result.is_admin ? { is_admin: true } : {}),
             }
           : null;
       if (!next && signedIn.current) setSessionEnded(true);

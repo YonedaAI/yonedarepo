@@ -130,7 +130,8 @@
         "The sending domain has open and click tracking off in Resend.",
         "Site traffic (worker/site-traffic.ts) reads the front Worker's yonedarepo_dev_site_events dataset (SITE_EVENTS_DATASET)",
         "through the Analytics Engine SQL API: CF_ACCOUNT_ID plus the optional secret ANALYTICS_READ_TOKEN (Account Analytics Read).",
-        "Without the token, traffic reports are unavailable and nothing else changes."
+        "Without the token, traffic reports are unavailable and nothing else changes.",
+        "Admin pages (/api/v1/admin, admin-api.ts): ADMIN_ACCOUNTS lists the operator accounts (comma separated; empty: only OWNER_TOKEN/Access). The sign-up notice goes to ADMIN_NOTIFY_EMAIL (empty: EMAIL_CONTACT). Credit grants and balances call the managed Worker's /admin/accounts/<account>/credit over MANAGED with MANAGED_ADMIN_TOKEN (optional secret, the managed Worker's own value; unset: grants are refused). MANAGED binds the managed Worker, which binds this one as PLATFORM: a fresh environment deploys this Worker once without MANAGED first."
       ],
       "secrets": [
         "OWNER_TOKEN",
@@ -142,7 +143,8 @@
         "SSH_TUNNEL_TOKEN"
       ],
       "optional_secrets": [
-        "ANALYTICS_READ_TOKEN"
+        "ANALYTICS_READ_TOKEN",
+        "MANAGED_ADMIN_TOKEN"
       ],
       "health": "yonedarepo-platform",
       "always_on": {
@@ -194,7 +196,9 @@
           "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>",
           "EMAIL_CONTACT": "hello@yonedarepo.com",
           "CF_ACCOUNT_ID": "{account_id}",
-          "SITE_EVENTS_DATASET": "yonedarepo_dev_site_events"
+          "SITE_EVENTS_DATASET": "yonedarepo_dev_site_events",
+          "ADMIN_ACCOUNTS": "",
+          "ADMIN_NOTIFY_EMAIL": ""
         },
         "secrets_store_secrets": [
           {
@@ -407,6 +411,10 @@
           {
             "binding": "SELF",
             "service": "{prefix}-platform"
+          },
+          {
+            "binding": "MANAGED",
+            "service": "{prefix}-agents-managed"
           }
         ],
         "routes": [
@@ -621,7 +629,8 @@
         "into the Analytics Engine dataset yonedarepo_dev_site_events (created on first write; infra plan/prune do not track it;",
         "underscores, not hyphens: the dataset is a table name in Analytics Engine SQL).",
         "No IP, cookie or visitor id; signed-in requests (session cookie), /api, /auth and assets are skipped.",
-        "WEB_ANALYTICS_TOKEN: the Cloudflare Web Analytics site token; set, the front Worker adds the beacon to public pages; empty, none."
+        "WEB_ANALYTICS_TOKEN: the Cloudflare Web Analytics site token; set, the front Worker adds the beacon to public pages; empty, none.",
+        "ADMIN_ACCOUNTS: the platform Worker's operator list, repeated here for the session answer's is_admin (the admin entry in the sidebar); keep the two equal."
       ],
       "secrets": [
         "OWNER_TOKEN"
@@ -670,7 +679,8 @@
         },
         "vars": {
           "PUBLIC_APP_ORIGIN": "{origin}",
-          "WEB_ANALYTICS_TOKEN": "70b90cc7e849429fa25cc64897ebfd2b"
+          "WEB_ANALYTICS_TOKEN": "70b90cc7e849429fa25cc64897ebfd2b",
+          "ADMIN_ACCOUNTS": ""
         },
         "services": [
           {

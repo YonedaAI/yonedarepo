@@ -5,7 +5,9 @@
 // `/settings/branches`) still parse, into the view that replaced them. The public site's
 // pages (`site/siteRoute.ts`) parse here too, as one `site` view. A repository's readable
 // address (`/<handle>/<name>`) and a profile (`/<handle>`) parse and format in repoNames.ts.
+// The operators' admin pages are `/admin/*` (`admin` is a reserved handle).
 import { isCanonicalAccountIdentifier } from '../../../../shared/account';
+import { type AdminSection, isAdminSection } from '../admin/adminModel';
 import { formatSitePage, parseSitePath, type SitePage } from '../site/siteRoute';
 import { AGENT_SECTIONS, type AgentSection } from './agentModel';
 import { normalizeUserCode } from './connect';
@@ -44,6 +46,8 @@ export type SourceRoute =
   | { view: 'agent-runs'; agent?: string; workspace?: string }
   /** One run's detail; `runRepo`, not `repo`, so the repository shell stays out of it. */
   | { view: 'agent-run'; runRepo: string; run: string; workspace?: string }
+  /** The operators' admin pages (`/admin[/<section>]`, a user at `/admin/users/<account>`). */
+  | { view: 'admin'; section: AdminSection; account?: string }
   | { view: 'site'; site: SitePage }
   | NamedRoute
   | { view: 'files'; repo: string; path: string; ref: string; at?: number }
@@ -106,6 +110,12 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
   if (root === 'repositories' && !repo) return { view: 'repositories' };
   if (root === 'orgs' && repo && ORG_NAME.test(repo) && !view) return { view: 'org', org: repo };
   if (root === 'agents') return parseAgentsRoute(parts.slice(1), params);
+  if (root === 'admin') {
+    if (!isAdminSection(repo)) return { view: 'admin', section: 'overview' };
+    return repo === 'users' && view && !rest.length
+      ? { view: 'admin', section: 'users', account: view }
+      : { view: 'admin', section: repo };
+  }
   if (root === 'source' && repo === 'tokens' && !view) return { view: 'settings' };
   if ((root === 'source' && repo === 'explore' && !view) || (root === 'explore' && !repo))
     return { view: 'explore' };
@@ -217,6 +227,10 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'explore') return '/source/explore';
   if (route.view === 'org') return `/orgs/${route.org}`;
   if (route.view === 'site') return formatSitePage(route.site);
+  if (route.view === 'admin') {
+    if (route.account) return `/admin/users/${encodeURIComponent(route.account)}`;
+    return route.section === 'overview' ? '/admin' : `/admin/${route.section}`;
+  }
   if (route.view === 'profile' || route.view === 'repo-name') return formatNamedRoute(route);
   if (route.view === 'device')
     return route.code ? `/device?code=${encodeURIComponent(route.code)}` : '/device';

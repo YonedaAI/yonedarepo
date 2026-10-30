@@ -29,7 +29,10 @@ function front() {
   const platformEnv = {
     ...bindings,
     ...configured,
-    PLATFORM_QUEUE: { send: async (body: Envelope) => void queued.push(body) },
+    // The account's email jobs; the operators' sign-up notice is tested on its own.
+    PLATFORM_QUEUE: {
+      send: async (body: Envelope) => void (body.kind !== 'admin_signup_notice' && queued.push(body)),
+    },
   } as unknown as Env;
   const platform = new PlatformEntrypoint(createExecutionContext(), platformEnv);
   return { ...platformEnv, PLATFORM_QUEUE: undefined, PLATFORM: platform } as unknown as Env;

@@ -18,6 +18,15 @@ op_names! {
     }
 }
 op_names! {
+    /// Operator access (trusted Worker adapters only): the account's summary for the admin
+    /// index, and suspension.
+    pub(crate) enum AccessOp {
+        Summary = "account_summary",
+        Suspend = "account_suspend",
+        Unsuspend = "account_unsuspend",
+    }
+}
+op_names! {
     /// The contact email's verification (tokens, the change, the confirmation).
     pub(crate) enum EmailOp {
         Status = "email_status",
@@ -125,6 +134,7 @@ op_names! {
 #[serde(untagged)]
 pub(crate) enum AccountOp {
     Signin(SigninOp),
+    Access(AccessOp),
     Email(EmailOp),
     Token(TokenOp),
     Ssh(SshOp),
@@ -149,6 +159,7 @@ impl AccountOp {
     pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Signin(op) => op.name(),
+            Self::Access(op) => op.name(),
             Self::Email(op) => op.name(),
             Self::Token(op) => op.name(),
             Self::Ssh(op) => op.name(),
@@ -165,6 +176,7 @@ impl AccountOp {
     #[cfg(test)]
     pub(crate) fn all() -> Vec<Self> {
         let mut all: Vec<Self> = SigninOp::ALL.iter().copied().map(Self::Signin).collect();
+        all.extend(AccessOp::ALL.iter().copied().map(Self::Access));
         all.extend(EmailOp::ALL.iter().copied().map(Self::Email));
         all.extend(TokenOp::ALL.iter().copied().map(Self::Token));
         all.extend(SshOp::ALL.iter().copied().map(Self::Ssh));

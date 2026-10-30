@@ -59,7 +59,7 @@ fn expect_ok(
 }
 
 /// The public front: the Worker that serves the frontend (the agents role, else the first).
-fn front(workers: &[Deployable]) -> Option<&Deployable> {
+pub(crate) fn front(workers: &[Deployable]) -> Option<&Deployable> {
     workers
         .iter()
         .find(|w| w.role == "agents" || w.role == "app")

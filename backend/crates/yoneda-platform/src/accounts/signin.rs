@@ -30,6 +30,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
                 let mut public = public_account(&account(db)?);
                 public["orgs"] = json!(super::orgs::hints(db)?);
                 Ok(public)
+            } else if super::access::suspended_at(db)?.is_some() {
+                Ok(json!({"authenticated":false,"suspended":true}))
             } else {
                 Ok(json!({"authenticated":false}))
             }
@@ -64,6 +66,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
             let Ok(mut a) = account(db) else {
                 return Ok(json!({"authenticated":false}));
             };
+            if super::access::suspended_at(db)?.is_some() {
+                return Ok(json!({"authenticated":false,"suspended":true}));
+            }
             if !super::access::valid(db, now)? || !allow_attempt(db, now)? {
                 return Ok(json!({"authenticated":false,"limited":true}));
             }

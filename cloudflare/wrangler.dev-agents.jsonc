@@ -21,6 +21,7 @@
 // underscores, not hyphens: the dataset is a table name in Analytics Engine SQL).
 // No IP, cookie or visitor id; signed-in requests (session cookie), /api, /auth and assets are skipped.
 // WEB_ANALYTICS_TOKEN: the Cloudflare Web Analytics site token; set, the front Worker adds the beacon to public pages; empty, none.
+// ADMIN_ACCOUNTS: the platform Worker's operator list, repeated here for the session answer's is_admin (the admin entry in the sidebar); keep the two equal.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
@@ -131,6 +132,7 @@
     }
   ],
   "vars": {
+    "ADMIN_ACCOUNTS": "",
     "PUBLIC_APP_ORIGIN": "https://dev.yonedarepo.com",
     "WEB_ANALYTICS_TOKEN": "70b90cc7e849429fa25cc64897ebfd2b"
   },

@@ -116,7 +116,7 @@ export async function signInWith(
     if (identity.email)
       await claims(env, await emailKey(identity.email), { op: 'identity_claim', account: name });
     // A new account only: later sign-ins and links never welcome again.
-    await accountCreated(env, name, identity.email);
+    await accountCreated(env, name, identity.email, identity.provider);
     return { kind: 'signed_in', username: name, created: true };
   }
   return { kind: 'error', code: 'unavailable' };

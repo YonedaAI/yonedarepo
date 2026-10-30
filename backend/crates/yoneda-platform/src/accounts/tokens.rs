@@ -31,6 +31,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: TokenOp, now: i64) -> R
             Ok(json!({"tokens": rows.iter().map(public).collect::<Result<Vec<_>>>()?}))
         }
         TokenOp::Check => {
+            super::access::refuse_suspended(db)?;
             let row = db
                 .query(
                     "SELECT * FROM account_tokens WHERE token_hash=? AND revoked_at IS NULL AND expires_at>?",

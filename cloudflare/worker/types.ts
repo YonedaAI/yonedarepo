@@ -66,6 +66,15 @@ export interface Env {
   RESEND_API_KEY?: { get(): Promise<string> };
   EMAIL_FROM?: string;
   EMAIL_CONTACT?: string;
+  /** Where the operators' sign-up notice goes (platform-signup-notice.ts); EMAIL_CONTACT
+   * when unset. */
+  ADMIN_NOTIFY_EMAIL?: string;
+  /** Operators: accounts (comma separated) whose browser sessions may use the admin pages
+   * and `/api/v1/admin` (admin-auth.ts). Unset or empty: none. */
+  ADMIN_ACCOUNTS?: string;
+  /** The managed agents Worker's admin bearer (platform Worker), for the admin pages' credit
+   * grants and balances over MANAGED; unset: those answer as unavailable. */
+  MANAGED_ADMIN_TOKEN?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   ARTIFACTS_NAMESPACE: string;
@@ -90,7 +99,8 @@ export interface Env {
   WEB_ORIGIN?: string;
   /** The source platform Worker (front Worker); its public API is all it calls. */
   PLATFORM?: Fetcher;
-  /** The managed agents Worker (front Worker): `/api/managed/*` is proxied to it. */
+  /** The managed agents Worker: the front Worker proxies `/api/managed/*` to it; the
+   * platform Worker grants and reads credit through its admin routes (admin pages). */
   MANAGED?: Fetcher;
   PUBLIC_APP_ORIGIN?: string;
   /** Cookieless site analytics (front Worker, site-events.ts): page views and sign-ups; absent,
