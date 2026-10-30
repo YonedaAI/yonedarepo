@@ -80,6 +80,9 @@ export class RepoObjects {
   knowsWithheld = false;
   /** A fork's parent objects (repo-inherit), asked when this repository's tiers miss. */
   readonly inherited?: Inherited;
+  /** Ids a bulk locate of this reader's just found in no bundle (a projection's plan):
+   * reads of the store of record go straight to their R2 keys, not asking again. */
+  readonly unbundled = new Set<string>();
   constructor(
     readonly env: Env,
     readonly repo: string,
@@ -356,7 +359,12 @@ export class RepoObjects {
     const add = (w: { id: string; kind: string }, data: Uint8Array) =>
       found.set(w.id, { id: w.id, kind: w.kind as RawObject['kind'], data_b64: toBase64(data) });
     if (wanted.length === 0) return [];
-    const bundled = await readBundled(this.env, this.repo, wanted, SMALL_RANGE);
+    const bundled = await readBundled(
+      this.env,
+      this.repo,
+      wanted.filter((w) => !this.unbundled.has(w.id)),
+      SMALL_RANGE,
+    );
     for (const w of wanted) if (bundled.has(w.id)) add(w, bundled.get(w.id) as Uint8Array);
     const rest = wanted.filter((w) => !found.has(w.id));
     for (let i = 0; i < rest.length; i += CACHE_CHUNK)
