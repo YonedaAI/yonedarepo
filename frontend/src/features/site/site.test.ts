@@ -404,3 +404,69 @@ describe('transcript claims', () => {
     }
   });
 });
+
+// The site's palette, read from site.css on disk (Vitest empties a `?raw` stylesheet import,
+// and the browser tsconfig has no Node types, hence the untyped dynamic import): app components on site pages (the sign-in panel's
+// buttons) paint --blue behind --on-accent, so both must map to the site's accent pair, and
+// every text pair the site uses must reach WCAG AA in both themes.
+describe('site palette', async () => {
+  const fs = await import(`node:${'fs'}`);
+  const siteCss: string = fs.readFileSync(
+    new URL('../../styles/site.css', import.meta.url),
+    'utf8',
+  );
+  const block = (selector: string) => {
+    const at = siteCss.indexOf(selector);
+    const body = siteCss.slice(siteCss.indexOf('{', at) + 1, siteCss.indexOf('}', at));
+    return Object.fromEntries(
+      [...body.matchAll(/--([\w-]+):\s*([^;]+);/g)].map(([, name, value]) => [name, value.trim()]),
+    );
+  };
+  const light = block('.site {');
+  const dark = block(':root[data-theme="dark"] .site {');
+  const hex = (value: string) => {
+    const h = value.replace('#', '');
+    const full = h.length === 3 ? [...h].map((c) => c + c).join('') : h.slice(0, 6);
+    return [0, 2, 4].map((i) => Number.parseInt(full.slice(i, i + 2), 16) / 255);
+  };
+  const lum = (value: string) => {
+    const [r, g, b] = hex(value).map((c) =>
+      c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4,
+    );
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const contrast = (a: string, b: string) => {
+    const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+
+  it('maps the app button pair to the site accent pair', () => {
+    expect(light.blue).toBe('var(--site-accent)');
+    expect(light['on-accent']).toBe('var(--site-accent-text)');
+  });
+
+  it.each([
+    ['light', light],
+    ['dark', dark],
+  ])('keeps every %s text pair at AA', (_theme, t) => {
+    const pairs: [string, string][] = [
+      ['site-accent-text', 'site-accent'],
+      ['site-text', 'site-bg'],
+      ['site-text', 'site-surface'],
+      ['site-muted', 'site-bg'],
+      ['site-muted', 'site-surface'],
+      ['site-muted', 'site-accent-soft'],
+      ['site-faint', 'site-bg'],
+      ['site-faint', 'site-surface'],
+      ['site-good', 'site-surface'],
+      ['site-warn', 'site-surface'],
+      ['site-code-text', 'site-code-bg'],
+    ];
+    for (const [fg, bg] of pairs)
+      expect(`${fg} on ${bg}: ${contrast(t[fg], t[bg]) >= 4.5}`).toBe(`${fg} on ${bg}: true`);
+  });
+
+  it('defines the same dark palette for the system choice and the explicit choice', () => {
+    expect(block(':root:not([data-theme="light"]) .site {')).toEqual(dark);
+  });
+});
