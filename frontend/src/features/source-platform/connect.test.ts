@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { CloneButton } from './CodeParts';
-import { ConnectPanel } from './ConnectPanel';
+import { AgentConnectHelp, ConnectPanel } from './ConnectPanel';
 import {
   apiOrigin,
   claudeMcpJson,
@@ -87,6 +87,15 @@ describe('connect snippets', () => {
     expect(html.replace(install, '').replace(marketplace, '')).not.toContain(
       'https://dev.yonedarepo.com',
     );
+  });
+  it('copies one runnable command at a time: install, then sign in, no comments', () => {
+    const blocks = copyBlocks(
+      renderToStaticMarkup(createElement(AgentConnectHelp, { origin: api })),
+    );
+    expect(blocks.slice(0, 2)).toEqual([
+      ['Install the yoneda CLI', 'curl -fsSL https://dev.yonedarepo.com/install.sh | sh'],
+      ['Sign in', `yoneda login --origin ${api}`],
+    ]);
   });
   it('uses the configured API origin, else the page origin, without a trailing slash', () => {
     expect(apiOrigin('https://dev.yonedarepo.com', `${api}/`)).toBe(api);

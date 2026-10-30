@@ -7,7 +7,7 @@ import {
   cloneCommand,
   codexToml,
   httpsCloneCommand,
-  installSteps,
+  installCommand,
   loginCommand,
   mcpUrl,
 } from './connect';
@@ -79,7 +79,13 @@ export function AgentConnectHelp({ origin }: { origin: string }) {
     <>
       <section aria-labelledby="connect-cli">
         <h2 id="connect-cli">The yoneda CLI</h2>
-        <CopyBlock label="install the yoneda CLI" text={installSteps(origin)} />
+        <p className="source-meta">
+          Installs <code>yoneda</code> and <code>git-remote-yoneda</code> into{' '}
+          <code>~/.local/bin</code> on macOS and Linux. Signing in opens your browser to approve;
+          the token is stored with mode 0600.
+        </p>
+        <CopyBlock label="Install the yoneda CLI" text={installCommand(origin)} />
+        <CopyBlock label="Sign in" text={loginCommand(origin)} />
       </section>
       <section aria-labelledby="connect-agents">
         <h2 id="connect-agents">Agents (MCP)</h2>
