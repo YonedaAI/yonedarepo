@@ -30,7 +30,7 @@ export const FEATURE_PAGES: FeaturePage[] = [
     id: 'transactions',
     slug: 'code-as-transactions',
     headline: 'Every writer lands on main, in order.',
-    docs: 'guides/git-remotes',
+    docs: 'guides/pushing',
     stat: {
       value: burst.ours.label,
       label: 'writers landed on the first try in our 1,000-writer burst',
@@ -110,7 +110,7 @@ export const FEATURE_PAGES: FeaturePage[] = [
     id: 'fetch',
     slug: 'fetch-on-demand',
     headline: 'Clone the history now. Fetch each file when Git needs it.',
-    docs: 'reference/cli',
+    docs: 'guides/yoneda-remotes',
     blocks: [
       {
         title: 'Lazy by default',
@@ -185,7 +185,7 @@ export const FEATURE_PAGES: FeaturePage[] = [
     id: 'review-agents',
     slug: 'review-agents',
     headline: 'Reviewers that read every change.',
-    docs: 'guides/changes',
+    docs: 'agents/review-agents',
     blocks: [
       ...MANAGED_AGENTS.map((a) => ({ title: a.defaults.name, text: a.defaults.description })),
       {

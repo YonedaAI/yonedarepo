@@ -1,6 +1,7 @@
 // The site's written pages: Markdown files under `frontend/src/content`, each opening with a
 // small front matter block (`title:`, and for posts `date:`, `summary:`, `author:`,
 // `category:`, `order:`, `image:`, `imageAlt:`, `caption:`, `paper:`), bundled at build time.
+// The docs pages load in `./docs/docsContent.ts`.
 
 import { LEGAL_ENTITY, type LegalField } from '../../content/legal/entity';
 
@@ -21,9 +22,6 @@ export type Post = Page & {
 };
 
 const raw = (files: Record<string, unknown>) => files as Record<string, string>;
-const docsFiles = raw(
-  import.meta.glob('../../content/docs/**/*.md', { query: '?raw', import: 'default', eager: true }),
-);
 const blogFiles = raw(
   import.meta.glob('../../content/blog/*.md', { query: '?raw', import: 'default', eager: true }),
 );
@@ -58,29 +56,6 @@ const page = (source: string): Page => {
 // `../../content/docs/guides/cli.md` → `guides/cli`.
 const slugOf = (path: string, dir: string) =>
   path.slice(path.indexOf(dir) + dir.length).replace(/\.md$/, '');
-
-export const DOCS_PAGES: Record<string, Page> = Object.fromEntries(
-  Object.entries(docsFiles).map(([path, source]) => [slugOf(path, 'content/docs/'), page(source)]),
-);
-
-/** The docs' left navigation: every docs file appears exactly once (tested). */
-export const DOCS_NAV: { section: string; pages: string[] }[] = [
-  { section: 'Get started', pages: ['get-started'] },
-  {
-    section: 'Guides',
-    pages: [
-      'guides/repositories',
-      'guides/changes',
-      'guides/sessions',
-      'guides/search',
-      'guides/cli',
-      'guides/mcp',
-      'guides/git-remotes',
-    ],
-  },
-  { section: 'Reference', pages: ['reference/cli', 'reference/api'] },
-  { section: 'Security and privacy', pages: ['security'] },
-];
 
 /** Posts, newest first; one date's posts by `order`, then slug. */
 export const BLOG_POSTS: Post[] = Object.entries(blogFiles)

@@ -1,26 +1,31 @@
 ---
-title: API
+title: API reference
 summary: The REST API and the MCP tools. Both run the same operations with the same scopes.
 ---
 
 ## Basics
 
 - Base URL: `https://api.yonedarepo.com/api/v1`.
-- Authenticate with `Authorization: Bearer <token>` (a `ypat_` personal token or a `yrp_` repository token) or the browser session.
+- Authenticate with `Authorization: Bearer <token>`: a `ypat_` personal access token or a `yrp_` repository token; see [Tokens and access](/docs/guides/tokens). The web app uses its session cookie.
 - Request and response bodies are JSON. Errors answer `{error: {code, message}}` with an HTTP status; overload answers 503 `OVERLOADED` with `Retry-After`.
 - Reads take `at=<version>` to answer as of a landed version of the transaction log.
-- Every REST operation is also an MCP tool (below), dispatched through the same operation table.
+- Every repository operation is also an MCP tool (below), dispatched through the same operation table with the same scopes.
+
+```sh
+curl -H "Authorization: Bearer $YONEDA_TOKEN" https://api.yonedarepo.com/api/v1/repos
+```
 
 ## Account
 
 | Method and path | What it does |
 |---|---|
 | `GET /repos` | Repositories you can use |
-| `POST /repos` | Create a repository |
-| `POST /repos/import` | Import files as a new repository |
-| `GET`, `POST`, `DELETE /tokens[/<id>]` | Personal access tokens |
+| `POST /repos` | Create a repository, optionally with files and a policy |
+| `POST /repos/import` | Import a public HTTPS Git remote as a new repository; see [Import](/docs/guides/import) |
+| `GET`, `POST`, `DELETE /tokens[/<id>]` | Personal access tokens (create from a signed-in session) |
 | `GET`, `POST`, `DELETE /ssh-keys[/<id>]` | SSH keys |
 | `POST /device/code`, `POST /device/token` | Device login (RFC 8628) |
+| `GET /activity` | Your account's recent activity |
 | `GET`, `POST /orgs`; `GET`, `DELETE /orgs/<org>` | Organizations |
 | `GET /orgs/<org>/repos`; `POST /orgs/<org>/members` | An organization's repositories and members |
 | `POST /mcp` | The account MCP endpoint |
@@ -34,27 +39,36 @@ All paths start with `/repos/<id>`.
 | `GET /` | Head refs, log version and landing policy |
 | `GET /refs`, `GET /log`, `GET /txlog` | Branches, first-parent history, the transaction log |
 | `GET /tree`, `GET /blob` | A directory listing, a file |
+| `POST /objects` | Git objects by id, up to a response budget |
 | `GET /diff`, `GET /merge-base` | A diff (`patch=1` for hunks), a merge base |
-| `GET /search`, `GET /blame` | Code search, blame |
+| `GET /search`, `GET /blame` | Search (code, memories, commits, sessions, changes), blame |
 | `GET /symbols`, `GET /symbol`, `GET /contract` | Symbols, one symbol, its contract |
 | `GET /views/agent`, `GET /views/human` | A symbol with contract, callers and callees; the subsystem Overview |
-| `GET /commits/<sha>` | One commit |
-| `GET /context` | What a new coding session should know |
-| `GET /sessions`, `GET /commits/<sha>/sessions` | Recorded coding sessions |
+| `GET /commits/<sha>` | One commit with its checks, reviews and landing gates |
+| `GET /context`, `GET /context/relevant` | What a new coding session should know; context ranked for paths, symbols or a query |
+| `GET /sessions`, `GET /sessions/<n>`, `GET /sessions/<n>/transcript` | Recorded coding sessions and their transcripts |
+| `GET /commits/<sha>/sessions` | The sessions recorded on one commit |
+| `GET /memories`, `GET /memories/<n>` | Memories |
+| `GET /check-runs/<id>[/log]` | A check run and its log |
+| `GET /import` | Progress of an import |
 
 ## Repository: writing and landing
 
 | Method and path | What it does |
 |---|---|
 | `POST /commits` | A server-side commit |
-| `POST /land` | Land a branch on its base |
-| `POST /merges`, `POST /commits/<sha>/revert`, `POST /commits/<sha>/cherry-pick` | Merge, revert, cherry-pick on the server |
+| `POST /land` | Land a branch's commit on its base |
+| `POST /merges`, `POST /commits/<sha>/revert`, `POST /commits/<sha>/cherry-pick` | Merge, revert, cherry-pick on the server; see [Merge and rebase](/docs/guides/merge-rebase) |
 | `POST /branches`, `POST /refs/batch` | Create or move branches; move several atomically |
-| `POST /tags`, `GET /tags/<name>` | Lightweight tags |
+| `POST /branches/<name>/rebase` | Rebase a working branch on the server |
+| `POST /tags`, `GET /tags/<name>` | Tags |
 | `POST /commits/<sha>/reviews` | Approve or reject a commit |
-| `POST /commits/<sha>/checks`, `POST /commits/<sha>/check-runs`, `GET /check-runs/<id>[/log]` | Post a check, request a run, read a run and its log |
+| `POST /commits/<sha>/checks`, `POST /commits/<sha>/check-runs` | Post a check, request a run |
 | `POST /commits/<sha>/sessions` | Record a coding session on a commit |
+| `POST /memories`, `POST /memories/<n>/retire` | Add or retire a memory |
+| `POST /contracts` | Record a symbol's contract |
 | `POST /symbol-edits`, `POST /codemods`, `POST /plans`, `POST /bisect` | Symbol edits, codemods, work plans, bisect |
+| `POST /commits/<sha>/pin` | Pin a commit's objects |
 | `POST /fork` | Fork the repository |
 
 ## Changes, releases and settings
@@ -67,13 +81,32 @@ All paths start with `/repos/<id>`.
 | `POST /changes/<n>/comments`, `/close`, `/reopen` | Comment, close, reopen |
 | `DELETE /changes/<n>` | Delete a closed change and its comments (author or owner) |
 | `GET`, `POST /releases`; `GET`, `DELETE /releases/<tag>` | Releases |
-| `PUT /releases/<tag>/assets/<name>` | Upload a release asset (the body is the file) |
+| `PUT`, `GET /releases/<tag>/assets/<name>` | Upload a release asset (the body is the file), download one |
 | `PUT /policy`, `PUT /visibility` | Landing rules, public or private |
+| `GET`, `PUT /lfs` | The Git LFS quota |
 | `GET`, `POST /members`; `DELETE /members/<account>` | Members |
 | `GET`, `POST /tokens`; `DELETE /tokens/<name>` | Repository tokens |
-| `GET`, `POST /hooks`; `DELETE /hooks/<id>`; `GET /hooks/<id>/deliveries` | Signed webhooks |
+| `GET`, `POST /hooks`; `DELETE /hooks/<id>`; `GET /hooks/<id>/deliveries` | Signed [webhooks](/docs/guides/webhooks) |
+| `GET`, `POST /quarantine`; `POST /quarantine/<n>/release`, `/purge` | [Quarantine and purge](/docs/guides/quarantine) |
+| `POST /break-glass` | Owner-only [recovery and automation pause](/docs/guides/break-glass) (signed-in session) |
 | `DELETE /?confirm=<name>` | Delete the repository |
 | `POST /mcp` | The repository MCP endpoint |
+
+## Error codes
+
+| Code | HTTP | Meaning |
+|---|---|---|
+| `UNAUTHORIZED`, `FORBIDDEN` | 401, 403 | No valid credential, or it lacks the scope or role |
+| `NOT_FOUND` | 404 | No such resource, or you cannot see it (private repositories answer this) |
+| `STALE_HEAD` | 409 | A branch moved since the value you expected; read it again |
+| `CONFLICT` | 409 | A merge, rebase, revert or landing conflicts; details name the paths |
+| `NOT_READY` | 409 | A commit cannot land yet: its gates are not met |
+| `ALREADY_EXISTS` | 409 | A tag, release, asset or open change of that name exists |
+| `SECRET_DETECTED` | 422 | The content holds a credential |
+| `AUTOMATION_PAUSED` | 423 | The owner paused automation |
+| `RATE_LIMITED` | 429 | Too many requests; slow down |
+| `QUARANTINED` | 451 | The owner withheld this content |
+| `OVERLOADED` | 503 | Retry after the `Retry-After` seconds |
 
 ## MCP tools
 
