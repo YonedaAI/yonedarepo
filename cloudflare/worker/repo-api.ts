@@ -78,6 +78,8 @@ const STATUS: Record<string, number> = {
   GONE: 404,
   RATE_LIMITED: 429,
   OVERLOADED: 503,
+  // A create that failed and took back what it did: the same request can be repeated.
+  CREATE_UNAVAILABLE: 503,
   INTERNAL: 500,
   // An operator suspended the account (platform-admin.ts): its credentials are refused.
   ACCOUNT_SUSPENDED: 403,
@@ -469,6 +471,7 @@ function failure(e: any): Response {
     e instanceof ApiError && e.details
       ? response({ error: { code, message, details: e.details } }, status)
       : error(code, message, status);
-  if (code === 'OVERLOADED') refused.headers.set('retry-after', String(RETRY_AFTER_SECONDS));
+  if (code === 'OVERLOADED' || code === 'CREATE_UNAVAILABLE')
+    refused.headers.set('retry-after', String(RETRY_AFTER_SECONDS));
   return refused;
 }

@@ -5,12 +5,14 @@
 // retried delete repeats whatever a failed attempt left undone.
 
 import { teamEntries } from './platform-org-access';
+import { unlistRepository } from './repo-create';
 import { forgetFork } from './repo-forks';
 import { dropDeletedHead } from './repo-head';
 import { dispatchHooks } from './repo-hooks';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { requirePatScope } from './repo-pat';
 import { releaseNames, withPaths } from './repo-paths';
+import { dispatchPurge } from './repo-projection';
 import { ownSpec } from './repo-stores';
 import type { Env } from './types';
 
@@ -86,23 +88,14 @@ export async function deleteRepository(env: Env, auth: Credentials, repo: string
   if (listed) await releaseNames(env, listed.workspace, repo);
   // A fork's parent stops counting it (the parent refuses deletion while forks remain).
   if (deleted.parent) await forgetFork(env, deleted.parent, repo);
-  await env.INDEX.batch([
-    env.INDEX.prepare('DELETE FROM platform_repos WHERE id=?').bind(repo),
-    env.INDEX.prepare('DELETE FROM platform_members WHERE repo=?').bind(repo),
-    env.INDEX.prepare('DELETE FROM platform_activity WHERE repo=?').bind(repo),
-  ]);
+  await unlistRepository(env, repo);
   await dropDeletedHead(env, repo);
   // Hooks subscribed to `repo` get repo.deleted, delivered from the tombstone (a repeated
   // delete names any still waiting, so a lost job is sent again).
   await Promise.all(
     ((deleted.hooks ?? []) as number[]).map((id) => dispatchHooks(env, repo, `hook:${id}`)),
   );
-  await env.PLATFORM_QUEUE.send({
-    v: 1,
-    repo_id: repo,
-    job_id: `purge-${repo}`,
-    kind: 'platform_purge',
-  });
+  await dispatchPurge(env, repo);
   return { deleted: true };
 }
 
