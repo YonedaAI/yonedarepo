@@ -92,7 +92,7 @@ export function AccountPanel({
             ? 'Recover your account'
             : 'Sign in'}
       </h2>
-      <p>Your repositories and tokens belong to your account.</p>
+      <TermsNotice />
       {mode !== 'recover' && (
         <OAuthButtons
           providers={providers}
@@ -234,7 +234,6 @@ export function AccountPanel({
             </button>
           ))}
       </div>
-      <TermsNotice />
     </section>
   );
 }

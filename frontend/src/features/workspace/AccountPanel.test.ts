@@ -28,4 +28,17 @@ describe('account form', () => {
     expect(names).toEqual(['username', 'password']);
     expect(html).toContain('Username or email');
   });
+
+  it.each(['signup', 'login'] as const)(
+    'opens %s with the terms line linking to both legal pages, once',
+    (mode) => {
+      const html = render(mode);
+      expect(html).toContain('By signing in, you agree to our');
+      expect(html.match(/href="\/terms"/g)).toHaveLength(1);
+      expect(html.match(/href="\/privacy"/g)).toHaveLength(1);
+      expect(html).not.toContain('belong to your account');
+      // Right under the heading, before the form.
+      expect(html.indexOf('By signing in')).toBeLessThan(html.indexOf('<form'));
+    },
+  );
 });
