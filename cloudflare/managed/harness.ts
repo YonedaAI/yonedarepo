@@ -39,6 +39,23 @@ export interface HarnessParams {
 const deny = (status: number, code: string, message: string) =>
   Response.json({ error: { code, message } }, { status });
 
+/** A refused egress attempt, logged (Workers Logs: `managed.egress_refused`) and answered 403. */
+function refuse(req: Request, p: HarnessParams | undefined, code: string, message: string) {
+  const url = new URL(req.url);
+  console.warn(
+    JSON.stringify({
+      event: 'managed.egress_refused',
+      run: p?.run ?? null,
+      repo: p?.repo ?? null,
+      code,
+      method: req.method,
+      host: url.host,
+      path: url.pathname.slice(0, 200),
+    }),
+  );
+  return deny(403, code, message);
+}
+
 /** The platform requests a reviewer may make: reads of its own repository. */
 export function readAllowed(method: string, path: string, repo: string) {
   const api = `/api/v1/repos/${repo}`;
@@ -62,7 +79,7 @@ async function platformOutbound(
   const p = ctx.params;
   const url = new URL(req.url);
   if (!p || !readAllowed(req.method, url.pathname, p.repo))
-    return deny(403, 'FORBIDDEN', 'The review container may only read its repository');
+    return refuse(req, p, 'FORBIDDEN', 'The review container may only read its repository');
   const connection = await repoStub(env, p.repo).connection();
   if (!connection) return deny(403, 'FORBIDDEN', 'The repository is not connected');
   const headers = new Headers(req.headers);
@@ -111,7 +128,7 @@ async function gatewayOutbound(
   const gateway = new URL(env.AI_GATEWAY_URL);
   const prefix = `${gateway.pathname.replace(/\/$/, '')}/${gatewaySlug(env, p.provider)}/`;
   if (req.method !== 'POST' || !url.pathname.startsWith(prefix))
-    return deny(403, 'FORBIDDEN', `This run may only call ${p.provider} through the gateway`);
+    return refuse(req, p, 'FORBIDDEN', `This run may only call ${p.provider} through the gateway`);
   const text = await req.text();
   let body: Record<string, any>;
   try {
@@ -120,7 +137,7 @@ async function gatewayOutbound(
     return deny(400, 'INVALID_INPUT', 'Model requests are JSON');
   }
   if (body.model !== p.model)
-    return deny(403, 'MODEL_NOT_ALLOWED', `This run uses ${p.model} only`);
+    return refuse(req, p, 'MODEL_NOT_ALLOWED', `This run uses ${p.model} only`);
   const repo = repoStub(env, p.repo);
   const stop = await repo.stopReason(p.run, p.attempt);
   if (stop) return deny(409, 'RUN_STOPPED', `The run is ${stop}`);
@@ -214,6 +231,7 @@ export class HarnessContainer extends Container<ManagedEnv> {
       [PLATFORM_HOST]: { method: 'platform', params },
       [GATEWAY_HOST]: { method: 'gateway', params },
     });
+    await this.setOutboundHandler('elsewhere', params);
     await this.startAndWaitForPorts(8080);
     const res = await this.containerFetch('http://runner/run', {
       method: 'POST',
@@ -241,8 +259,21 @@ export class HarnessContainer extends Container<ManagedEnv> {
 
 // Assigned, not a `static` class field: a class field hides @cloudflare/containers' setter, so
 // its per-class registry (which ContainerProxy reads) would stay empty (platform-ssh-gateway.ts).
-export const outbound = { platform: platformOutbound, gateway: gatewayOutbound };
+/** Every other plain-HTTP host: refused and logged (HTTPS elsewhere is blocked by
+ * `enableInternet = false` before any handler, so it leaves no log). */
+const elsewhereOutbound = (
+  req: Request,
+  _env: ManagedEnv,
+  ctx: OutboundHandlerContext<HarnessParams>,
+) => refuse(req, ctx.params, 'EGRESS_DENIED', 'The review container has no internet access');
+
+export const outbound = {
+  platform: platformOutbound,
+  gateway: gatewayOutbound,
+  elsewhere: elsewhereOutbound,
+};
 HarnessContainer.outboundHandlers = outbound;
+HarnessContainer.outbound = elsewhereOutbound;
 
 /** The calls a run makes on its container (typed plainly: RPC types of a Container nest deep). */
 export interface HarnessBox {
