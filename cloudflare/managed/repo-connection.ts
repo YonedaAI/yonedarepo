@@ -9,6 +9,8 @@ export type Connection = {
   token: string;
   hook_id: number;
   hook_secret: string;
+  /** The token was revoked (no agent runs here); only the repo.deleted hook remains. */
+  revoked?: boolean;
 };
 
 export async function readConnection(sql: SqlStorage, env: ManagedEnv): Promise<Connection | null> {
@@ -20,8 +22,9 @@ export async function readConnection(sql: SqlStorage, env: ManagedEnv): Promise<
       token_sealed: string;
       hook_id: number;
       hook_secret_sealed: string;
+      revoked_at: number | null;
     }>(
-      'SELECT repo, account, token_name, token_sealed, hook_id, hook_secret_sealed FROM connection WHERE id = 1',
+      'SELECT repo, account, token_name, token_sealed, hook_id, hook_secret_sealed, revoked_at FROM connection WHERE id = 1',
     )
     .toArray()[0];
   if (!row) return null;
@@ -31,6 +34,7 @@ export async function readConnection(sql: SqlStorage, env: ManagedEnv): Promise<
     token: await open(env, row.repo, 'token', row.token_sealed),
     hook_id: row.hook_id,
     hook_secret: await open(env, row.repo, 'hook_secret', row.hook_secret_sealed),
+    revoked: row.revoked_at !== null,
   };
 }
 
@@ -47,7 +51,7 @@ export async function writeConnection(
      VALUES (1, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET account = excluded.account, token_name = excluded.token_name,
        token_sealed = excluded.token_sealed, hook_id = excluded.hook_id,
-       hook_secret_sealed = excluded.hook_secret_sealed`,
+       hook_secret_sealed = excluded.hook_secret_sealed, revoked_at = NULL`,
     repo,
     c.account,
     c.token_name,
@@ -76,4 +80,21 @@ export async function signatureMatches(secret: string, body: string, signature: 
   const expected = new TextEncoder().encode(`sha256=${await hmacHex(secret, body)}`);
   const supplied = new TextEncoder().encode(signature);
   return expected.length === supplied.length && crypto.subtle.timingSafeEqual(expected, supplied);
+}
+
+/** The token is revoked and the agents hook replaced by `hook` (repo.deleted only). The revoked
+ * token stays sealed: the platform answers a deleted repository GONE before it checks a
+ * credential, so it still tells a deletion from a live repository. */
+export async function retainConnection(
+  sql: SqlStorage,
+  env: ManagedEnv,
+  repo: string,
+  hook: { id: number; secret: string },
+) {
+  sql.exec(
+    'UPDATE connection SET hook_id = ?, hook_secret_sealed = ?, revoked_at = ? WHERE id = 1',
+    hook.id,
+    await seal(env, repo, 'hook_secret', hook.secret),
+    Date.now(),
+  );
 }

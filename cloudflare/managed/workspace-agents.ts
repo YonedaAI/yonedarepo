@@ -71,6 +71,14 @@ export class WorkspaceAgents extends DurableObject<ManagedEnv> {
       .map((r) => r.repo);
   }
 
+  /** A deleted repository: out of every agent's enabled list, its own overrides dropped. */
+  forget(repo: string) {
+    this.ctx.storage.transactionSync(() => {
+      this.#sql.exec('DELETE FROM enabled WHERE repo = ?', repo);
+      this.#sql.exec('DELETE FROM settings WHERE scope = ?', repo);
+    });
+  }
+
   /** Replaces the index of repositories `agent` is enabled on. */
   setEnabled(agent: ManagedAgentId, repos: string[]) {
     this.ctx.storage.transactionSync(() => {

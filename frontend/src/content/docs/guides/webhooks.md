@@ -27,6 +27,7 @@ The answer holds the signing secret (`whsec_…`). It is shown once. The URL mus
 | `check` | A check concluded: pass, fail or error |
 | `change` | A change request was opened, commented, landed, closed or deleted (`change.opened`, `change.commented`, `change.landed`, `change.closed`, `change.deleted`) |
 | `release` | A release was published or deleted (`release.published`, `release.deleted`) |
+| `repo` | The repository was deleted (`repo.deleted`, sent once; nothing is delivered after it) |
 
 Leave out `events` to get them all. `paths` limits the commit messages a hook sees to commits inside those paths; change titles and comment text go only to hooks without `paths`.
 

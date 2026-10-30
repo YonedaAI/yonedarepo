@@ -51,3 +51,8 @@ export function agentSummary(
       last_run: listRuns(sql, s.agent, 1)[0] ?? null,
     }));
 }
+
+/** A deleted repository's state: its runs (with their findings), switches and connection. */
+export function clearRepository(sql: SqlStorage) {
+  for (const table of ['runs', 'agents', 'connection']) sql.exec(`DELETE FROM ${table}`);
+}
