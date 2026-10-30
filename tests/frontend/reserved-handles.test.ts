@@ -23,12 +23,15 @@ const workerRoots = (path: string) =>
   [...source(path).matchAll(/['"`]\/([a-z][a-z0-9_-]*)/g)].map((m) => m[1]).filter((s) => HANDLE.test(s));
 
 const REPO = 'r00000000000000000000';
+/** What the app makes of a path nothing else claims: home, or a handle's profile and one of
+ * its repositories (`/<handle>[/<name>]`). */
+const OPEN = ['home', 'profile', 'repo-name'];
 /** Whether the app routes `/<segment>` (alone, or with something after it) to a page of its
- * own rather than the home page it gives an unknown path. */
+ * own rather than to what any handle gets. */
 const appRoutes = (segment: string) =>
   [[segment], [segment, 'x']].some((parts) => parseSitePath(parts) !== undefined) ||
   [`/${segment}`, `/${segment}/x`, `/${segment}/${REPO}`].some(
-    (path) => parseSourceRoute(path, '').view !== 'home',
+    (path) => !OPEN.includes(parseSourceRoute(path, '').view),
   );
 
 describe('reserved handles', () => {
