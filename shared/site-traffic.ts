@@ -1,5 +1,5 @@
 // The admin Traffic page's wire shape: cookieless site analytics read back from Workers
-// Analytics Engine (cloudflare/worker/site-traffic.ts). Counts are sampled page views and
+// Analytics Engine (cloudflare/worker/platform-site-traffic.ts). Counts are sampled page views and
 // sign-ups, not unique visitors: nothing identifies a visitor, so none can be counted.
 
 export type TrafficWindow = 7 | 30;
