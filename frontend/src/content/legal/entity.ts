@@ -16,7 +16,7 @@ export const LEGAL_ENTITY = {
   /** The youngest age at which a person may use the service. */
   minimumAge: '16',
   /** The date both pages were last changed (YYYY-MM-DD). */
-  lastUpdated: '2026-10-29',
+  lastUpdated: '2026-10-30',
 };
 
 export type LegalField = keyof typeof LEGAL_ENTITY;

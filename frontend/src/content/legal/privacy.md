@@ -62,6 +62,20 @@ We send a welcome email when your account is created, an email to confirm your a
 
 Our servers run on Cloudflare Workers, which log each request's outcome, errors and timing. Cloudflare may record request metadata with them, such as your IP address and browser user agent. Our code is written never to log passwords, tokens or authorization headers. An internal monitor counts these events to find faults.
 
+### Site analytics
+
+To learn which pages people read and how they find us, we count views of our public pages (the home page, documentation, blog, pricing and public repositories), not the signed-in app. These counts are cookieless and aggregate: we store no IP addresses, cookies or visitor identifiers, so a count cannot be traced back to you. For each page view we record:
+
+- the page path, without its query string;
+- the referring site's name only, such as `news.ycombinator.com`, not the full address;
+- your country, as Cloudflare works it out from the connection;
+- the device type (desktop, mobile, tablet or bot), worked out from your browser's user agent, which we do not store;
+- campaign tags in the link you followed (`utm_source`, `utm_medium` and `utm_campaign`), if it had any.
+
+When you create an account, we count the sign-up the same way: how you signed up (email, GitHub or Google) and the referring site and campaign tags of the page you first landed on, never your account or email address. Your browser holds that first page's referring site and tags in `sessionStorage` until you close the tab; it is not a cookie and is not sent anywhere else.
+
+We also use Cloudflare Web Analytics on our public pages. Its script sets no cookies and does not fingerprint your browser; it reports the page, referring site, country, device type and how fast the page loaded.
+
 ## How we use it
 
 We use this information to:
@@ -72,7 +86,8 @@ We use this information to:
 - run the checks and review agents a repository's owner sets up;
 - protect the platform, for example by scanning pushes for leaked credentials and limiting sign-in attempts;
 - send the emails described above;
-- find and fix faults.
+- find and fix faults;
+- count, in aggregate, which public pages are read and where visitors come from.
 
 We do not sell personal data, and we do not use your repositories or transcripts to train models.
 
@@ -88,6 +103,7 @@ Everything is stored and processed by Cloudflare. Requests are served from Cloud
 - **Managed agent transcripts and credit records** are retained while the workspace exists and are not deleted automatically. We erase them when you ask at [legal@yonedarepo.com](mailto:legal@yonedarepo.com).
 - **Model gateway logs** of review-agent requests and responses are kept until the log store reaches its cap of 10 million entries; then the oldest are deleted first. We erase them when you ask at [legal@yonedarepo.com](mailto:legal@yonedarepo.com).
 - **Request logs** are kept for the period Cloudflare's logging service allows, which is days, not months.
+- **Site analytics** page-view and sign-up counts are kept for three months, then deleted automatically.
 - **Your account** is kept until you ask us to delete it.
 
 ## Your choices and deletion
@@ -128,7 +144,7 @@ Managed review agents reach their model providers through our Cloudflare AI Gate
 
 ## Cookies
 
-YonedaRepo sets only essential cookies, so there is nothing to opt into: a signed, HttpOnly session cookie that keeps you signed in for at most seven days, and, while you sign in with GitHub or Google, a short-lived cookie (ten minutes at most) that ties the sign-in to your browser. Your browser's local storage also keeps two settings for this site: whether this browser was signed in last time, and your theme. We use no advertising, analytics or third-party tracking cookies.
+YonedaRepo sets only essential cookies, so there is nothing to opt into: a signed, HttpOnly session cookie that keeps you signed in for at most seven days, and, while you sign in with GitHub or Google, a short-lived cookie (ten minutes at most) that ties the sign-in to your browser. Your browser's local storage also keeps two settings for this site: whether this browser was signed in last time, and your theme; its session storage keeps the referring site and campaign tags described under Site analytics until you close the tab. We use no advertising, analytics or third-party tracking cookies: our site analytics are cookieless.
 
 ## Links to other sites
 
