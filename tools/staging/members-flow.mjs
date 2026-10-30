@@ -52,7 +52,7 @@ export async function membersFlow({ origin, api, kit, platform }, metrics) {
     // read: listed with its role, reads and clones, can't push.
     await role('read');
     const listed = (await member.get('/repos')).repos.find((r) => r.id === repo.id);
-    assert.deepEqual([listed?.role, listed?.owner], ['read', kit.KIT_USERNAME], 'the shared repository is listed');
+    assert.deepEqual([listed?.role, listed?.owner], ['read', kit.KIT_ACCOUNT ?? kit.KIT_USERNAME], 'the shared repository is listed');
     const cloned = git(['clone', '-q', remote, 'work']);
     assert.ok(cloned.ok, `clone at read: ${cloned.out}`);
     const work = join(dir, 'work');
