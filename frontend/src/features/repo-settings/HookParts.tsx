@@ -14,6 +14,7 @@ export const HOOK_EVENTS = [
   'check',
   'change',
   'release',
+  'repo',
 ] as const;
 
 /** What each event delivers (`change` covers change.opened, .commented, .closed, .landed). */
@@ -26,6 +27,7 @@ export const HOOK_EVENT_HELP: Record<(typeof HOOK_EVENTS)[number], string> = {
   check: 'a check run finished',
   change: 'a change request opened, commented, closed or landed',
   release: 'a release was published or deleted',
+  repo: 'the repository was deleted (sent once)',
 };
 
 export type Hook = {

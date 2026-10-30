@@ -60,7 +60,9 @@ export type QueueMessage =
       change: number | null;
       action: string | null;
     }
-  | { kind: 'resume'; repo: string; run: string };
+  | { kind: 'resume'; repo: string; run: string }
+  /** The platform's repo.deleted: clear the repository's reviews. */
+  | { kind: 'deleted'; repo: string };
 
 export class ConfigError extends Error {}
 
@@ -86,4 +88,6 @@ export const COMMIT_ID = /^[0-9a-f]{40}$/;
 /** The repository token the agents use; a landing policy names it as check poster. */
 export const TOKEN_NAME = 'yoneda-managed-agents';
 export const TOKEN_SCOPES = ['read', 'review', 'check'];
-export const HOOK_EVENTS = ['change', 'branch'];
+export const HOOK_EVENTS = ['change', 'branch', 'repo'];
+/** What stays subscribed once no agent runs on a repository: its deletion. */
+export const NOTICE_EVENTS = ['repo'];

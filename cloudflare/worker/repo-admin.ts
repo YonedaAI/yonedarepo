@@ -7,6 +7,7 @@
 import { teamEntries } from './platform-org-access';
 import { forgetFork } from './repo-forks';
 import { dropDeletedHead } from './repo-head';
+import { dispatchHooks } from './repo-hooks';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { requirePatScope } from './repo-pat';
 import { ownSpec } from './repo-stores';
@@ -85,6 +86,11 @@ export async function deleteRepository(env: Env, auth: Credentials, repo: string
     env.INDEX.prepare('DELETE FROM platform_activity WHERE repo=?').bind(repo),
   ]);
   await dropDeletedHead(env, repo);
+  // Hooks subscribed to `repo` get repo.deleted, delivered from the tombstone (a repeated
+  // delete names any still waiting, so a lost job is sent again).
+  await Promise.all(
+    ((deleted.hooks ?? []) as number[]).map((id) => dispatchHooks(env, repo, `hook:${id}`)),
+  );
   await env.PLATFORM_QUEUE.send({
     v: 1,
     repo_id: repo,
