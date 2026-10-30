@@ -57,6 +57,13 @@ async function grantCredit(req: Request, env: ManagedEnv, account: string) {
   return json({ balance: granted.balance, resumed: granted.resume.length });
 }
 
+/** `GET /admin/accounts/<account>/credit`: the balance and the ten newest ledger entries. */
+async function creditState(env: ManagedEnv, account: string) {
+  const ledger = ledgerStub(env, account);
+  const [balance, entries] = await Promise.all([ledger.balance(), ledger.entries(10)]);
+  return json({ balance, entries });
+}
+
 export async function managedFetch(req: Request, env: ManagedEnv): Promise<Response> {
   const url = new URL(req.url);
   const parts = url.pathname.split('/').filter(Boolean);
@@ -77,11 +84,12 @@ export async function managedFetch(req: Request, env: ManagedEnv): Promise<Respo
     parts[3] === 'credit' &&
     parts.length === 4
   ) {
-    if (req.method !== 'POST') return refuse('METHOD_NOT_ALLOWED', 'POST only', 405);
+    if (req.method !== 'POST' && req.method !== 'GET')
+      return refuse('METHOD_NOT_ALLOWED', 'GET or POST only', 405);
     if (!(await admin(req, env))) return refuse('UNAUTHORIZED', 'Admin token required', 401);
     const account = workspaceName(parts[2]);
     if (!account) return refuse('NOT_FOUND', 'Unknown account', 404);
-    return grantCredit(req, env, account);
+    return req.method === 'GET' ? creditState(env, account) : grantCredit(req, env, account);
   }
   // The browser API only on the site's origin (through the front Worker), never on this
   // Worker's own hostname, so a session cookie is only ever checked for the site it belongs to.

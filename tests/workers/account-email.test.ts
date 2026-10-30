@@ -28,8 +28,16 @@ afterEach(async () => {
 });
 
 const queued: Envelope[] = [];
-const fakeQueue = { send: async (body: Envelope) => void queued.push(body) };
-afterEach(() => void queued.splice(0));
+/** The operators' sign-up notices, apart from the account's own email jobs. */
+const notices: Envelope[] = [];
+const fakeQueue = {
+  send: async (body: Envelope) =>
+    void (body.kind === 'admin_signup_notice' ? notices : queued).push(body),
+};
+afterEach(() => {
+  queued.splice(0);
+  notices.splice(0);
+});
 /** The Secrets Store binding: counts reads, so the key is shown to be read at send time. */
 const keyReads = { count: 0 };
 const storeKey = (value: () => string) => ({
@@ -158,6 +166,7 @@ it('enqueues exactly one welcome job when an account is created, and none otherw
   }
   expect((await auth(target, 'login', 'no_email')).status).toBe(401);
   expect(queued).toHaveLength(2);
+  expect(notices.map((n) => n.workspace)).toEqual(['ada', 'ada_lovelace']);
 });
 
 it('posts the welcome email to Resend with its key and a per-account idempotency key', async () => {

@@ -35,6 +35,7 @@
 // Site traffic (worker/site-traffic.ts) reads the front Worker's yonedarepo_prod_site_events dataset (SITE_EVENTS_DATASET)
 // through the Analytics Engine SQL API: CF_ACCOUNT_ID plus the optional secret ANALYTICS_READ_TOKEN (Account Analytics Read).
 // Without the token, traffic reports are unavailable and nothing else changes.
+// Admin pages (/api/v1/admin, admin-api.ts): ADMIN_ACCOUNTS lists the operator accounts (comma separated; empty: only OWNER_TOKEN/Access). The sign-up notice goes to ADMIN_NOTIFY_EMAIL (empty: EMAIL_CONTACT). Credit grants and balances call the managed Worker's /admin/accounts/<account>/credit over MANAGED with MANAGED_ADMIN_TOKEN (optional secret, the managed Worker's own value; unset: grants are refused). MANAGED binds the managed Worker, which binds this one as PLATFORM: a fresh environment deploys this Worker once without MANAGED first.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
@@ -279,6 +280,10 @@
     {
       "binding": "SELF",
       "service": "yonedarepo-prod-platform"
+    },
+    {
+      "binding": "MANAGED",
+      "service": "yonedarepo-prod-agents-managed"
     }
   ],
   "tail_consumers": [
@@ -292,6 +297,8 @@
     ]
   },
   "vars": {
+    "ADMIN_ACCOUNTS": "",
+    "ADMIN_NOTIFY_EMAIL": "",
     "ARTIFACTS_NAMESPACE": "yonedarepo-prod",
     "BLOB_WRITE_THROUGH": "off",
     "CF_ACCOUNT_ID": "f011d0ee02b23cad26b4b38151b204ad",

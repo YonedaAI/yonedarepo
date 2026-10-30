@@ -5,6 +5,7 @@
 // same to us.
 
 import { accountMcp } from './account-mcp';
+import { adminRoute } from './admin-api';
 import { authenticate } from './auth';
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { error, readJson, response } from './http';
@@ -78,6 +79,8 @@ const STATUS: Record<string, number> = {
   RATE_LIMITED: 429,
   OVERLOADED: 503,
   INTERNAL: 500,
+  // An operator suspended the account (admin-api.ts): its credentials are refused.
+  ACCOUNT_SUSPENDED: 403,
   // Withheld by the repository's owner (quarantine): known, deliberately not served.
   QUARANTINED: 451,
 };
@@ -149,6 +152,8 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return deviceApprove(env, auth, await bodyOf(req));
   if (parts[0] === 'activity' && parts.length === 1 && req.method === 'GET')
     return accountActivity(env, auth);
+  if (parts[0] === 'admin')
+    return adminRoute(env, auth, req.method, parts.slice(1), () => bodyOf(req), url.searchParams);
   if (parts[0] === 'orgs')
     return orgsRoute(env, auth, req.method, parts.slice(1), () => bodyOf(req), url.searchParams);
   if (parts[0] !== 'repos') throw new ApiError('NOT_FOUND', 'Unknown API path');
