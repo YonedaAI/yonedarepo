@@ -5,9 +5,9 @@ author: Matthew Long
 category: Research
 order: 0
 summary: Data lakes moved from directories of files to tables with a transaction log. This series argues source control is making the same move, and shows what each part contributes.
-image: /blog/source-code-as-a-transactional-abstraction/figure-1.webp
-imageAlt: A layered diagram with primitives at the bottom feeding Part I (the transaction log), which feeds Part II (views and the Git projection) and Part III (capacity), and both feed a composition box at the top.
-caption: How the parts compose (Figure 1 of the paper). Each arrow names the result one layer supplies to the next.
+image: /blog/source-code-as-a-transactional-abstraction/cover.webp
+imageAlt: Cover card of the paper Source Code as a Transactional Abstraction, the overview of the series, by Matthew Long.
+caption: The overview paper of the series, by Matthew Long (YonedaAI).
 paper: https://yonedarepo-research.vercel.app/papers/synthesis/
 ---
 
@@ -36,6 +36,8 @@ The architecture needs six primitives, including an object store and a serialize
 The analogy breaks in three places. Repository state is a ref map, not a set of files. Two writers of one file can both succeed through a three-way merge, which tables have no counterpart for. And read sets are declared by the writer rather than observed by an engine, so serializability holds **relative to what was declared**.
 
 ## What each part contributes
+
+![A layered diagram with primitives at the bottom feeding Part I (the transaction log), which feeds Part II (views and the Git projection) and Part III (capacity), and both feed a composition box at the top.](/blog/source-code-as-a-transactional-abstraction/figure-1.webp "How the parts compose (Figure 1 of the paper). Each arrow names the result one layer supplies to the next.")
 
 - **[Part I](/blog/a-transaction-log-for-source-control): the transaction log.** A hash-chained log of ref changes, snapshots and checkpoints, validation of declared reads and writes, and a serializability theorem. It also found where group landing fell short: two batch members that each read what the other wrote could land together (write skew). A pairwise check removes it.
 - **[Part II](/blog/partitioned-derived-data): derived data as views.** Search indexes, symbol tables and check results are partitioned jobs over immutable snapshots. A view is consistent at a snapshot when the key of each stored result determines that result. The Git commit of a branch is one of these views: a deterministic function of the log prefix.
