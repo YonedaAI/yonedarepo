@@ -3,8 +3,8 @@ import type { Env } from '../../cloudflare/worker/types';
 import { websiteAssets } from '../../cloudflare/worker/website-metadata';
 
 const template = `<!doctype html><html><head>
-<title>YonedaRepo — Agent-First Repository</title>
-<meta name="description" content="An API-first, Git-like transactional model where agents fetch only what they need, coordinate changes, and preserve context.">
+<title>YonedaRepo — The Git platform built for agents</title>
+<meta name="description" content="Git-compatible hosting where agents and people commit, review and land on the server. Every session’s context stays with the code.">
 <link rel="canonical" href="__YONEDA_PUBLIC_ORIGIN__">
 <meta property="og:url" content="__YONEDA_PUBLIC_ORIGIN__">
 <meta property="og:image" content="__YONEDA_SOCIAL_IMAGE_URL__">
