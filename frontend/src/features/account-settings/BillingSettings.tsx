@@ -1,5 +1,5 @@
-// Settings → Billing: the account's agent credit (the promotional credit added on its first
-// run), its payment method (none yet: setting up billing is coming) and agent usage by
+// Settings → Billing: the account's agent credit (the starting credit added when its first
+// agent is set up), its payment method (none yet: setting up billing is coming) and agent usage by
 // repository and agent. Platform features are free; only managed agent runs use credit.
 import type { BillingState } from '../../../../shared/managed-agents';
 import { BillingComing, loadState } from '../agents/agentParts';
@@ -26,7 +26,7 @@ export function BillingSettings({ workspace }: { workspace: string }) {
                 <h3>Credit balance</h3>
                 <p className="managed-figure">{formatCost(billing.credit.balance_usd)}</p>
                 <p className="source-meta">
-                  Promotional credit is added on your first run:{' '}
+                  Starting credit is added when you set up your first agent:{' '}
                   {formatCost(billing.credit.granted_usd)}. {formatCost(billing.credit.used_usd)}{' '}
                   used.
                 </p>

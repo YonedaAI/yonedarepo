@@ -90,6 +90,15 @@ export const WORKSPACE_SCHEMA: string[] = [
      repo TEXT NOT NULL,
      PRIMARY KEY (agent, repo)
    );`,
+  // v2 (2026-10-30): an agent's set-up (Add agent): who and when, whether it is paused, and
+  // whether it runs on all the workspace's repositories, new ones included.
+  `CREATE TABLE agent_meta (
+     agent TEXT PRIMARY KEY,
+     created_by TEXT NOT NULL,
+     created_at INTEGER NOT NULL,
+     active INTEGER NOT NULL DEFAULT 1,
+     all_repos INTEGER NOT NULL DEFAULT 0
+   );`,
 ];
 
 /** Applies pending migrations; safe to call on every Durable Object start. */
