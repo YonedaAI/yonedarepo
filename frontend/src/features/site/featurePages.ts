@@ -60,7 +60,7 @@ export const FEATURE_PAGES: FeaturePage[] = [
     id: 'global',
     slug: 'global',
     headline: 'One address for every repository, wherever you work.',
-    docs: 'guides/git-remotes',
+    docs: 'guides/global',
     blocks: [
       {
         title: 'No region to choose',
