@@ -93,10 +93,11 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
 
     let agents = &role(&workers, "agents").config;
     let vars = &agents["vars"];
-    assert_eq!(
-        vars,
-        &json!({"PUBLIC_APP_ORIGIN": "https://yonedarepo.com", "WEB_ANALYTICS_TOKEN": ""})
-    );
+    assert_eq!(vars["PUBLIC_APP_ORIGIN"], "https://yonedarepo.com");
+    // The Web Analytics site token is public (it ships in the page); prod has its own site.
+    let beacon = vars["WEB_ANALYTICS_TOKEN"].as_str().unwrap_or_default();
+    assert!(beacon.len() == 32 && beacon.bytes().all(|b| b.is_ascii_hexdigit()));
+    assert_eq!(vars.as_object().map(|v| v.len()), Some(2));
     assert_eq!(
         agents["analytics_engine_datasets"],
         json!([{"binding": "SITE_EVENTS", "dataset": "yonedarepo_prod_site_events"}])

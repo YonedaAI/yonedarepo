@@ -670,7 +670,7 @@
         },
         "vars": {
           "PUBLIC_APP_ORIGIN": "{origin}",
-          "WEB_ANALYTICS_TOKEN": ""
+          "WEB_ANALYTICS_TOKEN": "70b90cc7e849429fa25cc64897ebfd2b"
         },
         "services": [
           {

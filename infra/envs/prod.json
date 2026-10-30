@@ -666,7 +666,7 @@
         },
         "vars": {
           "PUBLIC_APP_ORIGIN": "{origin}",
-          "WEB_ANALYTICS_TOKEN": ""
+          "WEB_ANALYTICS_TOKEN": "fd30d727a0dc4d4c949dee535977d1b2"
         },
         "services": [
           {
