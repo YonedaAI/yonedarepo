@@ -7,6 +7,7 @@ import { readQuery, useActivity, useCommitMessages, useListing } from './codeDat
 import { currentApiOrigin } from './connect';
 import { FileBlame } from './FileBlame';
 import { FileTable } from './FileTable';
+import { FileText } from './FileText';
 import { Markdown } from './markdown';
 import type { RepoStatus } from './repoStatus';
 import { Failure, Loading } from './SourceStatus';
@@ -52,6 +53,8 @@ export function RepoFiles({
   navigate: Navigate;
 }) {
   const ref = apiRef(route.ref, status?.refs);
+  // A line belongs to the file on screen: every link away leaves it behind.
+  const { line, ...place } = route;
   const listing = useListing(route.repo, ref, route.path, route.at);
   const [blaming, setBlaming] = useState(false);
   const tree = listing.value?.kind === 'tree' ? listing.value : undefined;
@@ -67,7 +70,7 @@ export function RepoFiles({
     route.repo,
     [...activity.values()].map((a) => a.commit),
   );
-  const go = (path: string): SourceRoute => ({ ...route, path });
+  const go = (path: string): SourceRoute => ({ ...place, path });
   const pathLink = (path: string, children: ReactNode, attrs = {}) => (
     <a {...attrs} {...linkTo(go(path), navigate)}>
       {children}
@@ -84,7 +87,7 @@ export function RepoFiles({
         <BranchPicker
           refs={status?.refs ?? []}
           value={route.ref}
-          onChange={(next) => navigate({ ...route, ref: next, path: '', at: undefined })}
+          onChange={(next) => navigate({ ...place, ref: next, path: '', at: undefined })}
         />
         <nav aria-label="Path" className="source-crumbs">
           {pathLink('', <strong>{status?.name ?? route.repo}</strong>)}
@@ -103,9 +106,9 @@ export function RepoFiles({
           <VersionPicker
             repo={route.repo}
             at={route.at}
-            onChange={(at) => navigate({ ...route, at })}
+            onChange={(at) => navigate({ ...place, at })}
           />
-          <a className="toolbar-link" {...linkTo({ ...route, view: 'overview' }, navigate)}>
+          <a className="toolbar-link" {...linkTo({ ...place, view: 'overview' }, navigate)}>
             Subsystems
           </a>
           <CloneButton repo={route.repo} name={status?.name} origin={currentApiOrigin()} />
@@ -114,7 +117,7 @@ export function RepoFiles({
       {route.at !== undefined && (
         <p className="source-note" role="status">
           Time travel: showing {route.ref} as of log version {route.at}. Reads are pinned and
-          immutable. <a {...linkTo({ ...route, at: undefined }, navigate)}>Back to latest</a>
+          immutable. <a {...linkTo({ ...place, at: undefined }, navigate)}>Back to latest</a>
         </p>
       )}
       {listing.error && <Failure error={listing.error} onRetry={listing.reload} />}
@@ -183,7 +186,7 @@ export function RepoFiles({
           {blaming && route.at === undefined && ref ? (
             <FileBlame repo={route.repo} path={route.path} refName={ref} onNavigate={navigate} />
           ) : listing.value.encoding === 'utf-8' ? (
-            <pre>{listing.value.content}</pre>
+            <FileText content={listing.value.content} line={line} />
           ) : (
             <p className="source-empty">Binary file not shown.</p>
           )}

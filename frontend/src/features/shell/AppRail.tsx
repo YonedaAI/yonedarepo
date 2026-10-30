@@ -1,5 +1,5 @@
-// The narrow icon rail: Browse (Home), the open repository's Changes and Search (the
-// repository list when none is open), New repository, and the sidebar's collapse toggle.
+// The narrow icon rail: Browse (Home), the open repository's Changes (the repository list when
+// none is open), the Search page, New repository, and the sidebar's collapse toggle.
 import { GitPullRequest, House, PanelLeftClose, PanelLeftOpen, Plus, Search } from 'lucide-react';
 import { routeRepo, routeTab, type SourceRoute } from '../source-platform/sourceRoute';
 import { linkTo, type Navigate } from './useRoute';
@@ -15,7 +15,7 @@ export function AppRail({
 }: {
   authenticated: boolean;
   route: SourceRoute;
-  /** The open repository is gone: Changes and Search go to the repository list. */
+  /** The open repository is gone: Changes goes to the repository list. */
   missing?: boolean;
   /** The sidebar is hidden. */
   collapsed: boolean;
@@ -26,6 +26,7 @@ export function AppRail({
   const repo = missing ? undefined : routeRepo(route);
   const page = routeTab(route);
   const elsewhere: SourceRoute = authenticated ? { view: 'repositories' } : { view: 'explore' };
+  const searching = route.view === 'global-search';
   const item = (on: boolean) => `rail-item${on ? ' active' : ''}`;
   return (
     <nav className="rail" aria-label="Shortcuts">
@@ -35,7 +36,7 @@ export function AppRail({
       </a>
       {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: linkTo spreads the href, so this is a link. */}
       <a
-        className={item(!repo && route.view !== 'explore')}
+        className={item(!repo && !searching && route.view !== 'explore')}
         aria-label="Browse"
         title="Browse"
         {...linkTo({ view: 'home' }, navigate)}
@@ -53,10 +54,10 @@ export function AppRail({
       </a>
       {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: linkTo spreads the href, so this is a link. */}
       <a
-        className={item(page === 'search')}
+        className={item(searching)}
         aria-label="Search"
-        title={repo ? 'Search this repository' : 'Find a repository'}
-        {...linkTo(repo ? { view: 'search', repo, query: '' } : elsewhere, navigate)}
+        title="Search"
+        {...linkTo({ view: 'global-search' }, navigate)}
       >
         <Search size={18} aria-hidden="true" />
       </a>
