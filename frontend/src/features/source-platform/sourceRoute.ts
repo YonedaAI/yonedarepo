@@ -4,6 +4,7 @@
 // addresses (`/source`, `/source/tokens`, a repository's `/connect`, `/members` and
 // `/settings/branches`) still parse, into the view that replaced them. The public site's
 // pages (`site/siteRoute.ts`) parse here too, as one `site` view.
+import { isCanonicalAccountIdentifier } from '../../../../shared/account';
 import { formatSitePage, parseSitePath, type SitePage } from '../site/siteRoute';
 import { AGENT_SECTIONS, type AgentSection } from './agentModel';
 import { normalizeUserCode } from './connect';
@@ -79,7 +80,6 @@ export const ORG_NAME = /^[a-z][a-z0-9_]{2,31}$/;
 const SHA = /^[0-9a-f]{40}$/;
 const AGENT_ID = /^[a-z][a-z0-9-]{1,40}$/;
 const RUN_ID = /^[A-Za-z0-9_-]{1,120}$/;
-const WORKSPACE = /^[A-Za-z0-9._:-]{1,100}$/;
 const isSection = (value: string | undefined): value is RepoSettingsSection =>
   (REPO_SETTINGS_SECTIONS as readonly string[]).includes(value ?? '');
 const isAgentSection = (value: string | undefined): value is AgentSection =>
@@ -156,7 +156,8 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
 /** `/agents[/new|/<agent>|/runs[/<repo>/<run>]]`, with `?workspace=` for an org. */
 function parseAgentsRoute(parts: string[], params: URLSearchParams): SourceRoute {
   const named = params.get('workspace');
-  const space = named && WORKSPACE.test(named) ? { workspace: named } : {};
+  // Any account identifier (an org, a username or an email-named account), as the API takes it.
+  const space = named && isCanonicalAccountIdentifier(named) ? { workspace: named } : {};
   const [first, repo, run] = parts;
   if (first === 'runs') {
     if (repo && REPO.test(repo) && run && RUN_ID.test(run))

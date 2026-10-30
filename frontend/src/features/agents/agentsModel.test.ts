@@ -72,6 +72,8 @@ describe('routes', () => {
       { view: 'agent-runs' },
       { view: 'agent-runs', agent: 'slop-review' },
       { view: 'agent-run', runRepo: repoA, run: `${repoA}-cr-3-aaaaaaaaaaaa` },
+      // An account named by email before email-only sign-up is a workspace too.
+      { view: 'agents-home', workspace: 'dev.owner+agents@example.com' },
     ] as SourceRoute[]) {
       const [path, query = ''] = formatSourceRoute(route).split('?');
       expect(parseSourceRoute(path, query ? `?${query}` : '')).toEqual(route);
@@ -83,9 +85,15 @@ describe('routes', () => {
     // Odd input falls back to the overview, never to a repository page.
     expect(parseSourceRoute('/agents/runs/not-a-repo/x', '')).toEqual({ view: 'agent-runs' });
     expect(parseSourceRoute('/agents/Bad Agent', '')).toEqual({ view: 'agents-home' });
+    expect(parseSourceRoute('/agents', '?workspace=Not%20A%20Name')).toEqual({
+      view: 'agents-home',
+    });
   });
 
   it('builds the managed API paths', () => {
+    expect(runsPath('dev.owner+agents@example.com', {}, 5)).toBe(
+      '/workspaces/dev.owner%2Bagents%40example.com/runs?limit=5',
+    );
     expect(runsPath('acme', { agent: 'code-review' }, 50)).toBe(
       '/workspaces/acme/runs?agent=code-review&limit=50',
     );
