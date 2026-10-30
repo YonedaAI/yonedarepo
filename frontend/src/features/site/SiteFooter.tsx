@@ -49,7 +49,6 @@ export const FOOTER_COLUMNS: { title: string; links: FooterLink[] }[] = [
       { label: 'About', route: site({ page: 'about' }) },
       { label: 'Vision', route: site({ page: 'vision' }) },
       { label: 'Events', href: EVENTS_URL },
-      { label: 'Explore public repositories', route: { view: 'explore' } },
     ],
   },
   {

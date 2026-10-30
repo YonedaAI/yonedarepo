@@ -166,8 +166,9 @@ describe('site nav', () => {
     expect(menu.match(/href="\/features\/code-as-transactions"/g)).toHaveLength(2);
     expect(menu).toContain('href="/features"');
     const company = html.slice(html.indexOf('id="site-menu-company"'), html.indexOf('</header>'));
-    for (const href of ['/company/vision', '/company/about', '/source/explore'])
+    for (const href of ['/company/vision', '/company/about'])
       expect(company).toContain(`href="${href}"`);
+    expect(company).not.toContain('/source/explore');
     // Events is Yoneda Labs' Luma page, opened in a new tab.
     expect(company).toMatch(
       /href="https:\/\/luma\.com\/yoneda" target="_blank" rel="noopener noreferrer">Events</,
