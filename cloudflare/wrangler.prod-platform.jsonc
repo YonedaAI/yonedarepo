@@ -22,16 +22,19 @@
 // through this Worker. basic: svelte's three packs (168,943 objects) peak at 386 MiB, 675 MiB rebuilding every delta.
 // Git over SSH (platform-ssh-gateway.ts): one SshGateway container (cloudflare/ssh-gateway/Dockerfile,
 // its own image, never the runtime's) runs yoneda-ssh-gateway, reaching the platform only through SELF.
-// SSH_FRONT_DOOR=off. tunnel: the container also runs cloudflared (SSH_TUNNEL_TOKEN, a remotely
+// SSH_FRONT_DOOR=tunnel. tunnel: the container also runs cloudflared (SSH_TUNNEL_TOKEN, a remotely
 // managed tunnel whose route sends ssh.yonedarepo.com to ssh://localhost:2222, with no Access application so
 // `cloudflared access ssh` connects without a login); the cron below keeps it running (about $7 a
 // month on basic). connect: inbound TCP to this Worker (Spectrum, private beta). off: no container.
 // Secrets: SSH_GATEWAY_SECRET (32+ random characters), SSH_HOST_ED25519_KEY / SSH_HOST_ECDSA_KEY
-// (base64 of OpenSSH host key files, generated once and kept). SSH_TUNNEL_TOKEN joins the secrets when prod turns the tunnel on.
+// (base64 of OpenSSH host key files, generated once and kept), SSH_TUNNEL_TOKEN (the tunnel's token).
 // Welcome email (account-email.ts): the platform-jobs consumer sends one per new account through
 // Resend (EMAIL_FROM, EMAIL_CONTACT). Its key is RESEND_API_KEY, the Secrets Store secret
 // Resend-Yoneda, read at send time; without it email is off and sign-up never depends on it.
 // The sending domain has open and click tracking off in Resend.
+// Site traffic (worker/site-traffic.ts) reads the front Worker's yonedarepo_prod_site_events dataset (SITE_EVENTS_DATASET)
+// through the Analytics Engine SQL API: CF_ACCOUNT_ID plus the optional secret ANALYTICS_READ_TOKEN (Account Analytics Read).
+// Without the token, traffic reports are unavailable and nothing else changes.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
@@ -291,12 +294,14 @@
   "vars": {
     "ARTIFACTS_NAMESPACE": "yonedarepo-prod",
     "BLOB_WRITE_THROUGH": "off",
+    "CF_ACCOUNT_ID": "f011d0ee02b23cad26b4b38151b204ad",
     "EMAIL_CONTACT": "hello@yonedarepo.com",
     "EMAIL_FROM": "YonedaRepo <hello@yonedarepo.com>",
     "LAND_MODE": "batch",
     "LFS_S3_BUCKET": "yonedarepo-prod-platform-objects",
     "LFS_S3_ENDPOINT": "https://f011d0ee02b23cad26b4b38151b204ad.r2.cloudflarestorage.com",
     "PUSH_BUNDLES": "on",
+    "SITE_EVENTS_DATASET": "yonedarepo_prod_site_events",
     "SSH_FRONT_DOOR": "tunnel",
     "SSH_HOST": "ssh.yonedarepo.com",
     "WEB_ORIGIN": "https://yonedarepo.com",

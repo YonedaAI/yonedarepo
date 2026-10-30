@@ -13,7 +13,7 @@ import { workspace } from './workspace';
 
 /** What the callback does next; an `error` is a code the sign-in page explains. */
 export type Outcome =
-  | { kind: 'signed_in'; username: string }
+  | { kind: 'signed_in'; username: string; created?: true }
   | { kind: 'linked' }
   | { kind: 'error'; code: 'email_in_use' | 'identity_taken' | 'busy' | 'unavailable' };
 
@@ -117,7 +117,7 @@ export async function signInWith(
       await claims(env, await emailKey(identity.email), { op: 'identity_claim', account: name });
     // A new account only: later sign-ins and links never welcome again.
     await accountCreated(env, name, identity.email);
-    return { kind: 'signed_in', username: name };
+    return { kind: 'signed_in', username: name, created: true };
   }
   return { kind: 'error', code: 'unavailable' };
 }
