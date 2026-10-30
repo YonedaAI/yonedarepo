@@ -2,7 +2,8 @@
    column; one panel per feature in the rest, divided by rules, copy beside its visual. */
 .site-build.site-band {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 2.2fr);
+  /* The nav keeps its width; the panels take the rest of the wide frame. */
+  grid-template-columns: minmax(300px, 400px) minmax(0, 1fr);
   align-items: start;
   padding: 0;
 }

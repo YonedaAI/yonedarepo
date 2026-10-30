@@ -26,6 +26,7 @@
   color: var(--site-muted);
   font-size: var(--fs-md);
   line-height: 1.5;
+  max-width: 60ch;
 }
 .site-hero-actions {
   grid-area: actions;
