@@ -452,9 +452,24 @@ a.chip:hover {
   margin: 0 auto;
   padding: 28px 32px 48px;
 }
+.settings-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px 24px;
+  margin: 0 0 16px;
+}
+.settings-head > div {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+.settings-head p {
+  margin: 4px 0 0;
+}
 .account-settings h1 {
   font-size: 24px;
-  margin: 0 0 16px;
+  margin: 0;
 }
 .account-settings > .source-meta {
   margin: 0 0 16px;
@@ -477,6 +492,11 @@ a.chip:hover {
 }
 .settings-card p {
   margin: 0;
+}
+.settings-empty {
+  align-items: center;
+  padding: 56px 22px;
+  text-align: center;
 }
 .settings-card .source-token-form {
   margin-top: 0;
