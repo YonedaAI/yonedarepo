@@ -5,7 +5,7 @@ summary: Every yoneda command, as `yoneda` prints it with no arguments.
 
 Run `yoneda` with no arguments to print this list. Repository commands use the current clone's `yoneda::` remote, or `--repo <id> [--origin <url>]`.
 
-## Git
+## Clone
 
 ```text
 clone (a yoneda:: Git remote; lazy: commits and trees now, each file's contents when Git
@@ -107,14 +107,14 @@ offline checkouts (kept for existing scripts)
   status [--brief] | sync [--land | --attempt <id> [--mcp-url <url>]] | pull
 ```
 
-## Git
+## JSON output
 
 ```text
 --json (any command but help, push and hook): one JSON document on stdout, schema
 yoneda.cli.<command>.v1 (schemas/v1), or yoneda.cli.error.v1 with a stable code.
 ```
 
-## Git
+## With plain Git
 
 ```text
 Git: git clone yoneda::https://api.yonedarepo.com/<repo-id> (lazy), then fetch, pull and push.

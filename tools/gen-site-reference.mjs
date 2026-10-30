@@ -13,11 +13,14 @@ const read = (path) => readFileSync(new URL(path, root), 'utf8');
 const write = (path, text) => writeFileSync(new URL(path, root), text);
 
 const SECTIONS = [
+  ['clone', 'Clone'],
   ['account', 'Account'],
   ['organizations', 'Organizations'],
   ['repository', 'Repository'],
   ['declared reads', 'Declared reads'],
   ['offline checkouts', 'Offline checkouts'],
+  ['--json', 'JSON output'],
+  ['Git:', 'With plain Git'],
 ];
 
 function cliReference() {

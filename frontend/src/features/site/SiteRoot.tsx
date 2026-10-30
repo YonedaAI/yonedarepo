@@ -1,16 +1,20 @@
 // The public site's page switch, inside its own frame (no app sidebar), plus sign-in and
 // sign-up (`/signin`, `/signup`), which hand over to the app once the session exists.
-import { useEffect } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import type { Session } from '../../hooks/useSession';
 import type { Navigate } from '../shell/useRoute';
 import { AccountPanel } from '../workspace/AccountPanel';
-import { BLOG_POSTS, COMPANY_PAGES, DOCS_PAGES, LEGAL_PAGES } from './content';
+import { BLOG_POSTS, COMPANY_PAGES, LEGAL_PAGES } from './content';
 import { SiteFeatures } from './SiteFeatures';
 import { SiteHome } from './SiteHome';
 import { SiteLayout } from './SiteLayout';
-import { SiteBlog, SiteCompany, SiteDocs, SiteLegal } from './SitePages';
+import { SiteBlog, SiteCompany, SiteLegal } from './SitePages';
 import { SitePricing } from './SitePricing';
 import { SIGNED_IN_HINT, type SitePage } from './siteRoute';
+
+// The docs (their pages, search index and layout) load on the first docs visit; the page
+// sets its own title.
+const SiteDocs = lazy(() => import('./docs/SiteDocs').then((m) => ({ default: m.SiteDocs })));
 
 /** Remembers whether this browser is signed in (see `siteView`); storage may be blocked. */
 export function signedInHint(value?: boolean): boolean {
@@ -32,7 +36,7 @@ function pageTitle(site: SitePage): string {
     case 'pricing':
       return 'Pricing';
     case 'docs':
-      return DOCS_PAGES[site.slug]?.title ?? 'Docs';
+      return 'Docs';
     case 'blog':
       return 'Blog';
     case 'post':
@@ -61,7 +65,8 @@ export function SiteRoot({
 }) {
   const title = pageTitle(site);
   useEffect(() => {
-    document.title = site.page === 'home' ? title : `${title} — YonedaRepo`;
+    if (site.page !== 'docs')
+      document.title = site.page === 'home' ? title : `${title} — YonedaRepo`;
   }, [site.page, title]);
   // A signed-in visitor has nothing to do on the sign-in page.
   const signedInOnSignIn = site.page === 'signin' && session.authenticated;
@@ -73,7 +78,11 @@ export function SiteRoot({
       {site.page === 'home' && <SiteHome navigate={navigate} />}
       {site.page === 'features' && <SiteFeatures navigate={navigate} />}
       {site.page === 'pricing' && <SitePricing navigate={navigate} />}
-      {site.page === 'docs' && <SiteDocs key={site.slug} slug={site.slug} navigate={navigate} />}
+      {site.page === 'docs' && (
+        <Suspense fallback={<p className="docs-loading">Loading the docs…</p>}>
+          <SiteDocs key={site.slug} slug={site.slug} navigate={navigate} />
+        </Suspense>
+      )}
       {site.page === 'blog' && <SiteBlog navigate={navigate} />}
       {site.page === 'post' && <SiteBlog slug={site.slug} navigate={navigate} />}
       {(site.page === 'about' || site.page === 'vision') && (

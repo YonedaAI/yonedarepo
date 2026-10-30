@@ -1,0 +1,299 @@
+/* The docs: a sticky docs header (tabs, search) under the site header, then three columns:
+   the sidebar (sticky, its own scroll), the page, and "On this page" (from 1200px). At
+   900px and below the sidebar becomes a drawer behind "Menu". */
+.docs {
+  /* The site header's height, and the docs header's below it: the sticky offsets. */
+  --docs-site-header: 59px;
+  --docs-header: 52px;
+  --docs-top: calc(var(--docs-site-header) + var(--docs-header));
+  margin-inline: calc(-1 * var(--site-gutter));
+}
+.docs-header {
+  position: sticky;
+  top: var(--docs-site-header);
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: var(--docs-header);
+  padding-inline: var(--site-gutter);
+  background: color-mix(in srgb, var(--site-bg) 94%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--site-line);
+}
+.docs-tabs {
+  align-self: stretch;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.docs-tabs ul {
+  display: flex;
+  gap: 24px;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.docs-tab {
+  display: flex;
+  align-items: center;
+  height: 100%;
+  white-space: nowrap;
+  font-size: var(--fs-sm);
+  color: var(--site-muted);
+  border-bottom: 2px solid transparent;
+}
+.docs-tab:hover {
+  color: var(--site-text);
+}
+.docs-tab[aria-current="page"] {
+  color: var(--site-text);
+  font-weight: 500;
+  border-bottom-color: var(--site-accent);
+}
+.docs-menu-button {
+  display: none;
+}
+.docs-search-button,
+.docs-menu-button,
+.docs-copy-page {
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--site-line);
+  border-radius: 8px;
+  background: var(--site-surface);
+  color: var(--site-muted);
+  font: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.docs-search-button {
+  display: inline-flex;
+  margin-left: auto;
+  min-width: 220px;
+}
+.docs-search-button:hover,
+.docs-menu-button:hover,
+.docs-copy-page:hover {
+  color: var(--site-text);
+  border-color: var(--site-line-strong);
+}
+.docs-search-button kbd,
+.docs-search-field kbd {
+  margin-left: auto;
+  padding: 1px 6px;
+  border: 1px solid var(--site-line);
+  border-radius: 4px;
+  font: inherit;
+  font-size: var(--fs-xs);
+  color: var(--site-faint);
+}
+
+.docs-columns {
+  display: grid;
+  grid-template-columns: 264px minmax(0, 1fr) 224px;
+}
+.docs-drawer {
+  position: sticky;
+  top: var(--docs-top);
+  align-self: start;
+  height: calc(100vh - var(--docs-top));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-right: 1px solid var(--site-line);
+}
+.docs-drawer-backdrop {
+  display: none;
+}
+.docs-sidebar {
+  padding: 20px 16px 40px var(--site-gutter);
+  font-size: var(--fs-sm);
+}
+.docs-sidebar ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.docs-sidebar .docs-nav-top {
+  padding-bottom: 16px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--site-line);
+}
+.docs-nav-out,
+.docs-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 10px;
+  border-radius: 6px;
+  color: var(--site-muted);
+}
+.docs-nav-out:hover,
+.docs-nav-link:hover {
+  color: var(--site-text);
+  background: var(--site-accent-soft);
+}
+.docs-nav-link[aria-current="page"] {
+  color: var(--site-text);
+  font-weight: 500;
+  background: var(--site-accent-soft);
+  box-shadow: inset 2px 0 0 var(--site-accent);
+}
+.docs-nav-heading {
+  margin: 20px 0 6px;
+  padding-inline: 10px;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--site-text);
+}
+.docs-nav-parent {
+  display: flex;
+  align-items: center;
+}
+.docs-nav-parent .docs-nav-link {
+  flex: 1;
+}
+.docs-nav-toggle {
+  display: inline-flex;
+  padding: 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--site-muted);
+  cursor: pointer;
+}
+.docs-nav-toggle:hover {
+  color: var(--site-text);
+  background: var(--site-accent-soft);
+}
+.docs-nav-toggle svg {
+  transition: transform 0.15s;
+}
+.docs-nav-toggle[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+.docs-sidebar .docs-nav-children {
+  margin: 2px 0 4px 14px;
+  padding-left: 6px;
+  border-left: 1px solid var(--site-line);
+}
+
+/* On this page */
+.docs-toc {
+  position: sticky;
+  top: var(--docs-top);
+  align-self: start;
+  max-height: calc(100vh - var(--docs-top));
+  overflow-y: auto;
+  padding: 32px var(--site-gutter) 24px 8px;
+  font-size: var(--fs-sm);
+}
+.docs-toc-title {
+  margin: 0 0 8px;
+  font-size: var(--fs-xs);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--site-text);
+}
+.docs-toc ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-left: 1px solid var(--site-line);
+}
+.docs-toc-link {
+  text-decoration: none;
+  display: block;
+  margin-left: -1px;
+  padding: 4px 0 4px 12px;
+  border-left: 1px solid transparent;
+  color: var(--site-muted);
+}
+.docs-toc-sub .docs-toc-link {
+  padding-left: 24px;
+}
+.docs-toc-link:hover {
+  color: var(--site-text);
+}
+.docs-toc-link[aria-current="location"] {
+  color: var(--site-text);
+  border-left-color: var(--site-accent);
+}
+
+@media (max-width: 1199px) {
+  .docs-columns {
+    grid-template-columns: 248px minmax(0, 1fr);
+  }
+  .docs-toc {
+    display: none;
+  }
+}
+@media (max-width: 900px) {
+  /* The site header stays; the docs header scrolls away, so it does not eat the screen. */
+  .docs {
+    --docs-site-header: 64px;
+    --docs-header: 0px;
+  }
+  .docs-header {
+    position: static;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    height: auto;
+    padding-block: 8px 0;
+  }
+  .docs-menu-button {
+    display: inline-flex;
+  }
+  .docs-search-button {
+    min-width: 0;
+    flex: 1;
+    margin-left: 0;
+  }
+  .docs-tabs {
+    order: 3;
+    flex-basis: 100%;
+    height: 40px;
+  }
+  .docs-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .docs-drawer {
+    position: fixed;
+    inset: 0 auto 0 0;
+    z-index: 40;
+    width: min(300px, 85vw);
+    height: 100vh;
+    background: var(--site-bg);
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition:
+      transform 0.2s,
+      visibility 0.2s;
+  }
+  .docs-drawer.open {
+    transform: none;
+    visibility: visible;
+  }
+  .docs-drawer-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 39;
+    border: 0;
+    background: #0006;
+  }
+  .docs-sidebar {
+    padding: 20px 16px 40px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .docs-drawer,
+  .docs-nav-toggle svg {
+    transition: none;
+  }
+}

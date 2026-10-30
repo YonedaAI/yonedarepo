@@ -1,4 +1,4 @@
-/* Pricing, docs, blog, company and sign-in pages of the public site. */
+/* Pricing, blog, company and sign-in pages of the public site (the docs: site-docs.css). */
 /* Pricing */
 .site-notice {
   max-width: var(--site-measure);
@@ -95,49 +95,7 @@
   font-weight: 500;
 }
 
-/* Docs, blog and company prose */
-.site-docs {
-  display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
-  gap: 48px;
-  padding-top: 40px;
-  /* The nav beside a reading column, centred in the wide frame. */
-  max-width: calc(220px + 48px + var(--site-reading));
-  margin-inline: auto;
-}
-.site-docs-nav {
-  position: sticky;
-  top: 80px;
-  align-self: start;
-  font-size: var(--fs-base);
-}
-.site-docs-section {
-  margin: 20px 0 6px;
-  font-size: var(--fs-xs);
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--site-muted);
-}
-.site-docs-nav div:first-child .site-docs-section {
-  margin-top: 0;
-}
-.site-docs-nav ul {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-.site-docs-link {
-  display: block;
-  padding: 4px 10px;
-  border-radius: 6px;
-  color: var(--site-muted);
-}
-.site-docs-link:hover,
-.site-docs-link[aria-current="page"] {
-  color: var(--site-text);
-  background: var(--site-accent-soft);
-}
+/* Blog and company prose */
 .site-prose {
   max-width: var(--site-reading);
   font-size: var(--fs-md);
