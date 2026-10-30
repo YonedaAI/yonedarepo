@@ -44,12 +44,7 @@ fn signup<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     if username.contains('@') {
         return Err(bad("Accounts from a sign-in provider use a username"));
     }
-    if get(db, "account").is_ok() {
-        return Err(Error::new(
-            "ALREADY_EXISTS",
-            "Username or email unavailable",
-        ));
-    }
+    super::handles::name_free(db, &username)?;
     let identity = identity(c)?;
     let mut a = json!({"username":username,"verifier":null,"recovery_hash":null,"created_at":now});
     // The provider-verified email is the account's contact email (password sign-ups store

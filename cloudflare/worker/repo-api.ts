@@ -13,6 +13,7 @@ import { orgAccess } from './platform-org-access';
 import { orgsRoute } from './platform-orgs';
 import { sshKeyRoute } from './platform-ssh-keys';
 import { deviceApprove, deviceCode, deviceToken, tokenRoute } from './platform-tokens';
+import { forViewer } from './principal-privacy';
 import { deleteRepository, listRepositories } from './repo-admin';
 import { agentRecords } from './repo-agent-records';
 import { breakGlass } from './repo-break-glass';
@@ -31,6 +32,7 @@ import { streamObjects } from './repo-object-fetch';
 import { parseStore } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { verifyPat } from './repo-pat';
+import { pathOf, profile, renameRepository, resolvePath, withPath } from './repo-paths';
 import {
   ANONYMOUS,
   admitAnonymous,
@@ -64,6 +66,7 @@ const STATUS: Record<string, number> = {
   NOT_LANDED: 409,
   AUTOMATION_PAUSED: 423,
   ALREADY_EXISTS: 409,
+  NAME_TAKEN: 409,
   PUSH_FAILED: 502,
   NOT_SUPPORTED: 400,
   TIMEOUT: 503,
@@ -122,7 +125,15 @@ export async function credentials(req: Request, env: Env): Promise<Credentials |
   };
 }
 
+/** A REST answer as its caller may see it: a repository's names no account address to a
+ * non-member (principal-privacy). The account MCP's management tools come through here too. */
 export async function route(req: Request, env: Env, url: URL, auth: Credentials): Promise<Json> {
+  const value = await routed(req, env, url, auth);
+  const repo = /^\/api\/v1\/repos\/(r[0-9a-f]{20})(?:\/|$)/.exec(url.pathname)?.[1];
+  return repo ? forViewer(env, value, () => caller(env, repo, auth)({ op: 'repo_status' })) : value;
+}
+
+async function routed(req: Request, env: Env, url: URL, auth: Credentials): Promise<Json> {
   const parts = url.pathname.split('/').filter(Boolean).slice(2); // after api/v1
   if (parts[0] === 'tokens' && parts.length <= 2)
     return tokenRoute(env, auth, req.method, parts[1], () => bodyOf(req));
@@ -157,7 +168,9 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
     return deleteRepository(env, auth, repo, url.searchParams.get('confirm') ?? '');
   if (resource === 'refs' && sha === 'batch' && !sub && post)
     return batchRefs(ctx, await bodyOf(req));
-  if (!resource && get) return run('git_status', {});
+  if (!resource && get) return withPath(env, repo, await run('git_status', {}));
+  if (resource === 'name' && !sha && req.method === 'PUT')
+    return renameRepository(ctx, (await bodyOf(req)).name);
   if (resource === 'quarantine')
     return quarantineRoute(ctx, req.method, sha, sub, () => bodyOf(req));
   if (get && resource === 'refs') return run('git_refs', query);
@@ -349,7 +362,34 @@ async function handle(req: Request, env: Env): Promise<Response> {
         await limitAnonymous(env, req, url.pathname);
       return explore(env, url.searchParams);
     });
+  // Profiles are public listings, answered alike to everyone.
+  const profiled = /^\/api\/v1\/profiles\/([^/]+)$/.exec(url.pathname);
+  if (profiled && req.method === 'GET')
+    return answer(async () => {
+      if (!req.headers.has('cookie') && !req.headers.has('authorization'))
+        await limitAnonymous(env, req, url.pathname);
+      return profile(env, decodeURIComponent(profiled[1]));
+    });
   const signed = await timed('auth', () => credentials(req, env));
+  // A readable path, or the repository one names, for whoever asks (nobody signed in sees
+  // public repositories only); one that may not be read answers as one that is not there.
+  const resolving = /^\/api\/v1\/resolve\/([^/]+)\/([^/]+)$/.exec(url.pathname);
+  const pathing = /^\/api\/v1\/repos\/(r[0-9a-f]{20})\/path$/.exec(url.pathname);
+  if ((resolving || pathing) && req.method === 'GET') {
+    if (!signed && req.headers.has('authorization'))
+      return error('UNAUTHORIZED', 'Sign in or use a repository token', 401);
+    return answer(async () => {
+      if (!signed) await limitAnonymous(env, req, url.pathname);
+      return resolving
+        ? resolvePath(
+            env,
+            signed,
+            decodeURIComponent(resolving[1]),
+            decodeURIComponent(resolving[2]),
+          )
+        : pathOf(env, signed, (pathing as RegExpExecArray)[1]);
+    });
+  }
   // Without credentials, reads go on as anonymous (public repositories only, rate limited);
   // a token that is refused (expired, revoked, malformed) never falls back to anonymous.
   if (!signed && (req.headers.has('authorization') || !anonymousRead(req, url)))

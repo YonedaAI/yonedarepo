@@ -9,12 +9,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
         SigninOp::Signup => {
             let username =
                 yoneda_core::account::normalize_account_identifier(&string(c, "username")?)?;
-            if get(db, "account").is_ok() {
-                return Err(Error::new(
-                    "ALREADY_EXISTS",
-                    "Username or email unavailable",
-                ));
-            }
+            super::handles::name_free(db, &username)?;
             let email = contact_email(c)?;
             let verifier = verifier(c)?;
             let mut a = json!({"username":username,"verifier":verifier,"recovery_hash":hash(c,"recovery_hash",&[64])?,"created_at":now});

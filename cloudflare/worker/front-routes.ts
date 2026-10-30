@@ -7,6 +7,7 @@ import { accountRoute } from './accounts';
 import { serveDownload, serveInstallScript } from './downloads';
 import { error, response } from './http';
 import { oauthRoute } from './oauth';
+import { GIT_PATH, legacyRedirect } from './readable-paths';
 import type { Env } from './types';
 import { publicOrigin, websiteAssets } from './website-metadata';
 
@@ -21,7 +22,17 @@ export async function frontFetch(req: Request, env: Env): Promise<Response> {
     const handled = await oauthRoute(req, env);
     if (handled) return handled;
   }
-  if (!url.pathname.startsWith('/api/')) return websiteAssets(req, env);
+  // Git over HTTPS by readable path is the platform's (`/<handle>/<name>.git`).
+  if (GIT_PATH.test(url.pathname))
+    return env.PLATFORM
+      ? env.PLATFORM.fetch(req)
+      : error('NOT_FOUND', 'The source platform is not bound', 404);
+  if (!url.pathname.startsWith('/api/')) {
+    const moved = env.PLATFORM
+      ? await legacyRedirect(req, (ask) => (env.PLATFORM as Fetcher).fetch(ask))
+      : null;
+    return moved ?? websiteAssets(req, env);
+  }
   if (url.pathname.startsWith('/api/v1/'))
     return env.PLATFORM
       ? env.PLATFORM.fetch(req)

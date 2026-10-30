@@ -5,6 +5,7 @@
 import tools from '../../backend/crates/yoneda-core/src/platform_tools.json';
 import { RETRY_AFTER_SECONDS, transient } from './durable';
 import { error, readJson, response } from './http';
+import { forViewer } from './principal-privacy';
 import type { Json, RepoContext } from './repo-ops';
 import { operations } from './repo-tools';
 
@@ -100,6 +101,8 @@ export function repoMcp(req: Request, ctx: RepoContext): Promise<Response> {
     instructions:
       'Git semantics over an API: read with git_log/git_ls_tree/git_cat_file/git_diff, write with git_commit (server-side, nothing to push), then checks, review and git_land.',
     tools,
-    call: (name, args) => operation(name)(ctx, args),
+    // A non-member sees accounts by handle, never by address (principal-privacy).
+    call: async (name, args) =>
+      forViewer(ctx.env, await operation(name)(ctx, args), () => ctx.status()),
   });
 }

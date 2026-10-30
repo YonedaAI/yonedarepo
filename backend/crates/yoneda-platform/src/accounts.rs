@@ -9,6 +9,9 @@ mod device;
 mod email;
 #[cfg(test)]
 mod email_tests;
+mod handles;
+#[cfg(test)]
+mod handles_tests;
 mod identities;
 #[cfg(test)]
 mod identities_tests;
@@ -17,6 +20,7 @@ mod op;
 mod orgs;
 #[cfg(test)]
 mod orgs_tests;
+mod repo_names;
 mod signin;
 mod ssh_keys;
 #[cfg(test)]
@@ -50,11 +54,12 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             op::AccountOp::OAuth(op) => oauth_flows::handle(&db, &command, op, now),
             op::AccountOp::Org(op) => orgs::handle(&db, &command, op, now),
             op::AccountOp::OrgMember(op) => orgs::member(&db, &command, op, now),
+            op::AccountOp::Handle(op) => handles::handle(&db, &command, op, now),
         }
     }))
 }
 /// Digest-pinned, forward-only account migrations (version, SQL), applied in order.
-const MIGRATIONS: [(i64, &str); 7] = [
+const MIGRATIONS: [(i64, &str); 8] = [
     (1, include_str!("accounts/migrations/0001_accounts.sql")),
     (
         2,
@@ -65,6 +70,10 @@ const MIGRATIONS: [(i64, &str); 7] = [
     (5, include_str!("accounts/migrations/0005_ssh_keys.sql")),
     (6, include_str!("accounts/migrations/0006_token_origin.sql")),
     (7, include_str!("accounts/migrations/0007_identities.sql")),
+    (
+        8,
+        include_str!("accounts/migrations/0008_handles_repo_names.sql"),
+    ),
 ];
 fn migrate<S: SqlStore>(store: &S) -> Result<()> {
     store.query("CREATE TABLE IF NOT EXISTS workspace_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)", &[])?;
