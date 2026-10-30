@@ -54,20 +54,39 @@ export const SIGNUP_NOTICE = 'admin_signup_notice';
 /** The day each account was last noted as seen by this isolate (one write per day each). */
 const seen = new Map<string, number>();
 /** Notes `account` as seen today, after the answer; at most one D1 write per account and
- * day per isolate, and none where the index is not bound (the front Worker). */
+ * day per isolate, and none where the index is not bound (the front Worker). An account the
+ * index lacks (made before it, and found by no backfill) is added from its summary. */
 export function noteSeen(env: Env, account: string, now = Date.now()) {
   const day = Math.floor(now / DAY_MS);
   if (!env.INDEX || seen.get(account) === day) return;
   seen.set(account, day);
   if (seen.size > 10_000) seen.clear();
-  void afterAnswer(() =>
-    env.INDEX.prepare(
-      'UPDATE platform_accounts SET last_seen_at=? WHERE account=? AND (last_seen_at IS NULL OR last_seen_at<?)',
-    )
-      .bind(now, account, day * DAY_MS)
-      .run()
-      .catch(() => seen.delete(account)),
-  );
+  void afterAnswer(async () => {
+    try {
+      const { meta } = await env.INDEX.prepare(
+        'UPDATE platform_accounts SET last_seen_at=? WHERE account=? AND (last_seen_at IS NULL OR last_seen_at<?)',
+      )
+        .bind(now, account, day * DAY_MS)
+        .run();
+      if (meta.changes) return;
+      const held = await env.INDEX.prepare('SELECT 1 FROM platform_accounts WHERE account=?')
+        .bind(account)
+        .first();
+      const summary = held ? null : await accountSummary(env, account);
+      if (!summary) return;
+      await recordAccount(
+        env,
+        account,
+        summary.providers?.[0] ?? 'email',
+        Number(summary.created_at ?? 0),
+      );
+      await env.INDEX.prepare('UPDATE platform_accounts SET last_seen_at=? WHERE account=?')
+        .bind(now, account)
+        .run();
+    } catch {
+      seen.delete(account); // tried again on its next session check
+    }
+  });
 }
 
 /** Account names the platform's other projections know (repository owners, handles,
