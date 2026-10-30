@@ -69,7 +69,7 @@ describe('the Clone menu', () => {
 });
 
 describe('connect snippets', () => {
-  it('points every Connect line at the API origin, never the page origin', () => {
+  it('points every Connect line at the API origin; only downloads come from the site', () => {
     const html = renderToStaticMarkup(
       createElement(ConnectPanel, { repo, name: 'demo', origin: api }),
     ).replaceAll('&quot;', '"');
@@ -77,7 +77,15 @@ describe('connect snippets', () => {
     expect(html).toContain(`git clone yoneda::${api}/${repo} demo`);
     expect(html).toContain(`yoneda login --origin ${api}`);
     expect(html).toContain(`${api}/api/v1/mcp`);
-    expect(html).not.toContain('https://dev.yonedarepo.com');
+    // The installer and the plugin marketplace are files the site serves, not API calls.
+    const install = 'curl -fsSL https://dev.yonedarepo.com/install.sh | sh';
+    const marketplace =
+      '/plugin marketplace add https://dev.yonedarepo.com/downloads/claude/marketplace.json';
+    expect(html).toContain(install);
+    expect(html).toContain(marketplace);
+    expect(html.replace(install, '').replace(marketplace, '')).not.toContain(
+      'https://dev.yonedarepo.com',
+    );
   });
   it('uses the configured API origin, else the page origin, without a trailing slash', () => {
     expect(apiOrigin('https://dev.yonedarepo.com', `${api}/`)).toBe(api);
