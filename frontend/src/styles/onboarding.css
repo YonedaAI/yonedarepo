@@ -234,8 +234,3 @@ button.oauth-button svg {
 .oauth-terms a:hover {
   color: var(--text);
 }
-.oauth-method {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}

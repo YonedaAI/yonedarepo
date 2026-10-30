@@ -29,7 +29,7 @@
 }
 .dialog-heading h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--text-xl);
   font-weight: 600;
 }
 .dialog-body {
@@ -51,4 +51,11 @@
   flex-wrap: wrap;
   gap: 10px;
   margin: 8px 0 0;
+}
+.dialog .source-token-form {
+  margin-top: 0;
+}
+.dialog form .source-checks label {
+  display: flex;
+  gap: 8px;
 }

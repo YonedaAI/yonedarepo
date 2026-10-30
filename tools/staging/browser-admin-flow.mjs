@@ -56,7 +56,8 @@ export async function adminPages(page, { api, account, repo: { id, name }, shot,
   // Personal access token, limited to the org: shown once, used, revoked from its row.
   await accountSettings(page, 'Tokens');
   const pats = page.getByRole('region', { name: 'Personal access tokens', exact: true });
-  const patForm = pats.getByRole('form', { name: 'Create a personal access token' });
+  await pats.getByRole('button', { name: 'Create token' }).click();
+  const patForm = page.getByRole('dialog', { name: 'Create token' }).getByRole('form', { name: 'Create a personal access token' });
   const patName = `kit-pat-${Date.now().toString(36)}`;
   await patForm.getByLabel('Name', { exact: true }).fill(patName);
   await patForm.getByLabel(/^Organization/).selectOption({ label: `Only ${org}` }).catch((e) => {

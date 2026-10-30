@@ -47,7 +47,7 @@ const billing = (over: Partial<BillingState> = {}): BillingState => ({
 
 /** The titles of the page's cards, in order. */
 const cards = (html: string) =>
-  [...html.matchAll(/<section class="settings-card"[^>]*><h2[^>]*>([^<]+)</g)].map((m) => m[1]);
+  [...html.matchAll(/<section class="settings-section"[^>]*><h2[^>]*>([^<]+)</g)].map((m) => m[1]);
 /** One titled card's markup. */
 const cardOf = (html: string, title: string) => {
   const start = html.lastIndexOf('<section', html.indexOf(`>${title}<`));
