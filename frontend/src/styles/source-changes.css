@@ -28,7 +28,7 @@
   overflow-wrap: anywhere;
 }
 .source-changes a:hover strong {
-  color: var(--blue);
+  color: var(--blue-text);
 }
 .source-change-status {
   display: inline-block;
@@ -47,7 +47,7 @@
 }
 .source-change-landed {
   background: var(--accent-soft);
-  color: var(--blue);
+  color: var(--blue-text);
 }
 .source-change-closed {
   background: var(--surface-2);

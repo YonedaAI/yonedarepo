@@ -47,7 +47,7 @@
   background: var(--accent-soft);
 }
 .new-repository .visibility-option:has(input:focus-visible) {
-  outline: 2px solid var(--blue);
+  outline: 2px solid var(--blue-text);
   outline-offset: 2px;
 }
 .new-repository .visibility-option label {

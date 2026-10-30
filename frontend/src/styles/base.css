@@ -55,7 +55,7 @@ textarea:focus-visible,
 select:focus-visible,
 button:focus-visible,
 a:focus-visible {
-  outline: 3px solid var(--blue);
+  outline: 3px solid var(--blue-text);
   outline-offset: 2px;
 }
 code,
@@ -103,7 +103,7 @@ button.quiet:not(:disabled):hover {
 button.text-button {
   padding: 4px 0;
   min-height: 30px;
-  color: var(--blue);
+  color: var(--blue-text);
   background: transparent;
   font-weight: 500;
 }
@@ -129,11 +129,11 @@ label {
 }
 summary {
   cursor: pointer;
-  color: var(--blue);
+  color: var(--blue-text);
   padding: 8px 0;
 }
 summary:focus-visible {
-  outline: 3px solid var(--blue);
+  outline: 3px solid var(--blue-text);
   outline-offset: 2px;
 }
 pre {
@@ -169,7 +169,7 @@ pre {
   z-index: 100;
   background: var(--surface);
   padding: 12px;
-  color: var(--blue);
+  color: var(--blue-text);
 }
 .skip-link:focus {
   top: 12px;

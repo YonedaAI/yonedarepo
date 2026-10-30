@@ -13,7 +13,7 @@
 }
 .agent-sections a[aria-current="page"] {
   background: var(--accent-soft);
-  color: var(--blue);
+  color: var(--blue-text);
   font-weight: 500;
 }
 .agent-sections a:focus-visible {
@@ -101,10 +101,10 @@
 .agent-related a,
 .agent-facts a,
 .agent-contract-records a {
-  color: var(--blue);
+  color: var(--blue-text);
 }
 .agent-session-ref {
-  color: var(--blue);
+  color: var(--blue-text);
 }
 .agent-session-ref:hover,
 .agent-commits a:hover,
@@ -149,7 +149,7 @@
   color: inherit;
 }
 .agent-contracts summary code {
-  color: var(--blue);
+  color: var(--blue-text);
   overflow-wrap: anywhere;
 }
 .agent-contract-records {
@@ -172,7 +172,7 @@
   border-color: var(--success-line);
 }
 .agent-session-link:hover .agent-summary {
-  color: var(--blue);
+  color: var(--blue-text);
   text-decoration: underline;
 }
 .agent-sections a + a {
@@ -282,7 +282,7 @@
   font-size: 13px;
 }
 .memory-anchors li a {
-  color: var(--blue);
+  color: var(--blue-text);
 }
 .chip.memory-stale {
   background: #fff4e0;
