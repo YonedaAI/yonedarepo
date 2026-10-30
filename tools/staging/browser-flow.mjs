@@ -100,7 +100,8 @@ export async function browserFlow({ origin, api, kit, root, headed = false }, m)
 }
 
 /** The public site's top nav, in order, as a signed-out visitor sees it at `/`. */
-export const PUBLIC_NAV = ['Features', 'Pricing', 'Docs', 'Blog', 'Company'];
+/** Features and Company open menus (buttons); the rest are links. */
+export const PUBLIC_NAV = ['Features', 'Company', 'Pricing', 'Docs', 'Blog'];
 /** Where the login form lives since `/` became the public home for signed-out visitors. */
 export const signInUrl = (origin) => new URL('/signin', origin).href;
 
@@ -109,7 +110,7 @@ export async function publicHome(page, origin, shot, m) {
   await page.goto(origin);
   await page.getByRole('heading', { level: 1 }).waitFor();
   const nav = page.getByRole('navigation', { name: 'Main' });
-  const links = await nav.getByRole('listitem').getByRole('link').allInnerTexts();
+  const links = await nav.getByRole('listitem').locator(':scope > a, :scope > button').allInnerTexts();
   assert.deepEqual(links.map((l) => l.trim()), PUBLIC_NAV, 'the public home nav');
   await shot('public-home');
   await nav.getByRole('link', { name: 'Sign in', exact: true }).click();

@@ -16,13 +16,11 @@ export const repoMissing = (code: string | undefined) => code !== undefined && M
 /** True once any read under `repo` answers GONE: it was deleted while its page is open. */
 export function useRepoGone(repo: string): boolean {
   const [gone, setGone] = useState(false);
-  useEffect(
-    () =>
-      onRepoGone((id) => {
-        if (id === repo) setGone(true);
-      }),
-    [repo],
-  );
+  useEffect(() => {
+    return onRepoGone((id) => {
+      if (id === repo) setGone(true);
+    });
+  }, [repo]);
   return gone;
 }
 

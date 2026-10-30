@@ -127,7 +127,9 @@ export function AgentSessions({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   // biome-ignore lint/correctness/useExhaustiveDependencies: a new first page resets the rest.
-  useEffect(() => setMore(null), [first.data]);
+  useEffect(() => {
+    setMore(null);
+  }, [first.data]);
   if (first.loading && !first.data) return <Loading what="sessions" />;
   if (first.error) return <Failure error={first.error} onRetry={first.reload} />;
   const data = first.data as SessionList;
