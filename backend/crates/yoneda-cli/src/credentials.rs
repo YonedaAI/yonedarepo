@@ -3,6 +3,7 @@
 //! origin it was stored for; the value is never printed or passed on a command line.
 use crate::error::{Context, Error, Result};
 use serde::{Deserialize, Serialize};
+use std::ffi::OsString;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
@@ -68,14 +69,35 @@ impl Token {
     }
 }
 
+/// The home among `$HOME` and `%USERPROFILE%`. Windows' own OpenSSH reads the profile, and
+/// Git Bash may set a `HOME` of its own, so there the profile wins.
+fn pick_home(home: Option<OsString>, profile: Option<OsString>, windows: bool) -> Option<PathBuf> {
+    let (first, second) = if windows {
+        (profile, home)
+    } else {
+        (home, profile)
+    };
+    first
+        .filter(|v| !v.is_empty())
+        .or(second.filter(|v| !v.is_empty()))
+        .map(PathBuf::from)
+}
+
+/// The person's home directory.
+pub fn home_dir() -> Result<PathBuf> {
+    pick_home(
+        std::env::var_os("HOME"),
+        std::env::var_os("USERPROFILE"),
+        cfg!(windows),
+    )
+    .ok_or_else(|| Error::new("HOME is not set"))
+}
+
 /// `$XDG_CONFIG_HOME/yoneda/credentials`, else `~/.config/yoneda/credentials`.
 pub fn default_path() -> Result<PathBuf> {
     let base = match std::env::var_os("XDG_CONFIG_HOME").filter(|v| !v.is_empty()) {
         Some(dir) => PathBuf::from(dir),
-        None => {
-            PathBuf::from(std::env::var_os("HOME").ok_or_else(|| Error::new("HOME is not set"))?)
-                .join(".config")
-        }
+        None => home_dir()?.join(".config"),
     };
     Ok(base.join("yoneda").join("credentials"))
 }
@@ -180,6 +202,18 @@ pub fn stored_origin(path: &Path) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_home_is_the_profile_on_windows_and_home_elsewhere() {
+        let os = |v: &str| Some(OsString::from(v));
+        let path = |v: &str| Some(PathBuf::from(v));
+        assert_eq!(pick_home(os("/h"), os(r"C:\p"), false), path("/h"));
+        assert_eq!(pick_home(os("/h"), os(r"C:\p"), true), path(r"C:\p"));
+        assert_eq!(pick_home(None, os(r"C:\p"), false), path(r"C:\p"));
+        assert_eq!(pick_home(os("/h"), None, true), path("/h"));
+        assert_eq!(pick_home(os(""), os(""), true), None);
+        assert_eq!(pick_home(None, None, false), None);
+    }
 
     #[test]
     fn stores_privately_and_loads_only_for_its_origin() -> Result<()> {

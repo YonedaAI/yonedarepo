@@ -201,7 +201,9 @@ fn answer(method: &str, path: &str, body: &str) -> (&'static str, Value) {
         ("POST", "/ssh-keys") => ok(json!({ "id": "k1", "fingerprint": "SHA256:abc",
             "title": "ci", "ssh": { "host": "ssh.example" } })),
         ("GET", "/ssh-keys") => ok(json!({ "keys": [{ "id": "k1", "fingerprint": "SHA256:abc",
-            "title": "ci", "last_used_at": null }] })),
+            "title": "ci", "last_used_at": null }],
+            "ssh": { "front_door": "tunnel", "host": "ssh.example",
+                     "ssh_config": "Host ssh.example\n  ProxyCommand cloudflared access ssh --hostname %h\n" } })),
         ("DELETE", "/ssh-keys/k1") => ok(json!({})),
         _ => error(
             "404 Not Found",

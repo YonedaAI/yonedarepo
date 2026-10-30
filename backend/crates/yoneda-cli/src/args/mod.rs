@@ -129,6 +129,7 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "repo" => sub::repo(rest)?,
         "org" => org::org(rest)?,
         "ssh-key" => ssh_key::ssh_key(rest)?,
+        "ssh" => ssh_key::ssh(rest)?,
         "token" => sub::token(rest)?,
         "check" => sub::check(rest)?,
         "log" | "grep" | "search" | "blame" | "diff" | "symbols" => sub::read(command, rest)?,

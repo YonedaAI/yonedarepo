@@ -49,6 +49,18 @@ export const siteOrigin = (origin: string) => origin.replace(/^(https?:\/\/)api\
 export const installCommand = (origin: string) =>
   `curl -fsSL ${siteOrigin(origin)}/install.sh | sh`;
 
+/** The same in PowerShell, on Windows. */
+export const windowsInstallCommand = (origin: string) =>
+  `irm ${siteOrigin(origin)}/install.ps1 | iex`;
+
+/** Which installer a visitor's machine takes, from the browser's user agent. */
+export type InstallOs = 'unix' | 'windows';
+export const installOs = (userAgent: string | undefined): InstallOs =>
+  userAgent?.includes('Windows') ? 'windows' : 'unix';
+
+/** This machine's key, `~/.ssh/config` entry and clone line, once. */
+export const SSH_SETUP_COMMAND = 'yoneda ssh setup';
+
 /** The public marketplace the site serves (no Git host account needed). */
 export const claudeMarketplaceCommand = (origin: string) =>
   `/plugin marketplace add ${siteOrigin(origin)}/downloads/claude/marketplace.json`;

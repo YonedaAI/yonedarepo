@@ -2,6 +2,7 @@
 import { CircleAlert, CircleCheck, CircleDashed, Copy } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { CloneCommands } from './ConnectPanel';
+import { SSH_SETUP_COMMAND } from './connect';
 import { ago } from './fileActivity';
 import { usePeople } from './people';
 import { Failure } from './SourceStatus';
@@ -72,7 +73,7 @@ export function SshCloneLine({
       <CopyBlock label="SSH" text={command} />
       {access?.front_door === 'tunnel' && (
         <p className="source-meta clone-hint">
-          Needs cloudflared and an <code>~/.ssh/config</code> entry once:{' '}
+          Run <code>{SSH_SETUP_COMMAND}</code> once:{' '}
           <a href="/settings/ssh-keys">Settings → SSH keys</a>.
         </p>
       )}

@@ -219,6 +219,7 @@ pub async fn login(origin: &str, with_token: bool, browser: bool) -> Result<()> 
             .unwrap_or_default(),
         path.display()
     );
+    human!("Next, for Git over SSH: yoneda ssh setup");
     output::emit(&output::Login {
         origin: origin.to_owned(),
         account: grant.account,

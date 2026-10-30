@@ -1,0 +1,110 @@
+{
+  "$defs": {
+    "SshSetup": {
+      "additionalProperties": false,
+      "description": "`ssh setup`.",
+      "properties": {
+        "already_added": {
+          "description": "Whether the account already had the key.",
+          "type": "boolean"
+        },
+        "check_output": {
+          "description": "What `ssh -T` said.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "check_passed": {
+          "description": "Whether `ssh -T` got the platform's greeting; null when it did not run.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "clipboard": {
+          "description": "The tool that took the public key, or null when it was not copied.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "clone": {
+          "description": "A whole `git clone` command.",
+          "type": "string"
+        },
+        "cloudflared": {
+          "description": "The cloudflared the config runs; null when none was found or none is needed.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "config_changed": {
+          "description": "Whether this run changed that file.",
+          "type": "boolean"
+        },
+        "config_path": {
+          "description": "The SSH config holding the block; null on a front door that needs no entry.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "fingerprint": {
+          "type": "string"
+        },
+        "generated": {
+          "description": "Whether this run generated the key.",
+          "type": "boolean"
+        },
+        "key_path": {
+          "description": "The `.pub` file used.",
+          "type": "string"
+        },
+        "public_key": {
+          "description": "That file's line (never the private key).",
+          "type": "string"
+        },
+        "ssh_host": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "key_path",
+        "public_key",
+        "generated",
+        "fingerprint",
+        "already_added",
+        "ssh_host",
+        "cloudflared",
+        "config_path",
+        "config_changed",
+        "clipboard",
+        "check_passed",
+        "check_output",
+        "clone"
+      ],
+      "title": "SshSetup",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `ssh-setup`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/SshSetup"
+    },
+    "schema": {
+      "const": "yoneda.cli.ssh-setup.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.ssh-setup.v1",
+  "type": "object"
+}
