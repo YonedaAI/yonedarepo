@@ -6,7 +6,7 @@ import { LEGAL_ENTITY } from '../../content/legal/entity';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import type { SourceRoute } from '../source-platform/sourceRoute';
 import { featurePageFor } from './featurePages';
-import { sectionLink } from './siteLinks';
+import { EVENTS_URL, sectionLink } from './siteLinks';
 import { DOCS_HOME } from './siteRoute';
 
 /** A footer link: an app route, optionally to an anchor on it, or an outside address. */
@@ -48,6 +48,7 @@ export const FOOTER_COLUMNS: { title: string; links: FooterLink[] }[] = [
       { label: 'Blog', route: site({ page: 'blog' }) },
       { label: 'About', route: site({ page: 'about' }) },
       { label: 'Vision', route: site({ page: 'vision' }) },
+      { label: 'Events', href: EVENTS_URL },
       { label: 'Explore public repositories', route: { view: 'explore' } },
     ],
   },
@@ -67,7 +68,7 @@ export const FOOTER_COLUMNS: { title: string; links: FooterLink[] }[] = [
 
 /** The anchor's props: in-app routes navigate without a reload, then scroll to the hash. */
 function anchor(link: FooterLink, navigate: Navigate) {
-  // Profiles open in a new tab; an email link opens the mail app, so it needs no tab.
+  // Outside pages open in a new tab; an email link opens the mail app, so it needs no tab.
   if ('href' in link)
     return link.href.startsWith('mailto:')
       ? { href: link.href }
