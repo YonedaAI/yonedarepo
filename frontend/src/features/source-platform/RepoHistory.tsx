@@ -1,3 +1,4 @@
+import { usePeople } from './people';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha, when } from './sourceApi';
 import type { SourceRoute } from './sourceRoute';
@@ -20,6 +21,7 @@ export function RepoHistory({
   refName: string;
   onNavigate: (r: SourceRoute) => void;
 }) {
+  const people = usePeople();
   const log = useSource<{ commits: LogCommit[]; version: number }>(
     `/repos/${repo}/log?ref=${encodeURIComponent(refName)}&limit=100`,
   );
@@ -41,7 +43,7 @@ export function RepoHistory({
             <strong>{c.message.split('\n')[0]}</strong>
           </a>
           <span>
-            <code>{shortSha(c.commit)}</code> · {c.principal}
+            <code>{shortSha(c.commit)}</code> · {people.principal(c.principal)}
             {c.landed && ` · landed v${c.landed.version} · ${when(c.landed.landed_at)}`}
             {c.break_glass && (
               <>

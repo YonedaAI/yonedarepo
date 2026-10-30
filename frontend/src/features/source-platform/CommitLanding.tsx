@@ -12,7 +12,7 @@ import {
   ReviewButtons,
 } from './CommitGates';
 import { commitPanel, revertBranch } from './commitPanel';
-import { principalName } from './fileActivity';
+import { usePeople } from './people';
 import { useReadOnly } from './repoAccess';
 import type { RepoStatus } from './repoStatus';
 import { Failure } from './SourceStatus';
@@ -22,6 +22,7 @@ import { useSource } from './useSource';
 
 /** "Landed on main at v2 · <time> · by <who>": who from the log entry at that version. */
 export function LandedLine({ repo, landing }: { repo: string; landing: Landing }) {
+  const people = usePeople();
   const entry = useSource<{ entries: { version: number; actor: string }[] }>(
     `/repos/${repo}/txlog?after=${landing.version - 1}&limit=1`,
   );
@@ -30,7 +31,7 @@ export function LandedLine({ repo, landing }: { repo: string; landing: Landing }
     <p className="source-change-banner">
       Landed on {landing.refname.replace(/^refs\/heads\//, '')} at v{landing.version} ·{' '}
       {when(landing.landed_at)}
-      {actor && ` · by ${principalName(actor.replace(/^break-glass:/, ''))}`}
+      {actor && ` · by ${people.principal(actor.replace(/^break-glass:/, ''))}`}
       {actor?.startsWith('break-glass:') && ' (break glass)'}
     </p>
   );
