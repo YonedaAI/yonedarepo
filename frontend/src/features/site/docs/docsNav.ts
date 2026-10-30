@@ -40,7 +40,10 @@ export const DOCS_TABS: DocsTab[] = [
       },
       {
         title: 'Security',
-        entries: [{ slug: 'security', children: ['guides/quarantine', 'guides/break-glass'] }],
+        entries: [
+          { slug: 'security', children: ['guides/quarantine', 'guides/break-glass'] },
+          { slug: 'guides/global' },
+        ],
       },
     ],
   },

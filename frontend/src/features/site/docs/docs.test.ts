@@ -226,6 +226,18 @@ describe('docs Markdown extras', () => {
   });
 });
 
+// Where data lives follows the Privacy Policy's own words, never a claim of the docs' own.
+describe('data location claims', () => {
+  it('states the storage location exactly as the privacy page does', async () => {
+    const { LEGAL_PAGES } = await import('../content');
+    const sentence = 'Our main storage is placed in eastern North America';
+    expect(LEGAL_PAGES.privacy.body).toContain(sentence);
+    expect(DOCS_PAGES['guides/global'].body).toContain(sentence);
+    expect(LEGAL_PAGES.privacy.body).toContain('you do not choose a region');
+    expect(DOCS_PAGES['guides/global'].body).toContain('You do not choose a region');
+  });
+});
+
 // The review agents' pages quote the shared contract's numbers; they must stay in step.
 describe('review agent claims', () => {
   const credit = DOCS_PAGES['agents/review-credit'].body;
