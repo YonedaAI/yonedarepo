@@ -99,10 +99,12 @@ const contextMock = (
       ['in', 'yoneda context'],
       ['out', '# YonedaRepo context for this clone'],
       ['out', 'main at 4be81c2 (log version 215).'],
+      ['out', ''],
       ['out', '## Landing rules'],
       ['out', '- approvals required: 1; required checks: test'],
-      ['out', '## Recent sessions (newest first)'],
-      ['out', '- 2h ago · 9d1e0a7 "Add retry helper": …'],
+      ['out', '…'],
+      ['out', '## Open change requests'],
+      ['out', '- #12 Retry on 503 [branch retry at 9d1e0a7, by jane]'],
     ]}
   />
 );
