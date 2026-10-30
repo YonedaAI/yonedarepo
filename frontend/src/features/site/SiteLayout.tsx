@@ -1,34 +1,25 @@
-// The public site's frame: top nav (sections, then Sign in / Get started, or Open app when
-// signed in), the page, and a footer. At phone width the sections fold into a menu button.
+// The public site's frame: the header (logo; the sections centred, with Features and Company
+// menus; then Sign in / Get started, or Open app when signed in), the page, and a footer. At
+// phone width the sections fold into a menu button.
 // The site's faces, self-hosted from their npm packages (latin only): Inter for text,
 // Inter Tight for headings.
 import '@fontsource/inter/latin-400.css';
 import '@fontsource/inter/latin-500.css';
 import '@fontsource/inter-tight/latin-600.css';
 import { GitBranch, Menu, Monitor, Moon, Sun, X } from 'lucide-react';
-import { type MouseEvent, type ReactNode, useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import { nextTheme, type Theme, useTheme } from '../shell/theme';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { SiteFooter } from './SiteFooter';
-import { navSection, SITE_NAV, type SitePage } from './siteRoute';
+import { SiteNavMenus } from './SiteNavMenus';
+import { featureLink, sectionLink, siteLink } from './siteLinks';
+import { navSection, type SitePage } from './siteRoute';
 
 const THEME_LABEL: Record<Theme, string> = { system: 'System', light: 'Light', dark: 'Dark' };
 const THEME_ICON = { system: Monitor, light: Sun, dark: Moon };
 
-export const siteLink = (page: SitePage, navigate: Navigate) =>
-  linkTo({ view: 'site', site: page }, navigate);
-
-/** A link to one feature's section of `/features`. */
-export const featureLink = (id: string, navigate: Navigate) => ({
-  href: `/features#${id}`,
-  onClick: (event: MouseEvent<HTMLAnchorElement>) => {
-    if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
-    event.preventDefault();
-    navigate({ view: 'site', site: { page: 'features' } });
-    // The features page scrolls to the hash when it mounts.
-    window.history.replaceState(null, '', `/features#${id}`);
-  },
-});
+// The link helpers live in siteLinks.ts; pages import them from here as before.
+export { featureLink, sectionLink, siteLink };
 
 export function SiteLayout({
   page,
@@ -83,19 +74,7 @@ export function SiteLayout({
             Menu
           </button>
           <div id="site-sections" className={open ? 'site-sections open' : 'site-sections'}>
-            <ul>
-              {SITE_NAV.map((item) => (
-                <li key={item.label}>
-                  <a
-                    className="site-nav-link"
-                    {...siteLink(item.page, go)}
-                    aria-current={current === item.label ? 'page' : undefined}
-                  >
-                    {item.label}
-                  </a>
-                </li>
-              ))}
-            </ul>
+            <SiteNavMenus current={current} go={go} />
             <div className="site-account">
               {authenticated ? (
                 <a className="site-button" {...linkTo({ view: 'home' }, go)}>

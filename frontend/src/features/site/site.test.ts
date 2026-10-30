@@ -40,9 +40,10 @@ import { SiteFeatures } from './SiteFeatures';
 import { checkHealth, FOOTER_COLUMNS, SOCIAL_LINKS, StatusPill } from './SiteFooter';
 import { SiteHome } from './SiteHome';
 import { SiteLayout } from './SiteLayout';
+import { menuKey } from './SiteNavMenus';
 import { SiteBlog, SiteCompany, SiteDocs, SiteLegal } from './SitePages';
 import { SitePricing } from './SitePricing';
-import { siteView } from './siteRoute';
+import { SITE_NAV, siteView } from './siteRoute';
 
 const navigate = () => {};
 const render = (element: React.ReactElement) => renderToStaticMarkup(element);
@@ -115,6 +116,67 @@ describe('site nav', () => {
     expect(html).toContain('href="/terms"');
     expect(html).toContain('href="/privacy"');
     expect(html).toMatch(/<button[^>]*aria-label="Theme: System[^"]*"/);
+  });
+
+  it('orders the header Features, Company, Pricing, Docs, Blog, with menus for the first two', () => {
+    expect(SITE_NAV.map((s) => s.label)).toEqual([
+      'Features',
+      'Company',
+      'Pricing',
+      'Docs',
+      'Blog',
+    ]);
+    const html = render(
+      createElement(SiteLayout, { page: { page: 'home' }, authenticated: false, navigate }, 'x'),
+    );
+    const header = html.slice(0, html.indexOf('</header>'));
+    const at = ['>Features<', '>Company<', '>Pricing<', '>Docs<', '>Blog<'].map((l) =>
+      header.indexOf(l),
+    );
+    expect(at.every((i) => i > 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    for (const id of ['features', 'company']) {
+      expect(header).toMatch(
+        new RegExp(`<button[^>]*aria-expanded="false"[^>]*aria-controls="site-menu-${id}"`),
+      );
+      // Closed until opened, but in the page, so its links work without the menu.
+      expect(header).toMatch(new RegExp(`<div id="site-menu-${id}"[^>]*hidden=""`));
+    }
+  });
+
+  it('lists every tour feature in the Features menu, with Code as Transactions featured', () => {
+    const html = render(
+      createElement(SiteLayout, { page: { page: 'home' }, authenticated: false, navigate }, 'x'),
+    );
+    const menu = html.slice(
+      html.indexOf('id="site-menu-features"'),
+      html.indexOf('id="site-menu-company"'),
+    );
+    for (const item of BUILD_ON) {
+      expect(menu).toContain(escapeHtml(item.title));
+      expect(menu).toContain(escapeHtml(item.subtitle));
+    }
+    expect(menu.indexOf(escapeHtml(BUILD_ON[0].title))).toBeLessThan(
+      menu.indexOf(escapeHtml(BUILD_ON[1].title)),
+    );
+    expect(menu).toContain('Featured');
+    expect(menu).toContain('>Read');
+    expect(menu).toContain('href="/features#landing"');
+    expect(menu).toContain('href="/features"');
+    const company = html.slice(html.indexOf('id="site-menu-company"'), html.indexOf('</header>'));
+    for (const href of ['/company/vision', '/company/about', '/source/explore'])
+      expect(company).toContain(`href="${href}"`);
+    expect(company).not.toContain('Events');
+  });
+
+  it('opens a menu with Enter, Space or ArrowDown and closes it with Escape', () => {
+    expect(menuKey(null, 'features', 'Enter')).toEqual({ open: 'features', focus: 'first' });
+    expect(menuKey(null, 'features', ' ')).toEqual({ open: 'features', focus: 'first' });
+    expect(menuKey(null, 'company', 'ArrowDown')).toEqual({ open: 'company', focus: 'first' });
+    expect(menuKey('features', 'features', 'Enter')).toEqual({ open: null, focus: null });
+    expect(menuKey('features', 'features', 'Escape')).toEqual({ open: null, focus: 'button' });
+    expect(menuKey('company', 'features', 'Enter')).toEqual({ open: 'features', focus: 'first' });
+    expect(menuKey('features', 'features', 'Tab')).toEqual({ open: 'features', focus: null });
   });
 
   it('cycles the theme System → Light → Dark → System', () => {

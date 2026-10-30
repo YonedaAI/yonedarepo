@@ -1,10 +1,11 @@
-// The public site's footer: four link columns, a faint wordmark, and a bottom row with a live
-// status pill (the front's own /health, fetched on mount) and the copyright line.
+// The public site's footer: four link columns, a small faint wordmark, and a bottom row with a
+// live status (the front's own /health, fetched on mount: a dot and a word) and the copyright.
 import { GitBranch } from 'lucide-react';
-import { type MouseEvent, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { LEGAL_ENTITY } from '../../content/legal/entity';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import type { SourceRoute } from '../source-platform/sourceRoute';
+import { sectionLink } from './siteLinks';
 import { DOCS_HOME } from './siteRoute';
 
 /** A footer link: an app route, optionally to an anchor on it, or an outside address. */
@@ -70,20 +71,7 @@ function anchor(link: FooterLink, navigate: Navigate) {
     return link.href.startsWith('mailto:')
       ? { href: link.href }
       : { href: link.href, target: '_blank', rel: 'noopener noreferrer' };
-  const base = linkTo(link.route, navigate);
-  if (!link.hash) return base;
-  const href = `${base.href}#${link.hash}`;
-  return {
-    href,
-    onClick: (event: MouseEvent<HTMLAnchorElement>) => {
-      if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
-      event.preventDefault();
-      navigate(link.route);
-      window.history.replaceState(null, '', href);
-      // The page renders on the next frame; then its section can be found.
-      requestAnimationFrame(() => document.getElementById(link.hash ?? '')?.scrollIntoView());
-    },
-  };
+  return link.hash ? sectionLink(link.route, link.hash, navigate) : linkTo(link.route, navigate);
 }
 
 export type Health = 'operational' | 'degraded';
@@ -108,7 +96,7 @@ export async function checkHealth(
   }
 }
 
-/** The pill: nothing while the check runs, then a green or amber dot with its word. */
+/** The status: nothing while the check runs, then a green or amber dot with its word. */
 export function StatusPill({ health }: { health: Health | null }) {
   if (!health) return null;
   return (
