@@ -52,3 +52,64 @@
   gap: 10px;
   margin: 8px 0 0;
 }
+/* Contact support (features/workspace/SupportDialog.tsx). */
+.support-form textarea {
+  width: 100%;
+  min-height: 160px;
+  resize: vertical;
+  font: inherit;
+}
+.support-attachment,
+.support-consent {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+.support-attachment button.quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.support-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+}
+.support-file > span {
+  overflow-wrap: anywhere;
+}
+.support-file small {
+  flex: none;
+  color: var(--muted);
+}
+.dialog form .support-consent label {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+}
+.support-consent input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  padding: 0;
+}
+.support-consent a {
+  color: var(--blue-text);
+  font-size: 13px;
+  text-decoration: underline;
+}
+.support-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.support-status {
+  margin: 0 0 18px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}

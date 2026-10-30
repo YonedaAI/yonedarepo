@@ -14,6 +14,7 @@ import { isOwnAvatar, ownAvatar, publicAvatarName, servePublicAvatar } from './p
 import { orgAccess } from './platform-org-access';
 import { orgsRoute } from './platform-orgs';
 import { sshKeyRoute } from './platform-ssh-keys';
+import { SUPPORT_BODY_LIMIT, supportRoute } from './platform-support';
 import { deviceApprove, deviceCode, deviceToken, tokenRoute } from './platform-tokens';
 import { deleteRepository, listRepositories } from './repo-admin';
 import { agentRecords } from './repo-agent-records';
@@ -80,6 +81,10 @@ const STATUS: Record<string, number> = {
   OVERLOADED: 503,
   // A create that failed and took back what it did: the same request can be repeated.
   CREATE_UNAVAILABLE: 503,
+  // Contact support: no address to reply to, email not set up here, or the send failed.
+  NO_EMAIL: 409,
+  SUPPORT_UNAVAILABLE: 503,
+  SUPPORT_SEND_FAILED: 503,
   INTERNAL: 500,
   // An operator suspended the account (platform-admin.ts): its credentials are refused.
   ACCOUNT_SUSPENDED: 403,
@@ -154,6 +159,8 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return deviceApprove(env, auth, await bodyOf(req));
   if (parts[0] === 'activity' && parts.length === 1 && req.method === 'GET')
     return accountActivity(env, auth);
+  if (parts[0] === 'support' && parts.length === 1 && req.method === 'POST')
+    return supportRoute(env, auth, () => bodyOf(req, SUPPORT_BODY_LIMIT));
   if (parts[0] === 'admin')
     return adminRoute(env, auth, req.method, parts.slice(1), () => bodyOf(req), url.searchParams);
   if (parts[0] === 'orgs')

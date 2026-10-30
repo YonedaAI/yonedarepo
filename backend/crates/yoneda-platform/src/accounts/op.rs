@@ -27,12 +27,15 @@ op_names! {
     }
 }
 op_names! {
-    /// The contact email's verification (tokens, the change, the confirmation).
+    /// The contact email's verification (tokens, the change, the confirmation), and the daily
+    /// limit on contact support's emails.
     pub(crate) enum EmailOp {
         Status = "email_status",
         Token = "email_token",
         Change = "email_change",
         Verify = "email_verify",
+        SupportAdmit = "support_admit",
+        SupportRelease = "support_release",
     }
 }
 op_names! {
