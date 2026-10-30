@@ -202,3 +202,32 @@ fn a_provider_verified_address_starts_verified() {
         json!({"email":null,"verified":false})
     );
 }
+
+#[test]
+fn support_requests_are_limited_per_day_and_a_release_gives_the_slot_back() {
+    let db = account(Some("alice@example.com"));
+    let admit = |now| at(&db, now, json!({"op":"support_admit"})).unwrap();
+    for n in 0..5 {
+        assert_eq!(admit(n), json!({"admitted":true}), "request {n}");
+    }
+    assert_eq!(admit(6), json!({"admitted":false}));
+    // A request that was not delivered does not count, and only one slot comes back.
+    at(&db, 7, json!({"op":"support_release"})).unwrap();
+    assert_eq!(admit(8), json!({"admitted":true}));
+    assert_eq!(admit(9), json!({"admitted":false}));
+    // Confirmation resends have their own limit.
+    assert_eq!(issue(&db, 10, 'c', "resend"), json!({"issued":true}));
+    assert_eq!(admit(DAY), json!({"admitted":true}));
+}
+
+#[test]
+fn a_release_with_nothing_counted_gives_no_extra_requests() {
+    let db = account(Some("alice@example.com"));
+    at(&db, 0, json!({"op":"support_release"})).unwrap();
+    for n in 0..5 {
+        let admitted = at(&db, n, json!({"op":"support_admit"})).unwrap();
+        assert_eq!(admitted, json!({"admitted":true}));
+    }
+    let refused = at(&db, 6, json!({"op":"support_admit"})).unwrap();
+    assert_eq!(refused, json!({"admitted":false}));
+}

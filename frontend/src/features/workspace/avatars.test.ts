@@ -86,7 +86,7 @@ describe('the account menu', () => {
     expect(html).toContain('href="/settings/organizations"');
     expect(html).toContain('href="/settings/billing"');
     expect(html).toContain('aria-haspopup="true"');
-    for (const { href } of MENU_LINKS.filter((l) => l.external))
+    for (const { href } of MENU_LINKS)
       expect(html).toContain(`href="${href}" target="_blank" rel="noopener"`);
   });
 

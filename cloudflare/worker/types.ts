@@ -72,6 +72,8 @@ export interface Env {
   /** Where the operators' sign-up notice goes (platform-signup-notice.ts); EMAIL_CONTACT
    * when unset. */
   ADMIN_NOTIFY_EMAIL?: string;
+  /** Where contact support's emails go (platform-support.ts); unset, the form answers 503. */
+  SUPPORT_EMAIL?: string;
   /** Operators: accounts (comma separated) whose browser sessions may use the admin pages
    * and `/api/v1/admin` (admin-auth.ts). Unset or empty: none. */
   ADMIN_ACCOUNTS?: string;

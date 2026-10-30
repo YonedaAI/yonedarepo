@@ -2,13 +2,17 @@
 //! only as its digest (`email_token:<digest>`, with the address it was issued for). Verifying
 //! one sets the account's `email_verified_at` and drops every token; changing the address
 //! clears the verification and the tokens. Resends and changes share a limit (each sends an
-//! email to an address the caller chose); the sign-up's welcome token does not count.
+//! email to an address the caller chose); the sign-up's welcome token does not count. Contact
+//! support has its own limit: a request takes a slot before its email is sent and gives it
+//! back when the email could not be.
 use super::op::EmailOp;
 use super::*;
 
 const TOKEN_LIFETIME: i64 = 24 * 60 * 60 * 1000;
 const LIMIT_WINDOW: i64 = 24 * 60 * 60 * 1000;
 const LIMIT: i64 = 5;
+const EMAIL_RATE: &str = "email_rate";
+const SUPPORT_RATE: &str = "support_rate";
 
 pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: EmailOp, now: i64) -> Result<Value> {
     match op {
@@ -33,7 +37,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: EmailOp, now: i64) -> R
             if verified(&a) {
                 return Ok(json!({"issued":false,"reason":"verified"}));
             }
-            if resend && !allow(db, now)? {
+            if resend && !allow(db, EMAIL_RATE, now)? {
                 return Ok(json!({"issued":false,"reason":"limited"}));
             }
             issue(db, &token_hash(c)?, email, now)?;
@@ -47,7 +51,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: EmailOp, now: i64) -> R
             if a["email"] == email {
                 return Ok(json!({"changed":false,"reason":"same"}));
             }
-            if !allow(db, now)? {
+            if !allow(db, EMAIL_RATE, now)? {
                 return Ok(json!({"changed":false,"reason":"limited"}));
             }
             a["email"] = json!(email);
@@ -70,6 +74,11 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: EmailOp, now: i64) -> R
             drop_tokens(db)?;
             audit(db, "account.email_verified", now, json!({}))?;
             Ok(json!({"verified":true}))
+        }
+        EmailOp::SupportAdmit => Ok(json!({"admitted": allow(db, SUPPORT_RATE, now)?})),
+        EmailOp::SupportRelease => {
+            release(db, SUPPORT_RATE, now)?;
+            Ok(json!({}))
         }
     }
 }
@@ -106,9 +115,9 @@ fn drop_tokens<S: SqlStore>(db: &S) -> Result<()> {
     )?;
     Ok(())
 }
-/// Counts one resend or change against the window; false once the limit is reached.
-fn allow<S: SqlStore>(db: &S, now: i64) -> Result<bool> {
-    let mut rate = get(db, "email_rate").unwrap_or(json!({"start":now,"count":0}));
+/// Counts one request against `record`'s window; false once the limit is reached.
+fn allow<S: SqlStore>(db: &S, record: &str, now: i64) -> Result<bool> {
+    let mut rate = get(db, record).unwrap_or(json!({"start":now,"count":0}));
     if rate["start"].as_i64().unwrap_or_default() + LIMIT_WINDOW <= now {
         rate = json!({"start":now,"count":0});
     }
@@ -117,6 +126,18 @@ fn allow<S: SqlStore>(db: &S, now: i64) -> Result<bool> {
         return Ok(false);
     }
     rate["count"] = json!(n + 1);
-    put(db, "email_rate", &rate)?;
+    put(db, record, &rate)?;
     Ok(true)
+}
+/// Takes one request back off `record`'s window, if it is still the current one.
+fn release<S: SqlStore>(db: &S, record: &str, now: i64) -> Result<()> {
+    let Ok(mut rate) = get(db, record) else {
+        return Ok(());
+    };
+    let n = rate["count"].as_i64().unwrap_or_default();
+    if n > 0 && rate["start"].as_i64().unwrap_or_default() + LIMIT_WINDOW > now {
+        rate["count"] = json!(n - 1);
+        put(db, record, &rate)?;
+    }
+    Ok(())
 }
