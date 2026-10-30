@@ -103,6 +103,18 @@ export interface Env {
    * platform Worker grants and reads credit through its admin routes (admin pages). */
   MANAGED?: Fetcher;
   PUBLIC_APP_ORIGIN?: string;
+  /** Cookieless site analytics (front Worker, site-events.ts): page views and sign-ups; absent,
+   * nothing is recorded. */
+  SITE_EVENTS?: AnalyticsEngineDataset;
+  /** Cloudflare Web Analytics site token (front Worker); set, public pages carry its beacon. */
+  WEB_ANALYTICS_TOKEN?: string;
+  /** Site traffic reports (platform Worker, site-traffic.ts): the account and dataset the
+   * Analytics Engine SQL API reads, with an Account Analytics Read token; any unset, none. */
+  CF_ACCOUNT_ID?: string;
+  SITE_EVENTS_DATASET?: string;
+  ANALYTICS_READ_TOKEN?: string;
+  /** `on` lets search engines index this environment (production only; seo-files.ts). */
+  SEO_INDEXING?: string;
   /** This Worker itself (service binding); the SSH gateway's container reaches the
    * platform through it (platform-ssh-gateway.ts). */
   SELF?: Fetcher;

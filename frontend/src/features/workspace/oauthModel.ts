@@ -1,6 +1,7 @@
 // Sign-in with GitHub and Google, as the browser sees it: where each button goes, what a
 // returning `auth_error` means in words, and which sign-in methods an account may remove.
 // The Worker decides everything; this only names it.
+import type { LandingSource } from '../site/landingSource';
 
 export type Provider = 'github' | 'google';
 export const PROVIDERS: readonly Provider[] = ['github', 'google'];
@@ -12,11 +13,16 @@ export const isProvider = (value: unknown): value is Provider =>
 /** The Worker route that starts a sign-in (or, signed in, a link) with a provider. */
 export function oauthStartUrl(
   provider: Provider,
-  options: { intent?: 'link'; returnTo?: string } = {},
+  options: { intent?: 'link'; returnTo?: string; source?: LandingSource } = {},
 ) {
   const query = new URLSearchParams();
   if (options.intent) query.set('intent', options.intent);
-  else if (options.returnTo && options.returnTo !== '/') query.set('return_to', options.returnTo);
+  else {
+    if (options.returnTo && options.returnTo !== '/') query.set('return_to', options.returnTo);
+    // A sign-in that creates an account is counted by where its visitor landed from.
+    for (const [key, value] of Object.entries(options.source ?? {}))
+      if (value) query.set(key, value);
+  }
   const search = query.toString();
   return `/auth/${provider}/start${search ? `?${search}` : ''}`;
 }

@@ -5,6 +5,7 @@ import {
   normalizeAccountIdentifier,
 } from '../../../../shared/account';
 import { api } from '../../lib/api';
+import { landingSource, tabStorage } from '../site/landingSource';
 import { OAuthButtons, TermsNotice } from './OAuthButtons';
 import { isProvider, oauthStartUrl, type Provider } from './oauthModel';
 
@@ -104,6 +105,7 @@ export function AccountPanel({
             window.location.assign(
               oauthStartUrl(provider, {
                 returnTo: `${window.location.pathname}${window.location.search}`,
+                source: landingSource(tabStorage()),
               }),
             );
           }}
@@ -127,10 +129,10 @@ export function AccountPanel({
               if (typeof identifier !== 'string' || !isValidAccountIdentifier(identifier))
                 throw new Error('Enter a valid username or email address.');
             }
-            const result = await api<{ recovery_code?: string }>(
-              `auth/${mode}`,
-              Object.fromEntries(data),
-            );
+            const result = await api<{ recovery_code?: string }>(`auth/${mode}`, {
+              ...Object.fromEntries(data),
+              ...(mode === 'signup' ? { source: landingSource(tabStorage()) } : {}),
+            });
             form.reset();
             if (result.recovery_code) {
               setRecovery(result.recovery_code);

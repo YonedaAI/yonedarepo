@@ -17,6 +17,7 @@ import {
   ProviderError,
   type ProviderName,
 } from './oauth-providers';
+import { readSignupSource, recordSignup, takeSignupSource, withSignupSource } from './site-events';
 import { sha } from './storage';
 import type { Env, Json } from './types';
 import { publicOrigin } from './website-metadata';
@@ -56,7 +57,14 @@ export async function oauthRoute(req: Request, env: Env): Promise<Response | nul
     if (url.hostname === `www.${new URL(origin).hostname}`)
       return redirectTo(`${origin}${url.pathname}${url.search}`);
     const intent = url.searchParams.get('intent') === 'link' ? 'link' : 'signin';
-    const returnTo = intent === 'link' ? '/settings' : safePath(url.searchParams.get('return_to'));
+    // A sign-in that creates an account records where its visitor landed from (site-events.ts).
+    const returnTo =
+      intent === 'link'
+        ? '/settings'
+        : withSignupSource(
+            safePath(url.searchParams.get('return_to')),
+            readSignupSource(url.searchParams),
+          );
     const session = intent === 'link' ? await signedInSession(req, env) : null;
     if (intent === 'link' && !session) return fail('session', '/settings');
     const state = randomToken();
@@ -92,7 +100,7 @@ export async function oauthRoute(req: Request, env: Env): Promise<Response | nul
     binding_hash: binding ? await sha(binding) : '0'.repeat(64),
   });
   if (flow.status !== 'ok') return clearBinding(req, fail('state'));
-  const to = flow.return_to as string;
+  const { path: to, source } = takeSignupSource(flow.return_to as string);
   const denied = url.searchParams.get('error');
   const code = url.searchParams.get('code');
   if (denied || !code)
@@ -124,6 +132,7 @@ export async function oauthRoute(req: Request, env: Env): Promise<Response | nul
   if (outcome.kind === 'error') return clearBinding(req, fail(outcome.code, to));
   if (outcome.kind === 'linked')
     return clearBinding(req, back(origin, '/settings', { linked: provider }));
+  if (outcome.created) recordSignup(env, req, provider, source);
   const response = back(origin, to, {});
   response.headers.append(
     'set-cookie',

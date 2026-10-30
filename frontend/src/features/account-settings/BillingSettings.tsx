@@ -1,49 +1,39 @@
-// Settings → Billing: the account's agent credit, its card (brand and last four only; adding
-// or replacing one is Stripe's own page), the automatic top-up rule and the top-ups it
-// charged, and agent usage by repository and agent. Platform features are free; only
-// managed agent runs use credit. Back from Stripe (`?billing=added`), the page re-reads until
-// the card shows, since the webhook that records it can land a moment later.
-import { useEffect, useState } from 'react';
+// Settings → Billing (`/settings#billing`): the account's agent credit, its card (brand and
+// last four only; adding or replacing one is Stripe's own page), the automatic top-up switch
+// and rule, how to stop paying, the top-ups it charged, and agent usage by repository and
+// agent. Platform features are free; only managed agent runs use credit.
+import { useState } from 'react';
 import type { BillingState } from '../../../../shared/managed-agents';
 import { loadState } from '../agents/agentParts';
 import { agentName, billingPath, formatCost, usageTotals } from '../agents/agentsModel';
 import {
   cardLabel,
-  cardSaveState,
   topUpDay,
   topUpFailedText,
   topUpRule,
   topUpStatusLabel,
   topUpTone,
 } from '../agents/billingModel';
-import { AddCardButton, RemoveCardButton } from '../agents/billingParts';
+import {
+  AddCardButton,
+  AutoTopUpSwitch,
+  CardSaveNotice,
+  RemoveCardButton,
+  useCardReturn,
+} from '../agents/billingParts';
 import { useSource } from '../source-platform/useSource';
-
-const returnedFromStripe = () =>
-  typeof window !== 'undefined' &&
-  new URLSearchParams(window.location.search).get('billing') === 'added';
 
 export function BillingSettings({ workspace }: { workspace: string }) {
   const loaded = useSource<BillingState>(billingPath(workspace), '/api/managed');
   const [override, setOverride] = useState<BillingState | null>(null);
-  const [tries, setTries] = useState(0);
   // Only a complete answer is drawn (an older managed Worker may lack a field).
   const answer = override ?? loaded.data;
   const billing = answer?.credit && Array.isArray(answer.usage) ? answer : undefined;
   const card = billing?.payment_method ?? null;
-  const saving = cardSaveState(returnedFromStripe(), card, tries);
-  const reload = loaded.reload;
-  useEffect(() => {
-    if (saving !== 'waiting' || loaded.loading) return;
-    const timer = setTimeout(() => {
-      setTries((n) => n + 1);
-      reload();
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, [saving, loaded.loading, reload]);
+  const saving = useCardReturn(card, loaded.loading, loaded.reload);
   const totals = billing ? usageTotals(billing) : null;
   return (
-    <section aria-labelledby="billing-heading" className="billing-settings">
+    <section id="billing" aria-labelledby="billing-heading" className="billing-settings">
       <h2 id="billing-heading">Billing</h2>
       <p className="source-meta">
         Every platform feature is free. Managed agent runs are paid for from your credit: their
@@ -52,21 +42,7 @@ export function BillingSettings({ workspace }: { workspace: string }) {
       {loadState(loaded, 'billing') ??
         (billing && totals && (
           <>
-            {saving === 'saved' && (
-              <p className="billing-saved" role="status">
-                Card saved.
-              </p>
-            )}
-            {saving === 'waiting' && (
-              <p className="source-meta" role="status">
-                Saving your card…
-              </p>
-            )}
-            {saving === 'late' && (
-              <p className="source-meta" role="status">
-                Stripe has not confirmed the card yet. Reload this page in a minute.
-              </p>
-            )}
+            <CardSaveNotice saving={saving} credit={billing.credit} />
             {billing.credit.top_up_failed && (
               <div className="billing-banner" role="alert">
                 {topUpFailedText(billing.credit.top_up_failed)}
@@ -98,7 +74,16 @@ export function BillingSettings({ workspace }: { workspace: string }) {
                 {card ? (
                   <>
                     <p className="billing-card-label">{cardLabel(card)}</p>
-                    <p className="source-meta">{topUpRule(billing.auto_top_up)}.</p>
+                    <AutoTopUpSwitch
+                      workspace={workspace}
+                      enabled={billing.auto_top_up.enabled}
+                      onChange={(next) => setOverride(next)}
+                    />
+                    <p className="source-meta">
+                      {billing.auto_top_up.enabled
+                        ? `${topUpRule(billing.auto_top_up)}.`
+                        : 'Your card is not charged. Runs pause when your credit runs out.'}
+                    </p>
                     <div className="agent-card-actions">
                       <AddCardButton
                         workspace={workspace}
@@ -112,6 +97,11 @@ export function BillingSettings({ workspace }: { workspace: string }) {
                         onRemoved={(next) => setOverride(next)}
                       />
                     </div>
+                    <p className="source-meta">
+                      To stop all charges: turn off automatic top-up or remove your card. Agents
+                      keep running on your remaining credit, then pause. Pause or archive agents on
+                      the Agents page.
+                    </p>
                   </>
                 ) : (
                   <>

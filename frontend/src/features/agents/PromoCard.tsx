@@ -1,25 +1,34 @@
 // The Agents overview's credit card. Without a card: the starting credit (added when the first
 // agent is set up) and an offer to unlock the promotional credit by adding a card. With one:
-// the balance, the automatic top-up rule and the card (brand and last four only).
+// the balance, the card (brand and last four only), whether automatic top-up is on, and a link
+// to Settings → Billing (`manageHref`, where that is this workspace's billing). Back from
+// Stripe, whether the card was saved.
 import type { BillingMode, ManagedCredit } from '../../../../shared/managed-agents';
-import { AUTO_TOP_UP } from '../../../../shared/managed-agents';
 import { creditPercent, formatCost, usedText } from './agentsModel';
-import { cardLabel, promoCopy, topUpRule } from './billingModel';
-import { AddCardButton } from './billingParts';
+import { type CardSaveState, cardSummary, promoCopy } from './billingModel';
+import { AddCardButton, CardSaveNotice } from './billingParts';
 
 export function PromoCard({
   workspace,
   credit,
   billing,
+  returnTo,
+  manageHref,
+  saving = 'none',
 }: {
   workspace: string;
   credit: ManagedCredit;
   billing: BillingMode;
+  /** Where Stripe sends the browser back once a card is saved. */
+  returnTo?: string;
+  manageHref?: string;
+  saving?: CardSaveState;
 }) {
   const copy = promoCopy(credit, billing);
   return (
     <section className="agent-card agent-promo" aria-labelledby="promo-heading">
       <h3 id="promo-heading">{copy.title}</h3>
+      <CardSaveNotice saving={saving} credit={credit} />
       <p>{copy.body}</p>
       {credit.card && (
         <p className="managed-figure">
@@ -48,11 +57,22 @@ export function PromoCard({
       )}
       {credit.card ? (
         <p className="source-meta">
-          {topUpRule(AUTO_TOP_UP)} · {cardLabel(credit.card)}
+          {cardSummary(credit)}
+          {manageHref && (
+            <>
+              {' · '}
+              <a href={manageHref}>Manage billing</a>
+            </>
+          )}
         </p>
       ) : (
         <div className="agent-card-actions">
-          <AddCardButton workspace={workspace} billing={billing} label={copy.action} />
+          <AddCardButton
+            workspace={workspace}
+            billing={billing}
+            label={copy.action}
+            returnTo={returnTo}
+          />
         </div>
       )}
     </section>
