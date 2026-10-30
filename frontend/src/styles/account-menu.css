@@ -35,13 +35,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 500;
 }
 .account-label small,
 .account-dropdown small {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-sm);
 }
 .account-dropdown {
   position: absolute;
@@ -67,7 +67,7 @@
   display: grid;
   gap: 2px;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .account-dropdown strong {
   overflow-wrap: anywhere;
@@ -79,7 +79,7 @@
   justify-content: flex-start;
   background: transparent;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 .account-dropdown button:hover {
   background: var(--surface-2);
@@ -95,7 +95,7 @@
   border-radius: 6px;
   background: transparent;
   color: var(--text-2);
-  font-size: 12px;
+  font-size: var(--text-md);
   font-weight: 500;
   line-height: 18px;
   min-height: 32px;
@@ -143,7 +143,7 @@
 .theme-picker legend {
   padding: 0 4px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .theme-picker label {
   display: inline-flex;
@@ -154,7 +154,7 @@
   padding: 5px 8px;
   border-radius: 6px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 .theme-picker label.checked {

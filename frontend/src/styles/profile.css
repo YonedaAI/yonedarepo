@@ -12,7 +12,7 @@
 }
 .profile-head h1 {
   margin: 0;
-  font-size: 1.6rem;
+  font-size: var(--text-3xl);
   overflow-wrap: anywhere;
 }
 .profile-avatar {
@@ -29,7 +29,7 @@
   justify-content: center;
   background: var(--accent-soft);
   color: var(--accent-text);
-  font-size: 2.25rem;
+  font-size: var(--text-4xl);
   font-weight: 600;
 }
 .profile-handle {
@@ -39,7 +39,7 @@
   gap: 0.6rem;
   margin: 0.25rem 0 0;
   color: var(--muted);
-  font-size: 1.05rem;
+  font-size: var(--text-base);
 }
 .profile-kind {
   display: inline-flex;
@@ -48,7 +48,7 @@
   padding: 0.1rem 0.5rem;
   border: 1px solid var(--line);
   border-radius: 999px;
-  font-size: 0.78rem;
+  font-size: var(--text-sm);
 }
 .profile-tabs {
   display: flex;
@@ -79,12 +79,12 @@
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent-text);
-  font-size: 0.75rem;
+  font-size: var(--text-sm);
   font-weight: 600;
 }
 .profile-section {
   margin: 0 0 0.75rem;
-  font-size: 1rem;
+  font-size: var(--text-lg);
 }
 .profile-repos {
   display: grid;
@@ -128,12 +128,12 @@
 .profile-repo .profile-repo-description {
   margin-top: 0.4rem;
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: var(--text-md);
 }
 .profile-repo .profile-repo-meta {
   margin-top: 0.5rem;
   color: var(--faint);
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
 }
 .profile-explore {
   display: inline-flex;
@@ -154,7 +154,7 @@
     height: 64px;
   }
   .profile-initial {
-    font-size: 1.6rem;
+    font-size: var(--text-2xl);
   }
   .profile-cards {
     grid-template-columns: minmax(0, 1fr);
