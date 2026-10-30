@@ -185,38 +185,9 @@
 .site-prose :where(li + li) {
   margin-top: 4px;
 }
-.site-byline {
-  color: var(--site-muted);
-  margin: 0 0 24px;
-}
 .site-post {
   margin: 0 auto;
   padding-top: 40px;
-}
-.site-posts {
-  list-style: none;
-  padding: 0;
-}
-/* Blog index, company pages: one reading column, centred in the frame. */
-.site-reading {
-  max-width: var(--site-reading);
-  margin-inline: auto;
-}
-.site-posts li {
-  padding: 24px 0;
-  border-top: 1px solid var(--site-line);
-}
-.site-posts time {
-  color: var(--site-muted);
-  font-size: var(--fs-sm);
-}
-.site-posts h2 {
-  margin: 6px 0;
-  font-size: var(--fs-xl);
-}
-.site-posts p {
-  margin: 0;
-  color: var(--site-muted);
 }
 .site-company {
   padding-top: 40px;

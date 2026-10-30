@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" font-family="Inter, system-ui, -apple-system, Segoe UI, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#e7e7e7"/></marker>
+  </defs>
+  <rect width="1600" height="900" fill="#161616"/>
+  <rect x="80" y="370" width="200" height="140" rx="16" fill="#1c1c1c" stroke="#4e4e4e" stroke-width="2"/>
+  <text x="180" y="438" fill="#f3f3f3" font-size="36" font-weight="600" text-anchor="middle">Head H</text>
+  <text x="180" y="478" fill="#a8a8a8" font-size="22" text-anchor="middle">no Conflict</text>
+  <text x="560" y="110" fill="#a8a8a8" font-size="26" letter-spacing="2" text-anchor="middle">ACCEPTED BATCH · ONE OCTOPUS MERGE</text>
+  <g font-family="IBM Plex Mono, ui-monospace, monospace" font-size="26">
+    <rect x="400" y="150" width="140" height="70" rx="10" fill="#2b2b2b" stroke="#e7e7e7" stroke-width="2"/><text x="470" y="194" fill="#ffffff" text-anchor="middle">m1</text>
+    <rect x="560" y="150" width="140" height="70" rx="10" fill="#2b2b2b" stroke="#e7e7e7" stroke-width="2"/><text x="630" y="194" fill="#ffffff" text-anchor="middle">m2</text>
+    <rect x="720" y="150" width="140" height="70" rx="10" fill="#2b2b2b" stroke="#e7e7e7" stroke-width="2"/><text x="790" y="194" fill="#ffffff" text-anchor="middle">m3</text>
+  </g>
+  <path d="M280 410 C340 300 360 185 390 185" fill="none" stroke="#e7e7e7" stroke-width="4"/>
+  <path d="M870 185 C1000 185 1040 260 1090 300" fill="none" stroke="#e7e7e7" stroke-width="4" marker-end="url(#a)"/>
+  <rect x="1100" y="250" width="420" height="120" rx="16" fill="#1c1c1c" stroke="#4e4e4e" stroke-width="2"/>
+  <text x="1310" y="305" fill="#f3f3f3" font-size="32" font-weight="600" text-anchor="middle" font-family="IBM Plex Mono, ui-monospace, monospace">landBatch</text>
+  <text x="1310" y="345" fill="#a8a8a8" font-size="22" text-anchor="middle">octopus merge of the batch</text>
+  <text x="560" y="800" fill="#a8a8a8" font-size="26" letter-spacing="2" text-anchor="middle">SERIAL EXECUTION IN TICKET ORDER</text>
+  <g font-family="IBM Plex Mono, ui-monospace, monospace" font-size="26">
+    <rect x="400" y="680" width="140" height="70" rx="10" fill="#232323" stroke="#4e4e4e" stroke-width="2"/><text x="470" y="724" fill="#f3f3f3" text-anchor="middle">f1</text>
+    <rect x="590" y="680" width="140" height="70" rx="10" fill="#232323" stroke="#4e4e4e" stroke-width="2"/><text x="660" y="724" fill="#f3f3f3" text-anchor="middle">f2</text>
+    <rect x="780" y="680" width="140" height="70" rx="10" fill="#232323" stroke="#4e4e4e" stroke-width="2"/><text x="850" y="724" fill="#f3f3f3" text-anchor="middle">f3</text>
+  </g>
+  <g stroke="#e7e7e7" stroke-width="3" fill="none" marker-end="url(#a)">
+    <path d="M280 470 C340 580 350 715 390 715"/>
+    <path d="M540 715 H580"/><path d="M730 715 H770"/>
+    <path d="M920 715 C1000 715 1040 620 1090 580"/>
+  </g>
+  <rect x="1100" y="510" width="420" height="120" rx="16" fill="#1c1c1c" stroke="#4e4e4e" stroke-width="2"/>
+  <text x="1310" y="565" fill="#f3f3f3" font-size="32" font-weight="600" text-anchor="middle" font-family="IBM Plex Mono, ui-monospace, monospace">serialTxns</text>
+  <text x="1310" y="605" fill="#a8a8a8" font-size="22" text-anchor="middle">f3(f2(f1(H)))</text>
+  <text x="1310" y="445" fill="#05df72" font-size="64" font-weight="600" text-anchor="middle">=</text>
+  <text x="1310" y="488" fill="#a8a8a8" font-size="22" text-anchor="middle">Theorem 5.1 · <tspan font-family="IBM Plex Mono, ui-monospace, monospace">batch_landing_sound</tspan></text>
+</svg>

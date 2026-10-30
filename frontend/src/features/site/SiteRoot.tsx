@@ -6,11 +6,12 @@ import type { Navigate } from '../shell/useRoute';
 import { AccountPanel } from '../workspace/AccountPanel';
 import { BLOG_POSTS, COMPANY_PAGES, DOCS_PAGES, LEGAL_PAGES } from './content';
 import { featureItemOf, featurePageAt } from './featurePages';
+import { SiteBlog } from './SiteBlog';
 import { SiteFeaturePage } from './SiteFeaturePage';
 import { SiteFeatures } from './SiteFeatures';
 import { SiteHome } from './SiteHome';
 import { SiteLayout } from './SiteLayout';
-import { SiteBlog, SiteCompany, SiteDocs, SiteLegal } from './SitePages';
+import { SiteCompany, SiteDocs, SiteLegal } from './SitePages';
 import { SitePricing } from './SitePricing';
 import { SIGNED_IN_HINT, type SitePage } from './siteRoute';
 

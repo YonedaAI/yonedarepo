@@ -1,10 +1,24 @@
 // The site's written pages: Markdown files under `frontend/src/content`, each opening with a
-// small front matter block (`title:`, and `date:`/`summary:` for posts), bundled at build time.
+// small front matter block (`title:`, and for posts `date:`, `summary:`, `author:`,
+// `category:`, `order:`, `image:`, `imageAlt:`, `caption:`, `paper:`), bundled at build time.
 
 import { LEGAL_ENTITY, type LegalField } from '../../content/legal/entity';
 
 type Page = { title: string; summary: string; body: string; status: string };
-export type Post = Page & { slug: string; date: string };
+export type Post = Page & {
+  slug: string;
+  date: string;
+  author: string;
+  category: string;
+  /** Orders posts of one date (lower first), e.g. the parts of a paper series. */
+  order: number;
+  /** The hero image, a path under `frontend/public/blog/<slug>/`. */
+  image: string;
+  imageAlt: string;
+  caption: string;
+  /** The paper a research post is drawn from. */
+  paper: string;
+};
 
 const raw = (files: Record<string, unknown>) => files as Record<string, string>;
 const docsFiles = raw(
@@ -68,13 +82,26 @@ export const DOCS_NAV: { section: string; pages: string[] }[] = [
   { section: 'Security and privacy', pages: ['security'] },
 ];
 
-/** Posts, newest first. */
+/** Posts, newest first; one date's posts by `order`, then slug. */
 export const BLOG_POSTS: Post[] = Object.entries(blogFiles)
   .map(([path, source]) => {
     const { fields } = frontMatter(source);
-    return { ...page(source), slug: slugOf(path, 'content/blog/'), date: fields.date ?? '' };
+    return {
+      ...page(source),
+      slug: slugOf(path, 'content/blog/'),
+      date: fields.date ?? '',
+      author: fields.author || 'Yoneda Labs',
+      category: fields.category || 'Engineering',
+      order: Number(fields.order) || 0,
+      image: fields.image ?? '',
+      imageAlt: fields.imageAlt ?? '',
+      caption: fields.caption ?? '',
+      paper: fields.paper ?? '',
+    };
   })
-  .sort((a, b) => b.date.localeCompare(a.date) || a.slug.localeCompare(b.slug));
+  .sort(
+    (a, b) => b.date.localeCompare(a.date) || a.order - b.order || a.slug.localeCompare(b.slug),
+  );
 
 export const COMPANY_PAGES = {
   about: page(companyFiles['../../content/company/about.md'] ?? ''),

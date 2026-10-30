@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" font-family="Inter, system-ui, -apple-system, Segoe UI, sans-serif">
+  <rect width="1600" height="900" fill="#161616"/>
+  <text x="120" y="150" fill="#a8a8a8" font-size="30" letter-spacing="3">ONE SEARCH SEGMENT</text>
+  <rect x="120" y="190" width="300" height="440" rx="16" fill="#1c1c1c" stroke="#4e4e4e" stroke-width="2"/>
+  <text x="150" y="250" fill="#f3f3f3" font-size="32" font-weight="600">files</text>
+  <g font-family="IBM Plex Mono, ui-monospace, monospace" font-size="24" fill="#a8a8a8">
+    <text x="150" y="310">0 README.md</text><text x="150" y="355">1 src/lib.rs</text><text x="150" y="400">2 src/main.rs</text><text x="150" y="445">3 CHANGELOG</text><text x="150" y="490">…</text>
+  </g>
+  <rect x="460" y="190" width="440" height="440" rx="16" fill="#1c1c1c" stroke="#4e4e4e" stroke-width="2"/>
+  <text x="490" y="250" fill="#f3f3f3" font-size="32" font-weight="600">trigram table</text>
+  <g font-family="IBM Plex Mono, ui-monospace, monospace" font-size="24">
+    <text x="490" y="310" fill="#a8a8a8">"abc"  @0</text>
+    <text x="490" y="355" fill="#a8a8a8">"cli"  @6</text>
+    <rect x="478" y="373" width="404" height="44" rx="8" fill="#2b2b2b" stroke="#e7e7e7" stroke-width="2"/>
+    <text x="490" y="403" fill="#ffffff">"mai"  @11</text>
+    <text x="490" y="445" fill="#a8a8a8">"tok"  @19</text>
+    <text x="490" y="490" fill="#a8a8a8">…</text>
+  </g>
+  <text x="490" y="590" fill="#a8a8a8" font-size="24">sorted · binary search</text>
+  <rect x="940" y="190" width="540" height="440" rx="16" fill="#1c1c1c" stroke="#4e4e4e" stroke-width="2"/>
+  <text x="970" y="250" fill="#f3f3f3" font-size="32" font-weight="600">postings</text>
+  <g>
+    <rect x="970" y="290" width="120" height="50" rx="6" fill="#232323"/><rect x="1100" y="290" width="80" height="50" rx="6" fill="#232323"/>
+    <rect x="1190" y="290" width="160" height="50" rx="6" fill="#232323"/><rect x="970" y="355" width="90" height="50" rx="6" fill="#232323"/>
+    <rect x="1070" y="355" width="200" height="50" rx="6" fill="#2b2b2b" stroke="#e7e7e7" stroke-width="2"/>
+    <rect x="1280" y="355" width="110" height="50" rx="6" fill="#232323"/><rect x="970" y="420" width="150" height="50" rx="6" fill="#232323"/>
+    <rect x="1130" y="420" width="100" height="50" rx="6" fill="#232323"/><rect x="1240" y="420" width="140" height="50" rx="6" fill="#232323"/>
+  </g>
+  <path d="M882 395 C930 395 1010 330 1060 368" fill="none" stroke="#e7e7e7" stroke-width="3"/>
+  <text x="970" y="560" fill="#a8a8a8" font-size="24">delta-encoded varints</text>
+  <text x="970" y="595" fill="#a8a8a8" font-size="24">decode only what the query needs</text>
+  <text x="120" y="760" fill="#f3f3f3" font-size="44" font-weight="600">2.2–2.7× smaller</text>
+  <text x="120" y="810" fill="#a8a8a8" font-size="28">than the JSON segments it replaced, for source trees</text>
+</svg>

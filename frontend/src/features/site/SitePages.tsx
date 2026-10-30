@@ -1,12 +1,12 @@
-// The site's written pages: Docs (`/docs/...`, left navigation), Blog (index and posts),
-// Company (About, Vision) and the Terms and Privacy pages, each from its Markdown file.
+// The site's written pages: Docs (`/docs/...`, left navigation), Company (About, Vision)
+// and the Terms and Privacy pages, each from its Markdown file. The blog is `SiteBlog`.
 
 import { LEGAL_ENTITY } from '../../content/legal/entity';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import type { LinkResolver } from '../source-platform/markdown';
 import { anchorId, inline, Markdown } from '../source-platform/markdown';
 import { parseSourceRoute } from '../source-platform/sourceRoute';
-import { BLOG_POSTS, COMPANY_PAGES, DOCS_NAV, DOCS_PAGES, LEGAL_PAGES } from './content';
+import { COMPANY_PAGES, DOCS_NAV, DOCS_PAGES, LEGAL_PAGES } from './content';
 import { siteLink } from './SiteLayout';
 import { DOCS_HOME } from './siteRoute';
 
@@ -63,60 +63,6 @@ export function SiteDocs({ slug, navigate }: { slug: string; navigate: Navigate 
         )}
       </article>
     </div>
-  );
-}
-
-const longDate = (date: string) =>
-  new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-    timeZone: 'UTC',
-  });
-
-/** The blog index, or one post when `slug` is given. */
-export function SiteBlog({ slug, navigate }: { slug?: string; navigate: Navigate }) {
-  if (slug === undefined)
-    return (
-      <article className="site-page site-reading">
-        <header className="site-page-head">
-          <h1>Blog</h1>
-          <p className="site-lead">Notes from building YonedaRepo, with the numbers we measured.</p>
-        </header>
-        <ul className="site-posts">
-          {BLOG_POSTS.map((post) => (
-            <li key={post.slug}>
-              <time dateTime={post.date}>{longDate(post.date)}</time>
-              <h2>
-                <a {...siteLink({ page: 'post', slug: post.slug }, navigate)}>{post.title}</a>
-              </h2>
-              <p>{inline(post.summary, post.slug)}</p>
-            </li>
-          ))}
-        </ul>
-      </article>
-    );
-  const post = BLOG_POSTS.find((p) => p.slug === slug);
-  return (
-    <article className="site-prose site-post">
-      <p>
-        <a {...siteLink({ page: 'blog' }, navigate)}>← Blog</a>
-      </p>
-      {post ? (
-        <>
-          <h1>{post.title}</h1>
-          <p className="site-byline">
-            <time dateTime={post.date}>{longDate(post.date)}</time> · Yoneda Labs
-          </p>
-          <Markdown source={post.body} shift={0} link={contentLinks(navigate)} anchors />
-        </>
-      ) : (
-        <>
-          <h1>Post not found</h1>
-          <p>There is no post at this address.</p>
-        </>
-      )}
-    </article>
   );
 }
 
