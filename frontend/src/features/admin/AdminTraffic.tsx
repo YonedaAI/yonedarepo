@@ -1,4 +1,4 @@
-// Admin traffic: the site's cookieless analytics (site-traffic.ts), page views per day for 30
+// Admin traffic: the site's cookieless analytics (platform-site-traffic.ts), page views per day for 30
 // days, then the top pages, referrers, countries, campaigns and sign-ups by source over the
 // chosen window (7 or 30 days). Page views, not visitors: nothing identifies a visitor.
 import { useState } from 'react';
