@@ -5,6 +5,7 @@ import {
   normalizeAccountIdentifier,
 } from '../../shared/account';
 import { accountCreated, emailRoute } from './account-email';
+import { handleState, setHandle } from './account-handles';
 import { accountFor, signUpWithEmail, signupEmail } from './email-accounts';
 import { error, readJson, response } from './http';
 import { unlink } from './oauth-identity';
@@ -74,9 +75,22 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
       const principal = await accountPrincipal(req, env);
       result = response(
         principal
-          ? { authenticated: true, username: principal.workspace }
+          ? {
+              authenticated: true,
+              username: principal.workspace,
+              ...(await handleState(env, principal.workspace)),
+            }
           : { authenticated: false },
       );
+    } else if (action === 'handle' && req.method === 'PUT') {
+      const principal = await accountPrincipal(req, env);
+      if (!principal) return error('UNAUTHORIZED', 'Sign in to choose a handle', 401);
+      try {
+        result = response(await setHandle(env, principal.workspace, (await readJson(req)).handle));
+      } catch (e: any) {
+        const status = ['HANDLE_TAKEN', 'HANDLE_FIXED'].includes(e?.code) ? 409 : 400;
+        return error(e?.code ?? 'INVALID_INPUT', e?.message ?? 'Handle refused', status);
+      }
     } else if (action === 'providers' && req.method === 'GET') {
       // Sign-in providers whose secrets are set (the sign-in page shows only these).
       result = response({ providers: configuredProviders(env) });

@@ -68,6 +68,21 @@ export async function gitCredentials(req: Request, env: Env): Promise<Credential
   );
 }
 
+/** The answer to a request for a repository that is not there, or that the caller may not
+ * read (Git by readable path, repo-git-paths): credentials refused as `serve` refuses them,
+ * then 401 without any, else 404. */
+export async function unknownRepository(req: Request, env: Env): Promise<Response> {
+  let auth: Credentials | null;
+  try {
+    auth = await gitCredentials(req, env);
+  } catch (e: any) {
+    return refusal(STATUS[failureCode(e)] ?? 500, String(e?.message ?? e));
+  }
+  if (!auth || '_anonymous' in auth)
+    return refusal(401, 'Use a repository or personal access token as the password');
+  return refusal(404, 'NOT_FOUND: Repository not found');
+}
+
 /** Serves a `/git/` request, or answers why it cannot, with its phases in Server-Timing
  * (Git shows response headers under `GIT_TRACE_CURL=1`). */
 export async function gitHttp(req: Request, env: Env): Promise<Response> {
