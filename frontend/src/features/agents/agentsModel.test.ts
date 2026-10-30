@@ -86,6 +86,9 @@ const setUp = (over: Partial<AgentState> = {}): Partial<AgentState> => ({
 const credit = (over: Partial<ManagedCredit> = {}): ManagedCredit => ({
   granted_usd: 5,
   used_usd: 1.25,
+  promo: { usd: 100, granted: false },
+  card: null,
+  top_up_failed: null,
   balance_usd: 3.75,
   paused: false,
   ...over,
@@ -402,7 +405,7 @@ describe('the agent menu and pages', () => {
     ]);
     expect(active.find((i) => i.action === 'create-own')).toMatchObject({
       disabled: true,
-      hint: 'Set up billing to create your own agents',
+      hint: 'Creating your own agents is coming',
     });
     expect(active.find((i) => i.action === 'archive')?.danger).toBe(true);
     const paused = menuItems(state('code-review', setUp({ active: false })));

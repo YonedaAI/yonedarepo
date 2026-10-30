@@ -10,8 +10,6 @@ import {
   MANAGED_AGENTS,
   type ManagedAgentDefinition,
   type ManagedAgentId,
-  type ManagedCredit,
-  STARTING_CREDIT_USD,
 } from '../../shared/managed-agents';
 import {
   customizedFields,
@@ -21,10 +19,12 @@ import {
 } from '../../shared/managed-settings';
 import { principalName, repoAgents, runNow } from './agent-actions';
 import { setRepos, sync } from './agent-repos';
+import { billingState, credit, removeCard, setupCard } from './billing';
 import { type ManagedEnv, REPO_ID, TOKEN_NAME } from './config';
 import { ledgerStub } from './ledger';
 import { type Json, Platform } from './platform';
 import { repoStub } from './repo-agents';
+import { stripeEnabled } from './stripe';
 import { WORKSPACE_SCOPE, workspaceStub } from './workspace-agents';
 
 export class ApiRefusal extends Error {
@@ -72,20 +72,6 @@ async function access(caller: Platform, workspace: string) {
   if (!personal && !orgOwner && repos.length === 0)
     throw new ApiRefusal('FORBIDDEN', 'Only a workspace owner can manage its agents', 403);
   return repos;
-}
-
-async function credit(env: ManagedEnv, workspace: string): Promise<ManagedCredit> {
-  const b = await ledgerStub(env, workspace).balance();
-  // A workspace that never ran an agent shows the starting credit its first run adds.
-  const fresh = b.granted === 0 && b.used === 0;
-  const granted = fresh ? STARTING_CREDIT_USD * 1_000_000 : b.granted;
-  const left = fresh ? granted : b.balance;
-  return {
-    granted_usd: granted / 1e6,
-    used_usd: b.used / 1e6,
-    balance_usd: left / 1e6,
-    paused: left <= 0,
-  };
 }
 
 async function runsOf(env: ManagedEnv, repos: string[], agent: string | null, limit: number) {
@@ -214,7 +200,7 @@ export async function managedApi(req: Request, env: ManagedEnv, parts: string[])
       workspace,
       agents: await Promise.all(MANAGED_AGENTS.map((a) => agentState(env, workspace, a))),
       credit: await credit(env, workspace),
-      billing: 'coming',
+      billing: stripeEnabled(env) ? 'stripe' : 'coming',
       repos: owned,
       token_name: TOKEN_NAME,
     };
@@ -260,11 +246,15 @@ export async function managedApi(req: Request, env: ManagedEnv, parts: string[])
       cost: await ledgerStub(env, workspace).runEntries(sub),
     };
   }
-  if (resource === 'billing' && !id && get) {
+  if (resource === 'billing' && id === 'setup' && req.method === 'POST')
+    return setupCard(env, req, workspace);
+  if (resource === 'billing' && id === 'card' && sub === 'remove' && req.method === 'POST')
+    await removeCard(env, workspace);
+  if (resource === 'billing' && (get || id === 'card')) {
     const runs = await runsOf(env, repos, null, 200);
     const usage = new Map<
       string,
-      { repo: string; agent: string; runs: number; cost_usd: number }
+      { repo: string; agent: ManagedAgentId; runs: number; cost_usd: number }
     >();
     for (const r of runs) {
       const key = `${r.repo}:${r.agent}`;
@@ -273,16 +263,14 @@ export async function managedApi(req: Request, env: ManagedEnv, parts: string[])
       row.cost_usd += r.cost_usd;
       usage.set(key, row);
     }
-    return {
+    return billingState(
+      env,
       workspace,
-      credit: await credit(env, workspace),
-      payment_method: null,
-      billing: 'coming',
-      usage: [...usage.values()].map((u) => ({
+      [...usage.values()].map((u) => ({
         ...u,
         repo_name: owned.find((o) => o.id === u.repo)?.name ?? u.repo,
       })),
-    };
+    );
   }
   throw new ApiRefusal('NOT_FOUND', 'Unknown managed API path', 404);
 }
