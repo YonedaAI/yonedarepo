@@ -112,6 +112,9 @@ export function buildCommand(spec) {
       $schema: 'https://opencode.ai/config.json',
       autoupdate: false,
       share: 'disabled',
+      // Titles and summaries use the run's model too: the gateway refuses any other.
+      model: `yoneda/${model}`,
+      small_model: `yoneda/${model}`,
       provider: {
         yoneda: {
           npm: '@ai-sdk/anthropic',

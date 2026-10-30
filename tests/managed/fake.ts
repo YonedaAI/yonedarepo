@@ -210,7 +210,8 @@ export class FakeHarness {
   async call(params: HarnessParams, call: ScriptedCall) {
     const gatewayPath = new URL(GATEWAY).pathname;
     const slug = { claude: 'anthropic', codex: 'openai', zai: 'custom-zai', mimo: 'custom-mimo' }[params.provider];
-    const path = call.path ?? `${gatewayPath}/${slug}/v1/messages`;
+    // Codex speaks the Responses API; the others Anthropic Messages.
+    const path = call.path ?? (params.provider === 'codex' ? `${gatewayPath}/${slug}/responses` : `${gatewayPath}/${slug}/v1/messages`);
     const req = new Request(`http://gateway.internal${path}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-api-key': 'yoneda-managed-placeholder' },

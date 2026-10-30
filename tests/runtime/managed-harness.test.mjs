@@ -57,6 +57,8 @@ test('opencode gets a gateway provider config, edits and network denied', () => 
   assert.equal(config.provider.yoneda.options.baseURL, `${gateway.base}/custom-mimo/anthropic/v1`);
   assert.equal(config.provider.yoneda.options.apiKey, PLACEHOLDER_KEY);
   assert.deepEqual(config.provider.yoneda.models['mimo-v2.6-flash'], {});
+  assert.equal(config.model, 'yoneda/mimo-v2.6-flash');
+  assert.equal(config.small_model, 'yoneda/mimo-v2.6-flash', 'titles use the run model too');
   assert.equal(config.permission.edit, 'deny');
   assert.equal(config.permission.webfetch, 'deny');
   assert.equal(config.permission.bash['*'], 'deny');
@@ -97,4 +99,19 @@ test('the prompt carries instructions, the review context, the repository rules 
   assert.match(prompt, /--- AGENTS\.md \(at the diff base\) ---\nFunctions stay under 50 lines\./);
   assert.doesNotMatch(prompt, /REVIEW\.md \(at/);
   assert.ok(prompt.trimEnd().endsWith('Reply with JSON.'));
+});
+
+test('a CLI that exits without reading its prompt is a reported failure, not a runner crash', async () => {
+  const { execute } = await import('../../cloudflare/containers/harness/runner.mjs');
+  const lines = [];
+  // 4 MiB is far past a pipe's buffer: writing it to a process that already exited raises EPIPE.
+  const failed = execute(['sh', '-c', 'echo "provider refused the request" >&2; exit 3'], {
+    cwd: process.cwd(),
+    env: {},
+    stdin: 'x'.repeat(4 * 1024 * 1024),
+    deadline: Date.now() + 30_000,
+    log: (text) => lines.push(text),
+  });
+  await assert.rejects(failed, /sh exited with 3/);
+  assert.match(lines.join(''), /provider refused the request/);
 });

@@ -48,6 +48,8 @@ export const REPO_SCHEMA: string[] = [
      UNIQUE (agent, change, head)
    );
    CREATE INDEX runs_recent ON runs(created_at DESC);`,
+  // v2 (2026-10-30): the agent's summary, as posted, for the run's detail page.
+  `ALTER TABLE runs ADD COLUMN summary TEXT;`,
 ];
 
 /** CreditLedger: append-only credit entries and runs waiting for credit. */

@@ -172,6 +172,7 @@ export async function runAgent(env: ManagedEnv, p: RunParams, step: Steps): Prom
     const status = report.posted.length > 0 ? 'findings' : 'passed';
     await repo.finish(p.run, p.attempt, status, {
       value: report.value,
+      summary: report.summary || null,
       findings: report.posted,
       withheld: report.withheld,
     });
@@ -261,7 +262,10 @@ async function attempt(
       : stop
         ? null
         : String(
-            status.error ?? (status.phase === 'running' ? 'Timed out' : 'The harness stopped'),
+            status.error ??
+              (status.phase === 'running'
+                ? 'Timed out'
+                : 'The harness container stopped before it reported'),
           );
     return { result, error, stop } satisfies Collected;
   });

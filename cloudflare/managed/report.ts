@@ -40,7 +40,7 @@ export async function postReport(
   token: string,
   result: Record<string, unknown>,
   blockAt: string | null,
-): Promise<{ posted: PostedFinding[]; withheld: number; value: RunValue }> {
+): Promise<{ posted: PostedFinding[]; withheld: number; value: RunValue; summary: string }> {
   const platform = new Platform(env, { token });
   const change = await platform.change(p.repo, p.change);
   const anchors = anchorsOf((change.diff?.changes ?? []) as { path: string; patch?: string }[]);
@@ -122,5 +122,5 @@ export async function postReport(
     findings: counts,
     withheld,
   });
-  return { posted, withheld, value };
+  return { posted, withheld, value, summary };
 }
