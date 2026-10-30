@@ -14,11 +14,9 @@
   grid-area: title;
   margin: 0;
   max-width: 13ch;
-  font-family: "Inter Tight", "IBM Plex Sans", sans-serif;
-  font-size: clamp(40px, 5vw, 60px);
-  font-weight: 700;
-  line-height: 1.02;
-  letter-spacing: -0.035em;
+  font-size: var(--fs-hero);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
 }
 .site-hero-lead {
   grid-area: lead;
@@ -26,7 +24,7 @@
   /* Optical alignment with the headline's cap height. */
   padding-top: 6px;
   color: var(--site-muted);
-  font-size: var(--fs-lg);
+  font-size: var(--fs-md);
   line-height: 1.5;
 }
 .site-hero-actions {
@@ -69,7 +67,7 @@
   border: 1px solid var(--site-line-strong);
   border-radius: 5px;
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0.01em;
 }
 .site-works-any {
