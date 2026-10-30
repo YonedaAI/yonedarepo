@@ -1,7 +1,8 @@
 // An agent's effective settings: the maintained defaults, then the workspace's overrides, then
-// a repository's. Only fields someone changed are stored, so a field nobody changed follows
-// the defaults as YonedaRepo updates them. Overrides are validated here, for the managed
-// Worker (authoritative) and the settings form (early feedback) alike.
+// a repository's. Managed agents are locked down: YonedaRepo maintains everything but when they
+// run (`trigger`), so only that is ever applied or accepted; overrides of other fields stored
+// before the lock are kept but ignored. Overrides are validated here, for the managed Worker
+// (authoritative) and the settings form (early feedback) alike.
 import {
   type AgentSettings,
   HARNESS_PROVIDERS,
@@ -24,6 +25,10 @@ const FIELDS: readonly (keyof AgentSettings)[] = [
   'trigger',
   'block_at',
 ];
+/** What a workspace may change on a managed agent (repositories and Active are not settings). */
+export const EDITABLE_FIELDS: readonly (keyof AgentSettings)[] = ['trigger'];
+/** Everything else is maintained by YonedaRepo. */
+export const LOCKED_FIELDS = FIELDS.filter((f) => !EDITABLE_FIELDS.includes(f));
 export const MAX_INSTRUCTIONS = 20_000;
 export const TIMEOUT_RANGE = { min: 5, max: 30 } as const;
 const MAX_FILTERS = 20;
@@ -35,14 +40,15 @@ export function resolveSettings(
   const out: AgentSettings = { ...agent.defaults, trigger: { ...agent.defaults.trigger } };
   for (const layer of layers) {
     if (!layer) continue;
-    for (const field of FIELDS) if (layer[field] !== undefined) (out as any)[field] = layer[field];
+    for (const field of EDITABLE_FIELDS)
+      if (layer[field] !== undefined) (out as any)[field] = layer[field];
   }
   return out;
 }
 
-/** The fields `overrides` changes from the defaults (what the page marks customized). */
+/** The fields `overrides` changes from the defaults that apply (what the page marks customized). */
 export const customizedFields = (overrides: SettingsOverrides | null | undefined) =>
-  FIELDS.filter((f) => overrides?.[f] !== undefined);
+  EDITABLE_FIELDS.filter((f) => overrides?.[f] !== undefined);
 
 export class SettingsError extends Error {}
 
@@ -76,6 +82,8 @@ export function validateOverrides(
   for (const [key, value] of Object.entries(patch)) {
     if (!FIELDS.includes(key as keyof AgentSettings))
       throw new SettingsError(`Unknown setting ${key}`);
+    if (!EDITABLE_FIELDS.includes(key as keyof AgentSettings))
+      throw new SettingsError(`${key} is maintained by YonedaRepo and cannot be changed`);
     if (value === null && key !== 'block_at') delete next[key];
     else next[key] = value;
   }

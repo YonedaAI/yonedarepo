@@ -71,6 +71,54 @@ export class WorkspaceAgents extends DurableObject<ManagedEnv> {
       .map((r) => r.repo);
   }
 
+  /** The agent's set-up: who added it and when, and whether it is active (null: never). */
+  meta(
+    agent: ManagedAgentId,
+  ): { created_by: string; created_at: number; active: boolean; all_repos: boolean } | null {
+    const row = this.#sql
+      .exec<{ created_by: string; created_at: number; active: number; all_repos: number }>(
+        'SELECT created_by, created_at, active, all_repos FROM agent_meta WHERE agent = ?',
+        agent,
+      )
+      .toArray()[0];
+    return row ? { ...row, active: row.active === 1, all_repos: row.all_repos === 1 } : null;
+  }
+
+  /** "All repositories, including new ones": a sync connects each one the workspace gains. */
+  setAllRepos(agent: ManagedAgentId, all: boolean) {
+    this.#sql.exec('UPDATE agent_meta SET all_repos = ? WHERE agent = ?', all ? 1 : 0, agent);
+  }
+
+  /** Add agent: recorded once (a later save keeps who and when). */
+  setUp(agent: ManagedAgentId, by: string) {
+    this.#sql.exec(
+      'INSERT INTO agent_meta (agent, created_by, created_at, active) VALUES (?, ?, ?, 1) ON CONFLICT(agent) DO NOTHING',
+      agent,
+      by,
+      Date.now(),
+    );
+  }
+
+  setActive(agent: ManagedAgentId, active: boolean) {
+    this.#sql.exec('UPDATE agent_meta SET active = ? WHERE agent = ?', active ? 1 : 0, agent);
+  }
+
+  /** Archive: the agent's set-up, overrides and repositories are forgotten. */
+  archive(agent: ManagedAgentId) {
+    this.ctx.storage.transactionSync(() => {
+      for (const table of ['agent_meta', 'settings', 'enabled'])
+        this.#sql.exec(`DELETE FROM ${table} WHERE agent = ?`, agent);
+    });
+  }
+
+  /** Repositories any agent of this workspace is set up on (paused ones included). */
+  reposInUse(): string[] {
+    return this.#sql
+      .exec<{ repo: string }>('SELECT DISTINCT repo FROM enabled')
+      .toArray()
+      .map((r) => r.repo);
+  }
+
   /** A deleted repository: out of every agent's enabled list, its own overrides dropped. */
   forget(repo: string) {
     this.ctx.storage.transactionSync(() => {

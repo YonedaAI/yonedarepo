@@ -452,16 +452,16 @@ describe('each agent on its fixtures', () => {
     });
   }
 
-  it('slop-review holds findings at medium, and blocks only at the level a repository opts into', async () => {
+  it('slop-review holds findings at medium and never blocks (its reading is maintained)', async () => {
     const h = await ready('slop-review');
     fakeGateway();
     const high = { summary: 's', findings: [{ ...FIXTURES['slop-review'].trigger.expected[0], severity: 'high' }] };
     h.harness.scripts = [{ result: high }];
-    expect((await put(h, 'slop-review', { settings: { block_at: 'medium' } })).status).toBe(200);
+    expect((await put(h, 'slop-review', { settings: { block_at: 'medium' } })).status).toBe(400);
     await deliver(h, opened(h));
     expect(await run(h, h.created[0])).toMatchObject({ value: 'medium' });
     expect(h.platform.comments[0].body).toContain('**Medium:');
-    expect(h.platform.checks[0]).toMatchObject({ status: 'fail', evidence: expect.objectContaining({ value: 'medium' }) });
+    expect(h.platform.checks[0]).toMatchObject({ status: 'pass', evidence: expect.objectContaining({ value: 'medium' }) });
   });
 });
 
@@ -484,34 +484,29 @@ describe('settings', () => {
     expect(overview.repos).toHaveLength(2);
   });
 
-  it('saves overrides per workspace and per repository, rejecting invalid ones', async () => {
+  it('saves when to run per workspace and per repository, rejecting an invalid trigger', async () => {
     const h = await ready();
-    const bad = await put(h, 'code-review', { settings: { harness: 'codex', provider: 'zai' } });
-    expect(bad.status).toBe(400);
-    expect((await put(h, 'code-review', { settings: { timeout_minutes: 99 } })).status).toBe(400);
-    expect((await put(h, 'code-review', { settings: { block_at: 'high' } })).status).toBe(400);
-    const saved = await (await put(h, 'code-review', { settings: { reasoning: 'high', instructions: 'Only check SQL.' } })).json<any>();
-    expect(saved.settings).toMatchObject({ reasoning: 'high', instructions: 'Only check SQL.', model: 'gpt-5.6-luna' });
-    expect(saved.customized.sort()).toEqual(['instructions', 'reasoning']);
-    await put(h, 'code-review', { scope: h.platform.repo, settings: { timeout_minutes: 10 } });
+    const bad = { when: 'sometimes', changes: 'ready_for_review', paths: [], branches: [] };
+    expect((await put(h, 'code-review', { settings: { trigger: bad } })).status).toBe(400);
+    const ready_ = { when: 'ready', changes: 'ready_for_review', paths: [], branches: [] };
+    const saved = await (await put(h, 'code-review', { settings: { trigger: ready_ } })).json<any>();
+    expect(saved).toMatchObject({ settings: { trigger: ready_ }, customized: ['trigger'] });
+    const onlySrc = { when: 'push', changes: 'ready_for_review', paths: ['src/'], branches: [] };
+    await put(h, 'code-review', { scope: h.platform.repo, settings: { trigger: onlySrc } });
     const repoState = await (await site(h, '/agents/code-review')).json<any>();
-    expect(repoState.repo_overrides).toEqual({ [h.platform.repo]: ['timeout_minutes'] });
-    fakeGateway();
-    h.harness.scripts = [{ result: result('code-review') }];
-    await deliver(h, opened(h));
-    await run(h, h.created[0]);
-    expect(h.harness.started[0].spec).toMatchObject({ reasoning: 'high', instructions: 'Only check SQL.', timeout_ms: 10 * 60_000 });
-    // Setting a field back to its default stops customizing it.
-    const reset = await (await put(h, 'code-review', { settings: { reasoning: 'medium' } })).json<any>();
-    expect(reset.customized).toEqual(['instructions']);
+    expect(repoState.repo_overrides).toEqual({ [h.platform.repo]: ['trigger'] });
+    // Setting it back to the default stops customizing it.
+    const reset = await (await put(h, 'code-review', { settings: { trigger: null } })).json<any>();
+    expect(reset.customized).toEqual([]);
   });
 
-  it('applies updated defaults to every field a workspace did not customize', () => {
+  it('applies updated maintained defaults to every workspace; only when it runs is its own', () => {
     const agent = managedAgent('code-review')!;
-    const overrides = validateOverrides(agent, {}, { instructions: 'Mine.' });
+    const trigger = { when: 'ready' as const, changes: 'ready_for_review' as const, paths: [], branches: [] };
+    const overrides = validateOverrides(agent, {}, { trigger });
     const updated = { ...agent, defaults: { ...agent.defaults, model: 'glm-5.3', instructions: 'New maintained text.', timeout_minutes: 25 } };
-    expect(resolveSettings(updated, overrides)).toMatchObject({ model: 'glm-5.3', timeout_minutes: 25, instructions: 'Mine.' });
-    expect(resolveSettings(updated, {})).toMatchObject({ instructions: 'New maintained text.' });
+    expect(resolveSettings(updated, overrides)).toMatchObject({ model: 'glm-5.3', timeout_minutes: 25, instructions: 'New maintained text.', trigger });
+    expect(() => validateOverrides(agent, {}, { instructions: 'Mine.' })).toThrow(/maintained by YonedaRepo/);
   });
 });
 
