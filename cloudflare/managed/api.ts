@@ -19,7 +19,7 @@ import {
 } from '../../shared/managed-settings';
 import { principalName, repoAgents, runNow } from './agent-actions';
 import { setRepos, sync } from './agent-repos';
-import { billingState, credit, removeCard, setupCard } from './billing';
+import { billingState, credit, removeCard, setAutoTopUp, setupCard } from './billing';
 import { type ManagedEnv, REPO_ID, TOKEN_NAME } from './config';
 import { ledgerStub } from './ledger';
 import { type Json, Platform } from './platform';
@@ -250,7 +250,9 @@ export async function managedApi(req: Request, env: ManagedEnv, parts: string[])
     return setupCard(env, req, workspace);
   if (resource === 'billing' && id === 'card' && sub === 'remove' && req.method === 'POST')
     await removeCard(env, workspace);
-  if (resource === 'billing' && (get || id === 'card')) {
+  const autoTopUp = resource === 'billing' && id === 'auto-top-up' && !sub && req.method === 'POST';
+  if (autoTopUp) await setAutoTopUp(env, req, workspace);
+  if (resource === 'billing' && (get || id === 'card' || autoTopUp)) {
     const runs = await runsOf(env, repos, null, 200);
     const usage = new Map<
       string,

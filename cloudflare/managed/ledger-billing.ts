@@ -1,5 +1,6 @@
 // A workspace's card billing inside its CreditLedger: the Stripe customer, the saved card
-// (payment method id, brand, last four), whether the last top-up failed, and the top-ups.
+// (payment method id, brand, last four), whether the last top-up failed, whether automatic
+// top-up is on, and the top-ups.
 // Functions over the ledger's SQL, each called inside one of its transactions.
 import { AUTO_TOP_UP, type CardOnFile, type TopUp } from '../../shared/managed-agents';
 
@@ -10,6 +11,7 @@ type BillingRow = {
   last4: string | null;
   card_added_at: number | null;
   top_up_failed: string | null;
+  auto_top_up: number;
 };
 
 const EMPTY: BillingRow = {
@@ -19,6 +21,7 @@ const EMPTY: BillingRow = {
   last4: null,
   card_added_at: null,
   top_up_failed: null,
+  auto_top_up: 1,
 };
 
 export function billingRow(sql: SqlStorage): BillingRow {
@@ -33,21 +36,28 @@ export const cardOf = (row: BillingRow): CardOnFile | null =>
 function upsert(sql: SqlStorage, fields: Partial<BillingRow>) {
   const next = { ...billingRow(sql), ...fields };
   sql.exec(
-    `INSERT INTO billing (id, customer, payment_method, brand, last4, card_added_at, top_up_failed)
-     VALUES (1, ?, ?, ?, ?, ?, ?)
+    `INSERT INTO billing (id, customer, payment_method, brand, last4, card_added_at, top_up_failed,
+       auto_top_up)
+     VALUES (1, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET customer = excluded.customer,
        payment_method = excluded.payment_method, brand = excluded.brand, last4 = excluded.last4,
-       card_added_at = excluded.card_added_at, top_up_failed = excluded.top_up_failed`,
+       card_added_at = excluded.card_added_at, top_up_failed = excluded.top_up_failed,
+       auto_top_up = excluded.auto_top_up`,
     next.customer,
     next.payment_method,
     next.brand,
     next.last4,
     next.card_added_at,
     next.top_up_failed,
+    next.auto_top_up,
   );
 }
 
 export const setCustomer = (sql: SqlStorage, customer: string) => upsert(sql, { customer });
+
+/** Automatic top-up on or off; the card stays saved either way. */
+export const setAutoTopUp = (sql: SqlStorage, enabled: boolean) =>
+  upsert(sql, { auto_top_up: enabled ? 1 : 0 });
 
 /** A newly saved card replaces the old one and clears a failed top-up. */
 export function recordCard(
@@ -64,12 +74,12 @@ export function forgetCard(sql: SqlStorage) {
 
 /**
  * The top-up the balance now calls for, recorded as pending, or null: only with a card on file,
- * no failed top-up waiting on a new card, no other top-up pending, and the balance below the
- * threshold. Its key (`topup-<n>`) is its idempotency key at Stripe.
+ * automatic top-up on, no failed top-up waiting on a new card, no other top-up pending, and the
+ * balance below the threshold. Its key (`topup-<n>`) is its idempotency key at Stripe.
  */
 export function topUpDue(sql: SqlStorage, balance: number, now: number): string | null {
   const row = billingRow(sql);
-  if (!row.payment_method || row.top_up_failed) return null;
+  if (!row.payment_method || !row.auto_top_up || row.top_up_failed) return null;
   if (balance >= AUTO_TOP_UP.below_usd * 1_000_000) return null;
   const pending = sql.exec("SELECT 1 FROM top_ups WHERE status = 'pending'").toArray().length;
   if (pending) return null;

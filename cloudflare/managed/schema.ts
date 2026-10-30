@@ -93,6 +93,9 @@ export const LEDGER_SCHEMA: string[] = [
      created_at INTEGER NOT NULL,
      settled_at INTEGER
    );`,
+  // v3 (2026-10-30): automatic top-up can be switched off without removing the card; on for
+  // every card saved before the switch existed.
+  `ALTER TABLE billing ADD COLUMN auto_top_up INTEGER NOT NULL DEFAULT 1;`,
 ];
 
 /** WorkspaceAgents: per-agent overrides (workspace-wide or per repository) and where it runs. */

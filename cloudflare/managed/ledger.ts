@@ -12,6 +12,7 @@ import {
   forgetCard,
   type PendingTopUp,
   recordCard,
+  setAutoTopUp,
   setCustomer,
   settleTopUp,
   topUp,
@@ -191,6 +192,7 @@ export class CreditLedger extends DurableObject<ManagedEnv> {
       customer: row.customer,
       card: cardOf(row),
       top_up_failed: row.top_up_failed,
+      auto_top_up: row.auto_top_up !== 0,
       promo_granted: promo,
       top_ups: topUps(sql),
     };
@@ -198,6 +200,10 @@ export class CreditLedger extends DurableObject<ManagedEnv> {
 
   setCustomer(customer: string) {
     this.#tx((sql) => setCustomer(sql, customer));
+  }
+
+  setAutoTopUp(enabled: boolean) {
+    this.#tx((sql) => setAutoTopUp(sql, enabled));
   }
 
   /** A card saved at Stripe for `customer` (refused for another): recorded, the promotional

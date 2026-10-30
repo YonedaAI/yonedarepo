@@ -61,11 +61,12 @@ describe('the account menu', () => {
       }),
     );
 
-  it('lists Account, Organizations, Connect agents, Appearance, Support, Documentation, About and Log out, in order', () => {
+  it('lists Account, Organizations, Billing, Connect agents, Appearance, Support, Documentation, About and Log out, in order', () => {
     const html = menu(null);
     const order = [
       'Account',
       'Organizations',
+      'Billing',
       'Connect agents (CLI, MCP)',
       'Appearance',
       'Support',
@@ -83,6 +84,7 @@ describe('the account menu', () => {
     expect(html).not.toContain('Changelog');
     expect(html).toContain('href="/settings#account"');
     expect(html).toContain('href="/settings#organizations"');
+    expect(html).toContain('href="/settings#billing"');
     expect(html).toContain('aria-haspopup="true"');
     for (const { href } of MENU_LINKS.filter((l) => l.external))
       expect(html).toContain(`href="${href}" target="_blank" rel="noopener"`);
