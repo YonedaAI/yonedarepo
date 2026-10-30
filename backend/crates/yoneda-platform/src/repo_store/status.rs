@@ -1,5 +1,6 @@
-//! `repo_status` as a typed contract: what `GET /repos/:id` answers. Its JSON Schema
-//! generates `shared/contracts/repo-status.ts` (`cargo xtask contracts`).
+//! `repo_status` as a typed contract, and what `GET /repos/:id` answers: that status with the
+//! readable path the Worker adds. The answer's JSON Schema generates
+//! `shared/contracts/repo-status.ts` (`cargo xtask contracts`).
 use super::auth::Actor;
 use super::members::Role;
 use super::rows::{self, Policy, Settings, Visibility};
@@ -39,6 +40,20 @@ pub struct RepoStatus {
     pub quarantined: Vec<Withheld>,
     /// Changes whenever `quarantined` does: caches derived from content are keyed by it.
     pub quarantine_epoch: u64,
+}
+
+/// What `GET /repos/:id` answers: the repository's status with its readable path. The Worker
+/// adds both from the D1 listing (cloudflare/worker/repo-paths.ts): the repository does not
+/// know its owner's handle.
+#[derive(Debug, Serialize, JsonSchema)]
+#[schemars(rename = "RepoStatus")]
+pub struct RepoAnswer {
+    #[serde(flatten)]
+    pub status: RepoStatus,
+    /// The owner's handle (null while an email-named owner has none).
+    pub owner_handle: Option<String>,
+    /// The readable path `/<handle>/<name>` (null while the owner has no handle).
+    pub path: Option<String>,
 }
 
 /// A withheld blob and the path its owner named when quarantining it.
