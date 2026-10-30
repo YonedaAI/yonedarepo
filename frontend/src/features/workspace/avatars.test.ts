@@ -40,6 +40,12 @@ describe('whose picture shows', () => {
     expect(html).toContain('referrerPolicy="no-referrer"');
     expect(html).toContain('alt=""');
     expect(render(createElement(Avatar, { name: 'ada', src: null }))).not.toContain('<img');
+    // Its size is a CSS variable, so a page's class (the profile's, smaller on a phone) wins.
+    const sized = render(
+      createElement(Avatar, { name: 'ada', src: null, size: 88, className: 'profile-avatar' }),
+    );
+    expect(sized).toContain('class="avatar profile-avatar"');
+    expect(sized).toContain('style="--avatar-size:88px"');
   });
 });
 

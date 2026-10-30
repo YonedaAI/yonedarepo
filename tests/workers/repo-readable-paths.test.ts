@@ -138,7 +138,7 @@ it('answers a private repository exactly as a missing one to anyone who may not 
   const profile = await api('/profiles/owner_p', {}, {}, local);
   expect([profile.status, profile.body]).toEqual([
     200,
-    { handle: 'owner_p', kind: 'user', display_name: null, repositories: [expect.objectContaining({ id, name: 'secret', path: '/owner_p/secret' })] },
+    { handle: 'owner_p', kind: 'user', display_name: null, avatar_url: null, repositories: [expect.objectContaining({ id, name: 'secret', path: '/owner_p/secret' })] },
   ]);
   for (const handle of ['docs', 'no_such_handle', 'owner_p@example.com'])
     expect((await api(`/profiles/${encodeURIComponent(handle)}`, {}, {}, local)).status, handle).toBe(404);

@@ -2,6 +2,7 @@
 // then two tabs: Overview, the pinned or most recently active repositories as cards, and
 // Repositories, every public repository as a list. An unknown handle is a not-found page.
 import { Building2, Compass, GitBranch, User } from 'lucide-react';
+import { Avatar } from '../shell/Avatar';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { ago } from '../source-platform/fileActivity';
 import { PublicBadge } from '../source-platform/PublicBadge';
@@ -12,7 +13,6 @@ import {
   type Profile,
   type ProfileRepo,
   type ProfileTab,
-  profileInitial,
   profileName,
   profilePath,
   topRepos,
@@ -88,13 +88,12 @@ export function ProfilePage({
   return (
     <section className="profile" aria-labelledby="profile-heading">
       <header className="profile-head">
-        {p.avatar_url ? (
-          <img className="profile-avatar" src={p.avatar_url} alt="" width={88} height={88} />
-        ) : (
-          <span className="profile-avatar profile-initial" aria-hidden="true">
-            {profileInitial(p)}
-          </span>
-        )}
+        <Avatar
+          name={profileName(p)}
+          src={p.avatar_url}
+          size={88}
+          className="profile-avatar profile-initial"
+        />
         <div>
           <h1 id="profile-heading">{profileName(p)}</h1>
           <p className="profile-handle">

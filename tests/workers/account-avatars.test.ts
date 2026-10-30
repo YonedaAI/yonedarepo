@@ -1,11 +1,13 @@
 // Account pictures (workerd): the provider's picture from sign-in, served as a redirect to
 // its allow-listed host (never fetched); an uploaded PNG, JPEG or WebP (at most 1 MiB,
 // typed by its bytes) stored in R2 and served from our origin with nosniff; removal falling
-// back to the provider's, then to none; email-named accounts never served publicly.
+// back to the provider's, then to none; pictures addressed by handle, so an email-named
+// account's is served by the handle it picked and never by its address; profiles carry it.
 import { expect, it } from 'vitest';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
+import { encodeAccountIdentifier } from '../../shared/account';
 import { workspace } from '../../cloudflare/worker/workspace';
-import { bindings, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, bindings, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -134,3 +136,47 @@ async function sha(text: string) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
+
+it("serves an email-named account's picture by its handle, never by its address", async () => {
+  const email = 'grace.pic@example.com';
+  const token = 'c'.repeat(64);
+  await workspace(bindings, email, {
+    op: 'signup',
+    username: email,
+    password: 'long platform test password',
+    salt: '01'.repeat(16),
+    session_hash: await sha(token),
+    recovery_hash: 'b'.repeat(64),
+  });
+  const cookie = `yoneda_account=${encodeAccountIdentifier(email)}.${token}`;
+  expect((await upload(cookie, PNG)).status).toBe(200);
+  // No handle yet: nothing public names the picture.
+  expect((await fetchApi(`/avatars/${encodeURIComponent(email)}`)).status).toBe(404);
+  const picked = await bindings.SELF.fetch('https://yoneda/api/auth/handle', {
+    method: 'PUT',
+    headers: { cookie, 'content-type': 'application/json' },
+    body: JSON.stringify({ handle: 'grace_pic' }),
+  });
+  expect(picked.status).toBe(200);
+  const served = await fetchApi('/avatars/grace_pic');
+  expect(served.status).toBe(200);
+  expect(served.headers.get('content-type')).toBe('image/png');
+  expect(new Uint8Array(await served.arrayBuffer())).toEqual(PNG);
+  expect((await fetchApi(`/avatars/${encodeURIComponent(email)}`)).status).toBe(404);
+  const profile = await api('/profiles/grace_pic', {});
+  expect(profile.status).toBe(200);
+  expect(profile.body.avatar_url).toMatch(/^\/api\/v1\/avatars\/grace_pic\?v=[0-9a-f]{12}$/);
+  expect(JSON.stringify(profile.body)).not.toContain('@');
+});
+
+it('profiles carry the picture URL: a person with one, none without, and no organization', async () => {
+  await githubAccount('prof_pic', GITHUB);
+  const withPicture = await api('/profiles/prof_pic', {});
+  expect(withPicture.body.avatar_url).toMatch(/^\/api\/v1\/avatars\/prof_pic\?v=[0-9a-f]{12}$/);
+  const cookie = await signup('prof_none');
+  expect((await api('/profiles/prof_none', {})).body.avatar_url).toBeNull();
+  const org = await api('/orgs', { cookie }, { body: { name: 'pic_org' } });
+  expect(org.status, JSON.stringify(org.body)).toBe(200);
+  expect((await api('/profiles/pic_org', {})).body).toMatchObject({ kind: 'org', avatar_url: null });
+  expect((await fetchApi('/avatars/pic_org')).status).toBe(404);
+});

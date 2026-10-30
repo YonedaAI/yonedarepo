@@ -1,9 +1,10 @@
 // Where an account's picture is served, for the browser: the signed-in person's own at
-// `/api/v1/account/avatar`, anyone's at `/api/v1/avatars/<name>`, each with a version
-// that changes with the picture. The account's WorkspaceAuthority decides which picture
-// it is (platform-avatars.ts serves it). An email-named account has no public picture URL:
-// the address would be in it.
-import { normalizeAccountIdentifier } from '../../shared/account';
+// `/api/v1/account/avatar`, anyone's at `/api/v1/avatars/<handle>`, each with a version that
+// changes with the picture. The account's WorkspaceAuthority decides which picture it is
+// (platform-avatars.ts serves it). Public URLs name the handle, never the account
+// identifier: an email-named account's picture is reached by the handle it picked.
+import { normalizeHandle } from '../../shared/account';
+import type { HandleOwner } from './repo-paths';
 import type { Env } from './types';
 import { workspace } from './workspace';
 
@@ -16,19 +17,15 @@ export const avatarInfo = (env: Env, account: string) =>
 export const ownAvatarUrl = (info: AvatarInfo | null) =>
   info?.version ? `/api/v1/account/avatar?v=${info.version}` : null;
 
-/** Anyone's picture URL for public pages (profiles), or null: none, or an email-named account. */
+/** Anyone's picture URL by their handle, or null for none (or no valid handle). */
 export function publicAvatarUrl(handle: string, info: AvatarInfo | null) {
-  if (!info?.version || !isPublicHandle(handle)) return null;
+  if (!info?.version || normalizeHandle(handle) !== handle) return null;
   return `/api/v1/avatars/${handle}?v=${info.version}`;
 }
 
-/** The picture URL of a profile's handle (unknown accounts have none). */
-export async function profileAvatarUrl(env: Env, handle: string) {
-  if (!isPublicHandle(handle)) return null;
-  const info = await avatarInfo(env, handle).catch(() => null);
-  return publicAvatarUrl(handle, info);
+/** A profile's picture URL: a person's by handle; an organization has none. */
+export async function profileAvatarUrl(env: Env, owner: HandleOwner) {
+  if (owner.kind === 'org') return null;
+  const info = await avatarInfo(env, owner.account).catch(() => null);
+  return publicAvatarUrl(owner.handle, info);
 }
-
-/** A canonical account name that is not an email address. */
-export const isPublicHandle = (name: string) =>
-  normalizeAccountIdentifier(name) === name && !name.includes('@');
