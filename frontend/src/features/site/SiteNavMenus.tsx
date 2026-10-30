@@ -5,10 +5,10 @@
 import { ArrowRight, ChevronDown } from 'lucide-react';
 import { type KeyboardEvent, type ReactNode, useEffect, useRef, useState } from 'react';
 import { linkTo, type Navigate } from '../shell/useRoute';
-import type { SourceRoute } from '../source-platform/sourceRoute';
 import { BUILD_ON } from './buildOn';
 import { logMock } from './buildOnMocks';
-import { sectionLink, siteLink } from './siteLinks';
+import { featurePageFor } from './featurePages';
+import { siteLink } from './siteLinks';
 import { SITE_NAV } from './siteRoute';
 
 export type MenuId = 'features' | 'company';
@@ -27,12 +27,6 @@ export function menuKey(
   return { open, focus: null };
 }
 
-/** Each tour item's own section: its `/features` entry, else its panel on the home page. */
-const featureRoute = (item: (typeof BUILD_ON)[number]): [SourceRoute, string] =>
-  item.feature
-    ? [{ view: 'site', site: { page: 'features' } }, item.feature]
-    : [{ view: 'home' }, `build-${item.id}`];
-
 function FeaturesPanel({ go }: { go: Navigate }) {
   const [lead] = BUILD_ON;
   return (
@@ -44,7 +38,7 @@ function FeaturesPanel({ go }: { go: Navigate }) {
             const Icon = item.icon;
             return (
               <li key={item.id}>
-                <a className="site-menu-item" {...sectionLink(...featureRoute(item), go)}>
+                <a className="site-menu-item" {...siteLink(featurePageFor(item.id), go)}>
                   <span className="site-menu-icon" aria-hidden="true">
                     <Icon size={16} />
                   </span>
@@ -63,7 +57,7 @@ function FeaturesPanel({ go }: { go: Navigate }) {
       </div>
       <div className="site-menu-featured">
         <p className="site-menu-title">Featured</p>
-        <a className="site-menu-card" {...sectionLink(...featureRoute(lead), go)}>
+        <a className="site-menu-card" {...siteLink(featurePageFor(lead.id), go)}>
           <span className="site-menu-card-visual">{logMock}</span>
           <strong>{lead.title}</strong>
           <small>{lead.subtitle}</small>

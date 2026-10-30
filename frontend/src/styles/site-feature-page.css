@@ -1,0 +1,92 @@
+/* A feature's own page (`/features/<slug>`): a hero band, the feature's mock large on the
+   surface colour, then "How it works" and "Related features" as rows of ruled cells. */
+.site-feature-hero.site-band {
+  padding-block: 72px 56px;
+}
+.site-feature-hero h1 {
+  margin: 0 0 var(--sp-4);
+  max-width: 22ch;
+  font-size: var(--fs-hero);
+  line-height: 1.08;
+  letter-spacing: -0.03em;
+}
+.site-feature-hero .site-hero-lead {
+  padding-top: 0;
+  margin-bottom: var(--sp-6);
+}
+.site-feature-visual.site-band {
+  background: var(--site-surface);
+}
+.site-feature-visual .site-mock {
+  max-width: 880px;
+  margin-inline: auto;
+  font-size: var(--fs-base);
+}
+.site-feature-stat {
+  max-width: 880px;
+  margin: var(--sp-5) auto 0;
+  color: var(--site-muted);
+  font-size: var(--fs-sm);
+}
+.site-feature-stat strong {
+  color: var(--site-good);
+  font-variant-numeric: tabular-nums;
+}
+.site-feature-blocks {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.site-feature-blocks strong,
+.site-feature-related strong {
+  color: var(--site-text);
+  font-size: var(--fs-base);
+}
+.site-feature-related {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.site-feature-related.site-tiles li {
+  padding: 0;
+}
+.site-feature-related a {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  height: 100%;
+  padding: var(--sp-4) var(--site-gutter) var(--sp-5);
+  color: var(--site-muted);
+  text-decoration: none;
+}
+.site-feature-related a:hover,
+.site-feature-related a:focus-visible {
+  background: var(--site-surface);
+}
+.site-feature-related .site-menu-icon {
+  margin-bottom: var(--sp-2);
+}
+
+/* Between phone and wide: the four blocks as two rows of two. */
+@media (min-width: 801px) and (max-width: 1100px) {
+  .site-feature-blocks {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .site-feature-blocks > li:nth-child(odd) {
+    border-left: 0;
+  }
+  .site-feature-blocks > li:nth-child(n + 3) {
+    border-top: 1px solid var(--site-line);
+  }
+}
+
+@media (max-width: 800px) {
+  .site-feature-hero.site-band {
+    padding-block: 48px 40px;
+  }
+  .site-feature-blocks,
+  .site-feature-related {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .site-feature-blocks > li + li,
+  .site-feature-related > li + li {
+    border-left: 0;
+    border-top: 1px solid var(--site-line);
+  }
+}

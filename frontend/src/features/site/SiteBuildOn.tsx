@@ -6,7 +6,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { Navigate } from '../shell/useRoute';
 import { inline } from '../source-platform/markdown';
 import { BUILD_ON, mockOf, pickActive } from './buildOn';
-import { featureLink, siteLink } from './SiteLayout';
+import { featurePageFor } from './featurePages';
+import { siteLink } from './SiteLayout';
 
 const panelId = (id: string) => `build-${id}`;
 const ORDER = BUILD_ON.map((item) => item.id);
@@ -94,12 +95,10 @@ export function SiteBuildOn({ navigate }: { navigate: Navigate }) {
               <h3 id={`${panelId(item.id)}-heading`} className="site-two-tone">
                 {item.lead} <span>{inline(item.more, item.id)}</span>
               </h3>
-              {item.feature && (
-                <a className="site-more" {...featureLink(item.feature, navigate)}>
-                  Learn more <span className="sr-only">about {item.title}</span>
-                  <ArrowRight size={16} aria-hidden="true" />
-                </a>
-              )}
+              <a className="site-more" {...siteLink(featurePageFor(item.id), navigate)}>
+                Learn more <span className="sr-only">about {item.title}</span>
+                <ArrowRight size={16} aria-hidden="true" />
+              </a>
             </div>
             <div className="site-build-visual">{mockOf(item)}</div>
           </article>
