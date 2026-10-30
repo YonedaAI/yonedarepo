@@ -1,5 +1,5 @@
 .source-diff {
-  font-size: 13px;
+  font-size: var(--text-mono-dense);
   line-height: 1.65;
 }
 .source-diff .sr-only {

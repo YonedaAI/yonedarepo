@@ -2,6 +2,8 @@
 // with scopes, an optional repository allowlist, an optional organization limit and an
 // expiry. Created from the session, shown once, revocable.
 import { type FormEvent, useState } from 'react';
+import { Dialog } from '../../components/Dialog';
+import { SettingsRow, SettingsSection } from '../../components/SettingsSection';
 import {
   DEFAULT_EXPIRY_DAYS,
   DEFAULT_PAT_SCOPES,
@@ -51,8 +53,7 @@ export function PatTable({
   if (tokens.loading && !tokens.data) return <Loading what="tokens" />;
   if (tokens.error) return <Failure error={tokens.error} onRetry={tokens.reload} />;
   const list = tokens.data?.tokens ?? [];
-  if (list.length === 0)
-    return <p className="source-empty">No personal access tokens. Create one below.</p>;
+  if (list.length === 0) return <p className="source-empty">No personal access tokens yet.</p>;
   const name = (id: string) => repos.find((r) => r.id === id)?.name ?? id;
   return (
     <div className="source-table-wrap">
@@ -159,6 +160,74 @@ export function OrgLimit({
   );
 }
 
+/** The new-token form: `onCreated` takes the secret, shown once. */
+export function PatDialog({
+  repos,
+  orgs,
+  onCreated,
+  onClose,
+}: {
+  repos: RepoSummary[];
+  orgs: OrgSummary[];
+  onCreated: (secret: string) => void;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState('');
+  const [scopes, setScopes] = useState<PatScope[]>(DEFAULT_PAT_SCOPES);
+  const [days, setDays] = useState(DEFAULT_EXPIRY_DAYS);
+  const [allow, setAllow] = useState<string[]>([]);
+  const [org, setOrg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  async function create(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      const created = await sourceApi<{ token: string }>('/tokens', {
+        body: patBody({ name, scopes, days, repos: allow, org }),
+      });
+      onCreated(created.token);
+    } catch (e) {
+      setError((e as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog title="Create token" onClose={onClose} locked={busy} initialFocus="#pat-name">
+      <form
+        onSubmit={create}
+        className="source-token-form"
+        aria-label="Create a personal access token"
+      >
+        <label htmlFor="pat-name" className="source-field">
+          Name
+          <input
+            id="pat-name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="laptop, ci, cloud agent"
+            maxLength={100}
+            required
+          />
+        </label>
+        <ScopeChecks legend="Scopes" options={PAT_SCOPES} value={scopes} onChange={setScopes} />
+        <ExpirySelect id="pat-expiry" value={days} onChange={setDays} />
+        <RepoAllowlist repos={repos} value={allow} onChange={setAllow} />
+        {orgs.length > 0 && <OrgLimit orgs={orgs} value={org} onChange={setOrg} />}
+        {error && <Failure error={error} />}
+        <div className="run-actions">
+          <button type="submit" disabled={busy || !name.trim() || scopes.length === 0}>
+            {busy ? 'Creating…' : 'Create token'}
+          </button>
+        </div>
+      </form>
+    </Dialog>
+  );
+}
+
 export function PersonalTokens({
   repos,
   orgs = [],
@@ -170,32 +239,10 @@ export function PersonalTokens({
   tokens: Loaded<{ tokens: Pat[] }>;
 }) {
   const tokens = onlyTokens(all, (t) => !isDeviceLogin(t));
-  const [name, setName] = useState('');
-  const [scopes, setScopes] = useState<PatScope[]>(DEFAULT_PAT_SCOPES);
-  const [days, setDays] = useState(DEFAULT_EXPIRY_DAYS);
-  const [allow, setAllow] = useState<string[]>([]);
-  const [org, setOrg] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
   const [secret, setSecret] = useState('');
 
-  async function create(event: FormEvent) {
-    event.preventDefault();
-    setBusy(true);
-    setError('');
-    try {
-      const created = await sourceApi<{ token: string }>('/tokens', {
-        body: patBody({ name, scopes, days, repos: allow, org }),
-      });
-      setSecret(created.token);
-      setName('');
-      tokens.reload();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
-  }
   async function revoke(token: Pat) {
     setError('');
     try {
@@ -206,42 +253,44 @@ export function PersonalTokens({
   }
 
   return (
-    <section className="settings-card" aria-labelledby="pat-heading">
-      <h2 id="pat-heading">Personal access tokens</h2>
-      <p className="source-meta">
-        For agents and CI across your repositories. <code>yoneda login</code> creates its own
-        through the browser (listed under Signed-in CLIs); create one here for a cloud agent.
-      </p>
-      <PatTable tokens={tokens} repos={repos} onRevoke={revoke} />
-      {secret ? (
-        <ShownOnce token={secret} onDone={() => setSecret('')} />
-      ) : (
-        <form
-          onSubmit={create}
-          className="source-token-form"
-          aria-label="Create a personal access token"
-        >
-          <label htmlFor="pat-name" className="source-field">
-            Name
-            <input
-              id="pat-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="laptop, ci, cloud agent"
-              maxLength={100}
-              required
-            />
-          </label>
-          <ScopeChecks legend="Scopes" options={PAT_SCOPES} value={scopes} onChange={setScopes} />
-          <ExpirySelect id="pat-expiry" value={days} onChange={setDays} />
-          <RepoAllowlist repos={repos} value={allow} onChange={setAllow} />
-          {orgs.length > 0 && <OrgLimit orgs={orgs} value={org} onChange={setOrg} />}
-          <button type="submit" disabled={busy || !name.trim() || scopes.length === 0}>
-            {busy ? 'Creating…' : 'Create token'}
+    <SettingsSection id="pat" title="Personal access tokens">
+      <SettingsRow
+        title="Git, agents and CI"
+        detail={
+          <>
+            Use a token as your Git password, or give one to a cloud agent.{' '}
+            <code>yoneda login</code> creates its own.
+          </>
+        }
+        action={
+          <button type="button" className="quiet" onClick={() => setCreating(true)}>
+            Create token
           </button>
-        </form>
+        }
+      />
+      {creating && (
+        <PatDialog
+          repos={repos}
+          orgs={orgs}
+          onClose={() => setCreating(false)}
+          onCreated={(token) => {
+            setSecret(token);
+            setCreating(false);
+            tokens.reload();
+          }}
+        />
       )}
-      {error && <Failure error={error} />}
-    </section>
+      {secret && (
+        <div className="settings-block">
+          <ShownOnce token={secret} onDone={() => setSecret('')} />
+        </div>
+      )}
+      <PatTable tokens={tokens} repos={repos} onRevoke={revoke} />
+      {error && (
+        <div className="settings-block">
+          <Failure error={error} />
+        </div>
+      )}
+    </SettingsSection>
   );
 }

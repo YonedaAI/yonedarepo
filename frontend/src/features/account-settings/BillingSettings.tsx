@@ -1,9 +1,10 @@
-// Settings → Billing (`/settings/billing`), a card each: the account's agent credit, its
+// Settings → Billing (`/settings/billing`), a headed card each: the account's agent credit, its
 // payment method (brand and last four only; adding or replacing one is Stripe's own page), the
 // automatic top-up switch and rule, how to stop paying, the top-ups it charged, and agent usage
 // by repository and agent. Platform features are free; only managed agent runs use credit.
 import { useState } from 'react';
 import type { BillingState } from '../../../../shared/managed-agents';
+import { SettingsRow, SettingsSection } from '../../components/SettingsSection';
 import { loadState } from '../agents/agentParts';
 import { agentName, billingPath, formatCost, usageTotals } from '../agents/agentsModel';
 import {
@@ -49,81 +50,89 @@ export function BillingSettings({ workspace }: { workspace: string }) {
                 {topUpFailedText(billing.credit.top_up_failed)}
               </div>
             )}
-            <section className="settings-card" aria-labelledby="credit-heading">
-              <h2 id="credit-heading">Credit balance</h2>
-              <p className="managed-figure">{formatCost(billing.credit.balance_usd)}</p>
-              <p className="source-meta">
-                {formatCost(billing.credit.granted_usd)} of credit added so far, including the
-                starting credit added when you set up your first agent.{' '}
-                {formatCost(billing.credit.used_usd)} used.
-              </p>
+            <SettingsSection id="credit" title="Credit balance">
+              <SettingsRow
+                title={
+                  <span className="managed-figure">{formatCost(billing.credit.balance_usd)}</span>
+                }
+                detail={
+                  <>
+                    {formatCost(billing.credit.granted_usd)} of credit added so far, including the
+                    starting credit added when you set up your first agent.{' '}
+                    {formatCost(billing.credit.used_usd)} used.
+                  </>
+                }
+              />
               {billing.credit.paused && (
-                <p className="managed-paused" role="status">
-                  The credit is used up, so agent runs are paused until credit is added.
-                </p>
-              )}
-              {offerPromo && (
-                <div className="billing-promo">
-                  <p>
-                    Adding a card unlocks {formatCost(billing.credit.promo.usd)} of promotional
-                    credit.
+                <div className="settings-block">
+                  <p className="managed-paused" role="status">
+                    The credit is used up, so agent runs are paused until credit is added.
                   </p>
-                  <AddCardButton workspace={workspace} billing={billing.billing} />
                 </div>
               )}
-            </section>
-            <section className="settings-card" aria-labelledby="payment-heading">
-              <h2 id="payment-heading">Payment method</h2>
+              {offerPromo && (
+                <SettingsRow
+                  title={`Adding a card unlocks ${formatCost(billing.credit.promo.usd)} of promotional credit.`}
+                  action={<AddCardButton workspace={workspace} billing={billing.billing} />}
+                />
+              )}
+            </SettingsSection>
+            <SettingsSection id="payment" title="Payment method">
               {card ? (
                 <>
-                  <p className="billing-card-label">{cardLabel(card)}</p>
-                  <AutoTopUpSwitch
-                    workspace={workspace}
-                    enabled={billing.auto_top_up.enabled}
-                    onChange={(next) => setOverride(next)}
+                  <SettingsRow
+                    title={<span className="billing-card-label">{cardLabel(card)}</span>}
+                    action={
+                      <>
+                        <AddCardButton
+                          workspace={workspace}
+                          billing={billing.billing}
+                          label="Replace card"
+                          className="quiet"
+                        />
+                        <RemoveCardButton
+                          workspace={workspace}
+                          card={card}
+                          onRemoved={(next) => setOverride(next)}
+                        />
+                      </>
+                    }
                   />
-                  <p className="source-meta">
-                    {billing.auto_top_up.enabled
-                      ? `${topUpRule(billing.auto_top_up)}.`
-                      : 'Your card is not charged. Runs pause when your credit runs out.'}
-                  </p>
-                  <div className="agent-card-actions">
-                    <AddCardButton
-                      workspace={workspace}
-                      billing={billing.billing}
-                      label="Replace card"
-                      className="quiet"
-                    />
-                    <RemoveCardButton
-                      workspace={workspace}
-                      card={card}
-                      onRemoved={(next) => setOverride(next)}
-                    />
-                  </div>
-                  <p className="source-meta">
+                  <SettingsRow
+                    title={
+                      <AutoTopUpSwitch
+                        workspace={workspace}
+                        enabled={billing.auto_top_up.enabled}
+                        onChange={(next) => setOverride(next)}
+                      />
+                    }
+                    detail={
+                      billing.auto_top_up.enabled
+                        ? `${topUpRule(billing.auto_top_up)}.`
+                        : 'Your card is not charged. Runs pause when your credit runs out.'
+                    }
+                  />
+                  <p className="source-meta settings-block">
                     To stop all charges: turn off automatic top-up or remove your card. Agents keep
                     running on your remaining credit, then pause. Pause or archive agents on the
                     Agents page.
                   </p>
                 </>
               ) : (
-                <>
-                  <p>No card on file.</p>
-                  <p className="source-meta">
-                    {billing.billing === 'stripe'
+                <SettingsRow
+                  title="No card on file."
+                  detail={
+                    billing.billing === 'stripe'
                       ? 'Add a card to unlock the promotional credit, create your own agents and top up automatically.'
-                      : 'Card billing is coming. Until then, the agents YonedaRepo maintains run on your starting credit.'}
-                  </p>
-                  {!offerPromo && (
-                    <div className="agent-card-actions">
-                      <AddCardButton workspace={workspace} billing={billing.billing} />
-                    </div>
-                  )}
-                </>
+                      : 'Card billing is coming. Until then, the agents YonedaRepo maintains run on your starting credit.'
+                  }
+                  action={
+                    !offerPromo && <AddCardButton workspace={workspace} billing={billing.billing} />
+                  }
+                />
               )}
-            </section>
-            <section className="settings-card" aria-labelledby="top-ups-heading">
-              <h2 id="top-ups-heading">Top-ups</h2>
+            </SettingsSection>
+            <SettingsSection id="top-ups" title="Top-ups">
               {billing.top_ups.length ? (
                 <div className="source-table-wrap">
                   <table className="source-table">
@@ -153,9 +162,8 @@ export function BillingSettings({ workspace }: { workspace: string }) {
               ) : (
                 <p className="source-empty">No top-ups yet.</p>
               )}
-            </section>
-            <section className="settings-card" aria-labelledby="usage-heading">
-              <h2 id="usage-heading">Usage by repository and agent</h2>
+            </SettingsSection>
+            <SettingsSection id="usage" title="Usage by repository and agent">
               {billing.usage.length ? (
                 <div className="source-table-wrap">
                   <table className="source-table">
@@ -189,7 +197,7 @@ export function BillingSettings({ workspace }: { workspace: string }) {
               ) : (
                 <p className="source-empty">No agent has run yet, so nothing has been used.</p>
               )}
-            </section>
+            </SettingsSection>
           </>
         ))}
     </>

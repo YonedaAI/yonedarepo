@@ -7,7 +7,7 @@ import { bubbleRadius } from './homeModel';
 
 const COLUMN = 24;
 const ROW = 7;
-const LEFT = 34;
+const LEFT = 44;
 const TOP = 8;
 const BOTTOM = 22;
 const RIGHT = 18;

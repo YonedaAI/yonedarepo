@@ -1,3 +1,17 @@
+/* The public site keeps its own, smaller type scale on the app's size names, so the styles and
+   elements the two share (forms, the sign-in panel, base text) stay as the site was set. */
+.site {
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-md: 13px;
+  --text-base: 14px;
+  --text-xl: 17px;
+  --text-3xl: 28px;
+  --text-mono: 12px;
+  --text-mono-dense: 11px;
+  --text-code: 0.85em;
+  --weight-heading: 500;
+}
 /* The site's frame: the main column has thin rules down both sides (the footer continues them). */
 .site-main {
   flex: 1;

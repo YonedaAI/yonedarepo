@@ -1,10 +1,11 @@
 // Account settings, one page per section (`settingsRoute.ts`; the sidebar's Account group moves
-// between them): General (the account, its email, its sign-in methods, the theme), Billing,
-// Tokens, SSH keys and Organizations. Each page is its title (Organizations adds a description
-// and Create organization), then titled cards.
+// between them): General (the profile, its email, its connected accounts, the theme, a way to
+// Billing), Billing, Tokens, SSH keys and Organizations. Each page is its title (Organizations
+// adds a description and Create organization), then headed cards of rows.
+import { SettingsRow, SettingsSection } from '../../components/SettingsSection';
 import type { AccountIdentity } from '../../lib/types';
 import { ThemePicker } from '../shell/ThemePicker';
-import type { Navigate } from '../shell/useRoute';
+import { linkTo, type Navigate } from '../shell/useRoute';
 import { AccountOrgs, CreateOrganization } from '../source-platform/AccountOrgs';
 import type { OrgSummary } from '../source-platform/orgModel';
 import { Loading } from '../source-platform/SourceStatus';
@@ -15,7 +16,7 @@ import { AvatarSettings } from './AvatarSettings';
 import { BillingSettings } from './BillingSettings';
 import { EmailSettings } from './EmailSettings';
 import { SignInMethods } from './SignInMethods';
-import { ACCOUNT_SECTION_TITLES, type AccountSection } from './settingsRoute';
+import { ACCOUNT_SECTION_TITLES, type AccountSection, formatSettingsRoute } from './settingsRoute';
 import { TokenSettings } from './TokenSettings';
 
 interface Props {
@@ -32,41 +33,49 @@ interface Props {
   onAvatar?: (picture: Pick<AccountIdentity, 'avatar_url' | 'avatar_source'>) => void;
 }
 
+const BILLING = { view: 'settings', section: 'billing' } as const;
+
 /** Waiting for the session, or nobody signed in. */
 const NoAccount = ({ loading }: { loading?: boolean }) =>
   loading ? <Loading what="your account" /> : <p className="source-meta">Sign in to see it.</p>;
 
-function General({ identity, loading, onAvatar }: Props) {
+function General({ identity, loading, onAvatar, navigate }: Props) {
   return (
     <>
-      <section className="settings-card" aria-labelledby="account-heading">
-        <h2 id="account-heading">Account</h2>
-        {identity && onAvatar && <AvatarSettings identity={identity} onChange={onAvatar} />}
+      <SettingsSection id="profile" title="Profile">
         {identity ? (
-          <dl className="settings-facts">
-            <dt>Account name</dt>
-            <dd>
-              <code>{identity.username}</code>
-            </dd>
-            <dt>Git and API</dt>
-            <dd>
-              Clone and push as this account with a personal token as the password, or sign the CLI
-              in with <code>yoneda login</code>.
-            </dd>
-          </dl>
+          <AvatarSettings identity={identity} onChange={onAvatar} />
         ) : (
-          <NoAccount loading={loading} />
+          <div className="settings-block">
+            <NoAccount loading={loading} />
+          </div>
         )}
-      </section>
+      </SettingsSection>
       {identity && <EmailSettings />}
       {identity && <SignInMethods />}
-      <section className="settings-card" aria-labelledby="appearance-heading">
-        <h2 id="appearance-heading">Appearance</h2>
-        <p className="source-meta">
-          System follows your device's light or dark setting. The choice is kept in this browser.
-        </p>
-        <ThemePicker />
-      </section>
+      <SettingsSection id="appearance" title="Appearance">
+        <SettingsRow
+          title="Theme"
+          detail="System follows your device. Kept in this browser."
+          action={<ThemePicker />}
+        />
+      </SettingsSection>
+      {identity && (
+        <SettingsSection id="general-billing" title="Billing">
+          <SettingsRow
+            title="Agent credit and usage"
+            detail="Platform features are free. Managed agent runs use credit."
+            action={
+              <a
+                className="button-link quiet"
+                {...(navigate ? linkTo(BILLING, navigate) : { href: formatSettingsRoute(BILLING) })}
+              >
+                Manage billing
+              </a>
+            }
+          />
+        </SettingsSection>
+      )}
     </>
   );
 }

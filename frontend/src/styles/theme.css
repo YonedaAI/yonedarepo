@@ -1,10 +1,27 @@
-/* Color tokens for both themes (features/shell/theme.ts holds the choice). Components use
-   these, never colors of their own. */
+/* Type and color tokens for both themes (features/shell/theme.ts holds the choice). Components
+   use these, never sizes or colors of their own. The public site keeps a smaller scale on the
+   same names (site-frame.css). */
 :root {
   font-family: "IBM Plex Sans", sans-serif;
   font-synthesis: none;
-  font-size: 14px;
+  font-size: var(--text-base);
   --mono: "IBM Plex Mono", ui-monospace, monospace;
+  --text-xs: 12px; /* uppercase section labels */
+  --text-sm: 13px; /* labels and metadata */
+  --text-md: 14px; /* secondary text, tables, toolbars */
+  --text-base: 15px; /* body text, sidebar rows */
+  --text-lg: 16px; /* card titles, page body copy */
+  --text-xl: 18px; /* section headings */
+  --text-2xl: 22px; /* a change's title, large figures */
+  --text-3xl: 26px; /* page headings */
+  --text-4xl: 30px; /* dashboard figures */
+  --text-mono: 14px; /* code fields */
+  --text-mono-dense: 13px; /* code and diff views */
+  --text-code: max(
+    var(--text-sm),
+    0.93em
+  ); /* code inside text: follows the text, never below 13px */
+  --weight-heading: 600;
   color: var(--text);
   background: var(--bg);
   /* Light unless the viewer chose Dark, or chose nothing (System) on a dark device; the
@@ -34,6 +51,8 @@
   --warn-soft: #fff8e6;
   --warn-line: #f0dca8;
   --danger: #b4232c;
+  /* Red as a fill behind --on-accent; --danger itself is text. */
+  --danger-fill: #b4232c;
   --danger-soft: #fdeeee;
   --danger-line: #f3c5c8;
   --focus-ring: #87bce7;
@@ -69,6 +88,7 @@
     --warn-soft: #2a2213;
     --warn-line: #5a4519;
     --danger: #ff6f6f;
+    --danger-fill: #c8343c;
     --danger-soft: #2c1517;
     --danger-line: #5c262a;
     --focus-ring: #7ea6ff;
@@ -104,6 +124,7 @@
   --warn-soft: #2a2213;
   --warn-line: #5a4519;
   --danger: #ff6f6f;
+  --danger-fill: #c8343c;
   --danger-soft: #2c1517;
   --danger-line: #5c262a;
   --focus-ring: #7ea6ff;

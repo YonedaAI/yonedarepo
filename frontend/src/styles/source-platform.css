@@ -26,12 +26,13 @@
   field-sizing: content;
   min-height: 30px;
   padding: 4px 8px;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .source-meta,
 .source-empty,
 .source-note {
   color: var(--muted);
+  font-size: var(--text-md);
 }
 .source-session-summary {
   margin: 4px 0;
@@ -79,7 +80,7 @@
   padding: 12px;
   overflow: auto;
   font:
-    13px / 1.5 "IBM Plex Mono",
+    var(--text-mono-dense) / 1.5 "IBM Plex Mono",
     monospace;
 }
 .source-history {
@@ -136,7 +137,7 @@
   width: 160px;
 }
 button.danger {
-  background: var(--danger);
+  background: var(--danger-fill);
 }
 .source-check-pass {
   color: var(--success);
@@ -145,7 +146,7 @@ button.danger {
   color: var(--danger);
 }
 .source-op {
-  font-size: 12px;
+  font-size: var(--text-xs);
   text-transform: uppercase;
   color: var(--muted);
 }
@@ -158,7 +159,7 @@ button.danger {
   width: 100%;
   border-collapse: collapse;
   font:
-    12.5px / 1.45 "IBM Plex Mono",
+    var(--text-mono-dense) / 1.45 "IBM Plex Mono",
     monospace;
 }
 .source-patch td {
@@ -191,6 +192,7 @@ button.danger {
   width: 100%;
   border-collapse: collapse;
   background: var(--surface);
+  font-size: var(--text-md);
 }
 .source-table caption {
   text-align: left;
@@ -205,7 +207,7 @@ button.danger {
   white-space: nowrap;
 }
 .source-class {
-  font-size: 12px;
+  font-size: var(--text-sm);
   padding: 1px 8px;
   border-radius: 10px;
   background: var(--accent-soft);
@@ -224,9 +226,9 @@ button.danger {
   display: inline-block;
   padding: 0 6px;
   border-radius: 4px;
-  background: var(--danger);
+  background: var(--danger-fill);
   color: var(--on-accent);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 600;
 }
 .source-break-glass {
@@ -254,7 +256,7 @@ button.danger {
 }
 .source-tokens h2,
 .source-connect h2 {
-  font-size: 16px;
+  font-size: var(--text-xl);
   margin: 0 0 6px;
 }
 .source-token-form {
@@ -301,14 +303,14 @@ button.danger {
   padding: 4px 4px 4px 12px;
   border-bottom: 1px solid var(--line);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .source-copy pre {
   margin: 0;
   padding: 10px 12px;
   overflow: auto;
   font:
-    13px / 1.5 "IBM Plex Mono",
+    var(--text-mono-dense) / 1.5 "IBM Plex Mono",
     monospace;
 }
 .source-shown-once {

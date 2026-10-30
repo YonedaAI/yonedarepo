@@ -4,7 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { formatSourceRoute, parseSourceRoute } from '../source-platform/sourceRoute';
-import { EmailAddress } from './EmailSettings';
+import { EmailAddress, EmailDialog } from './EmailSettings';
 import { VerifyEmailPage } from './VerifyEmailPage';
 
 const token = 'ab'.repeat(32);
@@ -40,7 +40,7 @@ describe('confirmation page', () => {
 });
 
 describe('Settings email section', () => {
-  const props = { busy: false, onResend: noop, onChange: noop };
+  const props = { busy: false, onResend: noop, onChange: async () => '' };
   it('shows an unconfirmed address with a resend button', () => {
     const html = render(
       createElement(EmailAddress, {
@@ -51,7 +51,9 @@ describe('Settings email section', () => {
     expect(html).toContain('ada@example.com');
     expect(html).toContain('Not confirmed');
     expect(html).toContain('Resend confirmation');
-    expect(html).toMatch(/<input[^>]*type="email"/);
+    // The field waits behind Change.
+    expect(html).toContain('>Change</button>');
+    expect(html).not.toContain('<input');
   });
 
   it('shows a confirmed address without one', () => {
@@ -71,6 +73,31 @@ describe('Settings email section', () => {
       createElement(EmailAddress, { ...props, status: { email: null, verified: false } }),
     );
     expect(html).toContain('No email address');
+    expect(html).toContain('>Add</button>');
     expect(html).not.toContain('Resend confirmation');
+  });
+
+  it('asks for the address in a dialog', () => {
+    const html = render(
+      createElement(EmailDialog, {
+        current: 'ada@example.com',
+        busy: false,
+        onChange: async () => '',
+        onClose: noop,
+      }),
+    );
+    expect(html).toContain('Change email');
+    expect(html).toMatch(/<input[^>]*type="email"/);
+    expect(html).toMatch(/<button type="submit"[^>]*>Send confirmation link<\/button>/);
+    expect(
+      render(
+        createElement(EmailDialog, {
+          current: null,
+          busy: false,
+          onChange: async () => '',
+          onClose: noop,
+        }),
+      ),
+    ).toContain('Add email');
   });
 });

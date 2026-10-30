@@ -32,7 +32,7 @@
 }
 .source-change-status {
   display: inline-block;
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 600;
   padding: 1px 8px;
   border-radius: 10px;
@@ -54,7 +54,7 @@
   color: var(--muted);
 }
 .source-change > header h2 {
-  font-size: 22px;
+  font-size: var(--text-2xl);
   margin-bottom: 4px;
   overflow-wrap: anywhere;
 }
@@ -112,7 +112,7 @@
   padding: 8px 12px;
   margin: 6px 0;
   font-family: "IBM Plex Sans", sans-serif;
-  font-size: 14px;
+  font-size: var(--text-md);
   white-space: normal;
 }
 .source-thread > header {
@@ -126,7 +126,7 @@
 }
 .source-patch .source-thread-row > td {
   font-family: "IBM Plex Sans", sans-serif;
-  font-size: 14px;
+  font-size: var(--text-md);
   padding: 4px 8px;
   white-space: normal;
 }
