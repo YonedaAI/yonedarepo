@@ -2,6 +2,8 @@
 // argv, environment and config, pointed at the gateway with placeholders only, plus result
 // extraction and prompt composition. No CLI or model runs here.
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import {
   buildCommand,
@@ -127,4 +129,19 @@ test('a CLI that exits without reading its prompt is a reported failure, not a r
   });
   await assert.rejects(failed, /sh exited with 3/);
   assert.match(lines.join(''), /provider refused the request/);
+});
+
+test('version.json is the digest of the runner and commands it ships with', () => {
+  const dir = new URL('../../cloudflare/containers/harness/', import.meta.url);
+  const digest = createHash('sha256')
+    .update(readFileSync(new URL('runner.mjs', dir)))
+    .update(readFileSync(new URL('commands.mjs', dir)))
+    .digest('hex')
+    .slice(0, 16);
+  const { build } = JSON.parse(readFileSync(new URL('version.json', dir), 'utf8'));
+  assert.equal(
+    build,
+    digest,
+    'harness changed: regenerate with `cat cloudflare/containers/harness/{runner,commands}.mjs | shasum -a 256 | cut -c1-16` into version.json',
+  );
 });

@@ -173,18 +173,19 @@ export async function runAgent(env: ManagedEnv, p: RunParams, step: Steps): Prom
     const report = await step.do('post', () =>
       postReport(env, p, agent, prepared.token, result, prepared.block_at),
     );
-    const status = report.posted.length > 0 ? 'findings' : 'passed';
+    // A withheld finding is still a finding: the run is never "passed" with one.
+    const status = report.posted.length + report.withheld.length > 0 ? 'findings' : 'passed';
     await repo.finish(p.run, p.attempt, status, {
       value: report.value,
       summary: report.summary || null,
       findings: report.posted,
-      withheld: report.withheld,
+      withheld: report.withheld.length,
     });
     return {
       status,
       value: report.value,
       findings: report.posted.length,
-      withheld: report.withheld,
+      withheld: report.withheld.length,
     };
   } catch (e: any) {
     const error =
@@ -208,7 +209,6 @@ async function attempt(
   i: number,
   agent: ManagedAgentDefinition,
 ): Promise<Collected> {
-  const name = `${p.run}-${p.attempt}-${i}`;
   const params: HarnessParams = {
     repo: p.repo,
     account: p.account,
@@ -220,10 +220,14 @@ async function attempt(
     model: choice.model,
     cap_microusd: Math.round(agent.cost_cap_usd * 1_000_000),
   };
+  // Each start try gets a fresh container (a retried start after a refused, mismatched image
+  // must not land on the same instance); the name it used is the step's result.
   const started = await step.do(`start-${i}`, async () => {
+    const name = `${p.run}-${p.attempt}-${i}-${crypto.randomUUID().slice(0, 8)}`;
     await harnessStub(env, name).begin(params, spec(env, p, w, choice));
-    return { at: Date.now() };
+    return { at: Date.now(), name };
   });
+  const name = started.name;
   let stop: string | null = null;
   for (let n = 0; ; n++) {
     await step.sleep(`wait-${i}-${n}`, POLL_MS);

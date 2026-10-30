@@ -43,6 +43,8 @@ export class FakePlatform {
   hooks: any[] = [];
   changes: FakeChange[] = [];
   revoked: string[] = [];
+  /** A credential shape only the platform's scanner knows (the managed pre-filter misses it). */
+  scannerRefuses: RegExp | null = null;
   /** The owner's break-glass automation pause (repo status `automation.paused`). */
   paused = false;
   /** The workspace (the billed account): one per test, since ledgers outlive a test. */
@@ -119,7 +121,8 @@ export class FakePlatform {
     if (req.method === 'POST' && comment) {
       if (!token) return refuse('FORBIDDEN', 403);
       // The platform's secret scanner refuses credentials in comments.
-      if (/ghp_[A-Za-z0-9]{36}/.test(String(body?.body))) return refuse('SECRET_DETECTED', 400);
+      if (/ghp_[A-Za-z0-9]{36}/.test(String(body?.body)) || this.scannerRefuses?.test(String(body?.body)))
+        return refuse('SECRET_DETECTED', 400);
       const posted = { id: this.comments.length + 1, number: Number(comment[1]), ...body };
       this.comments.push(posted);
       return ok({ comment: posted, resolved: 0 });
