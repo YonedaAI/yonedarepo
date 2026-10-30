@@ -206,6 +206,12 @@ export function AgentRunDetail({
                 </>
               )}
             </dl>
+            {detail.run.summary && (
+              <section aria-labelledby="summary-heading">
+                <h2 id="summary-heading">Summary</h2>
+                <p>{detail.run.summary}</p>
+              </section>
+            )}
             <section aria-labelledby="findings-heading">
               <h2 id="findings-heading">Findings</h2>
               {detail.findings.length ? (

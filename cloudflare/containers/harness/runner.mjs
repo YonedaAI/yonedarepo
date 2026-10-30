@@ -19,7 +19,7 @@ const RULE_MAX = 20_000;
 let job = null;
 
 /** Runs `argv`, collecting output (capped); rejects on a non-zero exit or the deadline. */
-function run(argv, { cwd, env, stdin, deadline, log }) {
+export function execute(argv, { cwd, env, stdin, deadline, log }) {
   return new Promise((resolve, reject) => {
     const child = spawn(argv[0], argv.slice(1), {
       cwd,
@@ -46,6 +46,9 @@ function run(argv, { cwd, env, stdin, deadline, log }) {
       if (code === 0) resolve(out);
       else reject(new Error(signal ? `${argv[0]} stopped (${signal})` : `${argv[0]} exited with ${code}`));
     });
+    // A CLI that exits (failing) before reading its whole prompt makes the write fail with
+    // EPIPE; its exit status is the failure to report, so the write error is only noted.
+    child.stdin.on('error', (e) => log(`[runner] prompt not fully read: ${e.code ?? e.message}\n`));
     child.stdin.end(stdin ?? '');
   });
 }
@@ -55,9 +58,9 @@ async function review(spec, state) {
   const log = (text) => {
     state.transcript = (state.transcript + text).slice(-TRANSCRIPT_MAX);
   };
-  const git = (args) => run(['git', ...args], { cwd: CHECKOUT, env: {}, deadline, log });
+  const git = (args) => execute(['git', ...args], { cwd: CHECKOUT, env: {}, deadline, log });
   state.phase = 'cloning';
-  await run(['yoneda', 'clone', spec.repo, CHECKOUT, '--origin', spec.platform_origin], {
+  await execute(['yoneda', 'clone', spec.repo, CHECKOUT, '--origin', spec.platform_origin], {
     cwd: '/work',
     env: {},
     deadline,
@@ -83,7 +86,7 @@ async function review(spec, state) {
     await writeFile(file, text, { mode: 0o600 });
   }
   state.phase = 'running';
-  const stdout = await run(command.argv, {
+  const stdout = await execute(command.argv, {
     cwd: CHECKOUT,
     env: { ...command.env, ...(command.env.OPENCODE_CONFIG ? { OPENCODE_CONFIG: join(HOME, command.env.OPENCODE_CONFIG) } : {}) },
     stdin: command.stdin,
@@ -144,4 +147,15 @@ export function serve(port = PORT) {
   }).listen(port);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) serve();
+if (import.meta.url === `file://${process.argv[1]}`) {
+  // The runner must outlive anything a review throws, or the Worker only sees the container
+  // gone: an unexpected error fails the running job (with its transcript) and keeps serving.
+  process.on('uncaughtException', (e) => {
+    if (job && !['done', 'failed'].includes(job.phase)) {
+      job.error = `Runner error: ${String(e?.message ?? e).slice(0, 400)}`;
+      job.phase = 'failed';
+      job.finished_at = Date.now();
+    }
+  });
+  serve();
+}

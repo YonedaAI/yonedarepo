@@ -162,6 +162,7 @@ describe('runs and billing', () => {
       head: 'a'.repeat(40),
       status: 'findings',
       value: 'fail',
+      summary: 'Reads past the end of the list.',
       harness: 'codex',
       provider: 'codex',
       model: 'gpt-5.6-luna',
