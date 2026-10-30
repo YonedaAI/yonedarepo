@@ -29,10 +29,10 @@ async function index(env: Env, fingerprint: string, command: Json): Promise<Json
 const KEY_REACH = ['repo:read', 'repo:write', 'repo:land'] as const;
 
 /** The account whose keys `auth` manages: a signed-in person, or a token with
- * `account:ssh-keys` or `repo:admin`. A key reaches every repository of the account and
- * outlives the token, so adding one needs a token that already does as much: no repository
- * or organization limit, and every scope a key acts with. Without that rule the narrow scope
- * alone would be full Git access. */
+ * `account:ssh-keys` or `repo:admin`. A key reaches every repository of the account, so
+ * adding one needs a token that already does as much: no repository or organization limit,
+ * and every scope a key acts with. Without that rule the narrow scope alone would be full
+ * Git access. */
 function manager(auth: Credentials, adding: boolean): string {
   if ('_pat' in auth) {
     const admin = patHolds(auth, 'repo:admin');

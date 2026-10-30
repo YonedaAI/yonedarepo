@@ -244,7 +244,9 @@ describe('device approval', () => {
   it('ticks SSH keys for a CLI login and says plainly what it does', () => {
     state.value = loaded({ data: { repos } });
     const page = html(DevicePage, { code: 'BCDF-GHJK' });
-    expect(page).toMatch(/checked=""\/>SSH keys<span[^>]*> \(add and remove keys on your account/);
+    expect(page).toMatch(
+      /checked=""\/>SSH keys<span[^>]*> \(add and remove keys on your account\)/,
+    );
     expect(page).toMatch(/checked=""\/>Read/);
     expect(page).toMatch(/type="checkbox"\/>Admin/);
   });

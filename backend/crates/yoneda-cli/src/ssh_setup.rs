@@ -28,8 +28,8 @@ fn refused(failure: Failure, origin: &str) -> Error {
     let mut error = Error::from(failure);
     if forbidden {
         error.message = format!(
-            "Run `yoneda login --origin {origin}`, keep SSH keys ticked on the approval page, \
-             then `yoneda ssh setup` again: this token cannot manage SSH keys ({})",
+            "Run `yoneda login --origin {origin}` again, then `yoneda ssh setup`: this token \
+             cannot manage SSH keys ({})",
             error.message
         );
     }

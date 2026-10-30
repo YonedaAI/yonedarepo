@@ -400,7 +400,7 @@ fn makes_no_key_while_ssh_is_off_or_the_token_cannot_manage_keys() -> TestResult
     assert!(!out.status.success());
     let message = stderr(&out);
     assert!(
-        message.contains("yoneda login") && message.contains("SSH keys ticked"),
+        message.contains("yoneda login") && message.contains("again") && !message.contains("Admin"),
         "says what works: {message}"
     );
     assert!(!world.ssh_dir().exists());
