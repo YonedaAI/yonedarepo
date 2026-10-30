@@ -96,6 +96,15 @@ describe('connect snippets', () => {
       ['Install the yoneda CLI', 'curl -fsSL https://dev.yonedarepo.com/install.sh | sh'],
       ['Sign in', `yoneda login --origin ${api}`],
     ]);
+    const labels = blocks.map(([label]) => label);
+    const plugin = labels.indexOf('Claude Code: add the marketplace');
+    expect(blocks.slice(plugin, plugin + 2)).toEqual([
+      [
+        'Claude Code: add the marketplace',
+        '/plugin marketplace add https://dev.yonedarepo.com/downloads/claude/marketplace.json',
+      ],
+      ['Claude Code: install the plugin', '/plugin install yoneda@yonedarepo'],
+    ]);
   });
   it('uses the configured API origin, else the page origin, without a trailing slash', () => {
     expect(apiOrigin('https://dev.yonedarepo.com', `${api}/`)).toBe(api);

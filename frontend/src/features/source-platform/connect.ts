@@ -50,11 +50,9 @@ export const installCommand = (origin: string) =>
   `curl -fsSL ${siteOrigin(origin)}/install.sh | sh`;
 
 /** The public marketplace the site serves (no Git host account needed). */
-export const claudePluginSteps = (origin: string) =>
-  [
-    `/plugin marketplace add ${siteOrigin(origin)}/downloads/claude/marketplace.json`,
-    '/plugin install yoneda@yonedarepo',
-  ].join('\n');
+export const claudeMarketplaceCommand = (origin: string) =>
+  `/plugin marketplace add ${siteOrigin(origin)}/downloads/claude/marketplace.json`;
+export const CLAUDE_PLUGIN_COMMAND = '/plugin install yoneda@yonedarepo';
 
 /** Claude Code `.mcp.json`: the token stays in the environment, never in the file. */
 export const claudeMcpJson = (origin: string) =>
