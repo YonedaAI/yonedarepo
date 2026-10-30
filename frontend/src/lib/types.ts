@@ -9,4 +9,6 @@ export type AccountIdentity = {
   handle_suggestion?: string | null;
   avatar_url?: string | null;
   avatar_source?: 'upload' | 'provider' | null;
+  /** An operator account (a hint for the Admin entry; the admin API checks for itself). */
+  is_admin?: boolean;
 };

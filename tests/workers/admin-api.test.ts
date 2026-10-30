@@ -4,7 +4,7 @@
 // the backfill, suspension refusing sign-in, sessions, tokens and Git until lifted, credit
 // grants through a stand-in managed Worker, operator quarantine, and an audit row per action.
 import { createExecutionContext } from 'cloudflare:test';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { accountRoute } from '../../cloudflare/worker/accounts';
 import { PlatformEntrypoint } from '../../cloudflare/worker/platform-entrypoint';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
@@ -225,6 +225,17 @@ it('backfills accounts the other projections know, once', async () => {
   ]);
   expect((await api('/admin/backfill', OWNER, { body: {} }, operators())).body.added).toBe(0);
   expect((await rows()).length).toBe(2);
+  // The account no projection knows joins the index at its next session check.
+  const three = await signupNow('unknown_four');
+  await bindings.INDEX.prepare("DELETE FROM platform_accounts WHERE account='unknown_four'").run();
+  await api('/repos', { cookie: three });
+  // After the answer (no waitUntil here: it runs alongside).
+  await vi.waitFor(async () =>
+    expect((await rows()).find((r: any) => r.account === 'unknown_four')).toMatchObject({
+      provider: 'email',
+      last_seen_at: expect.any(Number),
+    }),
+  );
   expect((await audits()).map((a: any) => [a.actor, a.action])).toEqual([
     ['_admin', 'accounts.backfill'],
     ['_admin', 'accounts.backfill'],
