@@ -16,13 +16,13 @@
 }
 h2.site-band-head,
 .site-band-head > h2 {
-  font-size: var(--fs-2xl);
+  font-size: var(--fs-xl);
   margin: 0;
 }
 /* Headlines in two tones: the claim, then a muted continuation. */
 .site-two-tone > span {
   color: var(--site-muted);
-  font-weight: 500;
+  font-weight: 400;
 }
 /* A row of cells divided by shared 1px rules. */
 .site-cells {
@@ -36,109 +36,16 @@ h2.site-band-head,
   border-left: 1px solid var(--site-line);
 }
 
-/* Hero */
-.site-hero.site-band {
-  padding-block: var(--sp-6) var(--site-band);
-}
-.site-hero {
-  display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
-  gap: var(--sp-6);
-  align-items: center;
-}
-.site-hero h1 {
-  font-size: var(--fs-hero);
-  line-height: 1.08;
-  margin: 0 0 var(--sp-5);
-}
-.site-hero h1 > span {
-  font-weight: 400;
-}
-.site-hero .site-terminal pre {
-  padding: var(--sp-5);
-  font-size: var(--fs-sm);
-}
-
-/* Problems: five equal cells on a wide screen, rows of a list below that. */
-.site-problems {
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-}
-.site-problems li {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-2);
-  padding: var(--sp-4) min(var(--sp-5), var(--site-gutter)) var(--sp-5);
-  font-size: var(--fs-sm);
-}
-.site-problems p {
-  margin: 0;
-}
-.site-problem {
-  font-weight: 600;
-  font-size: var(--fs-base);
-  line-height: 1.35;
-}
-.site-answer {
-  color: var(--site-muted);
-  flex: 1;
-}
-.site-problem-link {
-  align-self: flex-start;
-  color: var(--site-text);
-  font-size: var(--fs-xs);
-  font-weight: 600;
-}
-.site-problem-link svg {
-  vertical-align: -2px;
-  margin-left: 2px;
-}
-.site-problem-link:hover {
-  text-decoration: underline;
-  text-underline-offset: 2px;
-}
-
 /* Closing call to action: a band, not a floating card. */
 .site-band-cta {
   text-align: center;
   background: var(--site-accent-soft);
 }
 .site-band-cta h2 {
-  font-size: var(--fs-2xl);
+  font-size: var(--fs-xl);
   margin: 0 0 var(--sp-2);
 }
 .site-band-cta p {
   color: var(--site-muted);
   margin: 0 0 var(--sp-5);
-}
-
-@media (max-width: 1100px) {
-  .site-problems {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .site-problems li {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
-    column-gap: var(--sp-5);
-  }
-  .site-problems > li + li {
-    border-left: 0;
-    border-top: 1px solid var(--site-line);
-  }
-  .site-problem {
-    grid-row: span 2;
-  }
-}
-
-@media (max-width: 800px) {
-  .site-hero {
-    grid-template-columns: minmax(0, 1fr);
-    gap: var(--sp-5);
-  }
-  .site-hero .site-terminal pre {
-    padding: var(--sp-4);
-    font-size: var(--fs-xs);
-  }
-  .site-problems li {
-    display: flex;
-  }
 }

@@ -1,76 +1,84 @@
 // The public home (`/` signed out): hero, the problems YonedaRepo answers, the "Build on
 // YonedaRepo" feature tour, the comparison with plain Git and a closing call to action.
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Check } from 'lucide-react';
 import type { Navigate } from '../shell/useRoute';
-import { inline } from '../source-platform/markdown';
-import { heroMock } from './buildOnMocks';
-import { FEATURES } from './features';
+import { BUILD_ON } from './buildOn';
 import { SiteBuildOn } from './SiteBuildOn';
 import { SiteCompare } from './SiteCompare';
-import { featureLink, siteLink } from './SiteLayout';
+import { siteLink } from './SiteLayout';
+import { SiteWorksWith } from './SiteWorksWith';
 
-const PROBLEMS: { problem: string; answer: string; feature: string }[] = [
+/** The problem rows: the pain (struck through), our answer, and the tour panel that solves it. */
+const PROBLEMS: { problem: string; answer: string; panel: string }[] = [
   {
-    problem: 'Ten agents push to main at once, and someone’s work gets overwritten.',
-    answer: 'Landing on the server with compare-and-swap refs and declared reads.',
-    feature: 'landing',
+    problem: 'Agents overwriting each other on main',
+    answer: 'Every commit lands on the server, in order, first try.',
+    panel: 'transactions',
   },
   {
-    problem: 'Agents produce changes faster than people can review them.',
-    answer: 'Changes with approvals, container checks and model checks as landing gates.',
-    feature: 'changes',
+    problem: 'More changes than people can review',
+    answer: 'Review agents and required checks clear the routine, so people judge the rest.',
+    panel: 'review-agents',
   },
   {
-    problem: 'Every new agent session starts cold and repeats the last one’s mistakes.',
-    answer: '`yoneda context`: recent sessions, open changes and rules at session start.',
-    feature: 'context',
+    problem: 'Every session starting cold',
+    answer: 'Each session opens with what the last ones did, decided and touched.',
+    panel: 'memory',
   },
   {
-    problem: 'Nobody can tell which session wrote a commit, or what it looked at.',
-    answer: 'Session records on each commit, with the files the session read.',
-    feature: 'sessions',
+    problem: 'No record of which session wrote what',
+    answer: 'Every commit carries the session that made it.',
+    panel: 'memory',
   },
   {
-    problem: 'Reading three files means cloning the whole repository first.',
-    answer: 'Search, blame, history and diffs on the server, at any landed version.',
-    feature: 'code',
+    problem: 'Cloning everything to read three files',
+    answer: 'Fetch only the files you open, or search the server without a clone.',
+    panel: 'fetch',
   },
 ];
 
 export function SiteHome({ navigate }: { navigate: Navigate }) {
-  const byId = new Map(FEATURES.map((f) => [f.id, f]));
+  const titleOf = new Map(BUILD_ON.map((item) => [item.id, item.title]));
   return (
     <>
       <section className="site-band site-hero" aria-labelledby="hero-heading">
-        <div className="site-hero-copy">
-          <h1 id="hero-heading" className="site-two-tone">
-            Source control for agents at full speed.{' '}
-            <span>
-              A Git-compatible platform where agents and people commit, review and land on the
-              server.
-            </span>
-          </h1>
+        <h1 id="hero-heading">The Git platform built for agents</h1>
+        <p className="site-hero-lead">
+          Git-compatible hosting where agents and people commit, review and land on the server.
+          Every session’s context stays with the code, and a thousand writers can share one branch.
+        </p>
+        <div className="site-hero-actions">
           <a
             className="site-button site-button-large"
             {...siteLink({ page: 'signin', mode: 'signup' }, navigate)}
           >
-            Get started free <ArrowRight size={18} aria-hidden="true" />
+            Get started <ArrowRight size={18} aria-hidden="true" />
           </a>
+          <SiteWorksWith />
         </div>
-        {heroMock}
       </section>
 
-      <section className="site-band site-band-flush" aria-labelledby="problems-heading">
-        <h2 id="problems-heading" className="site-band-head">
-          What breaks when agents write the code
-        </h2>
-        <ul className="site-cells site-problems">
+      <section className="site-band site-problem-band" aria-labelledby="problems-heading">
+        <div className="site-problem-intro">
+          <p className="site-eyebrow">The problem</p>
+          <h2 id="problems-heading">Git wasn’t built for a thousand writers</h2>
+          <p>
+            Agents push in parallel, start every session from scratch and produce more changes than
+            any team can read. Plain Git makes them queue, retry and guess.
+          </p>
+        </div>
+        <ul className="site-problem-list">
           {PROBLEMS.map((p) => (
-            <li key={p.feature}>
-              <p className="site-problem">{p.problem}</p>
-              <p className="site-answer">{inline(p.answer, p.feature)}</p>
-              <a className="site-problem-link" {...featureLink(p.feature, navigate)}>
-                {byId.get(p.feature)?.title} <ArrowRight size={13} aria-hidden="true" />
+            <li key={p.problem}>
+              <Check className="site-problem-check" size={18} aria-hidden="true" />
+              <div>
+                <p className="site-problem">
+                  <s>{p.problem}</s>
+                </p>
+                <p className="site-answer">{p.answer}</p>
+              </div>
+              <a className="site-chip" href={`#build-${p.panel}`}>
+                {titleOf.get(p.panel)}
               </a>
             </li>
           ))}

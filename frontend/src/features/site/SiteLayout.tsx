@@ -1,5 +1,10 @@
 // The public site's frame: top nav (sections, then Sign in / Get started, or Open app when
 // signed in), the page, and a footer. At phone width the sections fold into a menu button.
+// The site's faces, self-hosted from their npm packages (latin only): Inter for text,
+// Inter Tight for headings.
+import '@fontsource/inter/latin-400.css';
+import '@fontsource/inter/latin-500.css';
+import '@fontsource/inter-tight/latin-600.css';
 import { GitBranch, Menu, Monitor, Moon, Sun, X } from 'lucide-react';
 import { type MouseEvent, type ReactNode, useState } from 'react';
 import { nextTheme, type Theme, useTheme } from '../shell/theme';
