@@ -1,160 +1,120 @@
-// Agents → <agent> (`/agents/<id>`): one agent's settings, pre-filled with YonedaRepo's
-// maintained defaults: name, description, harness, model, reasoning, timeout, instructions,
-// its value type and polarity, the trigger and the repositories it runs on. The first save
-// ("Enable agent") turns it on for the chosen repositories; later saves send only what
-// changed. `/agents/new` shows the same form for a custom agent, which needs billing.
+// One agent's pages. `/agents/<id>`: a set-up agent's page (AgentDetail), or, before it is set
+// up, its set-up page. `/agents/<id>/configure`: the same page for a set-up agent. YonedaRepo
+// maintains what the agent is (name, harness, model, reasoning, time limit, instructions and
+// result), shown read-only; a workspace sets when it runs, on which repositories, and whether it
+// is active. `/agents/new` is a custom agent, which needs billing (coming).
 import { useEffect, useState } from 'react';
 import {
   type AgentState,
-  type Harness,
+  HARNESS_LABELS,
   managedAgent,
-  type Reasoning,
-  type RunValue,
+  modelRate,
   type WorkspaceState,
 } from '../../../../shared/managed-agents';
-import { MAX_INSTRUCTIONS, TIMEOUT_RANGE } from '../../../../shared/managed-settings';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { Failure } from '../source-platform/SourceStatus';
 import { managedApi } from '../source-platform/sourceApi';
 import { useSource } from '../source-platform/useSource';
-import { AgentIcon, BillingComing, HistoryStrip, loadState } from './agentParts';
+import { AgentDetail } from './AgentDetail';
+import { AgentIcon, loadState } from './agentParts';
 import {
-  type AgentForm,
   agentPath,
-  customizedText,
-  formProblem,
-  harnessOptions,
-  initialForm,
-  modelOptions,
-  newAgentForm,
-  updateBody,
+  CREATE_OWN_GATE,
+  checkPreview,
   valueTypeLabel,
-  withHarness,
   workspacePath,
 } from './agentsModel';
-import { RepoChecklist, TriggerFields } from './settingsParts';
+import { RepoPicker, TriggerFields } from './settingsParts';
+import { type AgentForm, formProblem, initialForm, updateBody } from './setupForm';
 
 type Space = { workspace?: string };
 
-function Fields({
-  form,
-  set,
-  defaultInstructions,
-}: {
-  form: AgentForm;
-  set: (next: Partial<AgentForm>) => void;
-  defaultInstructions: string | null;
-}) {
-  const models = modelOptions(form.harness);
+const REASONING: Record<string, string> = { low: 'Low', medium: 'Medium', high: 'High' };
+const BLOCK_AT: Record<string, string> = { medium: 'medium or higher', high: 'high' };
+
+/** A field YonedaRepo maintains: readable, selectable, not editable. */
+function Fixed({ label, value }: { label: string; value: string }) {
   return (
-    <>
-      <label className="agent-field">
-        Name
-        <input value={form.name} maxLength={80} onChange={(e) => set({ name: e.target.value })} />
-      </label>
-      <label className="agent-field">
-        Description
-        <input
-          value={form.description}
-          maxLength={300}
-          onChange={(e) => set({ description: e.target.value })}
-        />
-      </label>
-      <div className="agent-field-row">
-        <label className="agent-field">
-          Harness
-          <select
-            value={form.harness}
-            onChange={(e) => set(withHarness(form, e.target.value as Harness))}
-          >
-            {harnessOptions().map((h) => (
-              <option key={h.value} value={h.value}>
-                {h.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="agent-field">
-          Model
-          <select
-            value={`${form.provider}/${form.model}`}
-            onChange={(e) => {
-              const picked = models.find((m) => m.value === e.target.value);
-              if (picked) set({ provider: picked.provider, model: picked.model });
-            }}
-          >
-            {models.map((m) => (
-              <option key={m.value} value={m.value}>
-                {m.text}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      <div className="agent-field-row">
-        <label className="agent-field">
-          Reasoning
-          <select
-            value={form.reasoning}
-            onChange={(e) => set({ reasoning: e.target.value as Reasoning })}
-          >
-            <option value="low">Low</option>
-            <option value="medium">Medium</option>
-            <option value="high">High</option>
-          </select>
-        </label>
-        <label className="agent-field">
-          Timeout (minutes)
-          <input
-            type="number"
-            min={TIMEOUT_RANGE.min}
-            max={TIMEOUT_RANGE.max}
-            value={form.timeout_minutes}
-            onChange={(e) => set({ timeout_minutes: Number(e.target.value) })}
-          />
-        </label>
-      </div>
-      <label className="agent-field">
-        Instructions
-        <textarea
-          rows={14}
-          maxLength={MAX_INSTRUCTIONS}
-          value={form.instructions}
-          onChange={(e) => set({ instructions: e.target.value })}
-        />
-      </label>
-      {defaultInstructions !== null && form.instructions !== defaultInstructions && (
-        <button
-          type="button"
-          className="text-button"
-          onClick={() => set({ instructions: defaultInstructions })}
-        >
-          Reset to the maintained instructions
-        </button>
-      )}
-    </>
+    <label className="agent-field">
+      {label}
+      <input className="agent-fixed" readOnly aria-readonly="true" value={value} />
+    </label>
   );
 }
 
-function Form({
+/** What the agent is, all maintained by YonedaRepo: shown, never sent. */
+function AgentFacts({ agent }: { agent: AgentState }) {
+  const s = agent.settings;
+  return (
+    <div className="agent-panel">
+      <div className="agent-panel-row agent-cols">
+        <Fixed label="Name" value={s.name} />
+        <Fixed label="Description" value={s.description} />
+      </div>
+      <div className="agent-panel-row agent-cols agent-cols-4">
+        <Fixed label="Harness" value={HARNESS_LABELS[s.harness]} />
+        <Fixed label="Model" value={modelRate(s.provider, s.model)?.label ?? s.model} />
+        <Fixed label="Reasoning effort" value={REASONING[s.reasoning] ?? s.reasoning} />
+        <Fixed label="Time limit" value={`${s.timeout_minutes} minutes`} />
+      </div>
+      <div className="agent-panel-row agent-field">
+        <span id="instructions-label">Instructions</span>
+        <section className="agent-fixed agent-instructions" aria-labelledby="instructions-label">
+          {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a scrolling box must take focus to scroll by keyboard. */}
+          <pre tabIndex={0}>{s.instructions}</pre>
+        </section>
+      </div>
+      <div className="agent-panel-row agent-cols agent-result">
+        <div className="agent-field">
+          <Fixed label="Result format" value={valueTypeLabel(agent)} />
+          <p className="source-meta">
+            {agent.value_type === 'pass_fail'
+              ? 'Pass when it finds nothing worth fixing; fail when it finds a high or medium problem. Lower is better.'
+              : `The level of the most serious finding. Lower is better. ${
+                  s.block_at
+                    ? `It blocks landing at ${BLOCK_AT[s.block_at] ?? s.block_at}.`
+                    : 'It reports and never blocks landing.'
+                }`}
+          </p>
+        </div>
+        <div className="agent-field">
+          <span id="preview-label">How the check shows on a change</span>
+          <ul className="agent-check-preview" aria-labelledby="preview-label">
+            {checkPreview(agent).map((line) => (
+              <li key={line.text}>
+                <span className={`result-tile tone-${line.tone}`} aria-hidden="true" />
+                <code>{line.text}</code>
+                <span className="source-meta">{line.note}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SetupForm({
   workspace,
   state,
   agent,
   space,
   navigate,
+  onNewRepository,
 }: {
   workspace: string;
   state: WorkspaceState;
   agent: AgentState;
   space: Space;
   navigate: Navigate;
+  onNewRepository?: () => void;
 }) {
   const [form, setForm] = useState(() => initialForm(agent, state.repos));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState('');
   const [current, setCurrent] = useState(agent);
-  const first = current.enabled_repos.length === 0;
+  const first = current.created_at === null;
   const set = (next: Partial<AgentForm>) => {
     setSaved('');
     setForm((f) => ({ ...f, ...next }));
@@ -171,9 +131,10 @@ function Form({
         method: 'PUT',
         body: updateBody(current, form),
       });
+      if (first) return navigate({ view: 'agent-settings', agent: agent.id, ...space });
       setCurrent(next);
       setForm(initialForm(next, state.repos));
-      setSaved(first ? 'Enabled.' : 'Saved.');
+      setSaved('Saved.');
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -181,120 +142,100 @@ function Form({
     }
   }
 
+  const name = current.settings.name;
   return (
-    <form className="agent-settings" onSubmit={save}>
-      <div className="agent-settings-head">
+    <form className="agent-setup" onSubmit={save}>
+      <header className="agent-setup-head">
         <AgentIcon icon={current.icon} />
         <div>
-          <h1>{current.settings.name}</h1>
+          <h1>{first ? `Set up ${name}` : `Configure ${name}`}</h1>
           <p>{current.pitch}</p>
         </div>
-      </div>
-      <p className="agent-maintained" role="note">
-        This agent is maintained by YonedaRepo, so its model and instructions stay up to date. You
-        can customize it to make it your own.
-        {current.customized.length > 0 &&
-          ` You changed its ${customizedText(current.customized)}; those stay as you set them.`}
-      </p>
-      {!first && (
-        <section aria-labelledby="history-heading">
-          <h2 id="history-heading">Last results</h2>
-          <HistoryStrip history={current.history} />
-          <a {...linkTo({ view: 'agent-runs', agent: agent.id, ...space }, navigate)}>
-            View its runs
-          </a>
-        </section>
-      )}
-      <Fields form={form} set={set} defaultInstructions={current.defaults.instructions} />
-      <dl className="managed-facts agent-result-type">
-        <dt>Value type</dt>
-        <dd>{valueTypeLabel(current)}</dd>
-        <dt>Polarity</dt>
-        <dd>Lower is better</dd>
-        <dt>Check</dt>
-        <dd>
-          <code>{current.check}</code>
-        </dd>
-      </dl>
-      {current.value_type === 'level' && (
-        <label className="agent-field">
-          Block landing at
-          <select
-            value={form.block_at ?? ''}
-            onChange={(e) => set({ block_at: (e.target.value || null) as RunValue | null })}
-          >
-            <option value="">Never (report only)</option>
-            <option value="medium">Medium or higher</option>
-            <option value="high">High</option>
-          </select>
-        </label>
-      )}
-      <TriggerFields trigger={form.trigger} onChange={(trigger) => set({ trigger })} />
-      <RepoChecklist
-        repos={state.repos}
-        selected={form.repos}
-        onChange={(repos) => set({ repos })}
-      />
-      {first && form.repos.length === 0 && (
-        <p className="source-meta">Choose at least one repository to enable the agent on.</p>
-      )}
+      </header>
+      <section className="agent-setup-section" aria-labelledby="agent-heading">
+        <h2 id="agent-heading">Agent</h2>
+        <AgentFacts agent={current} />
+        <p className="agent-panel agent-maintained" role="note">
+          YonedaRepo maintains this agent&apos;s model and instructions.
+        </p>
+      </section>
+      <section className="agent-setup-section" aria-labelledby="when-heading">
+        <h2 id="when-heading">When to run</h2>
+        <div className="agent-panel">
+          <TriggerFields trigger={form.trigger} onChange={(trigger) => set({ trigger })} />
+        </div>
+      </section>
+      <section className="agent-setup-section" aria-labelledby="repos-heading">
+        <h2 id="repos-heading">Repositories</h2>
+        <div className="agent-panel">
+          <RepoPicker
+            repos={state.repos}
+            all={form.all_repos}
+            selected={form.repos}
+            onChange={(next) => set(next)}
+            onNewRepository={onNewRepository}
+            navigate={navigate}
+          />
+        </div>
+      </section>
       {(error || problem) && <Failure error={error || problem} />}
       {saved && (
-        <p role="status" className="source-meta">
+        <p role="status" className="source-meta agent-setup-saved">
           {saved}
         </p>
       )}
-      <div className="agent-settings-actions">
-        <button
-          type="submit"
-          disabled={saving || Boolean(problem) || (first && form.repos.length === 0)}
-        >
-          {saving ? 'Saving…' : first ? 'Enable agent' : 'Save'}
+      <footer className="agent-setup-foot">
+        <label className="agent-switch">
+          <input
+            type="checkbox"
+            role="switch"
+            aria-checked={form.active}
+            checked={form.active}
+            onChange={(e) => set({ active: e.target.checked })}
+          />
+          <span>Active</span>
+        </label>
+        {!first && (
+          <a
+            className="button-link quiet"
+            {...linkTo({ view: 'agent-settings', agent: agent.id, ...space }, navigate)}
+          >
+            Cancel
+          </a>
+        )}
+        <button type="submit" disabled={saving || Boolean(problem)}>
+          {saving ? 'Saving…' : first ? 'Add agent' : 'Save changes'}
         </button>
-        <a {...linkTo({ view: 'agents-home', ...space }, navigate)}>Back to agents</a>
-      </div>
+      </footer>
     </form>
   );
 }
 
-function NewAgent({
-  state,
-  navigate,
-  space,
-}: {
-  state: WorkspaceState;
-  navigate: Navigate;
-  space: Space;
-}) {
-  const [form, setForm] = useState(() => newAgentForm(state.repos));
-  const set = (next: Partial<AgentForm>) => setForm((f) => ({ ...f, ...next }));
+function NewAgent({ navigate, space }: { navigate: Navigate; space: Space }) {
   return (
-    <form className="agent-settings" onSubmit={(e) => e.preventDefault()}>
-      <div className="agent-settings-head">
+    <div className="agent-setup">
+      <header className="agent-setup-head">
         <AgentIcon icon="custom" />
         <div>
           <h1>New agent</h1>
-          <p>Write your own instructions and pick where it runs.</p>
+          <p>Your own reviewer: your instructions, run on the changes you choose.</p>
         </div>
+      </header>
+      <div className="agents-billing-note" role="note">
+        <p>
+          {CREATE_OWN_GATE}. Billing is coming; meanwhile the agents YonedaRepo maintains run on
+          your starting credit.
+        </p>
       </div>
-      <BillingComing>
-        Creating your own agents needs billing, which is coming. The agents YonedaRepo maintains run
-        on your promotional credit in the meantime.
-      </BillingComing>
-      <Fields form={form} set={set} defaultInstructions={null} />
-      <TriggerFields trigger={form.trigger} onChange={(trigger) => set({ trigger })} />
-      <RepoChecklist
-        repos={state.repos}
-        selected={form.repos}
-        onChange={(repos) => set({ repos })}
-      />
-      <div className="agent-settings-actions">
-        <button type="submit" disabled title="Needs billing, which is coming">
+      <footer className="agent-setup-foot">
+        <a className="button-link quiet" {...linkTo({ view: 'agents-home', ...space }, navigate)}>
+          Back to agents
+        </a>
+        <button type="button" disabled title={CREATE_OWN_GATE}>
           Create agent
         </button>
-        <a {...linkTo({ view: 'agents-home', ...space }, navigate)}>Back to agents</a>
-      </div>
-    </form>
+      </footer>
+    </div>
   );
 }
 
@@ -302,12 +243,17 @@ export function AgentSettingsPage({
   workspace,
   agent,
   account,
+  configure = false,
   navigate,
+  onNewRepository,
 }: {
   workspace: string;
   agent: string;
   account?: string;
+  /** `/agents/<id>/configure`: the form even for a set-up agent. */
+  configure?: boolean;
   navigate: Navigate;
+  onNewRepository?: () => void;
 }) {
   const known = agent === 'new' || Boolean(managedAgent(agent));
   const loaded = useSource<WorkspaceState>(known ? workspacePath(workspace) : null, '/api/managed');
@@ -326,22 +272,30 @@ export function AgentSettingsPage({
     );
   const state = loaded.data;
   const found = state?.agents.find((a) => a.id === agent);
+  if (loadState(loaded, 'the agent')) return loadState(loaded, 'the agent');
+  if (!state) return null;
+  if (agent === 'new') return <NewAgent navigate={navigate} space={space} />;
+  if (!found) return <Failure error="This deployment does not offer that agent." />;
+  if (!configure && found.created_at !== null)
+    return (
+      <AgentDetail
+        workspace={workspace}
+        state={state}
+        agent={found}
+        space={space}
+        navigate={navigate}
+        onChanged={loaded.reload}
+      />
+    );
   return (
-    loadState(loaded, 'the agent') ??
-    (state &&
-      (agent === 'new' ? (
-        <NewAgent state={state} navigate={navigate} space={space} />
-      ) : found ? (
-        <Form
-          key={`${workspace}:${agent}`}
-          workspace={workspace}
-          state={state}
-          agent={found}
-          space={space}
-          navigate={navigate}
-        />
-      ) : (
-        <Failure error="This deployment does not offer that agent." />
-      )))
+    <SetupForm
+      key={`${workspace}:${agent}`}
+      workspace={workspace}
+      state={state}
+      agent={found}
+      space={space}
+      navigate={navigate}
+      onNewRepository={onNewRepository}
+    />
   );
 }

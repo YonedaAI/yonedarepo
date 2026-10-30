@@ -98,7 +98,11 @@ export class FakePlatform {
     const base = `/repos/${this.repo}`;
     if (this.deleted && (path === base || path.startsWith(`${base}/`))) return refuse('GONE', 404);
     if (req.method === 'GET' && path === base)
-      return ok({ owner: this.account, automation: { paused: this.paused ? { by: 'user:owner' } : null } });
+      return ok({
+        owner: this.account,
+        viewer: { owner, principal: owner ? 'user:owner' : 'user:reader' },
+        automation: { paused: this.paused ? { by: 'user:owner' } : null },
+      });
     const del = /^\/repos\/(r[0-9a-f]{20})\/(tokens|hooks)\/([^/]+)$/.exec(path);
     if (req.method === 'DELETE' && del) {
       if (!owner) return refuse('FORBIDDEN', 403);

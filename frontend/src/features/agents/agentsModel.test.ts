@@ -8,38 +8,48 @@ import {
   type AgentState,
   MANAGED_AGENTS,
   type ManagedAgentId,
+  type ManagedCredit,
+  readyForReview,
   type WorkspaceState,
 } from '../../../../shared/managed-agents';
 import { agentUsageRows } from '../site/pricing';
 import {
   formatSourceRoute,
   parseSourceRoute,
+  routeTab,
   type SourceRoute,
 } from '../source-platform/sourceRoute';
 import { HistoryStrip } from './agentParts';
 import {
+  archivePath,
   cardState,
+  checkPreview,
   costLabel,
   costUsd,
+  createdText,
   creditPercent,
-  customizedText,
-  filterRepos,
   formatCost,
   formatDuration,
-  formProblem,
-  initialForm,
-  modelOptions,
-  newAgentForm,
-  parseFilters,
+  formatUtc,
+  menuItems,
+  READY_HELP,
+  REPO_STATUS_LABELS,
+  relativeTime,
+  repoAgentsPath,
+  reposText,
+  runNowPath,
+  runNowText,
   runsPath,
+  syncAgents,
+  syncPath,
   tileTone,
-  updateBody,
+  triggerText,
   usageTotals,
   usedText,
   visibleAgents,
-  withHarness,
   workspaceOptions,
 } from './agentsModel';
+import { filterRepos, formProblem, initialForm, parseFilters, updateBody } from './setupForm';
 
 const repoA = 'r0000000000000000000a';
 const repoB = 'r0000000000000000000b';
@@ -58,9 +68,28 @@ function state(id: ManagedAgentId, over: Partial<AgentState> = {}): AgentState {
     enabled_repos: [],
     history: [],
     runs: 0,
+    created_by: null,
+    created_at: null,
+    active: true,
+    all_repos: false,
     ...over,
   };
 }
+/** Set up on `repos`, by ada, an hour before NOW. */
+const NOW = Date.UTC(2026, 9, 30, 12, 0, 0);
+const setUp = (over: Partial<AgentState> = {}): Partial<AgentState> => ({
+  enabled_repos: [repoA],
+  created_by: 'ada',
+  created_at: NOW - 3_600_000,
+  ...over,
+});
+const credit = (over: Partial<ManagedCredit> = {}): ManagedCredit => ({
+  granted_usd: 5,
+  used_usd: 1.25,
+  balance_usd: 3.75,
+  paused: false,
+  ...over,
+});
 
 describe('routes', () => {
   it('address every Agents page, with an org workspace in the query', () => {
@@ -101,8 +130,13 @@ describe('routes', () => {
 });
 
 describe('overview cards', () => {
-  it('show off, or enabled with the newest result and the run count', () => {
-    expect(cardState(state('code-review'))).toMatchObject({ enabled: false, last: null, runs: 0 });
+  it('show not set up, or set up with status, the newest result and the run count', () => {
+    expect(cardState(state('code-review'))).toMatchObject({
+      configured: false,
+      status: 'off',
+      last: null,
+      runs: 0,
+    });
     const tile = {
       id: 'x',
       repo: repoA,
@@ -112,12 +146,13 @@ describe('overview cards', () => {
       created_at: 1,
     };
     expect(
-      cardState(state('code-review', { enabled_repos: [repoA], history: [tile], runs: 7 })),
+      cardState(state('code-review', setUp({ history: [tile], runs: 7, active: false }))),
     ).toEqual({
-      enabled: true,
+      configured: true,
+      status: 'paused',
       last: tile,
       runs: 7,
-      repos: 1,
+      repos: '1 repository',
     });
   });
 
@@ -149,21 +184,16 @@ describe('overview cards', () => {
   });
 
   it('search and filter the agents', () => {
-    const agents = [
-      state('code-review', { enabled_repos: [repoA] }),
-      state('security-review'),
-      state('slop-review'),
-    ];
+    const agents = [state('code-review', setUp()), state('security-review'), state('slop-review')];
     expect(visibleAgents(agents, 'security', false).map((a) => a.id)).toEqual(['security-review']);
     expect(visibleAgents(agents, '', true).map((a) => a.id)).toEqual(['code-review']);
   });
 
-  it('show the promotional credit used', () => {
-    const credit = { granted_usd: 5, used_usd: 1.25, balance_usd: 3.75, paused: false };
-    expect(usedText(credit)).toBe('$1.25 used');
-    expect(creditPercent(credit)).toBe(25);
-    expect(creditPercent({ ...credit, used_usd: 9 })).toBe(100);
-    expect(usedText({ ...credit, used_usd: 0 })).toBe('$0.00 used');
+  it('show the credit used', () => {
+    expect(usedText(credit())).toBe('$1.25 used');
+    expect(creditPercent(credit())).toBe(25);
+    expect(creditPercent(credit({ used_usd: 9 }))).toBe(100);
+    expect(usedText(credit({ used_usd: 0 }))).toBe('$0.00 used');
   });
 
   it('offer the account and each owned org as workspaces', () => {
@@ -181,82 +211,121 @@ describe('overview cards', () => {
   });
 });
 
-describe('the settings form', () => {
-  it('pre-selects every repository on first enable, else the enabled ones', () => {
-    expect(initialForm(state('code-review'), repos).repos).toEqual([repoA, repoB]);
-    expect(initialForm(state('code-review', { enabled_repos: [repoB] }), repos).repos).toEqual([
-      repoB,
-    ]);
+describe('the set-up form', () => {
+  it('pre-selects every repository and Active at first set-up, all repositories with none, else what is set', () => {
+    expect(initialForm(state('code-review'), repos)).toEqual({
+      trigger: state('code-review').settings.trigger,
+      all_repos: false,
+      repos: [repoA, repoB],
+      active: true,
+    });
+    expect(initialForm(state('code-review'), [])).toMatchObject({ all_repos: true, repos: [] });
+    expect(
+      initialForm(state('code-review', setUp({ enabled_repos: [repoB], active: false })), repos),
+    ).toMatchObject({ all_repos: false, repos: [repoB], active: false });
+    expect(initialForm(state('code-review', setUp({ all_repos: true })), repos)).toMatchObject({
+      all_repos: true,
+    });
   });
 
-  it('sends only what changed, null for a field set back to its default, and repos on first enable', () => {
+  it('sends only the trigger, repositories and Active, never a field YonedaRepo maintains', () => {
     const fresh = state('code-review');
-    const form = initialForm(fresh, repos);
-    expect(updateBody(fresh, form)).toEqual({ repos: [repoA, repoB] });
-    const enabled = state('code-review', {
-      enabled_repos: [repoA],
-      settings: { ...fresh.settings, reasoning: 'high' },
-      customized: ['reasoning'],
+    expect(updateBody(fresh, initialForm(fresh, repos))).toEqual({
+      repos: [repoA, repoB],
+      active: true,
     });
-    const edit = {
-      ...initialForm(enabled, repos),
-      reasoning: 'medium' as const,
-      timeout_minutes: 25,
-    };
-    expect(updateBody(enabled, edit)).toEqual({
-      settings: { reasoning: null, timeout_minutes: 25 },
+    const enabled = state('code-review', setUp());
+    const form = initialForm(enabled, repos);
+    expect(updateBody(enabled, form)).toEqual({});
+    const ready = { ...form.trigger, when: 'ready' as const };
+    expect(updateBody(enabled, { ...form, trigger: ready })).toEqual({
+      settings: { trigger: ready },
     });
-    expect(updateBody(enabled, { ...initialForm(enabled, repos), repos: [repoA, repoB] })).toEqual({
+    const customized = state(
+      'code-review',
+      setUp({ settings: { ...fresh.settings, trigger: ready }, customized: ['trigger'] }),
+    );
+    expect(
+      updateBody(customized, {
+        ...initialForm(customized, repos),
+        trigger: fresh.defaults.trigger,
+      }),
+    ).toEqual({ settings: { trigger: null } });
+    expect(updateBody(enabled, { ...form, repos: [repoA, repoB] })).toEqual({
       repos: [repoA, repoB],
     });
-    expect(updateBody(enabled, initialForm(enabled, repos))).toEqual({});
+    expect(updateBody(enabled, { ...form, active: false })).toEqual({ active: false });
+    // Whatever the form holds besides, the body names only editable keys.
+    const tampered = { ...form, name: 'Mine', model: 'x', instructions: 'y' } as typeof form;
+    for (const body of [updateBody(enabled, tampered), updateBody(fresh, tampered)]) {
+      expect(
+        Object.keys(body).every((k) => ['settings', 'repos', 'all_repos', 'active'].includes(k)),
+      ).toBe(true);
+      expect(Object.keys(body.settings ?? {})).not.toContain('name');
+    }
   });
 
-  it('keeps or replaces the model when the harness changes', () => {
-    const form = initialForm(state('code-review'), repos);
-    expect(withHarness(form, 'claude-code')).toMatchObject({
-      harness: 'claude-code',
-      provider: 'zai',
-      model: 'glm-5.3-flash',
+  it('sends all repositories instead of a list, and a list again when switched back', () => {
+    const fresh = state('code-review');
+    expect(updateBody(fresh, initialForm(fresh, []))).toEqual({ all_repos: true, active: true });
+    const enabled = state('code-review', setUp());
+    const form = initialForm(enabled, repos);
+    expect(updateBody(enabled, { ...form, all_repos: true })).toEqual({ all_repos: true });
+    const all = state('code-review', setUp({ all_repos: true, enabled_repos: [repoA, repoB] }));
+    expect(updateBody(all, initialForm(all, repos))).toEqual({});
+    expect(updateBody(all, { ...initialForm(all, repos), all_repos: false })).toEqual({
+      repos: [repoA, repoB],
     });
-    expect(withHarness(form, 'codex')).toMatchObject({
-      harness: 'codex',
-      provider: 'codex',
-      model: 'gpt-5.6-luna',
-    });
-  });
-
-  it('lists each harness its providers models with prices including the margin', () => {
-    const codex = modelOptions('codex');
-    expect(codex.map((o) => o.value)).toEqual(['codex/gpt-5.6-luna']);
-    expect(codex[0].text).toContain(`$${Number((0.2 * AGENT_MARGIN).toPrecision(6))} in`);
-    expect(
-      modelOptions('opencode').every((o) => o.provider === 'zai' || o.provider === 'mimo'),
-    ).toBe(true);
-    expect(modelOptions('claude-code').some((o) => o.provider === 'claude')).toBe(true);
-    const glm = modelOptions('opencode').find((o) => o.model === 'glm-5.3-flash');
-    expect(glm?.text).toBe('GLM-5.3 Flash · Z.ai · $0.195 in / $0.65 out per million tokens');
   });
 
   it('flags a bad form early', () => {
     const agent = state('code-review');
     expect(formProblem(agent, initialForm(agent, repos))).toBe('');
-    expect(formProblem(agent, { ...initialForm(agent, repos), timeout_minutes: 99 })).toMatch(
-      /timeout_minutes/,
+    expect(formProblem(agent, initialForm(agent, []))).toBe('');
+    expect(formProblem(agent, { ...initialForm(agent, repos), repos: [] })).toMatch(
+      /at least one repository/,
     );
-    expect(formProblem(agent, { ...initialForm(agent, repos), name: ' ' })).toMatch(/name/);
-    expect(newAgentForm(repos)).toMatchObject({
-      name: '',
-      instructions: '',
-      repos: [repoA, repoB],
-    });
+    const many = Array.from({ length: 30 }, (_, i) => `p${i}/`);
+    const form = initialForm(agent, repos);
+    expect(formProblem(agent, { ...form, trigger: { ...form.trigger, paths: many } })).not.toBe('');
   });
 
-  it('names customized fields, filters repositories and reads filters', () => {
-    expect(customizedText(['model', 'provider', 'instructions'])).toBe('model and instructions');
-    expect(customizedText(['reasoning'])).toBe('reasoning');
+  it('filters repositories, reads filters and names where an agent runs', () => {
     expect(filterRepos(repos, 'WEB').map((r) => r.id)).toEqual([repoB]);
     expect(parseFilters('src/\n docs/ , src/\n')).toEqual(['src/', 'docs/']);
+    expect(reposText({ all_repos: true, enabled_repos: [] })).toBe('All repositories');
+    expect(reposText({ all_repos: false, enabled_repos: [repoA] })).toBe('1 repository');
+    expect(reposText({ all_repos: false, enabled_repos: [repoA, repoB] })).toBe('2 repositories');
+  });
+});
+
+describe('connecting new repositories', () => {
+  it('posts to the workspace sync, answers what it connected, and swallows every failure', async () => {
+    const calls: [string, object][] = [];
+    const connected = await syncAgents('acme', async (path, init) => {
+      calls.push([path, init]);
+      return { connected: 2 };
+    });
+    expect(connected).toBe(2);
+    expect(calls).toEqual([['/workspaces/acme/sync', { method: 'POST', body: {} }]]);
+    expect(syncPath('dev.owner+x@example.com')).toBe(
+      '/workspaces/dev.owner%2Bx%40example.com/sync',
+    );
+    for (const failure of ['NOT_FOUND', 'FORBIDDEN', 'network'])
+      expect(
+        await syncAgents('acme', async () => {
+          throw new Error(failure);
+        }),
+      ).toBe(0);
+    expect(await syncAgents('acme', async () => ({}))).toBe(0);
+    let called = false;
+    expect(
+      await syncAgents(undefined, async () => {
+        called = true;
+        return { connected: 1 };
+      }),
+    ).toBe(0);
+    expect(called).toBe(false);
   });
 });
 
@@ -313,9 +382,92 @@ describe('the pricing page agent rows', () => {
 const _fixture: WorkspaceState = {
   workspace: 'mlong',
   agents: [state('code-review')],
-  credit: { granted_usd: 5, used_usd: 0, balance_usd: 5, paused: false },
+  credit: credit({ used_usd: 0, balance_usd: 5 }),
   billing: 'coming',
   repos,
   token_name: 'yoneda-managed-agents',
 };
 void _fixture;
+
+describe('the agent menu and pages', () => {
+  it('offers Pause or Resume, Run now, Configure, Create your own (closed until billing) and Archive', () => {
+    expect(menuItems(state('code-review'))).toEqual([]);
+    const active = menuItems(state('code-review', setUp()));
+    expect(active.map((i) => i.label)).toEqual([
+      'Pause',
+      'Run now',
+      'Configure',
+      'Create your own',
+      'Archive',
+    ]);
+    expect(active.find((i) => i.action === 'create-own')).toMatchObject({
+      disabled: true,
+      hint: 'Set up billing to create your own agents',
+    });
+    expect(active.find((i) => i.action === 'archive')?.danger).toBe(true);
+    const paused = menuItems(state('code-review', setUp({ active: false })));
+    expect(paused.map((i) => [i.label, Boolean(i.disabled)])).toEqual([
+      ['Resume', false],
+      ['Run now', true],
+      ['Configure', false],
+      ['Create your own', true],
+      ['Archive', false],
+    ]);
+  });
+
+  it('says what Run now did', () => {
+    expect(runNowText({ started: 2, already: 0 })).toBe('Started 2 reviews.');
+    expect(runNowText({ started: 1, already: 3 })).toBe('Started 1 review; 3 already reviewed.');
+    expect(runNowText({ started: 0, already: 2 })).toBe(
+      'Every open change is already reviewed at its head.',
+    );
+    expect(runNowText({ started: 0, already: 0 })).toBe('There is no open change to review.');
+  });
+
+  it('formats times in UTC, relative history and the trigger', () => {
+    expect(formatUtc(Date.UTC(2026, 9, 30, 12, 19, 50))).toBe('2026-10-30 12:19 UTC');
+    expect(relativeTime(NOW - 20_000, NOW)).toBe('just now');
+    expect(relativeTime(NOW - 5 * 60_000, NOW)).toBe('5 minutes ago');
+    expect(relativeTime(NOW - 3_600_000, NOW)).toBe('1 hour ago');
+    expect(relativeTime(NOW - 2 * 86_400_000, NOW)).toBe('2 days ago');
+    expect(relativeTime(NOW - 90 * 86_400_000, NOW)).toBe('2026-08-01');
+    expect(createdText(state('code-review', setUp()), NOW)).toBe('Created by ada, 1 hour ago');
+    expect(createdText(state('code-review'))).toBe('Not set up yet');
+    const trigger = state('code-review').settings.trigger;
+    expect(triggerText(trigger)).toBe('On every push, changes ready for review');
+    expect(
+      triggerText({ ...trigger, when: 'ready', paths: ['src/'], branches: ['feature/*'] }),
+    ).toBe('When marked ready, changes ready for review, paths src/; branches feature/*');
+    expect(READY_HELP).toMatch(/unless its title starts with Draft: or WIP:/);
+    expect(readyForReview({ status: 'open', title: 'WIP: parser' })).toBe(false);
+    expect(readyForReview({ status: 'open', title: 'Parser fix' })).toBe(true);
+  });
+
+  it('previews the check for each result format', () => {
+    expect(checkPreview(state('code-review')).map((l) => l.text)).toEqual([
+      'code-review: pass',
+      'code-review: fail',
+    ]);
+    expect(checkPreview(state('slop-review')).map((l) => [l.text, l.tone])).toEqual([
+      ['slop-review: low', 'good'],
+      ['slop-review: medium', 'warn'],
+    ]);
+  });
+
+  it('addresses the new endpoints and the configure page', () => {
+    expect(runNowPath('ada', 'code-review')).toBe('/workspaces/ada/agents/code-review/run');
+    expect(archivePath('ada', 'code-review')).toBe('/workspaces/ada/agents/code-review/archive');
+    expect(repoAgentsPath('ada', repoA)).toBe(`/workspaces/ada/repos/${repoA}/agents`);
+    const route = { view: 'agent-configure', agent: 'code-review', workspace: 'acme' } as const;
+    expect(formatSourceRoute(route)).toBe('/agents/code-review/configure?workspace=acme');
+    expect(parseSourceRoute('/agents/code-review/configure', '?workspace=acme')).toEqual(route);
+    expect(REPO_STATUS_LABELS.off).toBe('Not on this repository');
+    const reviewers = parseSourceRoute('/source/r0123456789abcdef0123/agents/reviewers', '');
+    expect(reviewers).toEqual({
+      view: 'agents',
+      repo: 'r0123456789abcdef0123',
+      section: 'reviewers',
+    });
+    expect(routeTab(reviewers)).toBe('agents');
+  });
+});

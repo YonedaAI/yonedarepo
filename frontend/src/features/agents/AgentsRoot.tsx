@@ -1,4 +1,5 @@
-// The workspace Agents pages, by route: the overview, one agent's settings (or a new agent),
+// The workspace Agents pages, by route: the overview, one agent's page or its set-up form (or a
+// new agent),
 // the runs list and one run. The workspace is the route's (an org) or the signed-in account.
 import type { Navigate } from '../shell/useRoute';
 import type { AgentsRoute } from '../source-platform/sourceRoute';
@@ -11,13 +12,16 @@ export function AgentsRoot({
   account,
   orgs,
   navigate,
+  onNewRepository,
 }: {
   route: AgentsRoute;
   account?: string;
   orgs: { org: string; role: string }[];
   navigate: Navigate;
+  /** Opens the app's New repository dialog (the set-up page offers it with no repositories). */
+  onNewRepository?: () => void;
 }) {
-  return <div className="agents-root">{page(route, account, orgs, navigate)}</div>;
+  return <div className="agents-root">{page(route, account, orgs, navigate, onNewRepository)}</div>;
 }
 
 function page(
@@ -25,6 +29,7 @@ function page(
   account: string | undefined,
   orgs: { org: string; role: string }[],
   navigate: Navigate,
+  onNewRepository?: () => void,
 ) {
   const workspace = route.workspace ?? account;
   if (!workspace)
@@ -37,13 +42,16 @@ function page(
     );
   const space =
     route.workspace && route.workspace !== account ? { workspace: route.workspace } : {};
-  if (route.view === 'agent-settings')
+  if (route.view === 'agent-settings' || route.view === 'agent-configure')
     return (
       <AgentSettingsPage
+        key={`${route.view}:${route.agent}`}
         workspace={workspace}
         agent={route.agent}
         account={account}
+        configure={route.view === 'agent-configure'}
         navigate={navigate}
+        onNewRepository={onNewRepository}
       />
     );
   if (route.view === 'agent-runs')

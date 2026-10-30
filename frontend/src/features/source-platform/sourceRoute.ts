@@ -35,8 +35,10 @@ export type SourceRoute =
   | { view: 'org'; org: string }
   /** The workspace's managed agents (`/agents`); `workspace` (an org) defaults to the account. */
   | { view: 'agents-home'; workspace?: string }
-  /** One agent's settings (`/agents/<id>`), or a new custom agent (`/agents/new`). */
+  /** One agent's page (`/agents/<id>`): its runs and setup, or a new custom agent (`/agents/new`). */
   | { view: 'agent-settings'; agent: string; workspace?: string }
+  /** Set up or configure one agent (`/agents/<id>/configure`). */
+  | { view: 'agent-configure'; agent: string; workspace?: string }
   | { view: 'agent-runs'; agent?: string; workspace?: string }
   /** One run's detail; `runRepo`, not `repo`, so the repository shell stays out of it. */
   | { view: 'agent-run'; runRepo: string; run: string; workspace?: string }
@@ -153,7 +155,7 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
   };
 }
 
-/** `/agents[/new|/<agent>|/runs[/<repo>/<run>]]`, with `?workspace=` for an org. */
+/** `/agents[/new|/<agent>[/configure]|/runs[/<repo>/<run>]]`, with `?workspace=` for an org. */
 function parseAgentsRoute(parts: string[], params: URLSearchParams): SourceRoute {
   const named = params.get('workspace');
   // Any account identifier (an org, a username or an email-named account), as the API takes it.
@@ -167,6 +169,8 @@ function parseAgentsRoute(parts: string[], params: URLSearchParams): SourceRoute
       ? { view: 'agent-runs', agent, ...space }
       : { view: 'agent-runs', ...space };
   }
+  if (first && AGENT_ID.test(first) && repo === 'configure' && !run)
+    return { view: 'agent-configure', agent: first, ...space };
   if (first && AGENT_ID.test(first) && !repo)
     return { view: 'agent-settings', agent: first, ...space };
   return { view: 'agents-home', ...space };
@@ -174,9 +178,15 @@ function parseAgentsRoute(parts: string[], params: URLSearchParams): SourceRoute
 
 export type AgentsRoute = Extract<
   SourceRoute,
-  { view: 'agents-home' | 'agent-settings' | 'agent-runs' | 'agent-run' }
+  { view: 'agents-home' | 'agent-settings' | 'agent-configure' | 'agent-runs' | 'agent-run' }
 >;
-const AGENT_VIEWS: readonly string[] = ['agents-home', 'agent-settings', 'agent-runs', 'agent-run'];
+const AGENT_VIEWS: readonly string[] = [
+  'agents-home',
+  'agent-settings',
+  'agent-configure',
+  'agent-runs',
+  'agent-run',
+];
 /** The workspace Agents pages (one Browse entry holds them all). */
 export const isAgentsRoute = (route: SourceRoute): route is AgentsRoute =>
   AGENT_VIEWS.includes(route.view);
@@ -186,6 +196,7 @@ function formatAgentsRoute(route: AgentsRoute): string {
   let path: string;
   if (route.view === 'agents-home') path = '/agents';
   else if (route.view === 'agent-settings') path = `/agents/${route.agent}`;
+  else if (route.view === 'agent-configure') path = `/agents/${route.agent}/configure`;
   else if (route.view === 'agent-runs') {
     path = '/agents/runs';
     if (route.agent) query.set('agent', route.agent);

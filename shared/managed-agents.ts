@@ -378,6 +378,13 @@ export interface AgentState extends ManagedAgentDefinition {
   enabled_repos: string[];
   history: RunTile[];
   runs: number;
+  /** Set up in this workspace (Add agent was done): who and when; null until then. */
+  created_by: string | null;
+  created_at: number | null;
+  /** False while paused: set up and kept, but starts no run. */
+  active: boolean;
+  /** Runs on every repository the caller owns in the workspace, new ones included. */
+  all_repos: boolean;
 }
 
 /** The body of `PUT /api/managed/workspaces/:ws/agents/:agent`: settings to change (a field set to
@@ -387,6 +394,40 @@ export interface AgentUpdate {
   settings?: { [K in keyof AgentSettings]?: AgentSettings[K] | null };
   scope?: string;
   repos?: string[];
+  /** Pause (false) or resume (true): repositories and settings are kept either way. */
+  active?: boolean;
+  /** Run on all repositories, including ones created later (true), instead of `repos`. */
+  all_repos?: boolean;
+}
+
+/** `POST /api/managed/workspaces/:ws/sync`: repositories newly connected for agents set to run on
+ * all repositories (the web app asks after creating or importing one). */
+export interface SyncResult {
+  connected: number;
+}
+
+/** `POST /api/managed/workspaces/:ws/agents/:agent/run` (Run now): open changes reviewed at
+ * their heads now; a head already reviewed is not reviewed again. */
+export interface RunNowResult {
+  started: number;
+  already: number;
+}
+
+/** One row of a repository's Agents page (`GET /api/managed/workspaces/:ws/repos/:repo/agents`). */
+export interface RepoAgentRow {
+  id: ManagedAgentId;
+  name: string;
+  status: 'active' | 'paused' | 'off';
+  harness: Harness;
+  model: string;
+  latest: RunTile | null;
+}
+
+/** Whether a change counts as ready for review: open, and not marked a draft in its title
+ * (`Draft:`, `WIP:` or `[WIP]`, the common conventions; the platform has no draft state). */
+export function readyForReview(change: { status?: unknown; title?: unknown }): boolean {
+  if (change.status !== undefined && change.status !== 'open') return false;
+  return !/^\s*(draft:|wip:|\[wip\]|\[draft\])/i.test(String(change.title ?? ''));
 }
 
 /** `GET /api/managed/workspaces/:ws`: the Agents overview. */
