@@ -7,6 +7,7 @@ import { refreshHead } from './repo-head';
 import { newStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { requirePatScope } from './repo-pat';
+import { holdName, releaseNames } from './repo-paths';
 import { dispatchProjection } from './repo-projection';
 import { visibilityOf } from './repo-public';
 import { shardOutboxes } from './repo-shards';
@@ -91,17 +92,25 @@ export async function createRepository(env: Env, requester: Credentials, body: J
   const auth = await owning(env, requester, body);
   const visibility = visibilityOf(body.visibility);
   const id = newRepoId();
-  const store = newStore(env, `yr-${id}`);
-  await store.create();
-  const ctx = new RepoContext(env, id, caller(env, id, auth));
   const name = typeof body.name === 'string' && body.name ? body.name : id;
-  await ctx.call({
-    op: 'repo_init',
-    name,
-    object_store: store.spec,
-    policy: body.policy ?? { required_checks: [], approvals: 1 },
-    visibility,
-  });
+  const owner = auth._session.workspace;
+  await holdName(env, owner, id, name);
+  const ctx = new RepoContext(env, id, caller(env, id, auth));
+  let store: ReturnType<typeof newStore>;
+  try {
+    store = newStore(env, `yr-${id}`);
+    await store.create();
+    await ctx.call({
+      op: 'repo_init',
+      name,
+      object_store: store.spec,
+      policy: body.policy ?? { required_checks: [], approvals: 1 },
+      visibility,
+    });
+  } catch (e) {
+    await releaseNames(env, owner, id).catch(() => {});
+    throw e;
+  }
   // Commit shards start (migrate) now rather than on the first commits' path.
   await shardOutboxes(env, id);
   // Listing projection, written after the authority accepted the repository.
@@ -133,15 +142,22 @@ export async function importRepository(env: Env, requester: Credentials, body: J
   const max = Math.min(Math.max(Number(body.max_commits ?? 100) || 100, 1), 5000);
   const id = newRepoId();
   const name = typeof body.name === 'string' && body.name ? body.name : id;
+  const owner = auth._session.workspace;
+  await holdName(env, owner, id, name);
   const ctx = new RepoContext(env, id, caller(env, id, auth));
-  await ctx.call({
-    op: 'repo_init',
-    name,
-    // Artifacts creates the store itself during import.
-    object_store: `artifacts:${env.ARTIFACTS_NAMESPACE}/yr-${id}`,
-    policy: body.policy ?? { required_checks: [], approvals: 1 },
-    visibility,
-  });
+  await ctx
+    .call({
+      op: 'repo_init',
+      name,
+      // Artifacts creates the store itself during import.
+      object_store: `artifacts:${env.ARTIFACTS_NAMESPACE}/yr-${id}`,
+      policy: body.policy ?? { required_checks: [], approvals: 1 },
+      visibility,
+    })
+    .catch(async (e) => {
+      await releaseNames(env, owner, id).catch(() => {});
+      throw e;
+    });
   await listRepository(env, id, auth._session.workspace, name, visibility);
   const tokens = await issueTokens(ctx, body.tokens);
   const instance = await env.PLATFORM_IMPORT.create({

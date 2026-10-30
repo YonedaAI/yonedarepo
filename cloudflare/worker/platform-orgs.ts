@@ -8,6 +8,7 @@ import { ACCOUNT_IDENTIFIER_HELP, normalizeAccountIdentifier } from '../../share
 import { forgetOrgAccess, type OrgAccess, teamKey } from './platform-org-access';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import { requirePatScope } from './repo-pat';
+import { withPaths } from './repo-paths';
 import type { Env } from './types';
 import { workspace } from './workspace';
 
@@ -94,8 +95,8 @@ async function orgRepos(env: Env, org: string, account: string) {
     } ORDER BY created_at DESC LIMIT 200`,
   )
     .bind(org, ...(all ? [] : [JSON.stringify(keys)]))
-    .all<Json>();
-  return { repos: listed.results };
+    .all<{ owner: string; name: string }>();
+  return { repos: await withPaths(env, listed.results) };
 }
 
 /** `DELETE /orgs/:org?confirm=<org>`: an owner retires an org that owns no repositories

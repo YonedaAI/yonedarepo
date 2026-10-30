@@ -9,6 +9,7 @@ import { forgetFork } from './repo-forks';
 import { dropDeletedHead } from './repo-head';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { requirePatScope } from './repo-pat';
+import { releaseNames, withPaths } from './repo-paths';
 import { ownSpec } from './repo-stores';
 import type { Env } from './types';
 
@@ -67,7 +68,7 @@ export async function listRepositories(env: Env, auth: Credentials) {
   const repos = [...best.values()]
     .filter((r) => (!allowed || allowed.includes(r.id)) && (!org || r.owner === org))
     .slice(0, 200);
-  return { repos };
+  return { repos: await withPaths(env, repos) };
 }
 
 /** `DELETE /repos/:id?confirm=<name>`: the owner (session or repo:admin token) only, never
@@ -76,7 +77,12 @@ export async function deleteRepository(env: Env, auth: Credentials, repo: string
   requirePatScope(auth, 'repo:admin');
   if (!confirm) throw new ApiError('INVALID_INPUT', "confirm must be the repository's name");
   const ctx = new RepoContext(env, repo, caller(env, repo, auth));
+  const listed = await env.INDEX.prepare('SELECT workspace FROM platform_repos WHERE id=?')
+    .bind(repo)
+    .first<{ workspace: string }>();
   const deleted = await ctx.call({ op: 'repo_delete', confirm });
+  // Its names are free for the owner's next repositories.
+  if (listed) await releaseNames(env, listed.workspace, repo);
   // A fork's parent stops counting it (the parent refuses deletion while forks remain).
   if (deleted.parent) await forgetFork(env, deleted.parent, repo);
   await env.INDEX.batch([
