@@ -1,5 +1,6 @@
 // One feature's page (`/features/<slug>`), fed by FEATURE_PAGES: a hero with the feature's
-// name, headline and nav subtitle; its mock, large; how it works; and related features.
+// name, headline and nav subtitle beside its mock (under it on a phone); how it works; and
+// related features.
 import { ArrowRight } from 'lucide-react';
 import type { Navigate } from '../shell/useRoute';
 import { inline } from '../source-platform/markdown';
@@ -13,11 +14,13 @@ export function SiteFeaturePage({ slug, navigate }: { slug: string; navigate: Na
   if (!page || !item)
     return (
       <section className="site-band site-feature-hero" aria-labelledby="feature-heading">
-        <h1 id="feature-heading">Feature not found</h1>
-        <p className="site-hero-lead">
-          There is no feature at this address.{' '}
-          <a {...siteLink({ page: 'features' }, navigate)}>See all features</a>.
-        </p>
+        <div className="site-feature-copy">
+          <h1 id="feature-heading">Feature not found</h1>
+          <p className="site-hero-lead">
+            There is no feature at this address.{' '}
+            <a {...siteLink({ page: 'features' }, navigate)}>See all features</a>.
+          </p>
+        </div>
       </section>
     );
   const related = page.related.flatMap((id) => {
@@ -28,29 +31,30 @@ export function SiteFeaturePage({ slug, navigate }: { slug: string; navigate: Na
   return (
     <>
       <section className="site-band site-feature-hero" aria-labelledby="feature-heading">
-        <p className="site-eyebrow">{item.title}</p>
-        <h1 id="feature-heading">{page.headline}</h1>
-        <p className="site-hero-lead">{item.subtitle}</p>
-        <div className="site-hero-actions">
-          <a
-            className="site-button site-button-large"
-            {...siteLink({ page: 'signin', mode: 'signup' }, navigate)}
-          >
-            Get started <ArrowRight size={18} aria-hidden="true" />
-          </a>
-          <a className="site-more" {...siteLink({ page: 'docs', slug: page.docs }, navigate)}>
-            Read the docs <ArrowRight size={16} aria-hidden="true" />
-          </a>
+        <div className="site-feature-copy">
+          <p className="site-eyebrow">{item.title}</p>
+          <h1 id="feature-heading">{page.headline}</h1>
+          <p className="site-hero-lead">{item.subtitle}</p>
+          <div className="site-hero-actions">
+            <a
+              className="site-button site-button-large"
+              {...siteLink({ page: 'signin', mode: 'signup' }, navigate)}
+            >
+              Get started <ArrowRight size={18} aria-hidden="true" />
+            </a>
+            <a className="site-more" {...siteLink({ page: 'docs', slug: page.docs }, navigate)}>
+              Read the docs <ArrowRight size={16} aria-hidden="true" />
+            </a>
+          </div>
         </div>
-      </section>
-
-      <section className="site-band site-feature-visual" aria-label={`${item.title} in use`}>
-        {mockOf(item)}
-        {page.stat && (
-          <p className="site-feature-stat">
-            <strong>{page.stat.value}</strong> {page.stat.label}. <span>{page.stat.versus}.</span>
-          </p>
-        )}
+        <div className="site-feature-visual">
+          {mockOf(item)}
+          {page.stat && (
+            <p className="site-feature-stat">
+              <strong>{page.stat.value}</strong> {page.stat.label}. <span>{page.stat.versus}.</span>
+            </p>
+          )}
+        </div>
       </section>
 
       <section className="site-band site-band-flush" aria-labelledby="feature-how">
