@@ -46,7 +46,7 @@ The platform Worker's cron (`* * * * *`; a new cron can take up to 15 minutes to
 
 Troubleshooting with `wrangler tail <prefix>-platform`: `ssh.keepalive` (who woke it, whether it started), `ssh.container_started` / `ssh.container_stopped` / `ssh.container_error`, and the gateway's own reports `ssh.gateway.started`, `ssh.tunnel.started`, `ssh.tunnel.connected` (cloudflared's first edge connection) and `ssh.tunnel.exited` (exit code and cloudflared's last 20 lines). `ssh.gateway.lookup_failed` / `ssh.gateway.session_failed` carry the URL and HTTP status of a failed call to the platform (520: the container's route to `platform.internal` is not registered; 401: `SSH_GATEWAY_SECRET` differs). A tunnel that never reaches `ssh.tunnel.connected` is what makes `cloudflared access ssh` fail with `websocket: bad handshake` (the hostname answers 530).
 
-Users, once per machine: install cloudflared, then add to `~/.ssh/config` (printed by `yoneda ssh-key add` and shown under Settings → SSH keys):
+Users, once per machine: the CLI installer (it brings cloudflared), then `yoneda ssh setup`, which writes this to `~/.ssh/config` with cloudflared's absolute path (shown under Settings → SSH keys for a manual setup):
 
 ```
 Host ssh.yonedarepo.com
@@ -110,11 +110,13 @@ Each env's secrets file (`~/.config/yonedarepo/staging.env` for dev, the name ke
 
 ## Public downloads: the CLI and the Claude Code marketplace
 
-The front Worker serves `/install.sh` (`frontend/public/install.sh`, with the site's origin filled in) and `/downloads/*` from the `<prefix>-downloads` R2 bucket (`DOWNLOADS`; layout in `cloudflare/worker/downloads.ts`). `cargo xtask infra up --env <env>` creates the bucket.
+The front Worker serves `/install.sh` and `/install.ps1` (`frontend/public/`, with the site's origin filled in) and `/downloads/*` from the `<prefix>-downloads` R2 bucket (`DOWNLOADS`; layout in `cloudflare/worker/downloads.ts`). `cargo xtask infra up --env <env>` creates the bucket.
 
-1. `cargo xtask downloads stage --env <env>` builds `yoneda` and `git-remote-yoneda` for darwin-arm64 and darwin-x64 (Cargo, on a Mac) and linux-x64 and linux-arm64 (static musl, `cargo zigbuild`: needs `cargo install cargo-zigbuild`, zig, and `rustup target add x86_64-apple-darwin x86_64-unknown-linux-musl aarch64-unknown-linux-musl`), packs each as `cli/<version>/yoneda-<version>-<target>.tar.gz` with `SHA256SUMS`, `cli/latest.json` and `cli/LATEST`, and zips `plugins/yoneda` as `claude/yoneda-<plugin version>.zip` with `claude/marketplace.json` pinning its sha256. All under `target/downloads/<env>/`. `--targets linux-x64,linux-arm64` stages fewer.
+1. `cargo xtask downloads stage --env <env>` builds `yoneda` and `git-remote-yoneda` for darwin-arm64 and darwin-x64 (Cargo, on a Mac) and linux-x64, linux-arm64, windows-x64 and windows-arm64 (static musl and MinGW, `cargo zigbuild`: needs `cargo install cargo-zigbuild`, zig, and `rustup target add x86_64-apple-darwin x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-pc-windows-gnu aarch64-pc-windows-gnullvm`), packs each as `cli/<version>/yoneda-<version>-<target>.tar.gz` (`.zip` on Windows) with `SHA256SUMS`, `cli/latest.json` and `cli/LATEST`, and zips `plugins/yoneda` as `claude/yoneda-<plugin version>.zip` with `claude/marketplace.json` pinning its sha256. All under `target/downloads/<env>/`. `--targets linux-x64,linux-arm64` stages fewer.
 2. `cargo xtask downloads upload --env <env> --dry-run` prints the wrangler commands; without `--dry-run` it runs them (needs `CLOUDFLARE_API_TOKEN` with R2 write). Version pointers (`cli/LATEST`, `cli/latest.json`, `claude/marketplace.json`) go last.
-3. Check: `curl -fsSL https://<site>/install.sh | sh` on a Mac and a Linux box, then `yoneda auth token --show` after `yoneda login`.
+3. Check: `curl -fsSL https://<site>/install.sh | sh` on a Mac and a Linux box and `irm https://<site>/install.ps1 | iex` on Windows, then `yoneda auth token --show` after `yoneda login`.
+
+Both installers fetch Cloudflare's cloudflared at a pinned version, each file checked against a pinned SHA-256, and a failure only warns. To move the pin, set the version in both scripts and take each asset's hash from the release: `gh api repos/cloudflare/cloudflared/releases/tags/<version>` lists a `digest` per asset, which is the one to pin. The release notes agree for the bare binaries, but their `darwin-*.tgz` lines hash the binary inside the archive, not the archive the installer downloads. Download the assets and compare with `shasum -a 256`, and on a Mac check `codesign -dv` names Cloudflare (team 68WVV388M8). There is no windows-arm64 build: install.ps1 uses the x86-64 one there.
 
 The CLI version is the workspace version in `Cargo.toml`; the plugin's is `plugins/yoneda/.claude-plugin/plugin.json` (Claude Code updates a plugin only when it changes). Bump them before staging a new release: versioned files are served as immutable.
 

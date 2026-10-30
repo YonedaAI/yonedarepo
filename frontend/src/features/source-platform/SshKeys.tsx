@@ -3,9 +3,12 @@
 import { type FormEvent, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import { SettingsRow, SettingsSection } from '../../components/SettingsSection';
+import { currentApiOrigin, loginCommand, SSH_SETUP_COMMAND } from './connect';
+import { InstallCommand } from './InstallCommand';
 import { Failure, Loading } from './SourceStatus';
 import { sourceApi, when } from './sourceApi';
 import { publicKeyProblem, type SshAccess, type SshKey, suggestedTitle } from './sshKeyModel';
+import { CopyBlock } from './TokenParts';
 import { type Loaded, useSource } from './useSource';
 
 export function SshKeyTable({
@@ -60,31 +63,36 @@ export function SshKeyTable({
   );
 }
 
-/** How to use a key: the tunnel's one-time client setup, then the clone URL. */
-export function SshSetup({ access }: { access?: SshAccess }) {
+/** One machine's setup: install the CLI, then `yoneda ssh setup`, one Copy each. The config
+ * lines stay behind Manual setup for a machine where neither can run. */
+export function SshSetup({ access, origin }: { access?: SshAccess; origin: string }) {
   if (!access) return null;
   if (!access.host)
     return (
       <p className="source-meta">Git over SSH is not open yet; use HTTPS with a token meanwhile.</p>
     );
   return (
-    <div className="source-meta">
+    <>
+      <InstallCommand origin={origin} />
+      <CopyBlock label="Set up SSH on this machine" text={SSH_SETUP_COMMAND} />
+      <p className="source-meta">
+        Sign in first with <code>{loginCommand(origin)}</code>, ticking Admin on the approval page.
+        The setup uses your <code>id_ed25519</code> key or makes one, adds it here and writes its{' '}
+        <code>~/.ssh/config</code> entry. Then clone with <code>{access.clone_url}</code>.
+      </p>
       {access.ssh_config && (
-        <>
-          <p>
-            Git over SSH goes through Cloudflare Tunnel. Once per machine,{' '}
+        <details className="source-details">
+          <summary>Manual setup</summary>
+          <p className="source-meta">
             <a href="https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/">
-              install cloudflared
+              Install cloudflared
             </a>{' '}
             and add this to <code>~/.ssh/config</code>:
           </p>
           <pre>{access.ssh_config}</pre>
-        </>
+        </details>
       )}
-      <p>
-        Then clone with <code>{access.clone_url}</code>.
-      </p>
-    </div>
+    </>
   );
 }
 
@@ -210,7 +218,7 @@ export function SshKeys() {
       {access && (
         <SettingsSection id="ssh-setup" title="Set up">
           <div className="settings-block">
-            <SshSetup access={access} />
+            <SshSetup access={access} origin={currentApiOrigin()} />
           </div>
         </SettingsSection>
       )}

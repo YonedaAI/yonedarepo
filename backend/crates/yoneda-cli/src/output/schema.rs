@@ -67,6 +67,7 @@ pub fn all() -> Vec<(&'static str, Value)> {
         entry::<OrgTeamAdd>(),
         entry::<OrgTeamRemove>(),
         entry::<SshKeyAdd>(),
+        entry::<SshSetup>(),
         entry::<SshKeyList>(),
         entry::<SshKeyRemove>(),
         entry::<Login>(),

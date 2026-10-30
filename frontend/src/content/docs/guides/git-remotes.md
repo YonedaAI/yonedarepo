@@ -31,24 +31,31 @@ git fetch --unshallow
 
 ## SSH
 
-Git over SSH reaches the platform through Cloudflare Tunnel, so each machine needs `cloudflared` and one `~/.ssh/config` entry.
+Git over SSH reaches the platform through Cloudflare Tunnel. Two commands set up a machine; neither needs admin rights.
 
-### 1. Add your public key
+### 1. Install the CLI
 
-In the app under **Settings → SSH keys**, or with the CLI:
+It brings `cloudflared` along, unless you already have one that works. On macOS or Linux:
 
 ```sh
-yoneda ssh-key add ~/.ssh/id_ed25519.pub
+curl -fsSL https://yonedarepo.com/install.sh | sh
 ```
 
-### 2. Route SSH through cloudflared
+On Windows, in PowerShell:
 
-Install [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/), then add to `~/.ssh/config`:
-
-```text
-Host ssh.yonedarepo.com
-  ProxyCommand cloudflared access ssh --hostname %h
+```powershell
+irm https://yonedarepo.com/install.ps1 | iex
 ```
+
+### 2. Run the setup
+
+Sign in with `yoneda login`, ticking **Admin** on the approval page (only tokens with Admin for all repositories can add SSH keys), then:
+
+```sh
+yoneda ssh setup
+```
+
+It uses `~/.ssh/id_ed25519` or generates one, adds the public key to your account, writes a marked `# yoneda begin` block to `~/.ssh/config` without touching your other entries, and copies the public key to the clipboard if it can. It then tries `ssh -T`, which accepts the host key on first use as you would at the prompt, and prints a `git clone` line. Run it again whenever you like: it changes only what is out of date.
 
 ### 3. Clone
 
@@ -57,6 +64,17 @@ git clone ssh://git@ssh.yonedarepo.com/<repo-id>.git
 ```
 
 `ssh -T git@ssh.yonedarepo.com` answers `Hi <account>! You've successfully authenticated, but YonedaRepo does not provide shell access.`
+
+### Manual setup
+
+Add the public key under **Settings → SSH keys** or with `yoneda ssh-key add ~/.ssh/id_ed25519.pub`, install [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/), then add to `~/.ssh/config`:
+
+```text
+Host ssh.yonedarepo.com
+  ProxyCommand cloudflared access ssh --hostname %h
+```
+
+### Keys
 
 - Keys: Ed25519, ECDSA (P-256, P-384, P-521) and RSA of 2048 to 16384 bits. Security-key (`sk-`) keys are not accepted.
 - An account holds up to 50 keys. An SSH key acts as its account: it fetches what the account reads and pushes where it writes.
@@ -94,4 +112,4 @@ How a push to `main` lands next to other writers is on [Concurrent pushes](/docs
 | `Push has an object of N MiB; the limit is 100 MiB per file` | Track the file with Git LFS |
 | `secret detected in <path>:<line>` | A file holds a credential; see [Security](/docs/security#what-a-push-is-checked-for) |
 | `Not a Git repository URL: use /git/<repository id>.git` | The URL needs the repository's id, not its name |
-| `ssh: Could not resolve hostname` or a hang on connect | The `ProxyCommand` entry is missing, or `cloudflared` is not installed |
+| `ssh: Could not resolve hostname` or a hang on connect | The `ProxyCommand` entry is missing, or `cloudflared` is not installed: run `yoneda ssh setup` |

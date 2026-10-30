@@ -9,7 +9,7 @@ summary: Personal access tokens, repository tokens, SSH keys and device login, a
 |---|---|---|---|
 | Personal access token | `ypat_` | Your account, within its scopes | **Settings → Personal access tokens**, or `yoneda login` |
 | Repository token | `yrp_` | One repository, optionally some paths | Repository **Settings → Repository tokens**, or `yoneda token create` |
-| SSH key | | Your account, for Git over SSH | **Settings → SSH keys**, or `yoneda ssh-key add` |
+| SSH key | | Your account, for Git over SSH | `yoneda ssh setup`, **Settings → SSH keys**, or `yoneda ssh-key add` |
 | Browser session | | Your account, in the web app | Signing in |
 
 The server keeps only a hash of each token and checks it on every request. A token is shown once, when it is created. Revoking a token or removing an SSH key takes effect on the next request.
