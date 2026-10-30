@@ -18,6 +18,7 @@ h2.site-band-head,
 .site-band-head > h2 {
   font-size: var(--fs-xl);
   margin: 0;
+  max-width: 46ch;
 }
 /* Headlines in two tones: the claim, then a muted continuation. */
 .site-two-tone > span {
@@ -47,5 +48,5 @@ h2.site-band-head,
 }
 .site-band-cta p {
   color: var(--site-muted);
-  margin: 0 0 var(--sp-5);
+  margin: 0 auto var(--sp-5);
 }

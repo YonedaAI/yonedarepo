@@ -78,7 +78,7 @@ const longDate = (date: string) =>
 export function SiteBlog({ slug, navigate }: { slug?: string; navigate: Navigate }) {
   if (slug === undefined)
     return (
-      <article className="site-page">
+      <article className="site-page site-reading">
         <header className="site-page-head">
           <h1>Blog</h1>
           <p className="site-lead">Notes from building YonedaRepo, with the numbers we measured.</p>

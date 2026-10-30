@@ -33,6 +33,7 @@
     justify-content: space-between;
   }
   .site {
+    --site-edge: 16px;
     --site-gutter: 16px;
     --site-band: 32px;
   }

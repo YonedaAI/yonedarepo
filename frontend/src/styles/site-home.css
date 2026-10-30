@@ -22,6 +22,9 @@
   margin: 0 0 20px;
   scroll-margin-top: 80px;
 }
+.site-feature-wide > div {
+  max-width: var(--site-measure);
+}
 .site-feature-wide ul {
   padding-left: 20px;
   margin: 16px 0 0;
@@ -63,6 +66,7 @@
   border-radius: 16px;
 }
 .site-cta p {
+  margin-inline: auto;
   color: var(--site-muted);
 }
 
