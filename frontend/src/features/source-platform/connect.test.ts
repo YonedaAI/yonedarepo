@@ -16,6 +16,7 @@ import {
   normalizeUserCode,
   scopeList,
 } from './connect';
+import { forgetRepoNames, rememberRepoName } from './repoNames';
 import { formatSourceRoute, parseSourceRoute } from './sourceRoute';
 
 const api = 'https://api.dev.yonedarepo.com';
@@ -157,5 +158,19 @@ describe('settings, connect and device routes', () => {
       view: 'device',
       code: 'BCDF-GHJK',
     });
+  });
+});
+
+describe('readable clone address', () => {
+  it('clones over HTTPS by handle and name once known, else by id', () => {
+    forgetRepoNames();
+    expect(httpsCloneCommand(api, repo, 'retry-kit')).toBe(
+      `git clone ${api}/git/${repo}.git retry-kit`,
+    );
+    rememberRepoName(repo, 'ada', 'retry-kit');
+    expect(httpsCloneCommand(api, repo, 'retry-kit')).toBe(
+      `git clone ${api}/ada/retry-kit.git retry-kit`,
+    );
+    forgetRepoNames();
   });
 });

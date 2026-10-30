@@ -73,7 +73,9 @@ describe('site routes', () => {
 
   it('leaves the app routes and unknown paths as they were', () => {
     expect(parse('/')).toEqual({ view: 'home' });
-    expect(parse('/nowhere')).toEqual({ view: 'home' });
+    // A handle-shaped first segment is a profile (repoNames.ts); anything else is home.
+    expect(parse('/nowhere')).toEqual({ view: 'profile', handle: 'nowhere' });
+    expect(parse('/no-where')).toEqual({ view: 'home' });
     expect(parse('/settings')).toEqual({ view: 'settings' });
     expect(parse('/source/explore')).toEqual({ view: 'explore' });
   });

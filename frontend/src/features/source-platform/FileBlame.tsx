@@ -1,6 +1,6 @@
 import { Failure, Loading } from './SourceStatus';
 import { shortSha } from './sourceApi';
-import type { SourceRoute } from './sourceRoute';
+import { formatSourceRoute, type SourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
 
 type Line = { line: number; commit: string; text: string };
@@ -29,7 +29,7 @@ export function FileBlame({
             <td className="source-line">
               {(i === 0 || blame.data?.lines[i - 1].commit !== l.commit) && (
                 <a
-                  href={`/source/${repo}/commit/${l.commit}`}
+                  href={formatSourceRoute({ view: 'commit', repo, commit: l.commit })}
                   onClick={(e) => {
                     e.preventDefault();
                     onNavigate({ view: 'commit', repo, commit: l.commit });

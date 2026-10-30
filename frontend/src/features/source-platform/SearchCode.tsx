@@ -2,7 +2,7 @@
 // matched spans marked, and the rest of its lines behind "+N more in this file".
 import { useState } from 'react';
 import { type CodeHit, highlight, type Skipped, shownLines } from './searchModel';
-import type { SourceRoute } from './sourceRoute';
+import { formatSourceRoute, type SourceRoute } from './sourceRoute';
 
 /** Text files not content-searched named in the note; the rest are counted. */
 const NAMED = 5;
@@ -21,12 +21,13 @@ function CodeFile({
   const [expanded, setExpanded] = useState(false);
   const { lines, more } = shownLines(hit, expanded);
   const hidden = hit.lines.length - lines.length;
-  const open = () => onNavigate({ view: 'files', repo, path: hit.path, ref: 'main' });
+  const fileRoute: SourceRoute = { view: 'files', repo, path: hit.path, ref: 'main' };
+  const open = () => onNavigate(fileRoute);
   return (
     <article className="source-file search-file">
       <header>
         <a
-          href={`/source/${repo}/files/${hit.path}`}
+          href={formatSourceRoute(fileRoute)}
           onClick={(e) => {
             e.preventDefault();
             open();
@@ -69,7 +70,7 @@ function CodeFile({
         ) : (
           <a
             className="search-more"
-            href={`/source/${repo}/files/${hit.path}`}
+            href={formatSourceRoute(fileRoute)}
             onClick={(e) => {
               e.preventDefault();
               open();

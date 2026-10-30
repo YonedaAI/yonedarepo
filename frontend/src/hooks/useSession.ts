@@ -31,10 +31,20 @@ export function useSession() {
     const current = ++generation.current;
     setLoading(true);
     try {
-      const result = await api<{ authenticated: boolean; username?: string }>('auth/session');
+      const result = await api<{ authenticated: boolean } & Partial<AccountIdentity>>(
+        'auth/session',
+      );
       if (generation.current !== current) return;
       const next: AccountIdentity | null =
-        result.authenticated && result.username ? { username: result.username } : null;
+        result.authenticated && result.username
+          ? {
+              username: result.username,
+              ...(result.handle !== undefined ? { handle: result.handle } : {}),
+              ...(result.handle_suggestion !== undefined
+                ? { handle_suggestion: result.handle_suggestion }
+                : {}),
+            }
+          : null;
       if (!next && signedIn.current) setSessionEnded(true);
       else setSessionEnded(false);
       signedIn.current = !!next;

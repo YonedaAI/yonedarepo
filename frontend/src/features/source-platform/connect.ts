@@ -1,6 +1,8 @@
 // What a person copies to connect git, the yoneda CLI and agents to the platform. The API
 // origin comes from the build (VITE_YONEDA_API_ORIGIN, e.g. https://api.dev.yonedarepo.com);
 // without it the page's own origin is used, which serves the same API through its proxy.
+import { repoNameOf } from './repoNames';
+
 export const PAT_SCOPES = [
   { scope: 'repo:read', label: 'Read', hint: 'clone, log, grep, blame' },
   { scope: 'repo:write', label: 'Write', hint: 'commits and branches' },
@@ -25,9 +27,14 @@ export const currentApiOrigin = () =>
 
 /** `git clone <url> [dir]`: every clone line is a whole command, copied exactly as shown. */
 export const gitClone = (url: string, dir?: string) => `git clone ${url}${dir ? ` ${dir}` : ''}`;
+/** A repository's HTTPS Git URL: its readable `/<handle>/<name>.git` once known, else by id. */
+export function httpsCloneUrl(origin: string, repo: string) {
+  const named = repoNameOf(repo);
+  return named ? `${origin}/${named.owner}/${named.name}.git` : `${origin}/git/${repo}.git`;
+}
 /** Stock Git over HTTPS, with a token as the password. */
 export const httpsCloneCommand = (origin: string, repo: string, dir?: string) =>
-  gitClone(`${origin}/git/${repo}.git`, dir);
+  gitClone(httpsCloneUrl(origin, repo), dir);
 /** The yoneda remote helper. */
 export const cloneCommand = (origin: string, repo: string, dir?: string) =>
   gitClone(`yoneda::${origin}/${repo}`, dir);
