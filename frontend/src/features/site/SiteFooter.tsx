@@ -13,12 +13,14 @@ export type FooterLink = { label: string } & (
   | { href: string }
 );
 
-/** Public profiles; an entry renders only once its URL is set. */
+/** The Connect column, in order; an entry renders only while its URL is set. */
 export const SOCIAL_LINKS: { label: string; url: string }[] = [
-  { label: 'X', url: '' },
-  { label: 'LinkedIn', url: '' },
-  { label: 'GitHub', url: '' },
-  { label: 'Discord', url: '' },
+  { label: 'GitHub', url: 'https://github.com/YonedaRepo' },
+  { label: 'X', url: 'https://x.com/YonedaRepo' },
+  { label: 'LinkedIn', url: 'https://www.linkedin.com/company/yonedarepo' },
+  { label: 'YouTube', url: 'https://www.youtube.com/@YonedaRepo' },
+  { label: 'Discord', url: 'https://discord.gg/yonedarepo' },
+  { label: 'Email us', url: 'mailto:hello@yonedarepo.com' },
 ];
 
 const site = (page: Extract<SourceRoute, { view: 'site' }>['site']): SourceRoute => ({
@@ -57,16 +59,17 @@ export const FOOTER_COLUMNS: { title: string; links: FooterLink[] }[] = [
   },
   {
     title: 'Connect',
-    links: [
-      { label: 'Email us', href: 'mailto:hello@yonedarepo.com' },
-      ...SOCIAL_LINKS.filter((s) => s.url).map((s) => ({ label: s.label, href: s.url })),
-    ],
+    links: SOCIAL_LINKS.filter((s) => s.url).map((s) => ({ label: s.label, href: s.url })),
   },
 ];
 
 /** The anchor's props: in-app routes navigate without a reload, then scroll to the hash. */
 function anchor(link: FooterLink, navigate: Navigate) {
-  if ('href' in link) return { href: link.href };
+  // Profiles open in a new tab; an email link opens the mail app, so it needs no tab.
+  if ('href' in link)
+    return link.href.startsWith('mailto:')
+      ? { href: link.href }
+      : { href: link.href, target: '_blank', rel: 'noopener noreferrer' };
   const base = linkTo(link.route, navigate);
   if (!link.hash) return base;
   const href = `${base.href}#${link.hash}`;
