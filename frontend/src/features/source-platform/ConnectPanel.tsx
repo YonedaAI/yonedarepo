@@ -41,7 +41,7 @@ export function CloneCommands({
         text={httpsCloneCommand(origin, repo, name)}
       />
       <p className="source-meta clone-hint">
-        <a href="/settings#personal-tokens">Settings → Personal tokens</a>
+        <a href="/settings/tokens">Settings → Personal tokens</a>
       </p>
     </>
   );
@@ -92,8 +92,8 @@ export function AgentConnectHelp({ origin }: { origin: string }) {
         <h2 id="connect-agents">Agents (MCP)</h2>
         <p className="source-meta">
           One endpoint for all your repositories: every tool takes a <code>repo</code> argument.
-          Authenticate with a personal access token from <a href="/settings">Settings</a> in the{' '}
-          <code>YONEDA_TOKEN</code> environment variable.
+          Authenticate with a personal access token from <a href="/settings/tokens">Settings</a> in
+          the <code>YONEDA_TOKEN</code> environment variable.
         </p>
         <CopyBlock label="MCP URL" text={mcpUrl(origin)} />
         <CopyBlock

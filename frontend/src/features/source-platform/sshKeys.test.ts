@@ -112,10 +112,10 @@ describe('SSH in the Clone menu', () => {
       `<code>git clone ssh://git@ssh.dev.yonedarepo.com/${REPO}.git demo</code>`,
     );
     expect(shown).toContain('aria-label="Copy SSH"');
-    expect(shown).toContain('href="/settings#ssh-keys"');
+    expect(shown).toContain('href="/settings/ssh-keys"');
     const direct = line({ ...tunnel, front_door: 'connect', ssh_config: null });
     expect(direct).toContain('Copy SSH');
-    expect(direct).not.toContain('/settings#ssh-keys');
+    expect(direct).not.toContain('/settings/ssh-keys');
     expect(line(off)).toBe('');
     expect(line(undefined)).toBe('');
   });

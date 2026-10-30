@@ -1,17 +1,19 @@
 // The shell's sidebar: Browse (Home, Repositories, Explore, Agents: the workspace's managed
-// agents, their runs and settings; Admin for operators), the account's repositories and organizations, then
-// Repository: the switcher and the open repository's pages. On a phone it is the navigation
-// menu the top bar opens.
+// agents, their runs and settings; Admin for operators), Account (the settings pages, while on
+// one), the account's repositories and organizations, then Repository: the switcher and the
+// open repository's pages. On a phone it is the navigation menu the top bar opens.
 import {
   BookOpenText,
   Bot,
   Building2,
   Compass,
+  CreditCard,
   FolderGit2,
   GitBranch,
   GitCommitHorizontal,
   GitPullRequest,
   House,
+  KeyRound,
   LayoutDashboard,
   NotebookPen,
   Plus,
@@ -21,8 +23,15 @@ import {
   ShieldCheck,
   Sparkles,
   Tag,
+  Terminal,
+  UserRound,
 } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
+import {
+  ACCOUNT_SECTION_TITLES,
+  ACCOUNT_SECTIONS,
+  type AccountSection,
+} from '../account-settings/settingsRoute';
 import { unreadLabel } from '../admin/adminModel';
 import type { OrgSummary } from '../source-platform/orgModel';
 import { Failure } from '../source-platform/SourceStatus';
@@ -53,6 +62,14 @@ export const REPO_PAGES: { id: RepoTab; label: string; Icon: typeof House }[] = 
   { id: 'search', label: 'Search', Icon: Search },
   { id: 'settings', label: 'Settings', Icon: Settings },
 ];
+
+const ACCOUNT_ICONS: Record<AccountSection, typeof House> = {
+  general: UserRound,
+  billing: CreditCard,
+  tokens: KeyRound,
+  'ssh-keys': Terminal,
+  organizations: Building2,
+};
 
 /** Up and Down (Home, End) move between a navigation's links. */
 function arrowKeys(event: KeyboardEvent<HTMLElement>) {
@@ -170,6 +187,24 @@ export function AppSidebar({
           </a>
         )}
       </nav>
+      {authenticated && route.view === 'settings' && (
+        <nav className="side-nav" aria-label="Account" onKeyDown={arrowKeys}>
+          <p className="side-label">Account</p>
+          {ACCOUNT_SECTIONS.map((section) => {
+            const Icon = ACCOUNT_ICONS[section];
+            return (
+              <a
+                key={section}
+                {...current(section === route.section)}
+                {...linkTo({ view: 'settings', section }, navigate)}
+              >
+                <Icon size={16} aria-hidden="true" />
+                <span className="side-text">{ACCOUNT_SECTION_TITLES[section]}</span>
+              </a>
+            );
+          })}
+        </nav>
+      )}
       {authenticated && (
         <nav className="side-nav side-repos" aria-label="Repositories" onKeyDown={arrowKeys}>
           <p className="side-label">Your repositories</p>

@@ -26,8 +26,7 @@ export function AccountOrgs({
   }
   const list = [...(orgs.data?.orgs ?? [])].sort((a, b) => a.org.localeCompare(b.org));
   return (
-    <section id="organizations" aria-labelledby="orgs-heading">
-      <h2 id="orgs-heading">Organizations</h2>
+    <div className="settings-card">
       <p className="source-meta">
         An organization owns repositories together. Owners manage its members and teams; teams get
         roles on repositories.
@@ -72,6 +71,6 @@ export function AccountOrgs({
         )}
       </form>
       {error && <Failure error={error} />}
-    </section>
+    </div>
   );
 }

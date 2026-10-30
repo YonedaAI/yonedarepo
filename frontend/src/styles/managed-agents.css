@@ -375,12 +375,6 @@
 .agent-runs-table .chip {
   margin-left: 4px;
 }
-.billing-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
-}
 .plugin-actions {
   display: flex;
   flex-wrap: wrap;
