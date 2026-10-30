@@ -1659,6 +1659,7 @@ mod lfs;
 mod lfs_sweep;
 mod members;
 mod memories;
+mod mirror_retirement;
 mod model_runner;
 mod ops;
 mod orgs;

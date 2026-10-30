@@ -30,6 +30,7 @@ import { notifyHooks } from './repo-hooks';
 import { largeWarnings, SpilledFiles } from './repo-large-files';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
+import { framed } from './repo-pack-copy';
 import { dispatchObjects, dispatchProjection } from './repo-projection';
 import { putRawBytes } from './repo-stores';
 import { record, timed } from './repo-timing';
@@ -251,26 +252,6 @@ async function store(
   // Undispatched runs stay queued in the authority and are sent again on request.
   await timed('git.runs', () => dispatchRuns(ctx.env, ctx.repo, runs).catch(() => {}));
   return fresh;
-}
-
-const KINDS = ['', 'commit', 'tree', 'blob'];
-
-/** Splits `ReceiveSession.objects` frames: kind, 20-byte id, 4-byte length, content. */
-function framed(bytes: Uint8Array) {
-  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const out: { id: string; kind: string; data: Uint8Array }[] = [];
-  for (let at = 0; at < bytes.length; ) {
-    const kind = KINDS[bytes[at]];
-    const id = [...bytes.subarray(at + 1, at + 21)]
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join('');
-    const length = view.getUint32(at + 21);
-    if (!kind || at + 25 + length > bytes.length)
-      throw new ApiError('GIT_FAILED', 'Malformed object frame');
-    out.push({ id, kind, data: bytes.subarray(at + 25, at + 25 + length) });
-    at += 25 + length;
-  }
-  return out;
 }
 
 function report(

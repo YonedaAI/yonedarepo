@@ -114,10 +114,13 @@ export async function purgeRepository(env: Env, repo: string) {
   const store = ownSpec(String(target.object_store ?? ''));
   const r2 = /^r2:([A-Za-z0-9._-]+)$/.exec(store);
   if (r2) await purgePrefix(env, `store/v1/${r2[1]}/`);
-  const artifacts = /^artifacts:([^/]+)\/([A-Za-z0-9._-]+)$/.exec(store);
-  if (artifacts && artifacts[1] === env.ARTIFACTS_NAMESPACE)
-    await env.ARTIFACTS.delete(artifacts[2]).catch((e: any) => {
-      // Already gone (an earlier attempt, or an import that never created it).
-      if (!/not.?found/i.test(String(e?.message ?? e))) throw e;
-    });
+  // An Artifacts mirror a purge retired from it may be left to delete.
+  for (const spec of [store, String(target.retired_mirror ?? '')]) {
+    const artifacts = /^artifacts:([^/]+)\/([A-Za-z0-9._-]+)$/.exec(spec);
+    if (artifacts && artifacts[1] === env.ARTIFACTS_NAMESPACE)
+      await env.ARTIFACTS.delete(artifacts[2]).catch((e: any) => {
+        // Already gone (an earlier attempt, or an import that never created it).
+        if (!/not.?found/i.test(String(e?.message ?? e))) throw e;
+      });
+  }
 }
