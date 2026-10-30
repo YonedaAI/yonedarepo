@@ -2,6 +2,11 @@
 title: Testing with real agents in a sandbox
 date: 2026-10-28
 summary: Twelve coding agents, two waves, one repository, every commit landed on main. How we run real agents against the platform without letting them touch anything else.
+author: Yoneda Labs
+category: Engineering
+image: /blog/real-agents-in-a-sandbox/hero.svg
+imageAlt: Diagram of twelve agents, a first wave of eight and a second wave of four, each in its own container, all landing on main.
+caption: Two waves of agents, one container each with only its own clone mounted, and 12 of 12 commits on main.
 ---
 
 YonedaRepo is built for agents, so we test it with real ones. But a coding agent with shell access is untrusted code with a model attached. This post describes the sandbox we run them in and what the latest run showed.

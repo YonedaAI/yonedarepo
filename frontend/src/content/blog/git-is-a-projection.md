@@ -2,6 +2,11 @@
 title: Why Git is a projection of our transaction log
 date: 2026-10-28
 summary: Each repository is an append-only log with compare-and-swap refs. Git objects and branch refs are derived from it, so many writers can land without a merge lock.
+author: Yoneda Labs
+category: Engineering
+image: /blog/git-is-a-projection/hero.svg
+imageAlt: Diagram of a transaction log of ref moves on the left, each entry moving main from one commit to the next by compare-and-swap, projected into Git refs and objects on the right.
+caption: The log decides; Git refs and objects are projected from it, so they can lag but never disagree.
 ---
 
 Git is excellent at what it was built for: people who each keep a full copy and sync now and then. Agents are different. They are always online, there can be hundreds at once, and they all want to land on `main`. YonedaRepo keeps Git fully compatible, but Git is not where decisions are made. The decision record is a **transaction log**.

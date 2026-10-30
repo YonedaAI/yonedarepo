@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" font-family="Inter, system-ui, -apple-system, Segoe UI, sans-serif">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#e7e7e7"/></marker>
+  </defs>
+  <rect width="1600" height="900" fill="#161616"/>
+  <text x="50" y="420" fill="#f3f3f3" font-size="32" font-weight="600">Agents</text>
+  <text x="50" y="462" fill="#a8a8a8" font-size="24">Git · CLI · MCP</text>
+  <path d="M235 430 H285" stroke="#e7e7e7" stroke-width="4" marker-end="url(#a)"/>
+  <g stroke-width="2">
+    <rect x="295" y="350" width="330" height="160" rx="16" fill="#1c1c1c" stroke="#4e4e4e"/>
+    <rect x="705" y="320" width="440" height="220" rx="16" fill="#2b2b2b" stroke="#e7e7e7" stroke-width="3"/>
+    <rect x="705" y="110" width="440" height="140" rx="16" fill="#1c1c1c" stroke="#4e4e4e"/>
+    <rect x="705" y="620" width="440" height="140" rx="16" fill="#1c1c1c" stroke="#4e4e4e"/>
+    <rect x="1215" y="540" width="345" height="130" rx="16" fill="#1c1c1c" stroke="#4e4e4e"/>
+    <rect x="1215" y="720" width="345" height="130" rx="16" fill="#1c1c1c" stroke="#4e4e4e"/>
+  </g>
+  <text x="320" y="415" fill="#f3f3f3" font-size="28" font-weight="600">Stateless compute</text>
+  <text x="320" y="460" fill="#a8a8a8" font-size="26">Workers</text>
+  <text x="730" y="380" fill="#f3f3f3" font-size="30" font-weight="600">Serialized authority</text>
+  <text x="730" y="425" fill="#ffffff" font-size="25">one Durable Object (SQLite)</text>
+  <text x="730" y="462" fill="#ffffff" font-size="25">per repository</text>
+  <text x="730" y="505" fill="#a8a8a8" font-size="22">log · refs · landing queue</text>
+  <text x="730" y="170" fill="#f3f3f3" font-size="30" font-weight="600">Object store</text>
+  <text x="730" y="215" fill="#a8a8a8" font-size="26">R2 · store of record</text>
+  <text x="730" y="680" fill="#f3f3f3" font-size="30" font-weight="600">Durable queue</text>
+  <text x="730" y="725" fill="#a8a8a8" font-size="26">Queues · Workflows</text>
+  <text x="1240" y="595" fill="#f3f3f3" font-size="26" font-weight="600">Container compute</text>
+  <text x="1240" y="637" fill="#a8a8a8" font-size="23">Containers · checks</text>
+  <text x="1240" y="775" fill="#f3f3f3" font-size="26" font-weight="600">Git projection</text>
+  <text x="1240" y="817" fill="#a8a8a8" font-size="23">Artifacts · clone</text>
+  <g stroke="#e7e7e7" stroke-width="3" fill="none" marker-end="url(#a)">
+    <path d="M625 430 H695"/>
+    <path d="M460 350 C460 230 600 180 695 180"/>
+    <path d="M925 540 V610"/>
+    <path d="M1145 670 C1180 670 1185 605 1205 605"/>
+    <path d="M1145 710 C1180 710 1185 785 1205 785"/>
+  </g>
+  <text x="660" y="415" fill="#a8a8a8" font-size="20" text-anchor="middle">land</text>
+  <text x="455" y="235" fill="#a8a8a8" font-size="20" text-anchor="end">immutable puts</text>
+  <text x="945" y="585" fill="#a8a8a8" font-size="20">after landing</text>
+  <text x="1215" y="160" fill="#f3f3f3" font-size="40" font-weight="600">1,000 of 1,000</text>
+  <text x="1215" y="205" fill="#a8a8a8" font-size="24">writers landed in each</text>
+  <text x="1215" y="240" fill="#a8a8a8" font-size="24">of 6 measured bursts</text>
+</svg>

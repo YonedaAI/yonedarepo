@@ -35,12 +35,13 @@ import {
   PRICING,
   roundUpClean,
 } from './pricing';
+import { SiteBlog } from './SiteBlog';
 import { COMPARISONS } from './SiteCompare';
 import { SiteFeatures } from './SiteFeatures';
 import { checkHealth, FOOTER_COLUMNS, SOCIAL_LINKS, StatusPill } from './SiteFooter';
 import { SiteHome } from './SiteHome';
 import { SiteLayout } from './SiteLayout';
-import { SiteBlog, SiteCompany, SiteDocs, SiteLegal } from './SitePages';
+import { SiteCompany, SiteDocs, SiteLegal } from './SitePages';
 import { SitePricing } from './SitePricing';
 import { siteView } from './siteRoute';
 
