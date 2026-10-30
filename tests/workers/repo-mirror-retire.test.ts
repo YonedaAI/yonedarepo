@@ -14,6 +14,7 @@ import { PlatformStore } from '../../cloudflare/worker/repo-platform-store';
 import { projectRefs } from '../../cloudflare/worker/repo-projection';
 import { quarantineJob } from '../../cloudflare/worker/repo-quarantine';
 import type { Env } from '../../cloudflare/worker/types';
+import { asGit } from './git-answer';
 import { api, author, bindings, drainObjects, file, pushes, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
@@ -128,11 +129,12 @@ function serveMirrors() {
 
 /** A history built by the platform on the R2 store (it plays the remote): `main`, and the
  * secret on a commit of its own. Answers its refs and raw objects. */
-async function remote(name: string) {
+async function remote(name: string, secretAtTip = false) {
   const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2' } as unknown as Env;
   const cookie = await signup(name);
+  const files = [file('README.md', '# m\n'), file('src/app.txt', 'hello\n'), ...(secretAtTip ? [file('config/staging.txt', SECRET)] : [])];
   const created = await api('/repos', { cookie }, {
-    body: { name: 'remote', policy: { required_checks: [], approvals: 0 }, files: [file('README.md', '# m\n'), file('src/app.txt', 'hello\n')], author },
+    body: { name: 'remote', policy: { required_checks: [], approvals: 0 }, files, author },
   }, local);
   const main = created.body.commit as string;
   const leak = await api(`/repos/${created.body.id}/commits`, { cookie }, { body: { parent: main, changes: [file('config/staging.txt', SECRET)], message: 'leak', author } }, local);
@@ -173,6 +175,10 @@ const job = (env: Env, id: string) => quarantineJob(env, { v: 1, kind: 'platform
 
 let readers = 0;
 async function git(id: string, cookie: string, args: string[], env: Env) {
+  return new TextDecoder().decode(await gitBytes(id, cookie, args, env));
+}
+
+async function gitBytes(id: string, cookie: string, args: string[], env: Env) {
   const token = await api(`/repos/${id}/tokens`, { cookie }, { body: { name: `reader-${++readers}`, scopes: ['read'] } }, env);
   const response = await platformFetch(
     new Request(`https://yoneda/git/${id}.git/git-upload-pack`, {
@@ -182,7 +188,7 @@ async function git(id: string, cookie: string, args: string[], env: Env) {
     }),
     env,
   );
-  return response.text();
+  return new Uint8Array(await response.arrayBuffer());
 }
 
 async function inStore(env: Env, id: string, objects: Raw[]) {
@@ -312,4 +318,26 @@ it('purges a repository without an Artifacts mirror as before', async () => {
   expect([listed.body.mirror, listed.body.records[0].mirror]).toEqual([null, null]);
   expect((await api(`/repos/${created.body.id}`, { cookie }, {}, local)).body.object_store).toMatch(/^r2:/);
   expect([deleted, fetched]).toEqual([[], []]);
+});
+
+it('serves Git a framed refusal after retirement when the purged blob is in the tip, and a partial clone the rest', async () => {
+  deleted.length = fetched.length = 0;
+  const env = mirrorEnv({ PUSH_BUNDLES: 'on' });
+  serveMirrors();
+  const source = await remote('remote_tip', true);
+  const { cookie, id } = await imported('mirror_tip', env, source);
+  expect((await purge(id, cookie, env)).body.mirror).toBe(true);
+  await job(env, id);
+  expect((await api(`/repos/${id}/quarantine`, { cookie }, {}, env)).body.mirror.state).toBe('retired');
+  const answer = async (args: string[]) => asGit(await gitBytes(id, cookie, args, env), true);
+  for (const args of [[`want ${source.main}`, 'done'], [`want ${source.main}`, 'deepen 1', 'done']]) {
+    const full = await answer(args);
+    expect(full, args.join(' ')).toMatchObject({ badBand: null, pack: 0 });
+    expect(full.error, args.join(' ')).toMatch(/QUARANTINED: Blob [0-9a-f]{40} \(config\/staging\.txt\) is quarantined/);
+  }
+  const partial = await answer([`want ${source.main}`, 'filter blob:none', 'done']);
+  expect([partial.error, partial.badBand, partial.pack > 0]).toEqual([null, null, true]);
+  const lazy = await answer([`want ${await blobId(SECRET)}`, `want ${await blobId('hello\n')}`, 'filter blob:none', 'done']);
+  expect([lazy.error, lazy.badBand, lazy.pack > 0]).toEqual([null, null, true]);
+  expect(lazy.progress.join('\n')).toMatch(/QUARANTINED/);
 });

@@ -93,9 +93,11 @@ export async function uploadPack(
 }
 
 /** `head`, then the pack the session lists, on side-band `band` (none when 0) and ending
- * with a flush when banded. A failure before the pack starts is an ERR line after `head`
- * (Git prints it as `remote error: <message>`); an overloaded authority is rethrown, so Git
- * gets an HTTP 503 it can retry. The pack of a fetch that has nothing (`fresh`: a clone,
+ * with a flush when banded. A failure before the pack starts is an ERR line in place of
+ * `head` (Git prints it as `remote error: <message>`; after `head`, which ends where the
+ * pack's side-band packets begin, Git would read it as a packet of band 'E' and stop with
+ * "bad band #69"); an overloaded authority is rethrown, so Git gets an HTTP 503 it can
+ * retry. The pack of a fetch that has nothing (`fresh`: a clone,
  * partial or shallow, or a partial clone's checkout) is streamed from the store when held
  * there, else stored as it streams (PACK_CACHE=on), or by a job the fetch is handed to when
  * this isolate cannot store it. The session is opened only to build.
@@ -131,7 +133,7 @@ export async function sendPack(
     built = await buildPack(open(), objects, commits, tally);
   } catch (e: any) {
     if (transient(e)) throw e;
-    return errLine(head, e);
+    return errLine(new Uint8Array(), e);
   }
   const { count, chunks } = built;
   // A pack this isolate does not store, worth a build of its own, goes to a job.

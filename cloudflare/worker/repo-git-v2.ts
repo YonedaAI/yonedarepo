@@ -19,6 +19,8 @@ import {
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import type { Json, RepoContext } from './repo-ops';
 import type { Fresh } from './repo-pack-cache';
+import { concat, sideBand } from './repo-pack-stream';
+import { quarantined } from './repo-quarantine-guard';
 
 const ADVERTISEMENT = {
   'content-type': 'application/x-git-upload-pack-advertisement',
@@ -92,6 +94,7 @@ async function serveFetch(
     unshallow: walked.unshallow,
   });
   const commits = (walked.commits as Json[]).map((c) => String(c.commit));
+  const notice = await withheldWants(objects, walked, commits);
   // A fetch that has nothing gets what its wants, filter and depth name, whoever asks.
   const fresh: Fresh | undefined =
     request.haves.length === 0 && request.shallows.length === 0
@@ -103,7 +106,7 @@ async function serveFetch(
         }
       : undefined;
   return sendPack(
-    fromBase64(head.body_b64),
+    concat([fromBase64(head.body_b64), notice]),
     () => UploadSession.open({ ...walked, omit_blobs: request.omit_blobs }),
     objects,
     CHUNK,
@@ -111,4 +114,19 @@ async function serveFetch(
     commits,
     fresh,
   );
+}
+
+/** Files a fetch wants by id (a partial clone's checkout) that are withheld: left out of
+ * `walked`, and named on the progress channel (Git prints `remote:` lines, then reports
+ * them as not fetched and checks out every other file); a fetch of withheld files alone is
+ * refused (`QUARANTINED`, an ERR line). */
+async function withheldWants(objects: RepoObjects, walked: Json, commits: string[]) {
+  const wanted = (walked.objects ?? []) as string[];
+  const held = wanted.length ? await objects.withheldAmong(wanted) : new Map();
+  if (held.size === 0) return new Uint8Array();
+  const refusals = [...held].map(([id, path]) => quarantined(id, path));
+  if (held.size === new Set(wanted).size && commits.length === 0) throw refusals[0];
+  walked.objects = wanted.filter((id) => !held.has(id));
+  const lines = refusals.map((e) => `QUARANTINED: ${e.message}\n`).join('');
+  return sideBand(2, new TextEncoder().encode(lines), CHUNK);
 }
