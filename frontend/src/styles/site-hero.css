@@ -44,13 +44,33 @@
 .site-works-label {
   font-size: var(--fs-sm);
 }
+.site-marquee {
+  /* About four marks in view; the edges fade out. */
+  width: 176px;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 22%, #000 78%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 22%, #000 78%, transparent);
+}
+.site-marquee-track {
+  display: flex;
+  width: max-content;
+  animation: site-marquee 26s linear infinite;
+}
+.site-marquee:hover .site-marquee-track {
+  animation-play-state: paused;
+}
+@keyframes site-marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
 .site-works-with {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: var(--sp-4);
+  gap: var(--sp-5);
+  /* The gap after the last mark, so the two copies join at the same spacing. */
+  padding: 0 var(--sp-5) 0 0;
   margin: 0;
-  padding: 0;
   list-style: none;
 }
 .site-works-with li {
@@ -58,20 +78,31 @@
   align-items: center;
 }
 .site-works-mark {
+  display: block;
   width: 20px;
   height: 20px;
-  fill: currentColor;
-}
-.site-works-chip {
-  padding: 1px var(--sp-2);
-  border: 1px solid var(--site-line-strong);
-  border-radius: 5px;
-  font-size: var(--fs-xs);
-  font-weight: 500;
-  letter-spacing: 0.01em;
+  background: currentColor;
+  -webkit-mask: var(--mark) center / contain no-repeat;
+  mask: var(--mark) center / contain no-repeat;
 }
 .site-works-any {
   display: inline-flex;
+}
+
+/* No motion: a still row of the first four marks, nothing hidden behind a fade. */
+@media (prefers-reduced-motion: reduce) {
+  .site-marquee {
+    width: auto;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+  .site-marquee-track {
+    animation: none;
+  }
+  .site-works-with[aria-hidden="true"],
+  .site-works-with li:nth-child(n + 5) {
+    display: none;
+  }
 }
 
 @media (max-width: 800px) {
