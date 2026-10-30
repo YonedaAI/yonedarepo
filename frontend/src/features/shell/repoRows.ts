@@ -8,6 +8,8 @@ export type PlatformRepo = {
   name: string;
   created_at?: number;
   owner?: string;
+  /** The owner's handle (its readable address `/<handle>/<name>`); null while it has none. */
+  owner_handle?: string | null;
   role?: string;
   visibility?: Visibility;
 };
@@ -32,7 +34,10 @@ export function repoRows(platform: PlatformRepo[]): RepoRow[] {
     .map((repo) => ({
       repo: repo.id,
       name: repo.name || repo.id,
-      shared: repo.role && repo.role !== 'owner' ? `${repo.owner} · ${repo.role}` : undefined,
+      shared:
+        repo.role && repo.role !== 'owner'
+          ? `${repo.owner_handle ?? repo.owner} · ${repo.role}`
+          : undefined,
       ...(repo.visibility === 'public' ? { public: true } : {}),
     }))
     .sort((a, b) => a.name.localeCompare(b.name) || a.repo.localeCompare(b.repo));

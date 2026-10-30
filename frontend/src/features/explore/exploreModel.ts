@@ -6,6 +6,8 @@ export type ExploreRepo = {
   id: string;
   name: string;
   owner: string;
+  /** The owner's handle; null while an email-named owner has none. */
+  owner_handle?: string | null;
   created_at: number;
   visibility: 'public';
 };

@@ -96,7 +96,7 @@ export function RepoSearch({
                   <span className="chip">{m.memory.kind}</span>{' '}
                   {m.stale && <span className="chip memory-stale">stale</span>}{' '}
                   <a
-                    href={`/source/${repo}/agents/memories`}
+                    href={formatSourceRoute({ view: 'agents', repo, section: 'memories' })}
                     onClick={(e) => {
                       e.preventDefault();
                       onNavigate({ view: 'agents', repo, section: 'memories' });

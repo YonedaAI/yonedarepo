@@ -43,6 +43,14 @@ export function useRoute(): [SourceRoute, Navigate] {
   return [route, navigate];
 }
 
+/** Puts `route`'s current address in the location bar (a repository's readable address once
+ * its name is known), without a new history entry. */
+export function showAddress(route: SourceRoute) {
+  const url = formatSourceRoute(route);
+  if (url !== `${window.location.pathname}${window.location.search}`)
+    window.history.replaceState(null, '', url);
+}
+
 /** Props for an in-app link: a real `href` (new tab, copy link) and client navigation. */
 export function linkTo(route: SourceRoute, navigate: Navigate) {
   return {

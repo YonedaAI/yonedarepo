@@ -9,6 +9,7 @@ import { AccountSettings } from './features/account-settings/AccountSettings';
 import { VerifyEmailPage } from './features/account-settings/VerifyEmailPage';
 import { AgentsRoot } from './features/agents/AgentsRoot';
 import { ExplorePage } from './features/explore/ExplorePage';
+import { ReadablePage } from './features/profile/ReadablePage';
 import { AppRail } from './features/shell/AppRail';
 import { AppSidebar } from './features/shell/AppSidebar';
 import { GettingStarted } from './features/shell/GettingStarted';
@@ -25,8 +26,10 @@ import { DevicePage } from './features/source-platform/DevicePage';
 import { OrgPage } from './features/source-platform/OrgPage';
 import type { OrgSummary } from './features/source-platform/orgModel';
 import { RepoPage } from './features/source-platform/RepoPage';
+import { forgetRepoNames, rememberRepoName } from './features/source-platform/repoNames';
 import { isAgentsRoute, routeRepo } from './features/source-platform/sourceRoute';
 import { useSource } from './features/source-platform/useSource';
+import { HandlePrompt } from './features/workspace/HandlePicker';
 import {
   type AuthResult,
   PROVIDER_LABEL,
@@ -95,6 +98,8 @@ export function App() {
   const platform = useSource<{ repos: PlatformRepo[] }>(session.authenticated ? '/repos' : null);
   const orgs = useSource<{ orgs: OrgSummary[] }>(session.authenticated ? '/orgs' : null);
   const activity = useSource<AccountActivity>(session.authenticated ? '/activity' : null);
+  // Before anything renders a link, so repository links carry their readable address.
+  for (const r of platform.data?.repos ?? []) rememberRepoName(r.id, r.owner_handle, r.name);
   const rows = repoRows(platform.data?.repos ?? []);
   const rowsError = platform.error && !/Sign in/.test(platform.error) ? platform.error : '';
   const repo = routeRepo(route);
@@ -140,11 +145,15 @@ export function App() {
                 ? 'Confirm your email'
                 : route.view === 'org'
                   ? route.org
-                  : isAgentsRoute(route)
-                    ? 'Agents'
-                    : gone
-                      ? 'Repository not found'
-                      : (row?.name ?? loaded?.name ?? repo ?? '');
+                  : route.view === 'profile'
+                    ? route.handle
+                    : route.view === 'repo-name'
+                      ? route.name
+                      : isAgentsRoute(route)
+                        ? 'Agents'
+                        : gone
+                          ? 'Repository not found'
+                          : (row?.name ?? loaded?.name ?? repo ?? '');
   const activityError = activity.error && !/Sign in/.test(activity.error) ? activity.error : '';
   const refresh = () => {
     setTick((t) => t + 1);
@@ -290,6 +299,16 @@ export function App() {
                 navigate={navigate}
               />
             )}
+            {(route.view === 'profile' || route.view === 'repo-name') && (
+              <ReadablePage
+                route={route}
+                tick={tick}
+                navigate={navigate}
+                authenticated={session.authenticated}
+                onSignIn={() => setPanel('account')}
+                onNew={() => setCreating(true)}
+              />
+            )}
             {route.view === 'device' && <DevicePage code={route.code} />}
             {route.view === 'verify-email' && (
               <VerifyEmailPage account={route.account} token={route.token} />
@@ -362,6 +381,14 @@ export function App() {
           onCreated={created}
         />
       )}
+      <HandlePrompt
+        identity={creating ? null : session.identity}
+        onSet={(handle) => {
+          setNotice(`Your handle is ${handle}. Your profile is at /${handle}.`);
+          forgetRepoNames();
+          refresh();
+        }}
+      />
     </div>
   );
 }
