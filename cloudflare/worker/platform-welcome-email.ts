@@ -95,10 +95,12 @@ export async function welcomeJob(
     link && confirm
       ? renderVerify({ ...settings, verifyUrl: link })
       : renderWelcome({ ...settings, verifyUrl: link });
-  // Per account (welcome) or per token (confirmation); never the address or the token.
+  // Per account (welcome) or per token (confirmation); never the address or the token. The
+  // welcome key carries the origin: dev and prod share one Resend account, where the same
+  // username's key with another body is refused for 24 hours (invalid_idempotent_request).
   const idempotency = confirm
     ? `verify/${await digest(token ?? '')}`
-    : `welcome/${await digest(account)}`;
+    : `welcome/${await digest(`${settings.origin}\n${account}`)}`;
   const failed = (detail: Record<string, unknown>) => {
     if (attempts < MAX_ATTEMPTS && detail.transient) return { retry: backoff(attempts) };
     console.error(
