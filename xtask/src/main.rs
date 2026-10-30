@@ -1,3 +1,4 @@
+mod admin;
 mod cloudflare;
 mod cloudflare_deploy;
 mod commands;

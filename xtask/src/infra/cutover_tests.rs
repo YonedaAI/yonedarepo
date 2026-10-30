@@ -95,7 +95,7 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     let vars = &agents["vars"];
     assert_eq!(
         vars,
-        &json!({"PUBLIC_APP_ORIGIN": "https://yonedarepo.com"})
+        &json!({"PUBLIC_APP_ORIGIN": "https://yonedarepo.com", "ADMIN_ACCOUNTS": ""})
     );
     for absent in [
         "secrets_store_secrets",

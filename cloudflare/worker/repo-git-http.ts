@@ -29,6 +29,7 @@ const SERVICES = ['git-upload-pack', 'git-receive-pack'];
 const STATUS: Record<string, number> = {
   UNAUTHORIZED: 401,
   FORBIDDEN: 403,
+  ACCOUNT_SUSPENDED: 403,
   NOT_FOUND: 404,
   QUARANTINED: 451,
   GONE: 404,

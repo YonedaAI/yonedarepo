@@ -1,10 +1,13 @@
 // Worker entrypoint for the source platform alone: HTTP, Git over SSH's front doors (inbound
 // TCP and the tunnel gateway's keep-alive cron; platform-ssh-gateway.ts), plus its own queue
-// jobs (checks, object and ref projection, derived data, clone packs, webhooks, account emails). No agent runs, harnesses, providers or budgets.
+// jobs (checks, object and ref projection, derived data, clone packs, webhooks, account emails,
+// the operators' sign-up notice). No agent runs, harnesses, providers or budgets.
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import { withWaitUntil } from './background';
-import { queueWelcome, verifyEmail } from './platform-email-verify';
+import { type AccountCreated, accountCreated, SIGNUP_NOTICE } from './platform-accounts';
+import { verifyEmail } from './platform-email-verify';
 import { platformFetch } from './platform-routes';
+import { signupNoticeJob } from './platform-signup-notice';
 import { sshFrontDoor, sshKeepAlive } from './platform-ssh-gateway';
 import { welcomeJob } from './platform-welcome-email';
 import { purgeRepository } from './repo-admin';
@@ -58,6 +61,10 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
   } else if (envelope.kind === 'platform_purge') {
     await purgeRepository(env, envelope.repo_id);
     message.ack();
+  } else if (envelope.kind === SIGNUP_NOTICE) {
+    const outcome = await signupNoticeJob(env, envelope, message.attempts);
+    if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
+    else message.ack();
   } else if (envelope.kind === 'account_welcome') {
     const outcome = await welcomeJob(env, envelope, message.attempts);
     if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
@@ -76,10 +83,11 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
   connect(socket: Socket) {
     return sshFrontDoor(socket, this.env);
   }
-  /** A new account (RPC from the front Worker, or SELF): queues its welcome email. Not on
-   * any HTTP route, so only Workers bound to this one can ask. */
-  accountCreated(account: string) {
-    return queueWelcome(this.env, account);
+  /** A new account (RPC from the front Worker, or SELF): indexes it, queues the operators'
+   * sign-up notice and its welcome email. Not on any HTTP route, so only Workers bound to
+   * this one can ask. */
+  accountCreated(account: string, details?: AccountCreated) {
+    return accountCreated(this.env, account, details);
   }
   /** Settings' resend (no `change`) or address change for a signed-in account (RPC, as
    * above): a new confirmation token and email, or why not. */
