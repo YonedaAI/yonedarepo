@@ -89,9 +89,9 @@ Everything is stored and processed by Cloudflare. Requests are served from Cloud
 ## How long we keep it
 
 - **Sessions** expire after seven days. **Personal access tokens** expire after 1 to 90 days, and you can revoke them at any time.
-- **Deleting a repository** closes it at once: it can no longer be read, and its tokens are revoked. Its code, LFS files, release assets, check logs and transcripts are then deleted from storage, and it leaves the discovery index. The repository's own records (its log, change requests, comments, reviews and session records) stay sealed in its database, unreadable through the service. We erase them on request.
+- **Deleting a repository** closes it at once: it can no longer be read, and its tokens are revoked. Its code, LFS files, release assets, check logs and transcripts are then deleted from storage, and it leaves the discovery index. The repository's own records (its log, change requests, comments, reviews and session records) are retained in its sealed database and never served again. They are not deleted automatically; we erase them when you ask at [legal@yonedarepo.com](mailto:legal@yonedarepo.com).
 - **Transaction log history** is kept according to each repository's retention settings.
-- **Managed agent transcripts and credit records** are kept while the workspace exists. We delete them on request.
+- **Managed agent transcripts and credit records** are retained while the workspace exists and are not deleted automatically. We erase them when you ask at [legal@yonedarepo.com](mailto:legal@yonedarepo.com).
 - **Request logs** are kept for the period Cloudflare's logging service allows, which is days, not months.
 - **Your account** is kept until you ask us to delete it.
 
