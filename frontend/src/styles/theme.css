@@ -17,15 +17,17 @@
   --text: #152436;
   --text-2: #43546b;
   --muted: #5d6c80;
-  --faint: #8090a4;
+  --faint: #5f6e82;
   --line: #e1e6ed;
   --line-strong: #c5d6e1;
   --blue: #245de8;
+  /* Blue as text, links and focus outlines; --blue itself is the fill behind --on-accent. */
+  --blue-text: #245de8;
   --on-accent: #fff;
   --accent-soft: #edf3ff;
   --accent-line: #dbe5fc;
   --accent-text: #244da1;
-  --success: #157f72;
+  --success: #14786c;
   --success-soft: #e9f7ef;
   --success-line: #b9dcc5;
   --warn: #8a5a00;
@@ -51,10 +53,11 @@
     --text: #e6eaef;
     --text-2: #c3cbd5;
     --muted: #8e98a5;
-    --faint: #6a737e;
+    --faint: #878f9b;
     --line: #242a31;
     --line-strong: #353d47;
-    --blue: #4d80f5;
+    --blue: #3566dc;
+    --blue-text: #7aa0f8;
     --on-accent: #fff;
     --accent-soft: #172238;
     --accent-line: #2a3d63;
@@ -85,10 +88,11 @@
   --text: #e6eaef;
   --text-2: #c3cbd5;
   --muted: #8e98a5;
-  --faint: #6a737e;
+  --faint: #878f9b;
   --line: #242a31;
   --line-strong: #353d47;
-  --blue: #4d80f5;
+  --blue: #3566dc;
+  --blue-text: #7aa0f8;
   --on-accent: #fff;
   --accent-soft: #172238;
   --accent-line: #2a3d63;

@@ -48,6 +48,7 @@
   --blue: var(--site-accent);
   /* App buttons paint --blue behind --on-accent; on the site that pair is accent/accent-text. */
   --on-accent: var(--site-accent-text);
+  --blue-text: var(--site-accent);
   min-height: 100vh;
   display: flex;
   flex-direction: column;

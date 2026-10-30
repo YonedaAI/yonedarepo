@@ -33,7 +33,7 @@
   padding: 10px;
   border-radius: 12px;
   background: var(--accent-soft);
-  color: var(--blue);
+  color: var(--blue-text);
   margin-bottom: 18px;
 }
 .welcome-flow {
@@ -150,7 +150,7 @@ details.account-panel[open] {
   padding: 100px 24px;
 }
 .workspace-loading > svg {
-  color: var(--blue);
+  color: var(--blue-text);
   margin-bottom: 24px;
 }
 .workspace-loading h1 {
