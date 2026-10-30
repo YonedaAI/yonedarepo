@@ -14,10 +14,11 @@ import type { ManagedEnv } from './config';
 import {
   type Connection,
   readConnection,
+  retainConnection,
   signatureMatches,
   writeConnection,
 } from './repo-connection';
-import { agentSummary, listRuns, runById, runFindings } from './repo-runs';
+import { agentSummary, clearRepository, listRuns, runById, runFindings } from './repo-runs';
 import { migrate, REPO_SCHEMA } from './schema';
 
 export type { Connection } from './repo-connection';
@@ -64,6 +65,21 @@ export class RepoAgents extends DurableObject<ManagedEnv> {
 
   link(repo: string, c: Connection) {
     return writeConnection(this.#sql, this.env, repo, c);
+  }
+
+  /** Keeps only the repo.deleted hook (see retainConnection). */
+  retain(repo: string, hook: { id: number; secret: string }) {
+    return retainConnection(this.#sql, this.env, repo, hook);
+  }
+
+  hasConnection(): boolean {
+    return this.#sql.exec('SELECT 1 FROM connection WHERE id = 1').toArray().length > 0;
+  }
+
+  /** The repository was deleted: its runs, findings, switches and connection go, in one
+   * transaction. Its workflows find no run and stop at their next step. */
+  purge() {
+    this.#tx(clearRepository);
   }
 
   /** Forgets the connection (its token and webhook were revoked, or the platform refused them). */

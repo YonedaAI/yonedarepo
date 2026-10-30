@@ -47,6 +47,8 @@ export class FakePlatform {
   scannerRefuses: RegExp | null = null;
   /** The owner's break-glass automation pause (repo status `automation.paused`). */
   paused = false;
+  /** A deleted repository: every call on it answers GONE, as the platform's tombstone does. */
+  deleted = false;
   /** The workspace (the billed account): one per test, since ledgers outlive a test. */
   readonly account: string;
   readonly repos: string[];
@@ -92,6 +94,7 @@ export class FakePlatform {
       });
     if (req.method === 'GET' && path === '/orgs') return ok({ orgs: [] });
     const base = `/repos/${this.repo}`;
+    if (this.deleted && (path === base || path.startsWith(`${base}/`))) return refuse('GONE', 404);
     if (req.method === 'GET' && path === base)
       return ok({ owner: this.account, automation: { paused: this.paused ? { by: 'user:owner' } : null } });
     const del = /^\/repos\/(r[0-9a-f]{20})\/(tokens|hooks)\/([^/]+)$/.exec(path);
@@ -251,6 +254,8 @@ export function fakeGateway(usage = { input_tokens: 1000, output_tokens: 200 }) 
 }
 
 export interface Harness {
+  transcripts: Map<string, string>;
+  r2: { listCalls: { prefix: string; limit: number }[]; deleteCalls: number[] };
   env: ManagedEnv;
   platform: FakePlatform;
   harness: FakeHarness;
@@ -270,6 +275,8 @@ export function harness(
   const created: RunParams[] = [];
   const ids = new Set<string>();
   const transcripts = new Map<string, string>();
+  const listCalls: { prefix: string; limit: number }[] = [];
+  const deleteCalls: number[] = [];
   const secret = (value: string) => ({ get: async () => value }) as unknown as SecretsStoreSecret;
   let managed: ManagedEnv;
   const fakeHarness = new FakeHarness(() => managed);
@@ -291,9 +298,21 @@ export function harness(
     } as unknown as Workflow<RunParams>,
     TRANSCRIPTS: {
       put: async (key: string, text: string) => void transcripts.set(key, text),
-      list: async ({ prefix }: { prefix: string }) => ({
-        objects: [...transcripts.keys()].filter((k) => k.startsWith(prefix)).map((key) => ({ key, uploaded: new Date() })),
-      }),
+      // R2's list: keys in order, at most `limit` (default 1000) a page, `truncated` past it.
+      list: async ({ prefix, limit = 1000 }: { prefix: string; limit?: number }) => {
+        const keys = [...transcripts.keys()].filter((k) => k.startsWith(prefix)).sort();
+        listCalls.push({ prefix, limit });
+        return {
+          objects: keys.slice(0, limit).map((key) => ({ key, uploaded: new Date() })),
+          truncated: keys.length > limit,
+        };
+      },
+      delete: async (keys: string | string[]) => {
+        const list = Array.isArray(keys) ? keys : [keys];
+        if (list.length > 1000) throw new Error('R2 deletes at most 1000 keys a call');
+        deleteCalls.push(list.length);
+        for (const k of list) transcripts.delete(k);
+      },
       get: async (key: string) => (transcripts.has(key) ? { text: async () => transcripts.get(key) } : null),
     } as unknown as R2Bucket,
     CLAUDE_KEY: secret(KEYS.claude),
@@ -302,7 +321,7 @@ export function harness(
     MIMO_KEY: secret(KEYS.mimo),
     ...overrides,
   };
-  return { env: managed, platform, harness: fakeHarness, sent, created };
+  return { env: managed, platform, harness: fakeHarness, sent, created, transcripts, r2: { listCalls, deleteCalls } };
 }
 
 /** Runs each step once, in order, like a Workflow that never fails; sleeps are instant. */

@@ -11,9 +11,9 @@ use yoneda_core::{Error, Result};
 
 /// `change` subscribes to every change request event (`change.opened`, `change.commented`,
 /// `change.landed`, `change.closed`, `change.deleted`); `release` to `release.published` and
-/// `release.deleted`.
-pub const EVENTS: [&str; 8] = [
-    "land", "merged", "refused", "branch", "tag", "check", "change", "release",
+/// `release.deleted`; `repo` to `repo.deleted` (sent once, when the repository is deleted).
+pub const EVENTS: [&str; 9] = [
+    "land", "merged", "refused", "branch", "tag", "check", "change", "release", "repo",
 ];
 const MAX_HOOKS: i64 = 20;
 /// Delivery attempts kept per hook for `GET /hooks/:id/deliveries`.

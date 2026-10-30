@@ -93,7 +93,8 @@ async function platformOutbound(
   if (!p || !readAllowed(req.method, url.pathname, p.repo))
     return refuse(req, p, 'FORBIDDEN', 'The review container may only read its repository');
   const connection = await repoStub(env, p.repo).connection();
-  if (!connection) return deny(403, 'FORBIDDEN', 'The repository is not connected');
+  if (!connection || connection.revoked)
+    return deny(403, 'FORBIDDEN', 'The repository is not connected');
   const headers = new Headers(req.headers);
   for (const h of ['cookie', 'authorization', 'x-forwarded-for']) headers.delete(h);
   headers.set('authorization', `Bearer ${connection.token}`);

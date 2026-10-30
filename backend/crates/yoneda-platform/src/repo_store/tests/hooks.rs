@@ -337,3 +337,45 @@ fn upgrades_from_the_checkpoint_digest_schema_and_stamps_rfc3339_times() {
 /// The schema as it stood before hooks (migrations 1-24).
 static PRE_HOOKS: std::sync::LazyLock<Vec<(i64, &'static str)>> =
     std::sync::LazyLock::new(|| super::super::migration::MIGRATIONS[..24].to_vec());
+
+#[test]
+fn deleting_the_repository_delivers_repo_deleted_to_hooks_that_want_it() {
+    let (h, _root) = seeded();
+    let wants = create(&h, OWNER, json!({"events":["repo"]})).unwrap()["id"].clone();
+    let other = create(&h, OWNER, json!({"events":["change"]})).unwrap()["id"].clone();
+    let deleted = h.ok(OWNER, json!({"op":"repo_delete","confirm":"demo"}));
+    assert_eq!(
+        deleted["hooks"],
+        json!([wants]),
+        "the hooks with a payload to deliver"
+    );
+    // The tombstone still lets the delivery job claim and settle that one payload.
+    let bodies = drain(&h, &wants);
+    assert_eq!(bodies.len(), 1);
+    assert_eq!(bodies[0]["event"], "repo.deleted");
+    assert_eq!(bodies[0]["action"], "deleted");
+    assert_eq!(bodies[0]["repo"], REPO);
+    assert!(bodies[0].get("message").is_none(), "no repository text");
+    assert_eq!(drain(&h, &other), Vec::<Value>::new());
+    // Everything else on the tombstone stays GONE, and a repeated delete queues nothing new.
+    assert_eq!(code(h.run(OWNER, json!({"op":"repo_hooks"}))), "GONE");
+    assert_eq!(
+        code(h.run(OWNER, json!({"op":"repo_hook_claim","hook_id":wants}))),
+        "GONE"
+    );
+    let again = h.ok(OWNER, json!({"op":"repo_delete","confirm":"demo"}));
+    assert_eq!(again["already"], true);
+    assert_eq!(again["hooks"], json!([]));
+    assert_eq!(drain(&h, &wants), Vec::<Value>::new());
+}
+
+#[test]
+fn a_repeated_delete_resends_a_repo_deleted_payload_still_waiting() {
+    let (h, _root) = seeded();
+    let hook = create(&h, OWNER, json!({"events":["repo"]})).unwrap()["id"].clone();
+    h.ok(OWNER, json!({"op":"repo_delete","confirm":"demo"}));
+    // The first delivery job was lost: the payload still waits, and a retry names its hook.
+    let again = h.ok(OWNER, json!({"op":"repo_delete","confirm":"demo"}));
+    assert_eq!(again["hooks"], json!([hook]));
+    assert_eq!(drain(&h, &hook).len(), 1);
+}

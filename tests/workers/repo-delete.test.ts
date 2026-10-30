@@ -2,6 +2,7 @@
 // GONE, tokens revoked, listing row removed) and purges the object store in a platform job.
 import { expect, it, vi } from 'vitest';
 import { platformJob } from '../../cloudflare/worker/platform-entrypoint';
+import { deliverHook } from '../../cloudflare/worker/repo-hooks';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, bindings, drainObjects, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
@@ -92,4 +93,29 @@ it('answers GONE in every isolate once the delete has answered', async () => {
   expect((await platformFetch(request, local)).status).toBe(200);
   const read = await api(`/repos/${id}/refs`, { token }, {}, local);
   expect([read.status, read.body.error?.code]).toEqual([404, 'GONE']);
+});
+
+it('sends repo.deleted to hooks subscribed to repo, from the tombstone', async () => {
+  const cookie = await signup('hookdel');
+  const created = await api('/repos', { cookie }, { body: { name: 'watched', files: [file('a.txt', 'a\n')], author } }, local);
+  const id = created.body.id as string;
+  const repo = `/repos/${id}`;
+  const hook = await api(`${repo}/hooks`, { cookie }, { body: { url: 'https://managed.example.com/hooks/x', events: ['repo'] } }, local);
+  expect(hook.status).toBe(200);
+  const before = queued.length;
+  expect((await api(`${repo}?confirm=watched`, { cookie }, { method: 'DELETE' }, local)).status).toBe(200);
+  const jobs = queued.slice(before).filter((m) => m.kind === 'platform_hooks' && m.repo_id === id);
+  expect(jobs.map((m) => m.job_id)).toEqual([`hook:${hook.body.id}`]);
+  const sent: { event: string | null; signature: string | null; body: any }[] = [];
+  await deliverHook(local, id, hook.body.id, async (req) => {
+    sent.push({ event: req.headers.get('x-yoneda-event'), signature: req.headers.get('x-yoneda-signature'), body: await req.json() });
+    return new Response(null, { status: 202 });
+  });
+  expect(sent).toEqual([
+    { event: 'repo.deleted', signature: expect.stringMatching(/^sha256=[0-9a-f]{64}$/), body: expect.objectContaining({ event: 'repo.deleted', action: 'deleted', repo: id }) },
+  ]);
+  // Delivered once: the tombstone has nothing more to send.
+  await deliverHook(local, id, hook.body.id, async () => {
+    throw new Error('nothing should be sent twice');
+  });
 });

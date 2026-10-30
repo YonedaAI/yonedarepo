@@ -65,7 +65,7 @@ describe('sealed connection', () => {
 });
 
 describe('disable', () => {
-  it('revokes the token and deletes the webhook once no agent runs on the repository', async () => {
+  it('revokes the token and swaps the webhook for a deletion notice once no agent runs there', async () => {
     const h = harness();
     h.platform.change();
     await put(h, 'code-review', { repos: [h.platform.repo] });
@@ -74,12 +74,19 @@ describe('disable', () => {
     expect(h.platform.revoked).toEqual([]);
     await put(h, 'security-review', { repos: [] });
     expect(h.platform.revoked).toEqual(['tokens:yoneda-managed-agents', 'hooks:7']);
-    expect(await repoStub(h.env, h.platform.repo).connection()).toBeNull();
-    // Enabling again mints a fresh token (names are never reused) and a fresh hook.
+    expect(h.platform.hooks.map((x) => x.events)).toEqual([['change', 'branch', 'repo'], ['repo']]);
+    expect(await repoStub(h.env, h.platform.repo).connection()).toMatchObject({ revoked: true, hook_id: 8 });
+    // A revoked connection starts nothing.
+    fakeGateway();
+    await deliver(h, opened(h));
+    expect(h.created).toHaveLength(0);
+    // Enabling again mints a fresh token (names are never reused) and a fresh agents hook.
     expect((await put(h, 'code-review', { repos: [h.platform.repo] })).status).toBe(200);
     const again = await repoStub(h.env, h.platform.repo).connection();
+    expect(again).toMatchObject({ revoked: false });
     expect(again?.token_name).toMatch(/^yoneda-managed-agents-[a-z0-9]+$/);
-    expect(h.platform.hooks).toHaveLength(2);
+    expect(h.platform.revoked).toContain('hooks:8');
+    expect(h.platform.hooks).toHaveLength(3);
   });
 });
 

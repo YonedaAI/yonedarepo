@@ -29,6 +29,7 @@ pub(super) fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         return Err(deletion::gone());
     }
     let actor = auth::actor(db, c, &settings)?;
+    deletion::tombstone_caller(op, &actor, &settings)?;
     visibility::gate(&actor, op, c)?;
     authorize(&actor, op, c)?;
     // Only the owner's own account keeps working while automation is paused (not admins).
