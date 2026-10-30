@@ -23,6 +23,7 @@ import { agentPages } from './browser-agent-flow.mjs';
 import { managedAgentPages } from './browser-managed-agents-flow.mjs';
 import { forkPages, orgPages, releasePages } from './browser-collab-flow.mjs';
 import { b64, Session, secondAccount, sleep, until } from './client.mjs';
+import { atRepo, repoPath } from './repo-urls.mjs';
 
 const author = { name: 'Browser gate', email: 'kit@yonedarepo.invalid' };
 
@@ -134,7 +135,7 @@ export async function signIn(page, origin, { KIT_USERNAME, KIT_LOGIN, KIT_PASSWO
 export async function accountSettings(page) {
   const menu = page.locator('details.account-menu');
   await menu.getByLabel(/^Account:/).click();
-  await menu.getByRole('link', { name: 'Settings' }).click();
+  await menu.getByRole('link', { name: 'Account' }).click();
   await page.getByRole('heading', { level: 1, name: 'Settings' }).waitFor();
 }
 
@@ -163,14 +164,14 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
     m.repo_deleted = true;
   });
   await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).waitFor();
-  await page.waitForURL(`**/source/${id}`);
+  await atRepo(page, account, id);
   await page.getByRole('region', { name: 'Files' }).getByText('README.md').first().waitFor();
   await shot('source-code');
   // The Clone menu: the SSH line exactly when the platform says Git over SSH is open.
   const ssh = (await account.raw('GET', '/api/v1/ssh-keys')).body?.ssh;
   await page.locator('.clone-menu > summary').click();
   const cloneMenu = page.locator('.clone-dropdown');
-  await cloneLines(page, cloneMenu, { api, id, name }, 'the Clone menu');
+  await cloneLines(page, cloneMenu, { api, id, name, path: await repoPath(account, id) }, 'the Clone menu');
   const sshBlock = cloneMenu.locator('.source-copy', { has: page.getByText('SSH', { exact: true }) });
   if (ssh?.front_door && ssh.host) {
     m.ssh_clone = await sshBlock.locator('code').innerText();
@@ -190,7 +191,7 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
   await shot('source-history');
   await branchesPage(page, account, id, shot, m);
   await tabs.getByRole('link', { name: 'Changes' }).click();
-  await page.waitForURL(`**/source/${id}/changes`);
+  await atRepo(page, account, id, `/changes`);
   await page.getByText('No open changes.').waitFor();
   await shot('source-changes');
   await tabs.getByRole('link', { name: 'Settings' }).click();
@@ -199,7 +200,7 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
   await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'Connect' }).click();
   await page.getByRole('heading', { name: 'Clone with git' }).waitFor();
   // Git, the CLI and MCP live on the platform API host, never the app's own origin.
-  m.clone_url = await cloneLines(page, page.locator('.source-connect'), { api, id, name }, 'Connect');
+  m.clone_url = await cloneLines(page, page.locator('.source-connect'), { api, id, name, path: await repoPath(account, id) }, 'Connect');
   await shot('source-connect');
   await accountSettings(page);
   await page.getByRole('heading', { name: 'Personal access tokens' }).waitFor();
@@ -213,15 +214,15 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
  * first with its one-time `yoneda login` on the API origin, then HTTPS pointing at Settings →
  * Personal tokens; each a whole command into a directory named after the repository.
  */
-export async function cloneLines(page, scope, { api, id, name }, what) {
+export async function cloneLines(page, scope, { api, id, name, path }, what) {
   const blocks = scope.locator('.source-copy');
   await blocks.first().waitFor();
   const labels = await blocks.locator('.source-copy-head > span').allInnerTexts();
   assert.deepEqual(labels.slice(0, 2), ['yoneda remote helper (recommended)', 'HTTPS (needs a personal token as the password)'], `${what}: clone entries out of order`);
   assert.equal(await blocks.nth(0).locator('code').innerText(), `git clone yoneda::${api}/${id} ${name}`, `${what}: the yoneda line`);
   const https = await blocks.nth(1).locator('code').innerText();
-  assert.equal(https, `git clone ${api}/git/${id}.git ${name}`, `${what}: the HTTPS line`);
-  await scope.getByText(`yoneda login --origin ${api}`, { exact: true }).waitFor();
+  assert.equal(https, `git clone ${api}${path}.git ${name}`, `${what}: the HTTPS line`);
+  await scope.getByText(`yoneda login --origin ${api}`, { exact: true }).first().waitFor();
   assert.equal(await scope.getByRole('link', { name: 'Settings → Personal tokens' }).getAttribute('href'), '/settings#personal-tokens', `${what}: the personal token link`);
   return https;
 }
@@ -232,7 +233,7 @@ export async function branchesPage(page, account, id, shot, m) {
   const name = 'kit-ui-branch';
   const refs = async () => (await account.get(`/api/v1/repos/${id}/refs`)).refs;
   await page.getByRole('button', { name: 'Branches and tags' }).click();
-  await page.waitForURL(`**/source/${id}/branches`);
+  await atRepo(page, account, id, `/branches`);
   const form = page.getByRole('form', { name: 'Create a branch' });
   await form.getByLabel('New branch').fill(name);
   await form.getByRole('button', { name: 'Create branch' }).click();
@@ -280,10 +281,10 @@ export async function changeLanded(page, { origin, kit, account, repo: { id, nam
 
   // The source pages end on account settings: back to the repository through the sidebar.
   await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).click();
-  await page.waitForURL(`**/source/${id}`);
+  await atRepo(page, account, id);
   await page.getByRole('navigation', { name: 'Repository' }).getByRole('link', { name: 'Changes' }).click();
   await page.getByRole('link', { name: /Browser gate change/ }).click();
-  await page.waitForURL(`**/source/${id}/changes/${change.number}`);
+  await atRepo(page, account, id, `/changes/${change.number}`);
   // The Gates panel (MergeGates) summarizes what the head still needs; its actions sit in
   // the Landing gates region below it, whose approval reloads the panel.
   const merge = page.getByRole('region', { name: 'Gates', exact: true });
@@ -324,7 +325,9 @@ export async function changeRebased(page, { origin, account, member, base, repo:
   const box = page.getByRole('region', { name: 'Rebase' });
   const started = performance.now();
   await box.getByRole('button', { name: 'Rebase on main' }).click();
-  await settle(box.getByText('Up to date with main.'), [page.getByRole('alert')], { timeoutMs: 60_000, what: 'rebase' });
+  // The result line, not "Up to date": that follows the page's reads and can show before the rebase answers.
+  await settle(box.getByText('Rebased 1 commit(s) on main.'), [page.getByRole('alert')], { timeoutMs: 60_000, what: 'rebase' });
+  await box.getByText('Up to date with main.').waitFor();
   m.rebase_ui_ms = Math.round(performance.now() - started);
   await shot('change-rebased');
   const refs = (await account.get(api('/refs'))).refs;
