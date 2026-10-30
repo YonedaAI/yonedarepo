@@ -4,7 +4,7 @@
 // SSH fingerprint claims, a claim is re-checked with its account, so a stale one grants
 // nothing. A matching email never merges accounts: the person signs in to the existing
 // account and links the provider there.
-import { normalizeAccountIdentifier } from '../../shared/account';
+import { isReservedHandle, normalizeAccountIdentifier } from '../../shared/account';
 import { accountCreated } from './account-email';
 import type { ProviderIdentity } from './oauth-providers';
 import { sha } from './storage';
@@ -13,7 +13,7 @@ import { workspace } from './workspace';
 
 /** What the callback does next; an `error` is a code the sign-in page explains. */
 export type Outcome =
-  | { kind: 'signed_in'; username: string }
+  | { kind: 'signed_in'; username: string; created?: true }
   | { kind: 'linked' }
   | { kind: 'error'; code: 'email_in_use' | 'identity_taken' | 'busy' | 'unavailable' };
 
@@ -27,6 +27,7 @@ const fields = (i: ProviderIdentity) => ({
   subject: i.subject,
   login: printable(i.login) || i.provider,
   email: i.email,
+  avatar_url: i.avatar,
 });
 
 export async function claims(env: Env, key: string, command: Json): Promise<Json> {
@@ -83,6 +84,8 @@ export async function signInWith(
         provider: identity.provider,
         subject: identity.subject,
         session_hash: sessionHash,
+        // Each sign-in refreshes the provider's picture (an uploaded one still wins).
+        avatar_url: identity.avatar,
       });
       return signed.authenticated
         ? { kind: 'signed_in', username: held.account }
@@ -113,8 +116,8 @@ export async function signInWith(
     if (identity.email)
       await claims(env, await emailKey(identity.email), { op: 'identity_claim', account: name });
     // A new account only: later sign-ins and links never welcome again.
-    await accountCreated(env, name, identity.email);
-    return { kind: 'signed_in', username: name };
+    await accountCreated(env, name, identity.email, identity.provider);
+    return { kind: 'signed_in', username: name, created: true };
   }
   return { kind: 'error', code: 'unavailable' };
 }
@@ -193,7 +196,9 @@ export function candidates(identity: ProviderIdentity): string[] {
     () =>
       `${base}_${[...crypto.getRandomValues(new Uint8Array(2))].map((b) => b.toString(16).padStart(2, '0')).join('')}`,
   );
-  return [base, ...numbered, ...random].filter((n) => normalizeAccountIdentifier(n) === n);
+  return [base, ...numbered, ...random].filter(
+    (n) => normalizeAccountIdentifier(n) === n && !isReservedHandle(n),
+  );
 }
 
 const printable = (value: string) => value.replace(/[^\x21-\x7e]/g, '').slice(0, 100);

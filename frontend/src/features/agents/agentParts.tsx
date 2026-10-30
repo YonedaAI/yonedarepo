@@ -119,7 +119,7 @@ export function BillingComing({ children }: { children?: React.ReactNode }) {
     <div className="agents-billing-note" role="note">
       <p>
         {children ??
-          'Setting up billing is coming. Until then, the agents YonedaRepo maintains run on your promotional credit.'}
+          'Setting up billing is coming. Until then, the agents YonedaRepo maintains run on your starting credit.'}
       </p>
       <button type="button" disabled title="Billing is not available yet">
         Set up billing

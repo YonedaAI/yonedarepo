@@ -9,12 +9,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
         SigninOp::Signup => {
             let username =
                 yoneda_core::account::normalize_account_identifier(&string(c, "username")?)?;
-            if get(db, "account").is_ok() {
-                return Err(Error::new(
-                    "ALREADY_EXISTS",
-                    "Username or email unavailable",
-                ));
-            }
+            super::handles::name_free(db, &username)?;
             let email = contact_email(c)?;
             let verifier = verifier(c)?;
             let mut a = json!({"username":username,"verifier":verifier,"recovery_hash":hash(c,"recovery_hash",&[64])?,"created_at":now});
@@ -35,6 +30,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
                 let mut public = public_account(&account(db)?);
                 public["orgs"] = json!(super::orgs::hints(db)?);
                 Ok(public)
+            } else if super::access::suspended_at(db)?.is_some() {
+                Ok(json!({"authenticated":false,"suspended":true}))
             } else {
                 Ok(json!({"authenticated":false}))
             }
@@ -69,6 +66,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
             let Ok(mut a) = account(db) else {
                 return Ok(json!({"authenticated":false}));
             };
+            if super::access::suspended_at(db)?.is_some() {
+                return Ok(json!({"authenticated":false,"suspended":true}));
+            }
             if !super::access::valid(db, now)? || !allow_attempt(db, now)? {
                 return Ok(json!({"authenticated":false,"limited":true}));
             }

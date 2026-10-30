@@ -3,9 +3,9 @@
 // and changing the address from Settings, and the resend limit. No real Resend calls.
 import { env } from 'cloudflare:workers';
 import { createExecutionContext, reset } from 'cloudflare:test';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 import { accountRoute } from '../../cloudflare/worker/accounts';
-import { PlatformEntrypoint } from '../../cloudflare/worker/platform-entrypoint';
+import { PlatformEntrypoint, platformJob } from '../../cloudflare/worker/platform-entrypoint';
 import { welcomeJob } from '../../cloudflare/worker/platform-welcome-email';
 import { sha } from '../../cloudflare/worker/storage';
 import type { Env, Envelope } from '../../cloudflare/worker/types';
@@ -29,7 +29,10 @@ function front() {
   const platformEnv = {
     ...bindings,
     ...configured,
-    PLATFORM_QUEUE: { send: async (body: Envelope) => void queued.push(body) },
+    // The account's email jobs; the operators' sign-up notice is tested on its own.
+    PLATFORM_QUEUE: {
+      send: async (body: Envelope) => void (body.kind !== 'admin_signup_notice' && queued.push(body)),
+    },
   } as unknown as Env;
   const platform = new PlatformEntrypoint(createExecutionContext(), platformEnv);
   return { ...platformEnv, PLATFORM_QUEUE: undefined, PLATFORM: platform } as unknown as Env;
@@ -169,4 +172,27 @@ it('welcomes a provider-verified account without a link', async () => {
   const sent = await deliver(target, queued[0]);
   expect(sent?.to).toEqual(['octo@example.com']);
   expect(sent?.text).not.toContain('verify-email');
+});
+
+it('sends a Settings confirmation through the queue consumer, not just acks it', async () => {
+  const target = front();
+  const cookie = await signup(target, 'vera');
+  await call(target, 'email/resend', {}, cookie);
+  const job = queued.find((j) => j.kind === 'account_verify') as Envelope;
+  const platformEnv = { ...target, ...configured } as Env;
+  const posted: any[] = [];
+  const original = globalThis.fetch;
+  globalThis.fetch = (async (_url: RequestInfo, init?: RequestInit) => {
+    posted.push(JSON.parse(String(init?.body)));
+    return Response.json({ id: 'email_1' });
+  }) as typeof fetch;
+  const message = { body: job, attempts: 1, ack: vi.fn(), retry: vi.fn() };
+  try {
+    await platformJob(platformEnv, message as unknown as Message<Envelope>);
+  } finally {
+    globalThis.fetch = original;
+  }
+  expect(posted).toHaveLength(1);
+  expect(posted[0].subject).toBe('Confirm your email for YonedaRepo');
+  expect(message.ack).toHaveBeenCalled();
 });

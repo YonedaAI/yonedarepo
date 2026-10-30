@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { EXPLORE_PAGE, type ExploreRepo, exploreList, explorePath } from './exploreModel';
+import {
+  EXPLORE_PAGE,
+  type ExploreRepo,
+  exploreList,
+  explorePath,
+  ownerName,
+} from './exploreModel';
 
 const repo = (n: number, created_at = 1_000_000 - n): ExploreRepo => ({
   id: `r${String(n).padStart(20, '0')}`,
@@ -39,5 +45,14 @@ describe('explore list', () => {
     const { repos } = exploreList([first, second]);
     expect(repos).toHaveLength(EXPLORE_PAGE + 1);
     expect(repos.at(-1)?.name).toBe('repo-99');
+  });
+});
+
+describe('explore owner', () => {
+  it('names the owner by handle, and an email-named owner without one as hidden', () => {
+    expect(ownerName({ ...repo(1), owner: 'ada', owner_handle: 'ada' })).toBe('ada');
+    // The public list sends `owner: null` while an email-named owner has no handle.
+    expect(ownerName({ ...repo(1), owner: null, owner_handle: null })).toBe('member');
+    expect(ownerName({ ...repo(1), owner: 'ada@example.com' })).toBe('member');
   });
 });

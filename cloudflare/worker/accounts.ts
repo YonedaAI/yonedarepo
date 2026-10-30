@@ -5,10 +5,15 @@ import {
   normalizeAccountIdentifier,
 } from '../../shared/account';
 import { accountCreated, emailRoute } from './account-email';
+import { handleState, setHandle } from './account-handles';
+import { noteSeen } from './account-index';
+import { isAdminAccount } from './admin-auth';
+import { avatarInfo, ownAvatarUrl } from './avatars';
 import { accountFor, signUpWithEmail, signupEmail } from './email-accounts';
 import { error, readJson, response } from './http';
 import { unlink } from './oauth-identity';
 import { configuredProviders } from './oauth-providers';
+import { readSignupSource, recordSignup } from './site-events';
 import { sha } from './storage';
 import type { Env, Json, Principal } from './types';
 import { workspace } from './workspace';
@@ -51,16 +56,22 @@ export async function signedInSession(req: Request, env: Env) {
   const result = await workspace(env, session.name, { op: 'session', session_hash: sessionHash });
   return result.authenticated ? { account: session.name, sessionHash } : null;
 }
-export async function accountPrincipal(req: Request, env: Env): Promise<Principal | null> {
+/** The session's account, or why there is none (`suspended` by an operator). A signed-in
+ * check notes the account as seen today (platform-accounts). */
+async function sessionCheck(req: Request, env: Env) {
   const session = sessionValue(req);
-  if (!session) return null;
+  if (!session) return { principal: null, suspended: false };
   const result = await workspace(env, session.name, {
     op: 'session',
     session_hash: await sha(session.token),
   });
-  return result.authenticated
-    ? { workspace: session.name, role: 'user', orgs: result.orgs ?? [] }
-    : null;
+  if (!result.authenticated) return { principal: null, suspended: result.suspended === true };
+  noteSeen(env, session.name);
+  const principal: Principal = { workspace: session.name, role: 'user', orgs: result.orgs ?? [] };
+  return { principal, suspended: false };
+}
+export async function accountPrincipal(req: Request, env: Env): Promise<Principal | null> {
+  return (await sessionCheck(req, env)).principal;
 }
 export async function accountRoute(req: Request, env: Env): Promise<Response | null> {
   const path = new URL(req.url).pathname;
@@ -71,12 +82,33 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
   try {
     let result: Response;
     if (action === 'session' && req.method === 'GET') {
-      const principal = await accountPrincipal(req, env);
+      const { principal, suspended } = await sessionCheck(req, env);
+      // The account menu's picture; a failed lookup only means initials.
+      const avatar = principal
+        ? await avatarInfo(env, principal.workspace).catch(() => null)
+        : null;
       result = response(
         principal
-          ? { authenticated: true, username: principal.workspace }
-          : { authenticated: false },
+          ? {
+              authenticated: true,
+              username: principal.workspace,
+              ...(await handleState(env, principal.workspace)),
+              avatar_url: ownAvatarUrl(avatar),
+              avatar_source: avatar?.source ?? null,
+              // A hint for the UI's admin entry; every admin route checks for itself.
+              is_admin: isAdminAccount(env, principal.workspace),
+            }
+          : { authenticated: false, ...(suspended ? { suspended: true } : {}) },
       );
+    } else if (action === 'handle' && req.method === 'PUT') {
+      const principal = await accountPrincipal(req, env);
+      if (!principal) return error('UNAUTHORIZED', 'Sign in to choose a handle', 401);
+      try {
+        result = response(await setHandle(env, principal.workspace, (await readJson(req)).handle));
+      } catch (e: any) {
+        const status = ['HANDLE_TAKEN', 'HANDLE_FIXED'].includes(e?.code) ? 409 : 400;
+        return error(e?.code ?? 'INVALID_INPUT', e?.message ?? 'Handle refused', status);
+      }
     } else if (action === 'providers' && req.method === 'GET') {
       // Sign-in providers whose secrets are set (the sign-in page shows only these).
       result = response({ providers: configuredProviders(env) });
@@ -149,13 +181,17 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
               },
         );
       }
+      if (account.suspended) return error('ACCOUNT_SUSPENDED', 'This account is suspended', 403);
       if (!account.authenticated)
         return error(
           'UNAUTHORIZED',
           'Credentials did not match; wait a minute after repeated attempts',
           401,
         );
-      if (action === 'signup') await accountCreated(env, name, email);
+      if (action === 'signup') {
+        await accountCreated(env, name, email, 'email');
+        recordSignup(env, req, 'email', readSignupSource(body.source));
+      }
       result = response({ ...account, ...(action !== 'login' ? { recovery_code: recovery } : {}) });
       if (action !== 'recover')
         result.headers.set(

@@ -1,6 +1,7 @@
 // Comments on a change: one comment, a composer, and a line thread with reply and resolve.
 import { type FormEvent, useState } from 'react';
 import type { Anchor, ChangeComment, Thread } from './changeModel';
+import { Person } from './Person';
 import { usePeople } from './people';
 import { useReadOnly } from './repoAccess';
 import { Failure } from './SourceStatus';
@@ -20,7 +21,7 @@ export function CommentItem({ comment }: { comment: ChangeComment }) {
       aria-label={`Comment by ${people.principal(comment.principal)}`}
     >
       <header className="source-meta">
-        <strong>{people.principal(comment.principal)}</strong> · {when(comment.at)}
+        <Person principal={comment.principal} strong /> · {when(comment.at)}
         {comment.resolved_at !== null && ' · resolved'}
       </header>
       <p>{comment.body}</p>

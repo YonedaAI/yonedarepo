@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { CloneButton } from './CodeParts';
-import { ConnectPanel } from './ConnectPanel';
+import { AgentConnectHelp, ConnectPanel } from './ConnectPanel';
 import {
   apiOrigin,
   claudeMcpJson,
@@ -16,6 +16,7 @@ import {
   normalizeUserCode,
   scopeList,
 } from './connect';
+import { forgetRepoNames, rememberRepoName } from './repoNames';
 import { formatSourceRoute, parseSourceRoute } from './sourceRoute';
 
 const api = 'https://api.dev.yonedarepo.com';
@@ -87,6 +88,24 @@ describe('connect snippets', () => {
       'https://dev.yonedarepo.com',
     );
   });
+  it('copies one runnable command at a time: install, then sign in, no comments', () => {
+    const blocks = copyBlocks(
+      renderToStaticMarkup(createElement(AgentConnectHelp, { origin: api })),
+    );
+    expect(blocks.slice(0, 2)).toEqual([
+      ['Install the yoneda CLI', 'curl -fsSL https://dev.yonedarepo.com/install.sh | sh'],
+      ['Sign in', `yoneda login --origin ${api}`],
+    ]);
+    const labels = blocks.map(([label]) => label);
+    const plugin = labels.indexOf('Claude Code: add the marketplace');
+    expect(blocks.slice(plugin, plugin + 2)).toEqual([
+      [
+        'Claude Code: add the marketplace',
+        '/plugin marketplace add https://dev.yonedarepo.com/downloads/claude/marketplace.json',
+      ],
+      ['Claude Code: install the plugin', '/plugin install yoneda@yonedarepo'],
+    ]);
+  });
   it('uses the configured API origin, else the page origin, without a trailing slash', () => {
     expect(apiOrigin('https://dev.yonedarepo.com', `${api}/`)).toBe(api);
     expect(apiOrigin('https://dev.yonedarepo.com', '  ')).toBe('https://dev.yonedarepo.com');
@@ -157,5 +176,19 @@ describe('settings, connect and device routes', () => {
       view: 'device',
       code: 'BCDF-GHJK',
     });
+  });
+});
+
+describe('readable clone address', () => {
+  it('clones over HTTPS by handle and name once known, else by id', () => {
+    forgetRepoNames();
+    expect(httpsCloneCommand(api, repo, 'retry-kit')).toBe(
+      `git clone ${api}/git/${repo}.git retry-kit`,
+    );
+    rememberRepoName(repo, 'ada', 'retry-kit');
+    expect(httpsCloneCommand(api, repo, 'retry-kit')).toBe(
+      `git clone ${api}/ada/retry-kit.git retry-kit`,
+    );
+    forgetRepoNames();
   });
 });

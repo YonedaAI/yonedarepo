@@ -17,7 +17,8 @@ export function onUnauthorized(listener: () => void) {
 export async function api<T>(
   path: string,
   body?: unknown,
-  options?: { signal?: AbortSignal },
+  /** `method`: PUT for a body that replaces a value (default: GET without a body, else POST). */
+  options?: { signal?: AbortSignal; method?: 'PUT' },
 ): Promise<T> {
   // Repository navigation may cancel reads, never an in-flight owner mutation.
   const readSignal = body === undefined ? options?.signal : undefined;
@@ -46,7 +47,7 @@ export async function api<T>(
   });
   const request = (async () => {
     const response = await fetch(`/api/${path}`, {
-      method: body === undefined ? 'GET' : 'POST',
+      method: options?.method ?? (body === undefined ? 'GET' : 'POST'),
       headers,
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: controller.signal,

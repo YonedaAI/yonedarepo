@@ -157,7 +157,15 @@ export type Bisect = {
   remaining: number;
 };
 
-export const AGENT_SECTIONS = ['sessions', 'memories', 'contracts', 'pins', 'bisects'] as const;
+/** `reviewers`: the managed agents that review this repository (linked from Agent tools). */
+export const AGENT_SECTIONS = [
+  'sessions',
+  'memories',
+  'contracts',
+  'pins',
+  'bisects',
+  'reviewers',
+] as const;
 export type AgentSection = (typeof AGENT_SECTIONS)[number];
 
 /** The sessions read for these filters, from the page after `before` when given. */

@@ -9,6 +9,8 @@ import tokens from '../../cloudflare/migrations/0004_platform_tokens.sql?raw';
 import members from '../../cloudflare/migrations/0005_platform_members.sql?raw';
 import visibility from '../../cloudflare/migrations/0006_platform_repo_visibility.sql?raw';
 import activity from '../../cloudflare/migrations/0007_platform_activity.sql?raw';
+import handles from '../../cloudflare/migrations/0008_platform_handles.sql?raw';
+import accounts from '../../cloudflare/migrations/0009_platform_accounts.sql?raw';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { type CheckReport, completeContainerCheck } from '../../cloudflare/worker/repo-checks';
 import { compute } from '../../cloudflare/worker/repo-compute';
@@ -189,7 +191,7 @@ afterEach(async () => {
 });
 beforeEach(async () => {
   // Every config running these tests gets the D1 schema (listing and personal-token lookup).
-  for (const migration of [listing, tokens, members, visibility, activity])
+  for (const migration of [listing, tokens, members, visibility, activity, handles, accounts])
     for (const statement of migration.split(';').filter((s) => s.replace(/--.*$/gm, '').trim()))
       await bindings.INDEX
         .exec(statement.replace(/--.*$/gm, '').replace(/\s+/g, ' ').trim())

@@ -1,14 +1,18 @@
-// The shell's top bar: the navigation menu (phones), the page title, Getting started, the
-// theme (cycles System, Light, Dark), refresh and the account menu.
+// The shell's top bar: the navigation menu (phones), the page's breadcrumbs (where it has a
+// parent, breadcrumbs.ts) or its title, Getting started, the theme (cycles System, Light,
+// Dark), refresh and the account menu.
 import { Menu, Monitor, Moon, RefreshCw, Sun, X } from 'lucide-react';
 import type { ReactNode } from 'react';
 import type { AccountIdentity } from '../../lib/types';
 import { nextTheme, THEMES, useTheme } from '../shell/theme';
-import type { Navigate } from '../shell/useRoute';
+import { linkTo, type Navigate } from '../shell/useRoute';
+import { formatSourceRoute } from '../source-platform/sourceRoute';
 import { AccountMenu } from './AccountMenu';
+import type { Crumb } from './breadcrumbs';
 
 export function WorkspaceHeader({
   title,
+  crumbs,
   loading,
   onRefresh,
   authenticated,
@@ -24,6 +28,8 @@ export function WorkspaceHeader({
 }: {
   /** The current page or repository. */
   title: string;
+  /** The way back to this page's parents; shown instead of the title. */
+  crumbs?: Crumb[] | null;
   loading: boolean;
   onRefresh: () => void;
   authenticated: boolean;
@@ -58,7 +64,26 @@ export function WorkspaceHeader({
             {menuOpen ? <X size={20} /> : <Menu size={20} />}
           </button>
         )}
-        <p className="topbar-title">{title}</p>
+        {crumbs?.length ? (
+          <nav aria-label="Breadcrumb" className="topbar-crumbs">
+            <ol>
+              {crumbs.map((crumb, i) => (
+                // A link's address, else the current page's label (never starts with "/").
+                <li key={crumb.to ? formatSourceRoute(crumb.to) : crumb.label}>
+                  {i === crumbs.length - 1 || !crumb.to ? (
+                    <span aria-current={i === crumbs.length - 1 ? 'page' : undefined}>
+                      {crumb.label}
+                    </span>
+                  ) : (
+                    <a {...linkTo(crumb.to, navigate)}>{crumb.label}</a>
+                  )}
+                </li>
+              ))}
+            </ol>
+          </nav>
+        ) : (
+          <p className="topbar-title">{title}</p>
+        )}
       </div>
       <div className="header-actions">
         {progress && <span className="topbar-progress">{progress}</span>}

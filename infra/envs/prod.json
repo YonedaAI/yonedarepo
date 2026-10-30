@@ -121,7 +121,11 @@
         "Welcome email (account-email.ts): the platform-jobs consumer sends one per new account through",
         "Resend (EMAIL_FROM, EMAIL_CONTACT). Its key is RESEND_API_KEY, the Secrets Store secret",
         "Resend-Yoneda, read at send time; without it email is off and sign-up never depends on it.",
-        "The sending domain has open and click tracking off in Resend."
+        "The sending domain has open and click tracking off in Resend.",
+        "Site traffic (worker/platform-site-traffic.ts) reads the front Worker's yonedarepo_prod_site_events dataset (SITE_EVENTS_DATASET)",
+        "through the Analytics Engine SQL API: CF_ACCOUNT_ID plus the optional secret ANALYTICS_READ_TOKEN (Account Analytics Read).",
+        "Without the token, traffic reports are unavailable and nothing else changes.",
+        "Admin pages (/api/v1/admin, platform-admin.ts): ADMIN_ACCOUNTS lists the operator accounts (comma separated; empty: only OWNER_TOKEN/Access). The sign-up notice goes to ADMIN_NOTIFY_EMAIL (empty: EMAIL_CONTACT). Credit grants and balances call the managed Worker's /admin/accounts/<account>/credit over MANAGED with MANAGED_ADMIN_TOKEN (optional secret, the managed Worker's own value; unset: grants are refused). MANAGED binds the managed Worker, which binds this one as PLATFORM: a fresh environment deploys this Worker once without MANAGED first."
       ],
       "secrets": [
         "OWNER_TOKEN",
@@ -131,6 +135,10 @@
         "SSH_HOST_ED25519_KEY",
         "SSH_HOST_ECDSA_KEY",
         "SSH_TUNNEL_TOKEN"
+      ],
+      "optional_secrets": [
+        "ANALYTICS_READ_TOKEN",
+        "MANAGED_ADMIN_TOKEN"
       ],
       "health": "yonedarepo-platform",
       "always_on": {
@@ -179,7 +187,11 @@
           "SSH_FRONT_DOOR": "tunnel",
           "SSH_HOST": "ssh.yonedarepo.com",
           "EMAIL_FROM": "YonedaRepo <hello@yonedarepo.com>",
-          "EMAIL_CONTACT": "hello@yonedarepo.com"
+          "EMAIL_CONTACT": "hello@yonedarepo.com",
+          "CF_ACCOUNT_ID": "{account_id}",
+          "SITE_EVENTS_DATASET": "yonedarepo_prod_site_events",
+          "ADMIN_ACCOUNTS": "",
+          "ADMIN_NOTIFY_EMAIL": ""
         },
         "secrets_store_secrets": [
           {
@@ -392,6 +404,10 @@
           {
             "binding": "SELF",
             "service": "{prefix}-platform"
+          },
+          {
+            "binding": "MANAGED",
+            "service": "{prefix}-agents-managed"
           }
         ],
         "routes": [
@@ -435,6 +451,10 @@
         "repository's stored agent token and webhook secret, so losing it means re-enabling agents).",
         "Optional: AI_GATEWAY_TOKEN, the gateway's token when it is authenticated; MANAGED_ADMIN_TOKEN,",
         "bearer for POST /admin/accounts/<workspace>/credit (unset: nobody may grant).",
+        "Card billing (Stripe): STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET (optional together; unset:",
+        "\"coming\"). Stripe's webhook endpoint is https://managed.yonedarepo.com/stripe/webhook, events",
+        "setup_intent.succeeded, payment_intent.succeeded, payment_intent.payment_failed. A saved card",
+        "unlocks PROMO_CREDIT_USD once; a balance under $5 is topped up by $20 off-session.",
         "Deployed before the front Worker, which binds it as MANAGED."
       ],
       "secrets": [
@@ -442,7 +462,9 @@
       ],
       "optional_secrets": [
         "AI_GATEWAY_TOKEN",
-        "MANAGED_ADMIN_TOKEN"
+        "MANAGED_ADMIN_TOKEN",
+        "STRIPE_SECRET_KEY",
+        "STRIPE_WEBHOOK_SECRET"
       ],
       "health": "yonedarepo-agents-managed",
       "ephemeral": false,
@@ -464,7 +486,8 @@
         "vars": {
           "PUBLIC_URL": "https://managed.yonedarepo.com",
           "AI_GATEWAY_URL": "https://gateway.ai.cloudflare.com/v1/{account_id}/{prefix}-managed-agents",
-          "AI_GATEWAY_PROVIDERS": "claude=anthropic,codex=openai,zai=custom-zai,mimo=custom-mimo"
+          "AI_GATEWAY_PROVIDERS": "claude=anthropic,codex=openai,zai=custom-zai,mimo=custom-mimo",
+          "PROMO_CREDIT_USD": "100"
         },
         "secrets_store_secrets": [
           {
@@ -593,7 +616,14 @@
         "page, its /auth/<provider>/* routes answer 404. Callback URLs: https://yonedarepo.com/auth/github/callback",
         "and https://yonedarepo.com/auth/google/callback. Deploy uploads them when the secrets file has them.",
         "/api/managed is proxied to the managed agents Worker (MANAGED service binding, deployed first).",
-        "/install.sh and /downloads/* (worker/downloads.ts): the CLI installer and releases and the public Claude Code marketplace, from the DOWNLOADS bucket that cargo xtask downloads stages and uploads."
+        "/install.sh and /downloads/* (worker/downloads.ts): the CLI installer and releases and the public Claude Code marketplace, from the DOWNLOADS bucket that cargo xtask downloads stages and uploads.",
+        "Site analytics (worker/site-events.ts): one cookieless SITE_EVENTS data point per public HTML page view and per sign-up,",
+        "into the Analytics Engine dataset yonedarepo_prod_site_events (created on first write; infra plan/prune do not track it;",
+        "underscores, not hyphens: the dataset is a table name in Analytics Engine SQL).",
+        "No IP, cookie or visitor id; signed-in requests (session cookie), /api, /auth and assets are skipped.",
+        "WEB_ANALYTICS_TOKEN: the Cloudflare Web Analytics site token; set, the front Worker adds the beacon to public pages; empty, none.",
+        "SEO_INDEXING=on lets search engines index the site: robots.txt allows it, sitemap.xml lists it and HTML has no X-Robots-Tag (worker/seo-files.ts).",
+        "ADMIN_ACCOUNTS: the platform Worker's operator list, repeated here for the session answer's is_admin (the admin entry in the sidebar); keep the two equal."
       ],
       "secrets": [
         "OWNER_TOKEN"
@@ -645,7 +675,10 @@
           "run_worker_first": true
         },
         "vars": {
-          "PUBLIC_APP_ORIGIN": "{origin}"
+          "PUBLIC_APP_ORIGIN": "{origin}",
+          "WEB_ANALYTICS_TOKEN": "fd30d727a0dc4d4c949dee535977d1b2",
+          "SEO_INDEXING": "on",
+          "ADMIN_ACCOUNTS": ""
         },
         "services": [
           {
@@ -655,6 +688,12 @@
           {
             "binding": "MANAGED",
             "service": "{prefix}-agents-managed"
+          }
+        ],
+        "analytics_engine_datasets": [
+          {
+            "binding": "SITE_EVENTS",
+            "dataset": "yonedarepo_prod_site_events"
           }
         ],
         "r2_buckets": [

@@ -7,6 +7,7 @@
 import platformTools from '../../backend/crates/yoneda-core/src/platform_tools.json';
 import { operation, serveMcp } from './repo-mcp';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
+import { forViewer } from './repo-principal-privacy';
 import type { Env } from './types';
 
 /** The REST router (`repo-api.ts`), called in-process for the management tools. */
@@ -223,7 +224,9 @@ export function accountMcp(req: Request, env: Env, auth: Credentials, route: Rou
       const run = operation(name);
       const { repo, ...toolArgs } = args;
       const id = await resolve(repo);
-      return run(new RepoContext(env, id, caller(env, id, auth)), toolArgs);
+      const ctx = new RepoContext(env, id, caller(env, id, auth));
+      // A non-member sees accounts by handle, never by address (principal-privacy).
+      return forViewer(env, await run(ctx, toolArgs), () => ctx.status());
     },
   });
 }

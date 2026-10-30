@@ -11,7 +11,7 @@ import { workspace } from './workspace';
 
 export const RESEND_EMAILS = 'https://api.resend.com/emails';
 /** Deliveries per message: the platform-jobs queue's max_retries (3) plus the first. */
-const MAX_ATTEMPTS = 4;
+export const MAX_ATTEMPTS = 4;
 
 let warnedOff = false;
 /** Logs once per isolate why email is off (names only, never values). */
@@ -41,7 +41,7 @@ function config(env: Env) {
 }
 
 /** The Resend key from the Secrets Store, at send time; never logged. */
-async function resendKey(env: Env) {
+export async function resendKey(env: Env) {
   try {
     const key = (await env.RESEND_API_KEY?.get())?.trim();
     if (key) return key;
@@ -52,10 +52,10 @@ async function resendKey(env: Env) {
 }
 
 /** Seconds before delivery `attempts + 1`: 30 s, 2 min, 8 min. */
-const backoff = (attempts: number) => 30 * 4 ** Math.max(0, attempts - 1);
+export const backoff = (attempts: number) => 30 * 4 ** Math.max(0, attempts - 1);
 
 /** Resend answers worth repeating: its own faults, rate limits and an in-flight duplicate. */
-function transient(status: number, name: unknown) {
+export function transient(status: number, name: unknown) {
   return (
     status >= 500 || status === 429 || (status === 409 && name === 'concurrent_idempotent_requests')
   );

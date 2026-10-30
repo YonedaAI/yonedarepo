@@ -3,7 +3,7 @@
 // until free), and the address is claimed on its own claim instance (`email:<sha256>`, the
 // one provider sign-in uses for verified emails) so it signs in to that handle. Accounts made
 // earlier keep their names: a plain username, or an account named by an address.
-import { normalizeAccountIdentifier } from '../../shared/account';
+import { isReservedHandle, normalizeAccountIdentifier } from '../../shared/account';
 import { contactEmail } from './account-email';
 import { accountExists, claims, emailKey, emailTaken, holder, PENDING_MS } from './oauth-identity';
 import type { Env, Json } from './types';
@@ -48,7 +48,7 @@ export function handlesFor(email: string): string[] {
     );
   });
   return [withSuffix(base, ''), ...numbered, ...random].filter(
-    (name) => normalizeAccountIdentifier(name) === name,
+    (name) => normalizeAccountIdentifier(name) === name && !isReservedHandle(name),
   );
 }
 

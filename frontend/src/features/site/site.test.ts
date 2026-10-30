@@ -73,7 +73,9 @@ describe('site routes', () => {
 
   it('leaves the app routes and unknown paths as they were', () => {
     expect(parse('/')).toEqual({ view: 'home' });
-    expect(parse('/nowhere')).toEqual({ view: 'home' });
+    // A handle-shaped first segment is a profile (repoNames.ts); anything else is home.
+    expect(parse('/nowhere')).toEqual({ view: 'profile', handle: 'nowhere' });
+    expect(parse('/no-where')).toEqual({ view: 'home' });
     expect(parse('/settings')).toEqual({ view: 'settings' });
     expect(parse('/source/explore')).toEqual({ view: 'explore' });
   });
@@ -650,6 +652,24 @@ describe('content', () => {
       .map(([name]) => name);
     expect(missing).toEqual([]);
     expect(LEGAL_ENTITY.lastUpdated).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  // Site analytics (cloudflare/worker/site-events.ts) record these fields and nothing that
+  // identifies a visitor; the policy must say so before collection starts.
+  it('describes the cookieless page-view analytics the front Worker records', () => {
+    const body = LEGAL_PAGES.privacy.body;
+    expect(body).toContain('### Site analytics');
+    for (const field of [
+      'page path',
+      'referring site',
+      'country',
+      'device type',
+      'campaign tags',
+      'Cloudflare Web Analytics',
+      'sessionStorage',
+    ])
+      expect(body).toContain(field);
+    expect(body).toMatch(/no IP addresses, cookies or visitor identifiers/);
   });
 
   it('renders the home and features pages with one h1 each', () => {

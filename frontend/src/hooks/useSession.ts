@@ -31,10 +31,23 @@ export function useSession() {
     const current = ++generation.current;
     setLoading(true);
     try {
-      const result = await api<{ authenticated: boolean; username?: string }>('auth/session');
+      const result = await api<{ authenticated: boolean } & Partial<AccountIdentity>>(
+        'auth/session',
+      );
       if (generation.current !== current) return;
       const next: AccountIdentity | null =
-        result.authenticated && result.username ? { username: result.username } : null;
+        result.authenticated && result.username
+          ? {
+              username: result.username,
+              ...(result.handle !== undefined ? { handle: result.handle } : {}),
+              ...(result.handle_suggestion !== undefined
+                ? { handle_suggestion: result.handle_suggestion }
+                : {}),
+              avatar_url: result.avatar_url ?? null,
+              avatar_source: result.avatar_source ?? null,
+              ...(result.is_admin ? { is_admin: true } : {}),
+            }
+          : null;
       if (!next && signedIn.current) setSessionEnded(true);
       else setSessionEnded(false);
       signedIn.current = !!next;
@@ -51,6 +64,12 @@ export function useSession() {
     clear();
     setSessionEnded(false);
   }, [clear]);
+  /** A new picture (an upload or its removal), without reading the session again. */
+  const setAvatar = useCallback(
+    (avatar: Pick<AccountIdentity, 'avatar_url' | 'avatar_source'>) =>
+      setIdentity((current) => current && { ...current, ...avatar }),
+    [],
+  );
   useEffect(() => {
     void discover();
   }, [discover]);
@@ -63,5 +82,6 @@ export function useSession() {
     setError,
     discover,
     signOut,
+    setAvatar,
   };
 }

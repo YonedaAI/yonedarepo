@@ -108,6 +108,7 @@ op_names! {
         Sessions = "repo_sessions",
         SetPolicy = "repo_set_policy",
         SetVisibility = "repo_set_visibility",
+        Rename = "repo_rename",
         Snapshot = "repo_snapshot",
         StagedObjects = "repo_staged_objects",
         StaleReads = "repo_stale_reads",

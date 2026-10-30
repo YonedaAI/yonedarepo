@@ -70,7 +70,7 @@ async function reviewed() {
       await put(h, 'code-review', {
         repos: [h.platform.repo],
         scope: h.platform.repo,
-        settings: { timeout_minutes: 10 },
+        settings: { trigger: { when: 'push', changes: 'ready_for_review', paths: ['src/'], branches: [] } },
       })
     ).status,
   ).toBe(200);

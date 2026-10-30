@@ -10,8 +10,6 @@ import {
   MANAGED_AGENTS,
   type ManagedAgentDefinition,
   type ManagedAgentId,
-  type ManagedCredit,
-  STARTING_CREDIT_USD,
 } from '../../shared/managed-agents';
 import {
   customizedFields,
@@ -19,17 +17,14 @@ import {
   SettingsError,
   validateOverrides,
 } from '../../shared/managed-settings';
-import {
-  HOOK_EVENTS,
-  type ManagedEnv,
-  NOTICE_EVENTS,
-  REPO_ID,
-  TOKEN_NAME,
-  TOKEN_SCOPES,
-} from './config';
+import { principalName, repoAgents, runNow } from './agent-actions';
+import { setRepos, sync } from './agent-repos';
+import { billingState, credit, removeCard, setAutoTopUp, setupCard } from './billing';
+import { type ManagedEnv, REPO_ID, TOKEN_NAME } from './config';
 import { ledgerStub } from './ledger';
-import { type Json, Platform, PlatformError } from './platform';
+import { type Json, Platform } from './platform';
 import { repoStub } from './repo-agents';
+import { stripeEnabled } from './stripe';
 import { WORKSPACE_SCOPE, workspaceStub } from './workspace-agents';
 
 export class ApiRefusal extends Error {
@@ -79,20 +74,6 @@ async function access(caller: Platform, workspace: string) {
   return repos;
 }
 
-async function credit(env: ManagedEnv, workspace: string): Promise<ManagedCredit> {
-  const b = await ledgerStub(env, workspace).balance();
-  // A workspace that never ran an agent shows the starting credit its first run adds.
-  const fresh = b.granted === 0 && b.used === 0;
-  const granted = fresh ? STARTING_CREDIT_USD * 1_000_000 : b.granted;
-  const left = fresh ? granted : b.balance;
-  return {
-    granted_usd: granted / 1e6,
-    used_usd: b.used / 1e6,
-    balance_usd: left / 1e6,
-    paused: left <= 0,
-  };
-}
-
 async function runsOf(env: ManagedEnv, repos: string[], agent: string | null, limit: number) {
   const lists = await Promise.all(repos.map((r) => repoStub(env, r).runs(agent, limit)));
   return lists.flat().sort((a, b) => b.created_at - a.created_at);
@@ -103,14 +84,21 @@ async function agentState(
   workspace: string,
   agent: ManagedAgentDefinition,
 ): Promise<AgentState> {
-  const stored = await workspaceStub(env, workspace).settings(agent.id);
+  const ws = workspaceStub(env, workspace);
+  const [stored, meta] = await Promise.all([ws.settings(agent.id), ws.meta(agent.id)]);
   const runs = await runsOf(env, stored.enabled, agent.id, 200);
   return {
     ...agent,
+    created_by: meta?.created_by ?? null,
+    created_at: meta?.created_at ?? null,
+    active: meta?.active ?? true,
+    all_repos: meta?.all_repos ?? false,
     settings: resolveSettings(agent, stored.workspace),
     customized: customizedFields(stored.workspace),
     repo_overrides: Object.fromEntries(
-      Object.entries(stored.repos).map(([r, o]) => [r, customizedFields(o)]),
+      Object.entries(stored.repos)
+        .map(([r, o]) => [r, customizedFields(o)] as const)
+        .filter(([, fields]) => fields.length > 0),
     ),
     enabled_repos: stored.enabled,
     history: runs.slice(0, 6).map(({ id, repo, change, value, status, created_at }) => ({
@@ -123,63 +111,6 @@ async function agentState(
     })),
     runs: runs.length,
   };
-}
-
-/** Mints the agents' repository token and registers their webhook, as the owner. */
-async function connect(env: ManagedEnv, req: Request, repo: string, workspace: string) {
-  const stub = repoStub(env, repo);
-  const existing = await stub.connection();
-  if (existing && !existing.revoked) return;
-  const owner = new Platform(env, { forward: req });
-  // Agents return to a repository that kept only its deletion notice: that hook is replaced.
-  if (existing) await owner.deleteHook(repo, existing.hook_id).catch(alreadyGone);
-  let name = TOKEN_NAME;
-  let minted: Json;
-  try {
-    minted = await owner.createToken(repo, name, TOKEN_SCOPES);
-  } catch (e) {
-    // Token names are never reused: a revoked earlier token keeps the plain name.
-    if (!(e instanceof PlatformError && e.code === 'ALREADY_EXISTS')) throw e;
-    name = `${TOKEN_NAME}-${Date.now().toString(36)}`;
-    minted = await owner.createToken(repo, name, TOKEN_SCOPES);
-  }
-  const hook = await owner.createHook(
-    repo,
-    `${env.PUBLIC_URL.replace(/\/$/, '')}/hooks/${repo}`,
-    HOOK_EVENTS,
-  );
-  await stub.link(repo, {
-    account: workspace,
-    token_name: name,
-    token: String(minted.token),
-    hook_id: Number(hook.id),
-    hook_secret: String(hook.secret),
-  });
-}
-
-const alreadyGone = (e: unknown) => {
-  if (!(e instanceof PlatformError && (e.status === 404 || e.code === 'NOT_FOUND'))) throw e;
-};
-
-/**
- * Once no agent runs on a repository: its agent token is revoked and the agents webhook (change,
- * branch, repo) is replaced by one for repo.deleted alone, so the repository's reviews (runs,
- * findings, transcripts) are still cleared when it is deleted. A token or hook already gone is
- * fine.
- */
-async function disconnect(env: ManagedEnv, req: Request, repo: string) {
-  const stub = repoStub(env, repo);
-  const connection = await stub.connection().catch(() => null);
-  if (!connection || connection.revoked) return;
-  const owner = new Platform(env, { forward: req });
-  await owner.revokeToken(repo, connection.token_name).catch(alreadyGone);
-  await owner.deleteHook(repo, connection.hook_id).catch(alreadyGone);
-  const notice = await owner.createHook(
-    repo,
-    `${env.PUBLIC_URL.replace(/\/$/, '')}/hooks/${repo}`,
-    NOTICE_EVENTS,
-  );
-  await stub.retain(repo, { id: Number(notice.id), secret: String(notice.secret) });
 }
 
 async function update(
@@ -209,30 +140,49 @@ async function update(
       throw e;
     }
   }
-  if (body.repos !== undefined) {
+  if (body.active !== undefined && typeof body.active !== 'boolean')
+    throw new ApiRefusal('INVALID_INPUT', 'active is true or false', 400);
+  if (body.all_repos !== undefined && typeof body.all_repos !== 'boolean')
+    throw new ApiRefusal('INVALID_INPUT', 'all_repos is true or false', 400);
+  let wanted: string[] | null = null;
+  if (body.all_repos === true) wanted = owned.map((o) => o.id);
+  else if (body.repos !== undefined) {
     if (
       !Array.isArray(body.repos) ||
       !body.repos.every((r: unknown) => typeof r === 'string' && REPO_ID.test(r))
     )
       throw new ApiRefusal('INVALID_INPUT', 'repos lists repository ids', 400);
-    const wanted = [...new Set(body.repos as string[])];
+    wanted = [...new Set(body.repos as string[])];
     if (!wanted.every((r) => owned.some((o) => o.id === r)))
       throw new ApiRefusal(
         'FORBIDDEN',
         'Agents run only on repositories you own in this workspace',
         403,
       );
-    for (const repo of wanted) {
-      await connect(env, req, repo, workspace);
-      await repoStub(env, repo).setEnabled(agent.id, true, by);
-    }
-    for (const repo of stored.enabled.filter((r) => !wanted.includes(r))) {
-      const stub = repoStub(env, repo);
-      await stub.setEnabled(agent.id, false, by);
-      if ((await stub.enabled()).length === 0) await disconnect(env, req, repo);
-    }
-    await ws.setEnabled(agent.id, wanted);
-    if (wanted.length) await ledgerStub(env, workspace).ensureStartingCredit();
+  }
+  if (wanted) {
+    // Add agent: the first repositories (or "all repositories", even with none yet) record who
+    // set it up and when.
+    if ((wanted.length || body.all_repos === true) && !(await ws.meta(agent.id)))
+      await ws.setUp(
+        agent.id,
+        await principalName(new Platform(env, { forward: req }), owned, workspace),
+      );
+    if (await ws.meta(agent.id)) await ws.setAllRepos(agent.id, body.all_repos === true);
+    await setRepos(
+      env,
+      req,
+      workspace,
+      agent,
+      wanted,
+      body.active ?? (await ws.meta(agent.id))?.active ?? true,
+    );
+  }
+  if (typeof body.active === 'boolean' && (await ws.meta(agent.id))) {
+    // Pause or resume: repositories, token and settings are kept; only the switches move.
+    await ws.setActive(agent.id, body.active);
+    for (const repo of (await ws.settings(agent.id)).enabled)
+      await repoStub(env, repo).setEnabled(agent.id, body.active, by);
   }
   return agentState(env, workspace, agent);
 }
@@ -250,17 +200,28 @@ export async function managedApi(req: Request, env: ManagedEnv, parts: string[])
       workspace,
       agents: await Promise.all(MANAGED_AGENTS.map((a) => agentState(env, workspace, a))),
       credit: await credit(env, workspace),
-      billing: 'coming',
+      billing: stripeEnabled(env) ? 'stripe' : 'coming',
       repos: owned,
       token_name: TOKEN_NAME,
     };
   if (resource === 'agents' && id) {
     const agent = MANAGED_AGENTS.find((a) => a.id === id);
     if (!agent) throw new ApiRefusal('NOT_FOUND', 'Unknown agent', 404);
-    if (get) return agentState(env, workspace, agent);
-    if (req.method === 'PUT') return update(env, req, workspace, agent, owned);
+    if (get && !sub) return agentState(env, workspace, agent);
+    if (req.method === 'PUT' && !sub) return update(env, req, workspace, agent, owned);
+    if (req.method === 'POST' && sub === 'run') return runNow(env, workspace, agent);
+    if (req.method === 'POST' && sub === 'archive') {
+      await setRepos(env, req, workspace, agent, [], false);
+      await workspaceStub(env, workspace).archive(agent.id);
+      return agentState(env, workspace, agent);
+    }
   }
+  if (resource === 'sync' && !id && req.method === 'POST') return sync(env, req, workspace, owned);
   const repos = owned.map((r) => r.id);
+  if (resource === 'repos' && id && sub === 'agents' && get) {
+    if (!repos.includes(id)) throw new ApiRefusal('NOT_FOUND', 'Unknown repository', 404);
+    return { agents: await repoAgents(env, workspace, id) };
+  }
   if (resource === 'runs' && !id && get) {
     const agent = url.searchParams.get('agent') as ManagedAgentId | null;
     const repo = url.searchParams.get('repo');
@@ -285,11 +246,17 @@ export async function managedApi(req: Request, env: ManagedEnv, parts: string[])
       cost: await ledgerStub(env, workspace).runEntries(sub),
     };
   }
-  if (resource === 'billing' && !id && get) {
+  if (resource === 'billing' && id === 'setup' && req.method === 'POST')
+    return setupCard(env, req, workspace);
+  if (resource === 'billing' && id === 'card' && sub === 'remove' && req.method === 'POST')
+    await removeCard(env, workspace);
+  const autoTopUp = resource === 'billing' && id === 'auto-top-up' && !sub && req.method === 'POST';
+  if (autoTopUp) await setAutoTopUp(env, req, workspace);
+  if (resource === 'billing' && (get || id === 'card' || autoTopUp)) {
     const runs = await runsOf(env, repos, null, 200);
     const usage = new Map<
       string,
-      { repo: string; agent: string; runs: number; cost_usd: number }
+      { repo: string; agent: ManagedAgentId; runs: number; cost_usd: number }
     >();
     for (const r of runs) {
       const key = `${r.repo}:${r.agent}`;
@@ -298,16 +265,14 @@ export async function managedApi(req: Request, env: ManagedEnv, parts: string[])
       row.cost_usd += r.cost_usd;
       usage.set(key, row);
     }
-    return {
+    return billingState(
+      env,
       workspace,
-      credit: await credit(env, workspace),
-      payment_method: null,
-      billing: 'coming',
-      usage: [...usage.values()].map((u) => ({
+      [...usage.values()].map((u) => ({
         ...u,
         repo_name: owned.find((o) => o.id === u.repo)?.name ?? u.repo,
       })),
-    };
+    );
   }
   throw new ApiRefusal('NOT_FOUND', 'Unknown managed API path', 404);
 }

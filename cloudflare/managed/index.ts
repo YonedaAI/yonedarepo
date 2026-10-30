@@ -1,8 +1,9 @@
 // Managed agents Worker (`<prefix>-agents-managed`): YonedaRepo's predefined reviewers, run as
 // an ordinary API client of the platform. Its public hostname takes only signed webhooks and
-// /health; the browser API is served to the front Worker's service binding on the site's own
+// /health and Stripe's signed billing webhook (/stripe/webhook); the browser API is served to the front Worker's service binding on the site's own
 // origin. The platform itself never runs, schedules or knows about agents.
 import { ApiRefusal, managedApi, workspaceName } from './api';
+import { BillingRefusal, stripeWebhook } from './billing';
 import type { ManagedEnv, QueueMessage } from './config';
 import { REPO_ID } from './config';
 import { consume, receiveHook } from './dispatch';
@@ -56,6 +57,13 @@ async function grantCredit(req: Request, env: ManagedEnv, account: string) {
   return json({ balance: granted.balance, resumed: granted.resume.length });
 }
 
+/** `GET /admin/accounts/<account>/credit`: the balance and the ten newest ledger entries. */
+async function creditState(env: ManagedEnv, account: string) {
+  const ledger = ledgerStub(env, account);
+  const [balance, entries] = await Promise.all([ledger.balance(), ledger.entries(10)]);
+  return json({ balance, entries });
+}
+
 export async function managedFetch(req: Request, env: ManagedEnv): Promise<Response> {
   const url = new URL(req.url);
   const parts = url.pathname.split('/').filter(Boolean);
@@ -65,6 +73,7 @@ export async function managedFetch(req: Request, env: ManagedEnv): Promise<Respo
       v: 1,
       revision: env.BUILD_REVISION ?? 'development',
     });
+  if (url.pathname === '/stripe/webhook' && req.method === 'POST') return stripeWebhook(req, env);
   if (parts[0] === 'hooks' && parts.length === 2 && req.method === 'POST') {
     if (!REPO_ID.test(parts[1])) return refuse('NOT_FOUND', 'Unknown repository', 404);
     return receiveHook(req, env, parts[1]);
@@ -75,11 +84,12 @@ export async function managedFetch(req: Request, env: ManagedEnv): Promise<Respo
     parts[3] === 'credit' &&
     parts.length === 4
   ) {
-    if (req.method !== 'POST') return refuse('METHOD_NOT_ALLOWED', 'POST only', 405);
+    if (req.method !== 'POST' && req.method !== 'GET')
+      return refuse('METHOD_NOT_ALLOWED', 'GET or POST only', 405);
     if (!(await admin(req, env))) return refuse('UNAUTHORIZED', 'Admin token required', 401);
     const account = workspaceName(parts[2]);
     if (!account) return refuse('NOT_FOUND', 'Unknown account', 404);
-    return grantCredit(req, env, account);
+    return req.method === 'GET' ? creditState(env, account) : grantCredit(req, env, account);
   }
   // The browser API only on the site's origin (through the front Worker), never on this
   // Worker's own hostname, so a session cookie is only ever checked for the site it belongs to.
@@ -88,7 +98,7 @@ export async function managedFetch(req: Request, env: ManagedEnv): Promise<Respo
     try {
       return json(await managedApi(req, env, parts.slice(2)));
     } catch (e: any) {
-      if (e instanceof ApiRefusal || e instanceof PlatformError)
+      if (e instanceof ApiRefusal || e instanceof PlatformError || e instanceof BillingRefusal)
         return refuse(e.code, e.message, e.status);
       console.error(
         JSON.stringify({ event: 'managed.api', message: String(e?.message ?? e).slice(0, 200) }),
