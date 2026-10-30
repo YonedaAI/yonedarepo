@@ -4,8 +4,12 @@
 import { describe, expect, it } from 'vitest';
 import type { ManagedCredit } from '../../../../shared/managed-agents';
 import {
+  agentsReturnPath,
+  autoTopUpPath,
   cardLabel,
+  cardSavedText,
   cardSaveState,
+  cardSummary,
   promoCopy,
   RETURN_PATH,
   removeCardPath,
@@ -25,6 +29,7 @@ const credit = (over: Partial<ManagedCredit> = {}): ManagedCredit => ({
   promo: { usd: 100, granted: false },
   card: null,
   top_up_failed: null,
+  auto_top_up: true,
   ...over,
 });
 const card = { brand: 'visa', last4: '4242', added_at: 1 };
@@ -53,6 +58,27 @@ describe('agent billing', () => {
     expect(withCard.title).toBe('Agent credit');
     expect(withCard.body).toContain('Your card unlocked $100.00 of promotional credit');
     expect(withCard).not.toHaveProperty('action');
+    const off = promoCopy(credit({ card, auto_top_up: false }), 'stripe');
+    expect(off.body).toContain('Automatic top-up is off');
+    expect(off.body).not.toContain('tops up from your card');
+  });
+
+  it('sums up the card on the Agents page', () => {
+    expect(cardSummary(credit({ card }))).toBe('Visa •••• 4242 · Auto top-up on');
+    expect(cardSummary(credit({ card, auto_top_up: false }))).toBe(
+      'Visa •••• 4242 · Auto top-up off',
+    );
+    expect(cardSummary(credit())).toBeNull();
+  });
+
+  it('returns from Stripe to the page the card was added from', () => {
+    expect(RETURN_PATH).toBe('/settings?billing=added');
+    expect(agentsReturnPath()).toBe('/agents?billing=added');
+    expect(agentsReturnPath('acme')).toBe('/agents?workspace=acme&billing=added');
+    expect(cardSavedText(credit({ card, promo: { usd: 100, granted: true } }))).toBe(
+      'Card saved. $100.00 promotional credit added.',
+    );
+    expect(cardSavedText(credit({ card }))).toBe('Card saved.');
   });
 
   it('opens Create your own only with a card on file', () => {});
@@ -80,5 +106,6 @@ describe('agent billing', () => {
       '/workspaces/dev.owner%2Bx%40example.com/billing/setup',
     );
     expect(removeCardPath('ada')).toBe('/workspaces/ada/billing/card/remove');
+    expect(autoTopUpPath('ada')).toBe('/workspaces/ada/billing/auto-top-up');
   });
 });

@@ -89,6 +89,7 @@ const credit = (over: Partial<ManagedCredit> = {}): ManagedCredit => ({
   promo: { usd: 100, granted: false },
   card: null,
   top_up_failed: null,
+  auto_top_up: true,
   balance_usd: 3.75,
   paused: false,
   ...over,
