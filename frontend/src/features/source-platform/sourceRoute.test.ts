@@ -6,6 +6,7 @@ import { forgetRepoNames, rememberRepoName, repoBase } from './repoNames';
 import {
   formatSourceRoute,
   parseSourceRoute,
+  routeRepo,
   routeTab,
   type SourceRoute,
   tabRoute,
@@ -27,6 +28,11 @@ describe('source routes', () => {
       { view: 'settings', section: 'organizations' },
       { view: 'files', repo, path: '', ref: 'main' },
       { view: 'files', repo, path: 'src/a b.rs', ref: 'feature/x', at: 3 },
+      { view: 'files', repo, path: 'src/a.rs', ref: 'main', line: 12 },
+      { view: 'global-search' },
+      { view: 'global-search', q: 'retry with' },
+      { view: 'global-search', q: 'retry', within: repo },
+      { view: 'global-search', within: repo },
       { view: 'history', repo, ref: 'main' },
       { view: 'history', repo, ref: 'dev' },
       { view: 'commit', repo, commit: sha },
@@ -59,6 +65,34 @@ describe('source routes', () => {
     // Not a repository id, and nothing nests under it.
     expect(parseSourceRoute('/source/explore/x', '')).toEqual({ view: 'home' });
     expect(routeTab({ view: 'explore' })).toBeUndefined();
+  });
+  it('keeps a Search page search in its address, never as a repository route', () => {
+    expect(formatSourceRoute({ view: 'global-search' })).toBe('/search');
+    expect(formatSourceRoute({ view: 'global-search', q: 'a b', within: repo })).toBe(
+      `/search?q=a+b&repo=${repo}`,
+    );
+    expect(parseSourceRoute('/search/', '?q=')).toEqual({ view: 'global-search' });
+    // A value that is no repository id is dropped, not sent to the API.
+    expect(parseSourceRoute('/search', '?q=x&repo=nope')).toEqual({
+      view: 'global-search',
+      q: 'x',
+    });
+    // The shell's repository pages stay out of it.
+    expect(routeRepo({ view: 'global-search', within: repo })).toBeUndefined();
+    expect(routeTab({ view: 'global-search' })).toBeUndefined();
+    // A repository's own Search page keeps its address.
+    expect(parseSourceRoute(`/source/${repo}/search`, '?q=x')).toEqual({
+      view: 'search',
+      repo,
+      query: 'x',
+    });
+  });
+  it('addresses a line of a file, and nothing else', () => {
+    const at = (search: string) => parseSourceRoute(`/source/${repo}/files/a.rs`, search);
+    expect(at('?line=12')).toMatchObject({ line: 12 });
+    for (const bad of ['0', '-1', '1.5', 'x', '99999999999999999999'])
+      expect(at(`?line=${bad}`)).not.toHaveProperty('line');
+    expect(parseSourceRoute(`/source/${repo}`, '?line=12')).not.toHaveProperty('line');
   });
   it('gives each account settings page its own address', () => {
     const settings = (section: AccountSection) => ({ view: 'settings', section }) as const;
