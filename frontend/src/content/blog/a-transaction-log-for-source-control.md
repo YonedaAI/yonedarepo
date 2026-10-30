@@ -5,9 +5,9 @@ author: Matthew Long
 category: Research
 order: 1
 summary: Part I treats a repository as a database with a transaction log. Commits are built on the server, landing is validated against the log, and lost races stop costing a rebase.
-image: /blog/a-transaction-log-for-source-control/figure-1.webp
-imageAlt: Diagram of the write path, where a writer sends changes to a stateless adapter, which pushes objects to a content-addressed object store, calls stateless compute for merges, and makes separate prepare, record and land calls to a serialized authority, one per repository.
-caption: Figure 1 of the paper. Creating a commit and landing it are separate calls, and only the land call touches refs.
+image: /blog/a-transaction-log-for-source-control/cover.webp
+imageAlt: Cover card of the paper A Transaction Log for Source Control, Part I of the series Source Code as a Transactional Abstraction, by Matthew Long.
+caption: Part I of Source Code as a Transactional Abstraction, by Matthew Long (YonedaAI).
 paper: https://yonedarepo-research.vercel.app/papers/transaction-log-source-control/
 ---
 
@@ -24,6 +24,8 @@ The analogy breaks in two useful places. A repository's snapshot is a map of ref
 The log, the refs and validation live in a **serialized authority per repository** that runs each command atomically, next to a content-addressed object store, a durable queue and stateless compute.
 
 ## Creating a commit is not landing it
+
+![Diagram of the write path, where a writer sends changes to a stateless adapter, which pushes objects to a content-addressed object store, calls stateless compute for merges, and makes separate prepare, record and land calls to a serialized authority, one per repository.](/blog/a-transaction-log-for-source-control/figure-1.webp "Figure 1 of the paper. Creating a commit and landing it are separate calls, and only the land call touches refs.")
 
 The key separation is in the figure above. A writer sends file changes, a parent, a base log version and an optional declared read set. The server builds the commit, rewriting only the directories on changed paths, pushes the objects, reads them back and records it. None of those steps moves a ref.
 
