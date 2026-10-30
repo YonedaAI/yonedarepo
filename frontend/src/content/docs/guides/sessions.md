@@ -1,5 +1,5 @@
 ---
-title: Sessions
+title: Sessions and transcripts
 summary: Record which coding session produced a commit, what it read, and hand its context to the next one.
 ---
 
@@ -20,7 +20,7 @@ The agent plugins record sessions for you:
 | Codex | `yoneda setup codex` (skill and MCP) |
 | Gemini CLI | `yoneda setup gemini` (extension and MCP) |
 
-With hooks installed, a session starts with the repository's context, records each file it reads, and records itself on its commits when it ends, uploading its transcript (Claude Code and opencode).
+With hooks installed (Claude Code and opencode), a session starts with the repository's context, records each file it reads, and records itself on the commits it pushed when it ends, uploading its transcript. With Codex and Gemini CLI, the skill tells the agent to run `yoneda session record` after pushing; scripts can run it too. See [Connect an agent](/docs/agents/connect).
 
 ## Record by hand
 
@@ -58,4 +58,4 @@ On a refusal: `git pull --rebase`, re-check the named paths, push again.
 yoneda context [--max-bytes <n>] [--json]
 ```
 
-prints what a new session should know, within a byte budget: `main`'s head and log version, the landing rules, recent sessions with their summaries, open change requests (this branch's first) and symbol contracts on the files you are changing. It says how many entries it left out. The hooks put this text at the start of each agent session. Over MCP the same read is `git_context`, and `git_sessions_recent` lists recent sessions.
+prints what a new session should know, within a byte budget: `main`'s head and log version, the landing rules, recent sessions with their summaries, open change requests (this branch's first), symbol contracts on the files you are changing and the repository's current [memories](/docs/agents/memories). It says how many entries it left out. The hooks put this text at the start of each agent session. Over MCP the same read is `git_context`, and `git_sessions_recent` lists recent sessions.

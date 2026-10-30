@@ -17,14 +17,10 @@ import { LEGAL_ENTITY } from '../../content/legal/entity';
 import { nextTheme, THEMES } from '../shell/theme';
 import { formatSourceRoute, parseSourceRoute } from '../source-platform/sourceRoute';
 import { BUILD_ON, mockOf, pickActive } from './buildOn';
-import {
-  BLOG_POSTS,
-  COMPANY_PAGES,
-  DOCS_NAV,
-  DOCS_PAGES,
-  LEGAL_PAGES,
-  LEGAL_SOURCES,
-} from './content';
+import { BLOG_POSTS, COMPANY_PAGES, LEGAL_PAGES, LEGAL_SOURCES } from './content';
+import { DOCS_PAGES } from './docs/docsContent';
+import { DOCS_ORDER } from './docs/docsNav';
+import { SiteDocs } from './docs/SiteDocs';
 import { FEATURE_PAGES, featurePageOf } from './featurePages';
 import { FEATURES } from './features';
 import {
@@ -44,7 +40,7 @@ import { checkHealth, FOOTER_COLUMNS, SOCIAL_LINKS, StatusPill } from './SiteFoo
 import { SiteHome } from './SiteHome';
 import { SiteLayout } from './SiteLayout';
 import { menuKey } from './SiteNavMenus';
-import { SiteCompany, SiteDocs, SiteLegal } from './SitePages';
+import { SiteCompany, SiteLegal } from './SitePages';
 import { SitePricing } from './SitePricing';
 import { navSection, SITE_NAV, siteView } from './siteRoute';
 
@@ -57,7 +53,7 @@ describe('site routes', () => {
     ['/features', { page: 'features' }],
     ['/features/code-as-transactions', { page: 'feature', slug: 'code-as-transactions' }],
     ['/pricing', { page: 'pricing' }],
-    ['/docs', { page: 'docs', slug: 'get-started' }],
+    ['/docs', { page: 'docs', slug: 'introduction' }],
     ['/docs/guides/changes', { page: 'docs', slug: 'guides/changes' }],
     ['/blog', { page: 'blog' }],
     ['/blog/search-v4', { page: 'post', slug: 'search-v4' }],
@@ -516,9 +512,8 @@ describe('pricing', () => {
 
 describe('content', () => {
   it('lists every docs file in the nav, and every nav entry has a file', () => {
-    const navSlugs = DOCS_NAV.flatMap((s) => s.pages);
-    expect(new Set(navSlugs).size).toBe(navSlugs.length);
-    expect([...navSlugs].sort()).toEqual(Object.keys(DOCS_PAGES).sort());
+    expect(new Set(DOCS_ORDER).size).toBe(DOCS_ORDER.length);
+    expect([...DOCS_ORDER].sort()).toEqual(Object.keys(DOCS_PAGES).sort());
   });
 
   it.each(Object.keys(DOCS_PAGES))('renders docs page %s', (slug) => {

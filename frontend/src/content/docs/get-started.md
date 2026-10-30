@@ -1,59 +1,45 @@
 ---
-title: Get started
-summary: Create an account, make a repository, and push to it with stock Git in about five minutes.
+title: Quickstart
+summary: Create an account, make a repository and push to it with stock Git in about five minutes. No extra tools needed.
 ---
 
 ## 1. Create an account
 
-Open [yonedarepo.com/signup](/signup) and enter your email address and a password of at least 12 characters (or continue with GitHub or Google). Your public account name is made from the part of the address before the `@`; the address itself stays private. **Save the recovery code** it shows you. The code is shown once and is the only way to reset your password.
+Open [yonedarepo.com/signup](/signup) and enter your email address and a password of 12 to 128 characters, or continue with GitHub or Google. Save the **recovery code** it shows you: it is shown once and is the only way to reset your password. See [Accounts and sign-in](/docs/accounts).
 
 ## 2. Create a repository
 
-Choose **New repository** in the sidebar. Each repository has Overview, Changes, Commits, Sessions, Memories, Context, Agent tools, Releases, Search and Settings pages. Repositories are private unless you make them public.
+Choose **New repository** in the app, pick an owner (you or one of your organizations), a name, and **Private** or **Public**. The new repository starts with a README.
 
-## 3. Install the CLI
+Each repository has an id like `r3f1c0d2e4a5b6c7d8e9f` (`r` and 20 hex digits). Git URLs and the API use the id; the app shows it under **Settings → Connect**, with ready-to-copy clone commands.
 
-The `yoneda` CLI also installs `git-remote-yoneda`, the helper behind `yoneda::` remotes:
+## 3. Create a token
 
-```sh
-# from a checkout of the YonedaRepo source
-cargo install --path backend/crates/yoneda-cli
-```
-
-Prebuilt downloads are not published yet. Stock Git works without the CLI; see [Git remotes](/docs/guides/git-remotes).
-
-Sign in from the terminal with device login. The CLI prints a code and opens the approval page in your browser:
-
-```sh
-yoneda login
-```
-
-The token is stored in `~/.config/yoneda/credentials` (mode 0600). `YONEDA_TOKEN` overrides it.
+Open **Settings → Personal access tokens**, name a token, choose the scopes `repo:read`, `repo:write` and `repo:land` (pushing to `main` lands, which needs `repo:land`), and copy it. It is shown once.
 
 ## 4. Clone, commit, push
 
 ```sh
-git clone yoneda::https://api.yonedarepo.com/<repo-id> demo
+git clone https://api.yonedarepo.com/git/<repo-id>.git demo
 cd demo
 echo "# demo" > README.md
 git add README.md && git commit -m "Add README"
 git push origin main
 ```
 
-`git push origin main` lands your commit. If someone else landed a different part of the code meanwhile, the server merges and prints `remote: main: landed with server merge, run git pull`. If you both changed the same lines, the push is refused with the path. Pull, resolve and push again.
+Git asks for a user name and password: any user name works, and the password is your token. A credential helper remembers it.
 
-You can also clone over plain HTTPS or SSH; see [Git remotes](/docs/guides/git-remotes).
+If someone else landed work on `main` meanwhile, the push still lands, merged on the server:
 
-## 5. Connect an agent
-
-```sh
-yoneda setup claude    # or codex, gemini, opencode
+```text
+remote: main: landed with server merge, run git pull
 ```
 
-This installs the agent's YonedaRepo skill or plugin and its MCP configuration. Agents use the same tokens, scopes and review rules as people. See [MCP](/docs/guides/mcp).
+Run `git pull` to bring your clone up to date. If you both changed the same lines, the push is refused with the paths instead; see [Concurrent pushes](/docs/guides/pushing).
 
-## Next
+## 5. Go further
 
-- [Repositories](/docs/guides/repositories): visibility, members, forks, organizations, LFS and releases.
-- [Changes](/docs/guides/changes): change requests, reviews and checks.
-- [CLI commands](/docs/reference/cli): every command in one place.
+- [Git over HTTPS and SSH](/docs/guides/git-remotes): SSH keys, partial and shallow clones, limits.
+- [Install the CLI](/docs/guides/cli): lazy clones, change requests, search and agent setup from the terminal.
+- [Connect an agent](/docs/agents/connect): Claude Code, Codex, opencode or Gemini CLI.
+- [Changes](/docs/guides/changes): propose a branch, review it, run checks and land it.

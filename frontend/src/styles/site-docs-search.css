@@ -1,0 +1,82 @@
+/* Docs search: the dialog over the page, its field and its results. */
+.docs-search-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 12vh 16px 16px;
+  background: color-mix(in srgb, var(--site-bg) 40%, #0008);
+}
+.docs-search {
+  display: flex;
+  flex-direction: column;
+  width: min(640px, 100%);
+  max-height: 70vh;
+  border: 1px solid var(--site-line);
+  border-radius: 12px;
+  background: var(--site-surface);
+  box-shadow: 0 24px 64px #0005;
+  overflow: hidden;
+}
+.docs-search-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--site-line);
+}
+.docs-search-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--site-text);
+  font: inherit;
+  font-size: var(--fs-md);
+}
+.docs-search-field input:focus-visible {
+  outline: none;
+}
+.docs-search-empty {
+  margin: 0;
+  padding: 16px;
+}
+.docs-search-results {
+  margin: 0;
+  padding: 6px;
+  overflow-y: auto;
+  list-style: none;
+}
+.docs-search-option {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 32px 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.docs-search-option[aria-selected="true"] {
+  background: var(--site-accent-soft);
+}
+.docs-search-enter {
+  position: absolute;
+  right: 10px;
+  top: 12px;
+  color: var(--site-muted);
+}
+.docs-search-path {
+  color: var(--site-text);
+  font-weight: 500;
+  font-size: var(--fs-sm);
+}
+.docs-search-snippet {
+  font-size: var(--fs-xs);
+  color: var(--site-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -46,9 +46,9 @@ export function inline(text: string, key = '', link?: LinkResolver): ReactNode[]
   return out;
 }
 
-type Block =
+export type Block =
   | { kind: 'heading'; level: number; text: string }
-  | { kind: 'code'; text: string }
+  | { kind: 'code'; text: string; lang: string }
   | { kind: 'list'; ordered: boolean; items: string[] }
   | { kind: 'quote'; text: string }
   | { kind: 'table'; head: string[]; rows: string[][] }
@@ -72,12 +72,13 @@ export function blocks(source: string): Block[] {
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
-    const fence = /^\s{0,3}(```|~~~)/.exec(line);
+    // The fence's info string names the code's language (```sh).
+    const fence = /^\s{0,3}(```|~~~)\s*([\w+-]*)/.exec(line);
     if (fence) {
       const body: string[] = [];
       for (i++; i < lines.length && !lines[i].trimStart().startsWith(fence[1]); i++)
         body.push(lines[i]);
-      out.push({ kind: 'code', text: body.join('\n') });
+      out.push({ kind: 'code', text: body.join('\n'), lang: fence[2].toLowerCase() });
       i++;
     } else if (TABLE_ROW.test(line) && TABLE_RULE.test(lines[i + 1] ?? '')) {
       const head = cells(line);
@@ -143,70 +144,73 @@ export function Markdown({
   link?: LinkResolver;
   anchors?: boolean;
 }) {
-  const text = (value: string, key: string) => inline(value, key, link);
+  // Blocks are positional parts of one immutable document.
   return (
-    <>
-      {blocks(source).map((block, n) => {
-        // Blocks are positional parts of one immutable document.
-        const key = `b${n}`;
-        if (block.kind === 'heading') {
-          const Tag = `h${Math.min(block.level + shift, 6)}` as 'h2';
-          return (
-            <Tag key={key} id={anchors ? anchorId(block.text) : undefined}>
-              {text(block.text, key)}
-            </Tag>
-          );
-        }
-        if (block.kind === 'table')
-          return (
-            <div key={key} className="markdown-table">
-              <table>
-                <thead>
-                  <tr>
-                    {block.head.map((cell, j) => (
-                      // biome-ignore lint/suspicious/noArrayIndexKey: positional cells of one row.
-                      <th key={j} scope="col">
-                        {text(cell, `${key}.h${j}.`)}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {block.rows.map((row, r) => (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: positional rows of one table.
-                    <tr key={r}>
-                      {row.map((cell, j) => (
-                        // biome-ignore lint/suspicious/noArrayIndexKey: positional cells of one row.
-                        <td key={j}>{text(cell, `${key}.${r}.${j}.`)}</td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          );
-        if (block.kind === 'code')
-          return (
-            <pre key={key}>
-              <code>{block.text}</code>
-            </pre>
-          );
-        if (block.kind === 'list') {
-          const List = block.ordered ? 'ol' : 'ul';
-          return (
-            <List key={key}>
-              {block.items.map((item, j) => (
-                // biome-ignore lint/suspicious/noArrayIndexKey: positional items of one list.
-                <li key={`${key}.${j}`}>{text(item, `${key}.${j}.`)}</li>
-              ))}
-            </List>
-          );
-        }
-        if (block.kind === 'quote')
-          return <blockquote key={key}>{text(block.text, key)}</blockquote>;
-        if (block.kind === 'rule') return <hr key={key} />;
-        return <p key={key}>{text(block.text, key)}</p>;
-      })}
-    </>
+    <>{blocks(source).map((block, n) => renderBlock(block, `b${n}`, { shift, link, anchors }))}</>
   );
+}
+
+/** One block as React elements; a page renderer can draw some blocks itself and pass the rest here. */
+export function renderBlock(
+  block: Block,
+  key: string,
+  { shift = 1, link, anchors = false }: { shift?: number; link?: LinkResolver; anchors?: boolean },
+): ReactNode {
+  const text = (value: string, k: string) => inline(value, k, link);
+  if (block.kind === 'heading') {
+    const Tag = `h${Math.min(block.level + shift, 6)}` as 'h2';
+    return (
+      <Tag key={key} id={anchors ? anchorId(block.text) : undefined}>
+        {text(block.text, key)}
+      </Tag>
+    );
+  }
+  if (block.kind === 'table')
+    return (
+      <div key={key} className="markdown-table">
+        <table>
+          <thead>
+            <tr>
+              {block.head.map((cell, j) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: positional cells of one row.
+                <th key={j} scope="col">
+                  {text(cell, `${key}.h${j}.`)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {block.rows.map((row, r) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: positional rows of one table.
+              <tr key={r}>
+                {row.map((cell, j) => (
+                  // biome-ignore lint/suspicious/noArrayIndexKey: positional cells of one row.
+                  <td key={j}>{text(cell, `${key}.${r}.${j}.`)}</td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  if (block.kind === 'code')
+    return (
+      <pre key={key}>
+        <code>{block.text}</code>
+      </pre>
+    );
+  if (block.kind === 'list') {
+    const List = block.ordered ? 'ol' : 'ul';
+    return (
+      <List key={key}>
+        {block.items.map((item, j) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: positional items of one list.
+          <li key={`${key}.${j}`}>{text(item, `${key}.${j}.`)}</li>
+        ))}
+      </List>
+    );
+  }
+  if (block.kind === 'quote') return <blockquote key={key}>{text(block.text, key)}</blockquote>;
+  if (block.kind === 'rule') return <hr key={key} />;
+  return <p key={key}>{text(block.text, key)}</p>;
 }
