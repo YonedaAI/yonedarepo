@@ -1,0 +1,42 @@
+/* The site's frame: the main column and the footer share thin rules down both sides. */
+.site-main {
+  flex: 1;
+  width: 100%;
+  max-width: var(--site-frame);
+  margin: 0 auto;
+  padding: 0 var(--site-gutter) var(--site-band);
+  border-inline: 1px solid var(--site-line);
+}
+.site-main-flush {
+  padding: 0;
+}
+.site-main a:not([class]) {
+  color: var(--site-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.site-footer {
+  border-top: 1px solid var(--site-line);
+  color: var(--site-muted);
+  font-size: var(--fs-sm);
+}
+.site-footer-inner {
+  max-width: var(--site-frame);
+  margin: 0 auto;
+  padding: var(--sp-5) var(--site-gutter);
+  border-inline: 1px solid var(--site-line);
+}
+.site-footer-inner > p {
+  margin: 0;
+}
+.site-footer ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-5);
+  margin: 0 0 var(--sp-3);
+  padding: 0;
+  list-style: none;
+}
+.site-footer a:hover {
+  color: var(--site-text);
+}

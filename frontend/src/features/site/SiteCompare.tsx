@@ -47,11 +47,15 @@ const width = (value: number, max: number) => `${max > 0 ? (value / max) * 100 :
 
 export function SiteCompare() {
   return (
-    <section className="site-section" aria-labelledby="compare-heading">
-      <h2 id="compare-heading">One branch. A thousand writers. No retries.</h2>
-      <p className="site-lead">
-        Plain Git makes concurrent writers take turns. YonedaRepo lands them all on the server.
-      </p>
+    <section className="site-band site-band-flush" aria-labelledby="compare-heading">
+      <div className="site-band-head">
+        <h2 id="compare-heading" className="site-two-tone">
+          One branch. A thousand writers. No retries.{' '}
+          <span>
+            Plain Git makes concurrent writers take turns. YonedaRepo lands them all on the server.
+          </span>
+        </h2>
+      </div>
       {COMPARISONS.map((c) => {
         const max = Math.max(c.ours.value, c.theirs.value);
         return (
@@ -77,7 +81,7 @@ export function SiteCompare() {
           </figure>
         );
       })}
-      <ul className="site-tiles">
+      <ul className="site-cells site-tiles">
         {TILES.map(({ icon: Icon, title, text }) => (
           <li key={title}>
             <Icon size={20} aria-hidden="true" />
