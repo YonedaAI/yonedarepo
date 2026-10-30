@@ -1,17 +1,19 @@
-// Settings → Sign-in methods: the GitHub and Google identities linked to the account, linking
-// another configured provider, and unlinking one. The last way to sign in (the only identity
-// of an account without a password) cannot be removed; the Worker refuses it too.
+// Settings → Connected accounts: a row per sign-in provider, its linked identity with Disconnect
+// or Not connected with Connect. Linking never merges accounts: a provider account links to one
+// YonedaRepo account only. The last way to sign in (the only identity of an account without a
+// password) cannot be removed; the Worker refuses it too.
 import { useCallback, useEffect, useState } from 'react';
+import { SettingsRow, SettingsSection } from '../../components/SettingsSection';
 import { api } from '../../lib/api';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { when } from '../source-platform/sourceApi';
 import { ProviderMark } from '../workspace/OAuthButtons';
 import {
   canUnlink,
-  isProvider,
   type SignInMethods as Methods,
   oauthStartUrl,
   PROVIDER_LABEL,
+  PROVIDERS,
   type Provider,
 } from '../workspace/oauthModel';
 
@@ -27,82 +29,62 @@ export function SignInMethodList({
   onLink: (provider: Provider) => void;
 }) {
   const removable = canUnlink(methods);
-  const linked = new Set(methods.identities.map((i) => i.provider));
-  const linkable = methods.providers.filter(isProvider).filter((p) => !linked.has(p));
-  return (
-    <>
-      {methods.identities.length === 0 ? (
-        <p className="source-empty">No sign-in provider is linked. This account uses a password.</p>
-      ) : (
-        <div className="source-table-wrap">
-          <table className="source-table">
-            <thead>
-              <tr>
-                <th>Provider</th>
-                <th>Account</th>
-                <th>Linked</th>
-                <th>
-                  <span className="sr-only">Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {methods.identities
-                .filter((i) => isProvider(i.provider))
-                .map((i) => {
-                  const label = PROVIDER_LABEL[i.provider as Provider];
-                  return (
-                    <tr key={i.provider}>
-                      <td>
-                        <span className="oauth-method">
-                          <ProviderMark provider={i.provider as Provider} />
-                          {label}
-                        </span>
-                      </td>
-                      <td>{i.email ?? i.login}</td>
-                      <td>{when(i.created_at)}</td>
-                      <td>
-                        <button
-                          type="button"
-                          className="quiet"
-                          disabled={busy || !removable}
-                          title={removable ? undefined : 'The only way to sign in to this account'}
-                          aria-label={`Unlink ${label}`}
-                          onClick={() => onUnlink(i.provider as Provider)}
-                        >
-                          Unlink
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-            </tbody>
-          </table>
-        </div>
-      )}
-      {!removable && methods.identities.length > 0 && (
-        <p className="source-meta">
-          This is your only way to sign in, so it cannot be unlinked. Link another provider first.
-        </p>
-      )}
-      {linkable.length > 0 && (
-        <div className="source-actions">
-          {linkable.map((provider) => (
+  const identityOf = (provider: Provider) =>
+    methods.identities.find((i) => i.provider === provider);
+  const shown = PROVIDERS.filter((p) => identityOf(p) || methods.providers.includes(p));
+  if (shown.length === 0)
+    return (
+      <p className="source-empty settings-block">
+        No sign-in provider is linked. This account uses a password.
+      </p>
+    );
+  return shown.map((provider) => {
+    const label = PROVIDER_LABEL[provider];
+    const identity = identityOf(provider);
+    return (
+      <SettingsRow
+        key={provider}
+        media={<ProviderMark provider={provider} />}
+        title={label}
+        detail={
+          identity ? (
+            <span className="settings-row-mono" title={`Connected ${when(identity.created_at)}`}>
+              {identity.email ?? identity.login}
+            </span>
+          ) : (
+            'Not connected'
+          )
+        }
+        action={
+          identity ? (
+            <>
+              {!removable && <span className="source-meta">Only way to sign in</span>}
+              <button
+                type="button"
+                className="quiet"
+                disabled={busy || !removable}
+                title={removable ? undefined : 'The only way to sign in to this account'}
+                aria-label={`Disconnect ${label}`}
+                onClick={() => onUnlink(provider)}
+              >
+                Disconnect
+              </button>
+            </>
+          ) : (
             <button
               type="button"
-              key={provider}
-              className="oauth-button"
+              className="quiet"
               disabled={busy}
+              aria-label={`Connect ${label}`}
               onClick={() => onLink(provider)}
             >
-              <ProviderMark provider={provider} />
-              <span>Link {PROVIDER_LABEL[provider]}</span>
+              Connect
             </button>
-          ))}
-        </div>
-      )}
-    </>
-  );
+          )
+        }
+      />
+    );
+  });
 }
 
 export function SignInMethods() {
@@ -116,16 +98,15 @@ export function SignInMethods() {
   }, []);
   useEffect(load, [load]);
   return (
-    <section className="settings-card" aria-labelledby="signin-methods-heading">
-      <h2 id="signin-methods-heading">Sign-in methods</h2>
-      <p className="source-meta">
-        Sign in with a linked provider instead of a password. Linking never merges accounts: a
-        provider account links to one YonedaRepo account only.
-      </p>
+    <SettingsSection id="connected-accounts" title="Connected accounts">
       {loadError ? (
-        <Failure error={loadError} onRetry={load} />
+        <div className="settings-block">
+          <Failure error={loadError} onRetry={load} />
+        </div>
       ) : !methods ? (
-        <Loading what="sign-in methods" />
+        <div className="settings-block">
+          <Loading what="connected accounts" />
+        </div>
       ) : (
         <SignInMethodList
           methods={methods}
@@ -135,8 +116,8 @@ export function SignInMethods() {
             window.location.assign(oauthStartUrl(provider, { intent: 'link' }));
           }}
           onUnlink={async (provider) => {
-            if (!window.confirm(`Unlink ${PROVIDER_LABEL[provider]}? You can link it again later.`))
-              return;
+            const label = PROVIDER_LABEL[provider];
+            if (!window.confirm(`Disconnect ${label}? You can connect it again later.`)) return;
             setBusy(true);
             setError('');
             try {
@@ -150,7 +131,11 @@ export function SignInMethods() {
           }}
         />
       )}
-      {error && <Failure error={error} />}
-    </section>
+      {error && (
+        <div className="settings-block">
+          <Failure error={error} />
+        </div>
+      )}
+    </SettingsSection>
   );
 }

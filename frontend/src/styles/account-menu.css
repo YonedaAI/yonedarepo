@@ -173,9 +173,6 @@
 .account-submenu .theme-picker {
   margin: 4px 2px 2px;
 }
-.account-settings .theme-picker {
-  max-width: 340px;
-}
 .menu-progress {
   display: none;
 }
@@ -229,21 +226,6 @@
   vertical-align: middle;
 }
 /* Account settings: the picture, its source, upload and remove. */
-.avatar-settings {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin: 4px 0 16px;
-}
-.avatar-settings .source-meta {
-  margin: 0 0 8px;
-}
-.avatar-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
 .avatar-upload {
   display: inline-flex;
   align-items: center;

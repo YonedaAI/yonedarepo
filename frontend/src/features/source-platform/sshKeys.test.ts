@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { SshCloneLine } from './CodeParts';
-import { SshKeyTable, SshSetup } from './SshKeys';
+import { SshKeyDialog, SshKeyTable, SshSetup } from './SshKeys';
 import { publicKeyProblem, type SshKey, sshCloneCommand, suggestedTitle } from './sshKeyModel';
 import type { Loaded } from './useSource';
 
@@ -52,6 +52,18 @@ describe('SSH key table', () => {
     expect(html).toContain(key.fingerprint);
     expect(html).toContain('never');
     expect(html).toContain('aria-label="Delete SSH key laptop"');
+  });
+});
+
+describe('adding an SSH key', () => {
+  const dialog = () =>
+    renderToStaticMarkup(createElement(SshKeyDialog, { onAdded: () => {}, onClose: () => {} }));
+  it('asks for the title and the public key in a dialog, with the CLI way beside them', () => {
+    const html = dialog();
+    expect(html).toContain('id="ssh-title"');
+    expect(html).toContain('<textarea id="ssh-key"');
+    expect(html).toContain('yoneda ssh-key add');
+    expect(html).toMatch(/<button type="submit"[^>]*disabled=""[^>]*>Add SSH key<\/button>/);
   });
 });
 
