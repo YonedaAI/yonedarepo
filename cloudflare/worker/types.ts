@@ -93,6 +93,8 @@ export interface Env {
   /** The managed agents Worker (front Worker): `/api/managed/*` is proxied to it. */
   MANAGED?: Fetcher;
   PUBLIC_APP_ORIGIN?: string;
+  /** `on` lets search engines index this environment (production only; seo-files.ts). */
+  SEO_INDEXING?: string;
   /** This Worker itself (service binding); the SSH gateway's container reaches the
    * platform through it (platform-ssh-gateway.ts). */
   SELF?: Fetcher;
