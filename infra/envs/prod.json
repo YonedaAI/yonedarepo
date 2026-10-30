@@ -190,7 +190,7 @@
           "EMAIL_CONTACT": "hello@yonedarepo.com",
           "CF_ACCOUNT_ID": "{account_id}",
           "SITE_EVENTS_DATASET": "yonedarepo_prod_site_events",
-          "ADMIN_ACCOUNTS": "",
+          "ADMIN_ACCOUNTS": "magnetonio",
           "ADMIN_NOTIFY_EMAIL": ""
         },
         "secrets_store_secrets": [
@@ -678,7 +678,7 @@
           "PUBLIC_APP_ORIGIN": "{origin}",
           "WEB_ANALYTICS_TOKEN": "fd30d727a0dc4d4c949dee535977d1b2",
           "SEO_INDEXING": "on",
-          "ADMIN_ACCOUNTS": ""
+          "ADMIN_ACCOUNTS": "magnetonio"
         },
         "services": [
           {
