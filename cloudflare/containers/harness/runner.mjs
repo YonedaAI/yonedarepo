@@ -8,6 +8,10 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { dirname, join } from 'node:path';
 import { buildCommand, composePrompt, extractResult, finalMessage, PLACEHOLDER_KEY } from './commands.mjs';
+import version from './version.json' with { type: 'json' };
+
+/** This image's build (version.json), reported so the Worker refuses a mismatched image. */
+const BUILD = version.build;
 
 const PORT = Number(process.env.PORT ?? 8080);
 const HOME = process.env.HOME ?? '/home/agent';
@@ -113,11 +117,11 @@ async function body(req) {
 export function serve(port = PORT) {
   return createServer(async (req, res) => {
     const url = new URL(req.url ?? '/', 'http://runner');
-    if (req.method === 'GET' && url.pathname === '/health') return respond(res, 200, { ok: true });
+    if (req.method === 'GET' && url.pathname === '/health') return respond(res, 200, { ok: true, build: BUILD });
     if (req.method === 'GET' && url.pathname === '/status') {
-      if (!job) return respond(res, 200, { phase: 'idle' });
+      if (!job) return respond(res, 200, { phase: 'idle', build: BUILD });
       const { phase, result, error, transcript, started_at, finished_at } = job;
-      return respond(res, 200, { phase, result, error, transcript, started_at, finished_at });
+      return respond(res, 200, { phase, result, error, transcript, started_at, finished_at, build: BUILD });
     }
     if (req.method === 'POST' && url.pathname === '/run') {
       if (job) return respond(res, 409, { error: 'A review already ran in this container' });
@@ -141,7 +145,7 @@ export function serve(port = PORT) {
         .finally(() => {
           state.finished_at = Date.now();
         });
-      return respond(res, 202, { phase: state.phase });
+      return respond(res, 202, { phase: state.phase, build: BUILD });
     }
     respond(res, 404, { error: 'not found' });
   }).listen(port);

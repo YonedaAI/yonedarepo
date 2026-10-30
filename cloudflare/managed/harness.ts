@@ -14,12 +14,24 @@ import {
   type TokenUsage,
   usageCostMicrousd,
 } from '../../shared/managed-agents';
+import harnessVersion from '../containers/harness/version.json';
 import { gatewaySlug, type ManagedEnv } from './config';
 import { type CallMeta, ledgerStub, type Usage } from './ledger';
 import { repoStub } from './repo-agents';
 import { meterStream, usageOfBody } from './usage';
 
 export const PLATFORM_HOST = 'platform.internal';
+/** The harness image this Worker was built with (version.json: a digest of runner.mjs and
+ * commands.mjs, checked by tests/runtime/managed-harness.test.mjs). */
+export const HARNESS_BUILD: string = harnessVersion.build;
+
+/** Why a runner's answer to `POST /run` is not this Worker's harness, or null when it is. */
+export function buildMismatch(answer: unknown): string | null {
+  const build = (answer as { build?: unknown } | null)?.build;
+  return build === HARNESS_BUILD
+    ? null
+    : `The harness image (${typeof build === 'string' ? build : 'unknown'}) is not this Worker's (${HARNESS_BUILD}); retrying on a fresh container`;
+}
 export const GATEWAY_HOST = 'gateway.internal';
 
 /** What the handlers know about the run a container serves. */
@@ -239,6 +251,13 @@ export class HarnessContainer extends Container<ManagedEnv> {
       body: JSON.stringify(spec),
     });
     if (res.status !== 202) throw new Error(`The harness refused the run: HTTP ${res.status}`);
+    const mismatch = buildMismatch(await res.json().catch(() => null));
+    if (mismatch) {
+      // An older (or newer) image than this Worker's, e.g. mid container rollout: its prompt
+      // and result contract may differ, so it never reviews. The start is retried, fresh.
+      await this.destroy();
+      throw new Error(mismatch);
+    }
   }
 
   async status(): Promise<Record<string, any>> {
