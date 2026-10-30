@@ -1,6 +1,5 @@
 ---
 title: Privacy Policy
-status: Draft, pending legal review
 summary: What YonedaRepo collects, why, where it is kept, who helps us process it, and how to have it removed.
 ---
 
@@ -53,7 +52,7 @@ A session record can also carry a **transcript**: the context the session starte
 
 ### Managed review agents and credit
 
-If a workspace owner enables a managed review agent (Code review, Security review or Slop review) on a repository, we keep each run's settings, its outcome, the comments and check it posted, and a transcript of the run with credentials redacted. Each workspace has a credit balance: we record every grant and every charge, which is a model call's cost or a container's running time.
+If a workspace owner enables a managed review agent (Code review, Security review or Slop review) on a repository, we keep each run's settings, its outcome, the comments and check it posted, and a transcript of the run with credentials redacted. Each workspace has a credit balance: we record every grant and every charge, which is a model call's cost or a container's running time. Billing is not live yet: we take no payments and hold no payment details.
 
 ### Email
 
@@ -157,4 +156,4 @@ We will update this policy as the platform changes. The date of the latest versi
 
 ## Contact
 
-Privacy questions and requests go to [legal@yonedarepo.com](mailto:legal@yonedarepo.com), or by post to {{legalName}}, {{postalAddress}}.
+Privacy questions and requests go to [legal@yonedarepo.com](mailto:legal@yonedarepo.com). We reply from that address.
