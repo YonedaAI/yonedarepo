@@ -9,6 +9,7 @@ import { authenticate } from './auth';
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { error, readJson, response } from './http';
 import { accountActivity } from './platform-account-activity';
+import { isOwnAvatar, ownAvatar, publicAvatarName, servePublicAvatar } from './platform-avatars';
 import { orgAccess } from './platform-org-access';
 import { orgsRoute } from './platform-orgs';
 import { sshKeyRoute } from './platform-ssh-keys';
@@ -370,6 +371,14 @@ async function handle(req: Request, env: Env): Promise<Response> {
         await limitAnonymous(env, req, url.pathname);
       return profile(env, decodeURIComponent(profiled[1]));
     });
+  // Anyone's picture, like the listing: no session check per image.
+  const avatar = publicAvatarName(url);
+  if (avatar !== undefined && req.method === 'GET')
+    return (async () => {
+      if (!req.headers.has('cookie') && !req.headers.has('authorization'))
+        await limitAnonymous(env, req, url.pathname);
+      return servePublicAvatar(env, avatar);
+    })().catch(failure);
   const signed = await timed('auth', () => credentials(req, env));
   // A readable path, or the repository one names, for whoever asks (nobody signed in sees
   // public repositories only); one that may not be read answers as one that is not there.
@@ -417,6 +426,8 @@ async function handle(req: Request, env: Env): Promise<Response> {
       : auth;
   if (mcp) return repoMcp(req, new RepoContext(env, mcp[1], caller(env, mcp[1], machine)));
   if (url.pathname === '/api/v1/mcp') return accountMcp(req, env, machine, route);
+  // The signed-in person's picture: its bytes, an upload or a removal.
+  if (isOwnAvatar(url)) return ownAvatar(req, env, auth).catch(failure);
   // An asset download is the asset's bytes, not a JSON answer.
   const download = releaseDownload(req, env, url, auth);
   if (download) return download.catch(failure);

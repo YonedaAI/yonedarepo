@@ -27,6 +27,7 @@ const fields = (i: ProviderIdentity) => ({
   subject: i.subject,
   login: printable(i.login) || i.provider,
   email: i.email,
+  avatar_url: i.avatar,
 });
 
 export async function claims(env: Env, key: string, command: Json): Promise<Json> {
@@ -83,6 +84,8 @@ export async function signInWith(
         provider: identity.provider,
         subject: identity.subject,
         session_hash: sessionHash,
+        // Each sign-in refreshes the provider's picture (an uploaded one still wins).
+        avatar_url: identity.avatar,
       });
       return signed.authenticated
         ? { kind: 'signed_in', username: held.account }
