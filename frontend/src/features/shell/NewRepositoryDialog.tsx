@@ -5,7 +5,7 @@ import { Dialog } from '../../components/Dialog';
 import { VISIBILITIES, VISIBILITY_HELP, VISIBILITY_LABELS } from '../repo-settings/visibilityModel';
 import { type OrgSummary, ownerOptions } from '../source-platform/orgModel';
 import type { Visibility } from '../source-platform/repoAccess';
-import { sourceApi } from '../source-platform/sourceApi';
+import { SourceApiError, sourceApi } from '../source-platform/sourceApi';
 
 export const REPO_NAME_PATTERN = '[A-Za-z0-9_\\-][A-Za-z0-9._\\-]{0,99}';
 
@@ -38,6 +38,24 @@ export function createBody(
   };
 }
 
+/** Above the server's own bounds on a create (repo-create.ts), so a stall normally ends in
+ * its answer; this one is for a request nothing answers. */
+export const CREATE_TIMEOUT_MS = 45_000;
+export const CREATE_SLOW =
+  'Creating the repository is taking too long. Check your repositories before trying again: it may still appear.';
+export const CREATE_BUSY = "Couldn't create the repository just now. Please try again.";
+
+/** Asks for the repository, giving up after `timeoutMs`. */
+export const requestCreate = (body: unknown, timeoutMs = CREATE_TIMEOUT_MS) =>
+  sourceApi<{ id: string }>('/repos', { body, signal: AbortSignal.timeout(timeoutMs) });
+
+/** What a failed create says to people. */
+export function createFailure(e: unknown) {
+  if ((e as Error).name === 'TimeoutError') return CREATE_SLOW;
+  if (e instanceof SourceApiError && e.status === 503) return CREATE_BUSY;
+  return (e as Error).message;
+}
+
 export function NewRepositoryDialog({
   account,
   orgs = [],
@@ -67,12 +85,10 @@ export function NewRepositoryDialog({
     setBusy(true);
     setError('');
     try {
-      const created = await sourceApi<{ id: string }>('/repos', {
-        body: createBody(name, description, owner, visibility),
-      });
+      const created = await requestCreate(createBody(name, description, owner, visibility));
       await onCreated({ repo: created.id, owner });
     } catch (e) {
-      setError((e as Error).message);
+      setError(createFailure(e));
       setBusy(false);
     }
   }

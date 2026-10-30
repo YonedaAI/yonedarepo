@@ -28,6 +28,23 @@ export function failureCode(e: any): string {
   return transient(e) ? 'OVERLOADED' : 'INTERNAL';
 }
 
+/**
+ * `call`, or a rejection (no `code`: unexpected, so `failureCode` says INTERNAL) once `ms`
+ * pass. The call itself cannot be cancelled and may still take effect later.
+ */
+export function bounded<T>(ms: number, call: Promise<T>): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`No answer within ${ms} ms`)), ms);
+    call.then(resolve, reject).finally(() => clearTimeout(timer));
+  });
+}
+
+/** `run`, bounded to `ms`, once more if that fails: only for what is safe to repeat, also
+ * after a first attempt that lands late (`run` is told it is the retry). */
+export function boundedRetry<T>(ms: number, run: (retry: boolean) => Promise<T>): Promise<T> {
+  return bounded(ms, run(false)).catch(() => bounded(ms, run(true)));
+}
+
 /** `Symbol.dispose` (workerd has it; this project's TypeScript lib does not declare it). */
 const DISPOSE = (Symbol as { dispose?: symbol }).dispose;
 
