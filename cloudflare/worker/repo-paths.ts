@@ -7,6 +7,7 @@
 // in the listing once (a rebuildable projection) and held from then on. A path a caller may
 // not read answers exactly as one that names nothing.
 import { normalizeHandle } from '../../shared/account';
+import { profileAvatarUrl } from './avatars';
 import { refreshHead } from './repo-head';
 import { ApiError, type Credentials, caller, type Json, type RepoContext } from './repo-ops';
 import { admitAnonymous } from './repo-public';
@@ -189,6 +190,8 @@ export async function profile(env: Env, handle: string): Promise<Json> {
     handle: owner.handle,
     kind: owner.kind === 'org' ? 'org' : 'user',
     display_name: null,
+    // By handle, never by the account identifier (an address for an email-named account).
+    avatar_url: await profileAvatarUrl(env, owner),
     repositories: listed.results.map((r) => ({ ...r, path: `/${owner.handle}/${r.name}` })),
   };
 }

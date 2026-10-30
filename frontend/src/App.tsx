@@ -301,6 +301,7 @@ export function App() {
                 repos={rows.map((r) => ({ id: r.repo, name: r.name }))}
                 orgs={orgs}
                 navigate={navigate}
+                onAvatar={session.setAvatar}
               />
             )}
             {(route.view === 'profile' || route.view === 'repo-name') && (

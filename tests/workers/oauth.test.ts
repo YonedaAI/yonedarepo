@@ -29,7 +29,7 @@ const configured: Env = {
 const keys = await generateKeyPair('RS256', { extractable: true });
 const jwk = { ...(await exportJWK(keys.publicKey)), kid: 'test-key', alg: 'RS256', use: 'sig' };
 
-type Profile = { id: string; login: string; email: string; verified?: boolean };
+type Profile = { id: string; login: string; email: string; verified?: boolean; avatar?: string };
 /** Codes the fake provider issued: each bound to the PKCE challenge of the attempt it came from. */
 const issued = new Map<string, { challenge: string; nonce: string; profile: Profile }>();
 const exchanges: string[] = [];
@@ -68,7 +68,11 @@ beforeEach(() => {
     if (url.href === 'https://api.github.com/user') {
       const grant = issued.get(bearer.replace('gho_', ''));
       if (!grant) return new Response('unauthorized', { status: 401 });
-      return Response.json({ id: Number(grant.profile.id), login: grant.profile.login });
+      return Response.json({
+        id: Number(grant.profile.id),
+        login: grant.profile.login,
+        avatar_url: grant.profile.avatar,
+      });
     }
     if (url.href === 'https://api.github.com/user/emails') {
       const grant = issued.get(bearer.replace('gho_', ''));
@@ -92,6 +96,7 @@ beforeEach(() => {
         email: grant.profile.email,
         email_verified: grant.profile.verified ?? true,
         nonce: grant.nonce,
+        picture: grant.profile.avatar,
       })
         .setProtectedHeader({ alg: 'RS256', kid: 'test-key' })
         .setIssuer('https://accounts.google.com')
@@ -415,4 +420,37 @@ it('an OAuth-signed-in browser approves a yoneda login device code', async () =>
     body: JSON.stringify({ user_code, scopes: ['repo:read'], expires_days: 1 }),
   });
   expect(approve.status).toBe(200);
+});
+
+it("GitHub and Google sign-ins bring the provider's picture, refreshed on each sign-in", async () => {
+  const picture = (session?: string) =>
+    call('/api/auth/session', { headers: session ? { cookie: session } : {} })
+      .then((r) => r.json<{ avatar_url: string | null }>())
+      .then((b) => b.avatar_url);
+  const served = (name: string) =>
+    bindings.SELF.fetch(`https://yoneda.test/api/v1/avatars/${name}`, { redirect: 'manual' });
+  const first = 'https://avatars.githubusercontent.com/u/583231?v=4';
+  const github = await signIn('github', { ...octo, avatar: first });
+  const version = await picture(github.session);
+  expect(version).toMatch(/^\/api\/v1\/account\/avatar\?v=[0-9a-f]{12}$/);
+  expect((await served('octo_cat')).headers.get('location')).toBe(first);
+  // The next sign-in reports a new picture: it replaces the old one.
+  const next = 'https://avatars.githubusercontent.com/u/583231?v=5';
+  const again = await signIn('github', { ...octo, avatar: next });
+  expect(await picture(again.session)).not.toBe(version);
+  expect((await served('octo_cat')).headers.get('location')).toBe(next);
+  // Google's `picture` claim, on Google's image host.
+  const photo = 'https://lh3.googleusercontent.com/a/ACg8oc-jane=s96-c';
+  const google = await signIn('google', { ...jane, avatar: photo });
+  const name = (await whoami(google.session)) ?? '';
+  expect((await served(name)).headers.get('location')).toBe(photo);
+  // A picture elsewhere is no picture, and never blocks the sign-in.
+  const other = await signIn('github', {
+    id: '77',
+    login: 'elsewhere',
+    email: 'elsewhere@example.com',
+    avatar: 'https://evil.example/me.png',
+  });
+  expect(await whoami(other.session)).toBe('elsewhere');
+  expect(await picture(other.session)).toBeNull();
 });

@@ -64,6 +64,15 @@ op_names! {
     }
 }
 op_names! {
+    /// The account's picture: its source, what to serve, an upload and its removal.
+    pub(crate) enum AvatarOp {
+        Get = "avatar_get",
+        Serve = "avatar_serve",
+        Upload = "avatar_upload",
+        Remove = "avatar_remove",
+    }
+}
+op_names! {
     /// OAuth sign-in attempts and identity claims, each on its own authority instance.
     pub(crate) enum OAuthOp {
         FlowPut = "oauth_flow_put",
@@ -121,6 +130,7 @@ pub(crate) enum AccountOp {
     Ssh(SshOp),
     Device(DeviceOp),
     Identity(IdentityOp),
+    Avatar(AvatarOp),
     OAuth(OAuthOp),
     Org(OrgOp),
     OrgMember(OrgMemberOp),
@@ -144,6 +154,7 @@ impl AccountOp {
             Self::Ssh(op) => op.name(),
             Self::Device(op) => op.name(),
             Self::Identity(op) => op.name(),
+            Self::Avatar(op) => op.name(),
             Self::OAuth(op) => op.name(),
             Self::Org(op) => op.name(),
             Self::OrgMember(op) => op.name(),
@@ -159,6 +170,7 @@ impl AccountOp {
         all.extend(SshOp::ALL.iter().copied().map(Self::Ssh));
         all.extend(DeviceOp::ALL.iter().copied().map(Self::Device));
         all.extend(IdentityOp::ALL.iter().copied().map(Self::Identity));
+        all.extend(AvatarOp::ALL.iter().copied().map(Self::Avatar));
         all.extend(OAuthOp::ALL.iter().copied().map(Self::OAuth));
         all.extend(OrgOp::ALL.iter().copied().map(Self::Org));
         all.extend(OrgMemberOp::ALL.iter().copied().map(Self::OrgMember));
