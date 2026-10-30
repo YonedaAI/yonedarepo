@@ -11,6 +11,7 @@ import { chromium } from 'playwright-core';
 import { missingText } from './agent-tools-plan.mjs';
 import { see } from './browser-collab-flow.mjs';
 import { sleep } from './client.mjs';
+import { atRepo } from './repo-urls.mjs';
 
 /** The Repository navigation's highlighted entries (exactly one on every repository page). */
 export const highlighted = (page) =>
@@ -38,9 +39,9 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
 
   const tabs = page.getByRole('navigation', { name: 'Repository' });
   await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).click();
-  await page.waitForURL(`**/source/${id}`);
+  await atRepo(page, account, id);
   await tabs.getByRole('link', { name: 'Sessions' }).click();
-  await page.waitForURL(`**/source/${id}/agents`);
+  await atRepo(page, account, id, `/agents`);
   await onlyHighlighted(page, 'Sessions');
   assert.equal(await page.getByRole('navigation', { name: 'Agent tools' }).count(), 0, 'Sessions shows the Agent tools tabs');
   const list = page.getByRole('list', { name: 'Sessions' });
@@ -52,7 +53,7 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
   await see(list.getByRole('listitem').filter({ hasText: summary }), 'the session under the opencode filter');
 
   await row.getByRole('link', { name: new RegExp(summary.slice(0, 30)) }).click();
-  await page.waitForURL(`**/source/${id}/agents/sessions/${posted.session}`);
+  await atRepo(page, account, id, `/agents/sessions/${posted.session}`);
   await onlyHighlighted(page, 'Sessions');
   const detail = page.locator('article.agent-session');
   await see(detail.getByRole('heading', { name: /opencode/ }), 'the session page heading');
@@ -61,7 +62,7 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
   await shot('agents-session');
 
   await detail.getByRole('link', { name: new RegExp(main.slice(0, 10)) }).first().click();
-  await page.waitForURL(`**/source/${id}/commit/${main}`);
+  await atRepo(page, account, id, `/commit/${main}`);
   const sessions = page.getByRole('region', { name: 'Sessions', exact: true });
   await see(sessions.getByRole('link', { name: /opencode/ }), 'the session link on the commit page');
   await shot('agents-commit-sessions');
@@ -78,13 +79,13 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
   m.landed_commit_panel = 'landed line, Revert only';
 
   await tabs.getByRole('link', { name: 'Memories', exact: true }).click();
-  await page.waitForURL(`**/source/${id}/agents/memories`);
+  await atRepo(page, account, id, `/agents/memories`);
   await onlyHighlighted(page, 'Memories');
   assert.equal(await page.getByRole('navigation', { name: 'Agent tools' }).count(), 0, 'Memories shows the Agent tools tabs');
   await shot('agents-memories');
 
   await tabs.getByRole('link', { name: 'Agent tools', exact: true }).click();
-  await page.waitForURL(`**/source/${id}/agents/contracts`);
+  await atRepo(page, account, id, `/agents/contracts`);
   const tools = page.getByRole('navigation', { name: 'Agent tools' });
   assert.deepEqual(
     (await tools.getByRole('link').allInnerTexts()).map((t) => t.trim()),
@@ -97,7 +98,7 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
     ['Find a breaking commit', 'bisects', /^No searches yet\./],
   ]) {
     await tools.getByRole('link', { name: tab, exact: true }).click();
-    await page.waitForURL(`**/source/${id}/agents/${section}`);
+    await atRepo(page, account, id, `/agents/${section}`);
     await see(page.getByText(empty), `the ${section} empty state`);
     await onlyHighlighted(page, 'Agent tools');
   }
