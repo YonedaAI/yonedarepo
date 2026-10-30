@@ -10,14 +10,17 @@ import { api, author, bindings, drainObjects, file, queued, scoped, signup, useP
 
 usePlatformFixture();
 
-/** Runs steps directly, retrying failures a few times like Workflows would. */
+/** Runs steps directly, retrying failures a few times like Workflows would (never a
+ * NonRetryableError); `attempts` counts every run of a step. */
+const attempts: string[] = [];
 const step: ImportStep = {
-  async do(_name, _config, callback) {
+  async do(name, _config, callback) {
     for (let attempt = 1; ; attempt++) {
+      attempts.push(name);
       try {
         return await callback();
-      } catch (e) {
-        if (attempt >= 4) throw e;
+      } catch (e: any) {
+        if (attempt >= 4 || e?.name === 'NonRetryableError') throw e;
       }
     }
   },
@@ -95,7 +98,7 @@ it('imports first-parent history from a remote and lands it', async () => {
 
   const created = await api('/repos/import', owner, { body: { name: 'imported', url: 'https://git.example/src.git', max_commits: 2 } }, env);
   expect(created.status).toBe(200);
-  expect(started).toMatchObject({ id: `import-${created.body.id}`, params: { repo: created.body.id, branch: 'main', max: 2 } });
+  expect(started).toMatchObject({ id: `import-${created.body.id}`, params: { repo: created.body.id, branch: undefined, max: 2 } });
   expect((await api(`/repos/${created.body.id}/import`, owner, {}, env)).body.status).toBe('running');
 
   const result = await runImport(env, started.params, step);
@@ -164,4 +167,50 @@ it('refuses a clone of history only the mirror holds at once, reading none of it
     expect(text, args.join(' ')).toMatch(/\n[0-9a-f]{4}ERR NOT_FOUND: Commit [0-9a-f]{40} is held only as imported history/);
     expect(treeReads, args.join(' ')).toBe(0);
   }
+});
+
+/** A remote whose default branch is `master` (Artifacts: a branch it lacks is NOT_FOUND). */
+function masterRemote(sourceStore: string, head: string) {
+  const remote = fakeRemote(sourceStore, head, 0);
+  const asked: (string | undefined)[] = [];
+  return {
+    asked,
+    ...remote,
+    import: async (params: any) => {
+      asked.push(params.source.branch);
+      if (params.source.branch && params.source.branch !== 'master')
+        throw Object.assign(new Error(`Branch not found: "${params.source.branch}"`), { code: 'NOT_FOUND' });
+      return remote.import(params);
+    },
+    get: async (name: string) => ({ ...(await remote.get(name)), info: async () => ({ remote: `https://artifacts.test/${name}`, defaultBranch: 'master' }) }),
+  };
+}
+
+it("imports the remote's default branch as main when none is named, and fails a missing branch at once", async () => {
+  const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2' } as unknown as Env;
+  const owner = { cookie: await signup('import_master') };
+  const source = await api('/repos', owner, { body: { name: 'src', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', 'master\n')], author } }, local);
+  const head = source.body.commit as string;
+  await drainObjects(local);
+  for (const message of queued.splice(0).filter((m) => m.kind === 'platform_project')) await projectRefs(local, message);
+  const remote = masterRemote(`yr-${source.body.id}`, head);
+  let started: any;
+  const workflows = { create: async (options: any) => ((started = options), { id: options.id }), get: async () => ({ status: async () => ({ status: 'running' }) }) };
+  const env = { ...scoped, ARTIFACTS: remote, PLATFORM_IMPORT: workflows } as unknown as Env;
+
+  const created = await api('/repos/import', owner, { body: { name: 'hello', url: 'https://git.example/hello.git' } }, env);
+  expect([created.status, created.body.branch]).toEqual([200, null]);
+  expect(started.params.branch).toBeUndefined();
+  expect(await runImport(env, started.params, step)).toMatchObject({ commit: head, version: 1 });
+  expect(remote.asked).toEqual([undefined]);
+  // The default branch's history is this repository's main.
+  expect((await api(`/repos/${created.body.id}/refs`, owner, {}, env)).body.refs).toEqual({ 'refs/heads/main': head });
+  expect((await api(`/repos/${created.body.id}/blob?path=a.txt`, owner, {}, env)).body.content).toBe('master\n');
+
+  // A branch the remote does not have fails the import in one attempt, saying why.
+  const named = await api('/repos/import', owner, { body: { name: 'named', url: 'https://git.example/hello.git', branch: 'main' } }, env);
+  expect(named.body.branch).toBe('main');
+  attempts.length = 0;
+  await expect(runImport(env, started.params, step)).rejects.toThrow(/Branch not found: "main"/);
+  expect(attempts).toEqual(['import into the object store']);
 });

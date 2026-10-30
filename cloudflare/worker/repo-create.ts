@@ -128,7 +128,8 @@ export async function importRepository(env: Env, requester: Credentials, body: J
   const url = String(body.url ?? '');
   if (!/^https:\/\/[^\s]+$/.test(url))
     throw new ApiError('INVALID_INPUT', 'url must be an HTTPS Git remote');
-  const branch = typeof body.branch === 'string' && body.branch ? body.branch : 'main';
+  // None named: the remote's default branch (its HEAD), whatever it is called.
+  const branch = typeof body.branch === 'string' && body.branch ? body.branch : undefined;
   const max = Math.min(Math.max(Number(body.max_commits ?? 100) || 100, 1), 5000);
   const id = newRepoId();
   const name = typeof body.name === 'string' && body.name ? body.name : id;
@@ -147,7 +148,7 @@ export async function importRepository(env: Env, requester: Credentials, body: J
     id: `import-${id}`,
     params: { repo: id, url, branch, max },
   });
-  return { id, import: instance.id, branch, max_commits: max, ...tokens };
+  return { id, import: instance.id, branch: branch ?? null, max_commits: max, ...tokens };
 }
 
 /** The listing row of a repository the authority accepted (a fork's too). */
