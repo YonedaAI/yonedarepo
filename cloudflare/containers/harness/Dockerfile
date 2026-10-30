@@ -30,7 +30,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
     && npm install -g @anthropic-ai/claude-code@2.1.312 @openai/codex@0.165.0 \
     && npm cache clean --force
 COPY --from=build /usr/local/bin/yoneda /usr/local/bin/git-remote-yoneda /usr/local/bin/opencode /usr/local/bin/
-COPY cloudflare/containers/harness/runner.mjs cloudflare/containers/harness/commands.mjs /opt/yoneda/harness/
+COPY cloudflare/containers/harness/runner.mjs cloudflare/containers/harness/commands.mjs cloudflare/containers/harness/version.json /opt/yoneda/harness/
 LABEL yoneda.managed-harness="1"
 RUN mkdir -p /work && chown agent:agent /work
 USER agent

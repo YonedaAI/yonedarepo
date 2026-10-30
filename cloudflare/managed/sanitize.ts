@@ -91,32 +91,61 @@ export function parseJson(text: string): unknown {
   }
 }
 
-/** Valid findings from a model reply, plus how many were dropped (bad anchor or credential). */
+/** Why a finding could not be posted on its line. */
+export type WithheldReason = 'anchor' | 'credential' | 'scanner';
+
+/** A finding that was not posted; it still counts toward the run's value (fail closed). */
+export interface Withheld {
+  severity: Severity;
+  /** Defused title, or null when showing it could leak a credential. */
+  title: string | null;
+  reason: WithheldReason;
+}
+
+/** Where the checkout sits in the harness container (runner.mjs CHECKOUT). */
+const CHECKOUT = '/work/repo/';
+
+/** The diff path a finding means: as written, or without the checkout's absolute prefix, a
+ * leading `./` or git's `a/` / `b/` (agents that read files through their tools write those). */
+function anchorPath(path: string, anchors: Anchors): string {
+  if (anchors.has(path)) return path;
+  for (const prefix of [CHECKOUT, './', 'a/', 'b/'])
+    if (path.startsWith(prefix) && anchors.has(path.slice(prefix.length)))
+      return path.slice(prefix.length);
+  return path;
+}
+
+/**
+ * Valid findings from a model reply, and those that cannot be posted: no line of the diff to
+ * anchor to (or malformed), or text that looks like a credential. An unknown severity counts as
+ * medium, so a malformed finding never lowers the value.
+ */
 export function validFindings(
   raw: unknown,
   anchors: Anchors,
-): { kept: Finding[]; withheld: number } {
+): { kept: Finding[]; withheld: Withheld[] } {
   const list = Array.isArray(raw)
     ? raw
     : Array.isArray((raw as { findings?: unknown })?.findings)
       ? (raw as { findings: unknown[] }).findings
       : [];
   const kept: Finding[] = [];
-  let withheld = 0;
+  const withheld: Withheld[] = [];
   for (const item of list.slice(0, 100)) {
     const f = (item ?? {}) as Record<string, unknown>;
-    const path = typeof f.path === 'string' ? f.path : '';
+    const path = anchorPath(typeof f.path === 'string' ? f.path : '', anchors);
     const line = Number(f.line);
-    const severity = String(f.severity ?? '').toLowerCase() as Severity;
+    const stated = String(f.severity ?? '').toLowerCase() as Severity;
+    const severity: Severity = SEVERITIES.has(stated) ? stated : 'medium';
     const anchored = Number.isSafeInteger(line) && anchors.get(path)?.has(line) === true;
     const title = defuse(f.title, 120);
     const why = defuse(f.why, 600);
-    if (!anchored || !SEVERITIES.has(severity) || !title) {
-      withheld++;
+    if (looksLikeCredential(`${f.title ?? ''} ${f.why ?? ''}`)) {
+      withheld.push({ severity, title: null, reason: 'credential' });
       continue;
     }
-    if (looksLikeCredential(`${f.title ?? ''} ${f.why ?? ''}`)) {
-      withheld++;
+    if (!anchored || !SEVERITIES.has(stated) || !title) {
+      withheld.push({ severity, title: title || null, reason: 'anchor' });
       continue;
     }
     kept.push({ path, line, severity, title, why });
