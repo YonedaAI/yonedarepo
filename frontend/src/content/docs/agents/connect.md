@@ -9,11 +9,13 @@ Agents are ordinary clients of the platform. A coding agent works in a Git clone
 
 ## 1. Give the agent a token
 
-Create a personal access token under **Settings → Personal access tokens** with the scopes the agent needs, and export it where the agent runs:
+Export a token where the agent runs. With the [CLI](/docs/guides/cli) signed in, reuse its login:
 
 ```sh
-export YONEDA_TOKEN=ypat_…
+export YONEDA_TOKEN=$(yoneda auth token)
 ```
+
+Or create a personal access token under **Settings → Personal access tokens** with only the scopes and repositories the agent needs, and export that.
 
 Every setup below reads the token from `YONEDA_TOKEN` when the agent starts; none of them writes a token into a file.
 
@@ -36,14 +38,14 @@ All of them point at the account MCP endpoint, `https://api.yonedarepo.com/api/v
 
 ### Claude Code plugin
 
-`yoneda setup claude` prints the two commands that add the plugin inside Claude Code:
+Inside Claude Code (version 2.1.224 or later), add YonedaRepo's marketplace and install the plugin. `yoneda setup claude` prints the same two commands:
 
 ```text
-/plugin marketplace add <marketplace>
-/plugin install yoneda@yoneda
+/plugin marketplace add https://yonedarepo.com/downloads/claude/marketplace.json
+/plugin install yoneda@yonedarepo
 ```
 
-The plugin's MCP server reads its address from `YONEDA_MCP_URL`; set it to `https://api.yonedarepo.com/api/v1/mcp`. To register the server for yourself instead of per project:
+The marketplace is served by yonedarepo.com and the plugin is a download pinned by its SHA-256, so you need no GitHub or other Git account. The plugin connects to `https://api.yonedarepo.com/api/v1/mcp`; `YONEDA_MCP_URL` points it at another platform. To register the MCP server for yourself instead of per project:
 
 ```sh
 claude mcp add --transport http --scope user yoneda https://api.yonedarepo.com/api/v1/mcp \
@@ -71,5 +73,6 @@ Any MCP client can connect with a JSON configuration; see [MCP](/docs/guides/mcp
 | Symptom | What to do |
 |---|---|
 | The agent's MCP calls answer 401 | `YONEDA_TOKEN` is not set in the agent's environment, or the token expired |
-| Claude Code connects to the wrong platform | Set `YONEDA_MCP_URL` to `https://api.yonedarepo.com/api/v1/mcp` |
+| `/plugin marketplace add` fails on the URL | Update Claude Code: URL marketplaces with downloaded plugins need 2.1.224 or later |
+| Claude Code connects to the wrong platform | Unset `YONEDA_MCP_URL`, or set it to the platform you mean |
 | Hooks do nothing | Install the CLI, and run the agent inside a clone with a YonedaRepo remote |

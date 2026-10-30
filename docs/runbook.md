@@ -108,6 +108,16 @@ Workflow deploy tokens live in the GitHub Environments `dev` (deploy-dev) and `p
 
 Each env's secrets file (`~/.config/yonedarepo/staging.env` for dev, the name kept from before the rename; `prod.env` for prod; mode 0600) holds the Worker secrets its spec lists, such as `OWNER_TOKEN`, `VAULT_KEY` (64 hex), and superfan's `CF_ANALYTICS_TOKEN` (read-only: Account Analytics, Workers Scripts, Queues, Containers; superfan looks up the platform's queue, Durable Object and container ids by name with it) and `SUPERFAN_READ_TOKEN`. `deploy` uploads only the secrets a Worker does not have yet.
 
+## Public downloads: the CLI and the Claude Code marketplace
+
+The front Worker serves `/install.sh` (`frontend/public/install.sh`, with the site's origin filled in) and `/downloads/*` from the `<prefix>-downloads` R2 bucket (`DOWNLOADS`; layout in `cloudflare/worker/downloads.ts`). `cargo xtask infra up --env <env>` creates the bucket.
+
+1. `cargo xtask downloads stage --env <env>` builds `yoneda` and `git-remote-yoneda` for darwin-arm64 and darwin-x64 (Cargo, on a Mac) and linux-x64 and linux-arm64 (static musl, `cargo zigbuild`: needs `cargo install cargo-zigbuild`, zig, and `rustup target add x86_64-apple-darwin x86_64-unknown-linux-musl aarch64-unknown-linux-musl`), packs each as `cli/<version>/yoneda-<version>-<target>.tar.gz` with `SHA256SUMS`, `cli/latest.json` and `cli/LATEST`, and zips `plugins/yoneda` as `claude/yoneda-<plugin version>.zip` with `claude/marketplace.json` pinning its sha256. All under `target/downloads/<env>/`. `--targets linux-x64,linux-arm64` stages fewer.
+2. `cargo xtask downloads upload --env <env> --dry-run` prints the wrangler commands; without `--dry-run` it runs them (needs `CLOUDFLARE_API_TOKEN` with R2 write). Version pointers (`cli/LATEST`, `cli/latest.json`, `claude/marketplace.json`) go last.
+3. Check: `curl -fsSL https://<site>/install.sh | sh` on a Mac and a Linux box, then `yoneda auth token --show` after `yoneda login`.
+
+The CLI version is the workspace version in `Cargo.toml`; the plugin's is `plugins/yoneda/.claude-plugin/plugin.json` (Claude Code updates a plugin only when it changes). Bump them before staging a new release: versioned files are served as immutable.
+
 ## Real-world kit
 
 `node tools/staging-realworld.mjs` exercises a live environment the way a person, an agent client and a script use the platform. It runs against dev unless `--prod` is given, prints a pass/fail table and writes evidence to `.local/staging/`. Nothing in it starts an agent run; only the model-check gate calls a model (the platform's own AI check, under $0.01).
