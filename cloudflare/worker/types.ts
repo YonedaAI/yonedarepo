@@ -108,7 +108,7 @@ export interface Env {
   SITE_EVENTS?: AnalyticsEngineDataset;
   /** Cloudflare Web Analytics site token (front Worker); set, public pages carry its beacon. */
   WEB_ANALYTICS_TOKEN?: string;
-  /** Site traffic reports (platform Worker, site-traffic.ts): the account and dataset the
+  /** Site traffic reports (platform Worker, platform-site-traffic.ts): the account and dataset the
    * Analytics Engine SQL API reads, with an Account Analytics Read token; any unset, none. */
   CF_ACCOUNT_ID?: string;
   SITE_EVENTS_DATASET?: string;
