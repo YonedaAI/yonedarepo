@@ -91,6 +91,8 @@ export class FakePlatform {
         repos: this.repos.map((id) => ({ id, name: `name-${id.slice(1, 5)}`, owner: this.account, role: owner ? 'owner' : 'read' })),
       });
     if (req.method === 'GET' && path === '/orgs') return ok({ orgs: [] });
+    if (req.method === 'GET' && path === '/api/auth/session')
+      return ok({ authenticated: true, username: owner ? this.account : 'someone-else' });
     const base = `/repos/${this.repo}`;
     if (req.method === 'GET' && path === base)
       return ok({ owner: this.account, automation: { paused: this.paused ? { by: 'user:owner' } : null } });

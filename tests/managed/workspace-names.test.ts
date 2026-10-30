@@ -87,3 +87,23 @@ describe('email-named workspaces', () => {
     expect((await managedFetch(raw, h.env)).status).toBe(404);
   });
 });
+
+describe('a personal workspace with no repositories yet', () => {
+  const as = (cookie: string) =>
+    new Request('https://site.example.com/api/managed/workspaces/owner', { headers: { cookie } });
+
+  it('shows its own account the agents and the starting credit', async () => {
+    const h = harness(newRepo(), {}, 'owner');
+    h.platform.repos.length = 0;
+    const res = await managedFetch(as('session=owner'), h.env);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ workspace: 'owner', repos: [], credit: { granted_usd: 5 } });
+  });
+
+  it('still refuses anyone else', async () => {
+    const h = harness(newRepo(), {}, 'owner');
+    h.platform.repos.length = 0;
+    const res = await managedFetch(as('session=reader'), h.env);
+    expect(res.status).toBe(403);
+  });
+});
