@@ -11,6 +11,7 @@ import { holdName, releaseNames } from './repo-paths';
 import { dispatchProjection } from './repo-projection';
 import { visibilityOf } from './repo-public';
 import { shardOutboxes } from './repo-shards';
+import { timed } from './repo-timing';
 import type { Env } from './types';
 
 /**
@@ -89,17 +90,17 @@ export function newRepoId() {
 }
 
 export async function createRepository(env: Env, requester: Credentials, body: Json) {
-  const auth = await owning(env, requester, body);
+  const auth = await timed('create.owner', () => owning(env, requester, body));
   const visibility = visibilityOf(body.visibility);
   const id = newRepoId();
   const name = typeof body.name === 'string' && body.name ? body.name : id;
   const owner = auth._session.workspace;
-  await holdName(env, owner, id, name);
+  await timed('create.name', () => holdName(env, owner, id, name));
   const ctx = new RepoContext(env, id, caller(env, id, auth));
   let store: ReturnType<typeof newStore>;
   try {
     store = newStore(env, `yr-${id}`);
-    await store.create();
+    await timed('create.store', () => store.create());
     await ctx.call({
       op: 'repo_init',
       name,
@@ -112,19 +113,26 @@ export async function createRepository(env: Env, requester: Credentials, body: J
     throw e;
   }
   // Commit shards start (migrate) now rather than on the first commits' path.
-  await shardOutboxes(env, id);
+  await timed('create.shards', () => shardOutboxes(env, id));
   // Listing projection, written after the authority accepted the repository.
-  await listRepository(env, id, auth._session.workspace, name, visibility);
-  const tokens = await issueTokens(ctx, body.tokens);
+  await timed('create.list', () =>
+    listRepository(env, id, auth._session.workspace, name, visibility),
+  );
+  const tokens = await timed('create.tokens', () => issueTokens(ctx, body.tokens));
   if (!Array.isArray(body.files) || body.files.length === 0) return { id, ...tokens };
-  const seeded = await commit(ctx, new RepoObjects(env, id, store), {
-    changes: body.files,
-    message: body.message ?? 'Import',
-    author: body.author,
-  });
+  const seeded = await timed('create.commit', () =>
+    commit(ctx, new RepoObjects(env, id, store), {
+      changes: body.files,
+      message: body.message ?? 'Import',
+      author: body.author,
+    }),
+  );
   const landed = await ctx.call({ op: 'repo_import', ref: 'main', commit: seeded.commit });
   // Main's head is published (and its holder started) before the first commits need it.
-  await Promise.all([dispatchProjection(env, id), refreshHead(env, id)]);
+  await Promise.all([
+    timed('create.project', () => dispatchProjection(env, id)),
+    timed('create.head', () => refreshHead(env, id)),
+  ]);
   return { id, commit: seeded.commit, tree: seeded.tree, version: landed.version, ...tokens };
 }
 
