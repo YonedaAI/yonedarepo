@@ -1,6 +1,6 @@
 // "Build on YonedaRepo": the home page's feature tour, one panel per shipped capability, in
-// the order and with the nav subtitles the owner set. A panel links to its `/features` entry and shows that entry's
-// mock unless it has its own (buildOnMocks.tsx).
+// the order and with the nav subtitles the owner set. A panel links to its own page
+// (featurePages.ts) and shows its `/features` entry's mock unless it has its own (buildOnMocks.tsx).
 import type { LucideIcon } from 'lucide-react';
 import {
   Bot,
@@ -26,7 +26,7 @@ export type BuildOnItem = {
   /** The panel headline: `lead` in full weight, `more` in muted grey after it. */
   lead: string;
   more: string;
-  /** A `/features` entry, linked as "Learn more"; its mock shows unless `mock` is set. */
+  /** A `/features` entry whose mock shows unless `mock` is set. */
   feature?: string;
   mock?: ReactNode;
 };

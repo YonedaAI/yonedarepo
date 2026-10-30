@@ -5,6 +5,8 @@ import type { Session } from '../../hooks/useSession';
 import type { Navigate } from '../shell/useRoute';
 import { AccountPanel } from '../workspace/AccountPanel';
 import { BLOG_POSTS, COMPANY_PAGES, DOCS_PAGES, LEGAL_PAGES } from './content';
+import { featureItemOf, featurePageAt } from './featurePages';
+import { SiteFeaturePage } from './SiteFeaturePage';
 import { SiteFeatures } from './SiteFeatures';
 import { SiteHome } from './SiteHome';
 import { SiteLayout } from './SiteLayout';
@@ -29,6 +31,10 @@ function pageTitle(site: SitePage): string {
       return 'YonedaRepo — source control for agents';
     case 'features':
       return 'Features';
+    case 'feature': {
+      const page = featurePageAt(site.slug);
+      return (page && featureItemOf(page)?.title) ?? 'Features';
+    }
     case 'pricing':
       return 'Pricing';
     case 'docs':
@@ -72,6 +78,9 @@ export function SiteRoot({
     <SiteLayout page={site} authenticated={session.authenticated} navigate={navigate}>
       {site.page === 'home' && <SiteHome navigate={navigate} />}
       {site.page === 'features' && <SiteFeatures navigate={navigate} />}
+      {site.page === 'feature' && (
+        <SiteFeaturePage key={site.slug} slug={site.slug} navigate={navigate} />
+      )}
       {site.page === 'pricing' && <SitePricing navigate={navigate} />}
       {site.page === 'docs' && <SiteDocs key={site.slug} slug={site.slug} navigate={navigate} />}
       {site.page === 'blog' && <SiteBlog navigate={navigate} />}

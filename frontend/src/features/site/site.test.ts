@@ -25,6 +25,7 @@ import {
   LEGAL_PAGES,
   LEGAL_SOURCES,
 } from './content';
+import { FEATURE_PAGES, featurePageOf } from './featurePages';
 import { FEATURES } from './features';
 import {
   agentUsageRows,
@@ -36,6 +37,7 @@ import {
   roundUpClean,
 } from './pricing';
 import { COMPARISONS } from './SiteCompare';
+import { SiteFeaturePage } from './SiteFeaturePage';
 import { SiteFeatures } from './SiteFeatures';
 import { checkHealth, FOOTER_COLUMNS, SOCIAL_LINKS, StatusPill } from './SiteFooter';
 import { SiteHome } from './SiteHome';
@@ -43,7 +45,7 @@ import { SiteLayout } from './SiteLayout';
 import { menuKey } from './SiteNavMenus';
 import { SiteBlog, SiteCompany, SiteDocs, SiteLegal } from './SitePages';
 import { SitePricing } from './SitePricing';
-import { SITE_NAV, siteView } from './siteRoute';
+import { navSection, SITE_NAV, siteView } from './siteRoute';
 
 const navigate = () => {};
 const render = (element: React.ReactElement) => renderToStaticMarkup(element);
@@ -52,6 +54,7 @@ const parse = (path: string) => parseSourceRoute(path, '');
 describe('site routes', () => {
   it.each([
     ['/features', { page: 'features' }],
+    ['/features/code-as-transactions', { page: 'feature', slug: 'code-as-transactions' }],
     ['/pricing', { page: 'pricing' }],
     ['/docs', { page: 'docs', slug: 'get-started' }],
     ['/docs/guides/changes', { page: 'docs', slug: 'guides/changes' }],
@@ -161,7 +164,9 @@ describe('site nav', () => {
     );
     expect(menu).toContain('Featured');
     expect(menu).toContain('>Read');
-    expect(menu).toContain('href="/features#landing"');
+    // Each item opens its own page; the featured card is Code as Transactions'.
+    for (const page of FEATURE_PAGES) expect(menu).toContain(`href="/features/${page.slug}"`);
+    expect(menu.match(/href="\/features\/code-as-transactions"/g)).toHaveLength(2);
     expect(menu).toContain('href="/features"');
     const company = html.slice(html.indexOf('id="site-menu-company"'), html.indexOf('</header>'));
     for (const href of ['/company/vision', '/company/about', '/source/explore'])
@@ -198,6 +203,66 @@ describe('site nav', () => {
   });
 });
 
+describe('feature pages', () => {
+  const page = (slug: string) => render(createElement(SiteFeaturePage, { slug, navigate }));
+
+  it('gives every tour feature one page, in tour order, with a unique address', () => {
+    expect(FEATURE_PAGES.map((p) => p.id)).toEqual(BUILD_ON.map((b) => b.id));
+    const slugs = FEATURE_PAGES.map((p) => p.slug);
+    expect(new Set(slugs).size).toBe(slugs.length);
+    for (const slug of slugs) {
+      expect(parse(`/features/${slug}`)).toEqual({ view: 'site', site: { page: 'feature', slug } });
+      expect(navSection({ page: 'feature', slug })).toBe('Features');
+    }
+  });
+
+  it('renders the hero, the mock, how it works and related features for each', () => {
+    for (const p of FEATURE_PAGES) {
+      const item = BUILD_ON.find((b) => b.id === p.id);
+      if (!item) throw new Error(`no tour item ${p.id}`);
+      const html = page(p.slug);
+      expect(html).toContain(`<p class="site-eyebrow">${escapeHtml(item.title)}</p>`);
+      expect(html).toContain(escapeHtml(p.headline));
+      expect(html).toContain(escapeHtml(item.subtitle));
+      expect(html).toContain('href="/signup"');
+      expect(DOCS_PAGES[p.docs]).toBeTruthy();
+      expect(html).toContain(`href="/docs/${p.docs}"`);
+      expect(html).toContain('site-mock');
+      expect(p.blocks.length).toBeGreaterThanOrEqual(3);
+      expect(p.blocks.length).toBeLessThanOrEqual(4);
+      for (const block of p.blocks) expect(html).toContain(escapeHtml(block.title));
+      expect(p.related).not.toContain(p.id);
+      for (const id of p.related)
+        expect(html).toContain(`href="/features/${featurePageOf(id)?.slug}"`);
+    }
+  });
+
+  it('quotes only the measured burst from the home comparison', () => {
+    const [burst] = COMPARISONS;
+    const stats = FEATURE_PAGES.flatMap((p) => (p.stat ? [p.stat] : []));
+    expect(stats).toEqual([
+      expect.objectContaining({
+        value: burst.ours.label,
+        versus: `${burst.theirs.name}: ${burst.theirs.label}`,
+      }),
+    ]);
+    // Review agents' blocks follow the shipped agents and the starting credit.
+    const agents = featurePageOf('review-agents');
+    for (const a of MANAGED_AGENTS)
+      expect(agents?.blocks).toContainEqual({
+        title: a.defaults.name,
+        text: a.defaults.description,
+      });
+    expect(page('review-agents')).toContain(`$${STARTING_CREDIT_USD}`);
+  });
+
+  it('says so at an unknown feature address', () => {
+    const html = page('nowhere');
+    expect(html).toContain('Feature not found');
+    expect(html).toContain('href="/features"');
+  });
+});
+
 describe('home', () => {
   const home = () => render(createElement(SiteHome, { navigate }));
 
@@ -223,10 +288,8 @@ describe('home', () => {
       expect(html).toContain(`id="build-${item.id}"`);
       expect(html).toContain(escapeHtml(item.title));
       expect(mockOf(item)).toBeTruthy();
-      if (item.feature) {
-        expect(FEATURES.map((f) => f.id)).toContain(item.feature);
-        expect(html).toContain(`href="/features#${item.feature}"`);
-      }
+      if (item.feature) expect(FEATURES.map((f) => f.id)).toContain(item.feature);
+      expect(html).toContain(`href="/features/${featurePageOf(item.id)?.slug}"`);
     }
     // The first item is current before any scrolling, and only one is.
     expect(html.match(/aria-current="true"/g)).toHaveLength(1);
@@ -320,6 +383,16 @@ describe('footer', () => {
             : render(createElement(SiteFeatures, { navigate }));
       expect(target).toContain(`id="${link.hash}"`);
     }
+  });
+
+  it('links Code as Transactions and Review agents to their own pages', () => {
+    const product = FOOTER_COLUMNS.find((c) => c.title === 'Product')?.links ?? [];
+    const route = (label: string) => {
+      const link = product.find((l) => l.label === label);
+      return link && 'route' in link ? formatSourceRoute(link.route) : undefined;
+    };
+    expect(route('Code as Transactions')).toBe('/features/code-as-transactions');
+    expect(route('Review agents')).toBe('/features/review-agents');
   });
 
   it('lists the set public profiles in order, each opening in a new tab', () => {

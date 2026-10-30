@@ -12,14 +12,14 @@ import { nextTheme, type Theme, useTheme } from '../shell/theme';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { SiteFooter } from './SiteFooter';
 import { SiteNavMenus } from './SiteNavMenus';
-import { featureLink, sectionLink, siteLink } from './siteLinks';
+import { sectionLink, siteLink } from './siteLinks';
 import { navSection, type SitePage } from './siteRoute';
 
 const THEME_LABEL: Record<Theme, string> = { system: 'System', light: 'Light', dark: 'Dark' };
 const THEME_ICON = { system: Monitor, light: Sun, dark: Moon };
 
 // The link helpers live in siteLinks.ts; pages import them from here as before.
-export { featureLink, sectionLink, siteLink };
+export { sectionLink, siteLink };
 
 export function SiteLayout({
   page,
@@ -97,10 +97,14 @@ export function SiteLayout({
           </div>
         </nav>
       </header>
-      {/* The home page's bands run flush to the frame; other pages keep the gutter. */}
+      {/* The home and feature pages' bands run flush to the frame; other pages keep the gutter. */}
       <main
         id="site-main"
-        className={page.page === 'home' ? 'site-main site-main-flush' : 'site-main'}
+        className={
+          page.page === 'home' || page.page === 'feature'
+            ? 'site-main site-main-flush'
+            : 'site-main'
+        }
       >
         {children}
       </main>

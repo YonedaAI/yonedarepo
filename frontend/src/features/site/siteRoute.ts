@@ -1,10 +1,11 @@
-// The public site's addresses (`/features`, `/pricing`, `/docs/...`, `/blog/...`,
+// The public site's addresses (`/features`, `/features/<feature>`, `/pricing`, `/docs/...`, `/blog/...`,
 // `/company/...`, `/signin`, `/signup`, `/terms`, `/privacy`) and when `/` shows the public home instead of the app.
 import type { SourceRoute } from '../source-platform/sourceRoute';
 
 export type SitePage =
   | { page: 'home' }
   | { page: 'features' }
+  | { page: 'feature'; slug: string }
   | { page: 'pricing' }
   | { page: 'docs'; slug: string }
   | { page: 'blog' }
@@ -21,6 +22,8 @@ const SLUG = /^[a-z0-9][a-z0-9-]*$/;
 export function parseSitePath(parts: string[]): SitePage | undefined {
   const [root, ...rest] = parts;
   if (root === 'features' && !rest.length) return { page: 'features' };
+  if (root === 'features' && rest.length === 1 && SLUG.test(rest[0]))
+    return { page: 'feature', slug: rest[0] };
   if (root === 'pricing' && !rest.length) return { page: 'pricing' };
   if (root === 'signin' && !rest.length) return { page: 'signin', mode: 'login' };
   if (root === 'signup' && !rest.length) return { page: 'signin', mode: 'signup' };
@@ -42,6 +45,8 @@ export function formatSitePage(site: SitePage): string {
       return '/';
     case 'docs':
       return site.slug === DOCS_HOME ? '/docs' : `/docs/${site.slug}`;
+    case 'feature':
+      return `/features/${site.slug}`;
     case 'post':
       return `/blog/${site.slug}`;
     case 'about':
@@ -68,6 +73,7 @@ export const SITE_NAV: { label: string; page: SitePage }[] = [
 /** Which nav section a page belongs to. */
 export function navSection(site: SitePage): string | undefined {
   if (site.page === 'post') return 'Blog';
+  if (site.page === 'feature') return 'Features';
   if (site.page === 'vision') return 'Company';
   return SITE_NAV.find((item) => item.page.page === site.page)?.label;
 }
