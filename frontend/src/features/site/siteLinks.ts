@@ -5,6 +5,9 @@ import { linkTo, type Navigate } from '../shell/useRoute';
 import { formatSourceRoute, type SourceRoute } from '../source-platform/sourceRoute';
 import type { SitePage } from './siteRoute';
 
+/** Yoneda Labs' events page (meetups and talks), hosted on Luma. */
+export const EVENTS_URL = 'https://luma.com/yoneda';
+
 export const siteLink = (page: SitePage, navigate: Navigate) =>
   linkTo({ view: 'site', site: page }, navigate);
 

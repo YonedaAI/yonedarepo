@@ -168,7 +168,10 @@ describe('site nav', () => {
     const company = html.slice(html.indexOf('id="site-menu-company"'), html.indexOf('</header>'));
     for (const href of ['/company/vision', '/company/about', '/source/explore'])
       expect(company).toContain(`href="${href}"`);
-    expect(company).not.toContain('Events');
+    // Events is Yoneda Labs' Luma page, opened in a new tab.
+    expect(company).toMatch(
+      /href="https:\/\/luma\.com\/yoneda" target="_blank" rel="noopener noreferrer">Events</,
+    );
   });
 
   it('opens a menu with Enter, Space or ArrowDown and closes it with Escape', () => {
