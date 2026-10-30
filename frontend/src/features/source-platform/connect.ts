@@ -45,12 +45,9 @@ export const mcpUrl = (origin: string) => `${origin}/api/v1/mcp`;
 /** The site beside an API origin, where downloads live: `https://api.x` → `https://x`. */
 export const siteOrigin = (origin: string) => origin.replace(/^(https?:\/\/)api\./, '$1');
 
-export const installSteps = (origin: string) =>
-  [
-    '# installs yoneda and git-remote-yoneda into ~/.local/bin (macOS and Linux)',
-    `curl -fsSL ${siteOrigin(origin)}/install.sh | sh`,
-    `${loginCommand(origin)}   # approve in the browser; the token is stored with mode 0600`,
-  ].join('\n');
+/** Installs yoneda and git-remote-yoneda; one line, so Copy gives exactly what to run. */
+export const installCommand = (origin: string) =>
+  `curl -fsSL ${siteOrigin(origin)}/install.sh | sh`;
 
 /** The public marketplace the site serves (no Git host account needed). */
 export const claudePluginSteps = (origin: string) =>
