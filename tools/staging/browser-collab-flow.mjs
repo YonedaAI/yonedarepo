@@ -175,11 +175,12 @@ export async function orgPages(page, { account, member, shot, cleanup }, m) {
     const done = await account.raw('DELETE', `/api/v1/orgs/${org}?confirm=${org}`);
     assert.ok(done.ok, `Delete org: ${done.status} ${done.body?.error?.code ?? ''}`);
   });
-  await accountSettings(page);
-  const orgs = page.getByRole('region', { name: 'Organizations', exact: true });
-  await orgs.getByLabel('New organization').fill(org);
-  await orgs.getByRole('button', { name: 'Create organization' }).click();
-  await settle(page.getByRole('heading', { level: 1, name: org }), [orgs.getByRole('alert')], { timeoutMs: 30_000, what: 'creating the organization' });
+  await accountSettings(page, 'Organizations');
+  await page.getByRole('button', { name: 'Create organization' }).click();
+  const createOrg = page.getByRole('dialog', { name: 'Create organization' });
+  await createOrg.getByLabel('Organization name').fill(org);
+  await createOrg.getByRole('button', { name: 'Create organization' }).click();
+  await settle(page.getByRole('heading', { level: 1, name: org }), [createOrg.getByRole('alert')], { timeoutMs: 30_000, what: 'creating the organization' });
   await page.waitForURL(`**/orgs/${org}`);
   await see(page.getByText(/You are an owner/), 'the org page naming the creator an owner');
   await see(railOrg(page, org), 'the org in the sidebar');

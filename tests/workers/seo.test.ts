@@ -163,7 +163,7 @@ it('describes a blog post from its front matter, and the home and docs with stru
 });
 
 it('marks signed-in app pages noindex and names a public repository, never a private one', async () => {
-  for (const path of ['/settings', '/agents', '/admin', '/source/explore']) {
+  for (const path of ['/settings', '/settings/billing', '/agents', '/admin', '/source/explore']) {
     const app = await page(path);
     expect(app.head.robots, path).toBe('noindex');
     expect(app.head.canonical, path).toBeUndefined();

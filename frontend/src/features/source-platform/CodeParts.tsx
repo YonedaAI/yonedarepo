@@ -73,7 +73,7 @@ export function SshCloneLine({
       {access?.front_door === 'tunnel' && (
         <p className="source-meta clone-hint">
           Needs cloudflared and an <code>~/.ssh/config</code> entry once:{' '}
-          <a href="/settings#ssh-keys">Settings → SSH keys</a>.
+          <a href="/settings/ssh-keys">Settings → SSH keys</a>.
         </p>
       )}
     </>

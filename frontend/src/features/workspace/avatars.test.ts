@@ -82,9 +82,9 @@ describe('the account menu', () => {
     expect(at).toEqual([...at].sort((a, b) => a - b));
     // No product changelog page exists yet, so the menu does not link one.
     expect(html).not.toContain('Changelog');
-    expect(html).toContain('href="/settings#account"');
-    expect(html).toContain('href="/settings#organizations"');
-    expect(html).toContain('href="/settings#billing"');
+    expect(html).toContain('href="/settings"');
+    expect(html).toContain('href="/settings/organizations"');
+    expect(html).toContain('href="/settings/billing"');
     expect(html).toContain('aria-haspopup="true"');
     for (const { href } of MENU_LINKS.filter((l) => l.external))
       expect(html).toContain(`href="${href}" target="_blank" rel="noopener"`);

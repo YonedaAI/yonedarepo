@@ -5,8 +5,14 @@
 // `/settings/branches`) still parse, into the view that replaced them. The public site's
 // pages (`site/siteRoute.ts`) parse here too, as one `site` view. A repository's readable
 // address (`/<handle>/<name>`) and a profile (`/<handle>`) parse and format in repoNames.ts.
-// The operators' admin pages are `/admin/*` (`admin` is a reserved handle).
+// The operators' admin pages are `/admin/*` (`admin` is a reserved handle). Account settings
+// are `/settings[/<section>]` (`account-settings/settingsRoute.ts`, old anchors included).
 import { isCanonicalAccountIdentifier } from '../../../../shared/account';
+import {
+  formatSettingsRoute,
+  parseSettingsPath,
+  type SettingsRoute,
+} from '../account-settings/settingsRoute';
 import { type AdminSection, isAdminSection } from '../admin/adminModel';
 import { formatSitePage, parseSitePath, type SitePage } from '../site/siteRoute';
 import { AGENT_SECTIONS, type AgentSection } from './agentModel';
@@ -32,13 +38,15 @@ export type SourceRoute =
   | { view: 'home' }
   | { view: 'repositories' }
   | { view: 'explore' }
-  | { view: 'settings' }
+  | SettingsRoute
   | { view: 'device'; code: string }
   /** The contact email's confirmation page (the emailed link; its button confirms). */
   | { view: 'verify-email'; account: string; token: string }
   | { view: 'org'; org: string }
-  /** The workspace's managed agents (`/agents`); `workspace` (an org) defaults to the account. */
-  | { view: 'agents-home'; workspace?: string }
+  /** The workspace's managed agents (`/agents`); `workspace` (an org) defaults to the account.
+   * `cardAdded`: back from Stripe (`?billing=added`), kept here because the page reads it once
+   * the session is known, after the shell has rewritten the address. */
+  | { view: 'agents-home'; workspace?: string; cardAdded?: true }
   /** One agent's page (`/agents/<id>`): its runs and setup, or a new custom agent (`/agents/new`). */
   | { view: 'agent-settings'; agent: string; workspace?: string }
   /** Set up or configure one agent (`/agents/<id>/configure`). */
@@ -94,7 +102,8 @@ const isSection = (value: string | undefined): value is RepoSettingsSection =>
 const isAgentSection = (value: string | undefined): value is AgentSection =>
   (AGENT_SECTIONS as readonly string[]).includes(value ?? '');
 
-export function parseSourceRoute(pathname: string, search: string): SourceRoute {
+/** `hash` matters only to the old single settings page's anchors. */
+export function parseSourceRoute(pathname: string, search: string, hash = ''): SourceRoute {
   const params = new URLSearchParams(search);
   const parts = pathname.split('/').filter(Boolean).map(decodeURIComponent);
   const [root, repo, view, ...rest] = parts;
@@ -106,7 +115,7 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
       account: params.get('account') ?? '',
       token: params.get('token') ?? '',
     };
-  if (root === 'settings' && !repo) return { view: 'settings' };
+  if (root === 'settings') return parseSettingsPath(parts.slice(1), params, hash);
   if (root === 'repositories' && !repo) return { view: 'repositories' };
   if (root === 'orgs' && repo && ORG_NAME.test(repo) && !view) return { view: 'org', org: repo };
   if (root === 'agents') return parseAgentsRoute(parts.slice(1), params);
@@ -116,7 +125,8 @@ export function parseSourceRoute(pathname: string, search: string): SourceRoute 
       ? { view: 'admin', section: 'users', account: view }
       : { view: 'admin', section: repo };
   }
-  if (root === 'source' && repo === 'tokens' && !view) return { view: 'settings' };
+  if (root === 'source' && repo === 'tokens' && !view)
+    return { view: 'settings', section: 'tokens' };
   if ((root === 'source' && repo === 'explore' && !view) || (root === 'explore' && !repo))
     return { view: 'explore' };
   const site = parseSitePath(parts);
@@ -187,7 +197,9 @@ function parseAgentsRoute(parts: string[], params: URLSearchParams): SourceRoute
     return { view: 'agent-configure', agent: first, ...space };
   if (first && AGENT_ID.test(first) && !repo)
     return { view: 'agent-settings', agent: first, ...space };
-  return { view: 'agents-home', ...space };
+  return params.get('billing') === 'added'
+    ? { view: 'agents-home', ...space, cardAdded: true }
+    : { view: 'agents-home', ...space };
 }
 
 export type AgentsRoute = Extract<
@@ -216,13 +228,14 @@ function formatAgentsRoute(route: AgentsRoute): string {
     if (route.agent) query.set('agent', route.agent);
   } else path = `/agents/runs/${route.runRepo}/${route.run}`;
   if (route.workspace) query.set('workspace', route.workspace);
+  if (route.view === 'agents-home' && route.cardAdded) query.set('billing', 'added');
   return query.size ? `${path}?${query}` : path;
 }
 
 export function formatSourceRoute(route: SourceRoute): string {
   if (isAgentsRoute(route)) return formatAgentsRoute(route);
   if (route.view === 'home') return '/';
-  if (route.view === 'settings') return '/settings';
+  if (route.view === 'settings') return formatSettingsRoute(route);
   if (route.view === 'repositories') return '/repositories';
   if (route.view === 'explore') return '/source/explore';
   if (route.view === 'org') return `/orgs/${route.org}`;

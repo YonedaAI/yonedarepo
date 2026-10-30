@@ -1,9 +1,10 @@
 // The shell's sidebar, icon rail and repository switcher: rows named "<name>, <label>" for
-// assistive technology, the open repository's pages (Settings only for its admins), Explore
-// signed in or out, and the switcher's search.
+// assistive technology, the open repository's pages (Settings only for its admins), the
+// Account group on settings pages, Explore signed in or out, and the switcher's search.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import type { AccountSection } from '../account-settings/settingsRoute';
 import { formatSourceRoute, type SourceRoute } from '../source-platform/sourceRoute';
 import { AppRail } from './AppRail';
 import { AppSidebar, labelled } from './AppSidebar';
@@ -84,6 +85,43 @@ describe('sidebar', () => {
     // Not on a repository: the switcher only.
     expect(sidebar({})).toContain('Choose a repository');
     expect(sidebar({})).not.toContain('aria-label="Repository"');
+  });
+});
+
+describe('the Account group', () => {
+  const group = (section: AccountSection) => {
+    const html = sidebar({ route: { view: 'settings', section } });
+    const start = html.indexOf('<nav class="side-nav" aria-label="Account"');
+    return start < 0 ? '' : html.slice(start, html.indexOf('</nav>', start));
+  };
+
+  it('lists the settings pages on any settings page, the open one current', () => {
+    const nav = group('billing');
+    expect([...nav.matchAll(/href="([^"]+)"/g)].map((m) => m[1])).toEqual([
+      '/settings',
+      '/settings/billing',
+      '/settings/tokens',
+      '/settings/ssh-keys',
+      '/settings/organizations',
+    ]);
+    expect([...nav.matchAll(/<span class="side-text">([^<]+)</g)].map((m) => m[1])).toEqual([
+      'General',
+      'Billing',
+      'Tokens',
+      'SSH keys',
+      'Organizations',
+    ]);
+    expect(nav).toContain('<p class="side-label">Account</p>');
+    expect(nav.match(/aria-current="page"/g)).toHaveLength(1);
+    expect(nav).toMatch(/aria-current="page" class="active" href="\/settings\/billing"/);
+    expect(group('general')).toMatch(/aria-current="page" class="active" href="\/settings"/);
+  });
+
+  it('stays out of other pages, and of a signed-out visitor', () => {
+    expect(sidebar({})).not.toContain('aria-label="Account"');
+    expect(
+      sidebar({ authenticated: false, route: { view: 'settings', section: 'general' } }),
+    ).not.toContain('aria-label="Account"');
   });
 });
 

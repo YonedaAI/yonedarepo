@@ -45,6 +45,15 @@ const billing = (over: Partial<BillingState> = {}): BillingState => ({
   ...over,
 });
 
+/** The titles of the page's cards, in order. */
+const cards = (html: string) =>
+  [...html.matchAll(/<section class="settings-card"[^>]*><h2[^>]*>([^<]+)</g)].map((m) => m[1]);
+/** One titled card's markup. */
+const cardOf = (html: string, title: string) => {
+  const start = html.lastIndexOf('<section', html.indexOf(`>${title}<`));
+  return html.slice(start, html.indexOf('</section>', start));
+};
+
 beforeEach(() => answers.byPath.clear());
 
 describe('Settings → Billing', () => {
@@ -56,10 +65,18 @@ describe('Settings → Billing', () => {
     expect(html).not.toContain('first run');
     expect(html).toContain('Adding a card unlocks $100.00 of promotional credit');
     expect(html).toContain('No card on file');
-    expect(html).toContain('<section id="billing"');
+    expect(cards(html)).toEqual([
+      'Credit balance',
+      'Payment method',
+      'Top-ups',
+      'Usage by repository and agent',
+    ]);
     // Without a card there is nothing to switch off.
     expect(html).not.toContain('Automatic top-up');
-    expect(html).toMatch(/<button type="button">Add a card<\/button>/);
+    // One Add a card, next to what it unlocks.
+    expect(html.match(/<button type="button">Add a card<\/button>/g)).toHaveLength(1);
+    expect(cardOf(html, 'Credit balance')).toContain('>Add a card<');
+    expect(cardOf(html, 'Payment method')).not.toContain('>Add a card<');
     expect(html).toContain('No top-ups yet');
     expect(html).toContain('<td>parser</td><td>Code review</td><td>3</td><td>$0.30</td>');
     answers.byPath.set('/workspaces/ada/billing', {
@@ -70,6 +87,25 @@ describe('Settings → Billing', () => {
       /<button type="button" disabled="" title="Card billing is coming">Add a card/,
     );
     expect(coming).toContain('No agent has run yet');
+    expect(cards(coming)).toContain('Usage by repository and agent');
+  });
+
+  it('keeps Add a card under Payment method once the promotion is used', () => {
+    answers.byPath.set('/workspaces/ada/billing', {
+      data: billing({ credit: credit({ promo: { usd: 100, granted: true } }) }),
+    });
+    const html = render(BillingSettings, { workspace: 'ada' });
+    expect(html).not.toContain('Adding a card unlocks');
+    expect(cardOf(html, 'Credit balance')).not.toContain('>Add a card<');
+    expect(cardOf(html, 'Payment method')).toContain('>Add a card<');
+  });
+
+  it('draws the page around a slow or failed read', () => {
+    answers.byPath.set('/workspaces/ada/billing', { loading: true });
+    expect(render(BillingSettings, { workspace: 'ada' })).toContain('Loading billing');
+    expect(render(BillingSettings, { workspace: 'ada' })).toContain('Every platform feature');
+    answers.byPath.set('/workspaces/ada/billing', { error: 'boom' });
+    expect(render(BillingSettings, { workspace: 'ada' })).toContain('Retry');
   });
 
   it('shows the card by brand and last four, top-ups, the rule and the failure banner', () => {
@@ -155,12 +191,12 @@ describe('the Agents page credit card', () => {
         top_up_failed: 'declined',
       }),
       billing: 'stripe',
-      manageHref: '/settings#billing',
+      manageHref: '/settings/billing',
     });
     expect(html).toContain('Agent credit');
     expect(html).toContain('$104.20');
     expect(html).toContain('Visa •••• 4242 · Auto top-up on · ');
-    expect(html).toContain('<a href="/settings#billing">Manage billing</a>');
+    expect(html).toContain('<a href="/settings/billing">Manage billing</a>');
     expect(html).toContain('The last top-up failed');
     expect(html).not.toContain('Add a card');
     // Switched off: the card says so, and no "Manage billing" where Settings is not this
@@ -179,7 +215,7 @@ describe('the Agents page credit card', () => {
       workspace: 'ada',
       credit: credit({ card, promo: { usd: 100, granted: true } }),
       billing: 'stripe',
-      manageHref: '/settings#billing',
+      manageHref: '/settings/billing',
       saving: 'saved',
     });
     expect(saved).toContain('role="status"');

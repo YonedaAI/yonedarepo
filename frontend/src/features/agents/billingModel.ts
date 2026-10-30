@@ -17,12 +17,15 @@ export const setupPath = (workspace: string) => `${ws(workspace)}/billing/setup`
 export const removeCardPath = (workspace: string) => `${ws(workspace)}/billing/card/remove`;
 export const autoTopUpPath = (workspace: string) => `${ws(workspace)}/billing/auto-top-up`;
 
-const withBillingAdded = (path: string) => `${path}${path.includes('?') ? '&' : '?'}billing=added`;
-/** Where Stripe sends the browser back to Settings once the card is saved. */
-export const RETURN_PATH = withBillingAdded('/settings');
+/** Where Stripe sends the browser back to Settings → Billing once the card is saved. */
+export const RETURN_PATH = formatSourceRoute({
+  view: 'settings',
+  section: 'billing',
+  cardAdded: true,
+});
 /** Where Stripe sends the browser back to the Agents page (an org's keeps `?workspace=`). */
 export const agentsReturnPath = (workspace?: string) =>
-  withBillingAdded(formatSourceRoute({ view: 'agents-home', ...(workspace ? { workspace } : {}) }));
+  formatSourceRoute({ view: 'agents-home', ...(workspace ? { workspace } : {}), cardAdded: true });
 
 const BRANDS: Record<string, string> = {
   visa: 'Visa',
