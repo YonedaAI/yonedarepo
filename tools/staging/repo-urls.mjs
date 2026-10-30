@@ -16,3 +16,10 @@ export async function repoPath(account, id) {
 export async function atRepo(page, account, id, rest = '') {
   await page.waitForURL(`**${await repoPath(account, id)}${rest}`);
 }
+
+/** Opens a repository from the sidebar, which lists them everywhere but the settings pages. */
+export async function openRepo(page, name) {
+  if (new URL(page.url()).pathname.startsWith('/settings'))
+    await page.getByRole('navigation', { name: 'Browse' }).getByRole('link', { name: 'Home', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).click();
+}

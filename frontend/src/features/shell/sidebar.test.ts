@@ -117,6 +117,19 @@ describe('the Account group', () => {
     expect(group('general')).toMatch(/aria-current="page" class="active" href="\/settings"/);
   });
 
+  it('leaves only Browse and Account on a settings page: no repositories, no switcher', () => {
+    const html = sidebar({
+      route: { view: 'settings', section: 'general' },
+      rows: [{ repo: a, name: 'parser' }],
+    });
+    expect(html).toContain('aria-label="Account"');
+    expect(html).toContain('aria-label="Browse"');
+    expect(html).not.toContain('aria-label="Repositories"');
+    expect(html).not.toContain('Your repositories');
+    expect(html).not.toContain('Choose a repository');
+    expect(html).not.toContain('parser');
+  });
+
   it('stays out of other pages, and of a signed-out visitor', () => {
     expect(sidebar({})).not.toContain('aria-label="Account"');
     expect(

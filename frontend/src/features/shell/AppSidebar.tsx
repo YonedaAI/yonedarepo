@@ -1,6 +1,7 @@
 // The shell's sidebar: Browse (Home, Repositories, Explore, Agents: the workspace's managed
-// agents, their runs and settings; Admin for operators), Account (the settings pages, while on
-// one), the account's repositories and organizations, then Repository: the switcher and the
+// agents, their runs and settings; Admin for operators), then on a settings page Account (those
+// pages) and nothing else; elsewhere the account's repositories and organizations, then
+// Repository: the switcher and the
 // open repository's pages. On a phone it is the navigation menu the top bar opens.
 import {
   BookOpenText,
@@ -131,6 +132,8 @@ export function AppSidebar({
   const repo = missing ? undefined : routeRepo(route);
   const page = routeTab(route);
   const pages = REPO_PAGES.filter((p) => p.id !== 'settings' || settings);
+  // The settings pages are about the account: its groups replace the repository ones.
+  const onAccount = route.view === 'settings';
   return (
     <aside className="sidebar" id="app-sidebar" aria-label="Sidebar">
       <a className="sidebar-brand" {...linkTo({ view: 'home' }, navigate)}>
@@ -187,7 +190,7 @@ export function AppSidebar({
           </a>
         )}
       </nav>
-      {authenticated && route.view === 'settings' && (
+      {authenticated && onAccount && (
         <nav className="side-nav" aria-label="Account" onKeyDown={arrowKeys}>
           <p className="side-label">Account</p>
           {ACCOUNT_SECTIONS.map((section) => {
@@ -205,7 +208,7 @@ export function AppSidebar({
           })}
         </nav>
       )}
-      {authenticated && (
+      {authenticated && !onAccount && (
         <nav className="side-nav side-repos" aria-label="Repositories" onKeyDown={arrowKeys}>
           <p className="side-label">Your repositories</p>
           <div className="side-scroll">
@@ -263,7 +266,7 @@ export function AppSidebar({
           ))}
         </nav>
       )}
-      {(authenticated || repo) && (
+      {(authenticated || repo) && !onAccount && (
         <div className="side-section">
           <p className="side-label">Repository</p>
           <RepoSwitcher rows={rows} current={repo} currentName={repoName} navigate={navigate} />
