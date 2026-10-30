@@ -230,6 +230,8 @@ describe('the shared pipeline', () => {
     expect(stored).toMatchObject({ harness: 'opencode', model: 'glm-5.3-flash' });
     expect(stored!.fallback).toBe('mimo-v2.6-flash failed (opencode exited with 1); used glm-5.3-flash');
     expect(h.harness.ended.size).toBe(2);
+    // Every start used its own, fresh container.
+    expect(new Set(h.harness.started.map((x) => x.name)).size).toBe(2);
   });
 
   it('code review lists no fallback: a failed run fails instead of trying another model', async () => {
