@@ -1,7 +1,8 @@
 // Card billing for a workspace's agents: the credit as the browser sees it (with the saved
 // card and the promotional credit it unlocks), saving a card through Stripe Checkout, removing
-// it, Stripe's webhooks (a saved card, a top-up's outcome), and the automatic top-up a low
-// balance asks for (queued, charged off-session with one idempotency key per top-up).
+// it, switching automatic top-up on or off, Stripe's webhooks (a saved card, a top-up's
+// outcome), and the automatic top-up a low balance asks for (queued, charged off-session with
+// one idempotency key per top-up).
 import {
   AUTO_TOP_UP,
   type BillingState,
@@ -45,6 +46,7 @@ export async function credit(env: ManagedEnv, workspace: string): Promise<Manage
     promo: { usd: promoMicrousd(env) / 1e6, granted: billing.promo_granted },
     card: billing.card,
     top_up_failed: billing.top_up_failed,
+    auto_top_up: billing.auto_top_up,
   };
 }
 
@@ -62,14 +64,15 @@ export async function billingState(
     credit: c,
     payment_method: billing.card,
     billing: stripeEnabled(env) ? 'stripe' : 'coming',
-    auto_top_up: { ...AUTO_TOP_UP },
+    auto_top_up: { ...AUTO_TOP_UP, enabled: billing.auto_top_up },
     top_ups: billing.top_ups,
     usage,
   };
 }
 
 /** `POST /billing/setup {return_path}`: a Stripe Checkout URL (setup mode) that saves a card;
- * the browser returns to `return_path` on this site. */
+ * the browser returns to `return_path` on this site, or, cancelled, to the same page without
+ * its `billing` flag (so it keeps an org's `?workspace=`). */
 export async function setupCard(env: ManagedEnv, req: Request, workspace: string) {
   if (!stripeEnabled(env))
     throw new BillingRefusal('NOT_CONFIGURED', 'Card billing is not set up here yet', 503);
@@ -82,6 +85,8 @@ export async function setupCard(env: ManagedEnv, req: Request, workspace: string
       400,
     );
   const origin = new URL(req.url).origin;
+  const cancel = new URL(path, origin);
+  cancel.searchParams.delete('billing');
   const ledger = ledgerStub(env, workspace);
   let customer = (await ledger.billing()).customer;
   if (!customer) {
@@ -92,7 +97,7 @@ export async function setupCard(env: ManagedEnv, req: Request, workspace: string
     customer,
     workspace,
     success_url: `${origin}${path}`,
-    cancel_url: `${origin}/settings`,
+    cancel_url: `${origin}${cancel.pathname}${cancel.search}`,
   });
   return { url };
 }
@@ -101,6 +106,14 @@ export async function setupCard(env: ManagedEnv, req: Request, workspace: string
 export async function removeCard(env: ManagedEnv, workspace: string) {
   const pm = await ledgerStub(env, workspace).removeCard();
   if (pm && stripeEnabled(env)) await detach(env, pm);
+}
+
+/** `POST /billing/auto-top-up {enabled}`: automatic top-up on or off; the card stays saved. */
+export async function setAutoTopUp(env: ManagedEnv, req: Request, workspace: string) {
+  const body = (await req.json().catch(() => null)) as { enabled?: unknown } | null;
+  if (typeof body?.enabled !== 'boolean')
+    throw new BillingRefusal('INVALID_INPUT', 'enabled is true or false', 400);
+  await ledgerStub(env, workspace).setAutoTopUp(body.enabled);
 }
 
 const resumeAll = async (env: ManagedEnv, resume: Paused[]) => {

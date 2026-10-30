@@ -56,6 +56,7 @@ const credit = (over: Partial<ManagedCredit> = {}): ManagedCredit => ({
   promo: { usd: 100, granted: false },
   card: null,
   top_up_failed: null,
+  auto_top_up: true,
   balance_usd: 4.6,
   paused: false,
   ...over,
@@ -116,6 +117,16 @@ describe('the Agents overview', () => {
     expect(html).toContain('Add a card to unlock $100.00 more.');
     expect(html).toContain('Card billing is coming');
     expect(html).toContain('1 repository');
+    // With a card: the card, whether top-up is on, and Settings → Billing (the account's own).
+    const card = { brand: 'visa', last4: '4242', added_at: 1 };
+    answers.byPath.set('/workspaces/ada', { data: { ...workspace, credit: credit({ card }) } });
+    const carded = render(AgentsPage, { workspace: 'ada', account: 'ada', orgs: [], navigate });
+    expect(carded).toContain('Visa •••• 4242 · Auto top-up on · ');
+    expect(carded).toContain('<a href="/settings#billing">Manage billing</a>');
+    answers.byPath.set('/workspaces/acme', { data: { ...workspace, credit: credit({ card }) } });
+    expect(
+      render(AgentsPage, { workspace: 'acme', account: 'ada', orgs: [], navigate }),
+    ).not.toContain('Manage billing');
     const paused = {
       ...workspace,
       agents: [{ ...workspace.agents[0], active: false }, ...workspace.agents.slice(1)],

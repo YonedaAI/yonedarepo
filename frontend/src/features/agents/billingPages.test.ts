@@ -31,6 +31,7 @@ const credit = (over: Partial<ManagedCredit> = {}): ManagedCredit => ({
   promo: { usd: 100, granted: false },
   card: null,
   top_up_failed: null,
+  auto_top_up: true,
   ...over,
 });
 const billing = (over: Partial<BillingState> = {}): BillingState => ({
@@ -38,7 +39,7 @@ const billing = (over: Partial<BillingState> = {}): BillingState => ({
   credit: credit(),
   payment_method: null,
   billing: 'stripe',
-  auto_top_up: { below_usd: 5, add_usd: 20 },
+  auto_top_up: { below_usd: 5, add_usd: 20, enabled: true },
   top_ups: [],
   usage: [{ repo: repoA, repo_name: 'parser', agent: 'code-review', runs: 3, cost_usd: 0.3 }],
   ...over,
@@ -55,6 +56,9 @@ describe('Settings → Billing', () => {
     expect(html).not.toContain('first run');
     expect(html).toContain('Adding a card unlocks $100.00 of promotional credit');
     expect(html).toContain('No card on file');
+    expect(html).toContain('<section id="billing"');
+    // Without a card there is nothing to switch off.
+    expect(html).not.toContain('Automatic top-up');
     expect(html).toMatch(/<button type="button">Add a card<\/button>/);
     expect(html).toContain('No top-ups yet');
     expect(html).toContain('<td>parser</td><td>Code review</td><td>3</td><td>$0.30</td>');
@@ -108,6 +112,25 @@ describe('Settings → Billing', () => {
     expect(html).toContain('>Failed<');
     expect(html).not.toContain('Adding a card unlocks');
   });
+
+  it('switches automatic top-up off without removing the card, and says how to stop paying', () => {
+    const withCard = { credit: credit({ card }), payment_method: card };
+    answers.byPath.set('/workspaces/ada/billing', { data: billing(withCard) });
+    const on = render(BillingSettings, { workspace: 'ada' });
+    expect(on).toMatch(/type="checkbox" role="switch" aria-checked="true" checked=""/);
+    expect(on).toContain('Automatic top-up');
+    expect(on).toContain(
+      'To stop all charges: turn off automatic top-up or remove your card. Agents keep running on your remaining credit, then pause. Pause or archive agents on the Agents page.',
+    );
+    answers.byPath.set('/workspaces/ada/billing', {
+      data: billing({ ...withCard, auto_top_up: { below_usd: 5, add_usd: 20, enabled: false } }),
+    });
+    const off = render(BillingSettings, { workspace: 'ada' });
+    expect(off).toMatch(/type="checkbox" role="switch" aria-checked="false"/);
+    expect(off).not.toContain('checked=""');
+    expect(off).toContain('Your card is not charged');
+    expect(off).toContain('Visa •••• 4242');
+  });
 });
 
 describe('the Agents page credit card', () => {
@@ -132,13 +155,50 @@ describe('the Agents page credit card', () => {
         top_up_failed: 'declined',
       }),
       billing: 'stripe',
+      manageHref: '/settings#billing',
     });
     expect(html).toContain('Agent credit');
     expect(html).toContain('$104.20');
-    expect(html).toContain(
-      'Auto top-up: $20.00 when the balance falls below $5.00 · Visa •••• 4242',
-    );
+    expect(html).toContain('Visa •••• 4242 · Auto top-up on · ');
+    expect(html).toContain('<a href="/settings#billing">Manage billing</a>');
     expect(html).toContain('The last top-up failed');
     expect(html).not.toContain('Add a card');
+    // Switched off: the card says so, and no "Manage billing" where Settings is not this
+    // workspace's billing (an org).
+    const off = render(PromoCard, {
+      workspace: 'acme',
+      credit: credit({ card, auto_top_up: false }),
+      billing: 'stripe',
+    });
+    expect(off).toContain('Visa •••• 4242 · Auto top-up off');
+    expect(off).not.toContain('Manage billing');
+  });
+
+  it('back from Stripe: says the card was saved, with the promotional credit only when granted', () => {
+    const saved = render(PromoCard, {
+      workspace: 'ada',
+      credit: credit({ card, promo: { usd: 100, granted: true } }),
+      billing: 'stripe',
+      manageHref: '/settings#billing',
+      saving: 'saved',
+    });
+    expect(saved).toContain('role="status"');
+    expect(saved).toContain('Card saved. $100.00 promotional credit added.');
+    const plain = render(PromoCard, {
+      workspace: 'ada',
+      credit: credit({ card }),
+      billing: 'stripe',
+      saving: 'saved',
+    });
+    expect(plain).toContain('Card saved.');
+    expect(plain).not.toContain('promotional credit added');
+    expect(
+      render(PromoCard, {
+        workspace: 'ada',
+        credit: credit(),
+        billing: 'stripe',
+        saving: 'waiting',
+      }),
+    ).toContain('Saving your card…');
   });
 });

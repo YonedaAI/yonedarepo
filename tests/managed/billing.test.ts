@@ -3,22 +3,24 @@
 // is topped up by an off-session charge to the card (one idempotency key per top-up), a failed
 // charge stops further top-ups and is reported, and the card can be removed. No card data
 // reaches the Worker: Stripe's webhook names the payment method, its brand and last four.
+import { runInDurableObject } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AUTO_TOP_UP } from '../../shared/managed-agents';
 import type { QueueMessage } from '../../cloudflare/managed/config';
 import { consume } from '../../cloudflare/managed/dispatch';
 import { managedFetch } from '../../cloudflare/managed/index';
 import { ledgerStub } from '../../cloudflare/managed/ledger';
+import { LEDGER_SCHEMA, migrate } from '../../cloudflare/managed/schema';
 import { FakeStripe, fakeGateway, type Harness, harness, newRepo, STRIPE_BASE, STRIPE_KEY, STRIPE_WEBHOOK_SECRET } from './fake';
 
 afterEach(() => vi.restoreAllMocks());
 
 const stripeEnv = { STRIPE_SECRET_KEY: STRIPE_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_API_BASE: STRIPE_BASE, PROMO_CREDIT_USD: '100' };
-const api = (h: Harness, path: string, init: RequestInit = {}) =>
+const api = (h: Harness, path: string, init: RequestInit = {}, cookie = 'session=owner') =>
   managedFetch(
     new Request(`https://site.example.com/api/managed/workspaces/${h.platform.account}${path}`, {
       ...init,
-      headers: { cookie: 'session=owner', 'content-type': 'application/json' },
+      headers: { cookie, 'content-type': 'application/json' },
     }),
     h.env,
   );
@@ -64,6 +66,19 @@ describe('saving a card', () => {
       'metadata[workspace]': h.platform.account,
       'setup_intent_data[metadata][workspace]': h.platform.account,
     });
+    // Back to where the card was added from (the Agents page, an org's included); a cancelled
+    // form returns there too, without the "card added" flag.
+    for (const [returnPath, cancel] of [
+      ['/agents?billing=added', '/agents'],
+      ['/agents?workspace=acme&billing=added', '/agents?workspace=acme'],
+      ['/settings?billing=added', '/settings'],
+    ]) {
+      await api(h, '/billing/setup', { method: 'POST', body: JSON.stringify({ return_path: returnPath }) });
+      expect(stripe.calls.filter((c) => c.path === '/v1/checkout/sessions').at(-1)!.form).toMatchObject({
+        success_url: `https://site.example.com${returnPath}`,
+        cancel_url: `https://site.example.com${cancel}`,
+      });
+    }
     for (const bad of ['//evil.example/x', 'https://evil.example/x', 'settings'])
       expect((await api(h, '/billing/setup', { method: 'POST', body: JSON.stringify({ return_path: bad }) })).status, bad).toBe(400);
   });
@@ -175,5 +190,56 @@ describe('automatic top-up', () => {
     expect(stripe.detached).toEqual(['pm_card_1']);
     expect(removed).toMatchObject({ payment_method: null, credit: { card: null, promo: { granted: true } } });
     expect(await spendBelowThreshold(h)).toBeNull();
+  });
+});
+
+describe('turning automatic top-up off', () => {
+  const setAuto = (h: Harness, body: unknown, cookie?: string) =>
+    api(h, '/billing/auto-top-up', { method: 'POST', body: JSON.stringify(body) }, cookie);
+
+  it('is on for a saved card, and off keeps the card but charges nothing until turned on again', async () => {
+    const { h, stripe } = await withCard();
+    expect((await (await api(h, '/billing')).json<any>()).auto_top_up).toEqual({ ...AUTO_TOP_UP, enabled: true });
+    const off = await setAuto(h, { enabled: false });
+    expect(off.status).toBe(200);
+    expect(await off.json()).toMatchObject({
+      auto_top_up: { ...AUTO_TOP_UP, enabled: false },
+      payment_method: { last4: '4242' },
+      credit: { auto_top_up: false },
+    });
+    // Kept across reads, and the overview's credit says so too.
+    expect((await (await api(h, '/billing')).json<any>()).auto_top_up.enabled).toBe(false);
+    expect((await (await api(h, '')).json<any>()).credit.auto_top_up).toBe(false);
+    const ledger = ledgerStub(h.env, h.platform.account);
+    const meta = { repo: h.platform.repo, run: 'r', agent: 'code-review', model: 'm' };
+    const left = (await ledger.balance()).balance;
+    await ledger.hold('spend', left - 1000, meta);
+    expect(await ledger.settle('spend', null, true, meta)).toBeNull();
+    expect(stripe.calls.filter((c) => c.path === '/v1/payment_intents')).toHaveLength(0);
+    await setAuto(h, { enabled: true });
+    await ledger.hold('more', 500, meta);
+    expect(await ledger.settle('more', null, true, meta)).toMatch(/^topup-\d+$/);
+  });
+
+  it('only a workspace owner can switch it, and only to on or off', async () => {
+    const { h } = await withCard();
+    expect((await setAuto(h, { enabled: false }, 'session=reader')).status).toBe(403);
+    for (const bad of [{}, { enabled: 'no' }, { enabled: 0 }, null])
+      expect((await setAuto(h, bad)).status, JSON.stringify(bad)).toBe(400);
+    expect((await (await api(h, '/billing')).json<any>()).auto_top_up.enabled).toBe(true);
+  });
+
+  it('upgrades a ledger at schema v2 with a saved card to automatic top-up on', async () => {
+    const stub = ledgerStub(harness().env, `ws-${crypto.randomUUID()}`);
+    await runInDurableObject(stub as unknown as DurableObjectStub, (_instance, state) => {
+      const sql = state.storage.sql;
+      sql.exec('DROP TABLE billing');
+      sql.exec('DROP TABLE top_ups');
+      sql.exec(LEDGER_SCHEMA[1]);
+      sql.exec('UPDATE schema_version SET version = 2');
+      sql.exec("INSERT INTO billing (id, customer, payment_method, brand, last4, card_added_at) VALUES (1, 'cus', 'pm', 'visa', '4242', 1)");
+      expect(migrate(sql, LEDGER_SCHEMA)).toBe(LEDGER_SCHEMA.length);
+      expect(sql.exec('SELECT payment_method, auto_top_up FROM billing').toArray()).toEqual([{ payment_method: 'pm', auto_top_up: 1 }]);
+    });
   });
 });
