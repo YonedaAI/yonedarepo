@@ -4,8 +4,9 @@
 // (`?billing=added`), and the credit card says once it is saved. An agent not set up offers Add agent (its set-up page);
 // a set-up one shows Active or Paused, its newest result and run count, and a ⋮ menu.
 import { Filter, MoreHorizontal, Search } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AgentState, WorkspaceState } from '../../../../shared/managed-agents';
+import { useMenuDismiss } from '../shell/menuDismiss';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { managedApi } from '../source-platform/sourceApi';
 import { useSource } from '../source-platform/useSource';
@@ -113,6 +114,8 @@ export function AgentsPage({
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const [enabledOnly, setEnabledOnly] = useState(false);
+  const workspaceMenu = useRef<HTMLDetailsElement>(null);
+  useMenuDismiss(workspaceMenu);
   const space: Space = workspace === account ? {} : { workspace };
   const spaces = workspaceOptions(account, orgs);
   const actions = useAgentActions(workspace, space, navigate, loaded.reload);
@@ -137,7 +140,7 @@ export function AgentsPage({
         <div className="agents-toolbar-left">
           <span className="agents-pill">All agents</span>
           {spaces.length > 1 && (
-            <details className="agents-menu">
+            <details ref={workspaceMenu} className="agents-menu">
               <summary aria-label="Workspace">
                 <MoreHorizontal size={16} aria-hidden="true" />
               </summary>
