@@ -227,7 +227,10 @@ describe('feature pages', () => {
       expect(html).toContain('href="/signup"');
       expect(DOCS_PAGES[p.docs]).toBeTruthy();
       expect(html).toContain(`href="/docs/${p.docs}"`);
-      expect(html).toContain('site-mock');
+      // The mock sits in the hero, after the copy.
+      const hero = html.slice(0, html.indexOf('</section>'));
+      expect(hero).toContain('site-mock');
+      expect(hero.indexOf('site-mock')).toBeGreaterThan(hero.indexOf('id="feature-heading"'));
       expect(p.blocks.length).toBeGreaterThanOrEqual(3);
       expect(p.blocks.length).toBeLessThanOrEqual(4);
       for (const block of p.blocks) expect(html).toContain(escapeHtml(block.title));

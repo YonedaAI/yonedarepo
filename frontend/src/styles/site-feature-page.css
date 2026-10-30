@@ -1,11 +1,18 @@
-/* A feature's own page (`/features/<slug>`): a hero band, the feature's mock large on the
-   surface colour, then "How it works" and "Related features" as rows of ruled cells. */
+/* A feature's own page (`/features/<slug>`): a hero with the copy on the left and the
+   feature's mock on the surface colour at the right (under the copy on narrower screens),
+   then "How it works" and "Related features" as rows of ruled cells. */
 .site-feature-hero.site-band {
-  padding-block: 72px 56px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  padding: 0;
+}
+.site-feature-copy {
+  align-self: center;
+  padding: 72px var(--site-gutter);
 }
 .site-feature-hero h1 {
   margin: 0 0 var(--sp-4);
-  max-width: 22ch;
+  max-width: 18ch;
   font-size: var(--fs-hero);
   line-height: 1.08;
   letter-spacing: -0.03em;
@@ -14,16 +21,23 @@
   padding-top: 0;
   margin-bottom: var(--sp-6);
 }
-.site-feature-visual.site-band {
+.site-feature-visual {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  padding: var(--sp-6) var(--site-gutter);
+  border-left: 1px solid var(--site-line);
   background: var(--site-surface);
 }
 .site-feature-visual .site-mock {
-  max-width: 880px;
+  width: 100%;
+  max-width: 720px;
   margin-inline: auto;
   font-size: var(--fs-base);
 }
 .site-feature-stat {
-  max-width: 880px;
+  max-width: 720px;
   margin: var(--sp-5) auto 0;
   color: var(--site-muted);
   font-size: var(--fs-sm);
@@ -63,6 +77,20 @@
   margin-bottom: var(--sp-2);
 }
 
+/* Below wide: the mock stacks under the copy, full width. */
+@media (max-width: 1100px) {
+  .site-feature-hero.site-band {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .site-feature-copy {
+    padding-block: 56px 40px;
+  }
+  .site-feature-visual {
+    border-left: 0;
+    border-top: 1px solid var(--site-line);
+  }
+}
+
 /* Between phone and wide: the four blocks as two rows of two. */
 @media (min-width: 801px) and (max-width: 1100px) {
   .site-feature-blocks {
@@ -77,8 +105,11 @@
 }
 
 @media (max-width: 800px) {
-  .site-feature-hero.site-band {
-    padding-block: 48px 40px;
+  .site-feature-copy {
+    padding-block: 40px 32px;
+  }
+  .site-feature-visual {
+    padding-block: var(--sp-5);
   }
   .site-feature-blocks,
   .site-feature-related {
