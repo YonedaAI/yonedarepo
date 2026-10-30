@@ -1,6 +1,7 @@
 // One search across a repository as the search API answers it (`git_grep`): files and
 // lines, memories, and groups of commits, session records and change requests, each with a
 // count. A record group is null when it was not asked for or the caller cannot read it.
+import { principalName } from './people';
 import type { SourceRoute } from './sourceRoute';
 
 /** A matching line; `ranges` are `[start, end)` in UTF-16 code units of `text`. */
@@ -107,8 +108,12 @@ export type RecordSection = {
 /** `12` or `1000+` (a group the platform stopped counting). */
 const counted = (group: RecordGroup<unknown>) => `${group.count}${group.capped ? '+' : ''}`;
 
-/** The record groups with any match, in the page's order. */
-export function recordSections(repo: string, answer: SearchAnswer): RecordSection[] {
+/** The record groups with any match, in the page's order; `name` shows each commit's principal. */
+export function recordSections(
+  repo: string,
+  answer: SearchAnswer,
+  name: (principal: string) => string = principalName,
+): RecordSection[] {
   const sections: RecordSection[] = [];
   if (answer.commits?.count)
     sections.push({
@@ -119,7 +124,7 @@ export function recordSections(repo: string, answer: SearchAnswer): RecordSectio
         key: c.commit,
         route: { view: 'commit', repo, commit: c.commit },
         label: `${c.commit.slice(0, 12)} ${c.subject}`,
-        detail: [c.principal, ...c.paths].join(' · '),
+        detail: [name(c.principal), ...c.paths].join(' · '),
       })),
     });
   if (answer.sessions?.count)

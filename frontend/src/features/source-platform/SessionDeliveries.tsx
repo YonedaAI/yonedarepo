@@ -2,8 +2,8 @@
 // (a file it read, a new prompt), as the agent hooks recorded them. Labels are the items'
 // current text; a prompt itself is never kept.
 import { linkTo, type Navigate } from '../shell/useRoute';
-import { recorder } from './agentModel';
 import { type Deliveries, deliveryCause } from './memoryModel';
+import { usePeople } from './people';
 import { Failure, Loading } from './SourceStatus';
 import { when } from './sourceApi';
 import { useSource } from './useSource';
@@ -17,6 +17,7 @@ export function SessionDeliveries({
   sessionId: string;
   navigate: Navigate;
 }) {
+  const people = usePeople();
   const loaded = useSource<Deliveries>(
     `/repos/${repo}/context/deliveries?session_id=${encodeURIComponent(sessionId)}`,
   );
@@ -43,7 +44,7 @@ export function SessionDeliveries({
                 <span>
                   <strong>{deliveryCause(d)}</strong>{' '}
                   <span className="source-meta">
-                    · {d.items.length} items · {d.bytes} bytes · {recorder(d.principal)} ·{' '}
+                    · {d.items.length} items · {d.bytes} bytes · {people.principal(d.principal)} ·{' '}
                     {when(d.at)}
                   </span>
                 </span>

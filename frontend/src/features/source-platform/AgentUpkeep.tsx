@@ -3,12 +3,14 @@
 // Both are started by agents through MCP (`git_pin`, `git_bisect`) or the API; these pages
 // only show them.
 import { linkTo, type Navigate } from '../shell/useRoute';
-import { type Bisect, type Pin, recorder, shortRef } from './agentModel';
+import { type Bisect, type Pin, shortRef } from './agentModel';
+import { usePeople } from './people';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha, when } from './sourceApi';
 import { useSource } from './useSource';
 
 export function AgentPins({ repo, navigate }: { repo: string; navigate: Navigate }) {
+  const people = usePeople();
   const loaded = useSource<{ pins: Pin[] }>(`/repos/${repo}/pins`);
   if (loaded.loading && !loaded.data) return <Loading what="kept commits" />;
   if (loaded.error) return <Failure error={loaded.error} onRetry={loaded.reload} />;
@@ -35,7 +37,7 @@ export function AgentPins({ repo, navigate }: { repo: string; navigate: Navigate
                 <code>{shortSha(p.commit)}</code> {p.subject}
               </a>
               <span className="source-meta">
-                kept by {recorder(p.pinned_by)}
+                kept by {people.principal(p.pinned_by)}
                 {p.reason ? ` because ${p.reason}` : ''} · {when(p.pinned_at)}
               </span>
             </li>
@@ -53,6 +55,7 @@ const STATUS: Record<Bisect['status'], string> = {
 };
 
 function BisectRow({ repo, b, navigate }: { repo: string; b: Bisect; navigate: Navigate }) {
+  const people = usePeople();
   const commit = (sha: string) => (
     <a {...linkTo({ view: 'commit', repo, commit: sha }, navigate)}>
       <code>{shortSha(sha)}</code>
@@ -64,7 +67,8 @@ function BisectRow({ repo, b, navigate }: { repo: string; b: Bisect; navigate: N
       <strong>{b.check}</strong> on <code>{shortRef(b.ref)}</code>
       <span className="source-meta">
         {b.candidates} candidate{b.candidates === 1 ? '' : 's'}
-        {b.bad && <> up to {commit(b.bad)}</>} · {recorder(b.requested_by)} · {when(b.created_at)}
+        {b.bad && <> up to {commit(b.bad)}</>} · {people.principal(b.requested_by)} ·{' '}
+        {when(b.created_at)}
       </span>
       {b.status === 'found' && b.result?.first_bad && (
         <span>First breaking commit: {commit(b.result.first_bad)}</span>

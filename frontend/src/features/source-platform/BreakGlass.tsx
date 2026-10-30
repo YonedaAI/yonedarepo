@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { usePeople } from './people';
 import { useReadOnly } from './repoAccess';
 import { Failure } from './SourceStatus';
 import { shortSha, sourceApi, when } from './sourceApi';
@@ -28,11 +29,12 @@ export function BreakGlassRecords({
   commit: string;
   records: BreakGlassRecord[];
 }) {
+  const people = usePeople();
   return records.map((r) => (
     <p key={r.seq} className="source-break-glass-record">
       <span className="source-badge-danger">Break-glass</span> {describe(r, commit)} on{' '}
-      {(r.refname ?? '').replace(/^refs\/heads\//, '')} by {r.actor} · {when(r.created_at)} —{' '}
-      {r.reason}
+      {(r.refname ?? '').replace(/^refs\/heads\//, '')} by {people.principal(r.actor)} ·{' '}
+      {when(r.created_at)} — {r.reason}
     </p>
   ));
 }

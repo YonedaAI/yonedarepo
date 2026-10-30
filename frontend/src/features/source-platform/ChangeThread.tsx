@@ -1,7 +1,7 @@
 // Comments on a change: one comment, a composer, and a line thread with reply and resolve.
 import { type FormEvent, useState } from 'react';
 import type { Anchor, ChangeComment, Thread } from './changeModel';
-import { who } from './changeModel';
+import { usePeople } from './people';
 import { useReadOnly } from './repoAccess';
 import { Failure } from './SourceStatus';
 import { shortSha, sourceApi, when } from './sourceApi';
@@ -13,10 +13,14 @@ export const postComment = (repo: string, number: number, input: CommentInput) =
   sourceApi(`/repos/${repo}/changes/${number}/comments`, { body: input });
 
 export function CommentItem({ comment }: { comment: ChangeComment }) {
+  const people = usePeople();
   return (
-    <article className="source-comment" aria-label={`Comment by ${who(comment.principal)}`}>
+    <article
+      className="source-comment"
+      aria-label={`Comment by ${people.principal(comment.principal)}`}
+    >
       <header className="source-meta">
-        <strong>{who(comment.principal)}</strong> · {when(comment.at)}
+        <strong>{people.principal(comment.principal)}</strong> · {when(comment.at)}
         {comment.resolved_at !== null && ' · resolved'}
       </header>
       <p>{comment.body}</p>

@@ -3,9 +3,11 @@
 import { createElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { CommentItem } from './ChangeThread';
 import { FileTable } from './FileTable';
-import { ago, directoryActivity, type LogEntry, principalName } from './fileActivity';
+import { ago, directoryActivity, type LogEntry } from './fileActivity';
 import { blocks, Markdown } from './markdown';
+import { accountName, HIDDEN_ACCOUNT, principalName, ShowEmailsContext } from './people';
 import { apiRef } from './RepoFiles';
 import { landingNeeds } from './repoStatus';
 
@@ -48,6 +50,38 @@ describe('directory activity', () => {
     expect(principalName('user:ada')).toBe('ada');
     expect(principalName('token:ci')).toBe('ci (token)');
     expect(principalName('system')).toBe('system');
+  });
+  it('never shows an email-named account unless the page allows it', () => {
+    expect(principalName('user:ada@example.com')).toBe(HIDDEN_ACCOUNT);
+    expect(principalName('user:ada@example.com', true)).toBe('ada@example.com');
+    expect(principalName('break-glass:user:ada@example.com')).toBe(
+      `break-glass:user:${HIDDEN_ACCOUNT}`,
+    );
+    expect(accountName('ada.l+git@mail.example.co.uk')).toBe(HIDDEN_ACCOUNT);
+    expect(accountName('ada')).toBe('ada');
+    const comment = {
+      id: 1,
+      commit: 'a'.repeat(40),
+      path: null,
+      line: null,
+      side: null,
+      body: 'Looks good',
+      principal: 'user:ada@example.com',
+      at: 0,
+      resolved_at: null,
+    };
+    const page = (show?: boolean) => {
+      const item = createElement(CommentItem, { comment });
+      return renderToStaticMarkup(
+        show === undefined
+          ? item
+          : createElement(ShowEmailsContext.Provider, { value: show }, item),
+      );
+    };
+    // Outside a repository page, and for a viewer who is not a member, the address is hidden.
+    expect(page()).not.toContain('@');
+    expect(page(false)).toContain(`<strong>${HIDDEN_ACCOUNT}</strong>`);
+    expect(page(true)).toContain('ada@example.com');
   });
 });
 

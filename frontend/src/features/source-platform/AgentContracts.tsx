@@ -3,13 +3,8 @@
 // record still holds on main (authored) or the code changed since (stale: out of date).
 import { useState } from 'react';
 import { linkTo, type Navigate } from '../shell/useRoute';
-import {
-  appendPage,
-  type ContractGroup,
-  type ContractRecord,
-  groupContracts,
-  recorder,
-} from './agentModel';
+import { appendPage, type ContractGroup, type ContractRecord, groupContracts } from './agentModel';
+import { usePeople } from './people';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha, sourceApi, when } from './sourceApi';
 import { useSource } from './useSource';
@@ -41,6 +36,7 @@ function ContractRow({
   group: ContractGroup;
   navigate: Navigate;
 }) {
+  const people = usePeople();
   const [open, setOpen] = useState(false);
   const latest = group.records[0];
   return (
@@ -53,7 +49,7 @@ function ContractRow({
           <span className="agent-summary">{latest.contract.summary ?? '(no summary)'}</span>
           <span className="source-meta">
             {group.records.length} record{group.records.length === 1 ? '' : 's'} · latest by{' '}
-            {recorder(latest.recorded_by)} · {when(latest.recorded_at)}
+            {people.principal(latest.recorded_by)} · {when(latest.recorded_at)}
           </span>
         </summary>
         {open && <StatusOnMain repo={repo} group={group} />}
@@ -65,7 +61,7 @@ function ContractRow({
                 <a {...linkTo({ view: 'commit', repo, commit: r.commit }, navigate)}>
                   <code>{shortSha(r.commit)}</code>
                 </a>{' '}
-                · {recorder(r.recorded_by)}
+                · {people.principal(r.recorded_by)}
               </span>
               <pre>{JSON.stringify(r.contract, null, 2)}</pre>
             </li>
