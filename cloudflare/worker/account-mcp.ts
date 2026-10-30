@@ -5,6 +5,7 @@
 // each with the caller's own credentials (session, personal access token or repository
 // token), so scopes and allowlists are enforced exactly where they are for REST.
 import platformTools from '../../backend/crates/yoneda-core/src/platform_tools.json';
+import { forViewer } from './principal-privacy';
 import { operation, serveMcp } from './repo-mcp';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import type { Env } from './types';
@@ -223,7 +224,9 @@ export function accountMcp(req: Request, env: Env, auth: Credentials, route: Rou
       const run = operation(name);
       const { repo, ...toolArgs } = args;
       const id = await resolve(repo);
-      return run(new RepoContext(env, id, caller(env, id, auth)), toolArgs);
+      const ctx = new RepoContext(env, id, caller(env, id, auth));
+      // A non-member sees accounts by handle, never by address (principal-privacy).
+      return forViewer(env, await run(ctx, toolArgs), () => ctx.status());
     },
   });
 }

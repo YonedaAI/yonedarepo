@@ -97,6 +97,21 @@ op_names! {
     }
 }
 
+op_names! {
+    /// Handles (on a handle's own instance, or the account's) and the repository names an
+    /// owner holds.
+    pub(crate) enum HandleOp {
+        Reserve = "handle_reserve",
+        Release = "handle_release",
+        Lookup = "handle_lookup",
+        Set = "handle_set",
+        Get = "handle_get",
+        RepoClaim = "owned_repo_claim",
+        RepoRelease = "owned_repo_release",
+        RepoResolve = "owned_repo_resolve",
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum AccountOp {
@@ -109,6 +124,7 @@ pub(crate) enum AccountOp {
     OAuth(OAuthOp),
     Org(OrgOp),
     OrgMember(OrgMemberOp),
+    Handle(HandleOp),
 }
 
 impl AccountOp {
@@ -131,6 +147,7 @@ impl AccountOp {
             Self::OAuth(op) => op.name(),
             Self::Org(op) => op.name(),
             Self::OrgMember(op) => op.name(),
+            Self::Handle(op) => op.name(),
         }
     }
 
@@ -145,6 +162,7 @@ impl AccountOp {
         all.extend(OAuthOp::ALL.iter().copied().map(Self::OAuth));
         all.extend(OrgOp::ALL.iter().copied().map(Self::Org));
         all.extend(OrgMemberOp::ALL.iter().copied().map(Self::OrgMember));
+        all.extend(HandleOp::ALL.iter().copied().map(Self::Handle));
         all
     }
 }

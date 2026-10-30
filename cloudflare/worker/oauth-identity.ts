@@ -4,7 +4,7 @@
 // SSH fingerprint claims, a claim is re-checked with its account, so a stale one grants
 // nothing. A matching email never merges accounts: the person signs in to the existing
 // account and links the provider there.
-import { normalizeAccountIdentifier } from '../../shared/account';
+import { isReservedHandle, normalizeAccountIdentifier } from '../../shared/account';
 import { accountCreated } from './account-email';
 import type { ProviderIdentity } from './oauth-providers';
 import { sha } from './storage';
@@ -193,7 +193,9 @@ export function candidates(identity: ProviderIdentity): string[] {
     () =>
       `${base}_${[...crypto.getRandomValues(new Uint8Array(2))].map((b) => b.toString(16).padStart(2, '0')).join('')}`,
   );
-  return [base, ...numbered, ...random].filter((n) => normalizeAccountIdentifier(n) === n);
+  return [base, ...numbered, ...random].filter(
+    (n) => normalizeAccountIdentifier(n) === n && !isReservedHandle(n),
+  );
 }
 
 const printable = (value: string) => value.replace(/[^\x21-\x7e]/g, '').slice(0, 100);

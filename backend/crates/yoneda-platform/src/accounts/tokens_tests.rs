@@ -39,10 +39,10 @@ fn workspace_schema_migrates_fresh_repeat_and_from_version_one() {
         .map(|r| r["version"].as_i64().unwrap())
         .collect::<Vec<_>>()
     };
-    assert_eq!(versions(&fresh), vec![1, 2, 3, 4, 5, 6, 7]);
+    assert_eq!(versions(&fresh), vec![1, 2, 3, 4, 5, 6, 7, 8]);
     // Repeat application is a no-op.
     at(&fresh, 2000, json!({"op":"pat_list"})).unwrap();
-    assert_eq!(versions(&fresh), vec![1, 2, 3, 4, 5, 6, 7]);
+    assert_eq!(versions(&fresh), vec![1, 2, 3, 4, 5, 6, 7, 8]);
 
     // A store at version 1 (accounts only) upgrades in place and keeps its account.
     let old = NativeStore::memory().unwrap();
@@ -69,7 +69,7 @@ fn workspace_schema_migrates_fresh_repeat_and_from_version_one() {
         at(&old, 3000, json!({"op":"pat_list"})).unwrap()["tokens"],
         json!([])
     );
-    assert_eq!(versions(&old), vec![1, 2, 3, 4, 5, 6, 7]);
+    assert_eq!(versions(&old), vec![1, 2, 3, 4, 5, 6, 7, 8]);
 
     // An applied migration that differs from the committed one is refused.
     old.query(

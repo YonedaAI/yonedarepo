@@ -307,3 +307,30 @@ fn upgrades_from_the_session_ids_schema_as_private() {
             .is_err()
     );
 }
+
+#[test]
+fn only_the_owner_renames_and_a_check_changes_nothing() {
+    let (h, _) = seeded();
+    let name = |h: &Harness| h.ok(OWNER, json!({"op":"repo_status"}))["name"].clone();
+    for who in [AGENT, CI] {
+        assert_eq!(
+            code(h.run(who, json!({"op":"repo_rename","name":"other"}))),
+            "FORBIDDEN"
+        );
+    }
+    assert_eq!(
+        code(h.run(OWNER, json!({"op":"repo_rename","name":".hidden"}))),
+        "INVALID_INPUT"
+    );
+    let checked = h.ok(
+        OWNER,
+        json!({"op":"repo_rename","name":"Renamed","check":true}),
+    );
+    assert_eq!(
+        checked,
+        json!({"name":"Renamed","previous":"demo","workspace":"ws-1"})
+    );
+    assert_eq!(name(&h), "demo");
+    h.ok(OWNER, json!({"op":"repo_rename","name":"Renamed"}));
+    assert_eq!(name(&h), "Renamed");
+}

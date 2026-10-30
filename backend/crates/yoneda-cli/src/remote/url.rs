@@ -44,6 +44,42 @@ pub fn parse(url: &str) -> Result<RemoteUrl> {
     })
 }
 
+/// A remote named by readable path (`yoneda::https://<platform>/<handle>/<name>`, any
+/// spelling `parse` takes): its origin, the owner's handle and the repository's name, for
+/// the platform to resolve to an id (`GET /api/v1/resolve/<handle>/<name>`).
+pub fn parse_path(url: &str) -> Option<(String, String, String)> {
+    let url = url.trim();
+    let url = url.strip_prefix("yoneda::").unwrap_or(url);
+    let https = url
+        .strip_prefix("yoneda://")
+        .map(|rest| format!("https://{rest}"));
+    let url = https.as_deref().unwrap_or(url);
+    let scheme_end = url.find("://")? + 3;
+    let slash = url[scheme_end..].find('/')? + scheme_end;
+    let (origin, path) = url.split_at(slash);
+    let path = path.trim_end_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    let (handle, name) = path.strip_prefix('/')?.split_once('/')?;
+    let handle_ok = (3..=32).contains(&handle.len())
+        && handle.as_bytes()[0].is_ascii_alphabetic()
+        && handle
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_');
+    let name_ok = !name.is_empty()
+        && name.len() <= 100
+        && !name.starts_with('.')
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
+    (handle_ok && name_ok).then(|| {
+        Some((
+            normalize_origin(origin).ok()?,
+            handle.to_ascii_lowercase(),
+            name.to_owned(),
+        ))
+    })?
+}
+
 /// Whether `url` (a remote's configured URL) is the platform's: a `yoneda:` remote for the
 /// helper, or stock Git over its smart HTTP.
 pub fn is_platform(url: &str) -> bool {
@@ -97,6 +133,33 @@ mod tests {
             format!("yoneda::http://127.0.0.1:8787/{REPO}")
         );
         Ok(())
+    }
+
+    #[test]
+    fn reads_a_readable_path_for_the_platform_to_resolve() {
+        let want = Some((
+            "https://dev.yonedarepo.com".to_owned(),
+            "ada".to_owned(),
+            "Testing".to_owned(),
+        ));
+        for url in [
+            "yoneda::https://dev.yonedarepo.com/ada/Testing",
+            "yoneda://dev.yonedarepo.com/Ada/Testing.git",
+            "https://dev.yonedarepo.com/ada/Testing/",
+        ] {
+            assert_eq!(parse_path(url), want, "{url}");
+        }
+        for url in [
+            "https://dev.yonedarepo.com/ada",
+            "https://dev.yonedarepo.com/ada/a/b",
+            "https://dev.yonedarepo.com/a/repo",
+            "https://dev.yonedarepo.com/ada/.hidden",
+            "git@github.com:ada/repo.git",
+        ] {
+            assert_eq!(parse_path(url), None, "{url}");
+        }
+        // An id path is never a readable one's job.
+        assert!(parse(&format!("https://dev.yonedarepo.com/{REPO}")).is_ok());
     }
 
     #[test]
