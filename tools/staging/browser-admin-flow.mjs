@@ -46,10 +46,11 @@ export async function adminPages(page, { api, account, repo: { id, name }, shot,
     if (!orgDeleted) await account.raw('DELETE', `/api/v1/orgs/${org}?confirm=${org}`);
   });
   await accountSettings(page, 'Organizations');
-  const orgs = page.getByRole('region', { name: 'Organizations', exact: true });
-  await orgs.getByLabel('New organization').fill(org);
-  await orgs.getByRole('button', { name: 'Create organization' }).click();
-  await settle(page.getByRole('heading', { level: 1, name: org }), [orgs.getByRole('alert')], { timeoutMs: 30_000, what: 'creating the organization to delete' });
+  await page.getByRole('button', { name: 'Create organization' }).click();
+  const createOrg = page.getByRole('dialog', { name: 'Create organization' });
+  await createOrg.getByLabel('Organization name').fill(org);
+  await createOrg.getByRole('button', { name: 'Create organization' }).click();
+  await settle(page.getByRole('heading', { level: 1, name: org }), [createOrg.getByRole('alert')], { timeoutMs: 30_000, what: 'creating the organization to delete' });
 
   // Personal access token, limited to the org: shown once, used, revoked from its row.
   await accountSettings(page, 'Tokens');
