@@ -36,6 +36,7 @@ import {
   PRICING,
   roundUpClean,
 } from './pricing';
+import { SiteBlog } from './SiteBlog';
 import { COMPARISONS } from './SiteCompare';
 import { SiteFeaturePage } from './SiteFeaturePage';
 import { SiteFeatures } from './SiteFeatures';
@@ -43,7 +44,7 @@ import { checkHealth, FOOTER_COLUMNS, SOCIAL_LINKS, StatusPill } from './SiteFoo
 import { SiteHome } from './SiteHome';
 import { SiteLayout } from './SiteLayout';
 import { menuKey } from './SiteNavMenus';
-import { SiteBlog, SiteCompany, SiteDocs, SiteLegal } from './SitePages';
+import { SiteCompany, SiteDocs, SiteLegal } from './SitePages';
 import { SitePricing } from './SitePricing';
 import { navSection, SITE_NAV, siteView } from './siteRoute';
 
