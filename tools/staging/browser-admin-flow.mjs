@@ -131,7 +131,7 @@ export async function adminPages(page, { api, account, repo: { id, name }, shot,
   });
   await sleep(1_000);
   await page.reload();
-  await page.getByRole('heading', { level: 1, name: 'Settings' }).waitFor();
+  await page.getByRole('heading', { level: 1, name: 'Organizations', exact: true }).waitFor();
   assert.equal(await railOrg(page, org).count(), 0, `${org} is still in the sidebar`);
   await shot('org-deleted');
   m.org_deleted_in_ui = org;
