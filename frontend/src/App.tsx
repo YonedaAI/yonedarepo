@@ -34,6 +34,7 @@ import { forgetRepoNames, rememberRepoName } from './features/source-platform/re
 import { managedApi } from './features/source-platform/sourceApi';
 import { isAgentsRoute, routeRepo } from './features/source-platform/sourceRoute';
 import { useSource } from './features/source-platform/useSource';
+import { breadcrumbs } from './features/workspace/breadcrumbs';
 import { HandlePrompt } from './features/workspace/HandlePicker';
 import {
   type AuthResult,
@@ -230,6 +231,7 @@ export function App() {
       <main id="workspace">
         <WorkspaceHeader
           title={title}
+          crumbs={breadcrumbs(route, session.identity?.username)}
           loading={session.loading || platform.loading}
           authenticated={session.authenticated}
           identity={session.identity}

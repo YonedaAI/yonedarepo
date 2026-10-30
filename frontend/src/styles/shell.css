@@ -192,3 +192,39 @@ main {
 .topbar-menu {
   display: none;
 }
+/* Breadcrumbs: muted links, slash separators, the current page in bold. */
+.topbar-crumbs {
+  min-width: 0;
+}
+.topbar-crumbs ol {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  white-space: nowrap;
+}
+.topbar-crumbs li {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+.topbar-crumbs li + li::before {
+  content: "/" / "";
+  color: var(--faint);
+}
+.topbar-crumbs a {
+  color: var(--muted);
+  text-decoration: none;
+}
+.topbar-crumbs a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+.topbar-crumbs [aria-current="page"] {
+  overflow: hidden;
+  color: var(--text);
+  font-weight: 600;
+  text-overflow: ellipsis;
+}

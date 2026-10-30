@@ -100,11 +100,13 @@ export function AccountSettings({
   /** A new picture for the signed-in account (the shell's copy, so the menu follows it). */
   onAvatar?: (picture: Pick<AccountIdentity, 'avatar_url' | 'avatar_source'>) => void;
 }) {
-  // The account menu opens a section by its id (`/settings#organizations`).
+  // The account menu and the Agents page open a section by its id (`/settings#billing`). Most
+  // sections are drawn once the account is known, so the scroll waits for it.
+  const signedIn = identity !== null;
   useEffect(() => {
     const id = window.location.hash.slice(1);
-    if (id) document.getElementById(id)?.scrollIntoView({ block: 'start' });
-  }, []);
+    if (signedIn && id) document.getElementById(id)?.scrollIntoView({ block: 'start' });
+  }, [signedIn]);
   const tokens = useSource<{ tokens: Pat[] }>('/tokens');
   const [error, setError] = useState('');
   const clis = onlyTokens(tokens, isDeviceLogin);
