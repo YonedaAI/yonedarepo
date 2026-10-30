@@ -55,7 +55,7 @@ Pick from what step 2 shows:
 | Many sessions in one region | Cloudflare Load Balancers across replicas (a paid add-on; price to be checked) |
 | Demand changes through the day | A small Worker reads open sessions and starts or stops named instances |
 
-A session-count autoscaler is the last resort: gateways are cheap and always-on pool sizes are simpler.
+A session-count autoscaler is the last resort: gateways are cheap and always-on pool sizes are simpler. Libraries evaluated so far: [container-autoscaling.md](container-autoscaling.md).
 
 ## Separate from this plan
 
