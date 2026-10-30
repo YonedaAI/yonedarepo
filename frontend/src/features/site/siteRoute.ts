@@ -14,7 +14,7 @@ export type SitePage =
   | { page: 'legal'; doc: 'terms' | 'privacy' }
   | { page: 'signin'; mode: 'login' | 'signup' };
 
-export const DOCS_HOME = 'get-started';
+export const DOCS_HOME = 'introduction';
 const SLUG = /^[a-z0-9][a-z0-9-]*$/;
 
 /** A site page for a path's segments, or undefined for the app's own paths. */

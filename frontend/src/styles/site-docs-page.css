@@ -1,0 +1,254 @@
+/* A docs page: eyebrow, title, Copy page, the body's headings, code, callouts, tables and
+   cards, and previous/next. Phone-width changes are in site-docs.css. */
+.docs-main {
+  min-width: 0;
+  width: 100%;
+  max-width: calc(var(--site-reading) + 2 * 48px);
+  margin-inline: auto;
+  padding: 32px 48px 24px;
+}
+.docs-main :where(p, li, dd) {
+  max-width: none;
+}
+.docs-eyebrow {
+  margin: 0 0 8px;
+  font-size: var(--fs-sm);
+  font-weight: 500;
+  color: var(--site-accent);
+}
+.docs-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+.docs-title h1 {
+  flex: 1;
+  margin: 0;
+  font-size: var(--fs-3xl);
+}
+.docs-copy-page {
+  display: inline-flex;
+  flex: none;
+  margin-top: 6px;
+}
+.docs-summary {
+  margin: 12px 0 8px;
+  font-size: var(--fs-md);
+}
+.docs-prose {
+  font-size: var(--fs-base);
+  line-height: 1.65;
+}
+.docs-prose h2 {
+  font-size: var(--fs-xl);
+  margin: 40px 0 12px;
+}
+.docs-prose h3 {
+  font-size: var(--fs-md);
+  margin: 28px 0 8px;
+}
+.docs-heading {
+  scroll-margin-top: calc(var(--docs-top) + 16px);
+}
+.docs-anchor {
+  margin-left: 8px;
+  color: var(--site-faint);
+  text-decoration: none;
+  opacity: 0;
+}
+.docs-heading:hover .docs-anchor,
+.docs-anchor:focus-visible {
+  opacity: 1;
+}
+.docs-prose :not(pre) > code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--site-accent-soft);
+  color: var(--site-text);
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+.docs-prose :where(li + li) {
+  margin-top: 4px;
+}
+.docs-prose .markdown-table {
+  margin: 16px 0;
+  font-size: var(--fs-sm);
+}
+.docs-prose .markdown-table :where(th, td) {
+  padding: 8px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--site-line);
+}
+.docs-prose .markdown-table th {
+  color: var(--site-text);
+  font-weight: 500;
+}
+.docs-prose .markdown-table tr:last-child td {
+  border-bottom: 0;
+}
+.docs-code {
+  margin: 16px 0;
+  border: 1px solid var(--site-line);
+  border-radius: 10px;
+  background: var(--site-code-bg);
+  overflow: hidden;
+}
+.docs-code figcaption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 6px 4px 14px;
+  border-bottom: 1px solid var(--site-line);
+  font-size: var(--fs-xs);
+  color: var(--site-code-muted);
+}
+.docs-code button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--site-code-muted);
+  font: inherit;
+  cursor: pointer;
+}
+.docs-code button:hover {
+  color: var(--site-code-text);
+  background: var(--site-accent-soft);
+}
+.docs-code pre {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  color: var(--site-code-text);
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre;
+}
+.docs-callout {
+  display: flex;
+  gap: 10px;
+  margin: 16px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--site-line);
+  border-left: 3px solid var(--site-text);
+  border-radius: 8px;
+  background: var(--site-surface);
+}
+.docs-callout-icon {
+  flex: none;
+  margin-top: 4px;
+  color: var(--site-text);
+}
+.docs-callout p {
+  margin: 0;
+}
+.docs-callout-warning {
+  border-left-color: var(--site-warn);
+}
+.docs-callout-warning .docs-callout-icon {
+  color: var(--site-warn);
+}
+.docs-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 12px;
+  margin: 20px 0;
+  padding: 0;
+  list-style: none;
+}
+.docs-cards li + li {
+  margin-top: 0;
+}
+.docs-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  height: 100%;
+  padding: 16px;
+  border: 1px solid var(--site-line);
+  border-radius: 10px;
+  background: var(--site-surface);
+  color: var(--site-muted);
+  text-decoration: none;
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+.docs-card-icon {
+  color: var(--site-text);
+  margin-bottom: 4px;
+}
+.docs-card strong {
+  color: var(--site-text);
+  font-size: var(--fs-base);
+  font-weight: 500;
+}
+.docs-card:hover {
+  border-color: var(--site-line-strong);
+}
+.docs-pager {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 56px;
+  padding-top: 24px;
+  border-top: 1px solid var(--site-line);
+}
+.docs-pager-link {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 16px;
+  border: 1px solid var(--site-line);
+  border-radius: 10px;
+  color: var(--site-text);
+  font-weight: 500;
+}
+.docs-pager-link span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--fs-xs);
+  font-weight: 400;
+  color: var(--site-muted);
+}
+.docs-pager-next {
+  grid-column: 2;
+  text-align: right;
+  align-items: flex-end;
+}
+.docs-pager-link:hover {
+  border-color: var(--site-line-strong);
+}
+
+/* While the docs load (they are their own chunk). */
+.docs-loading {
+  padding: 48px 0;
+  text-align: center;
+}
+@media (max-width: 900px) {
+  .docs-main {
+    padding: 24px var(--site-gutter) 16px;
+  }
+  .docs-title {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .docs-title h1 {
+    font-size: var(--fs-2xl);
+  }
+  .docs-copy-page {
+    margin-top: 0;
+  }
+  .docs-pager {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .docs-pager-next {
+    grid-column: 1;
+  }
+}
