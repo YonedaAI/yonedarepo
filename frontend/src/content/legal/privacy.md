@@ -86,6 +86,7 @@ Everything is stored and processed by Cloudflare. Requests are served from Cloud
 - **Deleting a repository** closes it at once: it can no longer be read, and its tokens are revoked. Its code, LFS files, release assets, check logs and transcripts are then deleted from storage, and it leaves the discovery index. The repository's own records (its log, change requests, comments, reviews and session records) are retained in its sealed database and never served again. They are not deleted automatically; we erase them when you ask at [legal@yonedarepo.com](mailto:legal@yonedarepo.com).
 - **Transaction log history** is kept according to each repository's retention settings.
 - **Managed agent transcripts and credit records** are retained while the workspace exists and are not deleted automatically. We erase them when you ask at [legal@yonedarepo.com](mailto:legal@yonedarepo.com).
+- **Model gateway logs** of review-agent requests and responses are kept until the log store reaches its cap of 10 million entries; then the oldest are deleted first. We erase them when you ask at [legal@yonedarepo.com](mailto:legal@yonedarepo.com).
 - **Request logs** are kept for the period Cloudflare's logging service allows, which is days, not months.
 - **Your account** is kept until you ask us to delete it.
 
@@ -116,14 +117,14 @@ Passwords, recovery codes, sessions and tokens are stored only as hashes. Every 
 
 | Provider | What it receives | When |
 |---|---|---|
-| Cloudflare | Everything above: it hosts our servers, storage, databases, containers, logs and the AI Gateway our model calls pass through | Always |
+| Cloudflare | Everything above: it hosts our servers, storage, databases, containers, logs and the AI Gateway that managed review agents' model calls pass through | Always |
 | Resend | Your email address and the message | When we send you an email |
 | GitHub, Google | The sign-in exchange | Only if you sign in with them |
 | Z.ai, Xiaomi (MiMo), Anthropic, OpenAI | The code and text a managed review agent reads, and its instructions | Only for repositories whose owner enables a managed review agent; which provider depends on the agent and the model the owner picks |
 | Z.ai | A commit's diff and message | Only for repositories whose owner sets up a model check |
 | Xiaomi (MiMo) | Error counts and short error messages from our servers, with credentials removed | When our internal monitor summarizes a fault |
 
-Model calls pass through Cloudflare AI Gateway, which may keep a log of each request and its response under our account. Checks you write run in containers on Cloudflare, and their code is not sent anywhere else.
+Managed review agents reach their model providers through our Cloudflare AI Gateway. The gateway logs each of those requests and its response, including the code sent, under our Cloudflare account. Model checks call Z.ai directly and are not logged by the gateway. Checks you write run in containers on Cloudflare, and their code is not sent anywhere else.
 
 ## Cookies
 
