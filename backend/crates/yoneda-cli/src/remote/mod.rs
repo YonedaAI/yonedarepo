@@ -75,7 +75,13 @@ impl Session {
             .get(1)
             .or_else(|| argv.first())
             .ok_or_else(|| Error::usage("usage: git-remote-yoneda <remote> <url>"))?;
-        let url = url::parse(raw)?;
+        let url = match url::parse(raw) {
+            Ok(url) => url,
+            Err(refused) => match url::parse_path(raw) {
+                Some((origin, handle, name)) => resolve(&origin, &handle, &name)?,
+                None => return Err(refused),
+            },
+        };
         let git_dir = std::env::var_os("GIT_DIR")
             .map(PathBuf::from)
             .ok_or_else(|| Error::new("GIT_DIR is not set; run this through git"))?;
@@ -124,6 +130,51 @@ impl Session {
 /// The API for `url`'s repository with this person's token (`YONEDA_TOKEN`, else `yoneda
 /// login`). Without one it still reads a public repository; the platform asks for
 /// credentials (401) for anything else.
+/// The repository `/<handle>/<name>` names on `origin`, asked of the platform with the
+/// credential the helper uses there (a private one needs it; the answer is the same for one
+/// that is not there and one the credential may not read).
+fn resolve(origin: &str, handle: &str, name: &str) -> Result<RemoteUrl> {
+    let token = credentials::load_optional(
+        &credentials::default_path()?,
+        origin,
+        std::env::var("YONEDA_TOKEN").ok(),
+    )?;
+    resolve_with(origin, handle, name, token.as_ref())
+}
+
+fn resolve_with(
+    origin: &str,
+    handle: &str,
+    name: &str,
+    token: Option<&credentials::Token>,
+) -> Result<RemoteUrl> {
+    let api = Api::account(origin, token)?;
+    let path = format!(
+        "/resolve/{}/{}",
+        crate::api::encode(handle),
+        crate::api::encode(name)
+    );
+    let found = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| Error::new(format!("starting the runtime: {e}")))?
+        .block_on(api.get(&path))
+        .map_err(|failure| match failure.status {
+            404 => Error::usage(format!(
+                "{origin}/{handle}/{name} is not a repository you can read"
+            )),
+            _ => Error::from(failure),
+        })?;
+    let repo = found["id"]
+        .as_str()
+        .filter(|id| crate::api::valid_repo_id(id))
+        .ok_or_else(|| Error::new("The platform answered no repository id"))?;
+    Ok(RemoteUrl {
+        origin: origin.to_owned(),
+        repo: repo.to_owned(),
+    })
+}
+
 pub fn api_for(url: &RemoteUrl) -> Result<Api> {
     let token = credentials::load_optional(
         &credentials::default_path()?,
@@ -166,5 +217,61 @@ pub fn main() {
     if let Err(error) = outcome {
         say(&error.message);
         std::process::exit(error.exit_code.max(1));
+    }
+}
+
+#[cfg(test)]
+mod resolve_tests {
+    use super::*;
+    use std::io::{Read, Write};
+
+    /// Serves one answer per connection: `/api/v1/resolve/ada/testing` names a repository,
+    /// anything else is the platform's NOT_FOUND.
+    fn platform() -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        std::thread::spawn(move || {
+            for mut socket in listener.incoming().flatten() {
+                let mut request = [0u8; 4096];
+                let n = socket.read(&mut request).unwrap_or(0);
+                let line = String::from_utf8_lossy(&request[..n]).to_string();
+                let (status, body) = if line.starts_with("GET /api/v1/resolve/ada/testing ") {
+                    (
+                        "200 OK",
+                        r#"{"id":"r0123456789abcdef0123","handle":"ada","name":"Testing","path":"/ada/Testing"}"#,
+                    )
+                } else {
+                    (
+                        "404 Not Found",
+                        r#"{"error":{"code":"NOT_FOUND","message":"No such repository"}}"#,
+                    )
+                };
+                let reply = format!(
+                    "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = socket.write_all(reply.as_bytes());
+            }
+        });
+        origin
+    }
+
+    #[test]
+    fn a_readable_path_resolves_to_the_repository_it_names() {
+        let origin = platform();
+        let url = resolve_with(&origin, "ada", "testing", None).unwrap();
+        assert_eq!(
+            url,
+            RemoteUrl {
+                origin: origin.clone(),
+                repo: "r0123456789abcdef0123".into()
+            }
+        );
+        let missing = resolve_with(&origin, "ada", "other", None).unwrap_err();
+        assert!(
+            missing.message.contains("not a repository you can read"),
+            "{}",
+            missing.message
+        );
     }
 }
