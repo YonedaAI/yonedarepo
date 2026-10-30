@@ -244,6 +244,9 @@ if (values.realuser || values.dogfood || values['agent-tools']) {
 const kit = kitCredentials();
 const { BENCH_KEY } = readEnvFile('staging-bench.env', { required: false });
 const account = await accountSession(values.origin, kit.KIT_USERNAME, kit.KIT_PASSWORD);
+// The kit account's name and the identifier that signs it in: its username, or (an account
+// made after email-only sign-up) its test address, whose handle the platform chose.
+Object.assign(kit, { KIT_ACCOUNT: account.name, KIT_LOGIN: account.identifier });
 const platformAccount = new Session(`${values.origin}/api/v1`, { cookie: account.cookie });
 if (values['cleanup-repos']) {
   const cleaned = await cleanupRepos(platformAccount, values['cleanup-repos']);
@@ -309,7 +312,7 @@ const failureMetrics = (what, section) =>
   section.errors?.length ? { [`${what}_errors`]: Object.fromEntries(section.errors), [`${what}_failures`]: section.failures } : {};
 async function fanout(writers, m) {
   if (!BENCH_KEY) return { skip: 'BENCH_KEY not in staging-bench.env' };
-  const env = { ...process.env, YONEDA_USERNAME: kit.KIT_USERNAME, YONEDA_PASSWORD: kit.KIT_PASSWORD, BENCH_KEY };
+  const env = { ...process.env, YONEDA_USERNAME: kit.KIT_LOGIN, YONEDA_PASSWORD: kit.KIT_PASSWORD, BENCH_KEY };
   const args = ['tools/platform-fanout-bench.mjs', '--url', values.platform, '--client', values.client, '--writers', String(writers)];
   const { stdout } = await execFileAsync(process.execPath, args, { cwd: root, env, maxBuffer: 64 << 20, timeout: 30 * 60_000 });
   const { result } = JSON.parse(stdout);

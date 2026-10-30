@@ -241,7 +241,8 @@ export async function signup(username: string) {
   const response = await bindings.SELF.fetch('https://yoneda/api/auth/signup', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username, email: `${username}@example.com`, password: 'long platform test password' }),
+    // Sign-up is by email; the local part (a valid name) becomes the account's handle.
+    body: JSON.stringify({ email: `${username}@example.com`, password: 'long platform test password' }),
   });
   expect(response.status).toBe(200);
   return (response.headers.get('set-cookie') ?? '').split(';')[0];

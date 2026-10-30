@@ -6,7 +6,8 @@ const bindings = env as unknown as Env;
 afterEach(async () => { await reset(); });
 const request = (path: string, body?: unknown, cookie?: string) => bindings.SELF.fetch(`https://yoneda/api/${path}`, {method:body ? 'POST' : 'GET',headers:{...(body ? {'content-type':'application/json'} : {}),...(cookie ? {cookie} : {})},...(body ? {body:JSON.stringify(body)} : {})});
 async function signup(username: string) {
- const result = await request('auth/signup',{username,email:`${username}@example.com`,password:'a long test password'});
+ // Sign-up is by email; a local part that is a valid name becomes the account's handle.
+ const result = await request('auth/signup',{email:`${username}@example.com`,password:'a long test password'});
  expect(result.status).toBe(200);
  return {cookie:(result.headers.get('set-cookie') ?? '').split(';')[0],account:await result.json<any>()};
 }

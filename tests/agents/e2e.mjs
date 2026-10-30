@@ -55,7 +55,7 @@ try {
   const signup = await fetch(`${origin}/api/auth/signup`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: `agents_e2e_${Date.now().toString(36)}`, email: 'agents-e2e@example.com', password: 'local agents e2e password' }),
+    body: JSON.stringify({ email: `agents_e2e_${Date.now().toString(36)}@example.com`, password: 'local agents e2e password' }),
   });
   if (!signup.ok) throw new Error(`signup: ${signup.status} ${await signup.text()}`);
   const account = new Session(`${origin}/api/v1`, { cookie: (signup.headers.get('set-cookie') ?? '').split(';')[0] });

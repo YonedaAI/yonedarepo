@@ -5,7 +5,7 @@ summary: Create an account, make a repository, and push to it with stock Git in 
 
 ## 1. Create an account
 
-Open [yonedarepo.com/signup](/signup), choose a user name and a password of at least 12 characters, and **save the recovery code** it shows you. The code is shown once and is the only way to reset your password.
+Open [yonedarepo.com/signup](/signup) and enter your email address and a password of at least 12 characters (or continue with GitHub or Google). Your public account name is made from the part of the address before the `@`; the address itself stays private. **Save the recovery code** it shows you. The code is shown once and is the only way to reset your password.
 
 ## 2. Create a repository
 

@@ -61,6 +61,20 @@
   .site-tiles {
     grid-template-columns: minmax(0, 1fr);
   }
+  /* The sign-in panel on a phone: a little less padding and air between fields. */
+  .site .account-panel {
+    padding: 18px 16px;
+  }
+  .site .account-panel form {
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .site .account-panel label {
+    gap: 5px;
+  }
+  .site .account-panel input {
+    padding: 8px 10px;
+  }
   .site-tiles > li + li {
     border-left: 0;
     border-top: 1px solid var(--site-line);

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Imports a local directory (for example a fixture) as a new source-platform repository
 // through the public API. Credentials come from the environment, never arguments:
-//   YONEDA_USERNAME / YONEDA_PASSWORD  (add --signup to create the account first; YONEDA_EMAIL
+//   YONEDA_USERNAME / YONEDA_PASSWORD  (add --signup to create the account on first use; YONEDA_EMAIL
 //   is its contact email, default Resend's test inbox)
 // Usage: node tools/platform-import.mjs --url http://localhost:8787 --dir fixtures/website --name website
 import { lstat, readdir, readFile } from 'node:fs/promises';
@@ -39,18 +39,18 @@ async function session(url, signup) {
   const username = process.env.YONEDA_USERNAME;
   const password = process.env.YONEDA_PASSWORD;
   if (!username || !password) throw new Error('Set YONEDA_USERNAME and YONEDA_PASSWORD');
-  const post = (path) =>
+  // A sign-up uses an email address only (YONEDA_EMAIL, else Resend's test inbox); the
+  // platform names the account from it, and that address signs in to it as well.
+  const email = process.env.YONEDA_EMAIL ?? `delivered+${username.replace(/[^a-z0-9_]/gi, '_')}@resend.dev`;
+  const post = (path, body) =>
     fetch(`${url}/api/auth/${path}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      // A sign-up's welcome email goes to YONEDA_EMAIL, else Resend's test inbox.
-      body: JSON.stringify({ username, password, email: process.env.YONEDA_EMAIL ?? `delivered+${username.replace(/[^a-z0-9_]/gi, '_')}@resend.dev` }),
+      body: JSON.stringify(body),
     });
-  if (signup) {
-    const created = await post('signup');
-    if (!created.ok && created.status !== 409) throw new Error(`Signup failed (${created.status})`);
-  }
-  const login = await post('login');
+  let login = await post('login', { username, password });
+  if (login.status === 401) login = await post('login', { username: email, password });
+  if (login.status === 401 && signup) login = await post('signup', { email, password });
   if (!login.ok) throw new Error(`Login failed (${login.status})`);
   return (login.headers.get('set-cookie') ?? '').split(';')[0];
 }

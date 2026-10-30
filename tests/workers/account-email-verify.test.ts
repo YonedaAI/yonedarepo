@@ -45,7 +45,8 @@ async function call(target: Env, path: string, body?: unknown, cookie?: string, 
   return { status: res.status, body: await res.json<any>(), headers: res.headers };
 }
 async function signup(target: Env, username: string, email = `${username}@example.com`) {
-  const made = await call(target, 'signup', { username, email, password: 'a long test password' });
+  // Sign-up is by email; the local part (a valid name) becomes the account's handle.
+  const made = await call(target, 'signup', { email, password: 'a long test password' });
   expect(made.status).toBe(200);
   return (made.headers.get('set-cookie') ?? '').split(';')[0];
 }

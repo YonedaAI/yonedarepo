@@ -119,10 +119,10 @@ export async function publicHome(page, origin, shot, m) {
 }
 
 /** The real login form at `/signin`; the kit password is typed only here. */
-export async function signIn(page, origin, { KIT_USERNAME, KIT_PASSWORD }) {
+export async function signIn(page, origin, { KIT_USERNAME, KIT_LOGIN, KIT_PASSWORD }) {
   await page.goto(signInUrl(origin));
   await page.getByRole('navigation', { name: 'Account access' }).getByRole('button', { name: 'Sign in' }).click();
-  await page.getByLabel('Username or email').fill(KIT_USERNAME);
+  await page.getByLabel('Username or email').fill(KIT_LOGIN ?? KIT_USERNAME);
   const password = page.getByLabel('Password', { exact: true });
   await password.fill(KIT_PASSWORD);
   await password.press('Enter');
