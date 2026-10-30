@@ -54,7 +54,7 @@
 }
 .org-team h3 {
   margin: 0 0 0.5rem;
-  font-size: 1rem;
+  font-size: var(--text-lg);
 }
 .org-team-actions {
   display: flex;
@@ -66,6 +66,6 @@
   border: 1px solid var(--line);
   border-radius: 4px;
   color: var(--muted);
-  font-size: 0.75rem;
+  font-size: var(--text-sm);
   padding: 0 0.3rem;
 }

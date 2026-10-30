@@ -41,7 +41,7 @@
   border-radius: 9px;
   background: var(--blue);
   color: var(--on-accent);
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 600;
   line-height: 18px;
   text-align: center;
@@ -80,7 +80,7 @@
   justify-content: space-between;
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .admin-search {
   display: flex;
@@ -116,7 +116,7 @@
 .admin-sub {
   display: block;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .admin-detail {
   max-width: 420px;
@@ -130,7 +130,7 @@
   border-radius: 10px;
   background: var(--success-soft);
   color: var(--success);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .admin-status-suspended {
   border-color: var(--danger-line);
@@ -225,7 +225,7 @@
   flex-direction: column;
   gap: 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .admin-credit input {
   padding: 7px 9px;
