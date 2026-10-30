@@ -5,9 +5,10 @@
 import type { ManagedAgentId } from './managed-agents';
 
 const WORKING = `How to work:
-- The repository is checked out at the change's head. The diff base is given below; read the
-  change with \`git diff <base>...HEAD\` and the old version of a file with
-  \`git show <base>:<path>\`.
+- The change's full diff is below. Go through every changed file in it, one at a time; a
+  problem found in one file never ends the review of the others.
+- The repository is checked out at the change's head. Read the old version of a file with
+  \`git show <base>:<path>\`, and the diff again with \`git diff <base>...HEAD\`.
 - Follow a changed function to its callers and callees (rg, git grep) before judging it, and
   read the tests that cover it.
 - Only report a problem you can point at: one line on the new side of the diff.
@@ -41,8 +42,10 @@ Look for:
 - privilege escalation and changes to who can read or write what
 
 Ignore non-security issues. Rate a finding high when it is exploitable as written, medium when
-it is exploitable under plausible conditions, and low for hardening worth doing. Never print a
-secret you find: name its file and line only.
+it is exploitable under plausible conditions, and low for hardening worth doing. When you are
+unsure whether something is exploitable, report it at medium with what would make it so;
+never leave out a likely problem for lack of certainty. Never print a secret you find: name
+its file and line only.
 
 ${WORKING}`,
 
