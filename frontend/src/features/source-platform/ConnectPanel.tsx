@@ -2,8 +2,9 @@
 // with Claude Code and Codex configuration; and deleting a repository (type its name).
 import { type FormEvent, useState } from 'react';
 import {
+  CLAUDE_PLUGIN_COMMAND,
+  claudeMarketplaceCommand,
   claudeMcpJson,
-  claudePluginSteps,
   cloneCommand,
   codexToml,
   httpsCloneCommand,
@@ -95,7 +96,11 @@ export function AgentConnectHelp({ origin }: { origin: string }) {
           <code>YONEDA_TOKEN</code> environment variable.
         </p>
         <CopyBlock label="MCP URL" text={mcpUrl(origin)} />
-        <CopyBlock label="Claude Code plugin" text={claudePluginSteps(origin)} />
+        <CopyBlock
+          label="Claude Code: add the marketplace"
+          text={claudeMarketplaceCommand(origin)}
+        />
+        <CopyBlock label="Claude Code: install the plugin" text={CLAUDE_PLUGIN_COMMAND} />
         <CopyBlock
           label="Claude Code .mcp.json (without the plugin)"
           text={claudeMcpJson(origin)}
