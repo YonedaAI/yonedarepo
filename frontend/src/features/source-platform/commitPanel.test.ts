@@ -45,6 +45,8 @@ const status = (viewer: Viewer, policy = noChecks): RepoStatus => ({
   name: 'demo',
   version: 2,
   owner: 'kit',
+  owner_handle: 'kit',
+  path: '/kit/demo',
   object_store: 'r2',
   policy,
   policy_digest: 'd'.repeat(64),
