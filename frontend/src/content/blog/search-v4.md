@@ -2,6 +2,11 @@
 title: Search v4: a chunked index read in place
 date: 2026-10-28
 summary: Search stopped skipping whole directories, and its index got 2.2–2.7× smaller. Then we shipped a bug that broke every search, and fixed it the same day.
+author: Yoneda Labs
+category: Engineering
+image: /blog/search-v4/hero.svg
+imageAlt: Diagram of one search segment: a list of files, a sorted trigram table with offsets, and delta-encoded postings, with one trigram's postings highlighted.
+caption: A Search v4 segment: a sorted trigram table points into compact postings, so a query decodes only what it needs.
 ---
 
 Code search on YonedaRepo runs on the server, next to the repository. Each directory of a repository gets its own trigram index (a "segment"), rebuilt only when files under it change. On October 28 we changed how those segments are built and stored. This post covers what was wrong, what we changed, and the regression we caused along the way.
