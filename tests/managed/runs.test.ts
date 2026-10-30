@@ -104,9 +104,9 @@ describe('the shared pipeline', () => {
     // The container got the review, the configured harness and model, and no credential.
     const [{ spec, params: bound }] = h.harness.started;
     expect(spec).toMatchObject({
-      harness: 'opencode',
-      provider: 'zai',
-      model: 'glm-5.3-flash',
+      harness: 'codex',
+      provider: 'codex',
+      model: 'gpt-5.6-luna',
       reasoning: 'medium',
       timeout_ms: 20 * 60_000,
       base: BASE,
@@ -119,7 +119,7 @@ describe('the shared pipeline', () => {
     expect(spec.contract).toContain('"findings"');
     const specText = JSON.stringify(spec);
     for (const key of [...Object.values(KEYS), 'yrp_fixture']) expect(specText).not.toContain(key);
-    expect(bound).toMatchObject({ provider: 'zai', model: 'glm-5.3-flash', cap_microusd: 1_000_000 });
+    expect(bound).toMatchObject({ provider: 'codex', model: 'gpt-5.6-luna', cap_microusd: 1_000_000 });
     expect(h.harness.ended.size).toBe(1);
 
     expect(h.platform.comments.filter((c) => c.path).map((c) => [c.path, c.line, c.side, c.commit])).toEqual([
@@ -132,8 +132,8 @@ describe('the shared pipeline', () => {
 
     // Both model calls went through the gateway with the real key and run metadata.
     expect(calls).toHaveLength(2);
-    expect(calls[0].url).toBe(`https://gateway.example.com/v1/acct/yonedarepo-test-agents/custom-zai/v1/messages`);
-    expect(calls[0].headers.authorization).toBe(`Bearer ${KEYS.zai}`);
+    expect(calls[0].url).toBe(`https://gateway.example.com/v1/acct/yonedarepo-test-agents/openai/responses`);
+    expect(calls[0].headers.authorization).toBe(`Bearer ${KEYS.codex}`);
     expect(JSON.parse(calls[0].headers['cf-aig-metadata'])).toEqual({
       account: h.platform.account,
       repo: h.platform.repo,
@@ -141,10 +141,10 @@ describe('the shared pipeline', () => {
       agent: 'code-review',
       run: params.run,
     });
-    const rate = modelRate('zai', 'glm-5.3-flash')!;
+    const rate = modelRate('codex', 'gpt-5.6-luna')!;
     const perCall = chargeMicrousd(usageCostMicrousd(rate, { input: 1000, cache_write: 0, cache_read: 0, output: 200 }));
     const stored = await repoStub(h.env, h.platform.repo).run(params.run);
-    expect(stored).toMatchObject({ status: 'findings', value: 'fail', calls: 2, findings: 1, harness: 'opencode' });
+    expect(stored).toMatchObject({ status: 'findings', value: 'fail', calls: 2, findings: 1, harness: 'codex', summary: 'Reviewed.' });
     const container = stored!.container_seconds;
     expect(container).toBeGreaterThan(0);
     const balance = await ledgerStub(h.env, h.platform.account).balance();
@@ -212,19 +212,29 @@ describe('the shared pipeline', () => {
   });
 
   it('falls back to the next listed model when the configured one fails, and records why', async () => {
-    const h = await ready('code-review');
+    const h = await ready('slop-review');
     fakeGateway();
-    h.harness.scripts = [{ error: 'opencode exited with 1' }, { result: result('code-review') }];
+    h.harness.scripts = [{ error: 'opencode exited with 1' }, { result: result('slop-review') }];
     await deliver(h, opened(h));
     expect(await run(h, h.created[0])).toMatchObject({ status: 'findings' });
     expect(h.harness.started.map((s) => [s.spec.harness, s.spec.model])).toEqual([
+      ['opencode', 'mimo-v2.6-flash'],
       ['opencode', 'glm-5.3-flash'],
-      ['codex', 'gpt-5.6-luna'],
     ]);
     const stored = await repoStub(h.env, h.platform.repo).run(h.created[0].run);
-    expect(stored).toMatchObject({ harness: 'codex', model: 'gpt-5.6-luna' });
-    expect(stored!.fallback).toBe('glm-5.3-flash failed (opencode exited with 1); used gpt-5.6-luna');
+    expect(stored).toMatchObject({ harness: 'opencode', model: 'glm-5.3-flash' });
+    expect(stored!.fallback).toBe('mimo-v2.6-flash failed (opencode exited with 1); used glm-5.3-flash');
     expect(h.harness.ended.size).toBe(2);
+  });
+
+  it('code review lists no fallback: a failed run fails instead of trying another model', async () => {
+    const h = await ready('code-review');
+    fakeGateway();
+    h.harness.scripts = [{ error: 'codex exited with 1' }];
+    await deliver(h, opened(h));
+    expect(await run(h, h.created[0])).toEqual({ status: 'failed', error: 'codex exited with 1' });
+    expect(h.harness.started.map((s) => s.spec.model)).toEqual(['gpt-5.6-luna']);
+    expect(h.platform.checks).toHaveLength(0);
   });
 
   it('disable stops new runs and stops an open one at its next poll', async () => {
@@ -376,7 +386,7 @@ describe('the container boundary', () => {
 
 describe('each agent on its fixtures', () => {
   const cases: [ManagedAgentId, string, string, string][] = [
-    ['code-review', 'opencode', 'zai', 'glm-5.3-flash'],
+    ['code-review', 'codex', 'codex', 'gpt-5.6-luna'],
     ['security-review', 'claude-code', 'claude', 'claude-sonnet-5-5'],
     ['slop-review', 'opencode', 'mimo', 'mimo-v2.6-flash'],
   ];
@@ -445,7 +455,7 @@ describe('settings', () => {
     expect((await put(h, 'code-review', { settings: { timeout_minutes: 99 } })).status).toBe(400);
     expect((await put(h, 'code-review', { settings: { block_at: 'high' } })).status).toBe(400);
     const saved = await (await put(h, 'code-review', { settings: { reasoning: 'high', instructions: 'Only check SQL.' } })).json<any>();
-    expect(saved.settings).toMatchObject({ reasoning: 'high', instructions: 'Only check SQL.', model: 'glm-5.3-flash' });
+    expect(saved.settings).toMatchObject({ reasoning: 'high', instructions: 'Only check SQL.', model: 'gpt-5.6-luna' });
     expect(saved.customized.sort()).toEqual(['instructions', 'reasoning']);
     await put(h, 'code-review', { scope: h.platform.repo, settings: { timeout_minutes: 10 } });
     const repoState = await (await site(h, '/agents/code-review')).json<any>();
@@ -542,6 +552,24 @@ describe('Durable Objects and the Workflow binding', () => {
         expect(migrate(sql, schema)).toBe(schema.length);
       });
     }
+  });
+
+  it('upgrades a repository at schema v1 to v2 (run summaries), keeping its runs', async () => {
+    const stub = repoStub(env as unknown as ManagedEnv, newRepo());
+    await runInDurableObject(stub as DurableObjectStub, (_instance, state) => {
+      const sql = state.storage.sql;
+      // Back to the v1 shape, with a run in it.
+      sql.exec('DROP TABLE runs');
+      sql.exec('DROP TABLE agents');
+      sql.exec('DROP TABLE connection');
+      sql.exec(REPO_SCHEMA[0]);
+      sql.exec('UPDATE schema_version SET version = 1');
+      sql.exec(
+        "INSERT INTO runs (id, repo, agent, change, head, status, harness, provider, model, created_at) VALUES ('r1', 'r', 'code-review', 1, 'h', 'passed', 'codex', 'codex', 'gpt-5.6-luna', 1)",
+      );
+      expect(migrate(sql, REPO_SCHEMA)).toBe(2);
+      expect(sql.exec("SELECT id, summary FROM runs").toArray()).toEqual([{ id: 'r1', summary: null }]);
+    });
   });
 
   it('runs an instance in workerd (an unknown run stops at admit)', async () => {

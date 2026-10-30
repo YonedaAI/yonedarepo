@@ -75,16 +75,20 @@ export const MANAGED_AGENTS: readonly ManagedAgentDefinition[] = [
     defaults: {
       name: 'Code review',
       description: 'Finds correctness bugs, broken edge cases and risky changes, line by line.',
-      harness: 'opencode',
-      provider: 'zai',
-      model: 'glm-5.3-flash',
+      // Live on dev (2026-10-30): GLM-5.3 Flash missed the seeded off-by-one once and failed
+      // to run once; GPT-5.6 Luna found all three seeded problems for $0.007.
+      harness: 'codex',
+      provider: 'codex',
+      model: 'gpt-5.6-luna',
       reasoning: 'medium',
       timeout_minutes: 20,
       instructions: MANAGED_INSTRUCTIONS['code-review'],
       trigger: TRIGGER,
       block_at: null,
     },
-    fallback: [{ harness: 'codex', provider: 'codex', model: 'gpt-5.6-luna' }],
+    // No fallback: the cheaper GLM-5.3 Flash failed this agent's acceptance, and a reviewer that
+    // misses bugs would pass the check; a failed run is the honest outcome.
+    fallback: [],
     cost_cap_usd: 1,
   },
   {
@@ -319,6 +323,8 @@ export interface ManagedRun {
   status: RunStatus;
   /** The result: pass/fail, or low/medium/high; null until the run reports. */
   value: RunValue | null;
+  /** The agent's summary as posted (defused; null when none or withheld as a credential). */
+  summary: string | null;
   harness: Harness;
   provider: string;
   model: string;
