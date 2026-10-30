@@ -238,6 +238,7 @@
 
 /* Sign in: the app's account panel, in the site's colors */
 .site-signin {
+  width: 100%;
   max-width: 440px;
   margin: 0 auto;
   padding: 56px 0;
@@ -247,9 +248,19 @@
   margin: 0 0 20px;
 }
 .site .account-panel {
+  max-width: 100%;
   background: var(--site-surface);
   border-color: var(--site-line);
   color: var(--site-text);
+  /* A long error or recovery code wraps instead of widening the page. */
+  overflow-wrap: anywhere;
+}
+/* A disabled submit keeps a readable label on a quiet background. */
+.site .account-panel button[type="submit"]:disabled {
+  background: var(--site-accent-soft);
+  border-color: var(--site-line);
+  color: var(--site-muted);
+  filter: none;
 }
 .site .account-tabs {
   background: var(--site-bg);
