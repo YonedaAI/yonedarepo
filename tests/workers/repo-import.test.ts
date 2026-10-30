@@ -4,19 +4,23 @@
 import { expect, it } from 'vitest';
 import { type ImportStep, runImport } from '../../cloudflare/worker/repo-import';
 import type { Env } from '../../cloudflare/worker/types';
+import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { projectRefs } from '../../cloudflare/worker/repo-projection';
 import { api, author, bindings, drainObjects, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
-/** Runs steps directly, retrying failures a few times like Workflows would. */
+/** Runs steps directly, retrying failures a few times like Workflows would (never a
+ * NonRetryableError); `attempts` counts every run of a step. */
+const attempts: string[] = [];
 const step: ImportStep = {
-  async do(_name, _config, callback) {
+  async do(name, _config, callback) {
     for (let attempt = 1; ; attempt++) {
+      attempts.push(name);
       try {
         return await callback();
-      } catch (e) {
-        if (attempt >= 4) throw e;
+      } catch (e: any) {
+        if (attempt >= 4 || e?.name === 'NonRetryableError') throw e;
       }
     }
   },
@@ -94,7 +98,7 @@ it('imports first-parent history from a remote and lands it', async () => {
 
   const created = await api('/repos/import', owner, { body: { name: 'imported', url: 'https://git.example/src.git', max_commits: 2 } }, env);
   expect(created.status).toBe(200);
-  expect(started).toMatchObject({ id: `import-${created.body.id}`, params: { repo: created.body.id, branch: 'main', max: 2 } });
+  expect(started).toMatchObject({ id: `import-${created.body.id}`, params: { repo: created.body.id, branch: undefined, max: 2 } });
   expect((await api(`/repos/${created.body.id}/import`, owner, {}, env)).body.status).toBe('running');
 
   const result = await runImport(env, started.params, step);
@@ -115,4 +119,98 @@ it('imports first-parent history from a remote and lands it', async () => {
   expect(next.body.parents).toEqual([head]);
 
   expect((await api('/repos/import', owner, { body: { url: 'http://insecure' } }, env)).status).toBe(400);
+});
+
+it('refuses a clone of history only the mirror holds at once, reading none of its trees', async () => {
+  const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2' } as unknown as Env;
+  const owner = { cookie: await signup('import_clone') };
+  const source = await api('/repos', owner, { body: { name: 'src', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', '1\n')], author } }, local);
+  for (const text of ['2\n', '3\n']) {
+    const made = await api(`/repos/${source.body.id}/commits`, owner, { body: { ref: 'main', changes: [file(`d${text.trim()}/n.txt`, text)], message: text, author } }, local);
+    await api(`/repos/${source.body.id}/land`, owner, { body: { ref: 'main', commit: made.body.commit } }, local);
+  }
+  const head = (await api(`/repos/${source.body.id}/refs`, owner, {}, local)).body.refs['refs/heads/main'];
+  await drainObjects(local);
+  for (const message of queued.splice(0).filter((m) => m.kind === 'platform_project')) await projectRefs(local, message);
+  const remote = fakeRemote(`yr-${source.body.id}`, head, 0);
+  // Every tree read from the mirror, counted.
+  let treeReads = 0;
+  const counted = {
+    ...remote,
+    get: async (name: string) => {
+      const repo = await remote.get(name);
+      return { ...repo, readTree: (id: string) => (treeReads++, repo.readTree(id)) };
+    },
+  };
+  let started: any;
+  const workflows = { create: async (options: any) => ((started = options), { id: options.id }), get: async () => ({ status: async () => ({ status: 'running' }) }) };
+  const env = { ...scoped, ARTIFACTS: counted, PLATFORM_IMPORT: workflows } as unknown as Env;
+  const created = await api('/repos/import', owner, { body: { name: 'imported', url: 'https://git.example/src.git' } }, env);
+  await runImport(env, started.params, step);
+  const token = await api(`/repos/${created.body.id}/tokens`, owner, { body: { name: 'reader', scopes: ['read'] } }, env);
+  const pkt = (line: string) => `${(line.length + 4).toString(16).padStart(4, '0')}${line}`;
+  for (const args of [[`want ${head}`, 'thin-pack', 'ofs-delta', 'done'], [`want ${head}`, 'deepen 1', 'done']]) {
+    treeReads = 0;
+    const body = `${pkt('command=fetch\n')}${pkt('object-format=sha1\n')}0001${args.map((a) => pkt(`${a}\n`)).join('')}0000`;
+    const response = await platformFetch(
+      new Request(`https://yoneda/git/${created.body.id}.git/git-upload-pack`, {
+        method: 'POST',
+        headers: { authorization: `Basic ${btoa(`git:${token.body.token}`)}`, 'git-protocol': 'version=2' },
+        body,
+      }),
+      env,
+    );
+    const text = new TextDecoder().decode(await response.arrayBuffer());
+    // Refused before the pack starts (Git prints `remote error: …`), not after a walk of
+    // the imported trees through the mirror.
+    expect(response.status, args.join(' ')).toBe(200);
+    expect(text, args.join(' ')).toMatch(/\n[0-9a-f]{4}ERR NOT_FOUND: Commit [0-9a-f]{40} is held only as imported history/);
+    expect(treeReads, args.join(' ')).toBe(0);
+  }
+});
+
+/** A remote whose default branch is `master` (Artifacts: a branch it lacks is NOT_FOUND). */
+function masterRemote(sourceStore: string, head: string) {
+  const remote = fakeRemote(sourceStore, head, 0);
+  const asked: (string | undefined)[] = [];
+  return {
+    asked,
+    ...remote,
+    import: async (params: any) => {
+      asked.push(params.source.branch);
+      if (params.source.branch && params.source.branch !== 'master')
+        throw Object.assign(new Error(`Branch not found: "${params.source.branch}"`), { code: 'NOT_FOUND' });
+      return remote.import(params);
+    },
+    get: async (name: string) => ({ ...(await remote.get(name)), info: async () => ({ remote: `https://artifacts.test/${name}`, defaultBranch: 'master' }) }),
+  };
+}
+
+it("imports the remote's default branch as main when none is named, and fails a missing branch at once", async () => {
+  const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2' } as unknown as Env;
+  const owner = { cookie: await signup('import_master') };
+  const source = await api('/repos', owner, { body: { name: 'src', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', 'master\n')], author } }, local);
+  const head = source.body.commit as string;
+  await drainObjects(local);
+  for (const message of queued.splice(0).filter((m) => m.kind === 'platform_project')) await projectRefs(local, message);
+  const remote = masterRemote(`yr-${source.body.id}`, head);
+  let started: any;
+  const workflows = { create: async (options: any) => ((started = options), { id: options.id }), get: async () => ({ status: async () => ({ status: 'running' }) }) };
+  const env = { ...scoped, ARTIFACTS: remote, PLATFORM_IMPORT: workflows } as unknown as Env;
+
+  const created = await api('/repos/import', owner, { body: { name: 'hello', url: 'https://git.example/hello.git' } }, env);
+  expect([created.status, created.body.branch]).toEqual([200, null]);
+  expect(started.params.branch).toBeUndefined();
+  expect(await runImport(env, started.params, step)).toMatchObject({ commit: head, version: 1 });
+  expect(remote.asked).toEqual([undefined]);
+  // The default branch's history is this repository's main.
+  expect((await api(`/repos/${created.body.id}/refs`, owner, {}, env)).body.refs).toEqual({ 'refs/heads/main': head });
+  expect((await api(`/repos/${created.body.id}/blob?path=a.txt`, owner, {}, env)).body.content).toBe('master\n');
+
+  // A branch the remote does not have fails the import in one attempt, saying why.
+  const named = await api('/repos/import', owner, { body: { name: 'named', url: 'https://git.example/hello.git', branch: 'main' } }, env);
+  expect(named.body.branch).toBe('main');
+  attempts.length = 0;
+  await expect(runImport(env, started.params, step)).rejects.toThrow(/Branch not found: "main"/);
+  expect(attempts).toEqual(['import into the object store']);
 });

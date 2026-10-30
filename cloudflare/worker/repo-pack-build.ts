@@ -59,6 +59,7 @@ export async function buildPack(
   early.catch(() => {});
   let count = 0;
   try {
+    await refuseMirrorOnly(objects, commits);
     const started = performance.now();
     ({ count } = await enumerate(session, objects, stats.walkReads, seen));
     stats.walk = performance.now() - started;
@@ -76,6 +77,25 @@ export async function buildPack(
   const chunks = packChunks(session, objects, seen, early, budget, stats);
   return { count, chunks, close: () => session.close() };
 }
+
+/** History only a repository's mirror holds is not served here (its commits' exact bytes
+ * are not in the store of record): an import's, until a purge retires the mirror and
+ * copies it, or commits pushed before R2 held them. It is the oldest part of any history,
+ * so the walk's oldest commit (`commits` are newest first) tells, before any of its trees
+ * is read one by one through the mirror (dev, 2026-10-29: a clone right after an import
+ * walked the mirror until it failed with HTTP 503). */
+async function refuseMirrorOnly(objects: RepoObjects, commits: string[]) {
+  const oldest = commits.at(-1);
+  if (!oldest || !objects.store.cloneAccess) return;
+  if ((await objects.raw([{ id: oldest, kind: 'commit' }])).length > 0) return;
+  throw importedOnly(oldest);
+}
+
+const importedOnly = (id: string) =>
+  new ApiError(
+    'NOT_FOUND',
+    `Commit ${id} is held only as imported history, which HTTPS does not serve yet; use git-remote-yoneda`,
+  );
 
 /** `wanted` read whole (`rawObjects`). */
 async function readWhole(
@@ -120,12 +140,9 @@ async function* packChunks(
     const write = async function* (group: Read[]) {
       for (const { id, kind, data } of group) {
         if (!data)
-          throw new ApiError(
-            'NOT_FOUND',
-            kind === 'commit'
-              ? `Commit ${id} is held only as imported history, which HTTPS does not serve yet; use git-remote-yoneda`
-              : `${kind} ${id} is missing from the object store`,
-          );
+          throw kind === 'commit'
+            ? importedOnly(id)
+            : new ApiError('NOT_FOUND', `${kind} ${id} is missing from the object store`);
         if (isLarge(data)) {
           if (stats) stats.raw += data.size;
           yield* add(session.largeStart(id, data.size));

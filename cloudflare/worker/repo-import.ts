@@ -1,12 +1,16 @@
 // Imports an external Git repository: Artifacts fetches it into the repository's object
 // store, then its first-parent history (up to a limit) is recorded with file-level
-// changes and the branch is landed. Every step is idempotent so a Workflow can retry it.
+// changes and the branch (the remote's default unless one is named) lands as main. Every
+// step is idempotent so a Workflow can retry it; a failure retrying cannot mend (no such
+// remote or branch, no access) fails the import at once, with Artifacts' reason.
+import { NonRetryableError } from 'cloudflare:workflows';
 import { rpcValue } from './durable';
 import { parseStore, RepoObjects } from './repo-objects';
 import { caller, type Json, withTrees } from './repo-ops';
 import type { Env } from './types';
 
-export type ImportParams = { repo: string; url: string; branch: string; max: number };
+/** `branch`: the remote's branch to import; none: its default branch. */
+export type ImportParams = { repo: string; url: string; branch?: string; max: number };
 type Commit = { hash: string; tree: string; parents: string[]; message: string };
 /** The subset of WorkflowStep the import uses (tests pass a direct runner). */
 export type ImportStep = {
@@ -21,13 +25,27 @@ const BATCH = 20;
 
 const storeName = (repo: string) => `yr-${repo}`;
 
+/** Artifacts' refusals that no retry mends. */
+const FINAL = [
+  'NOT_FOUND',
+  'INVALID_INPUT',
+  'INVALID_URL',
+  'INVALID_REPO_NAME',
+  'REMOTE_AUTH_REQUIRED',
+  'MEMORY_LIMIT',
+];
+const final = (e: any) =>
+  FINAL.includes(e?.code) ? new NonRetryableError(`${e.code}: ${e?.message ?? e}`) : e;
+
 async function readHistory(env: Env, params: ImportParams): Promise<Commit[]> {
   using repo = await env.ARTIFACTS.get(storeName(params.repo));
+  // The branch Artifacts imported: the one named, else the remote's default.
+  const branch = params.branch ?? (await rpcValue(repo.info())).defaultBranch;
   const newestFirst: Commit[] = [];
   while (newestFirst.length < params.max) {
     const page = await rpcValue(
       repo.log({
-        ref: params.branch,
+        ref: branch,
         limit: Math.min(1000, params.max - newestFirst.length),
         offset: newestFirst.length,
       }),
@@ -41,8 +59,7 @@ async function readHistory(env: Env, params: ImportParams): Promise<Commit[]> {
         message: c.message.slice(0, 4000),
       });
   }
-  if (newestFirst.length === 0)
-    throw Object.assign(new Error(`Branch ${params.branch} has no commits`), { code: 'NOT_FOUND' });
+  if (newestFirst.length === 0) throw new NonRetryableError(`Branch ${branch} has no commits`);
   return newestFirst.reverse();
 }
 
@@ -89,12 +106,12 @@ export async function runImport(env: Env, params: ImportParams, step: ImportStep
     try {
       await rpcValue(
         env.ARTIFACTS.import({
-          source: { url: params.url, branch: params.branch },
+          source: { url: params.url, ...(params.branch ? { branch: params.branch } : {}) },
           target: { name: storeName(params.repo) },
         }),
       );
     } catch (e: any) {
-      if (e?.code !== 'ALREADY_EXISTS') throw e;
+      if (e?.code !== 'ALREADY_EXISTS') throw final(e);
     }
     return true;
   });
@@ -109,7 +126,7 @@ export async function runImport(env: Env, params: ImportParams, step: ImportStep
     const head = history[history.length - 1].hash;
     const status = await call({ op: 'repo_status' });
     if (status.refs.length > 0) return { commit: head, version: status.version };
-    const landed = await call({ op: 'repo_import', ref: params.branch, commit: head });
+    const landed = await call({ op: 'repo_import', ref: 'main', commit: head });
     return { commit: head, version: landed.version, commits: history.length };
   });
 }
