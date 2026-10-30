@@ -132,6 +132,16 @@ describe('home', () => {
 
   it('tours every Build on YonedaRepo feature: a nav item, its panel and a visual', () => {
     const html = home();
+    expect(BUILD_ON.map((b) => b.title)).toEqual([
+      'Code as Transactions',
+      'Git hosting',
+      'Changes & gates',
+      'Review agents',
+      'Sessions',
+      'Context',
+      'Code search',
+      'Teams & tools',
+    ]);
     expect(html).toContain('Build on YonedaRepo.');
     expect(html).toContain('aria-label="Build on YonedaRepo"');
     expect(new Set(BUILD_ON.map((b) => b.id)).size).toBe(BUILD_ON.length);
@@ -152,7 +162,7 @@ describe('home', () => {
 
   it('highlights the first panel in page order that is in view', () => {
     const order = BUILD_ON.map((b) => b.id);
-    expect(pickActive(order, new Set(['code', 'landing']), 'git-hosting')).toBe('landing');
+    expect(pickActive(order, new Set(['code', 'git-hosting']), 'transactions')).toBe('git-hosting');
     expect(pickActive(order, new Set(), 'context')).toBe('context');
   });
 
@@ -172,6 +182,12 @@ describe('home', () => {
     }
     expect(html).not.toMatch(
       /measured|promised|development environment|\bp95\b|how we test|not yet shown|\b20\d\d-\d\d-\d\d\b/i,
+    );
+  });
+
+  it('names no other company or product, and nothing as coming', () => {
+    expect(home()).not.toMatch(
+      /anthropic|claude|scion|openai|codex|opencode|\bglm|mimo|github|gitlab|cloudflare|coming soon/i,
     );
   });
 });

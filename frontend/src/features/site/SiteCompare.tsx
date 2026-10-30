@@ -23,8 +23,6 @@ export const COMPARISONS: Comparison[] = [
     theirs: { name: 'Plain Git', value: 1, label: '1 of 1,000' },
     note: 'Plain Git takes the one push that arrives first and rejects the rest as non-fast-forward, so 999 writers fetch, rebase and push again. YonedaRepo merges every commit on the server.',
   },
-  // Slot: "clone time vs GitHub" goes here once it is measured (bars are drawn to scale, so
-  // say in `question` that shorter is faster).
 ];
 
 const TILES = [
