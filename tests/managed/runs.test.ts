@@ -9,6 +9,7 @@ import {
 } from '../../shared/managed-agents';
 import { resolveSettings, validateOverrides } from '../../shared/managed-settings';
 import type { ManagedEnv, QueueMessage, RunParams } from '../../cloudflare/managed/config';
+import { promptDiff } from '../../cloudflare/managed/diff-prompt';
 import { consume } from '../../cloudflare/managed/dispatch';
 import { outbound } from '../../cloudflare/managed/harness';
 import { managedFetch } from '../../cloudflare/managed/index';
@@ -116,6 +117,10 @@ describe('the shared pipeline', () => {
       gateway: { base: 'http://gateway.internal/v1/acct/yonedarepo-test-agents' },
     });
     expect(spec.instructions).toContain('reviewing one change request for correctness');
+    // The whole diff rides in the prompt context: the agent sees every changed line.
+    expect(spec.context.diff).toContain('--- src/batch.js (modify)');
+    expect(spec.context.diff).toContain('i <= items.length');
+    expect(spec.context.diff).toContain('logo.png (binary)');
     expect(spec.contract).toContain('"findings"');
     const specText = JSON.stringify(spec);
     for (const key of [...Object.values(KEYS), 'yrp_fixture']) expect(specText).not.toContain(key);
@@ -266,6 +271,35 @@ describe('the shared pipeline', () => {
     await put(g, 'code-review', { settings: { trigger: { when: 'push', changes: 'ready_for_review', paths: ['docs/'], branches: [] } } });
     await deliver(g, opened(g));
     expect(g.created).toHaveLength(0);
+  });
+});
+
+describe('the diff in the prompt', () => {
+  it('carries every file of a multi-file change, and names what it leaves out', async () => {
+    const h = harness();
+    const files = (['code-review', 'security-review', 'slop-review'] as const).flatMap((a) => FIXTURES[a].trigger.files);
+    h.platform.change({ files });
+    await put(h, 'security-review', { repos: [h.platform.repo] });
+    fakeGateway();
+    h.harness.scripts = [{ result: result('security-review') }];
+    await deliver(h, opened(h));
+    await run(h, h.created[0]);
+    const diff: string = h.harness.started[0].spec.context.diff;
+    const order = files.map((f) => diff.indexOf(`--- ${f.path} (modify)`));
+    expect(order.every((i) => i >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(diff).toContain("+  const sql = 'SELECT * FROM users WHERE id = ' + id;");
+    expect(diff).toContain("+  console.log('items', items);");
+  });
+
+  it('caps the patch text and lists the files past the cap', () => {
+    const big = { path: 'big.js', op: 'add', patch: `@@ -0,0 +1 @@\n+${'x'.repeat(500)}\n` };
+    const small = { path: 'small.js', patch: '@@ -1 +1 @@\n+y\n' };
+    const shown = promptDiff([small, big, { path: 'img.png', binary: true }], 200);
+    expect(shown).toContain('--- small.js (modify)');
+    expect(shown).not.toContain('xxxx');
+    expect(shown).toMatch(/big\.js \(past the prompt's diff limit\)/);
+    expect(shown).toMatch(/img\.png \(binary\)/);
   });
 });
 

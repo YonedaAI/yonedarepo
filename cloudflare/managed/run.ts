@@ -13,6 +13,7 @@ import {
 import { RESULT_CONTRACT } from '../../shared/managed-instructions';
 import { resolveSettings } from '../../shared/managed-settings';
 import { gatewaySlugs, type ManagedEnv, type RunParams } from './config';
+import { promptDiff } from './diff-prompt';
 import { GATEWAY_HOST, type HarnessParams, harnessStub, PLATFORM_HOST } from './harness';
 import { ledgerStub } from './ledger';
 import { Platform, PlatformError } from './platform';
@@ -49,6 +50,8 @@ interface Prepared {
     base: string;
     head: string;
     files: string[];
+    /** Every changed file's patch (diff-prompt.ts), so the agent reviews each changed line. */
+    diff: string;
   };
 }
 
@@ -93,6 +96,7 @@ async function prepare(
       files: ((change.diff?.changes ?? []) as { path: string }[])
         .map((f) => String(f.path))
         .slice(0, 200),
+      diff: promptDiff((change.diff?.changes ?? []) as { path: string }[]),
     },
   };
 }
