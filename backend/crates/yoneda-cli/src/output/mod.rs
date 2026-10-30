@@ -6,8 +6,9 @@
 //! stable code. Without `--json` nothing changes: commands print their text with
 //! `human!`, which is silent under `--json`.
 //!
-//! `help`, `push` (Git's own output) and `hook` (the agent's hook protocol) have no
-//! `--json` form; `push` and `hook` pass `--json` on untouched.
+//! `help`, `push` (Git's own output), `hook` (the agent's hook protocol) and `auth token`
+//! (the bare credential, for a pipe) have no `--json` form; `push` and `hook` pass `--json`
+//! on untouched, and `auth` refuses it.
 mod account;
 mod error;
 mod local;

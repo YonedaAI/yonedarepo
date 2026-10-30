@@ -39,6 +39,11 @@ impl Token {
         }
         Ok(Self(value.to_owned()))
     }
+    /// The token itself, for `yoneda auth token` alone; everything else sends it through
+    /// `header`.
+    pub fn secret(&self) -> &str {
+        &self.0
+    }
     /// Repository tokens (`yrp_`) and other bearers go in `Authorization`; a personal
     /// account session (`<account>.<64 hex>`, the only credential the platform lets
     /// `git clone`) goes in the account cookie.

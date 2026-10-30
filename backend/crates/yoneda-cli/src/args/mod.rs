@@ -116,6 +116,16 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "logout" => Command::Logout {
             origin: simple(rest, &[])?.flag("origin"),
         },
+        "auth" => {
+            let p = Parsed::new(rest, &["origin"], &["show"])?;
+            if p.exactly(1, "auth token [--show]")?[0] != "token" {
+                return Err(Error::usage("expected auth token [--show]"));
+            }
+            Command::AuthToken {
+                origin: p.flag("origin"),
+                show: p.on("show"),
+            }
+        }
         "repo" => sub::repo(rest)?,
         "org" => org::org(rest)?,
         "ssh-key" => ssh_key::ssh_key(rest)?,
@@ -254,6 +264,23 @@ mod tests {
             }))
         );
         assert_eq!(parsed("").ok(), Some(Command::Help));
+        assert_eq!(
+            parsed("auth token").ok(),
+            Some(Command::AuthToken {
+                origin: None,
+                show: false
+            })
+        );
+        assert_eq!(
+            parsed("auth token --show --origin http://x").ok(),
+            Some(Command::AuthToken {
+                origin: Some("http://x".into()),
+                show: true
+            })
+        );
+        assert!(parsed("auth token extra").is_err());
+        assert!(parsed("auth status").is_err());
+        assert!(parsed("auth").is_err());
         assert_eq!(
             parsed("status --brief").ok(),
             Some(Command::Status { brief: true })
