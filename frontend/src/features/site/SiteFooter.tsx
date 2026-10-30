@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { LEGAL_ENTITY } from '../../content/legal/entity';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import type { SourceRoute } from '../source-platform/sourceRoute';
+import { featurePageFor } from './featurePages';
 import { sectionLink } from './siteLinks';
 import { DOCS_HOME } from './siteRoute';
 
@@ -36,8 +37,8 @@ export const FOOTER_COLUMNS: { title: string; links: FooterLink[] }[] = [
       { label: 'Features', route: site({ page: 'features' }) },
       { label: 'Pricing', route: site({ page: 'pricing' }) },
       { label: 'Docs', route: site({ page: 'docs', slug: DOCS_HOME }) },
-      { label: 'Code as Transactions', route: site({ page: 'features' }), hash: 'landing' },
-      { label: 'Review agents', route: { view: 'home' }, hash: 'build-review-agents' },
+      { label: 'Code as Transactions', route: site(featurePageFor('transactions')) },
+      { label: 'Review agents', route: site(featurePageFor('review-agents')) },
       { label: 'CLI', route: site({ page: 'docs', slug: 'guides/cli' }) },
     ],
   },
