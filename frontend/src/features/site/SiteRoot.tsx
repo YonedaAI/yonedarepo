@@ -4,8 +4,6 @@ import { lazy, Suspense, useEffect } from 'react';
 import type { Session } from '../../hooks/useSession';
 import type { Navigate } from '../shell/useRoute';
 import { AccountPanel } from '../workspace/AccountPanel';
-import { BLOG_POSTS, COMPANY_PAGES, LEGAL_PAGES } from './content';
-import { featureItemOf, featurePageAt } from './featurePages';
 import { SiteBlog } from './SiteBlog';
 import { SiteFeaturePage } from './SiteFeaturePage';
 import { SiteFeatures } from './SiteFeatures';
@@ -13,6 +11,7 @@ import { SiteHome } from './SiteHome';
 import { SiteLayout } from './SiteLayout';
 import { SiteCompany, SiteLegal } from './SitePages';
 import { SitePricing } from './SitePricing';
+import { documentTitle, pageTitle } from './seo';
 import { SIGNED_IN_HINT, type SitePage } from './siteRoute';
 
 // The docs (their pages, search index and layout) load on the first docs visit; the page
@@ -30,34 +29,6 @@ export function signedInHint(value?: boolean): boolean {
   }
 }
 
-function pageTitle(site: SitePage): string {
-  switch (site.page) {
-    case 'home':
-      return 'YonedaRepo — source control for agents';
-    case 'features':
-      return 'Features';
-    case 'feature': {
-      const page = featurePageAt(site.slug);
-      return (page && featureItemOf(page)?.title) ?? 'Features';
-    }
-    case 'pricing':
-      return 'Pricing';
-    case 'docs':
-      return 'Docs';
-    case 'blog':
-      return 'Blog';
-    case 'post':
-      return BLOG_POSTS.find((p) => p.slug === site.slug)?.title ?? 'Blog';
-    case 'about':
-    case 'vision':
-      return COMPANY_PAGES[site.page].title;
-    case 'legal':
-      return LEGAL_PAGES[site.doc].title;
-    case 'signin':
-      return site.mode === 'login' ? 'Sign in' : 'Create your account';
-  }
-}
-
 export function SiteRoot({
   site,
   session,
@@ -71,10 +42,10 @@ export function SiteRoot({
   signInError?: string;
 }) {
   const title = pageTitle(site);
+  const tabTitle = documentTitle(site);
   useEffect(() => {
-    if (site.page !== 'docs')
-      document.title = site.page === 'home' ? title : `${title} — YonedaRepo`;
-  }, [site.page, title]);
+    if (site.page !== 'docs') document.title = tabTitle;
+  }, [site.page, tabTitle]);
   // A signed-in visitor has nothing to do on the sign-in page.
   const signedInOnSignIn = site.page === 'signin' && session.authenticated;
   useEffect(() => {

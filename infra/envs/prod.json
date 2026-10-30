@@ -600,7 +600,8 @@
         "page, its /auth/<provider>/* routes answer 404. Callback URLs: https://yonedarepo.com/auth/github/callback",
         "and https://yonedarepo.com/auth/google/callback. Deploy uploads them when the secrets file has them.",
         "/api/managed is proxied to the managed agents Worker (MANAGED service binding, deployed first).",
-        "/install.sh and /downloads/* (worker/downloads.ts): the CLI installer and releases and the public Claude Code marketplace, from the DOWNLOADS bucket that cargo xtask downloads stages and uploads."
+        "/install.sh and /downloads/* (worker/downloads.ts): the CLI installer and releases and the public Claude Code marketplace, from the DOWNLOADS bucket that cargo xtask downloads stages and uploads.",
+        "SEO_INDEXING=on lets search engines index the site: robots.txt allows it, sitemap.xml lists it and HTML has no X-Robots-Tag (worker/seo-files.ts)."
       ],
       "secrets": [
         "OWNER_TOKEN"
@@ -652,7 +653,8 @@
           "run_worker_first": true
         },
         "vars": {
-          "PUBLIC_APP_ORIGIN": "{origin}"
+          "PUBLIC_APP_ORIGIN": "{origin}",
+          "SEO_INDEXING": "on"
         },
         "services": [
           {
