@@ -10,6 +10,7 @@ import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { packKey } from '../../cloudflare/worker/repo-pack-cache';
 import { transcriptKey } from '../../cloudflare/worker/repo-session-records';
 import type { Env } from '../../cloudflare/worker/types';
+import { asGit } from './git-answer';
 import { api, author, bindings, delayed, drainObjects, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 import { fakeBuilders } from './repo-pack-fixture';
 
@@ -298,4 +299,46 @@ it('never serves or builds a stored pack of any kind while a blob is withheld, a
   await platformJob(cached, { body: job, attempts: 1, ack: () => {}, retry: () => {} } as unknown as Message<any>);
   expect(await keys(`derived/v1/${id}/packs/`)).toEqual([]);
   expect(builders.record.started).toBe(0);
+});
+
+it('answers Git with a framed refusal when the tip holds a withheld blob, and serves a partial clone the rest', async () => {
+  const { cookie, id, reader } = await setUp('quarantine_tip');
+  const blob = await blobId(SECRET);
+  const app = await blobId('hello\n');
+  const main = (await api(`/repos/${id}/refs`, { cookie }, {}, local)).body.refs['refs/heads/main'];
+  const fetch = async (args: string[], v2 = true) => {
+    const body = v2
+      ? fetchCommand(args)
+      : `${args.map((a, i) => pkt(`${a}${i === 0 ? ' side-band-64k ofs-delta' : ''}\n`)).join('')}0000${pkt('done\n')}`;
+    const response = await platformFetch(
+      new Request(`https://yoneda/git/${id}.git/git-upload-pack`, {
+        method: 'POST',
+        headers: { authorization: `Basic ${btoa(`git:${reader.token}`)}`, ...(v2 ? { 'git-protocol': 'version=2' } : {}) },
+        body,
+      }),
+      local,
+    );
+    return asGit(new Uint8Array(await response.arrayBuffer()), v2);
+  };
+  const record = (await api(`/repos/${id}/quarantine`, { cookie }, { body: { path: 'config/staging.txt', reason: 'leak' } }, local)).body.record;
+  for (const stage of ['quarantined', 'purged']) {
+    if (stage === 'purged')
+      expect((await api(`/repos/${id}/quarantine/${record.id}/purge`, { cookie }, { body: { confirm: blob } }, local)).status).toBe(200);
+    // A full clone and a shallow one would lack the file: refused, naming it, in a way Git reads.
+    for (const [args, v2] of [[[`want ${main}`, 'done'], true], [[`want ${main}`, 'deepen 1', 'done'], true], [[`want ${main}`], false]] as const) {
+      const answer = await fetch([...args], v2);
+      expect(answer, `${stage} ${args.join(' ')}`).toMatchObject({ badBand: null, pack: 0 });
+      expect(answer.error, `${stage} ${args.join(' ')}`).toMatch(/QUARANTINED: Blob [0-9a-f]{40} \(config\/staging\.txt\) is quarantined/);
+    }
+    // A partial clone gets its pack.
+    const partial = await fetch([`want ${main}`, 'filter blob:none', 'done']);
+    expect([partial.error, partial.badBand, partial.pack > 0], stage).toEqual([null, null, true]);
+    // Its checkout's lazy fetch gets every other file, and says why the withheld one is not
+    // there; asking for that one alone is refused.
+    const lazy = await fetch([`want ${blob}`, `want ${app}`, 'filter blob:none', 'done']);
+    expect([lazy.error, lazy.badBand, lazy.pack > 0], stage).toEqual([null, null, true]);
+    expect(lazy.progress.join('\n'), stage).toMatch(/QUARANTINED: Blob [0-9a-f]{40} \(config\/staging\.txt\) is quarantined/);
+    const alone = await fetch([`want ${blob}`, 'filter blob:none', 'done']);
+    expect([alone.badBand, alone.error], stage).toEqual([null, expect.stringMatching(/QUARANTINED/)]);
+  }
 });

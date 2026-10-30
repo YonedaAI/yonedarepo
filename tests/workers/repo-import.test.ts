@@ -6,6 +6,7 @@ import { type ImportStep, runImport } from '../../cloudflare/worker/repo-import'
 import type { Env } from '../../cloudflare/worker/types';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { projectRefs } from '../../cloudflare/worker/repo-projection';
+import { asGit } from './git-answer';
 import { api, author, bindings, drainObjects, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
@@ -160,11 +161,12 @@ it('refuses a clone of history only the mirror holds at once, reading none of it
       }),
       env,
     );
-    const text = new TextDecoder().decode(await response.arrayBuffer());
     // Refused before the pack starts (Git prints `remote error: …`), not after a walk of
     // the imported trees through the mirror.
     expect(response.status, args.join(' ')).toBe(200);
-    expect(text, args.join(' ')).toMatch(/\n[0-9a-f]{4}ERR NOT_FOUND: Commit [0-9a-f]{40} is held only as imported history/);
+    const answer = asGit(new Uint8Array(await response.arrayBuffer()), true);
+    expect(answer, args.join(' ')).toMatchObject({ badBand: null, pack: 0 });
+    expect(answer.error, args.join(' ')).toMatch(/^NOT_FOUND: Commit [0-9a-f]{40} is held only as imported history/);
     expect(treeReads, args.join(' ')).toBe(0);
   }
 });
