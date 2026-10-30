@@ -23,6 +23,8 @@ first needs it)
 account
   login [--origin <url>] [--with-token] [--no-browser]   device login (or a token on stdin)
   logout [--origin <url>]
+  auth token [--show]                                    the token this CLI sends, on stdout for a pipe
+                                                         (export YONEDA_TOKEN=$(yoneda auth token))
   repo create <name> [--owner <org>] [--public] | repo list | repo delete <id> --confirm <name>
   repo visibility <id> public|private   public: anyone reads (no sign-in), only members write
   repo import <dir> [--name <name>] [--batch-files <n>]  files at HEAD (or a plain dir)

@@ -14,6 +14,7 @@
 // page, its /auth/<provider>/* routes answer 404. Callback URLs: https://yonedarepo.com/auth/github/callback
 // and https://yonedarepo.com/auth/google/callback. Deploy uploads them when the secrets file has them.
 // /api/managed is proxied to the managed agents Worker (MANAGED service binding, deployed first).
+// /install.sh and /downloads/* (worker/downloads.ts): the CLI installer and releases and the public Claude Code marketplace, from the DOWNLOADS bucket that cargo xtask downloads stages and uploads.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
@@ -81,6 +82,12 @@
     "region": "aws:us-east-1"
   },
   "preview_urls": false,
+  "r2_buckets": [
+    {
+      "binding": "DOWNLOADS",
+      "bucket_name": "yonedarepo-prod-downloads"
+    }
+  ],
   "ratelimits": [
     {
       "name": "AUTH_LIMITER",

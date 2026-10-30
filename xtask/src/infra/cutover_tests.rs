@@ -102,13 +102,18 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
         "containers",
         "queues",
         "d1_databases",
-        "r2_buckets",
     ] {
         assert!(
             agents.get(absent).is_none(),
             "the front Worker has no {absent}"
         );
     }
+    // Its one store: the public downloads (CLI releases, the Claude Code marketplace),
+    // which it only reads.
+    assert_eq!(
+        agents["r2_buckets"],
+        json!([{"binding": "DOWNLOADS", "bucket_name": "yonedarepo-prod-downloads"}])
+    );
     assert_eq!(agents["ratelimits"][0]["namespace_id"], "1001");
     assert_eq!(
         role(&workers, "agents").health,

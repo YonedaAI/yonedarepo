@@ -255,6 +255,12 @@ pub enum Command {
     Logout {
         origin: Option<String>,
     },
+    /// Prints the credential the CLI sends (`YONEDA_TOKEN`, else the stored login) for a
+    /// script; to a terminal only with `show`.
+    AuthToken {
+        origin: Option<String>,
+        show: bool,
+    },
     Repo {
         origin: Option<String>,
         command: RepoCommand,
