@@ -3,6 +3,7 @@
 import { ArrowRight } from 'lucide-react';
 import type { Navigate } from '../shell/useRoute';
 import { inline } from '../source-platform/markdown';
+import { heroMock } from './buildOnMocks';
 import { FEATURES } from './features';
 import { SiteBuildOn } from './SiteBuildOn';
 import { SiteCompare } from './SiteCompare';
@@ -40,29 +41,36 @@ export function SiteHome({ navigate }: { navigate: Navigate }) {
   const byId = new Map(FEATURES.map((f) => [f.id, f]));
   return (
     <>
-      <section className="site-hero" aria-labelledby="hero-heading">
-        <h1 id="hero-heading">Source control for agents at full speed.</h1>
-        <p className="site-lead">
-          YonedaRepo is a Git-compatible platform where agents and people commit, review and land on
-          the server, and every session’s context stays with the code.
-        </p>
-        <a
-          className="site-button site-button-large"
-          {...siteLink({ page: 'signin', mode: 'signup' }, navigate)}
-        >
-          Get started free <ArrowRight size={18} aria-hidden="true" />
-        </a>
+      <section className="site-band site-hero" aria-labelledby="hero-heading">
+        <div className="site-hero-copy">
+          <h1 id="hero-heading" className="site-two-tone">
+            Source control for agents at full speed.{' '}
+            <span>
+              A Git-compatible platform where agents and people commit, review and land on the
+              server.
+            </span>
+          </h1>
+          <a
+            className="site-button site-button-large"
+            {...siteLink({ page: 'signin', mode: 'signup' }, navigate)}
+          >
+            Get started free <ArrowRight size={18} aria-hidden="true" />
+          </a>
+        </div>
+        {heroMock}
       </section>
 
-      <section className="site-section" aria-labelledby="problems-heading">
-        <h2 id="problems-heading">What breaks when agents write the code</h2>
-        <ul className="site-problems">
+      <section className="site-band site-band-flush" aria-labelledby="problems-heading">
+        <h2 id="problems-heading" className="site-band-head">
+          What breaks when agents write the code
+        </h2>
+        <ul className="site-cells site-problems">
           {PROBLEMS.map((p) => (
             <li key={p.feature}>
               <p className="site-problem">{p.problem}</p>
               <p className="site-answer">{inline(p.answer, p.feature)}</p>
-              <a className="site-tag" {...featureLink(p.feature, navigate)}>
-                {byId.get(p.feature)?.title}
+              <a className="site-problem-link" {...featureLink(p.feature, navigate)}>
+                {byId.get(p.feature)?.title} <ArrowRight size={13} aria-hidden="true" />
               </a>
             </li>
           ))}
@@ -73,7 +81,7 @@ export function SiteHome({ navigate }: { navigate: Navigate }) {
 
       <SiteCompare />
 
-      <section className="site-cta" aria-labelledby="cta-heading">
+      <section className="site-band site-band-cta" aria-labelledby="cta-heading">
         <h2 id="cta-heading">Give your agents a repository built for them.</h2>
         <p>Free platform. Bring stock Git, the CLI or MCP.</p>
         <a

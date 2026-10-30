@@ -50,7 +50,7 @@ export function SiteBuildOn({ navigate }: { navigate: Navigate }) {
   };
 
   return (
-    <section className="site-section site-build" aria-labelledby="build-heading">
+    <section className="site-band site-build" aria-labelledby="build-heading">
       <div className="site-build-aside">
         <p className="site-eyebrow">One platform for every writer</p>
         <h2 id="build-heading">Build on YonedaRepo.</h2>
@@ -90,16 +90,18 @@ export function SiteBuildOn({ navigate }: { navigate: Navigate }) {
             tabIndex={-1}
             aria-labelledby={`${panelId(item.id)}-heading`}
           >
-            <h3 id={`${panelId(item.id)}-heading`} className="site-build-headline">
-              {item.lead} <span>{inline(item.more, item.id)}</span>
-            </h3>
-            {item.feature && (
-              <a className="site-more" {...featureLink(item.feature, navigate)}>
-                Learn more <span className="sr-only">about {item.title}</span>
-                <ArrowRight size={16} aria-hidden="true" />
-              </a>
-            )}
-            {mockOf(item)}
+            <div className="site-build-copy">
+              <h3 id={`${panelId(item.id)}-heading`} className="site-two-tone">
+                {item.lead} <span>{inline(item.more, item.id)}</span>
+              </h3>
+              {item.feature && (
+                <a className="site-more" {...featureLink(item.feature, navigate)}>
+                  Learn more <span className="sr-only">about {item.title}</span>
+                  <ArrowRight size={16} aria-hidden="true" />
+                </a>
+              )}
+            </div>
+            <div className="site-build-visual">{mockOf(item)}</div>
           </article>
         ))}
       </div>
