@@ -8,7 +8,7 @@ import { linkTo, type Navigate } from '../shell/useRoute';
 import { BUILD_ON } from './buildOn';
 import { logMock } from './buildOnMocks';
 import { featurePageFor } from './featurePages';
-import { siteLink } from './siteLinks';
+import { EVENTS_URL, siteLink } from './siteLinks';
 import { SITE_NAV } from './siteRoute';
 
 export type MenuId = 'features' | 'company';
@@ -81,6 +81,11 @@ function CompanyPanel({ go }: { go: Navigate }) {
       <li>
         <a className="site-menu-item" {...siteLink({ page: 'about' }, go)}>
           About
+        </a>
+      </li>
+      <li>
+        <a className="site-menu-item" href={EVENTS_URL} target="_blank" rel="noopener noreferrer">
+          Events
         </a>
       </li>
       <li>
