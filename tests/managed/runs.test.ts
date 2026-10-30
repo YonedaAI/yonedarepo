@@ -569,6 +569,10 @@ describe('webhooks', () => {
     expect((await post(await signature('whsec_wrong', body))).status).toBe(401);
     expect((await post(await signature(HOOK_SECRET, body))).status).toBe(202);
     expect(h.sent).toEqual([opened(h)]);
+    // The platform names change events by family and action (change_hooks.rs): change.opened.
+    const real = JSON.stringify({ event: 'change.opened', action: 'opened', repo: h.platform.repo, commit: HEAD_A, ref: 'refs/heads/feature', change: { number: 1 } });
+    expect((await post(await signature(HOOK_SECRET, real), real)).status).toBe(202);
+    expect(h.sent.at(-1)).toEqual(opened(h));
     const own = await managedFetch(new Request(`https://managed.example.com/api/managed/workspaces/${h.platform.account}`, { headers: { cookie: 'session=owner' } }), h.env);
     expect(own.status).toBe(404);
   });
@@ -590,7 +594,7 @@ describe('Durable Objects and the Workflow binding', () => {
     }
   });
 
-  it('upgrades a repository at schema v1 to v2 (run summaries), keeping its runs', async () => {
+  it('upgrades a repository at schema v1 to the latest (run summaries, revoked connections), keeping its runs', async () => {
     const stub = repoStub(env as unknown as ManagedEnv, newRepo());
     await runInDurableObject(stub as DurableObjectStub, (_instance, state) => {
       const sql = state.storage.sql;
@@ -603,8 +607,10 @@ describe('Durable Objects and the Workflow binding', () => {
       sql.exec(
         "INSERT INTO runs (id, repo, agent, change, head, status, harness, provider, model, created_at) VALUES ('r1', 'r', 'code-review', 1, 'h', 'passed', 'codex', 'codex', 'gpt-5.6-luna', 1)",
       );
-      expect(migrate(sql, REPO_SCHEMA)).toBe(2);
+      expect(migrate(sql, REPO_SCHEMA)).toBe(REPO_SCHEMA.length);
       expect(sql.exec("SELECT id, summary FROM runs").toArray()).toEqual([{ id: 'r1', summary: null }]);
+      // v3: a connection can be kept with its token revoked.
+      expect(sql.exec('SELECT revoked_at FROM connection').toArray()).toEqual([]);
     });
   });
 

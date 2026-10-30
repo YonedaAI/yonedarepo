@@ -19,7 +19,14 @@ import {
   SettingsError,
   validateOverrides,
 } from '../../shared/managed-settings';
-import { HOOK_EVENTS, type ManagedEnv, REPO_ID, TOKEN_NAME, TOKEN_SCOPES } from './config';
+import {
+  HOOK_EVENTS,
+  type ManagedEnv,
+  NOTICE_EVENTS,
+  REPO_ID,
+  TOKEN_NAME,
+  TOKEN_SCOPES,
+} from './config';
 import { ledgerStub } from './ledger';
 import { type Json, Platform, PlatformError } from './platform';
 import { repoStub } from './repo-agents';
@@ -121,8 +128,11 @@ async function agentState(
 /** Mints the agents' repository token and registers their webhook, as the owner. */
 async function connect(env: ManagedEnv, req: Request, repo: string, workspace: string) {
   const stub = repoStub(env, repo);
-  if (await stub.connection()) return;
+  const existing = await stub.connection();
+  if (existing && !existing.revoked) return;
   const owner = new Platform(env, { forward: req });
+  // Agents return to a repository that kept only its deletion notice: that hook is replaced.
+  if (existing) await owner.deleteHook(repo, existing.hook_id).catch(alreadyGone);
   let name = TOKEN_NAME;
   let minted: Json;
   try {
@@ -147,19 +157,29 @@ async function connect(env: ManagedEnv, req: Request, repo: string, workspace: s
   });
 }
 
-/** Revokes a repository's agent token and deletes its webhook once no agent runs there. A token
- * or hook already gone is fine; the connection is forgotten either way. */
+const alreadyGone = (e: unknown) => {
+  if (!(e instanceof PlatformError && (e.status === 404 || e.code === 'NOT_FOUND'))) throw e;
+};
+
+/**
+ * Once no agent runs on a repository: its agent token is revoked and the agents webhook (change,
+ * branch, repo) is replaced by one for repo.deleted alone, so the repository's reviews (runs,
+ * findings, transcripts) are still cleared when it is deleted. A token or hook already gone is
+ * fine.
+ */
 async function disconnect(env: ManagedEnv, req: Request, repo: string) {
   const stub = repoStub(env, repo);
   const connection = await stub.connection().catch(() => null);
-  if (!connection) return;
+  if (!connection || connection.revoked) return;
   const owner = new Platform(env, { forward: req });
-  const gone = (e: unknown) => {
-    if (!(e instanceof PlatformError && (e.status === 404 || e.code === 'NOT_FOUND'))) throw e;
-  };
-  await owner.revokeToken(repo, connection.token_name).catch(gone);
-  await owner.deleteHook(repo, connection.hook_id).catch(gone);
-  await stub.unlink();
+  await owner.revokeToken(repo, connection.token_name).catch(alreadyGone);
+  await owner.deleteHook(repo, connection.hook_id).catch(alreadyGone);
+  const notice = await owner.createHook(
+    repo,
+    `${env.PUBLIC_URL.replace(/\/$/, '')}/hooks/${repo}`,
+    NOTICE_EVENTS,
+  );
+  await stub.retain(repo, { id: Number(notice.id), secret: String(notice.secret) });
 }
 
 async function update(

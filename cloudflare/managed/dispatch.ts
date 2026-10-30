@@ -5,20 +5,27 @@
 import { managedAgent } from '../../shared/managed-agents';
 import { resolveSettings, triggerMatches } from '../../shared/managed-settings';
 import { COMMIT_ID, type ManagedEnv, type QueueMessage, type RunParams } from './config';
-import { Platform } from './platform';
+import { Platform, PlatformError } from './platform';
 import { repoStub } from './repo-agents';
 import { instanceId } from './workflow';
 import { workspaceStub } from './workspace-agents';
 
 const json = (value: unknown, status = 200) => Response.json(value, { status });
 
-/** `POST /hooks/<repo>`: a signed platform event. */
+/** `POST /hooks/<repo>`: a signed platform event. The platform names an event by family and
+ * action (`change.opened`, `branch` with `action`, `repo.deleted`). */
 export async function receiveHook(req: Request, env: ManagedEnv, repo: string): Promise<Response> {
   const body = await req.text();
   if (body.length > 256 * 1024) return json({ error: { code: 'TOO_LARGE' } }, 413);
   const signature = req.headers.get('x-yoneda-signature') ?? '';
-  if (!(await repoStub(env, repo).verify(body, signature)))
+  const stub = repoStub(env, repo);
+  if (!(await stub.verify(body, signature))) {
+    // A repository with nothing left here (already cleared, or never connected) has nothing to
+    // delete: a repeated repo.deleted is acknowledged so the platform stops resending it.
+    if (!(await stub.hasConnection()) && req.headers.get('x-yoneda-event') === 'repo.deleted')
+      return json({ ignored: true }, 202);
     return json({ error: { code: 'UNAUTHORIZED' } }, 401);
+  }
   let event: Record<string, any>;
   try {
     event = JSON.parse(body);
@@ -26,22 +33,78 @@ export async function receiveHook(req: Request, env: ManagedEnv, repo: string): 
     return json({ error: { code: 'INVALID_INPUT' } }, 400);
   }
   if (event.repo !== repo) return json({ error: { code: 'INVALID_INPUT' } }, 400);
+  const name = String(event.event ?? '');
+  if (name === 'repo.deleted') {
+    await env.RUNS.send({ kind: 'deleted', repo });
+    return json({ queued: true }, 202);
+  }
+  const family = name.split('.')[0];
+  const action = name.includes('.') ? name.split('.')[1] : String(event.action ?? '');
   const commit = COMMIT_ID.test(String(event.commit)) ? String(event.commit) : null;
   const wanted =
-    (event.event === 'change' && event.action === 'opened') ||
-    (event.event === 'branch' && (event.action === 'moved' || event.action === 'created'));
+    (family === 'change' && action === 'opened') ||
+    (family === 'branch' && (action === 'moved' || action === 'created'));
   if (!wanted || !commit) return json({ ignored: true }, 202);
   const number = Number(event.change?.number);
   await env.RUNS.send({
     kind: 'event',
     repo,
-    event: String(event.event),
+    event: family,
     ref: typeof event.ref === 'string' ? event.ref : null,
     commit,
     change: Number.isSafeInteger(number) && number > 0 ? number : null,
-    action: String(event.action),
+    action,
   });
   return json({ queued: true }, 202);
+}
+
+const TRANSCRIPT_PAGE = 1000;
+
+/** Deletes every transcript under `transcripts/<repo>/`, a page (at most 1,000 keys) at a time;
+ * listing again from the start until none is left, so a retry resumes where it stopped. */
+export async function purgeTranscripts(env: ManagedEnv, repo: string) {
+  if (!env.TRANSCRIPTS) return 0;
+  let deleted = 0;
+  for (;;) {
+    const page = await env.TRANSCRIPTS.list({
+      prefix: `transcripts/${repo}/`,
+      limit: TRANSCRIPT_PAGE,
+    });
+    if (page.objects.length > 0) {
+      await env.TRANSCRIPTS.delete(page.objects.map((o) => o.key));
+      deleted += page.objects.length;
+    }
+    if (!page.truncated || page.objects.length === 0) return deleted;
+  }
+}
+
+/**
+ * repo.deleted: once the platform confirms the repository is GONE (it answers so before it
+ * checks a credential, so even a revoked token tells), its transcripts, its workspace entries
+ * and its RepoAgents state go, in that order: the connection, which names the workspace, goes
+ * last, so a retry after a failure finds what is left. Billing entries stay.
+ */
+async function onDeleted(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'deleted' }>) {
+  const stub = repoStub(env, m.repo);
+  const connection = await stub.connection().catch(() => null);
+  if (!connection) return;
+  const gone = await new Platform(env, { token: connection.token }).status(m.repo).then(
+    () => false,
+    (e) => {
+      if (e instanceof PlatformError && e.code === 'GONE') return true;
+      // A live repository refuses a revoked token; anything else may be passing.
+      if (e instanceof PlatformError && e.status >= 400 && e.status < 500) return false;
+      throw e;
+    },
+  );
+  if (!gone) {
+    console.warn(JSON.stringify({ event: 'managed.delete_refused', repo: m.repo }));
+    return;
+  }
+  const transcripts = await purgeTranscripts(env, m.repo);
+  await workspaceStub(env, connection.account).forget(m.repo);
+  await stub.purge();
+  console.log(JSON.stringify({ event: 'managed.repo_purged', repo: m.repo, transcripts }));
 }
 
 /** Starts a run's Workflow instance; an instance that already exists is left alone. */
@@ -56,7 +119,7 @@ async function startInstance(env: ManagedEnv, params: RunParams) {
 async function onEvent(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'event' }>) {
   const repo = repoStub(env, m.repo);
   const [connection, enabled] = await Promise.all([repo.connection(), repo.enabled()]);
-  if (!connection || enabled.length === 0 || !m.commit) return;
+  if (!connection || connection.revoked || enabled.length === 0 || !m.commit) return;
   const platform = new Platform(env, { token: connection.token });
   // The owner's break-glass pause stops automation, managed agents included.
   if (await platform.automationPaused(m.repo)) return;
@@ -103,7 +166,7 @@ async function onEvent(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'event'
 async function onResume(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'resume' }>) {
   const repo = repoStub(env, m.repo);
   const connection = await repo.connection();
-  if (!connection) return;
+  if (!connection || connection.revoked) return;
   const next = await repo.resume(m.run);
   if (!next) return;
   await startInstance(env, {
@@ -123,6 +186,7 @@ export async function consume(batch: MessageBatch<QueueMessage>, env: ManagedEnv
       const m = message.body;
       if (m.kind === 'event') await onEvent(env, m);
       else if (m.kind === 'resume') await onResume(env, m);
+      else if (m.kind === 'deleted') await onDeleted(env, m);
       message.ack();
     } catch (e: any) {
       console.error(

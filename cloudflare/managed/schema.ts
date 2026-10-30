@@ -50,6 +50,9 @@ export const REPO_SCHEMA: string[] = [
    CREATE INDEX runs_recent ON runs(created_at DESC);`,
   // v2 (2026-10-30): the agent's summary, as posted, for the run's detail page.
   `ALTER TABLE runs ADD COLUMN summary TEXT;`,
+  // v3 (2026-10-30): a connection whose token was revoked when its last agent was disabled,
+  // kept (with a repo-only hook) so the repository's deletion still clears its reviews.
+  `ALTER TABLE connection ADD COLUMN revoked_at INTEGER;`,
 ];
 
 /** CreditLedger: append-only credit entries and runs waiting for credit. */

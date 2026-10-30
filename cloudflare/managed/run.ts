@@ -67,7 +67,7 @@ async function prepare(
   agent: ManagedAgentDefinition,
 ): Promise<Prepared | string> {
   const connection = await repoStub(env, p.repo).connection();
-  if (!connection) return 'not_connected';
+  if (!connection || connection.revoked) return 'not_connected';
   const platform = new Platform(env, { token: connection.token });
   if (await platform.automationPaused(p.repo)) return 'automation_paused';
   const change = await platform.change(p.repo, p.change);
@@ -256,7 +256,9 @@ async function attempt(
     );
     await repoStub(env, p.repo).recordContainer(p.run, seconds, charged);
     const transcript = typeof status.transcript === 'string' ? status.transcript : '';
-    if (transcript && env.TRANSCRIPTS)
+    // A run whose repository was deleted (and cleared) meanwhile keeps no transcript.
+    const kept = transcript && (await repoStub(env, p.repo).run(p.run)) !== null;
+    if (kept && env.TRANSCRIPTS)
       await env.TRANSCRIPTS.put(
         `transcripts/${p.repo}/${p.run}/${p.attempt}-${i}.txt`,
         redact(transcript).slice(-TRANSCRIPT_MAX),
