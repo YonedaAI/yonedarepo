@@ -1,5 +1,6 @@
 // Transport/browser counterpart of yoneda-core::account; parity cases live beside the Rust contract.
 import { accountSchema } from './contracts/account';
+import { reservedHandlesSchema } from './contracts/reserved-handles';
 
 export type { AccountIdentifier } from './contracts/account';
 export const ACCOUNT_IDENTIFIER_HELP = accountSchema.description;
@@ -57,4 +58,17 @@ export function decodeAccountIdentifier(value: string): string | null {
   } catch {
     return null;
   }
+}
+
+/** Names no handle may take: the site's and the app's top-level paths
+ * (`yoneda_core::account::RESERVED_HANDLES`). */
+export const RESERVED_HANDLES: ReadonlySet<string> = new Set(reservedHandlesSchema.enum);
+
+export const isReservedHandle = (name: string) => RESERVED_HANDLES.has(name);
+
+/** A handle as URLs carry it (`/<handle>`): a username's shape, lowercased, never an email
+ * address or a reserved name; null when `value` is none. */
+export function normalizeHandle(value: string): string | null {
+  const name = normalizeAccountIdentifier(value);
+  return name && !name.includes('@') && !isReservedHandle(name) ? name : null;
 }

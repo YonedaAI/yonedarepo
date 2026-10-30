@@ -199,6 +199,7 @@ fn run<S: SqlStore>(
         R::Tokens => tokens::list_tokens(db, actor),
         R::Members => members::list(db),
         R::SetVisibility => visibility::set(db, c, actor),
+        R::Rename => visibility::rename(db, c, settings),
         R::MemberPut => members::put(db, c, actor, settings),
         R::MemberRemove => members::remove(db, c, actor, settings),
     }
