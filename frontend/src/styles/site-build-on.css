@@ -1,0 +1,151 @@
+/* The home page's "Build on YonedaRepo" tour: a sticky feature list beside scrolling panels. */
+.site-build {
+  display: grid;
+  grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
+  gap: 56px;
+  align-items: start;
+}
+.site-build-aside {
+  position: sticky;
+  /* Clears the sticky site header. */
+  top: 88px;
+}
+.site-eyebrow {
+  margin: 0 0 8px;
+  color: var(--site-accent);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.site-build-aside h2 {
+  font-size: clamp(30px, 4vw, 44px);
+  margin: 0 0 24px;
+}
+.site-build-nav {
+  display: grid;
+  gap: 2px;
+  margin: 0 0 20px;
+  padding: 0;
+  list-style: none;
+}
+.site-build-link {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border-left: 3px solid transparent;
+  color: var(--site-muted);
+  transition:
+    background-color 0.15s,
+    color 0.15s;
+}
+.site-build-nav svg {
+  flex: none;
+  margin-top: 2px;
+}
+.site-build-link:hover {
+  background: var(--site-surface);
+  color: var(--site-text);
+}
+.site-build-link[aria-current="true"] {
+  background: var(--site-surface);
+  border-left-color: var(--site-accent);
+  color: var(--site-text);
+}
+.site-build-link[aria-current="true"] svg {
+  color: var(--site-accent);
+}
+.site-build-nav span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.site-build-nav strong {
+  font-size: 16px;
+}
+.site-build-nav small {
+  font-size: 14px;
+  color: var(--site-muted);
+}
+.site-build-panels {
+  display: grid;
+  gap: 32px;
+}
+.site-build-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 32px;
+  background: var(--site-surface);
+  border: 1px solid var(--site-line);
+  border-radius: 16px;
+  scroll-margin-top: 88px;
+}
+.site-build-panel:focus {
+  outline: none;
+}
+.site-build-panel:focus-visible {
+  outline: 2px solid var(--site-accent);
+  outline-offset: 4px;
+}
+.site-build-headline {
+  font-size: clamp(20px, 2.2vw, 24px);
+  line-height: 1.35;
+  margin: 0;
+}
+.site-build-headline > span {
+  color: var(--site-muted);
+  font-weight: 500;
+}
+.site-build-panel > .site-more {
+  align-self: flex-start;
+}
+.mock-checks {
+  margin: 12px 0 0;
+  color: var(--site-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-build-link {
+    transition: none;
+  }
+}
+
+@media (max-width: 800px) {
+  .site-build {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  .site-build-aside {
+    position: static;
+  }
+  .site-build-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .site-build-link {
+    align-items: center;
+    gap: 6px;
+    padding: 4px 12px;
+    border: 1px solid var(--site-line);
+    border-radius: 999px;
+    background: var(--site-surface);
+    font-size: 14px;
+  }
+  .site-build-link[aria-current="true"] {
+    border-color: var(--site-accent);
+  }
+  .site-build-nav strong {
+    font-size: 14px;
+  }
+  .site-build-nav small {
+    display: none;
+  }
+  .site-build-panel {
+    padding: 20px;
+    scroll-margin-top: 72px;
+  }
+}
