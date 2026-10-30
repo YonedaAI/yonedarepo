@@ -13,10 +13,18 @@ import {
   MANAGED_AGENTS,
   STARTING_CREDIT_USD,
 } from '../../../../shared/managed-agents';
+import { LEGAL_ENTITY } from '../../content/legal/entity';
 import { nextTheme, THEMES } from '../shell/theme';
 import { formatSourceRoute, parseSourceRoute } from '../source-platform/sourceRoute';
 import { BUILD_ON, mockOf, pickActive } from './buildOn';
-import { BLOG_POSTS, COMPANY_PAGES, DOCS_NAV, DOCS_PAGES, LEGAL_PAGES } from './content';
+import {
+  BLOG_POSTS,
+  COMPANY_PAGES,
+  DOCS_NAV,
+  DOCS_PAGES,
+  LEGAL_PAGES,
+  LEGAL_SOURCES,
+} from './content';
 import { FEATURES } from './features';
 import {
   agentUsageRows,
@@ -340,16 +348,82 @@ describe('content', () => {
     expect(html).not.toContain('](');
   });
 
-  it.each(['terms', 'privacy'] as const)('renders %s as a draft pending legal review', (doc) => {
-    expect(LEGAL_PAGES[doc].status).toBe('Draft, pending legal review');
-    const html = render(createElement(SiteLegal, { doc, navigate }));
-    expect(html.match(/<h1/g)).toHaveLength(1);
-    expect(html).toContain('Draft, pending legal review');
-    expect(html).toContain('Yoneda Labs');
-    expect(html).toContain('YonedaRepo');
-    expect(html).toContain('href="mailto:privacy@yonedarepo.com"');
-    expect(html).not.toMatch(/governing law|\bvenue\b|will be (set|published)|minimum age/i);
-    expect(html).not.toContain('](');
+  const LEGAL_SECTIONS = {
+    privacy: [
+      'What we collect',
+      'How we use it',
+      'Where it is stored',
+      'How long we keep it',
+      'Your choices and deletion',
+      'When we disclose it',
+      'Security',
+      'Service providers',
+      'Links to other sites',
+      'Rights in the EEA and the UK',
+      'Rights in US states',
+      'Children',
+      'Changes to this policy',
+      'Contact',
+    ],
+    terms: [
+      'Who may use YonedaRepo',
+      'Your account and its security',
+      'Your content',
+      'Acceptable use and limits',
+      'Credit and fees',
+      'Backups',
+      'Third-party integrations',
+      'Copyright complaints',
+      'Our intellectual property',
+      'Feedback',
+      'Links to other sites',
+      'Suspension and termination',
+      'Disclaimers',
+      'Limitation of liability',
+      'Indemnification',
+      'Disputes',
+      'Export and sanctions',
+      'Changes to these terms',
+      'General',
+      'Contact',
+    ],
+  };
+
+  it.each(['terms', 'privacy'] as const)(
+    'renders %s with every section, a contents list, the date and the legal address',
+    (doc) => {
+      const html = render(createElement(SiteLegal, { doc, navigate }));
+      expect(html.match(/<h1/g)).toHaveLength(1);
+      expect(html).toContain('YonedaRepo');
+      expect(html).toContain('href="mailto:legal@yonedarepo.com"');
+      expect(html).toContain(`Last updated <time dateTime="${LEGAL_ENTITY.lastUpdated}"`);
+      const headings = [...LEGAL_PAGES[doc].body.matchAll(/^## (.+)$/gm)].map((m) => m[1]);
+      expect(headings).toEqual(LEGAL_SECTIONS[doc]);
+      for (const title of headings) {
+        const id = title
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '');
+        expect(html).toContain(`href="#${id}"`);
+        expect(html).toContain(`id="${id}"`);
+      }
+      expect(html).not.toContain('](');
+      expect(html).not.toContain('{{');
+    },
+  );
+
+  it('fills every company fact the legal pages use, so none ships as a gap', () => {
+    const used = new Set(
+      Object.values(LEGAL_SOURCES).flatMap((source) =>
+        [...source.matchAll(/\{\{(\w+)\}\}/g)].map((m) => m[1]),
+      ),
+    );
+    expect([...used].filter((name) => !(name in LEGAL_ENTITY))).toEqual([]);
+    const missing = Object.entries(LEGAL_ENTITY)
+      .filter(([, value]) => !String(value).trim())
+      .map(([name]) => name);
+    expect(missing).toEqual([]);
+    expect(LEGAL_ENTITY.lastUpdated).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it('renders the home and features pages with one h1 each', () => {

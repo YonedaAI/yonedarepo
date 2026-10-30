@@ -1,6 +1,8 @@
 // The site's written pages: Markdown files under `frontend/src/content`, each opening with a
 // small front matter block (`title:`, and `date:`/`summary:` for posts), bundled at build time.
 
+import { LEGAL_ENTITY, type LegalField } from '../../content/legal/entity';
+
 type Page = { title: string; summary: string; body: string; status: string };
 export type Post = Page & { slug: string; date: string };
 
@@ -79,8 +81,20 @@ export const COMPANY_PAGES = {
   vision: page(companyFiles['../../content/company/vision.md'] ?? ''),
 };
 
+/** `{{field}}` in a legal page → that field of LEGAL_ENTITY (an unknown name stays as is). */
+export const fillLegal = (text: string) =>
+  text.replace(/\{\{(\w+)\}\}/g, (all, name: string) =>
+    name in LEGAL_ENTITY ? LEGAL_ENTITY[name as LegalField] : all,
+  );
+const legalPage = (source: string): Page => page(fillLegal(source));
+
 /** Terms and Privacy; `status` (front matter) is shown above each, e.g. a draft notice. */
 export const LEGAL_PAGES = {
-  terms: page(legalFiles['../../content/legal/terms.md'] ?? ''),
-  privacy: page(legalFiles['../../content/legal/privacy.md'] ?? ''),
+  terms: legalPage(legalFiles['../../content/legal/terms.md'] ?? ''),
+  privacy: legalPage(legalFiles['../../content/legal/privacy.md'] ?? ''),
+};
+/** The raw legal sources, for the test that every `{{field}}` they use is filled. */
+export const LEGAL_SOURCES = {
+  terms: legalFiles['../../content/legal/terms.md'] ?? '',
+  privacy: legalFiles['../../content/legal/privacy.md'] ?? '',
 };
