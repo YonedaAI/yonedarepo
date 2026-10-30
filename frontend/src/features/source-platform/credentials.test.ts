@@ -13,7 +13,7 @@ vi.mock('./useSource', () => ({
 }));
 
 const { pathList } = await import('./connect');
-const { patBody, PatTable, PersonalTokens } = await import('./PersonalTokens');
+const { PatDialog, patBody, PatTable } = await import('./PersonalTokens');
 const { repoTokenBody, RepoTokens } = await import('./RepoTokens');
 const { forkRequest } = await import('./forks');
 const { DeleteOrganization, orgDeletePath } = await import('./OrgDelete');
@@ -81,18 +81,18 @@ describe('token forms', () => {
     expect(table).toContain('<td>acme</td>');
     expect(table).toContain('<td>any</td>');
     expect(table).toContain('aria-label="Revoke ci"');
-    const tokens = loaded({ tokens: [] });
-    const form = html(PersonalTokens, {
-      repos: [],
+    // The form lives in Create token's dialog.
+    const props = { repos: [], onClose: () => {}, onCreated: () => {} };
+    const form = html(PatDialog, {
+      ...props,
       orgs: [
         { org: 'zeta', role: 'member' },
         { org: 'acme', role: 'owner' },
       ],
-      tokens,
     });
     expect(form).toContain('aria-label="Create a personal access token"');
     expect(form).toMatch(/Any \(not limited\).*Only acme.*Only zeta/);
-    expect(html(PersonalTokens, { repos: [], tokens })).not.toContain('pat-org');
+    expect(html(PatDialog, { ...props, orgs: [] })).not.toContain('pat-org');
   });
   it('offers a path grant on repository tokens', () => {
     state.value[`/repos/${repo}/tokens`] = loaded({
