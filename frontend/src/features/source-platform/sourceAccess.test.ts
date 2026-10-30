@@ -139,6 +139,29 @@ describe('the account settings pages', () => {
     }
   });
 
+  it('gives Organizations a description and its create button, once signed in', () => {
+    const props = { orgs: loaded({ data: { orgs: [] } }), navigate: () => {} };
+    const orgsPage = html(AccountSettings, {
+      identity,
+      repos,
+      section: 'organizations',
+      ...props,
+    });
+    const head = orgsPage.slice(orgsPage.indexOf('<header'), orgsPage.indexOf('</header>'));
+    expect(head).toContain('Organizations own repositories together');
+    expect(head).toContain('>Create organization</button>');
+    expect(orgsPage).toContain('No organizations yet');
+    const out = html(AccountSettings, {
+      identity: null,
+      repos,
+      section: 'organizations',
+      ...props,
+    });
+    expect(out).not.toContain('Create organization');
+    // Other pages have no such action.
+    expect(page('tokens')).not.toContain('Create organization');
+  });
+
   it('waits for the session, then asks a signed-out visitor to sign in', () => {
     expect(page('billing', { identity: null, loading: true })).toContain('Loading your account');
     const out = page('billing', { identity: null });

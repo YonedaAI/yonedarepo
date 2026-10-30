@@ -1,10 +1,11 @@
 // Account settings, one page per section (`settingsRoute.ts`; the sidebar's Account group moves
 // between them): General (the account, its email, its sign-in methods, the theme), Billing,
-// Tokens, SSH keys and Organizations. Each page is its title, then titled cards.
+// Tokens, SSH keys and Organizations. Each page is its title (Organizations adds a description
+// and Create organization), then titled cards.
 import type { AccountIdentity } from '../../lib/types';
 import { ThemePicker } from '../shell/ThemePicker';
 import type { Navigate } from '../shell/useRoute';
-import { AccountOrgs } from '../source-platform/AccountOrgs';
+import { AccountOrgs, CreateOrganization } from '../source-platform/AccountOrgs';
 import type { OrgSummary } from '../source-platform/orgModel';
 import { Loading } from '../source-platform/SourceStatus';
 import { SshKeys } from '../source-platform/SshKeys';
@@ -87,9 +88,23 @@ function Section(props: Props) {
 }
 
 export function AccountSettings(props: Props) {
+  const { section, identity, orgs, navigate } = props;
+  const isOrgs = section === 'organizations';
   return (
     <section className="account-settings" aria-labelledby="settings-title">
-      <h1 id="settings-title">{ACCOUNT_SECTION_TITLES[props.section]}</h1>
+      <header className="settings-head">
+        <div>
+          <h1 id="settings-title">{ACCOUNT_SECTION_TITLES[section]}</h1>
+          {isOrgs && (
+            <p className="source-meta">
+              Organizations own repositories together, with members and teams.
+            </p>
+          )}
+        </div>
+        {isOrgs && identity && orgs && navigate && (
+          <CreateOrganization orgs={orgs} navigate={navigate} />
+        )}
+      </header>
       <Section {...props} />
     </section>
   );
