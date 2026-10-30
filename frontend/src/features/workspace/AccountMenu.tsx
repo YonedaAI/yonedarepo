@@ -1,5 +1,5 @@
 // The account menu at the top right: the person's picture and name, then Account,
-// Organizations, Connect agents (the CLI and MCP panel), Appearance (the theme picker, as a submenu), Support, Documentation and
+// Organizations, Billing, Connect agents (the CLI and MCP panel), Appearance (the theme picker, as a submenu), Support, Documentation and
 // About (new tabs), and Log out.
 import {
   ArrowUpRight,
@@ -8,6 +8,7 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronRight,
+  CreditCard,
   Info,
   LifeBuoy,
   LogOut,
@@ -33,6 +34,7 @@ export const MENU_LINKS = [
 const SECTIONS = [
   { id: 'account', label: 'Account', Icon: UserRound },
   { id: 'organizations', label: 'Organizations', Icon: Building2 },
+  { id: 'billing', label: 'Billing', Icon: CreditCard },
 ] as const;
 
 export function AccountMenu({

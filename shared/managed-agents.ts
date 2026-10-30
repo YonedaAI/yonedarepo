@@ -366,6 +366,8 @@ export interface ManagedCredit {
   card: CardOnFile | null;
   /** Why the last automatic top-up failed (null when it did not): runs stop at $0. */
   top_up_failed: string | null;
+  /** Whether a saved card is charged when the balance runs low (on unless switched off). */
+  auto_top_up: boolean;
 }
 
 /** One automatic top-up charged to the card. */
@@ -497,7 +499,8 @@ export interface BillingState {
   /** The saved card (brand and last 4), or null. */
   payment_method: CardOnFile | null;
   billing: BillingMode;
-  auto_top_up: { below_usd: number; add_usd: number };
+  /** The top-up rule, and whether it is on (switched off, the card stays saved). */
+  auto_top_up: { below_usd: number; add_usd: number; enabled: boolean };
   top_ups: TopUp[];
   usage: {
     repo: string;

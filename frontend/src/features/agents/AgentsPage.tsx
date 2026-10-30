@@ -1,6 +1,7 @@
 // Agents (`/agents`): the workspace's managed agents. A top row (All agents, workspace menu,
 // filter, search, View runs, New agent), then "Managed by YonedaRepo": the credit card and one
-// card per agent YonedaRepo maintains. An agent not set up offers Add agent (its set-up page);
+// card per agent YonedaRepo maintains. A card added here returns here from Stripe
+// (`?billing=added`), and the credit card says once it is saved. An agent not set up offers Add agent (its set-up page);
 // a set-up one shows Active or Paused, its newest result and run count, and a ⋮ menu.
 import { Filter, MoreHorizontal, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -22,6 +23,8 @@ import {
   workspaceOptions,
   workspacePath,
 } from './agentsModel';
+import { agentsReturnPath } from './billingModel';
+import { useCardReturn } from './billingParts';
 import { PromoCard } from './PromoCard';
 
 type Space = { workspace?: string };
@@ -116,6 +119,7 @@ export function AgentsPage({
   const state = loaded.data;
   const agents = state ? visibleAgents(state.agents, query, enabledOnly) : [];
   const { reload } = loaded;
+  const saving = useCardReturn(state?.credit.card ?? null, loaded.loading, reload);
   // Connect repositories made outside the web app (the CLI, an import) to agents set to run on
   // all repositories; reload only when that changed something.
   useEffect(() => {
@@ -210,7 +214,15 @@ export function AgentsPage({
       {loadState(loaded, 'agents') ??
         (state && (
           <div className="agents-grid">
-            <PromoCard workspace={workspace} credit={state.credit} billing={state.billing} />
+            <PromoCard
+              workspace={workspace}
+              credit={state.credit}
+              billing={state.billing}
+              returnTo={agentsReturnPath(space.workspace)}
+              // Settings → Billing is the signed-in account's own.
+              manageHref={workspace === account ? '/settings#billing' : undefined}
+              saving={saving}
+            />
             {agents.map((agent) => (
               <AgentCard
                 key={agent.id}
