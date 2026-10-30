@@ -73,6 +73,26 @@ export const LEDGER_SCHEMA: string[] = [
      at INTEGER NOT NULL,
      PRIMARY KEY (repo, run)
    );`,
+  // v2 (2026-10-30): card billing. One row of the workspace's Stripe customer and saved card
+  // (payment method id, brand and last four only), and the automatic top-ups charged to it.
+  `CREATE TABLE billing (
+     id INTEGER PRIMARY KEY CHECK (id = 1),
+     customer TEXT,
+     payment_method TEXT,
+     brand TEXT,
+     last4 TEXT,
+     card_added_at INTEGER,
+     top_up_failed TEXT
+   );
+   CREATE TABLE top_ups (
+     key TEXT PRIMARY KEY,
+     amount INTEGER NOT NULL,
+     status TEXT NOT NULL CHECK (status IN ('pending','succeeded','failed')),
+     payment_intent TEXT,
+     error TEXT,
+     created_at INTEGER NOT NULL,
+     settled_at INTEGER
+   );`,
 ];
 
 /** WorkspaceAgents: per-agent overrides (workspace-wide or per repository) and where it runs. */

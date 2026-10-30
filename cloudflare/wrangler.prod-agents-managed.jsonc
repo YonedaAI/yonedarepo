@@ -15,8 +15,14 @@
 // secrets Claude, Codex, ZAI and MiMo. Agent models and fallbacks: shared/managed-agents.ts.
 // Credit: one CreditLedger per workspace, $5 promotional credit, runs pause at $0; container time
 // is billed at the check-minute rate. Transcripts (redacted) in R2 {prefix}-managed-transcripts.
-// Secrets (both optional): AI_GATEWAY_TOKEN, the gateway's token when it is authenticated;
-// MANAGED_ADMIN_TOKEN, bearer for POST /admin/accounts/<workspace>/credit (unset: nobody may grant).
+// Secrets: MANAGED_VAULT_KEY (required: 64 hex characters, generated once and kept; seals each
+// repository's stored agent token and webhook secret, so losing it means re-enabling agents).
+// Optional: AI_GATEWAY_TOKEN, the gateway's token when it is authenticated; MANAGED_ADMIN_TOKEN,
+// bearer for POST /admin/accounts/<workspace>/credit (unset: nobody may grant).
+// Card billing (Stripe): STRIPE_SECRET_KEY and STRIPE_WEBHOOK_SECRET (optional together; unset:
+// "coming"). Stripe's webhook endpoint is https://managed.yonedarepo.com/stripe/webhook, events
+// setup_intent.succeeded, payment_intent.succeeded, payment_intent.payment_failed. A saved card
+// unlocks PROMO_CREDIT_USD once; a balance under $5 is topped up by $20 off-session.
 // Deployed before the front Worker, which binds it as MANAGED.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
@@ -136,6 +142,7 @@
   "vars": {
     "AI_GATEWAY_PROVIDERS": "claude=anthropic,codex=openai,zai=custom-zai,mimo=custom-mimo",
     "AI_GATEWAY_URL": "https://gateway.ai.cloudflare.com/v1/f011d0ee02b23cad26b4b38151b204ad/yonedarepo-prod-managed-agents",
+    "PROMO_CREDIT_USD": "100",
     "PUBLIC_URL": "https://managed.yonedarepo.com"
   },
   "workers_dev": false,

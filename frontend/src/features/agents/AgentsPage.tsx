@@ -4,7 +4,7 @@
 // a set-up one shows Active or Paused, its newest result and run count, and a ⋮ menu.
 import { Filter, MoreHorizontal, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import type { AgentState, ManagedCredit, WorkspaceState } from '../../../../shared/managed-agents';
+import type { AgentState, WorkspaceState } from '../../../../shared/managed-agents';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { managedApi } from '../source-platform/sourceApi';
 import { useSource } from '../source-platform/useSource';
@@ -14,52 +14,17 @@ import { AgentIcon, loadState, ResultTile } from './agentParts';
 import {
   CREATE_OWN_GATE,
   cardState,
-  creditPercent,
-  formatCost,
   type MenuAction,
   menuItems,
   STATUS_BADGES,
   syncAgents,
-  usedText,
   visibleAgents,
   workspaceOptions,
   workspacePath,
 } from './agentsModel';
+import { PromoCard } from './PromoCard';
 
 type Space = { workspace?: string };
-
-/** The starting credit: what is used, and billing (coming) for more and for agents of your own. */
-function CreditCard({ credit }: { credit: ManagedCredit }) {
-  return (
-    <section className="agent-card agent-promo" aria-labelledby="promo-heading">
-      <h3 id="promo-heading">This one is on us!</h3>
-      <p>
-        YonedaRepo adds {formatCost(credit.granted_usd)} of starting credit when you set up your
-        first agent, for the agents it maintains. Set up billing to create agents of your own.
-      </p>
-      <div className="agent-usage">
-        <div className="managed-meter" aria-hidden="true">
-          <span
-            style={{ width: `${creditPercent(credit)}%` }}
-            className={credit.paused ? 'spent' : undefined}
-          />
-        </div>
-        <span>{usedText(credit)}</span>
-      </div>
-      {credit.paused && (
-        <p className="managed-paused" role="status">
-          The credit is used up, so runs are paused until credit is added.
-        </p>
-      )}
-      <div className="agent-card-actions">
-        <button type="button" className="quiet" disabled title="Billing is coming">
-          Set up billing
-        </button>
-        <span className="source-meta">Coming soon</span>
-      </div>
-    </section>
-  );
-}
 
 function AgentCard({
   agent,
@@ -245,7 +210,7 @@ export function AgentsPage({
       {loadState(loaded, 'agents') ??
         (state && (
           <div className="agents-grid">
-            <CreditCard credit={state.credit} />
+            <PromoCard workspace={workspace} credit={state.credit} billing={state.billing} />
             {agents.map((agent) => (
               <AgentCard
                 key={agent.id}

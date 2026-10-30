@@ -222,10 +222,7 @@ function NewAgent({ navigate, space }: { navigate: Navigate; space: Space }) {
         </div>
       </header>
       <div className="agents-billing-note" role="note">
-        <p>
-          {CREATE_OWN_GATE}. Billing is coming; meanwhile the agents YonedaRepo maintains run on
-          your starting credit.
-        </p>
+        <p>{CREATE_OWN_GATE}. Meanwhile the agents YonedaRepo maintains run on your credit.</p>
       </div>
       <footer className="agent-setup-foot">
         <a className="button-link quiet" {...linkTo({ view: 'agents-home', ...space }, navigate)}>

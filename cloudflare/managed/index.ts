@@ -1,8 +1,9 @@
 // Managed agents Worker (`<prefix>-agents-managed`): YonedaRepo's predefined reviewers, run as
 // an ordinary API client of the platform. Its public hostname takes only signed webhooks and
-// /health; the browser API is served to the front Worker's service binding on the site's own
+// /health and Stripe's signed billing webhook (/stripe/webhook); the browser API is served to the front Worker's service binding on the site's own
 // origin. The platform itself never runs, schedules or knows about agents.
 import { ApiRefusal, managedApi, workspaceName } from './api';
+import { BillingRefusal, stripeWebhook } from './billing';
 import type { ManagedEnv, QueueMessage } from './config';
 import { REPO_ID } from './config';
 import { consume, receiveHook } from './dispatch';
@@ -65,6 +66,7 @@ export async function managedFetch(req: Request, env: ManagedEnv): Promise<Respo
       v: 1,
       revision: env.BUILD_REVISION ?? 'development',
     });
+  if (url.pathname === '/stripe/webhook' && req.method === 'POST') return stripeWebhook(req, env);
   if (parts[0] === 'hooks' && parts.length === 2 && req.method === 'POST') {
     if (!REPO_ID.test(parts[1])) return refuse('NOT_FOUND', 'Unknown repository', 404);
     return receiveHook(req, env, parts[1]);
@@ -88,7 +90,7 @@ export async function managedFetch(req: Request, env: ManagedEnv): Promise<Respo
     try {
       return json(await managedApi(req, env, parts.slice(2)));
     } catch (e: any) {
-      if (e instanceof ApiRefusal || e instanceof PlatformError)
+      if (e instanceof ApiRefusal || e instanceof PlatformError || e instanceof BillingRefusal)
         return refuse(e.code, e.message, e.status);
       console.error(
         JSON.stringify({ event: 'managed.api', message: String(e?.message ?? e).slice(0, 200) }),
