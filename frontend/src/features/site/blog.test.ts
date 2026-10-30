@@ -36,14 +36,31 @@ describe('blog posts', () => {
     expect(post.caption).not.toBe('');
   });
 
-  it('draws each research post from a paper, at 600 to 1,200 words', () => {
-    const research = BLOG_POSTS.filter((p) => p.category === 'Research');
-    expect(research.length).toBeGreaterThanOrEqual(5);
-    for (const post of research) {
+  it('draws each paper post from its paper, at 600 to 1,200 words of prose', () => {
+    const papers = BLOG_POSTS.filter((p) => p.paper);
+    expect(papers.length).toBeGreaterThanOrEqual(5);
+    for (const post of papers) {
+      expect(post.category).toBe('Research');
       expect(post.paper).toMatch(/^https:\/\/yonedarepo-research\.vercel\.app\/papers\/[a-z-]+\/$/);
       expect(post.body).toContain(post.paper.replace(/\/$/, ''));
-      expect(words(post.body)).toBeGreaterThanOrEqual(600);
-      expect(words(post.body)).toBeLessThanOrEqual(1200);
+      const prose = bodyParts(post.body)
+        .map((part) => (part.kind === 'markdown' ? part.source : ''))
+        .join('\n');
+      expect(words(prose)).toBeGreaterThanOrEqual(600);
+      expect(words(prose)).toBeLessThanOrEqual(1200);
+    }
+  });
+
+  it('serves every figure a body shows, with alt text and a caption', () => {
+    const figures = BLOG_POSTS.flatMap((post) => bodyParts(post.body)).filter(
+      (part) => part.kind === 'figure',
+    );
+    expect(figures.length).toBeGreaterThanOrEqual(5);
+    for (const figure of figures) {
+      if (figure.kind !== 'figure') continue;
+      expect(PUBLIC).toContain(figure.src);
+      expect(figure.alt.length).toBeGreaterThan(20);
+      expect(figure.caption).not.toBe('');
     }
   });
 
