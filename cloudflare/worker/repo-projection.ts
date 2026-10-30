@@ -4,7 +4,7 @@
 // exactly what landed: one receive-pack carries every object Artifacts lacks plus the ref
 // update, with the last projected value as an expected-old lease; a refusal is recorded
 // as drift and left for the owner, never forced.
-import { bundledPlaces, noteBundles, type Wanted } from './repo-bundles';
+import { bundledPlaces, holdsBundles, locate, noteBundles, type Wanted } from './repo-bundles';
 import { compute } from './repo-compute';
 import { fromBase64, parseStore, RepoObjects, toBase64 } from './repo-objects';
 import { caller, type Json } from './repo-ops';
@@ -263,11 +263,22 @@ const bytesOf = (commits: Json[], sizes: Map<string, number>) =>
     0,
   );
 
-/** The sizes the bundles record for the planned objects (others are bounded by count). */
+/** The sizes the bundles record for the planned files (others are bounded by count). One
+ * bulk locate answers for every planned object: those it does not find are in no bundle,
+ * and the reads that follow do not ask for them again. */
 async function planSizes(objects: RepoObjects, commits: Json[]) {
-  const ids = commits.flatMap((c) => (c.objects as Json[]).map((o) => String(o.id)));
-  const places = await bundledPlaces(objects, ids);
-  return new Map([...places].map(([id, place]) => [id, place.size]));
+  const wanted = commits.flatMap((c) => c.objects as Wanted[]);
+  const bulk = holdsBundles(objects.repo);
+  const places = bulk
+    ? await locate(objects.env, objects.repo, wanted)
+    : await bundledPlaces(
+        objects,
+        wanted.map((w) => w.id),
+      );
+  if (bulk) for (const w of wanted) if (!places.has(w.id)) objects.unbundled.add(w.id);
+  return new Map(
+    [...places].filter(([, place]) => place.kind === 'blob').map(([id, p]) => [id, p.size]),
+  );
 }
 
 /**
