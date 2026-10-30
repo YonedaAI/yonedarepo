@@ -4,6 +4,7 @@
 import { expect, it } from 'vitest';
 import { type ImportStep, runImport } from '../../cloudflare/worker/repo-import';
 import type { Env } from '../../cloudflare/worker/types';
+import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { projectRefs } from '../../cloudflare/worker/repo-projection';
 import { api, author, bindings, drainObjects, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
@@ -115,4 +116,52 @@ it('imports first-parent history from a remote and lands it', async () => {
   expect(next.body.parents).toEqual([head]);
 
   expect((await api('/repos/import', owner, { body: { url: 'http://insecure' } }, env)).status).toBe(400);
+});
+
+it('refuses a clone of history only the mirror holds at once, reading none of its trees', async () => {
+  const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2' } as unknown as Env;
+  const owner = { cookie: await signup('import_clone') };
+  const source = await api('/repos', owner, { body: { name: 'src', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', '1\n')], author } }, local);
+  for (const text of ['2\n', '3\n']) {
+    const made = await api(`/repos/${source.body.id}/commits`, owner, { body: { ref: 'main', changes: [file(`d${text.trim()}/n.txt`, text)], message: text, author } }, local);
+    await api(`/repos/${source.body.id}/land`, owner, { body: { ref: 'main', commit: made.body.commit } }, local);
+  }
+  const head = (await api(`/repos/${source.body.id}/refs`, owner, {}, local)).body.refs['refs/heads/main'];
+  await drainObjects(local);
+  for (const message of queued.splice(0).filter((m) => m.kind === 'platform_project')) await projectRefs(local, message);
+  const remote = fakeRemote(`yr-${source.body.id}`, head, 0);
+  // Every tree read from the mirror, counted.
+  let treeReads = 0;
+  const counted = {
+    ...remote,
+    get: async (name: string) => {
+      const repo = await remote.get(name);
+      return { ...repo, readTree: (id: string) => (treeReads++, repo.readTree(id)) };
+    },
+  };
+  let started: any;
+  const workflows = { create: async (options: any) => ((started = options), { id: options.id }), get: async () => ({ status: async () => ({ status: 'running' }) }) };
+  const env = { ...scoped, ARTIFACTS: counted, PLATFORM_IMPORT: workflows } as unknown as Env;
+  const created = await api('/repos/import', owner, { body: { name: 'imported', url: 'https://git.example/src.git' } }, env);
+  await runImport(env, started.params, step);
+  const token = await api(`/repos/${created.body.id}/tokens`, owner, { body: { name: 'reader', scopes: ['read'] } }, env);
+  const pkt = (line: string) => `${(line.length + 4).toString(16).padStart(4, '0')}${line}`;
+  for (const args of [[`want ${head}`, 'thin-pack', 'ofs-delta', 'done'], [`want ${head}`, 'deepen 1', 'done']]) {
+    treeReads = 0;
+    const body = `${pkt('command=fetch\n')}${pkt('object-format=sha1\n')}0001${args.map((a) => pkt(`${a}\n`)).join('')}0000`;
+    const response = await platformFetch(
+      new Request(`https://yoneda/git/${created.body.id}.git/git-upload-pack`, {
+        method: 'POST',
+        headers: { authorization: `Basic ${btoa(`git:${token.body.token}`)}`, 'git-protocol': 'version=2' },
+        body,
+      }),
+      env,
+    );
+    const text = new TextDecoder().decode(await response.arrayBuffer());
+    // Refused before the pack starts (Git prints `remote error: …`), not after a walk of
+    // the imported trees through the mirror.
+    expect(response.status, args.join(' ')).toBe(200);
+    expect(text, args.join(' ')).toMatch(/\n[0-9a-f]{4}ERR NOT_FOUND: Commit [0-9a-f]{40} is held only as imported history/);
+    expect(treeReads, args.join(' ')).toBe(0);
+  }
 });
