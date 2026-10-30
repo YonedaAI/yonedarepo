@@ -89,7 +89,7 @@
 }
 a.chip:hover {
   border-color: var(--blue);
-  color: var(--blue);
+  color: var(--blue-text);
 }
 /* Fork sits beside the chips at their height, not a full-size button's. */
 .repo-head button.fork-button {
@@ -112,7 +112,7 @@ a.chip:hover {
 .source-empty-state a,
 .source-note a,
 .readme-body a {
-  color: var(--blue);
+  color: var(--blue-text);
   text-decoration: underline;
 }
 /* Code */
@@ -130,7 +130,7 @@ a.chip:hover {
   overflow-wrap: anywhere;
 }
 .source-crumbs a {
-  color: var(--blue);
+  color: var(--blue-text);
 }
 .source-crumbs a:hover {
   text-decoration: underline;
@@ -139,7 +139,7 @@ a.chip:hover {
   font-weight: 500;
 }
 .toolbar-link {
-  color: var(--blue);
+  color: var(--blue-text);
   font-size: 13px;
 }
 .clone-menu {
@@ -176,7 +176,7 @@ a.chip:hover {
   font-size: 0.85rem;
 }
 .clone-hint a {
-  color: var(--blue);
+  color: var(--blue-text);
   text-decoration: underline;
 }
 .latest-commit {
@@ -202,7 +202,7 @@ a.chip:hover {
   white-space: nowrap;
 }
 .latest-commit a:hover {
-  color: var(--blue);
+  color: var(--blue-text);
   text-decoration: underline;
 }
 .latest-commit > * {
@@ -240,7 +240,7 @@ a.chip:hover {
 }
 .file-name a:hover,
 .file-message a:hover {
-  color: var(--blue);
+  color: var(--blue-text);
   text-decoration: underline;
 }
 .latest-commit + .source-table-wrap .file-table,
@@ -248,7 +248,7 @@ a.chip:hover {
   border-radius: 0 0 8px 8px;
 }
 .file-icon-tree {
-  color: var(--blue);
+  color: var(--blue-text);
 }
 .file-message {
   color: var(--muted);
@@ -320,7 +320,7 @@ a.chip:hover {
 }
 .segmented button[aria-pressed="true"] {
   background: var(--accent-soft);
-  color: var(--blue);
+  color: var(--blue-text);
 }
 .segmented button:focus-visible {
   outline-offset: -3px;
