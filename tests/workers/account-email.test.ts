@@ -53,21 +53,27 @@ const scoped = (extra: Partial<Env> = {}) => {
   return { ...platformEnv, PLATFORM_QUEUE: undefined, PLATFORM: platform } as unknown as Env;
 };
 
-/** A sign-up gives `email` (the account name when it is an address); null leaves it out. */
+/**
+ * A sign-up sends `email` only (the platform names the account from its local part); with a
+ * null email it sends the plain name instead, which sign-up refuses. Sign-in sends the name.
+ */
 async function auth(
   target: Env,
   action: string,
   username: string,
   email: string | null = username.includes('@') ? username : `${username}@example.com`,
 ) {
+  const password = 'a long test password';
   const req = new Request(`https://yoneda/api/auth/${action}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      username,
-      password: 'a long test password',
-      ...(action === 'signup' && email !== null ? { email } : {}),
-    }),
+    body: JSON.stringify(
+      action !== 'signup'
+        ? { username, password }
+        : email !== null
+          ? { email, password }
+          : { username, password },
+    ),
   });
   return (await accountRoute(req, target)) as Response;
 }
@@ -128,16 +134,16 @@ it('enqueues exactly one welcome job when an account is created, and none otherw
       kind: 'account_welcome',
       repo_id: '',
       job_id: 'welcome',
-      workspace: 'ada@example.com',
+      workspace: 'ada',
       token: expect.stringMatching(/^[0-9a-f]{64}$/),
     },
   ]);
-  // A username account's welcome goes to its contact email.
+  // The account is named by a handle from the address; the welcome goes to the address.
   expect((await auth(target, 'signup', 'ada_user', 'Ada.Lovelace@Example.org')).status).toBe(200);
-  expect(queued[1]).toMatchObject({ workspace: 'ada_user' });
+  expect(queued[1]).toMatchObject({ workspace: 'ada_lovelace' });
   // The job names the account only; the address comes from the account authority.
-  expect(JSON.stringify(queued)).not.toContain('lovelace');
-  expect(await workspace(target, 'ada_user', { op: 'welcome_state' })).toEqual({
+  expect(JSON.stringify(queued)).not.toContain('example.org');
+  expect(await workspace(target, 'ada_lovelace', { op: 'welcome_state' })).toEqual({
     sent: false,
     email: 'ada.lovelace@example.org',
   });
@@ -169,14 +175,14 @@ it('posts the welcome email to Resend with its key and a per-account idempotency
   const key = request.headers.get('idempotency-key');
   // Scoped to the deployment's origin: dev and prod share one Resend account, and the same
   // username in both must not collide inside Resend's 24-hour idempotency window.
-  expect(key).toBe(`welcome/${await sha('https://yonedarepo.test\ngrace@example.com')}`);
-  expect(key).not.toBe(`welcome/${await sha('grace@example.com')}`);
+  expect(key).toBe(`welcome/${await sha('https://yonedarepo.test\ngrace')}`);
+  expect(key).not.toBe(`welcome/${await sha('grace')}`);
   expect(key).not.toContain('grace');
   // The confirmation link carries the job's token.
   const email = renderWelcome({
     origin: 'https://yonedarepo.test',
     contact: 'hello@yonedarepo.test',
-    verifyUrl: `https://yonedarepo.test/verify-email?account=grace%40example.com&token=${queued[0].token}`,
+    verifyUrl: `https://yonedarepo.test/verify-email?account=grace&token=${queued[0].token}`,
   });
   expect(request.json).toEqual({
     from: 'YonedaRepo <hello@yonedarepo.test>',
@@ -216,7 +222,7 @@ it('skips the send when email is not configured, and sign-up still succeeds', as
   const res = await bindings.SELF.fetch('https://yoneda/api/auth/signup', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: 'self', email: 'self@example.com', password: 'a long test password' }),
+    body: JSON.stringify({ email: 'self@example.com', password: 'a long test password' }),
   });
   expect(res.status).toBe(200);
 });

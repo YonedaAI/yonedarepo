@@ -283,11 +283,7 @@ it('denied consent and provider errors come back as errors, spending the attempt
 it('creates the account once; a second sign-in reuses the identity, and a taken name gets a suffix', async () => {
   const signup = await call('/api/auth/signup', {
     method: 'POST',
-    body: JSON.stringify({
-      username: 'octo_cat',
-      email: 'someone@example.net',
-      password: 'a long test password',
-    }),
+    body: JSON.stringify({ email: 'octo_cat@example.net', password: 'a long test password' }),
   });
   expect(signup.status).toBe(200);
   welcomed.length = 0; // the password sign-up's own welcome
@@ -314,14 +310,10 @@ it('never merges on a matching email: the owner signs in and links instead', asy
   expect(errorOf(refused.response)).toBe('email_in_use');
   expect(cookieOf(refused.response, 'yoneda_account')).toBeUndefined();
   expect(await exists('octo')).toBe(false);
-  // An account whose name is that email is protected the same way.
+  // An address a password account signed up with is protected the same way.
   await call('/api/auth/signup', {
     method: 'POST',
-    body: JSON.stringify({
-      username: 'pat@example.net',
-      email: 'pat@example.net',
-      password: 'a long test password',
-    }),
+    body: JSON.stringify({ email: 'pat@example.net', password: 'a long test password' }),
   });
   const named = await signIn('google', { id: 'google-sub-2', login: '', email: 'pat@example.net' });
   expect(errorOf(named.response)).toBe('email_in_use');
@@ -342,7 +334,7 @@ it('never merges on a matching email: the owner signs in and links instead', asy
   expect(errorOf(stolen)).toBe('identity_taken');
   expect(new URL(stolen.headers.get('location') ?? '').pathname).toBe('/settings');
   // Refusals, links and repeat sign-ins never welcome; each new account once.
-  expect(welcomed.map((w) => w.workspace)).toEqual(['octo_cat', 'pat@example.net', 'other']);
+  expect(welcomed.map((w) => w.workspace)).toEqual(['octo_cat', 'pat', 'other']);
 });
 
 it('starts on the public origin, so the callback finds its cookies on the same host', async () => {

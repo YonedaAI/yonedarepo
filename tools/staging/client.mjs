@@ -84,26 +84,34 @@ export class Session {
   post = (path, body = {}) => this.call('POST', path, body);
 }
 
-/** Signs the kit account in (signing up once); returns a cookie session. */
+/**
+ * Signs a kit account in, signing it up on first use, and returns a cookie session carrying
+ * the account's `name` and the `identifier` that signed it in. Accounts made before email-only
+ * sign-up sign in by username; newer ones were signed up with the kit's test address (Resend's
+ * test inbox, never a real one), get a handle made from it, and sign in by that address.
+ */
 export async function accountSession(origin, username, password) {
   const anonymous = new Session(origin);
-  let login = await anonymous.raw('POST', '/api/auth/login', { username, password });
-  // A first sign-up's welcome email goes to Resend's test inbox, never a real address.
   const email = `delivered+${username.replace(/[^a-z0-9_]/gi, '_')}@resend.dev`;
-  if (login.status === 401) login = await anonymous.raw('POST', '/api/auth/signup', { username, email, password });
+  let identifier = username;
+  let login = await anonymous.raw('POST', '/api/auth/login', { username, password });
+  if (login.status === 401) {
+    identifier = email;
+    login = await anonymous.raw('POST', '/api/auth/login', { username: email, password });
+  }
+  if (login.status === 401) login = await anonymous.raw('POST', '/api/auth/signup', { email, password });
   assert.equal(login.status, 200, `Kit sign-in failed: ${login.body?.error?.code ?? login.status}`);
   const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0];
-  return new Session(origin, { cookie });
+  return Object.assign(new Session(origin, { cookie }), { name: login.body.username, identifier });
 }
 
 /**
  * The second kit account (`<kit username>_m`, the same private password, signed up on first
  * use): another person than the kit account, for members and for reviews the platform refuses
- * to their author. Returns its name and a cookie session on the platform API.
+ * to their author. Returns its account name and a cookie session on the platform API.
  */
 export async function secondAccount(origin, { KIT_USERNAME, KIT_PASSWORD }) {
-  const name = `${KIT_USERNAME}_m`;
-  const { cookie } = await accountSession(origin, name, KIT_PASSWORD);
+  const { cookie, name } = await accountSession(origin, `${KIT_USERNAME}_m`, KIT_PASSWORD);
   return { name, session: new Session(`${origin}/api/v1`, { cookie }) };
 }
 

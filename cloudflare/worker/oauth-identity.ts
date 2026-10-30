@@ -18,10 +18,10 @@ export type Outcome =
   | { kind: 'error'; code: 'email_in_use' | 'identity_taken' | 'busy' | 'unavailable' };
 
 /** A claim younger than this whose account does not exist yet is another sign-in creating it. */
-const PENDING_MS = 2 * 60 * 1000;
+export const PENDING_MS = 2 * 60 * 1000;
 
 const identityKey = (i: ProviderIdentity) => `identity:${i.provider}:${i.subject}`;
-const emailKey = async (email: string) => `email:${await sha(email)}`;
+export const emailKey = async (email: string) => `email:${await sha(email)}`;
 const fields = (i: ProviderIdentity) => ({
   provider: i.provider,
   subject: i.subject,
@@ -29,7 +29,7 @@ const fields = (i: ProviderIdentity) => ({
   email: i.email,
 });
 
-async function claims(env: Env, key: string, command: Json): Promise<Json> {
+export async function claims(env: Env, key: string, command: Json): Promise<Json> {
   const response = await env.WORKSPACES.get(env.WORKSPACES.idFromName(key)).fetch(
     'http://workspace/command',
     { method: 'POST', body: JSON.stringify({ ...command, key }) },
@@ -43,7 +43,7 @@ async function claims(env: Env, key: string, command: Json): Promise<Json> {
 }
 
 /** The claim on a key, or null. */
-async function holder(
+export async function holder(
   env: Env,
   key: string,
 ): Promise<{ account: string; claimed_at: number } | null> {
@@ -64,7 +64,7 @@ const linkedTo = async (env: Env, account: string, i: ProviderIdentity) =>
       subject: i.subject,
     })
   ).linked === true;
-const accountExists = async (env: Env, account: string) =>
+export const accountExists = async (env: Env, account: string) =>
   (await workspace(env, account, { op: 'account_exists' })).exists === true;
 
 /** Signs in with an identity: its account, a refusal, or a new account named after it. */
@@ -169,7 +169,7 @@ export async function unlink(env: Env, account: string, provider: string) {
 }
 
 /** Whether a live account holds the email: one named by it, or one whose identity carries it. */
-async function emailTaken(env: Env, email: string) {
+export async function emailTaken(env: Env, email: string) {
   const named = normalizeAccountIdentifier(email);
   if (named && (await accountExists(env, named))) return true;
   const held = await holder(env, await emailKey(email));
