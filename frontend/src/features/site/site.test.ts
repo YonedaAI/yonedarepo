@@ -202,17 +202,20 @@ describe('home', () => {
 
   it('names other products only in the works-with strip, and nothing as coming', () => {
     const html = home();
-    const strip = /<ul class="site-works-with"[^>]*>[\s\S]*?<\/ul>/.exec(html)?.[0] ?? '';
-    // Nominative "works with": the agents we run against, by their own names.
-    for (const mark of [
-      'aria-label="Claude Code"',
-      '>Codex<',
-      'aria-label="OpenCode"',
-      'aria-label="Any Git client"',
-    ])
-      expect(strip).toContain(mark);
-    expect(html.replace(strip, '')).not.toMatch(
-      /anthropic|claude|scion|openai|codex|opencode|\bglm|mimo|github|gitlab|cloudflare|coming soon/i,
+    const strips = [...html.matchAll(/<ul class="site-works-with"[^>]*>[\s\S]*?<\/ul>/g)].map(
+      (m) => m[0],
+    );
+    // The marquee renders the list twice; only the first copy is read aloud.
+    expect(strips).toHaveLength(2);
+    expect(strips[0]).toContain('aria-label="Agents YonedaRepo works with"');
+    expect(strips[1]).toContain('aria-hidden="true"');
+    // Nominative "works with": real marks, each named, at least the agents we test against.
+    for (const name of ['Claude Code', 'Codex', 'OpenCode', 'Any Git client'])
+      expect(strips[0]).toContain(`role="img" aria-label="${name}"`);
+    expect(strips[0]).not.toContain('site-works-chip');
+    const rest = strips.reduce((page, strip) => page.replace(strip, ''), html);
+    expect(rest).not.toMatch(
+      /anthropic|claude|scion|openai|codex|opencode|cursor|gemini|copilot|(?<!&)\bamp\b|cline|\bglm|mimo|github|gitlab|cloudflare|coming soon/i,
     );
   });
 });
