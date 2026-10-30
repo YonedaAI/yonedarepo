@@ -12,7 +12,7 @@
 }
 .site-eyebrow {
   margin: 0 0 8px;
-  color: var(--site-accent);
+  color: var(--site-muted);
   font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -35,7 +35,7 @@
   gap: 12px;
   padding: 10px 12px;
   border-radius: 10px;
-  border-left: 3px solid transparent;
+  border: 1px solid transparent;
   color: var(--site-muted);
   transition:
     background-color 0.15s,
@@ -51,11 +51,11 @@
 }
 .site-build-link[aria-current="true"] {
   background: var(--site-surface);
-  border-left-color: var(--site-accent);
+  border-color: var(--site-line);
   color: var(--site-text);
 }
 .site-build-link[aria-current="true"] svg {
-  color: var(--site-accent);
+  color: var(--site-good);
 }
 .site-build-nav span {
   display: flex;
@@ -87,7 +87,7 @@
   outline: none;
 }
 .site-build-panel:focus-visible {
-  outline: 2px solid var(--site-accent);
+  outline: 2px solid var(--site-focus);
   outline-offset: 4px;
 }
 .site-build-headline {
@@ -168,7 +168,7 @@
     font-size: 14px;
   }
   .site-build-link[aria-current="true"] {
-    border-color: var(--site-accent);
+    border-color: var(--site-text);
   }
   .site-build-nav strong {
     font-size: 14px;

@@ -43,8 +43,8 @@
   align-self: flex-start;
   padding: 2px 10px;
   border-radius: 999px;
-  border: 1px solid var(--site-accent);
-  color: var(--site-accent);
+  border: 1px solid var(--site-line-strong);
+  color: var(--site-text);
   font-size: 13px;
   font-weight: 600;
 }
@@ -111,6 +111,7 @@
   padding: 48px 32px;
   text-align: center;
   background: var(--site-accent-soft);
+  border: 1px solid var(--site-line);
   border-radius: 16px;
 }
 .site-cta p {
@@ -134,13 +135,13 @@
   line-height: 1.6;
 }
 .term-in {
-  color: #fff;
+  color: var(--site-code-text);
 }
 .term-out {
-  color: #9fb3cc;
+  color: var(--site-code-muted);
 }
 .term-bad {
-  color: #ff9ca1;
+  color: var(--site-code-bad);
 }
 .site-panel {
   padding: 16px;
