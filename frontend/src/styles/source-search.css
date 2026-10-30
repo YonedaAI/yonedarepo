@@ -1,5 +1,9 @@
 /* Search results: matched spans, per-file counts, the "+N more" row and the muted note for
-   text files too large to search inside. */
+   text files too large to search inside; then the Search page. */
+.search-failed a,
+.search-repo-name a {
+  color: var(--blue-text);
+}
 .search-file pre > div {
   white-space: pre;
 }
@@ -12,6 +16,10 @@
 .search-line-number {
   color: var(--muted);
   user-select: none;
+}
+.search-file header a {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .search-file header .source-meta {
   margin-left: auto;
@@ -33,4 +41,109 @@
   gap: 6px;
   font-size: var(--text-md);
   color: var(--muted);
+}
+.search-file .search-line-number:hover {
+  color: var(--blue-text);
+  text-decoration: underline;
+}
+/* A file opened at a search result's line. */
+.file-line-target {
+  display: inline-block;
+  min-width: 100%;
+  min-height: 1lh;
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-line);
+}
+/* The Search page: one box and the repository picker, then results grouped by repository. */
+.search-page {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 32px;
+}
+.search-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.search-box {
+  position: relative;
+  flex: 1 1 260px;
+  min-width: 0;
+  display: flex;
+}
+.search-box svg {
+  position: absolute;
+  top: 50%;
+  left: 12px;
+  transform: translateY(-50%);
+  color: var(--muted);
+  pointer-events: none;
+}
+.search-box input {
+  width: 100%;
+  padding-left: 36px;
+}
+.search-bar select {
+  flex: 0 1 220px;
+  min-width: 0;
+  max-width: 100%;
+}
+@media (max-width: 800px) {
+  .search-page {
+    padding: 16px;
+  }
+  .search-bar select {
+    flex-basis: 100%;
+  }
+}
+.search-welcome {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 8px;
+  min-height: 50vh;
+  padding: 24px 16px;
+  text-align: center;
+  color: var(--muted);
+}
+.search-welcome h2 {
+  margin: 8px 0 0;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-heading);
+  color: var(--text);
+}
+.search-welcome p {
+  margin: 0 0 8px;
+  font-size: var(--text-md);
+}
+.search-status {
+  margin: 0;
+}
+.search-failed {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--text-md);
+}
+.search-repo {
+  min-width: 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-strong);
+}
+.search-repo-name {
+  margin: 0 0 8px;
+  font-size: var(--text-xl);
+  font-weight: var(--weight-heading);
+  overflow-wrap: anywhere;
+}
+.search-repo h3 {
+  margin: 12px 0 6px;
+  font-size: var(--text-md);
+}
+.search-repo .agent-list li {
+  padding: 6px 0;
 }

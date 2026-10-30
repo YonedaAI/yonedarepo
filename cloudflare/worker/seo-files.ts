@@ -24,6 +24,7 @@ const DISALLOWED = [
   '/device$',
   '/device/',
   '/repositories$',
+  '/search$',
 ];
 
 export function isSeoFile(pathname: string) {
