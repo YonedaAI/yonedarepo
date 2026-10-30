@@ -20,6 +20,7 @@ import { type ReactNode, useEffect, useRef, useState } from 'react';
 import type { AccountIdentity } from '../../lib/types';
 import type { AccountSection } from '../account-settings/settingsRoute';
 import { Avatar } from '../shell/Avatar';
+import { useMenuDismiss } from '../shell/menuDismiss';
 import { ThemePicker } from '../shell/ThemePicker';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { SupportDialog } from './SupportDialog';
@@ -60,6 +61,7 @@ export function AccountMenu({
   const [appearance, setAppearance] = useState(false);
   const [support, setSupport] = useState(false);
   const menu = useRef<HTMLDetailsElement>(null);
+  useMenuDismiss(menu);
   const back = useRef<HTMLButtonElement>(null);
   const opener = useRef<HTMLButtonElement>(null);
   const first = useRef(true);

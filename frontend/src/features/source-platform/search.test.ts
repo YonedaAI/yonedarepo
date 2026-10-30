@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { aroundLine } from './FileText';
 import {
   type CodeHit,
   foundNothing,
@@ -11,6 +12,19 @@ import {
 
 const repo = 'r0123456789abcdef0123';
 const empty: SearchAnswer = { results: [], skipped_files: [], skipped_count: 0 };
+
+describe('a file opened at a line', () => {
+  it('splits the text around the line, keeping every line ending', () => {
+    const content = 'one\n\nthree\nfour\n';
+    const parts = aroundLine(content, 3);
+    expect(parts).toEqual({ before: ['one\n', '\n'], target: 'three', after: ['\nfour', '\n'] });
+    expect(`${parts?.before.join('')}${parts?.target}${parts?.after.join('')}`).toBe(content);
+  });
+
+  it('finds no line past the end of a file that has changed since', () => {
+    expect(aroundLine('one\ntwo', 3)).toBeNull();
+  });
+});
 
 describe('repository search', () => {
   it('asks for every group, case-insensitive', () => {

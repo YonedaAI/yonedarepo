@@ -5,6 +5,7 @@ import { Check, Circle } from 'lucide-react';
 import { useRef } from 'react';
 import type { SourceRoute } from '../source-platform/sourceRoute';
 import { gettingStarted, type StepId } from './homeModel';
+import { useMenuDismiss } from './menuDismiss';
 import { linkTo, type Navigate } from './useRoute';
 
 export function GettingStarted({
@@ -22,6 +23,7 @@ export function GettingStarted({
   onConnect?: () => void;
 }) {
   const menu = useRef<HTMLDetailsElement>(null);
+  useMenuDismiss(menu);
   const progress = gettingStarted(steps);
   if (progress.complete) return null;
   const close = () => {
