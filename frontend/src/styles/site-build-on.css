@@ -1,14 +1,16 @@
 /* The home page's "Build on YonedaRepo" tour: a sticky feature list beside scrolling panels. */
 .site-build {
   display: grid;
-  grid-template-columns: minmax(0, 340px) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 370px) minmax(0, 1fr);
   gap: 56px;
   align-items: start;
 }
 .site-build-aside {
   position: sticky;
-  /* Clears the sticky site header. */
+  /* Clears the sticky site header; scrolls itself on a short window. */
   top: 88px;
+  max-height: calc(100vh - 104px);
+  overflow-y: auto;
 }
 .site-eyebrow {
   margin: 0 0 8px;
@@ -19,8 +21,8 @@
   text-transform: uppercase;
 }
 .site-build-aside h2 {
-  font-size: clamp(30px, 4vw, 44px);
-  margin: 0 0 24px;
+  font-size: clamp(30px, 3.6vw, 40px);
+  margin: 0 0 16px;
 }
 .site-build-nav {
   display: grid;
@@ -33,7 +35,7 @@
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  padding: 10px 12px;
+  padding: 7px 12px;
   border-radius: 10px;
   border: 1px solid transparent;
   color: var(--site-muted);
@@ -63,10 +65,10 @@
   gap: 2px;
 }
 .site-build-nav strong {
-  font-size: 16px;
+  font-size: 15.5px;
 }
 .site-build-nav small {
-  font-size: 14px;
+  font-size: 13.5px;
   color: var(--site-muted);
 }
 .site-build-panels {
@@ -139,6 +141,44 @@
   color: var(--site-warn);
 }
 
+.mock-files > li {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.mock-files span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.mock-stack {
+  display: grid;
+  gap: 12px;
+}
+.mock-globe {
+  display: block;
+  width: 100%;
+  height: auto;
+  fill: none;
+  stroke: var(--site-line-strong);
+  stroke-width: 1;
+}
+.mock-globe .mock-globe-link {
+  stroke: var(--site-muted);
+  stroke-width: 1.5;
+}
+.mock-globe .mock-globe-node {
+  fill: var(--site-good);
+  stroke: var(--site-bg);
+  stroke-width: 3;
+}
+.site-panel > .mock-caption {
+  margin-top: 12px;
+  color: var(--site-muted);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .site-build-link {
     transition: none;
@@ -152,6 +192,8 @@
   }
   .site-build-aside {
     position: static;
+    max-height: none;
+    overflow: visible;
   }
   .site-build-nav {
     display: flex;
