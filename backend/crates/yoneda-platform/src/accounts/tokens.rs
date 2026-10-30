@@ -5,13 +5,17 @@ use super::op::TokenOp;
 use super::*;
 use crate::storage::number;
 
-/// Account scopes a token may hold; `repo:admin` covers owner operations.
-pub(super) const SCOPES: [&str; 5] = [
+/// The scope that manages the account's SSH keys and nothing else.
+pub(crate) const SSH_KEYS_SCOPE: &str = "account:ssh-keys";
+/// Scopes a token may hold; `repo:admin` covers owner operations (`repo_store::auth` maps
+/// the `repo:` ones onto a repository's, the Worker enforces the `account:` one).
+pub(crate) const SCOPES: [&str; 6] = [
     "repo:read",
     "repo:write",
     "repo:land",
     "repo:review",
     "repo:admin",
+    SSH_KEYS_SCOPE,
 ];
 const DAY: i64 = 24 * 60 * 60 * 1000;
 const LIVE_LIMIT: usize = 50;
@@ -77,14 +81,15 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: TokenOp, now: i64) -> R
 /// org `null`: not limited to one organization's repositories).
 pub(super) fn grant(c: &Value) -> Result<Value> {
     let scopes: Vec<String> = serde_json::from_value(c["scopes"].clone())
-        .map_err(|_| bad("scopes must be a list of repo:* scopes"))?;
+        .map_err(|_| bad("scopes must be a list of token scopes"))?;
     if scopes.is_empty()
         || scopes.len() > SCOPES.len()
         || scopes.iter().any(|s| !SCOPES.contains(&s.as_str()))
     {
-        return Err(bad(
-            "Scopes must be some of repo:read, repo:write, repo:land, repo:review, repo:admin",
-        ));
+        return Err(bad(&format!(
+            "Scopes must be some of {}",
+            SCOPES.join(", ")
+        )));
     }
     let mut unique = scopes.clone();
     unique.sort();

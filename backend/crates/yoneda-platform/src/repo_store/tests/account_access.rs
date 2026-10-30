@@ -14,6 +14,43 @@ fn pat(h: &Harness, scopes: Value, c: Value) -> yoneda_core::Result<Value> {
     as_pat(h, "ws-1", scopes, c)
 }
 
+/// `account:ssh-keys` is about the account's keys: alone it opens no repository, and beside
+/// repository scopes it neither adds to them nor makes the token unknown.
+#[test]
+fn the_ssh_keys_scope_grants_nothing_on_a_repository() {
+    let (h, root) = seeded();
+    let only = json!(["account:ssh-keys"]);
+    for op in [
+        json!({"op":"repo_status"}),
+        json!({"op":"repo_clone_access"}),
+        json!({"op":"repo_tokens"}),
+        json!({"op":"repo_branch_set","ref":"x","commit":root,"expected":null}),
+    ] {
+        assert_eq!(code(pat(&h, only.clone(), op.clone())), "FORBIDDEN", "{op}");
+    }
+    let with_read = json!(["repo:read", "account:ssh-keys"]);
+    assert_eq!(
+        code(pat(&h, with_read.clone(), json!({"op":"repo_status"}))),
+        "OK"
+    );
+    assert_eq!(
+        code(pat(
+            &h,
+            with_read,
+            json!({"op":"repo_branch_set","ref":"x","commit":root,"expected":null})
+        )),
+        "FORBIDDEN"
+    );
+    assert_eq!(
+        code(pat(
+            &h,
+            json!(["repo:read", "repo:write", "account:ssh-keys"]),
+            json!({"op":"repo_branch_set","ref":"x","commit":root,"expected":null})
+        )),
+        "OK"
+    );
+}
+
 #[test]
 fn personal_tokens_hold_only_their_repository_scopes() {
     let (h, root) = seeded();

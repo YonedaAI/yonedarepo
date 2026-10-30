@@ -93,6 +93,104 @@ it('adds, lists and removes SSH keys; a key belongs to one account at a time', a
   expect((await internal('lookup', { fingerprint: FINGERPRINT })).body.account).toBe('ssh_bob');
 });
 
+const token = async (cookie: string, name: string, scopes: string[], repos?: string[]) =>
+  (await api('/tokens', { cookie }, { body: { name, scopes, ...(repos && { repos }) } })).body;
+
+it('holds an account:ssh-keys token to /ssh-keys: it lists and removes, and nothing else', async () => {
+  const cookie = await signup('ssh_only');
+  const r = await repo(cookie, 'ssh-only');
+  const only = await token(cookie, 'only', ['account:ssh-keys']);
+  expect(only.scopes).toEqual(['account:ssh-keys']);
+  const auth = { token: only.token };
+
+  const key = (await api('/ssh-keys', { cookie }, { body: { title: 'laptop', key: ED25519 } })).body;
+  const listed = await api('/ssh-keys', auth);
+  expect(listed.status).toBe(200);
+  expect(listed.body.keys.map((k: any) => k.id)).toEqual([key.id]);
+  expect((await api(`/ssh-keys/${key.id}`, auth, { method: 'DELETE' })).status).toBe(200);
+
+  // A key reads, writes and lands everywhere, so only a token that can already do so adds one.
+  const added = await api('/ssh-keys', auth, { body: { title: 'x', key: ED25519 } });
+  expect([added.status, added.body.error.code]).toEqual([403, 'FORBIDDEN']);
+  expect((await api('/ssh-keys', { cookie })).body.keys).toEqual([]);
+
+  const body = { body: { name: 'nope' } };
+  for (const [path, init] of [
+    ['/repos', {}],
+    ['/repos', body],
+    ['/repos/import', body],
+    [`/repos/${r}`, {}],
+    [`/repos/${r}/refs`, {}],
+    [`/repos/${r}/tree`, {}],
+    [`/repos/${r}/tokens`, {}],
+    [`/repos/${r}/policy`, {}],
+    [`/repos/${r}/members`, {}],
+    [`/repos/${r}?confirm=ssh-only`, { method: 'DELETE' }],
+    [`/repos/${r}/mcp`, { body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } }],
+    ['/mcp', { body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } }],
+    ['/tokens', {}],
+    ['/tokens', { body: { name: 'wider', scopes: ['repo:admin'] } }],
+    [`/tokens/${only.id}`, { method: 'DELETE' }],
+    ['/device/approve', { body: { user_code: 'BCDFGHJK', scopes: ['repo:admin'], expires_days: 1 } }],
+    ['/orgs', {}],
+    ['/orgs', body],
+    ['/activity', {}],
+    ['/support', { body: { subject: 's', message: 'm' } }],
+    ['/admin/accounts', {}],
+    ['/account/avatar', {}],
+    ['/resolve/ssh_only/ssh-only', {}],
+    [`/repos/${r}/path`, {}],
+  ] as [string, { method?: string; body?: unknown }][]) {
+    const answer = await api(path, auth, init);
+    expect([path, answer.status, answer.body?.error?.code]).toEqual([path, 403, 'FORBIDDEN']);
+  }
+  for (const smart of [
+    `${r}.git/info/refs?service=git-upload-pack`,
+    `${r}.git/info/refs?service=git-receive-pack`,
+  ])
+    expect((await git(smart, only.token)).status).toBe(403);
+  const basic = await platformFetch(
+    new Request(`https://yoneda/git/${r}.git/info/refs?service=git-upload-pack`, {
+      headers: { authorization: `Basic ${btoa(`x:${only.token}`)}`, 'git-protocol': 'version=2' },
+    }),
+    target,
+  );
+  expect(basic.status).toBe(403);
+});
+
+it('adds a key with the CLI login scopes; repo:admin still manages keys and others do not', async () => {
+  const cookie = await signup('ssh_login');
+  const r = await repo(cookie, 'ssh-login');
+  const login = await token(cookie, 'login', ['repo:read', 'repo:write', 'repo:land', 'account:ssh-keys']);
+  const added = await api('/ssh-keys', { token: login.token }, { body: { title: 'laptop', key: ED25519 } });
+  expect(added.status).toBe(200);
+  expect(added.body.ssh).toBeDefined();
+  // It keeps the repository scopes it holds, and gains no others.
+  expect((await api(`/repos/${r}`, { token: login.token })).status).toBe(200);
+  expect((await api('/repos', { token: login.token })).body.repos.map((x: any) => x.id)).toEqual([r]);
+  expect((await api('/tokens', { token: login.token })).status).toBe(403);
+  expect((await api('/repos', { token: login.token }, { body: { name: 'more' } })).status).toBe(403);
+  expect((await api(`/repos/${r}/tokens`, { token: login.token })).status).toBe(403);
+
+  // Short of what a key can do, or short of every repository, it cannot add one.
+  for (const scopes of [['repo:read', 'account:ssh-keys'], ['repo:read', 'repo:write', 'account:ssh-keys']]) {
+    const short = await token(cookie, 'short', scopes);
+    expect((await api('/ssh-keys', { token: short.token }, { body: { title: 'x', key: ECDSA } })).status).toBe(403);
+    expect((await api('/ssh-keys', { token: short.token })).status).toBe(200);
+    await api(`/tokens/${short.id}`, { cookie }, { method: 'DELETE' });
+  }
+  const narrow = await token(cookie, 'narrow', ['repo:read', 'repo:write', 'repo:land', 'account:ssh-keys'], [r]);
+  expect((await api('/ssh-keys', { token: narrow.token }, { body: { title: 'x', key: ECDSA } })).status).toBe(403);
+
+  // Without the scope: repository scopes alone stay out, repo:admin stays in.
+  const old = await token(cookie, 'old', ['repo:read', 'repo:write', 'repo:land']);
+  const refused = await api('/ssh-keys', { token: old.token });
+  expect([refused.status, refused.body.error.message]).toEqual([403, 'Token lacks the account:ssh-keys scope']);
+  const admin = await token(cookie, 'admin', ['repo:admin']);
+  expect((await api('/ssh-keys', { token: admin.token })).status).toBe(200);
+  expect((await api('/ssh-keys', { token: admin.token }, { body: { title: 'x', key: ECDSA } })).status).toBe(200);
+});
+
 it('answers the gateway only with a valid JWT, and only where SSH is configured', async () => {
   const alice = await signup('ssh_jwt');
   const added = (await api('/ssh-keys', { cookie: alice }, { body: { title: 'laptop', key: ED25519 } })).body;

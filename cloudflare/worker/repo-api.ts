@@ -33,7 +33,7 @@ import { downloadBlob } from './repo-object-download';
 import { streamObjects } from './repo-object-fetch';
 import { parseStore } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
-import { verifyPat } from './repo-pat';
+import { refuseOutsideKeys, verifyPat } from './repo-pat';
 import { pathOf, profile, renameRepository, resolvePath, withPath } from './repo-paths';
 import { forViewer } from './repo-principal-privacy';
 import {
@@ -123,6 +123,7 @@ export async function credentials(req: Request, env: Env): Promise<Credentials |
   if (bearer?.startsWith('Bearer yrp_')) return { _token: bearer.slice(7) };
   if (bearer?.startsWith('Bearer ypat_')) {
     const grant = await verifyPat(env, bearer.slice(7));
+    if (grant) refuseOutsideKeys(grant, new URL(req.url).pathname);
     return grant && { _pat: grant };
   }
   const principal = await authenticateOnce(req, env);

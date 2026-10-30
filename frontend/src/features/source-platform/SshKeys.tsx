@@ -76,8 +76,8 @@ export function SshSetup({ access, origin }: { access?: SshAccess; origin: strin
       <InstallCommand origin={origin} />
       <CopyBlock label="Set up SSH on this machine" text={SSH_SETUP_COMMAND} />
       <p className="source-meta">
-        Sign in first with <code>{loginCommand(origin)}</code>, ticking Admin on the approval page.
-        The setup uses your <code>id_ed25519</code> key or makes one, adds it here and writes its{' '}
+        Sign in first with <code>{loginCommand(origin)}</code>. The setup uses your{' '}
+        <code>id_ed25519</code> key or makes one, adds it here and writes its{' '}
         <code>~/.ssh/config</code> entry. Then clone with <code>{access.clone_url}</code>.
       </p>
       {access.ssh_config && (
