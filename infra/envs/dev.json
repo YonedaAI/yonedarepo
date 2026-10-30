@@ -127,7 +127,10 @@
         "Welcome email (account-email.ts): the platform-jobs consumer sends one per new account through",
         "Resend (EMAIL_FROM, EMAIL_CONTACT). Its key is RESEND_API_KEY, the Secrets Store secret",
         "Resend-Yoneda, read at send time; without it email is off and sign-up never depends on it.",
-        "The sending domain has open and click tracking off in Resend."
+        "The sending domain has open and click tracking off in Resend.",
+        "Site traffic (worker/site-traffic.ts) reads the front Worker's yonedarepo_dev_site_events dataset (SITE_EVENTS_DATASET)",
+        "through the Analytics Engine SQL API: CF_ACCOUNT_ID plus the optional secret ANALYTICS_READ_TOKEN (Account Analytics Read).",
+        "Without the token, traffic reports are unavailable and nothing else changes."
       ],
       "secrets": [
         "OWNER_TOKEN",
@@ -137,6 +140,9 @@
         "SSH_HOST_ED25519_KEY",
         "SSH_HOST_ECDSA_KEY",
         "SSH_TUNNEL_TOKEN"
+      ],
+      "optional_secrets": [
+        "ANALYTICS_READ_TOKEN"
       ],
       "health": "yonedarepo-platform",
       "always_on": {
@@ -186,7 +192,9 @@
           "SSH_FRONT_DOOR": "tunnel",
           "SSH_HOST": "ssh.dev.yonedarepo.com",
           "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>",
-          "EMAIL_CONTACT": "hello@yonedarepo.com"
+          "EMAIL_CONTACT": "hello@yonedarepo.com",
+          "CF_ACCOUNT_ID": "{account_id}",
+          "SITE_EVENTS_DATASET": "yonedarepo_dev_site_events"
         },
         "secrets_store_secrets": [
           {
@@ -608,7 +616,12 @@
         "page, its /auth/<provider>/* routes answer 404. Callback URLs: https://dev.yonedarepo.com/auth/github/callback",
         "and https://dev.yonedarepo.com/auth/google/callback. Deploy uploads them when the secrets file has them.",
         "/api/managed is proxied to the managed agents Worker (MANAGED service binding, deployed first).",
-        "/install.sh and /downloads/* (worker/downloads.ts): the CLI installer and releases and the public Claude Code marketplace, from the DOWNLOADS bucket that cargo xtask downloads stages and uploads."
+        "/install.sh and /downloads/* (worker/downloads.ts): the CLI installer and releases and the public Claude Code marketplace, from the DOWNLOADS bucket that cargo xtask downloads stages and uploads.",
+        "Site analytics (worker/site-events.ts): one cookieless SITE_EVENTS data point per public HTML page view and per sign-up,",
+        "into the Analytics Engine dataset yonedarepo_dev_site_events (created on first write; infra plan/prune do not track it;",
+        "underscores, not hyphens: the dataset is a table name in Analytics Engine SQL).",
+        "No IP, cookie or visitor id; signed-in requests (session cookie), /api, /auth and assets are skipped.",
+        "WEB_ANALYTICS_TOKEN: the Cloudflare Web Analytics site token; set, the front Worker adds the beacon to public pages; empty, none."
       ],
       "secrets": [
         "OWNER_TOKEN"
@@ -656,7 +669,8 @@
           "run_worker_first": true
         },
         "vars": {
-          "PUBLIC_APP_ORIGIN": "{origin}"
+          "PUBLIC_APP_ORIGIN": "{origin}",
+          "WEB_ANALYTICS_TOKEN": ""
         },
         "services": [
           {
@@ -666,6 +680,12 @@
           {
             "binding": "MANAGED",
             "service": "{prefix}-agents-managed"
+          }
+        ],
+        "analytics_engine_datasets": [
+          {
+            "binding": "SITE_EVENTS",
+            "dataset": "yonedarepo_dev_site_events"
           }
         ],
         "r2_buckets": [

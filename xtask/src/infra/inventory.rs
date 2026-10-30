@@ -118,6 +118,9 @@ pub(crate) fn d1(config: &Value) -> Vec<(String, Option<String>)> {
         .collect()
 }
 
+// Analytics Engine datasets (`analytics_engine_datasets`) are deliberately not inventoried:
+// Cloudflare creates one on its first write and offers no API to delete it, so
+// `infra plan` and `infra prune` neither report nor remove them.
 pub(crate) fn r2(config: &Value) -> BTreeSet<String> {
     strings(config, "/r2_buckets", "bucket_name")
         .map(str::to_owned)
