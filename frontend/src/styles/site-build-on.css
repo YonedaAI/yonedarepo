@@ -18,12 +18,12 @@
   margin: 0 0 var(--sp-2);
   color: var(--site-muted);
   font-size: var(--fs-xs);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 .site-build-aside h2 {
-  font-size: var(--fs-2xl);
+  font-size: var(--fs-xl);
   margin: 0 0 var(--sp-4);
 }
 .site-build-nav {
@@ -67,11 +67,11 @@
   gap: 2px;
 }
 .site-build-nav strong {
-  font-size: var(--fs-sm);
+  font-size: var(--fs-base);
 }
 .site-build-nav small {
   font-size: var(--fs-xs);
-  color: var(--site-muted);
+  color: var(--site-faint);
 }
 .site-build-panels {
   border-left: 1px solid var(--site-line);
@@ -99,8 +99,8 @@
   padding: var(--sp-6) var(--sp-5) var(--sp-6) var(--sp-6);
 }
 .site-build-copy h3 {
-  font-size: var(--fs-xl);
-  line-height: 1.35;
+  font-size: var(--fs-md);
+  line-height: 1.45;
   margin: 0;
 }
 .site-build-visual {

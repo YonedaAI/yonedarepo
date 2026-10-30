@@ -162,6 +162,19 @@ describe('home', () => {
     expect(html).toContain(`href="#build-${BUILD_ON[0].id}" aria-current="true"`);
   });
 
+  it('lists each problem struck through, with a chip linking to the tour panel that solves it', () => {
+    const html = home();
+    expect(html).toContain('Git wasn’t built for a thousand writers');
+    const rows = [
+      ...html.matchAll(
+        /<s>([^<]+)<\/s>[\s\S]*?<a class="site-chip" href="#build-([^"]+)">([^<]+)<\/a>/g,
+      ),
+    ];
+    expect(rows).toHaveLength(5);
+    for (const [, , panel, chip] of rows)
+      expect(BUILD_ON.find((b) => b.id === panel)?.title).toBe(chip.replace('&amp;', '&'));
+  });
+
   it('highlights the first panel in page order that is in view', () => {
     const order = BUILD_ON.map((b) => b.id);
     expect(pickActive(order, new Set(['code', 'git-hosting']), 'transactions')).toBe('git-hosting');

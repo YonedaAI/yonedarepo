@@ -40,7 +40,7 @@
   text-align: left;
   padding: 12px 16px 0;
   color: var(--site-muted);
-  font-size: 14px;
+  font-size: var(--fs-sm);
 }
 .site table th,
 .site table td {
@@ -51,19 +51,19 @@
 }
 .site table thead th {
   border-top: 0;
-  font-size: 13px;
+  font-size: var(--fs-xs);
   color: var(--site-muted);
-  font-weight: 600;
+  font-weight: 500;
 }
 .site-table small {
   display: block;
   font-weight: 400;
   color: var(--site-muted);
-  font-size: 13px;
+  font-size: var(--fs-xs);
   margin-top: 2px;
 }
 .site-rate {
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
@@ -84,15 +84,15 @@
 }
 .site-card h3 {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--fs-base);
   color: var(--site-muted);
 }
 .site-card p {
   margin: 8px 0 0;
 }
 .site-figure {
-  font-size: 26px;
-  font-weight: 600;
+  font-size: var(--fs-xl);
+  font-weight: 500;
 }
 
 /* Docs, blog and company prose */
@@ -106,12 +106,12 @@
   position: sticky;
   top: 80px;
   align-self: start;
-  font-size: 15px;
+  font-size: var(--fs-base);
 }
 .site-docs-section {
   margin: 20px 0 6px;
-  font-size: 12px;
-  font-weight: 600;
+  font-size: var(--fs-xs);
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--site-muted);
@@ -140,16 +140,16 @@
   min-width: 0;
 }
 .site-prose h1 {
-  font-size: clamp(30px, 4.6vw, 42px);
+  font-size: var(--fs-3xl);
   margin: 0 0 12px;
 }
 .site-prose h2 {
-  font-size: 24px;
+  font-size: var(--fs-xl);
   margin: 40px 0 12px;
   scroll-margin-top: 80px;
 }
 .site-prose h3 {
-  font-size: 19px;
+  font-size: var(--fs-md);
   margin: 28px 0 8px;
 }
 .site-prose pre {
@@ -158,7 +158,7 @@
   border-radius: 10px;
   background: var(--site-code-bg);
   color: var(--site-code-text);
-  font-size: 13px;
+  font-size: var(--fs-xs);
   line-height: 1.6;
 }
 .site-prose pre code {
@@ -200,11 +200,11 @@
 }
 .site-posts time {
   color: var(--site-muted);
-  font-size: 14px;
+  font-size: var(--fs-sm);
 }
 .site-posts h2 {
   margin: 6px 0;
-  font-size: 24px;
+  font-size: var(--fs-xl);
 }
 .site-posts p {
   margin: 0;
@@ -243,7 +243,7 @@
   padding: 56px 0;
 }
 .site-signin h1 {
-  font-size: 32px;
+  font-size: var(--fs-2xl);
   margin: 0 0 20px;
 }
 .site .account-panel {

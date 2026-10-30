@@ -11,7 +11,7 @@
   padding: 0;
 }
 .site-main a:not([class]) {
-  color: var(--site-accent);
+  color: var(--site-muted);
   text-decoration: underline;
   text-underline-offset: 2px;
 }
@@ -37,6 +37,7 @@
   padding: 0;
   list-style: none;
 }
+.site-main a:not([class]):hover,
 .site-footer a:hover {
   color: var(--site-text);
 }
