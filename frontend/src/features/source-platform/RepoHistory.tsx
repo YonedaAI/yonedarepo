@@ -1,7 +1,7 @@
 import { usePeople } from './people';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha, when } from './sourceApi';
-import type { SourceRoute } from './sourceRoute';
+import { formatSourceRoute, type SourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
 
 type LogCommit = {
@@ -34,7 +34,7 @@ export function RepoHistory({
       {log.data.commits.map((c) => (
         <li key={c.commit}>
           <a
-            href={`/source/${repo}/commit/${c.commit}`}
+            href={formatSourceRoute({ view: 'commit', repo, commit: c.commit })}
             onClick={(e) => {
               e.preventDefault();
               onNavigate({ view: 'commit', repo, commit: c.commit });

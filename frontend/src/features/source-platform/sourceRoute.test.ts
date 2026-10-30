@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { patchRows } from './patchRows';
+import { forgetRepoNames, rememberRepoName, repoBase } from './repoNames';
 import {
   formatSourceRoute,
   parseSourceRoute,
@@ -127,5 +128,55 @@ describe('patch rows', () => {
       { kind: 'add', text: 'y', new: 10 },
       { kind: 'note', text: 'No newline at end of file' },
     ]);
+  });
+});
+
+describe('readable addresses', () => {
+  const parse = (url: string) => {
+    const [path, query = ''] = url.split('?');
+    return parseSourceRoute(path, query ? `?${query}` : '');
+  };
+
+  it('parses a profile and a repository by handle and name, and formats them back', () => {
+    expect(parse('/ada')).toEqual({ view: 'profile', handle: 'ada' });
+    expect(parse('/ada?tab=repositories')).toEqual({
+      view: 'profile',
+      handle: 'ada',
+      tab: 'repositories',
+    });
+    const named = parse('/ada/retry-kit/history?ref=fix');
+    expect(named).toEqual({
+      view: 'repo-name',
+      owner: 'ada',
+      name: 'retry-kit',
+      rest: 'history',
+      search: '?ref=fix',
+    });
+    for (const url of ['/ada', '/ada?tab=repositories', '/ada/retry-kit/history?ref=fix'])
+      expect(formatSourceRoute(parse(url))).toBe(url);
+  });
+
+  it('keeps the app’s own paths and refuses what no handle or name can be', () => {
+    expect(parse('/orgs/Acme')).toEqual({ view: 'home' });
+    expect(parse('/repositories/x')).toEqual({ view: 'home' });
+    expect(parse('/Ada')).toEqual({ view: 'home' });
+    expect(parse('/ada/.hidden')).toEqual({ view: 'home' });
+    expect(parse('/ada@example.com')).toEqual({ view: 'home' });
+  });
+
+  it('formats a repository under its readable base once known; /source/<id> still parses', () => {
+    forgetRepoNames();
+    const files: SourceRoute = { view: 'files', repo, path: 'src/a.ts', ref: 'main' };
+    expect(formatSourceRoute(files)).toBe(`/source/${repo}/files/src/a.ts`);
+    rememberRepoName(repo, 'ada@example.com', 'retry-kit');
+    expect(formatSourceRoute(files)).toBe(`/source/${repo}/files/src/a.ts`);
+    rememberRepoName(repo, 'ada', 'retry-kit');
+    expect(repoBase(repo)).toBe('/ada/retry-kit');
+    expect(formatSourceRoute(files)).toBe('/ada/retry-kit/files/src/a.ts');
+    expect(formatSourceRoute({ view: 'change', repo, number: 12 })).toBe(
+      '/ada/retry-kit/changes/12',
+    );
+    expect(parse(`/source/${repo}/files/src/a.ts`)).toEqual(files);
+    forgetRepoNames();
   });
 });
