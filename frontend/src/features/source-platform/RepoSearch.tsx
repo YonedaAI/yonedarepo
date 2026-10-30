@@ -1,11 +1,10 @@
 // One search across the repository: matching files and lines, memories, and the commits,
 // session records and change requests whose text holds the query's words (searchModel).
 import { type FormEvent, useState } from 'react';
-import { usePeople } from './people';
-import { SearchCode } from './SearchCode';
+import { SearchAnswerView } from './SearchAnswerView';
 import { Failure, Loading } from './SourceStatus';
-import { foundNothing, recordSections, type SearchAnswer, searchPath } from './searchModel';
-import { formatSourceRoute, type SourceRoute } from './sourceRoute';
+import { foundNothing, type SearchAnswer, searchPath } from './searchModel';
+import type { SourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
 
 export function RepoSearch({
@@ -19,7 +18,6 @@ export function RepoSearch({
   word?: boolean;
   onNavigate: (r: SourceRoute) => void;
 }) {
-  const people = usePeople();
   const [draft, setDraft] = useState(query);
   const found = useSource<SearchAnswer>(query.length >= 2 ? searchPath(repo, query, word) : null);
   const go = (q: string, w: boolean) =>
@@ -58,68 +56,7 @@ export function RepoSearch({
       {found.data && foundNothing(found.data) && (
         <p className="source-empty">No matches for “{query}”.</p>
       )}
-      {found.data &&
-        recordSections(repo, found.data, people.principal).map((section) => (
-          <section
-            key={section.key}
-            aria-labelledby={`search-${section.key}-heading`}
-            className="search-records"
-          >
-            <h3 id={`search-${section.key}-heading`}>
-              {section.title} <span className="source-meta">({section.count})</span>
-            </h3>
-            <ul className="agent-list">
-              {section.rows.map((row) => (
-                <li key={row.key}>
-                  <a
-                    href={formatSourceRoute(row.route)}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      onNavigate(row.route);
-                    }}
-                  >
-                    {row.label}
-                  </a>
-                  <p className="source-meta">{row.detail}</p>
-                </li>
-              ))}
-            </ul>
-          </section>
-        ))}
-      {found.data?.memories?.length ? (
-        <section aria-labelledby="search-memories-heading" className="search-memories">
-          <h3 id="search-memories-heading">Memories</h3>
-          <ul className="agent-list">
-            {found.data.memories.map((m) => (
-              <li key={m.id}>
-                <span>
-                  <span className="chip">{m.memory.kind}</span>{' '}
-                  {m.stale && <span className="chip memory-stale">stale</span>}{' '}
-                  <a
-                    href={formatSourceRoute({ view: 'agents', repo, section: 'memories' })}
-                    onClick={(e) => {
-                      e.preventDefault();
-                      onNavigate({ view: 'agents', repo, section: 'memories' });
-                    }}
-                  >
-                    #{m.id}
-                  </a>
-                </span>
-                <p className="memory-text">{m.text}</p>
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-      {found.data && (
-        <SearchCode
-          repo={repo}
-          results={found.data.results}
-          skipped={found.data.skipped_files}
-          skippedCount={found.data.skipped_count}
-          onNavigate={onNavigate}
-        />
-      )}
+      {found.data && <SearchAnswerView repo={repo} answer={found.data} onNavigate={onNavigate} />}
     </section>
   );
 }
