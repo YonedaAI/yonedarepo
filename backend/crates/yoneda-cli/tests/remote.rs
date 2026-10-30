@@ -971,8 +971,9 @@ fn setup_installs_the_agent_files(c: &Client, origin: &str) -> TestResult {
     std::fs::create_dir_all(&project).map_err(|e| e.to_string())?;
     let said = c.ok(&project, &["setup", "claude", "--origin", origin])?;
     check(
-        said.contains("/plugin marketplace add YonedaAI/yonedarepo")
-            && said.contains("/plugin install yoneda@yoneda"),
+        said.contains(&format!(
+            "/plugin marketplace add {origin}/downloads/claude/marketplace.json"
+        )) && said.contains("/plugin install yoneda@yonedarepo"),
         &said,
     )?;
     c.ok(&project, &["setup", "codex", "--origin", origin])?;

@@ -89,7 +89,7 @@ export function AgentConnectHelp({ origin }: { origin: string }) {
           <code>YONEDA_TOKEN</code> environment variable.
         </p>
         <CopyBlock label="MCP URL" text={mcpUrl(origin)} />
-        <CopyBlock label="Claude Code plugin" text={claudePluginSteps()} />
+        <CopyBlock label="Claude Code plugin" text={claudePluginSteps(origin)} />
         <CopyBlock
           label="Claude Code .mcp.json (without the plugin)"
           text={claudeMcpJson(origin)}

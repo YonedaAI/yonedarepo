@@ -1,17 +1,22 @@
 // The front Worker's HTTP surface (yonedarepo.com, dev.yonedarepo.com): the browser app,
+// the CLI installer and downloads (/install.sh, /downloads/*; see downloads.ts),
 // account sign-in (password, and GitHub / Google at /auth/*), and the platform's public API
 // proxied on the same origin, as is the managed agents Worker's browser API (/api/managed).
 // Repositories, Git, tokens and MCP all live on the platform Worker.
 import { accountRoute } from './accounts';
+import { serveDownload, serveInstallScript } from './downloads';
 import { error, response } from './http';
 import { oauthRoute } from './oauth';
 import type { Env } from './types';
-import { websiteAssets } from './website-metadata';
+import { publicOrigin, websiteAssets } from './website-metadata';
 
 export async function frontFetch(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   if (url.pathname === '/health')
     return response({ service: 'yonedarepo', v: 1, revision: env.BUILD_REVISION ?? 'development' });
+  if (url.pathname === '/install.sh')
+    return serveInstallScript(req, env, publicOrigin(req, env.PUBLIC_APP_ORIGIN));
+  if (url.pathname.startsWith('/downloads/')) return serveDownload(req, env);
   if (url.pathname.startsWith('/auth/')) {
     const handled = await oauthRoute(req, env);
     if (handled) return handled;

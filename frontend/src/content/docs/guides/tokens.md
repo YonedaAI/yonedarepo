@@ -22,7 +22,7 @@ The server keeps only a hash of each token and checks it on every request. A tok
 - Up to 50 live tokens per account.
 - On a repository where you are a member, a token holds only what both its scopes and your role allow.
 
-`yoneda login` creates one through device login and stores it for the CLI. Every token it created is listed under **Settings → Signed-in CLIs**. There is no CLI command to create a token otherwise.
+`yoneda login` creates one through device login and stores it for the CLI; `yoneda auth token` prints it for a script (`export YONEDA_TOKEN=$(yoneda auth token)`). Every token `yoneda login` created is listed under **Settings → Signed-in CLIs**. There is no CLI command to create a token otherwise.
 
 ## Repository tokens
 

@@ -17,9 +17,22 @@ pub const GEMINI_MANIFEST: &str = include_str!("../../../../plugins/gemini/gemin
 pub const GEMINI_CONTEXT: &str = include_str!("../../../../plugins/gemini/GEMINI.md");
 /// The opencode 2 plugin (`<opencode config>/plugins/yoneda/index.ts`).
 pub const OPENCODE_PLUGIN: &str = include_str!("../../../../plugins/opencode/yoneda/index.ts");
-/// Where Claude Code installs the plugin from (this repository's marketplace).
-pub const CLAUDE_MARKETPLACE: &str = "YonedaAI/yonedarepo";
-pub const CLAUDE_PLUGIN: &str = "yoneda@yoneda";
+/// The plugin in the public marketplace the site serves (`plugins/public-marketplace.json`,
+/// staged by `cargo xtask downloads`): a plain URL, so no Git host account is needed.
+pub const CLAUDE_PLUGIN: &str = "yoneda@yonedarepo";
+
+/// The public marketplace for the platform at `origin`: on the site beside it, whose host
+/// is the API's without `api.` (`https://api.yonedarepo.com` → `https://yonedarepo.com`).
+pub fn claude_marketplace(origin: &str) -> String {
+    let site = match origin.split_once("://") {
+        Some((scheme, host)) if host.starts_with("api.") => format!("{scheme}://{}", &host[4..]),
+        _ => origin.to_owned(),
+    };
+    format!(
+        "{}/downloads/claude/marketplace.json",
+        site.trim_end_matches('/')
+    )
+}
 
 pub fn mcp_url(origin: &str) -> String {
     format!("{origin}/api/v1/mcp")
@@ -225,7 +238,7 @@ pub fn run(agent: Agent, origin: &str) -> Result<()> {
     human!("The agent reads the token from ${TOKEN_ENV} (`yoneda login`, then export it).");
     if agent == Agent::Claude {
         human!("Install the skill and session hook inside Claude Code:");
-        human!("  /plugin marketplace add {CLAUDE_MARKETPLACE}");
+        human!("  /plugin marketplace add {}", claude_marketplace(origin));
         human!("  /plugin install {CLAUDE_PLUGIN}");
         human!(
             "Per-person MCP instead of .mcp.json: claude mcp add --transport http --scope user yoneda {} --header \"Authorization: Bearer ${{{TOKEN_ENV}}}\"",
@@ -259,6 +272,22 @@ mod tests {
 
     fn read(path: &Path) -> Result<String> {
         std::fs::read_to_string(path).context(format!("reading {}", path.display()))
+    }
+
+    #[test]
+    fn finds_the_public_marketplace_on_the_site_beside_the_api() {
+        assert_eq!(
+            claude_marketplace("https://api.yonedarepo.com"),
+            "https://yonedarepo.com/downloads/claude/marketplace.json"
+        );
+        assert_eq!(
+            claude_marketplace("https://api.dev.yonedarepo.com"),
+            "https://dev.yonedarepo.com/downloads/claude/marketplace.json"
+        );
+        assert_eq!(
+            claude_marketplace("http://127.0.0.1:8787"),
+            "http://127.0.0.1:8787/downloads/claude/marketplace.json"
+        );
     }
 
     #[test]

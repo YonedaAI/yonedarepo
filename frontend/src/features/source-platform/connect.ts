@@ -35,15 +35,22 @@ export const cloneCommand = (origin: string, repo: string, dir?: string) =>
 export const loginCommand = (origin: string) => `yoneda login --origin ${origin}`;
 export const mcpUrl = (origin: string) => `${origin}/api/v1/mcp`;
 
+/** The site beside an API origin, where downloads live: `https://api.x` → `https://x`. */
+export const siteOrigin = (origin: string) => origin.replace(/^(https?:\/\/)api\./, '$1');
+
 export const installSteps = (origin: string) =>
   [
-    '# from a checkout of the YonedaRepo source (installs yoneda and git-remote-yoneda)',
-    'cargo install --path backend/crates/yoneda-cli',
+    '# installs yoneda and git-remote-yoneda into ~/.local/bin (macOS and Linux)',
+    `curl -fsSL ${siteOrigin(origin)}/install.sh | sh`,
     `${loginCommand(origin)}   # approve in the browser; the token is stored with mode 0600`,
   ].join('\n');
 
-export const claudePluginSteps = () =>
-  ['/plugin marketplace add YonedaAI/yonedarepo', '/plugin install yoneda@yoneda'].join('\n');
+/** The public marketplace the site serves (no Git host account needed). */
+export const claudePluginSteps = (origin: string) =>
+  [
+    `/plugin marketplace add ${siteOrigin(origin)}/downloads/claude/marketplace.json`,
+    '/plugin install yoneda@yonedarepo',
+  ].join('\n');
 
 /** Claude Code `.mcp.json`: the token stays in the environment, never in the file. */
 export const claudeMcpJson = (origin: string) =>

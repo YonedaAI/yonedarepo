@@ -45,6 +45,8 @@ export interface Env {
   LFS_S3_SECRET_ACCESS_KEY?: string;
   INDEX: D1Database;
   ARTIFACTS: Artifacts;
+  /** Public downloads: CLI releases and the Claude Code marketplace (front Worker only). */
+  DOWNLOADS?: R2Bucket;
   ASSETS: Fetcher;
   /** The platform's own review-model key (model checks); never an agent-layer key. */
   REVIEW_MODEL_KEY?: { get(): Promise<string> };

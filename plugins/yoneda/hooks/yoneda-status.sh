@@ -9,7 +9,7 @@ git rev-parse --is-inside-work-tree >/dev/null 2>&1 || { cat >/dev/null; exit 0;
 if ! command -v yoneda >/dev/null 2>&1; then
   cat >/dev/null
   if git remote -v 2>/dev/null | grep -q 'yoneda::'; then
-    echo "This repository uses a yoneda:: remote, but the yoneda CLI (and its git-remote-yoneda helper) is not on PATH. The repository's Connect panel in /source shows how to install it."
+    echo "This repository uses a yoneda:: remote, but the yoneda CLI (and its git-remote-yoneda helper) is not on PATH. Install it: curl -fsSL https://yonedarepo.com/install.sh | sh"
   fi
   exit 0
 fi
