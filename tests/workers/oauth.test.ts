@@ -454,3 +454,48 @@ it("GitHub and Google sign-ins bring the provider's picture, refreshed on each s
   expect(await whoami(other.session)).toBe('elsewhere');
   expect(await picture(other.session)).toBeNull();
 });
+
+it('records a provider sign-up once, with the landing source carried through the attempt', async () => {
+  const points: AnalyticsEngineDataPoint[] = [];
+  const using = {
+    ...configured,
+    SITE_EVENTS: { writeDataPoint: (p: AnalyticsEngineDataPoint) => points.push(p) },
+  } as unknown as Env;
+  const startWith = async (query: string) => {
+    const response = await call(`/auth/github/start?${query}`, {}, using);
+    const url = new URL(response.headers.get('location') ?? '');
+    return {
+      url,
+      binding: cookieOf(response, 'yoneda_oauth') ?? '',
+      state: url.searchParams.get('state') ?? '',
+      nonce: url.searchParams.get('nonce') ?? '',
+      challenge: url.searchParams.get('code_challenge') ?? '',
+    };
+  };
+  const finish = (attempt: Attempt) =>
+    call(
+      `/auth/github/callback?${new URLSearchParams({ state: attempt.state, code: consent(attempt, octo) })}`,
+      { headers: { cookie: attempt.binding } },
+      using,
+    );
+  const query = 'return_to=%2Fdocs&ref=github.com&utm_source=readme&utm_campaign=%3Cb%3Elaunch';
+  const created = await finish(await startWith(query));
+  expect(created.headers.get('location')).toBe('https://yoneda.test/docs');
+  expect(points).toHaveLength(1);
+  expect(points[0].blobs).toEqual([
+    'signup',
+    '',
+    'github.com',
+    '',
+    'bot',
+    'readme',
+    '',
+    'blaunch',
+    'github',
+  ]);
+  expect(JSON.stringify(points)).not.toMatch(/octo/i);
+  // Signing in again to the same account is not a sign-up.
+  const again = await finish(await startWith(query));
+  expect(again.headers.get('location')).toBe('https://yoneda.test/docs');
+  expect(points).toHaveLength(1);
+});

@@ -8,7 +8,9 @@ import { serveDownload, serveInstallScript } from './downloads';
 import { error, response } from './http';
 import { oauthRoute } from './oauth';
 import { GIT_PATH, legacyRedirect } from './readable-paths';
+import { recordPageView } from './site-events';
 import type { Env } from './types';
+import { withWebAnalytics } from './web-analytics';
 import { publicOrigin, websiteAssets } from './website-metadata';
 
 export async function frontFetch(req: Request, env: Env): Promise<Response> {
@@ -31,7 +33,10 @@ export async function frontFetch(req: Request, env: Env): Promise<Response> {
     const moved = env.PLATFORM
       ? await legacyRedirect(req, (ask) => (env.PLATFORM as Fetcher).fetch(ask))
       : null;
-    return moved ?? websiteAssets(req, env);
+    if (moved) return moved;
+    const page = await websiteAssets(req, env);
+    recordPageView(req, page, env);
+    return withWebAnalytics(req, page, env);
   }
   if (url.pathname.startsWith('/api/v1/'))
     return env.PLATFORM
