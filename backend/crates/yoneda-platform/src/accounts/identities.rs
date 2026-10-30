@@ -14,6 +14,8 @@ struct Identity {
     subject: String,
     login: String,
     email: Option<String>,
+    /// The provider's picture, on its own image hosts only (`avatars::provider_avatar`).
+    avatar: Option<String>,
 }
 
 pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: IdentityOp, now: i64) -> Result<Value> {
@@ -75,9 +77,14 @@ fn signin<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     if !linked || !super::access::valid(db, now)? {
         return Ok(denied);
     }
+    // Each sign-in refreshes the provider's picture (an upload still wins over it).
     db.query(
-        "UPDATE account_identities SET last_used_at=? WHERE provider=?",
-        &[json!(now), json!(provider)],
+        "UPDATE account_identities SET last_used_at=?,avatar_url=? WHERE provider=?",
+        &[
+            json!(now),
+            json!(super::avatars::provider_avatar(&provider, c)),
+            json!(provider),
+        ],
     )?;
     super::signin::session(db, c, now)?;
     Ok(public_account(&a))
@@ -169,7 +176,7 @@ fn held<S: SqlStore>(db: &S, provider: &str) -> Result<Option<Value>> {
 
 fn insert<S: SqlStore>(db: &S, identity: &Identity, now: i64) -> Result<()> {
     db.query(
-        "INSERT INTO account_identities(provider,subject,login,email,created_at,last_used_at) VALUES(?,?,?,?,?,?)",
+        "INSERT INTO account_identities(provider,subject,login,email,created_at,last_used_at,avatar_url) VALUES(?,?,?,?,?,?,?)",
         &[
             json!(identity.provider),
             json!(identity.subject),
@@ -177,6 +184,7 @@ fn insert<S: SqlStore>(db: &S, identity: &Identity, now: i64) -> Result<()> {
             json!(identity.email),
             json!(now),
             json!(now),
+            json!(identity.avatar),
         ],
     )?;
     Ok(())
@@ -207,8 +215,10 @@ fn identity(c: &Value) -> Result<Identity> {
             Some(email)
         }
     };
+    let provider = provider(c)?;
     Ok(Identity {
-        provider: provider(c)?,
+        avatar: super::avatars::provider_avatar(&provider, c),
+        provider,
         subject: subject(c)?,
         login: printable(c, "login", 100)?,
         email,

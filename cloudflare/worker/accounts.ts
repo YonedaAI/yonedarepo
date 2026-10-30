@@ -6,6 +6,7 @@ import {
 } from '../../shared/account';
 import { accountCreated, emailRoute } from './account-email';
 import { handleState, setHandle } from './account-handles';
+import { avatarInfo, ownAvatarUrl } from './avatars';
 import { accountFor, signUpWithEmail, signupEmail } from './email-accounts';
 import { error, readJson, response } from './http';
 import { unlink } from './oauth-identity';
@@ -73,12 +74,17 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
     let result: Response;
     if (action === 'session' && req.method === 'GET') {
       const principal = await accountPrincipal(req, env);
+      // The account menu's picture; a failed lookup only means initials.
+      const avatar = principal
+        ? await avatarInfo(env, principal.workspace).catch(() => null)
+        : null;
       result = response(
         principal
           ? {
               authenticated: true,
               username: principal.workspace,
               ...(await handleState(env, principal.workspace)),
+              avatar_url: ownAvatarUrl(avatar),
             }
           : { authenticated: false },
       );
