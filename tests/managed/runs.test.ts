@@ -280,6 +280,16 @@ describe('the container boundary', () => {
     ])
       expect((await call(method, path)).status, `${method} ${path}`).toBe(403);
     const forwarded = h.platform.requests.filter((r) => r.path.endsWith('/log') || r.path.endsWith('/objects'));
+    // Any other host is refused too, and every refusal is logged for Workers Logs.
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const elsewhere = await outbound.elsewhere(new Request('http://example.com/'), h.env, ctx);
+    expect(elsewhere.status).toBe(403);
+    expect((await call('POST', `/api/v1/repos/${repo}/land`)).status).toBe(403);
+    const logged = warn.mock.calls.map((c) => JSON.parse(String(c[0])));
+    expect(logged).toEqual([
+      expect.objectContaining({ event: 'managed.egress_refused', code: 'EGRESS_DENIED', host: 'example.com', run: 'r' }),
+      expect.objectContaining({ event: 'managed.egress_refused', code: 'FORBIDDEN', host: 'platform.internal', path: `/api/v1/repos/${repo}/land` }),
+    ]);
     expect(forwarded.every((r) => r.auth === 'Bearer yrp_fixture_yoneda-managed-agents')).toBe(true);
   });
 
