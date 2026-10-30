@@ -12,6 +12,7 @@ import assert from 'node:assert/strict';
 import { Session, sleep, until } from './client.mjs';
 import { see, railOrg } from './browser-collab-flow.mjs';
 import { accountSettings, newRepository, settle } from './browser-flow.mjs';
+import { atRepo } from './repo-urls.mjs';
 
 /** Accepts the next window.confirm (revoking asks first). */
 const acceptConfirm = (page) => page.once('dialog', (dialog) => dialog.accept());
@@ -83,7 +84,7 @@ export async function adminPages(page, { api, account, repo: { id, name }, shot,
 
   // Repository token, limited to docs/: shown once, used, revoked from its row.
   await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).click();
-  await page.waitForURL(`**/source/${id}`);
+  await atRepo(page, account, id);
   await page.getByRole('navigation', { name: 'Repository' }).getByRole('link', { name: 'Settings' }).click();
   await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'Repository tokens' }).click();
   const repoTokens = page.getByRole('region', { name: 'Repository tokens', exact: true });
@@ -156,7 +157,7 @@ export async function deletedRepoPage(page, { origin, account, shot, cleanup }, 
   });
   const rail = page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true });
   await rail.waitFor();
-  await page.waitForURL(`**/source/${id}`);
+  await atRepo(page, account, id);
   const tabs = page.getByRole('navigation', { name: 'Repository' });
   await tabs.getByRole('link', { name: 'Commits' }).click();
   await page.getByRole('list', { name: 'History of main' }).getByRole('listitem').first().waitFor();

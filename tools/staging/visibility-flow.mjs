@@ -56,8 +56,12 @@ export async function visibilityFlow({ origin, api, platform }, metrics) {
     const blob = await anonymousFront.raw('GET', `/api/v1${path}/blob?path=README.md`);
     assert.equal(blob.body.content, text, `anonymous read through the front origin: ${blob.status}`);
     const page = await fetch(`${origin}/source/${repo.id}`, { redirect: 'manual', signal: AbortSignal.timeout(60_000) });
-    assert.equal(page.status, 200, 'the repository page loads without a session');
-    assert.match(await page.text(), /<div id="root"|<script/i, 'the page is the web app');
+    assert.equal(page.status, 301, 'an old repository address moves to its readable one');
+    const readable = page.headers.get('location');
+    assert.equal(new URL(readable, origin).pathname, status.body.path, 'the move names the readable path');
+    const opened = await fetch(new URL(readable, origin), { redirect: 'manual', signal: AbortSignal.timeout(60_000) });
+    assert.equal(opened.status, 200, 'the repository page loads without a session');
+    assert.match(await opened.text(), /<div id="root"|<script/i, 'the page is the web app');
     assert.ok(await listed(), '/explore lists the public repository');
     const push = git(['-C', join(dir, 'public'), 'push', '-q', 'origin', 'HEAD:refs/heads/anon']);
     assert.ok(!push.ok, 'an anonymous push is refused');
