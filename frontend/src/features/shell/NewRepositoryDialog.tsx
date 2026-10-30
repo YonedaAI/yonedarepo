@@ -17,7 +17,8 @@ export function readmeSeed(name: string, description: string) {
   return btoa(binary);
 }
 
-export type Created = { repo: string };
+/** The new repository, and its owner (`''`: the caller's own account). */
+export type Created = { repo: string; owner: string };
 
 /** The create request's body: `owner` only for an organization (the caller is the default);
  * `visibility` always, so the choice never depends on the server's default. */
@@ -69,7 +70,7 @@ export function NewRepositoryDialog({
       const created = await sourceApi<{ id: string }>('/repos', {
         body: createBody(name, description, owner, visibility),
       });
-      await onCreated({ repo: created.id });
+      await onCreated({ repo: created.id, owner });
     } catch (e) {
       setError((e as Error).message);
       setBusy(false);

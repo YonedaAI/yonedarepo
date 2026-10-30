@@ -8,6 +8,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AccountSettings } from './features/account-settings/AccountSettings';
 import { VerifyEmailPage } from './features/account-settings/VerifyEmailPage';
 import { AgentsRoot } from './features/agents/AgentsRoot';
+import { syncAgents } from './features/agents/agentsModel';
 import { ExplorePage } from './features/explore/ExplorePage';
 import { AppRail } from './features/shell/AppRail';
 import { AppSidebar } from './features/shell/AppSidebar';
@@ -25,6 +26,7 @@ import { DevicePage } from './features/source-platform/DevicePage';
 import { OrgPage } from './features/source-platform/OrgPage';
 import type { OrgSummary } from './features/source-platform/orgModel';
 import { RepoPage } from './features/source-platform/RepoPage';
+import { managedApi } from './features/source-platform/sourceApi';
 import { isAgentsRoute, routeRepo } from './features/source-platform/sourceRoute';
 import { useSource } from './features/source-platform/useSource';
 import {
@@ -120,6 +122,8 @@ export function App() {
   }, [session.loading, session.error, session.authenticated]);
 
   async function created(result: Created) {
+    // Agents set to run on all repositories pick up the new one; best effort, never waited on.
+    void syncAgents(result.owner || session.identity?.username, managedApi);
     platform.reload();
     activity.reload();
     navigate({ view: 'files', repo: result.repo, path: '', ref: 'main' });
@@ -313,6 +317,7 @@ export function App() {
                 account={session.identity?.username}
                 orgs={orgs.data?.orgs ?? []}
                 navigate={navigate}
+                onNewRepository={() => setCreating(true)}
               />
             )}
             {'repo' in route && (
@@ -357,7 +362,9 @@ export function App() {
         <NewRepositoryDialog
           account={session.identity?.username}
           orgs={orgs.data?.orgs ?? []}
-          initialOwner={route.view === 'org' ? route.org : undefined}
+          initialOwner={
+            route.view === 'org' ? route.org : isAgentsRoute(route) ? route.workspace : undefined
+          }
           onClose={() => setCreating(false)}
           onCreated={created}
         />
