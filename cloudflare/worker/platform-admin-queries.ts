@@ -1,4 +1,4 @@
-// The admin pages' reads of the D1 projections (operators only; admin-api.ts checks): the
+// The admin pages' reads of the D1 projections (operators only; platform-admin.ts checks): the
 // overview's totals, the account and repository listings, the sign-up feed and the audit
 // log. Listings page backwards by creation time (`before`, a millisecond time).
 import type { Env, Json } from './types';

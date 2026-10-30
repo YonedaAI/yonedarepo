@@ -5,7 +5,7 @@
 // response: a missing binding or a failed write records nothing.
 import type { Env } from './types';
 
-/** Blob positions of a point, shared with the traffic queries (site-traffic.ts). */
+/** Blob positions of a point, shared with the traffic queries (platform-site-traffic.ts). */
 export const SITE_EVENT_BLOBS = {
   event: 'blob1',
   path: 'blob2',

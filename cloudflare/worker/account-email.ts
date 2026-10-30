@@ -9,9 +9,9 @@
 // over SELF, so the front binds no platform queue. Until confirmed, the address receives only
 // the welcome and confirmation emails.
 import { normalizeAccountIdentifier } from '../../shared/account';
+import type { AccountCreated, SignupProvider } from './account-index';
 import { afterAnswer } from './background';
 import { error, readJson, response } from './http';
-import type { AccountCreated, SignupProvider } from './platform-accounts';
 import { sha } from './storage';
 import type { Env, Principal } from './types';
 import { workspace } from './workspace';

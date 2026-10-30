@@ -25,6 +25,13 @@ const neutral = new Set([
   './avatars',
   // The readable repository addresses both Workers route; imports nothing.
   './readable-paths',
+  // Who the operator accounts are (ADMIN_ACCOUNTS); imports only types.
+  './admin-auth',
+  // The operators' account index rows and last-seen day; imports background, types, workspace.
+  './account-index',
+  // The site analytics data point layout (blob positions) the traffic queries read; imports only types.
+  './site-events',
+  '../../shared/site-traffic',
   // Account identifier rules (yoneda-core::account's transport counterpart); imports nothing.
   '../../shared/account',
   '../../backend/crates/yoneda-worker/build/worker/shim.mjs',
