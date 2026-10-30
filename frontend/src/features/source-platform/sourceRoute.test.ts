@@ -103,7 +103,7 @@ describe('source routes', () => {
       section: 'general',
     });
   });
-  it('keeps the Stripe return flag on the Agents page, an org\'s too', () => {
+  it("keeps the Stripe return flag on the Agents page, an org's too", () => {
     const at = (search: string) => parseSourceRoute('/agents', search);
     expect(at('?billing=added')).toEqual({ view: 'agents-home', cardAdded: true });
     expect(at('?workspace=acme&billing=added')).toEqual({
