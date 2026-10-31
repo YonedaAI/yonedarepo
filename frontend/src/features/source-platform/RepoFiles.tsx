@@ -121,7 +121,7 @@ export function RepoFiles({
         </p>
       )}
       {listing.error && <Failure error={listing.error} onRetry={listing.reload} />}
-      {listing.empty && (
+      {listing.empty && status && (
         <div className="source-empty-state">
           <p>
             {route.path
@@ -137,7 +137,8 @@ export function RepoFiles({
           )}
         </div>
       )}
-      {!listing.value && !listing.error && !listing.empty && <Loading what="files" />}
+      {/* No files means little until the status says why: the repository may be importing. */}
+      {!listing.value && !listing.error && (!listing.empty || !status) && <Loading what="files" />}
       {listing.value && route.at === undefined && (
         <LatestCommit repo={route.repo} commit={listing.value.commit} commitLink={commitLink} />
       )}
