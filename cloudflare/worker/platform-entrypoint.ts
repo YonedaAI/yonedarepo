@@ -5,9 +5,9 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { AccountCreated } from './account-index';
 import { withWaitUntil } from './background';
-import { laterIfHeld } from './legal-hold';
 import { accountCreated, SIGNUP_NOTICE } from './platform-accounts';
 import { verifyEmail } from './platform-email-verify';
+import { laterIfHeld } from './platform-legal-hold';
 import { platformFetch } from './platform-routes';
 import { signupNoticeJob } from './platform-signup-notice';
 import { sshFrontDoor, sshKeepAlive } from './platform-ssh-gateway';

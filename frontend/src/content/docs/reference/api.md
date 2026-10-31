@@ -31,6 +31,7 @@ curl -H "Authorization: Bearer $YONEDA_TOKEN" https://api.yonedarepo.com/api/v1/
 | `GET /activity` | Your account's recent activity |
 | `GET`, `POST /orgs`; `GET`, `DELETE /orgs/<org>` | Organizations |
 | `GET /orgs/<org>/repos`; `POST /orgs/<org>/members` | An organization's repositories and members |
+| `GET`, `POST`, `DELETE /orgs/<org>/hold`; `POST`, `DELETE /orgs/<org>/repos/<repo>/hold` | [Legal holds](/docs/guides/organizations#legal-hold) on an organization or one of its repositories |
 | `POST /mcp` | The account MCP endpoint |
 
 ## Repository: reading
@@ -107,6 +108,7 @@ All paths start with `/repos/<id>`.
 | `ALREADY_EXISTS` | 409 | A tag, release, asset or open change of that name exists |
 | `SECRET_DETECTED` | 422 | The content holds a credential |
 | `AUTOMATION_PAUSED` | 423 | The owner paused automation |
+| `LEGAL_HOLD` | 423 | A legal hold stands, or could not be read; nothing was deleted |
 | `RATE_LIMITED` | 429 | Too many requests; slow down |
 | `QUARANTINED` | 451 | The owner withheld this content |
 | `OVERLOADED` | 503 | Retry after the `Retry-After` seconds |

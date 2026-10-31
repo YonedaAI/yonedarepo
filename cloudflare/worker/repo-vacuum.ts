@@ -3,7 +3,7 @@
 // decides what is safe; the adapter only sends the ref deletions and reports back. Commit
 // shards forget expired commits that nothing newer descends from; branches and pins only
 // ever name commits the authority adopted (with all their ancestors), so they keep theirs.
-import { currentHold } from './legal-hold';
+import { currentHold } from './platform-legal-hold';
 import { compute } from './repo-compute';
 import { fromBase64, toBase64 } from './repo-objects';
 import type { Json, RepoContext } from './repo-ops';

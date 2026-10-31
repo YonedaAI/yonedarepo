@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { type Conflict, ConflictList, ReviewButtons } from './CommitGates';
 import type { ChangeDetail } from './changeModel';
+import { HELD_NOTE, useRepoHold } from './LegalHold';
 import { usePeople } from './people';
 import { useReadOnly } from './repoAccess';
 import { Failure } from './SourceStatus';
@@ -28,6 +29,7 @@ export function ChangeGates({
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
   // A public reader sees the gates and reviews, never the actions.
   const readOnly = useReadOnly();
+  const held = useRepoHold(change.status === 'closed' ? repo : null);
   async function act(label: string, path: string, body: unknown, done: string, method?: 'DELETE') {
     setBusy(label);
     setNotice('');
@@ -133,7 +135,8 @@ export function ChangeGates({
             <button
               type="button"
               className="danger"
-              disabled={!!busy}
+              disabled={!!busy || held}
+              title={held ? HELD_NOTE : undefined}
               onClick={() => {
                 const what = `Delete change #${change.number} and its comments? The branch stays.`;
                 if (window.confirm(what)) act('delete', base, undefined, 'Deleted.', 'DELETE');

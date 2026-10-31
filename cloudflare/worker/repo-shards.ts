@@ -3,7 +3,7 @@
 // queueing on the repository authority. A commit id names its shard, so any Worker reads
 // it back at once. The authority adopts a commit (parents first) when it first needs it.
 import { durableJson, storageGuard } from './durable';
-import { holdSwitch } from './legal-hold';
+import { holdSwitch } from './platform-legal-hold';
 import type { CachedObject } from './repo-stores';
 import { record, timed } from './repo-timing';
 import type { Env } from './types';

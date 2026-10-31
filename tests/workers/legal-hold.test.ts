@@ -121,6 +121,18 @@ it('members see a hold and only owners change it, and a read-only token cannot',
   expect(refused(await api(`/orgs/${org}/hold`, { token: read }, { body: {} }, on))).toEqual([403, 'FORBIDDEN']);
 });
 
+it('a token limited to other repositories cannot touch this one\'s hold', async () => {
+  const { org, owner, id } = await held('allowlist');
+  const other = (await api('/repos', owner, { body: { name: 'other', owner: org, policy: OPEN, files: [file('a.txt', 'a\\n')], author } }, on)).body.id as string;
+  const mint = async (repos: string[]) =>
+    (await api('/tokens', owner, { body: { name: `t${repos[0]}`, scopes: ['repo:admin'], repos } })).body.token as string;
+  const elsewhere = await mint([other]);
+  expect(refused(await api(`/orgs/${org}/repos/${id}/hold`, { token: elsewhere }, { body: {} }, on))).toEqual([403, 'FORBIDDEN']);
+  expect((await api(`/orgs/${org}/repos/${other}/hold`, { token: elsewhere }, { body: {} }, on)).status).toBe(200);
+  expect((await api(`/orgs/${org}/hold`, owner, {}, on)).body.repos[id]).toBeUndefined();
+  expect(refused(await api(`/orgs/${org}/hold`, { token: elsewhere }, { body: {} }, on))).toEqual([403, 'FORBIDDEN']);
+});
+
 it('a personal owner cannot set a hold; an operator can, and only an operator lifts it', async () => {
   const person = 'hold_person';
   const cookie = await signup(person);

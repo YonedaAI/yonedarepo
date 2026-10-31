@@ -10,6 +10,7 @@ import { CommitView } from './CommitView';
 import { ForkButton } from './ForkButton';
 import { HistoryTab } from './HistoryTab';
 import { ImportStatus } from './ImportStatus';
+import { RepoHoldBanner } from './LegalHold';
 import { PublicBadge } from './PublicBadge';
 import { ShowEmailsContext } from './people';
 import { ReleaseView } from './ReleaseView';
@@ -153,6 +154,7 @@ export function RepoPage({
               />
             )}
           </div>
+          {data && <RepoHoldBanner repo={repo} />}
           {drift.map((p) => (
             <p key={p.refname} role="alert" className="source-error">
               {p.refname.replace(/^refs\/heads\//, '')} in the Git object store has drifted from the

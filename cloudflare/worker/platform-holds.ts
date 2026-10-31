@@ -7,9 +7,10 @@
 //
 // A repository's owner comes from its authority, not the listing: a tombstone has left the
 // listing, and it is exactly what a hold must still reach before its purge.
-import { holdsOn } from './legal-hold';
+
 import { audit } from './platform-admin-queries';
-import { ApiError, caller, type Json, type RepoContext } from './repo-ops';
+import { holdsOn } from './platform-legal-hold';
+import { ApiError, type Credentials, caller, type Json, type RepoContext } from './repo-ops';
 import type { Env } from './types';
 import { workspace } from './workspace';
 
@@ -34,9 +35,12 @@ export async function repoHold(ctx: RepoContext) {
 }
 
 /** `/orgs/:org/hold` and `/orgs/:org/repos/:repo/hold`, `run` being the org's commands as
- * the calling account. Membership is asked first, so nobody else learns who owns `repo`. */
+ * the calling account. Membership is asked first, so nobody else learns who owns `repo`. A
+ * token limited to some repositories changes their holds alone, never the org's: its
+ * allowlist is `caller`'s to enforce, and these commands go to the org's authority. */
 export async function orgHold(
   env: Env,
+  auth: Credentials,
   org: string,
   method: string,
   run: (command: Json) => Promise<Json>,
@@ -45,6 +49,9 @@ export async function orgHold(
   requireHolds(env);
   if (method === 'GET' && !repo) return run({ op: 'org_hold_show' });
   if (method !== 'POST' && method !== 'DELETE') throw new ApiError('NOT_FOUND', 'Unknown API path');
+  const allowed = '_pat' in auth ? auth._pat.repos : null;
+  if (allowed !== null && !(repo && allowed.includes(repo)))
+    throw new ApiError('FORBIDDEN', 'This token is not allowed on this repository');
   if (repo) {
     await run({ op: 'org_show' });
     if ((await ownerOf(env, repo)) !== org)

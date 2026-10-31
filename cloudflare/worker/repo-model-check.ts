@@ -4,7 +4,8 @@
 // the platform's key and sends at most two requests. No tools, no agent loop, and never an
 // agent-layer key: the key is the platform Worker's REVIEW_MODEL_KEY Secrets Store binding.
 import { compute } from './repo-compute';
-import { diff, type Json, type RepoContext } from './repo-ops';
+import { diff } from './repo-diff';
+import type { Json, RepoContext } from './repo-ops';
 import type { Env } from './types';
 
 /** One model call's limit; two calls stay well inside the run's 120 s lease. */

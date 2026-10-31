@@ -3,6 +3,7 @@
 import { GitBranch } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { linkTo, type Navigate } from '../shell/useRoute';
+import { OrgHoldSection, type OrgHolds, OrgRepoHold, orgHeld } from './LegalHold';
 import { DeleteOrganization } from './OrgDelete';
 import { OrgTeams } from './OrgTeams';
 import { ORG_ROLE_HELP, ORG_ROLES, type Org, type OrgMember, type OrgRole } from './orgModel';
@@ -77,10 +78,17 @@ function MemberRows({
 }
 
 function OrgRepos({
+  org,
   repos,
+  holds,
+  manages,
   navigate,
 }: {
+  org: string;
   repos: Loaded<{ repos: OrgRepo[] }>;
+  /** Legal holds, where the platform has them. */
+  holds: Loaded<OrgHolds>;
+  manages: boolean;
   navigate: Navigate;
 }) {
   if (repos.loading && !repos.data) return <Loading what="repositories" />;
@@ -101,6 +109,16 @@ function OrgRepos({
             <GitBranch size={16} aria-hidden="true" /> {r.name}
           </a>{' '}
           <span className="source-meta">created {when(r.created_at)}</span>
+          {holds.data && (
+            <OrgRepoHold
+              org={org}
+              repo={r.id}
+              name={r.name}
+              hold={holds.data.repos[r.id]}
+              manages={manages}
+              onChanged={holds.reload}
+            />
+          )}
         </li>
       ))}
     </ul>
@@ -119,6 +137,7 @@ export function OrgPage({
 }) {
   const loaded = useSource<Org>(`/orgs/${org}`);
   const repos = useSource<{ repos: OrgRepo[] }>(`/orgs/${org}/repos`);
+  const holds = useSource<OrgHolds>(`/orgs/${org}/hold`);
   const { busy, error, run } = useChange(loaded.reload);
   const [account, setAccount] = useState('');
   const [role, setRole] = useState<OrgRole>('member');
@@ -187,10 +206,18 @@ export function OrgPage({
       <OrgTeams org={org} data={data} manages={manages} onChanged={loaded.reload} />
       <section aria-labelledby="org-repos-heading">
         <h2 id="org-repos-heading">Repositories</h2>
-        <OrgRepos repos={repos} navigate={navigate} />
+        <OrgRepos org={org} repos={repos} holds={holds} manages={manages} navigate={navigate} />
       </section>
+      {holds.data && (
+        <OrgHoldSection org={org} holds={holds.data} manages={manages} onChanged={holds.reload} />
+      )}
       {manages && onDeleted && (
-        <DeleteOrganization org={org} repoCount={repos.data?.repos.length} onDeleted={onDeleted} />
+        <DeleteOrganization
+          org={org}
+          repoCount={repos.data?.repos.length}
+          held={orgHeld(holds.data)}
+          onDeleted={onDeleted}
+        />
       )}
     </div>
   );

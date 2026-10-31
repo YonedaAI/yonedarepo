@@ -9,8 +9,8 @@
 // container's lifecycle state, CheckContainer's the same, and ObjectPushQueue keeps none.
 
 import { durableJson } from './durable';
-import { currentHold } from './legal-hold';
 import { audit } from './platform-admin-queries';
+import { currentHold } from './platform-legal-hold';
 import { purgeRepository } from './repo-admin';
 import { inBatches } from './repo-git-objects';
 import { dispatchHooks } from './repo-hooks';
