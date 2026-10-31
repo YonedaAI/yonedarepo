@@ -34,7 +34,7 @@ An approval is a review of the change's **head commit** by an account other than
 
 Comments are at most 8,000 bytes, and a comment holding a credential is refused. Unresolved comments show among the gates.
 
-Owners can let changes that only touch docs, formatting or comments count as approved (`auto_approve` in the landing rules). Anything that cannot be classified needs a human.
+Owners can let changes that only touch docs, formatting or comments count as approved (`auto_approve` in the landing rules). Every commit the landing would bring must qualify, not only the head. Merges, and anything that cannot be classified, need a human.
 
 ## Checks
 
