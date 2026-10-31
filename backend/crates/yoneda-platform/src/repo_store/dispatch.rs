@@ -203,6 +203,7 @@ fn run<S: SqlStore>(
         R::ChangesetRecord => version_projection::record(db, c, settings),
         R::RecordImported => history_import::record(db, c),
         R::RecordImportedBatch => history_fill::record_batch(db, c),
+        R::RecordImportedEnd => history_fill::end(db, c),
         R::BreakGlass => break_glass::execute(db, c, principal, settings),
         R::Import => {
             if !actor.can("import") {

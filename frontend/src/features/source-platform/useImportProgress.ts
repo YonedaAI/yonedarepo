@@ -2,7 +2,7 @@
 // empty one asks: a repository that was never imported has no import to read.
 import { useEffect, useState } from 'react';
 import type { HistoryFill } from '../../../../shared/contracts/repo-status';
-import { historyStopped, type ImportAnswer, importView, mayBeImport } from './importModel';
+import { type ImportAnswer, importView, mayBeImport } from './importModel';
 import type { RepoStatus } from './repoStatus';
 import { sourceApi } from './sourceApi';
 
@@ -67,18 +67,15 @@ export function useImportProgress(
   return watching ? progress : NONE;
 }
 
-/** How far an imported history has come, and whether it stopped short. */
-export type HistoryProgress = HistoryFill & { stopped: boolean };
-
 /** Follows a history filling in behind a landed main, from what the status said. `onFinished`
  * reads the repository again, which ends this: its status no longer names a fill. */
 export function useHistoryFill(
   repo: string,
   known: HistoryFill | null | undefined,
   onFinished: () => void,
-): HistoryProgress | null {
+): HistoryFill | null {
   const watching = Boolean(known);
-  const [seen, setSeen] = useState<HistoryProgress | null>(null);
+  const [seen, setSeen] = useState<HistoryFill | null>(null);
   useEffect(() => {
     if (!watching) return;
     const controller = new AbortController();
@@ -89,9 +86,8 @@ export function useHistoryFill(
           signal: controller.signal,
           once: true,
         });
-        if (!answer.history) onFinished();
-        else if (historyStopped(answer)) return setSeen({ ...answer.history, stopped: true });
-        else setSeen({ ...answer.history, stopped: false });
+        if (answer.history) setSeen(answer.history);
+        else onFinished();
       } catch {
         // The next read tells; the page keeps showing the last it knew.
       }
@@ -103,6 +99,5 @@ export function useHistoryFill(
       clearTimeout(timer);
     };
   }, [repo, watching, onFinished]);
-  if (!known) return null;
-  return seen ?? { ...known, stopped: false };
+  return known ? (seen ?? known) : null;
 }

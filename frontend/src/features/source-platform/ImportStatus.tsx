@@ -1,8 +1,9 @@
 // What a repository's pages show until its import lands: progress, or why it failed.
 import { LoaderCircle } from 'lucide-react';
+import type { HistoryFill, HistoryStopped } from '../../../../shared/contracts/repo-status';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { describeFailure, Loading } from './SourceStatus';
-import type { HistoryProgress, ImportProgress } from './useImportProgress';
+import type { ImportProgress } from './useImportProgress';
 
 export function ImportStatus({
   repo,
@@ -54,53 +55,35 @@ export function ImportStatus({
 
 /** What a repository's pages say above their content while its history fills in behind the
  * files: nothing here may read as a whole history until it is one. */
-export function HistoryImportStatus({
-  repo,
-  progress,
-  owner,
-  navigate,
-}: {
-  repo: string;
-  progress: HistoryProgress;
-  /** The viewer may delete the repository, which is how an import is tried again. */
-  owner: boolean;
-  navigate: Navigate;
-}) {
-  const { recorded, total, stopped } = progress;
-  if (stopped)
-    return (
-      <div className="import-history import-failed" role="alert">
-        <p>
-          <strong>
-            History stopped importing at {recorded} of {total} commits.
-          </strong>
-        </p>
-        <p className="source-meta">
-          All the files are here, but history, blame and search are missing the older commits, and
-          this repository takes no changes.{' '}
-          {owner && (
-            <>
-              To try again,{' '}
-              <a {...linkTo({ view: 'repo-settings', repo, section: 'delete' }, navigate)}>
-                delete this repository
-              </a>
-              , then add it again from the + menu.
-            </>
-          )}
-        </p>
-      </div>
-    );
+export function HistoryImportStatus({ progress }: { progress: HistoryFill }) {
   return (
     <div className="import-history" role="status">
       <p>
         <LoaderCircle size={16} className="spin" aria-hidden="true" />
         <strong>
-          Importing {recorded} of {total} commits
+          Importing {progress.recorded} of {progress.total} commits
         </strong>
       </p>
       <p className="source-meta">
-        All the files are here. History, blame and search show what has arrived so far, and this
-        repository takes changes when it finishes.
+        All the files are here and it can be cloned. History, blame and search show what has arrived
+        so far, and this repository takes changes when it finishes.
+      </p>
+    </div>
+  );
+}
+
+/** What they say for good once an imported history ended early. */
+export function HistoryStoppedStatus({ stopped }: { stopped: HistoryStopped }) {
+  return (
+    <div className="import-history" role="status">
+      <p>
+        <strong>
+          Only the newest {stopped.recorded} of {stopped.total} commits were imported.
+        </strong>
+      </p>
+      <p className="source-meta">
+        {stopped.reason} The files and new work are not affected; older commits are missing from
+        history, blame and search.
       </p>
     </div>
   );

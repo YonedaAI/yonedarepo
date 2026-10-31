@@ -180,7 +180,10 @@ fn commit_facts<S: SqlStore>(
     )?[0];
     out.insert("check_runs".into(), runs["n"].clone());
     out.insert("check_run_ms".into(), runs["ms"].clone());
-    let repairs = &db.query("SELECT COUNT(*) AS n FROM repairs WHERE commit_id=?", &key)?[0];
+    let repairs = &db.query(
+        "SELECT COUNT(*) AS n FROM repairs WHERE commit_id=? AND check_name<>'history import'",
+        &key,
+    )?[0];
     out.insert("repairs".into(), repairs["n"].clone());
     if let Some(row) = db
         .query(

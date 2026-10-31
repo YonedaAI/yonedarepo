@@ -277,7 +277,7 @@ pub fn record_repair<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
 
 pub fn repairs_for<S: SqlStore>(db: &S, commit: &ObjectId) -> Result<Vec<Value>> {
     db.query(
-        "SELECT refname,check_name,repair_commit,error,created_at FROM repairs WHERE commit_id=? ORDER BY created_at",
+        "SELECT refname,check_name,repair_commit,error,created_at FROM repairs WHERE commit_id=? AND check_name<>'history import' ORDER BY created_at",
         &[json!(commit.hex())],
     )
 }

@@ -13,9 +13,8 @@
 //! every read of history carries `history_import` so that a partial answer never reads as
 //! complete. Nothing moves a ref or starts new history (`refuses`): the chain stays the
 //! branch's own, a fork cannot copy half of it and a fetch cannot get a commit without its
-//! parents: a whole clone comes from the mirror, which already holds them all (the adapter's
-//! `repo-git-mirror`). A fill whose Workflow failed stays refused until the repository is
-//! deleted, which is how an import is tried again.
+//! parents: those come from the mirror, which already holds them all (the adapter's
+//! `repo-git-mirror`). A fill that cannot finish ends where it reached (`end`).
 use super::op::{ForkOp as F, QuarantineOp as Q, RepoOp as R, StoreOp};
 use crate::storage::SqlStore;
 use schemars::JsonSchema;
@@ -23,8 +22,10 @@ use serde::Serialize;
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result, git_object::ObjectId};
 
+mod end;
 mod record;
 
+pub(super) use end::{HistoryStopped, end, stopped};
 pub(super) use record::record_batch;
 pub(super) use record::record_head;
 #[cfg(test)]
@@ -102,19 +103,22 @@ pub(super) fn refuse_if_filling<S: SqlStore>(db: &S) -> Result<()> {
         Some(fill) => Err(Error::new(
             "IMPORT_IN_PROGRESS",
             format!(
-                "This repository's history is still importing ({} of {} commits): until that \
-                 finishes it takes no changes, and only a whole clone can be fetched. Its files \
-                 can be read now",
+                "This repository's history is still importing ({} of {} commits): it takes no \
+                 changes until that finishes. Its files can be read and cloned now",
                 fill.recorded, fill.total
             ),
         )),
     }
 }
 
-/// Adds `history_import` to a read of history, while it is partial.
+/// Adds to a read of history that it is partial: `history_import` while it fills, and
+/// `history_stopped` once a fill ended early.
 pub(super) fn note<S: SqlStore>(db: &S, mut answer: Value) -> Result<Value> {
     if let Some(fill) = filling(db)? {
         answer["history_import"] = json!(fill);
+    }
+    if let Some(stopped) = stopped(db)? {
+        answer["history_stopped"] = json!(stopped);
     }
     Ok(answer)
 }

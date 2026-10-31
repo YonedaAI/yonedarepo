@@ -3,10 +3,9 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { HistoryImportStatus, ImportStatus } from './ImportStatus';
+import { HistoryImportStatus, HistoryStoppedStatus, ImportStatus } from './ImportStatus';
 import {
   defaultRepoName,
-  historyStopped,
   importBody,
   importFailure,
   importView,
@@ -219,39 +218,30 @@ describe('ImportStatus', () => {
 });
 
 describe('a history filling in behind a landed main', () => {
-  const page = (progress: Parameters<typeof HistoryImportStatus>[0]['progress'], owner = true) =>
-    renderToStaticMarkup(
-      createElement(HistoryImportStatus, { repo: 'r1', progress, owner, navigate: () => {} }),
-    );
-
   it('ends the wait for the code as soon as main has landed', () => {
     const history = { recorded: 1, total: 233 };
     expect(importView({ status: 'running', history }).phase).toBe('complete');
-    expect(importView({ status: 'errored', history }).phase).toBe('complete');
     expect(importView({ status: 'running', history: null }).phase).toBe('running');
   });
 
   it('says how far it has come, and never that the history is whole', () => {
-    const shown = page({ recorded: 120, total: 233, stopped: false });
+    const progress = { recorded: 120, total: 233 };
+    const shown = renderToStaticMarkup(createElement(HistoryImportStatus, { progress }));
     expect(shown).toContain('Importing 120 of 233 commits');
     expect(shown).toContain('what has arrived so far');
     expect(shown).toContain('role="status"');
   });
 
-  it('says when it stopped, and only an owner is shown how to try again', () => {
-    const shown = page({ recorded: 120, total: 233, stopped: true });
-    expect(shown).toContain('History stopped importing at 120 of 233 commits.');
-    expect(shown).toContain('role="alert"');
-    expect(shown).toContain('delete this repository');
-    expect(page({ recorded: 120, total: 233, stopped: true }, false)).not.toContain(
-      'delete this repository',
-    );
-  });
-
-  it('counts only a failed or stopped Workflow as stopped', () => {
-    expect(historyStopped({ status: 'errored' })).toBe(true);
-    expect(historyStopped({ status: 'terminated' })).toBe(true);
-    expect(historyStopped({ status: 'running' })).toBe(false);
-    expect(historyStopped({ status: 'waiting' })).toBe(false);
+  it('says plainly what is missing when it ended early, and asks nothing of anyone', () => {
+    const stopped = {
+      recorded: 51,
+      total: 300,
+      reason: 'One commit changes more than 10,000 files.',
+    };
+    const shown = renderToStaticMarkup(createElement(HistoryStoppedStatus, { stopped }));
+    expect(shown).toContain('Only the newest 51 of 300 commits were imported.');
+    expect(shown).toContain(stopped.reason);
+    expect(shown).toContain('older commits are missing');
+    expect(shown).not.toContain('delete');
   });
 });

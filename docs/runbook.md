@@ -189,11 +189,10 @@ While history fills:
 | `repo_status`, log, path history, blame, record search | Carry `history_import {recorded, total}`: what they list is the newest part of the history |
 | A commit not recorded yet | 404 saying history is still importing |
 | Clone through `git-remote-yoneda` | Works: the object store holds all of it, and main is projected right after landing |
-| `git clone` over HTTPS or SSH | Works, now and after history is in: the pack streams from the object store (`cloudflare/worker/repo-git-mirror.ts`) when every want is a branch or tag it holds, nothing is withheld, and the clone is whole. A `--filter` clone receives every file |
-| `--depth`, or an incremental fetch | While filling: refused, `IMPORT_IN_PROGRESS`. After: as before, `held only as imported history` when it reaches imported commits |
+| `git clone` and `git fetch` over HTTPS or SSH, `--depth` too | Work, during the fill and after it: the pack streams from the object store (`cloudflare/worker/repo-git-mirror.ts`) when every want is a branch or tag it holds and nothing is withheld. A `--filter` clone receives every file. If the object store cannot answer: `IMPORT_IN_PROGRESS` while filling, after that as before, `held only as imported history` |
 | Landings, pushes, branches, tags, releases, forks, break-glass, purges | Refused, 409 `IMPORT_IN_PROGRESS`, naming how far it has come. A commit may still record from the published head; its landing is refused |
 
-A Workflow that fails for good leaves all the files readable and the history partial, the page says so, and the repository keeps refusing changes until the owner deletes it, which is how an import is tried again. A commit of more than 10,000 changed files fails an import in either mode; with the switch on, that happens after main has landed.
+A fill never leaves a repository refusing work. A commit of more than 10,000 changed files, or a wave that still fails after 5 retries (about 2.5 minutes), ends the fill where it reached: the repository holds what a capped import holds (`repo_record_imported_end`), takes changes at once, and says for good that only the newest N of M commits came in (`history_stopped` in `repo_status` and every read of history; the note is a row in `repairs`). A Workflow that died without doing that is ended by the next `GET /repos/:id/import`. A head of more than 10,000 changed files lands alone, with no changed paths recorded for it. A Workflow that fails before main lands fails the import, as with the switch off.
 
 ## Repository database size
 

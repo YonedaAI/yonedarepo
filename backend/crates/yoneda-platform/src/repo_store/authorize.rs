@@ -103,10 +103,14 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         }
         // Imported history is only recorded by the platform importer, which read it from
         // the object store; nobody else can declare commits into existence.
-        R::RecordImported | R::RecordImportedBatch if !actor.can("import") => Err(Error::new(
-            "FORBIDDEN",
-            "Only the platform importer records imported history",
-        )),
+        R::RecordImported | R::RecordImportedBatch | R::RecordImportedEnd
+            if !actor.can("import") =>
+        {
+            Err(Error::new(
+                "FORBIDDEN",
+                "Only the platform importer records imported history",
+            ))
+        }
         R::Review => actor.require("review"),
         // Protected refs need `land`; any other branch lands with `write` (`land_gates::scope`).
         R::Land | R::LandEnqueue => actor.require(land_gates::scope(&rows::branch_ref(c)?)),
@@ -179,6 +183,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::RecordClasses
         | R::RecordImported
         | R::RecordImportedBatch
+        | R::RecordImportedEnd
         | R::RecordPushed
         | R::RecordSymbols
         | R::Refs

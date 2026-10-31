@@ -104,11 +104,6 @@ export function importView(answer: ImportAnswer) {
   return { phase: 'running' as const };
 }
 
-/** Whether history stopped filling: nothing will finish it, and the repository waits for its
- * owner to delete it. */
-export const historyStopped = (answer: ImportAnswer) =>
-  answer.status === 'errored' || answer.status === 'terminated';
-
 /** Only a repository with no refs is waiting for its code: an import lands its branch before
  * anything else shows. */
 export const mayBeImport = (refs: readonly unknown[] | undefined) => refs?.length === 0;

@@ -293,7 +293,14 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
           throw new ApiError('NOT_FOUND', 'This repository has no import');
         throw e;
       });
-    return { import: `import-${repo}`, ...status, history: history_import };
+    // A Workflow that died cannot end its history: a repository must not wait on it.
+    const dead = ['errored', 'terminated'].includes(String(status.status));
+    if (history_import && dead)
+      await caller(env, repo, { _system: 'import' })({
+        op: 'repo_record_imported_end',
+        reason: 'The import stopped before its history was in.',
+      });
+    return { import: `import-${repo}`, ...status, history: dead ? null : history_import };
   }
   // Access changes republish main's head (begins and reads decide access from it).
   if (resource === 'visibility' && req.method === 'PUT')

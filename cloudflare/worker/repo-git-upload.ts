@@ -78,8 +78,7 @@ export async function uploadPack(
       }).body_b64,
     );
   const band = caps.includes('side-band-64k') ? CHUNK : caps.includes('side-band') ? 995 : 0;
-  const mirror = (head: Uint8Array) =>
-    request.done ? mirrorClone(ctx, objects, request, head, band) : Promise.resolve(null);
+  const mirror = (head: Uint8Array) => mirrorClone(ctx, objects, request, () => head, band);
   let walk: Json;
   try {
     walk = await ctx.call({
@@ -89,7 +88,11 @@ export async function uploadPack(
       common_only: !request.done,
     });
   } catch (e: any) {
-    const served = e?.code === 'IMPORT_IN_PROGRESS' && (await mirror(acknowledge([])));
+    if (e?.code !== 'IMPORT_IN_PROGRESS') throw e;
+    // The mirror already holds all of it. Until `done`, nothing is common: only the mirror
+    // can tell which haves it shares, and it leaves them out of the pack.
+    if (!request.done) return new Response(acknowledge([]), { headers: RESULT });
+    const served = await mirror(acknowledge([]));
     if (served) return served;
     throw e;
   }

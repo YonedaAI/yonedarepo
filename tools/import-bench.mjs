@@ -73,11 +73,11 @@ function git(args, env = {}) {
 }
 
 /** Seconds a whole `git clone` of `remote` takes, and what it holds. */
-async function timedClone(remote, env) {
+async function timedClone(remote, env, options = []) {
   const dir = await mkdtemp(join(tmpdir(), 'import-bench-'));
   const started = performance.now();
   try {
-    await git(['clone', '-q', remote, join(dir, 'r')], env);
+    await git(['clone', '-q', ...options, remote, join(dir, 'r')], env);
     const clone_s = seconds(started);
     const head = await git(['-C', join(dir, 'r'), 'rev-parse', 'HEAD']);
     const commits = Number(await git(['-C', join(dir, 'r'), 'rev-list', '--first-parent', '--count', 'HEAD']));
@@ -92,11 +92,15 @@ async function timedClone(remote, env) {
 async function ownClone(repo) {
   const minted = await call(`/repos/${repo}/tokens`, { body: { name: 'import-bench', scopes: ['read'] } });
   assert.equal(minted.status, 200, JSON.stringify(minted.body));
-  return timedClone(`${gitHost}/git/${repo}.git`, {
+  const remote = `${gitHost}/git/${repo}.git`;
+  const env = {
     GIT_CONFIG_COUNT: '1',
     GIT_CONFIG_KEY_0: 'http.extraHeader',
     GIT_CONFIG_VALUE_0: `Authorization: Bearer ${minted.body.token}`,
-  });
+  };
+  const [whole, shallow] = await Promise.all([timedClone(remote, env), timedClone(remote, env, ['--depth', '1'])]);
+  assert.equal(shallow.commits, 1, 'A clone of depth 1 is not shallow');
+  return { ...whole, depth_clone_s: shallow.clone_s };
 }
 
 async function run(source, n) {
@@ -165,6 +169,7 @@ const MEASURES = [
   ['  reading the log, s (server)', server('chain_ms')],
   ['  landing the head, s (server)', server('land_ms')],
   ['our git clone, s (client)', (r) => r.clone_s],
+  ['our git clone --depth 1, s (client)', (r) => r.depth_clone_s],
   ['history, s (server)', server('history_ms')],
   ['history, commits/s (server)', (r) => r.timing?.commits_per_s],
   ['  log, s (server)', server('log_ms')],

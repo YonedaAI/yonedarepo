@@ -9,7 +9,7 @@ import { ChangeView } from './ChangeView';
 import { CommitView } from './CommitView';
 import { ForkButton } from './ForkButton';
 import { HistoryTab } from './HistoryTab';
-import { HistoryImportStatus, ImportStatus } from './ImportStatus';
+import { HistoryImportStatus, HistoryStoppedStatus, ImportStatus } from './ImportStatus';
 import { RepoHoldBanner } from './LegalHold';
 import { PublicBadge } from './PublicBadge';
 import { ShowEmailsContext } from './people';
@@ -165,8 +165,9 @@ export function RepoPage({
           {status.error && (
             <Failure error={status.error} what="this repository" onRetry={status.reload} />
           )}
-          {!status.error && history && (
-            <HistoryImportStatus repo={repo} progress={history} owner={owner} navigate={navigate} />
+          {!status.error && history && <HistoryImportStatus progress={history} />}
+          {!status.error && data?.history_stopped && (
+            <HistoryStoppedStatus stopped={data.history_stopped} />
           )}
           {/* Settings stay open: deleting the repository is how a failed import is tried again. */}
           {!status.error && progress.phase !== 'none' && route.view !== 'repo-settings' && (

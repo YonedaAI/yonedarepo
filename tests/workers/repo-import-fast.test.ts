@@ -124,7 +124,7 @@ async function imported(remote: unknown, name: string, max = 5000, branch = 'mai
     get: async () => ({ status: async () => ({ status: 'running' }) }),
   };
   const env = { ...scoped, ARTIFACTS: remote, PLATFORM_IMPORT: workflows, FAST_IMPORT: 'on' } as unknown as Env;
-  const created = await api('/repos/import', owner, { body: { name, url: 'https://git.example/src.git', branch, max_commits: max } }, env);
+  const created = await api('/repos/import', owner, { body: { name, url: 'https://git.example/src.git', branch, max_commits: max, policy: { required_checks: [], approvals: 0 } } }, env);
   expect(created.status).toBe(200);
   return { env, owner, params: started.params, repo: `/repos/${created.body.id}`, id: created.body.id };
 }
@@ -260,19 +260,83 @@ it('stops a truncated import at its boundary, complete', async () => {
   expect(oldest.body.paths.map((p: any) => p.path)).toEqual(['src/lib/mod3.txt']);
 });
 
-it('fails a commit no retry can record at once', async () => {
-  const history = await chain(3, (n) => (n === 2 ? 10_001 : 0));
-  const remote = remoteOf(history);
-  const { env, params } = await imported(remote, 'huge');
-  const { step } = stepper();
-  await expect(runImport(env, params, step)).rejects.toMatchObject({ name: 'NonRetryableError', message: expect.stringMatching(/^TOO_LARGE: /) });
+describe('a fill that cannot finish', () => {
+  it('ends at a commit over 10,000 files, and the repository works', async () => {
+    const history = await chain(300, (n) => (n === 200 ? 10_001 : 0));
+    const remote = remoteOf(history);
+    const { env, owner, params, repo } = await imported(remote, 'huge');
+    // Commit 201 takes those files away again: it is the first that cannot be recorded.
+    const result: any = await runImport(env, params, stepper().step);
+    expect(result).toMatchObject({ commit: history.head, commits: 99, stopped: { recorded: 99, total: 300 } });
+    const status = (await api(repo, owner, {}, env)).body;
+    expect(status.history_import).toBeNull();
+    expect(status.history_stopped).toEqual({ recorded: 99, total: 300, reason: 'One commit changes more than 10,000 files.' });
+    const log = await api(`${repo}/log?ref=main&limit=200`, owner, {}, env);
+    expect(log.body.commits).toHaveLength(99);
+    expect(log.body.history_stopped.recorded).toBe(99);
+    // Work goes on from it: a commit lands on main.
+    const commit = await api(`${repo}/commits`, owner, { body: { ref: 'main', changes: [file('x.txt', 'x\n')], message: 'x', author } }, env);
+    expect(commit.status).toBe(200);
+    const land = await api(`${repo}/land`, owner, { body: { ref: 'main', commit: commit.body.commit } }, env);
+    expect(land.status).toBe(200);
+    const after = (await api(repo, owner, {}, env)).body;
+    expect(after.version).toBeGreaterThan(1);
+    expect(after.history_stopped.recorded).toBe(99);
+  });
+
+  it('ends after a failure that keeps coming back', async () => {
+    const history = await chain(300);
+    const remote = remoteOf(history);
+    const { env, owner, params, repo } = await imported(remote, 'failing');
+    let waves = 0;
+    const step: ImportStep = {
+      async do(name, _config, callback) {
+        if (name.startsWith('record') && ++waves === 2) throw new Error('Artifacts is down');
+        return callback();
+      },
+    };
+    const result: any = await runImport(env, params, step);
+    expect(result.stopped).toEqual({ recorded: 251, total: 300, reason: 'Recording older commits kept failing.' });
+    const status = (await api(repo, owner, {}, env)).body;
+    expect(status.history_import).toBeNull();
+    expect(status.history_stopped.recorded).toBe(251);
+  });
+
+  it('lands a head too large to record by itself, and says so', async () => {
+    const history = await chain(3, (n) => (n === 3 ? 10_001 : 0));
+    const { env, owner, params, repo } = await imported(remoteOf(history), 'huge_head');
+    const result: any = await runImport(env, params, stepper().step);
+    expect(result).toMatchObject({ commit: history.head, commits: 1, stopped: { recorded: 1, total: 3 } });
+    const status = (await api(repo, owner, {}, env)).body;
+    expect(status.refs[0].commit_id).toBe(history.head);
+    expect(status.history_stopped.total).toBe(3);
+  });
+
+  it('ends one whose Workflow died, the next time anyone looks', async () => {
+    const history = await chain(30);
+    const { env, owner, params, repo } = await imported(remoteOf(history), 'died');
+    const stop = new Error('stop');
+    const { step } = stepper(async (name) => {
+      if (name === 'land the head') throw stop;
+    });
+    await runImport(env, params, step).catch((e) => {
+      if (e !== stop) throw e;
+    });
+    expect((await api(`${repo}/import`, owner, {}, env)).body.history).toEqual({ recorded: 1, total: 30 });
+    const died = { ...env, PLATFORM_IMPORT: { get: async () => ({ status: async () => ({ status: 'terminated' }) }) } } as unknown as Env;
+    const answer = await api(`${repo}/import`, owner, {}, died);
+    expect(answer.body.history).toBeNull();
+    const status = (await api(repo, owner, {}, env)).body;
+    expect(status.history_import).toBeNull();
+    expect(status.history_stopped).toMatchObject({ recorded: 1, total: 30 });
+  });
 });
 
 const pkt = (line: string) => `${(line.length + 4).toString(16).padStart(4, '0')}${line}`;
 const PACK = new TextEncoder().encode(`PACK${'x'.repeat(5000)}`);
 
 /** The fake mirror's Git: `refs` advertised, and `PACK` for any fetch, in pieces. */
-function serveMirror(refs: Record<string, string>) {
+function serveMirror(refs: Record<string, string>, shallow: string[] = []) {
   const asked: string[] = [];
   const spy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = String(input instanceof Request ? input.url : input);
@@ -281,7 +345,8 @@ function serveMirror(refs: Record<string, string>) {
       return new Response(`${pkt('# service=git-upload-pack\n')}0000${lines.join('')}0000`);
     }
     asked.push(new TextDecoder().decode(new Uint8Array(await new Response(init?.body).arrayBuffer())));
-    const parts: Uint8Array[] = [new TextEncoder().encode(pkt('NAK\n'))];
+    const opening = shallow.length ? `${shallow.map((l) => pkt(`${l}\n`)).join('')}0000` : '';
+    const parts: Uint8Array[] = [new TextEncoder().encode(`${opening}${pkt('NAK\n')}`)];
     for (let i = 0; i < PACK.length; i += 1000) {
       const piece = PACK.subarray(i, i + 1000);
       parts.push(new TextEncoder().encode((piece.length + 5).toString(16).padStart(4, '0')), Uint8Array.of(1), piece);
@@ -343,15 +408,43 @@ describe('a clone as soon as main lands', () => {
     mirror.restore();
   });
 
+  it('serves a depth and an incremental fetch from it too', async () => {
+    const { env, id, head, token } = await landed('mirror_shapes');
+    const older = hex('c', 20);
+    const mirror = serveMirror({ 'refs/heads/main': head }, [`shallow ${head}`]);
+    const shallow = await gitFetch(env, id, token, [`want ${head}`, 'deepen 1', 'done']);
+    expect(shallow).toMatchObject({ error: null, pack: PACK.length });
+    expect(mirror.asked[0]).toContain('deepen 1');
+    mirror.restore();
+    const fetching = serveMirror({ 'refs/heads/main': head });
+    // A round short of `done` is answered `ready`: the pack is what the haves leave.
+    const fetched = await gitFetch(env, id, token, [`want ${head}`, `have ${older}`]);
+    expect(fetched).toMatchObject({ error: null, pack: PACK.length });
+    expect(fetching.asked[0]).toContain(`have ${older}`);
+        fetching.restore();
+  });
+
+  it('answers info/refs with main at the head, over either protocol', async () => {
+    const { env, id, head, token } = await landed('mirror_refs');
+    const ask = async (version: Record<string, string>) => {
+      const response = await platformFetch(
+        new Request(`https://yoneda/git/${id}.git/info/refs?service=git-upload-pack`, { headers: { authorization: `Basic ${btoa(`git:${token}`)}`, ...version } }),
+        env,
+      );
+      return [response.status, await response.text()] as const;
+    };
+    const [v0, refs] = await ask({});
+    expect([v0, refs]).toEqual([200, expect.stringContaining(`${head} refs/heads/main`)]);
+    const [v2, caps] = await ask({ 'git-protocol': 'version=2' });
+    expect([v2, caps]).toEqual([200, expect.stringContaining('ls-refs')]);
+  });
+
   it('never takes the mirror\'s word for what a reader may fetch', async () => {
     const { env, id, head, repo, owner, token } = await landed('mirror_refused');
     const hidden = hex('c', 7);
     const mirror = serveMirror({ 'refs/heads/main': head, [`refs/yoneda/c/${hidden}`]: hidden });
     // A commit the mirror holds and no branch or tag reaches.
     expect((await gitFetch(env, id, token, [`want ${hidden}`, 'done'])).error).toMatch(/^IMPORT_IN_PROGRESS/);
-    // A depth is not sent on, and an incremental fetch is not a clone.
-    expect((await gitFetch(env, id, token, [`want ${head}`, 'deepen 1', 'done'])).error).toMatch(/^IMPORT_IN_PROGRESS/);
-    expect((await gitFetch(env, id, token, [`want ${head}`, `have ${hidden}`, 'done'])).error).toMatch(/^IMPORT_IN_PROGRESS/);
     // Off, nothing goes to the mirror.
     const off = { ...env, FAST_IMPORT: 'off' } as Env;
     expect((await gitFetch(off, id, token, [`want ${head}`, 'done'])).error).toMatch(/^IMPORT_IN_PROGRESS/);

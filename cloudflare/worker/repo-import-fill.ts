@@ -9,12 +9,17 @@
 // already holds and refuses any that would leave a gap.
 import { NonRetryableError } from 'cloudflare:workflows';
 import { rpcValue } from './durable';
-import { compute } from './repo-compute';
 import { inBatches } from './repo-git-objects';
+import {
+  changedPaths,
+  diff,
+  parentTree,
+  type Repo,
+  tooLarge,
+  treeReader,
+} from './repo-import-trees';
 import { caller, type Json } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
-import type { TreeEntry } from './repo-stores';
-import { TreeMemo } from './repo-tree-memo';
 import type { Env } from './types';
 
 /** `branch`: the remote's branch to import; none: its default branch. */
@@ -36,21 +41,23 @@ export const RETRY = {
   retries: { limit: 8, delay: '10 seconds', backoff: 'exponential' },
   timeout: '10 minutes',
 };
+/** A wave retries for about 2.5 minutes: past that, the repository matters more. */
+const WAVE_RETRY = {
+  retries: { limit: 5, delay: '5 seconds', backoff: 'exponential' },
+  timeout: '10 minutes',
+};
 export const storeName = (repo: string) => `yr-${repo}`;
 
 /** Commits per wave, the authority's most per transaction (BATCH_COMMITS). */
 const WAVE = 250;
-/** Commits diffed at once, and trees one commit reads at once. */
+/** Commits diffed at once. */
 const DIFFS = 32;
-const READS = 16;
-/** Parsed tree entries a wave keeps: a tree's child's is usually its parent's next. */
-const TREE_ENTRIES = 200_000;
 /** JSON one authority call carries (one larger commit goes alone). */
 const BATCH_BYTES = 1024 * 1024;
 const LOG_PAGE = 1000;
 const POLL_MS = 500;
 
-type Repo = Awaited<ReturnType<Env['ARTIFACTS']['get']>>;
+export { changedPaths };
 
 export const logged = (c: ArtifactsCommitMetadata): Commit => ({
   hash: c.hash,
@@ -58,67 +65,6 @@ export const logged = (c: ArtifactsCommitMetadata): Commit => ({
   parents: c.parents,
   message: c.message.slice(0, 4000),
 });
-
-/** A tree diff's changes as the authority records them. */
-export const changedPaths = (changes: Json[]) =>
-  changes.map((c) => ({
-    path: c.path,
-    op: c.op,
-    old_blob: c.old?.id ?? null,
-    new_blob: c.new?.id ?? null,
-  }));
-
-/** The wave's reads of `repo`: each tree once, however many commits ask at once. */
-function treeReader(repo: Repo) {
-  const memo = new TreeMemo(TREE_ENTRIES);
-  const reading = new Map<string, Promise<TreeEntry[]>>();
-  const read = async (id: string) => {
-    const entries = await rpcValue(repo.readTree(id));
-    if (!entries) throw Object.assign(new Error(`Tree ${id} is missing`), { code: 'NOT_FOUND' });
-    const tree = entries.map((e) => ({ name: e.name, type: e.type, id: e.hash }));
-    memo.set('', id, tree);
-    reading.delete(id);
-    return tree;
-  };
-  return (id: string) => {
-    const held = memo.get('', id) ?? reading.get(id);
-    if (held) return held;
-    const started = read(id);
-    reading.set(id, started);
-    return started;
-  };
-}
-
-/** The file-level changes from tree `old` (null: nothing) to `tree`, as `withTrees` finds
- * them, starting from the two roots every diff needs. A commit no retry can record ends
- * the import, saying which limit it passed. */
-async function diff(read: ReturnType<typeof treeReader>, old: string | null, tree: string) {
-  const trees: Record<string, TreeEntry[]> = {};
-  let need = old ? [old, tree] : [tree];
-  for (let round = 0; round <= 64; round++) {
-    await inBatches(need, READS, async (id) => {
-      trees[id] = await read(id);
-    });
-    let result: Json;
-    try {
-      result = compute({ op: 'tree_diff', old, new: tree, trees });
-    } catch (e: any) {
-      throw e?.code === 'TOO_LARGE' ? new NonRetryableError(`${e.code}: ${e.message}`) : e;
-    }
-    if (!result.need_trees) return changedPaths(result.changes);
-    need = result.need_trees;
-  }
-  throw new NonRetryableError('INVALID_INPUT: Paths are nested too deeply');
-}
-
-/** The tree of `commit`'s first parent: `below` when the log says so, else its own read;
- * null for a root. */
-async function parentTree(repo: Repo, commit: Commit, below: Commit | undefined) {
-  const parent = commit.parents[0];
-  if (!parent) return null;
-  if (below?.hash === parent) return below.tree;
-  return (await rpcValue(repo.readCommit(parent)))?.treeHash ?? null;
-}
 
 /** The chain from `ref`, newest first, at most `want` commits. */
 async function readChain(repo: Repo, ref: string, want: number) {
@@ -159,8 +105,17 @@ async function landHead(env: Env, params: ImportParams) {
     throw new NonRetryableError(
       params.branch ? `Branch ${params.branch} has no commits` : 'The remote has no commits',
     );
-  const total = Math.min(chain.length, params.max);
-  const touches = await diff(treeReader(repo), await parentTree(repo, head, below), head.tree);
+  const whole = Math.min(chain.length, params.max);
+  // A head too large to record its changes still lands: it is all the history there will be.
+  const touches = await diff(
+    treeReader(repo),
+    await parentTree(repo, head, below),
+    head.tree,
+  ).catch((e) => {
+    if (!tooLarge(e)) throw e;
+    return null;
+  });
+  const total = touches ? whole : 1;
   const call = caller(env, params.repo, { _system: 'import' });
   await call({
     op: 'repo_record_imported',
@@ -169,7 +124,7 @@ async function landHead(env: Env, params: ImportParams) {
     parents: head.parents,
     message: head.message,
     generation: total,
-    touches,
+    touches: touches ?? [],
   });
   const status = await call({ op: 'repo_status' });
   const landed = status.refs.length
@@ -187,16 +142,34 @@ async function landHead(env: Env, params: ImportParams) {
     });
   // Now, not after the history: a clone through the store needs main there.
   else await dispatchProjection(env, params.repo);
+  const stopped = touches
+    ? null
+    : await endHistory(env, params, { reason: stopReason(TOO_LARGE), total: whole });
   const landed_at = Date.now();
   return {
     commit: head.hash,
     version: landed.version as number,
     total,
+    stopped,
     next: total > 1 ? { commit: below?.hash as string, generation: total - 1 } : null,
     fetched_at,
     read_at,
     landed_at,
   };
+}
+
+const TOO_LARGE = new Error('TOO_LARGE: ');
+/** Why history ended early, as the repository's page says it. */
+const stopReason = (e: unknown) =>
+  tooLarge(e)
+    ? 'One commit changes more than 10,000 files.'
+    : 'Recording older commits kept failing.';
+
+/** Ends history where it reached, leaving the repository as a capped import would. */
+async function endHistory(env: Env, params: ImportParams, why: Json) {
+  const call = caller(env, params.repo, { _system: 'import' });
+  const { history_stopped } = await call({ op: 'repo_record_imported_end', ...why });
+  return history_stopped as { recorded: number; total: number; reason: string } | null;
 }
 
 type Cursor = { commit: string; generation: number };
@@ -225,7 +198,7 @@ async function recordWave(env: Env, params: ImportParams, at: Cursor) {
   const logged_at = Date.now();
   const wave = page.slice(0, Math.min(WAVE, at.generation));
   const read = treeReader(repo);
-  const commits = await inBatches(
+  const diffed = await inBatches(
     wave.map((_, i) => i),
     DIFFS,
     async (i) => ({
@@ -234,13 +207,22 @@ async function recordWave(env: Env, params: ImportParams, at: Cursor) {
       parents: wave[i].parents,
       message: wave[i].message,
       generation: at.generation - i,
-      touches: await diff(read, await parentTree(repo, wave[i], page[i + 1]), wave[i].tree),
+      touches: await diff(read, await parentTree(repo, wave[i], page[i + 1]), wave[i].tree).catch(
+        (e) => {
+          if (!tooLarge(e)) throw e;
+          return null;
+        },
+      ),
     }),
   );
+  // What lies above a commit too large to record is still history.
+  const stop = diffed.findIndex((commit) => !commit.touches);
+  const commits = stop < 0 ? diffed : diffed.slice(0, stop);
   const diffed_at = Date.now();
   const call = caller(env, params.repo, { _system: 'import' });
   for (const batch of batches(commits))
     await call({ op: 'repo_record_imported_batch', commits: batch });
+  if (stop >= 0) throw new NonRetryableError(`TOO_LARGE: ${wave[stop].hash}`);
   const left = at.generation - wave.length;
   return {
     next: left > 0 ? { commit: page[wave.length].hash, generation: left } : null,
@@ -264,17 +246,25 @@ export async function landThenFill(
   const rates: number[] = [];
   const spent = { log_ms: [] as number[], trees_ms: [] as number[], authority_ms: [] as number[] };
   let next: Cursor | null = head.next;
-  while (next) {
-    const at: Cursor = next;
-    const wave = await step.do(`record commits below ${at.generation + 1}`, RETRY, () =>
-      recordWave(env, params, at),
-    );
-    const { log_ms, trees_ms, authority_ms } = wave;
-    spent.log_ms.push(log_ms);
-    spent.trees_ms.push(trees_ms);
-    spent.authority_ms.push(authority_ms);
-    rates.push(Math.round((wave.commits * 1000) / (log_ms + trees_ms + authority_ms + 1)));
-    next = wave.next;
+  let stopped = head.stopped;
+  try {
+    while (next) {
+      const at: Cursor = next;
+      const wave = await step.do(`record commits below ${at.generation + 1}`, WAVE_RETRY, () =>
+        recordWave(env, params, at),
+      );
+      const { log_ms, trees_ms, authority_ms } = wave;
+      spent.log_ms.push(log_ms);
+      spent.trees_ms.push(trees_ms);
+      spent.authority_ms.push(authority_ms);
+      rates.push(Math.round((wave.commits * 1000) / (log_ms + trees_ms + authority_ms + 1)));
+      next = wave.next;
+    }
+  } catch (e) {
+    // Retries are spent, or none can help: the repository must not wait on history.
+    console.warn(`history import ended early: ${params.repo}: ${e}`);
+    const reason = stopReason(e);
+    stopped = await step.do('end history here', RETRY, () => endHistory(env, params, { reason }));
   }
   const filled = await step.do('finish', RETRY, async () => Date.now());
   rates.sort((a, b) => a - b);
@@ -282,7 +272,8 @@ export async function landThenFill(
   return {
     commit: head.commit,
     version: head.version,
-    commits: head.total,
+    commits: stopped?.recorded ?? head.total,
+    ...(stopped && { stopped }),
     // What the bench reports (tools/import-bench.mjs): server-side, in the Workflow's steps.
     timing: {
       // From the request to main usable, stage by stage.

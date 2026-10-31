@@ -331,3 +331,109 @@ fn a_commit_parses_as_the_old_op_did() {
     no_generation.as_object_mut().unwrap().remove("generation");
     assert!(Imported::parse(&no_generation).is_err());
 }
+
+fn end(h: &Harness, c: Value) -> yoneda_core::Result<Value> {
+    let mut command = c;
+    command["op"] = json!("repo_record_imported_end");
+    h.run(IMPORTER, command)
+}
+
+/// Commits `oldest..=newest` as a capped import records them: the oldest keeps its parent,
+/// which no row holds.
+fn capped(oldest: usize, newest: usize) -> Harness {
+    let h = Harness::new();
+    for n in oldest..=newest {
+        let mut c = commit(n, newest, false);
+        c["op"] = json!("repo_record_imported");
+        c.as_object_mut().unwrap().remove("generation");
+        h.ok(IMPORTER, c);
+    }
+    h.ok(
+        IMPORTER,
+        json!({"op":"repo_import","ref":"main","commit":id(newest)}),
+    );
+    h
+}
+
+#[test]
+fn a_fill_that_ends_early_is_exactly_a_capped_import_that_says_so() {
+    let (h, slow) = (landed(6, false), capped(4, 6));
+    fill(&h, 5, 4, 6, false);
+    let answer = end(&h, json!({"reason":"One commit changes too many files."})).unwrap();
+    assert_eq!(answer["ended"], true);
+    assert_eq!(history_import(&h), Value::Null);
+    let stopped = json!({"recorded":3,"total":6,"reason":"One commit changes too many files."});
+    let status = h.ok(OWNER, json!({"op":"repo_status"}));
+    assert_eq!(status["history_stopped"], stopped);
+    for query in [
+        "SELECT id,tree,parents,generation,origin FROM commits ORDER BY rowid",
+        "SELECT ref,depth,commit_id FROM ref_chain ORDER BY depth",
+    ] {
+        assert_eq!(
+            h.db.query(query, &[]).unwrap(),
+            slow.db.query(query, &[]).unwrap(),
+            "{query}"
+        );
+    }
+    // What reads history says the older part is missing, for good.
+    for c in [
+        json!({"op":"repo_log","ref":"main"}),
+        json!({"op":"repo_path_history","ref":"main","path":"shared.txt"}),
+        json!({"op":"repo_search_records","query":"change"}),
+    ] {
+        let read = h.ok(OWNER, c.clone());
+        assert_eq!(read["history_stopped"], stopped, "{c}");
+        assert!(read.get("history_import").is_none(), "{c}");
+    }
+    let log = h.ok(OWNER, json!({"op":"repo_log","ref":"main"}));
+    assert_eq!(log["commits"].as_array().unwrap().len(), 3);
+    // The note is no repair of the commit it sits on.
+    let oldest = h.ok(OWNER, json!({"op":"repo_commit","commit":id(4)}));
+    assert_eq!(oldest["repairs"], json!([]));
+    // The repository works: it is no longer filling, and work extends the chain.
+    h.ok(
+        AGENT,
+        json!({"op":"repo_branch_set","ref":"work","commit":id(6)}),
+    );
+    let walked = h.ok(CI, json!({"op":"repo_git_walk","wants":[id(6)],"haves":[]}));
+    assert_eq!(walked["commits"].as_array().unwrap().len(), 3);
+    // Asked again, nothing changes.
+    let again = end(&h, json!({"reason":"something else"})).unwrap();
+    assert_eq!(again["ended"], false);
+    assert_eq!(
+        h.ok(OWNER, json!({"op":"repo_status"}))["history_stopped"],
+        stopped
+    );
+}
+
+#[test]
+fn ending_is_for_the_importer_and_only_a_fill_ends() {
+    let h = landed(3, false);
+    assert_eq!(
+        code(h.run(OWNER, json!({"op":"repo_record_imported_end","reason":"x"}))),
+        "FORBIDDEN"
+    );
+    let whole = recorded_oldest_first(3, false);
+    assert_eq!(end(&whole, json!({"reason":"x"})).unwrap()["ended"], false);
+    let status = whole.ok(OWNER, json!({"op":"repo_status"}));
+    assert_eq!(status["history_stopped"], Value::Null);
+    let late = recorded_oldest_first(3, false);
+    let named = end(&late, json!({"reason":"x","total":9})).unwrap();
+    assert_eq!(
+        named["ended"], false,
+        "a history that came in whole stays so"
+    );
+}
+
+#[test]
+fn a_head_alone_can_be_all_of_a_history() {
+    // Its own changes were too many to record: it landed by itself, parents and all.
+    let h = landed(1, true);
+    let answer = end(&h, json!({"reason":"too many","total":40})).unwrap();
+    assert_eq!(answer["ended"], true);
+    assert_eq!(
+        h.ok(OWNER, json!({"op":"repo_status"}))["history_stopped"],
+        json!({"recorded":1,"total":40,"reason":"too many"})
+    );
+    assert_eq!(history_import(&h), Value::Null);
+}

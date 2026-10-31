@@ -17,6 +17,7 @@ import {
   readAll,
   sendPack,
 } from './repo-git-upload';
+import type { ShallowLines } from './repo-mirror-git';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import type { Json, RepoContext } from './repo-ops';
 import type { Fresh } from './repo-pack-cache';
@@ -77,13 +78,13 @@ async function serveFetch(
 ) {
   const negotiating = !request.done && request.haves.length > 0;
   const walk = { op: 'repo_git_walk', wants: request.wants, haves: request.haves, objects: true };
-  if (negotiating) {
-    const { common } = await ctx.call({ ...walk, common_only: true });
-    if (!common.length) return answer(compute({ op: 'git_v2_fetch_head', nak: true }).body_b64);
-  }
-  const mirror = (head: Uint8Array) => mirrorClone(ctx, objects, request, head, CHUNK);
+  const shallow_info = request.depth != null || request.shallows.length > 0;
   let walked: Json;
   try {
+    if (negotiating) {
+      const { common } = await ctx.call({ ...walk, common_only: true });
+      if (!common.length) return answer(compute({ op: 'git_v2_fetch_head', nak: true }).body_b64);
+    }
     walked = await ctx.call({
       ...walk,
       shallows: request.shallows,
@@ -91,16 +92,27 @@ async function serveFetch(
       deepen_relative: request.deepen_relative,
     });
   } catch (e: any) {
-    // While history is still arriving, the mirror already holds all of it.
-    const plain = compute({ op: 'git_v2_fetch_head', acknowledged: null });
-    const served = e?.code === 'IMPORT_IN_PROGRESS' && (await mirror(fromBase64(plain.body_b64)));
+    if (e?.code !== 'IMPORT_IN_PROGRESS') throw e;
+    // The mirror already holds all of it. A round short of `done` is answered `ready`: which
+    // haves it shares only the mirror can tell, and it leaves them out of the pack.
+    const lead = ({ shallow, unshallow }: ShallowLines) =>
+      fromBase64(
+        compute({
+          op: 'git_v2_fetch_head',
+          acknowledged: negotiating ? [] : null,
+          shallow_info,
+          shallow,
+          unshallow,
+        }).body_b64,
+      );
+    const served = await mirrorClone(ctx, objects, request, lead, CHUNK);
     if (served) return served;
     throw e;
   }
   const head = compute({
     op: 'git_v2_fetch_head',
     acknowledged: negotiating ? walked.common : null,
-    shallow_info: request.depth != null || request.shallows.length > 0,
+    shallow_info,
     shallow: walked.shallow,
     unshallow: walked.unshallow,
   });
@@ -124,7 +136,7 @@ async function serveFetch(
     stats,
     commits,
     fresh,
-    mirror,
+    (sent) => mirrorClone(ctx, objects, request, () => sent, CHUNK),
   );
 }
 
