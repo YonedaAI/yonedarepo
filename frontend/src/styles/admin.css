@@ -332,3 +332,55 @@
   margin: 0 0 0 auto;
   color: var(--muted);
 }
+/* One user's Billing section (features/admin/AdminBilling.tsx) and its dialogs. */
+.admin-billing {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.admin-notice {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--danger-line);
+  border-radius: 8px;
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.admin-billing-form {
+  display: grid;
+  gap: 14px;
+}
+.admin-billing-form label {
+  display: grid;
+  gap: 4px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.admin-billing-form input:not([type="checkbox"]),
+.admin-billing-form textarea {
+  padding: 7px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.admin-billing-form textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+.admin-billing-form label.admin-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text);
+}
+.admin-warn {
+  margin: 0;
+  color: var(--danger);
+}
+.admin-mono {
+  font-family: var(--mono);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
