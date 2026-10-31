@@ -1,7 +1,7 @@
 // The shell's sidebar: Browse (Home, Repositories, Explore, Agents: the workspace's managed
 // agents, their runs and settings; Admin for operators), then on a settings page Account (those
-// pages); elsewhere Repository: the picker and the open repository's pages. The account's
-// organizations follow. On a phone it is the navigation menu the top bar opens.
+// pages); elsewhere Repository (the picker and the open repository's pages), then the account's
+// organizations. On a phone it is the navigation menu the top bar opens.
 import {
   BookOpenText,
   Bot,
@@ -251,7 +251,7 @@ export function AppSidebar({
           )}
         </div>
       )}
-      {orgs.length > 0 && (
+      {orgs.length > 0 && !onAccount && (
         <nav className="side-nav" aria-label="Organizations" onKeyDown={arrowKeys}>
           <p className="side-label">Organizations</p>
           {orgs.map((o) => (
