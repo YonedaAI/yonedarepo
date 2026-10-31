@@ -219,6 +219,11 @@ fn cases() -> Vec<Case> {
                 "Forked {REPO} at version 7 as mine ({FORK}): 2 ref(s), 5 commit(s)\n  git clone yoneda::{{ORIGIN}}/{FORK}\nnext: push a branch, then yoneda change create <branch> --to-parent\n"
             ),
         ),
+        case(
+            "search main --all --origin {ORIGIN}",
+            "search-all",
+            "/alice/demo\ncode\nsrc/a.rs:3: fn main\ncouldn't search mine: overloaded\nfound in 1 of 2 repositories searched\nmore: --after 1.r1\n",
+        ),
         case("org list --origin {ORIGIN}", "org-list", "acme  owner\n"),
         case(
             "org create acme --origin {ORIGIN}",

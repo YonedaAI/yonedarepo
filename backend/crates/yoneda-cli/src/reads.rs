@@ -79,7 +79,7 @@ fn search_group<T: serde::de::DeserializeOwned>(
 }
 
 /// Prints a search answer group by group; returns its `--json` report.
-fn print_search(found: &Value) -> Result<Search> {
+pub(crate) fn print_search(found: &Value) -> Result<Search> {
     let groups: Vec<String> = found["groups"]
         .as_array()
         .into_iter()

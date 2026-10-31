@@ -432,6 +432,20 @@ mod tests {
             })
         );
         assert_eq!(
+            parsed("search retry --all --in code --after 5.r1 --word").ok(),
+            Some(Command::SearchAll {
+                origin: None,
+                query: "retry".into(),
+                groups: Some(vec!["code".into()]),
+                limit: None,
+                word: true,
+                after: Some("5.r1".into()),
+            })
+        );
+        assert!(parsed("search retry --all --ref main").is_err());
+        assert!(parsed("search retry --all --repo r1").is_err());
+        assert!(parsed("grep retry --all").is_err());
+        assert_eq!(
             parsed("search retry --in commits,changes --limit 5 --word").ok(),
             Some(Command::Read {
                 target: Target::default(),

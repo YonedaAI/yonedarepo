@@ -6,6 +6,7 @@ import { SearchAnswerView } from '../source-platform/SearchAnswerView';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { capNote, matched, type Outcome } from './searchAllModel';
 import { searchRoute } from './searchRoute';
+import type { AccountSearch } from './useAccountSearch';
 
 function OneRepository({
   query,
@@ -61,8 +62,6 @@ export function SearchResults({
     );
   const finished = outcomes.length === targets.length;
   const found = matched(outcomes);
-  const failed = outcomes.filter((o) => o.kind === 'failed');
-  const name = (repo: string) => names.get(repo) ?? repo;
   const note = finished ? capNote({ capped }) : undefined;
   return (
     <>
@@ -74,6 +73,68 @@ export function SearchResults({
             : `No matches for “${query}”.`}
         {note && ` ${note}`}
       </p>
+      <Groups query={query} outcomes={outcomes} names={names} navigate={navigate} />
+    </>
+  );
+}
+
+/** A search across repositories as `GET /search` answers it, a page at a time. */
+export function AccountResults({
+  query,
+  search,
+  names,
+  navigate,
+}: {
+  query: string;
+  search: AccountSearch;
+  names: Map<string, string>;
+  navigate: Navigate;
+}) {
+  const { outcomes, searched, loading, error, next, more, retry } = search;
+  const found = matched(outcomes);
+  const known = new Map([...names, ...search.names]);
+  const repositories = (n: number) => (n === 1 ? '1 repository' : `${n} repositories`);
+  return (
+    <>
+      <p className="source-meta search-status" role="status">
+        {found.length
+          ? `Found in ${repositories(found.length)} of ${searched} searched.`
+          : loading
+            ? 'Searching your repositories…'
+            : error
+              ? ''
+              : `No matches for “${query}”.`}
+        {next && !loading && ' More repositories may match.'}
+      </p>
+      <Groups query={query} outcomes={outcomes} names={known} navigate={navigate} />
+      {error && <Failure error={error} what="results" onRetry={next ? more : retry} />}
+      {next && !error && (
+        <button type="button" className="search-next" onClick={more} disabled={loading}>
+          {loading ? 'Searching…' : 'Search more repositories'}
+        </button>
+      )}
+    </>
+  );
+}
+
+/** The repositories that couldn't be searched, then a group per repository that found
+ * something, in the order given. */
+function Groups({
+  query,
+  outcomes,
+  names,
+  navigate,
+}: {
+  query: string;
+  outcomes: Outcome[];
+  names: Map<string, string>;
+  navigate: Navigate;
+}) {
+  const found = matched(outcomes);
+  const failed = outcomes.filter((o) => o.kind === 'failed');
+  const name = (repo: string) => names.get(repo) ?? repo;
+  return (
+    <>
       {failed.length > 0 && (
         <p className="search-failed">
           Couldn’t search{' '}

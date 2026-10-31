@@ -6,8 +6,8 @@ import { audit } from './platform-admin-queries';
 import { compute } from './repo-compute';
 import { toBase64 } from './repo-objects';
 import { ApiError, caller, type Json, RepoContext } from './repo-ops';
-import { type PartitionIndex, searchSegments, segmentsIn } from './repo-search-index';
 import { accountSearchOn, ownerOf } from './repo-search-directory';
+import { type PartitionIndex, searchSegments, segmentsIn } from './repo-search-index';
 import type { Env, Envelope } from './types';
 import { searchDirectory } from './workspace';
 

@@ -1,6 +1,6 @@
-// The Search page (`/search`, the rail's Search): one box and a repository picker over the
-// repositories' own search API, across all of them (searchAllModel.ts) or in one. A search runs
-// on Enter, not as you type: across all repositories each one would be up to 25 requests. The
+// The Search page (`/search`, the rail's Search): one box and a repository picker, across all
+// repositories (searchAllModel.ts) or in one, over that repository's own search API. A search
+// runs on Enter, not as you type: across all repositories each one asks up to 25 of them. The
 // query and repository live in the address. `/` focuses the box and Escape clears it.
 import { Search } from 'lucide-react';
 import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react';
@@ -9,9 +9,10 @@ import { type PlatformRepo, repoRows } from '../shell/repoRows';
 import type { Navigate } from '../shell/useRoute';
 import { repoNameOf } from '../source-platform/repoNames';
 import { Failure, Loading } from '../source-platform/SourceStatus';
-import { SearchResults } from './SearchResults';
+import { AccountResults, SearchResults } from './SearchResults';
 import { isTyping, MIN_QUERY, searchPlan } from './searchAllModel';
 import { type SearchRoute, searchRoute } from './searchRoute';
+import { useAccountSearch } from './useAccountSearch';
 import { useSearchAcross } from './useSearchAcross';
 
 function Welcome({ onSignIn }: { onSignIn?: () => void }) {
@@ -79,13 +80,17 @@ export function SearchPage({
   const known = authenticated && !loading && !reposError;
   const targets = within ? [within] : known ? plan.repos : null;
   const asking = q.length >= MIN_QUERY && (within || !signedOut) ? q : '';
-  const { outcomes, retry } = useSearchAcross(asking, targets);
+  // Across all repositories the platform searches, where it can.
+  const account = useAccountSearch(known && !within ? asking : '');
+  const fanningOut = Boolean(within) || account.off;
+  const { outcomes, retry } = useSearchAcross(fanningOut ? asking : '', targets);
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
     const next = draft.trim();
-    if (next === q) retry();
-    else navigate(searchRoute(next, within));
+    if (next !== q) navigate(searchRoute(next, within));
+    else if (fanningOut) retry();
+    else account.retry();
   };
   const keys = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key !== 'Escape') return;
@@ -149,6 +154,8 @@ export function SearchPage({
             New repository
           </button>
         </div>
+      ) : !fanningOut ? (
+        <AccountResults query={q} search={account} names={names} navigate={navigate} />
       ) : (
         <SearchResults
           query={q}

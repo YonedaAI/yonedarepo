@@ -96,13 +96,37 @@ pub fn token(rest: &[String]) -> Result<Command> {
     })
 }
 
+/// `search <query> --all`: main's code and the newest records across the account, so it takes
+/// neither a repository nor a revision.
+fn search_all(command: &str, p: &Parsed) -> Result<Command> {
+    let bound = ["repo", "ref", "at", "path"]
+        .iter()
+        .any(|f| p.flag(f).is_some());
+    if command != "search" || bound {
+        return Err(Error::usage(
+            "--all goes with search, and without --repo, --ref, --at or --path",
+        ));
+    }
+    Ok(Command::SearchAll {
+        origin: p.flag("origin"),
+        query: p.exactly(1, "search <query> --all")?[0].clone(),
+        groups: list(p.flag("in")),
+        limit: p.number("limit")?,
+        word: p.on("word"),
+        after: p.flag("after"),
+    })
+}
+
 pub fn read(command: &str, rest: &[String]) -> Result<Command> {
     let p = Parsed::new(
         rest,
-        &with(&["ref", "limit", "at", "path", "in"]),
-        &["ignore-case", "word"],
+        &with(&["ref", "limit", "at", "path", "in", "after"]),
+        &["ignore-case", "word", "all"],
     )?;
     let at = p.number("at")?;
+    if p.on("all") {
+        return search_all(command, &p);
+    }
     let command = match command {
         "log" => {
             p.at_most(1)?;

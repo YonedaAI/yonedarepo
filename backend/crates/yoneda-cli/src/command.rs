@@ -273,6 +273,16 @@ pub enum Command {
         origin: Option<String>,
         command: OrgCommand,
     },
+    /// One query across the account's repositories (`search --all`).
+    SearchAll {
+        origin: Option<String>,
+        query: String,
+        groups: Option<Vec<String>>,
+        limit: Option<u64>,
+        word: bool,
+        /// A page's `next`: where the page after it starts.
+        after: Option<String>,
+    },
     SshKey {
         origin: Option<String>,
         command: SshKeyCommand,

@@ -46,6 +46,7 @@ pub mod remote;
 mod replay;
 mod repo_ops;
 mod run;
+mod search_all;
 pub mod session_cmd;
 pub mod session_files;
 pub mod setup;

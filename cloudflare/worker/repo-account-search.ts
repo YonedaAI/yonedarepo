@@ -228,12 +228,14 @@ async function runAll(tasks: Task[], run: (task: Task) => Promise<Outcome | null
   await Promise.race([Promise.all(Array.from({ length: AT_ONCE }, worker)), expired]);
   clearTimeout(timer);
   const started = next;
-  const settled = tasks.slice(0, started).map(
-    ({ row }, index) =>
-      (outcomes[index] === undefined
-        ? { row, error: 'This repository took too long to search' }
-        : outcomes[index]) as Outcome | null,
-  );
+  const settled = tasks
+    .slice(0, started)
+    .map(
+      ({ row }, index) =>
+        (outcomes[index] === undefined
+          ? { row, error: 'This repository took too long to search' }
+          : outcomes[index]) as Outcome | null,
+    );
   return { settled, started };
 }
 

@@ -102,6 +102,7 @@ pub fn all() -> Vec<(&'static str, Value)> {
         entry::<Log>(),
         entry::<Grep>(),
         entry::<Search>(),
+        entry::<SearchAll>(),
         entry::<Blame>(),
         entry::<Diff>(),
         entry::<Symbols>(),
