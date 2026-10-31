@@ -156,7 +156,7 @@ export async function runImport(env: Env, asked: ImportParams, step: ImportStep)
     await step.do(`record commits ${start}`, RETRY, () =>
       recordBatch(env, params, history.slice(start, start + BATCH), history[start - 1]),
     );
-  return step.do('land the imported branch', RETRY, async () => {
+  const landed = await step.do('land the imported branch', RETRY, async () => {
     const call = caller(env, params.repo, { _system: 'import' });
     const head = history[history.length - 1].hash;
     const status = await call({ op: 'repo_status' });
@@ -164,4 +164,17 @@ export async function runImport(env: Env, asked: ImportParams, step: ImportStep)
     const landed = await call({ op: 'repo_import', ref: 'main', commit: head });
     return { commit: head, version: landed.version, commits: history.length };
   });
+  // Imported as main, the store already holds main at this commit, and projecting it as a new
+  // ref is refused as stale. Any other branch leaves main for projection to create.
+  if ((branch ?? 'main') === 'main')
+    await step.do('note the store holds main', RETRY, () =>
+      caller(env, params.repo, { _system: 'projection' })({
+        op: 'repo_projection_result',
+        refname: 'refs/heads/main',
+        version: landed.version,
+        outcome: 'ok',
+        commit: landed.commit,
+      }),
+    );
+  return landed;
 }
