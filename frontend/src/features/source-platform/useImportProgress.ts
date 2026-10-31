@@ -6,7 +6,7 @@ import { historyStopped, type ImportAnswer, importView, mayBeImport } from './im
 import type { RepoStatus } from './repoStatus';
 import { sourceApi } from './sourceApi';
 
-export const IMPORT_POLL_MS = 2000;
+export const IMPORT_POLL_MS = 1000;
 /** Reads that may fail in a row before the page says it has lost track. */
 const STALLED_AFTER = 3;
 

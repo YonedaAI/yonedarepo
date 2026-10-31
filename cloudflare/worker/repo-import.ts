@@ -124,7 +124,8 @@ export async function runImport(env: Env, asked: ImportParams, step: ImportStep)
     (await step.do('find the default branch', RETRY, () => remoteDefaultBranch(asked.url))) ??
     undefined;
   const params = { ...asked, branch };
-  await step.do('import into the object store', RETRY, async () => {
+  const importing_at = await step.do('import into the object store', RETRY, async () => {
+    const started = Date.now();
     try {
       await rpcValue(
         env.ARTIFACTS.import({
@@ -135,9 +136,9 @@ export async function runImport(env: Env, asked: ImportParams, step: ImportStep)
     } catch (e: any) {
       if (e?.code !== 'ALREADY_EXISTS') throw final(e);
     }
-    return true;
+    return started;
   });
-  if (env.FAST_IMPORT === 'on') return landThenFill(env, params, step);
+  if (env.FAST_IMPORT === 'on') return landThenFill(env, params, step, importing_at);
   // Throws IMPORT_IN_PROGRESS until Artifacts finishes; the step retries with backoff.
   const history = await step.do('read history', RETRY, () => readHistory(env, params));
   for (let start = 0; start < history.length; start += BATCH)

@@ -13,8 +13,9 @@
 //! every read of history carries `history_import` so that a partial answer never reads as
 //! complete. Nothing moves a ref or starts new history (`refuses`): the chain stays the
 //! branch's own, a fork cannot copy half of it and a fetch cannot get a commit without its
-//! parents. A fill whose Workflow failed stays refused until the repository is deleted,
-//! which is how an import is tried again.
+//! parents: a whole clone comes from the mirror, which already holds them all (the adapter's
+//! `repo-git-mirror`). A fill whose Workflow failed stays refused until the repository is
+//! deleted, which is how an import is tried again.
 use super::op::{ForkOp as F, QuarantineOp as Q, RepoOp as R, StoreOp};
 use crate::storage::SqlStore;
 use schemars::JsonSchema;
@@ -101,9 +102,9 @@ pub(super) fn refuse_if_filling<S: SqlStore>(db: &S) -> Result<()> {
         Some(fill) => Err(Error::new(
             "IMPORT_IN_PROGRESS",
             format!(
-                "This repository's history is still importing ({} of {} commits): it takes no \
-                 changes and serves no fetches until that finishes. Its files can be read now; \
-                 git-remote-yoneda clones from the object store, which holds all of it",
+                "This repository's history is still importing ({} of {} commits): until that \
+                 finishes it takes no changes, and only a whole clone can be fetched. Its files \
+                 can be read now",
                 fill.recorded, fill.total
             ),
         )),

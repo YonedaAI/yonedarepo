@@ -9,6 +9,7 @@
 import { deferred } from './background';
 import { transient } from './durable';
 import { compute } from './repo-compute';
+import { mirrorClone } from './repo-git-mirror';
 import { UploadSession, wasmMemoryBytes } from './repo-git-sessions';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
@@ -66,30 +67,50 @@ export async function uploadPack(
     op: 'git_upload_request',
     body_b64: toBase64(await readAll(body, REQUEST_BYTES)),
   });
-  const walk = await ctx.call({
-    op: 'repo_git_walk',
-    wants: request.wants,
-    haves: request.haves,
-    common_only: !request.done,
-  });
   const caps: string[] = request.capabilities;
-  const ack = fromBase64(
-    compute({
-      op: 'git_acknowledge',
-      common: walk.common,
-      done: request.done,
-      detailed: caps.includes('multi_ack_detailed'),
-    }).body_b64,
-  );
-  if (!request.done) return new Response(ack, { headers: RESULT });
+  const acknowledge = (common: string[]) =>
+    fromBase64(
+      compute({
+        op: 'git_acknowledge',
+        common,
+        done: request.done,
+        detailed: caps.includes('multi_ack_detailed'),
+      }).body_b64,
+    );
   const band = caps.includes('side-band-64k') ? CHUNK : caps.includes('side-band') ? 995 : 0;
+  const mirror = (head: Uint8Array) =>
+    request.done ? mirrorClone(ctx, objects, request, head, band) : Promise.resolve(null);
+  let walk: Json;
+  try {
+    walk = await ctx.call({
+      op: 'repo_git_walk',
+      wants: request.wants,
+      haves: request.haves,
+      common_only: !request.done,
+    });
+  } catch (e: any) {
+    const served = e?.code === 'IMPORT_IN_PROGRESS' && (await mirror(acknowledge([])));
+    if (served) return served;
+    throw e;
+  }
+  const ack = acknowledge(walk.common);
+  if (!request.done) return new Response(ack, { headers: RESULT });
   const commits = (walk.commits ?? []).map((c: Json) => String(c.commit));
   // Version 0 is served without filters or depth: with no haves, a full clone.
   const fresh: Fresh | undefined =
     request.haves.length === 0
       ? { wants: request.wants, omit_blobs: false, depth: null, deepen_relative: false }
       : undefined;
-  return sendPack(ack, () => UploadSession.open(walk), objects, band, stats, commits, fresh);
+  return sendPack(
+    ack,
+    () => UploadSession.open(walk),
+    objects,
+    band,
+    stats,
+    commits,
+    fresh,
+    mirror,
+  );
 }
 
 /** `head`, then the pack the session lists, on side-band `band` (none when 0) and ending
@@ -103,7 +124,8 @@ export async function uploadPack(
  * a job the fetch is handed to when this isolate cannot store it. The session is opened only
  * to build.
  * A pack that would carry a quarantined blob is never started: the ERR names the blob
- * (and its path), rather than a pack Git finds incomplete. */
+ * (and its path), rather than a pack Git finds incomplete. History only the mirror holds
+ * comes from `mirror`, when it can serve this fetch. */
 export async function sendPack(
   head: Uint8Array,
   open: () => UploadSession,
@@ -112,6 +134,7 @@ export async function sendPack(
   stats?: PackStats,
   commits: string[] = [],
   fresh?: Fresh,
+  mirror?: (head: Uint8Array) => Promise<Response | null>,
 ): Promise<Response> {
   // Every built pack is logged; the client gets the timing line only when it asked.
   const tally = stats ?? new PackStats(false);
@@ -135,7 +158,8 @@ export async function sendPack(
   } catch (e: any) {
     await writer?.abort().catch(() => {});
     if (transient(e)) throw e;
-    return errLine(new Uint8Array(), e);
+    const served = e?.mirrorOnly && (await mirror?.(head));
+    return served || errLine(new Uint8Array(), e);
   }
   const { count, chunks } = built;
   // A pack this isolate does not store, worth a build of its own, goes to a job.

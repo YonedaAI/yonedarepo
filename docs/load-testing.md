@@ -61,11 +61,13 @@ Today's cost of one commit: 2-3 new trees, each read down every tier (Cache API,
 
 | Measure | Budget |
 |---|---|
-| Artifacts finished to main at the remote's head | under 10 s, any history size: one poll a second, the log (1 call per 1,000 commits), 3-6 tree reads, 3 authority calls, 1 queue send |
+| **Click to usable (files read, `git clone` of ours working)** | **Artifacts' fetch plus a few seconds. The bar is a `git clone` of the same repository: 1.0-1.5 s from GitHub to a Mac, 2026-10-31 (pflag 1.1 s, whisper 1.5 s, cobra 1.4 s; 3 runs each)** |
+| Artifacts finished to main at the remote's head | under 3 s below 1,000 commits: a look every 0.5 s, 1 log call per 1,000 commits, 3-6 tree reads, 3-4 authority calls. Recording history is no part of it |
+| The page after that | a read of the import every second |
 | History | at least 50 commits/s: 5,000 commits under 2 minutes |
 | One wave, 250 commits, one Workflow step | under 5 s: 1 log call, about 750 tree reads straight from Artifacts 32 at a time, no R2 or edge writes, 1-4 authority calls |
 | One authority transaction | at most 250 commits and 1 MiB of changed paths (a single larger commit goes alone, at most 10,000 paths); well under the 19 MB the size spike deleted safely in one transaction |
-| Progress | polled every 2 s, moves at least once per wave |
+| Progress | polled every 1 s, moves at least once per wave |
 
 Bench: `tools/import-bench.mjs`. Report the Workflow's own timing (`output.timing`), at least 3 runs, min, median and max.
 

@@ -6,6 +6,7 @@
 // side-band 64k. A client that does not ask for version 2 is served version 0 unchanged.
 import { transient } from './durable';
 import { compute } from './repo-compute';
+import { mirrorClone } from './repo-git-mirror';
 import { UploadSession } from './repo-git-sessions';
 import {
   CHUNK,
@@ -80,12 +81,22 @@ async function serveFetch(
     const { common } = await ctx.call({ ...walk, common_only: true });
     if (!common.length) return answer(compute({ op: 'git_v2_fetch_head', nak: true }).body_b64);
   }
-  const walked = await ctx.call({
-    ...walk,
-    shallows: request.shallows,
-    depth: request.depth,
-    deepen_relative: request.deepen_relative,
-  });
+  const mirror = (head: Uint8Array) => mirrorClone(ctx, objects, request, head, CHUNK);
+  let walked: Json;
+  try {
+    walked = await ctx.call({
+      ...walk,
+      shallows: request.shallows,
+      depth: request.depth,
+      deepen_relative: request.deepen_relative,
+    });
+  } catch (e: any) {
+    // While history is still arriving, the mirror already holds all of it.
+    const plain = compute({ op: 'git_v2_fetch_head', acknowledged: null });
+    const served = e?.code === 'IMPORT_IN_PROGRESS' && (await mirror(fromBase64(plain.body_b64)));
+    if (served) return served;
+    throw e;
+  }
   const head = compute({
     op: 'git_v2_fetch_head',
     acknowledged: negotiating ? walked.common : null,
@@ -113,6 +124,7 @@ async function serveFetch(
     stats,
     commits,
     fresh,
+    mirror,
   );
 }
 

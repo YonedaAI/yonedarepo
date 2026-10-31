@@ -18,7 +18,14 @@ import { TreeMemo } from './repo-tree-memo';
 import type { Env } from './types';
 
 /** `branch`: the remote's branch to import; none: its default branch. */
-export type ImportParams = { repo: string; url: string; branch?: string; max: number };
+export type ImportParams = {
+  repo: string;
+  url: string;
+  branch?: string;
+  max: number;
+  /** When the request asked, for the import's own timing. */
+  asked_at?: number;
+};
 export type Commit = { hash: string; tree: string; parents: string[]; message: string };
 /** The subset of WorkflowStep the import uses (tests pass a direct runner). */
 export type ImportStep = {
@@ -41,7 +48,7 @@ const TREE_ENTRIES = 200_000;
 /** JSON one authority call carries (one larger commit goes alone). */
 const BATCH_BYTES = 1024 * 1024;
 const LOG_PAGE = 1000;
-const POLL_MS = 1000;
+const POLL_MS = 500;
 
 type Repo = Awaited<ReturnType<Env['ARTIFACTS']['get']>>;
 
@@ -126,12 +133,12 @@ async function readChain(repo: Repo, ref: string, want: number) {
   return chain;
 }
 
-/** Calls `read` once Artifacts has finished: every second, not at the backoff a failed
- * step gets, which would leave the code hidden for minutes after it arrived. */
-async function whenImported<T>(read: () => Promise<T>): Promise<T> {
+/** The repository's store once Artifacts has finished: asked often, not at the backoff a
+ * failed step gets, which would leave the code hidden for minutes after it arrived. */
+async function whenImported(env: Env, params: ImportParams) {
   for (;;) {
     try {
-      return await read();
+      return await env.ARTIFACTS.get(storeName(params.repo));
     } catch (e: any) {
       if (e?.code !== 'IMPORT_IN_PROGRESS') throw e;
     }
@@ -140,23 +147,20 @@ async function whenImported<T>(read: () => Promise<T>): Promise<T> {
 }
 
 async function landHead(env: Env, params: ImportParams) {
-  const started = Date.now();
-  const chain = await whenImported(async () => {
-    using repo = await env.ARTIFACTS.get(storeName(params.repo));
-    // The branch Artifacts imported: the one named, else the store's own default.
-    const ref = params.branch ?? (await rpcValue(repo.info())).defaultBranch;
-    // One past the limit: the oldest kept commit's changes are against its real parent.
-    return readChain(repo, ref, params.max + 1);
-  });
-  const fetched = Date.now();
-  using held = await env.ARTIFACTS.get(storeName(params.repo));
+  using repo = await whenImported(env, params);
+  const fetched_at = Date.now();
+  // The branch Artifacts imported: the one named, else the store's own default.
+  const ref = params.branch ?? (await rpcValue(repo.info())).defaultBranch;
+  // One past the limit: the oldest kept commit's changes are against its real parent.
+  const chain = await readChain(repo, ref, params.max + 1);
+  const read_at = Date.now();
   const [head, below] = chain;
   if (!head)
     throw new NonRetryableError(
       params.branch ? `Branch ${params.branch} has no commits` : 'The remote has no commits',
     );
   const total = Math.min(chain.length, params.max);
-  const touches = await diff(treeReader(held), await parentTree(held, head, below), head.tree);
+  const touches = await diff(treeReader(repo), await parentTree(repo, head, below), head.tree);
   const call = caller(env, params.repo, { _system: 'import' });
   await call({
     op: 'repo_record_imported',
@@ -171,16 +175,27 @@ async function landHead(env: Env, params: ImportParams) {
   const landed = status.refs.length
     ? status
     : await call({ op: 'repo_import', ref: 'main', commit: head.hash });
+  // Imported as main, the store already holds main at this commit, and projecting it as a new
+  // ref is refused as stale. Any other branch leaves main for projection to create.
+  if ((params.branch ?? 'main') === 'main')
+    await caller(env, params.repo, { _system: 'projection' })({
+      op: 'repo_projection_result',
+      refname: 'refs/heads/main',
+      version: landed.version,
+      outcome: 'ok',
+      commit: head.hash,
+    });
   // Now, not after the history: a clone through the store needs main there.
-  await dispatchProjection(env, params.repo);
+  else await dispatchProjection(env, params.repo);
+  const landed_at = Date.now();
   return {
     commit: head.hash,
     version: landed.version as number,
     total,
     next: total > 1 ? { commit: below?.hash as string, generation: total - 1 } : null,
-    waited_ms: fetched - started,
-    head_ms: Date.now() - fetched,
-    landed_at: Date.now(),
+    fetched_at,
+    read_at,
+    landed_at,
   };
 }
 
@@ -238,7 +253,13 @@ async function recordWave(env: Env, params: ImportParams, at: Cursor) {
 
 const sum = (values: number[]) => values.reduce((a, b) => a + b, 0);
 
-export async function landThenFill(env: Env, params: ImportParams, step: ImportStep) {
+/** `importing_at`: when Artifacts was asked to fetch the remote. */
+export async function landThenFill(
+  env: Env,
+  params: ImportParams,
+  step: ImportStep,
+  importing_at: number,
+) {
   const head = await step.do('land the head', RETRY, () => landHead(env, params));
   const rates: number[] = [];
   const spent = { log_ms: [] as number[], trees_ms: [] as number[], authority_ms: [] as number[] };
@@ -264,8 +285,12 @@ export async function landThenFill(env: Env, params: ImportParams, step: ImportS
     commits: head.total,
     // What the bench reports (tools/import-bench.mjs): server-side, in the Workflow's steps.
     timing: {
-      waited_ms: head.waited_ms,
-      head_ms: head.head_ms,
+      // From the request to main usable, stage by stage.
+      start_ms: importing_at - (params.asked_at ?? importing_at),
+      artifacts_ms: head.fetched_at - importing_at,
+      chain_ms: head.read_at - head.fetched_at,
+      land_ms: head.landed_at - head.read_at,
+      usable_ms: head.landed_at - (params.asked_at ?? importing_at),
       history_ms,
       commits_per_s: Math.round(((head.total - 1) * 1000) / (history_ms + 1)),
       waves: rates.length,

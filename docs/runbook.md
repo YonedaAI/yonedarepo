@@ -179,7 +179,7 @@ node tools/staging-realworld.mjs --prod --only 0,browser,12,13,14,15,16,17
 
 ## Importing history behind the head
 
-`FAST_IMPORT=on` (unset or anything else: an import records all of its history, then lands main) lands main at the remote's head as soon as Artifacts has it, within a second of Artifacts finishing plus one log read per 1,000 commits, then records the first-parent history newest first, a Workflow step per 250 commits (`cloudflare/worker/repo-import-fill.ts`, `repo_store/history_fill.rs`). Budget and bench: `docs/load-testing.md`, `tools/import-bench.mjs`. No schema change: the state is main's imported head and where its `ref_chain` stops, so turning the switch off mid-import leaves the running fill safe.
+`FAST_IMPORT=on` (unset or anything else: an import records all of its history, then lands main) lands main at the remote's head as soon as Artifacts has it, half a second after Artifacts finishes plus one log read per 1,000 commits, then records the first-parent history newest first, a Workflow step per 250 commits (`cloudflare/worker/repo-import-fill.ts`, `repo_store/history_fill.rs`). Budget and bench: `docs/load-testing.md`, `tools/import-bench.mjs`. No schema change: the state is main's imported head and where its `ref_chain` stops, so turning the switch off mid-import leaves the running fill safe.
 
 While history fills:
 
@@ -189,7 +189,8 @@ While history fills:
 | `repo_status`, log, path history, blame, record search | Carry `history_import {recorded, total}`: what they list is the newest part of the history |
 | A commit not recorded yet | 404 saying history is still importing |
 | Clone through `git-remote-yoneda` | Works: the object store holds all of it, and main is projected right after landing |
-| `git clone` or fetch over HTTPS or SSH | Refused, `IMPORT_IN_PROGRESS`. Once history is in, the refusal is today's for imported history (`held only as imported history`) |
+| `git clone` over HTTPS or SSH | Works, now and after history is in: the pack streams from the object store (`cloudflare/worker/repo-git-mirror.ts`) when every want is a branch or tag it holds, nothing is withheld, and the clone is whole. A `--filter` clone receives every file |
+| `--depth`, or an incremental fetch | While filling: refused, `IMPORT_IN_PROGRESS`. After: as before, `held only as imported history` when it reaches imported commits |
 | Landings, pushes, branches, tags, releases, forks, break-glass, purges | Refused, 409 `IMPORT_IN_PROGRESS`, naming how far it has come. A commit may still record from the published head; its landing is refused |
 
 A Workflow that fails for good leaves all the files readable and the history partial, the page says so, and the repository keeps refusing changes until the owner deletes it, which is how an import is tried again. A commit of more than 10,000 changed files fails an import in either mode; with the switch on, that happens after main has landed.
