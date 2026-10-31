@@ -4,6 +4,7 @@
 import { afterAnswer } from './background';
 import { bounded, boundedRetry, failureCode } from './durable';
 import { orgArg, orgCaller, orgCommand } from './platform-orgs';
+import { asyncStore, dispatchStore } from './repo-artifacts-store';
 import { commit } from './repo-commit';
 import { refreshHead } from './repo-head';
 import { newStore, type ObjectStore, RepoObjects, toBase64 } from './repo-objects';
@@ -13,13 +14,14 @@ import { holdName, releaseNames } from './repo-paths';
 import { dispatchProjection, dispatchPurge } from './repo-projection';
 import { visibilityOf } from './repo-public';
 import { shardOutboxes } from './repo-shards';
+import { createStore } from './repo-store-create';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
 // Bounds on what a create waits for, from dev's 20 creates of 2026-10-30 (slowest: store
-// 3.3 s, repo_init 0.7 s, shards 4.5 s). The dialog's own bound (CREATE_TIMEOUT_MS) sits
-// above their sum, so a stall reaches people as this code's answer, not as its timeout.
-export const STORE_ATTEMPT_MS = 10_000;
+// 3.3 s, repo_init 0.7 s, shards 4.5 s). The dialog's own bound (CREATE_TIMEOUT_MS, 45 s) sits
+// above their sum (the store's 28 s, repo-store-create; 10 s here; 5 s taking back), so a stall
+// reaches people as this code's answer, not as its timeout.
 const INIT_MS = 10_000;
 const SHARD_START_MS = 12_000;
 const TAKE_BACK_MS = 5_000;
@@ -99,19 +101,6 @@ export function newRepoId() {
   return `r${[...random].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
-/** The object store of a new repository. A name is `yr-<new id>`, so on the retry
- * ALREADY_EXISTS is this create's first attempt having landed late. Anything else left
- * after the retry is an outage of the store, whatever code it carries. */
-function createStore(store: ObjectStore) {
-  return boundedRetry(STORE_ATTEMPT_MS, (retry) =>
-    store.create().catch((e) => {
-      if (!retry || e?.code !== 'ALREADY_EXISTS') throw e;
-    }),
-  ).catch((e) => {
-    throw unavailable(e);
-  });
-}
-
 function unavailable(cause: any) {
   console.warn(`repository create failed: ${cause?.message ?? cause}`);
   return new ApiError('CREATE_UNAVAILABLE', 'The repository could not be created now; try again');
@@ -170,7 +159,13 @@ export async function createRepository(env: Env, requester: Credentials, body: J
   let accepted = false;
   try {
     const store = newStore(env, `yr-${id}`);
-    await timed('create.store', () => createStore(store));
+    const later = asyncStore(env);
+    if (!later)
+      await timed('create.store', () =>
+        createStore(store).catch((e) => {
+          throw unavailable(e);
+        }),
+      );
     await bounded(
       INIT_MS,
       ctx.call({
@@ -182,6 +177,8 @@ export async function createRepository(env: Env, requester: Credentials, body: J
       }),
     );
     accepted = true;
+    // Asked for before anyone can see the repository, so none is left without its store.
+    if (later) await timed('create.queue', () => bounded(INIT_MS, dispatchStore(env, id)));
     const created = await populate(env, ctx, store, { name, visibility, owner }, body);
     await startShards(env, id);
     return created;

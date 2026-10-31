@@ -205,6 +205,15 @@ A repository's Durable Object refuses writes at about 10.7 GB of `databaseSize` 
 
 Rollout: D1 migration 0010 before the Worker, as the deploy does. Deleting data lowers the size at once, but delete in small batches: one 950 MB delete reset an object for minutes.
 
+## Creating a repository's store
+
+Artifacts is the projected mirror: a new repository's commits, pushes, reads and clones go through its authority, R2 and the outboxes. With `ASYNC_STORE=on` on the platform Worker (`infra/envs/<env>.json`; unset or `off`: the create waits for Artifacts, up to 28 s over three attempts), a create answers without Artifacts, and a `platform_store` queue job creates the store.
+
+- **Rollout.** A queue job of a kind a Worker doesn't know is acked and dropped (`platformJob`), so the order is: deploy this code with the variable `off` (nothing sends the job), let the rollout finish, then deploy again with it `on`. To roll back, set it `off` first and let the queue drain.
+- **Clones.** `git clone` over HTTPS, SSH and `yoneda clone` never need the store: a store that isn't there reads as empty, and the store of record has the objects. `yoneda clone --offline` asks `POST /repos/:id/clone`, which waits up to 20 s for the store and then answers a retryable 503; a commit too large to stage waits the same. A fork of a repository without a store gets an empty store of its own, by its own job.
+- **Failures.** The job comes back as a fresh delayed message (5 s doubling to 15 minutes), so it never reaches the dead letters. After 200 attempts, about two days, it logs `store.create_failed` at error level and stops. The repository keeps working without a mirror; `repo_status` shows its projection waiting. A projection that finds no store ends, and the job asks for it again.
+- **Measuring.** `node tools/staging/create-bench.mjs --runs 3 --creates 20` (the kit account on dev) prints min, median and max of the create and of each server-side phase. Budget of a seeded create with the job: median under 2 s, slowest under 4 s, and no `create.store` phase (before it: median 3.5 s, with stalls the bound turned into 503s).
+
 ## Erasing deleted repositories
 
 Deleting a repository leaves a tombstone and purges its objects. With `REPO_ERASE=on` on the platform Worker (unset: nothing changes), the purge also deletes `derived/v1/<repo>/` (search indexes, packs, symbols and facts hold file content), and its last act queues `platform_erase`, which empties the rest; `infra/envs/<env>.json` carries the variable. Nothing assumes the purge follows the deletion closely.

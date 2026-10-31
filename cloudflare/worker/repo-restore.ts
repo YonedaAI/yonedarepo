@@ -9,6 +9,7 @@
 // Repository tokens stay revoked: whoever took the repository over may hold them. A managed
 // agents connection has one: its owner saves the agent once, which mints a new token.
 
+import { asyncStore, dispatchStore } from './repo-artifacts-store';
 import { listRepository } from './repo-create';
 import { forgetDeleted, isDeletedListed } from './repo-deleted';
 import { forgetFork } from './repo-forks';
@@ -63,6 +64,8 @@ async function rearm(env: Env, repo: string) {
     dispatchHooks(env, repo),
     schedulePurge(env, repo, now),
     scheduleSweep(env, repo, now),
+    // A store job that found the tombstone left the store to this restore.
+    ...(asyncStore(env) ? [dispatchStore(env, repo)] : []),
   ]);
 }
 

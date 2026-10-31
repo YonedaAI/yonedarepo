@@ -138,6 +138,7 @@
         "The same dataset's SITE_EVENTS binding takes platform requests by client kind (worker/platform-client-events.ts) while TRAFFIC_EVENTS is on.",
         "Without the token, traffic reports are unavailable and nothing else changes.",
         "ADMIN_BILLING=on adds the operators' billing routes (platform-admin-billing.ts) and starts the managed Worker's nightly reconcile from this Worker's cron; set it on the managed Worker too.",
+        "ASYNC_STORE=on: a create answers without Artifacts and a platform_store queue job creates the store (repo-store-create.ts). Set it only once every Worker on the queue knows the job: deploy with it off first (docs/runbook.md).",
         "Admin pages (/api/v1/admin, platform-admin.ts): ADMIN_ACCOUNTS lists the operator accounts (comma separated; empty: only OWNER_TOKEN/Access). The sign-up notice goes to ADMIN_NOTIFY_EMAIL (empty: EMAIL_CONTACT). Credit grants and balances call the managed Worker's /admin/accounts/<account>/credit over MANAGED with MANAGED_ADMIN_TOKEN (optional secret, the managed Worker's own value; unset: grants are refused). MANAGED binds the managed Worker, which binds this one as PLATFORM: a fresh environment deploys this Worker once without MANAGED first."
       ],
       "secrets": [
@@ -207,6 +208,7 @@
           "SITE_EVENTS_DATASET": "yonedarepo_prod_site_events",
           "ADMIN_ACCOUNTS": "magnetonio",
           "ADMIN_BILLING": "off",
+          "ASYNC_STORE": "off",
           "ADMIN_NOTIFY_EMAIL": "",
           "SUPPORT_EMAIL": "support@yonedalabs.ai"
         },

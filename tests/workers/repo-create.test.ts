@@ -3,7 +3,7 @@
 // leaves nothing in the way of repeating it, and says so with a retryable answer.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { withWaitUntil } from '../../cloudflare/worker/background';
-import { STORE_ATTEMPT_MS } from '../../cloudflare/worker/repo-create';
+import { STORE_ATTEMPT_MS, STORE_BACKOFF_MS } from '../../cloudflare/worker/repo-store-create';
 import { SHARDS } from '../../cloudflare/worker/repo-shards';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, fakeArtifacts, fakeQueue, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
@@ -51,11 +51,12 @@ const stalled = () => new Promise<never>(() => {});
 const names = async (cookie: string) => (await api('/repos', { cookie })).body.repos.map((r: any) => r.name);
 const purges = () => queued.filter((m) => m.kind === 'platform_purge').map((m) => m.repo_id);
 
-/** Each attempt at the store waited out on fake timers; `attempts`: how many it sees. */
+/** Each attempt at the store and the backoff after it, waited out on fake timers; `attempts`:
+ * how many it sees. */
 async function waitedOut<T>(pending: Promise<T>, attempts: () => number, count: number) {
   for (let attempt = 1; attempt <= count; attempt++) {
     await vi.waitFor(() => expect(attempts()).toBe(attempt));
-    await vi.advanceTimersByTimeAsync(STORE_ATTEMPT_MS);
+    await vi.advanceTimersByTimeAsync(STORE_ATTEMPT_MS + STORE_BACKOFF_MS * attempt);
   }
   return pending;
 }
@@ -64,15 +65,15 @@ describe('a stalled object store', () => {
   beforeEach(() => void vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
   afterEach(() => void vi.useRealTimers());
 
-  it('answers a retryable 503 after one retry, frees the name, and the same name then works', async () => {
+  it('answers a retryable 503 after three attempts, frees the name, and the same name then works', async () => {
     const owner = { cookie: await signup('stalled') };
     let attempts = 0;
     const env = artifactsWith(() => {
       attempts++;
       return stalled();
     });
-    const refused = await waitedOut(api('/repos', owner, { body: seed('stalled') }, env), () => attempts, 2);
-    expect(attempts).toBe(2);
+    const refused = await waitedOut(api('/repos', owner, { body: seed('stalled') }, env), () => attempts, 3);
+    expect(attempts).toBe(3);
     expect(refused.status).toBe(503);
     expect(refused.body.error.code).toBe('CREATE_UNAVAILABLE');
     expect(refused.headers.get('retry-after')).toBe('1');
@@ -93,6 +94,26 @@ describe('a stalled object store', () => {
     });
     const body = { name: 'late', policy: { required_checks: [], approvals: 0 } };
     const created = await waitedOut(api('/repos', owner, { body }, env), () => attempts, 1);
+    expect(created.status, JSON.stringify(created.body)).toBe(200);
+  });
+
+  it('waits out a first attempt Artifacts is still working on', async () => {
+    const owner = { cookie: await signup('inprogress') };
+    let attempts = 0;
+    const env = artifactsWith(() => {
+      attempts++;
+      if (attempts === 1) return stalled();
+      const code = attempts === 2 ? 'CREATE_IN_PROGRESS' : 'ALREADY_EXISTS';
+      return Promise.reject(Object.assign(new Error(code), { code }));
+    });
+    const body = { name: 'inprogress', policy: { required_checks: [], approvals: 0 } };
+    const asked = api('/repos', owner, { body }, env);
+    await vi.waitFor(() => expect(attempts).toBe(1));
+    await vi.advanceTimersByTimeAsync(STORE_ATTEMPT_MS + STORE_BACKOFF_MS);
+    await vi.waitFor(() => expect(attempts).toBe(2));
+    await vi.advanceTimersByTimeAsync(2 * STORE_BACKOFF_MS);
+    const created = await asked;
+    expect(attempts).toBe(3);
     expect(created.status, JSON.stringify(created.body)).toBe(200);
   });
 });
