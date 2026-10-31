@@ -207,18 +207,10 @@ fn hidden<S: SqlStore>(db: &S, kind: &str, ids: &[i64]) -> Result<BTreeSet<i64>>
     }
 }
 
-/// `repo_context_deliveries {session_id}`: what the session was shown, oldest first.
-pub fn list<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
-    let session = session_id(c)?;
-    let mut rows = db.query(
-        "SELECT seq,trigger,subject,items,bytes,principal,at FROM context_deliveries \
-         WHERE session_id=? ORDER BY seq LIMIT ?",
-        &[json!(session), json!(MAX_LISTED + 1)],
-    )?;
-    let truncated = rows.len() as u64 > MAX_LISTED;
-    rows.truncate(MAX_LISTED as usize);
+/// `rows` of `context_deliveries` as the API answers them, their items labelled.
+fn shaped<S: SqlStore>(db: &S, rows: &[Value]) -> Result<Vec<Value>> {
     let mut parsed = Vec::with_capacity(rows.len());
-    for row in &rows {
+    for row in rows {
         let items: Vec<Value> = serde_json::from_str(row["items"].as_str().unwrap_or("[]"))
             .map_err(|_| super::super::rows::corrupt("delivery items"))?;
         parsed.push(items);
@@ -235,7 +227,7 @@ pub fn list<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             named.insert(format!("{kind}:{id}"), label);
         }
     }
-    let deliveries: Vec<Value> = rows
+    Ok(rows
         .iter()
         .zip(parsed)
         .map(|(row, items)| {
@@ -251,10 +243,45 @@ pub fn list<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
                     "bytes": row["bytes"], "principal": row["principal"], "at": row["at"],
                     "items": items })
         })
-        .collect();
+        .collect())
+}
+
+/// `repo_context_deliveries {session_id}`: what the session was shown, oldest first.
+pub fn list<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+    let session = session_id(c)?;
+    let mut rows = db.query(
+        "SELECT seq,trigger,subject,items,bytes,principal,at FROM context_deliveries \
+         WHERE session_id=? ORDER BY seq LIMIT ?",
+        &[json!(session), json!(MAX_LISTED + 1)],
+    )?;
+    let truncated = rows.len() as u64 > MAX_LISTED;
+    rows.truncate(MAX_LISTED as usize);
+    let deliveries = shaped(db, &rows)?;
     let bytes: u64 = rows.iter().filter_map(|r| r["bytes"].as_u64()).sum();
     Ok(
         json!({ "session_id": session, "deliveries": deliveries, "bytes": bytes,
                "truncated": truncated }),
     )
+}
+
+/// The newest `max` deliveries to any of `sessions`, oldest first, each naming its session,
+/// and whether there were more.
+pub fn of_sessions<S: SqlStore>(
+    db: &S,
+    sessions: &[&str],
+    max: usize,
+) -> Result<(Vec<Value>, bool)> {
+    let mut rows = db.query(
+        "SELECT seq,session_id,trigger,subject,items,bytes,principal,at FROM context_deliveries \
+         WHERE session_id IN (SELECT value FROM json_each(?)) ORDER BY seq DESC LIMIT ?",
+        &[json!(json!(sessions).to_string()), json!(max + 1)],
+    )?;
+    let cut = rows.len() > max;
+    rows.truncate(max);
+    rows.reverse();
+    let mut listed = shaped(db, &rows)?;
+    for (delivery, row) in listed.iter_mut().zip(&rows) {
+        delivery["session_id"] = row["session_id"].clone();
+    }
+    Ok((listed, cut))
 }

@@ -58,6 +58,7 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
   change create [<branch>] --to-parent ...  in a fork: propose the branch to the parent's main
   change list [--status open|landed|closed|all]
   change show <n>                     a change: gates, reviews, comments and files
+  change route <n>                    its commits, the sessions behind them, what they were shown, checks
   change comment <n> -m <text> [--path <p> --line <n> --side old|new] [--resolve]
   change land <n>                     land the change's head on its base
   change close <n>                    close a change without landing it (the branch stays)

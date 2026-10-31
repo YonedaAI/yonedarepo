@@ -399,6 +399,14 @@ fn cases() -> Vec<Case> {
             ),
         ),
         case(
+            "change route 3 --repo {REPO} --origin {ORIGIN}",
+            "change-route",
+            format!(
+                "#3 [open] topic -> main: 1 commit, 1 session, 300 bytes read, 900 bytes fetched, 1 memory delivered\n{} Retry twice by alice\n  check pass ci\n  session claude-code opus: Added the retry (300 bytes read)\ndelivered:\n  claude-code:s1 read src/a.rs: 1 item, 40 bytes\n",
+                &COMMIT[..12]
+            ),
+        ),
+        case(
             "change comment 3 -m hi --repo {REPO} --origin {ORIGIN}",
             "change-comment",
             "Commented on change #3\n",

@@ -14,6 +14,7 @@ mod attempt;
 mod auth_token;
 mod brief;
 mod change_cmd;
+mod change_route;
 mod changes;
 mod checkout;
 mod chunk;

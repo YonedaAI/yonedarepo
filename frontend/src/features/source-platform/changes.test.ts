@@ -6,14 +6,21 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Loaded } from './useSource';
 
-const state: { value: Loaded<any>; gates: Loaded<any>; paths: (string | null)[] } = {
+const state: {
+  value: Loaded<any>;
+  gates: Loaded<any>;
+  route: Loaded<any>;
+  paths: (string | null)[];
+} = {
   value: { loading: true, reload: () => {} },
   gates: { loading: true, reload: () => {} },
+  route: { loading: true, reload: () => {} },
   paths: [],
 };
 vi.mock('./useSource', () => ({
   useSource: (path: string | null) => {
     state.paths.push(path);
+    if (path?.endsWith('/route')) return state.route;
     return path?.endsWith('/gates') ? state.gates : state.value;
   },
 }));
@@ -253,6 +260,17 @@ describe('change page', () => {
     expect(blocked).toContain('aria-label="Comment on src/a.ts line 2 (base)"');
     state.value = loaded({ data: detail({}, true) });
     expect(view()).toMatch(/<button type="button">Land on main/);
+  });
+
+  it('keeps the page and the pushes when the route cannot be read', () => {
+    state.value = loaded({ data: detail() });
+    state.route = loaded({ error: 'The server failed: try again' });
+    const page = html(ChangeView, { repo, number: 7, navigate: () => {} });
+    expect(page).toContain('id="change-route-heading"');
+    expect(page).toContain('The server failed: try again');
+    expect(page).toContain('ada pushed');
+    expect(page).toContain('Files changed (1)');
+    state.route = { loading: true, reload: () => {} };
   });
 
   it('lands on its own base, ungated when the base is not protected', () => {

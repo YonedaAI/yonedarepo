@@ -203,6 +203,11 @@ pub async fn run(t: &Resolved, command: ChangeCommand) -> Result<()> {
             show(&change);
             output::emit(&output::ChangeShow { change });
         }
+        ChangeCommand::Route { number } => {
+            let route = t.api.get(&format!("/changes/{number}/route")).await?;
+            crate::change_route::print(&route);
+            output::emit(&output::ChangeRoute { route });
+        }
         ChangeCommand::Comment {
             number,
             body,

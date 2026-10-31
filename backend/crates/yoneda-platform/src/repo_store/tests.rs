@@ -1654,6 +1654,7 @@ mod change_bases;
 mod change_delete;
 mod change_gates;
 mod change_records;
+mod change_route;
 mod changes;
 mod changesets;
 mod check_evidence;

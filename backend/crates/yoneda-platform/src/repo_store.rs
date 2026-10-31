@@ -33,6 +33,7 @@ mod change_delete;
 pub(crate) mod change_gates;
 mod change_hooks;
 mod change_records;
+pub(crate) mod change_route;
 mod changes;
 mod changesets;
 mod check_evidence;

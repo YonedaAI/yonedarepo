@@ -87,11 +87,15 @@ export const changeOperations = {
   // What the head still needs before it can land (repo_store/change_gates.rs).
   git_change_gates: (ctx: RepoContext, a: Json) =>
     ctx.call({ op: 'repo_change_gates', number: changeNumber(a.number) }),
+  // Its commits and the evidence on them, in one bounded read (repo_store/change_route.rs).
+  git_change_route: (ctx: RepoContext, a: Json) =>
+    ctx.call({ op: 'repo_change_route', number: changeNumber(a.number) }),
   git_change_delete: (ctx: RepoContext, a: Json) =>
     notified(ctx, ctx.call({ op: 'repo_change_delete', number: changeNumber(a.number) })),
 };
 
-/** `GET|POST /changes`, `GET|DELETE /changes/:n`, `POST /changes/:n/comments|close|reopen`. */
+/** `GET|POST /changes`, `GET|DELETE /changes/:n`, `GET /changes/:n/gates|route`,
+ * `POST /changes/:n/comments|close|reopen`. */
 export async function changesRoute(
   ctx: RepoContext,
   req: Request,
@@ -111,6 +115,7 @@ export async function changesRoute(
     });
   if (number && !sub && method === 'DELETE') return ops.git_change_delete(ctx, { number });
   if (number && method === 'GET' && sub === 'gates') return ops.git_change_gates(ctx, { number });
+  if (number && method === 'GET' && sub === 'route') return ops.git_change_route(ctx, { number });
   if (number && method === 'POST' && sub === 'comments')
     return ops.git_change_comment(ctx, { ...(await body()), number });
   if (number && method === 'POST' && sub === 'close') return ops.git_change_close(ctx, { number });

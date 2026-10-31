@@ -11,7 +11,7 @@
 //! Every op describes the whole repository, so a path-restricted token can use none.
 mod anchors;
 mod candidates;
-mod deliveries;
+pub(super) mod deliveries;
 mod listing;
 pub(super) mod records;
 pub(super) mod relevance;

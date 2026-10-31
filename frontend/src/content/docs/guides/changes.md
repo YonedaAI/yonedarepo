@@ -24,6 +24,7 @@ yoneda change create retry --title "Retry on 503" -m "Adds backoff"
 
 ```sh
 yoneda change show 12                       # gates, reviews, comments and files
+yoneda change route 12                      # its commits, sessions, delivered context and checks
 yoneda change comment 12 -m "Cap at 30 s" --path src/retry.ts --line 14 --side new
 yoneda change comment 12 -m "Done" --path src/retry.ts --line 14 --side new --resolve
 yoneda review approve <head-sha>

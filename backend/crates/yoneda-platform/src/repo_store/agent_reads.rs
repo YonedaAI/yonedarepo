@@ -37,7 +37,7 @@ fn before(c: &Value) -> Result<i64> {
     }
 }
 
-fn subject(message: &Value) -> String {
+pub(super) fn subject(message: &Value) -> String {
     message
         .as_str()
         .unwrap_or_default()

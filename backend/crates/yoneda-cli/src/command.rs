@@ -173,6 +173,10 @@ pub enum ChangeCommand {
     Show {
         number: u64,
     },
+    /// The change's commits, the sessions behind them, what those were shown, their checks.
+    Route {
+        number: u64,
+    },
     Comment {
         number: u64,
         body: Option<String>,
