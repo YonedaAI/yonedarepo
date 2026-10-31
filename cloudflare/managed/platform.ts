@@ -76,12 +76,19 @@ export class Platform {
     return this.#call('GET', `/repos/${repo}`);
   }
   /** Whether the owner's break-glass pause stops automation (`automation.paused`), managed
-   * agents included. */
-  async automationPaused(repo: string) {
-    return Boolean((await this.status(repo)).automation?.paused);
+   * agents included, and whether agents run on automatic Landings (off when the platform
+   * doesn't say). */
+  async automation(repo: string) {
+    const status = await this.status(repo);
+    return { paused: Boolean(status.automation?.paused), onAuto: status.landings?.agents === true };
   }
-  openChanges(repo: string) {
-    return this.#call('GET', `/repos/${repo}/changes?status=open&limit=200`);
+  /** The newest 200 open changes, of one branch or of those opened on purpose when asked, so
+   * the platform filters first and a repository's other rows can't push the wanted one out. */
+  openChanges(repo: string, only: { branch?: string | null; explicit?: boolean } = {}) {
+    const query = new URLSearchParams({ status: 'open', limit: '200' });
+    if (only.branch) query.set('branch', only.branch);
+    if (only.explicit) query.set('origin', 'explicit');
+    return this.#call('GET', `/repos/${repo}/changes?${query}`);
   }
   change(repo: string, number: number) {
     return this.#call('GET', `/repos/${repo}/changes/${number}?patch=1`);

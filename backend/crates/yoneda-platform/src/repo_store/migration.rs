@@ -2,7 +2,14 @@ use crate::storage::SqlStore;
 use serde_json::json;
 use yoneda_core::{Error, Result};
 
-pub(crate) const MIGRATIONS: [(i64, &str); 43] = [
+/// The newest migration this binary applies. `MIGRATIONS` may run past it: a newer entry is
+/// known and left unapplied here, and a store that already ran it is accepted, its digest
+/// checked as any other's. A repository that ran a migration refuses every binary that
+/// doesn't know it (`SCHEMA_TOO_NEW`), so a migration ships in two waves: wave 1 adds its
+/// entry, wave 2 raises this line. Rollback from wave 2 goes to wave 1, never earlier.
+pub(crate) const APPLY_THROUGH: i64 = 43;
+
+pub(crate) const MIGRATIONS: [(i64, &str); 44] = [
     (1, include_str!("../migrations/repo_store/0001_source.sql")),
     (
         2,
@@ -161,6 +168,10 @@ pub(crate) const MIGRATIONS: [(i64, &str); 43] = [
         43,
         include_str!("../migrations/repo_store/0043_mirror_retirement.sql"),
     ),
+    (
+        44,
+        include_str!("../migrations/repo_store/0044_auto_landings.sql"),
+    ),
 ];
 
 /// The statements of a migration, split at `;`, except within a trigger's `BEGIN … END`;
@@ -196,15 +207,26 @@ fn statements(sql: &str) -> Vec<String> {
 
 /// Digest-pinned, forward-only migrations for the platform's own Durable Object.
 pub fn migrate_repo_store<S: SqlStore>(db: &S) -> Result<()> {
-    migrate_with(db, "repo_schema_migrations", &MIGRATIONS)
+    migrate_through(db, "repo_schema_migrations", &MIGRATIONS, APPLY_THROUGH)
 }
 
-/// Applies `migrations` in order, recording each version and digest in `table`; refuses a
-/// store migrated by a newer binary or one whose applied migrations differ.
+/// Applies every one of `migrations` (`migrate_through` with no ceiling).
 pub(crate) fn migrate_with<S: SqlStore>(
     db: &S,
     table: &'static str,
     migrations: &'static [(i64, &'static str)],
+) -> Result<()> {
+    migrate_through(db, table, migrations, i64::MAX)
+}
+
+/// Applies `migrations` up to version `apply_through` in order, recording each version and
+/// digest in `table`; refuses a store migrated past the last of `migrations` or one whose
+/// applied migrations differ.
+pub(crate) fn migrate_through<S: SqlStore>(
+    db: &S,
+    table: &'static str,
+    migrations: &'static [(i64, &'static str)],
+    apply_through: i64,
 ) -> Result<()> {
     db.query(
         &format!(
@@ -237,6 +259,9 @@ pub(crate) fn migrate_with<S: SqlStore>(
                         "An applied repository migration differs from the committed one",
                     ));
                 }
+                continue;
+            }
+            if *version > apply_through {
                 continue;
             }
             for statement in statements(sql) {

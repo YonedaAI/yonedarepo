@@ -7,7 +7,7 @@
 //! credentials can neither read nor write one.
 use super::auth::Actor;
 use super::rows::{self, branch_ref};
-use super::{change_hooks, reads};
+use super::{change_adopt, change_hooks, reads};
 use crate::storage::{SqlStore, bad, number};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result, git_object::ObjectId};
@@ -17,8 +17,8 @@ pub const MAX_BODY: usize = 8000;
 /// Branch moves `show` lists in a change's timeline.
 const TIMELINE: u64 = 100;
 
-const CHANGE: &str = "SELECT c.number,c.title,c.body,c.branch,c.base,c.author,c.status,c.created_at,\
-     c.updated_at,c.landed_version,c.landed_commit,c.source_repo,c.source_branch,\
+/// `c.*`, so `origin` is answered wherever the schema has it (`change_adopt`).
+const CHANGE: &str = "SELECT c.*,\
      (SELECT commit_id FROM refs WHERE name='refs/heads/'||c.branch) AS branch_head,\
      (SELECT COUNT(*) FROM change_comments k WHERE k.change_number=c.number) AS comment_count \
      FROM changes c";
@@ -149,10 +149,18 @@ pub fn create<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
         return Err(bad("title must be one line"));
     }
     let body = text(c, "body", MAX_BODY)?.unwrap_or_default();
-    if let Some(number) = open_on(db, &branch)? {
-        return Err(already_open(&branch, number));
-    }
     let now = number(c, "now")?;
+    if let Some(open) = open_on(db, &branch)? {
+        if !change_adopt::unclaimed(db, open)? {
+            return Err(already_open(&branch, open));
+        }
+        let proposal = change_adopt::Proposal {
+            title: &title,
+            body: &body,
+            base: &base,
+        };
+        return change_adopt::adopt(db, open, &proposal, actor, now);
+    }
     db.query(
         "INSERT INTO changes(title,body,branch,base,author,status,created_at,updated_at,source_repo,source_branch) VALUES(?,?,?,?,?,'open',?,?,?,?)",
         &[json!(title), json!(body), json!(branch), json!(base), json!(actor.principal), json!(now), json!(now), json!(source.0), json!(source.1)],
