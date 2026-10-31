@@ -14,7 +14,8 @@ import { sshBearer, verifySshToken } from './platform-ssh';
 import { credentials } from './repo-api';
 import { compute } from './repo-compute';
 import { receivePack } from './repo-git-receive';
-import { PackStats, uploadPack } from './repo-git-upload';
+import { BUSY, busyLine, retried } from './repo-git-retry';
+import { PackStats, REQUEST_BYTES, readAll, uploadPack } from './repo-git-upload';
 import { advertiseV2, uploadPackV2, wantsV2 } from './repo-git-v2';
 import { guardInherited } from './repo-inherit';
 import { isLfsPath, lfsHttp } from './repo-lfs';
@@ -39,8 +40,8 @@ const STATUS: Record<string, number> = {
   REPO_FULL: 507,
 };
 
-/** A plain-text refusal Git shows as `remote: <message>`; a 401 invites credentials and a
- * 503 says when to try again. */
+/** A plain-text refusal Git shows as `remote: <message>` for `info/refs` (it drops the body
+ * of a POST: `busyLine`); a 401 invites credentials and a 503 says when to try again. */
 export function refusal(status: number, message: string) {
   const headers: Record<string, string> = { 'content-type': 'text/plain; charset=utf-8' };
   if (status === 401) headers['www-authenticate'] = 'Basic realm="YonedaRepo"';
@@ -116,30 +117,37 @@ async function serve(req: Request, env: Env): Promise<Response> {
     return refusal(STATUS[failureCode(e)] ?? 500, String(e?.message ?? e));
   }
   if (!auth) return refusal(401, 'Use a repository or personal access token as the password');
-  const anonymous = '_anonymous' in auth;
-  const ctx = new RepoContext(env, repo, caller(env, repo, auth));
+  const signed = auth;
+  const anonymous = '_anonymous' in signed;
+  // Access first, so a refusal is an HTTP status Git reports, not a broken protocol. Each
+  // attempt has its own context: one keeps its failed reads.
+  const session = async () => {
+    const ctx = new RepoContext(env, repo, caller(env, repo, signed));
+    const access = await ctx.call({ op: 'repo_git_access', service });
+    return { ctx, access, objects: ctx.adopt(access.object_store, access.quarantined) };
+  };
   try {
     if (anonymous) await admitAnonymous(env, repo);
-    // Access first, so a refusal is an HTTP status Git reports, not a broken protocol.
-    const access = await ctx.call({ op: 'repo_git_access', service });
-    const objects = ctx.adopt(access.object_store, access.quarantined);
-    const v2 = service === 'git-upload-pack' && wantsV2(req);
-    if (action === 'info/refs') return v2 ? advertiseV2() : await advertise(ctx, service);
-    const body = requestBody(req);
-    if (service === 'git-receive-pack') {
+    if (action === 'git-receive-pack') {
+      const { ctx, access, objects } = await retried(repo, service, session);
       // What a push omits must be held already; a fork's inherited objects count only for
       // readers of its parent (repo-inherit).
       guardInherited(ctx, objects);
-      return await receivePack(ctx, objects, body, access.secret_allow ?? []);
+      return await receivePack(ctx, objects, requestBody(req), access.secret_allow ?? []);
     }
-    // A client asking for timings gets them after the pack (PackStats).
-    const stats = req.headers.get('x-yoneda-timing') === '1' ? new PackStats() : undefined;
-    return v2
-      ? await uploadPackV2(ctx, objects, body, stats)
-      : await uploadPack(ctx, objects, body, stats);
+    const v2 = service === 'git-upload-pack' && wantsV2(req);
+    const sent = action === 'info/refs' ? null : await readAll(requestBody(req), REQUEST_BYTES);
+    return await retried(repo, service, async () => {
+      const { ctx, objects } = await session();
+      if (!sent) return v2 ? advertiseV2() : await advertise(ctx, service);
+      const body = new Blob([sent]).stream();
+      // A client asking for timings gets them after the pack (PackStats).
+      const stats = req.headers.get('x-yoneda-timing') === '1' ? new PackStats() : undefined;
+      return v2
+        ? await uploadPackV2(ctx, objects, body, stats)
+        : await uploadPack(ctx, objects, body, stats);
+    });
   } catch (e: any) {
-    // A push refused because the authority was overloaded moved nothing (receivePack
-    // throws only then), so Git gets a status it reports instead of a per-ref refusal.
     const code = failureCode(e);
     // Without credentials, a refusal invites them (a push, or a repository that is private
     // or missing: the same answer, so existence does not leak).
@@ -147,6 +155,8 @@ async function serve(req: Request, env: Env): Promise<Response> {
       return refusal(401, 'Use a repository or personal access token as the password');
     const status = STATUS[code] ?? (e instanceof ApiError ? 400 : 500);
     if (status >= 500) console.error(`git ${service} failed: ${code}`);
+    if (code === 'OVERLOADED' && action === 'git-upload-pack') return busyLine();
+    if (code === 'OVERLOADED') return refusal(status, `${code}: ${BUSY}`);
     return refusal(status, `${code}: ${String(e?.message ?? e).slice(0, 500)}`);
   }
 }

@@ -381,8 +381,9 @@ test('--memory-test prints its estimate and starts nothing without --yes, and re
   assert.match(few.stderr, /at least 5/);
 });
 
-test('only a clone the platform answered with 503 is retried', () => {
+test('only a clone the platform was too busy for is retried', () => {
   assert.equal(retryableClone('error: RPC failed; HTTP 503 curl 22'), true);
+  assert.equal(retryableClone('fatal: remote error: OVERLOADED: The repository is busy right now'), true);
   assert.equal(retryableClone('fatal: repository not found'), false);
   assert.equal(retryableClone(undefined), false);
 });

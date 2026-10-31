@@ -17,6 +17,7 @@
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { toHex } from './hmac';
 import { readJson } from './http';
+import { retried } from './repo-git-retry';
 import { inheritObjects } from './repo-lfs-inherit';
 import { lfsKey, scheduleSweep, sweepLfs } from './repo-lfs-sweep';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
@@ -157,11 +158,14 @@ async function batch(ctx: RepoContext, req: Request, url: URL): Promise<Response
     return lfsError(409, 'Only sha256 object ids are served');
   const creds = s3Credentials(ctx.env);
   if (!creds) return lfsError(501, 'Git LFS is not configured on this deployment');
-  const decided = await ctx.call({
-    op: 'repo_lfs_batch',
-    operation,
-    objects: objects.map((o: Json) => ({ oid: o?.oid, size: o?.size })),
-  });
+  const ask = () =>
+    ctx.call({
+      op: 'repo_lfs_batch',
+      operation,
+      objects: objects.map((o: Json) => ({ oid: o?.oid, size: o?.size })),
+    });
+  // git-lfs stops at a batch's first 503; a download only reads, an upload reserves.
+  const decided = await (operation === 'download' ? retried(ctx.repo, 'git-lfs', ask) : ask());
   // Lapsed reservations' bytes, and new ones once they lapse, are the sweep's (repo-lfs-sweep).
   await scheduleSweep(ctx.env, ctx.repo, decided.sweep_at);
   // A fork's missing objects may be its parent's, for callers who read the parent.

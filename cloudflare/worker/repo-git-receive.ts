@@ -93,26 +93,19 @@ export async function receivePack(
           store(ctx, objects, session, tips, secretAllow, reads ?? [], files, messages),
         );
     } catch (e) {
-      // Nothing moved: an overloaded authority is an HTTP 503 Git can retry; otherwise
-      // report why for every ref still going.
-      if (transient(e)) throw e;
-      // A credential refuses the whole push by path and line (never its text); the pack
-      // itself unpacked fine.
+      // Nothing moved: report why for every ref still going. A credential refuses the whole
+      // push by path and line (never its text); the pack itself unpacked fine, as it did for
+      // an overloaded authority (a per-ref refusal is the one thing Git prints from a push
+      // that fails after its POST: a 503 ends in "Everything up-to-date").
       const secret = (e as any)?.code === 'SECRET_DETECTED';
       const why = secret ? String((e as any).message) : reason(e);
       for (const c of going) outcomes.set(c.ref, why);
-      return report(commands, outcomes, secret ? null : why, sideBand, messages);
+      return report(commands, outcomes, secret || transient(e) ? null : why, sideBand, messages);
     }
     await timed('git.move', async () => {
       if (atomic) await moveAll(ctx, going, outcomes, messages);
       else for (const c of going) outcomes.set(c.ref, await moveOne(ctx, c, fresh, messages));
     });
-    // Every ref refused only because the authority was overloaded: nothing moved, so the
-    // push as a whole is retryable.
-    if (going.length > 0 && going.every((c) => outcomes.get(c.ref)?.startsWith('OVERLOADED:')))
-      throw Object.assign(new Error('The repository is overloaded; nothing moved'), {
-        overloaded: true,
-      });
     // New tags are mirrored to the object store like protected branches (a lost message
     // only delays that).
     if (going.some((c) => c.ref.startsWith('refs/tags/') && !outcomes.get(c.ref)))

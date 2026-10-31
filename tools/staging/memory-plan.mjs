@@ -170,6 +170,7 @@ export function runProblems({ arm, code, killed, session, delivery, deliveries =
   return problems;
 }
 
-/** A clone refused with HTTP 503 (the platform's OVERLOADED, with Retry-After). Git doesn't
- * retry it, and a person would run it again. */
-export const retryableClone = (message) => /HTTP 503/.test(String(message));
+/** A clone the platform was too busy to serve: `info/refs` answered 503 OVERLOADED, the fetch an
+ * ERR line naming it (repo-git-retry.ts), or the edge a bare 503. Git doesn't retry it, and a
+ * person would run it again. */
+export const retryableClone = (message) => /HTTP 503|OVERLOADED/.test(String(message));
