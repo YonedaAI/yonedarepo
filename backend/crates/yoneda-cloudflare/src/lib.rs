@@ -69,4 +69,7 @@ impl SqlStore for CloudStore {
             )),
         }
     }
+    fn database_size(&self) -> Result<u64> {
+        Ok(self.0.sql().database_size() as u64)
+    }
 }

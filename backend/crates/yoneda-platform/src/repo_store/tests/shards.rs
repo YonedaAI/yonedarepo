@@ -120,6 +120,17 @@ fn shard_commits_are_adopted_parents_first_and_land_like_any_other() {
 }
 
 #[test]
+fn a_shards_status_says_what_its_database_holds() {
+    let (h, root) = seeded();
+    let s = shard();
+    commit_in(&h, &s, AGENT, json!(root), "a.txt");
+    let status = on(&s, json!({"op": "store_status"})).unwrap();
+    assert!(status["db_bytes"].as_u64().unwrap() > 4096, "{status}");
+    assert_eq!(status["table_rows"]["commits"], json!(1));
+    assert!(status["pending"].as_u64().unwrap() > 0, "{status}");
+}
+
+#[test]
 fn shards_verify_what_they_record_and_only_the_platform_reaches_them() {
     let (h, root) = seeded();
     let s = shard();

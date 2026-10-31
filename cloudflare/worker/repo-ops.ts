@@ -79,6 +79,7 @@ const KEEPS_REFS = new Set([
   'repo_context_deliver',
   'repo_context_deliveries',
   'repo_status',
+  'repo_storage',
   'repo_refs',
   'repo_snapshot',
   'repo_log',

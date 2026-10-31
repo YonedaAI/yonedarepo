@@ -4,12 +4,12 @@ use super::auth::{self, Actor};
 use super::op::{InitOp, Op, RepoOp as R, StoreOp};
 use super::rows::{self, Settings};
 use super::{
-    activity, adopt, agent_context, agent_reads, annotated, bisect, branches, change_comments,
-    change_delete, change_gates, change_records, changes, changesets, checks, classes, contracts,
-    git_http, head, history, history_import, hook_delivery, hook_events, hooks, land, land_batch,
-    land_queue, land_tickets, members, merging, prepare, projection, projection_plan, pushed,
-    reads, rebase, record, releases, search_records, sessions, staging, store_lineage, submitted,
-    symbols, tags, tokens, version_projection,
+    activity, adopt, agent_context, agent_reads, annotated, bisect, branches, capacity,
+    change_comments, change_delete, change_gates, change_records, changes, changesets, checks,
+    classes, contracts, git_http, head, history, history_import, hook_delivery, hook_events, hooks,
+    land, land_batch, land_queue, land_tickets, members, merging, prepare, projection,
+    projection_plan, pushed, reads, rebase, record, releases, search_records, sessions, staging,
+    store_lineage, submitted, symbols, tags, tokens, version_projection,
 };
 use super::{
     authorize::authorize, break_glass, deletion, forks, grants, lfs, maintenance, memory,
@@ -60,6 +60,7 @@ fn run<S: SqlStore>(
     match op {
         R::Status => serde_json::to_value(super::status::status(db, settings, actor)?)
             .map_err(|e| yoneda_core::Error::new("ENCODING", e.to_string())),
+        R::Storage => capacity::usage(db, capacity::REPO_TABLES),
         R::CloneAccess => quarantine::refuse_direct_clone(db)
             .map(|()| json!({ "object_store": settings.object_store })),
         R::Refs => reads::refs(db, c),
