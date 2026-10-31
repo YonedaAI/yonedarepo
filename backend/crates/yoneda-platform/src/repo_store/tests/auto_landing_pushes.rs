@@ -299,6 +299,14 @@ fn landing_on_a_working_branch_opens_one_and_a_mirror_or_import_does_not() {
         json!({"op":"repo_fork_mirror","fork":"r0123456789abcdef0999","branch":"feature","commit":fork}),
     );
     assert_eq!(rows(&h, "open").len(), 1, "a fork's mirror opens nothing");
+    // The fork's proposal opens its own, on that mirror, as it always did.
+    let proposed = h.ok(
+        CI,
+        json!({"op":"repo_change_create","branch":"forks/r0123456789abcdef0999/feature",
+            "source_repo":"r0123456789abcdef0999","source_branch":"feature","title":"From a fork"}),
+    );
+    assert_eq!(proposed["origin"], "explicit");
+    assert_eq!(proposed["head"], json!(fork));
 }
 
 #[test]

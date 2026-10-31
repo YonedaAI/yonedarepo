@@ -47,11 +47,12 @@ export function AutoLandingSettings({
             checked={landings.create}
             onChange={(e) => set({ create: e.target.checked })}
           />
-          Open a Landing for every pushed branch
-          <span className="source-meta">
-            {' '}
-            Costs nothing and starts no agent. Skips main, release and fork branches. A Landing
-            someone closed stays closed until reopened.
+          <span>
+            Open a Landing for every pushed branch
+            <small className="subtle">
+              Costs nothing and starts no agent. Skips main, release and fork branches. A Landing
+              someone closed stays closed until reopened.
+            </small>
           </span>
         </label>
         <label>
@@ -61,11 +62,12 @@ export function AutoLandingSettings({
             disabled={!landings.create}
             onChange={(e) => set({ agents: e.target.checked })}
           />
-          Run agents on automatic Landings
-          <span className="source-meta">
-            {' '}
-            The agents set up on this repository run on them, at their usual price. Off, they run
-            only on Landings someone opened on purpose.
+          <span>
+            Run agents on automatic Landings
+            <small className="subtle">
+              The agents set up on this repository run on them, at their usual price. Off, they run
+              only on Landings someone opened on purpose.
+            </small>
           </span>
         </label>
       </fieldset>

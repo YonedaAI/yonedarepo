@@ -92,13 +92,13 @@ describe('automatic Landings', () => {
     expect(page).toContain('Run agents on automatic Landings');
     expect(page).toContain('Costs nothing and starts no agent');
     expect(page).not.toContain('checked=""');
-    expect(page).toMatch(/<input[^>]*disabled=""[^>]*>Run agents/);
+    expect(page).toMatch(/<input[^>]*disabled=""[^>]*><span>Run agents/);
     const on = html(AutoLandingSettings, {
       repo,
       landings: { create: true, agents: false },
       onChanged: () => {},
     });
-    expect(on).toMatch(/<input[^>]*checked=""[^>]*>Open a Landing/);
+    expect(on).toMatch(/<input[^>]*checked=""[^>]*><span>Open a Landing/);
     expect(on).not.toContain('disabled=""');
   });
   it('sets one switch at a time', () => {

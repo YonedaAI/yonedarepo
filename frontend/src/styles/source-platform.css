@@ -290,6 +290,12 @@ button.danger {
   gap: 8px;
   align-items: baseline;
 }
+.source-checks label input {
+  flex: none;
+}
+.source-checks label small {
+  display: block;
+}
 .source-copy {
   border: 1px solid var(--line);
   border-radius: 6px;

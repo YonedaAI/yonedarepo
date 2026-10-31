@@ -23,7 +23,7 @@ import { deleteRepository, listDeleted, listRepositories } from './repo-admin';
 import { agentRecords } from './repo-agent-records';
 import { breakGlass } from './repo-break-glass';
 import { changeLogStatus } from './repo-changelog';
-import { changesRoute } from './repo-changes';
+import { changesRoute, setAutoLandings } from './repo-changes';
 import { compactLog } from './repo-compaction';
 import { createRepository, importRepository, tokenSecret } from './repo-create';
 import { refreshHead } from './repo-head';
@@ -311,11 +311,8 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
       repo,
       ctx.call({ op: 'repo_set_policy', policy: (await bodyOf(req)).policy }),
     );
-  // The repository's automatic Landings switches: not in `policy`, whose digest checks bind to.
-  if (resource === 'auto-landings' && req.method === 'PUT') {
-    const { create, agents } = await bodyOf(req);
-    return ctx.call({ op: 'repo_auto_landings', create, agents });
-  }
+  if (resource === 'auto-landings' && req.method === 'PUT')
+    return setAutoLandings(ctx, await bodyOf(req));
   if (resource === 'objects' && post)
     return run('git_get_objects', await bodyOf(req, 2 * 1024 * 1024));
   if (resource === 'merges' && post) return run('git_merge', await bodyOf(req));

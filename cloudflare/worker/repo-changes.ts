@@ -95,6 +95,11 @@ export const changeOperations = {
     notified(ctx, ctx.call({ op: 'repo_change_delete', number: changeNumber(a.number) })),
 };
 
+/** `PUT /auto-landings {create?, agents?}`: the repository's switches, kept out of `policy`,
+ * whose digest every recorded check binds to (repo_store/auto_landing.rs). */
+export const setAutoLandings = (ctx: RepoContext, { create, agents }: Json) =>
+  ctx.call({ op: 'repo_auto_landings', create, agents });
+
 /** `GET|POST /changes`, `GET|DELETE /changes/:n`, `POST /changes/:n/comments|close|reopen`. */
 export async function changesRoute(
   ctx: RepoContext,
