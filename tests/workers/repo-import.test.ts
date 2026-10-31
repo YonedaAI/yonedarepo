@@ -205,6 +205,26 @@ function masterRemote(sourceStore: string, head: string) {
   };
 }
 
+it('a remote on main leaves nothing to project: the store already holds that branch', async () => {
+  const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2' } as unknown as Env;
+  const owner = { cookie: await signup('import_main') };
+  const source = await api('/repos', owner, { body: { name: 'src', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', 'main\n')], author } }, local);
+  const head = source.body.commit as string;
+  await drainObjects(local);
+  for (const message of queued.splice(0).filter((m) => m.kind === 'platform_project')) await projectRefs(local, message);
+  let started: any;
+  const workflows = { create: async (options: any) => ((started = options), { id: options.id }), get: async () => ({ status: async () => ({ status: 'running' }) }) };
+  const env = { ...scoped, ARTIFACTS: fakeRemote(`yr-${source.body.id}`, head), PLATFORM_IMPORT: workflows } as unknown as Env;
+  const created = await api('/repos/import', owner, { body: { name: 'on-main', url: 'https://git.example/main.git' } }, env);
+  const advertised = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+    new Response(`001e# service=git-upload-pack\n0000${'0'.repeat(4)}${head} HEAD\0multi_ack symref=HEAD:refs/heads/main agent=git/2\n0000`),
+  );
+  await runImport(env, started.params, step);
+  advertised.mockRestore();
+  const projection = (await api(`/repos/${created.body.id}`, owner, {}, env)).body.projections[0];
+  expect(projection).toMatchObject({ refname: 'refs/heads/main', status: 'ok', projected_commit: head, detail: null });
+});
+
 it("imports the remote's default branch as main when none is named, and fails a missing branch at once", async () => {
   const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2' } as unknown as Env;
   const owner = { cookie: await signup('import_master') };
