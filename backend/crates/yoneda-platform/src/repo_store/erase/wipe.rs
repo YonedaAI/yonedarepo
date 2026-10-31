@@ -6,6 +6,7 @@
 //! page budget, clearing the whole index in one transaction (measured: 4 MB per 200k paths).
 //! In `secure-delete` mode each delete takes its terms out of the index itself, so the row
 //! budget bounds that work too, and only empty pages are left for the last step's rebuild.
+use super::super::flight_plans;
 use super::{BYTE_BUDGET, ROW_BUDGET};
 use crate::storage::SqlStore;
 use serde_json::Value;
@@ -57,6 +58,7 @@ pub(crate) const TABLES: &[Table] = &[
     sized("commits", &["message", "read_set"]),
     sized("context_deliveries", &["items"]),
     keyed("bundled_objects", "id"),
+    sized("flight_plans", &["goal", "scope"]),
     keyed("fork_origin", "refname"),
     keyed("forks", "repo"),
     rows("hook_attempts"),
@@ -182,6 +184,10 @@ pub(super) fn batch<S: SqlStore>(db: &S) -> Result<Spent> {
     }
     let mut spent = Spent::default();
     for table in TABLES {
+        // A repository that has not run the table's migration holds none of its rows.
+        if table.name == flight_plans::TABLE && !flight_plans::available(db)? {
+            continue;
+        }
         if let Some(last) = measure(db, table, &mut spent)? {
             db.query(
                 &format!("DELETE FROM {} WHERE {}<=?", table.name, table.key),

@@ -6,11 +6,11 @@ use super::rows::{self, Settings};
 use super::{
     activity, adopt, agent_context, agent_reads, annotated, bisect, branches, capacity,
     change_comments, change_delete, change_gates, change_instruments, change_records, change_route,
-    changes, changesets, checks, classes, contracts, git_http, head, history, history_fill,
-    history_import, hook_delivery, hook_events, hooks, land, land_batch, land_queue, land_tickets,
-    legal_hold, members, merging, prepare, projection, projection_plan, pushed, reads, rebase,
-    record, releases, search_records, sessions, staging, store_lineage, submitted, symbols, tags,
-    tokens, version_projection,
+    changes, changesets, checks, classes, contracts, flight_plans, git_http, head, history,
+    history_fill, history_import, hook_delivery, hook_events, hooks, land, land_batch, land_queue,
+    land_tickets, legal_hold, members, merging, prepare, projection, projection_plan, pushed,
+    reads, rebase, record, releases, search_records, sessions, staging, store_lineage, submitted,
+    symbols, tags, tokens, version_projection,
 };
 use super::{
     authorize::authorize, break_glass, deletion, erase, forks, grants, lfs, maintenance, memory,
@@ -131,6 +131,7 @@ fn run<S: SqlStore>(
         R::BisectList => agent_reads::bisect_list(db, c, actor),
         R::AgentContext => agent_context::context(db, c, actor, settings)
             .and_then(|found| history_fill::note(db, found)),
+        R::FlightPlan => flight_plans::file(db, c, actor),
         R::ChangeCreate => changes::create(db, c, actor),
         R::Changes => changes::list(db, c, actor),
         R::ChangeShow => changes::show(db, c, actor, settings),

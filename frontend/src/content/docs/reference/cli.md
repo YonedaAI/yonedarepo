@@ -57,7 +57,8 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
   change create [<branch>] [--title <t>] [-m <body>] [--base <b>]   open a change request on main or <b>
   change create [<branch>] --to-parent ...  in a fork: propose the branch to the parent's main
   change list [--status open|landed|closed|all]
-  change show <n>                     a change: gates, reviews, comments and files
+  change show <n>                     a change: flight plan, gates, open findings, reviews,
+                                      comments and files
   change route <n>                    its commits, the sessions behind them, what they were shown, checks
   change comment <n> -m <text> [--path <p> --line <n> --side old|new] [--resolve]
   change land <n>                     land the change's head on its base
@@ -71,6 +72,9 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
                                       when they read the anchored files (session: $YONEDA_SESSION_ID)
   memory list [--path <p>] [--kind <k>] [--status current|stale|draft|retired|…]
   memory show <id> | memory retire <id> [-m <reason>]
+  flight-plan -m <goal> [--scope <text>] [--branch <b>] [--change <n>] [--session-id <id>]
+                                      file the goal first: the landing shows it (default
+                                      branch: this clone's; session: $YONEDA_SESSION_ID)
   policy show | policy set '<json>'
   token create <name> [--scopes read,write] [--paths a/,b/] | token list | token revoke <name>
   log [path] [--ref <b>] [--limit <n>] [--at <version>]

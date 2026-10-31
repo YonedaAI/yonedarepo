@@ -186,6 +186,7 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "change" => change::change(rest)?,
         "release" => release::release(rest)?,
         "memory" => memory::memory(rest)?,
+        "flight-plan" => sub::flight_plan(rest)?,
         "hook" => sub::hook(rest)?,
         "context" => sub::context(rest)?,
         "help" | "--help" | "-h" => Command::Help,
@@ -621,6 +622,28 @@ mod tests {
             })
         );
         assert!(parsed("memory add gotcha").is_err());
+        assert_eq!(
+            parse(&[
+                "flight-plan".into(),
+                "-m".into(),
+                "Retry twice".into(),
+                "--scope".into(),
+                "src/net only".into(),
+                "--change".into(),
+                "3".into(),
+            ])
+            .ok(),
+            Some(Command::FlightPlan {
+                target: Target::default(),
+                goal: "Retry twice".into(),
+                scope: Some("src/net only".into()),
+                branch: None,
+                change: Some(3),
+                session_id: None,
+            })
+        );
+        assert!(parsed("flight-plan").is_err());
+        assert!(parsed("flight-plan -m g extra").is_err());
         assert!(parsed("memory show x").is_err());
         assert_eq!(
             parsed("hook claude-prompt").ok(),

@@ -119,4 +119,34 @@ export const FIXTURES: Record<ManagedAgentId, { trigger: Fixture; clean: Fixture
       expected: [],
     },
   },
+  'intent-drift': {
+    trigger: {
+      files: [
+        {
+          path: 'src/users.js',
+          patch: patch(1, [
+            ' export function find(db, id) {',
+            '+  cache.set(id, Date.now());',
+            "   return db.query('SELECT * FROM users WHERE id = ?', [id]);",
+            ' }',
+          ]),
+        },
+      ],
+      expected: [],
+    },
+    clean: {
+      files: [
+        {
+          path: 'src/users.js',
+          patch: patch(1, [
+            ' export function find(db, id) {',
+            "-  return db.query('SELECT * FROM users');",
+            "+  return db.query('SELECT * FROM users WHERE id = ?', [id]);",
+            ' }',
+          ]),
+        },
+      ],
+      expected: [],
+    },
+  },
 };

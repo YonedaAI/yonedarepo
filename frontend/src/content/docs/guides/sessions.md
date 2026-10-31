@@ -58,4 +58,4 @@ On a refusal: `git pull --rebase`, re-check the named paths, push again.
 yoneda context [--max-bytes <n>] [--json]
 ```
 
-prints what a new session should know, within a byte budget: `main`'s head and log version, the landing rules, recent sessions with their summaries, open change requests (this branch's first), symbol contracts on the files you are changing and the repository's current [memories](/docs/agents/memories). It says how many entries it left out. The hooks put this text at the start of each agent session. Over MCP the same read is `git_context`, and `git_sessions_recent` lists recent sessions.
+prints what a new session should know, within a byte budget: `main`'s head and log version, the landing rules, the open findings on this branch's change, recent sessions with their summaries, open change requests (this branch's first), symbol contracts on the files you are changing and the repository's current [memories](/docs/agents/memories). It says how many entries it left out. The hooks put this text at the start of each agent session. Over MCP the same read is `git_context`, and `git_sessions_recent` lists recent sessions.

@@ -52,7 +52,7 @@ pub(super) fn kind(c: &Value) -> Result<&'static str> {
         .ok_or_else(|| bad("kind must be decision, constraint, gotcha or howto"))
 }
 
-pub(super) fn session_id(c: &Value) -> Result<Option<String>> {
+pub(in crate::repo_store) fn session_id(c: &Value) -> Result<Option<String>> {
     match &c["session_id"] {
         Value::Null => Ok(None),
         Value::String(s)

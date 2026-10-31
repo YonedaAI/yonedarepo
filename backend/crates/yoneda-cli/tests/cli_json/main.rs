@@ -395,7 +395,7 @@ fn cases() -> Vec<Case> {
             "change show 3 --repo {REPO} --origin {ORIGIN}",
             "change-show",
             format!(
-                "{change_line}\n\n  why\n\nhead {COMMIT}\nnot ready: approvals 0/1; waiting for ci\n  approve by bob\n1 file(s) changed\n  modify src/a.rs\n- bob on src/a.rs:7 (new)\n  nit\n"
+                "{change_line}\n\n  why\n\nflight plan: Retry twice\n  scope: src/ only\nhead {COMMIT}\nnot ready: approvals 0/1; waiting for ci\n  approve by bob\nGo-around: 1 open finding on change #3 (fix, then push; a re-review runs on the push)\n- src/a.rs:7: nit\n1 file(s) changed\n  modify src/a.rs\n- bob on src/a.rs:7 (new)\n  nit\n"
             ),
         ),
         case(
@@ -405,6 +405,11 @@ fn cases() -> Vec<Case> {
                 "#3 [open] topic -> main: 1 commit, 1 session, 300 bytes read, 900 bytes fetched, 1 memory delivered\n{} Retry twice by alice\n  check pass ci\n  session claude-code opus: Added the retry (300 bytes read)\ndelivered:\n  claude-code:s1 read src/a.rs: 1 item, 40 bytes\n",
                 &COMMIT[..12]
             ),
+        ),
+        case(
+            "flight-plan -m goal --branch topic --repo {REPO} --origin {ORIGIN}",
+            "flight-plan",
+            "Flight plan #4 filed for topic\n",
         ),
         case(
             "change comment 3 -m hi --repo {REPO} --origin {ORIGIN}",

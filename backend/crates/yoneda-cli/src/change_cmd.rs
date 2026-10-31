@@ -4,6 +4,7 @@
 //! `yoneda change land <n>`.
 use crate::command::ChangeCommand;
 use crate::error::{Error, Result};
+use crate::go_around;
 use crate::human;
 use crate::output::{self, ChangeSummary};
 use crate::repo_ops::{current_branch, land_head};
@@ -81,6 +82,13 @@ fn show(change: &Value) {
     if !text(change, "body").is_empty() {
         human!("\n  {}\n", text(change, "body").replace('\n', "\n  "));
     }
+    match change["flight_plan"]["goal"].as_str() {
+        Some(goal) => human!("flight plan: {goal}"),
+        None => human!("No flight plan"),
+    }
+    if let Some(scope) = change["flight_plan"]["scope"].as_str() {
+        human!("  scope: {scope}");
+    }
     match change["head"].as_str() {
         Some(head) => human!("head {head}"),
         None => human!("head: none (the branch is gone)"),
@@ -100,6 +108,9 @@ fn show(change: &Value) {
                     .unwrap_or_default()
             );
         }
+    }
+    if let Some(block) = go_around::block(&change["go_around"]) {
+        human!("{block}");
     }
     let files = change["diff"]["changes"]
         .as_array()

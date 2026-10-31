@@ -3,9 +3,9 @@ use crate::args::{self, Command, SyncMode};
 use crate::checkout::Checkout;
 use crate::error::{Error, Result};
 use crate::{
-    account, agent_hook, attempt, brief, change_cmd, clone, context_cmd, declared_reads, login,
-    memory_cmd, pull, reads, release_cmd, repo_ops, session_cmd, setup, sparse, status, sync,
-    target,
+    account, agent_hook, attempt, brief, change_cmd, clone, context_cmd, declared_reads,
+    flight_plan, login, memory_cmd, pull, reads, release_cmd, repo_ops, session_cmd, setup, sparse,
+    status, sync, target,
 };
 use crate::{human, output};
 
@@ -146,6 +146,23 @@ async fn run(command: Command) -> Result<()> {
         }
         Command::Memory { target, command } => {
             memory_cmd::run(&target::resolve(&target)?, command).await
+        }
+        Command::FlightPlan {
+            target,
+            goal,
+            scope,
+            branch,
+            change,
+            session_id,
+        } => {
+            let plan = flight_plan::Plan {
+                goal,
+                scope,
+                branch,
+                change,
+                session_id,
+            };
+            flight_plan::run(&target::resolve(&target)?, plan).await
         }
         Command::Hook(event) => agent_hook::run(event).await,
         Command::Context { max_bytes } => context_cmd::run(max_bytes).await,

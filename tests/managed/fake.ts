@@ -35,6 +35,9 @@ export interface FakeChange {
   /** A push's own row (`auto`); absent as on a platform before migration 0044. */
   origin?: 'explicit' | 'auto';
   created_at?: number;
+  body?: string;
+  /** The newest flight plan, as `change show` answers it; left out by an older platform. */
+  flight_plan?: { goal: string; scope: string | null } | null;
 }
 
 /** The platform's public API as far as the agents use it, plus refusals for anything else. */
@@ -54,6 +57,8 @@ export class FakePlatform {
   revokedAt: number | null = null;
   /** A credential shape only the platform's scanner knows (the managed pre-filter misses it). */
   scannerRefuses: RegExp | null = null;
+  /** Comments the change has room for before the platform's cap refuses (null: plenty). */
+  commentRoom: number | null = null;
   /** The owner's break-glass automation pause (repo status `automation.paused`). */
   paused = false;
   /** A platform older than the list's `branch` and `origin` filters answers every open change. */
@@ -152,6 +157,7 @@ export class FakePlatform {
       // The platform's secret scanner refuses credentials in comments.
       if (/ghp_[A-Za-z0-9]{36}/.test(String(body?.body)) || this.scannerRefuses?.test(String(body?.body)))
         return refuse('SECRET_DETECTED', 400);
+      if (this.commentRoom !== null && this.comments.length >= this.commentRoom) return refuse('TOO_LARGE', 413);
       const posted = { id: this.comments.length + 1, number: Number(comment[1]), ...body };
       this.comments.push(posted);
       return ok({ comment: posted, resolved: 0 });

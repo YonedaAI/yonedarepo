@@ -251,6 +251,25 @@ pub fn session(rest: &[String]) -> Result<Command> {
     })
 }
 
+pub fn flight_plan(rest: &[String]) -> Result<Command> {
+    let p = Parsed::new(
+        rest,
+        &with(&["message", "scope", "branch", "change", "session-id"]),
+        &[],
+    )?;
+    p.at_most(0)?;
+    Ok(Command::FlightPlan {
+        target: p.target(),
+        goal: p
+            .flag("message")
+            .ok_or_else(|| Error::usage("flight-plan needs -m <goal>"))?,
+        scope: p.flag("scope"),
+        branch: p.flag("branch"),
+        change: p.number("change")?,
+        session_id: p.flag("session-id"),
+    })
+}
+
 pub fn context(rest: &[String]) -> Result<Command> {
     let p = Parsed::new(rest, &["max-bytes"], &[])?;
     p.at_most(0)?;

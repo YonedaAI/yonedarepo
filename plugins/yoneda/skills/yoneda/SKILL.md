@@ -46,6 +46,16 @@ Landing checks more than overlapping writes. A push may declare the files its ch
 2. Push. With a `yoneda::` remote, `git push` declares them by itself. With an HTTPS remote (`https://…/git/r….git`), use `yoneda push <git push arguments>` (e.g. `yoneda push origin main`): it adds `-o yoneda.reads=…`. Either clears them after a clean push. In Claude Code, a plain `git push` to an HTTPS remote is stopped while reads are recorded.
 3. Record the session. The Claude Code and opencode plugins do it at the end of each turn that pushed: the CLI, model, your last message (truncated) and the session's transcript with the context it started with. The platform redacts credentials in the transcript and the repository's readers can see it. Elsewhere, after pushing: `yoneda session record --cli <cli> --summary <text> --model <m> [--transcript <file>]` for HEAD (a short summary, never secrets). `yoneda session list` shows a commit's records.
 
+## Go-around: findings come back to you
+
+Review agents and reviewers leave findings on lines of a change. Nothing wakes you for them: they are in the context of the next session on that branch, in a `Go-around` section with file and line, and in `yoneda change show <n>` (MCP: `go_around` in `git_context` and `git_change_show`).
+
+1. Read them first, and check the file: one marked "on older commit" may be fixed already.
+2. Fix them and push. A push re-runs the review on the new head, and a reviewer token's older findings drop out once it has looked again.
+3. If a finding is wrong, say why on it: `yoneda change comment <n> -m <why> --path <p> --line <n> --side new --resolve`.
+
+Each push drops the head's approvals, so bundle your fixes into one push.
+
 ## Memories: what the code does not say
 
 The repository keeps memories that agents and people leave for later sessions. You are shown them without asking: the relevant ones at session start, the ones on a file when you read it, and those matching your prompt (each once per session; one marked "the code changed since" may be out of date, so verify it).
