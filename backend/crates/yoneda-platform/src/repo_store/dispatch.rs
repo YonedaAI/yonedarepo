@@ -148,7 +148,7 @@ fn run<S: SqlStore>(
         R::ChangeInstruments => change_instruments::read(db, c, actor),
         R::CheckClaim => checks::claim(db, c),
         R::CheckRelease => checks::release(db, c),
-        R::CheckRun => checks::run_op(db, c),
+        R::CheckRun => super::check_run_reads::run_op(db, c),
         R::RecordRepair => checks::record_repair(db, c),
         R::CheckComplete => checks::complete(db, c, principal),
         R::SetPolicy => checks::set_policy(db, c, principal, settings),

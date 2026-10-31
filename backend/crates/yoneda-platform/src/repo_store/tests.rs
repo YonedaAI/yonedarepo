@@ -28,6 +28,8 @@ struct Harness {
     /// Plays the commit shards: records of commits built outside the authority, by id.
     shard: RefCell<HashMap<String, Value>>,
     now: RefCell<i64>,
+    /// What the adapter's switches add to every command (`repo-archive-switches.ts`).
+    switches: RefCell<Value>,
 }
 
 impl Harness {
@@ -39,6 +41,7 @@ impl Harness {
             cached: RefCell::default(),
             shard: RefCell::default(),
             now: RefCell::new(1_700_000_000_000),
+            switches: RefCell::new(json!({})),
         };
         h.run(OWNER, json!({"op":"repo_init","name":"demo","object_store":"artifacts:test/demo","policy":{"required_checks":["unit"],"approvals":1,"check_posters":{"unit":["owner","token:ci"]}}})).unwrap();
         for (name, scopes) in [
@@ -52,6 +55,9 @@ impl Harness {
     fn run(&self, principal: &str, mut c: Value) -> yoneda_core::Result<Value> {
         *self.now.borrow_mut() += 1_000;
         c["now"] = json!(*self.now.borrow());
+        for (key, value) in self.switches.borrow().as_object().into_iter().flatten() {
+            c[key] = value.clone();
+        }
         match principal.strip_prefix("token:") {
             Some(name) => c["_token"] = json!(format!("{name}-secret-0123456789abcdef0123456789")),
             None if principal == SYSTEM => c["_system"] = json!("checks"),
