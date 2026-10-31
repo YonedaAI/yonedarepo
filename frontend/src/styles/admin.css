@@ -142,6 +142,16 @@
   background: var(--accent-soft);
   color: var(--accent-text);
 }
+.admin-sizes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  margin: 4px 0 0;
+  padding: 0;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  list-style: none;
+}
 .admin-more {
   align-self: flex-start;
 }
