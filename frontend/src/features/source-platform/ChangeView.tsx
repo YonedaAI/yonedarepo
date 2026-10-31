@@ -1,22 +1,17 @@
-// One change request: what it proposes, its gates and actions, the conversation (comments and
-// branch pushes) and the diff from the merge base with main, with threads on its lines.
+// One change request: what it proposes, its gates and actions, its route, the conversation
+// (comments and branch pushes) and the diff from the merge base with main, with threads on its lines.
 import { useMemo } from 'react';
 import type { ChangeGates as Gates } from '../../../../shared/contracts/change-gates';
 import type { Navigate } from '../shell/useRoute';
 import { ChangeDiff } from './ChangeDiff';
 import { ChangeGates } from './ChangeGates';
+import { ChangeRoute } from './ChangeRoute';
 import { ChangeSessions } from './ChangeSessions';
 import { CommentItem, Composer, LineThread, postComment } from './ChangeThread';
-import {
-  type ChangeDetail,
-  type ConversationItem,
-  conversation,
-  diffAnchors,
-  groupComments,
-} from './changeModel';
+import { type ChangeDetail, conversation, diffAnchors, groupComments } from './changeModel';
 import { MergeGates } from './MergeGates';
 import { Person } from './Person';
-import { usePeople } from './people';
+import { PushItem } from './PushItem';
 import { RebaseButton } from './RebaseButton';
 import { ChangeStatusChip } from './RepoChanges';
 import { useReadOnly } from './repoAccess';
@@ -24,38 +19,6 @@ import { Failure, Loading } from './SourceStatus';
 import { shortSha, when } from './sourceApi';
 import { formatSourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
-
-const PUSHED = { created: 'pushed the branch', moved: 'pushed', deleted: 'deleted the branch' };
-
-function PushItem({
-  push,
-  onCommit,
-}: {
-  push: Extract<ConversationItem, { kind: 'push' }>['push'];
-  onCommit?: (sha: string) => void;
-}) {
-  const people = usePeople();
-  return (
-    <p className="source-push source-meta">
-      {people.principal(push.actor)} {PUSHED[push.action]}
-      {push.after && (
-        <>
-          {' '}
-          <a
-            href={`#${push.after}`}
-            onClick={(e) => {
-              e.preventDefault();
-              onCommit?.(push.after as string);
-            }}
-          >
-            <code>{shortSha(push.after)}</code>
-          </a>
-        </>
-      )}{' '}
-      · v{push.version} · {when(push.at)}
-    </p>
-  );
-}
 
 export function ChangeView({
   repo,
@@ -156,6 +119,16 @@ export function ChangeView({
       />
       {!readOnly && c.status === 'open' && c.head && (
         <RebaseButton repo={repo} change={c} onChanged={refresh} />
+      )}
+      {navigate && (
+        <ChangeRoute
+          key={c.head}
+          repo={repo}
+          number={number}
+          pushes={c.timeline}
+          navigate={navigate}
+          onCommit={onCommit}
+        />
       )}
       {c.head && navigate && (
         <ChangeSessions

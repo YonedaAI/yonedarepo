@@ -548,6 +548,7 @@ mod tests {
         for (line, command) in [
             ("change close #4", ChangeCommand::Close { number: 4 }),
             ("change reopen 4", ChangeCommand::Reopen { number: 4 }),
+            ("change route #4", ChangeCommand::Route { number: 4 }),
         ] {
             assert_eq!(
                 parsed(line).ok(),
@@ -749,6 +750,8 @@ mod tests {
             "repo fork",
             "change show",
             "change show 0",
+            "change route",
+            "change route 0",
             "change land x",
             "change delete",
             "change delete 0",

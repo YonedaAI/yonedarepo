@@ -87,6 +87,7 @@ pub fn all() -> Vec<(&'static str, Value)> {
         entry::<ChangeCreate>(),
         entry::<ChangeList>(),
         entry::<ChangeShow>(),
+        entry::<ChangeRoute>(),
         entry::<ChangeComment>(),
         entry::<ReleaseCreate>(),
         entry::<ReleaseList>(),

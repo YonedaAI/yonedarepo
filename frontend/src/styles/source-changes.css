@@ -92,6 +92,25 @@
   padding-left: 10px;
   border-left: 2px solid var(--line);
 }
+.change-route {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.change-route > li {
+  margin: 0 0 6px 12px;
+  padding-left: 10px;
+  border-left: 2px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.change-route > li[data-kind="push"] {
+  margin-left: 0;
+  padding-left: 0;
+  border-left: 0;
+}
+.change-route .source-session-summary {
+  margin: 2px 0;
+}
 .source-composer {
   display: grid;
   gap: 4px;

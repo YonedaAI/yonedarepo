@@ -174,6 +174,14 @@ pub struct ChangeShow {
     pub change: Value,
 }
 
+/// `change route`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ChangeRoute {
+    /// The commits, sessions, delivered context and checks, as the platform returns them.
+    pub route: Value,
+}
+
 /// `change comment`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -314,6 +322,7 @@ super::report! {
     ChangeCreate => "change-create",
     ChangeList => "change-list",
     ChangeShow => "change-show",
+    ChangeRoute => "change-route",
     ChangeComment => "change-comment",
     ReleaseCreate => "release-create",
     ReleaseList => "release-list",

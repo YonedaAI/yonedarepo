@@ -381,6 +381,11 @@ fn change_requests(w: &World) -> TestResult {
             && shown.contains("on b.txt:1 (new)"),
         &shown,
     )?;
+    let route = c.ok(&dir, &["change", "route", "1"])?;
+    check(
+        route.contains("feature -> main: 1 commit") && route.contains("Add b by"),
+        &route,
+    )?;
     let landed = c.ok(&dir, &["change", "land", "1"])?;
     check(landed.contains("Landed change #1"), &landed)?;
     let change = w
