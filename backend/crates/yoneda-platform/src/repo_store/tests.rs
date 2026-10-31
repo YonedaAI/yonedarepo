@@ -1664,6 +1664,7 @@ mod mirror_retirement;
 mod model_runner;
 mod ops;
 mod orgs;
+mod path_grants;
 mod pending_refs;
 mod pushed;
 mod quarantine;

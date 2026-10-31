@@ -2,7 +2,8 @@
 // read path (tree, file, diff, search, blame, symbols, objects, log) and every write path,
 // including after the owner warmed every cache tier with the hidden content.
 import { expect, it } from 'vitest';
-import { api, author, file, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, file, scoped, signup, usePlatformFixture } from './repo-fixture';
+import type { Env } from '../../cloudflare/worker/types';
 
 usePlatformFixture();
 
@@ -65,4 +66,33 @@ it('isolates hidden paths across reads, writes, caches and object tickets', asyn
   expect((await api(`${repo}/land`, contractor, { body: { ref: 'main', commit: mixed.body.commit } })).status).toBe(403);
   const codemod = await api(`${repo}/codemods`, contractor, { body: { find: 'greeting', replace: 'salute', author } });
   expect(codemod.body.touches.map((t: any) => t.path)).toEqual(['public/app.ts']);
+});
+
+// Commits are in their shards here, so the authority sees the chain only through the adapter.
+it.each(['batch', 'changeset'])('judges all a landing would bring in %s mode', async (mode) => {
+  const target = { ...scoped, LAND_MODE: mode } as unknown as Env;
+  const owner = { cookie: await signup(`chain-${mode}`) };
+  const files = [file('public/app.ts', 'a\n'), file('secret/keys.ts', 'b\n')];
+  const created = await api('/repos', owner, { body: { name: 'g', policy: { required_checks: [], approvals: 0 }, files, author } }, target);
+  const repo = `/repos/${created.body.id}`;
+  const head = created.body.commit as string;
+  const minted = await api(`${repo}/tokens`, owner, { body: { name: 'contractor', scopes: ['read', 'write', 'land'], paths: ['public/'] } }, target);
+  const contractor = { token: minted.body.token as string };
+  const commit = async (who: object, parent: string, path: string) =>
+    (await api(`${repo}/commits`, who, { body: { parent, base_version: 1, changes: [file(path, 'x\n')], message: path, author } }, target)).body.commit as string;
+  const land = (who: object, sha: string) => api(`${repo}/land`, who, { body: { ref: 'main', commit: sha } }, target);
+
+  const hidden = await commit(owner, head, 'secret/more.ts');
+  const onTop = await commit(contractor, hidden, 'public/on-top.ts');
+  expect((await land(contractor, hidden)).status).toBe(403);
+  const refused = await land(contractor, onTop);
+  expect([refused.status, refused.body.error?.message]).toEqual([403, 'Path is outside your grant']);
+  expect((await api(`${repo}/blob?path=secret/more.ts`, owner, {}, target)).status).toBe(404);
+
+  // Work inside the grant lands, a chain included, and the owner lands the refused one.
+  const first = await commit(contractor, head, 'public/first.ts');
+  const second = await commit(contractor, first, 'public/second.ts');
+  expect((await land(contractor, second)).body.landed).toBe(true);
+  expect((await land(owner, onTop)).body.landed).toBe(true);
+  expect((await api(`${repo}/blob?path=secret/more.ts`, owner, {}, target)).status).toBe(200);
 });

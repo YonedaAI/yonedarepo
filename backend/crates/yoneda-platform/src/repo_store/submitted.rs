@@ -169,12 +169,19 @@ fn land_one<S: SqlStore>(
             &[json!(commit.id.hex()), touch["path"].clone(), touch["symbols"].clone(), c["now"].clone()],
         )?;
     }
-    // Auto-approval judges all a landing would bring: a chain is adopted before its gates.
-    if !settings.policy.auto_approve.is_empty()
+    // Auto-approval and a path grant judge all a landing would bring: a chain is adopted
+    // before either, a cost only they pay.
+    let restricted = actor.grant.is_some();
+    if (restricted || !settings.policy.auto_approve.is_empty())
         && !parents_here(db, &commit)?
         && !adopt_chain(db, c, settings, records)?
     {
         return Ok(json!({ "status": "need_chain" }));
+    }
+    if restricted
+        && let Err(e) = super::grants::require_landing(db, &commit, &touches, refname, &actor.grant)
+    {
+        return Ok(refused(e));
     }
     if let Err(e) = require_gates(db, &commit, refname, settings) {
         return Ok(refused(e));
