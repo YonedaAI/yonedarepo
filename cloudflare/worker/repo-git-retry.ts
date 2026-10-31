@@ -6,7 +6,8 @@
 //
 // Budget of one read (`info/refs` of either service, `git-upload-pack`):
 //   success       no added wait or call, and no switch: the POST body was always held whole.
-//   attempts      4 at most, each from the access check on.
+//   attempts      3 retries at most, shared by the request's steps (credentials, then the
+//                 read from its access check on).
 //   added wait    3 s at most in all: 250, 750 and 2,000 ms, each less up to a quarter of
 //                 jitter so readers that failed together do not return together.
 //   window        no retry starts 20 s or more into the request: a walk that failed late would
@@ -28,35 +29,39 @@ export const READ_RETRY = { waits: [250, 750, 2_000], window: 20_000 };
 /** What a person sees when the retries run out. */
 export const BUSY = 'The repository is busy right now; try again in a few seconds';
 
-/** `attempt` until it answers, fails otherwise, or the budget above runs out. */
-export async function retried<T>(repo: string, service: string, attempt: () => Promise<T>) {
+/** Runs a request's steps, each until it answers or fails otherwise, within the one budget
+ * above; a step past it throws the failure. */
+export function retrier(repo: string, service: string) {
   const started = Date.now();
-  for (let tries = 0; ; tries++) {
-    try {
-      return await attempt();
-    } catch (e: any) {
-      if (failureCode(e) !== 'OVERLOADED') throw e;
-      const wait = READ_RETRY.waits[tries];
-      const elapsed_ms = Date.now() - started;
-      const retrying = wait !== undefined && elapsed_ms < READ_RETRY.window;
-      const error = String(e?.message ?? e).slice(0, 300);
-      console.warn(
-        JSON.stringify({
-          event: 'git.overloaded',
-          repo,
-          service,
-          tries,
-          elapsed_ms,
-          retrying,
-          error,
-        }),
-      );
-      if (!retrying) throw e;
-      const ms = wait * (0.75 + Math.random() / 4);
-      await new Promise((resolve) => setTimeout(resolve, ms));
-      record('git.retry', ms);
+  let tries = 0;
+  return async <T>(attempt: () => Promise<T>) => {
+    for (;;) {
+      try {
+        return await attempt();
+      } catch (e: any) {
+        if (failureCode(e) !== 'OVERLOADED') throw e;
+        const wait = READ_RETRY.waits[tries];
+        const elapsed_ms = Date.now() - started;
+        const retrying = wait !== undefined && elapsed_ms < READ_RETRY.window;
+        console.warn(
+          JSON.stringify({
+            event: 'git.overloaded',
+            repo,
+            service,
+            tries,
+            elapsed_ms,
+            retrying,
+            error: String(e?.message ?? e).slice(0, 300),
+          }),
+        );
+        if (!retrying) throw e;
+        tries++;
+        const ms = wait * (0.75 + Math.random() / 4);
+        await new Promise((resolve) => setTimeout(resolve, ms));
+        record('git.retry', ms);
+      }
     }
-  }
+  };
 }
 
 /** An upload-pack POST that could not be served: an ERR line, the one thing Git prints from a

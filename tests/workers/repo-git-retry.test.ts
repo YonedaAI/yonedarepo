@@ -5,7 +5,7 @@
 import { beforeEach, expect, it, vi } from 'vitest';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { isolateLocations } from '../../cloudflare/worker/repo-bundles';
-import { READ_RETRY, retried } from '../../cloudflare/worker/repo-git-retry';
+import { READ_RETRY, retrier } from '../../cloudflare/worker/repo-git-retry';
 import * as stream from '../../cloudflare/worker/repo-pack-stream';
 import type { Env } from '../../cloudflare/worker/types';
 import { asGit } from './git-answer';
@@ -65,7 +65,7 @@ it('retries a read through a brief overload, within its budget', async () => {
   const sleeps = vi.spyOn(globalThis, 'setTimeout');
   Object.assign(READ_RETRY, quick);
   await expect(
-    retried('r', 'git-upload-pack', async () => {
+    retrier('r', 'git-upload-pack')(async () => {
       if (++attempts <= quick.waits.length) throw overloaded();
       return 'served';
     }),
@@ -85,19 +85,36 @@ it('stops at four attempts, and starts none past the window', async () => {
     attempts++;
     throw overloaded();
   };
-  await expect(retried('r', 'git-upload-pack', failing)).rejects.toThrow(/overloaded/);
+  await expect(retrier('r', 'git-upload-pack')(failing)).rejects.toThrow(/overloaded/);
   expect(attempts).toBe(4);
   attempts = 0;
   Object.assign(READ_RETRY, { window: 0 });
-  await expect(retried('r', 'git-upload-pack', failing)).rejects.toThrow(/overloaded/);
+  await expect(retrier('r', 'git-upload-pack')(failing)).rejects.toThrow(/overloaded/);
   expect(attempts).toBe(1);
+});
+
+it("shares one budget between a request's steps", async () => {
+  const retried = retrier('r', 'git-upload-pack');
+  let attempts = 0;
+  const twice = async () => {
+    if (++attempts <= 2) throw overloaded();
+  };
+  await retried(twice);
+  attempts = 0;
+  await expect(
+    retried(async () => {
+      attempts++;
+      throw overloaded();
+    }),
+  ).rejects.toThrow(/overloaded/);
+  expect(attempts).toBe(2);
 });
 
 it('never retries what says something about the request', async () => {
   let attempts = 0;
   const refused = Object.assign(new Error('overloaded'), { code: 'NOT_FOUND' });
   await expect(
-    retried('r', 'git-upload-pack', async () => {
+    retrier('r', 'git-upload-pack')(async () => {
       attempts++;
       throw refused;
     }),
@@ -150,6 +167,41 @@ it('clones through an overload of the walk, and answers an ERR line Git prints w
     expect(read.error).toBe('OVERLOADED: The repository is busy right now; try again in a few seconds');
   }
   expect(long.seen.get('repo_git_walk')).toBe(8);
+});
+
+it("retries a personal token's lookup, and says why on a POST when it cannot", async () => {
+  const cookie = await signup('retry_pat');
+  const created = await api('/repos', { cookie }, { body: { name: 'pat', policy: { approvals: 0, required_checks: [] }, files: [file('a.md', 'a\n')], author } });
+  const repo = created.body.id as string;
+  const pat = (await api('/tokens', { cookie }, { body: { name: 'laptop', scopes: ['repo:read'], repos: [repo] } })).body.token as string;
+  const busyIndex = (failures: number) => {
+    const { INDEX } = scoped;
+    let looked = 0;
+    const env = {
+      ...scoped,
+      INDEX: new Proxy(INDEX, {
+        get: (target, key) =>
+          key === 'prepare'
+            ? (sql: string) => {
+                if (/platform_tokens/.test(sql) && looked++ < failures) throw new Error('D1 DB is overloaded. Requests queued for too long.');
+                return target.prepare(sql);
+              }
+            : Reflect.get(target, key),
+      }),
+    } as unknown as Env;
+    return { env, lookups: () => looked };
+  };
+  const brief = busyIndex(2);
+  expect((await refs(repo, pat, brief.env)).status).toBe(200);
+  expect(brief.lookups()).toBeGreaterThanOrEqual(3);
+
+  const body = `${pkt('command=ls-refs\n')}${pkt('object-format=sha1\n')}0000`;
+  const answer = await platformFetch(
+    new Request(`https://yoneda/git/${repo}.git/git-upload-pack`, { method: 'POST', headers: { authorization: `Basic ${btoa(`git:${pat}`)}`, 'git-protocol': 'version=2' }, body }),
+    busyIndex(100).env,
+  );
+  expect([answer.status, answer.headers.get('retry-after')]).toEqual([200, '1']);
+  expect(asGit(new Uint8Array(await answer.arrayBuffer()), true).error).toMatch(/^OVERLOADED: The repository is busy/);
 });
 
 it('retries a failed read of the commits, which comes before the first byte', async () => {

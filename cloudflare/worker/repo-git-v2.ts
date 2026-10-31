@@ -60,7 +60,7 @@ export async function uploadPackV2(
     }
     return await serveFetch(ctx, objects, request, stats);
   } catch (e: any) {
-    // Nothing is sent yet: an overloaded authority can be tried again (`retried`).
+    // Nothing is sent yet: an overloaded authority can be tried again (`retrier`).
     if (transient(e)) throw e;
     return errLine(none, e);
   }

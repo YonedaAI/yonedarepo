@@ -14,7 +14,7 @@ import { sshBearer, verifySshToken } from './platform-ssh';
 import { credentials } from './repo-api';
 import { compute } from './repo-compute';
 import { receivePack } from './repo-git-receive';
-import { BUSY, busyLine, retried } from './repo-git-retry';
+import { BUSY, busyLine, retrier } from './repo-git-retry';
 import { PackStats, REQUEST_BYTES, readAll, uploadPack } from './repo-git-upload';
 import { advertiseV2, uploadPackV2, wantsV2 } from './repo-git-v2';
 import { guardInherited } from './repo-inherit';
@@ -108,12 +108,20 @@ async function serve(req: Request, env: Env): Promise<Response> {
   if ((action === 'info/refs') !== (req.method === 'GET'))
     return refusal(405, `${req.method} is not allowed here`);
   const ssh = sshBearer(req);
+  /** Git prints an overloaded platform's refusal only in these forms. */
+  const busy = () =>
+    action === 'git-upload-pack' ? busyLine() : refusal(503, `OVERLOADED: ${BUSY}`);
+  const retried = retrier(repo, service);
   let auth: Credentials | null;
   try {
-    auth = await timed('git.auth', () =>
-      ssh ? verifySshToken(env, ssh, repo, service) : gitCredentials(req, env),
+    // A personal token is a D1 read on every request, shared by all repositories.
+    auth = await retried(() =>
+      timed('git.auth', () =>
+        ssh ? verifySshToken(env, ssh, repo, service) : gitCredentials(req, env),
+      ),
     );
   } catch (e: any) {
+    if (failureCode(e) === 'OVERLOADED') return busy();
     return refusal(STATUS[failureCode(e)] ?? 500, String(e?.message ?? e));
   }
   if (!auth) return refusal(401, 'Use a repository or personal access token as the password');
@@ -129,7 +137,7 @@ async function serve(req: Request, env: Env): Promise<Response> {
   try {
     if (anonymous) await admitAnonymous(env, repo);
     if (action === 'git-receive-pack') {
-      const { ctx, access, objects } = await retried(repo, service, session);
+      const { ctx, access, objects } = await retried(session);
       // What a push omits must be held already; a fork's inherited objects count only for
       // readers of its parent (repo-inherit).
       guardInherited(ctx, objects);
@@ -137,7 +145,7 @@ async function serve(req: Request, env: Env): Promise<Response> {
     }
     const v2 = service === 'git-upload-pack' && wantsV2(req);
     const sent = action === 'info/refs' ? null : await readAll(requestBody(req), REQUEST_BYTES);
-    return await retried(repo, service, async () => {
+    return await retried(async () => {
       const { ctx, objects } = await session();
       if (!sent) return v2 ? advertiseV2() : await advertise(ctx, service);
       const body = new Blob([sent]).stream();
@@ -155,8 +163,7 @@ async function serve(req: Request, env: Env): Promise<Response> {
       return refusal(401, 'Use a repository or personal access token as the password');
     const status = STATUS[code] ?? (e instanceof ApiError ? 400 : 500);
     if (status >= 500) console.error(`git ${service} failed: ${code}`);
-    if (code === 'OVERLOADED' && action === 'git-upload-pack') return busyLine();
-    if (code === 'OVERLOADED') return refusal(status, `${code}: ${BUSY}`);
+    if (code === 'OVERLOADED') return busy();
     return refusal(status, `${code}: ${String(e?.message ?? e).slice(0, 500)}`);
   }
 }

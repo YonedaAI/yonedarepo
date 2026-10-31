@@ -97,7 +97,7 @@ export async function uploadPack(
  * `head` (Git prints it as `remote error: <message>`; after `head`, which ends where the
  * pack's side-band packets begin, Git would read it as a packet of band 'E' and stop with
  * "bad band #69"); an overloaded authority is rethrown, so the request can be tried again
- * before any byte went out (`retried`; Git itself retries nothing). The pack of a fetch that
+ * before any byte went out (`retrier`; Git itself retries nothing). The pack of a fetch that
  * has nothing (`fresh`: a clone, partial or shallow, or a partial clone's checkout) is
  * streamed from the store when held there, else stored as it streams (PACK_CACHE=on), or by
  * a job the fetch is handed to when this isolate cannot store it. The session is opened only
