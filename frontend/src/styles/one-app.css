@@ -189,16 +189,18 @@ a.chip:hover {
   font-size: var(--text-sm);
 }
 @media (max-width: 800px) {
-  /* The button isn't at the screen's edge here, so the panel takes the screen's width. */
+  /* The button isn't at the toolbar's edge here, so the panel takes the toolbar's width. */
+  .clone-menu {
+    position: static;
+  }
+  .source-toolbar {
+    position: relative;
+  }
   .clone-dropdown {
-    position: fixed;
-    top: auto;
-    right: 16px;
-    left: 16px;
+    top: 100%;
+    right: 0;
+    left: 0;
     width: auto;
-    max-height: calc(100vh - 32px);
-    margin-top: 6px;
-    overflow-y: auto;
   }
 }
 .clone-hint a {
