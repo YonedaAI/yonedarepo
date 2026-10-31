@@ -1,10 +1,13 @@
-// Admin overview: account, activity and repository totals, and sign-ups per day for 30 days.
+// Admin overview: account, activity and repository totals, sign-ups per day for 30 days, and the
+// revenue view where ADMIN_BILLING is on.
+import type { Navigate } from '../shell/useRoute';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { useSource } from '../source-platform/useSource';
 import { DayChart } from './AdminParts';
+import { AdminRevenueSection } from './AdminRevenue';
 import type { Overview } from './adminModel';
 
-export function AdminOverview() {
+export function AdminOverview({ navigate }: { navigate: Navigate }) {
   const overview = useSource<Overview>('/admin/overview');
   if (overview.loading && !overview.data) return <Loading what="the overview" />;
   if (overview.error || !overview.data)
@@ -43,6 +46,7 @@ export function AdminOverview() {
         picked a handle, joined one or hold a token. Other older accounts appear when they next sign
         in.
       </p>
+      {overview.data.billing && <AdminRevenueSection navigate={navigate} />}
     </>
   );
 }

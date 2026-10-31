@@ -41,9 +41,11 @@ export interface ManagedEnv {
   STRIPE_WEBHOOK_SECRET?: string;
   /** Stripe's API origin (tests point it at a fake). */
   STRIPE_API_BASE?: string;
-  /** Operators' billing (admin routes, the new Stripe events, the nightly reconcile): `on`, or
-   * none of it exists. Set with the platform Worker's. */
+  /** Operators' billing (admin routes, the new Stripe events, the nightly reconcile, the revenue
+   * rollup): `on`, or none of it exists. Set with the platform Worker's. */
   ADMIN_BILLING?: string;
+  /** The platform's D1, for the two tables of the revenue rollup and no others. */
+  INDEX?: D1Database;
   /** Worker secret, optional: a restricted key for refunds and nothing else; unset, the refund
    * route answers NOT_CONFIGURED. STRIPE_SECRET_KEY never refunds. */
   STRIPE_REFUND_KEY?: string;
@@ -90,7 +92,9 @@ export type QueueMessage =
   | { kind: 'refund'; account: string; id: string }
   /** The nightly reconcile: find the accounts Stripe saw activity for, then each one. */
   | { kind: 'reconcile-all' }
-  | { kind: 'reconcile'; account: string };
+  | { kind: 'reconcile'; account: string }
+  /** Push every day of an account's ledger to the revenue rollup again. */
+  | { kind: 'rollup'; account: string };
 
 export class ConfigError extends Error {}
 

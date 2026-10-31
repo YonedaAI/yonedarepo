@@ -232,6 +232,30 @@ How it behaves:
 
 A refund Stripe reports as succeeded and later fails is not reversed automatically: nothing here listens for it. The reconcile logs it as `refund_total`.
 
+### Revenue
+
+The Overview shows platform-wide money with `ADMIN_BILLING` on. Page loads read D1 and wake no ledger. Every figure is the ledger's, in micro-USD, by UTC day.
+
+To turn it on, after the steps above:
+
+1. Deploy. D1 migration `0012` runs first, then the managed Worker, which binds the platform's D1 as `INDEX` for `billing_daily` and `billing_accounts` alone.
+2. On the Overview, press **Rebuild from the ledgers** once. Ledgers from before the rollup hold days it has never seen, and only a rebuild sends them. It wakes every account in `platform_accounts` and every repository owner, so it isn't for routine use.
+
+How it stays right:
+
+- **Outbox.** Triggers mark a day in the transaction that changes it, so no write path can skip the rollup. The ledger's alarm pushes marked days to D1 about 5 seconds later, outside any transaction, as whole rows. A D1 outage delays the figures, keeps the marks, retries each minute, and never touches a charge.
+- **Retries.** `version` rises with each push, so a late retry can't overwrite newer numbers.
+- **Checks.** The nightly reconcile holds the ledger to Stripe and the rollup to the ledger (`rollup_total`), for accounts with Stripe activity in the last two days.
+
+What the figures mean:
+
+- **Net revenue** is gross top-ups less refunds and disputes lost: money kept, on a cash basis. It includes credit sold and not yet used, and it is before Stripe's fees, which aren't in the ledger. A lost dispute counts the disputed money, not Stripe's dispute fee.
+- **Refunds** count on the day Stripe confirmed them. A refund still open is under **Refunds awaiting Stripe**.
+- **Credit outstanding** is each account's position now, not the range's. Sold credit is what the balance holds of top-ups under the oldest-first rule; the rest of a positive balance was given away.
+- **Model cost** is the provider's reported usage at list rates, recorded per call. It isn't an invoice, so a discount or a provider's rounding isn't in it. **Margin** exists only for those calls.
+- **Not recorded**: container cost, the cost of calls with an unknown outcome, and Stripe fees. Container time is charged at a flat rate with no cost beside it.
+- **Usage includes free credit.** Model margin counts calls paid with promotional credit, which brought in no money. The free credit granted in the range is shown beside it.
+
 ## Recovery
 
 Queues are at least once: redelivery is expected, so consumers must be idempotent (leases, epochs, idempotency keys). The dead-letter queue is diagnostic transport evidence; the repository Durable Object's records remain authoritative. Check the repository's current state before retrying anything by hand.

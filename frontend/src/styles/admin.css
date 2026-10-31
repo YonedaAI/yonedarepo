@@ -343,7 +343,8 @@
   gap: 16px;
   min-width: 0;
 }
-.admin-billing .source-table-wrap {
+.admin-billing .source-table-wrap,
+.admin-revenue .source-table-wrap {
   /* Holds the header's sr-only text, which would otherwise widen the page at phone width. */
   position: relative;
   max-width: 100%;
@@ -394,4 +395,37 @@
   font-family: var(--mono);
   font-size: var(--text-sm);
   overflow-wrap: anywhere;
+}
+/* The revenue view (features/admin/AdminRevenue.tsx). */
+.admin-revenue {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.admin-revenue-range {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+.admin-revenue-range label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.admin-revenue-range input,
+.admin-revenue-range select {
+  padding: 7px 9px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.admin-unrecorded {
+  color: var(--muted);
+  font-style: italic;
 }

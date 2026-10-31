@@ -16,7 +16,12 @@ const RECONCILE_AT = { hour: 3, minute: 17 };
 export const adminBillingOn = (env: Env) => env.ADMIN_BILLING === 'on';
 
 /** The managed Worker's answer, or its refusal as this API's own. */
-async function managed(env: Env, method: 'GET' | 'POST', path: string, body?: Json): Promise<Json> {
+export async function managed(
+  env: Env,
+  method: 'GET' | 'POST',
+  path: string,
+  body?: Json,
+): Promise<Json> {
   if (!env.MANAGED || !env.MANAGED_ADMIN_TOKEN)
     throw new ApiError('NOT_CONFIGURED', 'Billing is not reachable from this platform');
   const answer = await env.MANAGED.fetch(`https://managed${path}`, {

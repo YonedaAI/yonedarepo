@@ -58,6 +58,19 @@ async function grantCredit(req: Request, env: ManagedEnv, account: string) {
   return json({ balance: granted.balance, resumed: granted.resume.length });
 }
 
+/** `POST /admin/billing/rollup {accounts}`: each ledger pushes every day again, from the queue. */
+async function rollupRebuild(req: Request, env: ManagedEnv) {
+  const body = (await req.json().catch(() => null)) as { accounts?: unknown } | null;
+  const accounts = Array.isArray(body?.accounts) ? (body.accounts as unknown[]) : [];
+  const names = accounts.map((a) => workspaceName(typeof a === 'string' ? a : undefined));
+  if (!names.length || names.length > 100 || names.includes(null))
+    return refuse('INVALID_INPUT', 'accounts lists 1 to 100 accounts', 400);
+  await env.RUNS.sendBatch(
+    names.map((account) => ({ body: { kind: 'rollup', account } as QueueMessage })),
+  );
+  return json({ queued: names.length }, 202);
+}
+
 /** `GET /admin/accounts/<account>/credit`: the balance and the ten newest ledger entries. */
 async function creditState(env: ManagedEnv, account: string) {
   const ledger = ledgerStub(env, account);
@@ -97,6 +110,11 @@ export async function managedFetch(req: Request, env: ManagedEnv): Promise<Respo
     if (!adminBillingOn(env)) return refuse('NOT_FOUND', 'Not found', 404);
     await env.RUNS.send({ kind: 'reconcile-all' });
     return json({ queued: true }, 202);
+  }
+  if (url.pathname === '/admin/billing/rollup' && req.method === 'POST') {
+    if (!(await admin(req, env))) return refuse('UNAUTHORIZED', 'Admin token required', 401);
+    if (!adminBillingOn(env)) return refuse('NOT_FOUND', 'Not found', 404);
+    return rollupRebuild(req, env);
   }
   if (parts[0] === 'admin' && parts[1] === 'accounts' && parts[3] === 'billing') {
     if (!(await admin(req, env))) return refuse('UNAUTHORIZED', 'Admin token required', 401);

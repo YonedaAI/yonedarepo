@@ -491,6 +491,8 @@
         "Refunds also need STRIPE_REFUND_KEY (optional secret: a restricted key, Refunds write; unset: the",
         "refund route answers NOT_CONFIGURED) and the vars REFUND_MAX_USD and REFUND_DAILY_USD (per refund,",
         "and per UTC day across all accounts; unset: every refund is refused).",
+        "INDEX is the platform's D1, bound for the revenue rollup alone: each ledger pushes its changed",
+        "days to billing_daily and billing_accounts (managed/ledger-rollup.ts), with ADMIN_BILLING on.",
         "Deployed before the front Worker, which binds it as MANAGED."
       ],
       "secrets": [
@@ -509,6 +511,12 @@
         "name": "{prefix}-agents-managed",
         "main": "managed/index.ts",
         "compatibility_date": "2026-10-07",
+        "d1_databases": [
+          {
+            "binding": "INDEX",
+            "database_name": "{prefix}-platform-index"
+          }
+        ],
         "workers_dev": false,
         "preview_urls": false,
         "observability": {

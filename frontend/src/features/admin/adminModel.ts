@@ -27,6 +27,8 @@ export type Overview = {
   suspended: number;
   repos: { public: number; private: number };
   signups_per_day: { day: string; count: number }[];
+  /** Whether the revenue view exists here (ADMIN_BILLING). */
+  billing?: boolean;
 };
 export type AdminAccount = {
   account: string;
