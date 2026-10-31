@@ -13,6 +13,7 @@ import {
   accountRowOf,
   audit,
   auditLog,
+  largestRepos,
   listAccounts,
   listRepos,
   overview,
@@ -76,6 +77,7 @@ export async function adminRoute(
       return setSuspended(env, actor, account, action === 'suspend');
   }
   if (section === 'repos' && !id && get) return listRepos(env, query.get('q'), query.get('before'));
+  if (section === 'repos' && id === 'largest' && !action && get) return largestRepos(env);
   if (section === 'repos' && id) {
     if (!/^r[0-9a-f]{20}$/.test(id)) throw new ApiError('NOT_FOUND', 'Unknown repository');
     if (!action && get) return repoDetail(env, id);
@@ -208,11 +210,15 @@ async function asOwner(env: Env, repo: string) {
   return { row, ctx: new RepoContext(env, repo, caller(env, repo, auth)) };
 }
 
-/** `GET repos/<id>`: the listing row and the repository's quarantine records. */
+/** `GET repos/<id>`: the listing row, the repository's quarantine records and what its
+ * database holds now (null when that cannot be read: the rest of the page still helps). */
 async function repoDetail(env: Env, repo: string) {
   const { row, ctx } = await asOwner(env, repo);
-  const quarantines = await ctx.call({ op: 'repo_quarantines' });
-  return { ...row, quarantines: quarantines.records ?? [] };
+  const [quarantines, storage] = await Promise.all([
+    ctx.call({ op: 'repo_quarantines' }),
+    ctx.call({ op: 'repo_storage' }).catch(() => null),
+  ]);
+  return { ...row, quarantines: quarantines.records ?? [], storage };
 }
 
 /** `POST repos/<id>/quarantine {blob | path (at ref) | session, reason}` or

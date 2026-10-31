@@ -46,6 +46,12 @@ export type AdminRepo = {
   visibility: 'public' | 'private';
   created_at: number;
 };
+/** A repository with the database size last sampled and the alert level it reached. */
+export type LargeRepo = AdminRepo & { db_bytes: number; level: number | null };
+/** A repository's database now (null when it could not be read). */
+export type RepoDetail = AdminRepo & {
+  storage: { db_bytes: number; table_rows: Record<string, number> } | null;
+};
 export type Page<T> = { items: T[]; next: number | null };
 export type Credit = {
   balance: { granted: number; used: number; balance: number };
@@ -86,6 +92,8 @@ export const accountsPath = (q: string, before?: number) =>
   withQuery('/admin/accounts', { q: q.trim(), before });
 export const reposPath = (q: string, before?: number) =>
   withQuery('/admin/repos', { q: q.trim(), before });
+export const LARGEST_PATH = '/admin/repos/largest';
+export const repoPath = (repo: string) => `/admin/repos/${repo}`;
 export const signupsPath = (since: number) => `/admin/signups?since=${since}`;
 export const auditPath = (before?: number) => withQuery('/admin/audit', { before });
 export const accountPath = (account: string) => `/admin/accounts/${encodeURIComponent(account)}`;
@@ -105,6 +113,14 @@ export function when(at: number | null | undefined) {
     minute: '2-digit',
   });
 }
+/** A database size in decimal units, like the alert levels: `9.1 GB`, `120 MB`. */
+export function dbSize(bytes: number) {
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
+  return bytes >= 1e6 ? `${Math.round(bytes / 1e6)} MB` : `${Math.round(bytes / 1e3)} KB`;
+}
+/** The label of an alert level, or null below the first. */
+export const storageAlert = (level: number | null) =>
+  level === null ? null : `Over ${level / 1e9} GB`;
 export const usd = (micro: number) => `$${(micro / 1_000_000).toFixed(2)}`;
 
 /** The sidebar badge's text: empty for none, capped at 99+. */
