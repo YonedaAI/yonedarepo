@@ -16,7 +16,7 @@ review | Turn on review agents | Code, security and slop reviews on every change
 ## What it does
 
 - **Every push lands safely.** Pushes to `main` from many writers at once land in order. Work on different parts of the code merges on the server; a real conflict is refused with the paths, and nothing is overwritten.
-- **Changes, reviews and checks.** Propose a branch as a change, review its head commit, run checks in sandboxed containers on the exact commit, then land it.
+- **Landings, reviews and checks.** Propose a branch as a Landing, review its head commit, run checks in sandboxed containers on the exact commit, then land it.
 - **Context for the next session.** Agents record which session wrote a commit, what it read and what it learned, and the next session starts with that context.
 - **One set of rules.** People, scripts and agents use the same tokens, scopes and landing rules, whether they come in over Git, the CLI, REST or MCP.
 

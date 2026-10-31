@@ -1,4 +1,5 @@
 //! Typed access to platform tables.
+pub use super::auto_landing::AutoLandings;
 pub use super::checkpoints::{checkpoint_at_or_before, maybe_checkpoint, refs_digest_at};
 pub use super::policy::{Policy, Runner, check_name};
 pub use super::visibility::Visibility;
@@ -25,6 +26,8 @@ pub struct Settings {
     pub parent: Option<(String, u64)>,
     /// Who reads it besides its owner and members (`visibility`).
     pub visibility: Visibility,
+    /// The repository's Landing switches.
+    pub auto_landings: AutoLandings,
 }
 
 impl Settings {
@@ -105,6 +108,7 @@ pub fn settings<S: SqlStore>(db: &S) -> Result<Settings> {
             )
         }),
         visibility: Visibility::parse(&text("visibility")?)?,
+        auto_landings: AutoLandings::of(&row),
     })
 }
 
@@ -119,6 +123,13 @@ pub fn object_id(v: &Value, key: &str) -> Result<ObjectId> {
 fn ids(text: &str) -> Result<Vec<ObjectId>> {
     let raw: Vec<String> = serde_json::from_str(text).map_err(|_| corrupt("parents"))?;
     raw.iter().map(|id| ObjectId::parse(id)).collect()
+}
+
+/// The short name of branch `name`, as `branch_ref` validates it.
+pub fn short_branch(name: &str) -> Result<String> {
+    Ok(branch_ref(&json!({ "ref": name }))?
+        .trim_start_matches("refs/heads/")
+        .to_owned())
 }
 
 pub fn commit_row<S: SqlStore>(db: &S, id: &ObjectId) -> Result<Option<CommitRow>> {

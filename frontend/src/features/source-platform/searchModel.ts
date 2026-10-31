@@ -142,7 +142,7 @@ export function recordSections(
   if (answer.changes?.count)
     sections.push({
       key: 'changes',
-      title: 'Changes',
+      title: 'Landings',
       count: counted(answer.changes),
       rows: answer.changes.results.map((c) => ({
         key: String(c.number),

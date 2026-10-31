@@ -54,6 +54,7 @@ export async function receiveHook(req: Request, env: ManagedEnv, repo: string): 
     (family === 'branch' && (action === 'moved' || action === 'created'));
   if (!wanted || !commit) return json({ ignored: true }, 202);
   const number = Number(event.change?.number);
+  const at = Date.parse(String(event.at));
   await env.RUNS.send({
     kind: 'event',
     repo,
@@ -62,6 +63,7 @@ export async function receiveHook(req: Request, env: ManagedEnv, repo: string): 
     commit,
     change: Number.isSafeInteger(number) && number > 0 ? number : null,
     action,
+    ...(Number.isFinite(at) ? { at } : {}),
   });
   return json({ queued: true }, 202);
 }
@@ -154,7 +156,8 @@ async function onEvent(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'event'
     { account: connection.account, platform },
     enabled,
     changes,
-    m.event === 'change',
+    // No `change.opened` reaches this hook for a push's own row: the push that opened it does.
+    m.event === 'change' || changes.some((c) => c.origin === 'auto' && c.created_at === m.at),
   );
 }
 

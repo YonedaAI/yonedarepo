@@ -1,7 +1,7 @@
 //! The rules behind each requirement: required checks and approvals as landing decides them
 //! (`land_gates::gates`), unresolved review comments, and freshness against the base.
 use super::{GateKind, GateRequirement, GateState, requirement};
-use crate::repo_store::{land_gates, rows};
+use crate::repo_store::{go_around, land_gates, rows};
 use crate::storage::SqlStore;
 use serde_json::{Value, json};
 use std::collections::HashSet;
@@ -18,7 +18,7 @@ fn plural(n: usize, one: &str) -> String {
 }
 
 /// Each required check and the approvals, as landing decides them (`land_gates::gates`).
-pub(super) fn policy<S: SqlStore>(
+pub(in crate::repo_store) fn policy<S: SqlStore>(
     db: &S,
     id: &ObjectId,
     base: &str,
@@ -115,8 +115,43 @@ pub(super) fn policy<S: SqlStore>(
     Ok(out)
 }
 
+/// Unresolved agent findings on the head, with the repository's switch on: landing refuses
+/// them on a protected base (`land_gates::gates`).
+pub(super) fn findings<S: SqlStore>(
+    db: &S,
+    id: &ObjectId,
+    base: &str,
+    enforced: bool,
+) -> Result<GateRequirement> {
+    let refname = format!("refs/heads/{base}");
+    let open = go_around::agent_findings(db, id, &refname)?;
+    Ok(if open == 0 {
+        requirement(
+            GateKind::Findings,
+            "Agent findings",
+            GateState::Ready,
+            "No unresolved agent findings".to_owned(),
+            enforced,
+        )
+    } else {
+        requirement(
+            GateKind::Findings,
+            "Agent findings",
+            GateState::Blocked,
+            format!(
+                "{}; resolve them or push a fix",
+                plural(open as usize, "unresolved agent finding")
+            ),
+            enforced,
+        )
+    })
+}
+
 /// Unresolved comments anchored to the diff (general discussion is not counted).
-pub(super) fn comments<S: SqlStore>(db: &S, number: &Value) -> Result<GateRequirement> {
+pub(in crate::repo_store) fn comments<S: SqlStore>(
+    db: &S,
+    number: &Value,
+) -> Result<GateRequirement> {
     let open = db.query(
         "SELECT COUNT(*) AS n FROM change_comments WHERE change_number=? AND path IS NOT NULL \
          AND resolved_at IS NULL",

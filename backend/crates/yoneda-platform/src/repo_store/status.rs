@@ -4,7 +4,7 @@
 use super::auth::Actor;
 use super::history_fill::{HistoryFill, HistoryStopped};
 use super::members::Role;
-use super::rows::{self, Policy, Settings, Visibility};
+use super::rows::{self, AutoLandings, Policy, Settings, Visibility};
 use crate::storage::SqlStore;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -28,6 +28,8 @@ pub struct RepoStatus {
     pub bundled: bool,
     /// Whether automation is paused, and by whom.
     pub automation: Value,
+    /// Whether a push opens a Landing, and whether agents run on those.
+    pub landings: AutoLandings,
     /// Set on a fork: the repository it was forked from and that one's version at the fork.
     pub parent: Option<ForkParent>,
     /// How many forks read this repository's objects (it is deleted only after them).
@@ -138,6 +140,7 @@ pub fn status<S: SqlStore>(db: &S, settings: &Settings, actor: &Actor) -> Result
         objects: super::staging::status(db)?,
         bundled: super::pushed::bundles::any(db)?,
         automation: super::break_glass::state(db)?,
+        landings: settings.auto_landings,
         parent: settings.parent.as_ref().map(|(repo, version)| ForkParent {
             repo: repo.clone(),
             version: *version,

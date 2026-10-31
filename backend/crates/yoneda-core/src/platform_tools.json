@@ -1106,7 +1106,7 @@
   },
   {
     "name": "git_context",
-    "description": "What a coding session starting work should know, in one read: main's head (and branch's, when named), the landing rules, the newest session records (what earlier sessions did), open change requests, and the newest authored symbol contracts, those on paths first, and the repository's current memories ranked for those paths. With branch, go_around holds the open findings on that branch's open change, each with its file and line (at most 10 of open, those on the head first; on_head false means an older commit): read them, fix, push, and a re-review runs on the push.",
+    "description": "What a coding session starting work should know, in one read: main's head (and branch's, when named), the landing rules, the newest session records (what earlier sessions did), open change requests, and the newest authored symbol contracts, those on paths first, and the repository's current memories ranked for those paths. With branch, go_around holds the open findings on that branch's open change, each with its file and line (at most 10 of open, those on the head first; on_head false means an older commit): read them, fix, push, and a re-review runs on the push. traffic warns of open Landings on the same work: warnings (at most 8, ranked same symbol, same file, then a Landing that read the file) name the landing, overlap, path and symbols, more counts the rest. It covers paths, symbols (path#symbol_path) and, with branch, what that branch changed; the branch's own Landing is left out.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1114,6 +1114,13 @@
           "type": "string"
         },
         "paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 100
+        },
+        "symbols": {
           "type": "array",
           "items": {
             "type": "string"
@@ -1309,7 +1316,7 @@
   },
   {
     "name": "git_context_relevant",
-    "description": "What is relevant to the files, symbols (path#symbol_path) and/or text (e.g. the task) you are working on, ranked in one read: current memories, authored contracts, recent session records and open change requests. Ranked by where each is anchored (a named symbol, then the file, then its directory), plus matching words of query, then fresh before stale, then newest. types narrows it (memory, contract, session, change); limit is at most 50.",
+    "description": "What is relevant to the files, symbols (path#symbol_path) and/or text (e.g. the task) you are working on, ranked in one read: current memories, authored contracts, recent session records and open change requests. Ranked by where each is anchored (a named symbol, then the file, then its directory), plus matching words of query, then fresh before stale, then newest. types narrows it (memory, contract, session, change); limit is at most 50. traffic warns of open Landings on the files and symbols named (as in git_context); branch leaves out your own Landing and counts what it changed as yours. A read at an older version has none.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1326,6 +1333,9 @@
             "type": "string"
           },
           "maxItems": 100
+        },
+        "branch": {
+          "type": "string"
         },
         "query": {
           "type": "string",
@@ -2372,6 +2382,21 @@
       "required": [
         "number"
       ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_ctc_radar",
+    "description": "What CTC, Code Traffic Control, sees: every open Landing (the newest limit, default 25, at most 50, and always those in line) with the decision the job would make as things stand (cleared, hold or go_around, with its reasons; with land_when_cleared off, nothing lands on it), its place in line (queued tickets, then cleared, oldest first, then waiting), the other Landings on the same work (same symbol, same file, or one that read what another wrote) and the last decision recorded on it. truncated says there are more. Reading it records nothing. Needs a whole-repository credential. REST: GET /ctc.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        }
+      },
       "additionalProperties": false
     }
   },

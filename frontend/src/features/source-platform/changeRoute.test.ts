@@ -137,6 +137,9 @@ describe('route wording', () => {
     expect(deliveredItems(deliveries).map((i) => i.type)).toEqual(['memory', 'change']);
     expect(deliveredLine(deliveries)).toBe('1 memory and 1 other item delivered · 340 B');
     expect(deliveredLine(deliveries.slice(1))).toBe('1 memory delivered · 40 B');
+    const warned = (label: string) => ({ type: 'traffic', id: 5, label });
+    const files = [warned('Landing #5: a.rs'), warned('Landing #5: b.rs')];
+    expect(deliveredItems([{ ...deliveries[0], items: files }])).toHaveLength(2);
     expect(
       deliveredLine([{ ...deliveries[0], items: [{ type: 'change', id: 1, label: null }] }]),
     ).toBe('1 item delivered · 300 B');

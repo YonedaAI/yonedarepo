@@ -43,6 +43,23 @@ pub fn occ_writing<S: SqlStore>(
     Ok(proposal.check(&later, &super::symbols::refinements(db, &later)?))
 }
 
+/// Whether one indexed read proves `occ` would find no conflict: `refname` moved since `commit`
+/// (or it would answer `FastForward`), and nothing since met what it read. A symbol's read counts
+/// as its whole file here, so a `false` proves nothing: it is `occ`'s to say. Log entries that
+/// have been archived have left the index, so nor does this speak for them.
+pub fn reads_untouched<S: SqlStore>(db: &S, commit: &CommitRow, refname: &str) -> Result<bool> {
+    let since = branch_since(db, commit, refname)?;
+    if since < super::maintenance::archive::floor(db)? {
+        return Ok(false);
+    }
+    let moved = db.query(
+        "SELECT 1 AS x FROM txlog WHERE version>? AND refname=? LIMIT 1",
+        &[json!(since), json!(refname)],
+    )?;
+    let reads: BTreeSet<String> = commit.read_set.iter().cloned().collect();
+    Ok(!moved.is_empty() && !super::changesets::touched_since(db, refname, since, &reads)?)
+}
+
 /// The version after which `refname`'s landings are concurrent with `commit`. A base version
 /// is pinned to main's head (what the author read), so on an unprotected branch it can
 /// postdate another landing there that the commit does not contain (a pushed commit on the

@@ -35,7 +35,7 @@ function Runs({
   if (!runs.length)
     return (
       <p className="source-empty">
-        No runs yet. It reviews a change when one opens or is pushed on its repositories.
+        No runs yet. It reviews a Landing when one opens or is pushed on its repositories.
       </p>
     );
   return (

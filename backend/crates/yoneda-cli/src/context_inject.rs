@@ -1,7 +1,8 @@
 //! Continuous context for a coding session: when it reads a file, the memories and
 //! contracts anchored there, and for each new prompt, whatever is relevant to its words
-//! (memories, contracts, recent sessions, open changes), each only once per session. One
-//! platform read ranks them (`GET /context/relevant` with the session id, which leaves out
+//! (memories, contracts, recent sessions, open changes), each only once per session. A read
+//! also hears of the open Landings on that file (`traffic`), first, once per Landing and file.
+//! One platform read ranks them (`GET /context/relevant` with the session id, which leaves out
 //! what this session was already shown and reports the bytes injected so far); the text is
 //! capped at `PER_INJECTION` bytes and `PER_SESSION` bytes after the start, and each
 //! injection is recorded (`POST /context/deliveries`) so the session page can show it.
@@ -11,7 +12,7 @@ use crate::api::{Api, encode};
 use crate::command::Target;
 use crate::error::{Error, Result};
 use crate::session_cmd::{Here, relative};
-use crate::target;
+use crate::{target, traffic};
 use serde_json::{Value, json};
 use std::path::Path;
 use std::time::Duration;
@@ -115,6 +116,22 @@ pub fn render(heading: &str, items: &[Value], budget: usize) -> Option<(String, 
     (!shown.is_empty()).then_some((text, shown))
 }
 
+/// Traffic, then the items under `heading`, in at most `room` bytes.
+fn compose(heading: &str, read: &Value, room: usize) -> Option<(String, Vec<Value>)> {
+    let items = read["items"].as_array().cloned().unwrap_or_default();
+    let warned = traffic::block(&read["traffic"], room);
+    let (mut text, mut shown) = warned.unwrap_or_default();
+    match render(heading, &items, room - text.len()) {
+        Some((rest, more)) => {
+            text.push_str(&rest);
+            shown.extend(more);
+        }
+        None if shown.is_empty() => return None,
+        None => {}
+    }
+    Some((text, shown))
+}
+
 /// How much of the session's budget is left after `delivered` bytes.
 pub fn budget(delivered: u64) -> usize {
     PER_INJECTION.min(PER_SESSION.saturating_sub(delivered as usize))
@@ -177,7 +194,10 @@ pub async fn inject(
                     ""
                 }
             );
-            let query = format!("paths={}&types=memory,contract", encode(&files.join(",")));
+            let mut query = format!("paths={}&types=memory,contract", encode(&files.join(",")));
+            if let Ok(branch) = at.git.run(&["symbolic-ref", "--short", "HEAD"]) {
+                query.push_str(&format!("&branch={}", encode(&branch)));
+            }
             (query, "read", Some(first), heading)
         }
         Trigger::Prompt(prompt) => {
@@ -205,8 +225,7 @@ pub async fn inject(
     if room < MIN_BUDGET {
         return Ok(None);
     }
-    let items = read["items"].as_array().cloned().unwrap_or_default();
-    let Some((text, shown)) = render(&heading, &items, room) else {
+    let Some((text, shown)) = compose(&heading, &read, room) else {
         return Ok(None);
     };
     // Shown even when the record fails: it only dedupes later injections.
@@ -253,6 +272,34 @@ mod tests {
         );
         assert!(render("H:", &items, 10).is_none());
         assert!(render("H:", &[], 1000).is_none());
+    }
+
+    fn warned(landing: u64) -> Value {
+        json!({"landing": landing, "overlap": "file", "path": "src/net.rs", "symbols": [],
+               "title": "Retry budget", "branch": "fix"})
+    }
+
+    #[test]
+    fn traffic_comes_first_and_shares_the_budget() {
+        let read = json!({"items": [memory(1, "retry() must stay idempotent.", false)],
+                          "traffic": {"more": 0, "warnings": [warned(5)]}});
+        let (text, shown) = compose("Memory:", &read, PER_INJECTION).unwrap();
+        assert!(text.starts_with(
+            "CTC traffic on the files you read:\n- Landing 5 (\"Retry budget\", branch fix) is changing src/net.rs\nMemory:\n"
+        ));
+        assert_eq!(
+            shown,
+            [
+                json!({"type": "traffic", "id": 5, "path": "src/net.rs"}),
+                json!({"type": "memory", "id": 1})
+            ]
+        );
+        // Traffic alone is worth an injection, and a small budget holds only what fits.
+        let alone = json!({"items": [], "traffic": {"more": 0, "warnings": [warned(5)]}});
+        assert!(compose("Memory:", &alone, PER_INJECTION).is_some());
+        let some = compose("Memory:", &read, 150).unwrap();
+        assert!(some.0.len() <= 150, "{}", some.0);
+        assert!(compose("Memory:", &json!({"items": []}), PER_INJECTION).is_none());
     }
 
     #[test]

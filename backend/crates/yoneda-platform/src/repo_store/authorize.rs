@@ -123,7 +123,11 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
                 "Only the platform merger lands queued work",
             ))
         }
-        R::SetPolicy => actor.require_owner(),
+        R::LandClearance if !actor.can("clearance") => Err(Error::new(
+            "FORBIDDEN",
+            "Only the platform's clearance job asks this",
+        )),
+        R::SetPolicy | R::AutoLandings => actor.require_owner(),
         // Admins manage other members; only the owner manages admins (`members`).
         R::Members | R::MemberPut | R::MemberRemove => actor.require_owner(),
         // Hooks reveal repository events to an outside URL: the owner (or repo:admin) decides.
@@ -157,6 +161,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::Commit
         | R::ContractList
         | R::Contracts
+        | R::CtcRadar
         | R::ErasePlan
         | R::EraseStep
         | R::HoldOwner
@@ -169,6 +174,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::LandBatch
         | R::LandChangesets
         | R::LandClaim
+        | R::LandClearance
         | R::LandRelease
         | R::LandStatus
         | R::LandSubmitted

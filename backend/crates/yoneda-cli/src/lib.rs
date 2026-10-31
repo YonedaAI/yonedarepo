@@ -60,5 +60,6 @@ mod sync;
 mod target;
 #[cfg(test)]
 mod testkit;
+mod traffic;
 
 pub use run::main;

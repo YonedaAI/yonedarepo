@@ -31,6 +31,7 @@ mod platform_build;
 mod platform_code;
 mod platform_compute;
 mod platform_contracts;
+pub(crate) mod platform_ctc;
 mod platform_derived;
 mod platform_facts;
 mod platform_facts_rust;

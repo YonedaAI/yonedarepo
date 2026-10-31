@@ -76,10 +76,10 @@ export const BUILD_ON: BuildOnItem[] = [
   {
     id: 'changes',
     icon: ShieldCheck,
-    title: 'Changes & gates',
-    subtitle: 'Ship when every gate is green',
+    title: 'Landings & clearance',
+    subtitle: 'Cleared to land when every gate is green',
     lead: 'Nothing reaches main until it has earned it.',
-    more: 'Review a change line by line, collect approvals on its latest commit, and land the moment every required gate passes.',
+    more: 'Review a Landing line by line, collect approvals on its latest commit, and land the moment every required gate passes.',
     feature: 'changes',
   },
   {
@@ -107,7 +107,7 @@ export const BUILD_ON: BuildOnItem[] = [
     title: 'Continuous Memory',
     subtitle: 'Every agent picks up where the last one left off',
     lead: 'Agents that remember.',
-    more: 'Every commit keeps the session that wrote it: what it read and what it said. Each new session opens with `yoneda context`: what the last ones did, the open changes and the rules. No cold starts, no repeated mistakes.',
+    more: 'Every commit keeps the session that wrote it: what it read and what it said. Each new session opens with `yoneda context`: what the last ones did, the open Landings and the rules. No cold starts, no repeated mistakes.',
     feature: 'sessions',
     mock: memoryMock,
   },

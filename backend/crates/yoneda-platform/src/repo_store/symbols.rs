@@ -5,7 +5,7 @@
 use super::rows::{self, branch_ref, current_version};
 use crate::storage::{SqlStore, bad, number};
 use serde_json::{Value, json};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use yoneda_core::{
     Error, Result,
     git_object::ObjectId,
@@ -49,15 +49,17 @@ pub fn for_commit<S: SqlStore>(db: &S, id: &ObjectId) -> Result<Vec<SymbolTouch>
         "SELECT path,symbols FROM commit_symbols WHERE commit_id=? ORDER BY path",
         &[json!(id.hex())],
     )?
-    .into_iter()
-    .map(|row| {
-        Ok(SymbolTouch {
-            path: row["path"].as_str().unwrap_or_default().into(),
-            symbols: serde_json::from_str(row["symbols"].as_str().unwrap_or_default())
-                .map_err(|_| rows::corrupt("symbol touches"))?,
-        })
-    })
+    .iter()
+    .map(symbol_touch)
     .collect()
+}
+
+fn symbol_touch(row: &Value) -> Result<SymbolTouch> {
+    Ok(SymbolTouch {
+        path: row["path"].as_str().unwrap_or_default().into(),
+        symbols: serde_json::from_str(row["symbols"].as_str().unwrap_or_default())
+            .map_err(|_| rows::corrupt("symbol touches"))?,
+    })
 }
 
 pub fn as_json(touches: &[SymbolTouch]) -> Value {
@@ -69,15 +71,29 @@ pub fn as_json(touches: &[SymbolTouch]) -> Value {
     )
 }
 
-/// Derived symbol writes of each entry's landed commit, by version.
+/// Derived symbol writes of each entry's landed commit, by version, in one read.
 pub fn refinements<S: SqlStore>(db: &S, entries: &[TxEntry]) -> Result<Refinements> {
+    let landed: Vec<(u64, String)> = (entries.iter())
+        .filter_map(|entry| Some((entry.version, entry.new?.hex())))
+        .collect();
+    let commits: Vec<&String> = landed.iter().map(|(_, commit)| commit).collect();
+    let mut touched: BTreeMap<String, Vec<SymbolTouch>> = BTreeMap::new();
+    if !commits.is_empty() {
+        for row in db.query(
+            "SELECT commit_id,path,symbols FROM commit_symbols \
+             WHERE commit_id IN (SELECT value FROM json_each(?)) ORDER BY path",
+            &[json!(json!(commits).to_string())],
+        )? {
+            touched
+                .entry(row["commit_id"].as_str().unwrap_or_default().to_owned())
+                .or_default()
+                .push(symbol_touch(&row)?);
+        }
+    }
     let mut out = Refinements::new();
-    for entry in entries {
-        if let Some(commit) = entry.new {
-            let touches = for_commit(db, &commit)?;
-            if !touches.is_empty() {
-                out.insert(entry.version, touches);
-            }
+    for (version, commit) in landed {
+        if let Some(touches) = touched.get(&commit) {
+            out.insert(version, touches.clone());
         }
     }
     Ok(out)

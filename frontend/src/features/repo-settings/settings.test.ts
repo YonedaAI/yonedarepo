@@ -14,6 +14,7 @@ const { RepoSettings } = await import('./RepoSettings');
 const { PolicyForm } = await import('./PolicyForm');
 const { ChecksSettings } = await import('./ChecksSettings');
 const { RunnerEditor } = await import('./RunnerEditor');
+const { AutoLandingSettings, autoLandingsRequest } = await import('./AutoLandingSettings');
 
 const html = (type: any, props: any) => renderToStaticMarkup(createElement(type, props));
 const loaded = (value: Partial<Loaded<any>>): Loaded<any> => ({
@@ -80,6 +81,48 @@ describe('policy editing', () => {
     expect(policy.argvText(['cargo', 'test'])).toBe('cargo test');
     expect(policy.argvText(['sh', '-c', 'a && b'])).toBe('["sh","-c","a && b"]');
     expect(policy.listFromText('a, b\n\nc\na')).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('automatic Landings', () => {
+  it('shows both switches, off by default, and keeps agents off until Landings are on', () => {
+    const off = { create: false, agents: false };
+    const page = html(AutoLandingSettings, { repo, landings: off, onChanged: () => {} });
+    expect(page).toContain('Open a Landing for every pushed branch');
+    expect(page).toContain('Run agents on automatic Landings');
+    expect(page).toContain('Costs nothing and starts no agent');
+    expect(page).not.toContain('checked=""');
+    expect(page).toMatch(/<input[^>]*disabled=""[^>]*><span>Run agents/);
+    const on = html(AutoLandingSettings, {
+      repo,
+      landings: { create: true, agents: false },
+      onChanged: () => {},
+    });
+    expect(on).toMatch(/<input[^>]*checked=""[^>]*><span>Open a Landing/);
+    expect(on).not.toContain('disabled=""');
+  });
+  it('shows Land when cleared and blocking findings as their own switches', () => {
+    const page = (landings: object) =>
+      html(AutoLandingSettings, { repo, landings, onChanged: () => {} });
+    const off = page({ create: false, agents: false });
+    expect(off).toMatch(/<input type="checkbox"\/><span>Land when cleared/);
+    expect(off).toContain('Risk not High');
+    expect(off).toMatch(
+      /<input type="checkbox"\/><span>Block landing on unresolved agent findings/,
+    );
+    const on = page({ land_when_cleared: true, findings_block: true });
+    expect(on).toMatch(/<input[^>]*checked=""[^>]*><span>Land when cleared/);
+    expect(on).toMatch(/<input[^>]*checked=""[^>]*><span>Block landing/);
+    expect(autoLandingsRequest('r1', { land_when_cleared: true }).body).toEqual({
+      land_when_cleared: true,
+    });
+  });
+  it('sets one switch at a time', () => {
+    expect(autoLandingsRequest('r1', { agents: true })).toEqual({
+      path: '/repos/r1/auto-landings',
+      method: 'PUT',
+      body: { agents: true },
+    });
   });
 });
 

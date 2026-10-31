@@ -4,13 +4,17 @@
 //! did, newest first), the open change requests, the authored symbol contracts on the
 //! paths the agent is working on (then the newest others), and the repository's current
 //! memories ranked for those paths (`memory::relevance`, the newest others filling the
-//! rest), and the open findings on the branch's change (`go_around`). Every list is bounded;
-//! the client renders and caps the text it hands the agent.
+//! rest), the open findings on the branch's change (`go_around`), and the open Landings on
+//! those paths and on what the branch changed (`traffic`). Every list is bounded; the client
+//! renders and caps the text it hands the agent.
 use super::auth::Actor;
+use super::memory::relevance;
 use super::rows::{self, Settings};
+use super::traffic::{self, Ask};
 use super::{agent_reads, changes, go_around, sessions};
 use crate::storage::{SqlStore, bad};
 use serde_json::{Value, json};
+use std::collections::BTreeSet;
 use yoneda_core::Result;
 
 const MAX_PATHS: usize = 100;
@@ -65,7 +69,7 @@ fn contracts<S: SqlStore>(db: &S, paths: &[String], limit: u64) -> Result<Vec<Va
         .collect()
 }
 
-/// `repo_agent_context {branch?, paths?, sessions?, changes?, contracts?, memories?}`.
+/// `repo_agent_context {branch?, paths?, symbols?, sessions?, changes?, contracts?, memories?}`.
 pub fn context<S: SqlStore>(
     db: &S,
     c: &Value,
@@ -75,11 +79,7 @@ pub fn context<S: SqlStore>(
     sessions::whole_repository(actor)?;
     let branch = match c["branch"].as_str() {
         None => None,
-        Some(name) => Some(
-            rows::branch_ref(&json!({ "ref": name }))?
-                .trim_start_matches("refs/heads/")
-                .to_owned(),
-        ),
+        Some(name) => Some(rows::short_branch(name)?),
     };
     let paths: Vec<String> = match &c["paths"] {
         Value::Null => Vec::new(),
@@ -92,6 +92,16 @@ pub fn context<S: SqlStore>(
     for path in &paths {
         yoneda_core::validate_path(path)?;
     }
+    let symbols = relevance::symbols_of(c)?;
+    let ask = Ask {
+        files: (paths.iter().cloned())
+            .chain(symbols.iter().map(|(path, _)| path.clone()))
+            .collect(),
+        symbols,
+        branch: branch.clone(),
+        start: true,
+        ..Ask::default()
+    };
     let recent = agent_reads::session_list(
         db,
         &json!({ "limit": count(c, "sessions", 8, MAX_SESSIONS)? }),
@@ -118,8 +128,8 @@ pub fn context<S: SqlStore>(
         "sessions": recent["sessions"],
         "changes": open["changes"],
         "go_around": findings,
+        "traffic": traffic::warnings(db, &ask, &actor.grant, &BTreeSet::new())?,
         "contracts": contracts(db, &paths, count(c, "contracts", 5, MAX_CONTRACTS)?)?,
-        "memories": super::memory::relevance::for_start(
-            db, &paths, count(c, "memories", 8, MAX_MEMORIES)?)?,
+        "memories": relevance::for_start(db, &paths, count(c, "memories", 8, MAX_MEMORIES)?)?,
     }))
 }

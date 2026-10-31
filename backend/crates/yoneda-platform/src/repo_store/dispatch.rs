@@ -4,13 +4,13 @@ use super::auth::{self, Actor};
 use super::op::{InitOp, Op, RepoOp as R, StoreOp};
 use super::rows::{self, Settings};
 use super::{
-    activity, adopt, agent_context, agent_reads, annotated, bisect, branches, capacity,
-    change_comments, change_delete, change_gates, change_instruments, change_records, change_route,
-    changes, changesets, checks, classes, contracts, flight_plans, git_http, head, history,
-    history_fill, history_import, hook_delivery, hook_events, hooks, land, land_batch, land_queue,
-    land_tickets, legal_hold, members, merging, prepare, projection, projection_plan, pushed,
-    reads, rebase, record, releases, search_records, sessions, staging, store_lineage, submitted,
-    symbols, tags, tokens, version_projection,
+    activity, adopt, agent_context, agent_reads, annotated, auto_landing, bisect, branches,
+    capacity, change_closing, change_comments, change_delete, change_gates, change_instruments,
+    change_records, change_route, changes, changesets, checks, classes, contracts, flight_plans,
+    git_http, head, history, history_fill, history_import, hook_delivery, hook_events, hooks, land,
+    land_batch, land_queue, land_tickets, land_when_cleared, legal_hold, members, merging, prepare,
+    projection, projection_plan, pushed, reads, rebase, record, releases, search_records, sessions,
+    staging, store_lineage, submitted, symbols, tags, tokens, version_projection,
 };
 use super::{
     authorize::authorize, break_glass, deletion, erase, forks, grants, lfs, maintenance, memory,
@@ -48,7 +48,9 @@ pub(super) fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     if legal_hold::refuses(op) && !settings.erased() {
         legal_hold::require_free(c, &settings.workspace)?;
     }
-    let result = run(db, c, op, &actor, &settings)?;
+    let since = land_when_cleared::watching(db, op, &settings);
+    let mut result = run(db, c, op, &actor, &settings)?;
+    land_when_cleared::ask_for_jobs(db, op, c, since, &mut result);
     Ok(grants::redact(op, &actor.grant, result))
 }
 
@@ -136,10 +138,11 @@ fn run<S: SqlStore>(
         R::Changes => changes::list(db, c, actor),
         R::ChangeShow => changes::show(db, c, actor, settings),
         R::ChangeComment => change_comments::comment(db, c, actor),
-        R::ChangeClose => changes::set_open(db, c, actor, false),
-        R::ChangeReopen => changes::set_open(db, c, actor, true),
+        R::ChangeClose => change_closing::set_open(db, c, actor, false),
+        R::ChangeReopen => change_closing::set_open(db, c, actor, true),
         R::ChangeDelete => change_delete::delete(db, c, actor),
         R::ChangeGates => change_gates::gates(db, c, actor, settings),
+        R::CtcRadar => super::traffic::radar::radar(db, c, actor, settings),
         R::ChangeRoute => change_route::route(db, c, actor),
         R::ChangeInstruments => change_instruments::read(db, c, actor),
         R::CheckClaim => checks::claim(db, c),
@@ -148,6 +151,7 @@ fn run<S: SqlStore>(
         R::RecordRepair => checks::record_repair(db, c),
         R::CheckComplete => checks::complete(db, c, principal),
         R::SetPolicy => checks::set_policy(db, c, principal),
+        R::AutoLandings => auto_landing::set(db, c),
         R::ProjectionPending => projection::pending(db),
         R::ProjectionResult => projection::result(db, c),
         R::ObjectsPending => staging::pending(db),
@@ -189,17 +193,24 @@ fn run<S: SqlStore>(
         R::ErasePlan => erase::plan(db, c, settings),
         R::EraseStep => erase::step(db, c, settings),
         // `enqueue`: a landing that needs a merge joins the branch's queue in this call.
-        R::Land => land::land(db, c, principal, settings).or_else(|e| {
-            if e.code == "MERGE_REQUIRED" && c["enqueue"] == true {
-                land_tickets::enqueue(db, c, principal, settings)
-            } else {
-                Err(e)
-            }
-        }),
-        R::LandEnqueue => land_tickets::enqueue(db, c, principal, settings),
+        R::Land => {
+            let cleared = land_when_cleared::guard(db, c, actor, settings)?;
+            let landed = land::land(db, c, principal, settings).or_else(|e| {
+                if e.code == "MERGE_REQUIRED" && c["enqueue"] == true {
+                    land_tickets::enqueue(db, c, principal, settings)
+                } else {
+                    Err(e)
+                }
+            })?;
+            land_when_cleared::after_land(db, c, cleared.as_ref(), &landed)?;
+            Ok(landed)
+        }
+        R::LandEnqueue => land_when_cleared::refuse_bare_land(actor)
+            .and_then(|()| land_tickets::enqueue(db, c, principal, settings)),
+        R::LandClearance => land_when_cleared::ask(db, c, settings),
         R::LandStatus => land_tickets::status(db, c),
-        R::LandClaim => land_queue::claim(db, c),
-        R::LandBatch => land_batch::land_batch(db, c, principal),
+        R::LandClaim => land_queue::claim(db, c, settings),
+        R::LandBatch => land_batch::land_batch(db, c, principal, settings),
         R::LandRelease => land_batch::release(db, c),
         R::LandChangesets => changesets::land(db, c),
         R::LandSubmitted => submitted::land(db, c, settings),

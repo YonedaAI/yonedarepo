@@ -115,7 +115,7 @@ export function CommitLanding({
     </button>
   );
   return (
-    <section className="source-gates" aria-label="Landing gates">
+    <section className="source-gates" aria-label="Clearance">
       {panel.state === 'landed' ? (
         <>
           {panel.landings.map((l) => (

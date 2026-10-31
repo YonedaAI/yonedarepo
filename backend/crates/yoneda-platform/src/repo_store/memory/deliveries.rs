@@ -5,8 +5,11 @@
 //! after the start so far (the start's packet has its own cap), so a client keeps its
 //! per-session cap.
 //! A prompt is never kept: a prompt delivery's subject is the prompt's SHA-256.
+//! A traffic warning is delivered as `{type: traffic, id: its Landing, path}`: one per file,
+//! since a session told about one file of a Landing has yet to hear about another.
 use super::super::auth::Actor;
 use super::super::quarantine::{WithheldMemories, withheld_sessions};
+use super::super::traffic::delivered_key;
 use super::relevance::TYPES;
 use crate::storage::{SqlStore, bad, number};
 use serde_json::{Value, json};
@@ -19,6 +22,7 @@ const MAX_BYTES: u64 = 64 * 1024;
 const MAX_PER_SESSION: u64 = 1000;
 const MAX_LISTED: u64 = 500;
 const LABEL: usize = 160;
+const TRAFFIC: &str = "traffic";
 
 /// What one caller has delivered to one session so far (`bytes`: after the start).
 pub struct Delivered {
@@ -39,6 +43,18 @@ fn session_id(c: &Value) -> Result<String> {
         .ok_or_else(|| bad("session_id must be 1-128 characters without spaces"))
 }
 
+/// What a delivered item is known by.
+fn key(item: &Value) -> String {
+    match (
+        item["type"].as_str(),
+        item["id"].as_i64(),
+        item["path"].as_str(),
+    ) {
+        (Some(TRAFFIC), Some(landing), Some(path)) => delivered_key(landing, path),
+        (kind, ..) => format!("{}:{}", kind.unwrap_or_default(), item["id"]),
+    }
+}
+
 pub fn delivered<S: SqlStore>(db: &S, session: &str, principal: &str) -> Result<Delivered> {
     let rows = db.query(
         "SELECT trigger,items,bytes FROM context_deliveries WHERE session_id=? AND principal=? \
@@ -56,11 +72,7 @@ pub fn delivered<S: SqlStore>(db: &S, session: &str, principal: &str) -> Result<
         }
         let items: Vec<Value> =
             serde_json::from_str(row["items"].as_str().unwrap_or("[]")).unwrap_or_default();
-        out.items.extend(
-            items
-                .iter()
-                .map(|i| format!("{}:{}", i["type"].as_str().unwrap_or_default(), i["id"])),
-        );
+        out.items.extend(items.iter().map(key));
     }
     Ok(out)
 }
@@ -72,12 +84,19 @@ fn items(c: &Value) -> Result<Vec<Value>> {
         .ok_or_else(|| bad("items must be a list of at most 50 {type, id}"))?;
     list.iter()
         .map(|item| {
-            let kind = item["type"].as_str().filter(|t| TYPES.contains(t));
             let id = item["id"].as_i64().filter(|n| *n > 0);
-            match (kind, id) {
-                (Some(kind), Some(id)) => Ok(json!({ "type": kind, "id": id })),
+            let kind = item["type"].as_str();
+            match (kind, id, item["path"].as_str()) {
+                (Some(TRAFFIC), Some(id), Some(path)) => {
+                    yoneda_core::validate_path(path.trim_end_matches('/'))?;
+                    Ok(json!({ "type": TRAFFIC, "id": id, "path": path }))
+                }
+                (Some(kind), Some(id), _) if TYPES.contains(&kind) => {
+                    Ok(json!({ "type": kind, "id": id }))
+                }
                 _ => Err(bad(
-                    "Each item is {type: memory|contract|session|change, id}",
+                    "Each item is {type: memory|contract|session|change, id}, or \
+                     {type: traffic, id: a Landing, path}",
                 )),
             }
         })
@@ -234,8 +253,10 @@ fn shaped<S: SqlStore>(db: &S, rows: &[Value]) -> Result<Vec<Value>> {
             let items: Vec<Value> = items
                 .into_iter()
                 .map(|mut i| {
-                    let key = format!("{}:{}", i["type"].as_str().unwrap_or_default(), i["id"]);
-                    i["label"] = json!(named.get(&key));
+                    i["label"] = match i["path"].as_str() {
+                        Some(path) => json!(format!("Landing #{}: {path}", i["id"])),
+                        None => json!(named.get(&key(&i))),
+                    };
                     i
                 })
                 .collect();

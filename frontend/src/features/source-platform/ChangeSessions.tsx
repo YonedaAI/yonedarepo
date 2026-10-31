@@ -23,11 +23,11 @@ export function ChangeSessions({
   const groups = groupByCommit(loaded.data?.sessions ?? []);
   return (
     <section aria-labelledby="change-sessions-heading">
-      <h3 id="change-sessions-heading">Sessions behind this change</h3>
+      <h3 id="change-sessions-heading">Sessions behind this Landing</h3>
       {loaded.loading && !loaded.data && <p className="source-empty">Loading sessions…</p>}
       {loaded.error && <p className="source-empty">Sessions unavailable: {loaded.error}</p>}
       {loaded.data && groups.length === 0 && (
-        <p className="source-empty">No session recorded for this change&apos;s commits.</p>
+        <p className="source-empty">No session recorded for this Landing&apos;s commits.</p>
       )}
       {groups.map((g) => (
         <div key={g.commit}>

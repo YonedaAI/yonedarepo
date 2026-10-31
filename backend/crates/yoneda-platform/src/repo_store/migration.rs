@@ -7,7 +7,7 @@ use yoneda_core::{Error, Result};
 /// checked as any other's. A repository that ran a migration refuses every binary that
 /// doesn't know it (`SCHEMA_TOO_NEW`), so a migration ships in two waves: wave 1 adds its
 /// entry, wave 2 raises this line. Rollback from wave 2 goes to wave 1, never earlier.
-pub(crate) const APPLY_THROUGH: i64 = 43;
+pub(crate) const APPLY_THROUGH: i64 = 44;
 
 pub(crate) const MIGRATIONS: [(i64, &str); 45] = [
     (1, include_str!("../migrations/repo_store/0001_source.sql")),

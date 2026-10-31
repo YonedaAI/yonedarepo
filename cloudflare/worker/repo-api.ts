@@ -24,7 +24,7 @@ import { deleteRepository, listDeleted, listRepositories } from './repo-admin';
 import { agentRecords } from './repo-agent-records';
 import { breakGlass } from './repo-break-glass';
 import { changeLogStatus } from './repo-changelog';
-import { changesRoute } from './repo-changes';
+import { changesRoute, setAutoLandings } from './repo-changes';
 import { compactLog } from './repo-compaction';
 import { createRepository, importRepository, tokenSecret } from './repo-create';
 import { refreshHead } from './repo-head';
@@ -275,6 +275,7 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   if (resource === 'commits' && sha && sub === 'sessions' && get)
     return run('git_sessions', { commit: sha });
   if (resource === 'context' && !sha && get) return run('git_context', query);
+  if (resource === 'ctc' && !sha && get) return run('git_ctc_radar', query);
   if (resource === 'context' && sha && !sub)
     return contextRoute(ctx, req.method, sha, query, () => bodyOf(req));
   if (resource === 'memories')
@@ -308,6 +309,8 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
       repo,
       ctx.call({ op: 'repo_set_policy', policy: (await bodyOf(req)).policy }),
     );
+  if (resource === 'auto-landings' && req.method === 'PUT')
+    return setAutoLandings(ctx, await bodyOf(req));
   if (resource === 'objects' && post)
     return run('git_get_objects', await bodyOf(req, 2 * 1024 * 1024));
   if (resource === 'merges' && post) return run('git_merge', await bodyOf(req));

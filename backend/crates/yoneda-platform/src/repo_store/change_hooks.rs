@@ -64,14 +64,19 @@ pub(super) fn notify<S: SqlStore>(
     actor: &str,
     now: i64,
 ) -> Result<()> {
+    // A push's own row opening is heard only by hooks that asked (`hooks::AUTO_LANDINGS`).
+    let quiet = change["origin"] == "auto" && action == "opened";
     let subscribed: Vec<Hook> = hooks::active(db)?
         .into_iter()
-        .filter(|h| h.wants(name))
+        .filter(|h| h.wants(name) && (!quiet || h.wants_auto_landings()))
         .collect();
     if subscribed.is_empty() {
         return Ok(());
     }
     let mut event = event(name, action, change, actor, now);
+    if quiet && let Some(fields) = event.fields.get_mut("change") {
+        fields["origin"] = json!("auto");
+    }
     if name == "change.opened" {
         let body = change["body"].as_str().unwrap_or_default();
         if !body.is_empty() {
