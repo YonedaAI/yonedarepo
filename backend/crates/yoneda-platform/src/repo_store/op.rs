@@ -113,6 +113,7 @@ op_names! {
         StagedObjects = "repo_staged_objects",
         StaleReads = "repo_stale_reads",
         Status = "repo_status",
+        Storage = "repo_storage",
         TagCreate = "repo_tag_create",
         TagShow = "repo_tag_show",
         TokenCreate = "repo_token_create",

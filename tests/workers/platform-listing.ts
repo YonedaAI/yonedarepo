@@ -9,10 +9,11 @@ import visibility from '../../cloudflare/migrations/0006_platform_repo_visibilit
 import activity from '../../cloudflare/migrations/0007_platform_activity.sql?raw';
 import handles from '../../cloudflare/migrations/0008_platform_handles.sql?raw';
 import accounts from '../../cloudflare/migrations/0009_platform_accounts.sql?raw';
+import activitySize from '../../cloudflare/migrations/0010_platform_activity_db_bytes.sql?raw';
 
 beforeEach(async () => {
   const db = (env as unknown as { INDEX: D1Database }).INDEX;
-  for (const migration of [listing, tokens, members, visibility, activity, handles, accounts])
+  for (const migration of [listing, tokens, members, visibility, activity, handles, accounts, activitySize])
     for (const statement of migration.split(';').filter((s) => s.replace(/--.*$/gm, '').trim()))
       await db
         .exec(statement.replace(/--.*$/gm, '').replace(/\s+/g, ' ').trim())

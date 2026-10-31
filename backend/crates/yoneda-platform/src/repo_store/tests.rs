@@ -1636,6 +1636,7 @@ mod branch_policy;
 mod branches;
 mod break_glass;
 mod bundles;
+mod capacity;
 mod change_bases;
 mod change_delete;
 mod change_gates;

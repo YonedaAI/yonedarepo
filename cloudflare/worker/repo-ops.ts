@@ -1,7 +1,7 @@
 // Source platform operations shared by the HTTP API and MCP. Each takes plain arguments
 // and returns JSON; the SourceRepository Durable Object and Rust compute decide, this
 // module only moves objects between the cache tiers and those deciders.
-import { durableJson } from './durable';
+import { durableJson, storageGuard } from './durable';
 import type { OrgAccess } from './platform-org-access';
 import { archivedObjects } from './repo-archive';
 import { noteBundles } from './repo-bundles';
@@ -47,7 +47,7 @@ export type Credentials =
         | 'quarantine';
     };
 // Identity fields come only from the authenticating adapter, never from arguments.
-const CREDENTIAL_KEYS = ['_session', '_token', '_pat', '_anonymous', '_system'];
+const CREDENTIAL_KEYS = ['_session', '_token', '_pat', '_anonymous', '_system', '_storage_guard'];
 export class ApiError extends Error {
   constructor(
     readonly code: string,
@@ -79,6 +79,7 @@ const KEEPS_REFS = new Set([
   'repo_context_deliver',
   'repo_context_deliveries',
   'repo_status',
+  'repo_storage',
   'repo_refs',
   'repo_snapshot',
   'repo_log',
@@ -126,6 +127,7 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
     return {
       ...Object.fromEntries(Object.entries(command).filter(([k]) => !CREDENTIAL_KEYS.includes(k))),
       ...auth,
+      ...storageGuard(env),
     };
   };
   const once = async (command: Json) => {

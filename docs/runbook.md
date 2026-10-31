@@ -175,6 +175,17 @@ node tools/staging-realworld.mjs --prod --only 0,browser,12,13,14,15,16,17
 
 `--prod` switches the front, API and platform hosts to `yonedarepo.com`, `api.yonedarepo.com` and `yonedarepo-prod-platform`, and writes `prod-smoke-<ms>.json`, never `realworld*` (which the prod guard reads as dev evidence). The kit account and its second account are created on production on first use. Always pass `--only`: the bursts and gates are for dev.
 
+## Repository database size
+
+A repository's Durable Object refuses writes at about 10.7 GB of `databaseSize` (`docs/global-scale-plan.md`, spike results). A commit shard is its own database with the same limit.
+
+- **Watching.** `repo_storage` (the owner and the platform) answers `db_bytes` and row estimates per large table; `store_status` answers the same for a shard. The derive job samples it at most every 10 minutes per repository per isolate, in its existing `platform_activity` write (`db_bytes`, D1 migration 0010). Admin shows the largest repositories and one repository's live size under Repositories.
+- **Alerts.** `repo.storage` is logged once each time a sampled size crosses 5, 8 or 9 GB going up (`{event, repo, level, db_bytes}`).
+- **Refusing new work.** `REPO_STORAGE_GUARD=on` (unset or `off`: nothing changes) makes a repository at 9 GB answer 507 `REPO_FULL` to commits, pushes, imports and new landings, and a shard refuse new records. Reads, projection, changeset records, hooks, adoption, compaction, queued landings, checks, token revocation, quarantine and deletes keep working. A commit on main normally begins from the published head, so until the head next reloads a commit may record in its shard and be refused when it lands. A byte count in the variable sets another limit, for tests only.
+- **At the limit itself.** A write past it breaks the Durable Object's instance: the failure is thrown out of the call and the next request gets a new instance. Clients get 507 `REPO_FULL` (Git: in the push report, or as the HTTP status), guard or no guard, and in that moment so does anything else in flight on that instance.
+
+Rollout: D1 migration 0010 before the Worker, as the deploy does. Deleting data lowers the size at once, but delete in small batches: one 950 MB delete reset an object for minutes.
+
 ## Recovery
 
 Queues are at least once: redelivery is expected, so consumers must be idempotent (leases, epochs, idempotency keys). The dead-letter queue is diagnostic transport evidence; the repository Durable Object's records remain authoritative. Check the repository's current state before retrying anything by hand.

@@ -43,6 +43,7 @@ const STATUS: Record<string, number> = {
   NOT_CONFIGURED: 501,
   OVERLOADED: 503,
   QUOTA_EXCEEDED: 507,
+  REPO_FULL: 507,
 };
 
 export const isLfsPath = (pathname: string) => PATH.test(pathname);

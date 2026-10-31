@@ -4,9 +4,27 @@
 // "already" on a repeat), so a call that did run before the reset is safe to repeat.
 const RESET = /no longer active|Network connection lost|reset because its code was updated/i;
 const OVERLOAD = /overloaded|queued for too long|too many requests queued/i;
+/** How a Durable Object's database refuses a write at its size limit (production, workerd). */
+const FULL = /Exceeded the maximum database size|database or disk is full|SQLITE_FULL/i;
 
 /** Seconds a client waits before retrying a request the platform was too busy to serve. */
 export const RETRY_AFTER_SECONDS = 1;
+
+/** Where a repository's database refuses new work, in bytes: `databaseSize` as Durable Object
+ * SQLite reports it (writes failed at about 10.7 GB in the 10-31 spike). */
+const STORAGE_GUARD_BYTES = 9e9;
+
+/**
+ * What a command to a repository carries for the authority to refuse new work near the size
+ * limit (repo_store::capacity). Nothing unless `REPO_STORAGE_GUARD` is `on`; a byte count there
+ * sets another limit, for tests (the variable is never client input).
+ */
+export function storageGuard(env: { REPO_STORAGE_GUARD?: string }) {
+  const guard = env.REPO_STORAGE_GUARD;
+  if (guard === 'on') return { _storage_guard: STORAGE_GUARD_BYTES };
+  const bytes = Number(guard);
+  return guard && Number.isSafeInteger(bytes) && bytes > 0 ? { _storage_guard: bytes } : {};
+}
 
 /**
  * A failure that says nothing about the request: a Durable Object overloaded, reset or
@@ -77,6 +95,10 @@ export async function durableJson<T = Record<string, any>>(
       const response = await stub().fetch(url, { method: 'POST', body });
       return await response.json<T>();
     } catch (e: any) {
+      // Thrown out of the call with the instance reset, not answered: the object cannot catch
+      // it (a write past the limit breaks the instance). The same write fails again.
+      if (FULL.test(String(e?.message ?? e)))
+        throw Object.assign(new Error("This repository's database is full"), { code: 'REPO_FULL' });
       if (attempt > 0 || !(e?.retryable === true || RESET.test(String(e?.message ?? e)))) throw e;
       await new Promise((resolve) => setTimeout(resolve, 50 + Math.random() * 100));
     }
