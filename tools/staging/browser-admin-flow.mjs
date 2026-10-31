@@ -131,10 +131,15 @@ export async function adminPages(page, { api, account, repo: { id, name }, shot,
     what: `${org} gone from the caller's orgs`,
   });
   await sleep(1_000);
+  const listed = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/v1/orgs');
   await page.reload();
+  await listed;
   await page.getByRole('heading', { level: 1, name: 'Organizations', exact: true }).waitFor();
-  assert.equal(await railOrg(page, org).count(), 0, `${org} is still in the sidebar`);
   await shot('org-deleted');
+  // Settings pages have no Organizations group: look from Home.
+  await page.getByRole('navigation', { name: 'Browse' }).getByRole('link', { name: 'Home', exact: true }).click();
+  await page.waitForURL((url) => url.pathname === '/');
+  assert.equal(await railOrg(page, org).count(), 0, `${org} is still in the sidebar`);
   m.org_deleted_in_ui = org;
 }
 
