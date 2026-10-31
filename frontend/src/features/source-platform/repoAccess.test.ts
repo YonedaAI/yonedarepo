@@ -6,7 +6,8 @@ import { describe, expect, it } from 'vitest';
 import { Composer } from './ChangeThread';
 import { RepoNotFound } from './RepoNotFound';
 import { isPublic, ReadOnlyContext, repoAccess } from './repoAccess';
-import { canMoveBranches } from './repoStatus';
+import { canMoveBranches, type RepoStatus } from './repoStatus';
+import { StatusChips } from './StatusChips';
 
 const owner = { owner: true, role: null, principal: 'user:ada' };
 const admin = { owner: true, role: 'admin' as const, principal: 'user:bob' };
@@ -104,5 +105,24 @@ describe('read-only views', () => {
     expect(page(true)).not.toContain('Sign in');
     const noSignIn = createElement(RepoNotFound, { authenticated: false, navigate: () => {} });
     expect(renderToStaticMarkup(noSignIn)).toContain('href="/source/explore"');
+  });
+
+  it('shows what landing needs only to someone who can land', () => {
+    const chips = (readOnly: boolean) =>
+      renderToStaticMarkup(
+        createElement(StatusChips, {
+          repo: 'r0',
+          status: {
+            version: 3,
+            policy: { approvals: 1, required_checks: [] },
+          } as unknown as RepoStatus,
+          owner: false,
+          readOnly,
+          navigate: () => {},
+        }),
+      );
+    expect(chips(false)).toContain('Landing needs: 1 approval');
+    expect(chips(true)).not.toContain('Landing needs');
+    expect(chips(true)).toContain('main @ v3');
   });
 });

@@ -211,6 +211,8 @@ export function AgentMemories({ repo, navigate }: { repo: string; navigate: Navi
         </EmptyState>
       </section>
     );
+  // The first read of an unfiltered page shows no filters: it may answer with nothing to filter.
+  if (first.loading && !first.data && unfiltered) return <Loading what="memories" />;
   return (
     <section aria-labelledby="memories-heading">
       <div className="agent-head">

@@ -201,7 +201,16 @@ function StartFrom({
   );
 }
 
-export function RepoBranches({ repo, canWrite }: { repo: string; canWrite: boolean }) {
+export function RepoBranches({
+  repo,
+  canWrite,
+  viewerKnown = true,
+}: {
+  repo: string;
+  canWrite: boolean;
+  /** The status has answered: until then `canWrite` says nothing about this viewer. */
+  viewerKnown?: boolean;
+}) {
   const { refs, record } = useEditedRefs(repo);
   const { busy, error, run } = useChange(refs.reload);
   const [branch, setBranch] = useState('');
@@ -247,7 +256,9 @@ export function RepoBranches({ repo, canWrite }: { repo: string; canWrite: boole
   return (
     <section aria-labelledby="branches-heading">
       <h2 id="branches-heading">Branches and tags</h2>
-      {!canWrite && <p className="source-meta">Creating and deleting them needs the write role.</p>}
+      {viewerKnown && !canWrite && (
+        <p className="source-meta">Creating and deleting them needs the write role.</p>
+      )}
       <BranchTable refs={refs} onDelete={canWrite ? remove : undefined} />
       {canStart && (
         <form onSubmit={createBranch} className="source-token-form" aria-label="Create a branch">

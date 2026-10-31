@@ -43,7 +43,7 @@ export function RepoNotFound({
         action={
           authenticated ? (
             <a className="button-link" {...linkTo({ view: 'home' }, navigate)}>
-              Your repositories
+              Repositories
             </a>
           ) : onSignIn ? (
             <button type="button" onClick={onSignIn}>
