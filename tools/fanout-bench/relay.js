@@ -3,7 +3,7 @@
 // many `{repo, writers}` batches; this Worker splits them across six calls to itself until each
 // call is one batch, which runs as usual. A driver connection covers RELAY_MAX batches, and each
 // hop adds one Worker-to-Worker call to when a batch starts.
-export const BENCH_VERSION = 2;
+export const BENCH_VERSION = 3;
 export const RELAY_MAX = 50;
 const WIDTH = 6;
 const REPO = /^r[0-9a-f]{20}$/;

@@ -8,6 +8,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BENCH_VERSION, RELAY_MAX } from './relay.js';
+import { OWN_TRAFFIC } from '../own-traffic.mjs';
 
 export const AUTHOR = { name: 'Fanout bench', email: 'bench@yonedarepo.invalid' };
 export const b64 = (text) => Buffer.from(text).toString('base64');
@@ -24,7 +25,7 @@ export async function connect(url, client, { client2 } = {}) {
   const signIn = async () => {
     const login = await fetch(`${url}/api/auth/login`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...OWN_TRAFFIC },
       body: JSON.stringify({ username: process.env.YONEDA_USERNAME, password: process.env.YONEDA_PASSWORD }),
     });
     assert.equal(login.status, 200, 'Login failed; set YONEDA_USERNAME and YONEDA_PASSWORD');
@@ -39,7 +40,7 @@ export async function connect(url, client, { client2 } = {}) {
       try {
         const response = await fetch(`${url}/api/v1${path}`, {
           method,
-          headers: { 'content-type': 'application/json', cookie },
+          headers: { 'content-type': 'application/json', ...OWN_TRAFFIC, cookie },
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         });
         if (response.status === 401 && attempt === 1) {

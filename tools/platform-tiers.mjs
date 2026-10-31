@@ -12,6 +12,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { OWN_TRAFFIC } from './own-traffic.mjs';
 
 const { values } = parseArgs({ options: { url: { type: 'string' }, files: { type: 'string', default: '120' } } });
 assert.ok(values.url, 'Pass --url of the deployed platform');
@@ -22,7 +23,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const login = await fetch(`${url}/api/auth/login`, {
   method: 'POST',
-  headers: { 'content-type': 'application/json' },
+  headers: { 'content-type': 'application/json', ...OWN_TRAFFIC },
   body: JSON.stringify({ username: process.env.YONEDA_USERNAME, password: process.env.YONEDA_PASSWORD }),
 });
 assert.equal(login.status, 200, 'Login failed; set YONEDA_USERNAME and YONEDA_PASSWORD');
@@ -30,7 +31,7 @@ const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0];
 async function call(path, body) {
   const response = await fetch(`${url}/api/v1${path}`, {
     method: body ? 'POST' : 'GET',
-    headers: { 'content-type': 'application/json', cookie },
+    headers: { 'content-type': 'application/json', ...OWN_TRAFFIC, cookie },
     body: body ? JSON.stringify(body) : undefined,
   });
   const value = await response.json().catch(() => ({}));

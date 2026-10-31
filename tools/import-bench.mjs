@@ -16,6 +16,7 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { gitConfigEnv, OWN_TRAFFIC } from './own-traffic.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -35,7 +36,7 @@ const LIMIT_MS = 20 * 60 * 1000;
 
 const login = await fetch(`${url}/api/auth/login`, {
   method: 'POST',
-  headers: { 'content-type': 'application/json' },
+  headers: { 'content-type': 'application/json', ...OWN_TRAFFIC },
   body: JSON.stringify({
     username: process.env.YONEDA_USERNAME ?? process.env.DEV_OWNER_USERNAME,
     password: process.env.YONEDA_PASSWORD ?? process.env.DEV_OWNER_PASSWORD,
@@ -47,7 +48,7 @@ const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0];
 async function call(path, init = {}) {
   const response = await fetch(`${url}/api/v1${path}`, {
     method: init.method ?? (init.body ? 'POST' : 'GET'),
-    headers: { 'content-type': 'application/json', cookie },
+    headers: { 'content-type': 'application/json', ...OWN_TRAFFIC, cookie },
     body: init.body ? JSON.stringify(init.body) : undefined,
   });
   return {
@@ -99,9 +100,7 @@ async function ownClone(repo) {
   assert.equal(minted.status, 200, JSON.stringify(minted.body));
   const remote = `${gitHost}/git/${repo}.git`;
   const env = {
-    GIT_CONFIG_COUNT: '1',
-    GIT_CONFIG_KEY_0: 'http.extraHeader',
-    GIT_CONFIG_VALUE_0: `Authorization: Bearer ${minted.body.token}`,
+    ...gitConfigEnv({ token: minted.body.token }),
   };
   const named = (what, clone) =>
     clone.catch((e) => {

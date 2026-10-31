@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { phases } from '../fanout-bench/stats.mjs';
 import { latency } from '../load-metrics.mjs';
 import { b64, until } from './client.mjs';
+import { gitConfigEnv } from '../own-traffic.mjs';
 
 const author = { name: 'Staging kit', email: 'kit@yonedarepo.invalid' };
 const wrangler = (args) => execFileSync('node_modules/.bin/wrangler', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
@@ -74,7 +75,7 @@ async function cloneCheck(platform, newRepo, metrics) {
   const made = await platform.post(`/repos/${repo.id}/commits`, { ref: 'main', changes: [{ path: 'src/added.txt', content_b64: b64('landed\n') }], message: 'Kit commit', author });
   await platform.post(`/repos/${repo.id}/land`, { ref: 'main', commit: made.commit });
   const access = await platform.post(`/repos/${repo.id}/clone`, {});
-  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${access.token}` };
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', ...gitConfigEnv({ token: access.token }) };
   const git = (args, cwd) => execFileSync('git', args, { cwd, env, encoding: 'utf8' }).trim();
   // Batched landing projects main as its own Git commit (N11): the clone must hold the
   // commit the API reports for main, whose tree contains the landed change.

@@ -1,5 +1,6 @@
 // A plain JSON-RPC MCP client over HTTP, for the account MCP item (15).
 import assert from 'node:assert/strict';
+import { OWN_TRAFFIC } from '../own-traffic.mjs';
 
 export class McpClient {
   constructor(url, token) {
@@ -7,8 +8,11 @@ export class McpClient {
     this.token = token;
     this.id = 0;
   }
+  headers() {
+    return { 'content-type': 'application/json', accept: 'application/json', authorization: `Bearer ${this.token}`, ...OWN_TRAFFIC };
+  }
   async rpc(method, params) {
-    const headers = { 'content-type': 'application/json', accept: 'application/json', authorization: `Bearer ${this.token}` };
+    const headers = this.headers();
     if (this.session) Object.assign(headers, { 'mcp-session-id': this.session, 'mcp-protocol-version': '2025-06-18' });
     const response = await fetch(this.url, { method: 'POST', headers, body: JSON.stringify({ jsonrpc: '2.0', id: ++this.id, method, params }) });
     const body = await response.json();
@@ -18,7 +22,7 @@ export class McpClient {
   }
   /** A tool call's outcome without asserting: `{ status, error, isError, text }`. */
   async attempt(name, args) {
-    const headers = { 'content-type': 'application/json', accept: 'application/json', authorization: `Bearer ${this.token}`, 'mcp-protocol-version': '2025-06-18' };
+    const headers = { ...this.headers(), 'mcp-protocol-version': '2025-06-18' };
     const body = JSON.stringify({ jsonrpc: '2.0', id: ++this.id, method: 'tools/call', params: { name, arguments: args } });
     const response = await fetch(this.url, { method: 'POST', headers, body });
     const value = await response.json().catch(() => ({}));
