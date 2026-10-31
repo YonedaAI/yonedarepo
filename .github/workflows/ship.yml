@@ -1,0 +1,116 @@
+name: Ship
+# The ship, on the pull request from dev to main (docs/ship-pipeline.md). The owner says "ship",
+# then the PR is opened; merging it deploys prod (deploy-prod.yml). This repository is public:
+# everything printed here is readable by anyone, so deploy and kit output go through
+# tools/ship/quiet.mjs and only a minimal pass table leaves the runner.
+#
+# Secrets reach only the `dev` job: same-repository head, GitHub Environment `dev`. A fork's
+# pull_request run gets no secrets from GitHub whatever its copy of this file says, and
+# pull_request_target is never used here.
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+# One ship at a time; a newer push to dev waits and then runs at its head.
+concurrency:
+  group: ship
+  cancel-in-progress: false
+# An explicit bash shell runs with -eo pipefail, so `cmd | tee` fails when cmd fails.
+defaults:
+  run:
+    shell: bash
+jobs:
+  gate:
+    name: Ship gate
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # GitHub's test merge and the PR head: the kit tests the head, Check and Full the merge.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - name: The merge must not change the tree
+        env:
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$(git rev-parse 'HEAD^{tree}')" != "$(git rev-parse "$PR_HEAD^{tree}")" ]; then
+            echo "::error::main has changes dev lacks, so the merge is not the tree this ship would test. Merge main into dev."
+            exit 1
+          fi
+
+  check:
+    needs: gate
+    uses: ./.github/workflows/ci.yml
+    with:
+      ship: true
+
+  full:
+    needs: gate
+    uses: ./.github/workflows/full.yml
+    with:
+      ship: true
+
+  dev:
+    name: Deploy dev + kit
+    needs: [check, full]
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'dev'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    environment: dev
+    # The kit tests what dev runs: deploy-dev.yml waits for this group.
+    concurrency:
+      group: deploy-dev
+      cancel-in-progress: false
+    env:
+      PR_HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Fetch the tip of dev for the deploy guard
+        run: git fetch --no-tags --depth=1 origin +dev:refs/remotes/origin/dev
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/env-file
+        with:
+          content: ${{ secrets.YONEDA_ENV_FILE }}
+          env: dev
+      - name: Deploy dev at the PR head
+        run: node tools/ship/quiet.mjs deploy -- cargo xtask deploy --env dev
+      - name: Build the CLI the kit drives
+        run: cargo build -p yoneda-cli --release --quiet
+      - name: Full kit
+        run: node tools/ship/quiet.mjs kit -- node tools/staging-realworld.mjs
+      - name: Dev must still run the PR head
+        run: |
+          for url in https://dev.yonedarepo.com/health https://yonedarepo-dev-platform.mlong-f01.workers.dev/health; do
+            if [ "$(curl -fsS --retry 3 "$url" | jq -r .revision)" != "$PR_HEAD" ]; then
+              echo "::error::dev moved during the kit, so its evidence is for other code."
+              exit 1
+            fi
+          done
+      - name: Minimal evidence
+        id: evidence
+        run: node tools/ship/evidence.mjs "$RUNNER_TEMP/evidence"
+      - name: Scan the evidence with gitleaks
+        env:
+          VERSION: 8.30.1
+          SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/gitleaks.tar.gz" "https://github.com/gitleaks/gitleaks/releases/download/v$VERSION/gitleaks_${VERSION}_linux_x64.tar.gz"
+          echo "$SHA256  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP" gitleaks
+          "$RUNNER_TEMP/gitleaks" dir "$RUNNER_TEMP/evidence" --redact --no-banner --exit-code 1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: realworld-${{ steps.evidence.outputs.tree }}
+          path: ${{ runner.temp }}/evidence
+          if-no-files-found: error
+          retention-days: 7
+      - name: Pass table of a failed kit
+        if: failure()
+        run: node tools/ship/evidence.mjs --table realworld || true
+      - name: Remove the secrets files
+        if: always()
+        run: rm -rf ~/.config/yonedarepo .local/staging
