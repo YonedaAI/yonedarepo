@@ -180,3 +180,33 @@ fn a_failed_attempt_goes_around_only_for_what_the_work_must_answer() {
         "REPO_FULL"
     );
 }
+
+#[test]
+fn a_landing_ahead_with_a_read_conflict_holds_it_by_name() {
+    let mut state = clear();
+    state.ahead = vec![Ahead {
+        landing: 7,
+        paths: vec!["src/a.rs".into(), "src/b.rs".into()],
+    }];
+    let held = clearance(&state);
+    assert_eq!(held.decision(), Decision::Hold);
+    assert_eq!(codes(&held), ["SEPARATION"]);
+    assert_eq!(
+        held.reasons()[0].reason,
+        "Landing 7 is ahead in the queue on src/a.rs, src/b.rs: it lands first"
+    );
+    // A go-around outranks it, and Risk is not read for a Landing that has to wait.
+    state.risk = None;
+    assert!(!clearance(&state).needs_risk());
+    state.conflict = Some("stale".into());
+    assert_eq!(clearance(&state).decision(), Decision::GoAround);
+}
+
+#[test]
+fn a_state_recorded_before_separation_replays() {
+    let mut recorded = serde_json::to_value(clear()).unwrap();
+    assert!(recorded.get("ahead").is_none(), "nothing ahead: nothing recorded");
+    recorded.as_object_mut().unwrap().remove("ahead");
+    let state: LandingState = serde_json::from_value(recorded).unwrap();
+    assert_eq!(clearance(&state), Clearance::Cleared);
+}

@@ -13,7 +13,7 @@ use super::auth::Actor;
 use super::changes::{self, number_of, whole_repository};
 use super::{break_glass, rows};
 use crate::platform_ctc::{Decision, Reason};
-use crate::storage::SqlStore;
+use crate::storage::{SqlStore, number};
 use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
@@ -175,7 +175,7 @@ pub fn gates<S: SqlStore>(
     let ready = requirements
         .iter()
         .all(|r| !r.enforced || r.state == GateState::Ready);
-    let land_when_cleared = super::land_when_cleared::shown(db, &change, settings)?;
+    let land_when_cleared = super::land_when_cleared::shown(db, &change, settings, number(c, "now")?)?;
     let gates = ChangeGates {
         number: change["number"].as_i64().unwrap_or_default(),
         status,

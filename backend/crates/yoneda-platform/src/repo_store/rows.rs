@@ -125,6 +125,13 @@ fn ids(text: &str) -> Result<Vec<ObjectId>> {
     raw.iter().map(|id| ObjectId::parse(id)).collect()
 }
 
+/// The short name of branch `name`, as `branch_ref` validates it.
+pub fn short_branch(name: &str) -> Result<String> {
+    Ok(branch_ref(&json!({ "ref": name }))?
+        .trim_start_matches("refs/heads/")
+        .to_owned())
+}
+
 pub fn commit_row<S: SqlStore>(db: &S, id: &ObjectId) -> Result<Option<CommitRow>> {
     let Some(row) = db
         .query("SELECT * FROM commits WHERE id=?", &[json!(id.hex())])?

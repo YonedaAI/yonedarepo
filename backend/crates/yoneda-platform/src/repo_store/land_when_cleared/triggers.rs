@@ -3,7 +3,11 @@
 //! Landing opened or reopened. Their answer carries `land_checks`, the Landings to look at; the
 //! adapter takes that field off and sends one queue job each, so nothing polls. Only with the
 //! switch on: off, an op reads nothing more and its answer is what it was. Failing checks,
-//! rejections and refused attempts can't clear anything, so a job never asks for a job.
+//! rejections and refused attempts can't clear anything, so a job never asks for a job. The one
+//! thing that clears a Landing from outside it is the way ahead clearing: whatever takes a
+//! Landing out of the queue asks again for those held behind one (`separated`). Only a
+//! separation hold is asked for, and a separation refusal asks nothing, so that can't go round.
+use crate::platform_ctc::SEPARATION;
 use crate::repo_store::op::{ForkOp, RepoOp as R, StoreOp};
 use crate::repo_store::rows::{self, Settings};
 use crate::storage::SqlStore;
@@ -12,6 +16,8 @@ use yoneda_core::Result;
 
 /// Jobs one op asks for: a queue batch's limit. A branch batch past it waits for its next event.
 const MOST: u64 = 100;
+/// Open Landings, newest first, looked at for a separation hold.
+const HELD: u64 = 200;
 
 /// Where the log stood before the op, when the repository's switch is on.
 pub(in crate::repo_store) fn watching<S: SqlStore>(
@@ -49,6 +55,27 @@ fn moved_since<S: SqlStore>(db: &S, since: u64) -> Result<Vec<Value>> {
     )
 }
 
+/// Open Landings the newest decision on which is a separation hold.
+fn separated<S: SqlStore>(db: &S) -> Result<Vec<Value>> {
+    db.query(
+        "SELECT number FROM (SELECT number,clearance FROM changes WHERE status='open' \
+         ORDER BY number DESC LIMIT ?) \
+         WHERE instr(json_extract(clearance,'$[0].reasons'),?)>0 LIMIT ?",
+        &[json!(HELD), json!(SEPARATION), json!(MOST)],
+    )
+}
+
+/// What moved, with whoever was held behind it.
+fn with_separated<S: SqlStore>(db: &S, mut rows: Vec<Value>) -> Result<Vec<Value>> {
+    for row in separated(db)? {
+        if !rows.contains(&row) {
+            rows.push(row);
+        }
+    }
+    rows.truncate(MOST as usize);
+    Ok(rows)
+}
+
 fn affected<S: SqlStore>(
     db: &S,
     op: StoreOp,
@@ -58,7 +85,7 @@ fn affected<S: SqlStore>(
 ) -> Result<Vec<Value>> {
     let one = |number: &Value| Ok(vec![json!({ "number": number })]);
     let op = match op {
-        StoreOp::Fork(ForkOp::Mirror) => return moved_since(db, since),
+        StoreOp::Fork(ForkOp::Mirror) => return with_separated(db, moved_since(db, since)?),
         StoreOp::Repo(op) => op,
         _ => return Ok(Vec::new()),
     };
@@ -80,7 +107,11 @@ fn affected<S: SqlStore>(
         R::ChangeReopen => one(&c["number"]),
         R::ChangeCreate => one(&result["number"]),
         R::BranchSet | R::BranchBatch | R::RecordPushed | R::Land | R::LandBatch => {
-            moved_since(db, since)
+            with_separated(db, moved_since(db, since)?)
+        }
+        R::ChangeClose => separated(db),
+        R::LandClearance if c["failed"].is_object() && c["failed"]["code"] != SEPARATION => {
+            separated(db)
         }
         _ => Ok(Vec::new()),
     }

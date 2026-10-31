@@ -176,6 +176,7 @@ pub(super) fn landing_state<S: SqlStore>(
         legal_hold: None,
         repo_full: None,
         risk,
+        ahead: Vec::new(),
     };
     if let Some(c) = answers {
         // Not answered yet: the adapter asks the owner's authority and sends it again.

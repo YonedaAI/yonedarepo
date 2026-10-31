@@ -103,6 +103,7 @@ mod submitted;
 mod symbols;
 mod tags;
 mod tokens;
+mod traffic;
 mod tree_cache;
 mod undo;
 mod version_projection;

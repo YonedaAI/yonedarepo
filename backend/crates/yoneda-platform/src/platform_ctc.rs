@@ -47,6 +47,17 @@ pub struct LandingState {
     pub repo_full: Option<String>,
     /// `None`: not scored yet.
     pub risk: Option<RiskScore>,
+    /// Landings ahead in the queue this one has a read conflict with. Absent from a state
+    /// recorded before separation, which replays as nothing ahead.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ahead: Vec<Ahead>,
+}
+
+/// A Landing ahead in the queue, and the paths where one wrote what the other read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Ahead {
+    pub landing: i64,
+    pub paths: Vec<String>,
 }
 
 /// One requirement of the policy, as the page words it.
@@ -128,6 +139,8 @@ impl Clearance {
 }
 
 const RISK_NOT_SCORED: &str = "RISK_NOT_SCORED";
+/// Held behind a Landing ahead in the queue (`repo_store::land_when_cleared::separation`).
+pub(crate) const SEPARATION: &str = "SEPARATION";
 /// A refused attempt the work has to answer; any other is a hold.
 const GOES_AROUND: [&str; 5] = [
     "CONFLICT",
@@ -238,6 +251,14 @@ fn holds(state: &LandingState, back: &[Reason]) -> Vec<Reason> {
             .map(|w| reason("REPO_FULL", w.clone())),
     );
     wait.extend(state.risk.as_ref().and_then(risk));
+    wait.extend(state.ahead.iter().map(|ahead| {
+        let on = ahead.paths.join(", ");
+        let why = format!(
+            "Landing {} is ahead in the queue on {on}: it lands first",
+            ahead.landing
+        );
+        reason(SEPARATION, why)
+    }));
     wait
 }
 

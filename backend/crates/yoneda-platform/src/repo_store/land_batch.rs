@@ -64,7 +64,7 @@ pub fn land_batch<S: SqlStore>(
         // The merge can't lose a member here, so the builder rebuilds and the claim fails it.
         if land_when_cleared::by_job(&row) {
             cleared.push(
-                land_when_cleared::still_cleared(db, &commit, &refname, settings)
+                land_when_cleared::still_cleared(db, &commit, &refname, settings, now)
                     .map_err(|e| Error::new("STALE_HEAD", format!("{}; rebuild", e.message)))?,
             );
         }

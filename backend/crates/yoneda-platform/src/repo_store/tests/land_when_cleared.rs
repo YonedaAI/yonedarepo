@@ -9,7 +9,7 @@ use crate::storage::SqlStore;
 const LANDER: &str = "platform:land-when-cleared";
 const MERGER: &str = "platform:merge";
 
-fn switch_on(h: &Harness) {
+pub(super) fn switch_on(h: &Harness) {
     h.ok(
         OWNER,
         json!({"op":"repo_auto_landings","land_when_cleared":true}),
@@ -17,7 +17,7 @@ fn switch_on(h: &Harness) {
 }
 
 /// A commit on `parent` touching `path`, on branch `name`.
-fn branch(h: &Harness, who: &str, parent: &str, name: &str, path: &str) -> String {
+pub(super) fn branch(h: &Harness, who: &str, parent: &str, name: &str, path: &str) -> String {
     let id = h
         .commit(who, Some(parent), 1, json!([file(path, "x\n")]), json!([]))
         .unwrap();
@@ -29,7 +29,7 @@ fn branch(h: &Harness, who: &str, parent: &str, name: &str, path: &str) -> Strin
 }
 
 /// An open Landing of `name` on main.
-fn landing(h: &Harness, name: &str) -> i64 {
+pub(super) fn landing(h: &Harness, name: &str) -> i64 {
     h.ok(
         AGENT,
         json!({"op":"repo_change_create","branch":name,"title":"Add it"}),
@@ -39,7 +39,7 @@ fn landing(h: &Harness, name: &str) -> i64 {
 }
 
 /// The job's decision: it scores Risk only when asked to.
-fn assess(h: &Harness, number: i64) -> Value {
+pub(super) fn assess(h: &Harness, number: i64) -> Value {
     let first = h.ok(LANDER, json!({"op":"repo_land_clearance","number":number}));
     if first["needs_risk"] != true {
         return first;
@@ -47,7 +47,7 @@ fn assess(h: &Harness, number: i64) -> Value {
     scored(h, number, "low")
 }
 
-fn scored(h: &Harness, number: i64, level: &str) -> Value {
+pub(super) fn scored(h: &Harness, number: i64, level: &str) -> Value {
     let risk = json!({"level":level,"score":10,"why":["Small"]});
     h.ok(
         LANDER,
@@ -55,7 +55,7 @@ fn scored(h: &Harness, number: i64, level: &str) -> Value {
     )
 }
 
-fn land(h: &Harness, number: i64, head: &str) -> yoneda_core::Result<Value> {
+pub(super) fn land(h: &Harness, number: i64, head: &str) -> yoneda_core::Result<Value> {
     h.run(
         LANDER,
         json!({"op":"repo_land","ref":"main","commit":head,"enqueue":true,
@@ -63,7 +63,7 @@ fn land(h: &Harness, number: i64, head: &str) -> yoneda_core::Result<Value> {
     )
 }
 
-fn change(h: &Harness, number: i64) -> Value {
+pub(super) fn change(h: &Harness, number: i64) -> Value {
     h.ok(OWNER, json!({"op":"repo_change_show","number":number}))
 }
 
@@ -95,12 +95,12 @@ fn reviewer(h: &Harness) -> &'static str {
     "token:reviewer"
 }
 
-fn decisions(h: &Harness, number: i64) -> Vec<Value> {
+pub(super) fn decisions(h: &Harness, number: i64) -> Vec<Value> {
     let shown = change(h, number);
     shown["clearances"].as_array().cloned().unwrap_or_default()
 }
 
-fn waiting(answer: &Value) -> Vec<&str> {
+pub(super) fn waiting(answer: &Value) -> Vec<&str> {
     answer["reasons"]
         .as_array()
         .unwrap()

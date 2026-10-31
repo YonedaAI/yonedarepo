@@ -11,7 +11,7 @@
 //! ticket answers for its Landing as of the moment it lands.
 //!
 //! Every decision the job makes is recorded on the Landing (`record`), so "why did this land?"
-//! always has an answer.
+//! always has an answer. Every decision also looks at who is ahead in the queue (`separation`).
 //!
 //! The platform evaluates rules and moves a ref; it starts no agent. Explicit landings never
 //! pass through here. The job's identity is `ACTOR`, a platform role that lands nothing but a
@@ -21,13 +21,15 @@ use super::auth::Actor;
 use super::change_gates::LandingClearance;
 use super::changes::{self, number_of};
 use super::rows::{self, CommitRow, Settings};
-use crate::platform_ctc::{Clearance, LandingState, Reason, RiskScore, clearance};
+use super::traffic::Queue;
+use crate::platform_ctc::{Clearance, Decision, LandingState, Reason, RiskScore, clearance};
 use crate::storage::{SqlStore, bad, number};
 use record::{decision_row, failed_attempt, last_refusal, record, scored_risk};
 use serde_json::{Value, json};
 use state::{Answers, landing_state};
 use yoneda_core::{Error, Result, git_object::ObjectId};
 mod record;
+mod separation;
 mod state;
 mod triggers;
 pub(super) use record::landed;
@@ -73,6 +75,7 @@ fn judge<S: SqlStore>(
     db: &S,
     change: &Value,
     settings: &Settings,
+    queue: &Queue,
     answers: Answers,
     risk: Option<RiskScore>,
 ) -> Result<Option<Judged>> {
@@ -85,7 +88,8 @@ fn judge<S: SqlStore>(
     let id = ObjectId::parse(head)?;
     let refname = format!("refs/heads/{}", change["base"].as_str().unwrap_or_default());
     let commit = rows::recorded(db, &id)?;
-    let state = landing_state(db, change, &commit, &refname, settings, answers, risk)?;
+    let mut state = landing_state(db, change, &commit, &refname, settings, answers, risk)?;
+    state.ahead = separation::ahead(db, queue, change, &id, &refname)?;
     let decided = clearance(&state);
     Ok(Some(Judged {
         commit: id,
@@ -114,12 +118,14 @@ pub fn ask<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value>
         .transpose()?;
     // A score means nothing else stood in the way, so the adapter's answers are worth having.
     let answers = risk.is_some().then_some(c);
+    let now = number(c, "now")?;
+    let queue = Queue::read(db, settings, now)?;
     let Some(Judged {
         commit,
         refname,
         state,
         decided,
-    }) = judge(db, &change, settings, answers, risk)?
+    }) = judge(db, &change, settings, &queue, answers, risk)?
     else {
         return Ok(json!({ "state": "done" }));
     };
@@ -131,7 +137,6 @@ pub fn ask<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value>
         answer["needs_risk"] = json!(true);
         return Ok(answer);
     }
-    let now = number(c, "now")?;
     let row = decision_row(&json!(commit), &decided, Some(&state), None, now);
     record(db, landing, row)?;
     Ok(answer)
@@ -165,7 +170,8 @@ pub(super) fn guard<S: SqlStore>(
         return Err(off());
     }
     let risk = scored_risk(&change, &expected);
-    cleared(number, judge(db, &change, settings, Some(c), risk)?).map(Some)
+    let queue = Queue::read(db, settings, crate::storage::number(c, "now")?)?;
+    cleared(number, judge(db, &change, settings, &queue, Some(c), risk)?).map(Some)
 }
 
 fn cleared(number: i64, judged: Option<Judged>) -> Result<Cleared> {
@@ -219,6 +225,7 @@ pub(super) fn still_cleared<S: SqlStore>(
     commit: &CommitRow,
     refname: &str,
     settings: &Settings,
+    now: i64,
 ) -> Result<Cleared> {
     if !settings.auto_landings.land_when_cleared {
         return Err(off());
@@ -232,7 +239,8 @@ pub(super) fn still_cleared<S: SqlStore>(
     let number = number.ok_or_else(moved)?;
     let change = changes::get(db, number)?;
     let risk = scored_risk(&change, &commit.id);
-    cleared(number, judge(db, &change, settings, None, risk)?)
+    let queue = Queue::read(db, settings, now)?;
+    cleared(number, judge(db, &change, settings, &queue, None, risk)?)
 }
 
 /// What the page shows of an open Landing with the switch on (`GET /changes/:n/gates`): the same
@@ -241,18 +249,31 @@ pub(super) fn shown<S: SqlStore>(
     db: &S,
     change: &Value,
     settings: &Settings,
+    now: i64,
 ) -> Result<Option<LandingClearance>> {
     if !settings.auto_landings.land_when_cleared {
         return Ok(None);
     }
+    let queue = Queue::read(db, settings, now)?;
+    Ok(decided_on(db, change, settings, &queue)?.map(|(decision, reasons)| LandingClearance {
+        decision,
+        reasons,
+        refused: last_refusal(change),
+    }))
+}
+
+/// What CTC says of an open Landing as it stands, on the Risk the job last scored, whether or
+/// not the repository's switch is on. Reads what `judge` reads, and records nothing.
+pub(super) fn decided_on<S: SqlStore>(
+    db: &S,
+    change: &Value,
+    settings: &Settings,
+    queue: &Queue,
+) -> Result<Option<(Decision, Vec<Reason>)>> {
     let risk = change["head"]
         .as_str()
         .and_then(|head| ObjectId::parse(head).ok())
         .and_then(|head| scored_risk(change, &head));
-    let judged = judge(db, change, settings, None, risk)?;
-    Ok(judged.map(|Judged { decided, .. }| LandingClearance {
-        decision: decided.decision(),
-        reasons: decided.reasons().to_vec(),
-        refused: last_refusal(change),
-    }))
+    let judged = judge(db, change, settings, queue, None, risk)?;
+    Ok(judged.map(|Judged { decided, .. }| (decided.decision(), decided.reasons().to_vec())))
 }

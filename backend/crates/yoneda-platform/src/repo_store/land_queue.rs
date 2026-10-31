@@ -95,7 +95,8 @@ pub fn claim<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Valu
         )?;
         // A Landing that cleared when it was queued has to still be cleared.
         if land_when_cleared::by_job(&row)
-            && let Err(error) = land_when_cleared::still_cleared(db, &commit, &refname, settings)
+            && let Err(error) =
+                land_when_cleared::still_cleared(db, &commit, &refname, settings, now)
         {
             let result = json!({ "code": error.code, "message": error.message });
             finish(db, &row["ticket"], "failed", result.clone(), now)?;
