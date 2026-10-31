@@ -15,6 +15,7 @@ op_names! {
         AccountExists = "account_exists",
         WelcomeState = "welcome_state",
         WelcomeSent = "welcome_sent",
+        DeviceNoted = "device_noted",
     }
 }
 op_names! {
@@ -116,6 +117,7 @@ op_names! {
     /// Organization commands for its members: showing it, or managing it as an owner.
     pub(crate) enum OrgMemberOp {
         Show = "org_show",
+        Audit = "org_audit",
         Delete = "org_delete",
         MemberPut = "org_member_put",
         MemberRemove = "org_member_remove",
@@ -135,6 +137,19 @@ op_names! {
         Check = "hold_check",
         OperatorSet = "hold_operator_set",
         OperatorRelease = "hold_operator_release",
+    }
+}
+
+op_names! {
+    /// An organization's audit log: what a source hands over (`Targets`, `Pending`), and the
+    /// log itself, on its own authority instance.
+    pub(crate) enum AuditOp {
+        Targets = "audit_targets",
+        Pending = "audit_pending",
+        Cursor = "audit_cursor",
+        Append = "audit_append",
+        Read = "audit_read",
+        Verify = "audit_verify",
     }
 }
 
@@ -169,6 +184,7 @@ pub(crate) enum AccountOp {
     Org(OrgOp),
     OrgMember(OrgMemberOp),
     Hold(HoldOp),
+    Audit(AuditOp),
     Handle(HandleOp),
 }
 
@@ -196,6 +212,7 @@ impl AccountOp {
             Self::Org(op) => op.name(),
             Self::OrgMember(op) => op.name(),
             Self::Hold(op) => op.name(),
+            Self::Audit(op) => op.name(),
             Self::Handle(op) => op.name(),
         }
     }
@@ -215,6 +232,7 @@ impl AccountOp {
         all.extend(OrgOp::ALL.iter().copied().map(Self::Org));
         all.extend(OrgMemberOp::ALL.iter().copied().map(Self::OrgMember));
         all.extend(HoldOp::ALL.iter().copied().map(Self::Hold));
+        all.extend(AuditOp::ALL.iter().copied().map(Self::Audit));
         all.extend(HandleOp::ALL.iter().copied().map(Self::Handle));
         all
     }

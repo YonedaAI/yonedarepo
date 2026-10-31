@@ -137,6 +137,7 @@
   ],
   "vars": {
     "ADMIN_ACCOUNTS": "magnetonio",
+    "AUDIT_LOG": "off",
     "PUBLIC_APP_ORIGIN": "https://yonedarepo.com",
     "SEO_INDEXING": "on",
     "WEB_ANALYTICS_TOKEN": "fd30d727a0dc4d4c949dee535977d1b2"

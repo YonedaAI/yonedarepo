@@ -1,9 +1,10 @@
 // Erasing a deleted repository (`REPO_ERASE=on`; repo_store/erase.rs has the authority's
-// half). Deletion leaves a tombstone and the purge job its object store; this job, sent when
-// a purge finishes, empties what is left: every commit shard, the combiners, and in small
-// transactions the authority's own records. The tombstone stays, answering GONE. Each part
-// is repeatable and the authority's rows go last, because they name the combiners to clear,
-// so a job that dies anywhere is simply run again. Logs carry counts and ids, never content.
+// half). Deletion leaves a tombstone and the purge job its object store; this job, sent by
+// the end of a purge however long after the deletion that runs, empties what is left: every
+// commit shard, the combiners, and in small transactions the authority's own records. The
+// tombstone stays, answering GONE. Each part is repeatable and the authority's rows go last,
+// because they name the combiners to clear, so a job that dies anywhere is simply run again.
+// Logs carry counts and ids, never content.
 //
 // Other per-repository objects hold nothing to erase: PackBuilder's storage is its
 // container's lifecycle state, CheckContainer's the same, and ObjectPushQueue keeps none.
@@ -11,7 +12,7 @@
 import { durableJson } from './durable';
 import { audit } from './platform-admin-queries';
 import { currentHold } from './platform-legal-hold';
-import { purgeRepository } from './repo-admin';
+import { dispatchErase, eraseOn, purgeObjects } from './repo-admin';
 import { inBatches } from './repo-git-objects';
 import { dispatchHooks } from './repo-hooks';
 import { ApiError, caller, type Json } from './repo-ops';
@@ -20,7 +21,6 @@ import { SHARDS, shardCall } from './repo-shards';
 import { ownSpec } from './repo-stores';
 import type { Env, Envelope } from './types';
 
-export const ERASE = 'platform_erase';
 /** Steps per job: each is a Durable Object round trip, and a long erase continues in a
  * fresh job, so one repository never holds a consumer for long. */
 const STEPS_PER_JOB = 100;
@@ -30,23 +30,8 @@ const HOOK_WAIT_SECONDS = 300;
 /** Objects cleared at once (an invocation keeps six connections open). */
 const WIDTH = 6;
 
-export const eraseOn = (env: Env) => env.REPO_ERASE === 'on';
-
 function progress(repo: string, phase: string, details: Json = {}) {
   console.log(JSON.stringify({ event: 'repo.erase', repo, phase, ...details }));
-}
-
-/** Asks for `repo` to be erased, from the start or continuing its authority's records. */
-export async function dispatchErase(
-  env: Env,
-  repo: string,
-  job: 'start' | 'records' = 'start',
-  delaySeconds?: number,
-) {
-  await env.PLATFORM_QUEUE.send(
-    { v: 1, kind: ERASE, repo_id: repo, job_id: job },
-    delaySeconds ? { delaySeconds } : undefined,
-  );
 }
 
 type Erasable = { erase(): Promise<void> };
@@ -85,16 +70,16 @@ export async function eraseJob(env: Env, envelope: Envelope) {
     });
     if (plan.live || plan.erased) return;
     if (plan.forks) return progress(repo, 'blocked', { forks: plan.forks });
-    if (plan.wait_ms !== undefined) {
+    if (plan.hooks) {
       await Promise.all(
         (plan.hooks as number[]).map((id) => dispatchHooks(env, repo, `hook:${id}`)),
       );
       await dispatchErase(env, repo, 'start', HOOK_WAIT_SECONDS);
-      return progress(repo, 'hooks', { hooks: plan.hooks.length, wait_ms: plan.wait_ms });
+      return progress(repo, 'hooks', { hooks: plan.hooks.length });
     }
     await clearObjects(env, repo, plan.refs);
     // A shard's drain that raced the purge put objects back; with the shards empty, none can.
-    await purgeRepository(env, repo);
+    await purgeObjects(env, repo);
     progress(repo, 'objects', { db_bytes: plan.db_bytes });
   }
   let rows = 0;
@@ -143,7 +128,7 @@ export async function backfillObject(env: Env, actor: string, body: Json) {
   if (plan.forks) return { state: 'blocked', db_bytes, forks: plan.forks };
   const repo = repoOf(env, object, String(plan.object_store));
   if (!repo) return { state: 'unnamed', db_bytes };
-  const found = { repo, db_bytes, waiting: plan.wait_ms !== undefined };
+  const found = { repo, db_bytes, waiting: Boolean(plan.hooks) };
   if (dryRun) return { state: 'tombstone', ...found };
   await dispatchPurge(env, repo);
   await audit(env, actor, 'repo.erase_backfill', repo, { db_bytes });

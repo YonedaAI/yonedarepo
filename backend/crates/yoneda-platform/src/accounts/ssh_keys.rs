@@ -82,7 +82,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SshOp, now: i64) -> Res
                 &[json!(now), json!(id)],
             )?;
             super::ssh_key_tokens::forget(db, &id)?;
-            audit(db, "ssh_key.removed", now, json!({"id":id}))?;
+            let orgs = super::orgs::hints(db)?;
+            audit(db, "ssh_key.removed", now, json!({"id":id,"orgs":orgs}))?;
             Ok(json!({"id":id,"deleted":true,"fingerprint":row["fingerprint"]}))
         }
         SshOp::FpClaim => {
@@ -162,7 +163,7 @@ fn add<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         db,
         "ssh_key.added",
         now,
-        json!({"id":id,"fingerprint":key.fingerprint,"token":token}),
+        json!({"id":id,"fingerprint":key.fingerprint,"token":token,"orgs":super::orgs::hints(db)?}),
     )?;
     let row = db.query("SELECT * FROM account_ssh_keys WHERE id=?", &[json!(id)])?;
     Ok(public(
@@ -171,13 +172,19 @@ fn add<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
 }
 
 /// Removes every live key (account recovery: a key added by whoever held the account
-/// must not outlive the recovery).
-pub(super) fn remove_all<S: SqlStore>(db: &S, now: i64) -> Result<()> {
+/// must not outlive the recovery) and answers how many.
+pub(super) fn remove_all<S: SqlStore>(db: &S, now: i64) -> Result<i64> {
+    let live = super::orgs::count(
+        db,
+        "SELECT COUNT(*) AS n FROM account_ssh_keys WHERE removed_at IS NULL",
+        &[],
+    )?;
     db.query(
         "UPDATE account_ssh_keys SET removed_at=? WHERE removed_at IS NULL",
         &[json!(now)],
     )?;
-    super::ssh_key_tokens::forget_all(db)
+    super::ssh_key_tokens::forget_all(db)?;
+    Ok(live)
 }
 
 fn public(row: &Value) -> Value {

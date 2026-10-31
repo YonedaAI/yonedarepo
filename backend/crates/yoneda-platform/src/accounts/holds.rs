@@ -6,7 +6,8 @@
 //! personal account's repository). A hold stands while either layer does, and each side
 //! lifts only its own, so an owner can never release an operator's hold. Setting a layer
 //! twice keeps the first; releasing one that is not there changes nothing. Every change
-//! writes a `legal_hold.*` event, and the adapter adds `admin_audit` for operators.
+//! writes a `legal_hold.*` event, which an org's audit log takes up (`audit_details`), and
+//! the adapter adds `admin_audit` for operators.
 //!
 //! `hold_check` is the answer a repository's destructive ops wait for
 //! (`repo_store::legal_hold`). Deleting an org checks here directly, in its own transaction.
@@ -74,7 +75,7 @@ fn set<S: SqlStore>(db: &S, c: &Value, layer: &str, by: &str, now: i64) -> Resul
     if hold[layer].is_null() {
         hold[layer] = json!({ "at": now, "by": by });
         put(db, &id, &hold)?;
-        let event = json!({ "repo": c["repo"], "layer": layer, "by": by });
+        let event = json!({ "repo": c["repo"], "layer": layer, "actor": by });
         audit(db, "legal_hold.set", now, event)?;
     }
     Ok(json!({ "hold": hold }))
@@ -92,7 +93,7 @@ fn release<S: SqlStore>(db: &S, c: &Value, layer: &str, by: &str, now: i64) -> R
     } else {
         put(db, &id, &hold)?;
     }
-    let event = json!({ "repo": c["repo"], "layer": layer, "by": by });
+    let event = json!({ "repo": c["repo"], "layer": layer, "actor": by });
     audit(db, "legal_hold.released", now, event)?;
     Ok(json!({ "released": true, "hold": hold }))
 }
@@ -152,24 +153,26 @@ fn check<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     Ok(json!({ "held": !(org.is_null() && own.is_null()), "org": org, "repo": own }))
 }
 
-/// An operator's hold on a whole account is for orgs; on a repository, for any owner.
-fn operator_target<S: SqlStore>(db: &S, c: &Value) -> Result<()> {
+/// An operator's hold on a whole account is for orgs; on a repository, for any owner. Runs
+/// `change`, and says whether an org holds it (its audit log has this event to copy).
+fn operator<S: SqlStore>(
+    db: &S,
+    c: &Value,
+    change: impl FnOnce(&str) -> Result<Value>,
+) -> Result<Value> {
+    let org = super::orgs::org(db);
     if c["repo"].is_null() {
-        super::orgs::org(db)?;
+        org.clone()?;
     }
-    Ok(())
+    let mut answer = change(&string(c, "operator")?)?;
+    answer["org_owned"] = json!(org.is_ok());
+    Ok(answer)
 }
 
 pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: HoldOp, now: i64) -> Result<Value> {
     match op {
         HoldOp::Check => check(db, c),
-        HoldOp::OperatorSet => {
-            operator_target(db, c)?;
-            set(db, c, OPERATOR, &string(c, "operator")?, now)
-        }
-        HoldOp::OperatorRelease => {
-            operator_target(db, c)?;
-            release(db, c, OPERATOR, &string(c, "operator")?, now)
-        }
+        HoldOp::OperatorSet => operator(db, c, |by| set(db, c, OPERATOR, by, now)),
+        HoldOp::OperatorRelease => operator(db, c, |by| release(db, c, OPERATOR, by, now)),
     }
 }

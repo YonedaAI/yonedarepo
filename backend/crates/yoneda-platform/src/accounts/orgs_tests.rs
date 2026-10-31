@@ -429,3 +429,62 @@ fn the_team_id_migration_numbers_existing_teams_and_continues_after_them() {
             .is_empty()
     );
 }
+
+/// Every event of the org's authority, newest last, as `(kind, data)`.
+fn events(db: &NativeStore) -> Vec<(String, Value)> {
+    db.query("SELECT kind,data FROM workspace_events ORDER BY seq", &[])
+        .unwrap()
+        .iter()
+        .map(|row| {
+            let data = serde_json::from_str(row["data"].as_str().unwrap()).unwrap();
+            (row["kind"].as_str().unwrap().to_owned(), data)
+        })
+        .collect()
+}
+
+#[test]
+fn every_org_event_names_who_did_it() {
+    let db = acme();
+    let alice = "alice";
+    ok(
+        &db,
+        json!({"op":"org_member_put","actor":alice,"account":"bob","role":"member"}),
+    );
+    ok(
+        &db,
+        json!({"op":"org_member_put","actor":alice,"account":"carol","role":"member"}),
+    );
+    ok(&db, json!({"op":"team_create","actor":alice,"team":"devs"}));
+    ok(
+        &db,
+        json!({"op":"team_member_put","actor":alice,"team":"devs","account":"bob"}),
+    );
+    ok(
+        &db,
+        json!({"op":"team_member_remove","actor":alice,"team":"devs","account":"bob"}),
+    );
+    ok(&db, json!({"op":"team_delete","actor":alice,"team":"devs"}));
+    // Removed by an owner, and leaving on one's own: each names the one who acted.
+    ok(
+        &db,
+        json!({"op":"org_member_remove","actor":alice,"account":"bob"}),
+    );
+    ok(
+        &db,
+        json!({"op":"org_member_remove","actor":"carol","account":"carol"}),
+    );
+    ok(
+        &db,
+        json!({"op":"org_delete","actor":alice,"confirm":"acme"}),
+    );
+    let seen = events(&db);
+    assert_eq!(seen.len(), 10);
+    for (kind, data) in &seen {
+        let expected = if data["account"] == "carol" && kind == "org.member_removed" {
+            "user:carol"
+        } else {
+            "user:alice"
+        };
+        assert_eq!(data["actor"], expected, "{kind}");
+    }
+}

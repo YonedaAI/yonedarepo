@@ -172,8 +172,8 @@ fn run<S: SqlStore>(
         R::Delete => deletion::delete(db, c, actor, settings),
         R::PurgeTarget => deletion::purge_target(db, actor, settings),
         R::HoldOwner => Ok(json!({ "owner": settings.workspace })),
-        R::ErasePlan => erase::plan(db, c, settings),
-        R::EraseStep => erase::step(db, c, settings),
+        R::ErasePlan => erase::plan(db, settings),
+        R::EraseStep => erase::step(db, settings),
         // `enqueue`: a landing that needs a merge joins the branch's queue in this call.
         R::Land => land::land(db, c, principal, settings).or_else(|e| {
             if e.code == "MERGE_REQUIRED" && c["enqueue"] == true {

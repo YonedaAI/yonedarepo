@@ -4,6 +4,7 @@ import { GitBranch } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { OrgHoldSection, type OrgHolds, OrgRepoHold, orgHeld } from './LegalHold';
+import { OrgAudit } from './OrgAudit';
 import { DeleteOrganization } from './OrgDelete';
 import { OrgTeams } from './OrgTeams';
 import { ORG_ROLE_HELP, ORG_ROLES, type Org, type OrgMember, type OrgRole } from './orgModel';
@@ -125,12 +126,30 @@ function OrgRepos({
   );
 }
 
+/** The tabs an owner gets while the platform keeps audit logs. */
+function OrgTabs({ org, tab, navigate }: { org: string; tab?: 'audit'; navigate: Navigate }) {
+  const pick = (target?: 'audit') =>
+    target === tab ? { 'aria-current': 'page' as const, className: 'active' } : {};
+  return (
+    <nav className="admin-tabs" aria-label="Organization sections">
+      <a {...pick()} {...linkTo({ view: 'org', org }, navigate)}>
+        Overview
+      </a>
+      <a {...pick('audit')} {...linkTo({ view: 'org', org, tab: 'audit' }, navigate)}>
+        Audit log
+      </a>
+    </nav>
+  );
+}
+
 export function OrgPage({
   org,
+  tab,
   navigate,
   onDeleted,
 }: {
   org: string;
+  tab?: 'audit';
   navigate: Navigate;
   /** After an owner deleted it: the shell re-reads the caller's orgs and leaves the page. */
   onDeleted?: () => void;
@@ -166,58 +185,76 @@ export function OrgPage({
         Organization created {when(data.created_at)} by {data.created_by.replace(/^user:/, '')}. You
         are {data.role === 'owner' ? 'an owner' : 'a member'} ({ORG_ROLE_HELP[data.role]}).
       </p>
-      <section aria-labelledby="org-members-heading">
-        <h2 id="org-members-heading">Members</h2>
-        <MemberRows members={data.members} manages={manages} onRole={put} onRemove={remove} />
-        {manages && (
-          <form onSubmit={add} className="source-token-form">
-            <label htmlFor="org-member-account" className="source-field">
-              Account
-              <input
-                id="org-member-account"
-                value={account}
-                onChange={(e) => setAccount(e.target.value)}
-                placeholder="username"
-                autoComplete="off"
-                required
-              />
-            </label>
-            <label htmlFor="org-member-role" className="source-field">
-              Role
-              <select
-                id="org-member-role"
-                value={role}
-                onChange={(e) => setRole(e.target.value as OrgRole)}
-              >
-                {ORG_ROLES.map((r) => (
-                  <option key={r} value={r}>
-                    {r}: {ORG_ROLE_HELP[r]}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button type="submit" disabled={busy || !account.trim()}>
-              {busy ? 'Saving…' : 'Add member'}
-            </button>
-          </form>
-        )}
-        {error && <Failure error={error} />}
-      </section>
-      <OrgTeams org={org} data={data} manages={manages} onChanged={loaded.reload} />
-      <section aria-labelledby="org-repos-heading">
-        <h2 id="org-repos-heading">Repositories</h2>
-        <OrgRepos org={org} repos={repos} holds={holds} manages={manages} navigate={navigate} />
-      </section>
-      {holds.data && (
-        <OrgHoldSection org={org} holds={holds.data} manages={manages} onChanged={holds.reload} />
+      {data.audit_log && manages && <OrgTabs org={org} tab={tab} navigate={navigate} />}
+      {tab === 'audit' && data.audit_log && manages && <OrgAudit org={org} />}
+      {tab === 'audit' && !(data.audit_log && manages) && (
+        <p className="source-empty">
+          {data.audit_log
+            ? 'Only owners of this organization can see its audit log.'
+            : 'The audit log isn’t turned on here.'}
+        </p>
       )}
-      {manages && onDeleted && (
-        <DeleteOrganization
-          org={org}
-          repoCount={repos.data?.repos.length}
-          held={orgHeld(holds.data)}
-          onDeleted={onDeleted}
-        />
+      {!tab && (
+        <>
+          <section aria-labelledby="org-members-heading">
+            <h2 id="org-members-heading">Members</h2>
+            <MemberRows members={data.members} manages={manages} onRole={put} onRemove={remove} />
+            {manages && (
+              <form onSubmit={add} className="source-token-form">
+                <label htmlFor="org-member-account" className="source-field">
+                  Account
+                  <input
+                    id="org-member-account"
+                    value={account}
+                    onChange={(e) => setAccount(e.target.value)}
+                    placeholder="username"
+                    autoComplete="off"
+                    required
+                  />
+                </label>
+                <label htmlFor="org-member-role" className="source-field">
+                  Role
+                  <select
+                    id="org-member-role"
+                    value={role}
+                    onChange={(e) => setRole(e.target.value as OrgRole)}
+                  >
+                    {ORG_ROLES.map((r) => (
+                      <option key={r} value={r}>
+                        {r}: {ORG_ROLE_HELP[r]}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="submit" disabled={busy || !account.trim()}>
+                  {busy ? 'Saving…' : 'Add member'}
+                </button>
+              </form>
+            )}
+            {error && <Failure error={error} />}
+          </section>
+          <OrgTeams org={org} data={data} manages={manages} onChanged={loaded.reload} />
+          <section aria-labelledby="org-repos-heading">
+            <h2 id="org-repos-heading">Repositories</h2>
+            <OrgRepos org={org} repos={repos} holds={holds} manages={manages} navigate={navigate} />
+          </section>
+          {holds.data && (
+            <OrgHoldSection
+              org={org}
+              holds={holds.data}
+              manages={manages}
+              onChanged={holds.reload}
+            />
+          )}
+          {manages && onDeleted && (
+            <DeleteOrganization
+              org={org}
+              repoCount={repos.data?.repos.length}
+              held={orgHeld(holds.data)}
+              onDeleted={onDeleted}
+            />
+          )}
+        </>
       )}
     </div>
   );

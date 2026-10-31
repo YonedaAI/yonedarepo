@@ -10,6 +10,7 @@ import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { error, readJson, response } from './http';
 import { accountActivity } from './platform-account-activity';
 import { adminRoute } from './platform-admin';
+import { auditExport, auditExportOrg } from './platform-audit-export';
 import { isOwnAvatar, ownAvatar, publicAvatarName, servePublicAvatar } from './platform-avatars';
 import { favoritesRoute } from './platform-favorites';
 import { repoHold } from './platform-holds';
@@ -460,6 +461,10 @@ async function handle(req: Request, env: Env): Promise<Response> {
   if (url.pathname === '/api/v1/mcp') return accountMcp(req, env, machine, route);
   // The signed-in person's picture: its bytes, an upload or a removal.
   if (isOwnAvatar(url)) return ownAvatar(req, env, auth).catch(failure);
+  // An audit log's export is a file, not a JSON answer.
+  const audited = auditExportOrg(url);
+  if (audited && req.method === 'GET')
+    return auditExport(env, auth, audited, url.searchParams).catch(failure);
   // An asset download is the asset's bytes, not a JSON answer.
   const download = releaseDownload(req, env, url, auth);
   if (download) return download.catch(failure);

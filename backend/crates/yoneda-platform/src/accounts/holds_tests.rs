@@ -152,7 +152,7 @@ fn setting_twice_keeps_who_set_it_and_every_change_is_audited_once() {
     assert_eq!(again["hold"]["owner"]["by"], "user:alice");
     assert_eq!(
         events(&db, "legal_hold.set"),
-        [json!({"repo":null,"layer":"owner","by":"user:alice"})]
+        [json!({"repo":null,"layer":"owner","actor":"user:alice"})]
     );
     ok(&db, json!({"op":"org_hold_release","actor":"bob"}));
     assert_eq!(
@@ -165,12 +165,22 @@ fn setting_twice_keeps_who_set_it_and_every_change_is_audited_once() {
     );
     assert_eq!(
         events(&db, "legal_hold.released"),
-        [json!({"repo":null,"layer":"owner","by":"user:bob"})]
+        [json!({"repo":null,"layer":"owner","actor":"user:bob"})]
     );
     assert_eq!(
         events(&db, "legal_hold.set").last().unwrap(),
-        &json!({"repo":REPO,"layer":"operator","by":"ops"})
+        &json!({"repo":REPO,"layer":"operator","actor":"ops"})
     );
+}
+
+#[test]
+fn an_operators_answer_says_whether_an_org_holds_it() {
+    let db = acme();
+    let set = json!({"op":"hold_operator_set","operator":"ops"});
+    assert_eq!(ok(&db, set)["org_owned"], true);
+    let person = NativeStore::memory().unwrap();
+    let set = json!({"op":"hold_operator_set","operator":"ops","repo":REPO});
+    assert_eq!(ok(&person, set)["org_owned"], false);
 }
 
 #[test]

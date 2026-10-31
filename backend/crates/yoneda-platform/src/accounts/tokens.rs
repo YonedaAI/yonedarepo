@@ -67,18 +67,24 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: TokenOp, now: i64) -> R
             account(db)?;
             let id = string(c, "id")?;
             let found = db.query(
-                "SELECT id FROM account_tokens WHERE id=? AND revoked_at IS NULL",
+                "SELECT org FROM account_tokens WHERE id=? AND revoked_at IS NULL",
                 &[json!(id)],
             )?;
-            if found.is_empty() {
+            let Some(row) = found.first() else {
                 return Err(Error::new("NOT_FOUND", "Unknown token"));
-            }
+            };
             db.query(
                 "UPDATE account_tokens SET revoked_at=? WHERE id=?",
                 &[json!(now), json!(id)],
             )?;
             let removed = super::ssh_key_tokens::remove_added_by(db, &id, now)?;
-            audit(db, "pat.revoked", now, json!({"id":id}))?;
+            let orgs = super::audit_log::token_orgs(db, &row["org"])?;
+            audit(
+                db,
+                "pat.revoked",
+                now,
+                json!({"id":id,"org":row["org"],"orgs":orgs}),
+            )?;
             Ok(json!({"id":id,"revoked":true,"removed_ssh_keys":removed}))
         }
     }
@@ -183,7 +189,8 @@ fn create<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         db,
         "pat.created",
         now,
-        json!({"id":id,"scopes":grant["scopes"],"repos":grant["repos"],"org":grant["org"],"origin":origin,"host":host}),
+        json!({"id":id,"scopes":grant["scopes"],"repos":grant["repos"],"org":grant["org"],"origin":origin,"host":host,
+            "orgs":super::audit_log::token_orgs(db, &grant["org"])?}),
     )?;
     let row = db.query("SELECT * FROM account_tokens WHERE id=?", &[json!(id)])?;
     public(row.first().ok_or_else(|| bad("Token was not stored"))?)
@@ -220,13 +227,18 @@ pub(super) fn acting<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Option<
     Ok(Some(id.clone()))
 }
 
-/// Revokes every live token (account recovery).
-pub(super) fn revoke_all<S: SqlStore>(db: &S, now: i64) -> Result<()> {
+/// Revokes every live token (account recovery) and answers how many.
+pub(super) fn revoke_all<S: SqlStore>(db: &S, now: i64) -> Result<i64> {
+    let live = super::orgs::count(
+        db,
+        "SELECT COUNT(*) AS n FROM account_tokens WHERE revoked_at IS NULL",
+        &[],
+    )?;
     db.query(
         "UPDATE account_tokens SET revoked_at=? WHERE revoked_at IS NULL",
         &[json!(now)],
     )?;
-    Ok(())
+    Ok(live)
 }
 
 /// A stored token without its digest.

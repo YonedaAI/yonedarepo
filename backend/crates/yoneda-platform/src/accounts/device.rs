@@ -67,7 +67,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: DeviceOp, now: i64) -> 
                     json!(code),
                 ],
             )?;
-            Ok(json!({"approved":!deny,"client_name":row["client_name"]}))
+            Ok(json!({"approved":!deny,"client_name":row["client_name"],"host":row["host"]}))
         }
         DeviceOp::Poll => poll(db, &code, live, c, now),
     }

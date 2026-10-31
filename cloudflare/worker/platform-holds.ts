@@ -8,6 +8,7 @@
 // A repository's owner comes from its authority, not the listing: a tombstone has left the
 // listing, and it is exactly what a hold must still reach before its purge.
 
+import { auditOrg } from './account-audit';
 import { audit } from './platform-admin-queries';
 import { holdsOn } from './platform-legal-hold';
 import { ApiError, type Credentials, caller, type Json, type RepoContext } from './repo-ops';
@@ -69,6 +70,7 @@ async function operatorHold(env: Env, actor: string, owner: string, method: stri
     repo,
   });
   await audit(env, actor, set ? 'legal_hold.set' : 'legal_hold.release', repo ?? owner);
+  if (done.org_owned) await auditOrg(env, owner);
   return done;
 }
 

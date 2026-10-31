@@ -121,6 +121,23 @@ it('members see a hold and only owners change it, and a read-only token cannot',
   expect(refused(await api(`/orgs/${org}/hold`, { token: read }, { body: {} }, on))).toEqual([403, 'FORBIDDEN']);
 });
 
+it('hold changes reach the org audit log, an operator\'s with its layer and actor', async () => {
+  const { org, owner, id } = await held('audited');
+  const audited = { ...on, AUDIT_LOG: 'on' } as unknown as Env;
+  const ops = { cookie: await signup('hold_ops') };
+  await api(`/orgs/${org}/hold`, owner, { body: {} }, audited);
+  await api(`/orgs/${org}/hold`, owner, del, audited);
+  await api(`/admin/repos/${id}/hold`, ops, { body: {} }, audited);
+  const { items } = (await api(`/orgs/${org}/audit`, owner, {}, audited)).body;
+  const seen = items.filter((e: any) => e.kind.startsWith('legal_hold.'));
+  const row = (e: any) => [e.kind, e.actor, e.details.layer];
+  expect(seen.map(row).sort()).toEqual([
+    ['legal_hold.released', `user:${org}_a`, 'owner'],
+    ['legal_hold.set', `user:${org}_a`, 'owner'],
+    ['legal_hold.set', 'hold_ops', 'operator'],
+  ].sort());
+});
+
 it('a token limited to other repositories cannot touch this one\'s hold', async () => {
   const { org, owner, id } = await held('allowlist');
   const other = (await api('/repos', owner, { body: { name: 'other', owner: org, policy: OPEN, files: [file('a.txt', 'a\\n')], author } }, on)).body.id as string;

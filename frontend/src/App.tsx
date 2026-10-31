@@ -422,6 +422,7 @@ export function App() {
               <OrgPage
                 key={`${route.org}:${tick}`}
                 org={route.org}
+                tab={route.tab}
                 navigate={navigate}
                 onDeleted={() => {
                   orgs.reload();
