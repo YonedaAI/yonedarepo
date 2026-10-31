@@ -51,6 +51,10 @@ export const changeOperations = {
       op: 'repo_changes',
       status: a.status || 'open',
       ...(a.limit === undefined ? {} : { limit: Number(a.limit) }),
+      ...(typeof a.branch === 'string' ? { branch: a.branch } : {}),
+      ...(typeof a.origin === 'string' ? { origin: a.origin } : {}),
+      // The Landings list's rows no change names (repo_store/direct_landings.rs).
+      ...(a.direct === '1' || a.direct === true ? { direct: true } : {}),
     }),
   git_change_show: async (ctx: RepoContext, a: Json) => {
     const show = { op: 'repo_change_show', number: changeNumber(a.number) };

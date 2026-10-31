@@ -1,4 +1,5 @@
 //! Typed access to platform tables.
+pub use super::auto_landing::AutoLandings;
 pub use super::checkpoints::{checkpoint_at_or_before, maybe_checkpoint, refs_digest_at};
 pub use super::policy::{Policy, Runner, check_name};
 pub use super::visibility::Visibility;
@@ -25,6 +26,8 @@ pub struct Settings {
     pub parent: Option<(String, u64)>,
     /// Who reads it besides its owner and members (`visibility`).
     pub visibility: Visibility,
+    /// The repository's automatic Landings switches.
+    pub auto_landings: AutoLandings,
 }
 
 impl Settings {
@@ -105,6 +108,10 @@ pub fn settings<S: SqlStore>(db: &S) -> Result<Settings> {
             )
         }),
         visibility: Visibility::parse(&text("visibility")?)?,
+        auto_landings: AutoLandings {
+            create: row["auto_landings"] == 1,
+            agents: row["auto_landing_agents"] == 1,
+        },
     })
 }
 

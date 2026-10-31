@@ -133,6 +133,18 @@ pub(super) fn append<S: SqlStore>(
     super::ref_chain::advance(db, refname, &commit.id)?;
     super::projection::target(db, refname, &commit.id, version, entry.committed_at_ms)?;
     rows::maybe_checkpoint(db, version, &entry.chain)?;
+    // Landing on a working branch moves it as a push does; a fork's mirror (`RefMove`) and a
+    // copied or imported ref (`Import`) are nobody's proposal.
+    if matches!(kind, TxKind::Commit | TxKind::Merge) {
+        super::auto_landing::on_move(
+            db,
+            refname,
+            commit,
+            old.is_none(),
+            principal,
+            entry.committed_at_ms,
+        );
+    }
     Ok(
         json!({ "landed": true, "ref": refname, "commit": commit.id, "version": version, "chain": entry.chain }),
     )

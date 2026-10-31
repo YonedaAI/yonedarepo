@@ -14,6 +14,8 @@ export type RepoStatus = {
   history_import: HistoryFill | null;
   /** Set when an imported history ended early: older commits are not here. */
   history_stopped: HistoryStopped | null;
+  /** Whether a push opens a Landing, and whether agents run on those. */
+  landings: AutoLandings;
   name: string;
   object_store: string;
   /** Object projection progress (the adapter merges shard outboxes into it). */
@@ -37,6 +39,14 @@ export type RepoStatus = {
   viewer: Viewer;
   /** Who may read: members only, or anyone. */
   visibility: Visibility;
+};
+
+/** The repository's two switches, both off until the owner turns them on. */
+export type AutoLandings = {
+  /** Managed agents run on those Landings. Off, opening one starts nothing. */
+  agents: boolean;
+  /** A push opens a Landing. */
+  create: boolean;
 };
 
 export type ForkParent = {
@@ -133,6 +143,24 @@ export type Withheld = {
 
 export const repoStatusSchema = {
   "$defs": {
+    "AutoLandings": {
+      "description": "The repository's two switches, both off until the owner turns them on.",
+      "properties": {
+        "agents": {
+          "description": "Managed agents run on those Landings. Off, opening one starts nothing.",
+          "type": "boolean"
+        },
+        "create": {
+          "description": "A push opens a Landing.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "create",
+        "agents"
+      ],
+      "type": "object"
+    },
     "ForkParent": {
       "properties": {
         "repo": {
@@ -564,6 +592,10 @@ export const repoStatusSchema = {
       ],
       "description": "Set when an imported history ended early: older commits are not here."
     },
+    "landings": {
+      "$ref": "#/$defs/AutoLandings",
+      "description": "Whether a push opens a Landing, and whether agents run on those."
+    },
     "name": {
       "type": "string"
     },
@@ -657,6 +689,7 @@ export const repoStatusSchema = {
     "objects",
     "bundled",
     "automation",
+    "landings",
     "parent",
     "forks",
     "visibility",

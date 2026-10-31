@@ -16,6 +16,9 @@ use yoneda_core::{Error, Result};
 pub const EVENTS: [&str; 9] = [
     "land", "merged", "refused", "branch", "tag", "check", "change", "release", "repo",
 ];
+/// Asked for by name, never by default: with `change`, also `change.opened` for a Landing a
+/// push opened. One per branch could reach `hook_events::MAX_PENDING` and switch a hook off.
+pub const AUTO_LANDINGS: &str = "change.auto";
 const MAX_HOOKS: i64 = 20;
 /// Delivery attempts kept per hook for `GET /hooks/:id/deliveries`.
 pub const LOG_SIZE: i64 = 50;
@@ -35,6 +38,10 @@ impl Hook {
         let family = event.split('.').next().unwrap_or(event);
         self.events.iter().any(|e| e == family)
     }
+    /// Whether this hook asked for automatic Landings opening.
+    pub fn wants_auto_landings(&self) -> bool {
+        self.events.iter().any(|e| e == AUTO_LANDINGS)
+    }
 }
 
 fn parse_events(value: &Value) -> Result<Vec<String>> {
@@ -48,7 +55,7 @@ fn parse_events(value: &Value) -> Result<Vec<String>> {
     }
     let mut events = Vec::new();
     for event in listed {
-        if !EVENTS.contains(&event.as_str()) {
+        if !EVENTS.contains(&event.as_str()) && event != AUTO_LANDINGS {
             return Err(bad(&format!(
                 "Unknown event {event}; events are {}",
                 EVENTS.join(", ")

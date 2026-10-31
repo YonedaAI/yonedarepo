@@ -82,6 +82,8 @@ export type QueueMessage =
       commit: string | null;
       change: number | null;
       action: string | null;
+      /** When it happened, in ms: a push and the Landing it opened share this time. */
+      at?: number;
     }
   | { kind: 'resume'; repo: string; run: string }
   /** The platform's repo.purged, or a repo.deleted with no purge to come: clear its reviews. */

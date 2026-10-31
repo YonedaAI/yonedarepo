@@ -4,12 +4,13 @@ use super::auth::{self, Actor};
 use super::op::{InitOp, Op, RepoOp as R, StoreOp};
 use super::rows::{self, Settings};
 use super::{
-    activity, adopt, agent_context, agent_reads, annotated, bisect, branches, capacity,
-    change_comments, change_delete, change_gates, change_records, changes, changesets, checks,
-    classes, contracts, git_http, head, history, history_fill, history_import, hook_delivery,
-    hook_events, hooks, land, land_batch, land_queue, land_tickets, legal_hold, members, merging,
-    prepare, projection, projection_plan, pushed, reads, rebase, record, releases, search_records,
-    sessions, staging, store_lineage, submitted, symbols, tags, tokens, version_projection,
+    activity, adopt, agent_context, agent_reads, annotated, auto_landing, bisect, branches,
+    capacity, change_closing, change_comments, change_delete, change_gates, change_records,
+    changes, changesets, checks, classes, contracts, git_http, head, history, history_fill,
+    history_import, hook_delivery, hook_events, hooks, land, land_batch, land_queue, land_tickets,
+    legal_hold, members, merging, prepare, projection, projection_plan, pushed, reads, rebase,
+    record, releases, search_records, sessions, staging, store_lineage, submitted, symbols, tags,
+    tokens, version_projection,
 };
 use super::{
     authorize::authorize, break_glass, deletion, erase, forks, grants, lfs, maintenance, memory,
@@ -133,8 +134,8 @@ fn run<S: SqlStore>(
         R::Changes => changes::list(db, c, actor),
         R::ChangeShow => changes::show(db, c, actor, settings),
         R::ChangeComment => change_comments::comment(db, c, actor),
-        R::ChangeClose => changes::set_open(db, c, actor, false),
-        R::ChangeReopen => changes::set_open(db, c, actor, true),
+        R::ChangeClose => change_closing::set_open(db, c, actor, false),
+        R::ChangeReopen => change_closing::set_open(db, c, actor, true),
         R::ChangeDelete => change_delete::delete(db, c, actor),
         R::ChangeGates => change_gates::gates(db, c, actor, settings),
         R::CheckClaim => checks::claim(db, c),
@@ -143,6 +144,7 @@ fn run<S: SqlStore>(
         R::RecordRepair => checks::record_repair(db, c),
         R::CheckComplete => checks::complete(db, c, principal),
         R::SetPolicy => checks::set_policy(db, c, principal),
+        R::AutoLandings => auto_landing::set(db, c),
         R::ProjectionPending => projection::pending(db),
         R::ProjectionResult => projection::result(db, c),
         R::ObjectsPending => staging::pending(db),

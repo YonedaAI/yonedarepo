@@ -186,3 +186,47 @@ it('lands a change on its own base branch, leaving main alone', async () => {
   expect((await api(`/repos/${repo}/changes/1`, { token: agent })).body).toMatchObject({ status: 'landed', landed_commit: fix[0].id });
   expect((await api(`/repos/${repo}/refs`, { cookie })).body.refs['refs/heads/main']).toBe(main);
 });
+
+it('opens a Landing per push once the owner turns it on, and a push-then-create still answers', async () => {
+  const cookie = await signup('landing_owner');
+  const created = await api('/repos', { cookie }, { body: { name: 'landings', policy: { approvals: 1, required_checks: [] }, files: [file('a.md', 'a\n')], author } });
+  const repo = created.body.id as string;
+  const agent = (await api(`/repos/${repo}/tokens`, { cookie }, { body: { name: 'agent', scopes: ['read', 'write'] } })).body.token as string;
+  const status = await api(`/repos/${repo}`, { cookie });
+  const main = (await api(`/repos/${repo}/refs`, { cookie })).body.refs['refs/heads/main'] as string;
+  expect(status.body.landings).toEqual({ create: false, agents: false });
+
+  // Off: exactly as before.
+  const off = await push(repo, agent, 'refs/heads/off', null, await commitOf(main, 'off\n'));
+  expect(off).toContain('open a change: yoneda change create off');
+  expect((await api(`/repos/${repo}/changes?status=all`, { token: agent })).body.changes).toEqual([]);
+
+  // Only the owner turns it on, and the policy digest stays.
+  const denied = await api(`/repos/${repo}/auto-landings`, { token: agent }, { method: 'PUT', body: { create: true } });
+  expect(denied.status).toBe(403);
+  const set = await api(`/repos/${repo}/auto-landings`, { cookie }, { method: 'PUT', body: { create: true } });
+  expect(set.body).toEqual({ create: true, agents: false });
+  const after = await api(`/repos/${repo}`, { cookie });
+  expect(after.body.landings).toEqual({ create: true, agents: false });
+  expect(after.body.policy_digest).toBe(status.body.policy_digest);
+
+  const on = await push(repo, agent, 'refs/heads/feature', null, await commitOf(main, 'on\n'));
+  expect(on).toMatch(/change #1 now at this push/);
+  const auto = (await api(`/repos/${repo}/changes`, { token: agent })).body.changes;
+  expect(auto).toHaveLength(1);
+  expect(auto[0]).toMatchObject({ number: 1, branch: 'feature', title: 'retry', origin: 'auto', base: 'main' });
+  expect((await api(`/repos/${repo}/changes?origin=explicit`, { token: agent })).body.changes).toEqual([]);
+  expect((await api(`/repos/${repo}/changes?branch=feature`, { token: agent })).body.changes).toHaveLength(1);
+
+  // What an installed CLI does after a push: it creates, and gets a change back.
+  const claimed = await api(`/repos/${repo}/changes`, { token: agent }, { body: { branch: 'feature', title: 'Retry calls' } });
+  expect(claimed.status).toBe(200);
+  expect(claimed.body).toMatchObject({ number: 1, title: 'Retry calls', origin: 'explicit' });
+  const again = await api(`/repos/${repo}/changes`, { token: agent }, { body: { branch: 'feature', title: 'Again' } });
+  expect(again.status).toBe(409);
+
+  // The list's direct rows come only when asked for.
+  const landed = await api(`/repos/${repo}/changes?status=landed&direct=1`, { token: agent });
+  expect(landed.body.direct).toEqual([]);
+  expect((await api(`/repos/${repo}/changes?status=landed`, { token: agent })).body.direct).toBeUndefined();
+});

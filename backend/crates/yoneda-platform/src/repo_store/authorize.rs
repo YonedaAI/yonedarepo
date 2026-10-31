@@ -123,7 +123,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
                 "Only the platform merger lands queued work",
             ))
         }
-        R::SetPolicy => actor.require_owner(),
+        R::SetPolicy | R::AutoLandings => actor.require_owner(),
         // Admins manage other members; only the owner manages admins (`members`).
         R::Members | R::MemberPut | R::MemberRemove => actor.require_owner(),
         // Hooks reveal repository events to an outside URL: the owner (or repo:admin) decides.
