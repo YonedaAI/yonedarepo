@@ -21,13 +21,11 @@ export function RepoByName({
   navigate,
   authenticated,
   onSignIn,
-  onNew,
 }: {
   route: Extract<NamedRoute, { view: 'repo-name' }>;
   navigate: Navigate;
   authenticated: boolean;
   onSignIn: () => void;
-  onNew: () => void;
 }) {
   const found = useSource<Resolved>(resolvePath(route.owner, route.name));
   const id = found.data?.id;
@@ -39,14 +37,7 @@ export function RepoByName({
     navigate(parseSourceRoute(`/source/${id}${rest}`, route.search), { replace: true });
   }, [id]);
   if (repoMissing(found.code))
-    return (
-      <RepoNotFound
-        navigate={navigate}
-        onNew={onNew}
-        authenticated={authenticated}
-        onSignIn={onSignIn}
-      />
-    );
+    return <RepoNotFound navigate={navigate} authenticated={authenticated} onSignIn={onSignIn} />;
   if (found.error) return <Failure error={found.error} onRetry={found.reload} />;
   return <Loading what={`${route.owner}/${route.name}`} />;
 }

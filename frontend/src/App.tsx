@@ -400,7 +400,6 @@ export function App() {
                 navigate={navigate}
                 authenticated={session.authenticated}
                 onSignIn={() => setPanel('account')}
-                onNew={() => setCreating(true)}
               />
             )}
             {route.view === 'admin' &&
@@ -470,7 +469,6 @@ export function App() {
                   platform.reload();
                   favorites.reload();
                 }}
-                onNew={() => setCreating(true)}
               />
             )}
           </>

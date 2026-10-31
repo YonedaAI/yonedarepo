@@ -101,16 +101,6 @@ a.chip:hover {
   font-size: var(--text-sm);
   line-height: inherit;
 }
-.source-empty-state {
-  border: 1px dashed var(--line-strong);
-  border-radius: 8px;
-  padding: 20px;
-  background: var(--surface);
-}
-.source-empty-state p {
-  margin: 0 0 8px;
-}
-.source-empty-state a,
 .source-note a,
 .readme-body a {
   color: var(--blue-text);
@@ -537,23 +527,6 @@ a.chip:hover {
 .import-history strong {
   color: var(--text);
 }
-.import-status p {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.import-status p:last-child {
-  margin-bottom: 0;
-}
-.import-status .source-meta {
-  display: block;
-  overflow-wrap: anywhere;
-}
-.import-status strong,
 .import-notice strong {
   color: var(--text);
-}
-.import-failed {
-  border: 1px solid var(--danger-line);
-  background: var(--danger-soft);
 }

@@ -12,6 +12,7 @@ import {
   modelRate,
   type WorkspaceState,
 } from '../../../../shared/managed-agents';
+import { EmptyState } from '../../components/EmptyState';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { Failure } from '../source-platform/SourceStatus';
 import { managedApi } from '../source-platform/sourceApi';
@@ -269,12 +270,14 @@ export function AgentSettingsPage({
   }, []);
   if (!known)
     return (
-      <div className="source-empty-state">
-        <p>
-          <strong>There is no agent called “{agent}”.</strong>{' '}
-          <a {...linkTo({ view: 'agents-home', ...space }, navigate)}>See all agents</a>
-        </p>
-      </div>
+      <EmptyState
+        title={`There is no agent called “${agent}”`}
+        action={
+          <a className="button-link" {...linkTo({ view: 'agents-home', ...space }, navigate)}>
+            See all agents
+          </a>
+        }
+      />
     );
   const state = loaded.data;
   const found = state?.agents.find((a) => a.id === agent);

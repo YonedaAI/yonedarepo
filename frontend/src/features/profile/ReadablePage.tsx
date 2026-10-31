@@ -11,7 +11,6 @@ export function ReadablePage({
   navigate,
   authenticated,
   onSignIn,
-  onNew,
 }: {
   route: NamedRoute;
   /** The shell's refresh count: a refresh reads the page again. */
@@ -19,7 +18,6 @@ export function ReadablePage({
   navigate: Navigate;
   authenticated: boolean;
   onSignIn: () => void;
-  onNew: () => void;
 }) {
   if (route.view === 'profile')
     return (
@@ -37,7 +35,6 @@ export function ReadablePage({
       navigate={navigate}
       authenticated={authenticated}
       onSignIn={onSignIn}
-      onNew={onNew}
     />
   );
 }

@@ -93,9 +93,9 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
     'the Agent tools tabs',
   );
   for (const [tab, section, empty] of [
-    ['Contracts', 'contracts', /^No contracts yet\./],
-    ['Kept commits', 'pins', /^No kept commits\./],
-    ['Find a breaking commit', 'bisects', /^No searches yet\./],
+    ['Contracts', 'contracts', /^No contracts yet$/],
+    ['Kept commits', 'pins', /^No kept commits$/],
+    ['Find a breaking commit', 'bisects', /^No searches yet$/],
   ]) {
     await tools.getByRole('link', { name: tab, exact: true }).click();
     await atRepo(page, account, id, `/agents/${section}`);

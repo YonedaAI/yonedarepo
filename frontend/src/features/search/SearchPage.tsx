@@ -4,6 +4,7 @@
 // query and repository live in the address. `/` focuses the box and Escape clears it.
 import { Search } from 'lucide-react';
 import { type FormEvent, type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import { EmptyState } from '../../components/EmptyState';
 import type { ActivitySession } from '../shell/homeModel';
 import { type PlatformRepo, repoRows } from '../shell/repoRows';
 import type { Navigate } from '../shell/useRoute';
@@ -148,12 +149,14 @@ export function SearchPage({
           <Loading what="your repositories" />
         )
       ) : !targets.length ? (
-        <div className="source-empty-state">
-          <p>You have no repositories to search yet.</p>
-          <button type="button" onClick={onNew}>
-            New repository
-          </button>
-        </div>
+        <EmptyState
+          title="No repositories to search yet"
+          action={
+            <button type="button" onClick={onNew}>
+              New repository
+            </button>
+          }
+        />
       ) : !fanningOut ? (
         <AccountResults query={q} search={account} names={names} navigate={navigate} />
       ) : (

@@ -1,6 +1,7 @@
 // The workspace Agents pages, by route: the overview, one agent's page or its set-up form (or a
 // new agent),
 // the runs list and one run. The workspace is the route's (an org) or the signed-in account.
+import { EmptyState } from '../../components/EmptyState';
 import type { Navigate } from '../shell/useRoute';
 import type { AgentsRoute } from '../source-platform/sourceRoute';
 import { AgentRunDetail, AgentRuns } from './AgentRuns';
@@ -32,14 +33,7 @@ function page(
   onNewRepository?: () => void,
 ) {
   const workspace = route.workspace ?? account;
-  if (!workspace)
-    return (
-      <div className="source-empty-state">
-        <p>
-          <strong>Sign in to see your agents.</strong>
-        </p>
-      </div>
-    );
+  if (!workspace) return <EmptyState title="Sign in to see your agents" />;
   const space =
     route.workspace && route.workspace !== account ? { workspace: route.workspace } : {};
   if (route.view === 'agent-settings' || route.view === 'agent-configure')

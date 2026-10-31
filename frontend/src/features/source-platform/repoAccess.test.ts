@@ -98,9 +98,11 @@ describe('read-only views', () => {
       renderToStaticMarkup(
         createElement(RepoNotFound, { authenticated, onSignIn: () => {}, navigate: () => {} }),
       );
-    expect(page(false)).toContain('Repository not found (or it is private)');
+    expect(page(false)).toContain('Repository not found');
+    expect(page(false)).toContain('or is private');
     expect(page(false)).toContain('Sign in');
-    expect(page(false)).toContain('href="/source/explore"');
     expect(page(true)).not.toContain('Sign in');
+    const noSignIn = createElement(RepoNotFound, { authenticated: false, navigate: () => {} });
+    expect(renderToStaticMarkup(noSignIn)).toContain('href="/source/explore"');
   });
 });

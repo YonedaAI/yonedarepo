@@ -46,14 +46,11 @@ describe('a repository that is not there', () => {
     expect(seen).toEqual([]);
   });
 
-  it('shows one not-found page with a way back and a way forward', () => {
-    const html = renderToStaticMarkup(
-      createElement(RepoNotFound, { navigate: () => {}, onNew: () => {} }),
-    );
+  it('shows one not-found page with one way back', () => {
+    const html = renderToStaticMarkup(createElement(RepoNotFound, { navigate: () => {} }));
     expect(html).toContain('Repository not found');
-    expect(html).toContain('This repository doesn&#x27;t exist or was deleted');
+    expect(html).toContain('It doesn&#x27;t exist, was deleted, or is private');
     expect(html).toContain('href="/"');
-    expect(html).toContain('New repository');
     expect(html).not.toContain('role="alert"');
   });
 });

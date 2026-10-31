@@ -43,7 +43,6 @@ export function RepoPage({
   navigate,
   onDeleted,
   onMissing,
-  onNew,
   onSignIn,
   onLoaded,
 }: {
@@ -58,7 +57,6 @@ export function RepoPage({
   onDeleted: () => void;
   /** The repository is not there for this viewer (deleted, unknown, private or not theirs). */
   onMissing: () => void;
-  onNew: () => void;
   onSignIn?: () => void;
   /** The loaded name and visibility, and whether the viewer may change settings, for the
    * shell's header and sidebar. */
@@ -100,14 +98,7 @@ export function RepoPage({
       });
   }, [data, repo, owner, onLoaded]);
   if (missing)
-    return (
-      <RepoNotFound
-        navigate={navigate}
-        onNew={onNew}
-        authenticated={authenticated}
-        onSignIn={onSignIn}
-      />
-    );
+    return <RepoNotFound navigate={navigate} authenticated={authenticated} onSignIn={onSignIn} />;
   return (
     // Members see email-named accounts as they are; anyone reading only because the repository
     // is public sees "member" instead (people.ts).

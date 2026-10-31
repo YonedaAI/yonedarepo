@@ -4,6 +4,7 @@
 // the commit it was written against and the session it came from. Writers add, supersede,
 // publish a session's draft, and retire; every change appends, nothing is edited away.
 import { useState } from 'react';
+import { EmptyState } from '../../components/EmptyState';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { type ComposerStart, EMPTY_COMPOSER, MemoryComposer } from './MemoryComposer';
 import {
@@ -190,6 +191,26 @@ export function AgentMemories({ repo, navigate }: { repo: string; navigate: Navi
     setMore(null);
     setFilters({ ...filters, ...change });
   };
+  const unfiltered = memoriesPath(repo, filters) === memoriesPath(repo, NO_MEMORY_FILTERS);
+  const none = Boolean(first.data) && memories.length === 0 && unfiltered;
+  if (none && !first.error && !composer)
+    return (
+      <section aria-labelledby="memories-heading">
+        <EmptyState
+          id="memories-heading"
+          title="No memories yet"
+          action={
+            !readOnly && (
+              <button type="button" onClick={() => setComposer(EMPTY_COMPOSER)}>
+                Add a memory
+              </button>
+            )
+          }
+        >
+          Agents save what the code doesn't say here, and later sessions read it.
+        </EmptyState>
+      </section>
+    );
   return (
     <section aria-labelledby="memories-heading">
       <div className="agent-head">
@@ -261,17 +282,7 @@ export function AgentMemories({ repo, navigate }: { repo: string; navigate: Navi
       ) : first.error ? (
         <Failure error={first.error} onRetry={first.reload} />
       ) : memories.length === 0 ? (
-        <div className="source-empty-state">
-          <p>
-            <strong>No memories {filters === NO_MEMORY_FILTERS ? 'yet' : 'match'}.</strong> A memory
-            is a decision, constraint, gotcha or how-to that the code does not say, anchored to the
-            files or symbols it is about. Coding sessions are shown the relevant ones when they
-            start, when they read those files and when a prompt matches.
-          </p>
-          <p>
-            Agents add one with <code>yoneda memory add</code> or MCP <code>git_memory_add</code>.
-          </p>
-        </div>
+        !none && <p className="source-empty">No memories match these filters.</p>
       ) : (
         <ul className="agent-list memory-list" aria-label="Memories">
           {memories.map((m) => (
