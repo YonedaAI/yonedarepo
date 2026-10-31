@@ -28,6 +28,9 @@ pub const MAX_BOUND_PARAMETERS: usize = 100;
 pub trait SqlStore: Clone + 'static {
     fn query(&self, sql: &str, params: &[Value]) -> Result<Vec<Value>>;
     fn transaction(&self, action: Box<dyn FnOnce() -> Result<Value>>) -> Result<Value>;
+    /// The bytes the database occupies now, as Durable Object SQLite counts them against
+    /// its size limit (pages in use, free pages included).
+    fn database_size(&self) -> Result<u64>;
 }
 
 pub fn bad(message: &str) -> Error {
