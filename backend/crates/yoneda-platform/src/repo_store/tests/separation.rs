@@ -96,9 +96,8 @@ fn landings_on_other_files_pass_each_other() {
 fn a_landing_that_is_only_waiting_holds_nobody() {
     let (h, root) = repo();
     // Older, on the same file, and nobody will ever approve it.
-    let id = branch(&h, AGENT, &root, "abandoned", "src/a.rs");
-    let older = landing(&h, "abandoned");
-    let _ = (id, older);
+    branch(&h, AGENT, &root, "abandoned", "src/a.rs");
+    landing(&h, "abandoned");
     let newer = work(&h, &root, "newer", "src/a.rs", json!(["src/a.rs"]));
     assert_eq!(assess(&h, newer.1)["state"], "cleared");
 }
@@ -120,6 +119,45 @@ fn a_queued_ticket_is_ahead() {
     assert_eq!(queued["queued"], true, "{queued}");
     let behind = work(&h, &root, "behind", "src/b.rs", json!(["src/a.rs"]));
     assert_eq!(waiting(&assess(&h, behind.1)), ["SEPARATION"]);
+}
+
+/// A person's ticket for a Landing that read `reads`, with main moved on `moved`, and a Landing
+/// held behind it.
+fn ticket_ahead(moved: &str, reads: Value) -> (Harness, i64) {
+    let (h, root) = repo();
+    let front = work(&h, &root, "front", "src/a.rs", reads);
+    let first = work(&h, &root, "first", moved, json!([]));
+    h.ok(
+        OWNER,
+        json!({"op":"repo_land","ref":"main","commit":first.0}),
+    );
+    h.ok(
+        OWNER,
+        json!({"op":"repo_land_enqueue","ref":"main","commit":front.0}),
+    );
+    let behind = work(&h, &root, "behind", "src/b.rs", json!(["src/a.rs"]));
+    assert_eq!(waiting(&assess(&h, behind.1)), ["SEPARATION"]);
+    (h, behind.1)
+}
+
+#[test]
+fn a_ticket_settled_any_way_asks_for_the_held_landing() {
+    // Landed by the changeset path.
+    let (h, behind) = ticket_ahead("src/m.rs", json!(["src/a.rs"]));
+    let step = h.ok(
+        "platform:merge",
+        json!({"op":"repo_land_changesets","ref":"main"}),
+    );
+    assert_eq!(step["land_checks"], json!([behind]), "{step}");
+    // Refused at the claim, its read stale.
+    let (h, behind) = ticket_ahead("src/m.rs", json!(["src/m.rs"]));
+    let claim = h.ok(
+        "platform:merge",
+        json!({"op":"repo_land_claim","ref":"main"}),
+    );
+    assert_eq!(claim["failed"].as_array().unwrap().len(), 1, "{claim}");
+    assert_eq!(claim["land_checks"], json!([behind]), "{claim}");
+    assert_eq!(assess(&h, behind)["state"], "cleared");
 }
 
 #[test]
@@ -210,8 +248,7 @@ fn a_person_lands_past_a_hold_as_ever() {
 #[test]
 fn off_nothing_is_ahead_and_no_read_is_added() {
     let (h, root) = seeded();
-    let front = work(&h, &root, "front", "src/a.rs", json!([]));
-    let _ = front;
+    work(&h, &root, "front", "src/a.rs", json!([]));
     let gates = |h: &Harness, n| {
         let before = h.db.counts();
         h.ok(OWNER, json!({"op":"repo_change_gates","number":n}));

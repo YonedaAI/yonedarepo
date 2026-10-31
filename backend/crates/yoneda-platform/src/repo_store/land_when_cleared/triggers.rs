@@ -109,7 +109,8 @@ fn affected<S: SqlStore>(
         R::BranchSet | R::BranchBatch | R::RecordPushed | R::Land | R::LandBatch => {
             with_separated(db, moved_since(db, since)?)
         }
-        R::ChangeClose => separated(db),
+        R::ChangeClose | R::LandChangesets | R::LandSubmitted => separated(db),
+        R::LandClaim if result["failed"].as_array().is_some_and(|f| !f.is_empty()) => separated(db),
         R::LandClearance if c["failed"].is_object() && c["failed"]["code"] != SEPARATION => {
             separated(db)
         }

@@ -141,6 +141,7 @@ CTC decides by rules alone, and asks no model. The Landing page shows that same 
 | Every path-limited token that worked on it covers all it would land | It stays open |
 | Risk isn't High, and the repository isn't full | It stays open with the reason |
 | It merges cleanly | Go-around, with the reason |
+| No Landing ahead in the queue wrote what it read, or read what it writes | It waits, naming that Landing, and CTC looks again once the way clears |
 
 - A newer push or a rejection that arrives first stops it, even once the landing has joined the queue.
 - A refused landing stays open with its reason. Only the next event tries again, and a Landing already cleared when you turn this on lands on its next event.
@@ -149,6 +150,18 @@ CTC decides by rules alone, and asks no model. The Landing page shows that same 
 - `yoneda change` and the **Land** button work as before, and don't apply these rules.
 
 **Block landing on unresolved agent findings**, also off by default, refuses every landing on a protected branch, by anyone, while an agent's finding on the Landing is unresolved. A person's comment doesn't count: only Land when cleared waits for those.
+
+## Traffic
+
+When a coding session starts, or reads a file, the platform tells it which open Landings are on the same work, so it can avoid the collision before anything lands:
+
+```text
+- Landing 12 ("Retry budget", branch fix) is changing `retry` in src/net.rs
+```
+
+The closest come first: the same symbol, then the same file, then a Landing that read the file, since changing it would send that Landing around. A session hears each Landing and file once. It comes with `yoneda context`, the session hooks, `git_context` and `git_context_relevant`. A session's own branch counts as what it is changing, and its own Landing is left out. Nothing is held or refused by a warning. A token limited to some paths can't use these reads at all, and a file quarantine withholds is left out.
+
+**CTC** in a repository's sidebar shows every open Landing: its state, what it's waiting for, its place in line, where it overlaps another Landing and the last decision on it. The line runs queued landings first, then cleared ones, oldest cleared first, then those waiting. A Landing that's only waiting holds nobody up, so one left open can't stop the rest. With Land when cleared off, the page shows what CTC would say and nothing lands on its own. The same answer is `GET /ctc` and `git_ctc_radar`.
 
 ## Close, reopen, delete
 

@@ -101,7 +101,7 @@ fn a_session_hears_which_landing_is_changing_its_file() {
 #[test]
 fn the_same_symbol_leads_then_the_same_file_then_a_landing_that_read_it() {
     let (h, root) = seeded();
-    let read = branch(&h, "reads", &root, &["docs/a.md"], json!(["src/lib.rs"]));
+    branch(&h, "reads", &root, &["docs/a.md"], json!(["src/lib.rs"]));
     let first = landing(&h, "reads");
     let file_only = branch(&h, "file", &root, &["src/lib.rs"], json!([]));
     let second = landing(&h, "file");
@@ -109,7 +109,6 @@ fn the_same_symbol_leads_then_the_same_file_then_a_landing_that_read_it() {
     let same = branch(&h, "same", &root, &["src/lib.rs"], json!([]));
     let third = landing(&h, "same");
     symbols(&h, &same, "src/lib.rs", json!(["Policy::backoff"]));
-    let _ = read;
     let ranked = relevant(
         &h,
         json!({"paths":["src/lib.rs"],"symbols":["src/lib.rs#Policy"]}),
@@ -387,7 +386,7 @@ fn a_warning_costs_the_same_however_long_the_history_or_many_the_landings() {
     let many = cost(&h);
     assert_eq!(one.statements, many.statements, "{one:?} {many:?}");
     assert!(
-        one.statements <= none.statements + 6,
+        one.statements <= none.statements + 5,
         "{none:?} then {one:?}"
     );
     // Rows answer for the Landings, not for the 40 commits of history on that file: each is

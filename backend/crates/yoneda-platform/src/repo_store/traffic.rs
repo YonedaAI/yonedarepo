@@ -11,7 +11,6 @@
 //! Each footprint read is three statements however many Landings it covers (`read`): every count
 //! here is bounded by the Landings named and the commits of each, never by the base's history.
 use super::quarantine::WithheldMemories;
-use super::rows;
 use crate::storage::SqlStore;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -19,6 +18,7 @@ use yoneda_core::{
     Result,
     txlog::{Access, overlaps},
 };
+mod overlaps;
 mod queue;
 pub(crate) mod radar;
 mod warnings;
@@ -263,10 +263,10 @@ pub(super) fn read<S: SqlStore>(
                 continue;
             }
             let path = row["path"].as_str().unwrap_or_default();
-            let symbols: Vec<String> = match row["symbols"].as_str() {
-                Some(text) => serde_json::from_str(text).map_err(|_| rows::corrupt("symbols"))?,
-                None => Vec::new(),
-            };
+            // A warning is no reason to fail a read: unreadable symbols are a whole file.
+            let symbols: Vec<String> = (row["symbols"].as_str())
+                .and_then(|text| serde_json::from_str(text).ok())
+                .unwrap_or_default();
             let commit = row["commit_id"].as_str().unwrap_or_default();
             for landing in holders.get(commit).into_iter().flatten() {
                 let print = prints.entry(*landing).or_default();

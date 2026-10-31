@@ -189,7 +189,7 @@ Ships **before** stage 6.
 
 ## 6a. CTC: land when cleared
 
-`git_land` needs a caller, so with this off a Landing is a better PR. With it on, CTC (Code Traffic Control) lands an open Landing when its gates go green. It evaluates rules and moves a ref; it starts no agent. No sequencing, radar or traffic warnings yet.
+`git_land` needs a caller, so with this off a Landing is a better PR. With it on, CTC (Code Traffic Control) lands an open Landing when its gates go green. It evaluates rules and moves a ref; it starts no agent. Traffic, separation, sequencing and the radar are in 6b.
 
 **Built:** `platform_ctc.rs`, `repo_store/land_when_cleared.rs`, `cloudflare/worker/repo-land-cleared.ts`, `repo-land-check.ts`. Behind `LAND_WHEN_CLEARED` (off everywhere) and a per-repo switch (off).
 
@@ -220,6 +220,27 @@ Ships **before** stage 6.
 **Findings:** `findings_block` is enforced in `land_gates::gates`, so it refuses every landing on a protected base, explicit ones too. It counts open findings from tokens (`go_around`). Findings withheld from a line aren't counted, since nothing can resolve them; they reach the check's value instead.
 
 **Rollback:** `0044` carries these columns on dev, and wave 1 has to ship that text: the digest is computed from it, so a binary with earlier text fails `MIGRATION_DRIFT` on a store that applied it.
+
+## 6b. CTC: traffic
+
+Rules only: CTC warns, holds and orders. It writes no code, assigns no work and starts no agent. No schema migration.
+
+**Built:** `repo_store/traffic.rs` (footprints), `traffic/warnings.rs`, `traffic/queue.rs`, `traffic/radar.rs`, `traffic/overlaps.rs`, `land_when_cleared/separation.rs`, `backend/crates/yoneda-cli/src/traffic.rs`, `RepoCtc.tsx`.
+
+| Part | Choice |
+|---|---|
+| Footprint | A Landing writes what its own commits changed: first parents from its head down to its base, at most 32. It read what its head declared, the set landing checks. Symbols are `commit_symbols`, so a file the deriver hasn't reached is a whole-file overlap. A merge counts as what it changed against its first parent, so a branch that merged its base in also shows what that brought |
+| Warnings | `traffic` beside the answer of `git_context` and `git_context_relevant`, never a ranked item: an installed CLI renders an item it can't name as an open change. One warning is one Landing on one path; 8 at most, 3 per Landing, `more` counts the rest. Same symbol, same file, then a Landing that read it |
+| Session's own work | `branch` leaves out its Landing, and what it changed against main counts as named. At a start, as asked about too |
+| Once per session | Delivered as `{type: traffic, id, path}`, so the next file of the same Landing still warns. Only a platform that answered traffic gets one |
+| Grants and quarantine | Both context reads already refuse a path-limited token, and the read filters by grant as well. A file with a withheld blob on either side is left out, with its symbols. Declared reads are paths only, so a read stays |
+| Bound | Newest 50 open Landings. 3 statements for all of them, plus 2 for quarantine: `Counted` holds a warning at 5 statements over a repository with nothing open, the same at 1 and 21 Landings, and rows follow the Landings, not 40 commits of history on the file |
+| Separation | `clearance` holds with `SEPARATION` while a Landing ahead wrote what this one read, or read what it writes. With no declared reads a Landing's writes count, as in the batch rule. Holding only orders them: landing's own rules judge whatever lands second. Explicit landings never come here |
+| Ahead | A pending ticket, or a newest decision clearing the current head. **Not** a Landing that is only waiting: it might never clear, and one left open would stop the repository. A clearance older than 10 minutes stops holding, for a job that died and lost its last word too |
+| Asking again | Whatever takes a Landing out of line asks for those held: landed, closed, a new head, a failed attempt, a ticket settled by the changeset path or refused at the claim. A lapsed clearance asks for nothing: its held Landing waits for its next trigger |
+| Sequence | `Queue` reads `land_queue` and the record; nothing new schedules. Tickets, then cleared by oldest decision, then on the radar those waiting, oldest first |
+| Radar | `GET /ctc`, `git_ctc_radar`, the CTC page polling every 15 s while on screen. The job's decision, read and never recorded, with the switch off too. 25 Landings by default, 50 at most, and always those in line. `Counted`: 24 statements a Landing, the same after 5 and 35 later landings |
+| Conflict check | `reads_untouched` proves no stale read from `txlog_paths` in one indexed read before `occ` reads every log entry since the head's base. `refinements` is one statement, not one per entry. A Landing whose reads were touched still reads those entries, on every radar poll |
 
 ## 7. Flight plan and Intent drift
 

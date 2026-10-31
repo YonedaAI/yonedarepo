@@ -106,7 +106,7 @@ export function RepoCtc({ repo, ...links }: Links & { repo: string }) {
   const head = (
     <div className="source-changes-head">
       <h2 id="ctc-heading">CTC</h2>
-      <button type="button" className="secondary" onClick={reload} disabled={radar.loading}>
+      <button type="button" className="quiet" onClick={reload}>
         Refresh
       </button>
     </div>

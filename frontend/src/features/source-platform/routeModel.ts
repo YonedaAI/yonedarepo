@@ -22,10 +22,14 @@ export type RouteItem =
   | { kind: 'session'; at: number; session: RouteSession; delivered: RouteDelivery[] }
   | { kind: 'check'; at: number; check: RouteCheck };
 
+/** What tells delivered items apart: a traffic warning is one Landing on one file. */
+export const deliveredKey = (i: { type: string; id: number; label: string | null }) =>
+  `${i.type}:${i.id}:${i.type === 'traffic' ? i.label : ''}`;
+
 /** The items of `deliveries`, each once: memories first, then the rest as delivered. */
 export function deliveredItems(deliveries: RouteDelivery[]): RouteDeliveredItem[] {
   const items = new Map<string, RouteDeliveredItem>();
-  for (const item of deliveries.flatMap((d) => d.items)) items.set(`${item.type}:${item.id}`, item);
+  for (const item of deliveries.flatMap((d) => d.items)) items.set(deliveredKey(item), item);
   const all = [...items.values()];
   return [...all.filter((i) => i.type === 'memory'), ...all.filter((i) => i.type !== 'memory')];
 }

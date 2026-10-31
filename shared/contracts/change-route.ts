@@ -46,7 +46,7 @@ export type RouteDeliveredItem = {
   id: number;
   /** The item's current text; null for what quarantine withholds. */
   label: string | null;
-  /** `memory`, `contract`, `session` or `change`. */
+  /** `memory`, `contract`, `session`, `change` or `traffic`. */
   type: string;
 };
 
@@ -180,7 +180,7 @@ export const changeRouteSchema = {
           ]
         },
         "type": {
-          "description": "`memory`, `contract`, `session` or `change`.",
+          "description": "`memory`, `contract`, `session`, `change` or `traffic`.",
           "type": "string"
         }
       },

@@ -154,13 +154,13 @@ fn overlaps_name_the_other_landing_closest_first() {
 #[test]
 fn a_landing_whose_branch_is_gone_still_shows() {
     let (h, root) = seeded();
-    let (id, number) = work(&h, &root, "gone", "src/a.rs", json!([]));
-    let _ = id;
+    let (_, number) = work(&h, &root, "gone", "src/a.rs", json!([]));
     h.db.query("DELETE FROM refs WHERE name='refs/heads/gone'", &[])
         .unwrap();
     let line = radar(&h);
     let line = row(&line, number);
     assert_eq!(line["decision"], Value::Null);
+    assert_eq!(line["reasons"][0]["code"], "NO_BRANCH");
     assert_eq!(line["head"], Value::Null);
     assert_eq!(line["place"], Value::Null);
 }

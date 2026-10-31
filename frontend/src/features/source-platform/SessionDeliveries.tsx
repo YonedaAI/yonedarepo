@@ -8,6 +8,7 @@ import {
   deliveryCause,
 } from './memoryModel';
 import { usePeople } from './people';
+import { deliveredKey } from './routeModel';
 import { Failure, Loading } from './SourceStatus';
 import { when } from './sourceApi';
 import { useSource } from './useSource';
@@ -22,7 +23,7 @@ export function DeliveredItem({
   item: Pick<DeliveredItemRow, 'id' | 'label'> & { type: string };
   navigate: Navigate;
 }) {
-  if (i.type === 'change')
+  if (i.type === 'change' || i.type === 'traffic')
     return (
       <a {...linkTo({ view: 'change', repo, number: i.id }, navigate)}>
         {i.label ?? `Landing #${i.id}`}
@@ -83,7 +84,7 @@ export function SessionDeliveries({
                 </span>
                 <ul className="memory-anchors">
                   {d.items.map((i) => (
-                    <li key={`${i.type}:${i.id}`}>
+                    <li key={deliveredKey(i)}>
                       <DeliveredItem repo={repo} item={i} navigate={navigate} />
                     </li>
                   ))}
