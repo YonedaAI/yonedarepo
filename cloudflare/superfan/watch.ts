@@ -1,7 +1,8 @@
 // One superfan pass: read tail counters and analytics, evaluate deterministic rules, and
 // only for problems not already written up ask the cheap model for a short finding, within
 // the daily cap. A silent or failing telemetry source is itself a finding; it never reads
-// as "all quiet", and findings are resolved only by rules that were actually evaluated.
+// as "all quiet", and findings are resolved only by rules that were actually evaluated. New
+// findings then go out privately by email.
 import {
   type AnalyticsSource,
   CloudflareAnalytics,
@@ -12,6 +13,7 @@ import {
 import { dailyCap, type SuperfanEnv, type WatchSite, watchSite } from './config';
 import type { SuperfanLedger } from './ledger';
 import { FlashModel, type ModelClient, ModelError } from './model';
+import { notifyFindings } from './notify';
 import {
   baselineSamples,
   type ComponentReport,
@@ -116,12 +118,15 @@ async function narrate(
 export async function runWatch(env: SuperfanEnv, deps = productionDeps(env)): Promise<WatchResult> {
   const run = await deps.ledger.startRun(deps.now());
   if (run === null) return { outcome: 'busy', anomalies: 0, modelCalls: 0, findings: [] };
+  let result: WatchResult;
   try {
-    return await pass(env, deps, run);
+    result = await pass(env, deps, run);
   } catch (error) {
     await deps.ledger.finishRun(run, 'error', 0, 0, deps.now());
     throw error;
   }
+  await notifyFindings(env, deps.ledger, deps.now());
+  return result;
 }
 
 async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<WatchResult> {

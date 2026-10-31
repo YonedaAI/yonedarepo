@@ -1,6 +1,8 @@
 // Superfan Worker: the platform-only Worker's tail consumer, an hourly cron pass over its
-// telemetry, and an authenticated read endpoint for findings. It posts nowhere.
+// telemetry, and an authenticated read endpoint for findings. Findings reach the owner by
+// private email (notify.ts) and nowhere public.
 import { isWatchable, type SuperfanEnv } from './config';
+import { noticesOn } from './notify';
 import { aggregate } from './tail';
 import { ledgerStub, runWatch } from './watch';
 
@@ -47,6 +49,7 @@ export async function superfanFetch(req: Request, env: SuperfanEnv): Promise<Res
             ? 'cloudflare'
             : 'waiting_on_token',
       model: env.SUPERFAN_MODEL,
+      notices: noticesOn(env) ? 'email' : 'off',
       ...(await ledger.status(now)),
     });
   }

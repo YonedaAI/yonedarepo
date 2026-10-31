@@ -2,6 +2,7 @@
 // files, HTTP sessions against the staging front Worker and platform, and the step recorder.
 // Credentials are read from 0600 files and never printed, logged or passed as arguments.
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { chmodSync, existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
@@ -26,6 +27,13 @@ export function readEnvFile(name, { required = true } = {}) {
     if (match) values[match[1]] = match[2].trim();
   }
   return values;
+}
+
+/** The commit's Git tree in the checkout at `root`; null when this clone lacks the commit. */
+export function treeOf(root, commit) {
+  if (!/^[0-9a-f]{40}$/.test(commit ?? '')) return null;
+  const git = spawnSync('git', ['rev-parse', '--verify', '-q', `${commit}^{tree}`], { cwd: root, encoding: 'utf8' });
+  return git.status === 0 ? git.stdout.trim() : null;
 }
 
 /** The kit account, created on first use. */

@@ -68,6 +68,8 @@ describe('superfan ledger schema', () => {
       const sql = state.storage.sql;
       // Rebuild the version-1 shape inside a fresh object, with a finding in it.
       for (const t of ['tail_samples', 'tail_minutes']) sql.exec(`DROP TABLE IF EXISTS ${t}`);
+      sql.exec('ALTER TABLE findings DROP COLUMN notified_at');
+      sql.exec('ALTER TABLE spend_days DROP COLUMN emails');
       sql.exec('UPDATE schema_version SET version = 1');
       sql.exec(
         "INSERT INTO findings (dedup_key, component, kind, status, signals, summary, narrative_status, first_seen, last_seen) VALUES ('a:b', 'a', 'anomaly', 'open', '[]', 's', 'pending', 1, 1)",
@@ -75,6 +77,9 @@ describe('superfan ledger schema', () => {
       expect(migrate(sql)).toBe(MIGRATIONS.length);
       expect(sql.exec('SELECT COUNT(*) AS n FROM tail_minutes').one().n).toBe(0);
       expect(sql.exec('SELECT COUNT(*) AS n FROM findings').one().n).toBe(1);
+      // A finding from before notices is not new.
+      expect(sql.exec('SELECT notified_at FROM findings').one().notified_at).toBe(1);
+      expect(sql.exec('SELECT emails FROM spend_days').toArray()).toEqual([]);
     });
   });
 

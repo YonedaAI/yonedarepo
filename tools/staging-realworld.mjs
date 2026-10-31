@@ -104,7 +104,7 @@ import { cliChangeRequest } from './staging/change-flow.mjs';
 import { accountMcp, cleanupRepos, cliCleanup, revokePat, serverReads } from './staging/cli-account-flow.mjs';
 import { cliConcurrency, cliLoginRepo, cliTransactional } from './staging/cli-flow.mjs';
 import { CliKit } from './staging/cli-tools.mjs';
-import { Recorder, Session, accountSession, kitCredentials, readEnvFile, secondAccount } from './staging/client.mjs';
+import { Recorder, Session, accountSession, kitCredentials, readEnvFile, secondAccount, treeOf } from './staging/client.mjs';
 import { agentHooks } from './staging/agent-hooks-flow.mjs';
 import { agentRun } from './staging/agent-run-flow.mjs';
 import { forkFlow } from './staging/fork-flow.mjs';
@@ -382,7 +382,9 @@ if (['12', '13', '14', '15', '16', '17', '18', '21', '27', '28', '29'].some(want
 }
 
 // Only the model check calls a model (the platform's own AI check, < $0.01).
-const evidence = { schema: 1, origin: values.origin, platform: values.platform, recorded_at: new Date().toISOString(), items: rec.items };
+// The tree of the commit item 0 saw live: the prod guard takes a merge commit of the same tree.
+const tree = treeOf(root, rec.items.find((i) => i.id === '0')?.metrics.front);
+const evidence = { schema: 1, origin: values.origin, platform: values.platform, tree, recorded_at: new Date().toISOString(), items: rec.items };
 await mkdir(resolve(root, '.local/staging'), { recursive: true });
 // Smoke-only evidence keeps its own name: the prod guard reads the newest realworld*.json.
 const smoke = ['model', 'hooks', 'members', 'reads', 'browser', '22', '24', '25', '26', '31'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));

@@ -3,9 +3,9 @@ name: Check
 # warm cargo and pnpm caches, about ten minutes. Lint, types and the unit tests of each crate,
 # the Worker Wasm build, the frontend and runtime suites. The workerd suites, the platform and
 # superfan Workers, the frontend build and the runtime image run in "Full suite" (full.yml),
-# by hand before a prod ship; together they are `cargo xtask check` (xtask/src/commands.rs),
-# so keep both workflows in step with its arm. Nothing here deploys: dev and prod deploy from
-# the owner's checkout (deploy-dev.yml and deploy-prod.yml are manual and off).
+# in the ship or by hand; together they are `cargo xtask check` (xtask/src/commands.rs),
+# so keep both workflows in step with its arm. Nothing here deploys. A ship PR (dev to main)
+# runs this through ship.yml, not on its own, so it runs once.
 on:
   # Documentation-only changes (docs/, Markdown anywhere, the site's content) run nothing.
   pull_request:
@@ -14,11 +14,18 @@ on:
     branches: [main]
     paths-ignore: ['docs/**', '**/*.md', 'frontend/src/content/**']
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      ship:
+        description: Called by ship.yml
+        type: boolean
+        default: false
 permissions:
   contents: read
-# One run per branch or PR: a newer push cancels the older run of the same ref.
+# One run per branch or PR: a newer push cancels the older run of the same ref. Ship's call has
+# its own group, because a run on the same PR would otherwise cancel it.
 concurrency:
-  group: check-${{ github.event.pull_request.number || github.ref }}
+  group: check-${{ inputs.ship && 'ship' || github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 # An explicit bash shell runs with -eo pipefail, so `cmd | tee` fails when cmd fails.
 defaults:
@@ -27,6 +34,13 @@ defaults:
 jobs:
   check:
     name: Check
+    # A fork's branch named dev is no ship PR: its run stays here.
+    if: >-
+      inputs.ship ||
+      github.event_name != 'pull_request' ||
+      github.head_ref != 'dev' ||
+      github.base_ref != 'main' ||
+      github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

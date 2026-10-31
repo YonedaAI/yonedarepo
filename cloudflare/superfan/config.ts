@@ -33,6 +33,10 @@ export interface SuperfanEnv {
   SUPERFAN_READ_TOKEN?: string;
   MIMO_KEY?: SecretsStoreSecret;
   ZAI_KEY?: SecretsStoreSecret;
+  /** Where new findings are mailed (notify.ts); empty: no mail. */
+  ADMIN_NOTIFY_EMAIL?: string;
+  EMAIL_FROM?: string;
+  RESEND_API_KEY?: SecretsStoreSecret;
 }
 
 export interface WatchIds {
