@@ -107,6 +107,25 @@ export async function deleteRepository(env: Env, auth: Credentials, repo: string
 
 const R2_PAGE = 1000;
 
+/** Every cache derived from the repository's content (search, packs, symbols, facts, views). */
+export const derivedPrefix = (repo: string) => `derived/v1/${repo}/`;
+
+export const ERASE = 'platform_erase';
+export const eraseOn = (env: Env) => env.REPO_ERASE === 'on';
+
+/** Asks for `repo` to be erased, from the start or continuing its authority's records. */
+export async function dispatchErase(
+  env: Env,
+  repo: string,
+  job: 'start' | 'records' = 'start',
+  delaySeconds?: number,
+) {
+  await env.PLATFORM_QUEUE.send(
+    { v: 1, kind: ERASE, repo_id: repo, job_id: job },
+    delaySeconds ? { delaySeconds } : undefined,
+  );
+}
+
 /** Deletes every R2 object under `prefix`, a page at a time. */
 export async function purgePrefix(env: Env, prefix: string) {
   for (;;) {
@@ -116,13 +135,14 @@ export async function purgePrefix(env: Env, prefix: string) {
   }
 }
 
-/** The purge job: a deleted repository's object store and platform objects (check logs,
- * cached objects). Idempotent; the authority names the store only once it is a tombstone. */
-export async function purgeRepository(env: Env, repo: string) {
+/** A deleted repository's object store, platform objects (check logs, cached objects) and
+ * derived caches. Idempotent; the authority names the store only once it is a tombstone, and
+ * an erased one names none. */
+export async function purgeObjects(env: Env, repo: string) {
   const target: Json = await caller(env, repo, { _system: 'purge' })({ op: 'repo_purge_target' });
   await purgePrefix(env, `platform/v1/${repo}/`);
   // Search segments, packs, symbols and facts hold file content.
-  await purgePrefix(env, `derived/v1/${repo}/`);
+  await purgePrefix(env, derivedPrefix(repo));
   // A fork purges its own store, never the parent's it inherits from.
   const store = ownSpec(String(target.object_store ?? ''));
   const r2 = /^r2:([A-Za-z0-9._-]+)$/.exec(store);
@@ -136,4 +156,11 @@ export async function purgeRepository(env: Env, repo: string) {
         if (!/not.?found/i.test(String(e?.message ?? e))) throw e;
       });
   }
+}
+
+/** The purge job: the objects, then what is left in the databases (repo-erase), which never
+ * starts without a purge before it. */
+export async function purgeRepository(env: Env, repo: string) {
+  await purgeObjects(env, repo);
+  if (eraseOn(env)) await dispatchErase(env, repo);
 }

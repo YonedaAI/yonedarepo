@@ -11,11 +11,11 @@ import { platformFetch } from './platform-routes';
 import { signupNoticeJob } from './platform-signup-notice';
 import { sshFrontDoor, sshKeepAlive } from './platform-ssh-gateway';
 import { welcomeJob } from './platform-welcome-email';
-import { purgeRepository } from './repo-admin';
+import { ERASE, purgeRepository } from './repo-admin';
 import { executeCheckRun } from './repo-checks';
 import { CLASSIFY, classifyJob } from './repo-classify';
 import { deriveAfterLanding } from './repo-derived';
-import { dispatchErase, ERASE, eraseJob, eraseOn } from './repo-erase';
+import { eraseJob } from './repo-erase';
 import { hookJob } from './repo-hooks';
 import { lfsSweepJob } from './repo-lfs-sweep';
 import { PACK_BUILD, packBuildJob } from './repo-pack-jobs';
@@ -66,7 +66,6 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
     message.ack();
   } else if (envelope.kind === 'platform_purge') {
     await purgeRepository(env, envelope.repo_id);
-    if (eraseOn(env)) await dispatchErase(env, envelope.repo_id);
     message.ack();
   } else if (envelope.kind === ERASE) {
     await eraseJob(env, envelope);

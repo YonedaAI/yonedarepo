@@ -2,7 +2,7 @@
 //! once hooks are done or given up and no fork is left, in batches under a budget, resumable
 //! at any step, and leaving nothing but the row that answers GONE.
 use super::*;
-use crate::repo_store::erase::{BYTE_BUDGET, GIVE_UP_MS, ROW_BUDGET, wipe::TABLES};
+use crate::repo_store::erase::{BYTE_BUDGET, ROW_BUDGET, wipe::TABLES};
 use crate::repo_store::rows;
 use crate::storage::SqlStore;
 
@@ -344,7 +344,7 @@ fn waits_for_undelivered_hooks_then_erases() {
     delete(&h);
     let waiting = plan(&h);
     assert_eq!(waiting["hooks"], json!([hook]));
-    assert!(waiting["wait_ms"].as_i64().unwrap() > 0, "{waiting}");
+    assert!(waiting["refs"].is_null(), "{waiting}");
     let nothing_yet = count(&h, "commits");
     assert_eq!(
         code(h.run(ERASE, json!({"op":"repo_erase_step"}))),
@@ -359,32 +359,41 @@ fn waits_for_undelivered_hooks_then_erases() {
         HOOKS,
         json!({"op":"repo_hook_settle","hook_id":hook,"seq":claim["seq"],"attempt":claim["attempt"],"ok":true,"status":200,"ms":5}),
     );
-    assert!(plan(&h)["wait_ms"].is_null());
+    assert!(plan(&h)["hooks"].is_null());
     finish(&h);
     assert_eq!(count(&h, "hooks"), 0);
 }
 
+/// A hook switched off (50 failures, or too far behind) is given up on: nothing will ever
+/// send its payloads.
 #[test]
-fn gives_up_on_a_hook_switched_off_or_past_the_deadline() {
-    // Switched off (50 failures, or too far behind): nothing will ever send its payloads.
+fn gives_up_on_a_hook_switched_off() {
     let (h, _) = seeded();
     let hook = with_hook(&h);
     delete(&h);
     h.db.query("UPDATE hooks SET active=0 WHERE id=?", &[hook])
         .unwrap();
-    assert!(plan(&h)["wait_ms"].is_null());
+    assert!(plan(&h)["hooks"].is_null());
     finish(&h);
     assert_eq!(count(&h, "hook_outbox"), 0);
+}
 
-    // Still on, but its deliveries have stopped (their jobs ran out of retries).
+/// The wipe may run long after the deletion (a purge can wait out an undo window), and a
+/// purge can queue payloads of its own: how long ago the repository was deleted says nothing
+/// about what is still to send.
+#[test]
+fn a_late_erase_still_waits_for_hooks() {
     let (h, _) = seeded();
-    with_hook(&h);
+    let hook = with_hook(&h);
     delete(&h);
-    assert!(plan(&h)["wait_ms"].as_i64().is_some());
-    *h.now.borrow_mut() += GIVE_UP_MS;
-    assert!(plan(&h)["wait_ms"].is_null());
-    finish(&h);
-    assert_eq!(count(&h, "hook_outbox"), 0);
+    *h.now.borrow_mut() += 31 * 24 * 60 * 60 * 1000;
+    assert_eq!(plan(&h)["hooks"], json!([hook]));
+    assert_eq!(
+        code(h.run(ERASE, json!({"op":"repo_erase_step"}))),
+        "CONFLICT"
+    );
+    assert!(count(&h, "commits") > 0);
+    assert_eq!(count(&h, "hook_outbox"), 1);
 }
 
 /// Deleting refuses while forks remain; a tombstone that lists one anyway (older than that
