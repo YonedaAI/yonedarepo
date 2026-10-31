@@ -217,7 +217,7 @@
           "SITE_EVENTS_DATASET": "yonedarepo_dev_site_events",
           "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
           "ADMIN_BILLING": "off",
-          "ASYNC_STORE": "off",
+          "ASYNC_STORE": "on",
           "ADMIN_NOTIFY_EMAIL": "",
           "SUPPORT_EMAIL": "support@yonedalabs.ai"
         },
