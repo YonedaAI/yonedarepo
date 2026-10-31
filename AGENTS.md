@@ -73,6 +73,36 @@ Environments and deploys
 - Exception (owner, 2026-10-29): predefined **managed agents** (code review, security review) run in their own Worker (`<prefix>-agents-managed`) as ordinary API clients of the platform: Cloudflare Workflows + Queues for durable steps, AI Gateway for model calls and per-use cost, billed from the account's credit. The platform never runs, schedules or knows about agents; third-party runtimes (e.g. AgentHero) connect as plugins through webhooks and MCP.
 - Status and task lists contain only what a working dev and prod need; no governance or nice-to-have rows.
 
+## UI and UX rules (owner rules)
+
+Every page, panel and dialog follows these. Check them before reporting UI work done; the owner should never have to ask for one of these twice.
+
+Words
+- One short line. A page explains itself with its layout, not with paragraphs; longer help belongs in docs. No line over 76 characters of reading width.
+- Sentence case, plain verbs, the reader's words. No internal names on screen: ledger, rollup, projection, derive, outbox, Durable Object.
+- Show a requirement only when it applies to this viewer and this repository. A public clone says nothing about tokens.
+- Hints put the link first, then the action: `Settings → SSH keys: run yoneda ssh setup once.`
+- No product internals, setup steps or caveats in the main flow. If a note doesn't change what the reader does next, cut it.
+
+Empty, loading and error states
+- Nothing there: the shared empty state. A centred title (`No sessions yet`), one or two plain sentences on how the first one appears, at most one action. No box, dashed border, command syntax, MCP names or list of tools.
+- A section with nothing in it shows one line, never a table of zeros or headers over no rows.
+- Loading never shifts the layout. An error says what failed and offers the way out; no raw codes or stack text.
+
+Layout
+- Everything on a page shares the same left and right edges: no grids with spare columns, no blocks narrower than their neighbours without a reason.
+- Controls in a row are the same height and line up. A section's filters sit in its header row.
+- Figures are right aligned in tabular numerals; a total row looks like a total.
+- One command, one line: scroll it, never break it, and give it a Copy button.
+- Use the shared components and tokens. Add a new pattern only when none fits, and move the old ones onto it in the same change.
+
+Scope
+- Admin pages show what an operator reads. Repairs and first-use steps are `cargo xtask` commands, not buttons.
+- A feature that isn't part of the product doesn't appear in the product.
+
+Done means
+- Looked at in the served app, not only in tests: wide and 375px, light and dark, with empty, loading, error and full states, by keyboard, with no page-level sideways scroll. Look at the screenshots before reporting.
+
 ## References
 
 Use these as guidance, adapted to the actual repository rather than copied wholesale:
