@@ -89,7 +89,24 @@ If memory doesn't help, fix that before building Instruments around it.
 Built, not run yet: `tools/staging/memory-flow.mjs`. The run fills this section. Run it with `set -a; . ~/.config/yonedarepo/dev-owner.env; set +a`, then `node tools/staging-realworld.mjs --memory-test`, which prints the estimate; add `--yes` to start.
 
 <!-- memory-test-results:start -->
-No run yet.
+Run 2026-10-31T19:59:45.613Z on `e65eb761`, `zai-coding-plan/glm-5.3`. Evidence: `.local/staging/memory-test-1793474668732.json`.
+
+**Answer: memory helped.** Trap avoided: memory 6/6, plain 0/6, Fisher p = 0.0022.
+
+| Trap | Memory avoided | Plain avoided |
+|---|---|---|
+| frozen-file | 2/2 | 0/2 |
+| env-prefix | 2/2 | 0/2 |
+| exit-code | 2/2 | 0/2 |
+
+| Measure | Memory, mean (range) | Plain, mean (range) | Memory / plain | Claim |
+|---|---|---|---|---|
+| Tokens | 227,073 (69,924-500,798) | 111,429 (52,600-254,744) | 2.04 | ranges overlap: no difference shown |
+| Time, ms | 96,379 (40,587-143,125) | 46,289 (28,147-77,799) | 2.08 | ranges overlap: no difference shown |
+| Whole-file reads | 1 (0-2) | 1 (0-2) | 1.00 | ranges overlap: no difference shown |
+
+Landing success: memory 6/6, plain 6/6, Fisher p = 1.0000.
+Trap memory delivered in 6/6 memory runs. Invalid runs: 0 memory, 0 plain.
 <!-- memory-test-results:end -->
 
 **How it is built:**
