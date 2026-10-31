@@ -116,6 +116,10 @@ pub const RESERVED_HANDLES: &[&str] = &[
     "yonedarepo",
 ];
 
+/// Where a new account signed up from: Cloudflare location hints, one per continent. A code
+/// names a place, not a cell: no account has a home yet, and one with no code reads as `enam`.
+pub const ACCOUNT_REGIONS: &[&str] = &["afr", "apac", "enam", "oc", "sam", "weur"];
+
 pub const HANDLE_HELP: &str =
     "Handles are 3–32 letters, digits or underscores, starting with a letter";
 

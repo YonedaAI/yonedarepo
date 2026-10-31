@@ -5,6 +5,7 @@
 
 import { type AccountCreated, accountSummary, recordAccount } from './account-index';
 import { queueWelcome } from './platform-email-verify';
+import { isRegion, regionSignals } from './region';
 import type { Env } from './types';
 
 const PROVIDERS: readonly string[] = ['email', 'github', 'google'];
@@ -18,7 +19,8 @@ const PROVIDERS: readonly string[] = ['email', 'github', 'google'];
 export async function accountCreated(env: Env, account: string, details: AccountCreated = {}) {
   const provider =
     details.provider && PROVIDERS.includes(details.provider) ? details.provider : 'email';
-  await recordAccount(env, account, provider, Date.now());
+  const region = regionSignals(env) && isRegion(details.region) ? details.region : undefined;
+  await recordAccount(env, account, provider, Date.now(), region);
   await env.PLATFORM_QUEUE.send({
     v: 1,
     kind: SIGNUP_NOTICE,
@@ -64,6 +66,7 @@ export async function backfillAccounts(env: Env, after = '', limit = 50) {
       name,
       summary.providers?.[0] ?? 'email',
       Number(summary.created_at ?? 0),
+      summary.region,
     );
     if (summary.suspended_at)
       await env.INDEX.prepare('UPDATE platform_accounts SET suspended_at=? WHERE account=?')

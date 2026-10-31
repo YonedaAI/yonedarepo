@@ -80,6 +80,7 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     assert_eq!(platform["ratelimits"][0]["namespace_id"], "1001");
     assert_eq!(platform["placement"]["region"], "aws:us-east-1");
     assert_eq!(platform["vars"]["TRAFFIC_EVENTS"], "off");
+    assert_eq!(platform["vars"]["REGION_SIGNALS"], "off");
     assert_eq!(
         platform["analytics_engine_datasets"],
         json!([{"binding": "SITE_EVENTS", "dataset": "yonedarepo_prod_site_events"}])
@@ -109,7 +110,9 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     assert_eq!(vars["AUDIT_LOG"], "off");
     // The ping and platform client counts: dev measures them first (docs/load-testing.md).
     assert_eq!(vars["TRAFFIC_EVENTS"], "off");
-    assert_eq!(vars.as_object().map(|v| v.len()), Some(6));
+    // Sign-ups run here too; off until the owner clears the privacy text.
+    assert_eq!(vars["REGION_SIGNALS"], "off");
+    assert_eq!(vars.as_object().map(|v| v.len()), Some(7));
     assert_eq!(
         agents["analytics_engine_datasets"],
         json!([{"binding": "SITE_EVENTS", "dataset": "yonedarepo_prod_site_events"}])

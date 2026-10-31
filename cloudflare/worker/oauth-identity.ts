@@ -7,6 +7,7 @@
 import { isReservedHandle, normalizeAccountIdentifier } from '../../shared/account';
 import { accountCreated } from './account-email';
 import type { ProviderIdentity } from './oauth-providers';
+import type { SignupRegion } from './region';
 import { sha } from './storage';
 import type { Env, Json } from './types';
 import { workspace } from './workspace';
@@ -73,6 +74,7 @@ export async function signInWith(
   env: Env,
   identity: ProviderIdentity,
   sessionHash: string,
+  region: SignupRegion = {},
 ): Promise<Outcome> {
   const key = identityKey(identity);
   const held = await holder(env, key);
@@ -108,6 +110,7 @@ export async function signInWith(
         username: name,
         session_hash: sessionHash,
         ...fields(identity),
+        ...region,
       });
     } catch (e: any) {
       if (e?.code === 'ALREADY_EXISTS') continue;
@@ -116,7 +119,7 @@ export async function signInWith(
     if (identity.email)
       await claims(env, await emailKey(identity.email), { op: 'identity_claim', account: name });
     // A new account only: later sign-ins and links never welcome again.
-    await accountCreated(env, name, identity.email, identity.provider);
+    await accountCreated(env, name, identity.email, identity.provider, region);
     return { kind: 'signed_in', username: name, created: true };
   }
   return { kind: 'error', code: 'unavailable' };

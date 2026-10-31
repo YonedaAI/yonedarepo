@@ -143,6 +143,7 @@
         "Site traffic (worker/platform-site-traffic.ts) reads the front Worker's yonedarepo_dev_site_events dataset (SITE_EVENTS_DATASET)",
         "through the Analytics Engine SQL API: CF_ACCOUNT_ID plus the optional secret ANALYTICS_READ_TOKEN (Account Analytics Read).",
         "The same dataset's SITE_EVENTS binding takes platform requests by client kind (worker/platform-client-events.ts) while TRAFFIC_EVENTS is on.",
+        "It also takes sampled write origins (worker/platform-write-origin.ts) while REGION_SIGNALS is on; that switch stays off until the owner clears the privacy text.",
         "Without the token, traffic reports are unavailable and nothing else changes.",
         "ADMIN_BILLING=on adds the operators' billing routes (platform-admin-billing.ts) and starts the managed Worker's nightly reconcile from this Worker's cron; set it on the managed Worker too.",
         "LANDING_INSTRUMENTS=on: a change's page shows its Slop and Risk cards (repo-instruments.ts).",
@@ -209,6 +210,7 @@
           "ACCOUNT_SEARCH": "on",
           "AUDIT_LOG": "off",
           "TRAFFIC_EVENTS": "on",
+          "REGION_SIGNALS": "off",
           "PUSH_BUNDLES": "on",
           "PACK_CACHE": "on",
           "WEB_ORIGIN": "{origin}",
@@ -733,6 +735,7 @@
         "vars": {
           "AUDIT_LOG": "off",
           "TRAFFIC_EVENTS": "on",
+          "REGION_SIGNALS": "off",
           "PUBLIC_APP_ORIGIN": "{origin}",
           "WEB_ANALYTICS_TOKEN": "70b90cc7e849429fa25cc64897ebfd2b",
           "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com"

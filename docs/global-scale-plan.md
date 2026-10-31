@@ -297,6 +297,28 @@ A summary is 2^17 bits (16 KiB, 32 KB as hex), a repo's folded content and path 
 | R11 | `weur` on prod | **Real users there,** from R1 |
 | R12 | `apac` | Signups justify it |
 
+### R1 spike results (2026-10-31)
+
+**Does `request.cf` reach sign-up?** Yes: `accountRoute` and `oauthRoute` run on the Worker the client reached, the front, or the platform on `api.`. No sign-up crosses a binding.
+
+**Through a service binding?** Measured in workerd with `wrangler dev` (two Workers, local). Cloudflare's docs don't state it.
+
+| Call | `cf` at the callee |
+|---|---|
+| `PLATFORM.fetch(req)` (the front's proxy) | Kept |
+| `PLATFORM.fetch(new Request(url, req))` | Kept |
+| `PLATFORM.fetch(new Request(url, { headers }))` | Lost |
+| `PLATFORM.fetch(url)` | Lost |
+| RPC (`accountCreated`) | None: arguments only |
+
+So the region is read where the request arrives and passed on as a value. Git over SSH reaches the platform from the gateway container, so it can't show the client's continent and isn't sampled.
+
+**Not answered:** both Workers are pinned with `placement`. Cloudflare's docs don't say whether `request.cf` reports the client or the placed location. Check before relying on R1's data: the front's dev points should show countries other than the US (`blob4`).
+
+**Stored:** one code per continent, each a Cloudflare location hint: NA `enam`, EU `weur`, AS `apac`, SA `sam`, OC `oc`, AF `afr`. Antarctica, Tor and an unknown continent store nothing and read as `enam`. The account's authority holds the code and `platform_accounts.region` repeats it. `sam`, `oc` and `afr` have no planned cell yet, so R7 must say which cell serves them.
+
+**Write sample:** `write_origin` points in the site events dataset, one write in 10, with the continent and a digest of the account. A repository token's digest is its repository's, because naming the account would add a lookup (safety rule 8).
+
 ### Spikes for R3
 
 1. Can an Artifacts namespace be regional?

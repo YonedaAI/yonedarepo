@@ -276,3 +276,18 @@ fn the_identity_migration_upgrades_a_version_six_store_and_keeps_its_account() {
         .unwrap();
     assert_eq!(versions.len(), 10);
 }
+
+#[test]
+fn a_provider_signup_records_a_known_region() {
+    let signup = |region: &str| {
+        let db = NativeStore::memory().unwrap();
+        let command = with(
+            github("42"),
+            json!({"op":"identity_signup","username":"octocat","session_hash":"a".repeat(64),"region":region}),
+        );
+        assert!(at(&db, 1000, command).unwrap().get("region").is_none());
+        at(&db, 2000, json!({"op":"account_summary"})).unwrap()
+    };
+    assert_eq!(signup("weur")["region"], "weur");
+    assert!(signup("mars").get("region").is_none());
+}

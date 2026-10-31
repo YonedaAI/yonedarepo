@@ -139,6 +139,7 @@
     "ADMIN_ACCOUNTS": "magnetonio",
     "AUDIT_LOG": "off",
     "PUBLIC_APP_ORIGIN": "https://yonedarepo.com",
+    "REGION_SIGNALS": "off",
     "SEO_INDEXING": "on",
     "TRAFFIC_EVENTS": "off",
     "WEB_ANALYTICS_TOKEN": "fd30d727a0dc4d4c949dee535977d1b2"

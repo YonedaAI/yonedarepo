@@ -33,6 +33,10 @@ const neutral = new Set([
   './account-audit',
   // The site analytics data point layout (blob positions) the traffic queries read; imports only types.
   './site-events',
+  // Continent and region codes from `request.cf`; imports only types.
+  './region',
+  // A digest of an account or token; imports nothing.
+  './storage',
   '../../shared/site-traffic',
   // Token scope names, generated from Rust; types only.
   '../../shared/contracts/pat-scopes',

@@ -5,6 +5,7 @@ import { error, response } from './http';
 import { recordClient } from './platform-client-events';
 import { sshInternal } from './platform-ssh';
 import { frontDoor, sshWake } from './platform-ssh-gateway';
+import { watchWrites } from './platform-write-origin';
 import { GIT_PATH, legacyRedirect } from './readable-paths';
 import { repoApi } from './repo-api';
 import { gitHttp } from './repo-git-http';
@@ -12,7 +13,7 @@ import { gitByPath } from './repo-git-paths';
 import type { Env } from './types';
 
 export async function platformFetch(req: Request, env: Env): Promise<Response> {
-  const res = await platformRoute(req, env);
+  const res = await watchWrites(req, env, () => platformRoute(req, env));
   recordClient(req, res, env);
   return res;
 }
