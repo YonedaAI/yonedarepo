@@ -51,11 +51,11 @@ export const FEATURES: Feature[] = [
       <Terminal
         label="Cloning and pushing with stock Git"
         lines={[
-          ['in', 'git clone yoneda::https://api.yonedarepo.com/r3f1…  demo'],
+          ['in', 'git clone yoneda::https://api.yonedarepo.com/acme/app  demo'],
           ['in', 'git commit -am "Retry on 503" && git push origin main'],
           ['out', '[main 9d1e0a7] Retry on 503'],
           ['out', ' 1 file changed, 4 insertions(+), 1 deletion(-)'],
-          ['out', 'To yoneda::https://api.yonedarepo.com/r3f1…'],
+          ['out', 'To yoneda::https://api.yonedarepo.com/acme/app'],
           ['out', '   4be81c2..9d1e0a7  main -> main'],
         ]}
       />
@@ -77,11 +77,11 @@ export const FEATURES: Feature[] = [
           label="Two writers push to main from the same base, and both land"
           lines={[
             ['in', 'git push origin main          # writer 1'],
-            ['out', 'To yoneda::https://api.yonedarepo.com/r3f1…'],
+            ['out', 'To yoneda::https://api.yonedarepo.com/acme/app'],
             ['out', '   4be81c2..9d1e0a7  main -> main'],
             ['in', 'git push origin main          # writer 2, at the same moment'],
             ['out', 'remote: main: landed with server merge, run git pull'],
-            ['out', 'To yoneda::https://api.yonedarepo.com/r3f1…'],
+            ['out', 'To yoneda::https://api.yonedarepo.com/acme/app'],
             ['out', '   4be81c2..2c5f9e1  main -> main'],
           ]}
         />
