@@ -13,7 +13,7 @@ YonedaRepo maintains three review agents. Each reviews an open change's diff, re
 | **Security review** | Injection, missing authorization checks, committed or logged secrets, SSRF, XSS, unsafe deserialization, weak cryptography, privilege escalation | Claude Code, `claude-sonnet-5-5` | Pass or fail |
 | **Slop review** | Dead or duplicated code, debug leftovers, drift from the repository's conventions, oversized files, filler comments | opencode, `mimo-v2.6-flash` | A level: low, medium or high (lower is better) |
 
-The agents never edit, commit, push or use the network, and cannot land, approve or change policy: their token holds only read, review and check. The repository's `REVIEW.md`, `AGENTS.md` and `CLAUDE.md`, as they are at the change's base, are part of each review.
+The agents never edit, commit, push or use the network, and cannot land, approve or change policy: their token holds only read, review and check, including the right to post their own checks when your landing rules require them. The repository's `REVIEW.md`, `AGENTS.md` and `CLAUDE.md`, as they are at the change's base, are part of each review.
 
 ## Turn them on
 
