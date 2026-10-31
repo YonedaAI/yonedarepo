@@ -31,9 +31,7 @@ pub(crate) async fn execute(args: &[String]) -> Result<()> {
         None => Duration::from_millis(DEFAULT_DELAY_MS),
     };
     let (_, _, origin, bearer) = crate::admin::platform(&env)?;
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(60))
-        .build()?;
+    let client = crate::admin::platform_client(Duration::from_secs(60))?;
     let (mut after, mut repos, mut queued) = (Value::Null, 0, 0);
     loop {
         let response = client

@@ -74,9 +74,7 @@ pub(crate) async fn run(args: &[String]) -> Result<()> {
         .remove("OWNER_TOKEN")
         .ok_or("No OWNER_TOKEN in the secrets file")?;
     let head = head()?;
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()?;
+    let client = crate::admin::platform_client(Duration::from_secs(30))?;
     let mut check = Check {
         rows: Vec::new(),
         failed: 0,

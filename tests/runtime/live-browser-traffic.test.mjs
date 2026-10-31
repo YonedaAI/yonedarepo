@@ -112,6 +112,20 @@ test('every fetch in a tool carries the mark, or goes somewhere that never count
   assert.deepEqual(unmarked, []);
 });
 
+test('every xtask command that calls the platform API uses the marked client', async () => {
+  const admin = await readFile('xtask/src/admin.rs', 'utf8');
+  assert.ok(admin.includes(`"${NAME}"`), 'the marked client sends this header');
+  const files = (await readdir('xtask/src', { recursive: true })).filter((f) => f.endsWith('.rs'));
+  const callers = [];
+  for (const file of files) {
+    const source = await readFile(`xtask/src/${file}`, 'utf8');
+    if (!/\/api\/v1\//.test(source.replace(/^\s*\/\/.*$/gm, ''))) continue;
+    callers.push(file);
+    assert.match(source, /platform_client\(/, file);
+  }
+  assert.ok(callers.length >= 4, 'no platform call found: the pattern above went stale');
+});
+
 test('Git gets its configuration from the one helper, so nothing skips the mark', async () => {
   for (const file of await toolFiles()) {
     if (file === HELPER) continue;

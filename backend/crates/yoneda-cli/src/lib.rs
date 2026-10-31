@@ -31,6 +31,7 @@ pub mod error;
 mod flight_plan;
 mod git;
 mod go_around;
+mod http;
 pub mod import;
 pub mod login;
 mod memory_cmd;

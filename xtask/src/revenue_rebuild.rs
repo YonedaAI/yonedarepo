@@ -12,9 +12,7 @@ pub(crate) async fn execute(args: &[String]) -> Result<()> {
         return Err("Pass --confirm: this wakes every account".into());
     }
     let (_, _, origin, bearer) = crate::admin::platform(&env)?;
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(60))
-        .build()?;
+    let client = crate::admin::platform_client(Duration::from_secs(60))?;
     let (mut after, mut queued) = (Value::Null, 0);
     loop {
         let response = client
