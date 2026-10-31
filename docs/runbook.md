@@ -181,6 +181,8 @@ node tools/staging-realworld.mjs --prod --only 0,browser,12,13,14,15,16,17
 
 `FAST_IMPORT=on` (unset or anything else: an import records all of its history, then lands main) lands main at the remote's head from the import's own request, in its 30 s after the answer: it asks the remote for its default branch beside the request's writes, asks Artifacts for the remote, looks every 0.25 s until Artifacts has it, reads the log (1 call per 1,000 commits) and lands (`startImport`). The Workflow repeats all of that harmlessly, so what the request does not reach, it does; then it records the first-parent history newest first, a Workflow step per 250 commits (`cloudflare/worker/repo-import-fill.ts`, `repo_store/history_fill.rs`). Budget and bench: `docs/load-testing.md`, `tools/import-bench.mjs`. No schema change: the state is main's imported head and where its `ref_chain` stops, so turning the switch off mid-import leaves the running fill safe.
 
+`DIRECT_IMPORT=on` (with `FAST_IMPORT`, `PACK_CACHE` and `PUSH_BUNDLES` on; unset or anything else: Artifacts' fetch alone) also fetches a public `https://github.com/<owner>/<repo>` from the Worker, beside Artifacts' own fetch: main lands from that pack, usually first, and the same pack answers `git clone` and fills history (`cloudflare/worker/repo-import-direct.ts`). Any other remote, a pack over 24 MiB or 40,000 objects, and any failure leave the import to Artifacts as before, and Artifacts still ends up holding the whole history. No schema change: turning it off affects only new imports, and a repository imported either way reads the same. Numbers and limits: `docs/direct-import.md`.
+
 While history fills:
 
 | What | Answer |

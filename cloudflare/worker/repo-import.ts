@@ -8,6 +8,7 @@ import { rpcValue } from './durable';
 import { landThenFill } from './repo-import-fill';
 import {
   type Commit,
+  endWithoutMirror,
   fetchRemote,
   type ImportParams,
   type ImportStep,
@@ -123,11 +124,13 @@ export async function runImport(env: Env, asked: ImportParams, step: ImportStep)
     (await step.do('find the default branch', RETRY, () => remoteDefaultBranch(asked.url))) ??
     undefined;
   const params = { ...asked, branch };
-  const importing_at = await step.do('import into the object store', RETRY, async () => {
-    const started = Date.now();
-    await fetchRemote(env, params);
-    return started;
-  });
+  const importing_at = await step
+    .do('import into the object store', RETRY, async () => {
+      const started = Date.now();
+      await fetchRemote(env, params);
+      return started;
+    })
+    .catch(endWithoutMirror(env, params, step));
   if (env.FAST_IMPORT === 'on') return landThenFill(env, params, step, importing_at);
   // Throws IMPORT_IN_PROGRESS until Artifacts finishes; the step retries with backoff.
   const history = await step.do('read history', RETRY, () => readHistory(env, params));

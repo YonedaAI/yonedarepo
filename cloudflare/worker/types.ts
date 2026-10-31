@@ -44,6 +44,10 @@ export interface Env {
   /** `on`: a change's page shows its Slop and Risk cards (repo-instruments.ts; unset or
    * anything else: no route, and the page asks for nothing). */
   LANDING_INSTRUMENTS?: string;
+  /** `on` (with FAST_IMPORT, PACK_CACHE and PUSH_BUNDLES): a public GitHub repository's import
+   * also fetches it directly, and main lands from that (repo-import-direct.ts; unset or
+   * anything else: Artifacts' fetch alone). */
+  DIRECT_IMPORT?: string;
   /** Platform check executors (one fresh container per run attempt). */
   CHECK_RUNNERS: DurableObjectNamespace<import('./check-container').CheckContainer>;
   OBJECT_PUSHES: DurableObjectNamespace<import('./repo-push-queue').ObjectPushQueue>;

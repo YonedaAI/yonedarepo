@@ -7,7 +7,7 @@
 import { bundlesOn, storeBundle } from './repo-bundles';
 import { ReceiveSession } from './repo-git-sessions';
 import { SpilledFiles } from './repo-large-files';
-import { ApiError } from './repo-ops';
+import { ApiError, type Json } from './repo-ops';
 import { putRawBytes } from './repo-r2-writes';
 import type { Env } from './types';
 
@@ -74,22 +74,46 @@ export class PackCopy {
     }
   }
 
+  /** Checks the pack whole (a body cut short fails here). */
+  check() {
+    this.#session.call({ op: 'finish' });
+  }
+
+  /** A session call on the checked pack. */
+  call(input: Json) {
+    return this.#session.call(input);
+  }
+
   /** Checks the pack whole and writes its objects; answers the refs its commands named
    * and how many objects it holds (withheld ones not counted). */
   async store(): Promise<{ refs: string[]; objects: number }> {
-    this.#session.call({ op: 'finish' });
+    this.check();
     const { commands } = this.#session.call({ op: 'commands' });
-    const { objects } = this.#session.call({ op: 'copy', skip: [...this.withheld] });
+    const objects = await this.write({ op: 'copy', skip: [...this.withheld] });
+    return { refs: commands.map((c: { ref: string }) => c.ref), objects };
+  }
+
+  /** Writes what the session call `select` chooses, `width` batches at once; answers how
+   * many objects. */
+  async write(select: Json, width = 1): Promise<number> {
+    const { objects } = this.#session.call(select);
     const bundled = bundlesOn(this.env);
-    for (let frames = this.#session.objects(WRITE_BUDGET); frames.length > 0; ) {
+    const one = async (frames: Uint8Array) => {
       const batch = framed(frames);
       if (bundled) await storeBundle(this.env, this.repo, frames, batch);
       else
         for (let i = 0; i < batch.length; i += WRITES)
           await putRawBytes(this.env, this.rawKey, batch.slice(i, i + WRITES));
-      frames = this.#session.objects(WRITE_BUDGET);
+    };
+    for (let frames = this.#session.objects(WRITE_BUDGET); frames.length > 0; ) {
+      const group: Uint8Array[] = [];
+      while (group.length < width && frames.length > 0) {
+        group.push(frames);
+        frames = this.#session.objects(WRITE_BUDGET);
+      }
+      await Promise.all(group.map(one));
     }
-    return { refs: commands.map((c: { ref: string }) => c.ref), objects };
+    return objects;
   }
 
   async close() {

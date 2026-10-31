@@ -9,10 +9,12 @@
 // (a mirror still holds quarantined blobs). Any other fetch gets the answer it got before. A
 // filter is not sent on, since Artifacts has none: a partial clone receives every file, which
 // Git accepts.
+import { directImportOn, wholeClone } from './repo-import-direct';
 import { advertised, fetchPack, type ShallowLines } from './repo-mirror-git';
 import type { RepoObjects } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
-import { end, failed, RESULT, sideBand } from './repo-pack-stream';
+import { packKey, storedPack } from './repo-pack-cache';
+import { CHUNK, end, failed, RESULT, sendStored, sideBand } from './repo-pack-stream';
 
 /** What a client asked to fetch. */
 export type Asked = {
@@ -31,6 +33,30 @@ export function stillFilling(e: any) {
     'IMPORT_IN_PROGRESS',
     `This repository's history is still importing ${reached} and this fetch cannot be served yet; nothing was sent. Try again shortly`,
   );
+}
+
+/** A whole clone of what a direct import fetched, while history is still arriving, from the
+ * pack it stored (the first thing that holds it all): `head`, then that pack. Null for any
+ * other fetch, and for wants that are not this repository's current tips. */
+export async function importedClone(
+  ctx: RepoContext,
+  objects: RepoObjects,
+  asked: Json,
+  head: Uint8Array,
+) {
+  const shaped = asked.depth != null || asked.omit_blobs || asked.shallows?.length;
+  if (!directImportOn(objects.env) || asked.haves.length > 0 || shaped) return null;
+  if (await objects.withholdsAny()) return null;
+  const stored = await storedPack(
+    objects.env,
+    await packKey(objects.repo, wholeClone(asked.wants)),
+  );
+  if (!stored) return null;
+  const { refs } = await ctx.call({ op: 'repo_refs' });
+  const tips = new Set(Object.values(refs as Json));
+  if (asked.wants.every((want: string) => tips.has(want))) return sendStored(head, stored, CHUNK);
+  await stored.body.cancel();
+  return null;
 }
 
 /** Whether a mirror can answer this: the checks above, none of which read an object.

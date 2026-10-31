@@ -1,0 +1,105 @@
+// A Git client of a public GitHub repository, for an import that fetches it itself
+// (repo-import-direct): protocol version 2 over smart HTTP, its head (`ls-refs`, so a large
+// repository's pull refs never travel) and the whole pack of that one commit, streamed.
+//
+// The URL comes from a user, so this speaks to github.com and nothing else: `githubRemote`
+// takes only a plain repository address and builds the URL again from its two names, every
+// request refuses a redirect (Git follows one; a renamed repository takes the mirror's path),
+// no credential or cookie is ever sent, and the caller bounds the bytes and the time. Pack
+// bytes are untrusted: the session hashes every object and checks the trailer.
+import { bandOne, type ShallowLines } from './repo-mirror-git';
+
+const GITHUB =
+  /^https:\/\/github\.com\/([A-Za-z0-9][A-Za-z0-9-]{0,38})\/([A-Za-z0-9._-]{1,100})\/?$/;
+/** A ref name safe in a pkt-line, stricter than Git's: anything else takes the mirror's path. */
+const BRANCH = /^[A-Za-z0-9._][A-Za-z0-9._/-]{0,199}$/;
+/** What `ls-refs` for a head may answer: more is many branches sharing a name's start. */
+const REFS_BYTES = 64 * 1024;
+const RESULT = 'application/x-git-upload-pack-result';
+const HEAD_LINE = /^([0-9a-f]{40}) (\S+)(.*)$/;
+
+const pkt = (line: string) => `${(line.length + 4).toString(16).padStart(4, '0')}${line}`;
+
+/** The remote's canonical address, or null when `url` is not a plain GitHub repository. */
+export function githubRemote(url: string) {
+  const match = GITHUB.exec(url);
+  if (!match) return null;
+  const name = match[2].replace(/\.git$/, '');
+  if (!name || name === '.' || name === '..') return null;
+  return `https://github.com/${match[1]}/${name}.git`;
+}
+
+const request = (body: string) => ({
+  method: 'POST',
+  headers: {
+    'user-agent': 'git/yonedarepo',
+    'git-protocol': 'version=2',
+    'content-type': 'application/x-git-upload-pack-request',
+    accept: RESULT,
+  },
+  body,
+  redirect: 'manual' as const,
+});
+
+async function asked(remote: string, body: string, signal: AbortSignal) {
+  const answer = await fetch(`${remote}/git-upload-pack`, { ...request(body), signal });
+  // A redirect, a sign-in or a block: none is this repository's pack.
+  if (answer.status !== 200 || !answer.body)
+    throw new Error(`The remote answered ${answer.status}`);
+  if (answer.headers.get('content-type') !== RESULT)
+    throw new Error('The remote did not answer as a Git server');
+  return answer.body;
+}
+
+/** The lines of a pkt-line answer of at most REFS_BYTES. */
+async function lines(body: ReadableStream<Uint8Array>) {
+  let text = '';
+  const decoder = new TextDecoder();
+  for await (const chunk of body as unknown as AsyncIterable<Uint8Array>) {
+    text += decoder.decode(chunk, { stream: true });
+    if (text.length > REFS_BYTES) throw new Error('The remote has too many refs of this name');
+  }
+  const out: string[] = [];
+  for (let at = 0; at + 4 <= text.length; ) {
+    const length = Number.parseInt(text.slice(at, at + 4), 16);
+    if (Number.isNaN(length)) throw new Error('The remote answered malformed refs');
+    if (length < 4) {
+      at += 4;
+      continue;
+    }
+    out.push(text.slice(at + 4, at + length).trim());
+    at += length;
+  }
+  return out;
+}
+
+/** The commit `branch` is at, or the remote's default branch and its commit. */
+export async function remoteHead(remote: string, branch: string | undefined, signal: AbortSignal) {
+  if (branch !== undefined && !BRANCH.test(branch)) throw new Error('Unusual branch name');
+  const prefix = branch === undefined ? 'HEAD' : `refs/heads/${branch}`;
+  const body =
+    `${pkt('command=ls-refs\n')}${pkt('object-format=sha1')}0001` +
+    `${pkt('symrefs\n')}${pkt(`ref-prefix ${prefix}\n`)}0000`;
+  for (const line of await lines(await asked(remote, body, signal))) {
+    const [, head, name, rest] = HEAD_LINE.exec(line) ?? [];
+    if (name !== prefix) continue;
+    if (branch !== undefined) return { head, branch };
+    const named = /symref-target:refs\/heads\/(\S+)/.exec(rest)?.[1];
+    if (named) return { head, branch: named };
+  }
+  throw new Error(`The remote has no ${prefix}`);
+}
+
+/** The whole pack of `head`, as it arrives: no thin pack, so every delta's base is in it. A
+ * body cut short fails, here or at the pack's trailer. */
+export async function* remotePack(
+  remote: string,
+  head: string,
+  signal: AbortSignal,
+): AsyncGenerator<Uint8Array> {
+  const body =
+    `${pkt('command=fetch\n')}${pkt('object-format=sha1')}0001${pkt('ofs-delta\n')}` +
+    `${pkt('no-progress\n')}${pkt(`want ${head}\n`)}${pkt('done\n')}0000`;
+  const none: ShallowLines = { shallow: [], unshallow: [] };
+  yield* bandOne(await asked(remote, body, signal), none, false);
+}

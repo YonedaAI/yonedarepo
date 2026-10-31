@@ -100,11 +100,13 @@ export async function* fetchPack(
 }
 
 /** Side-band packets' band 1 (the pack), after the acknowledgments and, with a depth, the
- * shallow lines and the flush that end them; band 3 is an error. */
-async function* bandOne(
+ * shallow lines and the flush that end them; band 3 is an error. `bare`: the packets alone,
+ * as a stored pack holds them, ending with the body and no flush. */
+export async function* bandOne(
   body: ReadableStream<Uint8Array>,
   lines: ShallowLines,
   shallowFirst: boolean,
+  bare = false,
 ): AsyncGenerator<Uint8Array> {
   let opening = shallowFirst;
   const reader = body.getReader();
@@ -112,13 +114,15 @@ async function* bandOne(
   const need = async (n: number) => {
     while (held.length < n) {
       const { done, value } = await reader.read();
+      if (done && bare && held.length === 0) return false;
       if (done) throw new Error("The mirror's fetch ended early");
       held = held.length ? concat([held, value]) : value;
     }
+    return true;
   };
   try {
     for (;;) {
-      await need(4);
+      if (!(await need(4))) return;
       const length = Number.parseInt(text(held.subarray(0, 4)), 16);
       if (Number.isNaN(length) || (length > 0 && length < 5))
         throw new Error("The mirror's fetch answer is malformed");

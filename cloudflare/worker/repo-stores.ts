@@ -54,6 +54,8 @@ export interface ObjectStore {
     size: number,
     open: () => Promise<ReadableStream<Uint8Array>>,
   ): Promise<string | null>;
+  /** Sends a whole receive-pack request, streamed, where the store is a Git remote. */
+  pushStream?(open: () => Promise<ReadableStream<Uint8Array>>): Promise<Uint8Array>;
   /** A read-only `git clone` remote and short-lived token, where the store supports it. */
   cloneAccess?(): Promise<{ remote: string; token: string; expires_in_seconds: number }>;
   /** Waits for a store a create left to the queue, where a store can be late (`STORE_JOB`). */
