@@ -39,13 +39,14 @@ const final = (e: any) =>
 
 async function readHistory(env: Env, params: ImportParams): Promise<Commit[]> {
   using repo = await env.ARTIFACTS.get(storeName(params.repo));
-  // The branch Artifacts imported: the one named, else the remote's default.
-  const branch = params.branch ?? (await rpcValue(repo.info())).defaultBranch;
+  // The branch Artifacts imported: the one named, else the remote's default, which only HEAD
+  // names: `info().defaultBranch` answers main even for an imported master.
+  const ref = params.branch ?? 'HEAD';
   const newestFirst: Commit[] = [];
   while (newestFirst.length < params.max) {
     const page = await rpcValue(
       repo.log({
-        ref: branch,
+        ref,
         limit: Math.min(1000, params.max - newestFirst.length),
         offset: newestFirst.length,
       }),
@@ -59,7 +60,10 @@ async function readHistory(env: Env, params: ImportParams): Promise<Commit[]> {
         message: c.message.slice(0, 4000),
       });
   }
-  if (newestFirst.length === 0) throw new NonRetryableError(`Branch ${branch} has no commits`);
+  if (newestFirst.length === 0)
+    throw new NonRetryableError(
+      params.branch ? `Branch ${params.branch} has no commits` : 'The remote has no commits',
+    );
   return newestFirst.reverse();
 }
 
