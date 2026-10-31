@@ -7,8 +7,9 @@ import { expect, it, vi } from 'vitest';
 import { isolateLocations } from '../../cloudflare/worker/repo-bundles';
 import { isolateTrees } from '../../cloudflare/worker/repo-tree-memo';
 import type { Env } from '../../cloudflare/worker/types';
-import { api, countingOps, drainObjects, fakeArtifacts, scoped, usePlatformFixture } from './repo-fixture';
+import { api, author, countingOps, drainObjects, fakeArtifacts, scoped, signup, usePlatformFixture } from './repo-fixture';
 import { count, fetchV2, on, pushedRepo } from './repo-pack-fixture';
+import { git, join, type Obj, object, pack, pkt, text, tree } from './synthetic-pack';
 
 usePlatformFixture();
 
@@ -69,4 +70,48 @@ it('clones a fork while a commit shard cannot answer', { timeout: 60_000 }, asyn
   } as unknown as Env;
   cold();
   expect(count(await fetchV2(down, fork, forkToken, [`want ${tip}`, 'done']))).toBe(39);
+});
+
+it('clones a fork of an imported history through a busy shard, which was its HTTP 503', { timeout: 60_000 }, async () => {
+  // As an import is: pushed from its root commit, large enough for bundles, so that the check
+  // of the oldest commit (`refuseMirrorOnly`, before any byte) found it in no R2 key and asked
+  // the shards with everything else.
+  const cookie = await signup('fork_clone_import');
+  const created = await api('/repos', { cookie }, { body: { name: 'imported', policy: { approvals: 0, required_checks: [] } } }, env);
+  const repo = created.body.id as string;
+  const { token } = (await api(`/repos/${repo}/tokens`, { cookie }, { body: { name: 'git', scopes: ['read', 'write', 'land'] } }, env)).body;
+  const objects: Obj[] = [];
+  let tip = '';
+  for (let i = 0; i < 9; i++) {
+    const lines = Array.from({ length: 12_000 }, (_, n) => `line ${n} of file ${i}: ${(n * 7919 + i) % 100003}\n`);
+    const blob = await object('blob', text.encode(lines.join('')));
+    const root = await tree([['100644', 'f', blob.id]]);
+    const who = `${author.name} <${author.email}> ${1700000000 + i} +0000`;
+    const commit = await object('commit', text.encode(`tree ${root.id}\n${tip ? `parent ${tip}\n` : ''}author ${who}\ncommitter ${who}\n\nc${i}\n`));
+    objects.push(commit, root, blob);
+    tip = commit.id;
+  }
+  const head = text.encode(`${pkt(`${'0'.repeat(40)} ${tip} refs/heads/main\0report-status\n`)}0000`);
+  expect(new TextDecoder().decode(await git(repo, token, 'git-receive-pack', join([head, await pack(objects)]), env))).toContain('ok refs/heads/main');
+  await drainObjects(env);
+  const fork = (await api(`/repos/${repo}/fork`, { cookie }, { body: { name: 'mine' } }, env)).body.id as string;
+  const forkToken = (await api(`/repos/${fork}/tokens`, { cookie }, { body: { name: 'git', scopes: ['read'] } }, env)).body.token as string;
+
+  const shards = env.COMMIT_SHARDS as DurableObjectNamespace;
+  let calls = 0;
+  const busy = {
+    ...env,
+    COMMIT_SHARDS: {
+      idFromName: (name: string) => shards.idFromName(name),
+      get: (id: DurableObjectId) => ({
+        fetch: async (url: string, init: RequestInit) => {
+          if (++calls === 2) throw Object.assign(new Error('Durable Object is overloaded. Too many requests queued.'), { overloaded: true });
+          return shards.get(id).fetch(url, init);
+        },
+      }),
+    },
+  } as unknown as Env;
+  cold();
+  expect(count(await fetchV2(busy, fork, forkToken, [`want ${tip}`, 'done']))).toBe(objects.length);
+  expect(calls).toBe(0);
 });
