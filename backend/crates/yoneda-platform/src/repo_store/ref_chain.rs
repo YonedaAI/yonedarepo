@@ -27,6 +27,25 @@ pub fn depth<S: SqlStore>(db: &S, refname: &str, commit: &ObjectId) -> Result<Op
         .and_then(|row| row["depth"].as_i64()))
 }
 
+/// The branches holding `commit`: at their head, on their chain, or landed on a protected
+/// one (those never rewind, and a merged commit is on no chain). O(branches).
+pub fn branches_holding<S: SqlStore>(db: &S, commit: &ObjectId) -> Result<Vec<String>> {
+    let id = [json!(commit.hex())];
+    let moved = db.query(
+        "SELECT name FROM refs WHERE name LIKE 'refs/heads/%' AND (commit_id=?1 OR EXISTS \
+         (SELECT 1 FROM ref_chain c WHERE c.ref=refs.name AND c.commit_id=?1))",
+        &id,
+    )?;
+    let landed = db.query(
+        "SELECT refname AS name FROM landings WHERE commit_id=?",
+        &id,
+    )?;
+    let name = |row: &serde_json::Value| row["name"].as_str().unwrap_or_default().to_owned();
+    let mut branches: Vec<String> = moved.iter().map(name).collect();
+    branches.extend(landed.iter().map(name).filter(|r| rows::protected(r)));
+    Ok(branches)
+}
+
 /// Records `refname` now at `head` (a recorded commit).
 pub fn advance<S: SqlStore>(db: &S, refname: &str, head: &ObjectId) -> Result<()> {
     if let Some(at) = depth(db, refname, head)? {

@@ -64,9 +64,7 @@ fn clears(class: &Value, settings: &Settings) -> bool {
 }
 
 /// Whether every commit under `commit` that landing on `refname` would bring passes `passes`:
-/// walks single parents down to where they meet the ref (its head, its first-parent chain,
-/// or a commit landed on it). A merge, a parent not recorded, or more than `WALK` commits
-/// proves nothing, so none of those pass.
+/// `walk_until` it meets the ref (its head, its first-parent chain, or a commit landed on it).
 pub(super) fn older_commits_pass<S: SqlStore>(
     db: &S,
     commit: &CommitRow,
@@ -74,6 +72,23 @@ pub(super) fn older_commits_pass<S: SqlStore>(
     passes: impl Fn(&ObjectId) -> Result<bool>,
 ) -> Result<bool> {
     let head = rows::projected_ref(db, refname)?;
+    let meets = |parent: &ObjectId| {
+        Ok(head == Some(*parent)
+            || super::ref_chain::depth(db, refname, parent)?.is_some()
+            || landed_version(db, parent, refname)?.is_some())
+    };
+    walk_until(db, commit, meets, passes)
+}
+
+/// Whether every commit under `commit` passes `passes`, walking single parents down to one
+/// that `meets` the target. A merge, a parent not recorded, or more than `WALK` commits
+/// proves nothing, so none of those pass.
+pub(super) fn walk_until<S: SqlStore>(
+    db: &S,
+    commit: &CommitRow,
+    meets: impl Fn(&ObjectId) -> Result<bool>,
+    passes: impl Fn(&ObjectId) -> Result<bool>,
+) -> Result<bool> {
     let mut parents = commit.parents.clone();
     for _ in 0..WALK {
         let parent = match parents.as_slice() {
@@ -81,10 +96,7 @@ pub(super) fn older_commits_pass<S: SqlStore>(
             [parent] => *parent,
             _ => return Ok(false),
         };
-        if head == Some(parent)
-            || super::ref_chain::depth(db, refname, &parent)?.is_some()
-            || landed_version(db, &parent, refname)?.is_some()
-        {
+        if meets(&parent)? {
             return Ok(true);
         }
         let Some(row) = rows::commit_row(db, &parent)? else {

@@ -8,12 +8,12 @@ use crate::repo_store::land_gates::WALK;
 use crate::repo_store::op::{RepoOp, StoreOp};
 use crate::storage::SqlStore;
 
-const DOCS: &str = "token:docs";
+pub(super) const DOCS: &str = "token:docs";
 const MERGER: &str = "platform:merge";
-const MISSING: &str = "0123456789abcdef0123456789abcdef01234567";
+pub(super) const MISSING: &str = "0123456789abcdef0123456789abcdef01234567";
 
 /// Open policy (gates are covered elsewhere), plus a token limited to `docs/`.
-fn repo() -> (Harness, String) {
+pub(super) fn repo() -> (Harness, String) {
     let (h, root) = open();
     h.ok(
         OWNER,
@@ -23,7 +23,7 @@ fn repo() -> (Harness, String) {
     (h, root)
 }
 
-fn commit(h: &Harness, who: &str, parent: &str, path: &str) -> String {
+pub(super) fn commit(h: &Harness, who: &str, parent: &str, path: &str) -> String {
     h.commit(who, Some(parent), 1, json!([file(path, "x\n")]), json!([]))
         .unwrap()
 }
@@ -329,7 +329,19 @@ fn a_new_branch_is_judged_on_all_it_would_hold() {
     let (h, root) = repo();
     let docs = commit(&h, DOCS, &root, "docs/a.md");
     // `root` wrote README.md and src/: a branch made by this landing would bring them.
-    assert_refused_everywhere(&h, &docs, "work");
+    for landing in landings(&docs, "work") {
+        let refused = h.run(DOCS, landing).unwrap_err();
+        assert_eq!(refused.code, "FORBIDDEN");
+        assert!(
+            refused.message.contains("create the branch first"),
+            "{}",
+            refused.message
+        );
+    }
+    // Nothing to create first on a protected ref, nor anything to tell about a hidden head.
+    assert_refused_everywhere(&h, &docs, "release/1");
+    let src = commit(&h, AGENT, &root, "src/retry.rs");
+    assert_refused_everywhere(&h, &src, "work");
     // Made by a branch move at the base, the same landing has only `docs` to bring.
     h.ok(
         DOCS,
@@ -372,8 +384,16 @@ fn a_caller_of_the_whole_repository_pays_for_no_walk() {
     let (h, root) = repo();
     let whole: Grant = None;
     let before = h.db.counts();
-    for op in [RepoOp::Land, RepoOp::LandEnqueue, RepoOp::Review] {
-        let c = json!({"ref":"main","commit":root});
+    for op in [
+        RepoOp::Land,
+        RepoOp::LandEnqueue,
+        RepoOp::Review,
+        RepoOp::BranchSet,
+        RepoOp::BranchBatch,
+        RepoOp::TagCreate,
+    ] {
+        let c = json!({"ref":"main","name":"v1","commit":root,
+            "updates":[{"ref":"work","commit":root}]});
         grants::precheck(&h.db, StoreOp::Repo(op), &c, &whole).unwrap();
     }
     assert_eq!(h.db.counts(), before);

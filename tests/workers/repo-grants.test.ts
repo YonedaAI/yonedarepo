@@ -96,3 +96,50 @@ it.each(['batch', 'changeset'])('judges all a landing would bring in %s mode', a
   expect((await land(owner, onTop)).body.landed).toBe(true);
   expect((await api(`${repo}/blob?path=secret/more.ts`, owner, {}, target)).status).toBe(200);
 });
+
+it('holds ref moves and rebases to the grant', async () => {
+  const owner = { cookie: await signup('mover') };
+  const files = [file('public/app.ts', 'a\n'), file('secret/keys.ts', 'b\n')];
+  const created = await api('/repos', owner, { body: { name: 'g', policy: { required_checks: [], approvals: 0 }, files, author } });
+  const repo = `/repos/${created.body.id}`;
+  const head = created.body.commit as string;
+  const minted = await api(`${repo}/tokens`, owner, { body: { name: 'contractor', scopes: ['read', 'write', 'land'], paths: ['public/'] } });
+  const contractor = { token: minted.body.token as string };
+  const commit = async (who: object, parent: string, path: string) =>
+    (await api(`${repo}/commits`, who, { body: { parent, base_version: 1, changes: [file(path, 'x\n')], message: path, author } })).body.commit as string;
+  const land = (who: object, ref: string, sha: string) => api(`${repo}/land`, who, { body: { ref, commit: sha } });
+  const branch = (who: object, ref: string, sha: string, expected?: string) => api(`${repo}/branches`, who, { body: { ref, commit: sha, expected } });
+
+  // Commits in their shards: a ref at one outside the grant is refused however it is made.
+  const hidden = await commit(owner, head, 'secret/more.ts');
+  const onTop = await commit(contractor, hidden, 'public/on-top.ts');
+  for (const sha of [hidden, onTop]) {
+    expect((await branch(contractor, 'work', sha)).status).toBe(403);
+    expect((await api(`${repo}/refs/batch`, contractor, { body: { updates: [{ ref: 'work', commit: sha }] } })).status).toBe(403);
+    expect((await api(`${repo}/tags`, contractor, { body: { name: 'v1', commit: sha } })).status).toBe(403);
+  }
+
+  // A landing that would create a branch says what to do, and doing it works.
+  const inside = await commit(contractor, head, 'public/a.ts');
+  const refused = await land(contractor, 'fresh', inside);
+  expect(refused.status).toBe(403);
+  expect(refused.body.error.message).toContain('create the branch first');
+  expect((await branch(contractor, 'fresh', head)).status).toBe(200);
+  expect((await land(contractor, 'fresh', inside)).body.landed).toBe(true);
+
+  // A rebase replays commits inside the grant onto main, whatever main holds.
+  expect((await branch(contractor, 'work', inside)).status).toBe(200);
+  expect((await land(owner, 'main', hidden)).body.landed).toBe(true);
+  const rebased = await api(`${repo}/branches/work/rebase`, contractor, { body: {} });
+  expect(rebased.status).toBe(200);
+  expect(rebased.body.commits).toHaveLength(1);
+
+  // A commit outside the grant on the branch stops it, and the branch stays.
+  const side = await commit(owner, rebased.body.head, 'secret/side.ts');
+  expect((await branch(owner, 'work', side, rebased.body.head)).status).toBe(200);
+  const later = await commit(owner, hidden, 'public/later.ts');
+  expect((await land(owner, 'main', later)).body.landed).toBe(true);
+  expect((await api(`${repo}/branches/work/rebase`, contractor, { body: {} })).status).toBe(403);
+  const refs = (await api(`${repo}/refs`, owner)).body.refs;
+  expect(refs['refs/heads/work']).toBe(side);
+});
