@@ -243,6 +243,28 @@ export function stripeRefunded(sql: SqlStorage, topUp: string, total: number, no
   syncRefunded(sql, topUp, now);
 }
 
+/** Each top-up with what the ledger holds to be refunded of it, settled and open, and whether
+ * it knows of a dispute. */
+export const reconcileRows = (sql: SqlStorage) =>
+  sql
+    .exec<{
+      key: string;
+      amount: number;
+      status: string;
+      settled: number;
+      open: number;
+      disputes: number;
+    }>(
+      `SELECT t.key, t.amount, t.status,
+         (SELECT COALESCE(SUM(r.amount), 0) FROM refunds r
+           WHERE r.top_up = t.key AND r.status = 'succeeded') AS settled,
+         (SELECT COALESCE(SUM(r.amount), 0) FROM refunds r
+           WHERE r.top_up = t.key AND r.status = 'open') AS open,
+         (SELECT COUNT(*) FROM disputes d WHERE d.top_up = t.key) AS disputes
+       FROM top_ups t ORDER BY t.created_at DESC LIMIT 500`,
+    )
+    .toArray();
+
 /** Each day's refunds, on the limits instance: reserved before a refund, freed if it fails. */
 export function reserveRefund(
   sql: SqlStorage,

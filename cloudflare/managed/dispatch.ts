@@ -4,6 +4,7 @@
 // Workflow instance (also idempotent: the instance id is the run and attempt).
 import { type ManagedAgentId, managedAgent, readyForReview } from '../../shared/managed-agents';
 import { resolveSettings, triggerMatches } from '../../shared/managed-settings';
+import { reconcileAccount, reconcileAll } from './admin-reconcile';
 import { runRefund } from './admin-refund';
 import { runTopUp } from './billing';
 import { COMMIT_ID, type ManagedEnv, type QueueMessage, type RunParams } from './config';
@@ -225,6 +226,8 @@ export async function consume(batch: MessageBatch<QueueMessage>, env: ManagedEnv
       else if (m.kind === 'deleted') await onDeleted(env, m);
       else if (m.kind === 'topup') await runTopUp(env, m);
       else if (m.kind === 'refund') await runRefund(env, m.account, m.id);
+      else if (m.kind === 'reconcile-all') await reconcileAll(env);
+      else if (m.kind === 'reconcile') await reconcileAccount(env, m.account);
       message.ack();
     } catch (e: any) {
       console.error(

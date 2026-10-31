@@ -2,8 +2,9 @@
 // it, called only by the platform Worker's admin routes (which check the operator, scan the
 // reason and write admin_audit) with the admin bearer. Behind ADMIN_BILLING.
 import type { AdminBilling } from '../../shared/admin-billing';
+import { actorOf, idOf, microOf, reasonOf } from './admin-input';
 import { refund, refundDay, refundLimits, refundView } from './admin-refund';
-import { BillingRefusal } from './billing';
+import { BillingRefusal, removeCard, resumeAll } from './billing';
 import { limitMicrousd, type ManagedEnv } from './config';
 import { ledgerStub } from './ledger';
 
@@ -84,6 +85,50 @@ function pageOf(url: URL) {
   };
 }
 
+const GOODWILL_MAX = 1_000_000_000;
+
+/** `POST credit {id, usd, reason, actor}`: one grant per id, and waiting runs handed back. */
+async function goodwill(env: ManagedEnv, account: string, body: Record<string, unknown>) {
+  const id = idOf(body);
+  const reason = reasonOf(body);
+  actorOf(body);
+  const amount = microOf(body.usd);
+  if (amount > GOODWILL_MAX) throw new BillingRefusal('INVALID_INPUT', 'usd is at most 1000', 400);
+  const granted = await ledgerStub(env, account).grant(
+    `goodwill:${id}`,
+    amount,
+    `Goodwill: ${reason}`,
+  );
+  await resumeAll(env, granted.resume);
+}
+
+/** `POST pause {paused, reason, actor}`: an operator's stop on charging the card. */
+async function pause(env: ManagedEnv, account: string, body: Record<string, unknown>) {
+  const reason = reasonOf(body);
+  const actor = actorOf(body);
+  if (typeof body.paused !== 'boolean')
+    throw new BillingRefusal('INVALID_INPUT', 'paused is true or false', 400);
+  await ledgerStub(env, account).pauseBilling(body.paused ? { reason, by: actor } : null);
+}
+
+/** `POST <action> {reason, actor}`, each answering the account as it now stands. */
+async function act(
+  env: ManagedEnv,
+  account: string,
+  action: string | undefined,
+  body: Record<string, unknown>,
+) {
+  if (action === 'credit') await goodwill(env, account, body);
+  else if (action === 'pause') await pause(env, account, body);
+  else if (action === 'auto-top-up-off' || action === 'remove-card') {
+    reasonOf(body);
+    actorOf(body);
+    if (action === 'remove-card') await removeCard(env, account);
+    else await ledgerStub(env, account).setAutoTopUp(false);
+  } else throw new BillingRefusal('NOT_FOUND', 'Unknown billing path', 404);
+  return view(env, account);
+}
+
 /** Routes after `/admin/accounts/<account>/billing`. */
 export async function adminBilling(
   req: Request,
@@ -100,7 +145,7 @@ export async function adminBilling(
   }
   if (req.method === 'POST') {
     const body = ((await req.json().catch(() => null)) ?? {}) as Record<string, unknown>;
-    if (action === 'refund') return refund(env, account, body);
+    return action === 'refund' ? refund(env, account, body) : act(env, account, action, body);
   }
   throw new BillingRefusal('NOT_FOUND', 'Unknown billing path', 404);
 }

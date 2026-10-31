@@ -3,12 +3,13 @@
 // SQL in ledger-refunds.ts, ledger-disputes.ts and ledger-pages.ts; CreditLedger adds credit.
 import { DurableObject } from 'cloudflare:workers';
 import type { ManagedEnv } from './config';
-import { billingRow, cancelTopUp, cardOf } from './ledger-billing';
+import { billingRow, cancelTopUp, cardOf, setBillingPaused } from './ledger-billing';
 import { closeDispute, type DisputeEvent, disputeRows, openDispute } from './ledger-disputes';
 import { balanceOf } from './ledger-holds';
 import { entriesPage, usagePage } from './ledger-pages';
 import {
   type RefundAsk,
+  reconcileRows,
   refundAccepted,
   refundFailed,
   refundIntent,
@@ -140,6 +141,18 @@ export class LedgerAdmin extends DurableObject<ManagedEnv> {
       closeDispute(sql, d, status, Date.now());
       return { resume: this.takePaused(sql) };
     });
+  }
+
+  pauseBilling(pause: { reason: string; by: string } | null) {
+    this.tx((sql) => setBillingPaused(sql, pause && { ...pause, at: Date.now() }));
+  }
+
+  /** What the nightly reconcile compares with Stripe. Read-only. */
+  reconcileState() {
+    return this.tx((sql) => ({
+      customer: billingRow(sql).customer,
+      top_ups: reconcileRows(sql),
+    }));
   }
 
   cancelTopUp(key: string) {

@@ -70,3 +70,37 @@ export async function chargeOf(env: ManagedEnv, id: string) {
     throw e;
   }
 }
+
+const PAGES = 20;
+
+/** Every page of a list, up to PAGES; `complete` says whether that was all of it. */
+async function everyPage(env: ManagedEnv, path: string, query: Record<string, string>) {
+  const data: Record<string, any>[] = [];
+  let after = '';
+  for (let page = 0; page < PAGES; page++) {
+    const search = new URLSearchParams({ ...query, limit: '100' });
+    if (after) search.set('starting_after', after);
+    const list = await stripeRequest(env, env.STRIPE_SECRET_KEY, 'GET', `${path}?${search}`);
+    data.push(...(list.data as Record<string, any>[]));
+    if (!list.has_more) return { data, complete: true };
+    after = String(data.at(-1)?.id ?? '');
+  }
+  return { data, complete: false };
+}
+
+export const customerCharges = (env: ManagedEnv, customer: string) =>
+  everyPage(env, '/charges', { customer });
+
+/** The accounts with a charge or a refund at Stripe since `since` (seconds). */
+export async function activeAccounts(env: ManagedEnv, since: number) {
+  const created = { 'created[gte]': String(since) };
+  const [charges, refunds] = await Promise.all([
+    everyPage(env, '/charges', created),
+    everyPage(env, '/refunds', { ...created, 'expand[]': 'data.charge' }),
+  ]);
+  const accounts = [
+    ...charges.data.map((c) => c.metadata?.workspace),
+    ...refunds.data.map((r) => r.charge?.metadata?.workspace),
+  ].filter((a): a is string => typeof a === 'string');
+  return [...new Set(accounts)];
+}

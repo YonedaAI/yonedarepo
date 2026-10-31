@@ -9,16 +9,16 @@ import {
   type ManagedCredit,
   STARTING_CREDIT_USD,
 } from '../../shared/managed-agents';
+import { operatorEvent } from './billing-events';
 import { type ManagedEnv, promoMicrousd, type QueueMessage } from './config';
 import { ledgerStub, type Paused } from './ledger';
-import { operatorEvent } from './billing-events';
 import {
   cardOf,
   chargeOffSession,
   createCustomer,
   detach,
-  setupSession,
   StripeError,
+  setupSession,
   stripeEnabled,
   verifyWebhook,
 } from './stripe';
