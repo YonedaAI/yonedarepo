@@ -147,6 +147,9 @@ pub fn land<S: SqlStore>(db: &S, c: &Value, principal: &str, settings: &Settings
     if current == Some(commit.id) || landed_version(db, &commit.id, &refname)?.is_some() {
         return Ok(json!({ "landed": true, "already": true, "ref": refname, "commit": commit.id }));
     }
+    if super::capacity::landing_refused(db, c, &refname, &commit.id)? {
+        return Err(super::capacity::refusal());
+    }
     require_gates(db, &commit, &refname, settings)?;
     // A fast-forward-only landing compares against the latest version: the adapter projects
     // the pending changesets and retries. Any other landing queues behind them.

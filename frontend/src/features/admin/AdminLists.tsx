@@ -6,6 +6,7 @@ import { PublicBadge } from '../source-platform/PublicBadge';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import type { Loaded } from '../source-platform/useSource';
 import { PagedStatus, SearchBox, usePaged } from './AdminParts';
+import { LargestRepos } from './AdminStorage';
 import {
   type AdminAccount,
   type AdminRepo,
@@ -145,6 +146,7 @@ export function AdminRepos({ navigate }: { navigate: Navigate }) {
   const [q, setQ] = useState('');
   return (
     <>
+      <LargestRepos navigate={navigate} />
       <SearchBox label="Search names and owners" value={q} onSearch={setQ} />
       <ReposTable key={q} q={q} navigate={navigate} />
     </>

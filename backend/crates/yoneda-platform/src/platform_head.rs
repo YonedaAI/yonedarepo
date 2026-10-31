@@ -3,8 +3,8 @@
 //! authority applies, over the head's access snapshot. A stale snapshot can only admit
 //! work the landing then re-checks against the authority's current access.
 use crate::repo_store::auth::{Actor, actor_with};
-use crate::repo_store::grants;
 use crate::repo_store::members::Role;
+use crate::repo_store::{capacity, grants};
 use crate::storage::{bad, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
@@ -49,6 +49,10 @@ pub fn head_begin(c: &Value) -> Result<Value> {
         grants::require(&actor.grant, path.as_str().unwrap_or_default())?;
     }
     let head = &c["head"];
+    // Not a refusal to keep: the adapter asks the authority, which knows the size now.
+    if head["full"] == true {
+        return Err(capacity::refusal());
+    }
     Ok(json!({
         "principal": actor.principal, "parent": head["head"], "parent_id": head["head"]["id"],
         "parent_elsewhere": false, "base_version": head["base_version"],

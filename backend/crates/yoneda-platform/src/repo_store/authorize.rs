@@ -66,6 +66,8 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
             "FORBIDDEN",
             "Only the platform reads the activity summary",
         )),
+        // What the database holds: the owner and the platform's derive job, nobody else.
+        R::Storage if !actor.can("classify") => actor.require_owner(),
         R::CheckClaim
         | R::CheckRelease
         | R::CheckComplete
@@ -172,6 +174,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::StagedObjects
         | R::StaleReads
         | R::Status
+        | R::Storage
         | R::TagShow
         | R::TokenCreate
         | R::TokenRevoke
