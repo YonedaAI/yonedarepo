@@ -286,6 +286,49 @@ What the figures mean:
 - **Not recorded**: container cost, the cost of calls with an unknown outcome, and Stripe fees. Container time is charged at a flat rate with no cost beside it.
 - **Usage includes free credit.** Model margin counts calls paid with promotional credit, which brought in no money. The free credit granted in the range is shown beside it.
 
+## Basin analytics
+
+After a landing, the derive job streams one change record per landed version, merged commit and refused ticket to a Basin Pipeline (`CHANGELOG`, `cloudflare/worker/repo-changelog.ts`). The records land in an Iceberg table that Basin SQL queries. No binding means no stream, no cursor and no hold on compaction. **Analytics never stops a repository:** it is off the commit path, and it gives up history before it keeps a repository waiting.
+
+Setup, once per environment. xtask does not know this resource kind, so `tools/platform-analytics.mjs` makes it. Dev first; bind prod after a soak.
+
+1. Check the names and credentials, with no network: `node tools/platform-analytics.mjs setup --env dev --dry-run`.
+2. Create what is missing: `node tools/platform-analytics.mjs setup --env dev`. It reads `BASIN_TOKEN` (an R2 "Admin Read & Write" account API token) from `~/.config/yonedarepo/basin.env`, uses `CLOUDFLARE_API_TOKEN` or the wrangler login for the Cloudflare API, prints no credential, and is safe to run again. It answers the `binding` to add.
+3. Add that binding to the platform Worker's `config` in `infra/envs/<env>.json`, then run `cargo xtask infra gen` and deploy:
+
+   ```jsonc
+   // Example only, not in the specs yet: the stream's id, not the pipeline's.
+   "pipelines": [{ "binding": "CHANGELOG", "stream": "<stream id from setup>" }]
+   ```
+
+4. Delete the leftover `yonedarepo_platform_dev_changes_v1` stream by hand; `infra prune` does not know the kind.
+5. Land something twice, wait out the first flush (3 to 7 minutes), then run `node tools/platform-analytics.mjs status --env dev`.
+
+| Resource | dev | prod |
+|---|---|---|
+| Bucket (with Basin Catalog) | `yonedarepo-dev-change-log` | `yonedarepo-prod-change-log` |
+| Stream | `yonedarepo_dev_changes_v1` | `yonedarepo_prod_changes_v1` |
+| Sink | `yonedarepo_dev_changes_sink_v1` | `yonedarepo_prod_changes_sink_v1` |
+| Pipeline | `yonedarepo_dev_changes_pipeline_v1` | `yonedarepo_prod_changes_pipeline_v1` |
+| Table | `platform.changes_v1` | `platform.changes_v1` |
+
+Limits: 20 each of streams, sinks and pipelines per account, 1 GB/s per stream, 5 MB per request (the job splits its sends at 4 MB). Streams, sinks and pipelines cannot be changed once created. Pricing was not found.
+
+**Gaps are expected and counted.** Queries on this table give a floor, not a total. `GET /repos/:id/changelog` shows the cursor: `version`, `sent`, `failures`, `last_error`, `stalled_since`, `gaps` and `last_gap`. Each gap also logs `changelog.gap` with its range and reason.
+
+| When | What happens | Gap |
+|---|---|---|
+| A repository has no cursor (first job after binding, new repository, lost cursor) | That job records the head and sends nothing; nothing is held before it | Everything up to that head, including a new repository's first versions |
+| Sends fail | The range goes back and later jobs re-send it, as long as the limits below allow | None |
+| A segment is due and the stream is over 16,384 versions behind (`MAX_HOLD_VERSIONS`, `compaction.rs`) | The authority moves it anyway and answers `hold_released`; the cursor jumps to the head (`size`) | Cursor to head |
+| Sends have failed for 7 days (`MAX_STALL_MS`, `repo-changelog.ts`) | The hold stops at once; the next job jumps to the head (`age`) | Cursor to head |
+
+Refused landings are not skipped by a jump: they stay in the queue table, and compaction does not touch it. A cursor left below the floor still reads, through the archive, one 100-version page at a time.
+
+**A record shows its rows as they were when it was read, not when it landed.** The log entry never changes, and compaction moves only log rows, so a version read from a segment gives the same record. A check, repair or review class recorded after the first read is missing from what was sent. A later read (a failed send given back, a rewound cursor) shows it under the same `event_key`. The queries group by key and take `MAX` per column, so a count that fell afterwards, such as a re-run clearing a failure, keeps its old value. Only an erase deletes these rows, and what the stream already sent stays in the table: identifiers, counts and times, never contents.
+
+**Schema changes need a new stream.** Basin accepts an event that does not match the stream and drops it later without an error, so `records_and_the_stream_schema_agree` fails when `change_records.rs` and `cloudflare/basin/change-log.schema.json` disagree. To change a field, add a `_v2` stream, sink and pipeline, and bind the new stream. The `user error` metrics in GraphQL show dropped events.
+
 ## Recovery
 
 Queues are at least once: redelivery is expected, so consumers must be idempotent (leases, epochs, idempotency keys). The dead-letter queue is diagnostic transport evidence; the repository Durable Object's records remain authoritative. Check the repository's current state before retrying anything by hand.

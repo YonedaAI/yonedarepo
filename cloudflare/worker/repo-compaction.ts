@@ -4,7 +4,7 @@
 // authority deletes those rows in one transaction. No network I/O happens inside it, and
 // a run that dies at any step is simply run again (the plan reseals the same bytes).
 import { archiveKey } from './repo-archive';
-import { changeLogHold } from './repo-changelog';
+import { changeLogHold, skipChangeLog } from './repo-changelog';
 import { ApiError, type Call, caller, type Json } from './repo-ops';
 import type { Env } from './types';
 
@@ -28,14 +28,19 @@ async function writeVerified(env: Env, repo: string, sealed: Json) {
 
 /** Moves due segments (at most `max`) through `call`; answers the floor and tail size. */
 export async function compactLog(env: Env, repo: string, call: Call, max = SEGMENTS_PER_RUN) {
-  // A change-log stream still reading older versions holds them in SQL.
+  // A change-log stream still reading older versions holds them in SQL, up to a limit the
+  // authority keeps: past it the segment moves anyway and the stream skips to the head.
   const hold = await changeLogHold(env, repo);
-  const held = hold === undefined ? {} : { hold };
+  let held = hold === undefined ? {} : { hold };
   let last: Json = {};
   let segments = 0;
   while (segments < max) {
     const plan = await call({ op: 'repo_compact_plan', ...held });
     last = plan;
+    if (plan.hold_released) {
+      await skipChangeLog(env, repo, plan.head, 'size');
+      held = {};
+    }
     if (!plan.due) break;
     await writeVerified(env, repo, plan.segment);
     await writeVerified(env, repo, plan.checkpoints);
