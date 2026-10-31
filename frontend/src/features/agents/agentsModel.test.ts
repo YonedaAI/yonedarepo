@@ -462,6 +462,7 @@ describe('the agent menu and pages', () => {
     expect(checkPreview(state('slop-review')).map((l) => [l.text, l.tone])).toEqual([
       ['slop-review: low', 'good'],
       ['slop-review: medium', 'warn'],
+      ['slop-review: high', 'bad'],
     ]);
   });
 

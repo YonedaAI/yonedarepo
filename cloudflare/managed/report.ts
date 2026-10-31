@@ -7,7 +7,11 @@
 // credential-looking text, or a comment the platform's scanner refused) still counts at its
 // severity and is listed in the summary by severity and defused title. The step may be retried, so each comment carries a
 // reference (`run#n`) and one already on the change is not posted again.
-import type { ManagedAgentDefinition, RunValue } from '../../shared/managed-agents';
+import {
+  HIGH_LEVEL_FINDINGS,
+  type ManagedAgentDefinition,
+  type RunValue,
+} from '../../shared/managed-agents';
 import type { ManagedEnv, RunParams } from './config';
 import { Platform, PlatformError } from './platform';
 import { type PostedFinding, repoStub } from './repo-agents';
@@ -30,11 +34,17 @@ const footer = (agent: ManagedAgentDefinition, ref: string) =>
   `\n\n_${agent.defaults.name} by YonedaRepo managed agents · ${ref}_`;
 
 /** The run's value from every finding, posted or withheld: pass/fail, or the highest level
- * (lower is better). */
-export function runValue(agent: ManagedAgentDefinition, posted: { severity: string }[]): RunValue {
+ * (lower is better). A level agent's findings stop at medium, so no model's label makes a run
+ * `high`: only that many medium findings `posted` on distinct lines of the change do. */
+export function runValue(
+  agent: ManagedAgentDefinition,
+  findings: { severity: string }[],
+  posted: { severity: string }[],
+): RunValue {
   if (agent.value_type === 'pass_fail')
-    return posted.some((f) => f.severity === 'high' || f.severity === 'medium') ? 'fail' : 'pass';
-  const top = Math.max(1, ...posted.map((f) => RANK[f.severity] ?? 1));
+    return findings.some((f) => f.severity === 'high' || f.severity === 'medium') ? 'fail' : 'pass';
+  if (posted.filter((f) => f.severity === 'medium').length >= HIGH_LEVEL_FINDINGS) return 'high';
+  const top = Math.max(1, ...findings.map((f) => RANK[f.severity] ?? 1));
   return (['low', 'medium', 'high'] as const)[top - 1];
 }
 
@@ -69,7 +79,7 @@ export async function postReport(
   const change = await platform.change(p.repo, p.change);
   const anchors = anchorsOf((change.diff?.changes ?? []) as { path: string; patch?: string }[]);
   const checked = validFindings(result, anchors);
-  // A level agent reports low or medium only; anything higher is held at medium.
+  // A level agent's finding is low or medium; anything higher is held at medium (runValue).
   const capped = (severity: Severity): Severity =>
     agent.value_type === 'level' && severity === 'high' ? 'medium' : severity;
   const findings = dedupe(checked.kept)
@@ -107,7 +117,7 @@ export async function postReport(
     posted.push(f);
   }
 
-  const value = runValue(agent, [...posted, ...withheld]);
+  const value = runValue(agent, [...posted, ...withheld], posted);
   const tally = (list: { severity: string }[]) => {
     const counts = { high: 0, medium: 0, low: 0 };
     for (const f of list) counts[f.severity as keyof typeof counts]++;

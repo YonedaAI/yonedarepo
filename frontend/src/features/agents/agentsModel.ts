@@ -6,6 +6,7 @@ import {
   type AgentState,
   type BillingState,
   type CostEntry,
+  HIGH_LEVEL_FINDINGS,
   MANAGED_AGENTS,
   type ManagedAgentDefinition,
   type ManagedCredit,
@@ -185,6 +186,11 @@ export function checkPreview(agent: Pick<ManagedAgentDefinition, 'check' | 'valu
     : [
         { tone: 'good' as Tone, text: `${agent.check}: low`, note: 'Little to tidy' },
         { tone: 'warn' as Tone, text: `${agent.check}: medium`, note: '3 findings to look at' },
+        {
+          tone: 'bad' as Tone,
+          text: `${agent.check}: high`,
+          note: `${HIGH_LEVEL_FINDINGS} or more medium findings`,
+        },
       ];
 }
 

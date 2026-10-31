@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import {
   type AgentState,
   HARNESS_LABELS,
+  HIGH_LEVEL_FINDINGS,
   managedAgent,
   modelRate,
   type WorkspaceState,
@@ -70,7 +71,7 @@ function AgentFacts({ agent }: { agent: AgentState }) {
           <p className="source-meta">
             {agent.value_type === 'pass_fail'
               ? 'Pass when it finds nothing worth fixing; fail when it finds a high or medium problem. Lower is better.'
-              : `The level of the most serious finding. Lower is better. ${
+              : `The level of the most serious finding, or high with ${HIGH_LEVEL_FINDINGS} medium findings or more. Lower is better. ${
                   s.block_at
                     ? `It blocks landing at ${BLOCK_AT[s.block_at] ?? s.block_at}.`
                     : 'It reports and never blocks landing.'

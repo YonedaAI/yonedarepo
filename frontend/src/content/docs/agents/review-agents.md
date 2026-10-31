@@ -44,7 +44,7 @@ On the change:
 
 - **Line comments**, one per finding, at most 20, each on a line the change added.
 - **A summary comment.**
-- **A check** named after the agent (`code-review`, `security-review`, `slop-review`) on the head commit. Code review and Security review fail it when they post a high or medium finding. Slop review fails it only at or above **Block landing at**.
+- **A check** named after the agent (`code-review`, `security-review`, `slop-review`) on the head commit. Code review and Security review fail it when they post a high or medium finding. Slop review reports low and medium findings; its level is that of its most serious finding, or high with five or more medium findings on lines of the change. It fails the check only at or above **Block landing at**.
 
 Findings that cannot be placed on a line of the diff, or that look like a credential, are left out.
 
