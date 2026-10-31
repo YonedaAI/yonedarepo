@@ -83,6 +83,8 @@ yoneda change delete 12     # a closed change and its comments (author or owner)
 yoneda change list --status all
 ```
 
+Deleting a change's branch closes the change, with a comment saying why. It stays closed if the branch comes back; reopen it then.
+
 A landed change stays as history; a deleted change's number is never reused.
 
 ## In the web app

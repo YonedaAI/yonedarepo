@@ -40,6 +40,10 @@ export class FakePlatform {
   comments: any[] = [];
   checks: any[] = [];
   tokens: string[] = [];
+  /** What each minted token holds, by name. */
+  scopes = new Map<string, string[]>();
+  /** The policy's required checks: a token posts one only with its `check:<name>` scope. */
+  required: string[] = [];
   hooks: any[] = [];
   changes: FakeChange[] = [];
   revoked: string[] = [];
@@ -138,14 +142,25 @@ export class FakePlatform {
     }
     const check = new RegExp(`^${base}/commits/([0-9a-f]{40})/checks$`).exec(path);
     if (req.method === 'POST' && check) {
+      const held = this.scopes.get(String(req.headers.get('authorization')).replace('Bearer yrp_fixture_', ''));
+      if (this.required.includes(body.name) && !held?.includes(`check:${body.name}`))
+        return refuse('FORBIDDEN', 403);
       this.checks.push({ commit: check[1], ...body });
       return ok({ recorded: true });
+    }
+    if (req.method === 'GET' && /^\/repos\/r[0-9a-f]{20}\/tokens$/.test(path)) {
+      if (!owner) return refuse('FORBIDDEN', 403);
+      // As the platform lists them: scopes are the stored JSON text.
+      return ok({
+        tokens: [...this.scopes].map(([name, scopes]) => ({ name, scopes: JSON.stringify(scopes) })),
+      });
     }
     if (req.method === 'POST' && /^\/repos\/r[0-9a-f]{20}\/tokens$/.test(path)) {
       if (!owner) return refuse('FORBIDDEN', 403);
       const key = `${path}:${body.name}`;
       if (this.tokens.includes(key)) return refuse('ALREADY_EXISTS', 409);
       this.tokens.push(key);
+      this.scopes.set(body.name, body.scopes);
       return ok({ name: body.name, scopes: body.scopes, token: ['yrp', 'fixture', body.name].join('_') });
     }
     if (req.method === 'POST' && /^\/repos\/r[0-9a-f]{20}\/hooks$/.test(path)) {

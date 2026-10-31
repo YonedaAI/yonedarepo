@@ -25,6 +25,12 @@ pub fn migrate_commit_store<S: SqlStore>(db: &S) -> Result<()> {
     migrate_with(db, "commit_store_migrations", &MIGRATIONS)
 }
 
+/// Refuses a shard's `store_erase`, which the Worker runs without a store, unless the adapter
+/// vouches that no legal hold stands (`repo_store::legal_hold`).
+pub fn require_free_to_erase(c: &Value) -> Result<()> {
+    legal_hold::require_free(c, "")
+}
+
 /// One command against a migrated shard.
 pub fn execute_commit_store<S: SqlStore>(db: &S, command: Value) -> Result<Value> {
     if command["_system"] != "commits" {

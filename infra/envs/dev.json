@@ -185,6 +185,7 @@
         "vars": {
           "ARTIFACTS_NAMESPACE": "{prefix}",
           "LAND_MODE": "batch",
+          "REPO_ERASE": "on",
           "BLOB_WRITE_THROUGH": "off",
           "PUSH_BUNDLES": "on",
           "PACK_CACHE": "on",

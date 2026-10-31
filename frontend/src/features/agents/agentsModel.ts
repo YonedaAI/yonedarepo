@@ -6,6 +6,7 @@ import {
   type AgentState,
   type BillingState,
   type CostEntry,
+  HIGH_LEVEL_FINDINGS,
   MANAGED_AGENTS,
   type ManagedAgentDefinition,
   type ManagedCredit,
@@ -167,6 +168,10 @@ export function triggerText(trigger: Trigger): string {
   return `${when}, changes ready for review${filters.length ? `, ${filters.join('; ')}` : ''}`;
 }
 
+/** What the blocking level does, under its field on the set-up page. */
+export const BLOCK_HELP =
+  "The agent's check fails at this level. That blocks landing where the repository's landing rules require the check.";
+
 /** What a result looks like on a change, for the set-up page's check preview. */
 export function checkPreview(agent: Pick<ManagedAgentDefinition, 'check' | 'value_type'>) {
   return agent.value_type === 'pass_fail'
@@ -181,6 +186,11 @@ export function checkPreview(agent: Pick<ManagedAgentDefinition, 'check' | 'valu
     : [
         { tone: 'good' as Tone, text: `${agent.check}: low`, note: 'Little to tidy' },
         { tone: 'warn' as Tone, text: `${agent.check}: medium`, note: '3 findings to look at' },
+        {
+          tone: 'bad' as Tone,
+          text: `${agent.check}: high`,
+          note: `${HIGH_LEVEL_FINDINGS} or more medium findings`,
+        },
       ];
 }
 

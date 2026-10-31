@@ -2,7 +2,11 @@
 // queue shapes. Which harness and model each agent uses is the agent's settings
 // (shared/managed-agents.ts defaults, overridden per workspace or repository), validated
 // against the billing rate table; a fallback model is only ever one the agent lists.
-import type { ManagedAgentId, ModelProvider } from '../../shared/managed-agents';
+import {
+  MANAGED_AGENTS,
+  type ManagedAgentId,
+  type ModelProvider,
+} from '../../shared/managed-agents';
 import type { HarnessContainer } from './harness';
 import type { CreditLedger } from './ledger';
 import type { RepoAgents } from './repo-agents';
@@ -95,9 +99,16 @@ export function gatewaySlugs(env: ManagedEnv): Record<ModelProvider, string> {
 
 export const REPO_ID = /^r[0-9a-f]{20}$/;
 export const COMMIT_ID = /^[0-9a-f]{40}$/;
-/** The repository token the agents use; a landing policy names it as check poster. */
+/** The repository token the agents use. */
 export const TOKEN_NAME = 'yoneda-managed-agents';
-export const TOKEN_SCOPES = ['read', 'review', 'check'];
+/** A `check:<name>` scope lets the token post that check where a landing policy requires it. A
+ * scope and not a named poster: a reconnect gives the token another name (connect.ts). */
+export const TOKEN_SCOPES = [
+  'read',
+  'review',
+  'check',
+  ...MANAGED_AGENTS.map((a) => `check:${a.check}`),
+];
 export const HOOK_EVENTS = ['change', 'branch', 'repo'];
 /** What stays subscribed once no agent runs on a repository: its deletion. */
 export const NOTICE_EVENTS = ['repo'];

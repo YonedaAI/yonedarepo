@@ -111,7 +111,10 @@ pub fn check<S: SqlStore>(
     rows::recorded(db, &id)?;
     let name = string(c, "name")?;
     check_name(&name)?;
-    settings.policy.may_post(&name, principal, actor.owner)?;
+    let scoped = actor.can(&format!("check:{name}"));
+    settings
+        .policy
+        .may_post(&name, principal, actor.owner, scoped)?;
     let status = string(c, "status")?;
     if !matches!(status.as_str(), "pass" | "fail") {
         return Err(bad("Check status must be pass or fail"));

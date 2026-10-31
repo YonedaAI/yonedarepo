@@ -61,6 +61,7 @@ impl Harness {
             None if principal == "platform:derive" => c["_system"] = json!("derive"),
             None if principal == "platform:commits" => c["_system"] = json!("commits"),
             None if principal == "platform:hooks" => c["_system"] = json!("hooks"),
+            None if principal == "platform:erase" => c["_system"] = json!("erase"),
             None if principal == "platform:fork" => c["_system"] = json!("fork"),
             None if principal == "platform:lfs" => c["_system"] = json!("lfs"),
             None if principal == "platform:purge" => c["_system"] = json!("purge"),
@@ -1663,6 +1664,7 @@ mod compaction;
 mod compaction_writes;
 mod contract_paths;
 mod differential;
+mod erase;
 mod forks;
 mod git_shallow;
 mod hooks;

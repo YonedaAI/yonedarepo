@@ -5,7 +5,7 @@
 // and sends the op again with the answer, so only destructive paths pay. A hold set while a
 // destructive job runs reaches it at its next listed op, not sooner: the two authorities
 // share no transaction.
-import type { Env, Envelope } from './types';
+import type { Env, Envelope, Json } from './types';
 import { workspace } from './workspace';
 
 type Switch = { LEGAL_HOLD?: string };
@@ -31,6 +31,18 @@ export async function verifiedHold(env: Env, owner: string, repo: string): Promi
   });
   if (typeof answer.held !== 'boolean') throw refusal(unread);
   return { held: answer.held };
+}
+
+/** The answer for work outside the authority, asked fresh: a commit shard has no owner to
+ * name, so `call` (a caller that may read a tombstone) finds it. */
+export async function currentHold(
+  env: Env,
+  repo: string,
+  call: (command: Json) => Promise<Json>,
+): Promise<HoldAnswer> {
+  if (!holdsOn(env)) return 'off';
+  const { owner } = await call({ op: 'repo_hold_owner' });
+  return verifiedHold(env, String(owner), repo);
 }
 
 /** Runs a queue job that a hold may refuse: a held job goes back on the queue for later, as

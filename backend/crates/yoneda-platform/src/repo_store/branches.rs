@@ -93,6 +93,7 @@ pub fn delete<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> 
         ));
     }
     let (version, chain) = log_move(db, c, &refname, current, None, &refname, principal)?;
+    super::change_closing::branch_deleted(db, &refname, &old, principal, number(c, "now")?)?;
     db.query("DELETE FROM refs WHERE name=?", &[json!(refname)])?;
     super::ref_chain::forget(db, &refname)?;
     rows::maybe_checkpoint(db, version, &chain)?;

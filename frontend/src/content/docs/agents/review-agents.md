@@ -13,7 +13,7 @@ YonedaRepo maintains three review agents. Each reviews an open change's diff, re
 | **Security review** | Injection, missing authorization checks, committed or logged secrets, SSRF, XSS, unsafe deserialization, weak cryptography, privilege escalation | Claude Code, `claude-sonnet-5-5` | Pass or fail |
 | **Slop review** | Dead or duplicated code, debug leftovers, drift from the repository's conventions, oversized files, filler comments | opencode, `mimo-v2.6-flash` | A level: low, medium or high (lower is better) |
 
-The agents never edit, commit, push or use the network, and cannot land, approve or change policy: their token holds only read, review and check. The repository's `REVIEW.md`, `AGENTS.md` and `CLAUDE.md`, as they are at the change's base, are part of each review.
+The agents never edit, commit, push or use the network, and cannot land, approve or change policy: their token holds only read, review and check, including the right to post their own checks when your landing rules require them. The repository's `REVIEW.md`, `AGENTS.md` and `CLAUDE.md`, as they are at the change's base, are part of each review.
 
 ## Turn them on
 
@@ -44,7 +44,7 @@ On the change:
 
 - **Line comments**, one per finding, at most 20, each on a line the change added.
 - **A summary comment.**
-- **A check** named after the agent (`code-review`, `security-review`, `slop-review`) on the head commit. Code review and Security review fail it when they post a high or medium finding. Slop review fails it only at or above **Block landing at**.
+- **A check** named after the agent (`code-review`, `security-review`, `slop-review`) on the head commit. Code review and Security review fail it when they post a high or medium finding. Slop review reports low and medium findings; its level is that of its most serious finding, or high with five or more medium findings on lines of the change. It fails the check only at or above **Block landing at**.
 
 Findings that cannot be placed on a line of the diff, or that look like a credential, are left out.
 

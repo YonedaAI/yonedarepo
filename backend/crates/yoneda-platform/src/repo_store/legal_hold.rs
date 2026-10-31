@@ -14,10 +14,11 @@
 //! report what already happened. Landing, compaction (which moves the log to the object
 //! store), retiring memories, the LFS orphan sweep, branch deletion (vacuum is what would
 //! lose the history) and member removal stay off it too, as does withholding: quarantine
-//! keeps content from being served, only its purge is held.
+//! keeps content from being served, only its purge is held. `repo_erase_plan` only reads,
+//! and a backfill sends it knowing no repository to ask about; the erase's first destructive
+//! step is the shards' `store_erase`, which waits for an answer of its own (`commit_store`).
 //!
-//! The erase job's ops belong on this list when they land; the undo window's purge goes
-//! through `repo_purge_target` and needs nothing.
+//! The undo window's purge goes through `repo_purge_target` and needs nothing new.
 use super::op::{MaintenanceOp as M, QuarantineOp as Q, RepoOp as R, StoreOp};
 use serde_json::Value;
 use yoneda_core::{Error, Result};
@@ -27,8 +28,9 @@ use yoneda_core::{Error, Result};
 pub(crate) fn refuses(op: StoreOp) -> bool {
     matches!(
         op,
-        StoreOp::Repo(R::Delete | R::PurgeTarget | R::ReleaseDelete | R::ChangeDelete)
-            | StoreOp::Maintenance(M::VacuumPlan)
+        StoreOp::Repo(
+            R::Delete | R::PurgeTarget | R::EraseStep | R::ReleaseDelete | R::ChangeDelete
+        ) | StoreOp::Maintenance(M::VacuumPlan)
             | StoreOp::Quarantine(Q::Purge | Q::Claim | Q::MirrorClaim | Q::MirrorSwitch)
     )
 }

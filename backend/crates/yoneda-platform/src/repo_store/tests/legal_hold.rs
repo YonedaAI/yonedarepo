@@ -3,7 +3,7 @@
 //! (`accounts::holds`), tested there; the adapter's half is `tests/workers/legal-hold.test.ts`.
 use super::batches::open;
 use super::*;
-use crate::commit_store::{execute_commit_store, migrate_commit_store};
+use crate::commit_store::{execute_commit_store, migrate_commit_store, require_free_to_erase};
 use crate::repo_store::legal_hold::refuses;
 use crate::repo_store::op::Op;
 
@@ -27,6 +27,7 @@ fn destructive() -> Vec<(&'static str, Value)> {
     vec![
         (OWNER, delete()),
         ("platform:purge", json!({"op":"repo_purge_target"})),
+        ("platform:erase", json!({"op":"repo_erase_step"})),
         (OWNER, json!({"op":"repo_release_delete","tag":"v1"})),
         (OWNER, json!({"op":"repo_change_delete","number":1})),
         (OWNER, json!({"op":"repo_vacuum_plan"})),
@@ -58,6 +59,7 @@ fn the_list_is_exactly_the_destructive_ops() {
         [
             "repo_change_delete",
             "repo_delete",
+            "repo_erase_step",
             "repo_mirror_claim",
             "repo_mirror_switch",
             "repo_purge_target",
@@ -151,6 +153,35 @@ fn a_tombstone_under_a_hold_keeps_its_data_until_released() {
     );
     let free = h.ok("platform:purge", answered(purge, false));
     assert_eq!(free["name"], "demo");
+}
+
+#[test]
+fn an_erase_plans_freely_and_steps_only_on_a_verified_answer() {
+    let h = Harness::new();
+    h.ok(OWNER, answered(delete(), false));
+    let plan = unchecked(json!({"op":"repo_erase_plan"}));
+    assert_eq!(code(h.run("platform:erase", plan)), "OK");
+    let step = json!({"op":"repo_erase_step"});
+    assert_eq!(
+        code(h.run("platform:erase", answered(step.clone(), true))),
+        "LEGAL_HOLD"
+    );
+    assert_eq!(
+        code(h.run("platform:erase", unchecked(step))),
+        "HOLD_UNCHECKED"
+    );
+}
+
+#[test]
+fn an_erased_tombstone_asks_nobody_and_a_repeated_purge_still_answers() {
+    let h = Harness::new();
+    h.ok(OWNER, answered(delete(), false));
+    let step = json!({"op":"repo_erase_step"});
+    while h.ok("platform:erase", answered(step.clone(), false))["done"] != true {}
+    let purge = unchecked(json!({"op":"repo_purge_target"}));
+    assert_eq!(code(h.run("platform:purge", purge)), "OK");
+    let owner = json!({"op":"repo_hold_owner"});
+    assert_eq!(code(h.run("platform:purge", owner)), "GONE");
 }
 
 #[test]
@@ -249,4 +280,8 @@ fn a_shard_forgets_commits_only_on_a_verified_answer() {
     assert_eq!(code(run(json!({"held":true}))), "LEGAL_HOLD");
     assert_eq!(run(json!({"held":false})).unwrap()["deleted"], 0);
     assert_eq!(run(json!("off")).unwrap()["deleted"], 0);
+    let erase = |hold: Value| require_free_to_erase(&json!({ "_hold": hold })).map(|()| json!({}));
+    assert_eq!(code(erase(Value::Null)), "HOLD_UNCHECKED");
+    assert_eq!(code(erase(json!({"held":true}))), "LEGAL_HOLD");
+    assert_eq!(code(erase(json!({"held":false}))), "OK");
 }

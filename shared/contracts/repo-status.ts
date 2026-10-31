@@ -45,7 +45,7 @@ export type Policy = {
   approvals: number;
   /** Review classes that satisfy the approval requirement without a human (semantic approval). Only `docs`, `formatting` and `comment_only` may be listed. */
   auto_approve?: ("docs" | "formatting" | "comment_only")[];
-  /** Who may post each required check by hand: `owner` or `token:<name>` (token names are never reused). A required check named by a runner comes only from the platform's run; any other required check defaults to the owner alone. Omitted when empty, so policies that never bind posters keep their digest. */
+  /** Who may post each required check by hand: `owner` or `token:<name>` (token names are never reused). A required check named by a runner comes only from the platform's run; any other required check defaults to the owner and tokens minted with its `check:<name>` scope. Omitted when empty, so policies that never bind posters keep their digest. */
   check_posters?: Record<string, string[]>;
   required_checks: string[];
   runners?: Record<string, Runner>;
@@ -160,7 +160,7 @@ export const repoStatusSchema = {
             },
             "type": "array"
           },
-          "description": "Who may post each required check by hand: `owner` or `token:<name>` (token names are\nnever reused). A required check named by a runner comes only from the platform's run;\nany other required check defaults to the owner alone. Omitted when empty, so policies\nthat never bind posters keep their digest.",
+          "description": "Who may post each required check by hand: `owner` or `token:<name>` (token names are\nnever reused). A required check named by a runner comes only from the platform's run;\nany other required check defaults to the owner and tokens minted with its\n`check:<name>` scope. Omitted when empty, so policies that never bind posters keep\ntheir digest.",
           "propertyNames": {
             "pattern": "^[a-z0-9][a-z0-9._\\-]{0,63}$"
           },

@@ -56,7 +56,7 @@ A team is added as `team:<org>/<team>`. Removing a member refuses their next req
 | `approvals` | Approvals of the head commit needed to land, from accounts other than its author |
 | `required_checks` | Checks that must pass on the head |
 | `runners` | Checks the platform runs itself: a command, or a model call; see [Changes](/docs/guides/changes#checks) |
-| `auto_approve` | Kinds of change that count as approved: `docs`, `formatting`, `comment_only` |
+| `auto_approve` | Kinds of change that count as approved: `docs`, `formatting`, `comment_only`. A pushed commit is classified just after the push (up to 32 commits and 200 files a push), so it needs an approval until then, and one past those limits always does |
 | `secret_allow` | Accepted secret-scan false positives; see [Security](/docs/security#what-a-push-is-checked-for) |
 
 A command runner may name `paths` (up to 32): only files at or under them are shipped to its check container. Without `paths` the whole tree ships. Either way the checked commit's tree is shipped without history.

@@ -140,6 +140,9 @@ export const MANAGED_AGENTS: readonly ManagedAgentDefinition[] = [
   },
 ];
 
+/** Medium findings on distinct lines of a change that make a level agent's result `high`. */
+export const HIGH_LEVEL_FINDINGS = 5;
+
 export const managedAgent = (id: string) => MANAGED_AGENTS.find((a) => a.id === id);
 
 /** Which providers each harness can drive: Claude Code speaks Anthropic Messages (Claude, and

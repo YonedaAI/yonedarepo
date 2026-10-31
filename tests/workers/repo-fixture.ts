@@ -155,6 +155,8 @@ function inProcess(name: string): InProcess {
 // The head holder role (`<repo>#head`) runs in-process as in production: isolates read
 // main's head and access snapshot from it, never from the authority directly.
 const holders = new Map<string, HeadHolder>();
+/** Combiners asked to erase themselves, by name. */
+export const erasedCombiners: string[] = [];
 const holderOf = (name: string) => holders.get(name) ?? holders.set(name, new HeadHolder(scoped)).get(name)!;
 export const fakeCombiners = {
   idFromName: (name: string) => name,
@@ -169,6 +171,7 @@ export const fakeCombiners = {
     refresh: async (repo: string, access?: boolean) => holderOf(name).refresh(repo, access),
     trees: (repo: string, root: string, paths: string[], commit?: string) => holderOf(name).trees(repo, root, paths, commit),
     idle: () => holderOf(name).idle(),
+    erase: async () => void erasedCombiners.push(name),
   }),
 };
 /** Stops every in-process combiner: cancels due steps and waits out the running one. */

@@ -12,7 +12,7 @@ use super::{
     store_lineage, submitted, symbols, tags, tokens, version_projection,
 };
 use super::{
-    authorize::authorize, break_glass, deletion, forks, grants, lfs, maintenance, memory,
+    authorize::authorize, break_glass, deletion, erase, forks, grants, lfs, maintenance, memory,
     quarantine, visibility,
 };
 use crate::storage::SqlStore;
@@ -25,7 +25,7 @@ pub(super) fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         Op::Store(op) => op,
     };
     let settings = rows::settings(db)?;
-    if settings.deleted_at.is_some() && !deletion::allowed_when_deleted(op) {
+    if settings.deleted_at.is_some() && !deletion::allowed_when_deleted(op, &settings) {
         return Err(deletion::gone());
     }
     let actor = auth::actor(db, c, &settings)?;
@@ -40,7 +40,8 @@ pub(super) fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     if capacity::refuses(op) {
         capacity::refuse_if_full(db, c)?;
     }
-    if legal_hold::refuses(op) {
+    // An erased tombstone holds nothing, and no longer knows its owner.
+    if legal_hold::refuses(op) && !settings.erased() {
         legal_hold::require_free(c, &settings.workspace)?;
     }
     let result = run(db, c, op, &actor, &settings)?;
@@ -80,6 +81,7 @@ fn run<S: SqlStore>(
         R::MergePlan => merging::plan(db, c),
         R::PathHistory => history::path_history(db, c),
         R::RecordClasses => classes::record(db, c),
+        R::ClassesPending => classes::pending(db, c),
         R::RecordSymbols => symbols::record(db, c),
         R::StaleReads => symbols::stale_reads(db, c),
         R::RecordContract => contracts::record(db, c, principal),
@@ -170,6 +172,8 @@ fn run<S: SqlStore>(
         R::Delete => deletion::delete(db, c, actor, settings),
         R::PurgeTarget => deletion::purge_target(db, actor, settings),
         R::HoldOwner => Ok(json!({ "owner": settings.workspace })),
+        R::ErasePlan => erase::plan(db, c, settings),
+        R::EraseStep => erase::step(db, c, settings),
         // `enqueue`: a landing that needs a merge joins the branch's queue in this call.
         R::Land => land::land(db, c, principal, settings).or_else(|e| {
             if e.code == "MERGE_REQUIRED" && c["enqueue"] == true {

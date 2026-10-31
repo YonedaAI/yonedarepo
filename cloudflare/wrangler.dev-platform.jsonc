@@ -316,6 +316,7 @@
     "LFS_S3_ENDPOINT": "https://f011d0ee02b23cad26b4b38151b204ad.r2.cloudflarestorage.com",
     "PACK_CACHE": "on",
     "PUSH_BUNDLES": "on",
+    "REPO_ERASE": "on",
     "SITE_EVENTS_DATASET": "yonedarepo_dev_site_events",
     "SSH_FRONT_DOOR": "tunnel",
     "SSH_HOST": "ssh.dev.yonedarepo.com",

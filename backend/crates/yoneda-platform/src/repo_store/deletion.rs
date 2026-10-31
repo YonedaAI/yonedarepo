@@ -3,7 +3,8 @@
 //! revoked, and the adapter purges the object store asynchronously (the platform purger
 //! asks for the store of record through `repo_purge_target`). Nothing is erased here, so
 //! the deletion commits in one transaction with no I/O. Hooks subscribed to `repo` get one
-//! `repo.deleted` payload, delivered from the tombstone by the hooks job.
+//! `repo.deleted` payload, delivered from the tombstone by the hooks job. The erase job
+//! empties the tombstone afterwards (`erase`).
 use super::auth::Actor;
 use super::hook_events::{Event, enqueue};
 use super::hooks;
@@ -18,30 +19,30 @@ pub fn gone() -> Error {
     Error::new("GONE", "Repository was deleted")
 }
 
-/// Whether `op` still runs on a tombstone: the (idempotent) delete, the purge read, whose
-/// hold is whose (a hold may be placed on a tombstone until it is purged), and the delivery
-/// of hook payloads already queued (`repo.deleted` among them).
-pub fn allowed_when_deleted(op: StoreOp) -> bool {
-    matches!(
-        op,
+/// Whether `op` still runs on a tombstone: the purge read, the erase, and until it is
+/// erased, the (idempotent) delete, whose hold is whose (a hold may be placed on a tombstone
+/// until it is purged), and the delivery of hook payloads already queued (`repo.deleted`
+/// among them).
+pub fn allowed_when_deleted(op: StoreOp, settings: &Settings) -> bool {
+    match op {
+        StoreOp::Repo(RepoOp::PurgeTarget | RepoOp::ErasePlan | RepoOp::EraseStep) => true,
         StoreOp::Repo(
-            RepoOp::Delete
-                | RepoOp::PurgeTarget
-                | RepoOp::HoldOwner
-                | RepoOp::HookClaim
-                | RepoOp::HookSettle
-        )
-    )
+            RepoOp::Delete | RepoOp::HoldOwner | RepoOp::HookClaim | RepoOp::HookSettle,
+        ) => !settings.erased(),
+        _ => false,
+    }
 }
 
-/// On a tombstone, hook delivery belongs to the platform's hooks job alone, and who owns it
-/// to the platform: anyone else is answered GONE, as for every other operation.
+/// On a tombstone, hook delivery and the erase belong to their platform jobs alone, and who
+/// owns it to the platform: anyone else is answered GONE, as for every other operation.
 pub fn tombstone_caller(op: StoreOp, actor: &Actor, settings: &Settings) -> Result<()> {
-    let delivery = matches!(op, StoreOp::Repo(RepoOp::HookClaim | RepoOp::HookSettle));
-    let owner = matches!(op, StoreOp::Repo(RepoOp::HoldOwner));
-    if settings.deleted_at.is_some()
-        && ((delivery && !actor.can("hooks")) || (owner && !actor.can("system")))
-    {
+    let job = match op {
+        StoreOp::Repo(RepoOp::HookClaim | RepoOp::HookSettle) => Some("hooks"),
+        StoreOp::Repo(RepoOp::ErasePlan | RepoOp::EraseStep) => Some("erase"),
+        StoreOp::Repo(RepoOp::HoldOwner) => Some("system"),
+        _ => None,
+    };
+    if settings.deleted_at.is_some() && job.is_some_and(|scope| !actor.can(scope)) {
         return Err(gone());
     }
     Ok(())

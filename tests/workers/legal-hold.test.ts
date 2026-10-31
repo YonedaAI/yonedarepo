@@ -6,6 +6,7 @@
 import { expect, it } from 'vitest';
 import { platformJob } from '../../cloudflare/worker/platform-entrypoint';
 import { purgeRepository } from '../../cloudflare/worker/repo-admin';
+import { eraseJob } from '../../cloudflare/worker/repo-erase';
 import { quarantineJob } from '../../cloudflare/worker/repo-quarantine';
 import { shardCall } from '../../cloudflare/worker/repo-shards';
 import type { Env } from '../../cloudflare/worker/types';
@@ -166,6 +167,24 @@ it('a hold placed on a tombstone keeps it: the purge comes back later, not to th
   await purgeRepository(on, id);
 });
 
+it('an erase waits out a hold: shards and records stay until it is released', async () => {
+  const { org, owner, id, repo } = await held('erase');
+  const erasing = { ...on, REPO_ERASE: 'on', ARTIFACTS: undefined } as unknown as Env;
+  expect((await api(`${repo}?confirm=app`, owner, del, erasing)).status).toBe(200);
+  await api(`/orgs/${org}/repos/${id}/hold`, owner, { body: {} }, erasing);
+  const job = { v: 1, kind: 'platform_erase', repo_id: id, job_id: 'start' } as const;
+  let settled = '';
+  const message = { body: job, attempts: 1, ack: () => { settled = 'ack'; }, retry: () => { settled = 'retry'; } };
+  await platformJob(erasing, message as unknown as Message<any>);
+  expect(settled).toBe('ack');
+  expect(delayed.filter((m) => m.kind === 'platform_erase' && m.repo_id === id)).toHaveLength(1);
+  expect((await shardCall(erasing, id, 0, { op: 'store_status' })).db_bytes).toBeGreaterThan(0);
+  await expect(eraseJob(erasing, { ...job, job_id: 'records' })).rejects.toMatchObject({ code: 'LEGAL_HOLD' });
+  await api(`/orgs/${org}/repos/${id}/hold`, owner, del, erasing);
+  await eraseJob(erasing, job);
+  await expect(shardCall(erasing, id, 0, { op: 'store_status' })).rejects.toMatchObject({ code: 'GONE' });
+});
+
 it('a quarantine purge waits out a hold, and its job comes back later', async () => {
   const { org, owner, id, repo } = await held('quarantine');
   const made = (await api(`${repo}/quarantine`, owner, { body: { path: 'a.txt', reason: 'leak', retain_days: 1 } }, on)).body;
@@ -239,6 +258,8 @@ it('a commit shard refuses a vacuum delete without the answer', async () => {
   const refuse = shardCall(on, id, 0, { op: 'store_vacuum_delete', ids: [] });
   await expect(refuse).rejects.toMatchObject({ code: 'HOLD_UNCHECKED' });
   expect((await shardCall(on, id, 0, { op: 'store_vacuum_delete', ids: [], _hold: { held: false } })).deleted).toBe(0);
+  await expect(shardCall(on, id, 0, { op: 'store_erase' })).rejects.toMatchObject({ code: 'HOLD_UNCHECKED' });
+  await expect(shardCall(on, id, 0, { op: 'store_erase', _hold: { held: true } })).rejects.toMatchObject({ code: 'LEGAL_HOLD' });
 });
 
 it('off: the routes do not exist, nothing is checked, and an old hold stops nothing', async () => {

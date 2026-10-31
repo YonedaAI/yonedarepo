@@ -23,6 +23,7 @@ import {
 import { operatorOrgHold, operatorRepoHold } from './platform-holds';
 import { orgArg } from './platform-orgs';
 import { siteTraffic } from './platform-site-traffic';
+import { backfillObject } from './repo-erase';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { quarantineRoute } from './repo-quarantine';
 import type { Env } from './types';
@@ -70,6 +71,7 @@ export async function adminRoute(
     await audit(env, actor, 'accounts.backfill', after || '-', done);
     return done;
   }
+  if (section === 'erase-backfill' && !id && post) return backfillObject(env, actor, await body());
   if (section === 'accounts' && !id && get)
     return listAccounts(env, query.get('q'), query.get('before'));
   if (section === 'accounts' && id && !record) {

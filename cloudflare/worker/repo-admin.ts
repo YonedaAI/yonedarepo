@@ -121,6 +121,8 @@ export async function purgePrefix(env: Env, prefix: string) {
 export async function purgeRepository(env: Env, repo: string) {
   const target: Json = await caller(env, repo, { _system: 'purge' })({ op: 'repo_purge_target' });
   await purgePrefix(env, `platform/v1/${repo}/`);
+  // Search segments, packs, symbols and facts hold file content.
+  await purgePrefix(env, `derived/v1/${repo}/`);
   // A fork purges its own store, never the parent's it inherits from.
   const store = ownSpec(String(target.object_store ?? ''));
   const r2 = /^r2:([A-Za-z0-9._-]+)$/.exec(store);

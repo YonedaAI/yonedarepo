@@ -61,7 +61,7 @@ mod secret_scan;
 pub mod shared_contracts;
 
 pub use accounts::execute_workspace;
-pub use commit_store::{execute_commit_store, migrate_commit_store};
+pub use commit_store::{execute_commit_store, migrate_commit_store, require_free_to_erase};
 pub use platform_compute::{compute as platform_compute, stack_left};
 pub use repo_store::{execute_migrated, execute_repo_store, migrate_repo_store};
 

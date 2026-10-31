@@ -3,6 +3,7 @@
 // afterwards), a larger one is written to R2 first, and a failed write moves nothing.
 import { expect, it, vi } from 'vitest';
 import { hmacHex } from '../../cloudflare/worker/hmac';
+import { classifyJob, CLASSIFY_COMMITS } from '../../cloudflare/worker/repo-classify';
 import { compute } from '../../cloudflare/worker/repo-compute';
 import { deliverHook, hookJob } from '../../cloudflare/worker/repo-hooks';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
@@ -23,10 +24,10 @@ async function object(kind: Raw['kind'], data: Uint8Array): Promise<Raw> {
 }
 
 /** A commit on `parent` whose tree holds `count` small files (and nothing else). */
-async function commitOf(parent: string, count: number, label: string) {
+async function commitOf(parent: string, count: number, label: string, suffix = 'txt') {
   const blobs = await Promise.all(Array.from({ length: count }, (_, i) => object('blob', text.encode(`${label} ${i}\n`))));
   const entries = blobs
-    .map((b, i) => ({ name: `f${String(i).padStart(4, '0')}.txt`, id: b.id }))
+    .map((b, i) => ({ name: `f${String(i).padStart(4, '0')}.${suffix}`, id: b.id }))
     .sort((a, b) => (a.name < b.name ? -1 : 1));
   const parts = entries.flatMap((e) => [text.encode(`100644 ${e.name}\0`), Uint8Array.from(e.id.match(/../g) ?? [], (h) => Number.parseInt(h, 16))]);
   const tree = await object('tree', new Uint8Array(parts.flatMap((p) => [...p])));
@@ -54,14 +55,100 @@ async function push(repo: string, token: string, refname: string, objects: Raw[]
   return new TextDecoder().decode(await response.arrayBuffer());
 }
 
-async function setup(name: string) {
+async function setup(name: string, policy: Record<string, unknown> = { approvals: 0, required_checks: [] }) {
   const cookie = await signup(name);
-  const created = await api('/repos', { cookie }, { body: { name, policy: { approvals: 0, required_checks: [] }, files: [file('a.md', 'a\n')], author } });
+  const created = await api('/repos', { cookie }, { body: { name, policy, files: [file('a.md', 'a\n')], author } });
   const repo = created.body.id as string;
   const minted = await api(`/repos/${repo}/tokens`, { cookie }, { body: { name: 'git', scopes: ['read', 'write', 'land'] } });
   const refs = async () => (await api(`/repos/${repo}/refs`, { cookie })).body.refs;
   return { repo, cookie, token: minted.body.token as string, refs, main: (await refs())['refs/heads/main'] as string };
 }
+
+const AUTO_DOCS = { approvals: 1, required_checks: [], auto_approve: ['docs'] };
+const classifyJobs = () => {
+  const jobs = queued.filter((m) => m.kind === 'platform_classify');
+  queued.splice(0, queued.length, ...queued.filter((m) => m.kind !== 'platform_classify'));
+  return jobs;
+};
+const gatesOf = async (repo: string, token: string, commit: string) =>
+  (await api(`/repos/${repo}/commits/${commit}`, { token })).body;
+
+it('classifies a pushed docs commit after the push, so it lands with no human; logic needs one', async () => {
+  const { repo, token, cookie, main } = await setup('push_classified', AUTO_DOCS);
+  const { commit: docs, objects } = await commitOf(main, 2, 'docs');
+  queued.length = 0;
+  expect(await push(repo, token, 'refs/heads/notes', objects)).toContain('ok refs/heads/notes');
+  // Git never waited for it: unclassified until the job runs, which is what a human covers.
+  const before = await gatesOf(repo, token, docs.id);
+  expect(before.review_classes).toBeNull();
+  expect(before.gates).toMatchObject({ ready: false, auto_approved: false });
+
+  // The objects are still staged in the authority: the job reads them from there.
+  const jobs = classifyJobs();
+  expect(jobs).toEqual([expect.objectContaining({ repo_id: repo, commits: [docs.id] })]);
+  await classifyJob(scoped, jobs[0]);
+  const after = await gatesOf(repo, token, docs.id);
+  expect(after.review_classes).toMatchObject({ overall: 'docs' });
+  expect(after.gates).toMatchObject({ ready: true, auto_approved: true, review_class: 'docs' });
+  const landed = await api(`/repos/${repo}/land`, { cookie }, { body: { ref: 'main', commit: docs.id } });
+  expect(landed.status).toBe(200);
+
+  const { commit: logic, objects: code } = await commitOf(docs.id, 1, 'fn main() {}', 'rs');
+  queued.length = 0;
+  expect(await push(repo, token, 'refs/heads/fix', code)).toContain('ok refs/heads/fix');
+  await classifyJob(scoped, classifyJobs()[0]);
+  const judged = await gatesOf(repo, token, logic.id);
+  expect(judged.review_classes.overall).not.toBe('docs');
+  expect(judged.gates).toMatchObject({ ready: false, auto_approved: false });
+});
+
+it('a push to main needs its class before it can land alone, as an unclassified commit always has', async () => {
+  const { repo, token, refs, main } = await setup('push_main_classified', AUTO_DOCS);
+  const { commit, objects } = await commitOf(main, 1, 'docs');
+  queued.length = 0;
+  const refused = await push(repo, token, 'refs/heads/main', objects);
+  expect(refused).toContain('NOT_READY');
+  expect((await refs())['refs/heads/main']).toBe(main);
+  await classifyJob(scoped, classifyJobs()[0]);
+  expect(await push(repo, token, 'refs/heads/main', objects)).toContain('ok refs/heads/main');
+  expect((await refs())['refs/heads/main']).toBe(commit.id);
+});
+
+it('leaves a push unclassified where nothing would use the class, or past its budget', async () => {
+  const off = await setup('push_no_classify');
+  queued.length = 0;
+  const plain = await commitOf(off.main, 1, 'docs');
+  expect(await push(off.repo, off.token, 'refs/heads/notes', plain.objects)).toContain('ok refs/heads/notes');
+  expect(classifyJobs()).toEqual([]);
+
+  const on = await setup('push_over_budget', AUTO_DOCS);
+  const objects: Raw[] = [];
+  let parent = on.main;
+  for (let i = 0; i <= CLASSIFY_COMMITS; i++) {
+    const next = await commitOf(parent, 1, `docs ${i}`);
+    objects.unshift(...next.objects);
+    parent = next.commit.id;
+  }
+  queued.length = 0;
+  expect(await push(on.repo, on.token, 'refs/heads/long', objects)).toContain('ok refs/heads/long');
+  expect(classifyJobs()).toEqual([]);
+  expect((await gatesOf(on.repo, on.token, parent)).gates).toMatchObject({ auto_approved: false });
+});
+
+it('a job past its file budget leaves the rest needing a human, and a failed read too', async () => {
+  const { repo, token, main } = await setup('push_classify_budget', AUTO_DOCS);
+  const wide = await commitOf(main, 150, 'one');
+  const wider = await commitOf(wide.commit.id, 150, 'two');
+  queued.length = 0;
+  expect(await push(repo, token, 'refs/heads/wide', [...wider.objects, ...wide.objects])).toContain('ok refs/heads/wide');
+  await classifyJob(scoped, classifyJobs()[0]);
+  expect((await gatesOf(repo, token, wide.commit.id)).review_classes).not.toBeNull();
+  expect((await gatesOf(repo, token, wider.commit.id)).review_classes).toBeNull();
+  // An unknown commit or repository settles quietly: there is nothing to retry.
+  await expect(
+    classifyJob(scoped, { v: 1, kind: 'platform_classify', repo_id: repo, job_id: 'classify', commits: ['0'.repeat(40)] }),
+  ).resolves.toBeUndefined();
+});
 
 const rawKey = (repo: string, id: string) => `platform/v1/${repo}/git/${id}`;
 
