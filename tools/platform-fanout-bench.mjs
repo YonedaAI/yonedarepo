@@ -5,10 +5,14 @@
 // repository tokens, and deletes them when it ends. Credentials: YONEDA_USERNAME / YONEDA_PASSWORD; BENCH_KEY for the
 // bench client. Evidence goes to .local/platform-live/.
 //
+// Dev only: any other host is refused. Evidence is one timestamped file per run.
+//
 // --workload picks what runs:
 //   burst (default)  --writers N writers commit and land at once, then read back (burst.mjs)
 //   sustained        open-loop arrivals at each of --rates lands/s for --step-seconds, until
-//                    a step misses; reports the knee (sustained.mjs)
+//                    a step misses; reports the knee (sustained.mjs). --repos N spreads it over
+//                    N saved repositories (--rates stays per repository), --layout spread|single
+//                    picks the paths, --principals pat uses personal access tokens
 //   skew             --writers N writers whose declared reads meet each other's writes, with
 //                    and without the reads, checked for serializability (skew.mjs)
 //   reads            --burst N concurrent reads per read source; one refusal fails (reads.mjs)
@@ -18,8 +22,11 @@
 import assert from 'node:assert/strict';
 import { parseArgs } from 'node:util';
 import { burst } from './fanout-bench/burst.mjs';
+import { cloudflareReaders } from './fanout-bench/cf-analytics.mjs';
 import { connect, evidence } from './fanout-bench/driver.mjs';
+import { devSpec, requireDev } from './fanout-bench/guard.mjs';
 import { reads, SOURCES } from './fanout-bench/reads.mjs';
+import { ensurePool, poolPath } from './fanout-bench/repo-pool.mjs';
 import { skew } from './fanout-bench/skew.mjs';
 import { estimate, sustained } from './fanout-bench/sustained.mjs';
 
@@ -27,6 +34,8 @@ const { values } = parseArgs({
   options: {
     url: { type: 'string' },
     client: { type: 'string' },
+    client2: { type: 'string' },
+    local: { type: 'boolean', default: false },
     workload: { type: 'string', default: 'burst' },
     writers: { type: 'string', default: '1000' },
     principals: { type: 'string', default: 'tokens' },
@@ -39,6 +48,14 @@ const { values } = parseArgs({
     arrivals: { type: 'string', default: 'poisson' },
     warmup: { type: 'string', default: '5' },
     yes: { type: 'boolean', default: false },
+    repos: { type: 'string' },
+    layout: { type: 'string', default: 'spread' },
+    dirs: { type: 'string', default: '32' },
+    pats: { type: 'string', default: '10' },
+    'pool-file': { type: 'string' },
+    'target-p95-ms': { type: 'string' },
+    'sample-seconds': { type: 'string', default: '30' },
+    'settle-seconds': { type: 'string', default: '60' },
     // skew
     'skew-reads': { type: 'string', default: '1' },
     runs: { type: 'string', default: '1' },
@@ -49,7 +66,9 @@ const { values } = parseArgs({
 });
 assert.ok(values.url && values.client, 'Pass --url (platform) and --client (bench client)');
 assert.ok(['burst', 'sustained', 'skew', 'reads'].includes(values.workload), '--workload is burst, sustained, skew or reads');
-assert.ok(['session', 'tokens'].includes(values.principals), '--principals is session or tokens');
+assert.ok(['session', 'tokens', 'pat'].includes(values.principals), '--principals is session, tokens or pat');
+assert.ok(values.principals !== 'pat' || values.workload === 'sustained', '--principals pat runs with --workload sustained');
+requireDev([values.url, values.client, values.client2], { local: values.local });
 assert.ok(!values.mode || ['changeset', 'batch'].includes(values.mode), '--mode is changeset or batch');
 const url = values.url.replace(/\/$/, '');
 const positive = (name) => {
@@ -61,7 +80,7 @@ const mode = values.mode;
 
 // Every repository the workload creates is deleted afterwards, pass or fail; the evidence
 // file keeps the results.
-const session = await connect(url, values.client);
+const session = await connect(url, values.client, { client2: values.client2 });
 try {
   if (values.workload === 'burst') {
     const result = await burst(session, { writers: positive('writers'), principals: values.principals, mode });
@@ -69,17 +88,40 @@ try {
   } else if (values.workload === 'sustained') {
     const rates = values.rates.split(',').map(Number);
     assert.ok(rates.length && rates.every((r) => Number.isFinite(r) && r > 0), '--rates is a list of lands/s');
-    const o = { rates, step_s: positive('step-seconds'), per_shard: positive('per-shard'), segment_s: positive('segment-seconds'), arrivals: values.arrivals, warmup_s: Number(values.warmup), mode };
+    const principals = values.principals === 'session' ? 'tokens' : values.principals;
+    const repoCount = values.repos ? positive('repos') : 1;
+    const token = process.env.CF_ANALYTICS_TOKEN;
+    const o = {
+      rates,
+      step_s: positive('step-seconds'),
+      per_shard: positive('per-shard'),
+      segment_s: positive('segment-seconds'),
+      arrivals: values.arrivals,
+      warmup_s: Number(values.warmup),
+      mode,
+      principals,
+      layout: values.layout,
+      dirs: positive('dirs'),
+      pats: positive('pats'),
+      ...(values['target-p95-ms'] ? { target_ms: positive('target-p95-ms') } : {}),
+      analytics: token && !values.local ? cloudflareReaders({ token, spec: devSpec() }) : null,
+      sample_ms: positive('sample-seconds') * 1000,
+      settle_ms: Number(values['settle-seconds']) * 1000,
+    };
+    assert.ok(['spread', 'single'].includes(o.layout), '--layout is spread or single');
     assert.ok(o.per_shard <= 50 && o.segment_s <= 180, '--per-shard is at most 50 and --segment-seconds at most 180');
     assert.ok(['poisson', 'fixed'].includes(o.arrivals), '--arrivals is poisson or fixed');
-    const planned = estimate(o);
+    const planned = estimate({ ...o, repo_count: repoCount });
     console.error(`planned: ${JSON.stringify(planned)}`);
     if (planned.requests > 2_000_000 && !values.yes) {
       console.error(`${planned.requests} platform requests exceed 2,000,000; pass --yes to run`);
       process.exit(2);
     }
+    await session.preflight();
+    // Without --repos a repository is made for the run and deleted after it, as before.
+    if (values.repos) o.repos = await ensurePool(session, { file: values['pool-file'] ?? poolPath('sustained'), size: repoCount, prefix: 'sustained' });
     const result = await sustained(session, o);
-    await evidence(`sustained-${rates.join('_')}-${o.step_s}s-${mode ?? 'default'}`, url, { estimate: planned, ...result });
+    await evidence(`sustained-${repoCount}x${rates.join('_')}-${o.step_s}s-${o.layout}-${mode ?? 'default'}`, url, { estimate: planned, ...result });
   } else if (values.workload === 'skew') {
     const o = { writers: positive('writers'), k: positive('skew-reads'), runs: positive('runs'), mode };
     const result = await skew(session, o);

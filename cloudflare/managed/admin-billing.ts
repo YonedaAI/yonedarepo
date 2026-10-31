@@ -70,7 +70,7 @@ async function view(env: ManagedEnv, account: string): Promise<AdminBilling> {
       closed_at: d.closed_at,
     })),
     refund: {
-      configured: Boolean(env.STRIPE_REFUND_KEY),
+      configured: Boolean(env.STRIPE_REFUND_KEY ?? env.STRIPE_SECRET_KEY),
       max_usd: usdLimit(env.REFUND_MAX_USD),
       daily_usd: usdLimit(env.REFUND_DAILY_USD),
       used_today_usd: usd(usedToday),

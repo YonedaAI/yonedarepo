@@ -8,6 +8,7 @@ import { asyncStore, dispatchStore } from './repo-artifacts-store';
 import { commit } from './repo-commit';
 import { refreshHead } from './repo-head';
 import { defaultBranchSoon, startImport } from './repo-import';
+import { startWorkflow } from './repo-import-start';
 import { newStore, type ObjectStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { requirePatScope } from './repo-pat';
@@ -221,7 +222,7 @@ async function populate(
 
 /** Starts a durable import of an external Git repository (Artifacts-backed only). */
 export async function importRepository(env: Env, requester: Credentials, body: Json) {
-  const auth = await owning(env, requester, body);
+  const auth = await timed('import.owner', () => owning(env, requester, body));
   const asked_at = Date.now();
   if (env.PLATFORM_OBJECT_STORE === 'r2')
     throw new ApiError('NOT_SUPPORTED', 'Importing a remote needs the Artifacts object store');
@@ -238,27 +239,31 @@ export async function importRepository(env: Env, requester: Credentials, body: J
   const owner = auth._session.workspace;
   // Beside the writes below, so that Artifacts can be asked as soon as they end.
   const named = fast && !branch ? defaultBranchSoon(url) : Promise.resolve(null);
-  await holdName(env, owner, id, name);
+  await timed('import.name', () => holdName(env, owner, id, name));
   const ctx = new RepoContext(env, id, caller(env, id, auth));
-  await ctx
-    .call({
-      op: 'repo_init',
-      name,
-      // Artifacts creates the store itself during import.
-      object_store: `artifacts:${env.ARTIFACTS_NAMESPACE}/yr-${id}`,
-      policy: body.policy ?? { required_checks: [], approvals: 1 },
-      visibility,
-    })
-    .catch(async (e) => {
-      await releaseNames(env, owner, id).catch(() => {});
-      throw e;
-    });
-  await listRepository(env, id, auth._session.workspace, name, visibility);
-  const tokens = await issueTokens(ctx, body.tokens);
-  const params = { repo: id, url, branch: branch ?? (await named) ?? undefined, max, asked_at };
+  await timed('import.init', () =>
+    ctx
+      .call({
+        op: 'repo_init',
+        name,
+        // Artifacts creates the store itself during import.
+        object_store: `artifacts:${env.ARTIFACTS_NAMESPACE}/yr-${id}`,
+        policy: body.policy ?? { required_checks: [], approvals: 1 },
+        visibility,
+      })
+      .catch(async (e) => {
+        await releaseNames(env, owner, id).catch(() => {});
+        throw e;
+      }),
+  );
+  const remote = await timed('import.branch', () => named);
+  const params = { repo: id, url, branch: branch ?? remote ?? undefined, max, asked_at };
+  // Beside the writes below: nothing of it reads them.
   if (fast) deferred(() => startImport(env, params));
-  const instance = await env.PLATFORM_IMPORT.create({ id: `import-${id}`, params });
-  return { id, import: instance.id, branch: branch ?? null, max_commits: max, ...tokens };
+  await timed('import.list', () => listRepository(env, id, owner, name, visibility));
+  const tokens = await timed('import.tokens', () => issueTokens(ctx, body.tokens));
+  const workflow = await timed('import.workflow', () => startWorkflow(env, params));
+  return { id, import: workflow, branch: branch ?? null, max_commits: max, ...tokens };
 }
 
 /** The listing row of a repository the authority accepted (a fork's too, or one restored,

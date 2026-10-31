@@ -25,6 +25,10 @@ const DEFAULT_KEEP_VERSIONS: u64 = 10_000;
 const DEFAULT_KEEP_DAYS: i64 = 30;
 const MIN_KEEP_VERSIONS: u64 = 64;
 const MAX_KEEP_DAYS: i64 = 3_650;
+/// How far behind the head a reader's `hold` keeps a due segment in SQL. Past this the
+/// segment moves anyway and the plan says `hold_released`: analytics never bounds a
+/// repository's log, so a stalled stream costs at most this many extra rows, and a gap.
+const MAX_HOLD_VERSIONS: u64 = 16 * SEGMENT_VERSIONS;
 
 struct Retention {
     keep_versions: u64,
@@ -91,15 +95,18 @@ struct Due {
     segment: Sealed,
     checkpoints: Sealed,
     end_state: Checkpoint,
+    /// The caller's `hold` would have kept this segment and is past `MAX_HOLD_VERSIONS`.
+    hold_released: bool,
 }
 
-/// `(start, end]` after the floor, when every reader that streams the log has passed it,
-/// it is older than the retention bound, and the head is past it (the head row stays).
+/// `(start, end]` after the floor, when it is older than the retention bound, every reader
+/// that streams the log has passed it (a `hold` only to `MAX_HOLD_VERSIONS`), and the head
+/// is past it (the head row stays).
 fn due<S: SqlStore>(db: &S, c: &Value) -> Result<Option<Due>> {
     let start = archive::floor(db)?;
     let end = start + SEGMENT_VERSIONS;
     let head = rows::current_version(db)?;
-    if end >= head || c["hold"].as_u64().is_some_and(|hold| end > hold) {
+    if end >= head {
         return Ok(None);
     }
     let retention = Retention::of(db)?;
@@ -108,6 +115,11 @@ fn due<S: SqlStore>(db: &S, c: &Value) -> Result<Option<Due>> {
         .first()
         .is_some_and(|e| e.committed_at_ms <= number(c, "now").unwrap_or(0) - retention.keep_ms);
     if !old && end.saturating_add(retention.keep_versions) > head {
+        return Ok(None);
+    }
+    let hold = c["hold"].as_u64().filter(|hold| end > *hold);
+    let hold_released = hold.is_some_and(|hold| head.saturating_sub(hold) > MAX_HOLD_VERSIONS);
+    if hold.is_some() && !hold_released {
         return Ok(None);
     }
     // Changesets not yet projected, and webhook events not yet fanned out, stay in SQL.
@@ -140,6 +152,7 @@ fn due<S: SqlStore>(db: &S, c: &Value) -> Result<Option<Due>> {
         segment: Segment::seal(start, end, run)?,
         checkpoints: SegmentCheckpoints::seal(start, end, base, stored(db, start, end)?)?,
         end_state,
+        hold_released,
     }))
 }
 
@@ -182,6 +195,12 @@ fn progress<S: SqlStore>(db: &S) -> Result<Value> {
     }))
 }
 
+/// `repo_compact_status`: the floor and tail alone. Nothing is sealed, unlike a plan, so it is
+/// cheap enough to read while a repository is busy.
+pub fn status<S: SqlStore>(db: &S) -> Result<Value> {
+    progress(db)
+}
+
 /// `repo_compact_plan`: the next segment due (`due` with both sealed objects), or not due.
 pub fn plan<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let mut answer = progress(db)?;
@@ -192,6 +211,9 @@ pub fn plan<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         answer["end"] = json!(due.end);
         answer["segment"] = json!(due.segment);
         answer["checkpoints"] = json!(due.checkpoints);
+        if due.hold_released {
+            answer["hold_released"] = json!(true);
+        }
     }
     Ok(answer)
 }

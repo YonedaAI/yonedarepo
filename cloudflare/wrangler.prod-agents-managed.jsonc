@@ -25,8 +25,8 @@
 // unlocks PROMO_CREDIT_USD once; a balance under $5 is topped up by $20 off-session.
 // ADMIN_BILLING=on (with the platform Worker's) adds the operators' billing routes, the nightly
 // reconcile and three webhook events: charge.refunded, charge.dispute.created, charge.dispute.closed.
-// Refunds also need STRIPE_REFUND_KEY (optional secret: a restricted key, Refunds write; unset: the
-// refund route answers NOT_CONFIGURED) and the vars REFUND_MAX_USD and REFUND_DAILY_USD (per refund,
+// Refunds use STRIPE_REFUND_KEY (optional secret: a restricted key, Refunds write) or else STRIPE_SECRET_KEY,
+// bounded by the vars REFUND_MAX_USD and REFUND_DAILY_USD (per refund,
 // and per UTC day across all accounts; unset: every refund is refused).
 // REVENUE is this Worker's own D1, never the platform's: each ledger pushes its changed days to it
 // with ADMIN_BILLING on (managed/ledger-rollup.ts); the platform reads /admin/billing/revenue.
@@ -159,7 +159,9 @@
     "AI_GATEWAY_PROVIDERS": "claude=anthropic,codex=openai,zai=custom-zai,mimo=custom-mimo",
     "AI_GATEWAY_URL": "https://gateway.ai.cloudflare.com/v1/f011d0ee02b23cad26b4b38151b204ad/yonedarepo-prod-managed-agents",
     "PROMO_CREDIT_USD": "100",
-    "PUBLIC_URL": "https://managed.yonedarepo.com"
+    "PUBLIC_URL": "https://managed.yonedarepo.com",
+    "REFUND_DAILY_USD": "1000",
+    "REFUND_MAX_USD": "500"
   },
   "workers_dev": false,
   "workflows": [

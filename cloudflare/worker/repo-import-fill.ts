@@ -13,6 +13,7 @@ import { rpcValue } from './durable';
 import { inBatches } from './repo-git-objects';
 import { directOn, fetchedPack, wholeClone } from './repo-import-direct';
 import {
+  askedKey,
   endHistory,
   endWithoutMirror,
   headKey,
@@ -206,7 +207,7 @@ export async function landThenFill(
     const key = headKey(params.repo);
     const noted = await env.OBJECTS.get(key);
     const early = noted ? await noted.json<Json>() : null;
-    await env.OBJECTS.delete(key);
+    await env.OBJECTS.delete([key, askedKey(params.repo)]);
     return { filled: Date.now(), early };
   });
   rates.sort((a, b) => a - b);
@@ -219,6 +220,7 @@ export async function landThenFill(
     // What the bench reports (tools/import-bench.mjs): server-side, in the Workflow's steps.
     timing: {
       ...(early ?? headTiming(params, importing_at, head, 'workflow')),
+      workflow_ms: importing_at - (params.asked_at ?? importing_at),
       history_ms,
       commits_per_s: Math.round(((head.total - 1) * 1000) / (history_ms + 1)),
       waves: rates.length,

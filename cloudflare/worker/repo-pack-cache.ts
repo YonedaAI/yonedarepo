@@ -94,9 +94,14 @@ export class PackWriter {
       await this.#parts.abort();
       return false;
     }
-    await this.#parts.finish();
-    await this.#keep();
+    await this.complete();
+    await this.keep();
     return true;
+  }
+
+  /** Makes the pack readable, which is all a clone needs of it. `keep` goes on to list it. */
+  complete() {
+    return this.#parts.finish();
   }
 
   abort() {
@@ -105,7 +110,7 @@ export class PackWriter {
 
   /** Records this pack as the most recent and deletes those past `KEPT`, and with a
    * `tip`, those built for another tip (superseded). */
-  async #keep() {
+  async keep() {
     const listed = await this.env.OBJECTS.get(recentKey(this.repo));
     const recent = listed ? (await listed.json<(Kept | string)[]>()).map(entry) : [];
     const all = [{ key: this.key, tip: this.tip }, ...recent.filter((k) => k.key !== this.key)];

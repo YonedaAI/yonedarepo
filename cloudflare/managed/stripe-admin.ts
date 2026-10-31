@@ -1,14 +1,15 @@
-// Stripe for operators' billing. Refunds go out under STRIPE_REFUND_KEY alone, a restricted key:
-// an unset key stops here, it never falls back to STRIPE_SECRET_KEY. Reading a charge is not a
-// refund, and uses the secret key the rest of billing does.
+// Stripe for operators' billing. Refunds go out under STRIPE_REFUND_KEY, a restricted key, when
+// one is set, else under STRIPE_SECRET_KEY: REFUND_MAX_USD and REFUND_DAILY_USD bound them either
+// way. Reading a charge is not a refund, and uses the secret key the rest of billing does.
 import type { ManagedEnv } from './config';
 import { StripeError, stripeRequest } from './stripe';
 
 export type StripeRefund = { id: string; status: string; metadata?: Record<string, string> };
 
 function refundKey(env: ManagedEnv) {
-  if (!env.STRIPE_REFUND_KEY) throw new StripeError('Refunds are not configured', 503, 'config');
-  return env.STRIPE_REFUND_KEY;
+  const key = env.STRIPE_REFUND_KEY ?? env.STRIPE_SECRET_KEY;
+  if (!key) throw new StripeError('Refunds are not configured', 503, 'config');
+  return key;
 }
 
 /** The refund made for `id`, if Stripe has one. Asked before every attempt: an idempotency key

@@ -320,6 +320,10 @@ fn compaction_waits_for_held_cursors_and_is_the_owners_or_the_platforms() {
     );
 
     assert_eq!(
+        code(h.run(AGENT, json!({"op":"repo_compact_status"}))),
+        "FORBIDDEN"
+    );
+    assert_eq!(
         code(h.run(AGENT, json!({"op":"repo_compact_plan"}))),
         "FORBIDDEN"
     );
@@ -348,6 +352,45 @@ fn compaction_waits_for_held_cursors_and_is_the_owners_or_the_platforms() {
         })),
         "OK"
     );
+}
+
+#[test]
+fn a_hold_too_far_behind_the_head_stops_holding_a_due_segment() {
+    // Exactly the limit behind: a stalled stream still holds. One more: it does not.
+    let (h, _, _) = grown(17_407);
+    let r2 = Store::default();
+    h.ok(
+        OWNER,
+        json!({"op":"repo_set_retention","keep_versions":100,"keep_days":30}),
+    );
+    let plan = |hold: u64| h.ok(OWNER, json!({"op":"repo_compact_plan","hold":hold}));
+    let held = plan(1_023);
+    assert_eq!(
+        (&held["due"], &held["hold_released"]),
+        (&json!(false), &Value::Null)
+    );
+    let released = plan(1_022);
+    assert_eq!(
+        (&released["due"], &released["hold_released"]),
+        (&json!(true), &json!(true))
+    );
+    // Only when the hold is what stopped it: a segment retention keeps releases nothing.
+    h.ok(
+        OWNER,
+        json!({"op":"repo_set_retention","keep_versions":1_000_000}),
+    );
+    let kept = plan(1);
+    assert_eq!(
+        (&kept["due"], &kept["hold_released"]),
+        (&json!(false), &Value::Null)
+    );
+
+    // And the same hold on `done` does not undo the plan: the rows move.
+    h.ok(
+        OWNER,
+        json!({"op":"repo_set_retention","keep_versions":100}),
+    );
+    assert_eq!(compact_once(&h, &r2, json!({"hold": 1}))["floor"], 1_024);
 }
 
 #[test]
@@ -386,5 +429,37 @@ fn upgrades_from_the_changes_schema_with_no_segments() {
     assert_eq!(
         db.query("SELECT COUNT(*) AS n FROM txlog", &[]).unwrap()[0]["n"],
         1
+    );
+}
+
+/// The load tests' sampler reads the floor and tail while a repository is busy: the same
+/// figures as a plan's, and nothing sealed, moved or changed.
+#[test]
+fn compaction_status_reads_progress_and_changes_nothing() {
+    let (h, _, _) = grown(2_200);
+    let r2 = Store::default();
+    h.ok(
+        OWNER,
+        json!({"op":"repo_set_retention","keep_versions":100,"keep_days":30}),
+    );
+    let before = h.ok(OWNER, json!({"op":"repo_compact_status"}));
+    assert_eq!(
+        [
+            &before["floor"],
+            &before["head"],
+            &before["tail_rows"],
+            &before["retention"]["keep_versions"]
+        ],
+        [&json!(0), &json!(2_200), &json!(2_200), &json!(100)]
+    );
+    assert!(before.get("segment").is_none(), "{before}");
+    assert_eq!(h.ok(OWNER, json!({"op":"repo_compact_status"})), before);
+    assert_eq!(rows(&h, "SELECT COUNT(*) AS n FROM txlog"), 2_200);
+
+    compact_once(&h, &r2, json!({}));
+    let after = h.ok("platform:compact", json!({"op":"repo_compact_status"}));
+    assert_eq!(
+        [&after["floor"], &after["tail_rows"]],
+        [&json!(1_024), &json!(2_200 - 1_024)]
     );
 }

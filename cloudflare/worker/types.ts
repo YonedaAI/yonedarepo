@@ -65,7 +65,8 @@ export interface Env {
   /** This account's workers.dev subdomain: its Workers are never webhook targets (without
    * it, no workers.dev host is). */
   WORKERS_SUBDOMAIN?: string;
-  /** Basin Pipelines stream for change-log analytics (platform-dev only; optional). */
+  /** Basin Pipelines stream for change-log analytics (repo-changelog.ts; unset: no stream
+   * and no hold on compaction). Setup is in docs/runbook.md. */
   CHANGELOG?: { send(records: import('./repo-changelog').ChangeEvent[]): Promise<void> };
   /** Durable imports of external Git repositories into the source platform. */
   PLATFORM_IMPORT: Workflow<import('./repo-import').ImportParams>;

@@ -247,8 +247,17 @@ describe('what may be refunded', () => {
 });
 
 describe('keys and limits', () => {
-  it('answers NOT_CONFIGURED without the refund key, and never falls back to the secret key', async () => {
+  it('refunds under the secret key when no refund key is set', async () => {
+    const { h, stripe, key } = await paid({ STRIPE_REFUND_KEY: undefined });
+    const res = await refund(h, refundBody(key, 5));
+    expect(res.status).toBe(200);
+    const post = stripe.calls.find((c) => c.path === '/v1/refunds');
+    expect(post?.auth).toBe(`Bearer ${STRIPE_KEY}`);
+  });
+
+  it('answers NOT_CONFIGURED with no Stripe key at all, and moves nothing', async () => {
     const { h, stripe, ledger, key } = await paid({ STRIPE_REFUND_KEY: undefined });
+    h.env.STRIPE_SECRET_KEY = undefined;
     const before = (await ledger.balance()).balance;
     const res = await refund(h, refundBody(key, 5));
     expect(res.status).toBe(503);
