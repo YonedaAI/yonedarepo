@@ -7,7 +7,7 @@
 // stopped. The schedule's entry goes last: while it is there, the owner can retry.
 //
 // Repository tokens stay revoked: whoever took the repository over may hold them. A managed
-// agents connection has one, so its owner connects the repository again.
+// agents connection has one: its owner saves the agent once, which mints a new token.
 
 import { listRepository } from './repo-create';
 import { forgetDeleted, isDeletedListed } from './repo-deleted';
