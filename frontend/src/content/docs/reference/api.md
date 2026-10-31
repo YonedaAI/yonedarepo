@@ -26,6 +26,7 @@ curl -H "Authorization: Bearer $YONEDA_TOKEN" https://api.yonedarepo.com/api/v1/
 | `GET`, `POST`, `DELETE /ssh-keys[/<id>]` | SSH keys |
 | `GET`, `PUT`, `DELETE /account/avatar` | Your picture: `PUT` the image as the body (PNG, JPEG or WebP, up to 1 MB; signed-in session only); `DELETE` falls back to your GitHub or Google picture |
 | `GET /avatars/<account>` | An account's picture, no sign-in needed: the uploaded image, or a redirect to its GitHub or Google picture; 404 when it has none |
+| `GET /favorites`; `PUT`, `DELETE /favorites/<repo>` | Favorite repositories, up to 50 (signed-in session only): the list holds only repositories you can still read |
 | `POST /device/code`, `POST /device/token` | Device login (RFC 8628) |
 | `GET /activity` | Your account's recent activity |
 | `GET`, `POST /orgs`; `GET`, `DELETE /orgs/<org>` | Organizations |

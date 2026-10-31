@@ -17,9 +17,13 @@ export async function atRepo(page, account, id, rest = '') {
   await page.waitForURL(`**${await repoPath(account, id)}${rest}`);
 }
 
-/** Opens a repository from the sidebar, which lists them everywhere but the settings pages. */
+/** Opens a repository from the sidebar's picker, there on every page but the settings ones. An
+ * option's name is `name` or `owner/name`, with `, public` and the like after it. */
 export async function openRepo(page, name) {
   if (new URL(page.url()).pathname.startsWith('/settings'))
     await page.getByRole('navigation', { name: 'Browse' }).getByRole('link', { name: 'Home', exact: true }).click();
-  await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).click();
+  await page.getByRole('button', { name: /^(Choose a repository|Switch repository)/ }).click();
+  await page.getByRole('combobox', { name: 'Find repositories' }).fill(name);
+  const literal = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  await page.getByRole('option', { name: new RegExp(`^([^/]+/)?${literal}(,|$)`) }).click();
 }

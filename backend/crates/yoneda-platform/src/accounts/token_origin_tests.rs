@@ -199,5 +199,5 @@ fn the_origin_migration_marks_old_logins_and_drops_agent_layer_records() {
     let versions = old
         .query("SELECT COUNT(*) AS n FROM workspace_migrations", &[])
         .unwrap();
-    assert_eq!(versions[0]["n"], 9);
+    assert_eq!(versions[0]["n"], 10);
 }
