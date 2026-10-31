@@ -275,6 +275,7 @@ describe('a repository that is gone', () => {
           onToggle: () => {},
           navigate: () => {},
           onNew: () => {},
+          onImport: () => {},
         }),
       );
       expect(shortcuts).not.toContain(`href="/source/${a}`);
@@ -384,6 +385,7 @@ describe('icon rail', () => {
         onToggle: () => {},
         navigate: () => {},
         onNew: () => {},
+        onImport: () => {},
         ...props,
       }),
     );

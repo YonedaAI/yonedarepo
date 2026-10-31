@@ -9,6 +9,7 @@ import { ChangeView } from './ChangeView';
 import { CommitView } from './CommitView';
 import { ForkButton } from './ForkButton';
 import { HistoryTab } from './HistoryTab';
+import { ImportStatus } from './ImportStatus';
 import { PublicBadge } from './PublicBadge';
 import { ShowEmailsContext } from './people';
 import { ReleaseView } from './ReleaseView';
@@ -27,6 +28,7 @@ import { SessionView } from './SessionView';
 import { Failure } from './SourceStatus';
 import { StatusChips } from './StatusChips';
 import { formatSourceRoute, type SourceRoute } from './sourceRoute';
+import { useImportProgress } from './useImportProgress';
 import { useSource } from './useSource';
 
 type RepoRoute = Extract<SourceRoute, { repo: string }>;
@@ -80,6 +82,7 @@ export function RepoPage({
   const access = repoAccess(data?.viewer, authenticated);
   const owner = access.settings;
   const drift = data?.projections?.filter((p) => p.status === 'drift') ?? [];
+  const progress = useImportProgress(repo, data?.refs, status.reload);
   // biome-ignore lint/correctness/useExhaustiveDependencies: once per transition, not per render of the caller.
   useEffect(() => {
     if (missing) onMissing();
@@ -137,8 +140,10 @@ export function RepoPage({
                 at v{data.parent.version}
               </p>
             )}
-            {data && <StatusChips repo={repo} status={data} owner={owner} navigate={navigate} />}
-            {access.fork && data && (
+            {data && progress.phase === 'none' && (
+              <StatusChips repo={repo} status={data} owner={owner} navigate={navigate} />
+            )}
+            {access.fork && data && progress.phase === 'none' && (
               <ForkButton
                 repo={repo}
                 name={data.name}
@@ -157,7 +162,11 @@ export function RepoPage({
           {status.error && (
             <Failure error={status.error} what="this repository" onRetry={status.reload} />
           )}
-          {!status.error && (
+          {/* Settings stay open: deleting the repository is how a failed import is tried again. */}
+          {!status.error && progress.phase !== 'none' && route.view !== 'repo-settings' && (
+            <ImportStatus repo={repo} progress={progress} owner={owner} navigate={navigate} />
+          )}
+          {!status.error && (progress.phase === 'none' || route.view === 'repo-settings') && (
             <div className="repo-view">
               {route.view === 'files' && (
                 <RepoFiles route={route} status={data} navigate={navigate} />

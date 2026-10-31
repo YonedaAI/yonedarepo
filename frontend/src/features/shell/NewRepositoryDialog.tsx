@@ -2,10 +2,10 @@
 // one of the organizations it owns, private (the default) or public.
 import { type FormEvent, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
-import { VISIBILITIES, VISIBILITY_HELP, VISIBILITY_LABELS } from '../repo-settings/visibilityModel';
-import { type OrgSummary, ownerOptions } from '../source-platform/orgModel';
+import type { OrgSummary } from '../source-platform/orgModel';
 import type { Visibility } from '../source-platform/repoAccess';
 import { SourceApiError, sourceApi } from '../source-platform/sourceApi';
+import { OwnerField, VisibilityField } from './repoFormFields';
 
 export const REPO_NAME_PATTERN = '[A-Za-z0-9_\\-][A-Za-z0-9._\\-]{0,99}';
 
@@ -70,8 +70,6 @@ export function NewRepositoryDialog({
   onClose: () => void;
   onCreated: (created: Created) => Promise<void>;
 }) {
-  const owners = ownerOptions(account, orgs);
-  const preselected = owners.some((o) => o.value && o.value === initialOwner) ? initialOwner : '';
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   async function create(event: FormEvent<HTMLFormElement>) {
@@ -100,18 +98,7 @@ export function NewRepositoryDialog({
       initialFocus='input[name="name"]'
     >
       <form className="new-repository" onSubmit={create}>
-        {owners.length > 1 && (
-          <label>
-            Owner
-            <select name="owner" defaultValue={preselected} disabled={busy}>
-              {owners.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
+        <OwnerField account={account} orgs={orgs} initialOwner={initialOwner} disabled={busy} />
         <label>
           Repository name
           <input
@@ -129,26 +116,7 @@ export function NewRepositoryDialog({
           Description (optional)
           <textarea name="description" maxLength={500} rows={2} disabled={busy} />
         </label>
-        <fieldset className="visibility-choice" disabled={busy}>
-          <legend>Visibility</legend>
-          {/* Each radio is named by its label alone ("Private", "Public"); the help text is
-              its description, outside the label, so no other control's name says "Owner". */}
-          {VISIBILITIES.map((v) => (
-            <div key={v} className="visibility-option">
-              <label>
-                <input
-                  type="radio"
-                  name="visibility"
-                  value={v}
-                  defaultChecked={v === 'private'}
-                  aria-describedby={`visibility-${v}-help`}
-                />
-                <strong>{VISIBILITY_LABELS[v]}</strong>
-              </label>
-              <small id={`visibility-${v}-help`}>{VISIBILITY_HELP[v]}</small>
-            </div>
-          ))}
-        </fieldset>
+        <VisibilityField disabled={busy} />
         {error && (
           <p role="alert" className="form-error">
             {error}
