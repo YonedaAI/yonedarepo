@@ -494,3 +494,24 @@ a.chip:hover {
 .page-heading p {
   margin-bottom: 0;
 }
+/* A repository until its import lands. */
+.import-status p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.import-status p:last-child {
+  margin-bottom: 0;
+}
+.import-status .source-meta {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.import-status strong,
+.import-notice strong {
+  color: var(--text);
+}
+.import-failed {
+  border: 1px solid var(--danger-line);
+  background: var(--danger-soft);
+}

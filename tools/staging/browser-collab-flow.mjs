@@ -205,6 +205,7 @@ export async function orgPages(page, { account, member, shot, cleanup }, m) {
   // New repository, owned by the org through the owner picker.
   const name = `kit-org-repo-${Date.now()}`;
   await page.getByRole('button', { name: 'New repository' }).first().click();
+  await page.getByRole('menuitem', { name: 'Create repository' }).click();
   const dialog = page.getByRole('dialog', { name: 'New repository' });
   await dialog.getByLabel('Owner').selectOption({ label: `${org} (organization)` }).catch((e) => {
     throw new Error(`the Owner picker does not offer ${org}: ${e.message.split('\n')[0]}`);

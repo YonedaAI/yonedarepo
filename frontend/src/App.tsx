@@ -18,6 +18,7 @@ import { SearchPage } from './features/search/SearchPage';
 import { AppRail } from './features/shell/AppRail';
 import { AppSidebar } from './features/shell/AppSidebar';
 import { GettingStarted } from './features/shell/GettingStarted';
+import { GitHubImportDialog } from './features/shell/GitHubImportDialog';
 import { HomePage } from './features/shell/HomePage';
 import type { AccountActivity } from './features/shell/homeModel';
 import { type Created, NewRepositoryDialog } from './features/shell/NewRepositoryDialog';
@@ -87,6 +88,7 @@ export function App() {
     signInError && route.view !== 'settings' && route.view !== 'site' ? 'account' : null,
   );
   const [creating, setCreating] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [picking, setPicking] = useState(false);
   const [notice, setNotice] = useState(
     returned && 'linked' in returned
@@ -157,6 +159,7 @@ export function App() {
     if (!session.sessionEnded) return;
     setPanel(null);
     setCreating(false);
+    setAdding(false);
     setPicking(false);
   }, [session.sessionEnded]);
   useEffect(() => {
@@ -170,7 +173,10 @@ export function App() {
     activity.reload();
     navigate({ view: 'files', repo: result.repo, path: '', ref: 'main' });
     setCreating(false);
+    setAdding(false);
   }
+  const newOwner =
+    route.view === 'org' ? route.org : isAgentsRoute(route) ? route.workspace : undefined;
   const title =
     route.view === 'home'
       ? 'Home'
@@ -237,7 +243,14 @@ export function App() {
           setCollapsed(!collapsed);
         }}
         navigate={navigate}
-        onNew={() => setCreating(true)}
+        onNew={() => {
+          setMenuOpen(false);
+          setCreating(true);
+        }}
+        onImport={() => {
+          setMenuOpen(false);
+          setAdding(true);
+        }}
       />
       <AppSidebar
         authenticated={session.authenticated}
@@ -471,15 +484,22 @@ export function App() {
         <NewRepositoryDialog
           account={session.identity?.username}
           orgs={orgs.data?.orgs ?? []}
-          initialOwner={
-            route.view === 'org' ? route.org : isAgentsRoute(route) ? route.workspace : undefined
-          }
+          initialOwner={newOwner}
           onClose={() => setCreating(false)}
           onCreated={created}
         />
       )}
+      {adding && (
+        <GitHubImportDialog
+          account={session.identity?.username}
+          orgs={orgs.data?.orgs ?? []}
+          initialOwner={newOwner}
+          onClose={() => setAdding(false)}
+          onImported={created}
+        />
+      )}
       <HandlePrompt
-        identity={creating ? null : session.identity}
+        identity={creating || adding ? null : session.identity}
         onSet={(handle) => {
           setNotice(`Your handle is ${handle}. Your profile is at /${handle}.`);
           forgetRepoNames();

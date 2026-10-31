@@ -52,6 +52,8 @@ export type ApiInit = {
   /** Where the API lives on this origin: the platform (`/api/v1`, default) or the managed
    * agents Worker (`/api/managed`), which the front Worker proxies alike. */
   base?: '/api/v1' | '/api/managed';
+  /** A read whose failure is an answer: it is not retried. */
+  once?: boolean;
 };
 
 /**
@@ -63,7 +65,7 @@ export type ApiInit = {
 export async function sourceApi<T = any>(path: string, init: ApiInit = {}): Promise<T> {
   const base = init.base ?? '/api/v1';
   const method = init.method ?? (init.body === undefined ? 'GET' : 'POST');
-  const retries = method === 'GET' ? RETRY_DELAYS_MS.length : 0;
+  const retries = method === 'GET' && !init.once ? RETRY_DELAYS_MS.length : 0;
   for (let attempt = 0; ; attempt++) {
     let response: Response;
     try {
