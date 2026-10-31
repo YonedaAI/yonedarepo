@@ -112,10 +112,9 @@ async function orgDeleted(env: Env, org: string, actor: string) {
   return deletedOf(env, org);
 }
 
-/** `DELETE /orgs/:org?confirm=<org>`: an owner retires an org that owns no repositories
- * (as the listing shows; a repository created meanwhile is the race documented in
- * `orgs.rs`: its name is retired with the org, so it never passes to a new owner). Former
- * members' hints are dropped afterwards. */
+/** `DELETE /orgs/:org?confirm=<org>`: an owner retires an org that owns no repositories: none
+ * the listing shows, and none being created, which only its authority can tell (`orgs.rs`).
+ * Former members' hints are dropped afterwards. */
 async function deleteOrg(env: Env, org: string, actor: string, confirm: string) {
   await orgCommand(env, org, { op: 'org_show', actor });
   const owned = await env.INDEX.prepare(

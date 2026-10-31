@@ -41,10 +41,37 @@ fn owner<S: SqlStore>(db: &S) -> Result<()> {
     }
 }
 
+/// How long a current name counts as a repository being made, which the listing cannot show
+/// yet. Far above any request's life; older names are the listing's to answer for, so a hold a
+/// failed create left behind never keeps an org from being deleted.
+const CREATING_MS: i64 = 60 * 60 * 1000;
+
+/// Refuses to retire this owner while a name was claimed recently. Claims and the retirement
+/// are one authority's transactions, so a create either stops this or `claim` stops it: no
+/// repository is made under an owner nobody can act for.
+pub(super) fn refuse_creating<S: SqlStore>(db: &S, now: i64) -> Result<()> {
+    let held = db.query(
+        "SELECT 1 FROM repo_names WHERE current=1 AND at>? LIMIT 1",
+        &[json!(now - CREATING_MS)],
+    )?;
+    if held.is_empty() {
+        return Ok(());
+    }
+    Err(Error::new(
+        "CONFLICT",
+        "A repository is being created here; delete it before the organization",
+    ))
+}
+
 /// `owned_repo_claim {repo, name}`: `name` becomes the repository's name here (NAME_TAKEN
 /// while another repository has it); its name until now stays as an earlier name.
 /// Answers the name it had (`renamed_from`, null for a first claim or the same name).
+/// GONE for a deleted owner, unlike the NOT_FOUND of no owner, which the adapter lets through
+/// (a workspace an operator provisions holds no names).
 pub(super) fn claim<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
+    if get(db, "account").is_ok_and(|a| !a["deleted_at"].is_null()) {
+        return Err(Error::new("GONE", "This owner was deleted"));
+    }
     owner(db)?;
     let (repo, name) = (repo_id(c)?, repo_name(c)?);
     let key = name.to_ascii_lowercase();
