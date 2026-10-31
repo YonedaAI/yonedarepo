@@ -111,7 +111,8 @@ export async function issuePat(env: Env, account: string, request: Json, label?:
   };
 }
 
-/** Revokes one of `account`'s tokens; its lookup row goes with it. */
+/** Revokes one of `account`'s tokens; its lookup row goes with it. The account removes the
+ * SSH keys the token added in the same transaction and answers with them. */
 export async function revokePat(env: Env, account: string, id: string) {
   const revoked = await workspace(env, account, { op: 'pat_revoke', id });
   await env.INDEX.prepare('DELETE FROM platform_tokens WHERE workspace=? AND id=?')
