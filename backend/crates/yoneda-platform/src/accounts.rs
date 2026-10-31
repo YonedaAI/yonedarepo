@@ -30,6 +30,9 @@ mod orgs;
 mod orgs_tests;
 mod repo_names;
 mod signin;
+#[cfg(test)]
+mod ssh_key_token_tests;
+mod ssh_key_tokens;
 mod ssh_keys;
 #[cfg(test)]
 mod ssh_keys_tests;

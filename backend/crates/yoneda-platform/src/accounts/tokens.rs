@@ -32,7 +32,13 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: TokenOp, now: i64) -> R
                 "SELECT * FROM account_tokens WHERE revoked_at IS NULL ORDER BY created_at,id",
                 &[],
             )?;
-            Ok(json!({"tokens": rows.iter().map(public).collect::<Result<Vec<_>>>()?}))
+            let listed = |row: &Value| -> Result<Value> {
+                let mut token = public(row)?;
+                let id = row["id"].as_str().unwrap_or_default();
+                token["ssh_keys"] = json!(super::ssh_key_tokens::added_by(db, id)?.len());
+                Ok(token)
+            };
+            Ok(json!({"tokens": rows.iter().map(listed).collect::<Result<Vec<_>>>()?}))
         }
         TokenOp::Check => {
             super::access::refuse_suspended(db)?;
@@ -71,8 +77,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: TokenOp, now: i64) -> R
                 "UPDATE account_tokens SET revoked_at=? WHERE id=?",
                 &[json!(now), json!(id)],
             )?;
+            let removed = super::ssh_key_tokens::remove_added_by(db, &id, now)?;
             audit(db, "pat.revoked", now, json!({"id":id}))?;
-            Ok(json!({"id":id,"revoked":true}))
+            Ok(json!({"id":id,"revoked":true,"removed_ssh_keys":removed}))
         }
     }
 }
@@ -131,12 +138,7 @@ pub(super) fn grant(c: &Value) -> Result<Value> {
 fn create<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     account(db)?;
     let id = string(c, "id")?;
-    if id.len() != 20
-        || !id.starts_with("pat_")
-        || !id[4..]
-            .bytes()
-            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
-    {
+    if !valid_id(&id) {
         return Err(bad("Invalid token id"));
     }
     let name = string(c, "name")?;
@@ -185,6 +187,37 @@ fn create<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     )?;
     let row = db.query("SELECT * FROM account_tokens WHERE id=?", &[json!(id)])?;
     public(row.first().ok_or_else(|| bad("Token was not stored"))?)
+}
+
+/// `pat_<16 hex>`.
+fn valid_id(id: &str) -> bool {
+    id.len() == 20
+        && id.starts_with("pat_")
+        && id[4..]
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+}
+
+/// The token a command says it acts with (`token_id`; null: a signed-in person). It must be
+/// live here, in the command's transaction: the Worker's check came earlier, and a revocation
+/// committed in between would otherwise miss what this command adds.
+pub(super) fn acting<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Option<String>> {
+    let id = match &c["token_id"] {
+        Value::Null => return Ok(None),
+        Value::String(id) if valid_id(id) => id,
+        _ => return Err(bad("Invalid token id")),
+    };
+    let live = db.query(
+        "SELECT id FROM account_tokens WHERE id=? AND revoked_at IS NULL AND expires_at>?",
+        &[json!(id), json!(now)],
+    )?;
+    if live.is_empty() {
+        return Err(Error::new(
+            "UNAUTHORIZED",
+            "Unknown, expired or revoked token",
+        ));
+    }
+    Ok(Some(id.clone()))
 }
 
 /// Revokes every live token (account recovery).
