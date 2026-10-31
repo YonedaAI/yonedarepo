@@ -5,8 +5,9 @@
 //! and only then deletes those rows and advances the anchor, in this one transaction. A
 //! rerun after a crash at any step plans the same bytes again, and a repeated `done` is a
 //! no-op, so no entry is lost or archived twice.
-use super::super::{audit_outbox, hook_events, projection_plan, rows};
+use super::super::{hook_events, projection_plan, rows};
 use super::archive;
+use super::retention::{DAY_MS, Retention};
 use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
 use yoneda_core::{
@@ -18,80 +19,13 @@ use yoneda_core::{
     },
 };
 
-const DAY_MS: i64 = 24 * 60 * 60 * 1000;
-/// Defaults: entries leave once they are 10,000 versions behind the head or 30 days old,
-/// whichever comes first, so the tail holds at most `keep_versions + SEGMENT_VERSIONS`.
-const DEFAULT_KEEP_VERSIONS: u64 = 10_000;
-const DEFAULT_KEEP_DAYS: i64 = 30;
-const MIN_KEEP_VERSIONS: u64 = 64;
-const MAX_KEEP_DAYS: i64 = 3_650;
 /// How far behind the head a reader's `hold` keeps a due segment in SQL. Past this the
 /// segment moves anyway and the plan says `hold_released`: analytics never bounds a
 /// repository's log, so a stalled stream costs at most this many extra rows, and a gap.
 const MAX_HOLD_VERSIONS: u64 = 16 * SEGMENT_VERSIONS;
-
-struct Retention {
-    keep_versions: u64,
-    keep_ms: i64,
-}
-
-impl Retention {
-    fn of<S: SqlStore>(db: &S) -> Result<Self> {
-        let row = db
-            .query(
-                "SELECT keep_versions,keep_ms FROM txlog_retention WHERE id=1",
-                &[],
-            )?
-            .into_iter()
-            .next();
-        Ok(Self {
-            keep_versions: row
-                .as_ref()
-                .and_then(|r| r["keep_versions"].as_u64())
-                .unwrap_or(DEFAULT_KEEP_VERSIONS),
-            keep_ms: row
-                .as_ref()
-                .and_then(|r| r["keep_ms"].as_i64())
-                .unwrap_or(DEFAULT_KEEP_DAYS * DAY_MS),
-        })
-    }
-
-    fn json(&self) -> Value {
-        json!({ "keep_versions": self.keep_versions, "keep_days": self.keep_ms / DAY_MS })
-    }
-}
-
-/// `repo_set_retention` (owner): `keep_versions` (at least 64) and/or `keep_days` (1-3650).
-pub fn set_retention<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
-    let mut retention = Retention::of(db)?;
-    let before = retention.json();
-    let field = |key: &str| c.get(key).filter(|v| !v.is_null());
-    if field("keep_versions").is_none() && field("keep_days").is_none() {
-        return Err(bad("Give keep_versions and/or keep_days"));
-    }
-    if let Some(v) = field("keep_versions") {
-        retention.keep_versions = v
-            .as_u64()
-            .filter(|n| (MIN_KEEP_VERSIONS..=1_000_000_000).contains(n))
-            .ok_or_else(|| bad("keep_versions must be a whole number of at least 64"))?;
-    }
-    if let Some(v) = field("keep_days") {
-        retention.keep_ms = v
-            .as_i64()
-            .filter(|n| (1..=MAX_KEEP_DAYS).contains(n))
-            .ok_or_else(|| bad("keep_days must be a whole number from 1 to 3650"))?
-            * DAY_MS;
-    }
-    db.query(
-        "INSERT INTO txlog_retention(id,keep_versions,keep_ms) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET keep_versions=excluded.keep_versions,keep_ms=excluded.keep_ms",
-        &[json!(retention.keep_versions), json!(retention.keep_ms)],
-    )?;
-    let event = retention.json();
-    if event != before {
-        audit_outbox::record(db, c, "repo.retention_changed", principal, event)?;
-    }
-    Ok(retention.json())
-}
+/// How far past due a held segment counts as stalled, and the adapter raises the alarm.
+const STALL_VERSIONS: u64 = 8 * SEGMENT_VERSIONS;
+const STALL_MS: i64 = DAY_MS;
 
 /// The next segment due, sealed, with the ref state at its end.
 struct Due {
@@ -104,10 +38,19 @@ struct Due {
     hold_released: bool,
 }
 
-/// `(start, end]` after the floor, when it is older than the retention bound, every reader
-/// that streams the log has passed it (a `hold` only to `MAX_HOLD_VERSIONS`), and the head
-/// is past it (the head row stays).
-fn due<S: SqlStore>(db: &S, c: &Value) -> Result<Option<Due>> {
+/// The next segment, once retention lets it leave. Whether it may leave yet is `holder`'s.
+struct Ripe {
+    start: u64,
+    end: u64,
+    head: u64,
+    retention: Retention,
+    /// When its newest entry was committed.
+    newest_ms: Option<i64>,
+}
+
+/// `(start, end]` after the floor, when it is older than the retention bound and the head is
+/// past it (the head row stays).
+fn ripe<S: SqlStore>(db: &S, c: &Value) -> Result<Option<Ripe>> {
     let start = archive::floor(db)?;
     let end = start + SEGMENT_VERSIONS;
     let head = rows::current_version(db)?;
@@ -115,29 +58,80 @@ fn due<S: SqlStore>(db: &S, c: &Value) -> Result<Option<Due>> {
         return Ok(None);
     }
     let retention = Retention::of(db)?;
-    let last = entries(db, end - 1, end)?;
-    let old = last
+    let newest_ms = entries(db, end - 1, end)?
         .first()
-        .is_some_and(|e| e.committed_at_ms <= number(c, "now").unwrap_or(0) - retention.keep_ms);
+        .map(|e| e.committed_at_ms);
+    let old = newest_ms.is_some_and(|at| at <= number(c, "now").unwrap_or(0) - retention.keep_ms);
     if !old && end.saturating_add(retention.keep_versions) > head {
         return Ok(None);
     }
-    let hold = c["hold"].as_u64().filter(|hold| end > *hold);
-    let hold_released = hold.is_some_and(|hold| head.saturating_sub(hold) > MAX_HOLD_VERSIONS);
-    if hold.is_some() && !hold_released {
-        return Ok(None);
+    Ok(Some(Ripe {
+        start,
+        end,
+        head,
+        retention,
+        newest_ms,
+    }))
+}
+
+/// A caller's `hold` that would keep this segment, and whether it is past `MAX_HOLD_VERSIONS`.
+fn read_hold(c: &Value, ripe: &Ripe) -> (bool, bool) {
+    let hold = c["hold"].as_u64().filter(|hold| ripe.end > *hold);
+    let released = hold.is_some_and(|hold| ripe.head.saturating_sub(hold) > MAX_HOLD_VERSIONS);
+    (hold.is_some(), released)
+}
+
+/// What keeps a ripe segment in SQL: a reader that streams the log and has not passed it
+/// (only to `MAX_HOLD_VERSIONS`), changesets not yet projected, or webhook events not yet
+/// fanned out. The last two have no limit.
+fn holder<S: SqlStore>(db: &S, c: &Value, ripe: &Ripe) -> Result<Option<&'static str>> {
+    if let (true, false) = read_hold(c, ripe) {
+        return Ok(Some("changelog"));
     }
-    // Changesets not yet projected, and webhook events not yet fanned out, stay in SQL.
     let unprojected = db.query(
         "SELECT MIN(version) AS v FROM changesets WHERE projected IS NULL",
         &[],
     )?[0]["v"]
         .as_u64();
-    if unprojected.is_some_and(|v| v <= end)
-        || hook_events::held_version(db)?.is_some_and(|v| v < end)
-    {
+    Ok(if unprojected.is_some_and(|v| v <= ripe.end) {
+        Some("unprojected")
+    } else if hook_events::held_version(db)?.is_some_and(|v| v < ripe.end) {
+        Some("hooks")
+    } else {
+        None
+    })
+}
+
+/// The hold on a segment that retention lets leave: `stalled` once it is `STALL_VERSIONS`
+/// past the bound or `STALL_MS` past its age, which no passing backlog reaches.
+fn held<S: SqlStore>(db: &S, c: &Value) -> Result<Option<Value>> {
+    let Some(ripe) = ripe(db, c)? else {
+        return Ok(None);
+    };
+    let Some(by) = holder(db, c, &ripe)? else {
+        return Ok(None);
+    };
+    let bound = ripe.end.saturating_add(ripe.retention.keep_versions);
+    let overdue_versions = ripe.head.saturating_sub(bound);
+    let age_bound = number(c, "now").unwrap_or(0) - ripe.retention.keep_ms;
+    let overdue_ms = ripe.newest_ms.map_or(0, |at| (age_bound - at).max(0));
+    Ok(Some(json!({
+        "by": by,
+        "overdue_versions": overdue_versions,
+        "overdue_ms": overdue_ms,
+        "stalled": overdue_versions >= STALL_VERSIONS || overdue_ms >= STALL_MS,
+    })))
+}
+
+/// The next segment that may leave, sealed.
+fn due<S: SqlStore>(db: &S, c: &Value) -> Result<Option<Due>> {
+    let Some(ripe) = ripe(db, c)? else {
+        return Ok(None);
+    };
+    if holder(db, c, &ripe)?.is_some() {
         return Ok(None);
     }
+    let Ripe { start, end, .. } = ripe;
     let base = match archive::anchor(db)? {
         Some(anchor) => anchor,
         None if start == 0 => Checkpoint::default(),
@@ -157,7 +151,7 @@ fn due<S: SqlStore>(db: &S, c: &Value) -> Result<Option<Due>> {
         segment: Segment::seal(start, end, run)?,
         checkpoints: SegmentCheckpoints::seal(start, end, base, stored(db, start, end)?)?,
         end_state,
-        hold_released,
+        hold_released: read_hold(c, &ripe).1,
     }))
 }
 
@@ -200,13 +194,18 @@ fn progress<S: SqlStore>(db: &S) -> Result<Value> {
     }))
 }
 
-/// `repo_compact_status`: the floor and tail alone. Nothing is sealed, unlike a plan, so it is
-/// cheap enough to read while a repository is busy.
-pub fn status<S: SqlStore>(db: &S) -> Result<Value> {
-    progress(db)
+/// `repo_compact_status`: the floor, the tail and any hold on them. Nothing is sealed, unlike
+/// a plan, so it is cheap enough to read while a repository is busy.
+pub fn status<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+    let mut answer = progress(db)?;
+    if let Some(held) = held(db, c)? {
+        answer["held"] = held;
+    }
+    Ok(answer)
 }
 
-/// `repo_compact_plan`: the next segment due (`due` with both sealed objects), or not due.
+/// `repo_compact_plan`: the next segment due (`due` with both sealed objects), or not due
+/// and, if only a hold stops it, what holds it (`held`).
 pub fn plan<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let mut answer = progress(db)?;
     answer["due"] = json!(false);
@@ -219,6 +218,8 @@ pub fn plan<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         if due.hold_released {
             answer["hold_released"] = json!(true);
         }
+    } else if let Some(held) = held(db, c)? {
+        answer["held"] = held;
     }
     Ok(answer)
 }

@@ -2,6 +2,7 @@
 //! them) and log compaction (moving old versions to the object store).
 pub(super) mod archive;
 mod compaction;
+mod retention;
 pub(super) mod supplied;
 mod vacuum;
 use super::auth::Actor;
@@ -35,9 +36,9 @@ pub(super) fn run<S: SqlStore>(db: &S, c: &Value, op: M, principal: &str) -> Res
         M::Pin => vacuum::pin(db, c, principal),
         M::VacuumPlan => vacuum::plan(db, c),
         M::VacuumDone => vacuum::done(db, c),
-        M::CompactStatus => compaction::status(db),
+        M::CompactStatus => compaction::status(db, c),
         M::CompactPlan => compaction::plan(db, c),
         M::CompactDone => compaction::done(db, c),
-        M::SetRetention => compaction::set_retention(db, c, principal),
+        M::SetRetention => retention::set_retention(db, c, principal),
     }
 }
