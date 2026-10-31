@@ -4,6 +4,7 @@ import {
   encodeAccountIdentifier,
   normalizeAccountIdentifier,
 } from '../../shared/account';
+import { auditMember } from './account-audit';
 import { accountCreated, emailRoute } from './account-email';
 import { handleState, setHandle } from './account-handles';
 import { noteSeen } from './account-index';
@@ -13,7 +14,6 @@ import { accountFor, signUpWithEmail, signupEmail } from './email-accounts';
 import { error, readJson, response } from './http';
 import { unlink } from './oauth-identity';
 import { configuredProviders } from './oauth-providers';
-import { auditMember } from './platform-audit';
 import { readSignupSource, recordSignup } from './site-events';
 import { sha } from './storage';
 import type { Env, Json, Principal } from './types';

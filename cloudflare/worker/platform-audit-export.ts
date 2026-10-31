@@ -2,7 +2,7 @@
 // file, newest first, streamed a page at a time. Its own path because `route()` answers
 // JSON. Whoever may read the log may export it. A log too long for one request fails the
 // download rather than ending it early; `before` continues from the last row received.
-import { auditCatchUp, auditOn } from './platform-audit';
+import { auditCatchUp, auditOn } from './account-audit';
 import { auditFilters } from './platform-audit-read';
 import { orgArg, orgCaller, orgCommand } from './platform-orgs';
 import { ApiError, type Credentials, type Json } from './repo-ops';

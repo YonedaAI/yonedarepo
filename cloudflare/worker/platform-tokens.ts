@@ -3,7 +3,7 @@
 // signed in to their account (session cookie), directly or by approving a device code;
 // the device then redeems its code once for the token. Codes live in their own authority
 // instance (`device:<user code>`) for ten minutes and hold no token, only grants.
-import { auditDevice } from './platform-audit';
+import { auditDevice } from './account-audit';
 import { releaseClaims } from './platform-ssh-keys';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import { base64url, issuePat, requirePatScope, revokePat, sha } from './repo-pat';

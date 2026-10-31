@@ -3,7 +3,7 @@
 // and is asked on every request (strict: no cache), through a D1 lookup from digest to
 // account. The SourceRepository maps the scopes (`_pat` credentials) onto its own.
 import type { PatScope } from '../../shared/contracts/pat-scopes';
-import { auditMember } from './platform-audit';
+import { auditMember } from './account-audit';
 import { type OrgAccess, orgAccess } from './platform-org-access';
 import { ApiError, type Json } from './repo-ops';
 import { toBase64 } from './repo-stores';

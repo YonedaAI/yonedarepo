@@ -101,7 +101,7 @@ export interface Env {
   /** `off` leaves a shard commit's blobs to its shard's drain instead of also writing them
    * to R2's cache key after the commit (repo-commit-shard); anything else writes them. */
   BLOB_WRITE_THROUGH?: string;
-  /** `on` keeps organizations' audit logs and people's sign-in events (platform-audit.ts);
+  /** `on` keeps organizations' audit logs and people's sign-in events (account-audit.ts);
    * anything else writes neither and `/orgs/:org/audit` answers 404. */
   AUDIT_LOG?: string;
   /** The website people sign in at (device approval page `/device`); the platform falls

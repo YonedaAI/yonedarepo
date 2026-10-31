@@ -1,7 +1,7 @@
 // Reading an organization's audit log: its filters, a page and the chain's walk. Whoever
 // calls these has checked that the caller owns the org.
 import { normalizeAccountIdentifier } from '../../shared/account';
-import { auditCatchUp } from './platform-audit';
+import { auditCatchUp } from './account-audit';
 import { ApiError } from './repo-ops';
 import type { Env } from './types';
 import { auditLog } from './workspace';

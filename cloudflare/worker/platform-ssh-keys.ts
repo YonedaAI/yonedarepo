@@ -4,7 +4,7 @@
 // account that registered it, so the gateway's lookup is strongly consistent. A lookup
 // always re-checks the key with its account: removal there is the revocation, effective at
 // once, and a claim left behind by a failure grants nothing.
-import { auditMember } from './platform-audit';
+import { auditMember } from './account-audit';
 import { frontDoor } from './platform-ssh-gateway';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import { patHolds, requirePatScope } from './repo-pat';

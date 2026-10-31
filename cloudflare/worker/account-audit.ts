@@ -3,7 +3,8 @@
 // org-limited tokens and SSH keys. They reach the log by a copy after the answer, so a slow
 // or failed log costs the action nothing; the source keeps its events and the log a cursor
 // per source, so the next copy (or, for the org's own events, the next read) catches up.
-// This module stays free of the repository adapters: the front Worker loads it for sign-ins.
+// The part both Workers load, since an account recovery runs on the front Worker; reading
+// the log is platform-audit-read.ts. No repository adapters here, nor `platform-` modules.
 import { afterAnswer } from './background';
 import type { Env, Json } from './types';
 import { auditLog, workspace } from './workspace';
