@@ -21,6 +21,7 @@ The server keeps only a hash of each token and checks it on every request. A tok
 - **Expiry:** 1 to 90 days. The web app offers 1, 7, 30 or 90 days (default 30).
 - **Repositories:** all of yours, an allowlist of up to 100 repository ids, or one organization's.
 - Up to 50 live tokens per account.
+- **Revoking a token removes the SSH keys it added**, such as the one `yoneda ssh setup` adds, and the confirmation says how many. Keys you add while signed in to the website stay, and so do keys added before tokens were recorded with their keys. A token that only expires keeps its keys until you revoke it or remove them.
 - On a repository where you are a member, a token holds only what both its scopes and your role allow.
 
 `yoneda login` creates one through device login and stores it for the CLI; `yoneda auth token` prints it for a script (`export YONEDA_TOKEN=$(yoneda auth token)`). Every token `yoneda login` created is listed under **Settings → Signed-in CLIs**. There is no CLI command to create a token otherwise.
