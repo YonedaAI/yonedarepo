@@ -10,11 +10,11 @@
 // while writing another. So an agent could write to its parent; nothing tells it to, it holds no
 // land scope, and the test compares every ref of each parent at the end and fails if one moved.
 import assert from 'node:assert/strict';
-import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { opencodeArgs, printable } from './agent-run-plan.mjs';
 import { clientEnv, FAKE_MEMORY_AGENT, HOOK_LOG, sandboxArgs, sandboxEnv, WORKDIR } from './agent-sandbox.mjs';
-import { branchName, deliveryOf, forkName, isTestFork, judgeTrap, opencodeUsage, runProblems } from './memory-plan.mjs';
+import { branchName, deliveryOf, forkName, isTestFork, judgeTrap, opencodeUsage, retryableClone, runProblems } from './memory-plan.mjs';
 import { armPrompt, seedOrder } from './memory-traps.mjs';
 
 const q = (params) => new URLSearchParams(params).toString();
@@ -64,6 +64,14 @@ async function seed(owner, repo, trap) {
   return id;
 }
 
+const CLONE_TRIES = 4;
+
+/** Each retried clone is on record: a 503 here is a finding about the platform. */
+function evidenceClone(evidence, agent, attempt) {
+  appendFileSync(join(evidence, 'clone-retries.txt'), `${agent} attempt ${attempt}: HTTP 503\n`);
+  console.log(`  ${agent}: clone answered 503, retrying`);
+}
+
 /** Everything one agent needs: its fork, memories, token, clone and `runAgent` job. */
 export async function prepareRun(ctx, { trap, arm, round, parent }) {
   const { owner, ws, ts, origin, evidence, credential, model, image, egress, budget, timeoutS, fake } = ctx;
@@ -81,7 +89,17 @@ export async function prepareRun(ctx, { trap, arm, round, parent }) {
   ctx.secrets.add(minted.token);
   const dir = ws.path(agent);
   const plain = arm === 'plain';
-  await ws.ok('git', ['clone', '-q', plain ? `${ws.api}/git/${fork.id}.git` : `yoneda::${ws.api}/${fork.id}`, dir], { token: minted.token });
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await ws.ok('git', ['clone', '-q', plain ? `${ws.api}/git/${fork.id}.git` : `yoneda::${ws.api}/${fork.id}`, dir], { token: minted.token });
+      break;
+    } catch (e) {
+      if (attempt >= CLONE_TRIES || !retryableClone(e?.message)) throw e;
+      evidenceClone(evidence, agent, attempt);
+      rmSync(dir, { recursive: true, force: true });
+      await new Promise((resolve) => setTimeout(resolve, 15_000 * attempt));
+    }
+  }
   if (plain) await scanHidden(ctx, trap, dir);
   const branch = branchName(trap.id, round);
   await ws.git(dir, null, 'switch', '-q', '-c', branch);
