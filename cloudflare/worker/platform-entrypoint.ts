@@ -116,7 +116,9 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
     await Promise.all([
       sshKeepAlive(this.env, 'cron'),
       sweepDeleted(this.env).catch(logged('undo.sweep_failed')),
-      nightlyReconcile(this.env, controller.scheduledTime).catch(logged('billing.reconcile_failed')),
+      nightlyReconcile(this.env, controller.scheduledTime).catch(
+        logged('billing.reconcile_failed'),
+      ),
     ]);
   }
   /** Jobs of a batch run side by side (they wait on I/O, not CPU; heavy ones one at a
