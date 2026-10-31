@@ -6,6 +6,7 @@
 //! here. Members, tokens and path-restricted grants act exactly as on a private repository,
 //! so publishing grants nobody write and lifts no token's restriction. Only the owner's
 //! account (or an owner of the owning organization) changes visibility.
+use super::audit_outbox;
 use super::auth::Actor;
 use super::op::{ForkOp, LfsOp, MemoryOp, RepoOp as R, StoreOp};
 use crate::storage::{SqlStore, bad, string};
@@ -129,6 +130,10 @@ pub fn set<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
         "UPDATE repo_settings SET visibility=? WHERE id='repository' AND visibility<>? RETURNING id",
         &[json!(next.as_str()), json!(next.as_str())],
     )?;
+    if !changed.is_empty() {
+        let event = json!({ "visibility": next.as_str() });
+        audit_outbox::record(db, c, "repo.visibility_changed", &actor.principal, event)?;
+    }
     Ok(json!({ "visibility": next.as_str(), "changed": !changed.is_empty() }))
 }
 
@@ -136,13 +141,22 @@ pub fn set<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
 /// With `check`, validates the name and changes nothing: the adapter first has the owner's
 /// authority hold the name (unique per owner ignoring case: accounts/repo_names.rs).
 /// Answers the name, the one it replaces and the owner it is held under (`workspace`).
-pub fn rename<S: SqlStore>(db: &S, c: &Value, settings: &super::rows::Settings) -> Result<Value> {
+pub fn rename<S: SqlStore>(
+    db: &S,
+    c: &Value,
+    actor: &Actor,
+    settings: &super::rows::Settings,
+) -> Result<Value> {
     let name = super::rows::repo_name(c)?;
     if c["check"] != true {
         db.query(
             "UPDATE repo_settings SET name=? WHERE id='repository'",
             &[json!(name)],
         )?;
+        if name != settings.name {
+            let event = json!({ "previous": settings.name });
+            audit_outbox::record(db, c, "repo.renamed", &actor.principal, event)?;
+        }
     }
     Ok(json!({ "name": name, "previous": settings.name, "workspace": settings.workspace }))
 }

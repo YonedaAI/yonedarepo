@@ -7,6 +7,7 @@
 
 import { laterIfHeld } from './platform-legal-hold';
 import { teamEntries } from './platform-org-access';
+import { audited, auditRepoCatchUp } from './repo-audit';
 import { unlistRepository } from './repo-create';
 import { deletedOf, forgetDeleted, parkDeleted } from './repo-deleted';
 import { forgetFork } from './repo-forks';
@@ -94,7 +95,7 @@ export async function deleteRepository(env: Env, auth: Credentials, repo: string
   const listed = await env.INDEX.prepare('SELECT workspace FROM platform_repos WHERE id=?')
     .bind(repo)
     .first<{ workspace: string }>();
-  const deleted = await ctx.call({ op: 'repo_delete', confirm });
+  const deleted = await audited(env, repo, ctx.call({ op: 'repo_delete', confirm }));
   // First: a repository unlisted and not on the schedule would be left for good.
   if (undoOn(env)) await parkDeleted(env, repo, deleted);
   // Its names are free for the owner's next repositories.
@@ -186,6 +187,9 @@ export async function purgeRepository(
   repo: string,
   { scheduled = false, skipWindow = false } = {},
 ) {
+  // Not for a failed create taken back: nobody ever saw it. An operator's purge follows a
+  // delete, whose events have already gone.
+  if (!skipWindow) await auditRepoCatchUp(env, repo);
   await purgeObjects(env, repo, skipWindow);
   await dropSummary(env, repo);
   const done = scheduled

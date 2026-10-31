@@ -3,6 +3,7 @@
 //! exists; the authority decides who may add, change or remove whom. Admins act as the
 //! owner except that they cannot delete the repository or add, change or remove admins;
 //! nobody can make the owner a member.
+use super::audit_outbox;
 use super::auth::Actor;
 use super::rows::Settings;
 use crate::storage::{SqlStore, bad, number, string};
@@ -214,6 +215,12 @@ pub fn put<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings) -
             json!(number(c, "now")?),
         ],
     )?;
+    if t.current != Some(role) || !replaced.is_empty() {
+        let event = json!({
+            "account": t.shown, "role": role.as_str(), "previous": t.current.map(Role::as_str),
+        });
+        audit_outbox::record(db, c, "repo.member_put", &actor.principal, event)?;
+    }
     Ok(json!({
         "account": t.shown, "key": t.key, "role": role.as_str(),
         "previous": t.current.map(Role::as_str), "replaced": replaced,
@@ -248,5 +255,7 @@ pub fn remove<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings
             std::slice::from_ref(key),
         )?;
     }
+    let event = json!({ "account": t.shown });
+    audit_outbox::record(db, c, "repo.member_removed", &actor.principal, event)?;
     Ok(json!({ "account": t.shown, "removed": true, "keys": keys }))
 }

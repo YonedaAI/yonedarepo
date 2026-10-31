@@ -6,6 +6,7 @@
 // marks the published head stale so a change of access reaches stateless reads at once.
 import { ACCOUNT_IDENTIFIER_HELP, normalizeAccountIdentifier } from '../../shared/account';
 import { teamKey } from './platform-org-access';
+import { audited } from './repo-audit';
 import { refreshHead } from './repo-head';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 import { workspace } from './workspace';
@@ -39,7 +40,11 @@ export const memberOperations = {
     if (found.exists !== true)
       throw new ApiError('NOT_FOUND', `No ${team ? 'team' : 'account'} named ${account}`);
     const key = team ? teamKey(team[1], { name: team[2], id: found.id }) : account;
-    const put = await ctx.call({ op: 'repo_member_put', account: key, role: a.role });
+    const put = await audited(
+      ctx.env,
+      ctx.repo,
+      ctx.call({ op: 'repo_member_put', account: key, role: a.role }),
+    );
     const index =
       'INSERT INTO platform_members(repo,account,role) VALUES(?,?,?) ON CONFLICT(repo,account) DO UPDATE SET role=excluded.role';
     await ctx.env.INDEX.batch([
@@ -55,7 +60,11 @@ export const memberOperations = {
     return put;
   },
   git_member_remove: async (ctx: RepoContext, a: Json) => {
-    const removed = await ctx.call({ op: 'repo_member_remove', account: accountArg(a.account) });
+    const removed = await audited(
+      ctx.env,
+      ctx.repo,
+      ctx.call({ op: 'repo_member_remove', account: accountArg(a.account) }),
+    );
     await ctx.env.INDEX.batch(
       (removed.keys as string[]).map((key) =>
         ctx.env.INDEX.prepare('DELETE FROM platform_members WHERE repo=? AND account=?').bind(

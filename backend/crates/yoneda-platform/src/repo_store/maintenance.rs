@@ -38,6 +38,6 @@ pub(super) fn run<S: SqlStore>(db: &S, c: &Value, op: M, principal: &str) -> Res
         M::CompactStatus => compaction::status(db),
         M::CompactPlan => compaction::plan(db, c),
         M::CompactDone => compaction::done(db, c),
-        M::SetRetention => compaction::set_retention(db, c),
+        M::SetRetention => compaction::set_retention(db, c, principal),
     }
 }

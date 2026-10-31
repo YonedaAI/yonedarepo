@@ -68,9 +68,94 @@ const KINDS: &[(&str, &[(&str, Field)])] = &[
         "account.recovered",
         &[("tokens", Count), ("ssh_keys", Count)],
     ),
-    // Repository events start with the next stage; these are their shapes.
-    ("webhook.created", &[("id", Word), ("url", UrlHost)]),
-    ("webhook.deleted", &[("id", Word), ("url", UrlHost)]),
+    // A repository's events: `repo` is its id, `name` what it was called then.
+    (
+        "repo.created",
+        &[
+            ("repo", Word),
+            ("name", Word),
+            ("visibility", Word),
+            ("parent", Word),
+        ],
+    ),
+    ("repo.deleted", &[("repo", Word), ("name", Word)]),
+    (
+        "repo.restored",
+        &[("repo", Word), ("name", Word), ("previous", Word)],
+    ),
+    (
+        "repo.renamed",
+        &[("repo", Word), ("name", Word), ("previous", Word)],
+    ),
+    (
+        "repo.visibility_changed",
+        &[("repo", Word), ("name", Word), ("visibility", Word)],
+    ),
+    (
+        "repo.member_put",
+        &[
+            ("repo", Word),
+            ("name", Word),
+            ("account", Word),
+            ("role", Word),
+            ("previous", Word),
+        ],
+    ),
+    (
+        "repo.member_removed",
+        &[("repo", Word), ("name", Word), ("account", Word)],
+    ),
+    (
+        "repo.token_created",
+        &[
+            ("repo", Word),
+            ("name", Word),
+            ("token", Word),
+            ("scopes", Words),
+        ],
+    ),
+    (
+        "repo.token_revoked",
+        &[("repo", Word), ("name", Word), ("token", Word)],
+    ),
+    (
+        "repo.policy_changed",
+        &[
+            ("repo", Word),
+            ("name", Word),
+            ("digest", Word),
+            ("previous", Word),
+            ("required_checks", Words),
+            ("approvals", Count),
+        ],
+    ),
+    (
+        "repo.retention_changed",
+        &[
+            ("repo", Word),
+            ("name", Word),
+            ("keep_versions", Count),
+            ("keep_days", Count),
+        ],
+    ),
+    (
+        "webhook.created",
+        &[
+            ("repo", Word),
+            ("name", Word),
+            ("id", Word),
+            ("url", UrlHost),
+        ],
+    ),
+    (
+        "webhook.deleted",
+        &[
+            ("repo", Word),
+            ("name", Word),
+            ("id", Word),
+            ("url", UrlHost),
+        ],
+    ),
 ];
 
 /// The fields of `kind` that may be kept from `data`; `None` when it isn't a logged kind.
@@ -94,12 +179,14 @@ pub(super) fn details(kind: &str, data: &Value) -> Option<Value> {
 }
 
 /// Who acted: as the event says, or, on a member's own events, that member. An org's event
-/// from before actors were recorded names nobody.
+/// from before actors were recorded names nobody, and so does a repository's without one.
 pub(super) fn actor(data: &Value, org: &str, source: &str) -> Value {
     if let Some(actor) = word(&data["actor"]) {
         return actor;
     }
-    let name = source.strip_prefix("account:").unwrap_or_default();
+    let Some(name) = source.strip_prefix("account:") else {
+        return Value::Null;
+    };
     match data["by"].as_str() {
         Some(by) => word(&json!(format!("user:{by}"))).unwrap_or(Value::Null),
         None if name != org => word(&json!(format!("user:{name}"))).unwrap_or(Value::Null),

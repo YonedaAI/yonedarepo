@@ -1,5 +1,6 @@
 //! Repository tokens (`yrp_…`): the owner (or an admin) creates, revokes and lists them;
 //! only their digest is stored. `auth` resolves them to actors.
+use super::audit_outbox;
 use super::auth::{Actor, token_digest};
 use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
@@ -53,6 +54,8 @@ pub fn create_token<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Val
             json!(grant.as_ref().map(|g| json!(g).to_string())),
         ],
     )?;
+    let event = json!({ "token": name, "scopes": scopes });
+    audit_outbox::record(db, c, "repo.token_created", &actor.principal, event)?;
     Ok(
         json!({ "name": name, "principal": format!("token:{name}"), "scopes": scopes, "paths": grant }),
     )
@@ -61,10 +64,14 @@ pub fn create_token<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Val
 pub fn revoke_token<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     actor.require_owner()?;
     let name = string(c, "name")?;
-    db.query(
-        "UPDATE tokens SET revoked_at=? WHERE name=? AND revoked_at IS NULL",
+    let revoked = db.query(
+        "UPDATE tokens SET revoked_at=? WHERE name=? AND revoked_at IS NULL RETURNING name",
         &[json!(number(c, "now")?), json!(name)],
     )?;
+    if !revoked.is_empty() {
+        let event = json!({ "token": name });
+        audit_outbox::record(db, c, "repo.token_revoked", &actor.principal, event)?;
+    }
     Ok(json!({ "name": name, "revoked": true }))
 }
 

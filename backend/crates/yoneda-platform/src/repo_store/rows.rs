@@ -77,6 +77,8 @@ pub fn init<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "INSERT INTO repo_settings(id,name,workspace,owner,object_store,policy,policy_digest,created_at,parent,parent_version,visibility) VALUES('repository',?,?,?,?,?,?,?,?,?,?)",
         &[json!(name), json!(workspace), json!(principal), json!(object_store), json!(policy_json.to_string()), json!(digest), c["now"].clone(), json!(parent), json!(parent_version), json!(visibility.as_str())],
     )?;
+    let event = json!({ "visibility": visibility.as_str(), "parent": parent });
+    super::audit_outbox::record(db, c, "repo.created", &principal, event)?;
     Ok(json!({ "initialized": true, "policy_digest": digest, "visibility": visibility.as_str() }))
 }
 

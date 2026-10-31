@@ -4,13 +4,14 @@ use super::auth::{self, Actor};
 use super::op::{InitOp, Op, RepoOp as R, StoreOp};
 use super::rows::{self, Settings};
 use super::{
-    activity, adopt, agent_context, agent_reads, annotated, auto_landing, bisect, branches,
-    capacity, change_closing, change_comments, change_delete, change_gates, change_instruments,
-    change_records, change_route, changes, changesets, checks, classes, contracts, flight_plans,
-    git_http, head, history, history_fill, history_import, hook_delivery, hook_events, hooks, land,
-    land_batch, land_queue, land_tickets, land_when_cleared, legal_hold, members, merging, prepare,
-    projection, projection_plan, pushed, reads, rebase, record, releases, search_records, sessions,
-    staging, store_lineage, submitted, symbols, tags, tokens, version_projection,
+    activity, adopt, agent_context, agent_reads, annotated, audit_outbox, auto_landing, bisect,
+    branches, capacity, change_closing, change_comments, change_delete, change_gates,
+    change_instruments, change_records, change_route, changes, changesets, checks, classes,
+    contracts, flight_plans, git_http, head, history, history_fill, history_import, hook_delivery,
+    hook_events, hooks, land, land_batch, land_queue, land_tickets, land_when_cleared, legal_hold,
+    members, merging, prepare, projection, projection_plan, pushed, reads, rebase, record,
+    releases, search_records, sessions, staging, store_lineage, submitted, symbols, tags, tokens,
+    version_projection,
 };
 use super::{
     authorize::authorize, break_glass, deletion, erase, forks, grants, lfs, maintenance, memory,
@@ -150,7 +151,7 @@ fn run<S: SqlStore>(
         R::CheckRun => checks::run_op(db, c),
         R::RecordRepair => checks::record_repair(db, c),
         R::CheckComplete => checks::complete(db, c, principal),
-        R::SetPolicy => checks::set_policy(db, c, principal),
+        R::SetPolicy => checks::set_policy(db, c, principal, settings),
         R::AutoLandings => auto_landing::set(db, c),
         R::ProjectionPending => projection::pending(db),
         R::ProjectionResult => projection::result(db, c),
@@ -188,8 +189,10 @@ fn run<S: SqlStore>(
         R::Delete => deletion::delete(db, c, actor, settings),
         R::PurgeTarget => deletion::purge_target(db, c, actor, settings),
         R::Purged => undo::purged(db, c, actor, settings),
-        R::Restore => undo::restore(db, c, settings),
+        R::Restore => undo::restore(db, c, actor, settings),
         R::HoldOwner => Ok(json!({ "owner": settings.workspace })),
+        R::AuditPending => audit_outbox::pending(db, c, settings),
+        R::AuditDone => audit_outbox::done(db, c),
         R::ErasePlan => erase::plan(db, c, settings),
         R::EraseStep => erase::step(db, c, settings),
         // `enqueue`: a landing that needs a merge joins the branch's queue in this call.
@@ -229,7 +232,7 @@ fn run<S: SqlStore>(
         }
         R::HookCreate => hooks::create(db, c, actor),
         R::Hooks => hooks::list(db),
-        R::HookDelete => hooks::delete(db, c),
+        R::HookDelete => hooks::delete(db, c, actor),
         R::HookDeliveries => hooks::deliveries(db, c),
         R::HooksFanout => hook_events::fanout(db),
         R::HookClaim => hook_delivery::claim(db, c),
@@ -239,7 +242,7 @@ fn run<S: SqlStore>(
         R::Tokens => tokens::list_tokens(db, actor),
         R::Members => members::list(db),
         R::SetVisibility => visibility::set(db, c, actor),
-        R::Rename => visibility::rename(db, c, settings),
+        R::Rename => visibility::rename(db, c, actor, settings),
         R::MemberPut => members::put(db, c, actor, settings),
         R::MemberRemove => members::remove(db, c, actor, settings),
     }

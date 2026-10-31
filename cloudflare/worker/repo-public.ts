@@ -9,6 +9,7 @@
 // discovery listing on the side that never lists a private repository, and republish main's
 // head before answering, so a repository made private stops serving anonymous reads
 // everywhere within ACCESS_MS.
+import { audited } from './repo-audit';
 import { refreshHead } from './repo-head';
 import { ApiError, type Credentials, type Json, type RepoContext } from './repo-ops';
 import { withPaths } from './repo-paths';
@@ -102,7 +103,11 @@ export async function setVisibility(ctx: RepoContext, body: Json) {
   if (!viewer?.owner || viewer.role)
     throw new ApiError('FORBIDDEN', 'Only the repository owner can do this');
   if (visibility === 'private') await listVisibility(ctx.env, ctx.repo, visibility);
-  const changed = await ctx.call({ op: 'repo_set_visibility', visibility });
+  const changed = await audited(
+    ctx.env,
+    ctx.repo,
+    ctx.call({ op: 'repo_set_visibility', visibility }),
+  );
   await refreshHead(ctx.env, ctx.repo, true);
   if (visibility === 'public') await listVisibility(ctx.env, ctx.repo, visibility);
   await voidSummary(ctx.env, ctx.repo);

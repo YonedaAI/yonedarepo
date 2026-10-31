@@ -181,7 +181,7 @@ pub fn actor_with(
     if let Some(
         system @ ("checks" | "projection" | "import" | "merge" | "repair" | "derive" | "commits"
         | "purge" | "hooks" | "compact" | "fork" | "lfs" | "quarantine" | "erase"
-        | "land-when-cleared"),
+        | "land-when-cleared" | "audit"),
     ) = c.get("_system").and_then(Value::as_str)
     {
         let roles: &[&str] = match system {
@@ -195,6 +195,8 @@ pub fn actor_with(
             "compact" => &["compact"],
             // Empties a tombstone (erase).
             "erase" => &["erase"],
+            // Copies a repository's events to its org's audit log (audit_outbox).
+            "audit" => &["audit"],
             // Sweeps LFS bytes no object references (lfs::sweep).
             "lfs" => &["lfs"],
             // Purges quarantined content once its retention ends (quarantine::purge).

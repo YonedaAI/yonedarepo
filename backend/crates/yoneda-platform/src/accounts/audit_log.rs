@@ -1,13 +1,15 @@
 //! An organization's audit log: a sibling authority instance (`audit:<org>`) whose
 //! `workspace_events` rows are hash-chained, apart from the org's authority so that a full
 //! log can't break org access. Sources are the authorities whose own events commit with the
-//! state they record: the org's, and the personal accounts of its members, whose events name
-//! the orgs they concern (`orgs`). The adapter copies events across after the action; a copy
+//! state they record: the org's, the personal accounts of its members, whose events name the
+//! orgs they concern (`orgs`), and its repositories (`repo_store/audit_outbox.rs`, `repo:<id>`).
+//! The adapter copies events across after the action; a copy
 //! that fails is taken up by the next one, since a source keeps its events and the log keeps
 //! a cursor per source (`workspace_events` has no unique index, so the cursor is the dedupe).
 //! Rows use `seq`, `kind` and `at` as they are; everything else is in `data`.
 use super::audit_details::{actor, details};
 use super::op::AuditOp;
+use super::repo_names::repo_id;
 use super::*;
 
 const HEAD: &str = "audit_head";
@@ -40,10 +42,20 @@ pub(super) fn token_orgs<S: SqlStore>(db: &S, org: &Value) -> Result<Vec<Value>>
 
 fn source(c: &Value) -> Result<String> {
     let source = string(c, "source")?;
-    if !source.starts_with("account:") {
-        return Err(bad("An audit source is an account authority"));
+    let repo = source.strip_prefix("repo:").map(|id| json!({ "repo": id }));
+    if !source.starts_with("account:") && !repo.is_some_and(|c| repo_id(&c).is_ok()) {
+        return Err(bad("An audit source is an account or repository authority"));
     }
     Ok(source)
+}
+
+/// An event's data as its source vouches for it: a repository names itself by being the source.
+fn sourced(event: &Value, source: &str) -> Value {
+    let mut data = event["data"].clone();
+    if let Some(repo) = source.strip_prefix("repo:") {
+        data["repo"] = json!(repo);
+    }
+    data
 }
 
 fn limit(c: &Value, most: i64) -> i64 {
@@ -138,12 +150,13 @@ fn append<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         seen = source_seq;
         let kind = string(event, "kind")?;
         let at = crate::storage::number(event, "at")?;
-        let Some(details) = details(&kind, &event["data"]) else {
+        let sent = sourced(event, &source);
+        let Some(details) = details(&kind, &sent) else {
             continue;
         };
         seq += 1;
         let data = json!({
-            "actor": actor(&event["data"], &org, &source), "source": source,
+            "actor": actor(&sent, &org, &source), "source": source,
             "source_seq": source_seq, "details": details, "previous": previous,
         });
         let row = json!({ "seq": seq, "kind": kind, "at": at });

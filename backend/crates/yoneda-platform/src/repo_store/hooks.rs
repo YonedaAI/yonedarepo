@@ -2,6 +2,7 @@
 //! a waiting agent) what happened. The owner (or a `repo:admin` token) manages them. The
 //! adapter generates each signing secret; create returns it once and it is stored only
 //! here, where the delivery job reads it to sign. Listings never include it.
+use super::audit_outbox;
 use super::auth::Actor;
 use super::grants::{self, Grant};
 use super::{hook_events, hook_url};
@@ -105,6 +106,8 @@ pub fn create<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
           json!(since), json!(actor.principal), json!(now)],
     )?;
     let id = db.query("SELECT last_insert_rowid() AS id", &[])?[0]["id"].clone();
+    let event = json!({ "id": id.to_string(), "url": url });
+    audit_outbox::record(db, c, "webhook.created", &actor.principal, event)?;
     Ok(json!({
         "id": id, "url": url, "events": events, "paths": grant, "active": true,
         "since_version": since, "created_at": now,
@@ -155,8 +158,12 @@ pub(super) fn existing<S: SqlStore>(db: &S, c: &Value) -> Result<i64> {
 
 /// `repo_hook_delete {hook_id}`: the hook, its undelivered payloads and its log; any
 /// delivery job still running for it finds nothing to send.
-pub fn delete<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+pub fn delete<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     let id = existing(db, c)?;
+    let hook = db.query("SELECT url FROM hooks WHERE id=?", &[json!(id)])?;
+    let url = hook.first().map_or(Value::Null, |r| r["url"].clone());
+    let event = json!({ "id": id.to_string(), "url": url });
+    audit_outbox::record(db, c, "webhook.deleted", &actor.principal, event)?;
     for table in ["hook_outbox", "hook_attempts"] {
         db.query(
             &format!("DELETE FROM {table} WHERE hook_id=?"),
