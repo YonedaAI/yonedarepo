@@ -227,6 +227,14 @@ Deleting a repository leaves a tombstone and purges its objects. With `REPO_ERAS
 - **Backfill.** `cargo xtask admin erase-backfill --env dev --dry-run` lists tombstones and their sizes without changing anything; `--confirm` erases them, one at a time, and needs `REPO_ERASE=on`. It walks Cloudflare's object list (ids only), so it wakes every repository object, and needs `OWNER_TOKEN` in the secrets file and a token that can read Durable Object namespaces in `CLOUDFLARE_API_TOKEN` or `--token-file`. `--delay-ms` (default 1000) spaces objects, `--limit` stops early and `--after <cursor>`, printed per page, resumes. A tombstone whose store does not lead back to its object id is reported as `unnamed` and left alone.
 
 
+## Search across repositories
+
+`ACCOUNT_SEARCH=on` on the platform Worker serves `GET /api/v1/search`, the `search_repos` MCP tool and `yoneda search --all`, and keeps a summary per repository in its owner's directory (`search:<owner>` instances of `WorkspaceAuthority`, one `workspace_records` row per repository). Off, nothing is written and the route answers 404; the website then asks each repository itself, as it always has. `infra/envs/<env>.json` carries the variable. Budget and known costs: `docs/global-scale-plan.md`, item 5.
+
+- **Rows are rebuildable.** A missing row only means the repository is always asked. Nothing is read from a row but a yes or no.
+- **Backfill.** Derive writes a summary after a landing, so older repositories have none until their next one. `cargo xtask admin search-backfill --env dev --owner <account> --dry-run` counts an owner's repositories; `--confirm` queues a summary job for each, a page of 100 at a time. It needs `OWNER_TOKEN` in the secrets file and takes one owner, so a large account can be done on its own. `--delay-ms` (default 5000) spaces pages. Repeating it is safe.
+- **Turning it off and on.** With the switch off, deletes, quarantines and visibility changes don't reach the directory. After turning it back on, run the backfill for any owner who had rows.
+
 ## Undo window
 
 `REPO_UNDO_DAYS` on the platform Worker sets how long a deleted repository can be restored (30 is the plan; dev can set a fraction of a day). Unset, empty or 0 means an immediate purge, as before. A value that is not a number means 30, never zero. It is off by default in `infra/envs/<env>.json`; a non-zero value there is the whole switch.

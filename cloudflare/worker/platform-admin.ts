@@ -35,6 +35,7 @@ import { backfillObject } from './repo-erase';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { dispatchPurge } from './repo-projection';
 import { quarantineRoute } from './repo-quarantine';
+import { backfillSummaries } from './repo-search-summary';
 import type { Env } from './types';
 import { workspace } from './workspace';
 
@@ -82,6 +83,8 @@ export async function adminRoute(
     return done;
   }
   if (section === 'erase-backfill' && !id && post) return backfillObject(env, actor, await body());
+  if (section === 'search-backfill' && !id && post)
+    return backfillSummaries(env, actor, await body());
   if (section === 'deleted-repos' && id === 'rebuild' && !action && post)
     return rebuildSchedule(env, actor, await body());
   if (section === 'accounts' && !id && get)

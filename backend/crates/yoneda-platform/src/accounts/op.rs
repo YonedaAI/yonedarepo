@@ -163,6 +163,19 @@ op_names! {
 }
 
 op_names! {
+    /// An owner's search directory, on its own authority instance (trusted Worker adapters
+    /// only). Everything takes repository ids: there is no way to list what it holds.
+    pub(crate) enum SearchOp {
+        Put = "search_put",
+        Touch = "search_touch",
+        Fork = "search_fork",
+        Void = "search_void",
+        Drop = "search_drop",
+        Match = "search_match",
+    }
+}
+
+op_names! {
     /// Handles (on a handle's own instance, or the account's) and the repository names an
     /// owner holds.
     pub(crate) enum HandleOp {
@@ -195,6 +208,7 @@ pub(crate) enum AccountOp {
     Hold(HoldOp),
     DeletedRepo(DeletedRepoOp),
     Audit(AuditOp),
+    Search(SearchOp),
     Handle(HandleOp),
 }
 
@@ -224,6 +238,7 @@ impl AccountOp {
             Self::Hold(op) => op.name(),
             Self::DeletedRepo(op) => op.name(),
             Self::Audit(op) => op.name(),
+            Self::Search(op) => op.name(),
             Self::Handle(op) => op.name(),
         }
     }
@@ -245,6 +260,7 @@ impl AccountOp {
         all.extend(HoldOp::ALL.iter().copied().map(Self::Hold));
         all.extend(DeletedRepoOp::ALL.iter().copied().map(Self::DeletedRepo));
         all.extend(AuditOp::ALL.iter().copied().map(Self::Audit));
+        all.extend(SearchOp::ALL.iter().copied().map(Self::Search));
         all.extend(HandleOp::ALL.iter().copied().map(Self::Handle));
         all
     }

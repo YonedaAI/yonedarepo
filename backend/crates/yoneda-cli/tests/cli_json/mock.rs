@@ -169,6 +169,13 @@ fn answer(method: &str, path: &str, body: &str) -> (&'static str, Value) {
             { "cli": "codex", "model": "gpt", "recorded_by": "alice", "summary": "done" }] })),
         ("GET", "/log") => ok(json!({ "commits": [
             { "commit": COMMIT, "message": "first\nbody", "landed": { "version": 3 } }] })),
+        // The account's search; below it, a repository's.
+        ("GET", "/search") if local.is_none() => ok(json!({
+            "query": "main", "groups": ["code"], "searched": 2, "scanned": 30, "next": "1.r1",
+            "failed": [{ "repo": FORK, "name": "mine", "error": "overloaded" }],
+            "results": [{ "repo": REPO, "name": "demo", "owner": "alice", "path": "/alice/demo",
+                "answer": { "groups": ["code"], "results": [
+                    { "path": "src/a.rs", "lines": [{ "line": 3, "text": "fn main" }] }] } }] })),
         ("GET", "/search") => ok(json!({ "results": [
             { "path": "src/a.rs", "lines": [{ "line": 3, "text": "fn main" }] }] })),
         ("GET", "/blame") => ok(blame()),

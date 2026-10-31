@@ -85,6 +85,23 @@ async fn run(command: Command) -> Result<()> {
         Command::AuthToken { origin, show } => crate::auth_token::print(origin.as_deref(), show),
         Command::Repo { origin, command } => account::run(origin.as_deref(), command).await,
         Command::Org { origin, command } => crate::org_cmd::run(origin.as_deref(), command).await,
+        Command::SearchAll {
+            origin,
+            query,
+            groups,
+            limit,
+            word,
+            after,
+        } => {
+            let asked = crate::search_all::Asked {
+                query,
+                groups,
+                limit,
+                word,
+                after,
+            };
+            crate::search_all::run(origin.as_deref(), asked).await
+        }
         Command::SshKey { origin, command } => {
             crate::ssh_key_cmd::run(origin.as_deref(), command).await
         }

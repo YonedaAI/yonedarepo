@@ -125,6 +125,41 @@ pub struct Search {
     pub changes: Option<SearchGroup<ChangeHit>>,
 }
 
+/// One repository's answer to `search --all`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SearchAllRepo {
+    pub repo: String,
+    pub name: String,
+    /// The readable path `/<handle>/<name>` (null while the owner has no handle).
+    pub path: Option<String>,
+    pub search: Search,
+}
+
+/// A repository that could not be searched.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SearchAllFailed {
+    pub repo: String,
+    pub name: String,
+    pub error: String,
+}
+
+/// `search --all`: the repositories that found something on this page, of those asked.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct SearchAll {
+    pub query: String,
+    pub repos: Vec<SearchAllRepo>,
+    pub failed: Vec<SearchAllFailed>,
+    /// Repositories this page asked.
+    pub searched: u64,
+    /// Repositories this page looked through to choose them.
+    pub scanned: u64,
+    /// Pass as `--after` for the next page; null when this is the last.
+    pub next: Option<String>,
+}
+
 /// `blame`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -163,6 +198,7 @@ super::report! {
     Log => "log",
     Grep => "grep",
     Search => "search",
+    SearchAll => "search-all",
     Blame => "blame",
     Diff => "diff",
     Symbols => "symbols",

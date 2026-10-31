@@ -12,6 +12,7 @@
 import { refreshHead } from './repo-head';
 import { ApiError, type Credentials, type Json, type RepoContext } from './repo-ops';
 import { withPaths } from './repo-paths';
+import { voidSummary } from './repo-search-directory';
 import type { Env } from './types';
 
 export const ANONYMOUS: Credentials = { _anonymous: true };
@@ -104,6 +105,7 @@ export async function setVisibility(ctx: RepoContext, body: Json) {
   const changed = await ctx.call({ op: 'repo_set_visibility', visibility });
   await refreshHead(ctx.env, ctx.repo, true);
   if (visibility === 'public') await listVisibility(ctx.env, ctx.repo, visibility);
+  await voidSummary(ctx.env, ctx.repo);
   return changed;
 }
 

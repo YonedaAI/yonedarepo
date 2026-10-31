@@ -19,6 +19,7 @@ import { orgsRoute } from './platform-orgs';
 import { sshKeyRoute } from './platform-ssh-keys';
 import { SUPPORT_BODY_LIMIT, supportRoute } from './platform-support';
 import { deviceApprove, deviceCode, deviceToken, tokenRoute } from './platform-tokens';
+import { accountSearch } from './repo-account-search';
 import { deleteRepository, listDeleted, listRepositories } from './repo-admin';
 import { agentRecords } from './repo-agent-records';
 import { breakGlass } from './repo-break-glass';
@@ -177,6 +178,8 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return deviceApprove(env, auth, await bodyOf(req));
   if (parts[0] === 'activity' && parts.length === 1 && req.method === 'GET')
     return accountActivity(env, auth);
+  if (parts[0] === 'search' && parts.length === 1 && req.method === 'GET')
+    return accountSearch(env, auth, url, route);
   if (parts[0] === 'support' && parts.length === 1 && req.method === 'POST')
     return supportRoute(env, auth, () => bodyOf(req, SUPPORT_BODY_LIMIT));
   if (parts[0] === 'favorites' && parts.length <= 2)

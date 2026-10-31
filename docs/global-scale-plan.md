@@ -215,6 +215,38 @@ Today the browser asks 25 repos, 4 at a time. `GET /repos` also stops at 200.
 
 Searching all public repos is out of scope.
 
+### Request budget (written before the code)
+
+**Built without a new class or a migration:** the directory is a sibling instance in the existing `WORKSPACES` namespace (`search:<owner>`, as `audit:<org>`), and its rows are `workspace_records` (`search:<repo>`). Safety rules 3 and 4 don't apply, so it can ship with a switch alone, and a rollback has nothing to undo.
+
+All of this is behind `ACCOUNT_SEARCH`, off by default. Off, `GET /api/v1/search` answers 404, derive writes nothing and the clients use today's fan-out.
+
+| One `GET /api/v1/search` page | Most |
+|---|---|
+| D1 listing statements | 5, of 200 repos each (so 1,000 repos per page; a longer account continues on `next`) |
+| Directory calls | 16 per page, 200 repo IDs each; repos past that are "maybe" |
+| Bytes read per repo in a directory call | 8 positions of its summary, chosen in SQL; the summary never reaches the Worker |
+| Repo searches, code | 25, the newest that can match |
+| Repo searches, records | 25, the newest overall, on the first page only |
+| Repo searches at once | 4 |
+| Page time | 20 seconds: nothing starts after that, and what is still running is reported as failed. `next` continues from the last repo started |
+
+A directory that fails or is slow costs the filter, never the search: its repos are "maybe".
+
+| Each `platform_derive` job, switch on | Most |
+|---|---|
+| Directory calls | 2: a touch, then a put when main has moved |
+| Extra authority calls | 1 for the owner, and 1 for main's head on a job for another branch |
+| Segment pass | One pass over main's segments when main moved; 256 segments, then the row is "saturated". It stops as soon as the bitset is |
+
+A summary is 2^17 bits (16 KiB, 32 KB as hex), a repo's folded content and path trigrams, hashed. Above two thirds full it is stored as saturated, with no bits.
+
+**Forks.** A new fork holds what its parent does, so `search_fork` leaves a marker row and search skips it until it has activity of its own. Forks made before the switch have no row and are "maybe". A fork whose parent the caller can't list is skipped too until it lands: searching it directly still works.
+
+**Unmeasured on dev:** these are limits, not timings. The dev bench (at least 3 runs, server-side timing, min/median/max) waits for a dev deploy. The only number so far is local workerd: one directory call for 200 rows, 25 runs, min 9 ms, median 10 ms, max 15 ms.
+
+**Known cost:** a landing reaches the summary when its derive job runs. Until then a repo that has a summary and no newer activity row can miss the new content, for as long as the queue takes. Activity that isn't a landing, such as a check result, makes a repo "maybe" until its next derive job: safe, but it searches that repo.
+
 ## 6. Global regions
 
 **Design: regional cells.**

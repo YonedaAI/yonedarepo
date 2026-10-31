@@ -6,6 +6,7 @@ mod docs;
 mod memory;
 mod org;
 mod parser;
+mod read;
 mod release;
 mod ssh_key;
 mod sub;
@@ -132,7 +133,7 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "ssh" => ssh_key::ssh(rest)?,
         "token" => sub::token(rest)?,
         "check" => sub::check(rest)?,
-        "log" | "grep" | "search" | "blame" | "diff" | "symbols" => sub::read(command, rest)?,
+        "log" | "grep" | "search" | "blame" | "diff" | "symbols" => read::read(command, rest)?,
         "setup" => setup(rest)?,
         "land" => {
             let p = Parsed::new(rest, &with(&["branch"]), &[])?;
@@ -431,6 +432,20 @@ mod tests {
                 }
             })
         );
+        assert_eq!(
+            parsed("search retry --all --in code --after 5.r1 --word").ok(),
+            Some(Command::SearchAll {
+                origin: None,
+                query: "retry".into(),
+                groups: Some(vec!["code".into()]),
+                limit: None,
+                word: true,
+                after: Some("5.r1".into()),
+            })
+        );
+        assert!(parsed("search retry --all --ref main").is_err());
+        assert!(parsed("search retry --all --repo r1").is_err());
+        assert!(parsed("grep retry --all").is_err());
         assert_eq!(
             parsed("search retry --in commits,changes --limit 5 --word").ok(),
             Some(Command::Read {

@@ -14,6 +14,7 @@
 // head. No LAND_MODE_OVERRIDE: per-request mode headers are for benches only.
 // PUSH_BUNDLES=on writes a large push's objects as bundles (one R2 object per batch, indexed by the repository authority). Turn it off before rolling back below the bundle reader.
 // PACK_CACHE=on serves a clone's pack (full, partial, shallow, or a partial clone's checkout) from a stored copy (derived/v1/<repo>/packs/), stored by the first such clone or by a pack-build job it hands off to, and built for main's tip by a job a minute after a push (repositories of 5,000+ objects; PACK_BUILD_MIN_OBJECTS); off builds every pack from the bundles.
+// ACCOUNT_SEARCH=on keeps a search summary per repository in its owner's directory (search:<owner> instances of WorkspaceAuthority) and serves GET /api/v1/search, the search_repos MCP tool and the CLI's search --all; off writes none and the route answers 404, so the website asks each repository itself as before.
 // AUDIT_LOG=on keeps organizations' audit logs (audit:<org> instances of WorkspaceAuthority) and people's sign-in events; off writes neither and /orgs/:org/audit answers 404. Set it on this Worker and the front Worker together: sign-ins go through both.
 // BLOB_WRITE_THROUGH=on writes each API commit's blobs to R2 after the commit's own I/O, so burst read-backs skip the commit shards; off leaves them to the shard drain. Off since 2026-10-28: 6 interleaved dev bursts gave land p95 1.7-2.1 s off vs 2.7-3.2 s on, with read p95 0.18-0.32 s off (target < 2 s).
 // Check runs take minutes (container start, the check): one per invocation, up to
@@ -316,6 +317,7 @@
     ]
   },
   "vars": {
+    "ACCOUNT_SEARCH": "off",
     "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
     "ADMIN_BILLING": "on",
     "ADMIN_NOTIFY_EMAIL": "",

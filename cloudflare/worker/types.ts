@@ -134,6 +134,9 @@ export interface Env {
   /** `on` keeps organizations' audit logs and people's sign-in events (account-audit.ts);
    * anything else writes neither and `/orgs/:org/audit` answers 404. */
   AUDIT_LOG?: string;
+  /** `on` keeps search summaries and serves `GET /search` (repo-account-search.ts); anything
+   * else writes none, that route answers 404 and clients ask each repository themselves. */
+  ACCOUNT_SEARCH?: string;
   /** The website people sign in at (device approval page `/device`); the platform falls
    * back to the request origin. */
   WEB_ORIGIN?: string;

@@ -147,3 +147,7 @@
 .search-repo .agent-list li {
   padding: 6px 0;
 }
+.search-next {
+  display: block;
+  margin: 16px auto 0;
+}
