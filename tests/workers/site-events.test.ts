@@ -1,8 +1,8 @@
-// Cookieless site analytics on the front Worker: one Analytics Engine point per public HTML
-// page view and per sign-up, never an IP address, cookie or visitor id, and the Cloudflare Web
-// Analytics beacon on public pages only when its token is configured. Only real pages count: the
-// build's site routes and public repositories, never a path the app would show as Not Found.
-// Simulated bindings only.
+// Cookieless site analytics on the front Worker: one Analytics Engine point per signed-out HTML
+// request and per sign-up, never an IP address, cookie or visitor id, and the Cloudflare Web
+// Analytics beacon on public pages only when its token is configured. A request is classed from
+// its headers; a path that is not a page keeps its first segment only, so scanners stay visible
+// and nothing inside a repository is ever recorded. Simulated bindings only.
 import { env } from 'cloudflare:workers';
 import { reset } from 'cloudflare:test';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -43,6 +43,8 @@ function site(extra: Partial<Env> = {}) {
       fetch: async (req: Request) => {
         const { pathname } = new URL(req.url);
         if (pathname === '/_site/routes.json') return Response.json(manifest);
+        if (pathname.endsWith('.svg'))
+          return new Response('<svg/>', { headers: { 'content-type': 'image/svg+xml' } });
         return pathname.startsWith('/assets/')
           ? new Response('export {}', { headers: { 'content-type': 'text/javascript' } })
           : new Response(page, { headers: { 'content-type': 'text/html; charset=utf-8' } });
@@ -58,6 +60,7 @@ const visitor = {
   'user-agent':
     'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_6) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15',
   accept: 'text/html,application/xhtml+xml',
+  'sec-fetch-mode': 'navigate',
   referer: 'https://news.ycombinator.com/item?id=4242',
 };
 const get = (path: string, headers: Record<string, string> = visitor, init: RequestInit = {}) =>
@@ -87,6 +90,7 @@ it('records one point for a public page view: path, referring site, country, dev
       'social',
       'launch',
       '',
+      'unconfirmed',
     ],
     doubles: [0, 1],
   });
@@ -101,13 +105,12 @@ it('records nothing for the API, static assets, signed-in requests, non-GET or a
   await frontFetch(get('/favicon.svg'), using);
   await frontFetch(get('/pricing', { ...visitor, cookie: `yoneda_account=alice.${'a'.repeat(64)}` }), using);
   await frontFetch(get('/pricing', visitor, { method: 'POST' }), using);
-  await frontFetch(get('/settings'), using);
   expect(points).toEqual([]);
   const unbound = await frontFetch(get('/pricing'), { ...using, SITE_EVENTS: undefined });
   expect(unbound.status).toBe(200);
 });
 
-it('counts a public repository by its own address, drops its own host as a referrer and flags bots', async () => {
+it('counts a public repository by its own address, drops its own host as a referrer and classes each request', async () => {
   const fetch = publicRepos();
   const { using, points } = site({ PLATFORM: { fetch } as unknown as Fetcher });
   await frontFetch(
@@ -124,15 +127,21 @@ it('counts a public repository by its own address, drops its own host as a refer
     get('/blog', {
       'user-agent':
         'Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148',
+      'sec-fetch-mode': 'navigate',
     }),
     using,
   );
-  expect(points.map((p) => p.blobs?.slice(1, 5))).toEqual([
-    ['/alice/compiler', '', 'DE', 'desktop'],
-    ['/docs/guides/sessions', '', 'DE', 'bot'],
-    ['/blog', '', 'DE', 'mobile'],
+  await frontFetch(get('/pricing', { 'user-agent': 'Mozilla/5.0 (compatible; GPTBot/1.2)' }), using);
+  // A browser's user agent with none of a browser's navigation headers.
+  await frontFetch(get('/pricing', { 'user-agent': visitor['user-agent'] }), using);
+  expect(points.map((p) => [...(p.blobs ?? []).slice(1, 5), p.blobs?.[9]])).toEqual([
+    ['/alice/compiler', '', 'DE', 'desktop', 'unconfirmed'],
+    ['/docs/guides/sessions', '', 'DE', 'bot', 'crawler'],
+    ['/blog', '', 'DE', 'mobile', 'unconfirmed'],
+    ['/pricing', '', 'DE', 'bot', 'agent'],
+    ['/pricing', '', 'DE', 'bot', 'bot'],
   ]);
-  expect(points.map((p) => p.doubles)).toEqual([[0, 1], [1, 1], [0, 1]]);
+  expect(points.map((p) => p.doubles)).toEqual([[0, 1], [1, 1], [0, 1], [1, 1], [1, 1]]);
 });
 
 it('counts site pages at their one address: an alias, a trailing slash, sign-up and Explore', async () => {
@@ -149,56 +158,53 @@ it('counts site pages at their one address: an alias, a trailing slash, sign-up 
   ]);
 });
 
-it('records nothing for a path the app would show as Not Found, and still serves it', async () => {
+it('keeps a scanner path visible at its first segment, and still serves the app', async () => {
   const { using, points } = site({ PLATFORM: { fetch: publicRepos() } as unknown as Fetcher });
-  for (const path of [
-    '/wp',
-    '/wordpress',
-    '/wp-json',
-    '/cms',
-    '/press',
-    '/news',
-    '/site',
-    '/wp-login.php',
-    '/wp/wp-login.php',
-    '/wp-includes/js/jquery/jquery.js',
-    '/docs/nope',
-    '/blog/nope',
-    '/features/nope',
-    '/agents',
-    '/search',
-  ]) {
-    const response = await frontFetch(get(path), using);
-    expect(response.status, path).toBe(200);
-  }
-  expect(points).toEqual([]);
+  const curl = { 'user-agent': 'curl/8.7.1' };
+  const paths: [string, string][] = [
+    ['/wp', '/wp'],
+    ['/wp-login.php', '/wp-login.php'],
+    ['/wp/wp-login.php', '/wp'],
+    ['/wp-includes/js/jquery/jquery.js', '/wp-includes'],
+    ['/.git/config', '/.git'],
+    ['/docs/nope', '/docs'],
+    ['/admin', '/admin'],
+    ['/settings/tokens', '/settings'],
+    ['/ada@example.com/keys', '/(other)'],
+    [`/${'x'.repeat(200)}`, '/(other)'],
+  ];
+  for (const [path] of paths) expect((await frontFetch(get(path, curl), using)).status, path).toBe(200);
+  expect(points.map((p) => p.blobs?.[1])).toEqual(paths.map(([, kept]) => kept));
+  expect(new Set(points.map((p) => p.blobs?.[9]))).toEqual(new Set(['bot']));
+  await frontFetch(get('/wp'), using);
+  expect(points.at(-1)?.blobs?.[9]).toBe('unconfirmed');
 });
 
-it('never names a private repository, and counts none it cannot confirm', async () => {
-  const hidden = site({ PLATFORM: { fetch: publicRepos() } as unknown as Fetcher });
-  await frontFetch(get('/alice/secret-plans'), hidden.using);
-  expect(hidden.points).toEqual([]);
+it('never names a private repository or a page inside one, and calls nothing to decide', async () => {
+  const fetch = publicRepos();
+  const { using, points } = site({ PLATFORM: { fetch } as unknown as Fetcher });
+  await frontFetch(get('/alice/secret-plans'), using);
+  fetch.mockClear();
+  await frontFetch(get('/alice'), using);
+  await frontFetch(get('/alice/compiler/tree/main/src/secret-plan.md'), using);
+  expect(fetch.mock.calls.filter(([req]) => new URL(req.url).pathname.startsWith('/api/'))).toEqual([]);
+  expect(points.map((p) => p.blobs?.[1])).toEqual(['/alice', '/alice', '/alice']);
+  expect(JSON.stringify(points)).not.toContain('secret');
+  // A public repository's page asks once, for its head; the point reuses that answer.
+  await frontFetch(get('/alice/compiler'), using);
+  expect(fetch.mock.calls.filter(([req]) => new URL(req.url).pathname.startsWith('/api/'))).toHaveLength(1);
+  expect(points.at(-1)?.blobs?.[1]).toBe('/alice/compiler');
+  // An outage names nothing either.
   const down = vi.fn(async () => new Response('unavailable', { status: 503 }));
   const outage = site({ PLATFORM: { fetch: down } as unknown as Fetcher });
   await frontFetch(get('/alice/compiler'), outage.using);
-  expect(outage.points).toEqual([]);
-  const unbound = site();
-  await frontFetch(get('/alice/compiler'), unbound.using);
-  expect(unbound.points).toEqual([]);
+  expect(outage.points.map((p) => p.blobs?.[1])).toEqual(['/alice']);
 });
 
-it('spends no platform call on deciding: one-segment and deep paths ask nothing and are not counted', async () => {
-  const fetch = publicRepos();
-  const { using, points } = site({ PLATFORM: { fetch } as unknown as Fetcher });
-  await frontFetch(get('/alice'), using);
-  await frontFetch(get('/alice/compiler/tree/main/src/secret-plan.md'), using);
-  expect(points).toEqual([]);
-  expect(fetch.mock.calls.filter(([req]) => new URL(req.url).pathname.startsWith('/api/'))).toEqual([]);
-  // A public repository's page asks once, for its head; the count reuses that answer.
-  fetch.mockClear();
-  await frontFetch(get('/alice/compiler'), using);
-  expect(points).toHaveLength(1);
-  expect(fetch.mock.calls.filter(([req]) => new URL(req.url).pathname.startsWith('/api/'))).toHaveLength(1);
+it('keeps the beacon off app pages while their signed-out requests are recorded', async () => {
+  const { using, points } = site({ WEB_ANALYTICS_TOKEN: token });
+  expect(await (await frontFetch(get('/settings'), using)).text()).not.toContain('cloudflareinsights');
+  expect(points.map((p) => p.blobs?.[1])).toEqual(['/settings']);
 });
 
 it("leaves the live tests' browser out of both counts and changes nothing else about the page", async () => {
@@ -269,7 +275,7 @@ it('records an email sign-up with its landing source, never the account or addre
   expect(points).toEqual([
     {
       indexes: ['signup'],
-      blobs: ['signup', '', 'news.ycombinator.com', 'FR', 'desktop', 'hn', '', 'x'.repeat(64), 'email'],
+      blobs: ['signup', '', 'news.ycombinator.com', 'FR', 'desktop', 'hn', '', 'x'.repeat(64), 'email', ''],
       doubles: [0, 1],
     },
   ]);

@@ -39,6 +39,20 @@ Agree these before the first run. They are starting targets, not commitments.
 | Check start wait | under 60 s at the tested fleet size |
 | Monthly cost of one full run | written down before and after |
 
+## Client events budget
+
+`platform-client-events.ts` counts platform requests by client kind (admin Traffic page), behind `TRAFFIC_EVENTS`. Written before the code. Measure on against off before prod turns it on.
+
+| Measure | Target |
+|---|---|
+| Subrequests added | 0 |
+| Awaits added before the response | 0 |
+| CPU added per request | under 50 µs |
+| Land p95, 1,000-writer burst, on against off | at most 5% worse, 3 runs each |
+| Read p95 during that burst | at most 5% worse |
+| Data points per request | at most 1: reads 1 in 10, everything else all |
+| Failed or missing binding | no response changes |
+
 ## Stages
 
 Stop a stage at the first of: errors above 1%, p95 over 3× its target, or a Cloudflare limit error. Record what broke.

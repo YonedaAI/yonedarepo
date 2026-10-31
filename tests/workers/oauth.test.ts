@@ -492,6 +492,7 @@ it('records a provider sign-up once, with the landing source carried through the
     '',
     'blaunch',
     'github',
+    '',
   ]);
   expect(JSON.stringify(points)).not.toMatch(/octo/i);
   // Signing in again to the same account is not a sign-up.

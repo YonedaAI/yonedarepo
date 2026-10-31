@@ -11,6 +11,7 @@ import { oauthRoute } from './oauth';
 import { GIT_PATH, legacyRedirect } from './readable-paths';
 import { isSeoFile, seoFile } from './seo-files';
 import { recordPageView } from './site-events';
+import { sitePing } from './site-ping';
 import type { Env } from './types';
 import { withWebAnalytics } from './web-analytics';
 import { publicOrigin, websitePage } from './website-metadata';
@@ -41,6 +42,7 @@ export async function frontFetch(req: Request, env: Env): Promise<Response> {
     recordPageView(req, page, canonical, env);
     return withWebAnalytics(req, page, env);
   }
+  if (url.pathname === '/api/e') return sitePing(req, env);
   if (url.pathname.startsWith('/api/v1/'))
     return env.PLATFORM
       ? env.PLATFORM.fetch(req)

@@ -4,6 +4,7 @@ import { App } from './App';
 import { AppErrorBoundary, reloadAfterStaleChunk } from './components/AppErrorBoundary';
 import { applyTheme, readTheme } from './features/shell/theme';
 import { rememberLanding, tabStorage } from './features/site/landingSource';
+import { sendPagePing } from './features/site/pagePing';
 import './styles.css';
 
 // Vite reports a failed dynamic import of a replaced chunk after a deploy.
@@ -32,3 +33,13 @@ createRoot(root).render(
     </AppErrorBoundary>
   </StrictMode>,
 );
+
+// Once per page load, after it: a scanner that never runs JavaScript sends nothing.
+const ping = () =>
+  sendPagePing({
+    location: window.location,
+    referrer: document.referrer,
+    sendBeacon: (url, data) => navigator.sendBeacon(url, data),
+  });
+if (document.readyState === 'complete') ping();
+else window.addEventListener('load', ping, { once: true });
