@@ -148,24 +148,38 @@ describe('sign-in methods in settings', () => {
       }),
     );
 
-  it('never offers to unlink the last way to sign in', () => {
+  it('never offers to disconnect the last way to sign in, and says why', () => {
     expect(canUnlink({ identities: [github], password: false })).toBe(false);
     expect(canUnlink({ identities: [github], password: true })).toBe(true);
     expect(canUnlink({ identities: [github, google], password: false })).toBe(true);
     const only = list([github], false);
     expect(only).toMatch(
-      /aria-label="Unlink GitHub"[^>]*disabled=""|disabled=""[^>]*aria-label="Unlink GitHub"/,
+      /aria-label="Disconnect GitHub"[^>]*disabled=""|disabled=""[^>]*aria-label="Disconnect GitHub"/,
     );
-    expect(only).toContain('This is your only way to sign in');
-    expect(only).toContain('Link Google');
+    expect(only).toContain('title="The only way to sign in to this account"');
+    expect(only).toContain('>Only way to sign in<');
+    expect(only).toContain('o@example.com');
+    expect(only).toContain('Not connected');
+    expect(only).toContain('aria-label="Connect Google"');
     const both = list([github, google], false);
     expect(both).not.toContain('disabled=""');
-    expect(both).not.toContain('Link ');
+    expect(both).not.toContain('>Connect<');
+    expect(both).not.toContain('Not connected');
+    expect(both).not.toContain('Only way to sign in');
   });
 
-  it('offers only configured providers for linking', () => {
-    expect(list([], true, ['github'])).toContain('Link GitHub');
-    expect(list([], true, ['github'])).not.toContain('Link Google');
+  it('draws a row per provider, with no table', () => {
+    const rows = list([google], true);
+    expect(rows).not.toContain('<table');
+    expect(rows.match(/class="settings-row"/g)).toHaveLength(2);
+    expect(rows.indexOf('GitHub')).toBeLessThan(rows.indexOf('Google'));
+  });
+
+  it('offers only configured providers for connecting', () => {
+    expect(list([], true, ['github'])).toContain('aria-label="Connect GitHub"');
+    expect(list([], true, ['github'])).not.toContain('Google');
+    // A linked provider stays listed once it is no longer offered, so it can be disconnected.
+    expect(list([github], true, [])).toContain('aria-label="Disconnect GitHub"');
     expect(list([], true, [])).toContain('This account uses a password');
   });
 });

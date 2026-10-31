@@ -1,6 +1,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { patScopesSchema } from '../../../../shared/contracts/pat-scopes';
 import { CloneButton } from './CodeParts';
 import { AgentConnectHelp, ConnectPanel } from './ConnectPanel';
 import {
@@ -8,13 +9,19 @@ import {
   claudeMcpJson,
   cloneCommand,
   codexToml,
+  DEFAULT_PAT_SCOPES,
+  DEVICE_PAT_SCOPES,
   expiresIn,
   httpsCloneCommand,
+  installCommand,
+  installOs,
   isUserCode,
   loginCommand,
   mcpUrl,
   normalizeUserCode,
+  PAT_SCOPES,
   scopeList,
+  windowsInstallCommand,
 } from './connect';
 import { forgetRepoNames, rememberRepoName } from './repoNames';
 import { formatSourceRoute, parseSourceRoute } from './sourceRoute';
@@ -51,7 +58,7 @@ describe('the Clone menu', () => {
       );
       expect(html).toContain(`Run once: <code>yoneda login --origin ${api}</code>`);
       expect(html).toContain('then pull/push use your login');
-      expect(html).toContain('href="/settings#personal-tokens"');
+      expect(html).toContain('href="/settings/tokens"');
       expect(html).toContain('Settings → Personal tokens');
       const order = copyBlocks(html).map(([label]) => label);
       expect(order.slice(0, 2)).toEqual([
@@ -106,6 +113,24 @@ describe('connect snippets', () => {
       ['Claude Code: install the plugin', '/plugin install yoneda@yonedarepo'],
     ]);
   });
+  it('offers every scope the platform knows, SSH keys ticked only for a CLI login', () => {
+    expect(PAT_SCOPES.map((s) => s.scope)).toEqual(patScopesSchema.enum);
+    expect(DEFAULT_PAT_SCOPES).not.toContain('account:ssh-keys');
+    expect(DEVICE_PAT_SCOPES).toEqual([...DEFAULT_PAT_SCOPES, 'account:ssh-keys']);
+  });
+  it('gives Windows its own one-line install, from the site not the API', () => {
+    expect(installCommand(api)).toBe('curl -fsSL https://dev.yonedarepo.com/install.sh | sh');
+    expect(windowsInstallCommand(api)).toBe('irm https://dev.yonedarepo.com/install.ps1 | iex');
+  });
+  it('picks the operating system from the browser', () => {
+    const win = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0';
+    const mac = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Safari/605.1';
+    const linux = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131.0';
+    expect(installOs(win)).toBe('windows');
+    expect(installOs(mac)).toBe('unix');
+    expect(installOs(linux)).toBe('unix');
+    expect(installOs(undefined)).toBe('unix');
+  });
   it('uses the configured API origin, else the page origin, without a trailing slash', () => {
     expect(apiOrigin('https://dev.yonedarepo.com', `${api}/`)).toBe(api);
     expect(apiOrigin('https://dev.yonedarepo.com', '  ')).toBe('https://dev.yonedarepo.com');
@@ -152,7 +177,7 @@ describe('connect snippets', () => {
 describe('settings, connect and device routes', () => {
   it('round-trips the views', () => {
     for (const route of [
-      { view: 'settings' } as const,
+      { view: 'settings', section: 'general' } as const,
       { view: 'repo-settings', repo, section: 'connect' } as const,
       { view: 'device', code: 'BCDF-GHJK' } as const,
       { view: 'device', code: '' } as const,
@@ -160,13 +185,16 @@ describe('settings, connect and device routes', () => {
       const [path, search = ''] = formatSourceRoute(route).split('?');
       expect(parseSourceRoute(path, search ? `?${search}` : '')).toEqual(route);
     }
-    expect(formatSourceRoute({ view: 'settings' })).toBe('/settings');
+    expect(formatSourceRoute({ view: 'settings', section: 'general' })).toBe('/settings');
     expect(formatSourceRoute({ view: 'repo-settings', repo, section: 'connect' })).toBe(
       `/source/${repo}/settings/connect`,
     );
     expect(formatSourceRoute({ view: 'device', code: 'BCDF-GHJK' })).toBe('/device?code=BCDF-GHJK');
     // Older addresses still open the page that replaced them.
-    expect(parseSourceRoute('/source/tokens', '')).toEqual({ view: 'settings' });
+    expect(parseSourceRoute('/source/tokens', '')).toEqual({
+      view: 'settings',
+      section: 'tokens',
+    });
     expect(parseSourceRoute(`/source/${repo}/connect`, '')).toEqual({
       view: 'repo-settings',
       repo,

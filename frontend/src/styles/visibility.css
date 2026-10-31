@@ -9,19 +9,11 @@
   border-radius: 999px;
   background: var(--success-soft);
   color: var(--success);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 500;
   line-height: 1.5;
   vertical-align: middle;
   white-space: nowrap;
-}
-.rail-repo-public {
-  margin-left: auto;
-  color: var(--success);
-  font-size: 10px;
-}
-.rail-repo-shared + .rail-repo-public {
-  margin-left: 6px;
 }
 /* New repository: two radio cards, Private first (the default). */
 .visibility-choice {
@@ -93,7 +85,7 @@
   max-width: 640px;
 }
 .repo-not-found h1 {
-  font-size: 22px;
+  font-size: var(--text-3xl);
   margin: 8px 0;
 }
 .repo-not-found .source-actions {

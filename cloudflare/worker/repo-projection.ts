@@ -16,6 +16,16 @@ export async function dispatchProjection(env: Env, repo: string) {
   await env.PLATFORM_QUEUE.send({ v: 1, kind: 'platform_project', repo_id: repo, job_id: 'refs' });
 }
 
+/** Asks for a deleted repository's object store and platform objects to be purged. */
+export async function dispatchPurge(env: Env, repo: string) {
+  await env.PLATFORM_QUEUE.send({
+    v: 1,
+    repo_id: repo,
+    job_id: `purge-${repo}`,
+    kind: 'platform_purge',
+  });
+}
+
 /** Asks for a drain of the authority's object outbox, or of commit shard `shard`'s. */
 export async function dispatchObjects(env: Env, repo: string, shard?: number) {
   await env.PLATFORM_QUEUE.send({

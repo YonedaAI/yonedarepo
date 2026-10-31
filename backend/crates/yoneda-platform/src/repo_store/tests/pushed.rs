@@ -5,7 +5,7 @@
 use super::*;
 use yoneda_core::git_object::{ObjectId, Signature, TzOffset};
 
-fn pushed(parent: &str, tree: &str, message: &str) -> (String, Value) {
+pub(super) fn pushed(parent: &str, tree: &str, message: &str) -> (String, Value) {
     let who = Signature {
         name: "Dev".into(),
         email: "dev@example.com".into(),
@@ -26,7 +26,7 @@ fn pushed(parent: &str, tree: &str, message: &str) -> (String, Value) {
     (id, item)
 }
 
-fn record(h: &Harness, who: &str, commits: Value) -> yoneda_core::Result<Value> {
+pub(super) fn record(h: &Harness, who: &str, commits: Value) -> yoneda_core::Result<Value> {
     h.run(
         who,
         json!({ "op": "repo_record_pushed", "commits": commits }),

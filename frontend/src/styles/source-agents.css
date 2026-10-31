@@ -7,7 +7,7 @@
   align-items: center;
   min-height: 30px;
   padding: 4px 12px;
-  font-size: 13px;
+  font-size: var(--text-md);
   color: var(--text);
   background: var(--surface);
 }
@@ -46,7 +46,7 @@
   field-sizing: content;
   padding: 3px 8px;
   min-height: 28px;
-  font-size: 13px;
+  font-size: var(--text-md);
   width: auto;
 }
 .agent-sessions,
@@ -86,14 +86,14 @@
 .agent-sessions .source-meta,
 .agent-contracts .source-meta,
 .agent-list .source-meta {
-  font-size: 12px;
+  font-size: var(--text-sm);
   overflow-wrap: anywhere;
 }
 .agent-commits {
   display: flex;
   flex-wrap: wrap;
   gap: 4px 12px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 .agent-commits a,
@@ -127,7 +127,7 @@
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
   gap: 6px 16px;
-  font-size: 13px;
+  font-size: var(--text-md);
   margin: 12px 0 20px;
 }
 .agent-facts dt {
@@ -140,7 +140,7 @@
 .agent-reads li,
 .agent-related li {
   padding: 3px 0;
-  font-size: 13px;
+  font-size: var(--text-md);
   overflow-wrap: anywhere;
 }
 .agent-contracts summary {
@@ -187,7 +187,7 @@
   max-height: 480px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: var(--text-mono-dense);
 }
 .agent-turns {
   list-style: none;
@@ -203,7 +203,7 @@
 }
 .agent-turn-role {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
   font-weight: 500;
 }
 .agent-turn-text {
@@ -231,7 +231,7 @@
 }
 .agent-turn-tool h4 {
   margin: 8px 0 4px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 .agent-turn-failed {
@@ -253,7 +253,7 @@
 .agent-subtitle {
   margin: -6px 0 14px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .agent-head .agent-subtitle {
   margin: 4px 0 0;
@@ -279,7 +279,7 @@
   gap: 2px 12px;
   margin: 0;
   padding: 0;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .memory-anchors li a {
   color: var(--blue-text);

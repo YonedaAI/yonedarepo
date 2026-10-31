@@ -1,9 +1,10 @@
-// Settings → Billing (`/settings#billing`): the account's agent credit, its card (brand and
-// last four only; adding or replacing one is Stripe's own page), the automatic top-up switch
-// and rule, how to stop paying, the top-ups it charged, and agent usage by repository and
-// agent. Platform features are free; only managed agent runs use credit.
+// Settings → Billing (`/settings/billing`), a headed card each: the account's agent credit, its
+// payment method (brand and last four only; adding or replacing one is Stripe's own page), the
+// automatic top-up switch and rule, how to stop paying, the top-ups it charged, and agent usage
+// by repository and agent. Platform features are free; only managed agent runs use credit.
 import { useState } from 'react';
 import type { BillingState } from '../../../../shared/managed-agents';
+import { SettingsRow, SettingsSection } from '../../components/SettingsSection';
 import { loadState } from '../agents/agentParts';
 import { agentName, billingPath, formatCost, usageTotals } from '../agents/agentsModel';
 import {
@@ -32,9 +33,10 @@ export function BillingSettings({ workspace }: { workspace: string }) {
   const card = billing?.payment_method ?? null;
   const saving = useCardReturn(card, loaded.loading, loaded.reload);
   const totals = billing ? usageTotals(billing) : null;
+  // Without a card, the promotion's prompt holds Add a card; Payment method holds it otherwise.
+  const offerPromo = !card && billing?.credit.promo.granted === false;
   return (
-    <section id="billing" aria-labelledby="billing-heading" className="billing-settings">
-      <h2 id="billing-heading">Billing</h2>
+    <>
       <p className="source-meta">
         Every platform feature is free. Managed agent runs are paid for from your credit: their
         model calls at the provider&apos;s rate plus 30%, and their container time.
@@ -48,142 +50,156 @@ export function BillingSettings({ workspace }: { workspace: string }) {
                 {topUpFailedText(billing.credit.top_up_failed)}
               </div>
             )}
-            <div className="billing-cards">
-              <div className="agent-card">
-                <h3>Credit balance</h3>
-                <p className="managed-figure">{formatCost(billing.credit.balance_usd)}</p>
-                <p className="source-meta">
-                  {formatCost(billing.credit.granted_usd)} of credit added so far, including the
-                  starting credit added when you set up your first agent.{' '}
-                  {formatCost(billing.credit.used_usd)} used.
-                </p>
-                {!billing.credit.promo.granted && (
-                  <p className="source-meta">
-                    Adding a card unlocks {formatCost(billing.credit.promo.usd)} of promotional
-                    credit.
-                  </p>
-                )}
-                {billing.credit.paused && (
+            <SettingsSection id="credit" title="Credit balance">
+              <SettingsRow
+                title={
+                  <span className="managed-figure">{formatCost(billing.credit.balance_usd)}</span>
+                }
+                detail={
+                  <>
+                    {formatCost(billing.credit.granted_usd)} of credit added so far, including the
+                    starting credit added when you set up your first agent.{' '}
+                    {formatCost(billing.credit.used_usd)} used.
+                  </>
+                }
+              />
+              {billing.credit.paused && (
+                <div className="settings-block">
                   <p className="managed-paused" role="status">
                     The credit is used up, so agent runs are paused until credit is added.
                   </p>
-                )}
-              </div>
-              <div className="agent-card">
-                <h3>Payment method</h3>
-                {card ? (
-                  <>
-                    <p className="billing-card-label">{cardLabel(card)}</p>
-                    <AutoTopUpSwitch
-                      workspace={workspace}
-                      enabled={billing.auto_top_up.enabled}
-                      onChange={(next) => setOverride(next)}
-                    />
-                    <p className="source-meta">
-                      {billing.auto_top_up.enabled
+                </div>
+              )}
+              {offerPromo && (
+                <SettingsRow
+                  title={`Adding a card unlocks ${formatCost(billing.credit.promo.usd)} of promotional credit.`}
+                  action={<AddCardButton workspace={workspace} billing={billing.billing} />}
+                />
+              )}
+            </SettingsSection>
+            <SettingsSection id="payment" title="Payment method">
+              {card ? (
+                <>
+                  <SettingsRow
+                    title={<span className="billing-card-label">{cardLabel(card)}</span>}
+                    action={
+                      <>
+                        <AddCardButton
+                          workspace={workspace}
+                          billing={billing.billing}
+                          label="Replace card"
+                          className="quiet"
+                        />
+                        <RemoveCardButton
+                          workspace={workspace}
+                          card={card}
+                          onRemoved={(next) => setOverride(next)}
+                        />
+                      </>
+                    }
+                  />
+                  <SettingsRow
+                    title={
+                      <AutoTopUpSwitch
+                        workspace={workspace}
+                        enabled={billing.auto_top_up.enabled}
+                        onChange={(next) => setOverride(next)}
+                      />
+                    }
+                    detail={
+                      billing.auto_top_up.enabled
                         ? `${topUpRule(billing.auto_top_up)}.`
-                        : 'Your card is not charged. Runs pause when your credit runs out.'}
-                    </p>
-                    <div className="agent-card-actions">
-                      <AddCardButton
-                        workspace={workspace}
-                        billing={billing.billing}
-                        label="Replace card"
-                        className="quiet"
-                      />
-                      <RemoveCardButton
-                        workspace={workspace}
-                        card={card}
-                        onRemoved={(next) => setOverride(next)}
-                      />
-                    </div>
-                    <p className="source-meta">
-                      To stop all charges: turn off automatic top-up or remove your card. Agents
-                      keep running on your remaining credit, then pause. Pause or archive agents on
-                      the Agents page.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p>No card on file.</p>
-                    <p className="source-meta">
-                      {billing.billing === 'stripe'
-                        ? 'Add a card to unlock the promotional credit, create your own agents and top up automatically.'
-                        : 'Card billing is coming. Until then, the agents YonedaRepo maintains run on your starting credit.'}
-                    </p>
-                    <div className="agent-card-actions">
-                      <AddCardButton workspace={workspace} billing={billing.billing} />
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
-            <h3>Top-ups</h3>
-            {billing.top_ups.length ? (
-              <div className="source-table-wrap">
-                <table className="source-table">
-                  <thead>
-                    <tr>
-                      <th>Date (UTC)</th>
-                      <th>Amount</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {billing.top_ups.map((t) => (
-                      <tr key={t.id}>
-                        <td>{topUpDay(t.created_at)}</td>
-                        <td>{formatCost(t.amount_usd)}</td>
-                        <td>
-                          <span className={`chip run-${topUpTone(t.status)}`}>
-                            {topUpStatusLabel(t.status)}
-                          </span>
-                          {t.error && <span className="source-meta"> {t.error}</span>}
-                        </td>
+                        : 'Your card is not charged. Runs pause when your credit runs out.'
+                    }
+                  />
+                  <p className="source-meta settings-block">
+                    To stop all charges: turn off automatic top-up or remove your card. Agents keep
+                    running on your remaining credit, then pause. Pause or archive agents on the
+                    Agents page.
+                  </p>
+                </>
+              ) : (
+                <SettingsRow
+                  title="No card on file."
+                  detail={
+                    billing.billing === 'stripe'
+                      ? 'Add a card to unlock the promotional credit, create your own agents and top up automatically.'
+                      : 'Card billing is coming. Until then, the agents YonedaRepo maintains run on your starting credit.'
+                  }
+                  action={
+                    !offerPromo && <AddCardButton workspace={workspace} billing={billing.billing} />
+                  }
+                />
+              )}
+            </SettingsSection>
+            <SettingsSection id="top-ups" title="Top-ups">
+              {billing.top_ups.length ? (
+                <div className="source-table-wrap">
+                  <table className="source-table">
+                    <thead>
+                      <tr>
+                        <th>Date (UTC)</th>
+                        <th>Amount</th>
+                        <th>Status</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="source-empty">No top-ups yet.</p>
-            )}
-            <h3>Usage by repository and agent</h3>
-            {billing.usage.length ? (
-              <div className="source-table-wrap">
-                <table className="source-table">
-                  <thead>
-                    <tr>
-                      <th>Repository</th>
-                      <th>Agent</th>
-                      <th>Runs</th>
-                      <th>Cost</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {billing.usage.map((u) => (
-                      <tr key={`${u.repo}:${u.agent}`}>
-                        <td>{u.repo_name}</td>
-                        <td>{agentName(u.agent)}</td>
-                        <td>{u.runs}</td>
-                        <td>{formatCost(u.cost_usd)}</td>
+                    </thead>
+                    <tbody>
+                      {billing.top_ups.map((t) => (
+                        <tr key={t.id}>
+                          <td>{topUpDay(t.created_at)}</td>
+                          <td>{formatCost(t.amount_usd)}</td>
+                          <td>
+                            <span className={`chip run-${topUpTone(t.status)}`}>
+                              {topUpStatusLabel(t.status)}
+                            </span>
+                            {t.error && <span className="source-meta"> {t.error}</span>}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="source-empty">No top-ups yet.</p>
+              )}
+            </SettingsSection>
+            <SettingsSection id="usage" title="Usage by repository and agent">
+              {billing.usage.length ? (
+                <div className="source-table-wrap">
+                  <table className="source-table">
+                    <thead>
+                      <tr>
+                        <th>Repository</th>
+                        <th>Agent</th>
+                        <th>Runs</th>
+                        <th>Cost</th>
                       </tr>
-                    ))}
-                    <tr>
-                      <th scope="row" colSpan={2}>
-                        Total
-                      </th>
-                      <td>{totals.runs}</td>
-                      <td>{formatCost(totals.cost_usd)}</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="source-empty">No agent has run yet, so nothing has been used.</p>
-            )}
+                    </thead>
+                    <tbody>
+                      {billing.usage.map((u) => (
+                        <tr key={`${u.repo}:${u.agent}`}>
+                          <td>{u.repo_name}</td>
+                          <td>{agentName(u.agent)}</td>
+                          <td>{u.runs}</td>
+                          <td>{formatCost(u.cost_usd)}</td>
+                        </tr>
+                      ))}
+                      <tr>
+                        <th scope="row" colSpan={2}>
+                          Total
+                        </th>
+                        <td>{totals.runs}</td>
+                        <td>{formatCost(totals.cost_usd)}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="source-empty">No agent has run yet, so nothing has been used.</p>
+              )}
+            </SettingsSection>
           </>
         ))}
-    </section>
+    </>
   );
 }

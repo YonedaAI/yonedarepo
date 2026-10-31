@@ -15,7 +15,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { b64, sleep, until } from './client.mjs';
 import { accountSettings, settle } from './browser-flow.mjs';
-import { atRepo, repoPath } from './repo-urls.mjs';
+import { atRepo, openRepo, repoPath } from './repo-urls.mjs';
 
 const author = { name: 'Browser gate', email: 'kit@yonedarepo.invalid' };
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -39,7 +39,7 @@ export const railOrg = (page, org) =>
 export async function releasePages(page, { account, repo: { id, name }, shot }, m) {
   const api = (path) => `/api/v1/repos/${id}${path}`;
   const tabs = page.getByRole('navigation', { name: 'Repository' });
-  await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).click();
+  await openRepo(page, name);
   await atRepo(page, account, id);
   await tabs.getByRole('link', { name: 'Releases' }).click();
   await atRepo(page, account, id, `/releases`);
@@ -107,7 +107,7 @@ export async function releasePages(page, { account, repo: { id, name }, shot }, 
 
 /** "Fork" under a new name; then "Open change" on a fork branch, targeting the parent. */
 export async function forkPages(page, { account, repo: { id, name }, shot, cleanup }, m) {
-  await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).click();
+  await openRepo(page, name);
   await atRepo(page, account, id);
   await page.locator('.repo-head').getByRole('button', { name: 'Fork', exact: true }).click();
   const form = page.getByRole('form', { name: 'Fork this repository' });
@@ -175,11 +175,12 @@ export async function orgPages(page, { account, member, shot, cleanup }, m) {
     const done = await account.raw('DELETE', `/api/v1/orgs/${org}?confirm=${org}`);
     assert.ok(done.ok, `Delete org: ${done.status} ${done.body?.error?.code ?? ''}`);
   });
-  await accountSettings(page);
-  const orgs = page.getByRole('region', { name: 'Organizations', exact: true });
-  await orgs.getByLabel('New organization').fill(org);
-  await orgs.getByRole('button', { name: 'Create organization' }).click();
-  await settle(page.getByRole('heading', { level: 1, name: org }), [orgs.getByRole('alert')], { timeoutMs: 30_000, what: 'creating the organization' });
+  await accountSettings(page, 'Organizations');
+  await page.getByRole('button', { name: 'Create organization' }).click();
+  const createOrg = page.getByRole('dialog', { name: 'Create organization' });
+  await createOrg.getByLabel('Organization name').fill(org);
+  await createOrg.getByRole('button', { name: 'Create organization' }).click();
+  await settle(page.getByRole('heading', { level: 1, name: org }), [createOrg.getByRole('alert')], { timeoutMs: 30_000, what: 'creating the organization' });
   await page.waitForURL(`**/orgs/${org}`);
   await see(page.getByText(/You are an owner/), 'the org page naming the creator an owner');
   await see(railOrg(page, org), 'the org in the sidebar');
@@ -204,6 +205,7 @@ export async function orgPages(page, { account, member, shot, cleanup }, m) {
   // New repository, owned by the org through the owner picker.
   const name = `kit-org-repo-${Date.now()}`;
   await page.getByRole('button', { name: 'New repository' }).first().click();
+  await page.getByRole('menuitem', { name: 'Create repository' }).click();
   const dialog = page.getByRole('dialog', { name: 'New repository' });
   await dialog.getByLabel('Owner').selectOption({ label: `${org} (organization)` }).catch((e) => {
     throw new Error(`the Owner picker does not offer ${org}: ${e.message.split('\n')[0]}`);

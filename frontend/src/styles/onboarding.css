@@ -25,7 +25,7 @@
 }
 .welcome-story > p {
   max-width: 50ch;
-  font-size: 16px;
+  font-size: var(--text-lg);
   line-height: 1.6;
 }
 .intent-symbol {
@@ -47,12 +47,12 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--text-2);
 }
 .welcome-note,
 .welcome-story .welcome-note {
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 .account-panel {
@@ -69,12 +69,12 @@ details.account-panel[open] {
   padding: 20px 24px 24px;
 }
 .account-panel h2 {
-  font-size: 22px;
+  font-size: var(--text-2xl);
   letter-spacing: -0.6px;
   margin: 18px 0 8px;
 }
 .account-panel > p {
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .account-panel form {
   display: grid;
@@ -87,7 +87,7 @@ details.account-panel[open] {
 }
 .account-panel :where(form) > p {
   margin: -6px 0 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .run-actions {
   display: flex;
@@ -112,7 +112,7 @@ details.account-panel[open] {
   flex: 1;
   background: transparent;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
   min-height: 34px;
 }
 .account-tabs button.selected {
@@ -132,7 +132,7 @@ details.account-panel[open] {
 }
 .workspace-start > p {
   max-width: 55ch;
-  font-size: 16px;
+  font-size: var(--text-lg);
 }
 .workspace-start-actions {
   display: flex;
@@ -155,7 +155,7 @@ details.account-panel[open] {
 }
 .workspace-loading h1 {
   margin: 0 auto 16px;
-  font-size: 26px;
+  font-size: var(--text-3xl);
 }
 .session-ended {
   display: grid;
@@ -170,7 +170,7 @@ details.account-panel[open] {
 }
 .session-ended h1 {
   margin: 0;
-  font-size: 26px;
+  font-size: var(--text-3xl);
 }
 .session-ended h1:focus {
   outline: none;
@@ -212,7 +212,7 @@ button.oauth-button svg {
   align-items: center;
   gap: 12px;
   margin: 18px 0 0;
-  font-size: 12px;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 .oauth-divider::before,
@@ -223,7 +223,7 @@ button.oauth-button svg {
 }
 .oauth-terms {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-md);
   color: var(--muted);
 }
 .oauth-terms a {
@@ -233,9 +233,4 @@ button.oauth-button svg {
 }
 .oauth-terms a:hover {
   color: var(--text);
-}
-.oauth-method {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
 }

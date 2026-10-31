@@ -16,8 +16,8 @@
 }
 .home-greeting h1 {
   margin: 0;
-  font-size: 26px;
-  font-weight: 500;
+  font-size: var(--text-3xl);
+  font-weight: var(--weight-heading);
   letter-spacing: -0.4px;
 }
 .home-greeting p {
@@ -30,7 +30,7 @@
   border: 1px solid var(--line);
   border-radius: 8px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .home-section {
   display: flex;
@@ -46,7 +46,7 @@
 .home-label {
   margin: 0;
   color: var(--faint);
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 1.2px;
   text-transform: uppercase;
@@ -73,7 +73,7 @@
 }
 .stat-label {
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 1.1px;
   text-transform: uppercase;
@@ -84,16 +84,16 @@
   font-variant-numeric: tabular-nums;
 }
 .stat-value {
-  font-size: 30px;
+  font-size: var(--text-4xl);
   line-height: 1.1;
 }
 .stat-caption {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .home-total {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .home-total .stat-number {
   color: var(--text);
@@ -104,7 +104,7 @@
 .home-empty {
   margin: 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .contribution-chart {
   overflow-x: auto;
@@ -122,7 +122,7 @@
 .chart-axis {
   fill: var(--faint);
   font-family: var(--mono);
-  font-size: 9px;
+  font-size: var(--text-xs);
 }
 .chart-bubble {
   fill: var(--bubble);
@@ -170,14 +170,14 @@
 .home-session-text small,
 .home-sessions time {
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .home-sessions time {
   flex: none;
 }
 .repo-filter {
   width: 100%;
-  margin: 0 0 12px;
+  margin: 20px 0 12px;
 }
 .repo-context {
   display: flex;
@@ -186,7 +186,7 @@
 }
 .repo-context h2 {
   margin: 0 0 8px;
-  font-size: 15px;
+  font-size: var(--text-xl);
 }
 .repo-context section > p {
   margin: 0 0 6px;
@@ -224,6 +224,6 @@
     flex-direction: column;
   }
   .stat-value {
-    font-size: 24px;
+    font-size: var(--text-3xl);
   }
 }

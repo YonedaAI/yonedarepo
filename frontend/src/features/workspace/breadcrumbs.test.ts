@@ -1,5 +1,5 @@
 // The top bar's breadcrumbs for a route: the account (home, or the org's page), Agents, then
-// the page itself, with every crumb but the last a link.
+// the page itself, with every crumb but the last a link; account settings are Account / page.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
@@ -52,8 +52,20 @@ describe('breadcrumbs', () => {
 
   it('starts at Agents when the account is not known yet, and has none for other pages', () => {
     expect(breadcrumbs({ view: 'agent-runs' }, undefined)).toEqual([agents, { label: 'Runs' }]);
-    expect(breadcrumbs({ view: 'settings' }, 'ada')).toBeNull();
+    expect(breadcrumbs({ view: 'repositories' }, 'ada')).toBeNull();
     expect(breadcrumbs({ view: 'home' }, 'ada')).toBeNull();
+  });
+
+  it('heads every account settings page with Account, the way back to General', () => {
+    const account = { label: 'Account', to: { view: 'settings', section: 'general' } };
+    for (const [section, label] of [
+      ['general', 'General'],
+      ['billing', 'Billing'],
+      ['tokens', 'Tokens'],
+      ['ssh-keys', 'SSH keys'],
+      ['organizations', 'Organizations'],
+    ] as const)
+      expect(breadcrumbs({ view: 'settings', section }, 'ada')).toEqual([account, { label }]);
   });
 });
 

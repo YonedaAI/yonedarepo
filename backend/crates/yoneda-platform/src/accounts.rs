@@ -1,6 +1,6 @@
 //! The account authority (one WorkspaceAuthority Durable Object per account, one per
 //! device login code, SSH key fingerprint, OAuth sign-in attempt and identity claim): sign-in
-//! sessions, provider identities, the account's picture, personal access tokens, SSH keys and device login. Only trusted Worker adapters can call these commands.
+//! sessions, provider identities, the account's picture, favorite repositories, personal access tokens, SSH keys and device login. Only trusted Worker adapters can call these commands.
 use crate::storage::{SqlStore, bad, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
@@ -14,6 +14,9 @@ mod device;
 mod email;
 #[cfg(test)]
 mod email_tests;
+mod favorites;
+#[cfg(test)]
+mod favorites_tests;
 mod handles;
 #[cfg(test)]
 mod handles_tests;
@@ -27,6 +30,9 @@ mod orgs;
 mod orgs_tests;
 mod repo_names;
 mod signin;
+#[cfg(test)]
+mod ssh_key_token_tests;
+mod ssh_key_tokens;
 mod ssh_keys;
 #[cfg(test)]
 mod ssh_keys_tests;
@@ -38,6 +44,7 @@ mod token_origin_tests;
 mod tokens;
 #[cfg(test)]
 mod tokens_tests;
+pub(crate) use tokens::{SCOPES, SSH_KEYS_SCOPE};
 const TABLE: &str = "workspace_records";
 
 /// Apply the account schema and execute a command in one synchronous transaction.
@@ -58,6 +65,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             op::AccountOp::Device(op) => device::handle(&db, &command, op, now),
             op::AccountOp::Identity(op) => identities::handle(&db, &command, op, now),
             op::AccountOp::Avatar(op) => avatars::handle(&db, &command, op, now),
+            op::AccountOp::Favorite(op) => favorites::handle(&db, &command, op, now),
             op::AccountOp::OAuth(op) => oauth_flows::handle(&db, &command, op, now),
             op::AccountOp::Org(op) => orgs::handle(&db, &command, op, now),
             op::AccountOp::OrgMember(op) => orgs::member(&db, &command, op, now),
@@ -66,7 +74,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
     }))
 }
 /// Digest-pinned, forward-only account migrations (version, SQL), applied in order.
-const MIGRATIONS: [(i64, &str); 9] = [
+const MIGRATIONS: [(i64, &str); 10] = [
     (1, include_str!("accounts/migrations/0001_accounts.sql")),
     (
         2,
@@ -82,6 +90,7 @@ const MIGRATIONS: [(i64, &str); 9] = [
         include_str!("accounts/migrations/0008_handles_repo_names.sql"),
     ),
     (9, include_str!("accounts/migrations/0009_avatars.sql")),
+    (10, include_str!("accounts/migrations/0010_favorites.sql")),
 ];
 fn migrate<S: SqlStore>(store: &S) -> Result<()> {
     store.query("CREATE TABLE IF NOT EXISTS workspace_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)", &[])?;

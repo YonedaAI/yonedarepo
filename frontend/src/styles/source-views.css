@@ -15,7 +15,7 @@
   gap: 10px;
 }
 .source-subsystem h2 {
-  font-size: 16px;
+  font-size: var(--text-xl);
   margin: 0;
 }
 .source-subsystem h2 button.quiet {
@@ -35,10 +35,10 @@
   border: 1px solid var(--warn-line);
   border-radius: 999px;
   padding: 1px 8px;
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .source-section {
-  font-size: 16px;
+  font-size: var(--text-xl);
   margin: 20px 0 8px;
 }
 .source-details {

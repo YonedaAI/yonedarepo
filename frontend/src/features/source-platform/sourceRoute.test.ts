@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import type { AccountSection } from '../account-settings/settingsRoute';
+import { agentsReturnPath, RETURN_PATH } from '../agents/billingModel';
 import { patchRows } from './patchRows';
 import { forgetRepoNames, rememberRepoName, repoBase } from './repoNames';
 import {
   formatSourceRoute,
   parseSourceRoute,
+  routeRepo,
   routeTab,
   type SourceRoute,
   tabRoute,
@@ -17,9 +20,19 @@ describe('source routes', () => {
     const routes: SourceRoute[] = [
       { view: 'home' },
       { view: 'explore' },
-      { view: 'settings' },
+      { view: 'settings', section: 'general' },
+      { view: 'settings', section: 'billing' },
+      { view: 'settings', section: 'billing', cardAdded: true },
+      { view: 'settings', section: 'tokens' },
+      { view: 'settings', section: 'ssh-keys' },
+      { view: 'settings', section: 'organizations' },
       { view: 'files', repo, path: '', ref: 'main' },
       { view: 'files', repo, path: 'src/a b.rs', ref: 'feature/x', at: 3 },
+      { view: 'files', repo, path: 'src/a.rs', ref: 'main', line: 12 },
+      { view: 'global-search' },
+      { view: 'global-search', q: 'retry with' },
+      { view: 'global-search', q: 'retry', within: repo },
+      { view: 'global-search', within: repo },
       { view: 'history', repo, ref: 'main' },
       { view: 'history', repo, ref: 'dev' },
       { view: 'commit', repo, commit: sha },
@@ -53,6 +66,95 @@ describe('source routes', () => {
     expect(parseSourceRoute('/source/explore/x', '')).toEqual({ view: 'home' });
     expect(routeTab({ view: 'explore' })).toBeUndefined();
   });
+  it('keeps a Search page search in its address, never as a repository route', () => {
+    expect(formatSourceRoute({ view: 'global-search' })).toBe('/search');
+    expect(formatSourceRoute({ view: 'global-search', q: 'a b', within: repo })).toBe(
+      `/search?q=a+b&repo=${repo}`,
+    );
+    expect(parseSourceRoute('/search/', '?q=')).toEqual({ view: 'global-search' });
+    // A value that is no repository id is dropped, not sent to the API.
+    expect(parseSourceRoute('/search', '?q=x&repo=nope')).toEqual({
+      view: 'global-search',
+      q: 'x',
+    });
+    // The shell's repository pages stay out of it.
+    expect(routeRepo({ view: 'global-search', within: repo })).toBeUndefined();
+    expect(routeTab({ view: 'global-search' })).toBeUndefined();
+    // A repository's own Search page keeps its address.
+    expect(parseSourceRoute(`/source/${repo}/search`, '?q=x')).toEqual({
+      view: 'search',
+      repo,
+      query: 'x',
+    });
+  });
+  it('addresses a line of a file, and nothing else', () => {
+    const at = (search: string) => parseSourceRoute(`/source/${repo}/files/a.rs`, search);
+    expect(at('?line=12')).toMatchObject({ line: 12 });
+    for (const bad of ['0', '-1', '1.5', 'x', '99999999999999999999'])
+      expect(at(`?line=${bad}`)).not.toHaveProperty('line');
+    expect(parseSourceRoute(`/source/${repo}`, '?line=12')).not.toHaveProperty('line');
+  });
+  it('gives each account settings page its own address', () => {
+    const settings = (section: AccountSection) => ({ view: 'settings', section }) as const;
+    expect(formatSourceRoute(settings('general'))).toBe('/settings');
+    expect(formatSourceRoute(settings('billing'))).toBe('/settings/billing');
+    expect(formatSourceRoute(settings('tokens'))).toBe('/settings/tokens');
+    expect(formatSourceRoute(settings('ssh-keys'))).toBe('/settings/ssh-keys');
+    expect(formatSourceRoute(settings('organizations'))).toBe('/settings/organizations');
+    expect(parseSourceRoute('/settings/billing/', '')).toEqual(settings('billing'));
+    // Nothing else nests under it, and `general` has the bare address.
+    expect(parseSourceRoute('/settings/nope', '')).toEqual(settings('general'));
+    expect(parseSourceRoute('/settings/billing/x', '')).toEqual(settings('general'));
+    expect(parseSourceRoute('/settings/general', '')).toEqual(settings('general'));
+  });
+  it('sends the old single page anchors to the page that holds them', () => {
+    const at = (hash: string) => parseSourceRoute('/settings', '', hash);
+    expect(at('#billing')).toEqual({ view: 'settings', section: 'billing' });
+    expect(at('#personal-tokens')).toEqual({ view: 'settings', section: 'tokens' });
+    expect(at('#ssh-keys')).toEqual({ view: 'settings', section: 'ssh-keys' });
+    expect(at('#organizations')).toEqual({ view: 'settings', section: 'organizations' });
+    expect(at('#account')).toEqual({ view: 'settings', section: 'general' });
+    expect(at('#nope')).toEqual({ view: 'settings', section: 'general' });
+    // An anchor means nothing elsewhere.
+    expect(parseSourceRoute('/settings/tokens', '', '#billing')).toEqual({
+      view: 'settings',
+      section: 'tokens',
+    });
+    expect(parseSourceRoute('/repositories', '', '#billing')).toEqual({ view: 'repositories' });
+  });
+  it('keeps the Stripe return flag, old or new, so the page can wait for the card', () => {
+    const added = { view: 'settings', section: 'billing', cardAdded: true };
+    expect(parseSourceRoute('/settings', '?billing=added')).toEqual(added);
+    expect(parseSourceRoute('/settings/billing', '?billing=added')).toEqual(added);
+    expect(formatSourceRoute(parseSourceRoute('/settings', '?billing=added'))).toBe(RETURN_PATH);
+    // Only Billing takes it, and only with that value.
+    expect(parseSourceRoute('/settings/tokens', '?billing=added')).toEqual({
+      view: 'settings',
+      section: 'tokens',
+    });
+    expect(parseSourceRoute('/settings', '?billing=other')).toEqual({
+      view: 'settings',
+      section: 'general',
+    });
+  });
+  it("keeps the Stripe return flag on the Agents page, an org's too", () => {
+    const at = (search: string) => parseSourceRoute('/agents', search);
+    expect(at('?billing=added')).toEqual({ view: 'agents-home', cardAdded: true });
+    expect(at('?workspace=acme&billing=added')).toEqual({
+      view: 'agents-home',
+      workspace: 'acme',
+      cardAdded: true,
+    });
+    // The shell rewrites to this address: what Stripe was given must survive it.
+    for (const path of [agentsReturnPath(), agentsReturnPath('acme')]) {
+      const url = new URL(path, 'https://x');
+      expect(formatSourceRoute(parseSourceRoute(url.pathname, url.search))).toBe(path);
+    }
+    expect(formatSourceRoute(at('?billing=added&workspace=acme'))).toBe(agentsReturnPath('acme'));
+    // Only the Agents page takes it, and only with that value.
+    expect(at('?billing=other')).toEqual({ view: 'agents-home' });
+    expect(parseSourceRoute('/agents/runs', '?billing=added')).toEqual({ view: 'agent-runs' });
+  });
   it('falls back safely on malformed input', () => {
     expect(parseSourceRoute('/source/not-a-repo', '')).toEqual({ view: 'home' });
     expect(parseSourceRoute('/source', '')).toEqual({ view: 'home' });
@@ -85,7 +187,7 @@ describe('repository pages', () => {
     expect(routeTab({ view: 'repo-settings', repo, section: 'tokens' })).toBe('settings');
     expect(routeTab({ view: 'change', repo, number: 3 })).toBe('changes');
     expect(routeTab({ view: 'context', repo })).toBe('context');
-    expect(routeTab({ view: 'settings' })).toBeUndefined();
+    expect(routeTab({ view: 'settings', section: 'general' })).toBeUndefined();
     expect(routeTab({ view: 'repositories' })).toBeUndefined();
     for (const tab of [
       'overview',

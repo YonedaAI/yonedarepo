@@ -1,8 +1,17 @@
 // The shell's sidebar rows and its New repository dialog (seed, request body and labels).
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
-import { createBody, NewRepositoryDialog, readmeSeed } from './NewRepositoryDialog';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { SourceApiError } from '../source-platform/sourceApi';
+import {
+  CREATE_BUSY,
+  CREATE_SLOW,
+  createBody,
+  createFailure,
+  NewRepositoryDialog,
+  readmeSeed,
+  requestCreate,
+} from './NewRepositoryDialog';
 import { matchRows, repoRows, rowLabel } from './repoRows';
 
 const a = 'r0000000000000000000a';
@@ -60,6 +69,30 @@ describe('new repository request', () => {
       visibility: 'private',
     });
     expect(createBody('demo', '', '')).not.toHaveProperty('owner');
+  });
+});
+
+describe('a create that stalls or fails', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it('gives up on a request the server never answers, saying what to do', async () => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      (_, init) =>
+        new Promise((_resolve, reject) =>
+          init?.signal?.addEventListener('abort', () => reject(init.signal?.reason)),
+        ),
+    );
+    const failure = await requestCreate(createBody('demo', '', ''), 5).catch((e) => e);
+    expect(createFailure(failure)).toBe(CREATE_SLOW);
+  });
+
+  it('says a retryable refusal can be tried again, and keeps every other message', () => {
+    const refused = (status: number, code: string, message: string) =>
+      new SourceApiError(code, message, status);
+    expect(createFailure(refused(503, 'CREATE_UNAVAILABLE', 'raw'))).toBe(CREATE_BUSY);
+    expect(createFailure(refused(503, 'OVERLOADED', 'raw'))).toBe(CREATE_BUSY);
+    expect(createFailure(refused(409, 'NAME_TAKEN', 'Taken'))).toBe('Taken');
+    expect(createFailure(refused(500, 'INTERNAL', 'Reference: abc'))).toBe('Reference: abc');
   });
 });
 

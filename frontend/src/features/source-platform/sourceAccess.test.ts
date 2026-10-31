@@ -11,9 +11,10 @@ vi.mock('./useSource', () => ({ useSource: () => state.value }));
 
 const { ConnectPanel, DeleteRepository } = await import('./ConnectPanel');
 const { DeviceOutcome, DevicePage, deviceFailure } = await import('./DevicePage');
-const { PatTable } = await import('./PersonalTokens');
+const { PatDialog, PatTable } = await import('./PersonalTokens');
 const { RepoTokenTable, RepoTokens } = await import('./RepoTokens');
-const { AccountSettings, CliTable } = await import('../account-settings/AccountSettings');
+const { AccountSettings } = await import('../account-settings/AccountSettings');
+const { CliTable } = await import('../account-settings/TokenSettings');
 const { SourceApiError } = await import('./sourceApi');
 
 const html = (type: any, props: any) => renderToStaticMarkup(createElement(type, props));
@@ -70,11 +71,12 @@ describe('personal access tokens', () => {
     });
     expect(open).toContain('<td>all</td>');
   });
-  it('settles the account page: signed out, then CLIs apart from personal tokens', () => {
+  it('settles the Tokens page: signed out, then CLIs apart from personal tokens', () => {
     const identity = { role: 'user', username: 'ada' };
-    expect(html(AccountSettings, { identity, repos })).toContain('Loading signed-in CLIs');
+    const section = 'tokens';
+    expect(html(AccountSettings, { identity, repos, section })).toContain('Loading signed-in CLIs');
     state.value = signedOut;
-    expect(html(AccountSettings, { identity, repos })).toContain('You are signed out');
+    expect(html(AccountSettings, { identity, repos, section })).toContain('You are signed out');
     // A login is known by its origin (with the host it ran on), not by its name.
     const cli = {
       ...pat,
@@ -87,22 +89,107 @@ describe('personal access tokens', () => {
     const older = { ...cli, id: 'pat_old', host: null };
     const named = { ...pat, id: 'pat_named', name: 'yoneda-cli' };
     state.value = loaded({ data: { tokens: [pat, cli, older, named] } });
-    const page = html(AccountSettings, { identity, repos });
-    expect(page).toContain('<code>ada</code>');
+    const page = html(AccountSettings, { identity, repos, section });
+    expect(page).toContain('<h1 id="settings-title">Tokens</h1>');
     expect(page).toContain('Signed-in CLIs');
+    // Personal tokens first: an old `/settings#personal-tokens` link lands on them.
+    expect(page.indexOf('Personal access tokens')).toBeLessThan(page.indexOf('Signed-in CLIs'));
     expect(page).toContain('<td>ada-mbp</td>');
     expect(page).toContain('<td>unknown host</td>');
     expect(page.match(/>Sign out<\/button>/g)).toHaveLength(2);
     // A website token that happens to share the name stays with the personal tokens.
     expect(page).toContain('aria-label="Revoke yoneda-cli"');
     expect(page).toContain('<td>ci</td>');
-    // Default scopes are read, write and land; admin is opt-in.
-    expect(page.match(/type="checkbox" checked=""/g)?.length).toBeGreaterThanOrEqual(3);
-    expect(page).toContain('All repositories, including ones created later.');
-    expect(page).toContain('<option value="30" selected="">30 days</option>');
+    // The form waits behind Create token.
+    expect(page).toContain('>Create token</button>');
+    expect(page).not.toContain('<form');
     expect(
       html(CliTable, { tokens: loaded({ data: { tokens: [] } }), onSignOut: () => {}, now }),
     ).toContain('No CLI is signed in');
+  });
+  it('creates a token in a dialog: default scopes, all repositories, thirty days', () => {
+    const form = html(PatDialog, { repos, orgs: [], onCreated: () => {}, onClose: () => {} });
+    expect(form).toContain('aria-label="Create a personal access token"');
+    // Default scopes are read, write and land; admin is opt-in.
+    expect(form.match(/type="checkbox" checked=""/g)?.length).toBeGreaterThanOrEqual(3);
+    expect(form).toContain('All repositories, including ones created later.');
+    expect(form).toContain('<option value="30" selected="">30 days</option>');
+  });
+});
+
+describe('the account settings pages', () => {
+  const identity = { role: 'user', username: 'ada' };
+  const page = (section: string, over: object = {}) =>
+    html(AccountSettings, { identity, repos, section, ...over });
+
+  it('holds each section on its own page, under its own title', () => {
+    state.value = loaded({ data: { tokens: [] } });
+    const general = page('general');
+    expect(general).toContain('<h1 id="settings-title">General</h1>');
+    for (const title of ['Profile', 'Email', 'Connected accounts', 'Appearance', 'Billing'])
+      expect(general).toContain(`>${title}</h2>`);
+    expect(general).toContain('>ada<');
+    expect(general).toContain('href="/settings/billing"');
+    expect(general).toContain('>Manage billing<');
+    expect(general).not.toContain('Personal access tokens');
+    expect(general).not.toContain('Credit balance');
+    const titled = {
+      billing: 'Billing',
+      tokens: 'Tokens',
+      'ssh-keys': 'SSH keys',
+      organizations: 'Organizations',
+    };
+    for (const [section, title] of Object.entries(titled)) {
+      const other = page(section, { orgs: loaded({ data: { orgs: [] } }), navigate: () => {} });
+      expect(other).toContain(`<h1 id="settings-title">${title}</h1>`);
+      expect(other).not.toContain('Connected accounts');
+      // One name per page: a page of one section does not repeat its title.
+      expect(other).not.toContain(`>${title}</h2>`);
+    }
+  });
+
+  it('puts each heading above its card, and leaves no form open', () => {
+    state.value = loaded({ data: { tokens: [], keys: [] } });
+    for (const section of ['general', 'tokens', 'ssh-keys']) {
+      const shown = page(section);
+      expect(shown).toMatch(
+        /<section class="settings-section"[^>]*><h2[^>]*>[^<]+<\/h2><div class="settings-card">/,
+      );
+      expect(shown).not.toContain('<form');
+      expect(shown).not.toContain('<textarea');
+    }
+  });
+
+  it('gives Organizations a description and its create button, once signed in', () => {
+    const props = { orgs: loaded({ data: { orgs: [] } }), navigate: () => {} };
+    const orgsPage = html(AccountSettings, {
+      identity,
+      repos,
+      section: 'organizations',
+      ...props,
+    });
+    const head = orgsPage.slice(orgsPage.indexOf('<header'), orgsPage.indexOf('</header>'));
+    expect(head).toContain('Organizations own repositories together');
+    expect(head).toContain('>Create organization</button>');
+    expect(orgsPage).toContain('No organizations yet');
+    const out = html(AccountSettings, {
+      identity: null,
+      repos,
+      section: 'organizations',
+      ...props,
+    });
+    expect(out).not.toContain('Create organization');
+    // Other pages have no such action.
+    expect(page('tokens')).not.toContain('Create organization');
+  });
+
+  it('waits for the session, then asks a signed-out visitor to sign in', () => {
+    expect(page('billing', { identity: null, loading: true })).toContain('Loading your account');
+    const out = page('billing', { identity: null });
+    expect(out).toContain('Sign in to see it.');
+    expect(out).not.toContain('Loading');
+    // The theme is this browser's, so General still offers it.
+    expect(page('general', { identity: null })).toContain('Appearance');
   });
 });
 
@@ -153,6 +240,15 @@ describe('device approval', () => {
     expect(page).not.toMatch(/<button type="submit" disabled="">Approve/);
     const empty = html(DevicePage, { code: '' });
     expect(empty).toMatch(/<button type="submit" disabled="">Approve/);
+  });
+  it('ticks SSH keys for a CLI login and says plainly what it does', () => {
+    state.value = loaded({ data: { repos } });
+    const page = html(DevicePage, { code: 'BCDF-GHJK' });
+    expect(page).toMatch(
+      /checked=""\/>SSH keys<span[^>]*> \(add and remove keys on your account\)/,
+    );
+    expect(page).toMatch(/checked=""\/>Read/);
+    expect(page).toMatch(/type="checkbox"\/>Admin/);
   });
   it('explains unknown and expired codes, and the outcome', () => {
     expect(deviceFailure(new SourceApiError('NOT_FOUND', 'x', 404))).toMatch(

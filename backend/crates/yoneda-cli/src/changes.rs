@@ -229,6 +229,7 @@ mod tests {
         std::fs::create_dir_all(repo.path("new"))
             .and_then(|()| std::fs::rename(repo.path("old/name.txt"), repo.path("new/name.txt")))
             .map_err(|e| Error::new(e.to_string()))?;
+        #[cfg(unix)]
         repo.chmod("run.sh", 0o755)?;
         let binary: Vec<u8> = (0..=255u8).chain([0, 0, 255]).collect();
         repo.write("img/logo.bin", &binary)?;

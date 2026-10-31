@@ -122,6 +122,7 @@
         "Resend (EMAIL_FROM, EMAIL_CONTACT). Its key is RESEND_API_KEY, the Secrets Store secret",
         "Resend-Yoneda, read at send time; without it email is off and sign-up never depends on it.",
         "The sending domain has open and click tracking off in Resend.",
+        "Contact support (platform-support.ts) emails SUPPORT_EMAIL through Resend from EMAIL_FROM; without it the form answers 503.",
         "Site traffic (worker/platform-site-traffic.ts) reads the front Worker's yonedarepo_prod_site_events dataset (SITE_EVENTS_DATASET)",
         "through the Analytics Engine SQL API: CF_ACCOUNT_ID plus the optional secret ANALYTICS_READ_TOKEN (Account Analytics Read).",
         "Without the token, traffic reports are unavailable and nothing else changes.",
@@ -191,7 +192,8 @@
           "CF_ACCOUNT_ID": "{account_id}",
           "SITE_EVENTS_DATASET": "yonedarepo_prod_site_events",
           "ADMIN_ACCOUNTS": "magnetonio",
-          "ADMIN_NOTIFY_EMAIL": ""
+          "ADMIN_NOTIFY_EMAIL": "",
+          "SUPPORT_EMAIL": "support@yonedalabs.ai"
         },
         "secrets_store_secrets": [
           {
@@ -616,7 +618,7 @@
         "page, its /auth/<provider>/* routes answer 404. Callback URLs: https://yonedarepo.com/auth/github/callback",
         "and https://yonedarepo.com/auth/google/callback. Deploy uploads them when the secrets file has them.",
         "/api/managed is proxied to the managed agents Worker (MANAGED service binding, deployed first).",
-        "/install.sh and /downloads/* (worker/downloads.ts): the CLI installer and releases and the public Claude Code marketplace, from the DOWNLOADS bucket that cargo xtask downloads stages and uploads.",
+        "/install.sh, /install.ps1 and /downloads/* (worker/downloads.ts): the CLI installers and releases and the public Claude Code marketplace, from the DOWNLOADS bucket that cargo xtask downloads stages and uploads.",
         "Site analytics (worker/site-events.ts): one cookieless SITE_EVENTS data point per public HTML page view and per sign-up,",
         "into the Analytics Engine dataset yonedarepo_prod_site_events (created on first write; infra plan/prune do not track it;",
         "underscores, not hyphens: the dataset is a table name in Analytics Engine SQL).",

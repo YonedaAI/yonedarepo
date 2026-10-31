@@ -2,6 +2,7 @@
 @import "./styles/base.css";
 @import "./styles/shell.css";
 @import "./styles/shell-popovers.css";
+@import "./styles/repo-picker.css";
 @import "./styles/home.css";
 @import "./styles/account-menu.css";
 @import "./styles/onboarding.css";
@@ -13,6 +14,7 @@
 @import "./styles/source-search.css";
 @import "./styles/source-views.css";
 @import "./styles/one-app.css";
+@import "./styles/account-settings.css";
 @import "./styles/source-changes.css";
 @import "./styles/source-agents.css";
 @import "./styles/managed-agents.css";

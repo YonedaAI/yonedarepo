@@ -1,5 +1,6 @@
-// The code results of a search: each file with its match count and its first lines, the
-// matched spans marked, and the rest of its lines behind "+N more in this file".
+// The code results of a search: each file with its match count and its first lines, each
+// line number linked to that line of the file, the matched spans marked, and the rest of its
+// lines behind "+N more in this file".
 import { useState } from 'react';
 import { type CodeHit, highlight, type Skipped, shownLines } from './searchModel';
 import { formatSourceRoute, type SourceRoute } from './sourceRoute';
@@ -21,7 +22,7 @@ function CodeFile({
   const [expanded, setExpanded] = useState(false);
   const { lines, more } = shownLines(hit, expanded);
   const hidden = hit.lines.length - lines.length;
-  const fileRoute: SourceRoute = { view: 'files', repo, path: hit.path, ref: 'main' };
+  const fileRoute = { view: 'files', repo, path: hit.path, ref: 'main' } as const;
   const open = () => onNavigate(fileRoute);
   return (
     <article className="source-file search-file">
@@ -44,7 +45,17 @@ function CodeFile({
         <pre>
           {lines.map((l) => (
             <div key={l.line}>
-              <span className="search-line-number">{String(l.line).padStart(5)}</span>
+              <a
+                className="search-line-number"
+                aria-label={`Line ${l.line}`}
+                href={formatSourceRoute({ ...fileRoute, line: l.line })}
+                onClick={(e) => {
+                  e.preventDefault();
+                  onNavigate({ ...fileRoute, line: l.line });
+                }}
+              >
+                {String(l.line).padStart(5)}
+              </a>
               {'  '}
               {highlight(l.text, l.ranges).map((piece, i) =>
                 piece.mark ? (

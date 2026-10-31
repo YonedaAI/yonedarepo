@@ -81,6 +81,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SshOp, now: i64) -> Res
                 "UPDATE account_ssh_keys SET removed_at=? WHERE id=?",
                 &[json!(now), json!(id)],
             )?;
+            super::ssh_key_tokens::forget(db, &id)?;
             audit(db, "ssh_key.removed", now, json!({"id":id}))?;
             Ok(json!({"id":id,"deleted":true,"fingerprint":row["fingerprint"]}))
         }
@@ -129,6 +130,7 @@ fn claim<S: SqlStore>(db: &S, fingerprint: &str) -> Result<Option<Value>> {
 
 fn add<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     account(db)?;
+    let token = super::tokens::acting(db, c, now)?;
     let id = key_id(c)?;
     let title = string(c, "title")?;
     if title.trim().is_empty() || title.chars().count() > 64 || title.chars().any(char::is_control)
@@ -153,11 +155,14 @@ fn add<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         "INSERT INTO account_ssh_keys(id,title,fingerprint,algorithm,public_key,created_at) VALUES(?,?,?,?,?,?)",
         &[json!(id), json!(title), json!(key.fingerprint), json!(key.algorithm), json!(key.line), json!(now)],
     )?;
+    if let Some(token) = &token {
+        super::ssh_key_tokens::record(db, &id, token)?;
+    }
     audit(
         db,
         "ssh_key.added",
         now,
-        json!({"id":id,"fingerprint":key.fingerprint}),
+        json!({"id":id,"fingerprint":key.fingerprint,"token":token}),
     )?;
     let row = db.query("SELECT * FROM account_ssh_keys WHERE id=?", &[json!(id)])?;
     Ok(public(
@@ -172,7 +177,7 @@ pub(super) fn remove_all<S: SqlStore>(db: &S, now: i64) -> Result<()> {
         "UPDATE account_ssh_keys SET removed_at=? WHERE removed_at IS NULL",
         &[json!(now)],
     )?;
-    Ok(())
+    super::ssh_key_tokens::forget_all(db)
 }
 
 fn public(row: &Value) -> Value {

@@ -1,4 +1,5 @@
-//! `yoneda ssh-key …`: the account's SSH public keys (account-level, like `org`).
+//! `yoneda ssh-key …` (the account's SSH public keys, account-level like `org`) and
+//! `yoneda ssh setup`.
 use super::parser::{Parsed, split_sub};
 use crate::command::{Command, SshKeyCommand};
 use crate::error::{Error, Result};
@@ -26,6 +27,18 @@ pub fn ssh_key(rest: &[String]) -> Result<Command> {
     Ok(Command::SshKey {
         origin: p.flag("origin"),
         command,
+    })
+}
+
+pub fn ssh(rest: &[String]) -> Result<Command> {
+    let (sub, rest) = split_sub(rest, "ssh")?;
+    if sub != "setup" {
+        return Err(Error::usage(format!("unknown ssh command {sub:?}")));
+    }
+    let p = Parsed::new(&rest, &["origin"], &[])?;
+    p.at_most(0)?;
+    Ok(Command::SshSetup {
+        origin: p.flag("origin"),
     })
 }
 
@@ -76,6 +89,19 @@ mod tests {
                 },
             })
         );
+    }
+
+    #[test]
+    fn parses_ssh_setup() {
+        assert_eq!(
+            parsed("ssh setup --origin https://x").ok(),
+            Some(Command::SshSetup {
+                origin: Some("https://x".into()),
+            })
+        );
+        for line in ["ssh", "ssh keys", "ssh setup extra", "ssh setup --title x"] {
+            assert!(parsed(line).is_err(), "{line} should be refused");
+        }
     }
 
     #[test]

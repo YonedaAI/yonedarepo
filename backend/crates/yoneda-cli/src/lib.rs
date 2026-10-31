@@ -48,6 +48,7 @@ pub mod setup;
 mod snapshot;
 mod sparse;
 mod ssh_key_cmd;
+mod ssh_setup;
 mod state;
 mod status;
 mod sync;

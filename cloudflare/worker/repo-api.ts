@@ -11,9 +11,11 @@ import { error, readJson, response } from './http';
 import { accountActivity } from './platform-account-activity';
 import { adminRoute } from './platform-admin';
 import { isOwnAvatar, ownAvatar, publicAvatarName, servePublicAvatar } from './platform-avatars';
+import { favoritesRoute } from './platform-favorites';
 import { orgAccess } from './platform-org-access';
 import { orgsRoute } from './platform-orgs';
 import { sshKeyRoute } from './platform-ssh-keys';
+import { SUPPORT_BODY_LIMIT, supportRoute } from './platform-support';
 import { deviceApprove, deviceCode, deviceToken, tokenRoute } from './platform-tokens';
 import { deleteRepository, listRepositories } from './repo-admin';
 import { agentRecords } from './repo-agent-records';
@@ -32,7 +34,7 @@ import { downloadBlob } from './repo-object-download';
 import { streamObjects } from './repo-object-fetch';
 import { parseStore } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
-import { verifyPat } from './repo-pat';
+import { refuseOutsideKeys, verifyPat } from './repo-pat';
 import { pathOf, profile, renameRepository, resolvePath, withPath } from './repo-paths';
 import { forViewer } from './repo-principal-privacy';
 import {
@@ -78,7 +80,15 @@ const STATUS: Record<string, number> = {
   GONE: 404,
   RATE_LIMITED: 429,
   OVERLOADED: 503,
+  // A create that failed and took back what it did: the same request can be repeated.
+  CREATE_UNAVAILABLE: 503,
+  // Contact support: no address to reply to, email not set up here, or the send failed.
+  NO_EMAIL: 409,
+  SUPPORT_UNAVAILABLE: 503,
+  SUPPORT_SEND_FAILED: 503,
   INTERNAL: 500,
+  // The account keeps as many favorites as it may (platform-favorites.ts).
+  FAVORITES_FULL: 409,
   // An operator suspended the account (platform-admin.ts): its credentials are refused.
   ACCOUNT_SUSPENDED: 403,
   // Withheld by the repository's owner (quarantine): known, deliberately not served.
@@ -116,6 +126,7 @@ export async function credentials(req: Request, env: Env): Promise<Credentials |
   if (bearer?.startsWith('Bearer yrp_')) return { _token: bearer.slice(7) };
   if (bearer?.startsWith('Bearer ypat_')) {
     const grant = await verifyPat(env, bearer.slice(7));
+    if (grant) refuseOutsideKeys(grant, new URL(req.url).pathname);
     return grant && { _pat: grant };
   }
   const principal = await authenticateOnce(req, env);
@@ -152,6 +163,10 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return deviceApprove(env, auth, await bodyOf(req));
   if (parts[0] === 'activity' && parts.length === 1 && req.method === 'GET')
     return accountActivity(env, auth);
+  if (parts[0] === 'support' && parts.length === 1 && req.method === 'POST')
+    return supportRoute(env, auth, () => bodyOf(req, SUPPORT_BODY_LIMIT));
+  if (parts[0] === 'favorites' && parts.length <= 2)
+    return favoritesRoute(env, auth, req.method, parts[1]);
   if (parts[0] === 'admin')
     return adminRoute(env, auth, req.method, parts.slice(1), () => bodyOf(req), url.searchParams);
   if (parts[0] === 'orgs')
@@ -253,7 +268,13 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   }
   if (resource === 'import' && get) {
     await ctx.call({ op: 'repo_status' }); // read access first
-    const status = await env.PLATFORM_IMPORT.get(`import-${repo}`).then((i) => i.status());
+    const status = await env.PLATFORM_IMPORT.get(`import-${repo}`)
+      .then((i) => i.status())
+      .catch((e) => {
+        if (String(e?.message).includes('instance.not_found'))
+          throw new ApiError('NOT_FOUND', 'This repository has no import');
+        throw e;
+      });
     return { import: `import-${repo}`, ...status };
   }
   // Access changes republish main's head (begins and reads decide access from it).
@@ -469,6 +490,7 @@ function failure(e: any): Response {
     e instanceof ApiError && e.details
       ? response({ error: { code, message, details: e.details } }, status)
       : error(code, message, status);
-  if (code === 'OVERLOADED') refused.headers.set('retry-after', String(RETRY_AFTER_SECONDS));
+  if (code === 'OVERLOADED' || code === 'CREATE_UNAVAILABLE')
+    refused.headers.set('retry-after', String(RETRY_AFTER_SECONDS));
   return refused;
 }

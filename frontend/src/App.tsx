@@ -14,15 +14,19 @@ import { AgentsRoot } from './features/agents/AgentsRoot';
 import { syncAgents } from './features/agents/agentsModel';
 import { ExplorePage } from './features/explore/ExplorePage';
 import { ReadablePage } from './features/profile/ReadablePage';
+import { SearchPage } from './features/search/SearchPage';
 import { AppRail } from './features/shell/AppRail';
 import { AppSidebar } from './features/shell/AppSidebar';
 import { GettingStarted } from './features/shell/GettingStarted';
+import { GitHubImportDialog } from './features/shell/GitHubImportDialog';
 import { HomePage } from './features/shell/HomePage';
 import type { AccountActivity } from './features/shell/homeModel';
 import { type Created, NewRepositoryDialog } from './features/shell/NewRepositoryDialog';
+import { pickerShortcut, saveRecent } from './features/shell/pickerModel';
 import { RepositoriesPage } from './features/shell/RepositoriesPage';
 import { type PlatformRepo, repoRows } from './features/shell/repoRows';
 import { saveCollapsed, storedCollapsed } from './features/shell/theme';
+import { useFavorites } from './features/shell/useFavorites';
 import { type Navigate, useRoute } from './features/shell/useRoute';
 import { SiteRoot, signedInHint } from './features/site/SiteRoot';
 import { siteView } from './features/site/siteRoute';
@@ -84,6 +88,8 @@ export function App() {
     signInError && route.view !== 'settings' && route.view !== 'site' ? 'account' : null,
   );
   const [creating, setCreating] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [notice, setNotice] = useState(
     returned && 'linked' in returned
       ? `${PROVIDER_LABEL[returned.linked]} is linked: you can sign in with it now.`
@@ -114,13 +120,33 @@ export function App() {
   }, []);
   // Before anything renders a link, so repository links carry their readable address.
   for (const r of platform.data?.repos ?? []) rememberRepoName(r.id, r.owner_handle, r.name);
-  const rows = repoRows(platform.data?.repos ?? []);
+  const self = [session.identity?.username, session.identity?.handle];
+  const rows = repoRows(platform.data?.repos ?? [], self);
+  const favorites = useFavorites(session.authenticated, self);
   const rowsError = platform.error && !/Sign in/.test(platform.error) ? platform.error : '';
   const repo = routeRepo(route);
   const row = repo ? rows.find((r) => r.repo === repo) : undefined;
   const loaded = shown && shown.repo === repo ? shown : undefined;
   // The open repository answered NOT_FOUND or GONE: the shell drops its pages too.
   const gone = Boolean(repo) && repo === missing;
+  // The public site (its own pages, and `/` while signed out) renders in its own frame.
+  const site = siteView(route, session, signedInHint());
+  const opened = session.authenticated ? loaded?.repo : undefined;
+  useEffect(() => {
+    if (opened) saveRecent(opened);
+  }, [opened]);
+  // Cmd/Ctrl+K opens the picker wherever the app is on screen; the public docs keep theirs.
+  const shortcut = session.authenticated && !site;
+  useEffect(() => {
+    if (!shortcut) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (!pickerShortcut(event)) return;
+      event.preventDefault();
+      setPicking(true);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [shortcut]);
   useEffect(() => {
     if (!menuOpen) return;
     const onEscape = (event: KeyboardEvent) => {
@@ -133,6 +159,8 @@ export function App() {
     if (!session.sessionEnded) return;
     setPanel(null);
     setCreating(false);
+    setAdding(false);
+    setPicking(false);
   }, [session.sessionEnded]);
   useEffect(() => {
     if (!session.loading && !session.error) signedInHint(session.authenticated);
@@ -145,7 +173,10 @@ export function App() {
     activity.reload();
     navigate({ view: 'files', repo: result.repo, path: '', ref: 'main' });
     setCreating(false);
+    setAdding(false);
   }
+  const newOwner =
+    route.view === 'org' ? route.org : isAgentsRoute(route) ? route.workspace : undefined;
   const title =
     route.view === 'home'
       ? 'Home'
@@ -153,36 +184,37 @@ export function App() {
         ? 'Repositories'
         : route.view === 'explore'
           ? 'Explore'
-          : route.view === 'settings'
-            ? 'Settings'
-            : route.view === 'device'
-              ? 'Approve a device'
-              : route.view === 'verify-email'
-                ? 'Confirm your email'
-                : route.view === 'org'
-                  ? route.org
-                  : route.view === 'profile'
-                    ? route.handle
-                    : route.view === 'repo-name'
-                      ? route.name
-                      : isAgentsRoute(route)
-                        ? 'Agents'
-                        : route.view === 'admin'
-                          ? 'Admin'
-                          : gone
-                            ? 'Repository not found'
-                            : (row?.name ?? loaded?.name ?? repo ?? '');
+          : route.view === 'global-search'
+            ? 'Search'
+            : route.view === 'settings'
+              ? 'Settings'
+              : route.view === 'device'
+                ? 'Approve a device'
+                : route.view === 'verify-email'
+                  ? 'Confirm your email'
+                  : route.view === 'org'
+                    ? route.org
+                    : route.view === 'profile'
+                      ? route.handle
+                      : route.view === 'repo-name'
+                        ? route.name
+                        : isAgentsRoute(route)
+                          ? 'Agents'
+                          : route.view === 'admin'
+                            ? 'Admin'
+                            : gone
+                              ? 'Repository not found'
+                              : (row?.name ?? loaded?.name ?? repo ?? '');
   const activityError = activity.error && !/Sign in/.test(activity.error) ? activity.error : '';
   const refresh = () => {
     setTick((t) => t + 1);
     platform.reload();
     orgs.reload();
     activity.reload();
+    favorites.reload();
     if (isAdmin) signups.reload();
     void session.discover();
   };
-  // The public site (its own pages, and `/` while signed out) renders in its own frame.
-  const site = siteView(route, session, signedInHint());
   if (site)
     return (
       <SiteRoot
@@ -194,7 +226,10 @@ export function App() {
       />
     );
   return (
-    <div className={`app${collapsed ? ' sidebar-collapsed' : ''}${menuOpen ? ' menu-open' : ''}`}>
+    // An open picker shows the sidebar it lives in, whether collapsed or the phone menu.
+    <div
+      className={`app${collapsed && !picking ? ' sidebar-collapsed' : ''}${menuOpen || picking ? ' menu-open' : ''}`}
+    >
       <a className="skip-link" href="#workspace">
         Skip to content
       </a>
@@ -208,13 +243,23 @@ export function App() {
           setCollapsed(!collapsed);
         }}
         navigate={navigate}
-        onNew={() => setCreating(true)}
+        onNew={() => {
+          setMenuOpen(false);
+          setCreating(true);
+        }}
+        onImport={() => {
+          setMenuOpen(false);
+          setAdding(true);
+        }}
       />
       <AppSidebar
         authenticated={session.authenticated}
         loading={session.loading || platform.loading}
         rows={rows}
         rowsError={rowsError}
+        favorites={favorites}
+        picking={picking}
+        onPicking={setPicking}
         orgs={orgs.data?.orgs ?? []}
         route={route}
         missing={gone}
@@ -312,9 +357,31 @@ export function App() {
             {route.view === 'explore' && (
               <ExplorePage authenticated={session.authenticated} navigate={navigate} />
             )}
+            {route.view === 'global-search' && (
+              <SearchPage
+                key={tick}
+                route={route}
+                authenticated={session.authenticated}
+                repos={platform.data?.repos ?? []}
+                sessions={activity.data?.sessions ?? []}
+                // First reads only: a later reload keeps the search that is on the page.
+                loading={
+                  session.loading ||
+                  (session.authenticated &&
+                    ((!platform.data && !platform.error) || (!activity.data && !activity.error)))
+                }
+                reposError={rowsError}
+                onRetry={platform.reload}
+                navigate={navigate}
+                onSignIn={() => setPanel('account')}
+                onNew={() => setCreating(true)}
+              />
+            )}
             {route.view === 'settings' && (
               <AccountSettings
+                section={route.section}
                 identity={session.identity}
+                loading={session.loading}
                 repos={rows.map((r) => ({ id: r.repo, name: r.name }))}
                 orgs={orgs}
                 navigate={navigate}
@@ -358,7 +425,7 @@ export function App() {
                 navigate={navigate}
                 onDeleted={() => {
                   orgs.reload();
-                  navigate({ view: 'settings' });
+                  navigate({ view: 'settings', section: 'organizations' });
                   setNotice('Organization deleted.');
                 }}
               />
@@ -387,6 +454,7 @@ export function App() {
                 onDeleted={() => {
                   platform.reload();
                   activity.reload();
+                  favorites.reload();
                   navigate({ view: 'home' });
                   setNotice('Repository deleted.');
                 }}
@@ -394,6 +462,7 @@ export function App() {
                   // A stale sidebar entry (deleted elsewhere) drops out with the refreshed list.
                   setMissing(route.repo);
                   platform.reload();
+                  favorites.reload();
                 }}
                 onNew={() => setCreating(true)}
               />
@@ -415,15 +484,22 @@ export function App() {
         <NewRepositoryDialog
           account={session.identity?.username}
           orgs={orgs.data?.orgs ?? []}
-          initialOwner={
-            route.view === 'org' ? route.org : isAgentsRoute(route) ? route.workspace : undefined
-          }
+          initialOwner={newOwner}
           onClose={() => setCreating(false)}
           onCreated={created}
         />
       )}
+      {adding && (
+        <GitHubImportDialog
+          account={session.identity?.username}
+          orgs={orgs.data?.orgs ?? []}
+          initialOwner={newOwner}
+          onClose={() => setAdding(false)}
+          onImported={created}
+        />
+      )}
       <HandlePrompt
-        identity={creating ? null : session.identity}
+        identity={creating || adding ? null : session.identity}
         onSet={(handle) => {
           setNotice(`Your handle is ${handle}. Your profile is at /${handle}.`);
           forgetRepoNames();

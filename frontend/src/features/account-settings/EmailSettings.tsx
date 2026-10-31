@@ -1,55 +1,48 @@
-// Settings → Email: the account's contact email and whether it is confirmed, a new
-// confirmation link, and changing the address (which clears the confirmation and sends a link
-// to the new one). The Worker limits links and changes to five a day.
+// Settings → Email: the account's contact email (used only for account email, never shown to
+// others) and whether it is confirmed, a new confirmation link, and changing the address in a
+// dialog (which clears the confirmation and sends a link to the new one). The Worker limits
+// links and changes to five a day.
 import { type FormEvent, useCallback, useEffect, useState } from 'react';
+import { Dialog } from '../../components/Dialog';
+import { SettingsRow, SettingsSection } from '../../components/SettingsSection';
 import { api } from '../../lib/api';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 
 export type EmailStatus = { email: string | null; verified: boolean };
 
-export function EmailAddress({
-  status,
+/** Sends the confirmation link: `onChange` answers why it failed, or '' once it went. */
+export function EmailDialog({
+  current,
   busy,
-  onResend,
   onChange,
+  onClose,
 }: {
-  status: EmailStatus;
+  current: string | null;
   busy: boolean;
-  onResend: () => void;
-  onChange: (email: string) => void;
+  onChange: (email: string) => Promise<string>;
+  onClose: () => void;
 }) {
   const [draft, setDraft] = useState('');
-  const submit = (event: FormEvent) => {
+  const [error, setError] = useState('');
+  const submit = async (event: FormEvent) => {
     event.preventDefault();
-    onChange(draft);
+    setError('');
+    const problem = await onChange(draft);
+    if (problem) setError(problem);
+    else onClose();
   };
   return (
-    <>
-      <dl className="settings-facts">
-        <dt>Email</dt>
-        <dd>
-          {status.email ? (
-            <>
-              <code>{status.email}</code> ·{' '}
-              <span className="source-meta">{status.verified ? 'Confirmed' : 'Not confirmed'}</span>
-            </>
-          ) : (
-            'No email address'
-          )}
-        </dd>
-      </dl>
-      {status.email && !status.verified && (
-        <p className="source-meta">
-          We sent a confirmation link to this address.{' '}
-          <button type="button" className="quiet" disabled={busy} onClick={onResend}>
-            Resend confirmation
-          </button>
-        </p>
-      )}
-      <form onSubmit={submit} className="source-token-form">
-        <label className="source-field">
-          {status.email ? 'Change email' : 'Add email'}
+    <Dialog
+      title={current ? 'Change email' : 'Add email'}
+      onClose={onClose}
+      locked={busy}
+      initialFocus="#account-email"
+    >
+      <form onSubmit={submit}>
+        <label htmlFor="account-email">
+          Email
           <input
+            id="account-email"
             type="email"
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
@@ -60,12 +53,61 @@ export function EmailAddress({
             placeholder="you@example.com"
           />
         </label>
-        <div className="source-actions">
+        {error && <Failure error={error} />}
+        <div className="run-actions">
           <button type="submit" disabled={busy || !draft.trim()}>
             Send confirmation link
           </button>
         </div>
       </form>
+    </Dialog>
+  );
+}
+
+export function EmailAddress({
+  status,
+  busy,
+  onResend,
+  onChange,
+}: {
+  status: EmailStatus;
+  busy: boolean;
+  onResend: () => void;
+  onChange: (email: string) => Promise<string>;
+}) {
+  const [changing, setChanging] = useState(false);
+  return (
+    <>
+      <SettingsRow
+        title={status.email ?? 'No email address'}
+        detail={
+          status.email
+            ? status.verified
+              ? 'Confirmed'
+              : 'Not confirmed. We sent a confirmation link to this address.'
+            : 'Only used for account email, never shown to others.'
+        }
+        action={
+          <>
+            {status.email && !status.verified && (
+              <button type="button" className="quiet" disabled={busy} onClick={onResend}>
+                Resend confirmation
+              </button>
+            )}
+            <button type="button" className="quiet" onClick={() => setChanging(true)}>
+              {status.email ? 'Change' : 'Add'}
+            </button>
+          </>
+        }
+      />
+      {changing && (
+        <EmailDialog
+          current={status.email}
+          busy={busy}
+          onChange={onChange}
+          onClose={() => setChanging(false)}
+        />
+      )}
     </>
   );
 }
@@ -81,6 +123,7 @@ export function EmailSettings() {
     api<EmailStatus>('auth/email').then(setStatus, (e) => setLoadError((e as Error).message));
   }, []);
   useEffect(load, [load]);
+  /** Why it failed, or '' once it went. */
   const act = async (path: string, body: unknown, done: string) => {
     setBusy(true);
     setError('');
@@ -89,35 +132,41 @@ export function EmailSettings() {
       await api(path, body);
       setNotice(done);
       load();
+      return '';
     } catch (e) {
-      setError((e as Error).message);
+      return (e as Error).message;
     } finally {
       setBusy(false);
     }
   };
   return (
-    <section aria-labelledby="email-heading">
-      <h2 id="email-heading">Email</h2>
-      <p className="source-meta">
-        Used only for account email (the welcome and confirmation emails). It is never shown to
-        others.
-      </p>
+    <SettingsSection id="email" title="Email">
       {loadError ? (
-        <Failure error={loadError} onRetry={load} />
+        <div className="settings-block">
+          <Failure error={loadError} onRetry={load} />
+        </div>
       ) : !status ? (
-        <Loading what="your email address" />
+        <div className="settings-block">
+          <Loading what="your email address" />
+        </div>
       ) : (
         <EmailAddress
           status={status}
           busy={busy}
-          onResend={() => void act('auth/email/resend', {}, 'Confirmation link sent.')}
+          onResend={() => {
+            void act('auth/email/resend', {}, 'Confirmation link sent.').then(setError);
+          }}
           onChange={(email) =>
-            void act('auth/email', { email }, `Confirmation link sent to ${email.trim()}.`)
+            act('auth/email', { email }, `Confirmation link sent to ${email.trim()}.`)
           }
         />
       )}
-      {notice && <p role="status">{notice}</p>}
-      {error && <Failure error={error} />}
-    </section>
+      {(notice || error) && (
+        <div className="settings-block">
+          {notice && <p role="status">{notice}</p>}
+          {error && <Failure error={error} />}
+        </div>
+      )}
+    </SettingsSection>
   );
 }

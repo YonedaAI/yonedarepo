@@ -11,7 +11,9 @@ yoneda search backoff --in code,commits --limit 20
 yoneda grep "fn backoff" --path src/ -w            # code only
 ```
 
-The **Search** page, `GET /api/v1/repos/<id>/search?q=` and MCP `git_grep` run the same search.
+A repository's **Search** page, `GET /api/v1/repos/<id>/search?q=` and MCP `git_grep` run the same search.
+
+The app's **Search** page (`/search`, the rail's Search icon) runs it in the repository you pick. With **All repositories** your browser asks up to 25 of your repositories, the most recently active first, and groups the answers by repository; pick one to search past that limit. A search there runs when you press Enter, `/` puts the cursor in the box, and Esc clears it.
 
 - **Code** results are ranked: files where the query is a whole word (`test`, not `latest`) first, then files whose path matches, then files where it only appears inside words; within each, more matches first, then by path. `-w` (`word=true`, the **Whole words** toggle) leaves out matches inside words, and `-i` ignores case.
 - **Memories, commits, sessions and changes** are the records holding every word of the query, ranked by where the words appear, then newest first.
