@@ -11,7 +11,7 @@
 //! - [`SqlStore::transaction`] runs its action atomically and rolls back on `Err`; the action
 //!   is synchronous, so no network I/O can happen while it holds the transaction.
 //! - Statements bind at most [`MAX_BOUND_PARAMETERS`] values.
-//! - SQL failures come back as [`yoneda_core::Error`] values.
+//! - SQL failures come back as [`yoneda_core::Error`] values ([`sql_error`]).
 use serde_json::Value;
 use yoneda_core::{Error, Result};
 
@@ -31,6 +31,23 @@ pub trait SqlStore: Clone + 'static {
     /// The bytes the database occupies now, as Durable Object SQLite counts them against
     /// its size limit (pages in use, free pages included).
     fn database_size(&self) -> Result<u64>;
+}
+
+/// A failed SQL statement or commit: `REPO_FULL` when the database refused it for its size
+/// (Durable Object SQLite's limit, or SQLite's `SQLITE_FULL`), `DATABASE` otherwise.
+pub fn sql_error(message: impl Into<String>) -> Error {
+    const FULL: [&str; 3] = [
+        "Exceeded the maximum database size",
+        "database or disk is full",
+        "SQLITE_FULL",
+    ];
+    let message = message.into();
+    let code = if FULL.iter().any(|m| message.contains(m)) {
+        "REPO_FULL"
+    } else {
+        "DATABASE"
+    };
+    Error::new(code, message)
 }
 
 pub fn bad(message: &str) -> Error {

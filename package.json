@@ -10,6 +10,7 @@
     "test": "vitest run --config tests/workers/vitest.config.ts",
     "test:runtime": "node --test tests/runtime/*.test.mjs",
     "test:platform": "vitest run --config tests/platform/vitest.config.ts",
+    "test:storage-full": "vitest run --config tests/storage-full/vitest.config.ts",
     "test:superfan": "vitest run --config tests/superfan/vitest.config.ts",
     "test:managed": "vitest run --config tests/managed/vitest.config.ts",
     "deploy": "cargo xtask deploy",
