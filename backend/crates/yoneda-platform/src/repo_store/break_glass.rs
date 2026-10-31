@@ -145,7 +145,7 @@ fn land<S: SqlStore>(a: &Audit<S>, c: &Value, settings: &Settings) -> Result<Val
         );
     }
     let head = expect_head(a.db, c, &refname)?;
-    let gate = gates(a.db, &commit.id, settings)?;
+    let gate = gates(a.db, &commit, &refname, settings)?;
     if gate["rejected"] == true {
         return Err(Error::new(
             "FORBIDDEN",
@@ -203,7 +203,7 @@ fn revert<S: SqlStore>(a: &Audit<S>, c: &Value, settings: &Settings) -> Result<V
             "The revert commit is not the exact inverse of the target",
         ));
     }
-    let gate = gates(a.db, &commit.id, settings)?;
+    let gate = gates(a.db, &commit, &refname, settings)?;
     let mut result = a.advance(c, TxKind::Revert, &refname, head, &commit)?;
     let row = BTreeMap::from([
         ("ref", json!(refname)),
