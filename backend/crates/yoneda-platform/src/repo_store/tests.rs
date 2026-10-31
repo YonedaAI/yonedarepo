@@ -1653,6 +1653,7 @@ mod capacity;
 mod change_bases;
 mod change_delete;
 mod change_gates;
+mod change_instruments;
 mod change_records;
 mod change_route;
 mod changes;

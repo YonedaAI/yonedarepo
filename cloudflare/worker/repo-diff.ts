@@ -2,11 +2,33 @@
 // a quarantined side listed but never read), with patches on request.
 import { compute } from './repo-compute';
 import { decide, keepAllowed } from './repo-grants';
-import { toBase64 } from './repo-objects';
+import { type RepoObjects, toBase64 } from './repo-objects';
 import { type Json, type RepoContext, target, withTrees } from './repo-ops';
 
-const PATCH_FILES = 200;
-const PATCH_BYTES = 16 * 1024 * 1024;
+export const PATCH_FILES = 200;
+export const PATCH_BYTES = 16 * 1024 * 1024;
+
+/** One changed file's patch fields, spending `budget.bytes` on the blobs it reads. */
+export async function patchOf(objects: RepoObjects, change: Json, budget: { bytes: number }) {
+  const files = [change.old, change.new].filter((s) => s && ['blob', 'exec'].includes(s.type));
+  if (files.length === 0) return {};
+  // A quarantined side is not read: the change is listed, its patch marked withheld.
+  if ((await objects.withheldAmong(files.map((f) => f.id))).size)
+    return { patch_omitted: 'quarantined' };
+  const input: Json = { op: 'file_patch' };
+  for (const [side, value] of [
+    ['old', change.old],
+    ['new', change.new],
+  ] as const) {
+    if (!value || !['blob', 'exec'].includes(value.type)) continue;
+    const bytes = await objects.blob(value.id);
+    budget.bytes -= bytes.length;
+    input[`${side}_id`] = value.id;
+    input[`${side}_b64`] = toBase64(bytes);
+  }
+  if (budget.bytes < 0) return { patch_omitted: 'budget' };
+  return compute(input);
+}
 
 /** `head` against `base` (default: head's first parent; or their merge base). */
 export async function diff(ctx: RepoContext, args: Json) {
@@ -36,31 +58,11 @@ export async function diff(ctx: RepoContext, args: Json) {
       (c) => c.path === prefix || c.path.startsWith(`${prefix.replace(/\/$/, '')}/`),
     );
   if (args.patch) {
-    let budget = PATCH_BYTES;
+    const budget = { bytes: PATCH_BYTES };
     for (const change of changes.slice(0, PATCH_FILES)) {
-      const files = [change.old, change.new].filter((s) => s && ['blob', 'exec'].includes(s.type));
-      if (files.length === 0) continue;
-      // A quarantined side is not read: the change is listed, its patch marked withheld.
-      if ((await objects.withheldAmong(files.map((f) => f.id))).size) {
-        change.patch_omitted = 'quarantined';
-        continue;
-      }
-      const input: Json = { op: 'file_patch' };
-      for (const [side, value] of [
-        ['old', change.old],
-        ['new', change.new],
-      ] as const) {
-        if (!value || !['blob', 'exec'].includes(value.type)) continue;
-        const bytes = await objects.blob(value.id);
-        budget -= bytes.length;
-        input[`${side}_id`] = value.id;
-        input[`${side}_b64`] = toBase64(bytes);
-      }
-      if (budget < 0) {
-        change.patch_omitted = 'budget';
-        break;
-      }
-      Object.assign(change, compute(input));
+      const patch = await patchOf(objects, change, budget);
+      Object.assign(change, patch);
+      if (patch.patch_omitted === 'budget') break;
     }
   }
   return {

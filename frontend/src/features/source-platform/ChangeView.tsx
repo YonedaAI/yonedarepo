@@ -9,6 +9,7 @@ import { ChangeRoute } from './ChangeRoute';
 import { ChangeSessions } from './ChangeSessions';
 import { CommentItem, Composer, LineThread, postComment } from './ChangeThread';
 import { type ChangeDetail, conversation, diffAnchors, groupComments } from './changeModel';
+import { Instruments, instrumentsKey } from './Instruments';
 import { MergeGates } from './MergeGates';
 import { Person } from './Person';
 import { PushItem } from './PushItem';
@@ -107,6 +108,7 @@ export function ChangeView({
         )}
         {c.body && <p className="source-change-body">{c.body}</p>}
       </header>
+      {c.instruments && <Instruments key={instrumentsKey(c)} repo={repo} number={number} />}
       {c.status === 'open' && <MergeGates gates={gates} />}
       <ChangeGates
         repo={repo}

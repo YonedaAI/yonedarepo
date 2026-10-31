@@ -7,6 +7,7 @@
 import { diff } from './repo-diff';
 import { followForkChange, openForkChange } from './repo-forks';
 import { notifyHooks } from './repo-hooks';
+import { changeInstruments, instrumentsOn } from './repo-instruments';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 
 const changeNumber = (value: unknown) => {
@@ -63,7 +64,13 @@ export const changeOperations = {
       return false;
     });
     if (moved) change = await ctx.call(show);
-    return { ...change, source_error, diff: await changeDiff(ctx, change, a.patch === true) };
+    return {
+      ...change,
+      source_error,
+      diff: await changeDiff(ctx, change, a.patch === true),
+      // Tells the page there is a card row to ask for, so it asks nothing with the switch off.
+      ...(instrumentsOn(ctx.env) ? { instruments: true } : {}),
+    };
   },
   git_change_comment: (ctx: RepoContext, a: Json) =>
     notified(
@@ -94,8 +101,8 @@ export const changeOperations = {
     notified(ctx, ctx.call({ op: 'repo_change_delete', number: changeNumber(a.number) })),
 };
 
-/** `GET|POST /changes`, `GET|DELETE /changes/:n`, `GET /changes/:n/gates|route`,
- * `POST /changes/:n/comments|close|reopen`. */
+/** `GET|POST /changes`, `GET|DELETE /changes/:n`, `POST /changes/:n/comments|close|reopen`,
+ * `GET /changes/:n/gates|route|instruments`. */
 export async function changesRoute(
   ctx: RepoContext,
   req: Request,
@@ -116,6 +123,8 @@ export async function changesRoute(
   if (number && !sub && method === 'DELETE') return ops.git_change_delete(ctx, { number });
   if (number && method === 'GET' && sub === 'gates') return ops.git_change_gates(ctx, { number });
   if (number && method === 'GET' && sub === 'route') return ops.git_change_route(ctx, { number });
+  if (number && method === 'GET' && sub === 'instruments' && instrumentsOn(ctx.env))
+    return changeInstruments(ctx, changeNumber(number));
   if (number && method === 'POST' && sub === 'comments')
     return ops.git_change_comment(ctx, { ...(await body()), number });
   if (number && method === 'POST' && sub === 'close') return ops.git_change_close(ctx, { number });

@@ -32,6 +32,7 @@ op_names! {
         ChangeCreate = "repo_change_create",
         ChangeDelete = "repo_change_delete",
         ChangeGates = "repo_change_gates",
+        ChangeInstruments = "repo_change_instruments",
         ChangeRecords = "repo_change_records",
         ChangeReopen = "repo_change_reopen",
         ChangeRoute = "repo_change_route",

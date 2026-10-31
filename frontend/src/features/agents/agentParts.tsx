@@ -57,9 +57,9 @@ export function ResultTile({
   );
 }
 
-/** The last six results, newest first, padded with empty slots. */
-export function HistoryStrip({ history }: { history: RunTile[] }) {
-  const tiles = history.slice(0, 6);
+/** The last results (six by default), newest first, padded with empty slots. */
+export function HistoryStrip({ history, slots = 6 }: { history: RunTile[]; slots?: number }) {
+  const tiles = history.slice(0, slots);
   if (!tiles.length)
     return <p className="source-meta">No runs yet: results show here after the first one.</p>;
   return (
@@ -69,7 +69,7 @@ export function HistoryStrip({ history }: { history: RunTile[] }) {
           <ResultTile tile={t} />
         </li>
       ))}
-      {Array.from({ length: 6 - tiles.length }, (_, i) => (
+      {Array.from({ length: slots - tiles.length }, (_, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: empty placeholder slots have no identity.
         <li key={i} aria-hidden="true">
           <span className="result-tile tone-empty" />
