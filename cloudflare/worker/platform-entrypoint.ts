@@ -1,7 +1,7 @@
 // Worker entrypoint for the source platform alone: HTTP, Git over SSH's front doors (inbound
 // TCP and the tunnel gateway's keep-alive cron; platform-ssh-gateway.ts), plus its own queue
-// jobs (checks, object and ref projection, derived data, clone packs, webhooks, account emails,
-// the operators' sign-up notice). No agent runs, harnesses, providers or budgets.
+// jobs (checks, store creation, object and ref projection, derived data, clone packs, webhooks,
+// account emails, the operators' sign-up notice). No agent runs, harnesses, providers or budgets.
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { AccountCreated } from './account-index';
 import { withWaitUntil } from './background';
@@ -14,6 +14,7 @@ import { signupNoticeJob } from './platform-signup-notice';
 import { sshFrontDoor, sshKeepAlive } from './platform-ssh-gateway';
 import { welcomeJob } from './platform-welcome-email';
 import { ERASE, purgeJob } from './repo-admin';
+import { STORE_JOB } from './repo-artifacts-store';
 import { executeCheckRun } from './repo-checks';
 import { CLASSIFY, classifyJob } from './repo-classify';
 import { sweepDeleted } from './repo-deleted';
@@ -24,6 +25,7 @@ import { lfsSweepJob } from './repo-lfs-sweep';
 import { PACK_BUILD, packBuildJob } from './repo-pack-jobs';
 import { projectObjects, projectRefs } from './repo-projection';
 import { quarantineJob } from './repo-quarantine';
+import { storeAwaited, storeJob } from './repo-store-create';
 import type { Env, Envelope } from './types';
 
 /** Jobs that hold a large push's objects (projection to the object stores, derived data,
@@ -42,9 +44,14 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
     await executeCheckRun(env, envelope);
     message.ack();
   } else if (envelope.kind === 'platform_project') {
-    const outcome = await oneAtATime(() => projectRefs(env, envelope, message.attempts));
+    const outcome = await oneAtATime(() =>
+      storeAwaited(() => projectRefs(env, envelope, message.attempts)),
+    );
     if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
     else message.ack();
+  } else if (envelope.kind === STORE_JOB) {
+    await storeJob(env, envelope);
+    message.ack();
   } else if (envelope.kind === 'platform_objects') {
     await oneAtATime(() => projectObjects(env, envelope.repo_id, envelope.job_id));
     message.ack();
@@ -116,7 +123,9 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
     await Promise.all([
       sshKeepAlive(this.env, 'cron'),
       sweepDeleted(this.env).catch(logged('undo.sweep_failed')),
-      nightlyReconcile(this.env, controller.scheduledTime).catch(logged('billing.reconcile_failed')),
+      nightlyReconcile(this.env, controller.scheduledTime).catch(
+        logged('billing.reconcile_failed'),
+      ),
     ]);
   }
   /** Jobs of a batch run side by side (they wait on I/O, not CPU; heavy ones one at a

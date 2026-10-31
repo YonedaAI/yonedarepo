@@ -9,6 +9,8 @@ export type Envelope = {
   token?: string;
   /** A classify job's pushed commits, parents first (repo-classify.ts). */
   commits?: string[];
+  /** Failed attempts a store job follows (repo-store-create.ts). */
+  attempt?: number;
 };
 export interface Env {
   WORKSPACES: DurableObjectNamespace;
@@ -21,6 +23,9 @@ export interface Env {
   /** "request" makes a create wait for its commit shards to start, for comparing benches
    * (default: they start after the answer, see repo-create.ts). */
   SHARD_START?: string;
+  /** `on`: a create answers without Artifacts and a queue job creates the store (unset or
+   * anything else: the create waits for it; repo-store-create.ts). */
+  ASYNC_STORE?: string;
   /** Landing mode: batch (default) or changeset (see repo-changesets.ts). */
   LAND_MODE?: string;
   /** "true" lets a request choose its landing mode (x-yoneda-land-mode), for benchmarks. */

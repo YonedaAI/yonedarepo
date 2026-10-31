@@ -128,6 +128,8 @@ export async function commit(
       const target = prepared.push_store
         ? new RepoObjects(ctx.env, ctx.repo, parseStore(ctx.env, prepared.push_store))
         : store;
+      // Too large to stage, so the store must exist now, however new the repository is.
+      await timed('store.ready', async () => target.store.ready?.());
       const { report, readback } = await timed('push', () =>
         pushCommit(target, fromBase64(prepared.push_b64), prepared.commit, cached),
       );
