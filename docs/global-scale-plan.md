@@ -62,7 +62,25 @@ Same five items as the owner's list, with one swap: load tests move before archi
    - The headroom matters: a pending migration on a full database blocks every command, reads included (`source_repository.rs:26`).
 7. **Map the raw failure.** Today a full database reaches clients as HTTP 400 `DATABASE`, which reads as their fault. Map storage-full to `REPO_FULL` too.
 
-Thresholds get confirmed by the spike.
+Thresholds confirmed by the spike: keep 5, 8 and 9 GB.
+
+### Spike results (dev, 2026-10-31; one object, deleted afterwards)
+
+| Question | Measured |
+|---|---|
+| Real limit | Writes refused at about 10.7 GB as `databaseSize` reports it, which fits 10 GiB (inferred). 10,713,108,480 bytes was accepted |
+| Error | `Exceeded the maximum database size.` It reached the Worker as a thrown error for the whole request, past a try/catch around each insert. 100 inserts in one request all rolled back; 1 insert then fit |
+| At the limit | Reads, small writes, table and index creation, FTS inserts and FTS deletes all worked |
+| Do deletes shrink it? | Yes, at once. Deleting 500 rows of 1.9 MB and adding 100 lowered it by 762 MB |
+| Is space reused? | Yes. Writes worked again after the delete |
+| **Large delete** | **Deleting 950 MB in one transaction reset the object: `Durable Object storage operation exceeded timeout`. It then missed two 120-second requests.** The delete did commit. Deleting 19 MB was fine |
+| SQLite tools | No VACUUM, `dbstat`, `page_count` or `freelist_count`. `page_size` is 4096. Per-table size has to come from `SUM(length(...))` |
+
+What this changes:
+
+1. **Step 7:** the failure may not arrive as `DATABASE`; it can be thrown when the transaction commits. Test the real path through the Rust adapter.
+2. **Archive:** delete in small batches with a byte budget per transaction. One big delete can take a repo offline for minutes. Find the safe batch size on dev first.
+3. **Migrations:** small ones work at the limit, so the headroom matters less than first thought. A migration that rewrites rows is still untested there.
 
 ## 2. Load tests (stages 2 and 3)
 
@@ -113,7 +131,7 @@ Pick by measured savings from item 2, and re-measure after this stage.
 1. **Refactor first, with no behaviour change.** Split skeleton and detail reads. `read_set` is NOT NULL and parsed on every graph walk (`rows.rs:127,266`), so walks must stop reading it. Move direct SQL readers (`activity.rs:19`, `agent_reads.rs:20`, `search_records.rs:140`) and trigger `session_text_edit` onto the accessor.
 2. **Never store an empty placeholder.** `[]` silently skips stale-read checks (`merging.rs:40`). A cold commit carries a marker, and the reader raises.
 3. Add `commit_segments` and a nullable `commits.cold_segment`. Migration `repo_store/0044`.
-4. Reuse the compaction shape: plan, seal, write, read back, done, in one transaction (`maintenance/compaction.rs`, `writeVerified`, `purgePrefix`).
+4. Reuse the compaction shape: plan, seal, write, read back, done (`maintenance/compaction.rs`, `writeVerified`, `purgePrefix`). Delete in small batches, never all at once: the spike shows a 950 MB delete resets the object.
 5. Seal by bytes, not by count: 1024 commits can be huge.
 6. **Eligible commits:** a `landings` row at or below the log floor, so every existing hold is inherited, and not on the must-stay list. Commits have no version of their own, so imports and fork copies stay local at first.
 7. Move `read_set`, check evidence, session `reads`, `changesets.message`.
