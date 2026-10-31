@@ -209,11 +209,15 @@ async function ask(
   }
 }
 
-/** Runs `tasks` in order, AT_ONCE at a time, for at most PAGE_MS: none starts after that, and
- * one still running is reported as failed. Answers how many started. */
-async function runAll(tasks: Task[], run: (task: Task) => Promise<Outcome | null>) {
+/** Runs `tasks` in order, AT_ONCE at a time, for at most `limit` ms: none starts after that,
+ * and one still running is reported as failed. Answers how many started. */
+export async function runAll(
+  tasks: Task[],
+  run: (task: Task) => Promise<Outcome | null>,
+  limit = PAGE_MS,
+) {
   const outcomes: (Outcome | null | undefined)[] = new Array(tasks.length);
-  const deadline = Date.now() + PAGE_MS;
+  const deadline = Date.now() + limit;
   let next = 0;
   const worker = async () => {
     while (next < tasks.length && Date.now() < deadline) {
@@ -223,7 +227,7 @@ async function runAll(tasks: Task[], run: (task: Task) => Promise<Outcome | null
   };
   let timer = 0;
   const expired = new Promise<void>((resolve) => {
-    timer = setTimeout(resolve, PAGE_MS);
+    timer = setTimeout(resolve, limit);
   });
   await Promise.race([Promise.all(Array.from({ length: AT_ONCE }, worker)), expired]);
   clearTimeout(timer);

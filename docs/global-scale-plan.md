@@ -236,10 +236,12 @@ A directory that fails or is slow costs the filter, never the search: its repos 
 | Each `platform_derive` job, switch on | Most |
 |---|---|
 | Directory calls | 2: a touch, then a put when main has moved |
-| Extra authority calls | 1, for main's head, on a job for another branch |
+| Extra authority calls | 1 for the owner, and 1 for main's head on a job for another branch |
 | Segment pass | One pass over main's segments when main moved; 256 segments, then the row is "saturated". It stops as soon as the bitset is |
 
 A summary is 2^17 bits (16 KiB, 32 KB as hex), a repo's folded content and path trigrams, hashed. Above two thirds full it is stored as saturated, with no bits.
+
+**Forks.** A new fork holds what its parent does, so `search_fork` leaves a marker row and search skips it until it has activity of its own. Forks made before the switch have no row and are "maybe". A fork whose parent the caller can't list is skipped too until it lands: searching it directly still works.
 
 **Unmeasured:** these are limits, not timings. The dev bench (at least 3 runs, server-side timing, min/median/max) waits for a dev deploy.
 

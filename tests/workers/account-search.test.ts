@@ -4,6 +4,7 @@
 import { runInDurableObject } from 'cloudflare:test';
 import { expect, it } from 'vitest';
 import { platformJob } from '../../cloudflare/worker/platform-entrypoint';
+import { runAll } from '../../cloudflare/worker/repo-account-search';
 import { purgeJob } from '../../cloudflare/worker/repo-admin';
 import { deriveAfterLanding } from '../../cloudflare/worker/repo-derived';
 import type { Env } from '../../cloudflare/worker/types';
@@ -17,9 +18,9 @@ const solo = { required_checks: [], approvals: 0 };
 const search = (who: { cookie?: string; token?: string }, query: string, rest = '', target = on) =>
   api(`/search?query=${encodeURIComponent(query)}${rest}`, who, {}, target);
 
-async function repoWith(who: { cookie: string }, name: string, text: string, extra: object = {}) {
+async function repoWith(who: { cookie: string }, name: string, text: string, extra: object = {}, target = on) {
   const body = { name, policy: solo, files: [file('src/main.txt', text)], author, ...extra };
-  const created = await api('/repos', who, { body }, on);
+  const created = await api('/repos', who, { body }, target);
   expect(created.status, JSON.stringify(created.body)).toBe(200);
   return created.body.id as string;
 }
@@ -60,8 +61,10 @@ it('finds a repository beyond the newest 25, searching only those that can match
   expect(answer.status, JSON.stringify(answer.body)).toBe(200);
   expect(answer.body.results.map((r: any) => r.repo)).toEqual([oldest]);
   expect(answer.body.results[0].answer.results[0].path).toBe('src/main.txt');
-  expect(answer.body.searched).toBeLessThanOrEqual(26);
   expect(answer.body.next).toBeNull();
+  // The filter is what kept it to one: code asks only what can match.
+  const aimed = await search(owner, 'zebra_quantum', '&groups=code');
+  expect(aimed.body).toMatchObject({ searched: 1, scanned: 27, next: null });
   // The summary and the candidate list are never part of an answer.
   expect(JSON.stringify(answer.body)).not.toMatch(/bits|saturated|maybe/);
 });
@@ -159,6 +162,77 @@ it('lets a token see no more than GET /repos does', async () => {
   const restricted = await search({ token: minted.body.token }, 'token_needle');
   expect(restricted.status).toBe(403);
   expect(JSON.stringify(restricted.body)).not.toContain('token_needle');
+});
+
+it('refuses a caller with no account', async () => {
+  const answer = await search({}, 'anything');
+  expect(answer.status).toBe(401);
+});
+
+it('loses the filter, never the search, when a directory is down', async () => {
+  const owner = { cookie: await signup('search_down') };
+  const id = await repoWith(owner, 'kept', 'kept_needle\n');
+  await derive(id);
+  const real = on.WORKSPACES;
+  const asked: string[] = [];
+  const down = {
+    ...on,
+    WORKSPACES: {
+      get: (target: DurableObjectId) => real.get(target),
+      idFromName(name: string) {
+        if (name.startsWith('search:')) {
+          asked.push(name);
+          throw new Error('directory unavailable');
+        }
+        return real.idFromName(name);
+      },
+    },
+  } as unknown as Env;
+  const answer = await search(owner, 'kept_needle', '', down);
+  expect(answer.status, JSON.stringify(answer.body)).toBe(200);
+  expect(names(answer.body)).toEqual(['kept']);
+  expect(asked).toHaveLength(1);
+  // A query with a trigram the summary doesn't hold still reaches the repository, which says no.
+  expect((await search(owner, 'absent_needle', '&groups=code', down)).body).toMatchObject({ results: [], searched: 1 });
+  expect((await search(owner, 'absent_needle', '&groups=code')).body).toMatchObject({ results: [], searched: 0 });
+});
+
+it('stops starting repositories at the page limit and reports those still running', async () => {
+  const task = (id: string) => ({ row: { id } as any, groups: ['code'] });
+  const tasks = ['a', 'b', 'c', 'd', 'e', 'f'].map(task);
+  const started: string[] = [];
+  const { settled, started: count } = await runAll(
+    tasks,
+    ({ row }) => {
+      started.push(row.id);
+      return new Promise(() => {});
+    },
+    20,
+  );
+  expect(count).toBe(4);
+  expect(started).toEqual(['a', 'b', 'c', 'd']);
+  expect(settled.map((o) => o?.error)).toEqual(Array(4).fill('This repository took too long to search'));
+});
+
+it('leaves an unchanged fork out, and searches it once it has landed', async () => {
+  const local = { ...on, PLATFORM_OBJECT_STORE: 'r2' } as unknown as Env;
+  const owner = { cookie: await signup('search_forks') };
+  const parent = await repoWith(owner, 'parent', 'fork_needle\n', { visibility: 'public' }, local);
+  await derive(parent, 'main', local);
+  const forker = { cookie: await signup('search_forker') };
+  const forked = await api(`/repos/${parent}/fork`, forker, { body: { name: 'mine', policy: solo } }, local);
+  expect(forked.status, JSON.stringify(forked.body)).toBe(200);
+  const fork = forked.body.id as string;
+  expect(await row('search_forker', fork)).toMatchObject({ fork: true });
+  expect((await search(forker, 'fork_needle', '&groups=code', local)).body).toMatchObject({ results: [], searched: 0 });
+
+  const landed = await api(`/repos/${fork}/commits`, forker, { body: { ref: 'main', changes: [file('own.txt', 'own_needle\n')], message: 'Own', author } }, local);
+  expect(landed.status, JSON.stringify(landed.body)).toBe(200);
+  expect((await api(`/repos/${fork}/land`, forker, { body: { ref: 'main', commit: landed.body.commit } }, local)).body.landed).toBe(true);
+  await derive(fork, 'main', local);
+  expect((await row('search_forker', fork)).fork).toBeUndefined();
+  expect((await search(forker, 'own_needle', '&groups=code', local)).body.results.map((r: any) => r.repo)).toEqual([fork]);
+  expect((await search(forker, 'fork_needle', '&groups=code', local)).body.results.map((r: any) => r.repo)).toEqual([fork]);
 });
 
 it('asks a stranger’s repository nothing, whatever its owner’s summary holds', async () => {

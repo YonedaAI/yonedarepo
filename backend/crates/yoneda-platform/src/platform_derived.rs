@@ -19,6 +19,20 @@ const MAX_PARTITION_FILES: usize = 200_000;
 /// Characters of each line a blame answer carries; longer lines are cut there.
 const BLAME_LINE_CHARS: usize = 500;
 
+/// A derived-data op by name (`platform_compute` routes these here).
+pub fn compute(op: &str, c: &Value) -> Result<Value> {
+    match op {
+        "search_plan" => plan(c),
+        "partition_files" => partition_files(c),
+        "index_files" => index_files(c),
+        "search_segment" => search_segment(c),
+        "search_summary" => search_summary(c),
+        "grep" => grep_blob(c),
+        "blame" => blame_versions(c),
+        other => Err(bad(&format!("Unknown derived op {other}"))),
+    }
+}
+
 pub(crate) fn verified_blob(c: &Value, id: &ObjectId) -> Result<Option<Vec<u8>>> {
     let Some(encoded) = c["blobs"].get(id.hex()).and_then(Value::as_str) else {
         return Ok(None);

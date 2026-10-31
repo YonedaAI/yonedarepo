@@ -164,7 +164,7 @@ impl<'a> StoredSegment<'a> {
 
     /// Adds this segment's trigrams and its files' full paths (under `prefix`) to `summary`.
     pub fn summarize(&self, prefix: &str, summary: &mut Summary) {
-        for entry in self.table.chunks_exact(ENTRY) {
+        for entry in self.table.as_chunks::<ENTRY>().0 {
             summary.add_gram(&[entry[0], entry[1], entry[2]]);
         }
         for file in &self.files {

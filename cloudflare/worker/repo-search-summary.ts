@@ -6,10 +6,9 @@ import { audit } from './platform-admin-queries';
 import { compute } from './repo-compute';
 import { toBase64 } from './repo-objects';
 import { ApiError, caller, type Json, RepoContext } from './repo-ops';
-import { accountSearchOn, ownerOf } from './repo-search-directory';
+import { accountSearchOn, ownerOf, putSummary, touchSummary } from './repo-search-directory';
 import { type PartitionIndex, searchSegments, segmentsIn } from './repo-search-index';
 import type { Env, Envelope } from './types';
-import { searchDirectory } from './workspace';
 
 export const SUMMARY_JOB = 'platform_search_summary';
 /** Segments one summary reads; a repository with more would saturate anyway. */
@@ -54,12 +53,10 @@ export async function refreshSummary(
     const main = onMain ? head : await ctx.call({ op: 'repo_snapshot', ref: 'main' });
     const owner = await ownerOf(ctx.env, ctx.repo);
     const row = { repo: ctx.repo, at, commit: String(main.commit) };
-    const { current } = await searchDirectory(ctx.env, owner, { op: 'search_touch', ...row });
-    if (current) return;
+    if (await touchSummary(ctx.env, owner, row)) return;
     const indexes =
       onMain && segments ? segments : (await searchSegments(ctx, String(main.tree))).indexes;
-    const summary = await summaryOf(ctx, indexes);
-    await searchDirectory(ctx.env, owner, { op: 'search_put', ...row, ...summary });
+    await putSummary(ctx.env, owner, row, await summaryOf(ctx, indexes));
   } catch (e: any) {
     // No main yet is not a failure: there is nothing to summarize.
     if (e?.code !== 'NOT_FOUND') console.warn(`search summary: ${e?.message ?? e}`);

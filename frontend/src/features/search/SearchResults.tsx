@@ -109,7 +109,7 @@ export function AccountResults({
       <Groups query={query} outcomes={outcomes} names={known} navigate={navigate} />
       {error && <Failure error={error} what="results" onRetry={next ? more : retry} />}
       {next && !error && (
-        <button type="button" className="search-next" onClick={more} disabled={loading}>
+        <button type="button" className="quiet search-next" onClick={more} disabled={loading}>
           {loading ? 'Searching…' : 'Search more repositories'}
         </button>
       )}

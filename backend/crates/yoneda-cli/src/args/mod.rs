@@ -6,6 +6,7 @@ mod docs;
 mod memory;
 mod org;
 mod parser;
+mod read;
 mod release;
 mod ssh_key;
 mod sub;
@@ -132,7 +133,7 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "ssh" => ssh_key::ssh(rest)?,
         "token" => sub::token(rest)?,
         "check" => sub::check(rest)?,
-        "log" | "grep" | "search" | "blame" | "diff" | "symbols" => sub::read(command, rest)?,
+        "log" | "grep" | "search" | "blame" | "diff" | "symbols" => read::read(command, rest)?,
         "setup" => setup(rest)?,
         "land" => {
             let p = Parsed::new(rest, &with(&["branch"]), &[])?;
