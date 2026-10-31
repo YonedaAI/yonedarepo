@@ -234,12 +234,13 @@ A refund Stripe reports as succeeded and later fails is not reversed automatical
 
 ### Revenue
 
-The Overview shows platform-wide money with `ADMIN_BILLING` on. Page loads read D1 and wake no ledger. Every figure is the ledger's, in micro-USD, by UTC day.
+The Overview shows platform-wide money with `ADMIN_BILLING` on. The platform asks the managed Worker (`/admin/billing/revenue`, with `MANAGED_ADMIN_TOKEN`), which reads its own D1, `<prefix>-managed-revenue`, and wakes no ledger. Every figure is the ledger's, in micro-USD, by UTC day.
 
 To turn it on, after the steps above:
 
-1. Deploy. D1 migration `0012` runs first, then the managed Worker, which binds the platform's D1 as `INDEX` for `billing_daily` and `billing_accounts` alone.
-2. On the Overview, press **Rebuild from the ledgers** once. Ledgers from before the rollup hold days it has never seen, and only a rebuild sends them. It wakes every account in `platform_accounts` and every repository owner, so it isn't for routine use.
+1. Run `cargo xtask infra up --env <env>`. It creates `<prefix>-managed-revenue`, whose lock entry says `pending` until then, and **every deploy of that env refuses while it does**. Commit the lock.
+2. Deploy. The database's migrations (`cloudflare/managed/migrations`) run first, then the managed Worker, which binds it as `REVENUE`.
+3. On the Overview, press **Rebuild from the ledgers** once. Ledgers from before the rollup hold days it has never seen, and only a rebuild sends them. It wakes every account in `platform_accounts` and every repository owner, so it isn't for routine use.
 
 How it stays right:
 

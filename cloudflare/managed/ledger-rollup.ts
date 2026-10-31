@@ -1,6 +1,6 @@
 // The revenue rollup, from the ledger's side. Triggers (schema v5) mark a day in the transaction
-// that changes it; the alarm reads each marked day back whole and pushes it to D1, outside any
-// transaction, with the account's position now. Whole rows make every push idempotent and a
+// that changes it; the alarm reads each marked day back whole and pushes it to this Worker's D1,
+// outside any transaction, with the account's position now. Whole rows make every push idempotent and a
 // rebuild the same operation, and `version` keeps a late retry from overwriting newer numbers.
 // Nothing here is authoritative: D1 can be emptied and pushed again.
 //

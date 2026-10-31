@@ -142,7 +142,13 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
             _ => None,
         })
         .collect();
-    assert_eq!(migrations, ["yonedarepo-dev-platform-index"]);
+    assert_eq!(
+        migrations,
+        [
+            "yonedarepo-dev-platform-index",
+            "yonedarepo-dev-managed-revenue"
+        ]
+    );
     let first_deploy = plan
         .iter()
         .position(|s| matches!(s, Step::Deploy { .. }))
@@ -849,4 +855,31 @@ fn instances_still_starting_are_reported_but_not_busy() {
     let info = json!({"health": {"instances": {"active": 1, "assigned": 2, "starting": 4, "scheduling": 1, "stopped": 9}}});
     assert_eq!(crate::deploy_live::instance_counts(&info), (3, 5));
     assert_eq!(crate::deploy_live::instance_counts(&json!({})), (0, 0));
+}
+
+/// Each database migrates once, under the config of the Worker that declares it: wrangler takes
+/// the migrations directory from that config's entry for the database.
+#[test]
+fn each_d1_database_migrates_under_its_own_workers_config() {
+    let plan = steps(&Env::Dev, &dev_workers(), false, &Source::Dockerfile);
+    let migrations: Vec<_> = plan
+        .iter()
+        .filter_map(|s| match s {
+            Step::Migrate { database, config } => Some((database.as_str(), config.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        migrations,
+        [
+            (
+                "yonedarepo-dev-platform-index",
+                "cloudflare/wrangler.dev-platform.jsonc"
+            ),
+            (
+                "yonedarepo-dev-managed-revenue",
+                "cloudflare/wrangler.dev-agents-managed.jsonc"
+            ),
+        ]
+    );
 }

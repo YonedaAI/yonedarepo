@@ -1,7 +1,9 @@
--- The operators' revenue view reads these tables, and the ledgers stay the authority. Ledger
--- entries live in one Durable Object per account, so a platform view needs a rollup: each ledger
--- pushes the days that changed, as whole rows, from its own outbox (managed/ledger-rollup.ts).
--- Rebuildable: the ledgers can push every day again. Amounts are micro-USD, days are UTC.
+-- The managed Worker's own D1, separate from the platform's: agents and their billing reach the
+-- platform only as an API client. The operators' revenue view reads these tables, and the ledgers
+-- stay the authority. Ledger entries live in one Durable Object per account, so a platform view
+-- needs a rollup: each ledger pushes the days that changed, as whole rows, from its own outbox
+-- (ledger-rollup.ts). Rebuildable: the ledgers can push every day again. Amounts are micro-USD,
+-- days are UTC.
 -- `version` rises with each push from a ledger, so a late retry cannot overwrite newer numbers.
 CREATE TABLE IF NOT EXISTS billing_daily(
   account TEXT NOT NULL,

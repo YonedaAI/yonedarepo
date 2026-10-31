@@ -10,7 +10,7 @@ import { LEDGER_SCHEMA, migrate } from '../../cloudflare/managed/schema';
 import { admin, deliver, paid, refundBody, spend } from './billing-fixture';
 import type { FakeCharge, FakeStripe, Harness } from './fake';
 import { harness } from './fake';
-import { days, flush, index, pending, rollupOn, rollupTables, snapshot, undoRollup } from './rollup-fixture';
+import { days, flush, pending, revenueDb, rollupOn, rollupTables, snapshot, undoRollup } from './rollup-fixture';
 
 beforeAll(rollupTables);
 afterEach(() => vi.restoreAllMocks());
@@ -43,7 +43,7 @@ describe('each entry reaches the rollup', () => {
   it('coalesces a burst into one write per alarm, losing no entry', async () => {
     const { h } = await paid({}, on);
     await flush(h);
-    const batch = vi.spyOn(index, 'batch');
+    const batch = vi.spyOn(revenueDb, 'batch');
     for (const n of [1, 2, 3, 4, 5]) await spend(h, `burst-${n}`, 100_000);
     expect(batch).not.toHaveBeenCalled();
     const before = (await days(h))[0].unpriced_charged;
@@ -61,8 +61,8 @@ describe('each entry reaches the rollup', () => {
   });
 
   it('never touches D1 from a write: an outage cannot stop a charge, and nothing is lost', async () => {
-    const down = { batch: vi.fn(async () => { throw new Error('D1 is down'); }), prepare: index.prepare.bind(index) };
-    const { h, ledger } = await paid({}, (x) => rollupOn(x, { INDEX: down }));
+    const down = { batch: vi.fn(async () => { throw new Error('D1 is down'); }), prepare: revenueDb.prepare.bind(revenueDb) };
+    const { h, ledger } = await paid({}, (x) => rollupOn(x, { REVENUE: down }));
     const log = vi.spyOn(console, 'error').mockImplementation(() => {});
     const key = await spend(h, 'during-outage', 100_000);
     expect(key === null || typeof key === 'string').toBe(true);
@@ -71,7 +71,7 @@ describe('each entry reaches the rollup', () => {
     expect(await pending(h)).not.toEqual([]);
     expect(await days(h)).toEqual([]);
     expect(JSON.stringify(log.mock.calls)).toContain('billing.rollup');
-    await rollupOn(h, { INDEX: index });
+    await rollupOn(h, { REVENUE: revenueDb });
     await flush(h);
     expect(await pending(h)).toEqual([]);
     expect((await days(h))[0].top_ups).toBe(20_000_000);
@@ -95,7 +95,7 @@ describe('each entry reaches the rollup', () => {
       instance.env = { ...instance.env, ADMIN_BILLING: 'on' };
       expect(state.storage.sql.exec('SELECT COUNT(*) AS n FROM rollup_dirty').one().n).toBe(0);
     });
-    const row = await index.prepare("SELECT COUNT(*) AS n FROM billing_daily WHERE account LIKE 'billing:%'").first<{ n: number }>();
+    const row = await revenueDb.prepare("SELECT COUNT(*) AS n FROM billing_daily WHERE account LIKE 'billing:%'").first<{ n: number }>();
     expect(row?.n).toBe(0);
   });
 });
@@ -212,7 +212,7 @@ describe('at least once, and rebuildable', () => {
     const { h } = await paid({}, on);
     await flush(h);
     const [row] = await days(h);
-    await index
+    await revenueDb
       .prepare('UPDATE billing_daily SET version = version + 100, top_ups = 1 WHERE account = ? AND day = ?')
       .bind(row.account, row.day)
       .run();
@@ -237,8 +237,8 @@ describe('at least once, and rebuildable', () => {
     await admin(h, '/refund', refundBody(key, 3));
     await flush(h);
     const before = await days(h);
-    await index.prepare('DELETE FROM billing_daily WHERE account = ?').bind(h.platform.account).run();
-    await index.prepare('DELETE FROM billing_accounts WHERE account = ?').bind(h.platform.account).run();
+    await revenueDb.prepare('DELETE FROM billing_daily WHERE account = ?').bind(h.platform.account).run();
+    await revenueDb.prepare('DELETE FROM billing_accounts WHERE account = ?').bind(h.platform.account).run();
     await deliver(h, { kind: 'rollup', account: h.platform.account });
     await flush(h);
     const { version: _a, ...first } = before[0];
@@ -314,7 +314,7 @@ describe('the reconcile checks the rollup too', () => {
     const read = mismatches();
     const { h } = await paid({}, on);
     await flush(h);
-    await index.prepare('UPDATE billing_daily SET top_ups = 1 WHERE account = ?').bind(h.platform.account).run();
+    await revenueDb.prepare('UPDATE billing_daily SET top_ups = 1 WHERE account = ?').bind(h.platform.account).run();
     await deliver(h, { kind: 'reconcile', account: h.platform.account });
     expect(read()).toEqual([expect.objectContaining({ problem: 'rollup_total', ledger_usd: 20, rollup_usd: 0.000001 })]);
     expect((await days(h))[0].top_ups).toBe(1);

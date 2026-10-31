@@ -280,6 +280,58 @@ fn inventory_reads_resources_and_health_origins() {
     );
 }
 
+/// Each database's migrations come from its own binding, so the managed Worker's D1 never takes
+/// the platform's migrations, nor the platform's its. An entry that names no directory has no
+/// migrations to apply.
+#[test]
+fn each_d1_database_keeps_its_own_migrations_directory() {
+    let config = serde_json::json!({ "d1_databases": [
+        { "database_name": "own", "migrations_dir": "managed/migrations" },
+        { "database_name": "platform", "migrations_dir": "migrations" },
+        { "database_name": "none" },
+    ]});
+    assert_eq!(
+        inventory::d1(&config),
+        [
+            (
+                "own".to_string(),
+                Some("cloudflare/managed/migrations".to_string())
+            ),
+            (
+                "platform".to_string(),
+                Some("cloudflare/migrations".to_string())
+            ),
+            ("none".to_string(), None),
+        ]
+    );
+}
+
+#[test]
+fn the_managed_worker_has_its_own_d1_and_not_the_platforms() {
+    for (spec, lock, env) in [(DEV, DEV_LOCK, "dev"), (PROD, PROD_LOCK, "prod")] {
+        let spec = Spec::parse(spec).unwrap();
+        let workers = inventory::deployables(&spec, &self::lock(lock)).unwrap();
+        let databases = |role: &str| {
+            let worker = workers.iter().find(|w| w.role == role).unwrap();
+            inventory::d1(&worker.config)
+        };
+        assert_eq!(
+            databases("agents-managed"),
+            [(
+                format!("yonedarepo-{env}-managed-revenue"),
+                Some("cloudflare/managed/migrations".to_string())
+            )]
+        );
+        assert_eq!(
+            databases("platform"),
+            [(
+                format!("yonedarepo-{env}-platform-index"),
+                Some("cloudflare/migrations".to_string())
+            )]
+        );
+    }
+}
+
 #[test]
 fn secrets_files_parse_without_comments_or_quotes() {
     let parsed = super::secrets::parse("# c\nOWNER_TOKEN=abc\n\nVAULT_KEY=\"0f\"\nbad line\n");

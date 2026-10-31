@@ -2,7 +2,7 @@
 // an ordinary API client of the platform. Its public hostname takes only signed webhooks and
 // /health and Stripe's signed billing webhook (/stripe/webhook); the browser API is served to the front Worker's service binding on the site's own
 // origin. The platform itself never runs, schedules or knows about agents.
-import { adminBilling, adminBillingOn } from './admin-billing';
+import { adminBilling, adminPlatform } from './admin-billing';
 import { ApiRefusal, managedApi, workspaceName } from './api';
 import { BillingRefusal, stripeWebhook } from './billing';
 import type { ManagedEnv, QueueMessage } from './config';
@@ -58,19 +58,6 @@ async function grantCredit(req: Request, env: ManagedEnv, account: string) {
   return json({ balance: granted.balance, resumed: granted.resume.length });
 }
 
-/** `POST /admin/billing/rollup {accounts}`: each ledger pushes every day again, from the queue. */
-async function rollupRebuild(req: Request, env: ManagedEnv) {
-  const body = (await req.json().catch(() => null)) as { accounts?: unknown } | null;
-  const accounts = Array.isArray(body?.accounts) ? (body.accounts as unknown[]) : [];
-  const names = accounts.map((a) => workspaceName(typeof a === 'string' ? a : undefined));
-  if (!names.length || names.length > 100 || names.includes(null))
-    return refuse('INVALID_INPUT', 'accounts lists 1 to 100 accounts', 400);
-  await env.RUNS.sendBatch(
-    names.map((account) => ({ body: { kind: 'rollup', account } as QueueMessage })),
-  );
-  return json({ queued: names.length }, 202);
-}
-
 /** `GET /admin/accounts/<account>/credit`: the balance and the ten newest ledger entries. */
 async function creditState(env: ManagedEnv, account: string) {
   const ledger = ledgerStub(env, account);
@@ -105,16 +92,15 @@ export async function managedFetch(req: Request, env: ManagedEnv): Promise<Respo
     if (!account) return refuse('NOT_FOUND', 'Unknown account', 404);
     return req.method === 'GET' ? creditState(env, account) : grantCredit(req, env, account);
   }
-  if (url.pathname === '/admin/billing/reconcile' && req.method === 'POST') {
+  if (parts[0] === 'admin' && parts[1] === 'billing' && parts.length === 3) {
     if (!(await admin(req, env))) return refuse('UNAUTHORIZED', 'Admin token required', 401);
-    if (!adminBillingOn(env)) return refuse('NOT_FOUND', 'Not found', 404);
-    await env.RUNS.send({ kind: 'reconcile-all' });
-    return json({ queued: true }, 202);
-  }
-  if (url.pathname === '/admin/billing/rollup' && req.method === 'POST') {
-    if (!(await admin(req, env))) return refuse('UNAUTHORIZED', 'Admin token required', 401);
-    if (!adminBillingOn(env)) return refuse('NOT_FOUND', 'Not found', 404);
-    return rollupRebuild(req, env);
+    try {
+      const answer = await adminPlatform(req, env, parts[2]);
+      return json(answer, req.method === 'POST' ? 202 : 200);
+    } catch (e) {
+      if (e instanceof BillingRefusal) return refuse(e.code, e.message, e.status);
+      throw e;
+    }
   }
   if (parts[0] === 'admin' && parts[1] === 'accounts' && parts[3] === 'billing') {
     if (!(await admin(req, env))) return refuse('UNAUTHORIZED', 'Admin token required', 401);

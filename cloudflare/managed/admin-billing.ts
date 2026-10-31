@@ -4,8 +4,10 @@
 import type { AdminBilling } from '../../shared/admin-billing';
 import { actorOf, idOf, microOf, reasonOf } from './admin-input';
 import { refund, refundDay, refundLimits, refundView } from './admin-refund';
+import { revenue } from './admin-revenue';
+import { workspaceName } from './api';
 import { BillingRefusal, removeCard, resumeAll } from './billing';
-import { limitMicrousd, type ManagedEnv } from './config';
+import { limitMicrousd, type ManagedEnv, type QueueMessage } from './config';
 import { ledgerStub } from './ledger';
 
 const usd = (micro: number) => micro / 1_000_000;
@@ -146,6 +148,32 @@ export async function adminBilling(
   if (req.method === 'POST') {
     const body = ((await req.json().catch(() => null)) ?? {}) as Record<string, unknown>;
     return action === 'refund' ? refund(env, account, body) : act(env, account, action, body);
+  }
+  throw new BillingRefusal('NOT_FOUND', 'Unknown billing path', 404);
+}
+
+/** `POST /admin/billing/rollup {accounts}`: each ledger pushes every day again, from the queue. */
+async function queueRollups(req: Request, env: ManagedEnv) {
+  const body = (await req.json().catch(() => null)) as { accounts?: unknown } | null;
+  const accounts = Array.isArray(body?.accounts) ? (body.accounts as unknown[]) : [];
+  const names = accounts.map((a) => workspaceName(typeof a === 'string' ? a : undefined));
+  if (!names.length || names.length > 100 || names.includes(null))
+    throw new BillingRefusal('INVALID_INPUT', 'accounts lists 1 to 100 accounts', 400);
+  await env.RUNS.sendBatch(
+    names.map((account) => ({ body: { kind: 'rollup', account } as QueueMessage })),
+  );
+  return { queued: names.length };
+}
+
+/** Routes after `/admin/billing/`: what concerns every account rather than one. */
+export async function adminPlatform(req: Request, env: ManagedEnv, action: string | undefined) {
+  if (!adminBillingOn(env)) throw new BillingRefusal('NOT_FOUND', 'Not found', 404);
+  if (action === 'revenue' && req.method === 'GET')
+    return revenue(env, new URL(req.url).searchParams);
+  if (action === 'rollup' && req.method === 'POST') return queueRollups(req, env);
+  if (action === 'reconcile' && req.method === 'POST') {
+    await env.RUNS.send({ kind: 'reconcile-all' });
+    return { queued: true };
   }
   throw new BillingRefusal('NOT_FOUND', 'Unknown billing path', 404);
 }

@@ -33,8 +33,8 @@ type Mismatch = { problem: string; top_up: string; ledger_usd?: number; stripe_u
 /** Top-ups and settled refunds as the ledger and as D1 hold them. Days still waiting to be pushed
  * are not a difference; the caller skips the check while any do. */
 async function rollupProblems(env: ManagedEnv, account: string, topUps: TopUp[]) {
-  if (!env.INDEX) return [];
-  const row = await env.INDEX.prepare(
+  if (!env.REVENUE) return [];
+  const row = await env.REVENUE.prepare(
     `SELECT COALESCE(SUM(top_ups), 0) AS top_ups, COALESCE(SUM(refunds), 0) AS refunds
      FROM billing_daily WHERE account = ?`,
   )

@@ -70,7 +70,7 @@ export class LedgerAdmin extends DurableObject<ManagedEnv> {
   }
 
   #rollupOn() {
-    return this.env.ADMIN_BILLING === 'on' && Boolean(this.env.INDEX);
+    return this.env.ADMIN_BILLING === 'on' && Boolean(this.env.REVENUE);
   }
 
   /** Whether days still wait for the rollup, so the alarm should come back for them. */
@@ -81,7 +81,7 @@ export class LedgerAdmin extends DurableObject<ManagedEnv> {
   /** Pushes the marked days to D1, outside any transaction. A failed push keeps its marks and
    * never throws: an outage delays the rollup and touches nothing else. True when it failed. */
   protected async pushRollup(): Promise<boolean> {
-    const db = this.env.INDEX;
+    const db = this.env.REVENUE;
     if (!db || !this.#rollupOn()) return false;
     const sql = this.ctx.storage.sql;
     const batch = this.ctx.storage.transactionSync(() => rollupBatch(sql, ROLLUP_BATCH_DAYS));

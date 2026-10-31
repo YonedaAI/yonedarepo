@@ -44,8 +44,8 @@ export interface ManagedEnv {
   /** Operators' billing (admin routes, the new Stripe events, the nightly reconcile, the revenue
    * rollup): `on`, or none of it exists. Set with the platform Worker's. */
   ADMIN_BILLING?: string;
-  /** The platform's D1, for the two tables of the revenue rollup and no others. */
-  INDEX?: D1Database;
+  /** This Worker's own D1 (`<prefix>-managed-revenue`): the revenue rollup. */
+  REVENUE?: D1Database;
   /** Worker secret, optional: a restricted key for refunds and nothing else; unset, the refund
    * route answers NOT_CONFIGURED. STRIPE_SECRET_KEY never refunds. */
   STRIPE_REFUND_KEY?: string;
