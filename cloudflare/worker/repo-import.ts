@@ -37,11 +37,37 @@ const FINAL = [
 const final = (e: any) =>
   FINAL.includes(e?.code) ? new NonRetryableError(`${e.code}: ${e?.message ?? e}`) : e;
 
+const ADVERTISEMENT_BYTES = 64 * 1024;
+
+/** The remote's default branch, from its Git advertisement (`symref=HEAD:refs/heads/x`): the
+ * store can't tell it (`info()` answers main for a remote on master, and HEAD has no log).
+ * Null when the remote doesn't say; Artifacts' own refusal then names what is wrong. */
+export async function remoteDefaultBranch(url: string): Promise<string | null> {
+  const response = await fetch(
+    `${url.replace(/\/+$/, '')}/info/refs?service=git-upload-pack`,
+  ).catch(() => null);
+  if (!response?.ok || !response.body) return null;
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let text = '';
+  try {
+    while (text.length < ADVERTISEMENT_BYTES) {
+      const { done, value } = await reader.read();
+      if (done) return null;
+      text += decoder.decode(value, { stream: true });
+      const named = /symref=HEAD:refs\/heads\/([^\s\0]+)/.exec(text);
+      if (named) return named[1];
+    }
+    return null;
+  } finally {
+    await reader.cancel().catch(() => {});
+  }
+}
+
 async function readHistory(env: Env, params: ImportParams): Promise<Commit[]> {
   using repo = await env.ARTIFACTS.get(storeName(params.repo));
-  // The branch Artifacts imported: the one named, else the remote's default, which only HEAD
-  // names: `info().defaultBranch` answers main even for an imported master.
-  const ref = params.branch ?? 'HEAD';
+  // The branch Artifacts imported: the one named, else the store's own default.
+  const ref = params.branch ?? (await rpcValue(repo.info())).defaultBranch;
   const newestFirst: Commit[] = [];
   while (newestFirst.length < params.max) {
     const page = await rpcValue(
@@ -105,7 +131,12 @@ async function recordBatch(env: Env, params: ImportParams, batch: Commit[], prev
   return batch.length;
 }
 
-export async function runImport(env: Env, params: ImportParams, step: ImportStep) {
+export async function runImport(env: Env, asked: ImportParams, step: ImportStep) {
+  const branch =
+    asked.branch ??
+    (await step.do('find the default branch', RETRY, () => remoteDefaultBranch(asked.url))) ??
+    undefined;
+  const params = { ...asked, branch };
   await step.do('import into the object store', RETRY, async () => {
     try {
       await rpcValue(
