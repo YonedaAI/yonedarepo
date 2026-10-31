@@ -1,5 +1,5 @@
-// The revenue view's model: its range, its path, how a figure nobody recorded reads, and walking
-// the rebuild page by page. The numbers are the server's.
+// The revenue view's model: its range, its path and how a figure nobody recorded reads. The
+// numbers are the server's.
 import { money } from './adminBillingModel';
 import { withQuery } from './adminModel';
 
@@ -33,17 +33,3 @@ export function rangeProblem({ from, to, by }: RevenueRange) {
 
 /** A figure, or what stands in for one nobody recorded. Zero is a figure. */
 export const recorded = (usd: number | null) => (usd === null ? 'not recorded' : money(usd));
-
-export type RebuildPage = { queued: number; next: string | null };
-
-/** Asks for every page of accounts; answers how many were asked to push again. */
-export async function rebuildAll(page: (after?: string) => Promise<RebuildPage>) {
-  let total = 0;
-  let after: string | undefined;
-  for (;;) {
-    const answer = await page(after);
-    total += answer.queued;
-    if (answer.next === null) return total;
-    after = answer.next;
-  }
-}

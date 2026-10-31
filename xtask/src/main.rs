@@ -23,6 +23,7 @@ mod layers;
 mod layout;
 mod local_config;
 mod process;
+mod revenue_rebuild;
 mod search_backfill;
 use std::path::PathBuf;
 

@@ -1,4 +1,4 @@
-// The revenue view: its range and paths, the rebuild's paging, and the words that keep the numbers
+// The revenue view: its range and paths, and the words that keep the numbers
 // honest (ledger amounts labelled, a liability kept apart, not recorded where nothing was, and
 // never "profit").
 import { createElement } from 'react';
@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { AdminRevenue } from '../../../../shared/admin-revenue';
 import { RevenueReport } from './AdminRevenueReport';
-import { defaultRange, rangeProblem, rebuildAll, recorded, revenuePath } from './adminRevenueModel';
+import { defaultRange, rangeProblem, recorded, revenuePath } from './adminRevenueModel';
 
 const money = {
   gross_top_ups_usd: 100,
@@ -95,6 +95,15 @@ describe('what was not recorded', () => {
   });
 });
 
+describe('the takings', () => {
+  it('reads as a sum: gross, less refunds and disputes, is net', () => {
+    const text = html();
+    const order = ['$100.00', '$5.00', '$20.00', '$75.00'].map((usd) => text.indexOf(usd));
+    expect(order).toEqual([...order].sort((a, b) => a - b));
+    expect(text.match(/admin-sum-op/g)?.length).toBe(3);
+  });
+});
+
 describe('the words', () => {
   it('labels the numbers as the ledger’s, and names what checks them', () => {
     const text = html();
@@ -134,10 +143,17 @@ describe('the accounts', () => {
 });
 
 describe('with nothing recorded', () => {
-  it('says so and points at the rebuild, rather than showing an empty table', () => {
+  it('says so, rather than showing empty tables', () => {
     const empty = report({
       periods: [],
       accounts: { paying: 0, active_paying: 0, top: [] },
+      usage: {
+        consumed_usd: 0,
+        free_granted_usd: 0,
+        model: { charged_usd: 0, cost_usd: 0, margin_usd: 0, markup: null },
+        container: { charged_usd: 0, cost_usd: null, margin_usd: null },
+        unpriced: { charged_usd: 0, cost_usd: null, margin_usd: null },
+      },
       outstanding: {
         as_of: null,
         accounts: 0,
@@ -150,21 +166,8 @@ describe('with nothing recorded', () => {
     const text = html(empty);
     expect(text).toContain('Nothing recorded in this range');
     expect(text).toContain('No paying accounts in this range');
-  });
-});
-
-describe('rebuilding', () => {
-  it('walks every page, and reports how many accounts it asked', async () => {
-    const seen: (string | undefined)[] = [];
-    const pages = [
-      { queued: 100, next: 'mm' },
-      { queued: 7, next: null },
-    ];
-    const total = await rebuildAll(async (after) => {
-      seen.push(after);
-      return pages[seen.length - 1];
-    });
-    expect(seen).toEqual([undefined, 'mm']);
-    expect(total).toBe(107);
+    expect(text).toContain('No usage in this range');
+    expect(text).not.toContain('<table');
+    expect(text).not.toMatch(/rebuild/i);
   });
 });
