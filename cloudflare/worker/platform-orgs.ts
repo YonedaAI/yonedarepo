@@ -7,6 +7,8 @@
 import { ACCOUNT_IDENTIFIER_HELP, normalizeAccountIdentifier } from '../../shared/account';
 import { auditOn, auditOrg } from './account-audit';
 import { auditPage, auditVerify } from './platform-audit-read';
+import { orgHold } from './platform-holds';
+import { holdSwitch } from './platform-legal-hold';
 import { forgetOrgAccess, type OrgAccess, teamKey } from './platform-org-access';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import { requirePatScope } from './repo-pat';
@@ -117,7 +119,12 @@ async function deleteOrg(env: Env, org: string, actor: string, confirm: string) 
       'CONFLICT',
       `${org} owns ${owned?.n} repositories; delete them before the organization`,
     );
-  const deleted = await orgCommand(env, org, { op: 'org_delete', actor, confirm });
+  const deleted = await orgCommand(env, org, {
+    op: 'org_delete',
+    actor,
+    confirm,
+    ...holdSwitch(env),
+  });
   forgetOrgAccess(org);
   await Promise.all((deleted.members as string[]).map((m) => hint(env, m, org, false)));
   return { org, deleted: true };
@@ -206,6 +213,9 @@ async function orgRoute(
   }
   if (!resource && del) return deleteOrg(env, org, actor, query.get('confirm') ?? '');
   if (resource === 'repos' && !item && get) return orgRepos(env, org, actor);
+  if (resource === 'hold' && !item) return orgHold(env, auth, org, method, run);
+  if (resource === 'repos' && item && sub === 'hold' && !target)
+    return orgHold(env, auth, org, method, run, item);
   if (resource === 'members' && !item && post) {
     const { account, role } = await body();
     const invited = accountArg(account);

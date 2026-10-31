@@ -169,6 +169,37 @@ it('serves organizations over the account MCP', async () => {
   expect((await mcp('org_create', { name: 'beta' })).content[0].text).toContain('ALREADY_EXISTS');
 });
 
+it('a personal token with repo:admin deletes an org repository for an org owner', async () => {
+  const alice = { cookie: await signup('patdel_alice') };
+  await api('/orgs', alice, { body: { name: 'patdel' } });
+  const body = { owner: 'patdel', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', 'a\n')], author };
+  const id = (await api('/repos', alice, { body: { ...body, name: 'app' } })).body.id as string;
+  const mint = async (name: string, scopes: string[]) =>
+    (await api('/tokens', alice, { body: { name, scopes } })).body.token as string;
+  const repo = `/repos/${id}?confirm=app`;
+  const writer = await mint('w', ['repo:read', 'repo:write']);
+  expect((await api(repo, { token: writer }, { method: 'DELETE' })).status).toBe(403);
+  const admin = await mint('a', ['repo:admin']);
+  expect((await api(repo, { token: admin }, { method: 'DELETE' })).body).toEqual({ deleted: true });
+  expect((await api(`/repos/${id}`, alice)).body.error.code).toBe('GONE');
+});
+
+it('a second org owner who did not create the repository deletes it; a member cannot', async () => {
+  const alice = { cookie: await signup('coowner_alice') };
+  const bob = { cookie: await signup('coowner_bob') };
+  const carol = { cookie: await signup('coowner_carol') };
+  await api('/orgs', alice, { body: { name: 'coowned' } });
+  await api('/orgs/coowned/members', alice, { body: { account: 'coowner_bob', role: 'owner' } });
+  await api('/orgs/coowned/members', alice, { body: { account: 'coowner_carol', role: 'member' } });
+  const body = { name: 'app', owner: 'coowned', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', 'a\n')], author };
+  const id = (await api('/repos', alice, { body })).body.id as string;
+  const repo = `/repos/${id}?confirm=app`;
+  // A member with no grant on it does not see it at all.
+  expect((await api(repo, carol, { method: 'DELETE' })).status).toBe(404);
+  expect((await api(repo, bob, { method: 'DELETE' })).body).toEqual({ deleted: true });
+  expect((await api(`/repos/${id}`, alice)).body.error.code).toBe('GONE');
+});
+
 it('a deleted team takes its grants with it: a new team of the same name starts with none', async () => {
   const erin = { cookie: await signup('orgs_erin') };
   const finn = { cookie: await signup('orgs_finn') };

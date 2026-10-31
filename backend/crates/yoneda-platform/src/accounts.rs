@@ -25,6 +25,9 @@ mod favorites_tests;
 mod handles;
 #[cfg(test)]
 mod handles_tests;
+mod holds;
+#[cfg(test)]
+mod holds_tests;
 mod identities;
 #[cfg(test)]
 mod identities_tests;
@@ -74,6 +77,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             op::AccountOp::OAuth(op) => oauth_flows::handle(&db, &command, op, now),
             op::AccountOp::Org(op) => orgs::handle(&db, &command, op, now),
             op::AccountOp::OrgMember(op) => orgs::member(&db, &command, op, now),
+            op::AccountOp::Hold(op) => holds::handle(&db, &command, op, now),
             op::AccountOp::Audit(op) => audit_log::handle(&db, &command, op),
             op::AccountOp::Handle(op) => handles::handle(&db, &command, op, now),
         }

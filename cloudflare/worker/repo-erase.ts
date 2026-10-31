@@ -11,6 +11,7 @@
 
 import { durableJson } from './durable';
 import { audit } from './platform-admin-queries';
+import { currentHold } from './platform-legal-hold';
 import { dispatchErase, eraseOn, purgeObjects } from './repo-admin';
 import { inBatches } from './repo-git-objects';
 import { dispatchHooks } from './repo-hooks';
@@ -39,8 +40,11 @@ type Erasable = { erase(): Promise<void> };
  * spelled it, so each ref is cleared both ways. */
 async function clearObjects(env: Env, repo: string, refs: string[]) {
   const shards = Array.from({ length: SHARDS }, (_, shard) => shard);
+  const _hold = await currentHold(env, repo, caller(env, repo, { _system: 'purge' }));
   if (env.COMMIT_SHARDS)
-    await inBatches(shards, WIDTH, (shard) => shardCall(env, repo, shard, { op: 'store_erase' }));
+    await inBatches(shards, WIDTH, (shard) =>
+      shardCall(env, repo, shard, { op: 'store_erase', _hold }),
+    );
   const combiners = env.LAND_COMBINERS;
   if (!combiners) return;
   const names = new Set([`${repo}#head`, `${repo}#projector`]);

@@ -55,7 +55,13 @@ impl CommitShard {
             .map(|r| r.with_status(400));
         }
         if command["op"] == "store_erase" && command["_system"] == "commits" {
-            return self.erase().await;
+            return match yoneda_platform::require_free_to_erase(&command) {
+                Ok(()) => self.erase().await,
+                Err(e) => {
+                    Response::from_json(&json!({"error":{"code":e.code,"message":e.message}}))
+                        .map(|r| r.with_status(409))
+                }
+            };
         }
         if fresh && self.state.storage().get::<bool>(SEAL).await?.is_some() {
             return Response::from_json(

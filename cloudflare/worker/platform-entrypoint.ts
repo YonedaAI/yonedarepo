@@ -7,6 +7,7 @@ import type { AccountCreated } from './account-index';
 import { withWaitUntil } from './background';
 import { accountCreated, SIGNUP_NOTICE } from './platform-accounts';
 import { verifyEmail } from './platform-email-verify';
+import { laterIfHeld } from './platform-legal-hold';
 import { platformFetch } from './platform-routes';
 import { signupNoticeJob } from './platform-signup-notice';
 import { sshFrontDoor, sshKeepAlive } from './platform-ssh-gateway';
@@ -62,13 +63,13 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
     await lfsSweepJob(env, envelope);
     message.ack();
   } else if (envelope.kind === 'platform_quarantine') {
-    await quarantineJob(env, envelope);
+    await laterIfHeld(env, envelope, () => quarantineJob(env, envelope));
     message.ack();
   } else if (envelope.kind === 'platform_purge') {
-    await purgeRepository(env, envelope.repo_id);
+    await laterIfHeld(env, envelope, () => purgeRepository(env, envelope.repo_id));
     message.ack();
   } else if (envelope.kind === ERASE) {
-    await eraseJob(env, envelope);
+    await laterIfHeld(env, envelope, () => eraseJob(env, envelope));
     message.ack();
   } else if (envelope.kind === SIGNUP_NOTICE) {
     const outcome = await signupNoticeJob(env, envelope, message.attempts);

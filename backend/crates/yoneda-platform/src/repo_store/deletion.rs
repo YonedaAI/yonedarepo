@@ -20,24 +20,26 @@ pub fn gone() -> Error {
 }
 
 /// Whether `op` still runs on a tombstone: the purge read, the erase, and until it is
-/// erased, the (idempotent) delete and the delivery of hook payloads already queued
-/// (`repo.deleted` among them).
+/// erased, the (idempotent) delete, whose hold is whose (a hold may be placed on a tombstone
+/// until it is purged), and the delivery of hook payloads already queued (`repo.deleted`
+/// among them).
 pub fn allowed_when_deleted(op: StoreOp, settings: &Settings) -> bool {
     match op {
         StoreOp::Repo(RepoOp::PurgeTarget | RepoOp::ErasePlan | RepoOp::EraseStep) => true,
-        StoreOp::Repo(RepoOp::Delete | RepoOp::HookClaim | RepoOp::HookSettle) => {
-            !settings.erased()
-        }
+        StoreOp::Repo(
+            RepoOp::Delete | RepoOp::HoldOwner | RepoOp::HookClaim | RepoOp::HookSettle,
+        ) => !settings.erased(),
         _ => false,
     }
 }
 
-/// On a tombstone, hook delivery and the erase belong to their platform jobs alone: anyone
-/// else is answered GONE, as for every other operation.
+/// On a tombstone, hook delivery and the erase belong to their platform jobs alone, and who
+/// owns it to the platform: anyone else is answered GONE, as for every other operation.
 pub fn tombstone_caller(op: StoreOp, actor: &Actor, settings: &Settings) -> Result<()> {
     let job = match op {
         StoreOp::Repo(RepoOp::HookClaim | RepoOp::HookSettle) => Some("hooks"),
         StoreOp::Repo(RepoOp::ErasePlan | RepoOp::EraseStep) => Some("erase"),
+        StoreOp::Repo(RepoOp::HoldOwner) => Some("system"),
         _ => None,
     };
     if settings.deleted_at.is_some() && job.is_some_and(|scope| !actor.can(scope)) {
@@ -73,10 +75,9 @@ fn notify_deleted<S: SqlStore>(db: &S, actor: &Actor, now: i64) -> Result<Vec<Va
     Ok(ids)
 }
 
-/// `repo_delete {confirm}`: the owner only (never an admin member), with the repository's
-/// exact name.
+/// `repo_delete {confirm}`: the owner only (never an admin member: `authorize`), with the
+/// repository's exact name.
 pub fn delete<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings) -> Result<Value> {
-    actor.require_repo_owner()?;
     if string(c, "confirm")? != settings.name {
         return Err(Error::new(
             "INVALID_INPUT",

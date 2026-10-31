@@ -52,7 +52,8 @@ pub(super) fn member<S: SqlStore>(db: &S, c: &Value, op: OrgMemberOp, now: i64) 
         )
     })?;
     let leaving = op == OrgMemberOp::MemberRemove && c["account"] == actor.as_str();
-    if op != OrgMemberOp::Show && role != "owner" && !leaving {
+    let reads = matches!(op, OrgMemberOp::Show | OrgMemberOp::HoldShow);
+    if !reads && role != "owner" && !leaving {
         return Err(Error::new(
             "FORBIDDEN",
             format!("Only an owner of {org} can do this"),
@@ -69,6 +70,9 @@ pub(super) fn member<S: SqlStore>(db: &S, c: &Value, op: OrgMemberOp, now: i64) 
         OrgMemberOp::TeamDelete => super::teams::delete(db, c, &actor, now),
         OrgMemberOp::TeamMemberPut => super::teams::member_put(db, c, &actor, now),
         OrgMemberOp::TeamMemberRemove => super::teams::member_remove(db, c, &actor, now),
+        OrgMemberOp::HoldShow => super::holds::show(db),
+        OrgMemberOp::HoldSet => super::holds::owner_set(db, c, &actor, now),
+        OrgMemberOp::HoldRelease => super::holds::owner_release(db, c, &actor, now),
     }
 }
 
@@ -93,7 +97,7 @@ pub(super) fn org_name(name: &str) -> Result<String> {
 }
 
 /// The org this authority holds, or NOT_FOUND (a person's account, or nothing).
-fn org<S: SqlStore>(db: &S) -> Result<String> {
+pub(super) fn org<S: SqlStore>(db: &S) -> Result<String> {
     match get(db, "account") {
         Ok(record) if record["kind"] == "org" && record["deleted_at"].is_null() => {
             string(&record, "username")
@@ -285,6 +289,7 @@ fn delete<S: SqlStore>(db: &S, c: &Value, org: &str, actor: &str, now: i64) -> R
     if string(c, "confirm")? != org {
         return Err(bad("confirm must be the organization's name"));
     }
+    super::holds::refuse_org_delete(db, c)?;
     let members: Vec<Value> = db
         .query("SELECT account FROM org_members ORDER BY account", &[])?
         .into_iter()

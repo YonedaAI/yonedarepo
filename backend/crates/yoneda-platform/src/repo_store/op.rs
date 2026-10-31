@@ -59,6 +59,7 @@ op_names! {
         HookCreate = "repo_hook_create",
         HookDelete = "repo_hook_delete",
         HookDeliveries = "repo_hook_deliveries",
+        HoldOwner = "repo_hold_owner",
         HookSettle = "repo_hook_settle",
         Hooks = "repo_hooks",
         HooksFanout = "repo_hooks_fanout",

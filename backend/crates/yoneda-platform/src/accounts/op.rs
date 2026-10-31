@@ -125,6 +125,18 @@ op_names! {
         TeamDelete = "team_delete",
         TeamMemberPut = "team_member_put",
         TeamMemberRemove = "team_member_remove",
+        HoldShow = "org_hold_show",
+        HoldSet = "org_hold_set",
+        HoldRelease = "org_hold_release",
+    }
+}
+op_names! {
+    /// Legal holds outside an org's own commands: the check a repository's destructive ops
+    /// wait for, and operators' holds (trusted Worker adapters only).
+    pub(crate) enum HoldOp {
+        Check = "hold_check",
+        OperatorSet = "hold_operator_set",
+        OperatorRelease = "hold_operator_release",
     }
 }
 
@@ -171,6 +183,7 @@ pub(crate) enum AccountOp {
     OAuth(OAuthOp),
     Org(OrgOp),
     OrgMember(OrgMemberOp),
+    Hold(HoldOp),
     Audit(AuditOp),
     Handle(HandleOp),
 }
@@ -198,6 +211,7 @@ impl AccountOp {
             Self::OAuth(op) => op.name(),
             Self::Org(op) => op.name(),
             Self::OrgMember(op) => op.name(),
+            Self::Hold(op) => op.name(),
             Self::Audit(op) => op.name(),
             Self::Handle(op) => op.name(),
         }
@@ -217,6 +231,7 @@ impl AccountOp {
         all.extend(OAuthOp::ALL.iter().copied().map(Self::OAuth));
         all.extend(OrgOp::ALL.iter().copied().map(Self::Org));
         all.extend(OrgMemberOp::ALL.iter().copied().map(Self::OrgMember));
+        all.extend(HoldOp::ALL.iter().copied().map(Self::Hold));
         all.extend(AuditOp::ALL.iter().copied().map(Self::Audit));
         all.extend(HandleOp::ALL.iter().copied().map(Self::Handle));
         all

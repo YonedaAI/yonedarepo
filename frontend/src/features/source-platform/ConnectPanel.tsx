@@ -12,6 +12,7 @@ import {
   mcpUrl,
 } from './connect';
 import { InstallCommand } from './InstallCommand';
+import { HELD_NOTE, useRepoHold } from './LegalHold';
 import { Failure } from './SourceStatus';
 import { sourceApi } from './sourceApi';
 import { CopyBlock } from './TokenParts';
@@ -125,6 +126,7 @@ export function DeleteRepository({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const expected = name ?? repo;
+  const held = useRepoHold(repo);
   async function remove(event: FormEvent) {
     event.preventDefault();
     if (typed !== expected) return;
@@ -145,18 +147,20 @@ export function DeleteRepository({
         Deleting removes its history, refs and tokens for everyone. It cannot be undone. Type{' '}
         <strong>{expected}</strong> to confirm.
       </p>
+      {held && <p className="source-meta">{HELD_NOTE}</p>}
       <form onSubmit={remove} className="source-create">
         <label htmlFor="delete-confirm" className="sr-only">
           Repository name
         </label>
         <input
           id="delete-confirm"
+          disabled={held}
           value={typed}
           onChange={(e) => setTyped(e.target.value)}
           autoComplete="off"
           spellCheck={false}
         />
-        <button type="submit" className="danger" disabled={busy || typed !== expected}>
+        <button type="submit" className="danger" disabled={busy || held || typed !== expected}>
           {busy ? 'Deleting…' : 'Delete this repository'}
         </button>
       </form>

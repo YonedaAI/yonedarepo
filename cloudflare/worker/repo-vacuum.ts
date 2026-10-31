@@ -3,6 +3,7 @@
 // decides what is safe; the adapter only sends the ref deletions and reports back. Commit
 // shards forget expired commits that nothing newer descends from; branches and pins only
 // ever name commits the authority adopted (with all their ancestors), so they keep theirs.
+import { currentHold } from './platform-legal-hold';
 import { compute } from './repo-compute';
 import { fromBase64, toBase64 } from './repo-objects';
 import type { Json, RepoContext } from './repo-ops';
@@ -71,9 +72,11 @@ async function vacuumShards(ctx: RepoContext, retention: number) {
   const expired = expiredCommits(scans);
   const byShard = new Map<number, string[]>();
   for (const id of expired) byShard.set(shardOf(id), [...(byShard.get(shardOf(id)) ?? []), id]);
+  // Asked after the scans, just before the deletes.
+  const _hold = expired.length ? await currentHold(ctx.env, ctx.repo, ctx.call) : undefined;
   const deleted = await Promise.all(
     [...byShard].map(([shard, ids]) =>
-      shardCall(ctx.env, ctx.repo, shard, { op: 'store_vacuum_delete', ids }),
+      shardCall(ctx.env, ctx.repo, shard, { op: 'store_vacuum_delete', ids, _hold }),
     ),
   );
   return { expired: expired.length, forgotten: deleted.reduce((n, d) => n + d.deleted, 0) };

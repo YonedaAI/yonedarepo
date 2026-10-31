@@ -42,6 +42,8 @@ const KINDS: &[(&str, &[(&str, Field)])] = &[
         "org.team_member_removed",
         &[("team", Word), ("account", Word)],
     ),
+    ("legal_hold.set", &[("repo", Word), ("layer", Word)]),
+    ("legal_hold.released", &[("repo", Word), ("layer", Word)]),
     (
         "pat.created",
         &[

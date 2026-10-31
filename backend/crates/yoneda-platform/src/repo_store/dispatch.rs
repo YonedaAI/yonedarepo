@@ -7,7 +7,7 @@ use super::{
     activity, adopt, agent_context, agent_reads, annotated, bisect, branches, capacity,
     change_comments, change_delete, change_gates, change_records, changes, changesets, checks,
     classes, contracts, git_http, head, history, history_import, hook_delivery, hook_events, hooks,
-    land, land_batch, land_queue, land_tickets, members, merging, prepare, projection,
+    land, land_batch, land_queue, land_tickets, legal_hold, members, merging, prepare, projection,
     projection_plan, pushed, reads, rebase, record, releases, search_records, sessions, staging,
     store_lineage, submitted, symbols, tags, tokens, version_projection,
 };
@@ -39,6 +39,10 @@ pub(super) fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     grants::precheck(db, op, c, &actor.grant)?;
     if capacity::refuses(op) {
         capacity::refuse_if_full(db, c)?;
+    }
+    // An erased tombstone holds nothing, and no longer knows its owner.
+    if legal_hold::refuses(op) && !settings.erased() {
+        legal_hold::require_free(c, &settings.workspace)?;
     }
     let result = run(db, c, op, &actor, &settings)?;
     Ok(grants::redact(op, &actor.grant, result))
@@ -167,6 +171,7 @@ fn run<S: SqlStore>(
         }
         R::Delete => deletion::delete(db, c, actor, settings),
         R::PurgeTarget => deletion::purge_target(db, actor, settings),
+        R::HoldOwner => Ok(json!({ "owner": settings.workspace })),
         R::ErasePlan => erase::plan(db, settings),
         R::EraseStep => erase::step(db, settings),
         // `enqueue`: a landing that needs a merge joins the branch's queue in this call.

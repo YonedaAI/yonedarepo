@@ -757,7 +757,7 @@ fn the_quarantine_jobs_purge_clears_memories_of_a_purged_session_and_on_a_purged
         *h.now.borrow_mut() += 1_000;
         c["now"] = json!(*h.now.borrow());
         c["_system"] = json!("quarantine");
-        execute_repo_store(&h.db, c).unwrap()
+        execute_repo_store(&h.db, hold_off(c)).unwrap()
     };
     let claims = job(json!({"op":"repo_quarantine_claim","limit":10}))["claims"].clone();
     assert_eq!(claims.as_array().unwrap().len(), 2);

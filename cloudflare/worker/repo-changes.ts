@@ -3,9 +3,11 @@
 // adds the diff (object storage) to `show`, and sends the hook fan-out after events.
 // Approval is `git_review` on the head commit and landing is `git_land` of the head on the
 // change's base (main unless the change named another branch).
+
+import { diff } from './repo-diff';
 import { followForkChange, openForkChange } from './repo-forks';
 import { notifyHooks } from './repo-hooks';
-import { ApiError, diff, type Json, type RepoContext } from './repo-ops';
+import { ApiError, type Json, type RepoContext } from './repo-ops';
 
 const changeNumber = (value: unknown) => {
   const n = Number(value);
