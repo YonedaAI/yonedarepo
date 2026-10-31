@@ -57,5 +57,6 @@ yoneda token revoke ci
 | Message | What to do |
 |---|---|
 | `Path is outside your grant` | The token's paths do not cover the file; use a broader token |
+| `create the branch first` | A token with paths lands only what its paths cover, every commit down to the branch, and empty commits are refused. A new branch would bring its whole history: create the branch at a commit already on one, then land on it |
 | Git refuses a path-restricted token | Git reads the whole repository; use a token without paths, or the API |
 | `401` on a request that worked before | The token expired or was revoked; create a new one |

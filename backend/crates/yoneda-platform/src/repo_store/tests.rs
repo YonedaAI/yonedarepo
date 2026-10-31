@@ -1671,6 +1671,7 @@ mod pushed;
 mod quarantine;
 mod rebase;
 mod ref_chain;
+mod ref_grants;
 mod releases;
 mod search_records;
 mod secrets;
