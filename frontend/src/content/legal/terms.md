@@ -42,13 +42,11 @@ Every platform feature is free today. Managed review agents and metered usage dr
 
 ## Refunds
 
-Purchased credit that has been used is not refundable.
+All credit purchases are non-refundable, and promotional credit has no cash value.
 
-Unused purchased credit can be refunded if you ask within 14 days of buying it. After 14 days it stays on your account to use, but it is not refundable. Promotional credit has no cash value and is never refunded.
+If you think a charge is wrong, contact support. We fix billing errors, duplicate charges and charges you did not authorize, and we may issue other refunds at our discretion. If we stop offering the paid service, we refund your unused purchased credit.
 
-We refund billing errors, duplicate charges and charges you did not authorize. If we stop offering the paid service, we refund your unused purchased credit.
-
-To ask for a refund, use Support in the app or email the address under Contact. Refunds go back to the original payment method. If you dispute a charge with your bank, the related credit is frozen until the dispute closes.
+Refunds go back to the original payment method. If you dispute a charge with your bank, the related credit is frozen until the dispute closes.
 
 Nothing here limits any right to a refund you have under the law where you live.
 
