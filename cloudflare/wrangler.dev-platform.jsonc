@@ -322,6 +322,7 @@
     "CF_ACCOUNT_ID": "f011d0ee02b23cad26b4b38151b204ad",
     "EMAIL_CONTACT": "hello@yonedarepo.com",
     "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>",
+    "FAST_IMPORT": "on",
     "LAND_MODE": "batch",
     "LFS_S3_BUCKET": "yonedarepo-dev-platform-objects",
     "LFS_S3_ENDPOINT": "https://f011d0ee02b23cad26b4b38151b204ad.r2.cloudflarestorage.com",

@@ -198,6 +198,7 @@
           "ARTIFACTS_NAMESPACE": "{prefix}",
           "LAND_MODE": "batch",
           "REPO_ERASE": "on",
+          "FAST_IMPORT": "on",
           "BLOB_WRITE_THROUGH": "off",
           "AUDIT_LOG": "off",
           "TRAFFIC_EVENTS": "on",
