@@ -2,7 +2,9 @@
 // a Human view; a page request with no ping stays unconfirmed. It carries only the path and the
 // referring site's name. It always answers an empty 204: it sets no cookie, keeps no IP address
 // or user agent, and takes only same-origin requests about pages that exist. A forged ping or a
-// scripted browser still counts: this keeps out scanners, not a determined script.
+// scripted browser still counts: this keeps out scanners, not a determined script. A signed-in
+// reader of a public page counts too: the point says only that a session was there, never whose,
+// and the page is looked up without the cookie, so a private repository and the app never match.
 import { normalizeHandle } from '../../shared/account';
 import { appHead, siteHead } from './seo-head';
 import {
@@ -35,7 +37,7 @@ async function record(req: Request, env: Env) {
   if (req.headers.get('origin') !== url.origin) return;
   const site = req.headers.get('sec-fetch-site');
   if (site && site !== 'same-origin') return;
-  if (hasSession(req) || isOwnTraffic(req) || !sentByBrowser(req)) return;
+  if (isOwnTraffic(req) || !sentByBrowser(req)) return;
   const address = req.headers.get('cf-connecting-ip') ?? 'local';
   if (env.AUTH_LIMITER && !(await env.AUTH_LIMITER.limit({ key: `ping:${address}` })).success)
     return;
@@ -53,7 +55,7 @@ function write(req: Request, env: Env, path: string, referrer: string) {
     path,
     referrer,
     source: readSignupSource(null),
-    class: 'human',
+    class: hasSession(req) ? 'signed_in' : 'human',
     automated: false,
   });
 }

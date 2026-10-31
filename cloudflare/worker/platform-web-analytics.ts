@@ -32,12 +32,14 @@ function siteHost(origin: string | undefined) {
   }
 }
 
-/** Page loads and visits the beacon reported over the last `days` days, ending `now`. */
+/** Page loads and visits the beacon reported over the last `days` days, ending `now`, starting
+ * no earlier than `since` (epoch milliseconds). */
 export async function webAnalytics(
   env: Env,
   days: TrafficWindow,
   fetcher: typeof fetch = fetch,
   now = Date.now(),
+  since = 0,
 ): Promise<WebAnalyticsCheck> {
   const account = env.CF_ACCOUNT_ID ?? '';
   const token = env.ANALYTICS_READ_TOKEN ?? '';
@@ -46,7 +48,7 @@ export async function webAnalytics(
   const filter = {
     requestHost: host,
     bot: 0,
-    datetime_geq: new Date(now - days * DAY_MS).toISOString(),
+    datetime_geq: new Date(Math.max(now - days * DAY_MS, since)).toISOString(),
     datetime_leq: new Date(now).toISOString(),
   };
   try {

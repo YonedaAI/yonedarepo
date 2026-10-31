@@ -2,8 +2,8 @@
 // the class). A user agent is self-reported, so this sorts requests and proves nothing: only the
 // ping (site-ping.ts) confirms a browser, and only a token the platform accepted proves a client.
 
-/** What a page request looks like; `human` is only ever set by a ping. */
-export type SiteClass = 'human' | 'agent' | 'crawler' | 'bot' | 'unconfirmed';
+/** What a page request looks like; `human` and `signed_in` are only ever set by a ping. */
+export type SiteClass = 'human' | 'signed_in' | 'agent' | 'crawler' | 'bot' | 'unconfirmed';
 
 /** AI agents reading the site, for themselves or on someone's behalf, as they name themselves. */
 export const AI_AGENTS = [

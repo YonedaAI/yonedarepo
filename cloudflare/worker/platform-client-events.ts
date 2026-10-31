@@ -60,7 +60,7 @@ export function recordClient(req: Request, res: Response, env: Env, random = Mat
     env.SITE_EVENTS.writeDataPoint({
       indexes: ['client'],
       blobs: ['client', '', '', countryOf(req), ...empty, 'agent', seen.client, seen.operation],
-      doubles: [0, 1, every, held ? 1 : 0],
+      doubles: [0, 1, every, held ? 1 : 0, 1],
     });
   } catch {
     // A lost data point is acceptable; a failed request is not.
