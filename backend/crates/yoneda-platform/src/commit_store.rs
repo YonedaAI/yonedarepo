@@ -4,7 +4,7 @@
 //! writes and staged objects (until R2 holds them), and no refs: a commit reaches the
 //! authority (and its refs, checks and reviews) by adoption, when the authority first
 //! needs it. Only the platform adapter calls it, after the authority authorized the write.
-use crate::repo_store::{capacity, migration::migrate_with, staging};
+use crate::repo_store::{capacity, legal_hold, migration::migrate_with, staging};
 use crate::storage::{SqlStore, bad, number, string};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -45,7 +45,10 @@ pub fn execute_commit_store<S: SqlStore>(db: &S, command: Value) -> Result<Value
             "store_staged_held" => staging::held(&owned, c),
             "store_status" => status(&owned),
             "store_vacuum_scan" => vacuum_scan(&owned, c),
-            "store_vacuum_delete" => vacuum_delete(&owned, c),
+            "store_vacuum_delete" => {
+                legal_hold::require_free(c, "")?;
+                vacuum_delete(&owned, c)
+            }
             "store_forget" => forget(&owned, c),
             op => Err(Error::new("UNKNOWN_OP", format!("Unknown shard op {op}"))),
         }

@@ -31,8 +31,10 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::BranchSet
         | R::BranchBatch
         | R::BeginCommit => actor.require("write"),
-        // Owner (or repo:admin) checks and the purger's check happen in `deletion`.
-        R::Delete | R::PurgeTarget => Ok(()),
+        // Told before any legal hold, as `refuses` ops run after this.
+        R::Delete => actor.require_repo_owner(),
+        // The purger's check happens in `deletion`.
+        R::PurgeTarget => Ok(()),
         // Only the platform copies commit shard records in.
         R::AdoptCommit if !actor.can("system") => {
             Err(Error::new("FORBIDDEN", "Only the platform adopts commits"))
@@ -136,6 +138,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::Commit
         | R::ContractList
         | R::Contracts
+        | R::HoldOwner
         | R::GitAccess
         | R::GitWalk
         | R::HookClaim

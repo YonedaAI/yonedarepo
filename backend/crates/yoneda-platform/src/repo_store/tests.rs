@@ -63,6 +63,8 @@ impl Harness {
             None if principal == "platform:hooks" => c["_system"] = json!("hooks"),
             None if principal == "platform:fork" => c["_system"] = json!("fork"),
             None if principal == "platform:lfs" => c["_system"] = json!("lfs"),
+            None if principal == "platform:purge" => c["_system"] = json!("purge"),
+            None if principal == "platform:quarantine" => c["_system"] = json!("quarantine"),
             None if principal.starts_with("member:") => {
                 let account = &principal["member:".len()..];
                 c["_session"] = json!({"workspace": account, "principal": format!("user:{account}"), "human": true})
@@ -71,6 +73,10 @@ impl Harness {
                 c["_token"] = json!("public-secret-0123456789abcdef0123456789")
             }
             None => c["_session"] = json!({"workspace": "ws-1", "principal": principal}),
+        }
+        // The adapter with `LEGAL_HOLD` off; `tests/legal_hold` sends its own answers.
+        if c.get("_hold").is_none() {
+            c = hold_off(c);
         }
         execute_repo_store(&self.db, c)
     }
@@ -195,6 +201,12 @@ fn file(path: &str, text: &str) -> Value {
 /// Evidence naming what a claimed run ran against (`claim`: its `repo_check_claim` answer).
 fn ran_on(claim: &Value) -> Value {
     json!({"commit": claim["commit"], "tree": claim["tree"], "files_sha256": "0".repeat(64)})
+}
+
+/// A command as the adapter sends it with `LEGAL_HOLD` off.
+fn hold_off(mut c: Value) -> Value {
+    c["_hold"] = json!("off");
+    c
 }
 
 fn code(result: yoneda_core::Result<Value>) -> String {
@@ -1657,6 +1669,7 @@ mod hooks;
 mod land_cas;
 mod land_shapes;
 mod landed_tickets;
+mod legal_hold;
 mod lfs;
 mod lfs_sweep;
 mod members;

@@ -5,6 +5,8 @@
 // authorities to ask on their requests, org-access.ts) and drops this isolate's org access
 // copies after a change, so removals reach repositories within ACCESS_MS.
 import { ACCOUNT_IDENTIFIER_HELP, normalizeAccountIdentifier } from '../../shared/account';
+import { holdSwitch } from './legal-hold';
+import { orgHold } from './platform-holds';
 import { forgetOrgAccess, type OrgAccess, teamKey } from './platform-org-access';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import { requirePatScope } from './repo-pat';
@@ -115,7 +117,12 @@ async function deleteOrg(env: Env, org: string, actor: string, confirm: string) 
       'CONFLICT',
       `${org} owns ${owned?.n} repositories; delete them before the organization`,
     );
-  const deleted = await orgCommand(env, org, { op: 'org_delete', actor, confirm });
+  const deleted = await orgCommand(env, org, {
+    op: 'org_delete',
+    actor,
+    confirm,
+    ...holdSwitch(env),
+  });
   forgetOrgAccess(org);
   await Promise.all((deleted.members as string[]).map((m) => hint(env, m, org, false)));
   return { org, deleted: true };
@@ -170,6 +177,9 @@ export async function orgsRoute(
   if (!resource && get) return run({ op: 'org_show' });
   if (!resource && del) return deleteOrg(env, org, actor, query.get('confirm') ?? '');
   if (resource === 'repos' && !item && get) return orgRepos(env, org, actor);
+  if (resource === 'hold' && !item) return orgHold(env, org, method, run);
+  if (resource === 'repos' && item && sub === 'hold' && !target)
+    return orgHold(env, org, method, run, item);
   if (resource === 'members' && !item && post) {
     const { account, role } = await body();
     const invited = accountArg(account);

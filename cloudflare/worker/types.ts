@@ -25,6 +25,9 @@ export interface Env {
   LAND_MODE_OVERRIDE?: string;
   /** `on`: a repository's database refuses new work from 9 GB (unset or `off`: never). */
   REPO_STORAGE_GUARD?: string;
+  /** `on`: destructive ops wait for the owner's legal hold answer, and the hold routes
+   * exist (unset or anything else: neither; legal-hold.ts). */
+  LEGAL_HOLD?: string;
   /** Platform check executors (one fresh container per run attempt). */
   CHECK_RUNNERS: DurableObjectNamespace<import('./check-container').CheckContainer>;
   OBJECT_PUSHES: DurableObjectNamespace<import('./repo-push-queue').ObjectPushQueue>;

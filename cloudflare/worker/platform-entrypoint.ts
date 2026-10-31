@@ -5,6 +5,7 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { AccountCreated } from './account-index';
 import { withWaitUntil } from './background';
+import { laterIfHeld } from './legal-hold';
 import { accountCreated, SIGNUP_NOTICE } from './platform-accounts';
 import { verifyEmail } from './platform-email-verify';
 import { platformFetch } from './platform-routes';
@@ -57,10 +58,10 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
     await lfsSweepJob(env, envelope);
     message.ack();
   } else if (envelope.kind === 'platform_quarantine') {
-    await quarantineJob(env, envelope);
+    await laterIfHeld(env, envelope, () => quarantineJob(env, envelope));
     message.ack();
   } else if (envelope.kind === 'platform_purge') {
-    await purgeRepository(env, envelope.repo_id);
+    await laterIfHeld(env, envelope, () => purgeRepository(env, envelope.repo_id));
     message.ack();
   } else if (envelope.kind === SIGNUP_NOTICE) {
     const outcome = await signupNoticeJob(env, envelope, message.attempts);

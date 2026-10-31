@@ -12,6 +12,7 @@ import { accountActivity } from './platform-account-activity';
 import { adminRoute } from './platform-admin';
 import { isOwnAvatar, ownAvatar, publicAvatarName, servePublicAvatar } from './platform-avatars';
 import { favoritesRoute } from './platform-favorites';
+import { repoHold } from './platform-holds';
 import { orgAccess } from './platform-org-access';
 import { orgsRoute } from './platform-orgs';
 import { sshKeyRoute } from './platform-ssh-keys';
@@ -69,6 +70,8 @@ const STATUS: Record<string, number> = {
   STALE_EPOCH: 409,
   NOT_LANDED: 409,
   AUTOMATION_PAUSED: 423,
+  // Under a legal hold (repo_store/legal_hold.rs), or one that could not be read.
+  LEGAL_HOLD: 423,
   ALREADY_EXISTS: 409,
   NAME_TAKEN: 409,
   PUSH_FAILED: 502,
@@ -194,6 +197,7 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   if (!resource && get) return withPath(env, repo, await run('git_status', {}));
   if (resource === 'name' && !sha && req.method === 'PUT')
     return renameRepository(ctx, (await bodyOf(req)).name);
+  if (resource === 'hold' && !sha && get) return repoHold(ctx);
   if (resource === 'quarantine')
     return quarantineRoute(ctx, req.method, sha, sub, () => bodyOf(req));
   if (get && resource === 'refs') return run('git_refs', query);

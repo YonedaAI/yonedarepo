@@ -2,6 +2,7 @@
 // and returns JSON; the SourceRepository Durable Object and Rust compute decide, this
 // module only moves objects between the cache tiers and those deciders.
 import { durableJson, storageGuard } from './durable';
+import { type HoldAnswer, holdSwitch, verifiedHold } from './legal-hold';
 import type { OrgAccess } from './platform-org-access';
 import { archivedObjects } from './repo-archive';
 import { noteBundles } from './repo-bundles';
@@ -47,7 +48,15 @@ export type Credentials =
         | 'quarantine';
     };
 // Identity fields come only from the authenticating adapter, never from arguments.
-const CREDENTIAL_KEYS = ['_session', '_token', '_pat', '_anonymous', '_system', '_storage_guard'];
+const CREDENTIAL_KEYS = [
+  '_session',
+  '_token',
+  '_pat',
+  '_anonymous',
+  '_system',
+  '_storage_guard',
+  '_hold',
+];
 export class ApiError extends Error {
   constructor(
     readonly code: string,
@@ -128,11 +137,13 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
       ...Object.fromEntries(Object.entries(command).filter(([k]) => !CREDENTIAL_KEYS.includes(k))),
       ...auth,
       ...storageGuard(env),
+      ...holdSwitch(env),
     };
   };
-  const once = async (command: Json) => {
+  const once = async (command: Json, hold?: HoldAnswer) => {
+    const body = JSON.stringify({ ...sign(command), ...(hold && { _hold: hold }) });
     const value = await timed(`do.${command.op}`, () =>
-      durableJson<Json>(stub, 'https://source-repository/', JSON.stringify(sign(command))),
+      durableJson<Json>(stub, 'https://source-repository/', body),
     ).finally(() => {
       // Counted when it settles (it may have committed even if its answer was lost).
       if (!KEEPS_REFS.has(command.op)) noteWrite(repo);
@@ -143,12 +154,18 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
   // A commit the authority has not seen may live in its commit shard: adopt, then retry.
   // A read at the latest version of a branch with unprojected changesets waits for them.
   // A read below the compaction floor is retried once with the archived log it names.
+  // A destructive op is sent again with the legal hold answer of the owner it names.
   const call = async (command: Json) => {
     let sent = command;
+    let hold: HoldAnswer | undefined;
     for (let attempt = 0; ; attempt++) {
       try {
-        return await once(sent);
+        return await once(sent, hold);
       } catch (e) {
+        if (e instanceof ApiError && e.code === 'HOLD_UNCHECKED' && !hold) {
+          hold = await verifiedHold(env, e.message, repo);
+          continue;
+        }
         if (e instanceof ApiError && e.code === 'TXLOG_ARCHIVED' && !sent._archive) {
           const archive = await archivedObjects(env, repo, e.message);
           if (archive) {

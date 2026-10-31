@@ -2,9 +2,9 @@
 // D1 projections (admin-queries.ts), each account's authority and the site traffic report
 // (platform-site-traffic.ts). Actions are safe and reversible: credit grants (the managed agents
 // Worker's admin route, its bearer kept here), suspension (the account authority refuses
-// every credential until it is lifted), and quarantining or releasing repository content as
-// the repository's owner. Every action writes admin_audit. Contact emails appear in these
-// answers only.
+// every credential until it is lifted), quarantining or releasing repository content as the
+// repository's owner, and legal holds (platform-holds.ts). Every action writes admin_audit.
+// Contact emails appear in these answers only.
 import { normalizeAccountIdentifier } from '../../shared/account';
 import { accountSummary, recordAccount } from './account-index';
 import { isAdminAccount } from './admin-auth';
@@ -20,6 +20,8 @@ import {
   repoRowOf,
   signups,
 } from './platform-admin-queries';
+import { operatorOrgHold, operatorRepoHold } from './platform-holds';
+import { orgArg } from './platform-orgs';
 import { siteTraffic } from './platform-site-traffic';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { quarantineRoute } from './repo-quarantine';
@@ -56,6 +58,7 @@ export async function adminRoute(
   const [section, id, action, record, sub] = parts;
   const get = method === 'GET';
   const post = method === 'POST';
+  const hold = action === 'hold' && !record && (post || method === 'DELETE');
   if (section === 'overview' && !id && get) return overview(env);
   if (section === 'signups' && !id && get) return signups(env, query.get('since'));
   if (section === 'audit' && !id && get) return auditLog(env, query.get('before'));
@@ -76,6 +79,7 @@ export async function adminRoute(
     if ((action === 'suspend' || action === 'unsuspend') && post)
       return setSuspended(env, actor, account, action === 'suspend');
   }
+  if (section === 'orgs' && id && hold) return operatorOrgHold(env, actor, orgArg(id), method);
   if (section === 'repos' && !id && get) return listRepos(env, query.get('q'), query.get('before'));
   if (section === 'repos' && id === 'largest' && !action && get) return largestRepos(env);
   if (section === 'repos' && id) {
@@ -83,6 +87,7 @@ export async function adminRoute(
     if (!action && get) return repoDetail(env, id);
     if (action === 'quarantine' && post)
       return quarantineAsOwner(env, actor, id, record, sub, body);
+    if (hold) return operatorRepoHold(env, actor, id, method);
   }
   throw new ApiError('NOT_FOUND', 'Unknown admin path');
 }
