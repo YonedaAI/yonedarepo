@@ -156,8 +156,9 @@ impl Platform {
     /// create` makes), and a token that may read, write and land.
     pub fn repo(&self, files: &[(&str, &str)]) -> TestResult<(String, String)> {
         let files: Vec<Value> = files.iter().map(|(p, t)| file(p, t)).collect();
-        let mut body =
-            json!({ "name": "cli", "policy": { "required_checks": [], "approvals": 0 } });
+        // An owner's repository names are unique, and one test run makes many.
+        let name = format!("cli-{}", uuid::Uuid::new_v4().simple());
+        let mut body = json!({ "name": name, "policy": { "required_checks": [], "approvals": 0 } });
         if !files.is_empty() {
             body["files"] = json!(files);
             body["author"] = json!({ "name": "Seed", "email": "seed@example.com" });

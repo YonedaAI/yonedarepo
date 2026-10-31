@@ -5,8 +5,9 @@
 //! on their own; an org always keeps one owner. `actor` is the calling account, set by the
 //! authenticating adapter. A personal account's authority keeps hints of the orgs it joined
 //! (`org_hint_*`) so the adapter knows whom to ask; hints never grant access. Deleting an
-//! org (its owners, once it owns no repositories: the adapter checks the listing) leaves a
-//! tombstone: the name is retired, so nothing a deleted org held can pass to a new account.
+//! org (its owners, once it owns no repositories: the adapter checks the listing, and this
+//! authority the names claimed for repositories being made) leaves a tombstone: the name is
+//! retired, so nothing a deleted org held can pass to a new account.
 use super::op::{OrgMemberOp, OrgOp};
 use super::*;
 
@@ -290,6 +291,7 @@ fn delete<S: SqlStore>(db: &S, c: &Value, org: &str, actor: &str, now: i64) -> R
         return Err(bad("confirm must be the organization's name"));
     }
     super::holds::refuse_org_delete(db, c)?;
+    super::repo_names::refuse_creating(db, now)?;
     let members: Vec<Value> = db
         .query("SELECT account FROM org_members ORDER BY account", &[])?
         .into_iter()

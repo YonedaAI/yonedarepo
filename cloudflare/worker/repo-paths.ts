@@ -98,7 +98,8 @@ const claim = (env: Env, owner: string, repo: string, name: string) =>
  * Holds `name` among `owner`'s repositories for `repo` (a new one, or a rename):
  * NAME_TAKEN while another repository has it, also one made before owners held names. An
  * owner without an authority (a workspace an operator provisions) holds no names: its
- * repositories are reached by id. Answers the name it replaces (`renamed_from`).
+ * repositories are reached by id; a deleted org refuses (GONE), which is what stops a create
+ * already past its owner check. Answers the name it replaces (`renamed_from`).
  */
 export async function holdName(env: Env, owner: string, repo: string, name: string) {
   const listed = await listedNamed(env, owner, name);

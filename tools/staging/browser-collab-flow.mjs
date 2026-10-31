@@ -211,7 +211,8 @@ export async function orgPages(page, { account, member, shot, cleanup }, m) {
     throw new Error(`the Owner picker does not offer ${org}: ${e.message.split('\n')[0]}`);
   });
   await dialog.getByLabel('Repository name').fill(name);
-  const created = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/v1/repos' && r.request().method() === 'POST');
+  // Past the dialog's own bound (45 s): giving up sooner runs cleanup under a create in flight.
+  const created = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/v1/repos' && r.request().method() === 'POST', { timeout: 50_000 });
   await dialog.getByRole('button', { name: 'Create repository' }).click();
   const response = await created;
   assert.ok(response.ok(), `Create org repository: HTTP ${response.status()}`);

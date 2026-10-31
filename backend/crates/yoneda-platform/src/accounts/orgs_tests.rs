@@ -367,6 +367,33 @@ fn team_ids_are_never_reused_and_a_deleted_org_retires_its_name() {
 }
 
 #[test]
+fn a_repository_being_created_holds_the_org_and_a_deleted_org_refuses_new_names() {
+    const REPO: &str = "r0123456789abcdef0123";
+    const HOUR: i64 = 60 * 60 * 1000;
+    let delete = json!({"op":"org_delete","actor":"alice","confirm":"acme","_hold":"off"});
+    let claim = json!({"op":"owned_repo_claim","repo":REPO,"name":"late"});
+    let release = json!({"op":"owned_repo_release","repo":REPO});
+
+    let db = acme();
+    at(&db, 1000, claim.clone()).unwrap();
+    let held = at(&db, 2000, delete.clone()).unwrap_err();
+    assert_eq!(held.code, "CONFLICT");
+    // The repository went, or the create failed: its name no longer holds the org.
+    ok(&db, release);
+    at(&db, 2000, delete.clone()).unwrap();
+    assert_eq!(at(&db, 3000, claim.clone()).unwrap_err().code, "GONE");
+
+    // A hold left behind by a create that failed outright does not last.
+    let db = acme();
+    at(&db, 1000, claim).unwrap();
+    assert_eq!(
+        at(&db, 999 + HOUR, delete.clone()).unwrap_err().code,
+        "CONFLICT"
+    );
+    at(&db, 1000 + HOUR, delete).unwrap();
+}
+
+#[test]
 fn the_team_id_migration_numbers_existing_teams_and_continues_after_them() {
     let old = NativeStore::memory().unwrap();
     old.query(
