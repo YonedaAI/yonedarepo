@@ -35,6 +35,7 @@ const STATUS: Record<string, number> = {
   GONE: 404,
   RATE_LIMITED: 429,
   OVERLOADED: 503,
+  REPO_FULL: 507,
 };
 
 /** A plain-text refusal Git shows as `remote: <message>`; a 401 invites credentials and a
