@@ -599,6 +599,7 @@ describe('content', () => {
       'Your content',
       'Acceptable use and limits',
       'Credit and fees',
+      'Refunds',
       'Backups',
       'Third-party integrations',
       'Copyright complaints',
