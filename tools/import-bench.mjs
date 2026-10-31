@@ -142,6 +142,7 @@ async function run(source, n) {
         result.total_s = seconds(started);
         result.imported = answer.body.output?.commits;
         result.timing = answer.body.output?.timing ?? null;
+        result.stopped = answer.body.output?.stopped;
         break;
       }
       await wait(POLL_MS);
@@ -150,7 +151,10 @@ async function run(source, n) {
     assert.equal(log.body.history_import, undefined, 'A finished import still reads as partial');
     Object.assign(result, await clone);
     assert.equal(result.head, head, 'Our clone is not at main');
-    assert.equal(result.commits, result.imported, 'Our clone lacks commits');
+    // What the Workflow says it recorded, then what the clone holds: on a history that
+    // ended early (`stopped`), the clone has it all and the log the part recorded.
+    assert.equal(result.stopped, undefined, `History ended early: ${JSON.stringify(result.stopped)}`);
+    assert.equal(result.imported, result.commits, 'Recorded commits differ from the clone\'s');
   } finally {
     if (!values.keep) await call(`/repos/${repo}?confirm=${encodeURIComponent(name)}`, { method: 'DELETE' });
   }

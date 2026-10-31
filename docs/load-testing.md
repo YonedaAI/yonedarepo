@@ -62,8 +62,8 @@ Today's cost of one commit: 2-3 new trees, each read down every tier (Cache API,
 | Measure | Budget |
 |---|---|
 | **Click to usable (files read, `git clone` of ours working)** | **Artifacts' fetch plus a few seconds. The bar is a `git clone` of the same repository: 1.0-1.5 s from GitHub to a Mac, 2026-10-31 (pflag 1.1 s, whisper 1.5 s, cobra 1.4 s; 3 runs each)** |
-| Artifacts finished to main at the remote's head | under 3 s below 1,000 commits: a look every 0.5 s, 1 log call per 1,000 commits, 3-6 tree reads, 3-4 authority calls. Recording history is no part of it |
-| The page after that | a read of the import every second |
+| Artifacts finished to files shown | under 1.5 s: from the request, not the Workflow (dev, 2026-10-31: 1-4 s from request to Artifacts asked, most of it the Workflow starting). A look every 0.25 s, 1 log call per 1,000 commits, 3-6 tree reads, 3 authority calls, the page reading every 0.5 s. Recording history is no part of it |
+| Floor, dev, 2026-10-31 | Artifacts' fetch: 2.8-4.2 s (pflag, whisper), against a whole `git clone` at 0.8-1.3 s |
 | History | at least 50 commits/s: 5,000 commits under 2 minutes |
 | One wave, 250 commits, one Workflow step | under 5 s: 1 log call, about 750 tree reads straight from Artifacts 32 at a time, no R2 or edge writes, 1-4 authority calls |
 | One authority transaction | at most 250 commits and 1 MiB of changed paths (a single larger commit goes alone, at most 10,000 paths); well under the 19 MB the size spike deleted safely in one transaction |

@@ -11,167 +11,32 @@ import { NonRetryableError } from 'cloudflare:workflows';
 import { rpcValue } from './durable';
 import { inBatches } from './repo-git-objects';
 import {
-  changedPaths,
-  diff,
-  parentTree,
-  type Repo,
-  tooLarge,
-  treeReader,
-} from './repo-import-trees';
+  endHistory,
+  headKey,
+  headTiming,
+  type ImportParams,
+  type ImportStep,
+  landHead,
+  logged,
+  RETRY,
+  stopReason,
+  storeName,
+} from './repo-import-head';
+import { diff, parentTree, tooLarge, treeReader } from './repo-import-trees';
 import { caller, type Json } from './repo-ops';
-import { dispatchProjection } from './repo-projection';
 import type { Env } from './types';
 
-/** `branch`: the remote's branch to import; none: its default branch. */
-export type ImportParams = {
-  repo: string;
-  url: string;
-  branch?: string;
-  max: number;
-  /** When the request asked, for the import's own timing. */
-  asked_at?: number;
-};
-export type Commit = { hash: string; tree: string; parents: string[]; message: string };
-/** The subset of WorkflowStep the import uses (tests pass a direct runner). */
-export type ImportStep = {
-  do<T>(name: string, config: Json, callback: () => Promise<T>): Promise<T>;
-};
-
-export const RETRY = {
-  retries: { limit: 8, delay: '10 seconds', backoff: 'exponential' },
-  timeout: '10 minutes',
-};
 /** A wave retries for about 2.5 minutes: past that, the repository matters more. */
 const WAVE_RETRY = {
   retries: { limit: 5, delay: '5 seconds', backoff: 'exponential' },
   timeout: '10 minutes',
 };
-export const storeName = (repo: string) => `yr-${repo}`;
-
 /** Commits per wave, the authority's most per transaction (BATCH_COMMITS). */
 const WAVE = 250;
 /** Commits diffed at once. */
 const DIFFS = 32;
 /** JSON one authority call carries (one larger commit goes alone). */
 const BATCH_BYTES = 1024 * 1024;
-const LOG_PAGE = 1000;
-const POLL_MS = 500;
-
-export { changedPaths };
-
-export const logged = (c: ArtifactsCommitMetadata): Commit => ({
-  hash: c.hash,
-  tree: c.treeHash,
-  parents: c.parents,
-  message: c.message.slice(0, 4000),
-});
-
-/** The chain from `ref`, newest first, at most `want` commits. */
-async function readChain(repo: Repo, ref: string, want: number) {
-  const chain: Commit[] = [];
-  while (chain.length < want) {
-    const last = chain.at(-1)?.hash;
-    const limit = Math.min(LOG_PAGE, want - chain.length);
-    const page = await rpcValue(repo.log({ ref: last ?? ref, limit, offset: last ? 1 : 0 }));
-    chain.push(...page.map(logged));
-    if (page.length < limit) break;
-  }
-  return chain;
-}
-
-/** The repository's store once Artifacts has finished: asked often, not at the backoff a
- * failed step gets, which would leave the code hidden for minutes after it arrived. */
-async function whenImported(env: Env, params: ImportParams) {
-  for (;;) {
-    try {
-      return await env.ARTIFACTS.get(storeName(params.repo));
-    } catch (e: any) {
-      if (e?.code !== 'IMPORT_IN_PROGRESS') throw e;
-    }
-    await new Promise((done) => setTimeout(done, POLL_MS));
-  }
-}
-
-async function landHead(env: Env, params: ImportParams) {
-  using repo = await whenImported(env, params);
-  const fetched_at = Date.now();
-  // The branch Artifacts imported: the one named, else the store's own default.
-  const ref = params.branch ?? (await rpcValue(repo.info())).defaultBranch;
-  // One past the limit: the oldest kept commit's changes are against its real parent.
-  const chain = await readChain(repo, ref, params.max + 1);
-  const read_at = Date.now();
-  const [head, below] = chain;
-  if (!head)
-    throw new NonRetryableError(
-      params.branch ? `Branch ${params.branch} has no commits` : 'The remote has no commits',
-    );
-  const whole = Math.min(chain.length, params.max);
-  // A head too large to record its changes still lands: it is all the history there will be.
-  const touches = await diff(
-    treeReader(repo),
-    await parentTree(repo, head, below),
-    head.tree,
-  ).catch((e) => {
-    if (!tooLarge(e)) throw e;
-    return null;
-  });
-  const total = touches ? whole : 1;
-  const call = caller(env, params.repo, { _system: 'import' });
-  await call({
-    op: 'repo_record_imported',
-    commit: head.hash,
-    tree: head.tree,
-    parents: head.parents,
-    message: head.message,
-    generation: total,
-    touches: touches ?? [],
-  });
-  const status = await call({ op: 'repo_status' });
-  const landed = status.refs.length
-    ? status
-    : await call({ op: 'repo_import', ref: 'main', commit: head.hash });
-  // Imported as main, the store already holds main at this commit, and projecting it as a new
-  // ref is refused as stale. Any other branch leaves main for projection to create.
-  if ((params.branch ?? 'main') === 'main')
-    await caller(env, params.repo, { _system: 'projection' })({
-      op: 'repo_projection_result',
-      refname: 'refs/heads/main',
-      version: landed.version,
-      outcome: 'ok',
-      commit: head.hash,
-    });
-  // Now, not after the history: a clone through the store needs main there.
-  else await dispatchProjection(env, params.repo);
-  const stopped = touches
-    ? null
-    : await endHistory(env, params, { reason: stopReason(TOO_LARGE), total: whole });
-  const landed_at = Date.now();
-  return {
-    commit: head.hash,
-    version: landed.version as number,
-    total,
-    stopped,
-    next: total > 1 ? { commit: below?.hash as string, generation: total - 1 } : null,
-    fetched_at,
-    read_at,
-    landed_at,
-  };
-}
-
-const TOO_LARGE = new Error('TOO_LARGE: ');
-/** Why history ended early, as the repository's page says it. */
-const stopReason = (e: unknown) =>
-  tooLarge(e)
-    ? 'One commit changes more than 10,000 files.'
-    : 'Recording older commits kept failing.';
-
-/** Ends history where it reached, leaving the repository as a capped import would. */
-async function endHistory(env: Env, params: ImportParams, why: Json) {
-  const call = caller(env, params.repo, { _system: 'import' });
-  const { history_stopped } = await call({ op: 'repo_record_imported_end', ...why });
-  return history_stopped as { recorded: number; total: number; reason: string } | null;
-}
-
 type Cursor = { commit: string; generation: number };
 
 /** Splits `commits` so one call's JSON stays within `BATCH_BYTES`. */
@@ -266,7 +131,13 @@ export async function landThenFill(
     const reason = stopReason(e);
     stopped = await step.do('end history here', RETRY, () => endHistory(env, params, { reason }));
   }
-  const filled = await step.do('finish', RETRY, async () => Date.now());
+  const { filled, early } = await step.do('finish', RETRY, async () => {
+    const key = headKey(params.repo);
+    const noted = await env.OBJECTS.get(key);
+    const early = noted ? await noted.json<Json>() : null;
+    await env.OBJECTS.delete(key);
+    return { filled: Date.now(), early };
+  });
   rates.sort((a, b) => a - b);
   const history_ms = filled - head.landed_at;
   return {
@@ -276,12 +147,7 @@ export async function landThenFill(
     ...(stopped && { stopped }),
     // What the bench reports (tools/import-bench.mjs): server-side, in the Workflow's steps.
     timing: {
-      // From the request to main usable, stage by stage.
-      start_ms: importing_at - (params.asked_at ?? importing_at),
-      artifacts_ms: head.fetched_at - importing_at,
-      chain_ms: head.read_at - head.fetched_at,
-      land_ms: head.landed_at - head.read_at,
-      usable_ms: head.landed_at - (params.asked_at ?? importing_at),
+      ...(early ?? headTiming(params, importing_at, head, 'workflow')),
       history_ms,
       commits_per_s: Math.round(((head.total - 1) * 1000) / (history_ms + 1)),
       waves: rates.length,

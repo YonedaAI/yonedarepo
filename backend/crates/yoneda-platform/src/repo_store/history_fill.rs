@@ -80,6 +80,8 @@ pub(super) fn refuses(op: StoreOp) -> bool {
         op,
         StoreOp::Repo(
             R::BeginCommit
+                | R::BisectStart
+                | R::BisectStep
                 | R::BranchBatch
                 | R::BranchSet
                 | R::BreakGlass
