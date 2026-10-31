@@ -18,6 +18,8 @@ export const WORKDIR = '/work';
 /** The plugin and the scripted stand-in for opencode, as the image installs them. */
 export const PLUGIN = '/opt/yoneda/plugin';
 export const FAKE_OPENCODE = ['node', '/opt/yoneda/fake/tests/agents/fake-opencode.mjs'];
+/** The memory test's scripted stand-in (tests/agents/fake-memory-agent.mjs). */
+export const FAKE_MEMORY_AGENT = ['node', '/opt/yoneda/fake/tests/agents/fake-memory-agent.mjs'];
 /** Inside the clone's Git directory, so the clone stays the container's only mount. */
 export const HOOK_LOG = `${WORKDIR}/.git/yoneda-hooks.jsonl`;
 export const GUARD_EXIT = 97;
@@ -69,28 +71,35 @@ export function credentialFor(exported, model) {
 /** The container's whole environment (names and values); nothing else of the host reaches it.
  * Every client in it (opencode, git, the `yoneda` remote helper) reads the proxy variables,
  * which name the egress proxy at `proxy` (`startEgress`'s IPv4 `address:port`); the egress
- * check probes exactly that proxy and refuses to start an agent whose variables differ. */
-export function sandboxEnv({ origin, token, remote, credential, proxy }) {
+ * check probes exactly that proxy and refuses to start an agent whose variables differ.
+ * `plain` is an agent on a stock Git clone: no yoneda plugin and no YONEDA_* variable, with
+ * the token only as Git's header for the platform over smart HTTP. */
+export function sandboxEnv({ origin, token, remote, credential, proxy, plain = false }) {
   if (!/^\d{1,3}(\.\d{1,3}){3}:\d{1,5}$/.test(proxy ?? '')) throw new Error(`the egress proxy must be an IPv4 address:port, not ${proxy}`);
   const proxyUrl = `http://${proxy}`;
   return {
-    YONEDA_ORIGIN: origin,
-    YONEDA_TOKEN: token,
-    YONEDA_HOOK_LOG: HOOK_LOG,
-    YONEDA_AGENT_WORKDIR: WORKDIR,
-    OPENCODE_CONFIG_CONTENT: JSON.stringify({ plugins: [{ package: PLUGIN }] }),
+    ...(plain
+      ? {}
+      : {
+          YONEDA_ORIGIN: origin,
+          YONEDA_TOKEN: token,
+          YONEDA_HOOK_LOG: HOOK_LOG,
+          YONEDA_AGENT_WORKDIR: WORKDIR,
+          OPENCODE_CONFIG_CONTENT: JSON.stringify({ plugins: [{ package: PLUGIN }] }),
+        }),
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_TERMINAL_PROMPT: '0',
     // The bind mount's owner is not the container's agent user, and Docker Desktop's file
     // sharing reports unstable ctimes and inodes: with full stat checks Git takes tracked files
     // for modified and refuses `pull --rebase` ("local changes would be overwritten").
-    GIT_CONFIG_COUNT: '3',
+    GIT_CONFIG_COUNT: plain ? '4' : '3',
     GIT_CONFIG_KEY_0: 'safe.directory',
     GIT_CONFIG_VALUE_0: WORKDIR,
     GIT_CONFIG_KEY_1: 'core.checkStat',
     GIT_CONFIG_VALUE_1: 'minimal',
     GIT_CONFIG_KEY_2: 'core.trustctime',
     GIT_CONFIG_VALUE_2: 'false',
+    ...(plain ? { GIT_CONFIG_KEY_3: `http.${origin}/.extraHeader`, GIT_CONFIG_VALUE_3: `Authorization: Bearer ${token}` } : {}),
     SANDBOX_EXPECTED_ORIGIN: remote,
     SANDBOX_EGRESS_PROXY: proxy,
     HTTPS_PROXY: proxyUrl,
