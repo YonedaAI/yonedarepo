@@ -54,8 +54,21 @@ export async function compactLog(env: Env, repo: string, call: Call, max = SEGME
     });
     segments++;
   }
-  const { floor, head, tail_rows, retention } = last;
-  return { segments, floor, head, tail_rows, retention, more: segments === max };
+  const { floor, head, tail_rows, retention, held: stopped } = last;
+  // Superfan alarms on this line (tail.ts): a hold with no limit would otherwise be silent.
+  if (stopped?.stalled)
+    console.error(
+      JSON.stringify({ event: 'compaction.stalled', repo, ...stopped, floor, head, tail_rows }),
+    );
+  return {
+    segments,
+    floor,
+    head,
+    tail_rows,
+    retention,
+    more: segments === max,
+    ...(stopped ? { held: stopped } : {}),
+  };
 }
 
 const checked = new Map<string, number>();
