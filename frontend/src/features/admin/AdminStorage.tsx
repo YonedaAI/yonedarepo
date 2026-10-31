@@ -107,9 +107,7 @@ export function LargestRepos({ navigate }: { navigate: Navigate }) {
                 <th>Owner</th>
                 <th>Database</th>
                 <th>Alert</th>
-                <th>
-                  <span className="sr-only">Details</span>
-                </th>
+                <th aria-label="Details" />
               </tr>
             </thead>
             <tbody>
