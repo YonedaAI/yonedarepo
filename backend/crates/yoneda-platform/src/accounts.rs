@@ -40,6 +40,9 @@ mod orgs;
 #[cfg(test)]
 mod orgs_tests;
 mod repo_names;
+mod search_directory;
+#[cfg(test)]
+mod search_directory_tests;
 mod signin;
 #[cfg(test)]
 mod ssh_key_token_tests;
@@ -83,6 +86,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             op::AccountOp::Hold(op) => holds::handle(&db, &command, op, now),
             op::AccountOp::DeletedRepo(op) => deleted_repos::handle(&db, &command, op),
             op::AccountOp::Audit(op) => audit_log::handle(&db, &command, op),
+            op::AccountOp::Search(op) => search_directory::handle(&db, &command, op, now),
             op::AccountOp::Handle(op) => handles::handle(&db, &command, op, now),
         }
     }))

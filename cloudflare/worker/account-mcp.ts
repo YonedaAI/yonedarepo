@@ -8,6 +8,7 @@ import platformTools from '../../backend/crates/yoneda-core/src/platform_tools.j
 import { operation, serveMcp } from './repo-mcp';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { forViewer } from './repo-principal-privacy';
+import { accountSearchOn } from './repo-search-directory';
 import { DAY_MS, undoMs, undoOn } from './repo-undo-window';
 import type { Env } from './types';
 
@@ -186,10 +187,33 @@ const repoTools: Json[] = platformTools.map((tool: Json) => ({
 
 export const accountTools: Json[] = [...managementTools, ...orgToolSchemas, ...repoTools];
 
+/** Search across repositories, while `ACCOUNT_SEARCH` is on. */
+const searchTool: Json = {
+  name: 'search_repos',
+  description:
+    "Search all the repositories this credential can use: code and paths on each repository's main branch, plus records (memories, commits, sessions, changes) in the newest 25. Each page searches the code of the 25 newest repositories that can match; pass next as after for more. results has one entry per repository that found something, each with its git_grep answer; failed lists any that could not be searched. To search one repository fully, or another branch, use git_grep.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', minLength: 2, maxLength: 200 },
+      after: { type: 'string', description: 'The next value of the previous page' },
+      groups: {
+        type: 'string',
+        description: 'Comma-separated: code, memories, commits, sessions, changes',
+      },
+      ignore_case: { type: 'boolean' },
+      word: { type: 'boolean', description: 'Whole words only' },
+      limit: { type: 'integer', minimum: 1, description: 'Results per group, per repository' },
+    },
+    required: ['query'],
+    additionalProperties: false,
+  },
+};
+
 /** The tools as this deployment describes them: with the undo window on, deleting is not
  * permanent yet. */
-export const toolsOf = (env: Env) =>
-  undoOn(env)
+export function toolsOf(env: Env) {
+  const described = undoOn(env)
     ? accountTools.map((tool) =>
         tool.name === 'repo_delete'
           ? {
@@ -199,6 +223,8 @@ export const toolsOf = (env: Env) =>
           : tool,
       )
     : accountTools;
+  return accountSearchOn(env) ? [searchTool, ...described] : described;
+}
 
 export function accountMcp(req: Request, env: Env, auth: Credentials, route: Route) {
   const origin = new URL(req.url).origin;
@@ -228,6 +254,10 @@ export function accountMcp(req: Request, env: Env, auth: Credentials, route: Rou
     tools: toolsOf(env),
     call: async (name, args) => {
       if (name === 'repo_list') return rest('GET', '/repos');
+      if (name === 'search_repos') {
+        const asked = Object.entries(args).map(([k, v]) => [k, String(v)]);
+        return rest('GET', `/search?${new URLSearchParams(asked)}`);
+      }
       const org = orgTools.find(([tool]) => tool === name);
       if (org) return rest(...org[3](args));
       if (name === 'repo_create') return rest('POST', '/repos', args);

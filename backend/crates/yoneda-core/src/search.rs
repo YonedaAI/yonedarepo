@@ -12,6 +12,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 mod grep;
 pub mod stored;
+pub mod summary;
 pub use grep::{Grep, LineMatch, binary_path, grep};
 pub use stored::StoredSegment;
 

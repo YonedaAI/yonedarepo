@@ -9,7 +9,9 @@ use yoneda_core::{
     Error, Result,
     blame::{BlameLine, blame},
     git_object::{FileMode, ObjectId, ObjectKind, TreeEntry, hash_object},
-    search::{MAX_INDEXED_BYTES, StoredSegment, binary_path, build_segment, grep},
+    search::{
+        MAX_INDEXED_BYTES, StoredSegment, binary_path, build_segment, grep, summary::Summary,
+    },
 };
 
 /// Files one directory may list for indexing (its index is built in chunks).
@@ -184,6 +186,19 @@ pub fn search_segment(c: &Value) -> Result<Value> {
         "candidates": segment.candidates(prefix, &string(c, "query")?)?,
         "unindexed": unindexed,
     }))
+}
+
+/// `search_summary`: `bits` (a summary so far, or none) with a stored segment under `prefix`
+/// added. The adapter folds a repository's segments through this one at a time.
+pub fn search_summary(c: &Value) -> Result<Value> {
+    let bytes = crate::platform_objects::base64_field(c, "segment_b64")?;
+    let segment = StoredSegment::open(&bytes)?;
+    let mut summary = match c["bits"].as_str() {
+        Some(bits) => Summary::from_hex(bits)?,
+        None => Summary::default(),
+    };
+    segment.summarize(c["prefix"].as_str().unwrap_or_default(), &mut summary);
+    Ok(json!({ "bits": summary.to_hex(), "saturated": summary.saturated() }))
 }
 
 pub fn grep_blob(c: &Value) -> Result<Value> {

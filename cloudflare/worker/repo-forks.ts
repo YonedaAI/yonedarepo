@@ -14,6 +14,7 @@ import { ApiError, type Credentials, caller, type Json, type RepoContext } from 
 import { holdName } from './repo-paths';
 import { dispatchProjection } from './repo-projection';
 import { visibilityOf } from './repo-public';
+import { markFork } from './repo-search-directory';
 import { shardOutboxes } from './repo-shards';
 import {
   FORK_DEPTH,
@@ -85,6 +86,7 @@ export async function forkRepository(ctx: RepoContext, args: Json) {
   await caller(env, ctx.repo, { _system: 'fork' })({ op: 'repo_fork_register', fork: id });
   await shardOutboxes(env, id);
   await listRepository(env, id, auth._session.workspace, name, visibility);
+  await markFork(env, auth._session.workspace, id);
   await Promise.all([dispatchProjection(env, id), refreshHead(env, id)]);
   return {
     id,

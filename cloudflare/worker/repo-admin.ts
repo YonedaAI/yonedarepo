@@ -16,6 +16,7 @@ import { ApiError, type Credentials, caller, type Json, RepoContext } from './re
 import { requirePatScope } from './repo-pat';
 import { releaseNames, withPaths } from './repo-paths';
 import { dispatchPurge } from './repo-projection';
+import { dropSummary } from './repo-search-directory';
 import { ownSpec } from './repo-stores';
 import { undoOn } from './repo-undo-window';
 import type { Env, Envelope } from './types';
@@ -102,6 +103,7 @@ export async function deleteRepository(env: Env, auth: Credentials, repo: string
   if (deleted.parent) await forgetFork(env, deleted.parent, repo);
   await unlistRepository(env, repo);
   await dropDeletedHead(env, repo);
+  await dropSummary(env, repo, listed?.workspace);
   // Hooks subscribed to `repo` get repo.deleted, delivered from the tombstone (a repeated
   // delete names any still waiting, so a lost job is sent again).
   await Promise.all(
@@ -185,6 +187,7 @@ export async function purgeRepository(
   { scheduled = false, skipWindow = false } = {},
 ) {
   await purgeObjects(env, repo, skipWindow);
+  await dropSummary(env, repo);
   const done = scheduled
     ? await caller(env, repo, { _system: 'purge' })({ op: 'repo_purged' })
     : null;

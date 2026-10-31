@@ -55,6 +55,7 @@ pub fn compute(c: Value) -> Result<Value> {
         "partition_files" => crate::platform_derived::partition_files(&c),
         "index_files" => crate::platform_derived::index_files(&c),
         "search_segment" => crate::platform_derived::search_segment(&c),
+        "search_summary" => crate::platform_derived::search_summary(&c),
         "grep" => crate::platform_derived::grep_blob(&c),
         "blame" => crate::platform_derived::blame_versions(&c),
         "symbols" => crate::platform_code::symbols(&c),

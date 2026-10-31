@@ -9,6 +9,7 @@
 //! 3 bytes and a u32 posting offset, then the postings (each a varint count and varint
 //! deltas between ascending file indexes). Integers are little-endian. Every length and
 //! index is checked on read: a damaged segment is an error, never a panic.
+use super::summary::Summary;
 use super::{Segment, SegmentFile, candidates};
 use crate::{Error, Result};
 use std::collections::BTreeSet;
@@ -159,6 +160,19 @@ impl<'a> StoredSegment<'a> {
     /// `candidates`).
     pub fn candidates(&self, prefix: &str, query: &str) -> Result<Vec<SegmentFile>> {
         candidates(&self.files, prefix, query, |gram| self.posting(gram))
+    }
+
+    /// Adds this segment's trigrams and its files' full paths (under `prefix`) to `summary`.
+    pub fn summarize(&self, prefix: &str, summary: &mut Summary) {
+        for entry in self.table.chunks_exact(ENTRY) {
+            summary.add_gram(&[entry[0], entry[1], entry[2]]);
+        }
+        for file in &self.files {
+            match prefix {
+                "" => summary.add_path(&file.path),
+                _ => summary.add_path(&format!("{prefix}/{}", file.path)),
+            }
+        }
     }
 }
 

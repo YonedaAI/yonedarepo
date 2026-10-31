@@ -22,6 +22,7 @@ import { accessEverywhere } from './repo-head';
 import { retireMirror } from './repo-mirror-retire';
 import { RepoObjects } from './repo-objects';
 import { ApiError, caller, type Json, type RepoContext, target, walk } from './repo-ops';
+import { voidSummary } from './repo-search-directory';
 import { seedPrefix } from './repo-seed';
 import { transcriptKey } from './repo-session-records';
 import { ownSpec, parseStore } from './repo-stores';
@@ -77,6 +78,7 @@ async function quarantine(ctx: RepoContext, args: Json) {
     retain_days: args.retain_days,
   });
   await accessEverywhere(ctx.env, ctx.repo);
+  await voidSummary(ctx.env, ctx.repo);
   await schedulePurge(ctx.env, ctx.repo, made.purge_at);
   return made;
 }
@@ -134,6 +136,7 @@ export async function purgeContent(env: Env, repo: string, spec: string, claims:
   await zeroBundled(env, repo, blobs);
   await purgePrefix(env, derivedPrefix(repo));
   await purgePrefix(env, seedPrefix(repo));
+  await voidSummary(env, repo);
 }
 
 /** Overwrites the frames of `blobs` in the push bundles holding them with zeros, a bundle

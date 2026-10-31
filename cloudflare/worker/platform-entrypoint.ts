@@ -25,6 +25,7 @@ import { lfsSweepJob } from './repo-lfs-sweep';
 import { PACK_BUILD, packBuildJob } from './repo-pack-jobs';
 import { projectObjects, projectRefs } from './repo-projection';
 import { quarantineJob } from './repo-quarantine';
+import { SUMMARY_JOB, summaryJob } from './repo-search-summary';
 import { storeAwaited, storeJob } from './repo-store-create';
 import type { Env, Envelope } from './types';
 
@@ -57,6 +58,9 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
     message.ack();
   } else if (envelope.kind === 'platform_derive') {
     await oneAtATime(() => deriveAfterLanding(env, envelope));
+    message.ack();
+  } else if (envelope.kind === SUMMARY_JOB) {
+    await oneAtATime(() => summaryJob(env, envelope));
     message.ack();
   } else if (envelope.kind === CLASSIFY) {
     await oneAtATime(() => classifyJob(env, envelope));
