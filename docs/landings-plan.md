@@ -84,6 +84,31 @@ New policy fields must be left out when empty. Otherwise the policy digest chang
 
 If memory doesn't help, fix that before building Instruments around it.
 
+### Results
+
+Built, not run yet: `tools/staging/memory-flow.mjs`. The run fills this section. Run it with `set -a; . ~/.config/yonedarepo/dev-owner.env; set +a`, then `node tools/staging-realworld.mjs --memory-test`, which prints the estimate; add `--yes` to start.
+
+<!-- memory-test-results:start -->
+No run yet.
+<!-- memory-test-results:end -->
+
+**How it is built:**
+
+| Part | Choice |
+|---|---|
+| Traps | 3 made-up rules, one per repository, each a different kind: `frozen-file` on `oss-cobra` (where code goes), `env-prefix` on `oss-commander` (what a name must be), `exit-code` on `oss-click` (what a value must be) |
+| Hidden | Before an agent starts, the fork's tree, commit messages and history are scanned for each rule; a hit stops the test |
+| Oracle | Reads the pushed branch's diff through the API; the agent's code is never run |
+| Forks | One per run, per arm. Only the memory arm's fork gets memories, so nothing can leak to the plain arm |
+| Token | The owner's, limited to the fork and its parent, `repo:read` and `repo:write`, revoked after the run. **A token of the fork alone can't push to it** ("Objects this fork inherits need read on its parent"), so an agent could write to its parent. Nothing tells it to, it has no land scope, and every ref of each parent is compared at the end |
+| Delivery | 13 memories per fork, the trap oldest. The start packet is the 8 newest, so the trap reaches an agent only through its file or the prompt's words, behind 2 newer memories on the same file |
+| Invalid run | Memory arm: the trap memory didn't read back as delivered. Plain arm: any delivery, any memory, or a `yoneda` read call. Either arm: the agent didn't finish. Reported per arm and never counted |
+| Answer | "Memory helped" needs Fisher p < 0.05, at least 5 valid runs per arm and more than one trap improved |
+
+Dropping undelivered runs means the test measures agents that got the memory. How often it was delivered is reported apart, as a product number.
+
+**Dry run:** `node tests/agents/e2e.mjs --only none --memory-stub 6` runs the whole flow locally in the sandbox with a scripted agent that keeps a rule only if it reached its context. It proves the plumbing, not the answer. `--only 32` is the change evidence check without a browser.
+
 ## 3. Route read and timeline
 
 1. New read op: for one change, its commits, sessions, memories delivered and checks. All of it lives in the repo's database. Today the page makes several calls and commits aren't returned at all.

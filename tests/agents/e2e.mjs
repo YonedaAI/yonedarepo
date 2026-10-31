@@ -4,10 +4,13 @@
 // MCP) and 28 (the Claude Code and opencode plugin hooks); with --fake-agents N, item 29's
 // parallel-agent run with tests/agents/fake-opencode.mjs as `opencode` (scripted agents, the
 // real yoneda plugin, no model), each in the agent sandbox container like a real agent (needs
-// Docker; the image is built from this checkout). No provider keys; LFS is left to the live
+// Docker; the image is built from this checkout); with --memory-stub N, the memory test's dry
+// run: N blocks of tests/agents/fake-memory-agent.mjs in both arms on fixture repositories
+// named as the real ones. 32 is the change page's session evidence (API half; the browser half
+// needs the front Worker, so the live kit runs it). No provider keys; LFS is left to the live
 // kit (its uploads go to presigned R2 URLs).
-// Usage: cargo build -p yoneda-cli && node tests/agents/e2e.mjs [--only 27,28] [--fake-agents 4]
-//          [--cli-bin <dir>]
+// Usage: cargo build -p yoneda-cli && node tests/agents/e2e.mjs [--only 27,28,32] [--fake-agents 4]
+//          [--memory-stub 5] [--cli-bin <dir>]
 import { execFileSync, spawn } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
@@ -20,13 +23,37 @@ import { agentRun } from '../../tools/staging/agent-run-flow.mjs';
 import { CliKit, PAT_SCOPES } from '../../tools/staging/cli-tools.mjs';
 import { Recorder, Session, sleep } from '../../tools/staging/client.mjs';
 import { gitSemantics } from '../../tools/staging/git-semantics-flow.mjs';
+import { memoryRun, report } from '../../tools/staging/memory-flow.mjs';
+import { memoryPage } from '../../tools/staging/memory-page-flow.mjs';
+import { anchoredFiles, TRAPS } from '../../tools/staging/memory-traps.mjs';
+import { scrubber } from '../../tools/staging/realuser-plan.mjs';
+import { Workspace } from '../../tools/staging/realuser-git.mjs';
 
-const { values } = parseArgs({ options: { only: { type: 'string' }, 'cli-bin': { type: 'string' }, 'fake-agents': { type: 'string' } } });
+const { values } = parseArgs({ options: { only: { type: 'string' }, 'cli-bin': { type: 'string' }, 'fake-agents': { type: 'string' }, 'memory-stub': { type: 'string' } } });
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const config = join(root, 'tests/ssh/wrangler.jsonc');
 const wrangler = join(root, 'node_modules/.bin/wrangler');
 const fakeAgents = Number(values['fake-agents'] ?? 0);
+const memoryStub = Number(values['memory-stub'] ?? 0);
 const wanted = (id) => (id === '29' ? fakeAgents > 0 : !values.only || values.only.split(',').includes(id));
+
+/** The memory test's dry run on small repositories with the real ones' names and its files. */
+async function memoryStubRun(account, origin) {
+  for (const trap of TRAPS) {
+    const files = anchoredFiles(trap).map((path) => ({ path, content_b64: Buffer.from(`${path} of the fixture\n`).toString('base64') }));
+    await account.post('/repos', { name: trap.repo, policy: { required_checks: [], approvals: 1 }, files, author: { name: 'Dry run', email: 'kit@yonedarepo.invalid' } });
+  }
+  const secrets = new Set();
+  const ws = new Workspace({ api: origin, bin: values['cli-bin'] ?? join(root, 'target/debug'), scrub: scrubber(secrets) });
+  try {
+    const summary = await memoryRun({ owner: account, ws, root, ts: String(Date.now()), secrets }, { runs: memoryStub, parallel: 2, model: 'fake/scripted', timeoutS: 120, fake: true });
+    const code = report(summary, { root, fill: false });
+    const { answer, avoided, delivered, invalid } = summary.verdict;
+    if (code || answer !== 'memory helped' || delivered.yes !== delivered.n || invalid.plain + invalid.memory) throw new Error(`dry run: ${answer}, ${JSON.stringify({ avoided, delivered, invalid })}`);
+  } finally {
+    ws.dispose();
+  }
+}
 
 const freePort = () =>
   new Promise((resolve) => {
@@ -65,8 +92,10 @@ try {
   try {
     if (wanted('27')) await rec.step('27', 'Git semantics: stock git, yoneda CLI and MCP', (m) => gitSemantics(kit, { lfs: false }, m));
     if (wanted('28')) await rec.step('28', 'Agent hooks: Claude Code and opencode plugins, sessions API', (m) => agentHooks(kit, m));
+    if (wanted('32')) await rec.step('32', 'Change page evidence: session record, transcript and context delivery', (m) => memoryPage(kit, {}, m));
     if (wanted('29'))
       await rec.step('29', `Parallel agents (scripted, no model, sandboxed): ${fakeAgents} + 2`, (m) => agentRun(kit, { root, agents: fakeAgents, wave2: 2, model: 'fake/scripted', timeoutS: 120, fake: true }, m));
+    if (memoryStub) await rec.step('memory', `Memory test dry run (scripted, no model, sandboxed): ${memoryStub} blocks`, () => memoryStubRun(account, origin));
   } finally {
     kit.dispose();
   }

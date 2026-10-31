@@ -92,6 +92,18 @@ test("the container's environment is the allowlist, by name only", () => {
   assert.ok(!('SANDBOX_CREDENTIAL' in bare));
 });
 
+test('a plain arm gets no plugin and no platform variable, only Git\'s header for the token', () => {
+  const plain = sandboxEnv({ origin: 'https://api.example', token: 'repo-token-secret', remote: 'https://api.example/git/r1.git', credential: null, proxy, plain: true });
+  assert.deepEqual(Object.keys(plain).filter((n) => n.startsWith('YONEDA_') || n.startsWith('OPENCODE_')), []);
+  assert.equal(plain.GIT_CONFIG_COUNT, '4');
+  assert.equal(plain.GIT_CONFIG_KEY_3, 'http.https://api.example/.extraHeader');
+  assert.equal(plain.GIT_CONFIG_VALUE_3, 'Authorization: Bearer repo-token-secret');
+  assert.equal(plain.SANDBOX_EXPECTED_ORIGIN, 'https://api.example/git/r1.git');
+  // Everything else the sandbox relies on is the same as for any agent.
+  assert.equal(plain.GIT_CONFIG_VALUE_0, WORKDIR);
+  assert.equal(plain.HTTPS_PROXY, `http://${proxy}`);
+});
+
 test("the docker client gets the daemon's settings and the -e values, nothing else of the host", () => {
   const client = clientEnv(HOST, env);
   for (const leak of ['GH_TOKEN', 'SSH_AUTH_SOCK', 'OPENAI_API_KEY', 'PWD', 'GIT_CONFIG_GLOBAL', 'XDG_CONFIG_HOME']) assert.ok(!(leak in client), leak);

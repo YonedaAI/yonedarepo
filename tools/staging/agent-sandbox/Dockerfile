@@ -26,8 +26,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
     && usermod --login agent --home /home/agent --move-home node && groupmod --new-name agent node
 COPY --from=build /usr/local/bin/yoneda /usr/local/bin/git-remote-yoneda /usr/local/bin/opencode /usr/local/bin/
 COPY plugins/opencode/yoneda /opt/yoneda/plugin
-# The scripted stand-in for opencode (tests/agents/e2e.mjs --fake-agents), in its source layout.
-COPY tests/agents/fake-opencode.mjs /opt/yoneda/fake/tests/agents/
+# The scripted stand-ins for opencode (tests/agents/e2e.mjs --fake-agents, --memory-stub), in
+# their source layout.
+COPY tests/agents/fake-opencode.mjs tests/agents/fake-memory-agent.mjs /opt/yoneda/fake/tests/agents/
 COPY tools/staging/opencode-fake.mjs /opt/yoneda/fake/tools/staging/
 # The egress proxy (run as its own container from this image) and the agent's egress check.
 COPY tools/staging/agent-sandbox/egress-proxy.mjs tools/staging/agent-sandbox/egress-check.mjs /opt/yoneda/

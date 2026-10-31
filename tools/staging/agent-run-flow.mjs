@@ -74,10 +74,13 @@ export function spendBudget(limit) {
     report(agent, cost) {
       if (cost === null) return;
       spent.set(agent, cost);
-      if (!aborted && this.total() > limit) {
-        aborted = true;
-        for (const stop of listeners) stop();
-      }
+      if (this.total() > limit) this.abort();
+    },
+    /** Stops every run now, as going over the limit does. */
+    abort() {
+      if (aborted) return;
+      aborted = true;
+      for (const stop of listeners) stop();
     },
     total: () => [...spent.values()].reduce((a, b) => a + b, 0),
     onAbort(stop) {
@@ -92,7 +95,7 @@ export function spendBudget(limit) {
 }
 
 /** The host checkouts' and remotes' changes since `before`, as problems ([] when none). */
-async function hostProblems(before, watched) {
+export async function hostProblems(before, watched) {
   try {
     return hostDrift(before, await hostState(watched));
   } catch (e) {

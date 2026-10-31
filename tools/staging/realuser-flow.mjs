@@ -52,7 +52,7 @@ export async function deleteScratch(owner, repo, ts) {
 }
 
 /** Signs the owner in (never signs up); returns the cookie. */
-async function ownerLogin(origin, username, password) {
+export async function ownerLogin(origin, username, password) {
   const login = await new Session(origin).raw('POST', '/api/auth/login', { username, password });
   assert.equal(login.status, 200, `owner sign-in failed: ${login.body?.error?.code ?? login.status}`);
   return (login.headers.get('set-cookie') ?? '').split(';')[0];
