@@ -307,9 +307,11 @@ export class RepoObjects {
   /**
    * Raw content of objects for a pack, once per id: the store of record (R2: bundles where
    * the repository holds any, then one object per key), a fork's parent's store of record,
-   * then the authority's staged copy or bundle location for objects still missing, the
-   * commit shards (once for all; `owners` names the commit an object was staged with, so
-   * only its shard is asked), and a fork's parent's every tier last. Missing ones are left
+   * then the authority's staged copy or bundle location for objects still missing, a fork's
+   * parent's every tier (before its shards unless `owners` says an object is staged here:
+   * what no commit names is far more likely inherited, and one busy shard of 64 would fail
+   * every object they do not hold), and the commit shards (once for all; `owners` names the
+   * commit an object was staged with, so only its shard is asked). Missing ones are left
    * out. Bundled bytes come in ranges of `SMALL_RANGE`: callers hold every result at once.
    * With `large`, files too large to hold are listed there (id → size), not read.
    */
@@ -337,6 +339,8 @@ export class RepoObjects {
       const located = await readKnown(this.env, this.repo, chunk, answer.located, SMALL_RANGE);
       for (const w of chunk) if (located.has(w.id)) add(w, located.get(w.id) as Uint8Array);
     }
+    if (!owners)
+      for (const o of (await this.inherited?.raw(missing(wanted), true)) ?? []) found.set(o.id, o);
     // Commit shards once for all still missing: their commits' shards when the caller
     // names them (`owners`: id → commit), else every shard.
     const ids = missing(absent).map((w) => w.id);
