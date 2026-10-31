@@ -252,9 +252,9 @@ describe('feature pages', () => {
         versus: `${burst.theirs.name}: ${burst.theirs.label}`,
       }),
     ]);
-    // Review agents' blocks follow the shipped agents and the starting credit.
+    // Review agents' blocks follow the shipped line reviewers and the starting credit.
     const agents = featurePageOf('review-agents');
-    for (const a of MANAGED_AGENTS)
+    for (const a of MANAGED_AGENTS.filter((agent) => !agent.verdict))
       expect(agents?.blocks).toContainEqual({
         title: a.defaults.name,
         text: a.defaults.description,

@@ -1,17 +1,18 @@
 ---
 title: Review agents
-summary: Code review, Security review and Slop review run on your changes, post their findings as line comments and a check, and are billed from your credit.
+summary: Code review, Security review, Slop review and Intent drift run on your changes, post their findings and a check, and are billed from your credit.
 ---
 
 ## The agents
 
-YonedaRepo maintains three review agents. Each reviews an open change's diff, read only, and reports on the lines the change added.
+YonedaRepo maintains four review agents. Each reviews an open change's diff, read only. The first three report on the lines the change added; Intent drift gives one verdict on the whole change.
 
 | Agent | Looks for | Runs on | Result |
 |---|---|---|---|
 | **Code review** | Logic and off-by-one errors, error handling, races, missing awaits, unintended behavior changes, and breaks of the repository's own `REVIEW.md`, `AGENTS.md` or `CLAUDE.md` rules. Skips formatting and anything a linter reports. | Codex, `gpt-5.6-luna` | Pass or fail |
 | **Security review** | Injection, missing authorization checks, committed or logged secrets, SSRF, XSS, unsafe deserialization, weak cryptography, privilege escalation | Claude Code, `claude-sonnet-5-5` | Pass or fail |
 | **Slop review** | Dead or duplicated code, debug leftovers, drift from the repository's conventions, oversized files, filler comments | opencode, `mimo-v2.6-flash` | A level: low, medium or high (lower is better) |
+| **Intent drift** | Whether the diff does what the change's [flight plan](/docs/guides/changes#flight-plans) set out to do, and nothing it ruled out. A change with no plan starts no model and costs nothing. | opencode, `mimo-v2.6-flash` | A level: low on course, medium partly, high off course |
 
 The agents never edit, commit, push or use the network, and cannot land, approve or change policy: their token holds only read, review and check, including the right to post their own checks when your landing rules require them. The repository's `REVIEW.md`, `AGENTS.md` and `CLAUDE.md`, as they are at the change's base, are part of each review.
 
@@ -32,7 +33,7 @@ Only an owner can turn an agent on for a repository (for an organization's repos
 | Instructions | What the agent looks for; **Reset to the maintained instructions** restores ours |
 | When to run | **On every push** (default) or **When marked ready** (once, when the change opens) |
 | Paths, Branches | Optional filters; branches take `prefix/*` |
-| Block landing at | Slop review only: **Never (report only)** (default), **Medium or higher** or **High** |
+| Block landing at | Slop review and Intent drift: **Never (report only)** (default), **Medium or higher** or **High** |
 
 ## When they run
 
@@ -46,9 +47,15 @@ On the change:
 - **A summary comment.**
 - **A check** named after the agent (`code-review`, `security-review`, `slop-review`) on the head commit. Code review and Security review fail it when they post a high or medium finding. Slop review reports low and medium findings; its level is that of its most serious finding, or high with five or more medium findings on lines of the change. It fails the check only at or above **Block landing at**.
 
-Findings that cannot be placed on a line of the diff, or that look like a credential, are left out.
+Intent drift posts no line comments. Its summary comment gives the verdict and what drifted, and its check `intent-drift` carries the level. With no flight plan the check passes and its evidence says `no_plan`.
+
+Findings that cannot be placed on a line of the diff, or that look like a credential, are left out. So are findings past the 2,000 comments a change can hold; they still count toward the check.
 
 A failed check blocks landing only when the repository's [landing rules](/docs/guides/repositories#landing-rules) list it in `required_checks`; otherwise it is advice.
+
+## Go-around
+
+Nothing wakes an agent when findings arrive. The next session on the branch reads them in its context, with file and line, and so does anyone running `yoneda change show <n>`. It fixes them and pushes, and the push runs the review again. See [Go-around](/docs/guides/changes#go-around).
 
 ## Runs
 

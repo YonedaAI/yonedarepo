@@ -174,6 +174,14 @@ pub struct ChangeShow {
     pub change: Value,
 }
 
+/// `change route`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct ChangeRoute {
+    /// The commits, sessions, delivered context and checks, as the platform returns them.
+    pub route: Value,
+}
+
 /// `change comment`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -295,11 +303,20 @@ pub struct MemoryRetire {
     pub already: bool,
 }
 
+/// `flight-plan`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FlightPlan {
+    /// The plan as the platform stored it.
+    pub plan: Value,
+}
+
 super::report! {
     MemoryAdd => "memory-add",
     MemoryList => "memory-list",
     MemoryShow => "memory-show",
     MemoryRetire => "memory-retire",
+    FlightPlan => "flight-plan",
     TokenCreate => "token-create",
     TokenList => "token-list",
     TokenRevoke => "token-revoke",
@@ -314,6 +331,7 @@ super::report! {
     ChangeCreate => "change-create",
     ChangeList => "change-list",
     ChangeShow => "change-show",
+    ChangeRoute => "change-route",
     ChangeComment => "change-comment",
     ReleaseCreate => "release-create",
     ReleaseList => "release-list",

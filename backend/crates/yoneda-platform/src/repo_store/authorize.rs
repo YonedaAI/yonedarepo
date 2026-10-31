@@ -46,7 +46,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
             Err(Error::new("FORBIDDEN", "Only the platform adopts commits"))
         }
         R::Check => actor.require("check"),
-        R::SessionRecord => actor.require("write"),
+        R::SessionRecord | R::FlightPlan => actor.require("write"),
         // A change from a fork proposes the parent's mirror of a fork branch (`forks`):
         // the fork's writer needs only read here.
         R::ChangeCreate if c["source_repo"].is_string() => actor.require("read"),
@@ -148,6 +148,8 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::BundleLocate
         | R::ChangeRecords
         | R::ChangeGates
+        | R::ChangeRoute
+        | R::ChangeInstruments
         | R::ChangeShow
         | R::Changes
         | R::CheckRun

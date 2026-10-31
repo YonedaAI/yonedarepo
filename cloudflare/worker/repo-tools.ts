@@ -124,6 +124,16 @@ export const operations: Record<string, Operation> = {
       contracts: optionalNumber(a.contracts),
       memories: optionalNumber(a.memories),
     }),
+  // A plan the client files on purpose; never taken from a prompt.
+  git_flight_plan: (ctx, a) =>
+    ctx.call({
+      op: 'repo_flight_plan',
+      goal: a.goal,
+      scope: a.scope ?? null,
+      branch: a.branch ?? null,
+      change: a.change ?? null,
+      session_id: a.session_id ?? null,
+    }),
   git_bisect: async (ctx, a) => {
     const step = a.id
       ? await ctx.call({ op: 'repo_bisect_step', id: a.id })

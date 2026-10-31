@@ -1,0 +1,36 @@
+{
+  "$defs": {
+    "FlightPlan": {
+      "additionalProperties": false,
+      "description": "`flight-plan`.",
+      "properties": {
+        "plan": {
+          "description": "The plan as the platform stored it."
+        }
+      },
+      "required": [
+        "plan"
+      ],
+      "title": "FlightPlan",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `flight-plan`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/FlightPlan"
+    },
+    "schema": {
+      "const": "yoneda.cli.flight-plan.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.flight-plan.v1",
+  "type": "object"
+}

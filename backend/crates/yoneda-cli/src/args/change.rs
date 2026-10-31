@@ -36,6 +36,7 @@ pub fn change(rest: &[String]) -> Result<Command> {
             }
         }
         "show" => ChangeCommand::Show { number: number()? },
+        "route" => ChangeCommand::Route { number: number()? },
         "land" => ChangeCommand::Land { number: number()? },
         "close" => ChangeCommand::Close { number: number()? },
         "reopen" => ChangeCommand::Reopen { number: number()? },

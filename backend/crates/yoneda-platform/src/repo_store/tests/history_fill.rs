@@ -200,6 +200,11 @@ fn nothing_moves_a_ref_or_starts_new_history_while_filling() {
         ),
         (OWNER, json!({"op":"repo_fork_source"})),
         (CI, json!({"op":"repo_git_walk","wants":[id(3)],"haves":[]})),
+        // A bisection walks first parents: half a history would blame the wrong commit.
+        (
+            OWNER,
+            json!({"op":"repo_bisect_start","ref":"main","good":id(3),"bad":id(3),"check":"unit"}),
+        ),
     ] {
         let refused = h.run(principal, command.clone()).unwrap_err();
         assert_eq!(refused.code, "IMPORT_IN_PROGRESS", "{command}");

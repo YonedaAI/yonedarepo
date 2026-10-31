@@ -9,7 +9,7 @@ use yoneda_core::{Error, Result};
 /// entry, wave 2 raises this line. Rollback from wave 2 goes to wave 1, never earlier.
 pub(crate) const APPLY_THROUGH: i64 = 44;
 
-pub(crate) const MIGRATIONS: [(i64, &str); 44] = [
+pub(crate) const MIGRATIONS: [(i64, &str); 45] = [
     (1, include_str!("../migrations/repo_store/0001_source.sql")),
     (
         2,
@@ -171,6 +171,10 @@ pub(crate) const MIGRATIONS: [(i64, &str); 44] = [
     (
         44,
         include_str!("../migrations/repo_store/0044_auto_landings.sql"),
+    ),
+    (
+        45,
+        include_str!("../migrations/repo_store/0045_flight_plans.sql"),
     ),
 ];
 

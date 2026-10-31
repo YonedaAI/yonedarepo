@@ -356,7 +356,10 @@ fn path_restricted_tokens_cannot_quarantine() {
 fn upgrades_from_the_preceding_schema_with_records_intact() {
     let db = crate::native::NativeStore::memory().unwrap();
     let migrations = &super::super::migration::MIGRATIONS;
-    let preceding = migrations.len() - 1;
+    let preceding = migrations
+        .iter()
+        .position(|(v, _)| *v == super::super::migration::APPLY_THROUGH)
+        .unwrap();
     super::super::migration::migrate_with(&db, "repo_schema_migrations", &migrations[..preceding])
         .unwrap();
     db.query(

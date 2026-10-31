@@ -140,6 +140,19 @@ Dropping undelivered runs means the test measures agents that got the memory. Ho
 3. **Slop:** the existing `slop-review` value, last 5 heads.
 4. **Risk:** worked out by the platform, in Rust, with no model call and no cost: review classes, files and lines touched, sensitive paths, open findings. The same input always gives the same score, and the page shows why. Calibrate against real landings before showing a percentage.
 
+Built, behind `LANDING_INSTRUMENTS` (off): `GET /changes/:n/instruments`, `repo_change_instruments`, `platform_risk.rs`, `Instruments.tsx`. No schema migration, no policy field. Landing never reads Risk.
+
+| Risk input | Points |
+|---|---|
+| Review classes, worst commit | docs, formatting, comments 0; logic 15; instructions or unknown 25; **no class, or a commit that couldn't be read, 30** |
+| Size | files 0-20, lines 0-20 (lockfile lines not counted), any file not measured +10 |
+| Sensitive paths, each kind once | policy, workflows, auth 20; migrations 15; lockfiles 10 |
+| Open findings | 5 each, up to 25: unresolved line comments and findings withheld from a line |
+
+Low below 25, High from 55, score capped at 100. The page shows the level and every reason, not a percentage.
+
+**Not calibrated.** Dry run over 3,262 first-parent landings of cobra, commander.js and click, with classes assumed (docs-only or logic) and no findings: Low 73.9%, Medium 25.2%, High 0.9%. Only 6 of them were reverted: 4 Low, 2 Medium. That sets the bands' spread and says nothing about whether Risk predicts trouble. It stays "Risk (beta)" until real platform landings can be scored against outcomes.
+
 ## 5. Adoption of auto rows
 
 Ships **before** stage 6.
@@ -181,6 +194,12 @@ Ships **before** stage 6.
 3. Skill instructions ask agents to file one first. Hooks can't block a stock CLI, so "goal first" is encouraged, never enforced. No plan means the drift card says "No flight plan".
 4. Linking: the client sends the branch name. A push option beside `yoneda.reads` comes later, since installed CLIs won't send it.
 5. **Intent drift agent:** new managed agent comparing goal with diff. Needs change-level verdicts, because every finding must sit on a line today (`managed-instructions.ts:14`), and the body or plan passed to the harness. That means a **container rollout**: warn the owner first.
+
+**Rollout, in this order:**
+
+1. Wave 1: a binary that knows repo schema version 45 without applying it (the mechanism stage 5's `0044` brings). Every read answers as if no plan was filed, and filing answers `NOT_SUPPORTED`.
+2. Wave 2: the binary that applies `0045`. Rollback goes to wave 1, never earlier.
+3. Warn the owner, then roll the harness image with the managed Worker. Intent drift is off until a workspace enables it, and a change with no plan starts no container.
 
 ## 8. Go-around
 

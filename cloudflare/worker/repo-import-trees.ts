@@ -4,7 +4,7 @@ import { NonRetryableError } from 'cloudflare:workflows';
 import { rpcValue } from './durable';
 import { compute } from './repo-compute';
 import { inBatches } from './repo-git-objects';
-import type { Commit } from './repo-import-fill';
+import type { Commit } from './repo-import-head';
 import type { Json } from './repo-ops';
 import type { TreeEntry } from './repo-stores';
 import { TreeMemo } from './repo-tree-memo';
@@ -19,14 +19,20 @@ export type Repo = Awaited<ReturnType<Env['ARTIFACTS']['get']>>;
 
 export const tooLarge = (e: any) => /^TOO_LARGE: /.test(String(e?.message));
 
-/** A tree diff's changes as the authority records them. */
+/** A tree diff's changes as the authority records them. A touch has no rename: an exact
+ * rename, which the diff pairs up, is the delete and the add it was made of. */
 export const changedPaths = (changes: Json[]) =>
-  changes.map((c) => ({
-    path: c.path,
-    op: c.op,
-    old_blob: c.old?.id ?? null,
-    new_blob: c.new?.id ?? null,
-  }));
+  changes.flatMap((c) => {
+    const touch = (path: string, op: string, old: Json | null, added: Json | null) => ({
+      path,
+      op,
+      old_blob: old?.id ?? null,
+      new_blob: added?.id ?? null,
+    });
+    return c.op === 'rename'
+      ? [touch(c.old_path, 'delete', c.old, null), touch(c.path, 'add', null, c.new)]
+      : [touch(c.path, c.op, c.old, c.new)];
+  });
 
 /** The wave's reads of `repo`: each tree once, however many commits ask at once. */
 export function treeReader(repo: Repo) {

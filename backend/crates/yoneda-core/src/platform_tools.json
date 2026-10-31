@@ -1069,8 +1069,44 @@
     }
   },
   {
+    "name": "git_flight_plan",
+    "description": "File a flight plan before you start work (needs write and a whole-repository credential): the goal of this work and, optionally, its scope, each at most 2,000 bytes (refused if it holds a credential). The landing shows the newest plan for its branch or change, and the Intent drift agent, where it is on, compares the goal with the diff. Encouraged, never required. Pass branch (it need not be pushed yet), change when one is open, and session_id (your $YONEDA_SESSION_ID); at least one of the three. REST: POST /flight-plans.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "goal": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "What this work sets out to do"
+        },
+        "scope": {
+          "type": "string",
+          "maxLength": 2000,
+          "description": "What it will and will not touch"
+        },
+        "branch": {
+          "type": "string",
+          "description": "The branch the work is on"
+        },
+        "change": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The change number, when one is open"
+        },
+        "session_id": {
+          "type": "string",
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "goal"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "git_context",
-    "description": "What a coding session starting work should know, in one read: main's head (and branch's, when named), the landing rules, the newest session records (what earlier sessions did), open change requests, and the newest authored symbol contracts, those on paths first, and the repository's current memories ranked for those paths.",
+    "description": "What a coding session starting work should know, in one read: main's head (and branch's, when named), the landing rules, the newest session records (what earlier sessions did), open change requests, and the newest authored symbol contracts, those on paths first, and the repository's current memories ranked for those paths. With branch, go_around holds the open findings on that branch's open change, each with its file and line (at most 10 of open, those on the head first; on_head false means an older commit): read them, fix, push, and a re-review runs on the push.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2015,7 +2051,7 @@
   },
   {
     "name": "git_change_show",
-    "description": "One change request: the change, its head commit's record (git_show's shape: checks, check_runs, reviews and landing gates), its comments (oldest first), its branch's pushes from the transaction log (newest first) and the diff from the merge base with main to the head (git_diff's shape; for a landed change, against main just before it landed). patch adds unified patches. REST: GET /changes/:number?patch=1.",
+    "description": "One change request: the change, its head commit's record (git_show's shape: checks, check_runs, reviews and landing gates), its comments (oldest first), its branch's pushes from the transaction log (newest first) and the diff from the merge base with main to the head (git_diff's shape; for a landed change, against main just before it landed). patch adds unified patches. REST: GET /changes/:number?patch=1. flight_plan is the newest plan filed for its branch or number (null when none; git_flight_plan), and go_around its open findings (as in git_context; null unless the change is open).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2070,6 +2106,20 @@
             "null"
           ],
           "description": "git_diff's answer: {base, head, changes} (null when the change has no head)"
+        },
+        "flight_plan": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "The newest flight plan for the change: id, session_id, branch, change_number, goal, scope, principal, at"
+        },
+        "go_around": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "description": "Open findings: change, open (how many), findings (at most 10, each id, commit, path, line, side, body cut to 400 characters, principal, at, on_head)"
         }
       },
       "required": [
@@ -2292,6 +2342,24 @@
   {
     "name": "git_change_gates",
     "description": "What a change request's head still needs before it can land on its base, in one list: each required check, approvals, unresolved review comments, freshness against the base and a pause, each with state ready, waiting or blocked, one line of why, and whether landing enforces it (checks and approvals only on a protected base). ready is true when every enforced requirement is ready. REST: GET /changes/:number/gates.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "number": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "The change number"
+        }
+      },
+      "required": [
+        "number"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "git_change_route",
+    "description": "A change request's route in one read: the commits it introduces (newest first), the session records on them, the context those coding sessions were delivered (memories and other items, with labels), the latest check verdict per commit and name, and totals. Landed changes read against the base just before they landed. Tokens per session are not recorded; read_bytes and fetched_bytes are the measure. Each list keeps its newest rows (500 commits, 200 session records, 500 deliveries, 500 checks) and truncated says which were cut. Quarantined text reads null. Needs a whole-repository credential. REST: GET /changes/:number/route.",
     "inputSchema": {
       "type": "object",
       "properties": {

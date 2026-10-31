@@ -108,9 +108,23 @@ export type Push = {
 
 type DiffEnd = { commit: string; tree: string };
 
+/** What the work set out to do, filed on purpose by the session or person who did it. */
+export type FlightPlan = {
+  id: number;
+  session_id: string | null;
+  branch: string | null;
+  change_number: number | null;
+  goal: string;
+  scope: string | null;
+  principal: string;
+  at: number;
+};
+
 export type ChangeDetail = Change & {
   head_commit: CommitDetail | null;
   comments: ChangeComment[];
+  /** The newest plan for the branch or change; absent before the platform had plans. */
+  flight_plan?: FlightPlan | null;
   timeline: Push[];
   /** Why the fork branch's latest pushes could not be carried here (the change still shows). */
   source_error?: string;
@@ -118,6 +132,8 @@ export type ChangeDetail = Change & {
   base_protected?: boolean;
   /** From the merge base with the base branch (null: unrelated histories) to the head, as git_diff answers. */
   diff: { base: DiffEnd | null; head: DiffEnd; changes: DiffChange[] } | null;
+  /** This deployment answers `GET /changes/:n/instruments`. */
+  instruments?: boolean;
 };
 
 /** Where a comment on a line sits: deleted lines on the base file, others on the head file. */

@@ -2,11 +2,44 @@
 // (a file it read, a new prompt), as the agent hooks recorded them. Labels are the items'
 // current text; a prompt itself is never kept.
 import { linkTo, type Navigate } from '../shell/useRoute';
-import { type Deliveries, deliveryCause } from './memoryModel';
+import {
+  type DeliveredItem as DeliveredItemRow,
+  type Deliveries,
+  deliveryCause,
+} from './memoryModel';
 import { usePeople } from './people';
 import { Failure, Loading } from './SourceStatus';
 import { when } from './sourceApi';
 import { useSource } from './useSource';
+
+/** One delivered item: a link where it has a page, else its kind and label. */
+export function DeliveredItem({
+  repo,
+  item: i,
+  navigate,
+}: {
+  repo: string;
+  item: Pick<DeliveredItemRow, 'id' | 'label'> & { type: string };
+  navigate: Navigate;
+}) {
+  if (i.type === 'change')
+    return (
+      <a {...linkTo({ view: 'change', repo, number: i.id }, navigate)}>
+        {i.label ?? `Landing #${i.id}`}
+      </a>
+    );
+  if (i.type === 'session')
+    return (
+      <a {...linkTo({ view: 'session', repo, id: i.id }, navigate)}>
+        {i.label ?? `session #${i.id}`}
+      </a>
+    );
+  return (
+    <span>
+      <span className="chip">{i.type}</span> {i.label ?? `#${i.id}`}
+    </span>
+  );
+}
 
 export function SessionDeliveries({
   repo,
@@ -51,19 +84,7 @@ export function SessionDeliveries({
                 <ul className="memory-anchors">
                   {d.items.map((i) => (
                     <li key={`${i.type}:${i.id}`}>
-                      {i.type === 'change' ? (
-                        <a {...linkTo({ view: 'change', repo, number: i.id }, navigate)}>
-                          {i.label ?? `Landing #${i.id}`}
-                        </a>
-                      ) : i.type === 'session' ? (
-                        <a {...linkTo({ view: 'session', repo, id: i.id }, navigate)}>
-                          {i.label ?? `session #${i.id}`}
-                        </a>
-                      ) : (
-                        <span>
-                          <span className="chip">{i.type}</span> {i.label ?? `#${i.id}`}
-                        </span>
-                      )}
+                      <DeliveredItem repo={repo} item={i} navigate={navigate} />
                     </li>
                   ))}
                 </ul>

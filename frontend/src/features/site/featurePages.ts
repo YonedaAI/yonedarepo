@@ -9,6 +9,9 @@ import type { SitePage } from './siteRoute';
 
 export type FeatureBlock = { title: string; text: string };
 
+/** The agents the review page describes: those reporting on lines of a change. */
+const LINE_REVIEWERS = MANAGED_AGENTS.filter((a) => !a.verdict);
+
 export type FeaturePage = {
   /** The BUILD_ON item this page is for. */
   id: string;
@@ -187,10 +190,10 @@ export const FEATURE_PAGES: FeaturePage[] = [
     headline: 'Reviewers that read every change.',
     docs: 'agents/review-agents',
     blocks: [
-      ...MANAGED_AGENTS.map((a) => ({ title: a.defaults.name, text: a.defaults.description })),
+      ...LINE_REVIEWERS.map((a) => ({ title: a.defaults.name, text: a.defaults.description })),
       {
         title: 'A check you can require',
-        text: `Each agent runs on every push to an open change and records its check (${MANAGED_AGENTS.map((a) => `\`${a.check}\``).join(', ')}) on the head. Runs are billed per use from your credit; setting up a workspace’s first agent adds $${STARTING_CREDIT_USD} of credit, and adding a card unlocks more.`,
+        text: `Each agent runs on every push to an open change and records its check (${LINE_REVIEWERS.map((a) => `\`${a.check}\``).join(', ')}) on the head. Runs are billed per use from your credit; setting up a workspace’s first agent adds $${STARTING_CREDIT_USD} of credit, and adding a card unlocks more.`,
       },
     ],
     related: ['changes', 'ci', 'memory'],

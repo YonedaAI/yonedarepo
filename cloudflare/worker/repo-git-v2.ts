@@ -6,7 +6,7 @@
 // side-band 64k. A client that does not ask for version 2 is served version 0 unchanged.
 import { transient } from './durable';
 import { compute } from './repo-compute';
-import { mirrorClone } from './repo-git-mirror';
+import { importedClone, mirrorClone, stillFilling } from './repo-git-mirror';
 import { UploadSession } from './repo-git-sessions';
 import {
   CHUNK,
@@ -105,9 +105,12 @@ async function serveFetch(
           unshallow,
         }).body_b64,
       );
-    const served = await mirrorClone(ctx, objects, request, lead, CHUNK);
+    const held = lead({ shallow: [], unshallow: [] });
+    const served =
+      (await importedClone(ctx, objects, request, held)) ??
+      (await mirrorClone(ctx, objects, request, lead, CHUNK, true));
     if (served) return served;
-    throw e;
+    throw stillFilling(e);
   }
   const head = compute({
     op: 'git_v2_fetch_head',

@@ -247,7 +247,10 @@ fn releases_need_a_tag_land_scope_and_keep_assets_within_caps() {
 fn upgrades_from_the_bundles_schema_with_empty_release_tables() {
     let db = crate::native::NativeStore::memory().unwrap();
     let migrations = &super::super::migration::MIGRATIONS;
-    let before = migrations.len() - 1;
+    let before = migrations
+        .iter()
+        .position(|(v, _)| *v == super::super::migration::APPLY_THROUGH)
+        .unwrap();
     super::super::migration::migrate_with(&db, "repo_schema_migrations", &migrations[..before])
         .unwrap();
     db.query("INSERT INTO repo_settings(id,workspace,owner,object_store,policy,policy_digest,created_at) VALUES('repository','ws-1','user:owner','r2','{}','d',1)", &[]).unwrap();

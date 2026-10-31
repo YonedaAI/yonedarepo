@@ -5,12 +5,12 @@ use super::op::{InitOp, Op, RepoOp as R, StoreOp};
 use super::rows::{self, Settings};
 use super::{
     activity, adopt, agent_context, agent_reads, annotated, auto_landing, bisect, branches,
-    capacity, change_closing, change_comments, change_delete, change_gates, change_records,
-    changes, changesets, checks, classes, contracts, git_http, head, history, history_fill,
-    history_import, hook_delivery, hook_events, hooks, land, land_batch, land_queue, land_tickets,
-    legal_hold, members, merging, prepare, projection, projection_plan, pushed, reads, rebase,
-    record, releases, search_records, sessions, staging, store_lineage, submitted, symbols, tags,
-    tokens, version_projection,
+    capacity, change_closing, change_comments, change_delete, change_gates, change_instruments,
+    change_records, change_route, changes, changesets, checks, classes, contracts, flight_plans,
+    git_http, head, history, history_fill, history_import, hook_delivery, hook_events, hooks, land,
+    land_batch, land_queue, land_tickets, legal_hold, members, merging, prepare, projection,
+    projection_plan, pushed, reads, rebase, record, releases, search_records, sessions, staging,
+    store_lineage, submitted, symbols, tags, tokens, version_projection,
 };
 use super::{
     authorize::authorize, break_glass, deletion, erase, forks, grants, lfs, maintenance, memory,
@@ -129,7 +129,9 @@ fn run<S: SqlStore>(
         R::ContractList => agent_reads::contract_list(db, c),
         R::PinList => agent_reads::pin_list(db, actor),
         R::BisectList => agent_reads::bisect_list(db, c, actor),
-        R::AgentContext => agent_context::context(db, c, actor, settings),
+        R::AgentContext => agent_context::context(db, c, actor, settings)
+            .and_then(|found| history_fill::note(db, found)),
+        R::FlightPlan => flight_plans::file(db, c, actor),
         R::ChangeCreate => changes::create(db, c, actor),
         R::Changes => changes::list(db, c, actor),
         R::ChangeShow => changes::show(db, c, actor, settings),
@@ -138,6 +140,8 @@ fn run<S: SqlStore>(
         R::ChangeReopen => change_closing::set_open(db, c, actor, true),
         R::ChangeDelete => change_delete::delete(db, c, actor),
         R::ChangeGates => change_gates::gates(db, c, actor, settings),
+        R::ChangeRoute => change_route::route(db, c, actor),
+        R::ChangeInstruments => change_instruments::read(db, c, actor),
         R::CheckClaim => checks::claim(db, c),
         R::CheckRelease => checks::release(db, c),
         R::CheckRun => checks::run_op(db, c),

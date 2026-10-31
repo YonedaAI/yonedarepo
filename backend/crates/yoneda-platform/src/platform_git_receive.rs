@@ -4,6 +4,8 @@
 //! adapter to store. Nothing here moves a ref: the adapter records the commits and then
 //! applies the ref updates through the authority's compare-and-swap paths, with each
 //! command's old id as the expected-old lease (`git_land` takes none; see `repo_store::land`).
+mod import;
+
 use crate::platform_git_verify::{Step, Verified, Verifier};
 use crate::platform_objects::supplied_tree;
 use crate::secret_scan::StreamScan;
@@ -50,6 +52,9 @@ pub struct ReceiveSession {
     scanning: Option<StreamScan>,
     /// The verified commits, handed out a page at a time (`verified_page`).
     verified: Vec<Verified>,
+    /// An import's first-parent chain and how many of its commits are kept (`import`).
+    chain: Vec<import::Link>,
+    kept: usize,
 }
 
 impl Default for ReceiveSession {
@@ -71,6 +76,8 @@ impl ReceiveSession {
             written: 0,
             scanning: None,
             verified: Vec::new(),
+            chain: Vec::new(),
+            kept: 0,
         }
     }
 

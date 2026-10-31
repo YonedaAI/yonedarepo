@@ -5,35 +5,26 @@
 // remote or branch, no access) fails the import at once, with Artifacts' reason.
 import { NonRetryableError } from 'cloudflare:workflows';
 import { rpcValue } from './durable';
+import { landThenFill } from './repo-import-fill';
 import {
   type Commit,
-  changedPaths,
+  endWithoutMirror,
+  fetchRemote,
   type ImportParams,
   type ImportStep,
-  landThenFill,
   logged,
   RETRY,
   storeName,
-} from './repo-import-fill';
+} from './repo-import-head';
+import { changedPaths } from './repo-import-trees';
 import { parseStore, RepoObjects } from './repo-objects';
 import { caller, withTrees } from './repo-ops';
 import type { Env } from './types';
 
+export { startImport } from './repo-import-head';
 export type { ImportParams, ImportStep };
 
 const BATCH = 20;
-
-/** Artifacts' refusals that no retry mends. */
-const FINAL = [
-  'NOT_FOUND',
-  'INVALID_INPUT',
-  'INVALID_URL',
-  'INVALID_REPO_NAME',
-  'REMOTE_AUTH_REQUIRED',
-  'MEMORY_LIMIT',
-];
-const final = (e: any) =>
-  FINAL.includes(e?.code) ? new NonRetryableError(`${e.code}: ${e?.message ?? e}`) : e;
 
 const ADVERTISEMENT_BYTES = 64 * 1024;
 
@@ -60,6 +51,15 @@ export async function remoteDefaultBranch(url: string): Promise<string | null> {
   } finally {
     await reader.cancel().catch(() => {});
   }
+}
+
+/** How long a request waits for the remote to name its branch: the Workflow can still ask. */
+const BRANCH_WAIT_MS = 1500;
+
+/** `remoteDefaultBranch` for a request: null when the remote is slow or does not say. */
+export function defaultBranchSoon(url: string) {
+  const late = new Promise<null>((done) => setTimeout(() => done(null), BRANCH_WAIT_MS));
+  return Promise.race([remoteDefaultBranch(url).catch(() => null), late]);
 }
 
 async function readHistory(env: Env, params: ImportParams): Promise<Commit[]> {
@@ -124,20 +124,13 @@ export async function runImport(env: Env, asked: ImportParams, step: ImportStep)
     (await step.do('find the default branch', RETRY, () => remoteDefaultBranch(asked.url))) ??
     undefined;
   const params = { ...asked, branch };
-  const importing_at = await step.do('import into the object store', RETRY, async () => {
-    const started = Date.now();
-    try {
-      await rpcValue(
-        env.ARTIFACTS.import({
-          source: { url: params.url, ...(params.branch ? { branch: params.branch } : {}) },
-          target: { name: storeName(params.repo) },
-        }),
-      );
-    } catch (e: any) {
-      if (e?.code !== 'ALREADY_EXISTS') throw final(e);
-    }
-    return started;
-  });
+  const importing_at = await step
+    .do('import into the object store', RETRY, async () => {
+      const started = Date.now();
+      await fetchRemote(env, params);
+      return started;
+    })
+    .catch(endWithoutMirror(env, params, step));
   if (env.FAST_IMPORT === 'on') return landThenFill(env, params, step, importing_at);
   // Throws IMPORT_IN_PROGRESS until Artifacts finishes; the step retries with backoff.
   const history = await step.do('read history', RETRY, () => readHistory(env, params));

@@ -100,6 +100,7 @@ describe("a repository's Agents page", () => {
       ['code-review', 'active', 'codex'],
       ['security-review', 'paused', 'claude-code'],
       ['slop-review', 'off', 'opencode'],
+      ['intent-drift', 'off', 'opencode'],
     ]);
     expect(rows[0].latest).toMatchObject({ change: 1, value: 'fail', status: 'findings' });
     expect(rows[1].latest).toBeNull();

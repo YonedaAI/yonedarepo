@@ -4,10 +4,11 @@
 //! did, newest first), the open change requests, the authored symbol contracts on the
 //! paths the agent is working on (then the newest others), and the repository's current
 //! memories ranked for those paths (`memory::relevance`, the newest others filling the
-//! rest). Every list is bounded; the client renders and caps the text it hands the agent.
+//! rest), and the open findings on the branch's change (`go_around`). Every list is bounded;
+//! the client renders and caps the text it hands the agent.
 use super::auth::Actor;
 use super::rows::{self, Settings};
-use super::{agent_reads, changes, sessions};
+use super::{agent_reads, changes, go_around, sessions};
 use crate::storage::{SqlStore, bad};
 use serde_json::{Value, json};
 use yoneda_core::Result;
@@ -105,6 +106,10 @@ pub fn context<S: SqlStore>(
         Some(b) => head(db, b)?,
         None => Value::Null,
     };
+    let findings = match &branch {
+        Some(b) => go_around::of_branch(db, b)?,
+        None => Value::Null,
+    };
     Ok(json!({
         "version": rows::current_version(db)?,
         "main": head(db, "main")?,
@@ -112,6 +117,7 @@ pub fn context<S: SqlStore>(
         "policy": settings.policy,
         "sessions": recent["sessions"],
         "changes": open["changes"],
+        "go_around": findings,
         "contracts": contracts(db, &paths, count(c, "contracts", 5, MAX_CONTRACTS)?)?,
         "memories": super::memory::relevance::for_start(
             db, &paths, count(c, "memories", 8, MAX_MEMORIES)?)?,

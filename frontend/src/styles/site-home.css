@@ -183,11 +183,12 @@
   align-items: flex-start;
   gap: var(--sp-2);
   margin: 0;
-  color: var(--site-warn);
+  color: var(--site-muted);
   font-size: var(--fs-sm);
   line-height: 1.45;
 }
 .mock-stack > .mock-note svg {
   flex: none;
   margin-top: 2px;
+  color: var(--site-good);
 }

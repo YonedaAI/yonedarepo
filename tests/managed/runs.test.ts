@@ -558,7 +558,7 @@ describe('settings', () => {
     expect(h.platform.tokens).toHaveLength(2);
     expect(h.platform.hooks.map((x) => x.url).sort()).toEqual(h.platform.repos.map((r) => `https://managed.example.com/hooks/${r}`).sort());
     const overview = await (await site(h, '')).json<any>();
-    expect(overview.agents.map((a: any) => a.id)).toEqual(['code-review', 'security-review', 'slop-review']);
+    expect(overview.agents.map((a: any) => a.id)).toEqual(['code-review', 'security-review', 'slop-review', 'intent-drift']);
     expect(overview.credit).toMatchObject({ granted_usd: 5, used_usd: 0, balance_usd: 5 });
     expect(overview.repos).toHaveLength(2);
   });

@@ -92,7 +92,7 @@ export function parseJson(text: string): unknown {
 }
 
 /** Why a finding could not be posted on its line. */
-export type WithheldReason = 'anchor' | 'credential' | 'scanner';
+export type WithheldReason = 'anchor' | 'credential' | 'scanner' | 'cap';
 
 /** A finding that was not posted; it still counts toward the run's value (fail closed). */
 export interface Withheld {

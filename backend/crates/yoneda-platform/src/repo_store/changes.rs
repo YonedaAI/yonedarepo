@@ -7,7 +7,7 @@
 //! credentials can neither read nor write one.
 use super::auth::Actor;
 use super::rows::{self, branch_ref};
-use super::{change_adopt, change_hooks, reads};
+use super::{change_adopt, change_hooks, flight_plans, go_around, reads};
 use crate::storage::{SqlStore, bad, number};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result, git_object::ObjectId};
@@ -245,6 +245,12 @@ pub fn show<S: SqlStore>(
         None => Value::Null,
     };
     change["comments"] = json!(super::change_comments::of(db, &change["number"])?);
+    change["flight_plan"] = flight_plans::newest(db, &change["number"], &change["branch"])?;
+    change["go_around"] = if change["status"] == "open" {
+        go_around::of_change(db, &change["number"], &change["head"])?
+    } else {
+        Value::Null
+    };
     // Landing on a protected base needs the head's gates; any other base moves with `write`.
     change["base_protected"] = json!(rows::protected(&format!(
         "refs/heads/{}",

@@ -118,8 +118,17 @@ it('opens, discusses, approves and lands a change with its branch head', async (
   expect((await api(`/repos/${repo}/commits/${head}/reviews`, { cookie }, { body: { decision: 'approve' } })).status).toBe(200);
   const approved = await gates();
   expect([approved.ready, kinds(approved).approvals]).toEqual([true, ['ready', true]]);
+  // The route in one read: the change's own commits, none of main's.
+  const route = await api(`/repos/${repo}/changes/1/route`, { token: reader });
+  expect(route.status, JSON.stringify(route.body)).toBe(200);
+  expect(route.body).toMatchObject({ number: 1, status: 'open', branch: 'fix', base: 'main', head, merge_base: main });
+  expect(route.body.commits.at(0)).toMatchObject({ commit: head, subject: 'retry' });
+  expect(route.body.truncated).toEqual({ commits: false, sessions: false, deliveries: false, checks: false });
+  expect((await api(`/repos/${repo}/changes/1/route`, { token: docs })).status).toBe(403);
   const landed = await api(`/repos/${repo}/land`, { cookie }, { body: { ref: 'main', commit: head } });
   expect(landed.status, JSON.stringify(landed.body)).toBe(200);
+  const landedRoute = await api(`/repos/${repo}/changes/1/route`, { token: reader });
+  expect(landedRoute.body.commits).toEqual(route.body.commits);
   const after = await api(`/repos/${repo}/changes/1`, { token: reader });
   expect(after.body).toMatchObject({ status: 'landed', landed_version: landed.body.version, landed_commit: head, head, comment_count: 2 });
   // A landed change still shows what it changed: against main just before it landed.
@@ -132,6 +141,8 @@ it('opens, discusses, approves and lands a change with its branch head', async (
     api(`/repos/${repo}/mcp`, { token }, { body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } } });
   const reopened = await mcp('git_change_create', { branch: 'fix', title: 'Follow-up' });
   expect(reopened.body.result.structuredContent).toMatchObject({ number: 2, status: 'open' });
+  const routed = (await mcp('git_change_route', { number: 1 }, reader)).body.result.structuredContent;
+  expect(routed.commits.map((c: any) => c.commit)).toContain(head);
   const viaMcp = (await mcp('git_change_gates', { number: 2 })).body.result.structuredContent;
   expect([viaMcp.number, viaMcp.status, viaMcp.requirements.length > 0]).toEqual([2, 'open', true]);
   expect((await mcp('git_change_close', { number: 2 })).body.result.structuredContent.status).toBe('closed');
