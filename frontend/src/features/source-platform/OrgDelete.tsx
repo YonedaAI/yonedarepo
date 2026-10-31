@@ -12,6 +12,7 @@ export const orgDeletePath = (org: string, typed: string) =>
 export function DeleteOrganization({
   org,
   repoCount,
+  inWindow = 0,
   held = false,
   onDeleted,
 }: {
@@ -20,6 +21,8 @@ export function DeleteOrganization({
   held?: boolean;
   /** Repositories it owns as far as the caller sees (undefined: not read yet). */
   repoCount?: number;
+  /** Its repositories that can still be restored: nobody can, once it is gone. */
+  inWindow?: number;
   onDeleted: () => void;
 }) {
   const [typed, setTyped] = useState('');
@@ -49,6 +52,13 @@ export function DeleteOrganization({
       {repoCount !== undefined && repoCount > 0 && (
         <p className="source-meta">
           It owns {repoCount} {repoCount === 1 ? 'repository' : 'repositories'} you can see.
+        </p>
+      )}
+      {inWindow > 0 && (
+        <p className="source-meta">
+          {inWindow} deleted {inWindow === 1 ? 'repository' : 'repositories'} can still be restored.
+          Deleting the organization ends that: only its owners can restore them, and they are purged
+          on schedule.
         </p>
       )}
       {held && <p className="source-meta">{HELD_NOTE}</p>}

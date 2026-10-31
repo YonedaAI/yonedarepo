@@ -15,6 +15,9 @@ mod auth_events;
 mod avatars;
 #[cfg(test)]
 mod avatars_tests;
+mod deleted_repos;
+#[cfg(test)]
+mod deleted_repos_tests;
 mod device;
 mod email;
 #[cfg(test)]
@@ -78,6 +81,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             op::AccountOp::Org(op) => orgs::handle(&db, &command, op, now),
             op::AccountOp::OrgMember(op) => orgs::member(&db, &command, op, now),
             op::AccountOp::Hold(op) => holds::handle(&db, &command, op, now),
+            op::AccountOp::DeletedRepo(op) => deleted_repos::handle(&db, &command, op),
             op::AccountOp::Audit(op) => audit_log::handle(&db, &command, op),
             op::AccountOp::Handle(op) => handles::handle(&db, &command, op, now),
         }

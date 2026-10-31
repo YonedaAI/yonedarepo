@@ -8,7 +8,7 @@ Four things enterprise buyers ask about deletion and records. Nothing that works
 |---|---|---|
 | Org owners delete their org's repos | Built and tested with a session and MCP | Add the missing token and second-owner tests |
 | Deleted data really gone | Being built | 1 |
-| Undo window | Not built | 2 |
+| Undo window | Built behind `REPO_UNDO_DAYS`, unset | 2 |
 | Legal hold | Being built | 3 |
 | Audit log | Being built | 4 |
 

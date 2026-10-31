@@ -13,7 +13,7 @@ use super::{
 };
 use super::{
     authorize::authorize, break_glass, deletion, erase, forks, grants, lfs, maintenance, memory,
-    quarantine, visibility,
+    quarantine, undo, visibility,
 };
 use crate::storage::SqlStore;
 use serde_json::{Value, json};
@@ -25,11 +25,11 @@ pub(super) fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         Op::Store(op) => op,
     };
     let settings = rows::settings(db)?;
-    if settings.deleted_at.is_some() && !deletion::allowed_when_deleted(op, &settings) {
+    if settings.deleted_at.is_some() && !deletion::allowed_when_deleted(op, c, &settings) {
         return Err(deletion::gone());
     }
     let actor = auth::actor(db, c, &settings)?;
-    deletion::tombstone_caller(op, &actor, &settings)?;
+    deletion::tombstone_caller(op, c, &actor, &settings)?;
     visibility::gate(&actor, op, c)?;
     authorize(&actor, op, c)?;
     // Only the owner's own account keeps working while automation is paused (not admins).
@@ -170,10 +170,12 @@ fn run<S: SqlStore>(
             pushed::bundles::require_system(actor).and_then(|()| pushed::bundles::locate(db, c))
         }
         R::Delete => deletion::delete(db, c, actor, settings),
-        R::PurgeTarget => deletion::purge_target(db, actor, settings),
+        R::PurgeTarget => deletion::purge_target(db, c, actor, settings),
+        R::Purged => undo::purged(db, c, actor, settings),
+        R::Restore => undo::restore(db, c, settings),
         R::HoldOwner => Ok(json!({ "owner": settings.workspace })),
-        R::ErasePlan => erase::plan(db, settings),
-        R::EraseStep => erase::step(db, settings),
+        R::ErasePlan => erase::plan(db, c, settings),
+        R::EraseStep => erase::step(db, c, settings),
         // `enqueue`: a landing that needs a merge joins the branch's queue in this call.
         R::Land => land::land(db, c, principal, settings).or_else(|e| {
             if e.code == "MERGE_REQUIRED" && c["enqueue"] == true {

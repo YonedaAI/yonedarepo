@@ -154,7 +154,8 @@ async function takeBack(
   if (!accepted) return;
   await afterAnswer(async () => {
     await ctx.call({ op: 'repo_delete', confirm: name });
-    await dispatchPurge(env, repo);
+    // Nobody ever saw it, so there is nothing to undo.
+    await dispatchPurge(env, repo, 'now');
   }).catch(left);
 }
 
@@ -259,18 +260,21 @@ export async function importRepository(env: Env, requester: Credentials, body: J
   return { id, import: instance.id, branch: branch ?? null, max_commits: max, ...tokens };
 }
 
-/** The listing row of a repository the authority accepted (a fork's too). */
+/** The listing row of a repository the authority accepted (a fork's too, or one restored,
+ * which keeps its date and may be listed already by the attempt before). */
 export function listRepository(
   env: Env,
   id: string,
   workspace: string,
   name: string,
   visibility: string,
+  createdAt = Date.now(),
 ) {
   return env.INDEX.prepare(
-    'INSERT INTO platform_repos(id,workspace,name,created_at,visibility) VALUES(?,?,?,?,?)',
+    `INSERT INTO platform_repos(id,workspace,name,created_at,visibility) VALUES(?,?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET name=excluded.name,visibility=excluded.visibility`,
   )
-    .bind(id, workspace, name, Date.now(), visibility)
+    .bind(id, workspace, name, createdAt, visibility)
     .run();
 }
 

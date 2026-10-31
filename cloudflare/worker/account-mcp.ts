@@ -8,6 +8,7 @@ import platformTools from '../../backend/crates/yoneda-core/src/platform_tools.j
 import { operation, serveMcp } from './repo-mcp';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { forViewer } from './repo-principal-privacy';
+import { DAY_MS, undoMs, undoOn } from './repo-undo-window';
 import type { Env } from './types';
 
 /** The REST router (`repo-api.ts`), called in-process for the management tools. */
@@ -185,6 +186,20 @@ const repoTools: Json[] = platformTools.map((tool: Json) => ({
 
 export const accountTools: Json[] = [...managementTools, ...orgToolSchemas, ...repoTools];
 
+/** The tools as this deployment describes them: with the undo window on, deleting is not
+ * permanent yet. */
+export const toolsOf = (env: Env) =>
+  undoOn(env)
+    ? accountTools.map((tool) =>
+        tool.name === 'repo_delete'
+          ? {
+              ...tool,
+              description: `Delete a repository. Its owner can restore it for ${undoMs(env) / DAY_MS} days, then it is purged. confirm must equal the repository name exactly. Needs repo:admin.`,
+            }
+          : tool,
+      )
+    : accountTools;
+
 export function accountMcp(req: Request, env: Env, auth: Credentials, route: Route) {
   const origin = new URL(req.url).origin;
   const rest = (method: string, path: string, body?: Json) => {
@@ -210,7 +225,7 @@ export function accountMcp(req: Request, env: Env, auth: Credentials, route: Rou
     name: 'yonedarepo-account',
     instructions:
       'YonedaRepo across your repositories. repo_list/repo_create/repo_delete manage them; every git_* and symbol_* tool takes repo (id or name). Write with git_commit (server-side), land with git_land: disjoint concurrent changes merge on the server, a CONFLICT returns base/ours/theirs to resolve and commit again.',
-    tools: accountTools,
+    tools: toolsOf(env),
     call: async (name, args) => {
       if (name === 'repo_list') return rest('GET', '/repos');
       const org = orgTools.find(([tool]) => tool === name);

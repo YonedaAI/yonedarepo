@@ -386,6 +386,11 @@ export function App() {
                 orgs={orgs}
                 navigate={navigate}
                 onAvatar={session.setAvatar}
+                onRestored={() => {
+                  platform.reload();
+                  activity.reload();
+                  favorites.reload();
+                }}
               />
             )}
             {(route.view === 'profile' || route.view === 'repo-name') && (

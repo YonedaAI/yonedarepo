@@ -23,6 +23,7 @@ import {
   Sparkles,
   Tag,
   Terminal,
+  Trash2,
   UserRound,
 } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
@@ -30,9 +31,11 @@ import {
   ACCOUNT_SECTION_TITLES,
   ACCOUNT_SECTIONS,
   type AccountSection,
+  UNDO_SECTION,
 } from '../account-settings/settingsRoute';
 import { unreadLabel } from '../admin/adminModel';
 import type { OrgSummary } from '../source-platform/orgModel';
+import { useUndoDays } from '../source-platform/RecentlyDeleted';
 import { Failure } from '../source-platform/SourceStatus';
 import {
   isAgentsRoute,
@@ -69,6 +72,7 @@ const ACCOUNT_ICONS: Record<AccountSection, typeof House> = {
   tokens: KeyRound,
   'ssh-keys': Terminal,
   organizations: Building2,
+  'recently-deleted': Trash2,
 };
 
 /** Up and Down (Home, End) move between a navigation's links. */
@@ -140,6 +144,10 @@ export function AppSidebar({
   const pages = REPO_PAGES.filter((p) => p.id !== 'settings' || settings);
   // The settings pages are about the account: its groups replace the repository ones.
   const onAccount = route.view === 'settings';
+  const undoDays = useUndoDays(authenticated && onAccount);
+  const onUndo = route.view === 'settings' && route.section === UNDO_SECTION;
+  const accountSections =
+    undoDays > 0 || onUndo ? [...ACCOUNT_SECTIONS, UNDO_SECTION] : ACCOUNT_SECTIONS;
   return (
     <aside className="sidebar" id="app-sidebar" aria-label="Sidebar">
       <a className="sidebar-brand" {...linkTo({ view: 'home' }, navigate)}>
@@ -199,7 +207,7 @@ export function AppSidebar({
       {authenticated && onAccount && (
         <nav className="side-nav" aria-label="Account" onKeyDown={arrowKeys}>
           <p className="side-label">Account</p>
-          {ACCOUNT_SECTIONS.map((section) => {
+          {accountSections.map((section) => {
             const Icon = ACCOUNT_ICONS[section];
             return (
               <a

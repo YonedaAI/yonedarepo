@@ -17,6 +17,8 @@ pub struct Settings {
     pub object_store: String,
     pub policy: Policy,
     pub policy_digest: String,
+    /// When the repository was made.
+    pub created_at: i64,
     /// When the repository was deleted (a tombstone); `None` while it is live.
     pub deleted_at: Option<i64>,
     /// The repository this one was forked from, and the parent's version at the fork.
@@ -30,6 +32,10 @@ impl Settings {
     /// left.
     pub fn erased(&self) -> bool {
         self.object_store == super::erase::ERASED_STORE
+    }
+    /// Whether a purge has reached this tombstone, so it can never come back (`undo`).
+    pub fn purge_started(&self) -> bool {
+        self.erased() || super::undo::started(&self.policy_digest)
     }
 }
 
@@ -90,6 +96,7 @@ pub fn settings<S: SqlStore>(db: &S) -> Result<Settings> {
         object_store: text("object_store")?,
         policy: serde_json::from_str(&text("policy")?).map_err(|_| corrupt("policy"))?,
         policy_digest: text("policy_digest")?,
+        created_at: row["created_at"].as_i64().unwrap_or_default(),
         deleted_at: row["deleted_at"].as_i64(),
         parent: row["parent"].as_str().map(|p| {
             (

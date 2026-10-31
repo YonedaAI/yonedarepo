@@ -20,6 +20,7 @@ curl -H "Authorization: Bearer $YONEDA_TOKEN" https://api.yonedarepo.com/api/v1/
 | Method and path | What it does |
 |---|---|
 | `GET /repos` | Repositories you can use |
+| `GET /repos/deleted` | Your deleted repositories that can still be restored, where the platform keeps them for a time |
 | `POST /repos` | Create a repository, optionally with files and a policy |
 | `POST /repos/import` | Import a public HTTPS Git remote as a new repository; see [Import](/docs/guides/import) |
 | `GET`, `POST`, `DELETE /tokens[/<id>]` | Personal access tokens (create from a signed-in session) |
@@ -31,6 +32,7 @@ curl -H "Authorization: Bearer $YONEDA_TOKEN" https://api.yonedarepo.com/api/v1/
 | `GET /activity` | Your account's recent activity |
 | `GET`, `POST /orgs`; `GET`, `DELETE /orgs/<org>` | Organizations |
 | `GET /orgs/<org>/repos`; `POST /orgs/<org>/members` | An organization's repositories and members |
+| `GET /orgs/<org>/repos/deleted` | An organization's deleted repositories that can still be restored (owners) |
 | `GET`, `POST`, `DELETE /orgs/<org>/hold`; `POST`, `DELETE /orgs/<org>/repos/<repo>/hold` | [Legal holds](/docs/guides/organizations#legal-hold) on an organization or one of its repositories |
 | `POST /mcp` | The account MCP endpoint |
 
@@ -94,6 +96,7 @@ All paths start with `/repos/<id>`.
 | `GET`, `POST /quarantine`; `POST /quarantine/<n>/release`, `/purge` | [Quarantine and purge](/docs/guides/quarantine) |
 | `POST /break-glass` | Owner-only [recovery and automation pause](/docs/guides/break-glass) (signed-in session) |
 | `DELETE /?confirm=<name>` | Delete the repository |
+| `POST /restore` | Restore a deleted repository, optionally under a new `name` (needs `repo:admin`; its tokens stay revoked) |
 | `POST /mcp` | The repository MCP endpoint |
 
 ## Error codes
@@ -177,7 +180,7 @@ Each tool takes the repository from its endpoint, or a required `repo` (id or ex
 | `git_release_asset_upload` | Attach a file to a release (at most 4 MiB here as base64; up to 25 MiB with REST PUT /releases/:tag/assets/:name and the raw bytes as the body). Assets are immutable: a name is used once per release (ALREADY_EXISTS), at most 20 per release. Answers the recorded size and sha256. Needs the write and land scopes. |
 | `git_release_asset_download` | Read a release asset (at most 4 MiB here; larger ones with REST GET /releases/:tag/assets/:name, which answers the recorded sha256 in x-yoneda-sha256). Answers the bytes in base64 with the recorded size and sha256. |
 | `git_hook_list` | Webhooks of this repository: id, url, events, paths, active, consecutive failures and undelivered count. Secrets are never listed. Needs the owner or repo:admin. |
-| `git_hook_create` | Add a webhook: signed POSTs (X-Yoneda-Signature: sha256=<hex HMAC-SHA256 of the body with the secret>, X-Yoneda-Event, X-Yoneda-Delivery) to a public https url for each event, in log order, at least once. Events: land, merged, refused, branch (created/moved/deleted), tag, check (conclusion pass/fail/error), change (change requests: X-Yoneda-Event change.opened, change.commented, change.landed, change.closed or change.deleted; titles and comment text only for hooks without paths), release (release.published or release.deleted), repo (repo.deleted, once, when the repository is deleted); all when omitted. paths limits commit messages to commits inside those paths. Returns the secret once. Needs the owner or repo:admin. |
+| `git_hook_create` | Add a webhook: signed POSTs (X-Yoneda-Signature: sha256=<hex HMAC-SHA256 of the body with the secret>, X-Yoneda-Event, X-Yoneda-Delivery) to a public https url for each event, in log order, at least once. Events: land, merged, refused, branch (created/moved/deleted), tag, check (conclusion pass/fail/error), change (change requests: X-Yoneda-Event change.opened, change.commented, change.landed, change.closed or change.deleted; titles and comment text only for hooks without paths), release (release.published or release.deleted), repo (repo.deleted, once, when the repository is deleted; repo.purged, once, when an undo window ends in its purge); all when omitted. paths limits commit messages to commits inside those paths. Returns the secret once. Needs the owner or repo:admin. |
 | `git_hook_delete` | Delete a webhook; undelivered events are dropped. Needs the owner or repo:admin. |
 | `git_hook_deliveries` | A webhook's last 50 delivery attempts, newest first: delivery_id, event, attempt, ok, HTTP status, ms, error. Needs the owner or repo:admin. |
 | `git_member_list` | Members of this repository: account, role (read, write, land or admin), added_by and added_at. The owner is not listed. Needs the owner or an admin. |

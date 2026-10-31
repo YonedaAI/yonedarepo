@@ -113,7 +113,7 @@ import { cliChangeRequest } from './staging/change-flow.mjs';
 import { accountMcp, cleanupRepos, cliCleanup, revokePat, serverReads } from './staging/cli-account-flow.mjs';
 import { cliConcurrency, cliLoginRepo, cliTransactional } from './staging/cli-flow.mjs';
 import { CliKit } from './staging/cli-tools.mjs';
-import { Recorder, Session, accountSession, kitCredentials, readEnvFile, secondAccount, treeOf } from './staging/client.mjs';
+import { Recorder, Session, accountSession, kitCredentials, purgeWhatIsDeleted, readEnvFile, secondAccount, treeOf } from './staging/client.mjs';
 import { agentHooks } from './staging/agent-hooks-flow.mjs';
 import { agentRun } from './staging/agent-run-flow.mjs';
 import { forkFlow } from './staging/fork-flow.mjs';
@@ -276,6 +276,10 @@ const account = await accountSession(values.origin, kit.KIT_USERNAME, kit.KIT_PA
 // made after email-only sign-up) its test address, whose handle the platform chose.
 Object.assign(kit, { KIT_ACCOUNT: account.name, KIT_LOGIN: account.identifier });
 const platformAccount = new Session(`${values.origin}/api/v1`, { cookie: account.cookie });
+// The dev owner token is an operator's; prod's repositories wait out their window.
+const { OWNER_TOKEN } = readEnvFile('staging.env', { required: false });
+const { window_days } = await platformAccount.get('/repos/deleted').catch(() => ({}));
+if (window_days && OWNER_TOKEN && !values.prod) purgeWhatIsDeleted(new Session(`${values.origin}/api/v1`, { bearer: OWNER_TOKEN }));
 if (values['cleanup-repos']) {
   const cleaned = await cleanupRepos(platformAccount, values['cleanup-repos']);
   console.log(`Deleted ${cleaned.deleted} repositories named ${cleaned.prefix}*${cleaned.failed.length ? `; ${cleaned.failed.length} failed: ${JSON.stringify(cleaned.failed)}` : ''}`);

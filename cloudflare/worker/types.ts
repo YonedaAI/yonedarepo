@@ -93,6 +93,9 @@ export interface Env {
   /** `on` erases a deleted repository's records once its purge finishes (repo-erase); any
    * other value leaves them in its tombstone. */
   REPO_ERASE?: string;
+  /** Days a deleted repository can be restored before its purge (repo-undo-window.ts). Unset or
+   * 0: it purges at once. */
+  REPO_UNDO_DAYS?: string;
   /** `r2` stores new source-platform repositories' Git objects in R2 (local development). */
   PLATFORM_OBJECT_STORE?: string;
   /** `on` writes a large push's objects as bundles (repo-bundles); reads always use them. */

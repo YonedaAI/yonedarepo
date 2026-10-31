@@ -141,6 +141,15 @@ op_names! {
 }
 
 op_names! {
+    /// The repositories an owner can still restore (trusted Worker adapters only).
+    pub(crate) enum DeletedRepoOp {
+        Put = "deleted_repo_put",
+        Remove = "deleted_repo_remove",
+        List = "deleted_repo_list",
+    }
+}
+
+op_names! {
     /// An organization's audit log: what a source hands over (`Targets`, `Pending`), and the
     /// log itself, on its own authority instance.
     pub(crate) enum AuditOp {
@@ -184,6 +193,7 @@ pub(crate) enum AccountOp {
     Org(OrgOp),
     OrgMember(OrgMemberOp),
     Hold(HoldOp),
+    DeletedRepo(DeletedRepoOp),
     Audit(AuditOp),
     Handle(HandleOp),
 }
@@ -212,6 +222,7 @@ impl AccountOp {
             Self::Org(op) => op.name(),
             Self::OrgMember(op) => op.name(),
             Self::Hold(op) => op.name(),
+            Self::DeletedRepo(op) => op.name(),
             Self::Audit(op) => op.name(),
             Self::Handle(op) => op.name(),
         }
@@ -232,6 +243,7 @@ impl AccountOp {
         all.extend(OrgOp::ALL.iter().copied().map(Self::Org));
         all.extend(OrgMemberOp::ALL.iter().copied().map(Self::OrgMember));
         all.extend(HoldOp::ALL.iter().copied().map(Self::Hold));
+        all.extend(DeletedRepoOp::ALL.iter().copied().map(Self::DeletedRepo));
         all.extend(AuditOp::ALL.iter().copied().map(Self::Audit));
         all.extend(HandleOp::ALL.iter().copied().map(Self::Handle));
         all

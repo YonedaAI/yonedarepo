@@ -8,6 +8,7 @@ import { OrgAudit } from './OrgAudit';
 import { DeleteOrganization } from './OrgDelete';
 import { OrgTeams } from './OrgTeams';
 import { ORG_ROLE_HELP, ORG_ROLES, type Org, type OrgMember, type OrgRole } from './orgModel';
+import { type Deleted, RecentlyDeleted } from './RecentlyDeleted';
 import { Failure, Loading } from './SourceStatus';
 import { sourceApi, when } from './sourceApi';
 import { useChange } from './useChange';
@@ -157,6 +158,9 @@ export function OrgPage({
   const loaded = useSource<Org>(`/orgs/${org}`);
   const repos = useSource<{ repos: OrgRepo[] }>(`/orgs/${org}/repos`);
   const holds = useSource<OrgHolds>(`/orgs/${org}/hold`);
+  // Its owners': the only people who can restore them.
+  const owner = loaded.data?.role === 'owner';
+  const deleted = useSource<Deleted>(owner ? `/orgs/${org}/repos/deleted` : null);
   const { busy, error, run } = useChange(loaded.reload);
   const [account, setAccount] = useState('');
   const [role, setRole] = useState<OrgRole>('member');
@@ -238,6 +242,12 @@ export function OrgPage({
             <h2 id="org-repos-heading">Repositories</h2>
             <OrgRepos org={org} repos={repos} holds={holds} manages={manages} navigate={navigate} />
           </section>
+          {manages && (deleted.data?.window_days || deleted.data?.repos.length) ? (
+            <section aria-labelledby="org-deleted-heading">
+              <h2 id="org-deleted-heading">Recently deleted</h2>
+              <RecentlyDeleted loaded={deleted} onRestored={repos.reload} />
+            </section>
+          ) : null}
           {holds.data && (
             <OrgHoldSection
               org={org}
@@ -250,6 +260,7 @@ export function OrgPage({
             <DeleteOrganization
               org={org}
               repoCount={repos.data?.repos.length}
+              inWindow={deleted.data?.repos.length}
               held={orgHeld(holds.data)}
               onDeleted={onDeleted}
             />

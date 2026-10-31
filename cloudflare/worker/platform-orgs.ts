@@ -10,6 +10,7 @@ import { auditPage, auditVerify } from './platform-audit-read';
 import { orgHold } from './platform-holds';
 import { holdSwitch } from './platform-legal-hold';
 import { forgetOrgAccess, type OrgAccess, teamKey } from './platform-org-access';
+import { deletedOf } from './repo-deleted';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import { requirePatScope } from './repo-pat';
 import { withPaths } from './repo-paths';
@@ -101,6 +102,14 @@ async function orgRepos(env: Env, org: string, account: string) {
     .bind(org, ...(all ? [] : [JSON.stringify(keys)]))
     .all<{ owner: string; name: string }>();
   return { repos: await withPaths(env, listed.results) };
+}
+
+/** `GET /orgs/:org/repos/deleted`: what its owners can still restore. */
+async function orgDeleted(env: Env, org: string, actor: string) {
+  const { role } = await orgCommand(env, org, { op: 'org_show', actor });
+  if (role !== 'owner')
+    throw new ApiError('FORBIDDEN', `Only an owner of ${org} sees its deleted repositories`);
+  return deletedOf(env, org);
 }
 
 /** `DELETE /orgs/:org?confirm=<org>`: an owner retires an org that owns no repositories
@@ -202,8 +211,8 @@ async function orgRoute(
   }
   if (!name) throw new ApiError('NOT_FOUND', 'Unknown API path');
   const org = orgArg(name);
-  // The audit log is a read that takes repo:admin.
-  const change = !get || resource === 'audit';
+  // The audit log and what can be restored are reads that take repo:admin.
+  const change = !get || resource === 'audit' || (resource === 'repos' && item === 'deleted');
   const { account: actor } = orgCaller(auth, change, org);
   const run = (command: Json) => orgCommand(env, org, { ...command, actor });
   if (resource === 'audit' && get && !sub) return auditRoute(env, org, item, query, run);
@@ -213,6 +222,7 @@ async function orgRoute(
   }
   if (!resource && del) return deleteOrg(env, org, actor, query.get('confirm') ?? '');
   if (resource === 'repos' && !item && get) return orgRepos(env, org, actor);
+  if (resource === 'repos' && item === 'deleted' && !sub && get) return orgDeleted(env, org, actor);
   if (resource === 'hold' && !item) return orgHold(env, auth, org, method, run);
   if (resource === 'repos' && item && sub === 'hold' && !target)
     return orgHold(env, auth, org, method, run, item);

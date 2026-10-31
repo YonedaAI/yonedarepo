@@ -68,7 +68,8 @@ export async function eraseJob(env: Env, envelope: Envelope) {
       if (e instanceof ApiError && e.code === 'NOT_FOUND') return { live: true };
       throw e;
     });
-    if (plan.live || plan.erased) return;
+    // Still in its undo window (a job sent early): the end of its purge starts the erase.
+    if (plan.live || plan.erased || plan.not_due) return;
     if (plan.forks) return progress(repo, 'blocked', { forks: plan.forks });
     if (plan.hooks) {
       await Promise.all(

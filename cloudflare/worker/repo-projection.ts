@@ -16,12 +16,14 @@ export async function dispatchProjection(env: Env, repo: string) {
   await env.PLATFORM_QUEUE.send({ v: 1, kind: 'platform_project', repo_id: repo, job_id: 'refs' });
 }
 
-/** Asks for a deleted repository's object store and platform objects to be purged. */
-export async function dispatchPurge(env: Env, repo: string) {
+/** Asks for a deleted repository's object store and platform objects to be purged, now if
+ * its window allows (`purge`), or whatever the window says (`now`: no window applies). Never
+ * sent for later: see repo-deleted.ts. */
+export async function dispatchPurge(env: Env, repo: string, job: 'purge' | 'now' = 'purge') {
   await env.PLATFORM_QUEUE.send({
     v: 1,
     repo_id: repo,
-    job_id: `purge-${repo}`,
+    job_id: `${job}-${repo}`,
     kind: 'platform_purge',
   });
 }

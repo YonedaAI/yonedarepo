@@ -14,7 +14,10 @@ import { workspaceStub } from './workspace-agents';
 const json = (value: unknown, status = 200) => Response.json(value, { status });
 
 /** `POST /hooks/<repo>`: a signed platform event. The platform names an event by family and
- * action (`change.opened`, `branch` with `action`, `repo.deleted`). */
+ * action (`change.opened`, `branch` with `action`, `repo.deleted`). A repository's reviews go
+ * when it is gone for good: at `repo.purged`, or at `repo.deleted` when that says no purge is
+ * still to come (`purge_at`: the platform's undo window, during which the owner can restore
+ * it). A platform without the window sends only the second. */
 export async function receiveHook(req: Request, env: ManagedEnv, repo: string): Promise<Response> {
   const body = await req.text();
   if (body.length > 256 * 1024) return json({ error: { code: 'TOO_LARGE' } }, 413);
@@ -22,8 +25,9 @@ export async function receiveHook(req: Request, env: ManagedEnv, repo: string): 
   const stub = repoStub(env, repo);
   if (!(await stub.verify(body, signature))) {
     // A repository with nothing left here (already cleared, or never connected) has nothing to
-    // delete: a repeated repo.deleted is acknowledged so the platform stops resending it.
-    if (!(await stub.hasConnection()) && req.headers.get('x-yoneda-event') === 'repo.deleted')
+    // delete: a repeated event is acknowledged so the platform stops resending it.
+    const event = req.headers.get('x-yoneda-event') ?? '';
+    if (!(await stub.hasConnection()) && ['repo.deleted', 'repo.purged'].includes(event))
       return json({ ignored: true }, 202);
     return json({ error: { code: 'UNAUTHORIZED' } }, 401);
   }
@@ -35,7 +39,7 @@ export async function receiveHook(req: Request, env: ManagedEnv, repo: string): 
   }
   if (event.repo !== repo) return json({ error: { code: 'INVALID_INPUT' } }, 400);
   const name = String(event.event ?? '');
-  if (name === 'repo.deleted') {
+  if (name === 'repo.purged' || (name === 'repo.deleted' && !event.purge_at)) {
     await env.RUNS.send({ kind: 'deleted', repo });
     return json({ queued: true }, 202);
   }
@@ -80,7 +84,7 @@ export async function purgeTranscripts(env: ManagedEnv, repo: string) {
 }
 
 /**
- * repo.deleted: once the platform confirms the repository is GONE (it answers so before it
+ * repo.deleted or repo.purged: once the platform confirms the repository is GONE (it answers so before it
  * checks a credential, so even a revoked token tells), its transcripts, its workspace entries
  * and its RepoAgents state go, in that order: the connection, which names the workspace, goes
  * last, so a retry after a failure finds what is left. Billing entries stay.
