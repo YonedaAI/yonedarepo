@@ -122,8 +122,8 @@ export function RepoFiles({
       </div>
       {route.at !== undefined && (
         <p className="source-note" role="status">
-          Time travel: showing {route.ref} as of log version {route.at}. Reads are pinned and
-          immutable. <a {...linkTo({ ...place, at: undefined }, navigate)}>Back to latest</a>
+          Showing {route.ref} at version {route.at}.{' '}
+          <a {...linkTo({ ...place, at: undefined }, navigate)}>Back to latest</a>
         </p>
       )}
       {listing.error && <Failure error={listing.error} onRetry={listing.reload} />}

@@ -42,9 +42,7 @@ export function LfsSettings({ repo }: { repo: string }) {
     <section aria-labelledby="lfs-heading">
       <h2 id="lfs-heading">Large files (LFS)</h2>
       <p className="source-meta">
-        Track large files with <code>git lfs track &apos;*.bin&apos;</code>; pushes and clones over
-        this repository&apos;s Git URL move them with the same token. Uploads that would pass the
-        quota are refused.
+        Track large files with <code>git lfs track &apos;*.bin&apos;</code>, then push as usual.
       </p>
       {usage.loading && !data && <Loading what="LFS usage" />}
       {usage.error && <Failure error={usage.error} onRetry={usage.reload} />}

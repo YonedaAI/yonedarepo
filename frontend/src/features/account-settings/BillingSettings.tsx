@@ -38,8 +38,7 @@ export function BillingSettings({ workspace }: { workspace: string }) {
   return (
     <>
       <p className="source-meta">
-        Every platform feature is free. Managed agent runs are paid for from your credit: their
-        model calls at the provider&apos;s rate plus 30%, and their container time.
+        Every platform feature is free. Managed agent runs use your credit.
       </p>
       {loadState(loaded, 'billing') ??
         (billing && totals && (
@@ -57,8 +56,7 @@ export function BillingSettings({ workspace }: { workspace: string }) {
                 }
                 detail={
                   <>
-                    {formatCost(billing.credit.granted_usd)} of credit added so far, including the
-                    starting credit added when you set up your first agent.{' '}
+                    {formatCost(billing.credit.granted_usd)} added so far,{' '}
                     {formatCost(billing.credit.used_usd)} used.
                   </>
                 }
@@ -123,8 +121,8 @@ export function BillingSettings({ workspace }: { workspace: string }) {
                   title="No card on file."
                   detail={
                     billing.billing === 'stripe'
-                      ? 'Add a card to unlock the promotional credit, create your own agents and top up automatically.'
-                      : 'Card billing is coming. Until then, the agents YonedaRepo maintains run on your starting credit.'
+                      ? 'Add a card to unlock the promotional credit and top up automatically.'
+                      : 'Card billing is coming. Until then, agents run on your starting credit.'
                   }
                   action={
                     !offerPromo && <AddCardButton workspace={workspace} billing={billing.billing} />

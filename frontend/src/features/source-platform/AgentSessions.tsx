@@ -76,8 +76,8 @@ function SessionRow({
         <span className="agent-summary">{summaryText(s)}</span>
       </a>
       <span className="source-meta">
-        {people.principal(s.recorded_by)} · {when(s.at)} · {reads} declared read
-        {reads === 1 ? '' : 's'}
+        {people.principal(s.recorded_by)} · {when(s.at)} · {reads} file
+        {reads === 1 ? '' : 's'} read
         {s.transcript
           ? ` · ${transcriptLabel(s)}`
           : s.transcript_ref && (
@@ -152,7 +152,7 @@ export function AgentSessions({
           <h2 id="sessions-heading">Sessions</h2>
           {rows.length > 0 && (
             <p className="agent-subtitle">
-              Which coding session made each commit: the tool, the model and a short summary.
+              Which session made each commit: the tool, the model and a summary.
             </p>
           )}
         </div>

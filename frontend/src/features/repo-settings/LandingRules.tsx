@@ -23,7 +23,7 @@ export function LandingRules({ draft, change }: { draft: Policy; change: (next: 
           required
         />
         <small className="subtle">
-          Independent approvals from accounts other than the author. 0 lands without review.
+          From accounts other than the author. 0 lands without review.
         </small>
       </label>
       <label className="source-field settings-wide">
@@ -39,8 +39,7 @@ export function LandingRules({ draft, change }: { draft: Policy; change: (next: 
           aria-describedby="required-checks-help"
         />
         <small id="required-checks-help" className="subtle">
-          One check name per line (lowercase letters, digits, . _ -). A commit lands only when each
-          has passed on that exact commit. Checks the platform runs itself are set up under Checks.
+          One name per line. A commit lands only when each has passed on it.
         </small>
       </label>
       <fieldset className="source-checks" disabled={draft.approvals === 0}>

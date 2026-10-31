@@ -61,7 +61,7 @@ describe('Settings → Billing', () => {
     answers.byPath.set('/workspaces/ada/billing', { data: billing() });
     const html = render(BillingSettings, { workspace: 'ada' });
     expect(html).toContain('$4.70');
-    expect(html).toContain('including the starting credit added when you set up your first agent');
+    expect(html).toContain('added so far');
     expect(html).not.toContain('first run');
     expect(html).toContain('Adding a card unlocks $100.00 of promotional credit');
     expect(html).toContain('No card on file');

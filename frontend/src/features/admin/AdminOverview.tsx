@@ -41,7 +41,6 @@ export function AdminOverview({ navigate }: { navigate: Navigate }) {
         unit="sign-ups"
         days={days}
       />
-      <p className="source-meta">Older accounts appear here when they next sign in.</p>
       {overview.data.billing && <AdminRevenueSection navigate={navigate} />}
     </>
   );

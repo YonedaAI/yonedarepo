@@ -20,8 +20,7 @@ export const SUGGESTED: SuggestedPlugin[] = [
     id: 'agenthero',
     name: 'AgentHero',
     summary: 'Run multi-agent Apps on repo events',
-    detail:
-      'AgentHero receives this repository’s change, branch and check events by webhook and works through MCP with a token that can read, review and record checks.',
+    detail: 'Gets this repository’s events by webhook, and a token to read and review.',
   },
 ];
 

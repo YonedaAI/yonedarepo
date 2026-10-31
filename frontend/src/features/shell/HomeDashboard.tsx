@@ -11,8 +11,7 @@ function Sessions({ activity, navigate }: { activity: AccountActivity; navigate:
   if (!activity.sessions.length)
     return (
       <p className="home-empty">
-        No sessions recorded yet. An agent records one per commit it pushes (the Claude Code plugin
-        does it for you, or <code>yoneda session record</code>).
+        No sessions yet. Work with an agent and push your changes to record the first one.
       </p>
     );
   return (
@@ -63,7 +62,6 @@ export function HomeDashboard({
             {hello}
             {username ? `, ${username}` : ''}
           </h1>
-          <p>Here's an overview of your recent activity.</p>
         </div>
         <button type="button" onClick={onNew}>
           <Plus size={17} aria-hidden="true" />
@@ -109,10 +107,7 @@ export function HomeDashboard({
               {grid.total ? (
                 <ContributionChart grid={grid} />
               ) : (
-                <p className="home-empty">
-                  No commits yet. Commits pushed or landed on your repositories show here by day and
-                  hour.
-                </p>
+                <p className="home-empty">No commits yet.</p>
               )}
             </div>
           </section>

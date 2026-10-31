@@ -247,11 +247,7 @@ export function RepoBranches({ repo, canWrite }: { repo: string; canWrite: boole
   return (
     <section aria-labelledby="branches-heading">
       <h2 id="branches-heading">Branches and tags</h2>
-      <p className="source-meta">
-        Working branches move freely; <code>{PROTECTED_BRANCH}</code> moves only by landing. Tags
-        never move once created.
-        {!canWrite && ' Creating and deleting them needs the write role.'}
-      </p>
+      {!canWrite && <p className="source-meta">Creating and deleting them needs the write role.</p>}
       <BranchTable refs={refs} onDelete={canWrite ? remove : undefined} />
       {canStart && (
         <form onSubmit={createBranch} className="source-token-form" aria-label="Create a branch">

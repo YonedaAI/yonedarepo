@@ -112,10 +112,7 @@ export function RepoPlugins({ repo, navigate }: { repo: string; navigate: Naviga
   return (
     <section aria-labelledby="plugins-heading" className="repo-plugins">
       <h2 id="plugins-heading">Plugins</h2>
-      <p className="source-meta">
-        Plugins work as clients of this repository: each gets its own scoped token and, when it
-        needs events, a webhook. Uninstalling removes both.
-      </p>
+      <p className="source-meta">Each gets its own token and webhook. Uninstalling removes both.</p>
 
       {shown && (
         <div className="source-shown-once" role="status">

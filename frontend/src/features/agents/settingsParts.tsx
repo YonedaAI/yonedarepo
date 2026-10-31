@@ -166,10 +166,7 @@ export function RepoPicker({
             checked={all}
             onChange={() => onChange({ all_repos: true })}
           />
-          <span>
-            {ALL_REPOS_LABEL}
-            <span className="source-meta"> Repositories created or imported later join too.</span>
-          </span>
+          <span>{ALL_REPOS_LABEL}</span>
         </label>
         <label>
           <input

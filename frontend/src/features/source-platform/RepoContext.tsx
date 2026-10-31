@@ -42,10 +42,7 @@ export function RepoContext({ repo, navigate }: { repo: string; navigate: Naviga
   const needs = landingNeeds(context.policy);
   return (
     <div className="repo-context">
-      <p className="source-meta">
-        What an agent starting a session here reads first: <code>yoneda context</code> in a clone,
-        or MCP <code>git_context</code>.
-      </p>
+      <p className="source-meta">What an agent reads first when it starts a session here.</p>
       <section aria-labelledby="context-main">
         <h2 id="context-main">Main and landing rules</h2>
         <p>
@@ -55,7 +52,7 @@ export function RepoContext({ repo, navigate }: { repo: string; navigate: Naviga
               <a {...linkTo({ view: 'commit', repo, commit: context.main }, navigate)}>
                 <code>{shortSha(context.main)}</code>
               </a>
-              , log version {context.version}.
+              , version {context.version}.
             </>
           ) : (
             'main has no commits yet.'
@@ -98,7 +95,7 @@ export function RepoContext({ repo, navigate }: { repo: string; navigate: Naviga
             ))}
           </ul>
         ) : (
-          <p className="source-empty">No sessions recorded yet.</p>
+          <p className="source-empty">No sessions yet.</p>
         )}
       </section>
       <section aria-labelledby="context-changes">
@@ -134,7 +131,7 @@ export function RepoContext({ repo, navigate }: { repo: string; navigate: Naviga
             ))}
           </ul>
         ) : (
-          <p className="source-empty">No symbol contracts authored yet.</p>
+          <p className="source-empty">No contracts yet.</p>
         )}
       </section>
     </div>

@@ -1,6 +1,7 @@
 // The Releases tab: releases (a title, notes and assets attached to a tag), newest first, and
 // for the owner a form that publishes one for an existing tag.
 import { type FormEvent, useState } from 'react';
+import { EmptyState } from '../../components/EmptyState';
 import { usePeople } from './people';
 import { publishRelease, type Release, releasesPath, tagNames } from './releaseModel';
 import { Failure, Loading } from './SourceStatus';
@@ -22,10 +23,7 @@ export function ReleaseTable({
   const rows = releases.data?.releases ?? [];
   if (rows.length === 0)
     return (
-      <p className="source-empty">
-        No releases yet. Push a tag (git tag -a v1 -m … then git push origin v1) and publish a
-        release for it.
-      </p>
+      <EmptyState title="No releases yet">Push a tag, then publish a release for it.</EmptyState>
     );
   return (
     <ul className="source-changes" aria-label="Releases" aria-busy={releases.loading}>

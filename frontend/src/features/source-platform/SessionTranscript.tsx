@@ -98,13 +98,11 @@ function Document({ stored }: { stored: StoredTranscript }) {
           {note}
         </p>
       ))}
-      {context ? (
+      {context && (
         <details className="agent-transcript-context">
           <summary>Context given at session start</summary>
           <pre>{context}</pre>
         </details>
-      ) : (
-        <p className="source-meta">No context packet was recorded at session start.</p>
       )}
       <ol className="agent-turns">
         {turns.map((turn, n) => (

@@ -133,10 +133,9 @@ describe('home dashboard', () => {
   it('greets, shows the cards in monospace and the empty states', () => {
     const html = render(empty);
     expect(html).toMatch(/Good (morning|afternoon|evening), ada/);
-    expect(html).toContain('overview of your recent activity');
     expect(html.match(/class="stat-value"/g)).toHaveLength(4);
     expect(html).toContain('No commits yet');
-    expect(html).toContain('No sessions recorded yet');
+    expect(html).toContain('No sessions yet');
     expect(html).toContain('aria-labelledby="home-contributions"');
   });
 

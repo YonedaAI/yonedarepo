@@ -47,8 +47,7 @@ describe('the list', () => {
   });
   it('says plainly when nothing is waiting, with the window in it', () => {
     const page = list([]);
-    expect(page).toContain('Nothing here.');
-    expect(page).toContain('30 days');
+    expect(page).toContain('Nothing deleted in the last 30 days.');
   });
   it('still lists what the window promised after it was switched off', () => {
     expect(list([repo(3)], 0)).toContain('3 days left');

@@ -80,8 +80,12 @@ export function SessionView({
             'not recorded'
           )}
         </dd>
-        <dt>Fetch efficiency</dt>
-        <dd>{efficiency ?? 'not recorded'}</dd>
+        {efficiency && (
+          <>
+            <dt>Fetch efficiency</dt>
+            <dd>{efficiency}</dd>
+          </>
+        )}
         {s.prompt_digest && (
           <>
             <dt>Prompts digest</dt>

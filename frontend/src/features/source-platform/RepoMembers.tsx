@@ -170,11 +170,7 @@ export function RepoMembers({ repo, viewer }: { repo: string; viewer?: Viewer })
   return (
     <section aria-labelledby="members-heading">
       <h2 id="members-heading">Members</h2>
-      <p className="source-meta">
-        Other accounts and organization teams that use this repository. A member&apos;s personal
-        token holds only what both its scopes and the role allow; a team member holds the
-        team&apos;s role.
-      </p>
+      <p className="source-meta">Other accounts and organization teams that use this repository.</p>
       <MemberTable members={members} viewer={viewer} onRole={put} onRemove={remove} />
       <form onSubmit={add} className="source-token-form">
         <label htmlFor="member-kind" className="source-field">
