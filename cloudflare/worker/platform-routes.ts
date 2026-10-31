@@ -2,6 +2,7 @@
 // Git), /internal/ssh (the SSH gateway), account sign-in, health, and the /source web UI.
 import { accountRoute } from './accounts';
 import { error, response } from './http';
+import { recordClient } from './platform-client-events';
 import { sshInternal } from './platform-ssh';
 import { frontDoor, sshWake } from './platform-ssh-gateway';
 import { GIT_PATH, legacyRedirect } from './readable-paths';
@@ -11,6 +12,12 @@ import { gitByPath } from './repo-git-paths';
 import type { Env } from './types';
 
 export async function platformFetch(req: Request, env: Env): Promise<Response> {
+  const res = await platformRoute(req, env);
+  recordClient(req, res, env);
+  return res;
+}
+
+async function platformRoute(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   if (url.pathname === '/health') {
     sshWake(env);

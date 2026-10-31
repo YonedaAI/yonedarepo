@@ -1,6 +1,8 @@
 import { expect, it } from 'vitest';
 import type { Env } from '../../cloudflare/worker/types';
-import { websiteAssets } from '../../cloudflare/worker/website-metadata';
+import { websitePage } from '../../cloudflare/worker/website-metadata';
+
+const websiteAssets = async (req: Request, env: Env) => (await websitePage(req, env)).response;
 
 const template = `<!doctype html><html><head>
 <title>YonedaRepo — The Git platform built for agents</title>

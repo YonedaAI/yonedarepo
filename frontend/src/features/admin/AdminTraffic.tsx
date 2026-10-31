@@ -1,18 +1,32 @@
-// Admin traffic: the site's cookieless analytics (platform-site-traffic.ts), page views per day for 30
-// days, then the top pages, referrers, countries, campaigns and sign-ups by source over the
-// chosen window (7 or 30 days). Page views, not visitors: nothing identifies a visitor.
+// Admin traffic: the site's cookieless analytics (platform-site-traffic.ts) as humans, agents and
+// bots: a headline, each class per day for 30 days, platform use by client kind and Cloudflare Web
+// Analytics beside our own count, then the top pages, referrers and countries of the class the
+// filter picks (Humans first), campaigns and sign-ups by source over the chosen window (7 or 30
+// days). Page views, not visitors: nothing identifies a visitor.
 import { useState } from 'react';
 import type {
   SiteTrafficResult,
+  TrafficClass,
   TrafficCount,
   TrafficWindow,
 } from '../../../../shared/site-traffic';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { useSource } from '../source-platform/useSource';
 import { DayChart } from './AdminParts';
+import {
+  PlatformClients,
+  TrafficCheck,
+  TrafficClassNote,
+  TrafficHeadlineCards,
+} from './AdminTrafficCheck';
 import { countryName, lastThirtyDays, providerLabel } from './adminModel';
 
 const count = (n: number) => Math.round(n).toLocaleString('en-US');
+const CLASSES: { id: TrafficClass; label: string }[] = [
+  { id: 'humans', label: 'Humans' },
+  { id: 'agents', label: 'Agents' },
+  { id: 'bots', label: 'Bots and unconfirmed' },
+];
 
 function TopList({
   id,
@@ -61,7 +75,8 @@ function TopList({
 
 export function AdminTraffic() {
   const [days, setDays] = useState<TrafficWindow>(7);
-  const report = useSource<SiteTrafficResult>(`/admin/traffic?days=${days}`);
+  const [who, setWho] = useState<TrafficClass>('humans');
+  const report = useSource<SiteTrafficResult>(`/admin/traffic?days=${days}&class=${who}`);
   const windowPicker = (
     <fieldset className="admin-window">
       <legend className="sr-only">Window</legend>
@@ -98,19 +113,50 @@ export function AdminTraffic() {
     );
   const t = report.data.traffic;
   const signups = days === 7 ? t.signups.last_7 : t.signups.last_30;
+  const series = (name: TrafficClass) =>
+    lastThirtyDays(t.by_day.map((d) => ({ day: d.day, views: d[name] })));
   return (
     <>
       {windowPicker}
       <p className="source-meta">
-        Page views, not unique visitors: nothing identifies a visitor, so none are counted. Bots are
-        left out; counts are sampled.
+        Page views, not unique visitors: nothing identifies a visitor, so none are counted. Counts
+        are sampled.
       </p>
-      <DayChart
-        id="admin-views-chart"
-        title="Page views, last 30 days"
-        unit="page views"
-        days={lastThirtyDays(t.views_by_day)}
-      />
+      <TrafficClassNote since={t.classed_since} />
+      <TrafficHeadlineCards headline={t.headline} />
+      <div className="admin-grid">
+        {CLASSES.map(({ id, label }) => (
+          <DayChart
+            key={id}
+            id={`admin-${id}-chart`}
+            title={`${label}, last 30 days`}
+            unit={id === 'humans' ? 'views' : 'requests'}
+            days={series(id)}
+          />
+        ))}
+      </div>
+      <PlatformClients days={t.days} clients={t.clients} />
+      <TrafficCheck days={t.days} humans={t.headline.humans} web_analytics={t.web_analytics} />
+      <fieldset className="admin-window">
+        <legend className="sr-only">Whose pages, referrers and countries</legend>
+        {CLASSES.map(({ id, label }) => (
+          <button
+            key={id}
+            type="button"
+            className="quiet"
+            aria-pressed={who === id}
+            onClick={() => setWho(id)}
+          >
+            {label}
+          </button>
+        ))}
+      </fieldset>
+      {t.class === 'bots' && (
+        <p className="source-meta">
+          Paths here include what scanners asked for, such as /wp. Those are not pages. Anything
+          after a path's first segment is never recorded.
+        </p>
+      )}
       <div className="admin-grid">
         <TopList id="admin-top-pages" title="Top pages" label="Path" rows={t.top_pages} />
         <TopList
@@ -131,6 +177,9 @@ export function AdminTraffic() {
         <h2 id="admin-campaigns" className="home-label">
           Campaigns
         </h2>
+        <p className="source-meta">
+          From page requests that looked like browsers: the ping carries no campaign tags.
+        </p>
         {t.campaigns.length ? (
           <div className="source-table-wrap">
             <table className="source-table admin-table">

@@ -26,7 +26,7 @@ import {
 import { operatorOrgHold, operatorRepoHold } from './platform-holds';
 import { currentHold } from './platform-legal-hold';
 import { orgArg } from './platform-orgs';
-import { siteTraffic } from './platform-site-traffic';
+import { siteTraffic, trafficClass } from './platform-site-traffic';
 import { rebuildDeleted } from './repo-deleted';
 import { backfillObject } from './repo-erase';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
@@ -70,7 +70,7 @@ export async function adminRoute(
   if (section === 'signups' && !id && get) return signups(env, query.get('since'));
   if (section === 'audit' && !id && get) return auditLog(env, query.get('before'));
   if (section === 'traffic' && !id && get)
-    return siteTraffic(env, query.get('days') === '7' ? 7 : 30);
+    return siteTraffic(env, query.get('days') === '7' ? 7 : 30, trafficClass(query.get('class')));
   if (section === 'backfill' && !id && post) {
     const after = (await body().catch(() => ({}) as Json)).after;
     const done = await backfillAccounts(env, typeof after === 'string' ? after : '');

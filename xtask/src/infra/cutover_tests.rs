@@ -79,6 +79,11 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     assert_eq!(platform["vars"]["WEB_ORIGIN"], "https://yonedarepo.com");
     assert_eq!(platform["ratelimits"][0]["namespace_id"], "1001");
     assert_eq!(platform["placement"]["region"], "aws:us-east-1");
+    assert_eq!(platform["vars"]["TRAFFIC_EVENTS"], "off");
+    assert_eq!(
+        platform["analytics_engine_datasets"],
+        json!([{"binding": "SITE_EVENTS", "dataset": "yonedarepo_prod_site_events"}])
+    );
     assert_eq!(
         platform["secrets_store_secrets"],
         json!([
@@ -102,7 +107,9 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     assert!(vars["ADMIN_ACCOUNTS"].is_string());
     // Sign-ins run here too, so the switch is set with the platform Worker's.
     assert_eq!(vars["AUDIT_LOG"], "off");
-    assert_eq!(vars.as_object().map(|v| v.len()), Some(5));
+    // The ping and platform client counts: dev measures them first (docs/load-testing.md).
+    assert_eq!(vars["TRAFFIC_EVENTS"], "off");
+    assert_eq!(vars.as_object().map(|v| v.len()), Some(6));
     assert_eq!(
         agents["analytics_engine_datasets"],
         json!([{"binding": "SITE_EVENTS", "dataset": "yonedarepo_prod_site_events"}])

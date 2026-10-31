@@ -12,6 +12,12 @@ import {
 } from '../source-platform/sourceRoute';
 import { AdminRoot } from './AdminRoot';
 import {
+  PlatformClients,
+  TrafficCheck,
+  TrafficClassNote,
+  TrafficHeadlineCards,
+} from './AdminTrafficCheck';
+import {
   accountsPath,
   barHeights,
   countryName,
@@ -200,5 +206,63 @@ describe('admin pages', () => {
       signups: { loading: false, reload: () => {}, error: 'Operators only' },
     });
     expect(failed).toContain('role="alert"');
+  });
+});
+
+describe('admin traffic labels', () => {
+  const note = (since: string | null) =>
+    renderToStaticMarkup(createElement(TrafficClassNote, { since }));
+  const check = (web_analytics: object) =>
+    renderToStaticMarkup(
+      createElement(TrafficCheck, { days: 7, humans: 1234, web_analytics } as never),
+    );
+
+  it('says when classes began, and that older rows stay as they were', () => {
+    const html = note('2026-11-02');
+    expect(html).toContain('Classes began on 2026-11-02');
+    expect(html).toContain('cannot be cleaned');
+    expect(note(null)).toContain('No request has been classed yet');
+  });
+
+  it('heads the page with three classes, each saying what it can and cannot prove', () => {
+    const html = renderToStaticMarkup(
+      createElement(TrafficHeadlineCards, {
+        headline: { humans: 40, agents_site: 9, agents_platform: 1200, bots: 52, crawlers: 7 },
+      }),
+    );
+    expect(html).toContain('Humans');
+    expect(html).toContain('1,209');
+    expect(html).toContain('9 self-identified on the site, 1,200 platform requests');
+    expect(html).toContain('Bots and unconfirmed');
+    expect(html).toContain('7 from search crawlers');
+    expect(html).toContain('A scripted browser can pass');
+    expect(html).toContain('the one solid signal');
+  });
+
+  it('names each client kind and shows what a token proved', () => {
+    const rows = [{ client: 'cli', operation: 'land', count: 1500, with_token: 1400 }];
+    const html = renderToStaticMarkup(createElement(PlatformClients, { days: 7, clients: rows }));
+    expect(html).toContain('yoneda CLI');
+    expect(html).toContain('land');
+    expect(html).toContain('1,500');
+    expect(html).toContain('1,400');
+    const empty = renderToStaticMarkup(createElement(PlatformClients, { days: 7, clients: [] }));
+    expect(empty).toContain('TRAFFIC_EVENTS');
+  });
+
+  it('names what each count measures, side by side', () => {
+    const html = check({ ok: true, host: 'yonedarepo.com', page_loads: 56, visits: 7 });
+    expect(html).toContain('Humans');
+    expect(html).toContain('Web Analytics page loads');
+    expect(html).toContain('Web Analytics visits');
+    expect(html).toContain('1,234');
+    expect(html).toContain('yonedarepo.com');
+  });
+
+  it('keeps our count and says why when Web Analytics is missing', () => {
+    const failed = check({ ok: false, reason: 'query_failed' });
+    expect(failed).toContain('1,234');
+    expect(failed).toContain('Web Analytics could not be read');
+    expect(check({ ok: false, reason: 'not_configured' })).toContain('WEB_ORIGIN');
   });
 });

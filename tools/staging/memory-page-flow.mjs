@@ -16,7 +16,7 @@ import { chromium } from 'playwright-core';
 import { MODEL, NO_SESSION, poll, withEnv } from './agent-hooks-flow.mjs';
 import { see } from './browser-collab-flow.mjs';
 import { cookieHeader, signIn } from './browser-flow.mjs';
-import { b64, Session } from './client.mjs';
+import { b64, OWN_TRAFFIC, Session } from './client.mjs';
 import { fakeOpencode, modelCall } from './opencode-fake.mjs';
 import { repoPath } from './repo-urls.mjs';
 
@@ -84,7 +84,7 @@ async function pagesInChrome({ origin, kit: login, headed }, repo, number, metri
   metrics.evidence = dir;
   const browser = await chromium.launch({ channel: 'chrome', headless: !headed });
   try {
-    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: OWN_TRAFFIC });
     const page = await context.newPage();
     page.setDefaultTimeout(30_000);
     await signIn(page, origin, login);

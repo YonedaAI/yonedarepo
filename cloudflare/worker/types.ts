@@ -124,13 +124,17 @@ export interface Env {
    * platform Worker grants and reads credit through its admin routes (admin pages). */
   MANAGED?: Fetcher;
   PUBLIC_APP_ORIGIN?: string;
-  /** Cookieless site analytics (front Worker, site-events.ts): page views and sign-ups; absent,
-   * nothing is recorded. */
+  /** Cookieless site analytics (site-events.ts): page requests, pings and sign-ups on the front
+   * Worker, client kinds on the platform Worker; absent, nothing is recorded. */
   SITE_EVENTS?: AnalyticsEngineDataset;
+  /** `on` takes the browser ping (site-ping.ts) and counts platform requests by client kind
+   * (platform-client-events.ts); set on both Workers. */
+  TRAFFIC_EVENTS?: string;
   /** Cloudflare Web Analytics site token (front Worker); set, public pages carry its beacon. */
   WEB_ANALYTICS_TOKEN?: string;
   /** Site traffic reports (platform Worker, platform-site-traffic.ts): the account and dataset the
-   * Analytics Engine SQL API reads, with an Account Analytics Read token; any unset, none. */
+   * Analytics Engine SQL API reads, with an Account Analytics Read token; any unset, none. The
+   * same token reads Web Analytics for WEB_ORIGIN's host (platform-web-analytics.ts). */
   CF_ACCOUNT_ID?: string;
   SITE_EVENTS_DATASET?: string;
   ANALYTICS_READ_TOKEN?: string;

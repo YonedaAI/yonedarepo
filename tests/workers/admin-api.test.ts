@@ -299,8 +299,13 @@ it('reports site traffic to operators only, and says when it is not configured',
   });
   const on = await api('/admin/traffic?days=7', { cookie: boss }, {}, configured);
   expect(on.status).toBe(200);
-  expect(on.body).toMatchObject({ ok: true, traffic: { days: 7 } });
+  expect(on.body).toMatchObject({ ok: true, traffic: { days: 7, class: 'humans' } });
   expect(sql.some((q) => q.includes("INTERVAL '7' DAY"))).toBe(true);
   // Any other window answers 30 days.
   expect((await api('/admin/traffic?days=9', { cookie: boss }, {}, configured)).body.traffic.days).toBe(30);
+  // The tables follow the filter; anything else answers Humans.
+  const bots = await api('/admin/traffic?days=7&class=bots', { cookie: boss }, {}, configured);
+  expect(bots.body.traffic.class).toBe('bots');
+  const other = await api('/admin/traffic?days=7&class=x', { cookie: boss }, {}, configured);
+  expect(other.body.traffic.class).toBe('humans');
 });

@@ -22,7 +22,7 @@ import { adminPages, deletedRepoPage } from './browser-admin-flow.mjs';
 import { agentPages } from './browser-agent-flow.mjs';
 import { managedAgentPages } from './browser-managed-agents-flow.mjs';
 import { forkPages, orgPages, releasePages } from './browser-collab-flow.mjs';
-import { b64, Session, secondAccount, sleep, until } from './client.mjs';
+import { b64, OWN_TRAFFIC, Session, secondAccount, sleep, until } from './client.mjs';
 import { atRepo, openRepo, repoPath } from './repo-urls.mjs';
 
 const author = { name: 'Browser gate', email: 'kit@yonedarepo.invalid' };
@@ -60,7 +60,7 @@ export async function browserFlow({ origin, api, kit, root, headed = false }, m)
   const problems = [];
   const cleanup = [];
   const browser = await chromium.launch({ channel: 'chrome', headless: !headed });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: OWN_TRAFFIC });
   const page = await context.newPage();
   page.setDefaultTimeout(30_000);
   page.on('console', (message) => message.type() === 'error' && problems.push(`console: ${message.text()}`));
