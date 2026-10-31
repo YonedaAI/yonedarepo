@@ -6,7 +6,7 @@
 //! when the runtime's inputs are unchanged, else build it for linux/amd64 and push it);
 //! other envs let wrangler build the Dockerfile.
 use crate::deploy_exec::{Run, Timings};
-use crate::deploy_guard::{self as guard, Facts, Options, short};
+use crate::deploy_guard::{self as guard, Options, short};
 use crate::deploy_image::ImagePlan;
 use crate::infra::inventory::{self, Deployable};
 use crate::infra::spec::{Env, Lock, Spec};
@@ -185,7 +185,7 @@ pub(crate) async fn run(
     let started = Instant::now();
     let mut facts = guard::git_facts(spec)?;
     if env.is_prod() {
-        prod_facts(&mut facts).await?;
+        crate::deploy_evidence::prod_facts(&mut facts).await?;
     }
     guard::preflight(env, spec, &facts, options)?;
     timings.record("preflight: clean tree, branch tip", started, true);
@@ -284,20 +284,6 @@ pub(crate) fn with_consumer_detach(plan: Vec<Step>) -> Vec<Step> {
         out.push(step);
     }
     out
-}
-
-async fn prod_facts(facts: &mut Facts) -> Result<()> {
-    let dev = Spec::load(&Env::Dev)?;
-    for worker in inventory::deployables(&dev, &Lock::load(&Env::Dev)?)? {
-        if worker.health.is_some() {
-            facts.dev_revisions.push((
-                worker.name.clone(),
-                crate::deploy_live::live_revision(&worker).await,
-            ));
-        }
-    }
-    facts.evidence = guard::newest_evidence(std::path::Path::new(guard::EVIDENCE_DIR))?;
-    Ok(())
 }
 
 #[cfg(test)]

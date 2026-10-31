@@ -5,6 +5,7 @@ mod commands;
 mod contracts;
 mod deploy_credentials;
 mod deploy_env;
+mod deploy_evidence;
 mod deploy_exec;
 mod deploy_guard;
 mod deploy_image;
