@@ -28,7 +28,7 @@ impl NativeStore {
 const MAX_PARAMS: usize = 100;
 
 fn db_error(e: rusqlite::Error) -> Error {
-    Error::new("DATABASE", e.to_string())
+    crate::sql_error(e.to_string())
 }
 impl SqlStore for NativeStore {
     fn query(&self, sql: &str, params: &[Value]) -> Result<Vec<Value>> {
@@ -130,6 +130,19 @@ mod tests {
             "{}",
             refused.message
         );
+    }
+
+    #[test]
+    fn a_write_past_the_size_limit_says_the_repository_is_full() {
+        let db = NativeStore::memory().unwrap();
+        db.query("CREATE TABLE t(v TEXT)", &[]).unwrap();
+        db.query("PRAGMA max_page_count=4", &[]).unwrap();
+        let full = db
+            .query("INSERT INTO t VALUES(?)", &[json!("x".repeat(100_000))])
+            .unwrap_err();
+        assert_eq!(full.code, "REPO_FULL");
+        let other = db.query("SELECT * FROM missing", &[]).unwrap_err();
+        assert_eq!(other.code, "DATABASE");
     }
 
     #[test]

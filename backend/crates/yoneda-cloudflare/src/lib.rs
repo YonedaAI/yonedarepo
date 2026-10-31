@@ -3,8 +3,8 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::{JsCast, prelude::*};
 use worker::{SqlStorageValue, Storage};
-use yoneda_core::{Error, Result};
-use yoneda_store::SqlStore;
+use yoneda_core::Result;
+use yoneda_store::{SqlStore, sql_error};
 
 // SDK interop only: transactionSync is not exposed by workers-rs 0.8.7.
 #[wasm_bindgen(
@@ -41,7 +41,7 @@ impl SqlStore for CloudStore {
             .sql()
             .exec(sql, Some(values))
             .and_then(|c| c.to_array::<Value>())
-            .map_err(|e| Error::new("DATABASE", e.to_string()))
+            .map_err(|e| sql_error(e.to_string()))
     }
     fn transaction(&self, action: Box<dyn FnOnce() -> Result<Value>>) -> Result<Value> {
         let mut action = Some(action);
@@ -63,10 +63,10 @@ impl SqlStore for CloudStore {
         match result.borrow_mut().take() {
             Some(Err(e)) => Err(e),
             Some(Ok(v)) if invoked.is_ok() => Ok(v),
-            _ => Err(Error::new(
-                "DATABASE",
-                format!("Storage transaction failed: {:?}", invoked.err()),
-            )),
+            _ => Err(sql_error(format!(
+                "Storage transaction failed: {:?}",
+                invoked.err()
+            ))),
         }
     }
     fn database_size(&self) -> Result<u64> {

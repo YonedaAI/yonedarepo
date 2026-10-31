@@ -39,6 +39,31 @@ const refusedFull = (answer: { status: number; body: any }) => {
   expect(answer.body.error.code).toBe('REPO_FULL');
 };
 
+/** A receive-pack body creating `refname` with one new commit on `parent`. */
+async function branchPush(refname: string, parent: string) {
+  const encoder = new TextEncoder();
+  const sha = async (kind: string, data: Uint8Array) => {
+    const whole = new Uint8Array([...encoder.encode(`${kind} ${data.length}\0`), ...data]);
+    return [...new Uint8Array(await crypto.subtle.digest('SHA-1', whole))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  };
+  const blob = encoder.encode('pushed\n');
+  const blobId = await sha('blob', blob);
+  const tree = new Uint8Array([...encoder.encode('100644 p.txt\0'), ...(blobId.match(/../g) ?? []).map((h) => Number.parseInt(h, 16))]);
+  const treeId = await sha('tree', tree);
+  const who = `${author.name} <${author.email}> 1700000000 +0000`;
+  const commit = encoder.encode(`tree ${treeId}\nparent ${parent}\nauthor ${who}\ncommitter ${who}\n\npushed\n`);
+  const commitId = await sha('commit', commit);
+  const objects = [[commitId, 'commit', commit], [treeId, 'tree', tree], [blobId, 'blob', blob]] as const;
+  const { push_b64 } = compute({
+    op: 'branch_push',
+    refname,
+    old: null,
+    new: commitId,
+    objects: objects.map(([oid, kind, data]) => ({ id: oid, kind, data_b64: btoa(String.fromCharCode(...data)) })),
+  });
+  return Uint8Array.from(atob(push_b64), (c) => c.charCodeAt(0));
+}
+
 it('is off unless the variable turns it on: unset, off, and on below 9 GB change nothing', async () => {
   const { owner, repo } = await repository('guard-off');
   for (const value of [undefined, '', 'off', 'on']) {
@@ -94,27 +119,7 @@ it('never takes the limit from a client: the adapter drops the field from a comm
 
 it('refuses a Git push at the limit by ref, naming REPO_FULL', async () => {
   const { id, root, agent } = await repository('guard-push');
-  const encoder = new TextEncoder();
-  const blob = new TextEncoder().encode('pushed\n');
-  const sha = async (kind: string, data: Uint8Array) => {
-    const whole = new Uint8Array([...encoder.encode(`${kind} ${data.length}\0`), ...data]);
-    return [...new Uint8Array(await crypto.subtle.digest('SHA-1', whole))].map((b) => b.toString(16).padStart(2, '0')).join('');
-  };
-  const blobId = await sha('blob', blob);
-  const tree = new Uint8Array([...encoder.encode('100644 p.txt\0'), ...(blobId.match(/../g) ?? []).map((h) => Number.parseInt(h, 16))]);
-  const treeId = await sha('tree', tree);
-  const who = `${author.name} <${author.email}> 1700000000 +0000`;
-  const commit = encoder.encode(`tree ${treeId}\nparent ${root}\nauthor ${who}\ncommitter ${who}\n\npushed\n`);
-  const commitId = await sha('commit', commit);
-  const objects = [[commitId, 'commit', commit], [treeId, 'tree', tree], [blobId, 'blob', blob]] as const;
-  const { push_b64 } = compute({
-    op: 'branch_push',
-    refname: 'refs/heads/topic',
-    old: null,
-    new: commitId,
-    objects: objects.map(([oid, kind, data]) => ({ id: oid, kind, data_b64: btoa(String.fromCharCode(...data)) })),
-  });
-  const body = Uint8Array.from(atob(push_b64), (c) => c.charCodeAt(0));
+  const body = await branchPush('refs/heads/topic', root);
   const response = await platformFetch(
     new Request(`https://yoneda/git/${id}.git/git-receive-pack`, { method: 'POST', headers: { authorization: `Basic ${btoa(`git:${agent.token}`)}` }, body }),
     atLimit(),
@@ -208,4 +213,53 @@ it('keeps compaction going at the limit', async () => {
   const compacted = await api(`${repo}/compact`, owner, { body: {} }, guarded);
   expect(compacted.status).toBe(200);
   expect(compacted.body.segments).toBe(1);
+});
+
+/** `target` with the authority's writes among `ops` thrown out of the call, as Durable Object
+ * storage throws them at its size limit. */
+function databaseFull(target: Env, ops: string[]) {
+  const namespace = target.SOURCE_REPOS;
+  const SOURCE_REPOS = {
+    idFromName: (name: string) => namespace.idFromName(name),
+    get: (id: DurableObjectId) => ({
+      fetch: async (url: string, init: RequestInit) => {
+        const sent = JSON.parse(String(init.body));
+        if ([sent].flat().some((c) => ops.includes(c.op))) throw new Error('Exceeded the maximum database size.');
+        return namespace.get(id).fetch(url, init);
+      },
+    }),
+  };
+  return { ...target, SOURCE_REPOS } as unknown as Env;
+}
+
+it('maps a database that really is full to 507 REPO_FULL on REST, whatever the operation', async () => {
+  const { owner, repo, root } = await repository('full-rest');
+  const full = databaseFull(scoped, ['repo_branch_batch', 'repo_tag_create']);
+  refusedFull(await api(`${repo}/refs/batch`, owner, { body: { updates: [{ ref: 'x', commit: root, expected: null }] } }, full));
+  expect((await api(`${repo}/blob?path=a.txt`, owner, {}, full)).status).toBe(200);
+});
+
+it('maps a full database to REPO_FULL on Git, in the push report and as an HTTP status', async () => {
+  const { id, root, agent } = await repository('full-git');
+  const body = await branchPush('refs/heads/topic', root);
+  const push = (target: Env) =>
+    platformFetch(new Request(`https://yoneda/git/${id}.git/git-receive-pack`, { method: 'POST', headers: { authorization: `Basic ${btoa(`git:${agent.token}`)}` }, body }), target);
+  const reported = await push(databaseFull(scoped, ['repo_record_pushed']));
+  expect(new TextDecoder().decode(await reported.arrayBuffer())).toContain('REPO_FULL');
+  const refused = await push(databaseFull(scoped, ['repo_git_access']));
+  expect(refused.status).toBe(507);
+  expect(await refused.text()).toContain('REPO_FULL');
+});
+
+it('answers every lander of a batch the database would not take, instead of requeueing it', async () => {
+  const { owner, repo } = await repository('full-batch', batched);
+  const made = [];
+  for (const path of ['w/1.txt', 'w/2.txt']) made.push((await commitOn(repo, owner, path, batched)).body.commit as string);
+  const full = databaseFull(batched, ['repo_land_submitted']);
+  const { combiners, settled } = combinersOf(() => full);
+  const target = { ...full, LAND_COMBINERS: combiners } as unknown as Env;
+  const answers = await Promise.all(made.map((commit) => landOn(repo, owner, commit, target)));
+  await settled();
+  answers.forEach(refusedFull);
+  expect((await landOn(repo, owner, made[0], batched)).status).toBe(200);
 });

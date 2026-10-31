@@ -4,6 +4,8 @@
 // "already" on a repeat), so a call that did run before the reset is safe to repeat.
 const RESET = /no longer active|Network connection lost|reset because its code was updated/i;
 const OVERLOAD = /overloaded|queued for too long|too many requests queued/i;
+/** How a Durable Object's database refuses a write at its size limit (production, workerd). */
+const FULL = /Exceeded the maximum database size|database or disk is full|SQLITE_FULL/i;
 
 /** Seconds a client waits before retrying a request the platform was too busy to serve. */
 export const RETRY_AFTER_SECONDS = 1;
@@ -93,6 +95,10 @@ export async function durableJson<T = Record<string, any>>(
       const response = await stub().fetch(url, { method: 'POST', body });
       return await response.json<T>();
     } catch (e: any) {
+      // Thrown out of the call with the instance reset, not answered: the object cannot catch
+      // it (a write past the limit breaks the instance). The same write fails again.
+      if (FULL.test(String(e?.message ?? e)))
+        throw Object.assign(new Error("This repository's database is full"), { code: 'REPO_FULL' });
       if (attempt > 0 || !(e?.retryable === true || RESET.test(String(e?.message ?? e)))) throw e;
       await new Promise((resolve) => setTimeout(resolve, 50 + Math.random() * 100));
     }
