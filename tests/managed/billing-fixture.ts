@@ -56,8 +56,13 @@ export const browserApi = (h: Harness, path: string, init: RequestInit = {}) =>
     h.env,
   );
 
-export async function withCard(stripe = new FakeStripe(), overrides: Record<string, unknown> = {}) {
+export async function withCard(
+  stripe = new FakeStripe(),
+  overrides: Record<string, unknown> = {},
+  before?: (h: Harness) => Promise<void>,
+) {
   const h = harness(newRepo(), { ...billingEnv, ...overrides } as never);
+  await before?.(h);
   fakeGateway(undefined, stripe);
   const setup = await browserApi(h, '/billing/setup', {
     method: 'POST',
@@ -90,8 +95,11 @@ export const spend = async (h: Harness, key: string, amount: number) => {
 
 /** A workspace whose $20 automatic top-up was charged: the balance is just under $25, all of
  * the top-up unspent. */
-export async function paid(overrides: Record<string, unknown> = {}) {
-  const { h, stripe } = await withCard(new FakeStripe(), overrides);
+export async function paid(
+  overrides: Record<string, unknown> = {},
+  before?: (h: Harness) => Promise<void>,
+) {
+  const { h, stripe } = await withCard(new FakeStripe(), overrides, before);
   const ledger = ledgerStub(h.env, h.platform.account);
   const left = (await ledger.balance()).balance;
   const key = await spend(h, 'spend', left - (AUTO_TOP_UP.below_usd * 1_000_000 - 1000));

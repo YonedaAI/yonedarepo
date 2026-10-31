@@ -25,6 +25,7 @@ import {
   repoRowOf,
   signups,
 } from './platform-admin-queries';
+import { rebuildRollup, revenue } from './platform-admin-revenue';
 import { operatorOrgHold, operatorRepoHold } from './platform-holds';
 import { currentHold } from './platform-legal-hold';
 import { orgArg } from './platform-orgs';
@@ -68,7 +69,8 @@ export async function adminRoute(
   const get = method === 'GET';
   const post = method === 'POST';
   const hold = action === 'hold' && !record && (post || method === 'DELETE');
-  if (section === 'overview' && !id && get) return overview(env);
+  if (section === 'overview' && !id && get)
+    return { ...(await overview(env)), billing: adminBillingOn(env) };
   if (section === 'signups' && !id && get) return signups(env, query.get('since'));
   if (section === 'audit' && !id && get) return auditLog(env, query.get('before'));
   if (section === 'traffic' && !id && get)
@@ -84,6 +86,10 @@ export async function adminRoute(
     return rebuildSchedule(env, actor, await body());
   if (section === 'accounts' && !id && get)
     return listAccounts(env, query.get('q'), query.get('before'));
+  if (section === 'revenue' && adminBillingOn(env)) {
+    if (!id && get) return revenue(env, query);
+    if (id === 'rebuild' && !action && post) return rebuildRollup(env, actor, await body());
+  }
   if (section === 'accounts' && id && action === 'billing' && adminBillingOn(env) && !sub) {
     const account = accountParam(id);
     if (!(await accountSummary(env, account).catch(asApi)))

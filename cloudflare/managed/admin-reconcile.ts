@@ -1,7 +1,8 @@
 // The nightly reconcile, started by the platform Worker's cron: Stripe names the accounts with a
 // charge or a refund in the last two days, and each one's ledger is compared with its charges.
 // Read-only: it logs what differs (event `billing.reconcile.mismatch`) and changes nothing, here
-// or at Stripe. An open refund is no mismatch, whether or not Stripe has it yet.
+// or at Stripe. An open refund is no mismatch, whether or not Stripe has it yet. The revenue
+// rollup is held to the ledger the same way, so the chain Stripe, ledger, rollup is all checked.
 import type { ManagedEnv, QueueMessage } from './config';
 import { ledgerStub } from './ledger';
 import { activeAccounts, customerCharges } from './stripe-admin';
@@ -28,6 +29,31 @@ type TopUp = {
   disputes: number;
 };
 type Mismatch = { problem: string; top_up: string; ledger_usd?: number; stripe_usd?: number };
+
+/** Top-ups and settled refunds as the ledger and as D1 hold them. Days still waiting to be pushed
+ * are not a difference; the caller skips the check while any do. */
+async function rollupProblems(env: ManagedEnv, account: string, topUps: TopUp[]) {
+  if (!env.REVENUE) return [];
+  const row = await env.REVENUE.prepare(
+    `SELECT COALESCE(SUM(top_ups), 0) AS top_ups, COALESCE(SUM(refunds), 0) AS refunds
+     FROM billing_daily WHERE account = ?`,
+  )
+    .bind(account)
+    .first<{ top_ups: number; refunds: number }>();
+  const paid = topUps.filter((t) => t.status === 'succeeded');
+  const ledger = {
+    top_ups: paid.reduce((sum, t) => sum + t.amount, 0),
+    refunds: topUps.reduce((sum, t) => sum + t.settled, 0),
+  };
+  return (['top_ups', 'refunds'] as const)
+    .filter((field) => (row?.[field] ?? 0) !== ledger[field])
+    .map((field) => ({
+      problem: 'rollup_total',
+      field,
+      ledger_usd: usd(ledger[field]),
+      rollup_usd: usd(row?.[field] ?? 0),
+    }));
+}
 
 const usd = (micro: number) => micro / 1_000_000;
 
@@ -75,9 +101,10 @@ function compare(charges: Record<string, any>[], topUps: TopUp[], complete: bool
 }
 
 export async function reconcileAccount(env: ManagedEnv, account: string) {
-  const { customer, top_ups } = await ledgerStub(env, account).reconcileState();
+  const { customer, top_ups, rollup_pending } = await ledgerStub(env, account).reconcileState();
   if (!customer) return;
   const { data, complete } = await customerCharges(env, customer);
-  for (const mismatch of compare(data, top_ups, complete))
+  const rollup = rollup_pending ? [] : await rollupProblems(env, account, top_ups);
+  for (const mismatch of [...compare(data, top_ups, complete), ...rollup])
     console.error(JSON.stringify({ event: 'billing.reconcile.mismatch', account, ...mismatch }));
 }

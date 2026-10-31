@@ -2,6 +2,7 @@
 // and do to a ledger (admin-billing.ts and admin-refund.ts call these). Thin methods over the
 // SQL in ledger-refunds.ts, ledger-disputes.ts and ledger-pages.ts; CreditLedger adds credit.
 import { DurableObject } from 'cloudflare:workers';
+import { isCanonicalAccountIdentifier } from '../../shared/account';
 import type { ManagedEnv } from './config';
 import { billingRow, cancelTopUp, cardOf, setBillingPaused } from './ledger-billing';
 import { closeDispute, type DisputeEvent, disputeRows, openDispute } from './ledger-disputes';
@@ -22,10 +23,22 @@ import {
   topUpRows,
   unspentByTopUp,
 } from './ledger-refunds';
+import {
+  markAllDays,
+  ROLLUP_BATCH_DAYS,
+  rememberAccount,
+  rollupBatch,
+  rollupDone,
+  rollupPending,
+  rollupStatements,
+} from './ledger-rollup';
 import { LEDGER_SCHEMA, migrate } from './schema';
 
 /** How soon an open refund is tried again: the alarm queues it, until it settles. */
 export const REFUND_RETRY_MS = 5 * 60_000;
+/** How long writes gather before they go to the rollup, and the wait after D1 failed. */
+export const ROLLUP_DELAY_MS = 5_000;
+export const ROLLUP_RETRY_MS = 60_000;
 
 export type Paused = { repo: string; run: string };
 
@@ -37,8 +50,56 @@ export class LedgerAdmin extends DurableObject<ManagedEnv> {
     });
   }
 
+  /** Set while an alarm is on its way for the rollup, so a burst of writes arms one. */
+  protected rollupArmed = false;
+
+  /** One transaction; what it marked for the rollup arms the alarm in the same breath (no await
+   * in between, so it commits with the writes). */
   protected tx<T>(fn: (sql: SqlStorage) => T): T {
-    return this.ctx.storage.transactionSync(() => fn(this.ctx.storage.sql));
+    const answer = this.ctx.storage.transactionSync(() => fn(this.ctx.storage.sql));
+    if (!this.rollupArmed && this.#rollupOn() && rollupPending(this.ctx.storage.sql) > 0) {
+      const name = this.ctx.id.name;
+      // The refund limits' instance has no entries, and a ledger only ever has its account's name.
+      if (name && isCanonicalAccountIdentifier(name)) {
+        this.ctx.storage.transactionSync(() => rememberAccount(this.ctx.storage.sql, name));
+        this.rollupArmed = true;
+        void this.ctx.storage.setAlarm(Date.now() + ROLLUP_DELAY_MS);
+      }
+    }
+    return answer;
+  }
+
+  #rollupOn() {
+    return this.env.ADMIN_BILLING === 'on' && Boolean(this.env.REVENUE);
+  }
+
+  /** Whether days still wait for the rollup, so the alarm should come back for them. */
+  protected rollupWaiting() {
+    return this.#rollupOn() && rollupPending(this.ctx.storage.sql) > 0;
+  }
+
+  /** Pushes the marked days to D1, outside any transaction. A failed push keeps its marks and
+   * never throws: an outage delays the rollup and touches nothing else. True when it failed. */
+  protected async pushRollup(): Promise<boolean> {
+    const db = this.env.REVENUE;
+    if (!db || !this.#rollupOn()) return false;
+    const sql = this.ctx.storage.sql;
+    const batch = this.ctx.storage.transactionSync(() => rollupBatch(sql, ROLLUP_BATCH_DAYS));
+    if (!batch) return false;
+    try {
+      await db.batch(rollupStatements(db, batch));
+    } catch (e: any) {
+      const message = String(e?.message ?? e).slice(0, 200);
+      console.error(JSON.stringify({ event: 'billing.rollup', message }));
+      return true;
+    }
+    this.ctx.storage.transactionSync(() => rollupDone(sql, batch.marks));
+    return false;
+  }
+
+  /** Marks every day to go to the rollup again: the backfill, and the way to rebuild it. */
+  rollupRebuild() {
+    this.tx((sql) => markAllDays(sql));
   }
 
   /** The account as operators see it, in micro-USD (never the payment method id). */
@@ -152,6 +213,7 @@ export class LedgerAdmin extends DurableObject<ManagedEnv> {
     return this.tx((sql) => ({
       customer: billingRow(sql).customer,
       top_ups: reconcileRows(sql),
+      rollup_pending: rollupPending(sql),
     }));
   }
 

@@ -7,6 +7,7 @@ import { ledgerStub } from '../../cloudflare/managed/ledger';
 import { LEDGER_SCHEMA, migrate } from '../../cloudflare/managed/schema';
 import { admin, paid, spend, withCard } from './billing-fixture';
 import { harness } from './fake';
+import { undoRollup } from './rollup-fixture';
 
 afterEach(() => vi.restoreAllMocks());
 
@@ -114,6 +115,7 @@ describe('ledger schema v4', () => {
     const stub = ledgerStub(harness().env, `ws-${crypto.randomUUID()}`);
     await runInDurableObject(stub as unknown as DurableObjectStub, (_instance, state) => {
       const sql = state.storage.sql;
+      undoRollup(sql);
       for (const table of ['refunds', 'disputes', 'refund_days', 'billing', 'top_ups']) sql.exec(`DROP TABLE ${table}`);
       sql.exec(LEDGER_SCHEMA[1]);
       sql.exec(LEDGER_SCHEMA[2]);

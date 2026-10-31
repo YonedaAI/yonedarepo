@@ -6,7 +6,13 @@
 // operators do to a ledger is in LedgerAdmin, which this class extends.
 import { STARTING_CREDIT_USD } from '../../shared/managed-agents';
 import type { ManagedEnv, QueueMessage } from './config';
-import { LedgerAdmin, type Paused, REFUND_RETRY_MS } from './ledger-admin';
+import {
+  LedgerAdmin,
+  type Paused,
+  REFUND_RETRY_MS,
+  ROLLUP_DELAY_MS,
+  ROLLUP_RETRY_MS,
+} from './ledger-admin';
 import {
   billingRow,
   cardOf,
@@ -95,17 +101,23 @@ export class CreditLedger extends LedgerAdmin {
     return this.tx((sql) => releaseStaleHolds(sql, now - STALE_HOLD_MS));
   }
 
+  /** When the refunds were last queued: an alarm that came for the rollup need not resend them. */
+  #refundsSent = 0;
+
+  /** One alarm serves all of it: stale holds, the rollup and open refunds. What comes next is
+   * decided last, with no await after it, so a write made meanwhile is not pushed back. */
   override async alarm() {
+    this.rollupArmed = false;
     this.releaseStale();
+    const failed = await this.pushRollup();
     const refunds = openRefunds(this.ctx.storage.sql);
-    if (refunds.length) {
+    if (refunds.length && Date.now() - this.#refundsSent >= REFUND_RETRY_MS) {
+      this.#refundsSent = Date.now();
       await this.env.RUNS.sendBatch(
         refunds.map((r) => ({
           body: { kind: 'refund', account: r.account, id: r.id } as QueueMessage,
         })),
       );
-      await this.ctx.storage.setAlarm(Date.now() + REFUND_RETRY_MS);
-      return;
     }
     const open = this.ctx.storage.sql
       .exec<{ n: number }>(
@@ -113,7 +125,18 @@ export class CreditLedger extends LedgerAdmin {
            AND NOT EXISTS (SELECT 1 FROM entries r WHERE r.key = 'release:' || substr(h.key, 6))`,
       )
       .one().n;
-    if (open > 0) await this.ctx.storage.setAlarm(Date.now() + STALE_HOLD_MS);
+    const rollup = this.rollupWaiting();
+    if (rollup) this.rollupArmed = true;
+    const wait = rollup
+      ? failed
+        ? ROLLUP_RETRY_MS
+        : ROLLUP_DELAY_MS
+      : refunds.length
+        ? REFUND_RETRY_MS
+        : open > 0
+          ? STALE_HOLD_MS
+          : null;
+    if (wait !== null) await this.ctx.storage.setAlarm(Date.now() + wait);
   }
 
   /**

@@ -60,7 +60,7 @@ export function AdminRoot({
           </a>
         ))}
       </nav>
-      {section === 'overview' && <AdminOverview />}
+      {section === 'overview' && <AdminOverview navigate={navigate} />}
       {section === 'users' &&
         (account ? (
           <AdminUser key={account} account={account} self={self} navigate={navigate} />

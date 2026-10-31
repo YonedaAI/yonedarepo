@@ -8,6 +8,7 @@ import { reconcileAccount, reconcileAll } from './admin-reconcile';
 import { runRefund } from './admin-refund';
 import { runTopUp } from './billing';
 import { COMMIT_ID, type ManagedEnv, type QueueMessage, type RunParams } from './config';
+import { ledgerStub } from './ledger';
 import { Platform, PlatformError } from './platform';
 import { repoStub } from './repo-agents';
 import { instanceId } from './workflow';
@@ -232,6 +233,7 @@ export async function consume(batch: MessageBatch<QueueMessage>, env: ManagedEnv
       else if (m.kind === 'refund') await runRefund(env, m.account, m.id);
       else if (m.kind === 'reconcile-all') await reconcileAll(env);
       else if (m.kind === 'reconcile') await reconcileAccount(env, m.account);
+      else if (m.kind === 'rollup') await ledgerStub(env, m.account).rollupRebuild();
       message.ack();
     } catch (e: any) {
       console.error(

@@ -11,6 +11,7 @@ import { consume } from '../../cloudflare/managed/dispatch';
 import { managedFetch } from '../../cloudflare/managed/index';
 import { ledgerStub } from '../../cloudflare/managed/ledger';
 import { LEDGER_SCHEMA, migrate } from '../../cloudflare/managed/schema';
+import { undoRollup } from './rollup-fixture';
 import { FakeStripe, fakeGateway, type Harness, harness, newRepo, STRIPE_BASE, STRIPE_KEY, STRIPE_WEBHOOK_SECRET } from './fake';
 
 afterEach(() => vi.restoreAllMocks());
@@ -233,6 +234,7 @@ describe('turning automatic top-up off', () => {
     const stub = ledgerStub(harness().env, `ws-${crypto.randomUUID()}`);
     await runInDurableObject(stub as unknown as DurableObjectStub, (_instance, state) => {
       const sql = state.storage.sql;
+      undoRollup(sql);
       for (const table of ['refunds', 'disputes', 'refund_days', 'billing', 'top_ups']) sql.exec(`DROP TABLE ${table}`);
       sql.exec(LEDGER_SCHEMA[1]);
       sql.exec('UPDATE schema_version SET version = 2');
