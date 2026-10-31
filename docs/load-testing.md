@@ -69,7 +69,7 @@ Today's cost of one commit: 2-3 new trees, each read down every tier (Cache API,
 | One authority transaction | at most 250 commits and 1 MiB of changed paths (a single larger commit goes alone, at most 10,000 paths); well under the 19 MB the size spike deleted safely in one transaction |
 | Progress | polled every 1 s, moves at least once per wave |
 
-Bench: `tools/import-bench.mjs`. Report the Workflow's own timing (`output.timing`), at least 3 runs, min, median and max.
+Bench: `tools/import-bench.mjs`. Report the Workflow's own timing (`output.timing`), at least 3 runs, min, median and max. `DIRECT_IMPORT` has its own budget: `docs/direct-import.md`.
 
 ## Stages
 

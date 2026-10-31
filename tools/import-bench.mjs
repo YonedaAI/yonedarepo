@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-// Bench of importing public repositories (`FAST_IMPORT`): docs/load-testing.md holds the
-// budget. The bar is a `git clone`: each repository is first cloned from GitHub, as stock Git
+// Bench of importing public repositories (`FAST_IMPORT`, and `DIRECT_IMPORT` when it is on):
+// docs/load-testing.md and docs/direct-import.md hold the budgets. The bar is a `git clone`: each repository is first cloned from GitHub, as stock Git
 // does, then imported under a new name. A run times the request to main usable (files read,
 // the server's own stages from the Workflow's timing), a real `git clone` of ours started
 // that moment (checked against the commit count and with `git fsck`), and history's fill. It
@@ -170,6 +170,10 @@ const MEASURES = [
   ['usable: request to files read, s (client)', (r) => r.usable_s],
   ['  request to Artifacts asked, s (server)', server('start_ms')],
   ['  Artifacts fetching the remote, s (server)', server('artifacts_ms')],
+  ['  direct: GitHub naming its head, s (server)', server('remote_ms')],
+  ['  direct: the pack arriving and read, s (server)', server('pack_ms')],
+  ['  direct: the chain listed, s (server)', server('read_ms')],
+  ['  direct: head and pack stored, s (server)', server('store_ms')],
   ['  reading the log, s (server)', server('chain_ms')],
   ['  landing the head, s (server)', server('land_ms')],
   ['our git clone, s (client)', (r) => r.clone_s],
@@ -193,6 +197,7 @@ for (const source of values.repos.split(',')) {
   }
   results.push({ source, baseline, runs });
   console.log(`\n${source}: ${runs[0].imported} commits, ${RUNS} runs (min / median / max)`);
+  console.log(`  landed by: ${runs.map((r) => r.timing?.landed_by ?? 'unknown').join(', ')}`);
   console.log(`  git clone from GitHub, s (client): ${spread(baseline.map((b) => b.clone_s))}`);
   for (const [label, read] of MEASURES) console.log(`  ${label}: ${spread(runs.map(read))}`);
   if (!runs.every((r) => r.timing?.usable_ms !== undefined))

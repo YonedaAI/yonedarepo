@@ -1,9 +1,13 @@
 // The first half of an import that shows its code first (`FAST_IMPORT=on`): Artifacts is
 // asked for the remote, and main lands at the remote's head as soon as it has it. Run from the
 // import's request (`startImport`), then again by its Workflow, which finds it done: every
-// part repeats harmlessly. repo-import-fill.ts records the history behind it.
+// part repeats harmlessly. repo-import-fill.ts records the history behind it. With
+// `DIRECT_IMPORT` on, the request also fetches the remote itself and main may land first that
+// way (repo-import-direct): the same steps then find it landed.
 import { NonRetryableError } from 'cloudflare:workflows';
 import { rpcValue } from './durable';
+import { directImport, directOn } from './repo-import-direct';
+import { moveMirror } from './repo-import-mirror';
 import { diff, parentTree, type Repo, tooLarge, treeReader } from './repo-import-trees';
 import { caller, type Json } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
@@ -19,6 +23,8 @@ export type ImportParams = {
   asked_at?: number;
 };
 export type Commit = { hash: string; tree: string; parents: string[]; message: string };
+/** From the request to main usable, stage by stage, as the bench reports it. */
+export type Timing = Json & { usable_ms: number };
 /** The subset of WorkflowStep the import uses (tests pass a direct runner). */
 export type ImportStep = {
   do<T>(name: string, config: Json, callback: () => Promise<T>): Promise<T>;
@@ -94,13 +100,27 @@ async function whenImported(env: Env, params: ImportParams) {
   }
 }
 
+/** Main's commit, when a direct import landed it. The remote may have moved on since, so
+ * that Artifacts has another tip; main stays what was fetched and the mirror is moved to it. */
+async function landedHead(env: Env, params: ImportParams) {
+  if (!directOn(env, params.url)) return null;
+  const { refs } = await caller(env, params.repo, { _system: 'import' })({ op: 'repo_status' });
+  const main = (refs as Json[]).find((r) => r.name === 'refs/heads/main');
+  return (main?.commit_id as string | undefined) ?? null;
+}
+
 export async function landHead(env: Env, params: ImportParams) {
   using repo = await whenImported(env, params);
   const fetched_at = Date.now();
   // The branch Artifacts imported: the one named, else the store's own default.
   const ref = params.branch ?? (await rpcValue(repo.info())).defaultBranch;
   // One past the limit: the oldest kept commit's changes are against its real parent.
-  const chain = await readChain(repo, ref, params.max + 1);
+  let chain = await readChain(repo, ref, params.max + 1);
+  const direct = await landedHead(env, params);
+  if (direct && chain[0] && direct !== chain[0].hash) {
+    if (ref === 'main') await moveMirror(env, params, chain[0].hash, direct);
+    chain = await readChain(repo, direct, params.max + 1);
+  }
   const read_at = Date.now();
   const [head, below] = chain;
   if (!head)
@@ -175,6 +195,18 @@ export async function endHistory(env: Env, params: ImportParams, why: Json) {
   return history_stopped as { recorded: number; total: number; reason: string } | null;
 }
 
+/** For a step whose failure leaves Artifacts without this history for good: main may have
+ * landed without it (a direct import), and history below that must not wait on it. */
+export const endWithoutMirror =
+  (env: Env, params: ImportParams, step: ImportStep) =>
+  async (e: unknown): Promise<never> => {
+    if (directOn(env, params.url))
+      await step.do('end history here', RETRY, () =>
+        endHistory(env, params, { reason: 'The object store could not take this history.' }),
+      );
+    throw e;
+  };
+
 type Landed = Awaited<ReturnType<typeof landHead>>;
 /** Where a request that landed its import's head leaves that run's timing. */
 export const headKey = (repo: string) => `platform/v1/${repo}/import-head.json`;
@@ -200,8 +232,20 @@ export const headTiming = (
  * its answer, and what it does not reach, the Workflow does. */
 export async function startImport(env: Env, params: ImportParams) {
   const importing_at = Date.now();
-  await fetchRemote(env, params);
-  const head = await landHead(env, params);
-  const timing = headTiming(params, importing_at, head, 'request');
-  await env.OBJECTS.put(headKey(params.repo), JSON.stringify(timing));
+  // Beside Artifacts' own fetch, racing it to main: whichever lands first, the other finds it.
+  const direct = directOn(env, params.url)
+    ? directImport(env, params).then(async (timing) => {
+        if (timing) await env.OBJECTS.put(headKey(params.repo), JSON.stringify(timing));
+        return timing;
+      })
+    : null;
+  try {
+    await fetchRemote(env, params);
+    const head = await landHead(env, params);
+    if (await direct) return;
+    const timing = headTiming(params, importing_at, head, 'request');
+    await env.OBJECTS.put(headKey(params.repo), JSON.stringify(timing));
+  } finally {
+    await direct;
+  }
 }

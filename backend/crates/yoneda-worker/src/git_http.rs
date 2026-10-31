@@ -129,6 +129,9 @@ pub fn git_receive_call(handle: u32, input: &str) -> String {
                 Some("commands") => Ok(r.commands()),
                 Some("verify") => r.verify(&c),
                 Some("copy") => r.copy(&c),
+                Some("import_head") => r.import_head(&c),
+                Some("import_chain") => r.import_chain(&c),
+                Some("import_commits") => r.import_commits(&c),
                 Some("verified") => r.verified_page(
                     c["from"].as_u64().unwrap_or(0) as usize,
                     c["count"].as_u64().unwrap_or(0) as usize,

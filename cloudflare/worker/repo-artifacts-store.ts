@@ -40,6 +40,10 @@ export async function dispatchStore(env: Env, repo: string) {
 
 /** Whether `e` says Artifacts has no such repository (yet). */
 export const absent = (e: any) => e?.code === 'CREATE_IN_PROGRESS' || gone(e);
+/** Whether `e` says Artifacts is still fetching a repository whose main landed without it
+ * (`DIRECT_IMPORT`): reads find it empty, and what needs it waits. */
+const importing = (env: Env, e: any) =>
+  env.DIRECT_IMPORT === 'on' && e?.code === 'IMPORT_IN_PROGRESS';
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export class ArtifactsStore implements ObjectStore {
@@ -81,9 +85,20 @@ export class ArtifactsStore implements ObjectStore {
    * another receive-pack and once with a fresh token.
    */
   async pushFile(id: string, size: number, open: () => Promise<ReadableStream<Uint8Array>>) {
+    let held = '';
+    await this.pushStream(async () => {
+      const { body, carrier } = largeReceivePack(id, size, await open());
+      held = carrier;
+      return body;
+    });
+    return held;
+  }
+  /** `pushFile`'s retries around any receive-pack body (`open` makes one per attempt);
+   * answers Git's report. */
+  async pushStream(open: () => Promise<ReadableStream<Uint8Array>>) {
     for (let attempt = 0; ; attempt++) {
       const { remote, token } = await this.credentials(attempt > 0);
-      const { body, carrier } = largeReceivePack(id, size, await open());
+      const body = await open();
       const result = await fetch(`${remote}/git-receive-pack`, {
         method: 'POST',
         headers: {
@@ -107,7 +122,7 @@ export class ArtifactsStore implements ObjectStore {
         throw Object.assign(new Error(`Object store push returned ${result.status}`), {
           code: 'PUSH_FAILED',
         });
-      return carrier;
+      return report;
     }
   }
   private async credentials(fresh: boolean) {
@@ -127,7 +142,7 @@ export class ArtifactsStore implements ObjectStore {
     try {
       return await this.env.ARTIFACTS.get(this.name);
     } catch (e: any) {
-      if (!asyncStore(this.env) || !absent(e)) throw e;
+      if (!importing(this.env, e) && (!asyncStore(this.env) || !absent(e))) throw e;
       throw Object.assign(new Error(`Store ${this.name} does not exist yet`), {
         code: STORE_PENDING,
       });
@@ -186,7 +201,7 @@ export class ArtifactsStore implements ObjectStore {
     try {
       return await this.env.ARTIFACTS.get(this.name);
     } catch (e: any) {
-      if (absent(e)) return null;
+      if (absent(e) || importing(this.env, e)) return null;
       throw e;
     }
   }

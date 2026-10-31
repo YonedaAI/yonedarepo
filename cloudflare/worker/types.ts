@@ -41,6 +41,10 @@ export interface Env {
   /** `on`: an import lands main at once and fills its history in behind it
    * (repo-import-fill.ts; unset or anything else: history first, then main). */
   FAST_IMPORT?: string;
+  /** `on` (with FAST_IMPORT, PACK_CACHE and PUSH_BUNDLES): a public GitHub repository's import
+   * also fetches it directly, and main lands from that (repo-import-direct.ts; unset or
+   * anything else: Artifacts' fetch alone). */
+  DIRECT_IMPORT?: string;
   /** Platform check executors (one fresh container per run attempt). */
   CHECK_RUNNERS: DurableObjectNamespace<import('./check-container').CheckContainer>;
   OBJECT_PUSHES: DurableObjectNamespace<import('./repo-push-queue').ObjectPushQueue>;

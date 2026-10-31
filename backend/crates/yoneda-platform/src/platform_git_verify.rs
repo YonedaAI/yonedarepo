@@ -16,7 +16,7 @@ use yoneda_core::{
     Error, Result,
     git_object::{
         Commit, FileMode, ObjectId, ObjectKind, PackReader, TreeChange, TreeEntry, TreeLookup,
-        Walk, decode_tree, diff_trees_in,
+        Walk, decode_tree, decode_tree_loose, diff_trees_in,
     },
     txlog::{PathOp, PathTouch},
 };
@@ -78,6 +78,20 @@ impl Verifier {
         self.present.insert(id);
     }
 
+    /// A lookup of `pack`'s trees as history already in Git, read as Git reads them, decoded
+    /// on demand (an import's walk: `import_commits`).
+    pub(crate) fn history_trees<'a>(
+        &'a mut self,
+        pack: &'a mut PackReader,
+    ) -> impl TreeLookup + 'a {
+        PackTrees {
+            supplied: &self.trees,
+            pack,
+            decoded: &mut self.decoded,
+            decode: decode_tree_loose,
+        }
+    }
+
     pub fn verify(&mut self, pack: &mut PackReader, tips: &[ObjectId]) -> Result<Step> {
         let (order, parsed) = new_commits(pack, tips)?;
         let unknown: BTreeSet<ObjectId> = parsed
@@ -99,6 +113,7 @@ impl Verifier {
             supplied: &self.trees,
             pack,
             decoded: &mut self.decoded,
+            decode: decode_tree,
         };
         // Every diff first, so one round asks for every tree any commit needs.
         let mut need = BTreeSet::new();
@@ -230,6 +245,7 @@ struct PackTrees<'a> {
     supplied: &'a HashMap<ObjectId, Vec<TreeEntry>>,
     pack: &'a mut PackReader,
     decoded: &'a mut Decoded,
+    decode: fn(&[u8]) -> Result<Vec<TreeEntry>>,
 }
 
 impl TreeLookup for PackTrees<'_> {
@@ -243,7 +259,7 @@ impl TreeLookup for PackTrees<'_> {
         }
         if !self.decoded.map.contains_key(id) {
             let data = self.pack.content(id)?;
-            let entries = decode_tree(&data)
+            let entries = (self.decode)(&data)
                 .map_err(|e| Error::new(&e.code, format!("Tree {id}: {}", e.message)))?;
             self.decoded.put(*id, entries);
         }
@@ -345,7 +361,7 @@ fn new_commits(
     Ok((order, parsed))
 }
 
-fn touch(change: &TreeChange) -> PathTouch {
+pub(crate) fn touch(change: &TreeChange) -> PathTouch {
     let mode = |side: Option<(FileMode, ObjectId)>| {
         side.filter(|(m, _)| *m != FileMode::Gitlink)
             .map(|(m, _)| m)
