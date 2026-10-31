@@ -146,6 +146,7 @@ describe('SSH in the Clone menu', () => {
     expect(shown).toContain('aria-label="Copy SSH"');
     expect(shown).toContain('href="/settings/ssh-keys"');
     expect(shown).toContain('yoneda ssh setup');
+    expect(shown).toMatch(/Settings → SSH keys<\/a>: run <code>yoneda ssh setup<\/code> once\./);
     const direct = line({ ...tunnel, front_door: 'connect', ssh_config: null });
     expect(direct).toContain('Copy SSH');
     expect(direct).not.toContain('/settings/ssh-keys');

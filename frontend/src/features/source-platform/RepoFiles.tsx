@@ -111,7 +111,12 @@ export function RepoFiles({
           <a className="toolbar-link" {...linkTo({ ...place, view: 'overview' }, navigate)}>
             Subsystems
           </a>
-          <CloneButton repo={route.repo} name={status?.name} origin={currentApiOrigin()} />
+          <CloneButton
+            repo={route.repo}
+            name={status?.name}
+            origin={currentApiOrigin()}
+            visibility={status?.visibility}
+          />
         </span>
       </div>
       {route.at !== undefined && (
