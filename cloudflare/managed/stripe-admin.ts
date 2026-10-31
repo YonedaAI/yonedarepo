@@ -53,3 +53,20 @@ export async function createRefund(
   );
   return refund as StripeRefund;
 }
+
+/** A charge's workspace and top-up (Stripe copies them from the payment intent), or null for a
+ * charge Stripe does not know. A dispute carries neither, so the event alone cannot say whose
+ * it is. */
+export async function chargeOf(env: ManagedEnv, id: string) {
+  try {
+    return await stripeRequest(
+      env,
+      env.STRIPE_SECRET_KEY,
+      'GET',
+      `/charges/${encodeURIComponent(id)}`,
+    );
+  } catch (e) {
+    if (e instanceof StripeError && e.status === 404) return null;
+    throw e;
+  }
+}

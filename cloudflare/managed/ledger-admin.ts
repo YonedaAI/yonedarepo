@@ -3,8 +3,8 @@
 // SQL in ledger-refunds.ts, ledger-disputes.ts and ledger-pages.ts; CreditLedger adds credit.
 import { DurableObject } from 'cloudflare:workers';
 import type { ManagedEnv } from './config';
-import { billingRow, cardOf } from './ledger-billing';
-import { disputeRows } from './ledger-disputes';
+import { billingRow, cancelTopUp, cardOf } from './ledger-billing';
+import { closeDispute, type DisputeEvent, disputeRows, openDispute } from './ledger-disputes';
 import { balanceOf } from './ledger-holds';
 import { entriesPage, usagePage } from './ledger-pages';
 import {
@@ -16,6 +16,7 @@ import {
   refundRows,
   refundSucceeded,
   reserveRefund,
+  stripeRefunded,
   takenBack,
   topUpRows,
   unspentByTopUp,
@@ -111,6 +112,38 @@ export class LedgerAdmin extends DurableObject<ManagedEnv> {
       refundFailed(sql, id, error, Date.now());
       return { resume: this.takePaused(sql) };
     });
+  }
+
+  /** What Stripe says is refunded of `topUp` in all; answers the refunds still open on it,
+   * which only Stripe can settle, or null for a top-up this ledger does not know. */
+  stripeRefunded(topUp: string, total: number): string[] | null {
+    return this.tx((sql) => {
+      if (!sql.exec('SELECT 1 FROM top_ups WHERE key = ?', topUp).toArray().length) return null;
+      stripeRefunded(sql, topUp, total, Date.now());
+      return sql
+        .exec<{ id: string }>(
+          "SELECT id FROM refunds WHERE top_up = ? AND status = 'open' AND origin = 'operator'",
+          topUp,
+        )
+        .toArray()
+        .map((r) => r.id);
+    });
+  }
+
+  disputeOpened(d: DisputeEvent) {
+    this.tx((sql) => openDispute(sql, d, Date.now()));
+  }
+
+  /** Answers the runs the credit coming back lets go on. */
+  disputeClosed(d: DisputeEvent, status: string) {
+    return this.tx((sql) => {
+      closeDispute(sql, d, status, Date.now());
+      return { resume: this.takePaused(sql) };
+    });
+  }
+
+  cancelTopUp(key: string) {
+    this.tx((sql) => cancelTopUp(sql, key, Date.now()));
   }
 
   /** Runs that waited for credit, handed back once there is some (now forgotten here). */

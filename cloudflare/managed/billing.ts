@@ -11,12 +11,14 @@ import {
 } from '../../shared/managed-agents';
 import { type ManagedEnv, promoMicrousd, type QueueMessage } from './config';
 import { ledgerStub, type Paused } from './ledger';
+import { operatorEvent } from './billing-events';
 import {
   cardOf,
   chargeOffSession,
   createCustomer,
   detach,
   setupSession,
+  StripeError,
   stripeEnabled,
   verifyWebhook,
 } from './stripe';
@@ -134,6 +136,10 @@ export async function runTopUp(env: ManagedEnv, m: Extract<QueueMessage, { kind:
   const ledger = ledgerStub(env, m.account);
   const pending = await ledger.pendingTopUp(m.key);
   if (pending?.status !== 'pending') return;
+  if (pending.stopped) {
+    await ledger.cancelTopUp(m.key);
+    return;
+  }
   if (!pending.customer || !pending.payment_method) {
     await ledger.topUpResult(m.key, { ok: false, error: 'No card on file' });
     return;
@@ -149,8 +155,9 @@ export async function runTopUp(env: ManagedEnv, m: Extract<QueueMessage, { kind:
   await resumeAll(env, resume);
 }
 
-/** `POST /stripe/webhook`: Stripe's signed events. A saved card (setup_intent.succeeded) and a
- * top-up's outcome (payment_intent.succeeded / payment_failed); others are acknowledged. */
+/** `POST /stripe/webhook`: Stripe's signed events. A saved card (setup_intent.succeeded), a
+ * top-up's outcome (payment_intent.succeeded / payment_failed) and, with ADMIN_BILLING on, refunds
+ * and disputes (billing-events.ts); others are acknowledged. */
 export async function stripeWebhook(req: Request, env: ManagedEnv): Promise<Response> {
   const body = await req.text();
   if (body.length > 512 * 1024)
@@ -162,6 +169,16 @@ export async function stripeWebhook(req: Request, env: ManagedEnv): Promise<Resp
     event = JSON.parse(body);
   } catch {
     return Response.json({ error: { code: 'INVALID_INPUT' } }, { status: 400 });
+  }
+  const operator = await operatorEvent(env, event).catch((e) => {
+    if (!(e instanceof StripeError)) throw e;
+    return null;
+  });
+  if (operator === null)
+    return Response.json({ error: { code: 'STRIPE_UNAVAILABLE' } }, { status: 503 });
+  if (operator) {
+    await resumeAll(env, operator.resume);
+    return Response.json(operator.recorded ? { recorded: true } : { ignored: true });
   }
   const object = event.data?.object ?? {};
   const workspace =
