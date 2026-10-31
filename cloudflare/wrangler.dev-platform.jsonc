@@ -317,7 +317,7 @@
     ]
   },
   "vars": {
-    "ACCOUNT_SEARCH": "off",
+    "ACCOUNT_SEARCH": "on",
     "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
     "ADMIN_BILLING": "on",
     "ADMIN_NOTIFY_EMAIL": "",

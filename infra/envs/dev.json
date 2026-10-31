@@ -205,7 +205,7 @@
           "FAST_IMPORT": "on",
           "DIRECT_IMPORT": "on",
           "BLOB_WRITE_THROUGH": "off",
-          "ACCOUNT_SEARCH": "off",
+          "ACCOUNT_SEARCH": "on",
           "AUDIT_LOG": "off",
           "TRAFFIC_EVENTS": "on",
           "PUSH_BUNDLES": "on",
