@@ -45,9 +45,17 @@ it('moves old versions to R2 segments and still answers reads at them', async ()
   const bound = await api(`${repo}/retention`, owner, { method: 'PUT', body: { keep_versions: 64 } });
   expect(bound.body).toEqual({ keep_versions: 64, keep_days: 30 });
 
+  // The owner's read changes nothing, and only the owner may read it.
+  expect((await api(`${repo}/compaction`, agent)).status).toBe(403);
+  const unmoved = (await api(`${repo}/compaction`, owner)).body;
+  expect(unmoved).toMatchObject({ floor: 0, head: version, tail_rows: version, retention: { keep_versions: 64 } });
+  expect(unmoved.storage.db_bytes).toBeGreaterThan(4096);
+  expect((await api(`${repo}/compaction`, owner)).body.floor).toBe(0);
+
   const compacted = await api(`${repo}/compact`, owner, { body: {} });
   expect(compacted.status).toBe(200);
   expect(compacted.body).toMatchObject({ segments: 1, floor: 1_024, head: version, tail_rows: version - 1_024, more: false });
+  expect((await api(`${repo}/compaction`, owner)).body).toMatchObject({ floor: 1_024, tail_rows: version - 1_024 });
   const listed = await bindings.OBJECTS.list({ prefix: `platform/v1/${id}/_log/` });
   expect(listed.objects.map((o) => o.key.split('/_log/')[1]).sort()).toEqual([
     'checkpoint-00000000000000000000.json',

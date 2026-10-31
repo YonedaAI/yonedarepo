@@ -195,6 +195,12 @@ fn progress<S: SqlStore>(db: &S) -> Result<Value> {
     }))
 }
 
+/// `repo_compact_status`: the floor and tail alone. Nothing is sealed, unlike a plan, so it is
+/// cheap enough to read while a repository is busy.
+pub fn status<S: SqlStore>(db: &S) -> Result<Value> {
+    progress(db)
+}
+
 /// `repo_compact_plan`: the next segment due (`due` with both sealed objects), or not due.
 pub fn plan<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     let mut answer = progress(db)?;

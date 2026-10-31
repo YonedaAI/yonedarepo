@@ -81,7 +81,7 @@ test('more than 1% refused arrivals is a miss, counted by code', () => {
   const step = summarizeStep(arrivals({ gap: 100, duration: 60_000, latency: () => 300, status: (k) => (k % 50 === 0 ? 429 : 200) }), options);
   assert.equal(step.refused, 12);
   assert.deepEqual(step.refusals, { '429 RATE_LIMITED': 12 });
-  assert.ok(step.missed.includes('refusals'));
+  assert.ok(step.missed.includes('errors'));
 });
 
 test('arrivals the bench client abandoned mark the step client-limited', () => {

@@ -861,6 +861,33 @@
           }
         ]
       }
+    },
+    {
+      "role": "bench2",
+      "file": "wrangler.dev-bench2.jsonc",
+      "notes": [
+        "Second dev bench client: the same code as bench, with no hook boxes and no domain, so a load",
+        "test can compare 1 client against 2 (tools/fanout-bench/driver.mjs, --client2). BENCH_KEY is",
+        "set once from stdin and has the same value as bench's."
+      ],
+      "secrets": [
+        "BENCH_KEY"
+      ],
+      "ephemeral": false,
+      "config": {
+        "name": "{prefix}-bench2",
+        "main": "../tools/fanout-bench/worker.js",
+        "compatibility_date": "2026-10-07",
+        "compatibility_flags": [
+          "global_fetch_strictly_public"
+        ],
+        "workers_dev": true,
+        "preview_urls": false,
+        "placement": {
+          "mode": "targeted",
+          "region": "aws:us-east-1"
+        }
+      }
     }
   ],
   "retired": {
