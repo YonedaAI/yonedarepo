@@ -2,6 +2,7 @@
 //! first, answered from the per-commit changed-path index (no tree walks): the path's own
 //! rows joined to the branch's chain (`ref_chain`) where the chain holds the head, else by
 //! walking first parents.
+use super::ref_chain::{self, Below};
 use super::rows::{self, branch_ref};
 use crate::storage::{SqlStore, string};
 use serde_json::{Value, json};
@@ -23,8 +24,11 @@ pub fn path_history<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     };
     let mut next =
         head.ok_or_else(|| Error::new("NOT_FOUND", format!("{refname} does not exist")))?;
-    if let Some(depth) = super::ref_chain::depth(db, &refname, &next)? {
-        let commits = from_chain(db, &refname, depth, &path, limit)?;
+    let below = ref_chain::below(db, &refname)?;
+    if below != Below::Lost
+        && let Some(depth) = ref_chain::depth(db, &refname, &next)?
+    {
+        let commits = from_chain(db, &refname, depth, below, &path, limit)?;
         return Ok(json!({ "ref": refname, "path": path, "commits": commits }));
     }
     let mut commits = Vec::new();
@@ -52,11 +56,13 @@ pub fn path_history<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
 }
 
 /// The touches of `path` (or under it, or of a directory holding it) by commits on
-/// `refname`'s chain at or below `depth`, newest first, as the walk lists them.
+/// `refname`'s chain at or below `depth`, newest first, as the walk lists them: its own rows,
+/// then main's where the chain carries on there, whose depths all lie below them.
 fn from_chain<S: SqlStore>(
     db: &S,
     refname: &str,
     depth: i64,
+    below: Below,
     path: &str,
     limit: usize,
 ) -> Result<Vec<Value>> {
@@ -69,33 +75,44 @@ fn from_chain<S: SqlStore>(
         holders.push(format!("{}/", &dir[..at]));
     }
     holders.push(path.to_owned());
-    let rows = db.query(
-        "SELECT p.commit_id,p.path,p.op,p.old_blob,p.new_blob,m.message,m.principal \
-         FROM commit_paths p \
-         JOIN ref_chain c ON c.ref=? AND c.commit_id=p.commit_id AND c.depth<=? \
-         JOIN commits m ON m.id=p.commit_id \
-         WHERE p.path IN (SELECT value FROM json_each(?)) OR (p.path>? AND p.path<?) \
-         ORDER BY c.depth DESC, p.path LIMIT ?",
-        &[
-            json!(refname),
-            json!(depth),
-            json!(json!(holders).to_string()),
-            json!(format!("{dir}/")),
-            json!(format!("{dir}0")),
-            json!(limit),
-        ],
-    )?;
+    let mut spans = vec![(refname, depth)];
+    if let Below::Main(base) = below {
+        spans.push((ref_chain::MAIN, depth.min(base)));
+    }
+    let mut left = limit;
     let mut commits = Vec::new();
-    for row in rows {
-        let touched = row["path"].as_str().unwrap_or_default();
-        if !overlaps(touched, path) {
-            continue;
+    for (chain, depth) in spans {
+        let rows = db.query(
+            "SELECT p.commit_id,p.path,p.op,p.old_blob,p.new_blob,m.message,m.principal \
+             FROM commit_paths p \
+             JOIN ref_chain c ON c.ref=? AND c.commit_id=p.commit_id AND c.depth<=? \
+             JOIN commits m ON m.id=p.commit_id \
+             WHERE p.path IN (SELECT value FROM json_each(?)) OR (p.path>? AND p.path<?) \
+             ORDER BY c.depth DESC, p.path LIMIT ?",
+            &[
+                json!(chain),
+                json!(depth),
+                json!(json!(holders).to_string()),
+                json!(format!("{dir}/")),
+                json!(format!("{dir}0")),
+                json!(left),
+            ],
+        )?;
+        left -= rows.len();
+        for row in rows {
+            let touched = row["path"].as_str().unwrap_or_default();
+            if !overlaps(touched, path) {
+                continue;
+            }
+            let commit = ObjectId::parse(row["commit_id"].as_str().unwrap_or_default())?;
+            commits.push(json!({
+                "commit": commit, "path": touched, "op": row["op"], "old_blob": row["old_blob"],
+                "new_blob": row["new_blob"], "message": row["message"], "principal": row["principal"],
+            }));
         }
-        let commit = ObjectId::parse(row["commit_id"].as_str().unwrap_or_default())?;
-        commits.push(json!({
-            "commit": commit, "path": touched, "op": row["op"], "old_blob": row["old_blob"],
-            "new_blob": row["new_blob"], "message": row["message"], "principal": row["principal"],
-        }));
+        if left == 0 {
+            break;
+        }
     }
     Ok(commits)
 }

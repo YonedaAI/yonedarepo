@@ -8,9 +8,13 @@
 //! import's oldest has generation 1, and an imported head filled in behind (`history_fill`)
 //! leaves room below it. Past `BUILD` commits a chain starts from its newest ones: a branch
 //! that held more history before this index existed keeps the walk below them.
+//!
+//! With `_ref_chain` (the adapter's `REF_CHAIN_SHARED`), a branch stores only what lies above
+//! main's chain and numbers on from where it left: every agent branch would otherwise copy
+//! main. `below` proves the link from the rows on every read, so main is never assumed.
 use super::rows;
 use crate::storage::SqlStore;
-use serde_json::json;
+use serde_json::{Value, json};
 use yoneda_core::{Result, git_object::ObjectId};
 
 /// First parents one move walks at most to meet the chain (the walk's own MAX_SCAN).
@@ -18,8 +22,57 @@ const BUILD: usize = 5_000;
 /// Depth below which a chain started without reaching the start of history begins.
 const PARTIAL: i64 = 1_000_000_000;
 
-/// `commit`'s depth on `refname`'s chain, if the chain holds it.
+pub(super) const MAIN: &str = "refs/heads/main";
+
+/// What carries on under the oldest row a branch stores.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Below {
+    /// Nothing: the start of history, a commit not recorded, or a chain past its limit.
+    End,
+    /// Main's chain from this depth down.
+    Main(i64),
+    /// A recorded first parent that no chain holds, so history below the rows is unproven.
+    Lost,
+}
+
+/// What continues `refname`'s chain. Main's row one below the oldest must be that commit's
+/// first parent; otherwise the chain stands alone.
+pub fn below<S: SqlStore>(db: &S, refname: &str) -> Result<Below> {
+    if refname == MAIN {
+        return Ok(Below::End);
+    }
+    let rows = db.query(
+        "SELECT b.depth,m.depth AS main,p.id AS parent FROM ref_chain b \
+         LEFT JOIN commits c ON c.id=b.commit_id \
+         LEFT JOIN commits p ON p.id=json_extract(c.parents,'$[0]') \
+         LEFT JOIN ref_chain m ON m.ref=?2 AND m.depth=b.depth-1 AND m.commit_id=p.id \
+         WHERE b.ref=?1 ORDER BY b.depth LIMIT 1",
+        &[json!(refname), json!(MAIN)],
+    )?;
+    let Some(row) = rows.first() else {
+        return Ok(Below::End);
+    };
+    Ok(match row["main"].as_i64() {
+        Some(depth) => Below::Main(depth),
+        None if row["parent"].is_null() || row["depth"].as_i64() == Some(PARTIAL + 1) => Below::End,
+        None => Below::Lost,
+    })
+}
+
+/// `commit`'s depth on `refname`'s chain, if the chain holds it, in its own rows or in
+/// main's below them.
 pub fn depth<S: SqlStore>(db: &S, refname: &str, commit: &ObjectId) -> Result<Option<i64>> {
+    if let Some(at) = own_depth(db, refname, commit)? {
+        return Ok(Some(at));
+    }
+    let Below::Main(base) = below(db, refname)? else {
+        return Ok(None);
+    };
+    Ok(own_depth(db, MAIN, commit)?.filter(|at| *at <= base))
+}
+
+/// `commit`'s depth among the rows `refname` stores.
+fn own_depth<S: SqlStore>(db: &S, refname: &str, commit: &ObjectId) -> Result<Option<i64>> {
     Ok(db
         .query(
             "SELECT depth FROM ref_chain WHERE ref=? AND commit_id=?",
@@ -30,7 +83,9 @@ pub fn depth<S: SqlStore>(db: &S, refname: &str, commit: &ObjectId) -> Result<Op
 }
 
 /// The branches holding `commit`: at their head, on their chain, or landed on a protected
-/// one (those never rewind, and a merged commit is on no chain). O(branches).
+/// one (those never rewind, and a merged commit is on no chain). O(branches). A branch
+/// sharing main is not listed for what it holds through main: main is, and is protected,
+/// which is all `grants` asks.
 pub fn branches_holding<S: SqlStore>(db: &S, commit: &ObjectId) -> Result<Vec<String>> {
     let id = [json!(commit.hex())];
     let moved = db.query(
@@ -48,11 +103,12 @@ pub fn branches_holding<S: SqlStore>(db: &S, commit: &ObjectId) -> Result<Vec<St
     Ok(branches)
 }
 
-/// Records `refname` now at `head` (a recorded commit).
-pub fn advance<S: SqlStore>(db: &S, refname: &str, head: &ObjectId) -> Result<()> {
-    if let Some(at) = depth(db, refname, head)? {
+/// Records `refname` now at `head` (a recorded commit), under the command `c` that moved it.
+pub fn advance<S: SqlStore>(db: &S, refname: &str, head: &ObjectId, c: &Value) -> Result<()> {
+    if let Some(at) = own_depth(db, refname, head)? {
         return truncate(db, refname, at);
     }
+    let share = c["_ref_chain"] == "shared" && refname != MAIN;
     let mut walked = Vec::new();
     let mut next = *head;
     let mut row = rows::commit_row(db, head)?;
@@ -65,7 +121,11 @@ pub fn advance<S: SqlStore>(db: &S, refname: &str, head: &ObjectId) -> Result<()
         let Some(parent) = row.as_ref().and_then(|r| r.parents.first().copied()) else {
             break 0;
         };
-        if let Some(at) = depth(db, refname, &parent)? {
+        if let Some(at) = own_depth(db, refname, &parent)? {
+            break at;
+        }
+        if share && let Some(at) = own_depth(db, MAIN, &parent)? {
+            truncate(db, refname, i64::MIN)?;
             break at;
         }
         let above = row.as_ref().map_or(1, |r| r.generation as i64);
