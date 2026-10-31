@@ -6,7 +6,7 @@ use crate::storage::SqlStore;
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result, git_object::ObjectId};
 
-/// Commits an auto-approval walks at most, the head included.
+/// Commits a walk over what a landing would bring covers at most, the head included.
 pub(super) const WALK: usize = 256;
 
 /// Branch policy: a protected ref (`main`, `release`, `release/*`) lands with the `land` scope
@@ -63,17 +63,32 @@ fn clears(class: &Value, settings: &Settings) -> bool {
     })
 }
 
-/// Whether every commit under `commit` that landing on `refname` would bring also clears:
-/// walks single parents down to where they meet the ref (its head, its first-parent chain,
-/// or a commit landed on it). A merge, a commit with no class, a parent not recorded, or
-/// more than `WALK` commits proves nothing, so a human approves those.
-fn older_commits_clear<S: SqlStore>(
+/// Whether every commit under `commit` that landing on `refname` would bring passes `passes`:
+/// `walk_until` it meets the ref (its head, its first-parent chain, or a commit landed on it).
+pub(super) fn older_commits_pass<S: SqlStore>(
     db: &S,
     commit: &CommitRow,
     refname: &str,
-    settings: &Settings,
+    passes: impl Fn(&ObjectId) -> Result<bool>,
 ) -> Result<bool> {
     let head = rows::projected_ref(db, refname)?;
+    let meets = |parent: &ObjectId| {
+        Ok(head == Some(*parent)
+            || super::ref_chain::depth(db, refname, parent)?.is_some()
+            || landed_version(db, parent, refname)?.is_some())
+    };
+    walk_until(db, commit, meets, passes)
+}
+
+/// Whether every commit under `commit` passes `passes`, walking single parents down to one
+/// that `meets` the target. A merge, a parent not recorded, or more than `WALK` commits
+/// proves nothing, so none of those pass.
+pub(super) fn walk_until<S: SqlStore>(
+    db: &S,
+    commit: &CommitRow,
+    meets: impl Fn(&ObjectId) -> Result<bool>,
+    passes: impl Fn(&ObjectId) -> Result<bool>,
+) -> Result<bool> {
     let mut parents = commit.parents.clone();
     for _ in 0..WALK {
         let parent = match parents.as_slice() {
@@ -81,16 +96,13 @@ fn older_commits_clear<S: SqlStore>(
             [parent] => *parent,
             _ => return Ok(false),
         };
-        if head == Some(parent)
-            || super::ref_chain::depth(db, refname, &parent)?.is_some()
-            || landed_version(db, &parent, refname)?.is_some()
-        {
+        if meets(&parent)? {
             return Ok(true);
         }
         let Some(row) = rows::commit_row(db, &parent)? else {
             return Ok(false);
         };
-        if !class_of(db, &parent)?.is_some_and(|class| clears(&class, settings)) {
+        if !passes(&parent)? {
             return Ok(false);
         }
         parents = row.parents;
@@ -136,10 +148,13 @@ pub fn gates<S: SqlStore>(
         .collect();
     // Semantic approval: a classified change whose every file is in an auto-approvable
     // class satisfies the approval count, and only if all it would land is too. Unclassified
-    // or unknown changes never do. `review_class` stays the commit's own.
+    // or unknown changes, or a walk that proves nothing, need a human. `review_class` stays
+    // the commit's own.
     let class = class_of(db, id)?;
     let auto_approved = class.as_ref().is_some_and(|c| clears(c, settings))
-        && older_commits_clear(db, commit, refname, settings)?;
+        && older_commits_pass(db, commit, refname, |older| {
+            Ok(class_of(db, older)?.is_some_and(|class| clears(&class, settings)))
+        })?;
     let class = class.map(|c| c["overall"].clone());
     let ready = !rejected
         && (auto_approved || approvals >= settings.policy.approvals as usize)

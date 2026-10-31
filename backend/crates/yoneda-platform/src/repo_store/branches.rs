@@ -157,7 +157,7 @@ fn log_move<S: SqlStore>(
 }
 
 /// Most ref updates one batch carries.
-const BATCH_LIMIT: usize = 100;
+pub(super) const BATCH_LIMIT: usize = 100;
 
 /// An atomic multi-ref push: several working-branch moves (or deletes: a null commit) and
 /// tag creations in this one transaction. Every update is validated first (protected refs,
