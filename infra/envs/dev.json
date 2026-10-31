@@ -541,7 +541,9 @@
           "AI_GATEWAY_URL": "https://gateway.ai.cloudflare.com/v1/{account_id}/{prefix}-managed-agents",
           "AI_GATEWAY_PROVIDERS": "claude=anthropic,codex=openai,zai=custom-zai,mimo=custom-mimo",
           "ADMIN_BILLING": "off",
-          "PROMO_CREDIT_USD": "100"
+          "PROMO_CREDIT_USD": "100",
+          "REFUND_MAX_USD": "500",
+          "REFUND_DAILY_USD": "1000"
         },
         "secrets_store_secrets": [
           {
