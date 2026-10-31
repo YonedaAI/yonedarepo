@@ -43,7 +43,7 @@ describe('the Clone menu', () => {
     );
     expect(copyBlocks(html)).toEqual([
       ['yoneda remote helper (recommended)', `git clone yoneda::${api}/${repo} demo`],
-      ['HTTPS (needs a personal token as the password)', `git clone ${api}/git/${repo}.git demo`],
+      ['HTTPS', `git clone ${api}/git/${repo}.git demo`],
     ]);
   });
   it('waits for the repository name: never a command that clones into a directory named by the id', () => {
@@ -51,6 +51,18 @@ describe('the Clone menu', () => {
     expect(html).not.toContain('git clone');
     expect(html).toContain('Loading the clone commands');
   });
+  it('asks for no token on a public repository', () => {
+    const html = renderToStaticMarkup(
+      createElement(CloneButton, { repo, name: 'demo', origin: api, visibility: 'public' }),
+    );
+    expect(html).not.toMatch(/token/i);
+    expect(
+      copyBlocks(html)
+        .map(([label]) => label)
+        .slice(0, 2),
+    ).toEqual(['yoneda remote helper (recommended)', 'HTTPS']);
+  });
+
   it('says what each needs: one yoneda login on the API origin, or a personal token', () => {
     for (const component of [CloneButton, ConnectPanel]) {
       const html = renderToStaticMarkup(
@@ -59,12 +71,9 @@ describe('the Clone menu', () => {
       expect(html).toContain(`Run once: <code>yoneda login --origin ${api}</code>`);
       expect(html).toContain('then pull/push use your login');
       expect(html).toContain('href="/settings/tokens"');
-      expect(html).toContain('Settings → Personal tokens');
+      expect(html).toContain('Settings → Personal tokens</a>: use one as the password.');
       const order = copyBlocks(html).map(([label]) => label);
-      expect(order.slice(0, 2)).toEqual([
-        'yoneda remote helper (recommended)',
-        'HTTPS (needs a personal token as the password)',
-      ]);
+      expect(order.slice(0, 2)).toEqual(['yoneda remote helper (recommended)', 'HTTPS']);
     }
     expect(loginCommand('https://api.yonedarepo.com')).toBe(
       'yoneda login --origin https://api.yonedarepo.com',

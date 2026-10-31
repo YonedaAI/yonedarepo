@@ -221,7 +221,7 @@ export async function cloneLines(page, scope, { api, id, name, path }, what) {
   const blocks = scope.locator('.source-copy');
   await blocks.first().waitFor();
   const labels = await blocks.locator('.source-copy-head > span').allInnerTexts();
-  assert.deepEqual(labels.slice(0, 2), ['yoneda remote helper (recommended)', 'HTTPS (needs a personal token as the password)'], `${what}: clone entries out of order`);
+  assert.deepEqual(labels.slice(0, 2), ['yoneda remote helper (recommended)', 'HTTPS'], `${what}: clone entries out of order`);
   assert.equal(await blocks.nth(0).locator('code').innerText(), `git clone yoneda::${api}/${id} ${name}`, `${what}: the yoneda line`);
   const https = await blocks.nth(1).locator('code').innerText();
   assert.equal(https, `git clone ${api}${path}.git ${name}`, `${what}: the HTTPS line`);

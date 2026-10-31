@@ -19,15 +19,18 @@ import { sourceApi } from './sourceApi';
 import { CopyBlock } from './TokenParts';
 
 /** The two clone commands, the recommended yoneda remote helper first, each with what it
- * needs: the helper a one-time `yoneda login`, stock Git a personal token as the password. */
+ * needs: the helper a one-time `yoneda login`, stock Git a personal token as the password,
+ * except on a public repository, which clones with no credentials. */
 export function CloneCommands({
   repo,
   name,
   origin,
+  visibility,
 }: {
   repo: string;
   name?: string;
   origin: string;
+  visibility?: string;
 }) {
   return (
     <>
@@ -36,15 +39,14 @@ export function CloneCommands({
         text={cloneCommand(origin, repo, name)}
       />
       <p className="source-meta clone-hint">
-        Run once: <code>{loginCommand(origin)}</code> — then pull/push use your login.
+        Run once: <code>{loginCommand(origin)}</code>, then pull/push use your login.
       </p>
-      <CopyBlock
-        label="HTTPS (needs a personal token as the password)"
-        text={httpsCloneCommand(origin, repo, name)}
-      />
-      <p className="source-meta clone-hint">
-        <a href="/settings/tokens">Settings → Personal tokens</a>
-      </p>
+      <CopyBlock label="HTTPS" text={httpsCloneCommand(origin, repo, name)} />
+      {visibility !== 'public' && (
+        <p className="source-meta clone-hint">
+          <a href="/settings/tokens">Settings → Personal tokens</a>: use one as the password.
+        </p>
+      )}
     </>
   );
 }
