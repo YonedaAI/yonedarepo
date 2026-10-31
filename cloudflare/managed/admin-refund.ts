@@ -83,7 +83,7 @@ export async function runRefund(env: ManagedEnv, account: string, id: string) {
 /** `POST /admin/accounts/<account>/billing/refund {id, top_up, usd, reason, actor,
  * spent_override?, allow_negative?}`. `id` is the caller's: the same one is the same refund. */
 export async function refund(env: ManagedEnv, account: string, body: Record<string, unknown>) {
-  if (!env.STRIPE_REFUND_KEY)
+  if (!(env.STRIPE_REFUND_KEY ?? env.STRIPE_SECRET_KEY))
     throw new BillingRefusal('NOT_CONFIGURED', 'Refunds are not set up here', 503);
   const max = limitMicrousd(env.REFUND_MAX_USD);
   const daily = limitMicrousd(env.REFUND_DAILY_USD);
