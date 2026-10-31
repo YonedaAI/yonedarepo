@@ -10,7 +10,7 @@ vi.mock('../source-platform/useSource', () => ({ useSource: () => state.value })
 
 const refModel = await import('./refModel');
 const { BranchTable, RepoBranches, TagTable } = await import('./RepoBranches');
-const { HOOK_EVENTS, HOOK_EVENT_HELP, HookTable } = await import('./HookParts');
+const { HOOK_EVENTS, HOOK_EVENT_HELP, HOOK_OPT_IN, HookTable } = await import('./HookParts');
 const { hookBody, RepoWebhooks } = await import('./RepoWebhooks');
 const { SECTION_TITLES } = await import('./RepoSettings');
 const { HistoryTab } = await import('../source-platform/HistoryTab');
@@ -167,9 +167,12 @@ describe('webhook events and paths', () => {
     expect(HOOK_EVENTS).toContain('change');
     expect(HOOK_EVENTS).toContain('release');
     for (const e of HOOK_EVENTS) expect(HOOK_EVENT_HELP[e]).toBeTruthy();
+    // Asked for by name, so it is never in the default selection.
+    expect(HOOK_EVENTS).not.toContain('change.auto');
+    expect(HOOK_OPT_IN).toBe('change.auto');
     state.value = loaded({ data: { hooks: [] } });
     const form = html(RepoWebhooks, { repo });
-    expect(form).toContain('change request opened');
+    expect(form).toContain('Landing opened');
     expect(form).toContain('id="hook-paths"');
   });
   it('sends paths only when given and shows them in the table', () => {

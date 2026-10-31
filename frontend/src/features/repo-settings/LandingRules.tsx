@@ -44,7 +44,7 @@ export function LandingRules({ draft, change }: { draft: Policy; change: (next: 
         </small>
       </label>
       <fieldset className="source-checks" disabled={draft.approvals === 0}>
-        <legend>Land without an approval when a change is only</legend>
+        <legend>Land without an approval when a Landing is only</legend>
         {AUTO_APPROVABLE.map((c) => (
           <label key={c.id}>
             <input

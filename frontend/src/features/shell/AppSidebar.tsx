@@ -55,7 +55,7 @@ export const labelled = (name: string, label?: string) => (label ? `${name}, ${l
 
 export const REPO_PAGES: { id: RepoTab; label: string; Icon: typeof House }[] = [
   { id: 'overview', label: 'Overview', Icon: LayoutDashboard },
-  { id: 'changes', label: 'Changes', Icon: GitPullRequest },
+  { id: 'changes', label: 'Landings', Icon: GitPullRequest },
   { id: 'commits', label: 'Commits', Icon: GitCommitHorizontal },
   { id: 'sessions', label: 'Sessions', Icon: ScrollText },
   { id: 'memories', label: 'Memories', Icon: NotebookPen },

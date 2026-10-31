@@ -42,4 +42,4 @@ Run `git pull` to bring your clone up to date. If you both changed the same line
 - [Git over HTTPS and SSH](/docs/guides/git-remotes): SSH keys, partial and shallow clones, limits.
 - [Install the CLI](/docs/guides/cli): lazy clones, change requests, search and agent setup from the terminal.
 - [Connect an agent](/docs/agents/connect): Claude Code, Codex, opencode or Gemini CLI.
-- [Changes](/docs/guides/changes): propose a branch, review it, run checks and land it.
+- [Landings](/docs/guides/changes): propose a branch, review it, run checks and land it.

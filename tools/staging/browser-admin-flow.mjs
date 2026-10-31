@@ -145,7 +145,7 @@ export async function adminPages(page, { api, account, repo: { id, name }, shot,
 
 /**
  * A repository deleted while its page is open: created in the shell, opened on History,
- * then deleted by API. The next read (the Changes tab) answers GONE, and the page must show
+ * then deleted by API. The next read (the Landings tab) answers GONE, and the page must show
  * one "Repository not found" page (no error boxes) and drop it from the sidebar. A stale link
  * to one of its sub-routes shows the same page.
  */
@@ -180,7 +180,7 @@ export async function deletedRepoPage(page, { origin, account, shot, cleanup }, 
     assert.equal(await page.getByRole('alert').count(), 0, `${what}: error boxes beside the not-found page`);
     assert.equal(await tabs.count(), 0, `${what}: the repository tabs are still shown`);
   };
-  await tabs.getByRole('link', { name: 'Changes' }).click();
+  await tabs.getByRole('link', { name: 'Landings' }).click();
   await expectNotFound('deleted while open');
   await rail.waitFor({ state: 'detached' });
   await shot('repo-deleted-while-open');

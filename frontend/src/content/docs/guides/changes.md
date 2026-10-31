@@ -1,24 +1,53 @@
 ---
-title: Changes and review
-summary: Propose a branch as a change, review its head commit, run checks on the exact commit and land it.
+title: Landings and review
+summary: Propose a branch as a Landing, review its head commit, run checks on the exact commit and land it.
 ---
 
-## When you need a change
+## When you need a Landing
 
-A push to `main` lands directly when the [landing rules](/docs/guides/repositories#landing-rules) allow it, for example in a repository with no required approvals. When the rules require approvals or checks, propose the work as a **change** (a change request) and land it once its gates pass.
+A push to `main` lands directly when the [landing rules](/docs/guides/repositories#landing-rules) allow it, for example in a repository with no required approvals. When the rules require approvals or checks, propose the work as a **Landing** and land it once it is cleared. The API, MCP tools, CLI and webhooks call a Landing a **change**: `yoneda change`, `git_change_*`, `/changes` and `change.*`.
 
-## Open a change
+## Open a Landing
 
-Push a working branch, then open the change. When a pushed branch has no open change, the push suggests one.
+Push a working branch, then open the Landing. When a pushed branch has no open Landing, the push suggests one.
 
 ```sh
 git push origin retry
 yoneda change create retry --title "Retry on 503" -m "Adds backoff"
 ```
 
-- A change lands on `main` unless `--base <branch>` names another existing branch.
-- A branch has at most one open change; `main` and release branches cannot be proposed.
+- A Landing lands on `main` unless `--base <branch>` names another existing branch.
+- A branch has at most one open Landing; `main` and release branches cannot be proposed.
 - From a fork, `--to-parent` proposes the branch to the parent repository; see [Forks](/docs/guides/forks).
+
+## A Landing for every push
+
+Two switches under **Settings → Landing rules**, both off, set each repository's automatic Landings:
+
+| Switch | What it does |
+|---|---|
+| Open a Landing for every pushed branch | A push opens one Landing on `main`, titled with the commit's subject. It costs nothing and starts no agent. |
+| Run agents on automatic Landings | The agents set up on the repository run on them, at their usual price. |
+
+- A push skips `main`, `release*`, `forks/*`, a head `main` already holds, and a repository with no `main`.
+- `yoneda change create` on that branch claims the automatic Landing: your title, body and base replace the push's, and from then on it is a Landing like any other, agents included.
+- A Landing someone closed stays closed until it is reopened. A landed branch pushed again gets a new Landing.
+- Webhooks hear an automatic Landing open only by asking; see [Webhooks](/docs/guides/webhooks).
+
+## States
+
+The Landings list and page show a state worked out from what the repository holds. The API's `status` stays `open`, `landed` or `closed`.
+
+| State | Means |
+|---|---|
+| Planned | Open, and marked as a draft in its title (`Draft:`, `WIP:`) |
+| In flight | Open |
+| Cleared to land | Every required gate passes (shown on the Landing's page) |
+| Go-around | A required gate is blocked, so the work goes back (shown on the Landing's page) |
+| Landed | On its base branch |
+| Closed | Closed without landing |
+
+Work pushed straight to `main` has no Landing of its own. It shows in the list as **Landed directly**.
 
 ## Review
 
@@ -30,11 +59,11 @@ yoneda review approve <head-sha>
 yoneda review reject <head-sha> -m "Breaks the retry budget"
 ```
 
-An approval is a review of the change's **head commit** by an account other than the head's author. The platform refuses an author's own approval, including through a token the author created. Pushing a new head means earlier approvals stop counting. A rejection needs a reason.
+An approval is a review of the Landing's **head commit** by an account other than the head's author. The platform refuses an author's own approval, including through a token the author created. Pushing a new head means earlier approvals stop counting. A rejection needs a reason.
 
-Comments are at most 8,000 bytes, and a comment holding a credential is refused. Unresolved comments show among the gates.
+Comments are at most 8,000 bytes, and a comment holding a credential is refused. Unresolved comments show under Clearance.
 
-Owners can let changes that only touch docs, formatting or comments count as approved (`auto_approve` in the landing rules). Every commit the landing would bring must qualify, not only the head. Merges, and anything that cannot be classified, need a human.
+Owners can let Landings that only touch docs, formatting or comments count as approved (`auto_approve` in the landing rules). Every commit the landing would bring must qualify, not only the head. Merges, and anything that cannot be classified, need a human.
 
 ## Checks
 
@@ -62,7 +91,7 @@ A diff over 60,000 characters fails a model check unless the runner sets `allow_
 
 The managed [review agents](/docs/agents/review-agents) post their results as checks too, so the landing rules can require them.
 
-## Gates
+## Clearance
 
 `yoneda change show <n>` (or `GET /api/v1/repos/<id>/changes/<n>/gates`) lists what the head still needs: each required check, approvals, unresolved comments, freshness against the base and a pause, each **ready**, **waiting** or **blocked** with one line of why.
 
@@ -78,15 +107,15 @@ Landing on a protected branch needs the land scope and the required approvals an
 
 ```sh
 yoneda change close 12      # the branch stays
-yoneda change reopen 12     # needs the branch, with no other open change
-yoneda change delete 12     # a closed change and its comments (author or owner)
+yoneda change reopen 12     # needs the branch, with no other open Landing
+yoneda change delete 12     # a closed Landing and its comments (author or owner)
 yoneda change list --status all
 ```
 
-Deleting a change's branch closes the change, with a comment saying why. It stays closed if the branch comes back; reopen it then.
+Deleting a Landing's branch closes the Landing, with a comment saying why. It stays closed if the branch comes back; reopen it then.
 
-A landed change stays as history; a deleted change's number is never reused.
+A landed Landing stays as history; a deleted Landing's number is never reused.
 
 ## In the web app
 
-The **Changes** page lists open, landed and closed changes. A change page shows the diff with line comments, the gates, **Rebase on main** while the branch is behind, and **Land on main** once the gates pass.
+The **Landings** page lists open, landed and closed Landings, and work landed directly. A Landing's page shows the diff with line comments, its clearance, **Rebase on main** while the branch is behind, and **Land on main** once it is cleared. `/landings` and `/changes` reach the same page.

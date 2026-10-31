@@ -32,7 +32,7 @@ export function RepoSearch({
     <section aria-label="Search">
       <form onSubmit={submit} className="source-toolbar" aria-label="Search the repository">
         <label htmlFor="source-search" className="source-version">
-          Search code, commits, sessions and changes
+          Search code, commits, sessions and Landings
           <input
             id="source-search"
             value={draft}

@@ -37,7 +37,7 @@ function RunsTable({
   if (!runs.length)
     return (
       <p className="source-empty">
-        No runs yet. An enabled agent runs when a change opens or is pushed.
+        No runs yet. An enabled agent runs when a Landing opens or is pushed.
       </p>
     );
   return (

@@ -148,6 +148,8 @@ Ships **before** stage 6.
 2. `git_change_create` on a branch with an unclaimed auto row adopts it: title, body, base, author, and answers as a create. Explicit rows still answer `ALREADY_EXISTS`.
 3. Next repo schema migration, in two waves.
 
+**Built:** migration `0044`, in `repo_store/change_adopt.rs`. `migration.rs` holds the ceiling: `MIGRATIONS` may run past `APPLY_THROUGH`, and a known migration is accepted and left unapplied. Wave 1 also carries adoption and the managed filter on `origin`, both reading it from `SELECT *`, so a rollback from wave 2 keeps them.
+
 ## 6. Landings for every push
 
 1. **Two switches per repo, both off by default:** create Landings automatically, and run agents on automatic Landings. Turning on the first must cost nothing.
@@ -159,7 +161,18 @@ Ships **before** stage 6.
 7. **Rename in the UI:** sidebar, rail, change page, docs and marketing. Add `/landings` as an alias; `/changes` keeps working. Pinned tests are listed in the kit and `changes.test.ts`.
 8. "Open change" stays for forks.
 
-**Owner's default:** a person-closed Landing stays closed until reopened, and a pushed-again landed branch gets a new row.
+**Owner's default:** a person-closed Landing stays closed until reopened, and a pushed-again landed branch gets a new row. A deleted branch's closed row doesn't hold back a new branch of that name.
+
+**Built, in `repo_store/auto_landing.rs`:**
+
+| Part | Choice |
+|---|---|
+| Switches | `repo_settings.auto_landings` and `auto_landing_agents`; `PUT /auto-landings`; `landings` in `GET /repos/:id`; Settings → Landing rules. Not in `policy`, so no digest moves |
+| Agents | `reviewable` in `cloudflare/managed/dispatch.ts`; a missing `landings` means off |
+| Webhooks | `change.opened` for an auto row reaches only hooks listing `change.auto`, which no default includes. Adoption tells every `change` hook |
+| Open list | Managed asks for the event's branch, and for `origin=explicit` with agents off |
+| Direct landings | `repo_changes {direct}`, from main's first-parent chain, newest 1,000 entries; imports left out |
+| On-base check | Head, chain and landing rows, then a walk of at most 256 generations. Past that an old branch may get a row with an empty diff |
 
 ## 7. Flight plan and Intent drift
 

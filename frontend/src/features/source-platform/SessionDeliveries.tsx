@@ -53,7 +53,7 @@ export function SessionDeliveries({
                     <li key={`${i.type}:${i.id}`}>
                       {i.type === 'change' ? (
                         <a {...linkTo({ view: 'change', repo, number: i.id }, navigate)}>
-                          {i.label ?? `change #${i.id}`}
+                          {i.label ?? `Landing #${i.id}`}
                         </a>
                       ) : i.type === 'session' ? (
                         <a {...linkTo({ view: 'session', repo, id: i.id }, navigate)}>

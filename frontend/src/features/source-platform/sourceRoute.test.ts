@@ -281,4 +281,19 @@ describe('readable addresses', () => {
     expect(parse(`/source/${repo}/files/src/a.ts`)).toEqual(files);
     forgetRepoNames();
   });
+
+  it('reads /landings as an alias of /changes, which stays the address', () => {
+    expect(parseSourceRoute(`/source/${repo}/landings`, '')).toEqual({ view: 'changes', repo });
+    expect(parseSourceRoute(`/source/${repo}/landings/12`, '')).toEqual({
+      view: 'change',
+      repo,
+      number: 12,
+    });
+    expect(parseSourceRoute(`/source/${repo}/changes/12`, '')).toEqual({
+      view: 'change',
+      repo,
+      number: 12,
+    });
+    expect(formatSourceRoute({ view: 'changes', repo })).toBe(`/source/${repo}/changes`);
+  });
 });

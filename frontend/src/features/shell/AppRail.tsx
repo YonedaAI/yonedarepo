@@ -49,8 +49,8 @@ export function AppRail({
       {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: linkTo spreads the href, so this is a link. */}
       <a
         className={item(page === 'changes')}
-        aria-label="Changes"
-        title={repo ? 'Changes' : 'Changes (choose a repository)'}
+        aria-label="Landings"
+        title={repo ? 'Landings' : 'Landings (choose a repository)'}
         {...linkTo(repo ? { view: 'changes', repo } : elsewhere, navigate)}
       >
         <GitPullRequest size={18} aria-hidden="true" />

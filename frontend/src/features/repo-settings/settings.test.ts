@@ -14,6 +14,7 @@ const { RepoSettings } = await import('./RepoSettings');
 const { PolicyForm } = await import('./PolicyForm');
 const { ChecksSettings } = await import('./ChecksSettings');
 const { RunnerEditor } = await import('./RunnerEditor');
+const { AutoLandingSettings, autoLandingsRequest } = await import('./AutoLandingSettings');
 
 const html = (type: any, props: any) => renderToStaticMarkup(createElement(type, props));
 const loaded = (value: Partial<Loaded<any>>): Loaded<any> => ({
@@ -80,6 +81,32 @@ describe('policy editing', () => {
     expect(policy.argvText(['cargo', 'test'])).toBe('cargo test');
     expect(policy.argvText(['sh', '-c', 'a && b'])).toBe('["sh","-c","a && b"]');
     expect(policy.listFromText('a, b\n\nc\na')).toEqual(['a', 'b', 'c']);
+  });
+});
+
+describe('automatic Landings', () => {
+  it('shows both switches, off by default, and keeps agents off until Landings are on', () => {
+    const off = { create: false, agents: false };
+    const page = html(AutoLandingSettings, { repo, landings: off, onChanged: () => {} });
+    expect(page).toContain('Open a Landing for every pushed branch');
+    expect(page).toContain('Run agents on automatic Landings');
+    expect(page).toContain('Costs nothing and starts no agent');
+    expect(page).not.toContain('checked=""');
+    expect(page).toMatch(/<input[^>]*disabled=""[^>]*>Run agents/);
+    const on = html(AutoLandingSettings, {
+      repo,
+      landings: { create: true, agents: false },
+      onChanged: () => {},
+    });
+    expect(on).toMatch(/<input[^>]*checked=""[^>]*>Open a Landing/);
+    expect(on).not.toContain('disabled=""');
+  });
+  it('sets one switch at a time', () => {
+    expect(autoLandingsRequest('r1', { agents: true })).toEqual({
+      path: '/repos/r1/auto-landings',
+      method: 'PUT',
+      body: { agents: true },
+    });
   });
 });
 

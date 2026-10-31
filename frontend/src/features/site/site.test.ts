@@ -279,7 +279,7 @@ describe('home', () => {
       ['Global by default', 'One network, no regions to pick'],
       ['Git hosting', 'Stock Git, nothing new to learn'],
       ['Fetch only what you need', 'Clone in seconds, load files on demand'],
-      ['Changes & gates', 'Ship when every gate is green'],
+      ['Landings & clearance', 'Cleared to land when every gate is green'],
       ['Continuous integration', 'Checks that keep pace with agents'],
       ['Review agents', 'Code, security and slop review on tap'],
       ['Continuous Memory', 'Every agent picks up where the last one left off'],

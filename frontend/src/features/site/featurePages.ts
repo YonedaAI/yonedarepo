@@ -138,8 +138,8 @@ export const FEATURE_PAGES: FeaturePage[] = [
     docs: 'guides/changes',
     blocks: [
       {
-        title: 'A change from a push',
-        text: 'Push a branch and open a change with `yoneda change create`, from the web app, the API or MCP. A branch has at most one open change.',
+        title: 'A Landing from a push',
+        text: 'Push a branch and open a Landing with `yoneda change create`, from the web app, the API or MCP, or let every push open one. A branch has at most one open Landing.',
       },
       {
         title: 'Reviews of the head commit',
@@ -211,7 +211,7 @@ export const FEATURE_PAGES: FeaturePage[] = [
       },
       {
         title: 'Context at the start',
-        text: '`yoneda context` prints `main`’s head, the landing rules, recent sessions, open changes and symbol contracts, within a byte budget.',
+        text: '`yoneda context` prints `main`’s head, the landing rules, recent sessions, open Landings and symbol contracts, within a byte budget.',
       },
       {
         title: 'Set up once',

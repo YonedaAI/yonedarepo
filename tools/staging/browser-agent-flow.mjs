@@ -68,14 +68,14 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
   await shot('agents-commit-sessions');
 
   // main's head has landed: the panel says where, when and by whom, and offers Revert only.
-  const gates = page.getByRole('region', { name: 'Landing gates' });
+  const gates = page.getByRole('region', { name: 'Clearance', exact: true });
   await see(gates.getByText(/^Landed on main at v\d+ · .+ · by \S+/), 'the landed line on a landed commit');
   await see(gates.getByRole('button', { name: 'Revert' }), 'Revert on a landed commit');
   for (const name of ['Approve', 'Reject', /^Land/, 'Break glass…'])
     assert.equal(await gates.getByRole('button', { name }).count(), 0, `a landed commit offers ${name}`);
   assert.equal(await gates.locator('summary', { hasText: 'More' }).count(), 0, 'a landed commit has a More menu');
   assert.equal(await gates.getByRole('combobox').count(), 0, 'a landed commit offers a branch to land on');
-  assert.equal(await gates.getByText(/Ready to land|Review class|Approvals \d+\/\d+/).count(), 0, 'a landed commit shows landing gates');
+  assert.equal(await gates.getByText(/Cleared to land|Review class|Approvals \d+\/\d+/).count(), 0, 'a landed commit shows landing gates');
   m.landed_commit_panel = 'landed line, Revert only';
 
   await tabs.getByRole('link', { name: 'Memories', exact: true }).click();

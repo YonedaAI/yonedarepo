@@ -112,7 +112,7 @@ describe('sidebar', () => {
       'Explore',
       'Agents',
       'Overview',
-      'Changes',
+      'Landings',
       'Commits',
       'Sessions',
       'Memories',
@@ -209,8 +209,8 @@ describe('the highlighted page', () => {
   };
   for (const [route, page] of [
     [{ view: 'files', repo: a, path: '', ref: 'main' }, 'Overview'],
-    [{ view: 'changes', repo: a }, 'Changes'],
-    [{ view: 'change', repo: a, number: 2 }, 'Changes'],
+    [{ view: 'changes', repo: a }, 'Landings'],
+    [{ view: 'change', repo: a, number: 2 }, 'Landings'],
     [{ view: 'history', repo: a, ref: 'main' }, 'Commits'],
     [{ view: 'agents', repo: a, section: 'sessions' }, 'Sessions'],
     [{ view: 'session', repo: a, id: 3 }, 'Sessions'],

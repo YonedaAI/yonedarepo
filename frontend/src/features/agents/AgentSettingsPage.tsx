@@ -79,7 +79,7 @@ function AgentFacts({ agent }: { agent: AgentState }) {
           </p>
         </div>
         <div className="agent-field">
-          <span id="preview-label">How the check shows on a change</span>
+          <span id="preview-label">How the check shows on a Landing</span>
           <ul className="agent-check-preview" aria-labelledby="preview-label">
             {checkPreview(agent).map((line) => (
               <li key={line.text}>
@@ -227,7 +227,7 @@ function NewAgent({ navigate, space }: { navigate: Navigate; space: Space }) {
         <AgentIcon icon="custom" />
         <div>
           <h1>New agent</h1>
-          <p>Your own reviewer: your instructions, run on the changes you choose.</p>
+          <p>Your own reviewer: your instructions, run on the Landings you choose.</p>
         </div>
       </header>
       <div className="agents-billing-note" role="note">

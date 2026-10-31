@@ -12,6 +12,7 @@ import {
   DeliveryTable,
   HOOK_EVENT_HELP,
   HOOK_EVENTS,
+  HOOK_OPT_IN,
   type Hook,
   HookTable,
 } from './HookParts';
@@ -122,6 +123,24 @@ export function RepoWebhooks({ repo }: { repo: string }) {
                 <span className="source-meta"> ({HOOK_EVENT_HELP[name]})</span>
               </label>
             ))}
+            <label>
+              <input
+                type="checkbox"
+                checked={events.includes(HOOK_OPT_IN)}
+                onChange={(e) =>
+                  setEvents(
+                    e.target.checked
+                      ? [...events, HOOK_OPT_IN]
+                      : events.filter((x) => x !== HOOK_OPT_IN),
+                  )
+                }
+              />
+              {HOOK_OPT_IN}
+              <span className="source-meta">
+                {' '}
+                (with change: also Landings a push opens, one per branch)
+              </span>
+            </label>
           </fieldset>
           <label htmlFor="hook-paths" className="source-field settings-wide">
             Paths (optional)

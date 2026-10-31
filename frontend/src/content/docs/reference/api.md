@@ -77,11 +77,11 @@ All paths start with `/repos/<id>`.
 | `POST /commits/<sha>/pin` | Pin a commit's objects |
 | `POST /fork` | Fork the repository |
 
-## Changes, releases and settings
+## Landings, releases and settings
 
 | Method and path | What it does |
 |---|---|
-| `GET`, `POST /changes` | List or open change requests |
+| `GET`, `POST /changes` | List or open Landings (the API's change requests). `GET` takes `status`, `limit`, `branch` and `origin` (`explicit` or `auto`); `direct=1` adds `direct`, the landings on `main` no change names, to a list that holds landed rows |
 | `GET /changes/<n>` | A change with gates, reviews and comments |
 | `GET /changes/<n>/gates` | What the head still needs to land: each requirement ready, waiting or blocked, with why |
 | `POST /changes/<n>/comments`, `/close`, `/reopen` | Comment, close, reopen |
@@ -89,6 +89,7 @@ All paths start with `/repos/<id>`.
 | `GET`, `POST /releases`; `GET`, `DELETE /releases/<tag>` | Releases |
 | `PUT`, `GET /releases/<tag>/assets/<name>` | Upload a release asset (the body is the file), download one |
 | `PUT /policy`, `PUT /visibility` | Landing rules, public or private |
+| `PUT /auto-landings` | Automatic Landings: `{create?, agents?}`, owner or admin. `GET /repos/<id>` answers them as `landings` |
 | `GET`, `PUT /lfs` | The Git LFS quota |
 | `GET`, `POST /members`; `DELETE /members/<account>` | Members |
 | `GET`, `POST /tokens`; `DELETE /tokens/<name>` | Repository tokens |

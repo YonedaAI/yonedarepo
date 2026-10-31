@@ -1,5 +1,7 @@
 // Change requests as the platform returns them (git_change_* in platform_tools.json), and the
 // pure rules the change pages share: line anchors, thread grouping and the conversation order.
+import type { ChangeGates } from '../../../../shared/contracts/change-gates';
+import { readyForReview } from '../../../../shared/managed-agents';
 import type { CommitDetail } from './CommitGates';
 import type { DiffChange, LineRow } from './DiffFiles';
 import { patchRows } from './patchRows';
@@ -26,7 +28,61 @@ export type Change = {
   /** A change from a fork: the fork and its branch (mirrored here as `forks/<fork>/<branch>`). */
   source_repo?: string | null;
   source_branch?: string | null;
+  /** `auto`: a push opened it and nobody has claimed it. */
+  origin?: 'explicit' | 'auto';
 };
+
+/** A landing on main that no change names (`direct_landings.rs`). */
+export type DirectLanding = {
+  commit: string;
+  version: number;
+  landed_at: number;
+  title: string;
+  author: string | null;
+};
+
+/** The list's answer; `direct` comes with lists that hold landed rows. */
+export type ChangeList = { changes: Change[]; direct?: DirectLanding[] };
+
+export type LandingRow =
+  | { kind: 'change'; key: string; change: Change }
+  | { kind: 'direct'; key: string; landing: DirectLanding };
+
+/** The list's rows: as listed, or newest first once direct landings join them. */
+export function landingRows({ changes, direct = [] }: ChangeList): LandingRow[] {
+  const rows = changes.map((change) => ({
+    row: { kind: 'change' as const, key: `#${change.number}`, change },
+    at: change.updated_at,
+  }));
+  if (direct.length === 0) return rows.map((r) => r.row);
+  const landed = direct.map((landing) => ({
+    row: { kind: 'direct' as const, key: landing.commit, landing },
+    at: landing.landed_at,
+  }));
+  return [...rows, ...landed].sort((a, b) => b.at - a.at).map((r) => r.row);
+}
+
+/** What the UI calls a Landing's state. Worked out from its data, never stored or sent. */
+export type LandingState =
+  | 'Planned'
+  | 'In flight'
+  | 'Cleared to land'
+  | 'Go-around'
+  | 'Landed'
+  | 'Closed';
+
+/** `gates`, where the page has them: the list reads none, so it says only In flight. */
+export function landingState(
+  change: Pick<Change, 'status' | 'title'>,
+  gates?: ChangeGates | null,
+): LandingState {
+  if (change.status === 'landed') return 'Landed';
+  if (change.status === 'closed') return 'Closed';
+  if (!readyForReview(change)) return 'Planned';
+  if (gates?.ready) return 'Cleared to land';
+  const blocked = gates?.requirements.some((r) => r.enforced && r.state === 'blocked');
+  return blocked ? 'Go-around' : 'In flight';
+}
 
 export type Side = 'old' | 'new';
 export type ChangeComment = {
@@ -130,4 +186,6 @@ export function conversation(general: ChangeComment[], timeline: Push[]): Conver
 
 /** A principal for display: `user:ada` reads as `ada`. */
 export const changesPath = (repo: string, filter: ChangeFilter) =>
-  `/repos/${repo}/changes?status=${filter}&limit=100`;
+  `/repos/${repo}/changes?status=${filter}&limit=100${
+    filter === 'landed' || filter === 'all' ? '&direct=1' : ''
+  }`;
