@@ -94,7 +94,12 @@ export class LandBatcher {
     const started = Date.now();
     try {
       out = await merger.call({ op: 'repo_land_submitted', ref, items: batch.map((s) => s.item) });
-    } catch (e) {
+    } catch (e: any) {
+      // A full database refuses them again however often they are sent: answer each now.
+      if (e?.code === 'REPO_FULL') {
+        for (const s of batch) s.resolve({ status: 'failed', code: e.code, message: e.message });
+        return;
+      }
       this.#submissions.unshift(...batch);
       throw e;
     }

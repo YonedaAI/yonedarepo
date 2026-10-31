@@ -15,12 +15,14 @@ import {
   accountsPath,
   barHeights,
   countryName,
+  dbSize,
   lastThirtyDays,
   providerLabel,
   readSeen,
   reposPath,
   saveSeen,
   signupsPath,
+  storageAlert,
   unreadLabel,
 } from './adminModel';
 
@@ -60,6 +62,18 @@ describe('admin model', () => {
     expect(accountsPath(' ad a ', 123)).toBe('/admin/accounts?q=ad+a&before=123');
     expect(reposPath('x', undefined)).toBe('/admin/repos?q=x');
     expect(signupsPath(0)).toBe('/admin/signups?since=0');
+  });
+
+  it('shows database sizes in the units of the alert levels', () => {
+    expect(dbSize(9_100_000_000)).toBe('9.1 GB');
+    expect(dbSize(120_400_000)).toBe('120 MB');
+    expect(dbSize(52_000)).toBe('52 KB');
+  });
+
+  it('names the alert level a repository reached', () => {
+    expect(storageAlert(null)).toBeNull();
+    expect(storageAlert(5_000_000_000)).toBe('Over 5 GB');
+    expect(storageAlert(9_000_000_000)).toBe('Over 9 GB');
   });
 
   it('labels providers and caps the unread badge', () => {

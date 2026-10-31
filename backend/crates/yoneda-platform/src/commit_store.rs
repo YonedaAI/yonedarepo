@@ -4,7 +4,7 @@
 //! writes and staged objects (until R2 holds them), and no refs: a commit reaches the
 //! authority (and its refs, checks and reviews) by adoption, when the authority first
 //! needs it. Only the platform adapter calls it, after the authority authorized the write.
-use crate::repo_store::{migration::migrate_with, staging};
+use crate::repo_store::{capacity, migration::migrate_with, staging};
 use crate::storage::{SqlStore, bad, number, string};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use serde_json::{Value, json};
@@ -43,7 +43,7 @@ pub fn execute_commit_store<S: SqlStore>(db: &S, command: Value) -> Result<Value
             "store_objects_projected" => staging::projected(&owned, c),
             "store_staged_objects" => staged(&owned, c),
             "store_staged_held" => staging::held(&owned, c),
-            "store_status" => staging::status(&owned),
+            "store_status" => status(&owned),
             "store_vacuum_scan" => vacuum_scan(&owned, c),
             "store_vacuum_delete" => vacuum_delete(&owned, c),
             "store_forget" => forget(&owned, c),
@@ -62,6 +62,7 @@ fn record<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     {
         return Ok(json!({ "commit": id, "already": true, "dispatch_objects": false }));
     }
+    capacity::refuse_if_full(db, c)?;
     let mut objects = Vec::new();
     for object in c["objects"]
         .as_array()
@@ -159,6 +160,15 @@ fn read<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "symbols": db.query("SELECT path,symbols FROM commit_symbols WHERE commit_id=? ORDER BY path", &key)?,
         "objects": db.query("SELECT id,kind FROM commit_objects WHERE commit_id=? ORDER BY id", &key)?,
     }))
+}
+
+/// The shard's object outbox and what its database holds.
+fn status<S: SqlStore>(db: &S) -> Result<Value> {
+    let mut out = staging::status(db)?;
+    let usage = capacity::usage(db, capacity::SHARD_TABLES)?;
+    out["db_bytes"] = usage["db_bytes"].clone();
+    out["table_rows"] = usage["table_rows"].clone();
+    Ok(out)
 }
 
 /// Staged objects; with `with_record`, also the commit's record (null when this shard does
