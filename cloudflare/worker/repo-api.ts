@@ -243,6 +243,15 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   if (resource === 'vacuum' && post) return vacuum(ctx, await bodyOf(req).catch(() => ({})));
   // Owner-run log compaction (the derive job also runs it after landings) and its bound.
   if (resource === 'compact' && post) return compactLog(env, repo, ctx.call);
+  // The owner's read of the floor, tail and database size; changes nothing (the load tests'
+  // sampler, tools/fanout-bench/sampler.mjs).
+  if (resource === 'compaction' && get) {
+    const [compaction, storage] = await Promise.all([
+      ctx.call({ op: 'repo_compact_status' }),
+      ctx.call({ op: 'repo_storage' }),
+    ]);
+    return { ...compaction, storage };
+  }
   if (resource === 'retention' && req.method === 'PUT') {
     const { keep_versions, keep_days } = await bodyOf(req);
     return ctx.call({ op: 'repo_set_retention', keep_versions, keep_days });

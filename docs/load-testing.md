@@ -1,6 +1,6 @@
 # Load testing the platform for agents
 
-Status: plan, not run. Written 2026-10-30.
+Status: stages 2 and 3 have tools, built 2026-10-31 and tried against a stub only. No stage has run on dev. Written 2026-10-30.
 
 Goal: find where the platform stops scaling for agents. So far 1,000 writers passed and nothing failed, so the ceiling is unknown.
 
@@ -73,7 +73,7 @@ Bench: `tools/import-bench.mjs`. Report the Workflow's own timing (`output.timin
 
 ## Stages
 
-Stop a stage at the first of: errors above 1%, p95 over 3× its target, or a Cloudflare limit error. Record what broke.
+Stop a stage at the first of: errors above 1%, p95 over 3× its target, or a Cloudflare limit error. Record what broke. Expected conflicts answered as conflicts are not errors.
 
 ### 1. One busy repository
 
@@ -115,12 +115,61 @@ Answers: what cap each pool needs, and whether its queue stays fair between acco
 - Check that `AUTH_LIMITER` (30 a minute) and `PUBLIC_LIMITER` (300 a minute) refuse what they should, and that a large fleet behind one address is not caught by mistake.
 - Run the bench from Europe and Asia. The platform is placed in `aws:us-east-1`.
 
-## Build first
+## Running stages 2 and 3
 
-- Add `--writers` values above 1,000 and a repository-count flag to the kit, with stop rules.
-- The bench client is one Worker. Confirm it is not itself the limit at 10,000 writers (compare against 2 clients).
-- A results table in this file, updated per run: date, commit, size, min, median, max, errors, what broke.
+Deploy once before the first run, in this order. The tools need both, and the first run stops at its preflight if the bench client is older.
+
+1. `cargo xtask deploy --env dev`: the platform gains `GET /repos/<id>/compaction`, the bench client gains its relay, and `yonedarepo-dev-bench2` appears.
+2. Warn the owner; the full plan costs money.
+3. Make sure nothing else runs on dev.
+
+| Command | Does |
+|---|---|
+| `node tools/platform-load-stages.mjs --dry-run` | Prints runs, time and requests; sends nothing |
+| `node tools/platform-load-stages.mjs --yes` | Stage 3, then stage 2, 3 runs of each size |
+| `node tools/platform-load-stages.mjs --stages 2 --client2 https://yonedarepo-dev-bench2.mlong-f01.workers.dev --yes` | Stage 2, then its largest size again on 2 clients |
+| `node tools/platform-load-stages.mjs --results` | Rebuilds the table below from the evidence |
+
+Full plan, as printed by `--dry-run`: 33 runs, about 5.7 hours, about 3.6M platform requests.
+
+| Stage | Runs | Shape |
+|---|---|---|
+| 3 | 3 each | 1 repository at 100/s for 30 minutes, spread across 32 top-level directories |
+| 3 | 3 | The same, every write under `load/`: one search partition, so each derive job rebuilds it |
+| 3 | 3 | 20 repositories at 5/s each |
+| 2 | 3 each, in both arms | 20, 100, 500 and 1,000 repositories × 10 writers, no checks |
+
+- **Arms.** `tokens` (`yrp_`) skip D1 and the account authorities. `pat` (`ypat_`) read both on every request, so only this arm says anything about them. An account holds at most 50 live PATs, so writers share 10, all in one account: it measures one account's authority, not many.
+- **Repositories** are saved in `.local/platform-live/pool-*.json` and reused. Nothing deletes them. Stage 3 repositories keep growing: 3 runs add about 3 GB each (estimate from 5–6 KB per landing).
+- **Credentials** are fresh each run and revoked after it. PATs also expire after a day. Paths are unique to the run.
+- **Evidence** is one timestamped file per run in `.local/platform-live/`. It refuses to write if it holds a token.
+- **The sustained stop** is judged per 60-second segment, so a broken run ends within about 2 minutes. Sustained load has no target of its own in the budget, so it uses the 3 s of busy repositories: stop at 9 s. `--target-p95-ms` changes it.
+- **Hosts.** Every bench refuses anything but dev, from `infra/envs/dev.json`, and the bench client refuses it too.
+
+Single runs: `tools/platform-manyrepo-bench.mjs --no-checks --principals pat` and `tools/platform-fanout-bench.mjs --workload sustained --repos 20 --layout single`. Without `--no-checks`, many-repo starts a container per repository.
+
+### What the sampler reads
+
+Read-only, every 15–30 s, from up to 5 repositories across the run. A source it cannot read is listed under `unreadable` in the evidence, never read as quiet.
+
+| Figure | Source | Limit |
+|---|---|---|
+| Log floor, tail rows, `db_bytes`, table row estimates | `GET /repos/<id>/compaction`, owner only | Row estimates are the top rowid; deletes don't lower them |
+| Object outbox, projection lag | `GET /repos/<id>` | Asks all 64 shards, so 2 repositories only |
+| Queue depth, dead letters | Cloudflare GraphQL, `CF_ANALYTICS_TOKEN` | 5-minute groups, minutes late. Read them after the settle |
+| Worker errors, Durable Object kills, D1 query counts and p90 | Cloudflare GraphQL | Minutes late. Queries match Cloudflare's docs; **not yet run against the live API** |
+
+**Cannot be read:**
+
+| Missing | Why | Use instead |
+|---|---|---|
+| D1 errors | Cloudflare publishes no D1 error count | `d1_errors`: bench answers naming D1, plus Worker errors |
+| Bytes per table | No `dbstat` on Durable Object SQLite | Bytes per version overall, rows per version by table |
+
+So the "real bytes per landing by table" archive needs comes only as those two figures, unless a run also takes `SUM(length(...))` per table.
 
 ## Results
 
+<!-- results:start (tools/platform-load-stages.mjs --results) -->
 None yet.
+<!-- results:end -->

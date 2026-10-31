@@ -139,6 +139,7 @@ op_names! {
         Pin = "repo_pin",
         VacuumPlan = "repo_vacuum_plan",
         VacuumDone = "repo_vacuum_done",
+        CompactStatus = "repo_compact_status",
         CompactPlan = "repo_compact_plan",
         CompactDone = "repo_compact_done",
         SetRetention = "repo_set_retention",
