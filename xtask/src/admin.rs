@@ -2,7 +2,8 @@
 //! `platform_accounts`) with accounts made before it, through the deployed platform's
 //! `POST /api/v1/admin/backfill` as the owner (OWNER_TOKEN from the env's secrets file), one
 //! page at a time until the last. Repeating it adds nothing. `admin erase-backfill` is in
-//! `erase_backfill`, `admin search-backfill` in `search_backfill`.
+//! `erase_backfill`, `admin search-backfill` in `search_backfill`,
+//! `admin revenue-rebuild` in `revenue_rebuild`.
 use crate::infra::inventory::{self, Deployable};
 use crate::infra::spec::{Env, Lock, Spec};
 use crate::process::Result;
@@ -14,8 +15,9 @@ pub(crate) async fn execute(args: &[String]) -> Result<()> {
         Some("backfill-accounts") => backfill(args).await,
         Some("erase-backfill") => crate::erase_backfill::execute(args).await,
         Some("search-backfill") => crate::search_backfill::execute(args).await,
+        Some("revenue-rebuild") => crate::revenue_rebuild::execute(args).await,
         _ => Err(
-            "cargo xtask admin backfill-accounts|erase-backfill|search-backfill --env dev|prod"
+            "cargo xtask admin backfill-accounts|erase-backfill|search-backfill|revenue-rebuild --env dev|prod"
                 .into(),
         ),
     }

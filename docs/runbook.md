@@ -277,7 +277,7 @@ To turn it on, after the steps above:
 
 1. Run `cargo xtask infra up --env <env>`. It creates `<prefix>-managed-revenue`, whose lock entry says `pending` until then, and **every deploy of that env refuses while it does**. Commit the lock.
 2. Deploy. The database's migrations (`cloudflare/managed/migrations`) run first, then the managed Worker, which binds it as `REVENUE`.
-3. On the Overview, press **Rebuild from the ledgers** once. Ledgers from before the rollup hold days it has never seen, and only a rebuild sends them. It wakes every account in `platform_accounts` and every repository owner, so it isn't for routine use.
+3. Run `cargo xtask admin revenue-rebuild --env <env> --confirm` once. Ledgers from before the rollup hold days it has never seen, and only a rebuild sends them. It wakes every account in `platform_accounts` and every repository owner, so it isn't for routine use.
 
 How it stays right:
 

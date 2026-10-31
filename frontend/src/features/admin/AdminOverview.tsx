@@ -41,11 +41,7 @@ export function AdminOverview({ navigate }: { navigate: Navigate }) {
         unit="sign-ups"
         days={days}
       />
-      <p className="source-meta">
-        The index holds every sign-up since it started, and older accounts that own a repository,
-        picked a handle, joined one or hold a token. Other older accounts appear when they next sign
-        in.
-      </p>
+      <p className="source-meta">Older accounts appear here when they next sign in.</p>
       {overview.data.billing && <AdminRevenueSection navigate={navigate} />}
     </>
   );
