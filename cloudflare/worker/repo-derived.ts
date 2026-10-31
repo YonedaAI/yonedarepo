@@ -15,6 +15,7 @@ import { ApiError, caller, type Json, RepoContext, target } from './repo-ops';
 import { schedulePackBuild } from './repo-pack-jobs';
 import { searchSegments, segmentsIn } from './repo-search-index';
 import { writeSeed } from './repo-seed';
+import { sampleStorage } from './repo-storage';
 import { timed } from './repo-timing';
 import { viewFacts } from './repo-view-facts';
 import type { Env, Envelope } from './types';
@@ -238,7 +239,14 @@ export async function deriveAfterLanding(env: Env, envelope: Envelope) {
   // builds below; none throws.
   await emitChangeLog(env, envelope.repo_id);
   await fanoutHooks(env, envelope.repo_id);
-  await touchActivity(env, envelope.repo_id);
+  // Here, not after the builds: the touch must not wait for them or depend on them, and a
+  // size sampled at the end would need a D1 write of its own.
+  await touchActivity(
+    env,
+    envelope.repo_id,
+    Date.now(),
+    await sampleStorage(env, envelope.repo_id),
+  );
   const ctx = new RepoContext(
     env,
     envelope.repo_id,
