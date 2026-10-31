@@ -117,23 +117,10 @@
 .side-nav a svg {
   flex: none;
 }
-.side-scroll {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  max-height: 32vh;
-  overflow-y: auto;
-}
 .side-new {
   justify-content: flex-start;
   width: 100%;
   background: transparent;
-}
-.side-empty {
-  display: block;
-  padding: 4px 10px 8px;
-  color: var(--muted);
-  font-size: var(--text-sm);
 }
 .side-section {
   display: flex;
