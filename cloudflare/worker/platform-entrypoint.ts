@@ -6,6 +6,7 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { AccountCreated } from './account-index';
 import { withWaitUntil } from './background';
 import { accountCreated, SIGNUP_NOTICE } from './platform-accounts';
+import { nightlyReconcile } from './platform-admin-billing';
 import { verifyEmail } from './platform-email-verify';
 import { laterIfHeld } from './platform-legal-hold';
 import { platformFetch } from './platform-routes';
@@ -104,9 +105,13 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
   verifyEmail(account: string, change?: string) {
     return verifyEmail(this.env, account, change);
   }
-  /** Every minute: keeps the SSH gateway (and its tunnel) running. */
-  scheduled() {
-    return sshKeepAlive(this.env, 'cron');
+  /** Every minute: keeps the SSH gateway (and its tunnel) running; once a night, starts the
+   * billing reconcile. */
+  async scheduled(controller: ScheduledController) {
+    await Promise.all([
+      sshKeepAlive(this.env, 'cron'),
+      nightlyReconcile(this.env, controller.scheduledTime),
+    ]);
   }
   /** Jobs of a batch run side by side (they wait on I/O, not CPU; heavy ones one at a
    * time: `oneAtATime`); each settles alone. */

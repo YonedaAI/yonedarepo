@@ -3,12 +3,14 @@
 // (platform-site-traffic.ts). Actions are safe and reversible: credit grants (the managed agents
 // Worker's admin route, its bearer kept here), suspension (the account authority refuses
 // every credential until it is lifted), quarantining or releasing repository content as the
-// repository's owner, and legal holds (platform-holds.ts). Every action writes admin_audit.
+// repository's owner, and legal holds (platform-holds.ts). Refunds and the rest of billing are
+// platform-admin-billing.ts. Every action writes admin_audit.
 // Contact emails appear in these answers only.
 import { normalizeAccountIdentifier } from '../../shared/account';
 import { accountSummary, recordAccount } from './account-index';
 import { isAdminAccount } from './admin-auth';
 import { backfillAccounts } from './platform-accounts';
+import { adminBilling, adminBillingOn } from './platform-admin-billing';
 import {
   accountRowOf,
   audit,
@@ -74,6 +76,12 @@ export async function adminRoute(
   if (section === 'erase-backfill' && !id && post) return backfillObject(env, actor, await body());
   if (section === 'accounts' && !id && get)
     return listAccounts(env, query.get('q'), query.get('before'));
+  if (section === 'accounts' && id && action === 'billing' && adminBillingOn(env) && !sub) {
+    const account = accountParam(id);
+    if (!(await accountSummary(env, account).catch(asApi)))
+      throw new ApiError('NOT_FOUND', 'Unknown account');
+    return adminBilling(env, actor, account, method, record, body, query);
+  }
   if (section === 'accounts' && id && !record) {
     const account = accountParam(id);
     if (!action && get) return accountDetail(env, account);
@@ -138,6 +146,7 @@ async function accountDetail(env: Env, account: string) {
     repos: repos.items,
     tokens,
     credit,
+    billing: adminBillingOn(env),
   };
 }
 

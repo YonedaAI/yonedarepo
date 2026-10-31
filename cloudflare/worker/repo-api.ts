@@ -99,6 +99,11 @@ const STATUS: Record<string, number> = {
   QUARANTINED: 451,
   // The repository's database is at its size limit: new work is refused, reads go on.
   REPO_FULL: 507,
+  // Operators' billing: no refund key or no way to the managed Worker, and a refund a
+  // configured limit refuses, or one blocked by an open dispute.
+  NOT_CONFIGURED: 503,
+  REFUND_LIMIT: 403,
+  DISPUTED: 409,
 };
 export const statusOf = (code: string, known: boolean) => STATUS[code] ?? (known ? 400 : 500);
 const COMMIT_BODY_LIMIT = 64 * 1024 * 1024;

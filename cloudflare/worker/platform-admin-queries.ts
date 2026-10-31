@@ -1,6 +1,7 @@
 // The admin pages' reads of the D1 projections (operators only; platform-admin.ts checks): the
 // overview's totals, the account and repository listings, the sign-up feed and the audit
 // log. Listings page backwards by creation time (`before`, a millisecond time).
+import { ApiError } from './repo-ops';
 import { storageLevel } from './repo-storage';
 import type { Env, Json } from './types';
 
@@ -209,5 +210,28 @@ export async function audit(
     'INSERT INTO admin_audit(at,actor,action,target,detail) VALUES(?,?,?,?,?)',
   )
     .bind(Date.now(), actor, action, target, detail ? JSON.stringify(detail) : null)
+    .run();
+}
+
+/** Starts an audit row before an action, answering its id: `auditEnd` records how it went. */
+export async function auditBegin(
+  env: Env,
+  actor: string,
+  action: string,
+  target: string,
+  detail: Json,
+): Promise<number> {
+  const row = await env.INDEX.prepare(
+    'INSERT INTO admin_audit(at,actor,action,target,detail) VALUES(?,?,?,?,?) RETURNING id',
+  )
+    .bind(Date.now(), actor, action, target, JSON.stringify(detail))
+    .first<{ id: number }>();
+  if (!row) throw new ApiError('INTERNAL', 'The audit row was not written');
+  return row.id;
+}
+
+export async function auditEnd(env: Env, id: number, detail: Json) {
+  await env.INDEX.prepare('UPDATE admin_audit SET detail=? WHERE id=?')
+    .bind(JSON.stringify(detail), id)
     .run();
 }
