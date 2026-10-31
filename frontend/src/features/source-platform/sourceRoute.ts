@@ -45,7 +45,7 @@ export type SourceRoute =
   | { view: 'device'; code: string }
   /** The contact email's confirmation page (the emailed link; its button confirms). */
   | { view: 'verify-email'; account: string; token: string }
-  | { view: 'org'; org: string }
+  | { view: 'org'; org: string; tab?: 'audit' }
   /** The workspace's managed agents (`/agents`); `workspace` (an org) defaults to the account.
    * `cardAdded`: back from Stripe (`?billing=added`), kept here because the page reads it once
    * the session is known, after the shell has rewritten the address. */
@@ -122,6 +122,8 @@ export function parseSourceRoute(pathname: string, search: string, hash = ''): S
   if (root === 'repositories' && !repo) return { view: 'repositories' };
   if (root === 'search' && !repo) return parseSearchParams(params);
   if (root === 'orgs' && repo && ORG_NAME.test(repo) && !view) return { view: 'org', org: repo };
+  if (root === 'orgs' && repo && ORG_NAME.test(repo) && view === 'audit' && !rest.length)
+    return { view: 'org', org: repo, tab: 'audit' };
   if (root === 'agents') return parseAgentsRoute(parts.slice(1), params);
   if (root === 'admin') {
     if (!isAdminSection(repo)) return { view: 'admin', section: 'overview' };
@@ -247,7 +249,7 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'repositories') return '/repositories';
   if (route.view === 'global-search') return formatSearchRoute(route);
   if (route.view === 'explore') return '/source/explore';
-  if (route.view === 'org') return `/orgs/${route.org}`;
+  if (route.view === 'org') return `/orgs/${route.org}${route.tab ? `/${route.tab}` : ''}`;
   if (route.view === 'site') return formatSitePage(route.site);
   if (route.view === 'admin') {
     if (route.account) return `/admin/users/${encodeURIComponent(route.account)}`;

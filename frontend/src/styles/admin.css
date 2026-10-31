@@ -307,3 +307,28 @@
 .admin-feed a {
   color: var(--blue-text);
 }
+/* An organization's audit log (features/source-platform/OrgAudit). Wider than the org page's
+   other sections, and details wrap: a fingerprint is what a reader came for. */
+.source-tokens section.org-audit {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: none;
+}
+.org-audit .admin-detail {
+  min-width: 240px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.org-audit-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+}
+.org-audit-exports {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 0 auto;
+  color: var(--muted);
+}

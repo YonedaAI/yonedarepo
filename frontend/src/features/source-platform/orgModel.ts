@@ -20,6 +20,8 @@ export type Org = {
   role: OrgRole;
   members: OrgMember[];
   teams: Team[];
+  /** This platform keeps audit logs (the API's AUDIT_LOG switch). */
+  audit_log?: boolean;
 };
 
 export const ORG_ROLE_HELP: Record<OrgRole, string> = {

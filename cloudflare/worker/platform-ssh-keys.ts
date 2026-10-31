@@ -4,6 +4,7 @@
 // account that registered it, so the gateway's lookup is strongly consistent. A lookup
 // always re-checks the key with its account: removal there is the revocation, effective at
 // once, and a claim left behind by a failure grants nothing.
+import { auditMember } from './account-audit';
 import { frontDoor } from './platform-ssh-gateway';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import { patHolds, requirePatScope } from './repo-pat';
@@ -107,8 +108,10 @@ async function addKey(env: Env, account: string, token: string | null, request: 
     claimed = await index(env, added.fingerprint, { ...claim, replace: true });
   if (!claimed.claimed) {
     await workspace(env, account, { op: 'ssh_key_remove', id });
+    await auditMember(env, account);
     throw new ApiError('ALREADY_EXISTS', 'This key is already in use by an account');
   }
+  await auditMember(env, account);
   return added;
 }
 
@@ -116,6 +119,7 @@ async function addKey(env: Env, account: string, token: string | null, request: 
 async function removeKey(env: Env, account: string, id: string) {
   const removed = await workspace(env, account, { op: 'ssh_key_remove', id });
   await releaseClaims(env, account, [{ id, fingerprint: removed.fingerprint }]);
+  await auditMember(env, account);
   return { id, deleted: true };
 }
 
