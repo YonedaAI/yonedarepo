@@ -1,10 +1,19 @@
 //! A commit shard: records of commits built by stateless compute, chosen by commit id so
 //! concurrent writers do not queue on the repository authority (yoneda_platform::commit_store).
+//!
+//! `store_erase` empties a deleted repository's shard for good. A shard has no tombstone of
+//! its own and `git_status` wakes all 64 on every read, even of a deleted repository, so
+//! without a seal the next wake would migrate an empty schema back, and a commit begun before
+//! the deletion could still be recorded. The seal is one storage key (a repository's shards
+//! are all migrated at creation, so it replaces more than it adds), read once per instance
+//! before any migration.
 use serde_json::{Value, json};
 use std::cell::Cell;
 use std::time::Duration;
 use worker::*;
 use yoneda_cloudflare::CloudStore;
+
+const SEAL: &str = "erased";
 
 #[durable_object]
 pub struct CommitShard {
@@ -45,6 +54,15 @@ impl CommitShard {
             )
             .map(|r| r.with_status(400));
         }
+        if command["op"] == "store_erase" && command["_system"] == "commits" {
+            return self.erase().await;
+        }
+        if fresh && self.state.storage().get::<bool>(SEAL).await?.is_some() {
+            return Response::from_json(
+                &json!({"error":{"code":"GONE","message":"Repository was deleted"}}),
+            )
+            .map(|r| r.with_status(409));
+        }
         let timing = command["timing"] == true;
         command["now"] = json!(read_at as i64);
         let store = CloudStore::new(self.state.storage());
@@ -66,6 +84,16 @@ impl CommitShard {
             Err(e) => Response::from_json(&json!({"error":{"code":e.code,"message":e.message}}))
                 .map(|r| r.with_status(409)),
         }
+    }
+
+    /// Empties this shard and seals it (repeatable; see the module comment). All of its
+    /// storage goes in one call, atomically: nothing here keeps a tombstone.
+    async fn erase(&self) -> Result<Response> {
+        let storage = self.state.storage();
+        storage.delete_all().await?;
+        storage.put(SEAL, true).await?;
+        self.migrated.set(false);
+        Response::from_json(&json!({ "erased": true }))
     }
 
     /// Where this request's time went, in this instance's clock. A Worker's clock moves only

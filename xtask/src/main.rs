@@ -15,6 +15,7 @@ mod deploy_registry;
 mod deploy_secrets;
 mod dev;
 mod downloads;
+mod erase_backfill;
 mod infra;
 mod layers;
 mod layout;

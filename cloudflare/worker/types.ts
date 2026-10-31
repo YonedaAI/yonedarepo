@@ -85,6 +85,9 @@ export interface Env {
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   ARTIFACTS_NAMESPACE: string;
+  /** `on` erases a deleted repository's records once its purge finishes (repo-erase); any
+   * other value leaves them in its tombstone. */
+  REPO_ERASE?: string;
   /** `r2` stores new source-platform repositories' Git objects in R2 (local development). */
   PLATFORM_OBJECT_STORE?: string;
   /** `on` writes a large push's objects as bundles (repo-bundles); reads always use them. */

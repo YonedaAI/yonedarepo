@@ -25,6 +25,14 @@ pub struct Settings {
     pub visibility: Visibility,
 }
 
+impl Settings {
+    /// Whether the repository's records are gone (`erase`), its tombstone being all that is
+    /// left.
+    pub fn erased(&self) -> bool {
+        self.object_store == super::erase::ERASED_STORE
+    }
+}
+
 pub struct CommitRow {
     pub id: ObjectId,
     pub tree: ObjectId,

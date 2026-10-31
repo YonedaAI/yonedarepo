@@ -12,7 +12,7 @@ use super::{
     store_lineage, submitted, symbols, tags, tokens, version_projection,
 };
 use super::{
-    authorize::authorize, break_glass, deletion, forks, grants, lfs, maintenance, memory,
+    authorize::authorize, break_glass, deletion, erase, forks, grants, lfs, maintenance, memory,
     quarantine, visibility,
 };
 use crate::storage::SqlStore;
@@ -25,7 +25,7 @@ pub(super) fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         Op::Store(op) => op,
     };
     let settings = rows::settings(db)?;
-    if settings.deleted_at.is_some() && !deletion::allowed_when_deleted(op) {
+    if settings.deleted_at.is_some() && !deletion::allowed_when_deleted(op, &settings) {
         return Err(deletion::gone());
     }
     let actor = auth::actor(db, c, &settings)?;
@@ -166,6 +166,8 @@ fn run<S: SqlStore>(
         }
         R::Delete => deletion::delete(db, c, actor, settings),
         R::PurgeTarget => deletion::purge_target(db, actor, settings),
+        R::ErasePlan => erase::plan(db, c, settings),
+        R::EraseStep => erase::step(db, c, settings),
         // `enqueue`: a landing that needs a merge joins the branch's queue in this call.
         R::Land => land::land(db, c, principal, settings).or_else(|e| {
             if e.code == "MERGE_REQUIRED" && c["enqueue"] == true {

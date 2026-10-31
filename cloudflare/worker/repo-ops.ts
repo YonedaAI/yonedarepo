@@ -44,7 +44,8 @@ export type Credentials =
         | 'compact'
         | 'fork'
         | 'lfs'
-        | 'quarantine';
+        | 'quarantine'
+        | 'erase';
     };
 // Identity fields come only from the authenticating adapter, never from arguments.
 const CREDENTIAL_KEYS = ['_session', '_token', '_pat', '_anonymous', '_system', '_storage_guard'];

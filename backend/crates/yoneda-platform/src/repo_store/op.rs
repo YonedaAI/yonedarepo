@@ -49,6 +49,8 @@ op_names! {
         ContractList = "repo_contract_list",
         Contracts = "repo_contracts",
         Delete = "repo_delete",
+        ErasePlan = "repo_erase_plan",
+        EraseStep = "repo_erase_step",
         GitAccess = "repo_git_access",
         GitWalk = "repo_git_walk",
         Head = "repo_head",
