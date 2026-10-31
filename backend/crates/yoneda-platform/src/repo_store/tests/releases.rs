@@ -263,7 +263,7 @@ fn upgrades_from_the_bundles_schema_with_empty_release_tables() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        migrations.last().unwrap().0
+        super::super::migration::APPLY_THROUGH
     );
     assert_eq!(
         db.query("SELECT owner FROM repo_settings", &[]).unwrap()[0]["owner"],

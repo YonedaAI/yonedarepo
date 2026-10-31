@@ -124,15 +124,26 @@ async function startInstance(env: ManagedEnv, params: RunParams) {
   }
 }
 
+/**
+ * The open changes agents may run on. The owner's break-glass pause stops automation, managed
+ * agents included. A push's own row (`origin` = auto) costs nothing: agents run on it only when
+ * the repository turned that on, and the filter here holds on a platform that lists them all.
+ */
+export async function reviewable(platform: Platform, repo: string, branch: string | null = null) {
+  const { paused, onAuto } = await platform.automation(repo);
+  if (paused) return [];
+  const listed = await platform.openChanges(repo, { branch, explicit: !onAuto });
+  const open = (listed.changes ?? []) as Record<string, any>[];
+  return open.filter((c) => onAuto || c.origin !== 'auto');
+}
+
 async function onEvent(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'event' }>) {
   const repo = repoStub(env, m.repo);
   const [connection, enabled] = await Promise.all([repo.connection(), repo.enabled()]);
   if (!connection || connection.revoked || enabled.length === 0 || !m.commit) return;
   const platform = new Platform(env, { token: connection.token });
-  // The owner's break-glass pause stops automation, managed agents included.
-  if (await platform.automationPaused(m.repo)) return;
-  const open = ((await platform.openChanges(m.repo)).changes ?? []) as Record<string, any>[];
   const branch = m.ref?.startsWith('refs/heads/') ? m.ref.slice('refs/heads/'.length) : null;
+  const open = await reviewable(platform, m.repo, branch);
   // Only the change's current head is reviewed; an event for an older head is stale.
   const changes = open.filter(
     (c) => c.head === m.commit && (m.change ? c.number === m.change : c.branch === branch),

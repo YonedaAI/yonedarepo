@@ -378,7 +378,7 @@ fn upgrades_from_the_preceding_schema_with_records_intact() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        migrations.last().unwrap().0
+        super::super::migration::APPLY_THROUGH
     );
 }
 

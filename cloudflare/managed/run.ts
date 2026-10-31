@@ -70,7 +70,7 @@ async function prepare(
   const connection = await repoStub(env, p.repo).connection();
   if (!connection || connection.revoked) return 'not_connected';
   const platform = new Platform(env, { token: connection.token });
-  if (await platform.automationPaused(p.repo)) return 'automation_paused';
+  if ((await platform.automation(p.repo)).paused) return 'automation_paused';
   const change = await platform.change(p.repo, p.change);
   if (change.status !== 'open') return 'change_not_open';
   if (change.head !== p.head) return 'superseded';

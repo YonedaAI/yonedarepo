@@ -27,6 +27,7 @@ mod bisect;
 mod branches;
 mod break_glass;
 pub(crate) mod capacity;
+mod change_adopt;
 mod change_closing;
 mod change_comments;
 mod change_delete;

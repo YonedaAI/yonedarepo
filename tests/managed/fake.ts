@@ -32,6 +32,9 @@ export interface FakeChange {
   status: string;
   title: string;
   files: { path: string; patch: string }[];
+  /** A push's own row (`auto`); absent as on a platform before migration 0044. */
+  origin?: 'explicit' | 'auto';
+  created_at?: number;
 }
 
 /** The platform's public API as far as the agents use it, plus refusals for anything else. */
@@ -53,6 +56,10 @@ export class FakePlatform {
   scannerRefuses: RegExp | null = null;
   /** The owner's break-glass automation pause (repo status `automation.paused`). */
   paused = false;
+  /** A platform older than the list's `branch` and `origin` filters answers every open change. */
+  ignoresListFilters = false;
+  /** Run agents on automatic Landings (repo status `landings.agents`); undefined: no such field. */
+  autoAgents: boolean | undefined;
   /** A deleted repository: every call on it answers GONE, as the platform's tombstone does. */
   deleted = false;
   /** The workspace (the billed account): one per test, since ledgers outlive a test. */
@@ -108,6 +115,7 @@ export class FakePlatform {
         owner: this.account,
         viewer: { owner, principal: owner ? 'user:owner' : 'user:reader' },
         automation: { paused: this.paused ? { by: 'user:owner' } : null },
+        ...(this.autoAgents === undefined ? {} : { landings: { create: true, agents: this.autoAgents } }),
       });
     const del = /^\/repos\/(r[0-9a-f]{20})\/(tokens|hooks)\/([^/]+)$/.exec(path);
     if (req.method === 'DELETE' && del) {
@@ -115,8 +123,14 @@ export class FakePlatform {
       this.revoked.push(`${del[2]}:${decodeURIComponent(del[3])}`);
       return ok({ deleted: true });
     }
-    if (req.method === 'GET' && path === `${base}/changes`)
-      return ok({ changes: this.changes.filter((c) => c.status === 'open').map(({ files, ...c }) => c) });
+    if (req.method === 'GET' && path === `${base}/changes`) {
+      const wanted = (c: FakeChange) =>
+        c.status === 'open' &&
+        (this.ignoresListFilters ||
+          ((!url.searchParams.has('branch') || c.branch === url.searchParams.get('branch')) &&
+            (!url.searchParams.has('origin') || (c.origin ?? 'explicit') === url.searchParams.get('origin'))));
+      return ok({ changes: this.changes.filter(wanted).map(({ files, ...c }) => c) });
+    }
     const show = new RegExp(`^${base}/changes/(\\d+)$`).exec(path);
     if (req.method === 'GET' && show) {
       const c = this.changes.find((x) => x.number === Number(show[1]));
