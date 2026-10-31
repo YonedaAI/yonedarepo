@@ -10,6 +10,10 @@ export type RepoStatus = {
   forks: number;
   /** The paths a path-scoped token may read (null: the whole repository). */
   grant: string[] | null;
+  /** How far an imported history has been recorded, while it is still partial. */
+  history_import: HistoryFill | null;
+  /** Set when an imported history ended early: older commits are not here. */
+  history_stopped: HistoryStopped | null;
   name: string;
   object_store: string;
   /** Object projection progress (the adapter merges shard outboxes into it). */
@@ -38,6 +42,19 @@ export type RepoStatus = {
 export type ForkParent = {
   repo: string;
   version: number;
+};
+
+/** How far an imported history has been recorded behind its landed head. */
+export type HistoryFill = {
+  recorded: number;
+  total: number;
+};
+
+/** An imported history that ended early: how much of it is here, and why. */
+export type HistoryStopped = {
+  reason: string;
+  recorded: number;
+  total: number;
 };
 
 /** Landing policy: which checks must pass and how many independent approvals are needed. `runners` are owner-defined checks the platform executes itself (a command, or one model review call); definitions come from policy, never from the commit under test, so a change cannot weaken its own check. */
@@ -130,6 +147,50 @@ export const repoStatusSchema = {
       "required": [
         "repo",
         "version"
+      ],
+      "type": "object"
+    },
+    "HistoryFill": {
+      "description": "How far an imported history has been recorded behind its landed head.",
+      "properties": {
+        "recorded": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "recorded",
+        "total"
+      ],
+      "type": "object"
+    },
+    "HistoryStopped": {
+      "description": "An imported history that ended early: how much of it is here, and why.",
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "recorded": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "recorded",
+        "total",
+        "reason"
       ],
       "type": "object"
     },
@@ -481,6 +542,28 @@ export const repoStatusSchema = {
         "null"
       ]
     },
+    "history_import": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/HistoryFill"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "How far an imported history has been recorded, while it is still partial."
+    },
+    "history_stopped": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/HistoryStopped"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Set when an imported history ended early: older commits are not here."
+    },
     "name": {
       "type": "string"
     },
@@ -581,6 +664,8 @@ export const repoStatusSchema = {
     "grant",
     "quarantined",
     "quarantine_epoch",
+    "history_import",
+    "history_stopped",
     "owner_handle",
     "path"
   ],

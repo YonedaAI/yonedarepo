@@ -220,7 +220,14 @@ export async function blame(ctx: RepoContext, args: Json) {
     .map((c) => ({ commit: c.commit, blob: c.new_blob }));
   if (versions.length === 0) throw new ApiError('NOT_FOUND', `${path} has no history on ${ref}`);
   const result = await withObjects(ctx, { op: 'blame', versions });
-  return { ref, path, lines: result.lines, versions: versions.length };
+  const { history_import } = history;
+  return {
+    ref,
+    path,
+    lines: result.lines,
+    versions: versions.length,
+    ...(history_import && { history_import }),
+  };
 }
 
 export function pathHistory(ctx: RepoContext, args: Json) {

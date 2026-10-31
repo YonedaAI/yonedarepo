@@ -95,9 +95,12 @@ async function refuseMirrorOnly(objects: RepoObjects, commits: string[]) {
 }
 
 const importedOnly = (id: string) =>
-  new ApiError(
-    'NOT_FOUND',
-    `Commit ${id} is held only as imported history, which HTTPS does not serve yet; use git-remote-yoneda`,
+  Object.assign(
+    new ApiError(
+      'NOT_FOUND',
+      `Commit ${id} is held only as imported history, which HTTPS does not serve yet; use git-remote-yoneda`,
+    ),
+    { mirrorOnly: true },
   );
 
 /** `wanted` read whole (`rawObjects`). */

@@ -177,6 +177,23 @@ node tools/staging-realworld.mjs --prod --only 0,browser,12,13,14,15,16,17
 
 `--prod` switches the front, API and platform hosts to `yonedarepo.com`, `api.yonedarepo.com` and `yonedarepo-prod-platform`, and writes `prod-smoke-<ms>.json`, never `realworld*` (which the prod guard reads as dev evidence). The kit account and its second account are created on production on first use. Always pass `--only`: the bursts and gates are for dev.
 
+## Importing history behind the head
+
+`FAST_IMPORT=on` (unset or anything else: an import records all of its history, then lands main) lands main at the remote's head as soon as Artifacts has it, half a second after Artifacts finishes plus one log read per 1,000 commits, then records the first-parent history newest first, a Workflow step per 250 commits (`cloudflare/worker/repo-import-fill.ts`, `repo_store/history_fill.rs`). Budget and bench: `docs/load-testing.md`, `tools/import-bench.mjs`. No schema change: the state is main's imported head and where its `ref_chain` stops, so turning the switch off mid-import leaves the running fill safe.
+
+While history fills:
+
+| What | Answer |
+|---|---|
+| Files, tree, blob, search of code, status | Work, at the head |
+| `repo_status`, log, path history, blame, record search | Carry `history_import {recorded, total}`: what they list is the newest part of the history |
+| A commit not recorded yet | 404 saying history is still importing |
+| Clone through `git-remote-yoneda` | Works: the object store holds all of it, and main is projected right after landing |
+| `git clone` and `git fetch` over HTTPS or SSH, `--depth` too | Work, during the fill and after it: the pack streams from the object store (`cloudflare/worker/repo-git-mirror.ts`) when every want is a branch or tag it holds and nothing is withheld. A `--filter` clone receives every file. If the object store cannot answer: `IMPORT_IN_PROGRESS` while filling, after that as before, `held only as imported history` |
+| Landings, pushes, branches, tags, releases, forks, break-glass, purges | Refused, 409 `IMPORT_IN_PROGRESS`, naming how far it has come. A commit may still record from the published head; its landing is refused |
+
+A fill never leaves a repository refusing work. A commit of more than 10,000 changed files, or a wave that still fails after 5 retries (about 2.5 minutes), ends the fill where it reached: the repository holds what a capped import holds (`repo_record_imported_end`), takes changes at once, and says for good that only the newest N of M commits came in (`history_stopped` in `repo_status` and every read of history; the note is a row in `repairs`). A Workflow that died without doing that is ended by the next `GET /repos/:id/import`. A head of more than 10,000 changed files lands alone, with no changed paths recorded for it. A Workflow that fails before main lands fails the import, as with the switch off.
+
 ## Repository database size
 
 A repository's Durable Object refuses writes at about 10.7 GB of `databaseSize` (`docs/global-scale-plan.md`, spike results). A commit shard is its own database with the same limit.

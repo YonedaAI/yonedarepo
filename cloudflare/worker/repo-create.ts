@@ -224,6 +224,7 @@ async function populate(
 /** Starts a durable import of an external Git repository (Artifacts-backed only). */
 export async function importRepository(env: Env, requester: Credentials, body: Json) {
   const auth = await owning(env, requester, body);
+  const asked_at = Date.now();
   if (env.PLATFORM_OBJECT_STORE === 'r2')
     throw new ApiError('NOT_SUPPORTED', 'Importing a remote needs the Artifacts object store');
   const visibility = visibilityOf(body.visibility);
@@ -255,7 +256,7 @@ export async function importRepository(env: Env, requester: Credentials, body: J
   const tokens = await issueTokens(ctx, body.tokens);
   const instance = await env.PLATFORM_IMPORT.create({
     id: `import-${id}`,
-    params: { repo: id, url, branch, max },
+    params: { repo: id, url, branch, max, asked_at },
   });
   return { id, import: instance.id, branch: branch ?? null, max_commits: max, ...tokens };
 }

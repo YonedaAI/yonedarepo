@@ -51,6 +51,7 @@ mod git_wanted;
 pub(crate) mod grants;
 mod head;
 mod history;
+mod history_fill;
 mod history_import;
 mod hook_delivery;
 mod hook_events;

@@ -22,6 +22,9 @@ pub fn record<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             "History is only imported into an empty repository",
         ));
     }
+    if c.get("generation").is_some() {
+        return super::history_fill::record_head(db, c);
+    }
     let tree = object_id(c, "tree")?;
     let parents: Vec<ObjectId> = c["parents"]
         .as_array()

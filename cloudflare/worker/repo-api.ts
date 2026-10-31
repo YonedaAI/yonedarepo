@@ -69,6 +69,7 @@ const STATUS: Record<string, number> = {
   STALE_PARENT: 409,
   NOT_READY: 409,
   STALE_HEAD: 409,
+  IMPORT_IN_PROGRESS: 409,
   STALE_EPOCH: 409,
   NOT_LANDED: 409,
   AUTOMATION_PAUSED: 423,
@@ -284,7 +285,7 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return { run_id: sha, log: await log.text() };
   }
   if (resource === 'import' && get) {
-    await ctx.call({ op: 'repo_status' }); // read access first
+    const { history_import } = await ctx.call({ op: 'repo_status' }); // read access first
     const status = await env.PLATFORM_IMPORT.get(`import-${repo}`)
       .then((i) => i.status())
       .catch((e) => {
@@ -292,7 +293,14 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
           throw new ApiError('NOT_FOUND', 'This repository has no import');
         throw e;
       });
-    return { import: `import-${repo}`, ...status };
+    // A Workflow that died cannot end its history: a repository must not wait on it.
+    const dead = ['errored', 'terminated'].includes(String(status.status));
+    if (history_import && dead)
+      await caller(env, repo, { _system: 'import' })({
+        op: 'repo_record_imported_end',
+        reason: 'The import stopped before its history was in.',
+      });
+    return { import: `import-${repo}`, ...status, history: dead ? null : history_import };
   }
   // Access changes republish main's head (begins and reads decide access from it).
   if (resource === 'visibility' && req.method === 'PUT')
