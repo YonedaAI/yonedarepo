@@ -6,6 +6,7 @@
 
 import { transient } from './durable';
 import { landMode } from './repo-changesets';
+import { BUSY } from './repo-git-retry';
 import { landWithMerge } from './repo-landing';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 
@@ -34,7 +35,8 @@ const update = (c: Command) => ({
 export type Outcome = Map<string, string | null>;
 
 export const reason = (e: any) => {
-  const code = e instanceof ApiError ? e.code : transient(e) ? 'OVERLOADED' : (e?.code ?? 'ERROR');
+  if (!(e instanceof ApiError) && transient(e)) return `OVERLOADED: ${BUSY}`;
+  const code = e instanceof ApiError ? e.code : (e?.code ?? 'ERROR');
   return `${code}: ${String(e?.message ?? e)}`.slice(0, 300);
 };
 const short = (ref: string) => ref.replace(/^refs\/heads\//, '');

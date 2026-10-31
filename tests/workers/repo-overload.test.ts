@@ -1,11 +1,13 @@
 // An overloaded or briefly unreachable Durable Object is the platform's condition, not the
-// caller's mistake: REST and Git answer 503 OVERLOADED with Retry-After (so clients retry),
-// MCP names OVERLOADED in the tool error, and an unexpected failure is 500 INTERNAL, never
-// INVALID_INPUT. A push refused before any ref moved is a 503 Git reports, not a per-ref "ng".
+// caller's mistake: REST and Git's `info/refs` answer 503 OVERLOADED with Retry-After (so
+// clients retry), MCP names OVERLOADED in the tool error, and an unexpected failure is 500
+// INTERNAL, never INVALID_INPUT. A push whose objects could not be stored is refused per ref,
+// the one thing Git prints from a push's POST.
 import { expect, it } from 'vitest';
 import { failureCode, transient } from '../../cloudflare/worker/durable';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { compute } from '../../cloudflare/worker/repo-compute';
+import { READ_RETRY } from '../../cloudflare/worker/repo-git-retry';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
@@ -89,13 +91,16 @@ it('names OVERLOADED in an MCP tool error', async () => {
   expect(result.content[0].text).toMatch(/^OVERLOADED: .*retry after 1 s/);
 });
 
-it('answers Git 503 with Retry-After, and refuses a push whose objects could not be stored', async () => {
+it('answers info/refs 503 with Retry-After, and refuses per ref a push it could not store', async () => {
   const { repo, token } = await setup('overload_git');
   const basic = `Basic ${btoa(`git:${token}`)}`;
+  const waits = READ_RETRY.waits;
+  READ_RETRY.waits = [1, 1, 1];
   const refs = await platformFetch(
     new Request(`https://yoneda/git/${repo}.git/info/refs?service=git-upload-pack`, { headers: { authorization: basic } }),
     failing(() => overloaded),
   );
+  READ_RETRY.waits = waits;
   expect([refs.status, refs.headers.get('retry-after')]).toEqual([503, '1']);
   expect(await refs.text()).toMatch(/^OVERLOADED: /);
 
@@ -137,7 +142,8 @@ it('answers Git 503 with Retry-After, and refuses a push whose objects could not
   const topic = async () => (await api(`/repos/${repo}/refs`, { token })).body.refs['refs/heads/topic'];
   for (const op of ['repo_record_pushed', 'repo_branch_batch']) {
     const pushed = await push(failing((o) => (o === op ? overloaded : null)));
-    expect([op, pushed.status, pushed.headers.get('retry-after')]).toEqual([op, 503, '1']);
+    expect([op, pushed.status]).toEqual([op, 200]);
+    expect(new TextDecoder().decode(await pushed.arrayBuffer())).toContain('ng refs/heads/topic OVERLOADED: The repository is busy');
     expect(await topic()).toBeUndefined();
   }
   // The retry goes through.

@@ -96,11 +96,12 @@ export async function uploadPack(
  * with a flush when banded. A failure before the pack starts is an ERR line in place of
  * `head` (Git prints it as `remote error: <message>`; after `head`, which ends where the
  * pack's side-band packets begin, Git would read it as a packet of band 'E' and stop with
- * "bad band #69"); an overloaded authority is rethrown, so Git gets an HTTP 503 it can
- * retry. The pack of a fetch that has nothing (`fresh`: a clone,
- * partial or shallow, or a partial clone's checkout) is streamed from the store when held
- * there, else stored as it streams (PACK_CACHE=on), or by a job the fetch is handed to when
- * this isolate cannot store it. The session is opened only to build.
+ * "bad band #69"); an overloaded authority is rethrown, so the request can be tried again
+ * before any byte went out (`retrier`; Git itself retries nothing). The pack of a fetch that
+ * has nothing (`fresh`: a clone, partial or shallow, or a partial clone's checkout) is
+ * streamed from the store when held there, else stored as it streams (PACK_CACHE=on), or by
+ * a job the fetch is handed to when this isolate cannot store it. The session is opened only
+ * to build.
  * A pack that would carry a quarantined blob is never started: the ERR names the blob
  * (and its path), rather than a pack Git finds incomplete. */
 export async function sendPack(
@@ -132,6 +133,7 @@ export async function sendPack(
   try {
     built = await buildPack(open(), objects, commits, tally);
   } catch (e: any) {
+    await writer?.abort().catch(() => {});
     if (transient(e)) throw e;
     return errLine(new Uint8Array(), e);
   }

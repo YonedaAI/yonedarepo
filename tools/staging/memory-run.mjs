@@ -66,10 +66,10 @@ async function seed(owner, repo, trap) {
 
 const CLONE_TRIES = 4;
 
-/** Each retried clone is on record: a 503 here is a finding about the platform. */
+/** Each retried clone is on record: a refusal here is a finding about the platform. */
 function evidenceClone(evidence, agent, attempt) {
-  appendFileSync(join(evidence, 'clone-retries.txt'), `${agent} attempt ${attempt}: HTTP 503\n`);
-  console.log(`  ${agent}: clone answered 503, retrying`);
+  appendFileSync(join(evidence, 'clone-retries.txt'), `${agent} attempt ${attempt}: overloaded\n`);
+  console.log(`  ${agent}: clone refused as overloaded, retrying`);
 }
 
 /** Everything one agent needs: its fork, memories, token, clone and `runAgent` job. */
