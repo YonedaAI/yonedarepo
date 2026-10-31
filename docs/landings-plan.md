@@ -219,8 +219,8 @@ Conservative rules: a fork needs an approval of its head, a repo with no rules n
 Two schema changes, `0044` and `0045`, ship in two waves, so a rollback stays safe.
 
 1. **Wave 1, on dev:** binaries accept both versions without applying them.
-2. **Wave 2, after wave 1 is on prod:** merge `claude/tower-clearance`, which holds auto Landings, the rename, land when cleared and CTC; then `claude/landing-flight` from `9396f593`; then `claude/ctc-traffic`. Apply both migrations.
-3. **Harness commit `0158fb50`** with wave 2: a container rollout for Intent drift.
+2. **Wave 2, after wave 1 is on prod:** merge `claude/tower-clearance`, which holds auto Landings, the rename, land when cleared and CTC; then `claude/landing-flight` from `5642f0b0`; then `claude/ctc-traffic`. Apply both migrations.
+3. **Harness commit `2efe2984`** with wave 2: a container rollout for Intent drift.
 
 Switches stay off on prod until each is watched on dev: `LAND_WHEN_CLEARED`, then per-repo settings.
 
