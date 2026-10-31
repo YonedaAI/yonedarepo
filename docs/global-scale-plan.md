@@ -243,7 +243,7 @@ A summary is 2^17 bits (16 KiB, 32 KB as hex), a repo's folded content and path 
 
 **Forks.** A new fork holds what its parent does, so `search_fork` leaves a marker row and search skips it until it has activity of its own. Forks made before the switch have no row and are "maybe". A fork whose parent the caller can't list is skipped too until it lands: searching it directly still works.
 
-**Unmeasured:** these are limits, not timings. The dev bench (at least 3 runs, server-side timing, min/median/max) waits for a dev deploy.
+**Unmeasured on dev:** these are limits, not timings. The dev bench (at least 3 runs, server-side timing, min/median/max) waits for a dev deploy. The only number so far is local workerd: one directory call for 200 rows, 25 runs, min 9 ms, median 10 ms, max 15 ms.
 
 **Known cost:** a landing reaches the summary when its derive job runs. Until then a repo that has a summary and no newer activity row can miss the new content, for as long as the queue takes. Activity that isn't a landing, such as a check result, makes a repo "maybe" until its next derive job: safe, but it searches that repo.
 
