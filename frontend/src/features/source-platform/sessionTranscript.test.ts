@@ -20,7 +20,7 @@ vi.mock('./useSource', () => ({
 
 const { SessionTranscript } = await import('./SessionTranscript');
 const { SessionView } = await import('./SessionView');
-const { HowSessionsAreRecorded } = await import('./AgentSessions');
+const { NoSessions } = await import('./AgentSessions');
 const { transcriptNotes, transcriptPath, toolLabel } = await import('./agentModel');
 
 const html = (type: any, props: any) => renderToStaticMarkup(createElement(type, props));
@@ -157,6 +157,7 @@ describe('session transcript', () => {
     expect(page).toContain('id="session-transcript-heading"');
     expect(page).toContain('Stored on the platform · 4 turns');
     expect(page).toContain('src/parse.rs');
-    expect(html(HowSessionsAreRecorded, {})).not.toContain('never the transcript');
+    expect(html(NoSessions, {})).toContain('No sessions yet');
+    expect(html(NoSessions, {})).not.toContain('never the transcript');
   });
 });
