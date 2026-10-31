@@ -64,6 +64,7 @@ const status = (viewer: Viewer, policy = noChecks): RepoStatus => ({
   grant: null,
   quarantined: [],
   quarantine_epoch: 0,
+  history_import: null,
   visibility: 'private',
 });
 const page = (d: CommitDetail, s: RepoStatus) =>

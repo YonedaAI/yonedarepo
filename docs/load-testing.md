@@ -53,6 +53,22 @@ Agree these before the first run. They are starting targets, not commitments.
 | Data points per request | at most 1: reads 1 in 10, everything else all |
 | Failed or missing binding | no response changes |
 
+### GitHub import (`FAST_IMPORT`)
+
+Written before the code, from the hosted numbers we hold (a Worker to Durable Object call 10-50 ms, an R2 write 200-1000 ms). **Not measured on dev yet.**
+
+Today's cost of one commit: 2-3 new trees, each read down every tier (Cache API, R2 twice or more, the authority's staged read, then Artifacts) and then written up to R2 and the edge. A Workflow lends no `waitUntil`, so those writes are awaited. Then one authority call, and one Workflow step per 20 commits. Measured on dev: 1.5 commits/s (233 commits in 149 s).
+
+| Measure | Budget |
+|---|---|
+| Artifacts finished to main at the remote's head | under 10 s, any history size: one poll a second, the log (1 call per 1,000 commits), 3-6 tree reads, 3 authority calls, 1 queue send |
+| History | at least 50 commits/s: 5,000 commits under 2 minutes |
+| One wave, 250 commits, one Workflow step | under 5 s: 1 log call, about 750 tree reads straight from Artifacts 32 at a time, no R2 or edge writes, 1-4 authority calls |
+| One authority transaction | at most 250 commits and 1 MiB of changed paths (a single larger commit goes alone, at most 10,000 paths); well under the 19 MB the size spike deleted safely in one transaction |
+| Progress | polled every 2 s, moves at least once per wave |
+
+Bench: `tools/import-bench.mjs`. Report the Workflow's own timing (`output.timing`), at least 3 runs, min, median and max.
+
 ## Stages
 
 Stop a stage at the first of: errors above 1%, p95 over 3× its target, or a Cloudflare limit error. Record what broke.

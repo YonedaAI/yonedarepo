@@ -136,6 +136,9 @@ fn land_one<S: SqlStore>(
     {
         return Ok(refused(e));
     }
+    if let Err(e) = super::history_fill::refuse_if_filling(db) {
+        return Ok(refused(e));
+    }
     let commit = commit_row(record)?;
     let touches: Vec<PathTouch> = serde_json::from_value(record["paths"].clone())
         .map_err(|_| bad("Record paths are malformed"))?;

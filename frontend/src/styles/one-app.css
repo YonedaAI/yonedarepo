@@ -495,6 +495,25 @@ a.chip:hover {
   margin-bottom: 0;
 }
 /* A repository until its import lands. */
+.import-history {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.import-history p:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+.import-history .source-meta {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+.import-history strong {
+  color: var(--text);
+}
 .import-status p {
   display: flex;
   align-items: center;

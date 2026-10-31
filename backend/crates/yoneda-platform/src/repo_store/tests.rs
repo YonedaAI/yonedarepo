@@ -1667,6 +1667,7 @@ mod differential;
 mod erase;
 mod forks;
 mod git_shallow;
+mod history_fill;
 mod hooks;
 mod land_cas;
 mod land_shapes;

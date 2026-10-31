@@ -84,6 +84,7 @@ fn the_guard_refuses_exactly_the_ops_that_start_new_work() {
             "repo_prepare_commit",
             "repo_record_commit",
             "repo_record_imported",
+            "repo_record_imported_batch",
             "repo_record_pushed",
         ]
     );

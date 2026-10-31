@@ -103,7 +103,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         }
         // Imported history is only recorded by the platform importer, which read it from
         // the object store; nobody else can declare commits into existence.
-        R::RecordImported if !actor.can("import") => Err(Error::new(
+        R::RecordImported | R::RecordImportedBatch if !actor.can("import") => Err(Error::new(
             "FORBIDDEN",
             "Only the platform importer records imported history",
         )),
@@ -178,6 +178,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::Purged
         | R::RecordClasses
         | R::RecordImported
+        | R::RecordImportedBatch
         | R::RecordPushed
         | R::RecordSymbols
         | R::Refs

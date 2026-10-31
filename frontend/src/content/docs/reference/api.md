@@ -108,6 +108,7 @@ All paths start with `/repos/<id>`.
 | `STALE_HEAD` | 409 | A branch moved since the value you expected; read it again |
 | `CONFLICT` | 409 | A merge, rebase, revert or landing conflicts; details name the paths |
 | `NOT_READY` | 409 | A commit cannot land yet: its gates are not met |
+| `IMPORT_IN_PROGRESS` | 409 | An imported repository's history is still arriving: its files can be read, and it takes no changes until it ends |
 | `ALREADY_EXISTS` | 409 | A tag, release, asset or open change of that name exists |
 | `SECRET_DETECTED` | 422 | The content holds a credential |
 | `AUTOMATION_PAUSED` | 423 | The owner paused automation |

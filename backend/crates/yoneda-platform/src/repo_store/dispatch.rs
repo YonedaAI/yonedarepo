@@ -6,10 +6,10 @@ use super::rows::{self, Settings};
 use super::{
     activity, adopt, agent_context, agent_reads, annotated, bisect, branches, capacity,
     change_comments, change_delete, change_gates, change_records, changes, changesets, checks,
-    classes, contracts, git_http, head, history, history_import, hook_delivery, hook_events, hooks,
-    land, land_batch, land_queue, land_tickets, legal_hold, members, merging, prepare, projection,
-    projection_plan, pushed, reads, rebase, record, releases, search_records, sessions, staging,
-    store_lineage, submitted, symbols, tags, tokens, version_projection,
+    classes, contracts, git_http, head, history, history_fill, history_import, hook_delivery,
+    hook_events, hooks, land, land_batch, land_queue, land_tickets, legal_hold, members, merging,
+    prepare, projection, projection_plan, pushed, reads, rebase, record, releases, search_records,
+    sessions, staging, store_lineage, submitted, symbols, tags, tokens, version_projection,
 };
 use super::{
     authorize::authorize, break_glass, deletion, erase, forks, grants, lfs, maintenance, memory,
@@ -39,6 +39,9 @@ pub(super) fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     grants::precheck(db, op, c, &actor.grant)?;
     if capacity::refuses(op) {
         capacity::refuse_if_full(db, c)?;
+    }
+    if history_fill::refuses(op) {
+        history_fill::refuse_if_filling(db)?;
     }
     // An erased tombstone holds nothing, and no longer knows its owner.
     if legal_hold::refuses(op) && !settings.erased() {
@@ -72,14 +75,16 @@ fn run<S: SqlStore>(
             .map(|()| json!({ "object_store": settings.object_store })),
         R::Refs => reads::refs(db, c),
         R::Snapshot => reads::snapshot(db, c),
-        R::Log => reads::log(db, c),
+        R::Log => reads::log(db, c).and_then(|log| history_fill::note(db, log)),
         R::Txlog => reads::txlog(db, c),
         R::ChangeRecords => change_records::records(db, c),
         R::Activity => activity::activity(db, c),
         R::Commit => reads::commit(db, c, settings),
         R::MergeBase => reads::merge_base(db, c),
         R::MergePlan => merging::plan(db, c),
-        R::PathHistory => history::path_history(db, c),
+        R::PathHistory => {
+            history::path_history(db, c).and_then(|found| history_fill::note(db, found))
+        }
         R::RecordClasses => classes::record(db, c),
         R::ClassesPending => classes::pending(db, c),
         R::RecordSymbols => symbols::record(db, c),
@@ -115,7 +120,9 @@ fn run<S: SqlStore>(
         R::SessionRecord => sessions::record(db, c, actor),
         R::Sessions => sessions::list(db, c, actor),
         R::SessionList => agent_reads::session_list(db, c, actor),
-        R::SearchRecords => search_records::search(db, c, actor),
+        R::SearchRecords => {
+            search_records::search(db, c, actor).and_then(|found| history_fill::note(db, found))
+        }
         R::SessionShow => agent_reads::session_show(db, c, actor),
         R::SessionTranscript => sessions::transcript(db, c, actor),
         R::ContractList => agent_reads::contract_list(db, c),
@@ -195,6 +202,7 @@ fn run<S: SqlStore>(
         R::Head => head::head(db, c, settings),
         R::ChangesetRecord => version_projection::record(db, c, settings),
         R::RecordImported => history_import::record(db, c),
+        R::RecordImportedBatch => history_fill::record_batch(db, c),
         R::BreakGlass => break_glass::execute(db, c, principal, settings),
         R::Import => {
             if !actor.can("import") {

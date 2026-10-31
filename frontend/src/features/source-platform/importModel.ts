@@ -1,5 +1,6 @@
 // Adding a public GitHub repository: what the dialog's field accepts, the request it makes
 // (`POST /repos/import`), and what `GET /repos/<id>/import` means on the repository's page.
+import type { HistoryFill } from '../../../../shared/contracts/repo-status';
 import type { Visibility } from './repoAccess';
 
 /** The server's most commits per import; the dialog always asks for all of them. */
@@ -68,10 +69,12 @@ export function importBody(
   };
 }
 
-/** What `GET /repos/<id>/import` answers: the import Workflow's status. */
+/** What `GET /repos/<id>/import` answers: the import Workflow's status, and how far its
+ * history has come while main has landed ahead of it. */
 export type ImportAnswer = {
   status?: string;
   error?: { name?: string; message?: string } | null;
+  history?: HistoryFill | null;
 };
 
 /** What a failed import says: a final failure's message is `<Artifacts code>: <its reason>`.
@@ -90,9 +93,10 @@ export function importFailure(message: string | undefined) {
 }
 
 /** The import as its page shows it. Anything short of an end is still running: `waiting` is a
- * step retrying, and a status added later should not read as a failure. */
+ * step retrying, and a status added later should not read as a failure. Main landing ahead of
+ * its history ends the wait for the code, whatever then happens to the history. */
 export function importView(answer: ImportAnswer) {
-  if (answer.status === 'complete') return { phase: 'complete' as const };
+  if (answer.history || answer.status === 'complete') return { phase: 'complete' as const };
   if (answer.status === 'terminated')
     return { phase: 'failed' as const, title: 'This import was stopped.', reason: '' };
   if (answer.status === 'errored')
@@ -100,5 +104,11 @@ export function importView(answer: ImportAnswer) {
   return { phase: 'running' as const };
 }
 
-/** Only a repository with no refs can be mid-import: an import lands its branch last. */
+/** Whether history stopped filling: nothing will finish it, and the repository waits for its
+ * owner to delete it. */
+export const historyStopped = (answer: ImportAnswer) =>
+  answer.status === 'errored' || answer.status === 'terminated';
+
+/** Only a repository with no refs is waiting for its code: an import lands its branch before
+ * anything else shows. */
 export const mayBeImport = (refs: readonly unknown[] | undefined) => refs?.length === 0;

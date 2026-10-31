@@ -4,8 +4,10 @@
 //! Each chain entry is a commit and its depth along the chain; a move adds the commits
 //! between the new head and where its first parents meet the chain, and drops the entries
 //! above that point (a rewind or forced move). A chain starts from the commit whose first
-//! parent is not recorded (as the walk did) or, past `BUILD` commits, from its newest ones:
-//! a branch that held more history before this index existed keeps the walk below them.
+//! parent is not recorded (as the walk did), at that commit's generation: a truncated
+//! import's oldest has generation 1, and an imported head filled in behind (`history_fill`)
+//! leaves room below it. Past `BUILD` commits a chain starts from its newest ones: a branch
+//! that held more history before this index existed keeps the walk below them.
 use super::rows;
 use crate::storage::SqlStore;
 use serde_json::json;
@@ -66,9 +68,10 @@ pub fn advance<S: SqlStore>(db: &S, refname: &str, head: &ObjectId) -> Result<()
         if let Some(at) = depth(db, refname, &parent)? {
             break at;
         }
+        let above = row.as_ref().map_or(1, |r| r.generation as i64);
         row = rows::commit_row(db, &parent)?;
         if row.is_none() {
-            break 0;
+            break above - 1;
         }
         next = parent;
     };

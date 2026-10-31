@@ -94,6 +94,7 @@ op_names! {
         RecordCommit = "repo_record_commit",
         RecordContract = "repo_record_contract",
         RecordImported = "repo_record_imported",
+        RecordImportedBatch = "repo_record_imported_batch",
         RecordPushed = "repo_record_pushed",
         RecordRepair = "repo_record_repair",
         RecordSymbols = "repo_record_symbols",

@@ -1,11 +1,12 @@
 // Follows an import from its repository's page. Nothing marks a repository as imported, so an
 // empty one asks: a repository that was never imported has no import to read.
 import { useEffect, useState } from 'react';
-import { type ImportAnswer, importView, mayBeImport } from './importModel';
+import type { HistoryFill } from '../../../../shared/contracts/repo-status';
+import { historyStopped, type ImportAnswer, importView, mayBeImport } from './importModel';
 import type { RepoStatus } from './repoStatus';
 import { sourceApi } from './sourceApi';
 
-export const IMPORT_POLL_MS = 4000;
+export const IMPORT_POLL_MS = 2000;
 /** Reads that may fail in a row before the page says it has lost track. */
 const STALLED_AFTER = 3;
 
@@ -64,4 +65,44 @@ export function useImportProgress(
     };
   }, [repo, watching, onFinished]);
   return watching ? progress : NONE;
+}
+
+/** How far an imported history has come, and whether it stopped short. */
+export type HistoryProgress = HistoryFill & { stopped: boolean };
+
+/** Follows a history filling in behind a landed main, from what the status said. `onFinished`
+ * reads the repository again, which ends this: its status no longer names a fill. */
+export function useHistoryFill(
+  repo: string,
+  known: HistoryFill | null | undefined,
+  onFinished: () => void,
+): HistoryProgress | null {
+  const watching = Boolean(known);
+  const [seen, setSeen] = useState<HistoryProgress | null>(null);
+  useEffect(() => {
+    if (!watching) return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    const read = async () => {
+      try {
+        const answer = await sourceApi<ImportAnswer>(`/repos/${repo}/import`, {
+          signal: controller.signal,
+          once: true,
+        });
+        if (!answer.history) onFinished();
+        else if (historyStopped(answer)) return setSeen({ ...answer.history, stopped: true });
+        else setSeen({ ...answer.history, stopped: false });
+      } catch {
+        // The next read tells; the page keeps showing the last it knew.
+      }
+      if (!controller.signal.aborted) timer = setTimeout(read, IMPORT_POLL_MS);
+    };
+    void read();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [repo, watching, onFinished]);
+  if (!known) return null;
+  return seen ?? { ...known, stopped: false };
 }

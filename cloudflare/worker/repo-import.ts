@@ -5,25 +5,23 @@
 // remote or branch, no access) fails the import at once, with Artifacts' reason.
 import { NonRetryableError } from 'cloudflare:workflows';
 import { rpcValue } from './durable';
+import {
+  type Commit,
+  changedPaths,
+  type ImportParams,
+  type ImportStep,
+  landThenFill,
+  logged,
+  RETRY,
+  storeName,
+} from './repo-import-fill';
 import { parseStore, RepoObjects } from './repo-objects';
-import { caller, type Json, withTrees } from './repo-ops';
+import { caller, withTrees } from './repo-ops';
 import type { Env } from './types';
 
-/** `branch`: the remote's branch to import; none: its default branch. */
-export type ImportParams = { repo: string; url: string; branch?: string; max: number };
-type Commit = { hash: string; tree: string; parents: string[]; message: string };
-/** The subset of WorkflowStep the import uses (tests pass a direct runner). */
-export type ImportStep = {
-  do<T>(name: string, config: Json, callback: () => Promise<T>): Promise<T>;
-};
+export type { ImportParams, ImportStep };
 
-const RETRY = {
-  retries: { limit: 8, delay: '10 seconds', backoff: 'exponential' },
-  timeout: '10 minutes',
-};
 const BATCH = 20;
-
-const storeName = (repo: string) => `yr-${repo}`;
 
 /** Artifacts' refusals that no retry mends. */
 const FINAL = [
@@ -78,13 +76,7 @@ async function readHistory(env: Env, params: ImportParams): Promise<Commit[]> {
       }),
     );
     if (page.length === 0) break;
-    for (const c of page)
-      newestFirst.push({
-        hash: c.hash,
-        tree: c.treeHash,
-        parents: c.parents,
-        message: c.message.slice(0, 4000),
-      });
+    newestFirst.push(...page.map(logged));
   }
   if (newestFirst.length === 0)
     throw new NonRetryableError(
@@ -119,12 +111,7 @@ async function recordBatch(env: Env, params: ImportParams, batch: Commit[], prev
       tree: commit.tree,
       parents: commit.parents,
       message: commit.message,
-      touches: changes.map((c: Json) => ({
-        path: c.path,
-        op: c.op,
-        old_blob: c.old?.id ?? null,
-        new_blob: c.new?.id ?? null,
-      })),
+      touches: changedPaths(changes),
     });
     parent = commit;
   }
@@ -150,6 +137,7 @@ export async function runImport(env: Env, asked: ImportParams, step: ImportStep)
     }
     return true;
   });
+  if (env.FAST_IMPORT === 'on') return landThenFill(env, params, step);
   // Throws IMPORT_IN_PROGRESS until Artifacts finishes; the step retries with backoff.
   const history = await step.do('read history', RETRY, () => readHistory(env, params));
   for (let start = 0; start < history.length; start += BATCH)
