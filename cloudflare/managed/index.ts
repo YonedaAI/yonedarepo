@@ -2,6 +2,7 @@
 // an ordinary API client of the platform. Its public hostname takes only signed webhooks and
 // /health and Stripe's signed billing webhook (/stripe/webhook); the browser API is served to the front Worker's service binding on the site's own
 // origin. The platform itself never runs, schedules or knows about agents.
+import { adminBilling, adminBillingOn } from './admin-billing';
 import { ApiRefusal, managedApi, workspaceName } from './api';
 import { BillingRefusal, stripeWebhook } from './billing';
 import type { ManagedEnv, QueueMessage } from './config';
@@ -90,6 +91,23 @@ export async function managedFetch(req: Request, env: ManagedEnv): Promise<Respo
     const account = workspaceName(parts[2]);
     if (!account) return refuse('NOT_FOUND', 'Unknown account', 404);
     return req.method === 'GET' ? creditState(env, account) : grantCredit(req, env, account);
+  }
+  if (url.pathname === '/admin/billing/reconcile' && req.method === 'POST') {
+    if (!(await admin(req, env))) return refuse('UNAUTHORIZED', 'Admin token required', 401);
+    if (!adminBillingOn(env)) return refuse('NOT_FOUND', 'Not found', 404);
+    await env.RUNS.send({ kind: 'reconcile-all' });
+    return json({ queued: true }, 202);
+  }
+  if (parts[0] === 'admin' && parts[1] === 'accounts' && parts[3] === 'billing') {
+    if (!(await admin(req, env))) return refuse('UNAUTHORIZED', 'Admin token required', 401);
+    const account = workspaceName(parts[2]);
+    if (!account) return refuse('NOT_FOUND', 'Unknown account', 404);
+    try {
+      return json(await adminBilling(req, env, account, parts[4]));
+    } catch (e) {
+      if (e instanceof BillingRefusal) return refuse(e.code, e.message, e.status);
+      throw e;
+    }
   }
   // The browser API only on the site's origin (through the front Worker), never on this
   // Worker's own hostname, so a session cookie is only ever checked for the site it belongs to.

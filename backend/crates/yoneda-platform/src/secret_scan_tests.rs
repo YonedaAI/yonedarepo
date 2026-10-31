@@ -240,3 +240,14 @@ fn a_streamed_file_is_scanned_across_pieces_and_judged_by_path() {
     clean.feed(&"plain text\n".repeat(1000).into_bytes());
     assert!(clean.finish().is_empty());
 }
+
+/// Free text the adapter keeps (an operator's reason for a refund) is scanned by the same rules.
+#[test]
+fn the_compute_op_answers_whether_text_is_clean() {
+    let scan = |text: &str| {
+        crate::platform_compute(serde_json::json!({ "op": "secret_scan", "text": text })).unwrap()
+    };
+    assert_eq!(scan("Duplicate charge, customer asked")["clean"], true);
+    let key = token(&["sk", "_live_"], 32);
+    assert_eq!(scan(&format!("refund for {key}"))["clean"], false);
+}

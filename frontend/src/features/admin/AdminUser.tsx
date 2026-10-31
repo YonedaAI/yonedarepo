@@ -1,6 +1,7 @@
 // One account for operators: who it is (with its contact email, shown only here), its
-// repositories, tokens and credit, and the safe actions (suspend or unsuspend, grant credit),
-// each confirmed first and recorded in the audit log by the server.
+// repositories, tokens and credit, its Billing section where that is on, and the safe actions
+// (suspend or unsuspend, grant credit), each confirmed first and recorded in the audit log by
+// the server.
 import { ArrowLeft } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
@@ -9,6 +10,7 @@ import { PublicBadge } from '../source-platform/PublicBadge';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { sourceApi } from '../source-platform/sourceApi';
 import { useSource } from '../source-platform/useSource';
+import { AdminBillingSection } from './AdminBilling';
 import { type AccountDetail, accountPath, providerLabel, usd, when } from './adminModel';
 
 type Action = { kind: 'suspend' | 'unsuspend' } | { kind: 'credit'; usd: number; note: string };
@@ -186,7 +188,8 @@ export function AdminUser({
           </form>
         </div>
       </section>
-      {a.credit && a.credit.entries.length > 0 && (
+      {a.billing && <AdminBillingSection account={account} name={name} />}
+      {!a.billing && a.credit && a.credit.entries.length > 0 && (
         <section className="home-section" aria-labelledby="admin-user-ledger">
           <h3 id="admin-user-ledger" className="home-label">
             Latest ledger entries

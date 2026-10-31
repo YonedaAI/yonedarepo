@@ -30,6 +30,9 @@ export interface Env {
   /** `on`: destructive ops wait for the owner's legal hold answer, and the hold routes
    * exist (unset or anything else: neither; platform-legal-hold.ts). */
   LEGAL_HOLD?: string;
+  /** `on`: the operators' billing routes and the nightly reconcile exist (unset or anything
+   * else: neither; platform-admin-billing.ts). Set with the managed Worker's. */
+  ADMIN_BILLING?: string;
   /** Platform check executors (one fresh container per run attempt). */
   CHECK_RUNNERS: DurableObjectNamespace<import('./check-container').CheckContainer>;
   OBJECT_PUSHES: DurableObjectNamespace<import('./repo-push-queue').ObjectPushQueue>;

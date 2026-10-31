@@ -69,6 +69,7 @@ pub fn compute(c: Value) -> Result<Value> {
         "agent_view" => crate::platform_symbol_graph::agent_view(&c),
         "human_view" => crate::platform_views::human_view(&c),
         "session_transcript" => crate::platform_transcript::session_transcript(&c),
+        "secret_scan" => secret_scan(&c),
         "ref_update" => ref_update(&c),
         "ref_delete" => ref_delete(&c),
         "push_report" => push_report(&c),
@@ -95,6 +96,13 @@ pub fn compute(c: Value) -> Result<Value> {
         "git_v2_fetch_head" => crate::platform_git_v2::fetch_head(&c),
         op => Err(Error::new("UNKNOWN_OP", format!("Unknown compute op {op}"))),
     }
+}
+
+/// `secret_scan {text}` → `{clean}`: free text the adapter keeps rather than commits (an
+/// operator's reason) against the rules a commit is held to.
+fn secret_scan(c: &Value) -> Result<Value> {
+    let clean = crate::secret_scan::scan("text", string(c, "text")?.as_bytes(), &[]).is_ok();
+    Ok(json!({ "clean": clean }))
 }
 
 fn optional_id(c: &Value, key: &str) -> Result<Option<ObjectId>> {

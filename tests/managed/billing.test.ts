@@ -233,8 +233,7 @@ describe('turning automatic top-up off', () => {
     const stub = ledgerStub(harness().env, `ws-${crypto.randomUUID()}`);
     await runInDurableObject(stub as unknown as DurableObjectStub, (_instance, state) => {
       const sql = state.storage.sql;
-      sql.exec('DROP TABLE billing');
-      sql.exec('DROP TABLE top_ups');
+      for (const table of ['refunds', 'disputes', 'refund_days', 'billing', 'top_ups']) sql.exec(`DROP TABLE ${table}`);
       sql.exec(LEDGER_SCHEMA[1]);
       sql.exec('UPDATE schema_version SET version = 2');
       sql.exec("INSERT INTO billing (id, customer, payment_method, brand, last4, card_added_at) VALUES (1, 'cus', 'pm', 'visa', '4242', 1)");

@@ -209,6 +209,29 @@ Deleting a repository leaves a tombstone and purges its objects. With `REPO_ERAS
 - **Older code.** A build without the window leaves listed repositories alone: nothing sends their purge. A job already sent to the queue is the one exception, and the sweep sends only what is due.
 - **An org deleted during the window.** Nobody can restore its repositories any more, as only its owners could, and its name is retired for good. They purge on schedule. The org's delete page warns; a hold refuses the delete.
 - **Operator.** `POST /admin/repos/<id>/purge-now` purges one deleted repository at once. It is audited and refused under a hold, and there is no public way to skip the window: the window exists to survive a stolen token. The kit calls it after every deletion when the window is on and `OWNER_TOKEN` is in `staging.env`. `POST /admin/deleted-repos/rebuild {owner}` rebuilds one owner's D1 rows from its records; `cargo xtask admin erase-backfill --confirm` finds tombstones with no row, and each goes back on the schedule.
+## Operators' billing
+
+The Billing section of an admin user page, and refunds, disputes and the nightly reconcile behind it. Off by default: without `ADMIN_BILLING=on` the routes answer 404 and the new Stripe events are ignored.
+
+To turn it on:
+
+1. Create a Stripe restricted key with **Refunds: Write**, and put it in the env's secrets file as `STRIPE_REFUND_KEY`. Without it the refund route answers `NOT_CONFIGURED`. `STRIPE_SECRET_KEY` never refunds.
+2. Add `charge.refunded`, `charge.dispute.created` and `charge.dispute.closed` to the Stripe webhook endpoint (`https://managed.<env host>/stripe/webhook`).
+3. In `infra/envs/<env>.json`, set `REFUND_MAX_USD` (per refund) and `REFUND_DAILY_USD` (per UTC day, across all accounts) on the managed Worker. Unset, every refund is refused.
+4. Set `ADMIN_BILLING` to `on` for the managed and platform Workers, run `cargo xtask infra gen --env <env>`, and deploy.
+
+How it behaves:
+
+- **Credit is spent oldest first**, so promotional credit goes before a later top-up. A top-up's unspent credit is what the balance still holds of it. Refunding more needs the spent-credit override; leaving the balance negative needs its own flag.
+- **A refund cannot be split by a crash.** The ledger records it and takes the credit first, then Stripe is asked under the idempotency key `refund:<id>`. An open refund is retried every 5 minutes by the ledger's alarm and on `charge.refunded`. Each attempt looks the refund up at Stripe first, because Stripe replays a saved 500 for a key and may prune a key after 24 hours. If Stripe refuses or fails it, the credit comes back.
+- **A refund made in Stripe's dashboard** is what Stripe's running total shows beyond the refunds here. Its credit is taken even past zero, since the money has left.
+- **A dispute** freezes what is left of its top-up's credit and stops the card being charged until it closes. If it is lost the frozen credit stays gone. The customer's own auto top-up switch is not touched.
+- **Pausing billing** stops the card being charged. Credit already held stays usable, and agent runs go on.
+- **Nightly reconcile**: the platform cron starts it at 03:17 UTC. Stripe names the accounts with a charge or refund in the last two days, and each is compared with its ledger. Read-only: differences are logged as `billing.reconcile.mismatch`, with a `problem` of `amount`, `refund_total`, `dispute_missing`, `charge_without_top_up` or `top_up_without_charge`. An account with no activity in those two days is not checked.
+- **Audit**: each action writes `admin_audit` as `billing.<action>` before the money moves and updates it after. A row still reading `pending` is an action cut off midway; `unknown` means the managed Worker never answered, so check the account's refunds.
+
+A refund Stripe reports as succeeded and later fails is not reversed automatically: nothing here listens for it. The reconcile logs it as `refund_total`.
+
 ## Recovery
 
 Queues are at least once: redelivery is expected, so consumers must be idempotent (leases, epochs, idempotency keys). The dead-letter queue is diagnostic transport evidence; the repository Durable Object's records remain authoritative. Check the repository's current state before retrying anything by hand.

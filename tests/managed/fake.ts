@@ -264,19 +264,129 @@ export type GatewayCall = { url: string; headers: Record<string, string>; body: 
 export const STRIPE_BASE = 'https://stripe.test';
 export const STRIPE_KEY = ['sk', 'test', 'fixture'].join('_');
 export const STRIPE_WEBHOOK_SECRET = ['whsec', 'stripe', 'fixture'].join('_');
+export const STRIPE_REFUND_KEY = ['rk', 'test', 'fixture'].join('_');
+export type FakeCharge = {
+  id: string;
+  object: 'charge';
+  amount: number;
+  amount_captured: number;
+  amount_refunded: number;
+  disputed: boolean;
+  status: string;
+  created: number;
+  customer: string;
+  payment_intent: string;
+  metadata: Record<string, string>;
+};
+export type FakeRefund = {
+  id: string;
+  amount: number;
+  status: string;
+  charge: string;
+  payment_intent: string;
+  created: number;
+  metadata: Record<string, string>;
+};
 export class FakeStripe {
-  calls: { method: string; path: string; form: Record<string, string>; idempotency: string | null; auth: string | null }[] = [];
+  calls: { method: string; path: string; search: string; form: Record<string, string>; idempotency: string | null; auth: string | null }[] = [];
   intents = new Map<string, { id: string; status: string; amount: number }>();
   decline = false;
   detached: string[] = [];
   card = { brand: 'visa', last4: '4242' };
+  charges = new Map<string, FakeCharge>();
+  refunds: FakeRefund[] = [];
+  /** Saved per idempotency key, as Stripe saves them, the 500s included, until pruned. */
+  saved = new Map<string, Response>();
+  /** The next refund request does its work, but its answer is lost (a 500 reaches the Worker). */
+  loseRefundAnswer = false;
+  /** The next refund request fails with this before any work. */
+  refundError: { status: number; type: string; message: string } | null = null;
+  /** The status a new refund starts in. */
+  refundStatus = 'succeeded';
+  /** Every read of a charge fails. */
+  chargesDown = false;
+
+  /** A refund as the dashboard makes one: no call from the Worker, no metadata of ours. */
+  dashboardRefund(charge: FakeCharge, amount: number) {
+    return this.refund(charge, amount, {});
+  }
+
+  private refund(charge: FakeCharge, amount: number, metadata: Record<string, string>) {
+    charge.amount_refunded += amount;
+    const refund = {
+      id: `re_${this.refunds.length + 1}`,
+      amount,
+      status: this.refundStatus,
+      charge: charge.id,
+      payment_intent: charge.payment_intent,
+      created: Math.floor(Date.now() / 1000),
+      metadata,
+    };
+    this.refunds.push(refund);
+    return refund;
+  }
+
+  private refundRoute(form: Record<string, string>, idempotency: string | null) {
+    const known = idempotency ? this.saved.get(idempotency) : undefined;
+    if (known) return known.clone();
+    const answer = this.refundAnswer(form);
+    if (idempotency) this.saved.set(idempotency, answer.clone());
+    return answer;
+  }
+
+  private refundAnswer(form: Record<string, string>) {
+    const error = (status: number, type: string, message: string) => Response.json({ error: { type, message } }, { status });
+    if (this.refundError) {
+      const { status, type, message } = this.refundError;
+      this.refundError = null;
+      return error(status, type, message);
+    }
+    const charge = [...this.charges.values()].find((c) => c.payment_intent === form.payment_intent);
+    if (!charge) return error(404, 'invalid_request_error', 'No such payment intent');
+    const amount = Number(form.amount);
+    if (charge.amount_refunded + amount > charge.amount)
+      return error(400, 'invalid_request_error', 'Refund amount is greater than the unrefunded amount');
+    const metadata = Object.fromEntries(
+      Object.entries(form)
+        .filter(([k]) => k.startsWith('metadata['))
+        .map(([k, v]) => [k.slice('metadata['.length, -1), v]),
+    );
+    const refund = this.refund(charge, amount, metadata);
+    if (this.loseRefundAnswer) {
+      this.loseRefundAnswer = false;
+      return error(500, 'api_error', 'An error occurred');
+    }
+    return Response.json(refund);
+  }
 
   async handle(req: Request): Promise<Response> {
     const url = new URL(req.url);
     const form = Object.fromEntries(new URLSearchParams(req.method === 'POST' ? await req.text() : ''));
     const idempotency = req.headers.get('idempotency-key');
-    this.calls.push({ method: req.method, path: url.pathname, form, idempotency, auth: req.headers.get('authorization') });
+    this.calls.push({ method: req.method, path: url.pathname, search: url.search, form, idempotency, auth: req.headers.get('authorization') });
     const ok = (v: unknown) => Response.json(v);
+    if (url.pathname === '/v1/refunds' && req.method === 'POST') return this.refundRoute(form, idempotency);
+    if (url.pathname === '/v1/refunds') {
+      const intent = url.searchParams.get('payment_intent');
+      const since = Number(url.searchParams.get('created[gte]') ?? 0);
+      const data = this.refunds
+        .filter((r) => (intent ? r.payment_intent === intent : r.created >= since))
+        .map((r) => (url.searchParams.has('expand[]') ? { ...r, charge: this.charges.get(r.charge) } : r));
+      return ok({ data, has_more: false });
+    }
+    if (url.pathname === '/v1/charges') {
+      const customer = url.searchParams.get('customer');
+      const since = Number(url.searchParams.get('created[gte]') ?? 0);
+      const data = [...this.charges.values()].filter((c) => (customer ? c.customer === customer : c.created >= since));
+      return ok({ data, has_more: false });
+    }
+    const charge = /^\/v1\/charges\/([^/]+)$/.exec(url.pathname);
+    if (charge) {
+      if (this.chargesDown) return Response.json({ error: { type: 'api_error', message: 'down' } }, { status: 500 });
+      const found = this.charges.get(charge[1]);
+      if (found) return ok(found);
+      return Response.json({ error: { type: 'invalid_request_error', message: 'No such charge' } }, { status: 404 });
+    }
     if (url.pathname === '/v1/customers' && req.method === 'POST') return ok({ id: `cus_${this.calls.length}` });
     if (url.pathname === '/v1/checkout/sessions' && req.method === 'POST')
       return ok({ id: 'cs_test_1', url: 'https://checkout.stripe.test/c/pay/cs_test_1' });
@@ -298,6 +408,21 @@ export class FakeStripe {
         );
       const intent = { id: `pi_${this.intents.size + 1}`, status: 'succeeded', amount: Number(form.amount) };
       if (idempotency) this.intents.set(idempotency, intent);
+      // Stripe copies a payment intent's metadata onto the charge it creates.
+      const chargeId = `ch_${this.charges.size + 1}`;
+      this.charges.set(chargeId, {
+        id: chargeId,
+        object: 'charge',
+        amount: intent.amount,
+        amount_captured: intent.amount,
+        amount_refunded: 0,
+        disputed: false,
+        status: 'succeeded',
+        created: Math.floor(Date.now() / 1000),
+        customer: form.customer,
+        payment_intent: intent.id,
+        metadata: { workspace: form['metadata[workspace]'], top_up: form['metadata[top_up]'] },
+      });
       return ok(intent);
     }
     return Response.json({ error: { type: 'invalid_request_error', message: `no route ${url.pathname}` } }, { status: 404 });

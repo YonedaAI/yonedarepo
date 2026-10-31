@@ -6,6 +6,7 @@ import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { AccountCreated } from './account-index';
 import { withWaitUntil } from './background';
 import { accountCreated, SIGNUP_NOTICE } from './platform-accounts';
+import { nightlyReconcile } from './platform-admin-billing';
 import { verifyEmail } from './platform-email-verify';
 import { laterIfHeld } from './platform-legal-hold';
 import { platformFetch } from './platform-routes';
@@ -105,14 +106,18 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
   verifyEmail(account: string, change?: string) {
     return verifyEmail(this.env, account, change);
   }
-  /** Every minute: keeps the SSH gateway (and its tunnel) running, and sends the purges that
-   * came due. Neither stops the other. */
-  async scheduled() {
-    const sweep = sweepDeleted(this.env).catch((e) => {
-      const error = String(e?.message ?? e).slice(0, 200);
-      console.error(JSON.stringify({ event: 'undo.sweep_failed', error }));
-    });
-    await Promise.all([sshKeepAlive(this.env, 'cron'), sweep]);
+  /** Every minute: keeps the SSH gateway (and its tunnel) running and sends the purges that
+   * came due; once a night, starts the billing reconcile. None stops the others. */
+  async scheduled(controller: ScheduledController) {
+    const logged = (event: string) => (e: unknown) => {
+      const error = String((e as Error)?.message ?? e).slice(0, 200);
+      console.error(JSON.stringify({ event, error }));
+    };
+    await Promise.all([
+      sshKeepAlive(this.env, 'cron'),
+      sweepDeleted(this.env).catch(logged('undo.sweep_failed')),
+      nightlyReconcile(this.env, controller.scheduledTime).catch(logged('billing.reconcile_failed')),
+    ]);
   }
   /** Jobs of a batch run side by side (they wait on I/O, not CPU; heavy ones one at a
    * time: `oneAtATime`); each settles alone. */

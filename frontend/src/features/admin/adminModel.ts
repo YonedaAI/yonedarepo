@@ -71,6 +71,8 @@ export type AccountDetail = {
   repos: AdminRepo[];
   tokens: number | null;
   credit: Credit | null;
+  /** Whether the Billing section exists here (ADMIN_BILLING). */
+  billing?: boolean;
 };
 export type Signups = { items: AdminAccount[]; unread: number };
 export type AuditEntry = {
@@ -82,7 +84,7 @@ export type AuditEntry = {
   detail: Record<string, unknown> | null;
 };
 
-function withQuery(path: string, params: Record<string, string | number | undefined>) {
+export function withQuery(path: string, params: Record<string, string | number | undefined>) {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params))
     if (value !== undefined && value !== '') query.set(key, String(value));
