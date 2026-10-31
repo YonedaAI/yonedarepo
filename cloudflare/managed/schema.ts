@@ -96,6 +96,48 @@ export const LEDGER_SCHEMA: string[] = [
   // v3 (2026-10-30): automatic top-up can be switched off without removing the card; on for
   // every card saved before the switch existed.
   `ALTER TABLE billing ADD COLUMN auto_top_up INTEGER NOT NULL DEFAULT 1;`,
+  // v4 (2026-10-31): operators' billing. An operator's pause on charging the card; refunds (an
+  // operator's, recorded before Stripe is asked, and those Stripe reported), with what Stripe
+  // says is refunded per top-up; disputes; and each day's refunds on the instance that counts
+  // them (admin-refund.ts). entries.kind cannot change without rebuilding the table, so what
+  // takes credit back is a negative 'grant' keyed refund:, freeze: and so on (ledger-refunds.ts).
+  `ALTER TABLE billing ADD COLUMN paused_at INTEGER;
+   ALTER TABLE billing ADD COLUMN paused_reason TEXT;
+   ALTER TABLE billing ADD COLUMN paused_by TEXT;
+   ALTER TABLE top_ups ADD COLUMN stripe_refunded INTEGER NOT NULL DEFAULT 0;
+   CREATE TABLE refunds (
+     id TEXT PRIMARY KEY,
+     account TEXT NOT NULL,
+     top_up TEXT NOT NULL,
+     amount INTEGER NOT NULL CHECK (amount > 0),
+     status TEXT NOT NULL CHECK (status IN ('open','succeeded','failed')),
+     origin TEXT NOT NULL CHECK (origin IN ('operator','stripe')),
+     actor TEXT NOT NULL,
+     reason TEXT NOT NULL,
+     spent_override INTEGER NOT NULL DEFAULT 0,
+     stripe_refund TEXT,
+     error TEXT,
+     created_at INTEGER NOT NULL,
+     settled_at INTEGER
+   );
+   CREATE INDEX refunds_by_top_up ON refunds(top_up);
+   CREATE TABLE disputes (
+     id TEXT PRIMARY KEY,
+     top_up TEXT,
+     charge TEXT NOT NULL,
+     amount INTEGER NOT NULL,
+     frozen INTEGER NOT NULL DEFAULT 0,
+     status TEXT NOT NULL,
+     reason TEXT,
+     opened_at INTEGER NOT NULL,
+     closed_at INTEGER
+   );
+   CREATE TABLE refund_days (
+     id TEXT PRIMARY KEY,
+     day TEXT NOT NULL,
+     amount INTEGER NOT NULL
+   );
+   CREATE INDEX refund_days_by_day ON refund_days(day);`,
 ];
 
 /** WorkspaceAgents: per-agent overrides (workspace-wide or per repository) and where it runs. */

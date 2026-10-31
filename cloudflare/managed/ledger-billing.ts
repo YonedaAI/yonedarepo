@@ -12,6 +12,9 @@ type BillingRow = {
   card_added_at: number | null;
   top_up_failed: string | null;
   auto_top_up: number;
+  paused_at: number | null;
+  paused_reason: string | null;
+  paused_by: string | null;
 };
 
 const EMPTY: BillingRow = {
@@ -22,6 +25,9 @@ const EMPTY: BillingRow = {
   card_added_at: null,
   top_up_failed: null,
   auto_top_up: 1,
+  paused_at: null,
+  paused_reason: null,
+  paused_by: null,
 };
 
 export function billingRow(sql: SqlStorage): BillingRow {
@@ -37,12 +43,13 @@ function upsert(sql: SqlStorage, fields: Partial<BillingRow>) {
   const next = { ...billingRow(sql), ...fields };
   sql.exec(
     `INSERT INTO billing (id, customer, payment_method, brand, last4, card_added_at, top_up_failed,
-       auto_top_up)
-     VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+       auto_top_up, paused_at, paused_reason, paused_by)
+     VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET customer = excluded.customer,
        payment_method = excluded.payment_method, brand = excluded.brand, last4 = excluded.last4,
        card_added_at = excluded.card_added_at, top_up_failed = excluded.top_up_failed,
-       auto_top_up = excluded.auto_top_up`,
+       auto_top_up = excluded.auto_top_up, paused_at = excluded.paused_at,
+       paused_reason = excluded.paused_reason, paused_by = excluded.paused_by`,
     next.customer,
     next.payment_method,
     next.brand,
@@ -50,6 +57,9 @@ function upsert(sql: SqlStorage, fields: Partial<BillingRow>) {
     next.card_added_at,
     next.top_up_failed,
     next.auto_top_up,
+    next.paused_at,
+    next.paused_reason,
+    next.paused_by,
   );
 }
 
@@ -66,6 +76,18 @@ export function recordCard(
   now: number,
 ) {
   upsert(sql, { ...card, card_added_at: now, top_up_failed: null });
+}
+
+/** An operator's pause on charging the card (null lifts it); the credit stays usable. */
+export function setBillingPaused(
+  sql: SqlStorage,
+  pause: { at: number; reason: string; by: string } | null,
+) {
+  upsert(sql, {
+    paused_at: pause?.at ?? null,
+    paused_reason: pause?.reason ?? null,
+    paused_by: pause?.by ?? null,
+  });
 }
 
 export function forgetCard(sql: SqlStorage) {

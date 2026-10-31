@@ -116,7 +116,7 @@ export async function setAutoTopUp(env: ManagedEnv, req: Request, workspace: str
   await ledgerStub(env, workspace).setAutoTopUp(body.enabled);
 }
 
-const resumeAll = async (env: ManagedEnv, resume: Paused[]) => {
+export const resumeAll = async (env: ManagedEnv, resume: Paused[]) => {
   if (resume.length)
     await env.RUNS.sendBatch(
       resume.map((r) => ({ body: { kind: 'resume', repo: r.repo, run: r.run } as QueueMessage })),

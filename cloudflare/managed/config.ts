@@ -41,6 +41,15 @@ export interface ManagedEnv {
   STRIPE_WEBHOOK_SECRET?: string;
   /** Stripe's API origin (tests point it at a fake). */
   STRIPE_API_BASE?: string;
+  /** Operators' billing (admin routes, the new Stripe events, the nightly reconcile): `on`, or
+   * none of it exists. Set with the platform Worker's. */
+  ADMIN_BILLING?: string;
+  /** Worker secret, optional: a restricted key for refunds and nothing else; unset, the refund
+   * route answers NOT_CONFIGURED. STRIPE_SECRET_KEY never refunds. */
+  STRIPE_REFUND_KEY?: string;
+  /** USD, per refund and per UTC day across all accounts; unset means every refund is refused. */
+  REFUND_MAX_USD?: string;
+  REFUND_DAILY_USD?: string;
   /** The promotional credit a card on file unlocks, in USD (default 100). */
   PROMO_CREDIT_USD?: string;
   /** Worker secret, optional: bearer for granting credit; unset means nobody may. */
@@ -76,9 +85,20 @@ export type QueueMessage =
   /** The platform's repo.deleted: clear the repository's reviews. */
   | { kind: 'deleted'; repo: string }
   /** Charge the workspace's card for the pending top-up `key`. */
-  | { kind: 'topup'; account: string; key: string };
+  | { kind: 'topup'; account: string; key: string }
+  /** Take an open refund to Stripe, or settle it from what Stripe says. */
+  | { kind: 'refund'; account: string; id: string }
+  /** The nightly reconcile: find the accounts Stripe saw activity for, then each one. */
+  | { kind: 'reconcile-all' }
+  | { kind: 'reconcile'; account: string };
 
 export class ConfigError extends Error {}
+
+/** A configured USD limit in micro-USD; null (refuse) when unset or not a positive amount. */
+export function limitMicrousd(value: string | undefined): number | null {
+  const micro = Math.round(Number(value) * 1_000_000);
+  return value && Number.isSafeInteger(micro) && micro > 0 ? micro : null;
+}
 
 /** The gateway slug for a provider, from AI_GATEWAY_PROVIDERS. */
 export function gatewaySlug(env: ManagedEnv, provider: ModelProvider): string {
