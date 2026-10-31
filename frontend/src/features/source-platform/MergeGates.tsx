@@ -3,6 +3,7 @@
 // (`GET /changes/:n/gates`). The server decides; enforced requirements come first, and the
 // ones landing does not wait for are marked.
 import type { ChangeGates, GateRequirement } from '../../../../shared/contracts/change-gates';
+import { WillLandNote } from './LandWhenCleared';
 import { Failure, Loading } from './SourceStatus';
 import type { Loaded } from './useSource';
 
@@ -10,20 +11,20 @@ const STATE_LABEL = { ready: 'Ready', waiting: 'Waiting', blocked: 'Blocked' } a
 
 /** The panel's heading: ready, or what is in the way (enforced requirements only). */
 export function gatesHeading(gates: ChangeGates) {
-  if (gates.ready) return 'Ready to land';
+  if (gates.ready) return 'Cleared to land';
   const open = gates.requirements.filter((r) => r.enforced && r.state !== 'ready');
   const count = (state: GateRequirement['state']) => open.filter((r) => r.state === state).length;
   const parts = [
     count('blocked') && `${count('blocked')} blocked`,
     count('waiting') && `${count('waiting')} waiting`,
   ].filter(Boolean);
-  return parts.length ? `Not ready to land: ${parts.join(', ')}` : 'Not ready to land';
+  return parts.length ? `Not cleared to land: ${parts.join(', ')}` : 'Not cleared to land';
 }
 
 export function MergeGates({ gates }: { gates: Loaded<ChangeGates> }) {
   if (gates.error) return <Failure error={gates.error} onRetry={gates.reload} />;
   const data = gates.data;
-  if (!data) return <Loading what="gates" />;
+  if (!data) return <Loading what="clearance" />;
   // Stable: enforced requirements first, each group in the server's order.
   const shown = [
     ...data.requirements.filter((r) => r.enforced),
@@ -31,8 +32,9 @@ export function MergeGates({ gates }: { gates: Loaded<ChangeGates> }) {
   ];
   return (
     <section className="source-gates source-merge-gates" aria-labelledby="gates-heading">
-      <h3 id="gates-heading">Gates</h3>
+      <h3 id="gates-heading">Clearance</h3>
       <p className="source-merge-gates-summary">{gatesHeading(data)}</p>
+      {data.land_when_cleared && <WillLandNote clearance={data.land_when_cleared} />}
       <ul>
         {shown.map((r) => (
           <li key={`${r.kind}:${r.name}`} data-state={r.state}>

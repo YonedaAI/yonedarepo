@@ -32,9 +32,12 @@ pub fn enqueue<S: SqlStore>(
     if let Some(row) = existing.first() {
         return Ok(json!({ "ticket": row["ticket"], "queued": true }));
     }
+    // A cleared Landing takes the merge path, whose claim and batch check it again; changeset
+    // landing has no settings to check it with, and its own answer would come too late.
+    let slow = i64::from(principal == super::land_when_cleared::ACTOR);
     db.query(
-        "INSERT INTO land_queue(refname,commit_id,principal,status,requested_at) VALUES(?,?,?,'pending',?)",
-        &[json!(refname), json!(commit.id.hex()), json!(principal), json!(number(c, "now")?)],
+        "INSERT INTO land_queue(refname,commit_id,principal,status,requested_at,slow) VALUES(?,?,?,'pending',?,?)",
+        &[json!(refname), json!(commit.id.hex()), json!(principal), json!(number(c, "now")?), json!(slow)],
     )?;
     let ticket = db.query("SELECT last_insert_rowid() AS t", &[])?[0]["t"].clone();
     Ok(json!({ "ticket": ticket, "queued": true }))

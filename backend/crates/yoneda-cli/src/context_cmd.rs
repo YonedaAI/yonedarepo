@@ -4,7 +4,8 @@
 //! repository's memories ranked for the paths this clone is changing, the newest session
 //! records, open changes and the contracts on those paths; the local status line says what
 //! is not pushed yet. Open findings on this branch's change (`go_around`) come first: they
-//! are what this session is back for. The text is capped (6 KiB by default): sections fill in order and
+//! are what this session is back for. Then traffic: the open Landings on those paths and on
+//! what the branch changed, so a collision is seen before it lands. The text is capped (6 KiB by default): sections fill in order and
 //! whatever does not fit is counted, not cut mid-line (`context_render`). The hooks record
 //! which items the packet carried (`Rendered::items`), so later injections do not repeat them.
 use crate::command::Target;

@@ -58,7 +58,7 @@ pub struct RiskReading {
     pub reasons: Vec<RiskReason>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum RiskLevel {
     Low,

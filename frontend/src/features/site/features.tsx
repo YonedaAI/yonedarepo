@@ -97,16 +97,16 @@ export const FEATURES: Feature[] = [
   },
   {
     id: 'changes',
-    title: 'Changes, reviews and checks',
+    title: 'Landings, reviews and checks',
     summary: 'Propose a branch, review it line by line, land it when the gates pass.',
     points: [
-      'Change requests with line comments, from the web app, the CLI, the API or MCP.',
+      'Landings with line comments, from the web app, the CLI, the API or MCP.',
       'Approvals review the head commit, and an author can never approve their own.',
       'Checks run in an isolated container on the exact commit; model checks grade a diff against a rubric.',
       'Gates apply to protected branches (`main`, `release`, `release/*`).',
     ],
     mock: (
-      <figure className="site-mock site-panel" aria-label="A change ready to land">
+      <figure className="site-mock site-panel" aria-label="A Landing cleared to land">
         <p className="mock-title">
           <GitPullRequest size={16} aria-hidden="true" /> #12 Retry on 503 <span>retry → main</span>
         </p>
@@ -121,7 +121,7 @@ export const FEATURES: Feature[] = [
             <Check size={15} aria-hidden="true" /> model check <code>security</code> passed
           </li>
         </ul>
-        <p className="mock-action">Ready to land</p>
+        <p className="mock-action">Cleared to land</p>
       </figure>
     ),
   },
@@ -158,7 +158,7 @@ export const FEATURES: Feature[] = [
     title: 'Repository context for agents',
     summary: '`yoneda context` tells a new session what the last ones did.',
     points: [
-      'Recent sessions, open change requests, landing rules and symbol contracts, in one bounded text.',
+      'Recent sessions, open Landings, landing rules and symbol contracts, in one bounded text.',
       'Agent hooks put it at the start of every session automatically.',
       'Fits a byte budget (`--max-bytes`) and says what it left out.',
     ],
@@ -240,7 +240,7 @@ export const FEATURES: Feature[] = [
     title: 'The CLI and MCP',
     summary: 'Agents are ordinary clients, with the same tokens and rules as people.',
     points: [
-      '`yoneda` signs in by device login and drives repositories, changes, releases and organizations.',
+      '`yoneda` signs in by device login and drives repositories, Landings, releases and organizations.',
       'An MCP server per account and per repository, with every platform operation as a tool.',
       '`yoneda setup` installs a skill or plugin for popular coding agents.',
       'Tokens are scoped by operation, repository and directory.',

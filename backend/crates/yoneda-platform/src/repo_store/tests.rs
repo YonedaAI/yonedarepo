@@ -58,6 +58,9 @@ impl Harness {
             None if principal == "platform:projection" => c["_system"] = json!("projection"),
             None if principal == "platform:import" => c["_system"] = json!("import"),
             None if principal == "platform:merge" => c["_system"] = json!("merge"),
+            None if principal == "platform:land-when-cleared" => {
+                c["_system"] = json!("land-when-cleared")
+            }
             None if principal == "platform:derive" => c["_system"] = json!("derive"),
             None if principal == "platform:commits" => c["_system"] = json!("commits"),
             None if principal == "platform:hooks" => c["_system"] = json!("hooks"),
@@ -1643,6 +1646,7 @@ mod account_access;
 mod activity;
 mod agent_reads;
 mod auto_approval;
+mod auto_landing_pushes;
 mod auto_landings;
 mod batches;
 mod bound_parameters;
@@ -1666,6 +1670,7 @@ mod checkpoints;
 mod compaction;
 mod compaction_writes;
 mod contract_paths;
+mod ctc_radar;
 mod differential;
 mod erase;
 mod flight_plans;
@@ -1676,6 +1681,7 @@ mod history_fill;
 mod hooks;
 mod land_cas;
 mod land_shapes;
+mod land_when_cleared;
 mod landed_tickets;
 mod legal_hold;
 mod lfs;
@@ -1697,11 +1703,13 @@ mod releases;
 mod search_records;
 mod secrets;
 mod self_review;
+mod separation;
 mod sessions;
 mod shards;
 mod staging;
 mod symlink_refs;
 mod tags;
 mod tool_schemas;
+mod traffic;
 mod undo;
 mod visibility;

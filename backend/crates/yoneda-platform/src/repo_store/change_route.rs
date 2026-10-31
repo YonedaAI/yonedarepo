@@ -100,7 +100,7 @@ pub struct RouteDelivery {
 
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct RouteDeliveredItem {
-    /// `memory`, `contract`, `session` or `change`.
+    /// `memory`, `contract`, `session`, `change` or `traffic`.
     #[serde(rename = "type")]
     pub kind: String,
     pub id: i64,

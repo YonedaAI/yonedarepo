@@ -75,6 +75,36 @@ describe('agents on automatic Landings', () => {
     expect(h.created).toHaveLength(1);
   });
 
+  it('with the switch on, an agent that runs when ready runs on the push that opened the row, once', async () => {
+    const h = await connected();
+    h.platform.autoAgents = true;
+    const ready = { when: 'ready', changes: 'ready_for_review', paths: [], branches: [] };
+    expect((await put(h, { settings: { trigger: ready } })).status).toBe(200);
+    await deliver(h, pushed(h, HEAD_A, { at: 4_000 }));
+    expect(h.created).toHaveLength(0);
+    await deliver(h, pushed(h, HEAD_A, { at: 5_000 }));
+    expect(h.created).toHaveLength(1);
+    // A later push to the same Landing isn't its opening.
+    h.platform.change({ origin: 'auto', head: HEAD_B, created_at: 5_000, files: FIXTURES['code-review'].trigger.files });
+    await deliver(h, pushed(h, HEAD_B, { at: 6_000 }));
+    expect(h.created).toHaveLength(1);
+  });
+
+  it('with the switch on, an agent that runs on every push runs on an auto row', async () => {
+    const h = await connected();
+    h.platform.autoAgents = true;
+    await deliver(h, pushed(h));
+    expect(h.created).toHaveLength(1);
+  });
+
+  it('a change.opened from adoption reviews it as a create would', async () => {
+    const h = await connected();
+    h.platform.autoAgents = false;
+    h.platform.change({ origin: 'explicit', files: FIXTURES['code-review'].trigger.files });
+    await deliver(h, pushed(h, HEAD_A, { event: 'change', change: 1, action: 'opened' }));
+    expect(h.created).toHaveLength(1);
+  });
+
   it('asks the platform for one branch, so 200 other open rows cannot hide it', async () => {
     const h = await connected();
     h.platform.autoAgents = false;

@@ -5,6 +5,7 @@ use crate::accounts::SCOPES;
 use crate::platform_instruments::ChangeInstruments;
 use crate::repo_store::{
     change_gates::ChangeGates, change_route::ChangeRoute, policy::Policy, status::RepoAnswer,
+    traffic::radar::CtcRadar,
 };
 use serde_json::{Value, json};
 use yoneda_core::account::{
@@ -20,6 +21,7 @@ pub fn schemas() -> Vec<(&'static str, Value)> {
         ("change-gates", response::<ChangeGates>()),
         ("change-route", response::<ChangeRoute>()),
         ("change-instruments", response::<ChangeInstruments>()),
+        ("ctc-radar", response::<CtcRadar>()),
         ("reserved-handles", reserved_handles()),
         ("pat-scopes", pat_scopes()),
     ]

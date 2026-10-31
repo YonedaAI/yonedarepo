@@ -8,7 +8,13 @@ import { ChangeGates } from './ChangeGates';
 import { ChangeRoute } from './ChangeRoute';
 import { ChangeSessions } from './ChangeSessions';
 import { CommentItem, Composer, LineThread, postComment } from './ChangeThread';
-import { type ChangeDetail, conversation, diffAnchors, groupComments } from './changeModel';
+import {
+  type ChangeDetail,
+  conversation,
+  diffAnchors,
+  groupComments,
+  landingState,
+} from './changeModel';
 import { FlightPlanLine } from './FlightPlanLine';
 import { Instruments, instrumentsKey } from './Instruments';
 import { MergeGates } from './MergeGates';
@@ -47,7 +53,7 @@ export function ChangeView({
     [c],
   );
   if (detail.error) return <Failure error={detail.error} onRetry={detail.reload} />;
-  if (!c || !grouped) return <Loading what={`change #${number}`} />;
+  if (!c || !grouped) return <Loading what={`Landing #${number}`} />;
   const refresh = () => {
     detail.reload();
     gates.reload();
@@ -60,7 +66,7 @@ export function ChangeView({
     <article className="source-change" aria-labelledby="change-title">
       {onBack && (
         <button type="button" className="quiet source-back" onClick={onBack}>
-          ← All changes
+          ← All Landings
         </button>
       )}
       <header>
@@ -68,9 +74,9 @@ export function ChangeView({
           {c.title} <span className="source-meta">#{c.number}</span>
         </h2>
         <p className="source-meta">
-          <ChangeStatusChip status={c.status} /> <Person principal={c.author} />{' '}
-          {c.status === 'open' ? 'proposes' : 'proposed'} landing <code>{c.branch}</code> on{' '}
-          <code>{c.base}</code> · opened {when(c.created_at)}
+          <ChangeStatusChip status={c.status} state={landingState(c, gates.data)} />{' '}
+          <Person principal={c.author} /> {c.status === 'open' ? 'proposes' : 'proposed'} landing{' '}
+          <code>{c.branch}</code> on <code>{c.base}</code> · opened {when(c.created_at)}
           {c.head && (
             <>
               {' · head '}
@@ -159,7 +165,7 @@ export function ChangeView({
             {grouped.outdated.length > 0 && `, ${grouped.outdated.length} outdated (below)`}.
           </p>
         )}
-        <Composer label="Comment on this change" submit={submit} onDone={refresh} />
+        <Composer label="Comment on this Landing" submit={submit} onDone={refresh} />
       </section>
       {grouped.outdated.length > 0 && (
         <section aria-labelledby="outdated-heading">
@@ -189,7 +195,7 @@ export function ChangeView({
             onPosted={refresh}
           />
         ) : (
-          <p className="source-empty">No diff: the change has no head commit.</p>
+          <p className="source-empty">No diff: the Landing has no head commit.</p>
         )}
       </section>
     </article>

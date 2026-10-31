@@ -50,7 +50,11 @@ fn upgrading_from_0043_keeps_every_row_explicit_and_every_switch_off() {
     let settings = &db.query("SELECT * FROM repo_settings", &[]).unwrap()[0];
     assert_eq!(settings["auto_landings"], 0);
     assert_eq!(settings["auto_landing_agents"], 0);
+    assert_eq!(settings["land_when_cleared"], 0);
+    assert_eq!(settings["findings_block"], 0);
     assert_eq!(settings["owner"], "user:owner");
+    let change = &db.query("SELECT * FROM changes", &[]).unwrap()[0];
+    assert_eq!(change["clearance"], Value::Null);
 }
 
 #[test]

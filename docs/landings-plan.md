@@ -140,7 +140,7 @@ Dropping undelivered runs means the test measures agents that got the memory. Ho
 3. **Slop:** the existing `slop-review` value, last 5 heads.
 4. **Risk:** worked out by the platform, in Rust, with no model call and no cost: review classes, files and lines touched, sensitive paths, open findings. The same input always gives the same score, and the page shows why. Calibrate against real landings before showing a percentage.
 
-Built, behind `LANDING_INSTRUMENTS` (off): `GET /changes/:n/instruments`, `repo_change_instruments`, `platform_risk.rs`, `Instruments.tsx`. No schema migration, no policy field. Landing never reads Risk.
+Built, behind `LANDING_INSTRUMENTS` (off): `GET /changes/:n/instruments`, `repo_change_instruments`, `platform_risk.rs`, `Instruments.tsx`. No schema migration, no policy field. A person's landing never reads Risk; only Land when cleared does, below.
 
 | Risk input | Points |
 |---|---|
@@ -161,6 +161,8 @@ Ships **before** stage 6.
 2. `git_change_create` on a branch with an unclaimed auto row adopts it: title, body, base, author, and answers as a create. Explicit rows still answer `ALREADY_EXISTS`.
 3. Next repo schema migration, in two waves.
 
+**Built:** migration `0044`, in `repo_store/change_adopt.rs`. `migration.rs` holds the ceiling: `MIGRATIONS` may run past `APPLY_THROUGH`, and a known migration is accepted and left unapplied. Wave 1 also carries adoption and the managed filter on `origin`, both reading it from `SELECT *`, so a rollback from wave 2 keeps them.
+
 ## 6. Landings for every push
 
 1. **Two switches per repo, both off by default:** create Landings automatically, and run agents on automatic Landings. Turning on the first must cost nothing.
@@ -172,7 +174,73 @@ Ships **before** stage 6.
 7. **Rename in the UI:** sidebar, rail, change page, docs and marketing. Add `/landings` as an alias; `/changes` keeps working. Pinned tests are listed in the kit and `changes.test.ts`.
 8. "Open change" stays for forks.
 
-**Owner's default:** a person-closed Landing stays closed until reopened, and a pushed-again landed branch gets a new row.
+**Owner's default:** a person-closed Landing stays closed until reopened, and a pushed-again landed branch gets a new row. A deleted branch's closed row doesn't hold back a new branch of that name.
+
+**Built, in `repo_store/auto_landing.rs`:**
+
+| Part | Choice |
+|---|---|
+| Switches | `repo_settings.auto_landings` and `auto_landing_agents`; `PUT /auto-landings`; `landings` in `GET /repos/:id`; Settings → Landing rules. Not in `policy`, so no digest moves |
+| Agents | `reviewable` in `cloudflare/managed/dispatch.ts`; a missing `landings` means off |
+| Webhooks | `change.opened` for an auto row reaches only hooks listing `change.auto`, which no default includes. Adoption tells every `change` hook |
+| Open list | Managed asks for the event's branch, and for `origin=explicit` with agents off |
+| Direct landings | `repo_changes {direct}`, from main's first-parent chain, newest 1,000 entries; imports left out |
+| On-base check | Head, chain and landing rows, then a walk of at most 256 generations. Past that an old branch may get a row with an empty diff |
+
+## 6a. CTC: land when cleared
+
+`git_land` needs a caller, so with this off a Landing is a better PR. With it on, CTC (Code Traffic Control) lands an open Landing when its gates go green. It evaluates rules and moves a ref; it starts no agent. Traffic, separation, sequencing and the radar are in 6b.
+
+**Built:** `platform_ctc.rs`, `repo_store/land_when_cleared.rs`, `cloudflare/worker/repo-land-cleared.ts`, `repo-land-check.ts`. Behind `LAND_WHEN_CLEARED` (off everywhere) and a per-repo switch (off).
+
+**One decision.** `platform_ctc::clearance(&LandingState) -> Cleared | Hold { reasons } | GoAround { reasons }` is pure: it reads nothing and calls nothing. The page, the job, the land call and a ticket's claim and batch all ask it, so "what is this waiting for" and "may this land" can't disagree. No model is asked anything: an agent's verdict reaches it only as a check result or a comment already recorded.
+
+| Part | Choice |
+|---|---|
+| Switches | `repo_settings.land_when_cleared`, `findings_block`, in `0044`; `PUT /auto-landings`. Not in `policy` |
+| Trigger | An op that can clear a Landing names it in `land_checks` (`triggers.rs`): check passed, approval, comment resolved, new head, review class, Landing opened or reopened. The adapter strips the field and queues `platform_land_check`. A lost message costs that trigger, not the next |
+| Job kind known first | `LAND_WHEN_CLEARED` stays off through the deploy that ships the handler, and goes on in a later one. A rollback past the handler drops messages, which waits for the next trigger |
+| Exact head | The job asks `repo_land_clearance`; with only Risk missing it reads the diff and asks again with the score; then `repo_land` with `expected_head`. That call decides again in its own transaction. A landing that needs a merge queues as `slow`, and claim and batch decide again, so a newer push or a rejection stops a ticket too |
+| Identity | `_system: land-when-cleared`, actor `platform:land-when-cleared`. The role lands only a Landing it names |
+| Record | `changes.clearance`, in `0044`: the job's decisions as JSON, newest first, each with its reasons, the head it judged, the state it judged and the version if it landed. `clearances` in `GET /changes/:n`. A recorded state replays to the same decision. Newest 32 per Landing, identical ones skipped; a landing is the last thing recorded. Never a status |
+| Audit | None: the org audit log takes events from account authorities only (`audit_log.rs`). The record and the log's actor stand in |
+
+| Decision | Reasons |
+|---|---|
+| Go-around: the work has to answer | Failed required check or rejection, failed check on the head (required or not: this is how `block_at` reached reads), blocking findings, stale read, a merge that conflicted |
+| Hold: it can come without new work | Check or approval still to come, draft title, unresolved line comment, automation pause, legal hold, `REPO_FULL`, a path-limited token that worked on it not covering the landing, Risk High or not scored |
+
+**Two holds the owner didn't list:**
+
+| Hold | Why |
+|---|---|
+| Fork needs an approval of its head | A reader can fork, so green rules with no approvals would land a stranger's commit |
+| Nothing required | With no approval or check asked for, every push lands, and `write` becomes `land` |
+
+**Findings:** `findings_block` is enforced in `land_gates::gates`, so it refuses every landing on a protected base, explicit ones too. It counts open findings from tokens (`go_around`). Findings withheld from a line aren't counted, since nothing can resolve them; they reach the check's value instead.
+
+**Rollback:** `0044` carries these columns on dev, and wave 1 has to ship that text: the digest is computed from it, so a binary with earlier text fails `MIGRATION_DRIFT` on a store that applied it.
+
+## 6b. CTC: traffic
+
+Rules only: CTC warns, holds and orders. It writes no code, assigns no work and starts no agent. No schema migration.
+
+**Built:** `repo_store/traffic.rs` (footprints), `traffic/warnings.rs`, `traffic/queue.rs`, `traffic/radar.rs`, `traffic/overlaps.rs`, `land_when_cleared/separation.rs`, `backend/crates/yoneda-cli/src/traffic.rs`, `RepoCtc.tsx`.
+
+| Part | Choice |
+|---|---|
+| Footprint | A Landing writes what its own commits changed: first parents from its head down to its base, at most 32. It read what its head declared, the set landing checks. Symbols are `commit_symbols`, so a file the deriver hasn't reached is a whole-file overlap. A merge counts as what it changed against its first parent, so a branch that merged its base in also shows what that brought |
+| Warnings | `traffic` beside the answer of `git_context` and `git_context_relevant`, never a ranked item: an installed CLI renders an item it can't name as an open change. One warning is one Landing on one path; 8 at most, 3 per Landing, `more` counts the rest. Same symbol, same file, then a Landing that read it |
+| Session's own work | `branch` leaves out its Landing, and what it changed against main counts as named. At a start, as asked about too |
+| Once per session | Delivered as `{type: traffic, id, path}`, so the next file of the same Landing still warns. Only a platform that answered traffic gets one |
+| Grants and quarantine | Both context reads already refuse a path-limited token, and the read filters by grant as well. A file with a withheld blob on either side is left out, with its symbols. Declared reads are paths only, so a read stays |
+| Bound | Newest 50 open Landings. 3 statements for all of them, plus 2 for quarantine: `Counted` holds a warning at 5 statements over a repository with nothing open, the same at 1 and 21 Landings, and rows follow the Landings, not 40 commits of history on the file |
+| Separation | `clearance` holds with `SEPARATION` while a Landing ahead wrote what this one read, or read what it writes. With no declared reads a Landing's writes count, as in the batch rule. Holding only orders them: landing's own rules judge whatever lands second. Explicit landings never come here |
+| Ahead | A pending ticket, or a newest decision clearing the current head. **Not** a Landing that is only waiting: it might never clear, and one left open would stop the repository. A clearance older than 10 minutes stops holding, for a job that died and lost its last word too |
+| Asking again | Whatever takes a Landing out of line asks for those held: landed, closed, a new head, a failed attempt, a ticket settled by the changeset path or refused at the claim. A lapsed clearance asks for nothing: its held Landing waits for its next trigger |
+| Sequence | `Queue` reads `land_queue` and the record; nothing new schedules. Tickets, then cleared by oldest decision, then on the radar those waiting, oldest first |
+| Radar | `GET /ctc`, `git_ctc_radar`, the CTC page polling every 15 s while on screen. The job's decision, read and never recorded, with the switch off too. 25 Landings by default, 50 at most, and always those in line. `Counted`: 24 statements a Landing, the same after 5 and 35 later landings |
+| Conflict check | `reads_untouched` proves no stale read from `txlog_paths` in one indexed read before `occ` reads every log entry since the head's base. `refinements` is one statement, not one per entry. A Landing whose reads were touched still reads those entries, on every radar poll |
 
 ## 7. Flight plan and Intent drift
 

@@ -10,6 +10,7 @@ import { repoAccess } from '../source-platform/repoAccess';
 import type { RepoStatus } from '../source-platform/repoStatus';
 import { Loading } from '../source-platform/SourceStatus';
 import type { RepoSettingsSection } from '../source-platform/sourceRoute';
+import { AutoLandingSettings } from './AutoLandingSettings';
 import { ChecksSettings } from './ChecksSettings';
 import { LandingRules } from './LandingRules';
 import { LfsSettings } from './LfsSettings';
@@ -82,6 +83,13 @@ export function RepoSettings({
             <PolicyForm {...policy('landing rules')}>
               {(draft, change) => <LandingRules draft={draft} change={change} />}
             </PolicyForm>
+            {status.landings && (
+              <AutoLandingSettings
+                repo={repo}
+                landings={status.landings}
+                onChanged={onPolicySaved}
+              />
+            )}
           </section>
         )}
         {section === 'checks' && (

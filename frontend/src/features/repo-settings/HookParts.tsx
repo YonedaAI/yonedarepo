@@ -17,6 +17,10 @@ export const HOOK_EVENTS = [
   'repo',
 ] as const;
 
+/** Asked for by name, never selected by default (repo_store/hooks.rs AUTO_LANDINGS): with
+ * `change`, also hears a Landing a push opened, one per branch. */
+export const HOOK_OPT_IN = 'change.auto';
+
 /** What each event delivers (`change` covers change.opened, .commented, .closed, .landed). */
 export const HOOK_EVENT_HELP: Record<(typeof HOOK_EVENTS)[number], string> = {
   land: 'a commit landed on main',
@@ -25,7 +29,7 @@ export const HOOK_EVENT_HELP: Record<(typeof HOOK_EVENTS)[number], string> = {
   branch: 'a working branch moved or was deleted',
   tag: 'a tag was created',
   check: 'a check run finished',
-  change: 'a change request opened, commented, closed or landed',
+  change: 'a Landing opened, commented, closed or landed',
   release: 'a release was published or deleted',
   repo: 'the repository was deleted (sent once)',
 };
@@ -134,7 +138,7 @@ export function DeliveryTable({ deliveries }: { deliveries: Loaded<{ deliveries:
   if (deliveries.error) return <Failure error={deliveries.error} onRetry={deliveries.reload} />;
   const rows = deliveries.data?.deliveries ?? [];
   if (rows.length === 0)
-    return <p className="source-empty">Nothing delivered yet. Land a change to send one.</p>;
+    return <p className="source-empty">Nothing delivered yet. Land a commit to send one.</p>;
   return (
     <div className="source-table-wrap">
       <table className="source-table">

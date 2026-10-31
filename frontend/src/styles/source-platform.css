@@ -112,6 +112,17 @@
   padding: 4px 0;
   border-top: 1px solid var(--line);
 }
+.source-will-land {
+  margin-block: 8px;
+}
+.source-will-land p {
+  margin-block: 4px;
+}
+.source-will-land ul {
+  list-style: none;
+  margin: 4px 0;
+  padding: 0;
+}
 .source-gate-state {
   display: inline-block;
   min-width: 64px;
@@ -289,6 +300,12 @@ button.danger {
   display: flex;
   gap: 8px;
   align-items: baseline;
+}
+.source-checks label input {
+  flex: none;
+}
+.source-checks label small {
+  display: block;
 }
 .source-copy {
   border: 1px solid var(--line);

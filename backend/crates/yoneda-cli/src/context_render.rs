@@ -1,8 +1,8 @@
-//! The text of `yoneda context`: the header and landing rules, then open findings, memories,
-//! sessions, open changes and contracts while they fit under the byte cap, then a count of
-//! what was left out. Each entry remembers the item it shows, for the hooks' record.
+//! The text of `yoneda context`: the header and landing rules, then open findings, traffic,
+//! memories, sessions, open changes and contracts while they fit under the byte cap, then a
+//! count of what was left out. Each entry remembers the item it shows, for the hooks' record.
 use crate::context_cmd::Local;
-use crate::go_around;
+use crate::{go_around, traffic};
 use serde_json::{Value, json};
 use std::fmt::Write;
 
@@ -171,8 +171,9 @@ pub fn render(read: &Value, local: &Local, max: usize, now: u64) -> String {
     render_items(read, local, max, now).text
 }
 
-/// The context text, at most `max` bytes: the header and rules, then open findings, memories,
-/// sessions, open changes and contracts while they fit, then a count of what was left out.
+/// The context text, at most `max` bytes: the header and rules, then open findings, traffic,
+/// memories, sessions, open changes and contracts while they fit, then a count of what was left
+/// out.
 pub fn render_items(read: &Value, local: &Local, max: usize, now: u64) -> Rendered {
     let mut out = String::from("# YonedaRepo context for this clone\n");
     if let Some(brief) = &local.brief {
@@ -195,6 +196,7 @@ pub fn render_items(read: &Value, local: &Local, max: usize, now: u64) -> Render
     let around = go_around::title(&read["go_around"]);
     let sections = [
         (around.as_str(), findings(read)),
+        (traffic::TITLE, traffic::entries(&read["traffic"])),
         (
             "Memories (decisions, constraints, gotchas, how-tos) on the files you are changing, then the newest",
             memories(read),
@@ -357,6 +359,46 @@ mod tests {
         let change = json!({"type": "change", "id": 3});
         assert_eq!(done.items.iter().filter(|i| **i == change).count(), 1);
         assert_eq!(done.items[0], change);
+    }
+
+    fn traffic(n: i64) -> Value {
+        json!({ "more": 2, "warnings": (1..=n).map(|landing| json!({
+            "landing": landing, "overlap": "symbol", "path": "src/net.rs", "symbols": ["retry"],
+            "title": "Retry budget", "branch": "fix", "author": "token:a" })).collect::<Vec<_>>() })
+    }
+
+    #[test]
+    fn traffic_follows_findings_and_leads_the_rest() {
+        let local = Local {
+            brief: None,
+            branch: Some("fix".into()),
+        };
+        let mut packet = read(1);
+        packet["go_around"] = around(1);
+        packet["traffic"] = traffic(1);
+        let done = render_items(&packet, &local, DEFAULT_BYTES, NOW);
+        let warning = done
+            .text
+            .find("- Landing 1 (\"Retry budget\", branch fix) is changing `retry` in src/net.rs")
+            .unwrap();
+        assert!(done.text.find("Go-around").unwrap() < warning);
+        assert!(warning < done.text.find("[gotcha]").unwrap());
+        assert!(done.text.contains("- and 2 more on these files\n"));
+        let told = json!({"type": "traffic", "id": 1, "path": "src/net.rs"});
+        assert_eq!(done.items.iter().filter(|i| **i == told).count(), 1);
+    }
+
+    #[test]
+    fn traffic_stays_inside_the_cap() {
+        let mut packet = read(20);
+        packet["traffic"] = traffic(8);
+        for max in [800, 1500, DEFAULT_BYTES] {
+            let text = render(&packet, &Local::default(), max, NOW);
+            assert!(text.len() <= max, "{} > {max}", text.len());
+        }
+        // The answer of a platform without it renders as before.
+        let plain = render(&read(1), &Local::default(), DEFAULT_BYTES, NOW);
+        assert!(!plain.contains("Traffic"));
     }
 
     #[test]

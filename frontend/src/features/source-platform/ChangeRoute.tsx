@@ -11,6 +11,7 @@ import { usePeople } from './people';
 import {
   changeRoutePath,
   deliveredItems,
+  deliveredKey,
   deliveredLine,
   type RouteItem,
   routeCut,
@@ -65,7 +66,7 @@ function SessionStep({
           <summary className="source-meta">{deliveredLine(delivered)}</summary>
           <ul className="memory-anchors">
             {deliveredItems(delivered).map((i) => (
-              <li key={`${i.type}:${i.id}`}>
+              <li key={deliveredKey(i)}>
                 <DeliveredItem repo={repo} item={i} navigate={navigate} />
               </li>
             ))}

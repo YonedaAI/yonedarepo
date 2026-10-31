@@ -156,13 +156,24 @@ pub fn gates<S: SqlStore>(
             Ok(class_of(db, older)?.is_some_and(|class| clears(&class, settings)))
         })?;
     let class = class.map(|c| c["overall"].clone());
+    // Off, the answer holds no such field and this costs no read.
+    let findings = settings
+        .auto_landings
+        .findings_block
+        .then(|| super::go_around::agent_findings(db, id, refname))
+        .transpose()?;
     let ready = !rejected
         && (auto_approved || approvals >= settings.policy.approvals as usize)
         && missing.is_empty()
-        && failing.is_empty();
-    Ok(json!({
+        && failing.is_empty()
+        && findings.unwrap_or(0) == 0;
+    let mut gate = json!({
         "ready": ready, "approvals": approvals, "approvals_required": settings.policy.approvals,
         "review_class": class, "auto_approved": auto_approved,
         "rejected": rejected, "missing_checks": missing, "failing_checks": failing,
-    }))
+    });
+    if let Some(findings) = findings {
+        gate["open_findings"] = json!(findings);
+    }
+    Ok(gate)
 }

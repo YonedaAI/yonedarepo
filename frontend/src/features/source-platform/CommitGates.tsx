@@ -1,4 +1,4 @@
-// Landing gates, review buttons and land conflicts, shared by commit and change pages.
+// Clearance, review buttons and land conflicts, shared by commit and change pages.
 import { useState } from 'react';
 import type { BreakGlassRecord } from './BreakGlass';
 import type { Repair } from './CommitRepairs';
@@ -59,7 +59,7 @@ export function GateSummary({
   ].filter((line): line is string => Boolean(line));
   return (
     <>
-      <h3>{gates.ready ? 'Ready to land' : 'Not ready to land'}</h3>
+      <h3>{gates.ready ? 'Cleared to land' : 'Not cleared to land'}</h3>
       {lines.length > 0 && (
         <ul>
           {lines.map((line) => (

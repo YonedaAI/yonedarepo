@@ -134,7 +134,7 @@ The CLI items need `cargo build -p yoneda-cli --release` (`--cli-bin <dir>` name
 | Item | What must hold |
 |---|---|
 | `0` | `/health` revisions of the front and platform Workers (recorded with the evidence) |
-| `browser` | Headless system Chrome signs the kit account in through the login form, creates a repository with "New repository", opens Code, History (creates a branch under "Branches and tags" and deletes it), Changes (the empty list), Settings (Landing rules, Connect) and account Settings; then the second account commits on a branch, the kit account opens a change for it by API, approves and lands it on the Change page, and the page and the API both read it back `landed`. Needs Google Chrome; screenshots in `.local/staging/browser-<ts>/` |
+| `browser` | Headless system Chrome signs the kit account in through the login form, creates a repository with "New repository", opens Code, History (creates a branch under "Branches and tags" and deletes it), Landings (the empty list), Settings (Landing rules, Connect) and account Settings; then the second account commits on a branch, the kit account opens a change for it by API, approves and lands it on the Landing page, and the page and the API both read it back `landed`. Needs Google Chrome; screenshots in `.local/staging/browser-<ts>/` |
 | `6` | `git clone` of protected `main` matches the API tree byte for byte |
 | `7` | A check run in a container passes, and no container is left afterwards |
 | `8`, `9` | 100- and 1000-writer bursts through the bench Worker: every land succeeds and reads back |
@@ -207,6 +207,14 @@ A repository's Durable Object refuses writes at about 10.7 GB of `databaseSize` 
 - **At the limit itself.** A write past it breaks the Durable Object's instance: the failure is thrown out of the call and the next request gets a new instance. Clients get 507 `REPO_FULL` (Git: in the push report, or as the HTTP status), guard or no guard, and in that moment so does anything else in flight on that instance.
 
 Rollout: D1 migration 0010 before the Worker, as the deploy does. Deleting data lowers the size at once, but delete in small batches: one 950 MB delete reset an object for minutes.
+
+## Land when cleared
+
+`LAND_WHEN_CLEARED=on` on the platform Worker (`infra/envs/<env>.json`; unset or `off`: no job is queued, and a repository can't turn the switch on) has what can clear a Landing queue a `platform_land_check` job for CTC (docs/landings-plan.md).
+
+- **Rollout.** A queue job of a kind a Worker doesn't know is acked and dropped (`platformJob`), so deploy this code with the variable `off`, let the rollout finish, then deploy again with it `on`.
+- **Rolling back.** Set it `off` first. A job that reaches a binary without the handler is dropped, and its Landing waits for its next trigger: nothing is lost, and nothing lands late by itself.
+- **A Landing that didn't land.** Its page gives the reason, and `changes.clearance` keeps each decision with the head it judged. The next check, review, resolved comment or push tries again.
 
 ## Creating a repository's store
 

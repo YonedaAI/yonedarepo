@@ -102,7 +102,7 @@ export function RepoContext({ repo, navigate }: { repo: string; navigate: Naviga
         )}
       </section>
       <section aria-labelledby="context-changes">
-        <h2 id="context-changes">Open changes</h2>
+        <h2 id="context-changes">Open Landings</h2>
         {context.changes.length ? (
           <ul className="context-list">
             {context.changes.map((c) => (

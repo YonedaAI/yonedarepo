@@ -12,7 +12,11 @@
 //! the newest current memories when `fill` asks for them (a session start). With a
 //! `session_id`, items already delivered to that session by this caller are left out and
 //! the bytes delivered so far are reported, so a client can keep its per-session cap.
+//! `traffic` answers beside the items: the open Landings on the files and symbols named
+//! (`traffic::warnings`), as of now, so a read at an older version has none.
 use super::super::auth::Actor;
+use super::super::rows;
+use super::super::traffic::{self, Ask};
 use super::anchors::anchor_path;
 use super::candidates::{self, Candidate};
 use super::records::{judged_ref, version_at};
@@ -49,6 +53,8 @@ pub struct Request {
     pub at: u64,
     pub refname: String,
     pub session_id: Option<String>,
+    /// The session's branch, for `traffic`.
+    pub branch: Option<String>,
 }
 
 /// Lowercase words of at least 3 and at most 32 letters or digits, stopwords dropped.
@@ -71,10 +77,27 @@ fn list(c: &Value, key: &str, max: usize) -> Result<Vec<String>> {
     }
 }
 
+/// `path#symbol_path`, split.
+pub(in crate::repo_store) fn symbol_of(symbol: &str) -> Result<(String, String)> {
+    let (path, name) = symbol
+        .split_once('#')
+        .filter(|(_, n)| !n.is_empty() && n.len() <= 512)
+        .ok_or_else(|| bad("symbols must be path#symbol_path"))?;
+    yoneda_core::validate_path(path)?;
+    Ok((path.to_owned(), name.to_owned()))
+}
+
+/// A list of `path#symbol_path` of at most `MAX_SYMBOLS`.
+pub(in crate::repo_store) fn symbols_of(c: &Value) -> Result<BTreeSet<(String, String)>> {
+    list(c, "symbols", MAX_SYMBOLS)?
+        .iter()
+        .map(|s| symbol_of(s))
+        .collect()
+}
+
 impl Request {
     pub fn parse<S: SqlStore>(db: &S, c: &Value) -> Result<Self> {
-        let (mut files, mut dirs, mut symbols) =
-            (BTreeSet::new(), BTreeSet::new(), BTreeSet::new());
+        let (mut files, mut dirs) = (BTreeSet::new(), BTreeSet::new());
         for path in list(c, "paths", MAX_PATHS)? {
             anchor_path(&path)?;
             if path.ends_with('/') {
@@ -83,15 +106,8 @@ impl Request {
                 files.insert(path);
             }
         }
-        for symbol in list(c, "symbols", MAX_SYMBOLS)? {
-            let (path, name) = symbol
-                .split_once('#')
-                .filter(|(_, n)| !n.is_empty() && n.len() <= 512)
-                .ok_or_else(|| bad("symbols must be path#symbol_path"))?;
-            yoneda_core::validate_path(path)?;
-            files.insert(path.to_owned());
-            symbols.insert((path.to_owned(), name.to_owned()));
-        }
+        let symbols = symbols_of(c)?;
+        files.extend(symbols.iter().map(|(path, _)| path.clone()));
         let query = match &c["query"] {
             Value::Null => "",
             Value::String(q) if q.len() <= MAX_QUERY => q,
@@ -127,6 +143,10 @@ impl Request {
             Value::String(s) if !s.is_empty() && s.len() <= 128 => Some(s.clone()),
             _ => return Err(bad("session_id must be 1-128 characters")),
         };
+        let branch = match c["branch"].as_str() {
+            None => None,
+            Some(name) => Some(rows::short_branch(name)?),
+        };
         Ok(Self {
             files,
             dirs,
@@ -138,6 +158,7 @@ impl Request {
             at: version_at(db, c)?,
             refname: judged_ref(c)?,
             session_id,
+            branch,
         })
     }
 
@@ -196,8 +217,22 @@ pub fn rank<S: SqlStore>(db: &S, req: &Request, skip: &BTreeSet<String>) -> Resu
     Ok(items.into_iter().map(Candidate::json).collect())
 }
 
+/// What `req` asks of traffic: nothing, for a read of an older version.
+fn ask_of(c: &Value, req: &Request) -> Ask {
+    if !c["at"].is_null() {
+        return Ask::default();
+    }
+    Ask {
+        files: req.files.clone(),
+        dirs: req.dirs.clone(),
+        symbols: req.symbols.clone(),
+        branch: req.branch.clone(),
+        start: false,
+    }
+}
+
 /// `repo_context_relevant {paths?, symbols?, query?, types?, ref?, at?, fill?, limit?,
-/// session_id?}`.
+/// session_id?, branch?}`.
 pub fn relevant<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     let req = Request::parse(db, c)?;
     let delivered = match &req.session_id {
@@ -211,6 +246,7 @@ pub fn relevant<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> 
     Ok(json!({
         "version": req.at, "ref": req.refname, "terms": req.terms,
         "items": rank(db, &req, &skip)?,
+        "traffic": traffic::warnings(db, &ask_of(c, &req), &actor.grant, &skip)?,
         "delivered": delivered.map(|d| json!({ "bytes": d.bytes, "count": d.count })),
     }))
 }

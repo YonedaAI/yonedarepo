@@ -60,7 +60,7 @@ export function TriggerFields({
           </select>
         </label>
         <label className="agent-field">
-          Which changes
+          Which Landings
           <select value={trigger.changes} onChange={() => {}} aria-describedby="changes-hint">
             <option value="ready_for_review">Ready for review</option>
           </select>
