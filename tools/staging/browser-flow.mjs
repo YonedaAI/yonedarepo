@@ -165,7 +165,7 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
     assert.equal((await account.raw('GET', `/api/v1/repos/${id}`)).status, 404, 'Deleted repository is still served');
     m.repo_deleted = true;
   });
-  await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).waitFor();
+  await page.getByRole('button', { name: `Switch repository (current: ${name})` }).waitFor();
   await atRepo(page, account, id);
   await page.getByRole('region', { name: 'Files' }).getByText('README.md').first().waitFor();
   await shot('source-code');

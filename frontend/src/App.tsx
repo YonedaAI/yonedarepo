@@ -21,9 +21,11 @@ import { GettingStarted } from './features/shell/GettingStarted';
 import { HomePage } from './features/shell/HomePage';
 import type { AccountActivity } from './features/shell/homeModel';
 import { type Created, NewRepositoryDialog } from './features/shell/NewRepositoryDialog';
+import { pickerShortcut, saveRecent } from './features/shell/pickerModel';
 import { RepositoriesPage } from './features/shell/RepositoriesPage';
 import { type PlatformRepo, repoRows } from './features/shell/repoRows';
 import { saveCollapsed, storedCollapsed } from './features/shell/theme';
+import { useFavorites } from './features/shell/useFavorites';
 import { type Navigate, useRoute } from './features/shell/useRoute';
 import { SiteRoot, signedInHint } from './features/site/SiteRoot';
 import { siteView } from './features/site/siteRoute';
@@ -85,6 +87,7 @@ export function App() {
     signInError && route.view !== 'settings' && route.view !== 'site' ? 'account' : null,
   );
   const [creating, setCreating] = useState(false);
+  const [picking, setPicking] = useState(false);
   const [notice, setNotice] = useState(
     returned && 'linked' in returned
       ? `${PROVIDER_LABEL[returned.linked]} is linked: you can sign in with it now.`
@@ -115,13 +118,33 @@ export function App() {
   }, []);
   // Before anything renders a link, so repository links carry their readable address.
   for (const r of platform.data?.repos ?? []) rememberRepoName(r.id, r.owner_handle, r.name);
-  const rows = repoRows(platform.data?.repos ?? []);
+  const self = [session.identity?.username, session.identity?.handle];
+  const rows = repoRows(platform.data?.repos ?? [], self);
+  const favorites = useFavorites(session.authenticated, self);
   const rowsError = platform.error && !/Sign in/.test(platform.error) ? platform.error : '';
   const repo = routeRepo(route);
   const row = repo ? rows.find((r) => r.repo === repo) : undefined;
   const loaded = shown && shown.repo === repo ? shown : undefined;
   // The open repository answered NOT_FOUND or GONE: the shell drops its pages too.
   const gone = Boolean(repo) && repo === missing;
+  // The public site (its own pages, and `/` while signed out) renders in its own frame.
+  const site = siteView(route, session, signedInHint());
+  const opened = session.authenticated ? loaded?.repo : undefined;
+  useEffect(() => {
+    if (opened) saveRecent(opened);
+  }, [opened]);
+  // Cmd/Ctrl+K opens the picker wherever the app is on screen; the public docs keep theirs.
+  const shortcut = session.authenticated && !site;
+  useEffect(() => {
+    if (!shortcut) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (!pickerShortcut(event)) return;
+      event.preventDefault();
+      setPicking(true);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [shortcut]);
   useEffect(() => {
     if (!menuOpen) return;
     const onEscape = (event: KeyboardEvent) => {
@@ -134,6 +157,7 @@ export function App() {
     if (!session.sessionEnded) return;
     setPanel(null);
     setCreating(false);
+    setPicking(false);
   }, [session.sessionEnded]);
   useEffect(() => {
     if (!session.loading && !session.error) signedInHint(session.authenticated);
@@ -181,11 +205,10 @@ export function App() {
     platform.reload();
     orgs.reload();
     activity.reload();
+    favorites.reload();
     if (isAdmin) signups.reload();
     void session.discover();
   };
-  // The public site (its own pages, and `/` while signed out) renders in its own frame.
-  const site = siteView(route, session, signedInHint());
   if (site)
     return (
       <SiteRoot
@@ -197,7 +220,10 @@ export function App() {
       />
     );
   return (
-    <div className={`app${collapsed ? ' sidebar-collapsed' : ''}${menuOpen ? ' menu-open' : ''}`}>
+    // An open picker shows the sidebar it lives in, whether collapsed or the phone menu.
+    <div
+      className={`app${collapsed && !picking ? ' sidebar-collapsed' : ''}${menuOpen || picking ? ' menu-open' : ''}`}
+    >
       <a className="skip-link" href="#workspace">
         Skip to content
       </a>
@@ -218,6 +244,9 @@ export function App() {
         loading={session.loading || platform.loading}
         rows={rows}
         rowsError={rowsError}
+        favorites={favorites}
+        picking={picking}
+        onPicking={setPicking}
         orgs={orgs.data?.orgs ?? []}
         route={route}
         missing={gone}
@@ -412,6 +441,7 @@ export function App() {
                 onDeleted={() => {
                   platform.reload();
                   activity.reload();
+                  favorites.reload();
                   navigate({ view: 'home' });
                   setNotice('Repository deleted.');
                 }}
@@ -419,6 +449,7 @@ export function App() {
                   // A stale sidebar entry (deleted elsewhere) drops out with the refreshed list.
                   setMissing(route.repo);
                   platform.reload();
+                  favorites.reload();
                 }}
                 onNew={() => setCreating(true)}
               />

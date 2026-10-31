@@ -157,7 +157,7 @@ export async function deletedRepoPage(page, { origin, account, shot, cleanup }, 
   cleanup.push(async () => {
     if (!deleted) await remove();
   });
-  const rail = page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true });
+  const rail = page.getByRole('button', { name: `Switch repository (current: ${name})` });
   await rail.waitFor();
   await atRepo(page, account, id);
   const tabs = page.getByRole('navigation', { name: 'Repository' });

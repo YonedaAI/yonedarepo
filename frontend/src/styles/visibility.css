@@ -15,14 +15,6 @@
   vertical-align: middle;
   white-space: nowrap;
 }
-.rail-repo-public {
-  margin-left: auto;
-  color: var(--success);
-  font-size: var(--text-sm);
-}
-.rail-repo-shared + .rail-repo-public {
-  margin-left: 6px;
-}
 /* New repository: two radio cards, Private first (the default). */
 .visibility-choice {
   display: grid;

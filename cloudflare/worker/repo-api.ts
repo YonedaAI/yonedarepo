@@ -11,6 +11,7 @@ import { error, readJson, response } from './http';
 import { accountActivity } from './platform-account-activity';
 import { adminRoute } from './platform-admin';
 import { isOwnAvatar, ownAvatar, publicAvatarName, servePublicAvatar } from './platform-avatars';
+import { favoritesRoute } from './platform-favorites';
 import { orgAccess } from './platform-org-access';
 import { orgsRoute } from './platform-orgs';
 import { sshKeyRoute } from './platform-ssh-keys';
@@ -86,6 +87,8 @@ const STATUS: Record<string, number> = {
   SUPPORT_UNAVAILABLE: 503,
   SUPPORT_SEND_FAILED: 503,
   INTERNAL: 500,
+  // The account keeps as many favorites as it may (platform-favorites.ts).
+  FAVORITES_FULL: 409,
   // An operator suspended the account (platform-admin.ts): its credentials are refused.
   ACCOUNT_SUSPENDED: 403,
   // Withheld by the repository's owner (quarantine): known, deliberately not served.
@@ -162,6 +165,8 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return accountActivity(env, auth);
   if (parts[0] === 'support' && parts.length === 1 && req.method === 'POST')
     return supportRoute(env, auth, () => bodyOf(req, SUPPORT_BODY_LIMIT));
+  if (parts[0] === 'favorites' && parts.length <= 2)
+    return favoritesRoute(env, auth, req.method, parts[1]);
   if (parts[0] === 'admin')
     return adminRoute(env, auth, req.method, parts.slice(1), () => bodyOf(req), url.searchParams);
   if (parts[0] === 'orgs')
