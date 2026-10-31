@@ -83,6 +83,7 @@ describe('what was not recorded', () => {
     expect(recorded(null)).toBe('not recorded');
     expect(recorded(0)).toBe('$0.00');
     expect(recorded(3)).toBe('$3.00');
+    expect(recorded(1240)).toBe('$1,240.00');
   });
 
   it('marks container cost, unknown calls, total cost and Stripe fees, and gives model margin', () => {

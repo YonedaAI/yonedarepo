@@ -9,7 +9,8 @@ export const ledgerPath = (account: string, before?: number) =>
 export const usagePath = (account: string, before?: number) =>
   withQuery(`${billingPath(account)}/usage`, { before });
 
-export const money = (usd: number) => `${usd < 0 ? '-' : ''}$${Math.abs(usd).toFixed(2)}`;
+export const money = (usd: number) =>
+  `${usd < 0 ? '-' : ''}$${Math.abs(usd).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 const cents = (usd: number) => Math.round(usd * 100);
 /** Credit is kept in micro-USD and refunds are whole cents: what is available rounds down. The

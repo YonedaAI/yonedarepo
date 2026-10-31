@@ -173,6 +173,7 @@ a.chip:hover {
   box-shadow: 0 8px 28px var(--shadow);
 }
 .clone-dropdown .source-copy-head button {
+  min-height: 28px;
   padding: 2px 10px;
   font-size: var(--text-sm);
 }
@@ -186,6 +187,19 @@ a.chip:hover {
 .clone-hint {
   margin: -2px 0 10px;
   font-size: var(--text-sm);
+}
+@media (max-width: 800px) {
+  /* The button isn't at the screen's edge here, so the panel takes the screen's width. */
+  .clone-dropdown {
+    position: fixed;
+    top: auto;
+    right: 16px;
+    left: 16px;
+    width: auto;
+    max-height: calc(100vh - 32px);
+    margin-top: 6px;
+    overflow-y: auto;
+  }
 }
 .clone-hint a {
   color: var(--blue-text);
