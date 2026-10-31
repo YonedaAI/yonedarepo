@@ -317,7 +317,7 @@
   },
   "vars": {
     "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
-    "ADMIN_BILLING": "off",
+    "ADMIN_BILLING": "on",
     "ADMIN_NOTIFY_EMAIL": "",
     "ARTIFACTS_NAMESPACE": "yonedarepo-dev",
     "ASYNC_STORE": "on",

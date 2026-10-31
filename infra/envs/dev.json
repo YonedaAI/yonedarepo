@@ -219,7 +219,7 @@
           "CF_ACCOUNT_ID": "{account_id}",
           "SITE_EVENTS_DATASET": "yonedarepo_dev_site_events",
           "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
-          "ADMIN_BILLING": "off",
+          "ADMIN_BILLING": "on",
           "ASYNC_STORE": "on",
           "LANDING_INSTRUMENTS": "on",
           "ADMIN_NOTIFY_EMAIL": "",
@@ -540,7 +540,7 @@
           "PUBLIC_URL": "https://managed.dev.yonedarepo.com",
           "AI_GATEWAY_URL": "https://gateway.ai.cloudflare.com/v1/{account_id}/{prefix}-managed-agents",
           "AI_GATEWAY_PROVIDERS": "claude=anthropic,codex=openai,zai=custom-zai,mimo=custom-mimo",
-          "ADMIN_BILLING": "off",
+          "ADMIN_BILLING": "on",
           "PROMO_CREDIT_USD": "100",
           "REFUND_MAX_USD": "500",
           "REFUND_DAILY_USD": "1000"
