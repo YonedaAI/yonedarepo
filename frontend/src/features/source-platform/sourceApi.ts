@@ -86,7 +86,9 @@ export async function sourceApi<T = any>(path: string, init: ApiInit = {}): Prom
     }
     const value = await response.json().catch(() => ({}));
     if (response.ok) return value as T;
-    if (response.status >= 500 && attempt < retries) {
+    // 507 is the platform's own refusal (a repository at its limit), not a fault.
+    const fault = response.status >= 500 && response.status !== 507;
+    if (fault && attempt < retries) {
       await wait(RETRY_DELAYS_MS[attempt] ?? 0, init.signal);
       continue;
     }
@@ -94,7 +96,7 @@ export async function sourceApi<T = any>(path: string, init: ApiInit = {}): Prom
     const repo = code === 'GONE' ? REPO_PATH.exec(path)?.[1] : undefined;
     if (repo) for (const listener of goneListeners) listener(repo);
     const raw = String(value.error?.message ?? `Request failed (${response.status})`);
-    if (response.status >= 500) {
+    if (fault) {
       const reference = referenceOf(raw) ?? response.headers.get('cf-ray') ?? undefined;
       throw new SourceApiError(
         code,

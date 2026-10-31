@@ -86,6 +86,10 @@ impl<S: SqlStore> SqlStore for Counted<S> {
         self.add(|c| c.transactions += 1);
         self.inner.transaction(action)
     }
+
+    fn database_size(&self) -> Result<u64> {
+        self.inner.database_size()
+    }
 }
 
 #[cfg(all(test, feature = "native"))]

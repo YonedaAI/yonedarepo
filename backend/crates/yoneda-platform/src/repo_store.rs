@@ -26,6 +26,7 @@ mod authorize;
 mod bisect;
 mod branches;
 mod break_glass;
+pub(crate) mod capacity;
 mod change_comments;
 mod change_delete;
 pub(crate) mod change_gates;
