@@ -101,6 +101,14 @@ it('imports first-parent history from a remote and lands it', async () => {
   expect(created.status).toBe(200);
   expect(started).toMatchObject({ id: `import-${created.body.id}`, params: { repo: created.body.id, branch: undefined, max: 2 } });
   expect((await api(`/repos/${created.body.id}/import`, owner, {}, env)).body.status).toBe('running');
+  // A repository that was never imported has no import, and that is not a server error.
+  const never = await api('/repos', owner, { body: { name: 'never', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', 'a\n')], author } }, env);
+  const noWorkflow = {
+    ...env,
+    PLATFORM_IMPORT: { get: async () => Promise.reject(new Error('(instance.not_found) Instance not found')) },
+  } as unknown as Env;
+  const none = await api(`/repos/${never.body.id}/import`, owner, {}, noWorkflow);
+  expect([none.status, none.body.error?.code]).toEqual([404, 'NOT_FOUND']);
 
   const result = await runImport(env, started.params, step);
   expect(result).toMatchObject({ commit: head, version: 1, commits: 2 });
@@ -184,7 +192,15 @@ function masterRemote(sourceStore: string, head: string) {
         throw Object.assign(new Error(`Branch not found: "${params.source.branch}"`), { code: 'NOT_FOUND' });
       return remote.import(params);
     },
-    get: async (name: string) => ({ ...(await remote.get(name)), info: async () => ({ remote: `https://artifacts.test/${name}`, defaultBranch: 'master' }) }),
+    // As live Artifacts answers: info() says main for an imported master, and main has no log.
+    get: async (name: string) => {
+      const repo = await remote.get(name);
+      return {
+        ...repo,
+        info: async () => ({ remote: `https://artifacts.test/${name}`, defaultBranch: 'main' }),
+        log: async (options: any) => (options?.ref === 'main' ? [] : repo.log(options)),
+      };
+    },
   };
 }
 
