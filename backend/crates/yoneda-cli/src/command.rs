@@ -351,6 +351,17 @@ pub enum Command {
         target: Target,
         command: MemoryCommand,
     },
+    /// `yoneda flight-plan`: the goal this work sets out to reach, filed before it starts.
+    FlightPlan {
+        target: Target,
+        goal: String,
+        scope: Option<String>,
+        /// Default: the clone's current branch.
+        branch: Option<String>,
+        change: Option<u64>,
+        /// Default: from the environment.
+        session_id: Option<String>,
+    },
     Hook(HookEvent),
     /// `yoneda context`: what a coding session starting here should know.
     Context {

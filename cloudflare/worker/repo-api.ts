@@ -234,6 +234,7 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return run('symbol_edit', await bodyOf(req, COMMIT_BODY_LIMIT));
   if (resource === 'codemods' && post) return run('git_codemod', await bodyOf(req));
   if (resource === 'plans' && post) return run('git_plan', await bodyOf(req));
+  if (resource === 'flight-plans' && post) return run('git_flight_plan', await bodyOf(req));
   if (resource === 'bisect' && post) return run('git_bisect', await bodyOf(req));
   if (resource === 'bisect' && sha && get) return run('git_bisect', { id: sha });
   if (resource === 'commits' && sha && sub === 'pin' && post)

@@ -98,6 +98,7 @@ pub fn all() -> Vec<(&'static str, Value)> {
         entry::<MemoryList>(),
         entry::<MemoryShow>(),
         entry::<MemoryRetire>(),
+        entry::<FlightPlan>(),
         entry::<Log>(),
         entry::<Grep>(),
         entry::<Search>(),

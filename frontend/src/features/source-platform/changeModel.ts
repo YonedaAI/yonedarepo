@@ -52,9 +52,23 @@ export type Push = {
 
 type DiffEnd = { commit: string; tree: string };
 
+/** What the work set out to do, filed on purpose by the session or person who did it. */
+export type FlightPlan = {
+  id: number;
+  session_id: string | null;
+  branch: string | null;
+  change_number: number | null;
+  goal: string;
+  scope: string | null;
+  principal: string;
+  at: number;
+};
+
 export type ChangeDetail = Change & {
   head_commit: CommitDetail | null;
   comments: ChangeComment[];
+  /** The newest plan for the branch or change; absent before the platform had plans. */
+  flight_plan?: FlightPlan | null;
   timeline: Push[];
   /** Why the fork branch's latest pushes could not be carried here (the change still shows). */
   source_error?: string;

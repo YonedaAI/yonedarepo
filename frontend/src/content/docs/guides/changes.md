@@ -20,6 +20,16 @@ yoneda change create retry --title "Retry on 503" -m "Adds backoff"
 - A branch has at most one open change; `main` and release branches cannot be proposed.
 - From a fork, `--to-parent` proposes the branch to the parent repository; see [Forks](/docs/guides/forks).
 
+## Flight plans
+
+Before starting, say what the work sets out to do. It is written on purpose, and prompts are never read for it:
+
+```sh
+yoneda flight-plan -m "Retry failed fetches twice" --scope "src/net only"
+```
+
+The plan is for this clone's branch, pushed or not (`--branch` and `--change` name another; over MCP, `git_flight_plan`). The change page shows the goal of the newest plan for its branch, and a change with none says **No flight plan**. Plans are encouraged, never required: nothing refuses a push without one. The [Intent drift agent](/docs/agents/review-agents), when you turn it on, compares the goal with the diff. A goal and a scope each hold up to 2,000 bytes, and a plan holding a credential is refused.
+
 ## Review
 
 ```sh
@@ -66,6 +76,16 @@ The managed [review agents](/docs/agents/review-agents) post their results as ch
 ## Gates
 
 `yoneda change show <n>` (or `GET /api/v1/repos/<id>/changes/<n>/gates`) lists what the head still needs: each required check, approvals, unresolved comments, freshness against the base and a pause, each **ready**, **waiting** or **blocked** with one line of why.
+
+## Go-around
+
+Findings come back to whoever fixes them, and nothing wakes an agent to do it. The open findings on a change are its unresolved comments on lines:
+
+1. A new session on the branch gets them first in its context, with file and line. `yoneda change show <n>` lists them too, and over MCP they are `go_around` in `git_context` and `git_change_show`.
+2. It fixes them and pushes. A push re-runs the review agents, and it drops the head's approvals.
+3. Once a reviewer's token has commented on a newer commit, its older findings stop being listed: it looked again. A person's comment stays until it is resolved.
+
+At most 10 are listed, those on the head first, each cut to one line. The change page keeps every comment.
 
 ## Land
 

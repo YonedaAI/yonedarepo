@@ -245,6 +245,33 @@ describe('change page', () => {
     expect(view()).toContain('Change 7 not found');
   });
 
+  it('shows the goal on the header, or that no plan was filed', () => {
+    const page = (over: object) => {
+      state.value = loaded({ data: detail(over) });
+      state.gates = loaded({ data: changeGates });
+      return html(ChangeView, { repo: 'r1', number: 3 });
+    };
+    // Today's platform leaves the field out, a platform with no plan answers null.
+    for (const none of [{}, { flight_plan: null }]) {
+      expect(page(none)).toContain('No flight plan');
+    }
+    const plan = {
+      id: 4,
+      session_id: 'claude-code:s1',
+      branch: 'fix',
+      change_number: null,
+      goal: 'Retry twice before giving up',
+      scope: 'src/net only',
+      principal: 'token:agent',
+      at: 5,
+    };
+    const planned = page({ flight_plan: plan });
+    expect(planned).toContain('Retry twice before giving up');
+    expect(planned).toContain('src/net only');
+    expect(planned).not.toContain('No flight plan');
+    expect(page({ flight_plan: { ...plan, scope: null } })).not.toContain('Scope');
+  });
+
   it('offers review and land on an open change, land only once the gates pass', () => {
     state.value = loaded({ data: detail() });
     state.gates = loaded({ data: changeGates });

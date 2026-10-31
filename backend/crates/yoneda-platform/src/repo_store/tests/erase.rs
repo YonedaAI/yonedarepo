@@ -3,6 +3,7 @@
 //! at any step, and leaving nothing but the row that answers GONE.
 use super::*;
 use crate::repo_store::erase::{BYTE_BUDGET, ROW_BUDGET, wipe::TABLES};
+use crate::repo_store::flight_plans;
 use crate::repo_store::rows;
 use crate::storage::SqlStore;
 
@@ -118,6 +119,16 @@ fn every_table_is_erased_or_kept_on_purpose() {
 }
 
 #[test]
+fn a_repository_that_never_ran_the_flight_plans_migration_is_erased_too() {
+    let (h, _) = seeded();
+    h.db.query("DROP TABLE IF EXISTS flight_plans", &[])
+        .unwrap();
+    delete(&h);
+    finish(&h);
+    assert_eq!(count(&h, "commits"), 0);
+}
+
+#[test]
 fn only_the_erase_job_erases_and_only_a_tombstone() {
     let (h, _) = seeded();
     for who in [OWNER, AGENT, "platform:projection", SYSTEM] {
@@ -165,6 +176,10 @@ fn erases_every_record_and_keeps_only_the_tombstone() {
     finish(&h);
 
     for table in TABLES {
+        // Known to this binary and not applied yet: no table to count.
+        if table.name == flight_plans::TABLE && !flight_plans::available(&h.db).unwrap() {
+            continue;
+        }
         assert_eq!(count(&h, table.name), 0, "{}", table.name);
     }
     // Deleted rows leave their terms in the index until it is rewritten.

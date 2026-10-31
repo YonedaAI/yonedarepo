@@ -182,6 +182,12 @@ Ships **before** stage 6.
 4. Linking: the client sends the branch name. A push option beside `yoneda.reads` comes later, since installed CLIs won't send it.
 5. **Intent drift agent:** new managed agent comparing goal with diff. Needs change-level verdicts, because every finding must sit on a line today (`managed-instructions.ts:14`), and the body or plan passed to the harness. That means a **container rollout**: warn the owner first.
 
+**Rollout, in this order:**
+
+1. Wave 1: a binary that knows repo schema version 45 without applying it (the mechanism stage 5's `0044` brings). Every read answers as if no plan was filed, and filing answers `NOT_SUPPORTED`.
+2. Wave 2: the binary that applies `0045`. Rollback goes to wave 1, never earlier.
+3. Warn the owner, then roll the harness image with the managed Worker. Intent drift is off until a workspace enables it, and a change with no plan starts no container.
+
 ## 8. Go-around
 
 We don't build orchestration, so this is **pull, not push**: the platform never wakes an agent.

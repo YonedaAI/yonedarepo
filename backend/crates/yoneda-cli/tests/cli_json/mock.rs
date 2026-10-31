@@ -83,6 +83,9 @@ pub fn change() -> Value {
     json!({
         "number": 3, "status": "open", "title": "Retry twice", "branch": "topic",
         "base": "main", "author": "alice", "head": COMMIT, "body": "why",
+        "flight_plan": { "goal": "Retry twice", "scope": "src/ only" },
+        "go_around": { "change": 3, "open": 1, "findings": [{
+            "path": "src/a.rs", "line": 7, "body": "nit", "commit": COMMIT, "on_head": true }] },
         "head_commit": {
             "gates": { "ready": false, "approvals": 0, "approvals_required": 1,
                        "rejected": false, "missing_checks": ["ci"], "failing_checks": [] },
@@ -187,6 +190,8 @@ fn answer(method: &str, path: &str, body: &str) -> (&'static str, Value) {
         ("GET", "/changes") => ok(json!({ "changes": [change()] })),
         ("GET", "/changes/3") => ok(change()),
         ("GET", "/changes/3/route") => ok(change_route()),
+        ("POST", "/flight-plans") if body.contains("\"goal\"") => ok(json!({ "plan": {
+            "id": 4, "branch": "topic", "goal": "Retry twice", "scope": null } })),
         ("POST", "/changes/3/comments") => ok(json!({ "comment": { "id": 1 }, "resolved": 0 })),
         ("GET", "/releases") => ok(json!({ "releases": [release()] })),
         ("GET", "/releases/v1") => ok(release()),

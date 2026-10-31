@@ -54,6 +54,7 @@ op_names! {
         Delete = "repo_delete",
         ErasePlan = "repo_erase_plan",
         EraseStep = "repo_erase_step",
+        FlightPlan = "repo_flight_plan",
         GitAccess = "repo_git_access",
         GitWalk = "repo_git_walk",
         Head = "repo_head",
