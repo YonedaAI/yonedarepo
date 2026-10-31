@@ -318,7 +318,7 @@
     "ADMIN_BILLING": "off",
     "ADMIN_NOTIFY_EMAIL": "",
     "ARTIFACTS_NAMESPACE": "yonedarepo-dev",
-    "ASYNC_STORE": "off",
+    "ASYNC_STORE": "on",
     "AUDIT_LOG": "off",
     "BLOB_WRITE_THROUGH": "off",
     "CF_ACCOUNT_ID": "f011d0ee02b23cad26b4b38151b204ad",
