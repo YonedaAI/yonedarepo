@@ -83,7 +83,8 @@ it('changes nothing while REPO_ERASE is off', async () => {
   const keys = await derived(id);
   expect((await remove(who, id, 'kept', off)).status).toBe(200);
   await drain(id, off);
-  expect((await stored(`derived/v1/${id}/`)).sort()).toEqual([...keys].sort());
+  // Derived caches hold file content, so purge takes them with the switch off too.
+  expect(await stored(`derived/v1/${id}/`)).toEqual([]);
   expect(queued.filter((m) => m.kind === 'platform_erase')).toEqual([]);
   expect(await count(id, 'commits')).toBeGreaterThan(0);
   expect(await count(id, 'commit_paths')).toBe(7000 + 1);
