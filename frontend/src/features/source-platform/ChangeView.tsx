@@ -14,6 +14,7 @@ import {
   diffAnchors,
   groupComments,
 } from './changeModel';
+import { Instruments, instrumentsKey } from './Instruments';
 import { MergeGates } from './MergeGates';
 import { Person } from './Person';
 import { usePeople } from './people';
@@ -144,6 +145,7 @@ export function ChangeView({
         )}
         {c.body && <p className="source-change-body">{c.body}</p>}
       </header>
+      {c.instruments && <Instruments key={instrumentsKey(c)} repo={repo} number={number} />}
       {c.status === 'open' && <MergeGates gates={gates} />}
       <ChangeGates
         repo={repo}

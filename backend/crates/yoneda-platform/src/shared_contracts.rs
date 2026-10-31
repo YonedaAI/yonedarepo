@@ -2,6 +2,7 @@
 //! produce them. `cargo xtask contracts` writes each as `shared/contracts/<name>.ts` (its
 //! types and the schema itself); a test there fails while a committed file is stale.
 use crate::accounts::SCOPES;
+use crate::platform_instruments::ChangeInstruments;
 use crate::repo_store::{change_gates::ChangeGates, policy::Policy, status::RepoAnswer};
 use serde_json::{Value, json};
 use yoneda_core::account::{
@@ -15,6 +16,7 @@ pub fn schemas() -> Vec<(&'static str, Value)> {
         ("repo-status", response::<RepoAnswer>()),
         ("policy", request::<Policy>()),
         ("change-gates", response::<ChangeGates>()),
+        ("change-instruments", response::<ChangeInstruments>()),
         ("reserved-handles", reserved_handles()),
         ("pat-scopes", pat_scopes()),
     ]

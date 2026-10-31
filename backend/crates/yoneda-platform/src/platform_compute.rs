@@ -60,6 +60,7 @@ pub fn compute(c: Value) -> Result<Value> {
         "symbols" => crate::platform_code::symbols(&c),
         "symbol_edit" => crate::platform_code::symbol_edit(&c),
         "review_classes" => crate::platform_code::review_classes(&c),
+        "change_instruments" => crate::platform_instruments::instruments(&c),
         "symbol_touches" => crate::platform_access::symbol_touches(&c),
         "work_plan" => crate::platform_access::work_plan(&c),
         "replace_literal" => crate::platform_code::replace_literal(&c),

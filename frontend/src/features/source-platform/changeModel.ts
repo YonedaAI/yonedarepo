@@ -62,6 +62,8 @@ export type ChangeDetail = Change & {
   base_protected?: boolean;
   /** From the merge base with the base branch (null: unrelated histories) to the head, as git_diff answers. */
   diff: { base: DiffEnd | null; head: DiffEnd; changes: DiffChange[] } | null;
+  /** This deployment answers `GET /changes/:n/instruments`. */
+  instruments?: boolean;
 };
 
 /** Where a comment on a line sits: deleted lines on the base file, others on the head file. */

@@ -41,6 +41,9 @@ export interface Env {
   /** `on`: an import lands main at once and fills its history in behind it
    * (repo-import-fill.ts; unset or anything else: history first, then main). */
   FAST_IMPORT?: string;
+  /** `on`: a change's page shows its Slop and Risk cards (repo-instruments.ts; unset or
+   * anything else: no route, and the page asks for nothing). */
+  LANDING_INSTRUMENTS?: string;
   /** Platform check executors (one fresh container per run attempt). */
   CHECK_RUNNERS: DurableObjectNamespace<import('./check-container').CheckContainer>;
   OBJECT_PUSHES: DurableObjectNamespace<import('./repo-push-queue').ObjectPushQueue>;
