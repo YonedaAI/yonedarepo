@@ -12,9 +12,10 @@ import { platformFetch } from './platform-routes';
 import { signupNoticeJob } from './platform-signup-notice';
 import { sshFrontDoor, sshKeepAlive } from './platform-ssh-gateway';
 import { welcomeJob } from './platform-welcome-email';
-import { ERASE, purgeRepository } from './repo-admin';
+import { ERASE, purgeJob } from './repo-admin';
 import { executeCheckRun } from './repo-checks';
 import { CLASSIFY, classifyJob } from './repo-classify';
+import { sweepDeleted } from './repo-deleted';
 import { deriveAfterLanding } from './repo-derived';
 import { eraseJob } from './repo-erase';
 import { hookJob } from './repo-hooks';
@@ -66,7 +67,7 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
     await laterIfHeld(env, envelope, () => quarantineJob(env, envelope));
     message.ack();
   } else if (envelope.kind === 'platform_purge') {
-    await laterIfHeld(env, envelope, () => purgeRepository(env, envelope.repo_id));
+    await purgeJob(env, envelope);
     message.ack();
   } else if (envelope.kind === ERASE) {
     await laterIfHeld(env, envelope, () => eraseJob(env, envelope));
@@ -104,9 +105,14 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
   verifyEmail(account: string, change?: string) {
     return verifyEmail(this.env, account, change);
   }
-  /** Every minute: keeps the SSH gateway (and its tunnel) running. */
-  scheduled() {
-    return sshKeepAlive(this.env, 'cron');
+  /** Every minute: keeps the SSH gateway (and its tunnel) running, and sends the purges that
+   * came due. Neither stops the other. */
+  async scheduled() {
+    const sweep = sweepDeleted(this.env).catch((e) => {
+      const error = String(e?.message ?? e).slice(0, 200);
+      console.error(JSON.stringify({ event: 'undo.sweep_failed', error }));
+    });
+    await Promise.all([sshKeepAlive(this.env, 'cron'), sweep]);
   }
   /** Jobs of a batch run side by side (they wait on I/O, not CPU; heavy ones one at a
    * time: `oneAtATime`); each settles alone. */

@@ -1,6 +1,7 @@
 //! Erasing a deleted repository (`repo-erase.ts`, behind `REPO_ERASE`). The tombstone keeps
 //! answering GONE; everything else in the database goes, a batch per transaction, because
-//! one large delete resets the object for minutes (spike, 2026-10-31).
+//! one large delete resets the object for minutes (spike, 2026-10-31). Nothing here runs
+//! during the undo window (`undo`).
 //!
 //! The job asks `repo_erase_plan` when it may start: never while a fork is left, as forks
 //! read this repository's objects, and not while `hook_outbox` holds payloads for an active
@@ -12,8 +13,8 @@
 //! until it answers `done`. Each step is one transaction and nothing records progress
 //! beyond the rows left, so a crash loses one step and the next job carries on. The last
 //! step scrubs `repo_settings`, leaving a row an older binary still reads as a tombstone.
-use super::forks;
 use super::rows::Settings;
+use super::{forks, undo};
 use crate::storage::SqlStore;
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
@@ -60,9 +61,9 @@ fn combiner_refs<S: SqlStore>(db: &S) -> Result<Vec<Value>> {
 }
 
 /// `repo_erase_plan`: whether the repository can be erased now. `live`, `erased`, or the
-/// tombstone's size and store, with `forks` (never), `hooks` (not yet: those to deliver),
-/// or `refs` (go).
-pub(super) fn plan<S: SqlStore>(db: &S, settings: &Settings) -> Result<Value> {
+/// tombstone's size and store, with `not_due` (its due time: restorable until then), `forks`
+/// (never), `hooks` (not yet: those to deliver), or `refs` (go).
+pub(super) fn plan<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value> {
     let db_bytes = db.database_size()?;
     let Some(deleted_at) = settings.deleted_at else {
         return Ok(json!({ "live": true, "db_bytes": db_bytes }));
@@ -73,6 +74,10 @@ pub(super) fn plan<S: SqlStore>(db: &S, settings: &Settings) -> Result<Value> {
     let mut answer = json!({
         "deleted_at": deleted_at, "db_bytes": db_bytes, "object_store": settings.object_store,
     });
+    if let Some(due) = undo::waiting_until(c, settings) {
+        answer["not_due"] = json!(due);
+        return Ok(answer);
+    }
     let forks = forks::count(db)?;
     if forks > 0 {
         answer["forks"] = json!(forks);
@@ -89,13 +94,14 @@ pub(super) fn plan<S: SqlStore>(db: &S, settings: &Settings) -> Result<Value> {
 
 /// `repo_erase_step`: one batch, refused while the plan would say to wait. Answers what it
 /// deleted and, once nothing is left, `done`.
-pub(super) fn step<S: SqlStore>(db: &S, settings: &Settings) -> Result<Value> {
+pub(super) fn step<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value> {
     if settings.deleted_at.is_none() {
         return Err(Error::new("NOT_FOUND", "Repository is not deleted"));
     }
     if settings.erased() {
         return Ok(json!({ "done": true, "rows": 0, "bytes": 0 }));
     }
+    undo::require_due(c, settings)?;
     if forks::count(db)? > 0 {
         return Err(Error::new("CONFLICT", "A fork still reads this repository"));
     }

@@ -1697,4 +1697,5 @@ mod staging;
 mod symlink_refs;
 mod tags;
 mod tool_schemas;
+mod undo;
 mod visibility;

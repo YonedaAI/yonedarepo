@@ -33,6 +33,12 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::BeginCommit => actor.require("write"),
         // Told before any legal hold, as `refuses` ops run after this.
         R::Delete => actor.require_repo_owner(),
+        // The platform reads what it lists a tombstone by, and restores nothing.
+        R::Restore if actor.can("system") && c["check"] == true => Ok(()),
+        R::Restore => actor.require_repo_owner(),
+        R::Purged if !actor.can("system") => {
+            Err(Error::new("FORBIDDEN", "Only the platform reports a purge"))
+        }
         // The purger's check happens in `deletion`.
         R::PurgeTarget => Ok(()),
         // Only the platform copies commit shard records in.
@@ -169,6 +175,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::PathHistory
         | R::PinList
         | R::ProjectionObjects
+        | R::Purged
         | R::RecordClasses
         | R::RecordImported
         | R::RecordPushed

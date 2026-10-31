@@ -12,6 +12,7 @@ import { type CachedObject, parseStore, RepoObjects, type TreeEntry } from './re
 import type { PatGrant } from './repo-pat';
 import { adoptCommit, unrecorded } from './repo-shards';
 import { timed } from './repo-timing';
+import { undoSwitch } from './repo-undo-window';
 import type { Env } from './types';
 
 export type { PatGrant, PatScope } from './repo-pat';
@@ -40,6 +41,9 @@ export type Credentials =
         | 'lfs'
         | 'quarantine'
         | 'erase';
+      /** No undo window for this caller: a purge nobody may undo (a failed create taken back, an
+       * operator's purge). */
+      _undo_ms?: 0;
     };
 // Identity fields come only from the authenticating adapter, never from arguments.
 const CREDENTIAL_KEYS = [
@@ -50,6 +54,7 @@ const CREDENTIAL_KEYS = [
   '_system',
   '_storage_guard',
   '_hold',
+  '_undo_ms',
 ];
 export class ApiError extends Error {
   constructor(
@@ -130,6 +135,7 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
       throw new ApiError('FORBIDDEN', 'This token is not allowed on this repository');
     return {
       ...Object.fromEntries(Object.entries(command).filter(([k]) => !CREDENTIAL_KEYS.includes(k))),
+      ...undoSwitch(env),
       ...auth,
       ...storageGuard(env),
       ...holdSwitch(env),

@@ -215,8 +215,9 @@ async function purgeRecords(env: Env, repo: string): Promise<number | null> {
   return Date.now();
 }
 
-/** The queue job: one purge run, then the next one scheduled. A deleted repository's own
- * purge removes everything, so its quarantine job ends quietly. */
+/** The queue job: one purge run, then the next one scheduled. On a tombstone it goes on, as
+ * the undo window must not push a leaked secret's purge back, until the repository's own
+ * purge starts, which removes everything: the job then ends quietly. */
 export async function quarantineJob(env: Env, envelope: Envelope) {
   try {
     await schedulePurge(env, envelope.repo_id, await purgeDue(env, envelope.repo_id));

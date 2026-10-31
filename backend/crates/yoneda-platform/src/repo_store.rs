@@ -95,6 +95,7 @@ mod symbols;
 mod tags;
 mod tokens;
 mod tree_cache;
+mod undo;
 mod version_projection;
 mod visibility;
 pub use migration::migrate_repo_store;

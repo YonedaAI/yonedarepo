@@ -19,7 +19,7 @@ import { orgsRoute } from './platform-orgs';
 import { sshKeyRoute } from './platform-ssh-keys';
 import { SUPPORT_BODY_LIMIT, supportRoute } from './platform-support';
 import { deviceApprove, deviceCode, deviceToken, tokenRoute } from './platform-tokens';
-import { deleteRepository, listRepositories } from './repo-admin';
+import { deleteRepository, listDeleted, listRepositories } from './repo-admin';
 import { agentRecords } from './repo-agent-records';
 import { breakGlass } from './repo-break-glass';
 import { changeLogStatus } from './repo-changelog';
@@ -38,6 +38,7 @@ import { parseStore } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { refuseOutsideKeys, verifyPat } from './repo-pat';
 import { pathOf, profile, renameRepository, resolvePath, withPath } from './repo-paths';
+import { restoreRepository } from './repo-restore';
 import { forViewer } from './repo-principal-privacy';
 import {
   ANONYMOUS,
@@ -183,6 +184,8 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   if (parts.length === 2 && parts[1] === 'import' && req.method === 'POST')
     return importRepository(env, auth, await bodyOf(req));
   if (parts.length === 1 && req.method === 'GET') return listRepositories(env, auth);
+  if (parts.length === 2 && parts[1] === 'deleted' && req.method === 'GET')
+    return listDeleted(env, auth);
   const repo = parts[1];
   if (!/^r[0-9a-f]{20}$/.test(repo ?? '')) throw new ApiError('NOT_FOUND', 'Unknown repository');
   const ctx = new RepoContext(env, repo, caller(env, repo, auth));
@@ -193,6 +196,8 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   const run = (name: string, args: Json) => operations[name](ctx, args);
   if (!resource && req.method === 'DELETE')
     return deleteRepository(env, auth, repo, url.searchParams.get('confirm') ?? '');
+  if (resource === 'restore' && !sha && post)
+    return restoreRepository(env, auth, repo, (await bodyOf(req).catch(() => ({}) as Json)).name);
   if (resource === 'refs' && sha === 'batch' && !sub && post)
     return batchRefs(ctx, await bodyOf(req));
   if (!resource && get) return withPath(env, repo, await run('git_status', {}));
