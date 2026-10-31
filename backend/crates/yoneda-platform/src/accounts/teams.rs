@@ -18,15 +18,25 @@ fn team_name(c: &Value) -> Result<String> {
     Ok(name)
 }
 
-pub(super) fn delete<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
+pub(super) fn delete<S: SqlStore>(db: &S, c: &Value, actor: &str, now: i64) -> Result<Value> {
     let team = existing_team(db, c)?;
     db.query("DELETE FROM org_teams WHERE name=?", &[json!(team)])?;
     db.query("DELETE FROM org_team_members WHERE team=?", &[json!(team)])?;
-    audit(db, "org.team_deleted", now, json!({ "team": team }))?;
+    audit(
+        db,
+        "org.team_deleted",
+        now,
+        json!({ "team": team, "actor": actor }),
+    )?;
     Ok(json!({ "team": team, "deleted": true }))
 }
 
-pub(super) fn member_remove<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
+pub(super) fn member_remove<S: SqlStore>(
+    db: &S,
+    c: &Value,
+    actor: &str,
+    now: i64,
+) -> Result<Value> {
     let team = existing_team(db, c)?;
     let account = personal(c)?;
     let found = db.query(
@@ -47,7 +57,7 @@ pub(super) fn member_remove<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<
         db,
         "org.team_member_removed",
         now,
-        json!({ "team": team, "account": account }),
+        json!({ "team": team, "account": account, "actor": actor }),
     )?;
     Ok(json!({ "team": team, "account": account, "removed": true }))
 }
@@ -95,7 +105,7 @@ pub(super) fn create<S: SqlStore>(db: &S, c: &Value, actor: &str, now: i64) -> R
         db,
         "org.team_created",
         now,
-        json!({ "team": team, "id": id }),
+        json!({ "team": team, "id": id, "actor": actor }),
     )?;
     Ok(json!({ "team": team, "id": id, "created_at": now }))
 }
@@ -126,7 +136,7 @@ pub(super) fn member_put<S: SqlStore>(db: &S, c: &Value, actor: &str, now: i64) 
         db,
         "org.team_member_added",
         now,
-        json!({ "team": team, "account": account }),
+        json!({ "team": team, "account": account, "actor": actor }),
     )?;
     Ok(json!({ "team": team, "account": account, "added": true }))
 }

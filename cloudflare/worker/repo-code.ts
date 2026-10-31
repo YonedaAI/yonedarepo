@@ -16,13 +16,15 @@ const MAX_CLASSIFIED_FILES = 200;
 
 /**
  * The platform classifier's record of a commit's review classes, computed before the
- * commit is recorded (from its own new objects plus the tiers) and sent with it.
+ * commit is recorded (from its own new objects plus the tiers) and sent with it; for a pushed
+ * commit, after the push (repo-classify).
  */
 export async function reviewClasses(
   ctx: RepoContext,
   sha: string,
   touches: Json[],
   built: CachedObject[],
+  maxBytes?: number,
 ): Promise<Json> {
   const changes = touches.map((t) => ({
     path: t.path,
@@ -38,7 +40,7 @@ export async function reviewClasses(
       overall: 'unknown',
       files: changes.map((c) => ({ path: c.path, class: 'unknown' })),
     };
-  const result = await withObjects(ctx, { op: 'review_classes', changes }, built);
+  const result = await withObjects(ctx, { op: 'review_classes', changes }, built, maxBytes);
   return { op: 'repo_record_classes', commit: sha, overall: result.overall, files: result.files };
 }
 

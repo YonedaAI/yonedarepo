@@ -180,7 +180,7 @@ pub fn actor_with(
 ) -> Result<Actor> {
     if let Some(
         system @ ("checks" | "projection" | "import" | "merge" | "repair" | "derive" | "commits"
-        | "purge" | "hooks" | "compact" | "fork" | "lfs" | "quarantine"),
+        | "purge" | "hooks" | "compact" | "fork" | "lfs" | "quarantine" | "erase"),
     ) = c.get("_system").and_then(Value::as_str)
     {
         let roles: &[&str] = match system {
@@ -190,6 +190,8 @@ pub fn actor_with(
             "derive" => &["classify"],
             "hooks" => &["hooks"],
             "compact" => &["compact"],
+            // Empties a tombstone (erase).
+            "erase" => &["erase"],
             // Sweeps LFS bytes no object references (lfs::sweep).
             "lfs" => &["lfs"],
             // Purges quarantined content once its retention ends (quarantine::purge).

@@ -7,6 +7,16 @@ use yoneda_core::{Error, Result};
 
 pub const SCOPES: [&str; 5] = ["read", "write", "check", "review", "land"];
 
+/// One of `SCOPES`, or `check:<name>`: beside `check`, the token may post that required check
+/// where the policy binds no posters (`Policy::may_post`). Only an owner mints one, and an
+/// owner may post the check anyway.
+fn valid_scope(scope: &str) -> bool {
+    SCOPES.contains(&scope)
+        || scope
+            .strip_prefix("check:")
+            .is_some_and(|name| super::rows::check_name(name).is_ok())
+}
+
 pub fn create_token<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     actor.require_owner()?;
     let name = string(c, "name")?;
@@ -18,9 +28,9 @@ pub fn create_token<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Val
     let scopes: Vec<String> =
         serde_json::from_value(c["scopes"].clone()).map_err(|_| bad("scopes must be a list"))?;
     let grant = super::grants::parse(&c["paths"])?;
-    if scopes.is_empty() || scopes.iter().any(|s| !SCOPES.contains(&s.as_str())) {
+    if scopes.is_empty() || scopes.iter().any(|s| !valid_scope(s)) {
         return Err(bad(
-            "Scopes must be some of read, write, check, review, land",
+            "Scopes must be some of read, write, check, review, land, check:<name>",
         ));
     }
     if !db

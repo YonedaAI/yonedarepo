@@ -35,7 +35,7 @@ yoneda token list
 yoneda token revoke ci
 ```
 
-- **Scopes:** `read`, `write`, `check`, `review`, `land` (the CLI's default is `read,write`).
+- **Scopes:** `read`, `write`, `check`, `review`, `land` (the CLI's default is `read,write`). Beside `check`, `check:<name>` lets a token post the required check `<name>` when the landing rules name no posters for it.
 - **Paths:** 1 to 100 files or directory prefixes. Every read, search, blame and write outside them is refused with `Path is outside your grant`. Without paths the token covers the whole repository.
 - Repository tokens do not expire; revoke them when done. Only the owner or an admin creates them.
 

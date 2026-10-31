@@ -4,6 +4,7 @@ import {
   encodeAccountIdentifier,
   normalizeAccountIdentifier,
 } from '../../shared/account';
+import { auditMember } from './account-audit';
 import { accountCreated, emailRoute } from './account-email';
 import { handleState, setHandle } from './account-handles';
 import { noteSeen } from './account-index';
@@ -188,6 +189,7 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
           'Credentials did not match; wait a minute after repeated attempts',
           401,
         );
+      if (action === 'recover') await auditMember(env, name);
       if (action === 'signup') {
         await accountCreated(env, name, email, 'email');
         recordSignup(env, req, 'email', readSignupSource(body.source));

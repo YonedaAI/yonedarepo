@@ -133,6 +133,7 @@
   ],
   "vars": {
     "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
+    "AUDIT_LOG": "off",
     "PUBLIC_APP_ORIGIN": "https://dev.yonedarepo.com",
     "WEB_ANALYTICS_TOKEN": "70b90cc7e849429fa25cc64897ebfd2b"
   },

@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import {
   type AgentState,
   HARNESS_LABELS,
+  HIGH_LEVEL_FINDINGS,
   managedAgent,
   modelRate,
   type WorkspaceState,
@@ -24,7 +25,7 @@ import {
   valueTypeLabel,
   workspacePath,
 } from './agentsModel';
-import { RepoPicker, TriggerFields } from './settingsParts';
+import { BlockField, RepoPicker, TriggerFields } from './settingsParts';
 import { type AgentForm, formProblem, initialForm, updateBody } from './setupForm';
 
 type Space = { workspace?: string };
@@ -70,7 +71,7 @@ function AgentFacts({ agent }: { agent: AgentState }) {
           <p className="source-meta">
             {agent.value_type === 'pass_fail'
               ? 'Pass when it finds nothing worth fixing; fail when it finds a high or medium problem. Lower is better.'
-              : `The level of the most serious finding. Lower is better. ${
+              : `The level of the most serious finding, or high with ${HIGH_LEVEL_FINDINGS} medium findings or more. Lower is better. ${
                   s.block_at
                     ? `It blocks landing at ${BLOCK_AT[s.block_at] ?? s.block_at}.`
                     : 'It reports and never blocks landing.'
@@ -165,6 +166,14 @@ function SetupForm({
           <TriggerFields trigger={form.trigger} onChange={(trigger) => set({ trigger })} />
         </div>
       </section>
+      {current.value_type === 'level' && (
+        <section className="agent-setup-section" aria-labelledby="landing-heading">
+          <h2 id="landing-heading">Landing</h2>
+          <div className="agent-panel">
+            <BlockField value={form.block_at} onChange={(block_at) => set({ block_at })} />
+          </div>
+        </section>
+      )}
       <section className="agent-setup-section" aria-labelledby="repos-heading">
         <h2 id="repos-heading">Repositories</h2>
         <div className="agent-panel">
