@@ -255,11 +255,13 @@ pub(super) fn shown<S: SqlStore>(
         return Ok(None);
     }
     let queue = Queue::read(db, settings, now)?;
-    Ok(decided_on(db, change, settings, &queue)?.map(|(decision, reasons)| LandingClearance {
-        decision,
-        reasons,
-        refused: last_refusal(change),
-    }))
+    Ok(
+        decided_on(db, change, settings, &queue)?.map(|(decision, reasons)| LandingClearance {
+            decision,
+            reasons,
+            refused: last_refusal(change),
+        }),
+    )
 }
 
 /// What CTC says of an open Landing as it stands, on the Risk the job last scored, whether or

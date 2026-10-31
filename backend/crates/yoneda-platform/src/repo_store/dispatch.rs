@@ -142,6 +142,7 @@ fn run<S: SqlStore>(
         R::ChangeReopen => change_closing::set_open(db, c, actor, true),
         R::ChangeDelete => change_delete::delete(db, c, actor),
         R::ChangeGates => change_gates::gates(db, c, actor, settings),
+        R::CtcRadar => super::traffic::radar::radar(db, c, actor, settings),
         R::ChangeRoute => change_route::route(db, c, actor),
         R::ChangeInstruments => change_instruments::read(db, c, actor),
         R::CheckClaim => checks::claim(db, c),

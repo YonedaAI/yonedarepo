@@ -66,7 +66,10 @@ fn a_session_hears_which_landing_is_changing_its_file() {
     let (h, root) = seeded();
     branch(&h, "fix", &root, &["src/net.rs"], json!([]));
     let number = landing(&h, "fix");
-    let read = relevant(&h, json!({"paths":["src/net.rs"],"types":["memory","contract"]}));
+    let read = relevant(
+        &h,
+        json!({"paths":["src/net.rs"],"types":["memory","contract"]}),
+    );
     assert_eq!(seen(&read), [warned(number, "file", "src/net.rs")]);
     let warning = &read["warnings"][0];
     assert_eq!(warning["title"], "Work on fix");
@@ -77,7 +80,18 @@ fn a_session_hears_which_landing_is_changing_its_file() {
         AGENT,
         json!({"op":"repo_agent_context","paths":["src/net.rs"]}),
     );
-    assert_eq!(seen(&start["traffic"]), [warned(number, "file", "src/net.rs")]);
+    assert_eq!(
+        seen(&start["traffic"]),
+        [warned(number, "file", "src/net.rs")]
+    );
+    let named = h.ok(
+        AGENT,
+        json!({"op":"repo_agent_context","symbols":["src/net.rs#retry"]}),
+    );
+    assert_eq!(
+        seen(&named["traffic"]),
+        [warned(number, "file", "src/net.rs")]
+    );
     assert!(seen(&relevant(&h, json!({"paths":["README.md"]}))).is_empty());
     // A directory asked for covers the files under it.
     let dir = relevant(&h, json!({"paths":["src/"]}));
@@ -125,7 +139,10 @@ fn a_read_of_a_directory_or_symbol_meets_the_file_under_it() {
     let read = relevant(&h, json!({"paths":["src/lib.rs"]}));
     assert_eq!(
         seen(&read),
-        [warned(sym, "read", "src/lib.rs"), warned(dir, "read", "src/")]
+        [
+            warned(sym, "read", "src/lib.rs"),
+            warned(dir, "read", "src/")
+        ]
     );
 }
 
@@ -152,12 +169,21 @@ fn a_session_on_a_branch_is_warned_about_what_the_branch_changed() {
     let number = landing(&h, "theirs");
     // The clone names nothing: the branch's pushed work is what it is changing.
     let start = h.ok(AGENT, json!({"op":"repo_agent_context","branch":"mine"}));
-    assert_eq!(seen(&start["traffic"]), [warned(number, "symbol", "src/net.rs")]);
+    assert_eq!(
+        seen(&start["traffic"]),
+        [warned(number, "symbol", "src/net.rs")]
+    );
     assert_eq!(start["traffic"]["warnings"][0]["symbols"], json!(["retry"]));
     // Reading a file, the branch's symbols rank it, and only that file is warned about.
     let read = relevant(&h, json!({"paths":["src/net.rs"],"branch":"mine"}));
     assert_eq!(seen(&read), [warned(number, "symbol", "src/net.rs")]);
-    assert!(seen(&relevant(&h, json!({"paths":["README.md"],"branch":"mine"}))).is_empty());
+    assert!(
+        seen(&relevant(
+            &h,
+            json!({"paths":["README.md"],"branch":"mine"})
+        ))
+        .is_empty()
+    );
 }
 
 #[test]
@@ -169,14 +195,35 @@ fn only_what_a_landing_adds_counts_every_commit_of_it() {
     );
     // main moves on, and a Landing branches from there with two commits.
     let on_main = h
-        .commit(AGENT, Some(&root), 1, json!([file("old.rs", "x")]), json!([]))
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("old.rs", "x")]),
+            json!([]),
+        )
         .unwrap();
-    h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":on_main}));
+    h.ok(
+        OWNER,
+        json!({"op":"repo_land","ref":"main","commit":on_main}),
+    );
     let lower = h
-        .commit(AGENT, Some(&on_main), 2, json!([file("lower.rs", "x")]), json!([]))
+        .commit(
+            AGENT,
+            Some(&on_main),
+            2,
+            json!([file("lower.rs", "x")]),
+            json!([]),
+        )
         .unwrap();
     let upper = h
-        .commit(AGENT, Some(&lower), 2, json!([file("upper.rs", "x")]), json!([]))
+        .commit(
+            AGENT,
+            Some(&lower),
+            2,
+            json!([file("upper.rs", "x")]),
+            json!([]),
+        )
         .unwrap();
     h.ok(
         AGENT,
@@ -186,7 +233,10 @@ fn only_what_a_landing_adds_counts_every_commit_of_it() {
     let read = relevant(&h, json!({"paths":["old.rs","lower.rs","upper.rs"]}));
     assert_eq!(
         seen(&read),
-        [warned(number, "file", "lower.rs"), warned(number, "file", "upper.rs")]
+        [
+            warned(number, "file", "lower.rs"),
+            warned(number, "file", "upper.rs")
+        ]
     );
 }
 
@@ -253,7 +303,10 @@ fn a_quarantined_blob_is_no_traffic() {
     symbols(&h, &id, "src/net.rs", json!(["secret_name"]));
     branch(&h, "other", &root, &["src/net.rs"], json!([]));
     let other = landing(&h, "other");
-    assert_eq!(seen(&relevant(&h, json!({"paths":["src/net.rs"]}))).len(), 2);
+    assert_eq!(
+        seen(&relevant(&h, json!({"paths":["src/net.rs"]}))).len(),
+        2
+    );
     // `branch` writes its own name, so this withholds the file `fix` wrote.
     let blob = hash_object(ObjectKind::Blob, b"fix").hex();
     h.ok(
@@ -313,7 +366,13 @@ fn a_warning_costs_the_same_however_long_the_history_or_many_the_landings() {
     let mut tip = root.clone();
     for n in 0..40 {
         tip = h
-            .commit(AGENT, Some(&tip), n + 1, json!([file("src/hot.rs", &format!("{n}"))]), json!([]))
+            .commit(
+                AGENT,
+                Some(&tip),
+                n + 1,
+                json!([file("src/hot.rs", &format!("{n}"))]),
+                json!([]),
+            )
             .unwrap();
         h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":tip}));
     }
@@ -333,5 +392,8 @@ fn a_warning_costs_the_same_however_long_the_history_or_many_the_landings() {
     );
     // Rows answer for the Landings, not for the 40 commits of history on that file: each is
     // one open row, one commit walked and one path.
-    assert!(many.rows <= none.rows + 3 * 21 + 2, "{none:?} then {many:?}");
+    assert!(
+        many.rows <= none.rows + 3 * 21 + 2,
+        "{none:?} then {many:?}"
+    );
 }

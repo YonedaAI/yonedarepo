@@ -272,6 +272,7 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   if (resource === 'commits' && sha && sub === 'sessions' && get)
     return run('git_sessions', { commit: sha });
   if (resource === 'context' && !sha && get) return run('git_context', query);
+  if (resource === 'ctc' && !sha && get) return run('git_ctc_radar', query);
   if (resource === 'context' && sha && !sub)
     return contextRoute(ctx, req.method, sha, query, () => bodyOf(req));
   if (resource === 'memories')

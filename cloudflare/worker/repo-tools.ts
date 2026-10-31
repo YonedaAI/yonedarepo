@@ -112,13 +112,15 @@ export const operations: Record<string, Operation> = {
       ref: a.ref || null,
     }),
   // What a new coding session should know: heads, landing rules, recent sessions, open
-  // changes, contracts and memories on the paths it works on (a list, or comma-separated
-  // over REST).
+  // changes, traffic, contracts and memories on the paths it works on (a list, or
+  // comma-separated over REST).
   git_context: (ctx, a) =>
     ctx.call({
       op: 'repo_agent_context',
       branch: a.branch || null,
       paths: typeof a.paths === 'string' ? a.paths.split(',').filter(Boolean) : (a.paths ?? null),
+      symbols:
+        typeof a.symbols === 'string' ? a.symbols.split(',').filter(Boolean) : (a.symbols ?? null),
       sessions: optionalNumber(a.sessions),
       changes: optionalNumber(a.changes),
       contracts: optionalNumber(a.contracts),

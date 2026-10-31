@@ -175,7 +175,8 @@ pub fn gates<S: SqlStore>(
     let ready = requirements
         .iter()
         .all(|r| !r.enforced || r.state == GateState::Ready);
-    let land_when_cleared = super::land_when_cleared::shown(db, &change, settings, number(c, "now")?)?;
+    let land_when_cleared =
+        super::land_when_cleared::shown(db, &change, settings, number(c, "now")?)?;
     let gates = ChangeGates {
         number: change["number"].as_i64().unwrap_or_default(),
         status,

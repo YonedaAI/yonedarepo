@@ -161,6 +161,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::Commit
         | R::ContractList
         | R::Contracts
+        | R::CtcRadar
         | R::ErasePlan
         | R::EraseStep
         | R::HoldOwner

@@ -32,7 +32,9 @@ fn line(warning: &Value) -> String {
 
 /// One line each with the item a session records for it, then a count of the rest.
 pub fn entries(traffic: &Value) -> Vec<(String, Value)> {
-    let warnings = traffic["warnings"].as_array().map_or(&[][..], Vec::as_slice);
+    let warnings = traffic["warnings"]
+        .as_array()
+        .map_or(&[][..], Vec::as_slice);
     let mut lines: Vec<(String, Value)> = warnings
         .iter()
         .map(|w| {

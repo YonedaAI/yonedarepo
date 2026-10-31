@@ -66,7 +66,10 @@ fn tickets<S: SqlStore>(db: &S, bases: &[String]) -> Result<BTreeMap<(String, St
         .iter()
         .filter_map(|row| {
             let key = (row["refname"].as_str()?, row["commit_id"].as_str()?);
-            Some(((key.0.to_owned(), key.1.to_owned()), row["ticket"].as_i64()?))
+            Some((
+                (key.0.to_owned(), key.1.to_owned()),
+                row["ticket"].as_i64()?,
+            ))
         })
         .collect())
 }

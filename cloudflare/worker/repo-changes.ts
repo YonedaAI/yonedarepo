@@ -104,6 +104,9 @@ export const changeOperations = {
     ctx.call({ op: 'repo_change_route', number: changeNumber(a.number) }),
   git_change_delete: (ctx: RepoContext, a: Json) =>
     notified(ctx, ctx.call({ op: 'repo_change_delete', number: changeNumber(a.number) })),
+  // What CTC sees (repo_store/traffic/radar.rs); a read, recording nothing.
+  git_ctc_radar: (ctx: RepoContext, a: Json) =>
+    ctx.call({ op: 'repo_ctc_radar', limit: a.limit ? Number(a.limit) : null }),
 };
 
 /** `PUT /auto-landings {create?, agents?, land_when_cleared?, findings_block?}`: the repository's

@@ -45,7 +45,11 @@ fn session_id(c: &Value) -> Result<String> {
 
 /// What a delivered item is known by.
 fn key(item: &Value) -> String {
-    match (item["type"].as_str(), item["id"].as_i64(), item["path"].as_str()) {
+    match (
+        item["type"].as_str(),
+        item["id"].as_i64(),
+        item["path"].as_str(),
+    ) {
         (Some(TRAFFIC), Some(landing), Some(path)) => delivered_key(landing, path),
         (kind, ..) => format!("{}:{}", kind.unwrap_or_default(), item["id"]),
     }

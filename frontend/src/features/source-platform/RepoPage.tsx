@@ -17,6 +17,7 @@ import { ReleaseView } from './ReleaseView';
 import { RepoAgents } from './RepoAgents';
 import { RepoChanges } from './RepoChanges';
 import { RepoContext } from './RepoContext';
+import { RepoCtc } from './RepoCtc';
 import { RepoFiles } from './RepoFiles';
 import { RepoNotFound, repoMissing, useRepoGone } from './RepoNotFound';
 import { RepoOverview } from './RepoOverview';
@@ -213,6 +214,13 @@ export function RepoPage({
                   onCommit={(commit) => navigate({ view: 'commit', repo, commit })}
                   onChanged={status.reload}
                   navigate={navigate}
+                />
+              )}
+              {route.view === 'ctc' && (
+                <RepoCtc
+                  repo={repo}
+                  hrefOf={(number) => formatSourceRoute({ view: 'change', repo, number })}
+                  onOpen={(number) => navigate({ view: 'change', repo, number })}
                 />
               )}
               {route.view === 'agents' && (

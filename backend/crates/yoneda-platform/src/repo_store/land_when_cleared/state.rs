@@ -79,7 +79,7 @@ fn conflict<S: SqlStore>(
     refname: &str,
     head: &ObjectId,
 ) -> Result<Option<String>> {
-    if merging::on_head(db, commit, head)? {
+    if merging::on_head(db, commit, head)? || merging::reads_untouched(db, commit, refname)? {
         return Ok(None);
     }
     Ok(match merging::occ(db, commit, refname)? {

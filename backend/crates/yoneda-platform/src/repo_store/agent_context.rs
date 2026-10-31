@@ -92,9 +92,12 @@ pub fn context<S: SqlStore>(
     for path in &paths {
         yoneda_core::validate_path(path)?;
     }
+    let symbols = relevance::symbols_of(c)?;
     let ask = Ask {
-        files: paths.iter().cloned().collect(),
-        symbols: relevance::symbols_of(c)?,
+        files: (paths.iter().cloned())
+            .chain(symbols.iter().map(|(path, _)| path.clone()))
+            .collect(),
+        symbols,
         branch: branch.clone(),
         start: true,
         ..Ask::default()

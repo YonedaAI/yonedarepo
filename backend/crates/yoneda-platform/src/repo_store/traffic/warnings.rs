@@ -9,10 +9,12 @@
 //! answer and not ranked items: an installed client renders any item it can't name as an open
 //! change, and a session's delivered record says `traffic`, which only a platform that answered
 //! one can have sent it.
-use super::{MAX_LANDINGS, Footprint, Seed, Wanted, open, read};
+use super::{Footprint, MAX_LANDINGS, Seed, Wanted, open, read};
 use crate::repo_store::grants::{self, Grant};
 use crate::repo_store::rows;
 use crate::storage::SqlStore;
+use schemars::JsonSchema;
+use serde::Serialize;
 use serde_json::{Value, json};
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet};
@@ -39,22 +41,16 @@ pub struct Ask {
     pub start: bool,
 }
 
-/// How a Landing meets a session, closest first.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Overlap {
+/// How a Landing meets a session or another Landing, closest first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum Overlap {
+    /// The same symbol.
     Symbol,
+    /// The same file.
     File,
+    /// One wrote what the other read.
     Read,
-}
-
-impl Overlap {
-    fn name(self) -> &'static str {
-        match self {
-            Self::Symbol => "symbol",
-            Self::File => "file",
-            Self::Read => "read",
-        }
-    }
 }
 
 struct Warning {
@@ -183,7 +179,7 @@ pub fn warnings<S: SqlStore>(
             let about = others.iter().find(|l| l.seed.landing == w.landing);
             let symbols: Vec<&String> = w.symbols.iter().take(SYMBOLS).collect();
             json!({
-                "landing": w.landing, "overlap": w.overlap.name(), "path": w.path,
+                "landing": w.landing, "overlap": w.overlap, "path": w.path,
                 "symbols": symbols, "title": about.map(|l| &l.title),
                 "branch": about.map(|l| &l.branch), "author": about.map(|l| &l.author),
             })

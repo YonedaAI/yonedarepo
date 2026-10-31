@@ -71,6 +71,7 @@ export type SourceRoute =
   | { view: 'search'; repo: string; query: string; word?: boolean }
   | { view: 'changes'; repo: string }
   | { view: 'change'; repo: string; number: number }
+  | { view: 'ctc'; repo: string }
   | { view: 'releases'; repo: string }
   | { view: 'release'; repo: string; tag: string }
   | { view: 'agents'; repo: string; section: AgentSection }
@@ -86,6 +87,7 @@ export type SourceRoute =
 export type RepoTab =
   | 'overview'
   | 'changes'
+  | 'ctc'
   | 'agents'
   | 'commits'
   | 'sessions'
@@ -155,6 +157,7 @@ export function parseSourceRoute(pathname: string, search: string, hash = ''): S
       : { view: 'search', repo, query };
   }
   if (view === 'context') return { view: 'context', repo };
+  if (view === 'ctc') return { view: 'ctc', repo };
   // `/landings` is the same page under its UI name; `/changes` stays the address.
   if (view === 'changes' || view === 'landings') {
     const number = Number(rest[0]);
@@ -276,6 +279,7 @@ export function formatSourceRoute(route: SourceRoute): string {
       : `${base}/search`;
   if (route.view === 'commit') return `${base}/commit/${route.commit}`;
   if (route.view === 'changes') return `${base}/changes`;
+  if (route.view === 'ctc') return `${base}/ctc`;
   if (route.view === 'change') return `${base}/changes/${route.number}`;
   if (route.view === 'releases') return `${base}/releases`;
   if (route.view === 'release') return `${base}/releases/${encodeURIComponent(route.tag)}`;
@@ -312,6 +316,8 @@ export function routeTab(route: SourceRoute): RepoTab | undefined {
     case 'changes':
     case 'change':
       return 'changes';
+    case 'ctc':
+      return 'ctc';
     case 'releases':
     case 'release':
       return 'releases';
@@ -339,6 +345,7 @@ export function tabRoute(tab: RepoTab, repo: string): SourceRoute {
   if (tab === 'overview') return { view: 'files', repo, path: '', ref: 'main' };
   if (tab === 'commits') return { view: 'history', repo, ref: 'main' };
   if (tab === 'changes') return { view: 'changes', repo };
+  if (tab === 'ctc') return { view: 'ctc', repo };
   if (tab === 'releases') return { view: 'releases', repo };
   if (tab === 'sessions') return { view: 'agents', repo, section: 'sessions' };
   if (tab === 'agents') return { view: 'agents', repo, section: 'contracts' };

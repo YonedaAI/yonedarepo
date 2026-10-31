@@ -52,6 +52,7 @@ op_names! {
         Commit = "repo_commit",
         ContractList = "repo_contract_list",
         Contracts = "repo_contracts",
+        CtcRadar = "repo_ctc_radar",
         Delete = "repo_delete",
         ErasePlan = "repo_erase_plan",
         EraseStep = "repo_erase_step",

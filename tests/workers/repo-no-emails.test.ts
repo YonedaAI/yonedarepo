@@ -80,7 +80,7 @@ async function crawl(id: string, main: string, head: string, auth: { cookie?: st
   if (auth.cookie) {
     const tools: [string, object][] = [
       ['git_status', {}], ['git_log', { ref: 'main' }], ['git_show', { commit: head }], ['git_txlog', {}],
-      ['git_change_list', {}], ['git_change_show', { number: 1 }], ['git_change_route', { number: 1 }], ['git_sessions', { commit: main }],
+      ['git_change_list', {}], ['git_change_show', { number: 1 }], ['git_change_route', { number: 1 }], ['git_ctc_radar', {}], ['git_sessions', { commit: main }],
       ['git_release_list', {}], ['git_release_show', { tag: 'v1' }],
     ];
     for (const [name, args] of tools) {

@@ -1670,6 +1670,7 @@ mod checkpoints;
 mod compaction;
 mod compaction_writes;
 mod contract_paths;
+mod ctc_radar;
 mod differential;
 mod erase;
 mod flight_plans;

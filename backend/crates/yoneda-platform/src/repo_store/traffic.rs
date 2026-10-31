@@ -20,8 +20,10 @@ use yoneda_core::{
     txlog::{Access, overlaps},
 };
 mod queue;
+pub(crate) mod radar;
 mod warnings;
 pub(super) use queue::Queue;
+pub(crate) use warnings::Overlap;
 pub(super) use warnings::{Ask, delivered_key, warnings};
 
 /// Open Landings looked at, newest first.
@@ -95,7 +97,10 @@ impl Wanted {
 
     /// Whether a Landing's read of `read` (a file or `dir/`) meets what is wanted.
     fn meets(&self, read: &str) -> bool {
-        self.files.iter().chain(&self.dirs).any(|w| overlaps(read, w))
+        self.files
+            .iter()
+            .chain(&self.dirs)
+            .any(|w| overlaps(read, w))
     }
 
     /// The bound parameters: the exact entries, with each file's directories, since a read of
@@ -103,9 +108,15 @@ impl Wanted {
     fn params(&self) -> (Value, Value) {
         let mut exact = self.files.clone();
         for file in &self.files {
-            exact.extend(file.match_indices('/').map(|(at, _)| file[..=at].to_owned()));
+            exact.extend(
+                file.match_indices('/')
+                    .map(|(at, _)| file[..=at].to_owned()),
+            );
         }
-        (json!(exact).to_string().into(), json!(self.dirs).to_string().into())
+        (
+            json!(exact).to_string().into(),
+            json!(self.dirs).to_string().into(),
+        )
     }
 }
 
@@ -176,7 +187,12 @@ fn changed<S: SqlStore>(db: &S, commits: &[String], wanted: Option<&Wanted>) -> 
          OR p.path IN (SELECT value FROM json_each(?2)) \
          OR EXISTS (SELECT 1 FROM json_each(?3) d WHERE substr(p.path,1,length(d.value))=d.value)) \
          LIMIT ?4",
-        &[json!(json!(commits).to_string()), exact, dirs, json!(MAX_ROWS)],
+        &[
+            json!(json!(commits).to_string()),
+            exact,
+            dirs,
+            json!(MAX_ROWS),
+        ],
     )
 }
 
@@ -199,14 +215,24 @@ fn declared<S: SqlStore>(
              OR EXISTS (SELECT 1 FROM json_each(?3) d \
              WHERE substr(r.value,1,length(d.value))=d.value)) LIMIT ?4"
         ),
-        &[json!(json!(heads).to_string()), exact, dirs, json!(MAX_ROWS)],
+        &[
+            json!(json!(heads).to_string()),
+            exact,
+            dirs,
+            json!(MAX_ROWS),
+        ],
     )?;
     Ok(rows
         .iter()
         .filter_map(|row| {
             let entry = Access::parse(row["entry"].as_str()?);
             let meets = wanted.is_none_or(|w| w.meets(entry.path()));
-            meets.then(|| (row["id"].as_str().unwrap_or_default().to_owned(), entry.path().to_owned()))
+            meets.then(|| {
+                (
+                    row["id"].as_str().unwrap_or_default().to_owned(),
+                    entry.path().to_owned(),
+                )
+            })
         })
         .collect())
 }
@@ -252,7 +278,11 @@ pub(super) fn read<S: SqlStore>(
     let heads: Vec<&str> = seeds.iter().map(|s| s.head.as_str()).collect();
     for (head, entry) in declared(db, &heads, wanted)? {
         for seed in seeds.iter().filter(|s| s.head == head) {
-            prints.entry(seed.landing).or_default().reads.insert(entry.clone());
+            prints
+                .entry(seed.landing)
+                .or_default()
+                .reads
+                .insert(entry.clone());
         }
     }
     Ok(prints)

@@ -205,7 +205,10 @@ fn a_landing_ahead_with_a_read_conflict_holds_it_by_name() {
 #[test]
 fn a_state_recorded_before_separation_replays() {
     let mut recorded = serde_json::to_value(clear()).unwrap();
-    assert!(recorded.get("ahead").is_none(), "nothing ahead: nothing recorded");
+    assert!(
+        recorded.get("ahead").is_none(),
+        "nothing ahead: nothing recorded"
+    );
     recorded.as_object_mut().unwrap().remove("ahead");
     let state: LandingState = serde_json::from_value(recorded).unwrap();
     assert_eq!(clearance(&state), Clearance::Cleared);

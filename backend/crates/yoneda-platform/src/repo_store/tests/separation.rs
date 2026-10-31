@@ -46,11 +46,17 @@ fn a_read_conflict_with_a_landing_ahead_holds_it_and_names_that_landing() {
     assert!(why.contains(&format!("Landing {}", front.1)), "{why}");
     assert!(why.contains("src/a.rs"), "{why}");
     // The record says so, and the job could not land it if it tried.
-    assert_eq!(decisions(&h, behind.1)[0]["reasons"][0]["code"], "SEPARATION");
+    assert_eq!(
+        decisions(&h, behind.1)[0]["reasons"][0]["code"],
+        "SEPARATION"
+    );
     assert_eq!(code(land(&h, behind.1, &behind.0)), "SEPARATION");
     // The page reads the same decision.
     let gates = h.ok(OWNER, json!({"op":"repo_change_gates","number":behind.1}));
-    assert_eq!(gates["land_when_cleared"]["reasons"][0]["code"], "SEPARATION");
+    assert_eq!(
+        gates["land_when_cleared"]["reasons"][0]["code"],
+        "SEPARATION"
+    );
 }
 
 #[test]
@@ -103,7 +109,10 @@ fn a_queued_ticket_is_ahead() {
     let front = work(&h, &root, "front", "src/a.rs", json!([]));
     // main moves, so the landing has to wait for a merge.
     let moved = work(&h, &root, "moved", "src/m.rs", json!([]));
-    h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":moved.0}));
+    h.ok(
+        OWNER,
+        json!({"op":"repo_land","ref":"main","commit":moved.0}),
+    );
     let queued = h.ok(
         OWNER,
         json!({"op":"repo_land_enqueue","ref":"main","commit":front.0}),
@@ -132,7 +141,10 @@ fn closing_the_one_ahead_or_its_failing_clears_the_way() {
     assess(&h, behind.1);
     let closed = h.ok(OWNER, json!({"op":"repo_change_close","number":front.1}));
     assert!(
-        closed["land_checks"].as_array().unwrap().contains(&json!(behind.1)),
+        closed["land_checks"]
+            .as_array()
+            .unwrap()
+            .contains(&json!(behind.1)),
         "{closed}"
     );
     assert_eq!(assess(&h, behind.1)["state"], "cleared");
@@ -153,14 +165,23 @@ fn a_new_head_on_the_one_ahead_clears_the_way() {
     let (h, front, behind) = pair();
     assess(&h, behind.1);
     let newer = h
-        .commit(AGENT, Some(&front.0), 1, json!([file("src/new.rs", "x")]), json!([]))
+        .commit(
+            AGENT,
+            Some(&front.0),
+            1,
+            json!([file("src/new.rs", "x")]),
+            json!([]),
+        )
         .unwrap();
     let moved = h.ok(
         AGENT,
         json!({"op":"repo_branch_set","ref":"front","commit":newer,"expected":front.0}),
     );
     assert!(
-        moved["land_checks"].as_array().unwrap().contains(&json!(behind.1)),
+        moved["land_checks"]
+            .as_array()
+            .unwrap()
+            .contains(&json!(behind.1)),
         "{moved}"
     );
     assert_eq!(assess(&h, behind.1)["state"], "cleared");
@@ -179,7 +200,10 @@ fn a_clearance_nobody_acted_on_stops_holding_after_a_while() {
 fn a_person_lands_past_a_hold_as_ever() {
     let (h, _, behind) = pair();
     assert_eq!(waiting(&assess(&h, behind.1)), ["SEPARATION"]);
-    h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":behind.0}));
+    h.ok(
+        OWNER,
+        json!({"op":"repo_land","ref":"main","commit":behind.0}),
+    );
     assert_eq!(change(&h, behind.1)["status"], "landed");
 }
 

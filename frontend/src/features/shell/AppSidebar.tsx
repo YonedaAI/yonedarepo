@@ -16,6 +16,7 @@ import {
   LayoutDashboard,
   NotebookPen,
   Plus,
+  Radar,
   ScrollText,
   Search,
   Settings,
@@ -56,6 +57,7 @@ export const labelled = (name: string, label?: string) => (label ? `${name}, ${l
 export const REPO_PAGES: { id: RepoTab; label: string; Icon: typeof House }[] = [
   { id: 'overview', label: 'Overview', Icon: LayoutDashboard },
   { id: 'changes', label: 'Landings', Icon: GitPullRequest },
+  { id: 'ctc', label: 'CTC', Icon: Radar },
   { id: 'commits', label: 'Commits', Icon: GitCommitHorizontal },
   { id: 'sessions', label: 'Sessions', Icon: ScrollText },
   { id: 'memories', label: 'Memories', Icon: NotebookPen },

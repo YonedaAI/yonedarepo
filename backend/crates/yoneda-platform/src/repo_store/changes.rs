@@ -72,6 +72,15 @@ pub(super) fn get<S: SqlStore>(db: &S, number: i64) -> Result<Value> {
         .ok_or_else(|| Error::new("NOT_FOUND", format!("No change #{number}")))
 }
 
+/// The newest open changes, with their decisions.
+pub(super) fn newest_open<S: SqlStore>(db: &S, limit: u64) -> Result<Vec<Value>> {
+    let rows = db.query(
+        &format!("{CHANGE} WHERE c.status='open' ORDER BY c.number DESC LIMIT ?"),
+        &[json!(limit)],
+    )?;
+    Ok(rows.into_iter().map(shaped).collect())
+}
+
 pub(super) fn number_of(c: &Value) -> Result<i64> {
     c["number"]
         .as_i64()
