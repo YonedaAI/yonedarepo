@@ -7,6 +7,8 @@
 // Containers Read (all read-only). Secrets, set from stdin (~/.config/yonedarepo/prod.env):
 // CF_ANALYTICS_TOKEN  API token with the read permissions above
 // SUPERFAN_READ_TOKEN bearer for GET /findings, GET /status, POST /run
+// New findings mail ADMIN_NOTIFY_EMAIL through Resend (superfan/notify.ts, the Secrets Store secret Resend-Yoneda), at most
+// 8 digests a UTC day. The same address as the platform's sign-up notice (its EMAIL_CONTACT).
 // Deployed first: the production platform names this Worker in tail_consumers.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
@@ -44,6 +46,11 @@
       "binding": "ZAI_KEY",
       "secret_name": "ZAI",
       "store_id": "3d9115d4fe864c54a792bcb790a763e3"
+    },
+    {
+      "binding": "RESEND_API_KEY",
+      "secret_name": "Resend-Yoneda",
+      "store_id": "3d9115d4fe864c54a792bcb790a763e3"
     }
   ],
   "triggers": {
@@ -52,8 +59,10 @@
     ]
   },
   "vars": {
+    "ADMIN_NOTIFY_EMAIL": "hello@yonedarepo.com",
     "CF_ACCOUNT_ID": "f011d0ee02b23cad26b4b38151b204ad",
     "DAILY_CAP_MICROUSD": "1000000",
+    "EMAIL_FROM": "YonedaRepo <hello@yonedarepo.com>",
     "MIMO_TOKEN_PLAN_REGION": "sgp",
     "SUPERFAN_MODEL": "mimo-v2.6-flash",
     "TELEMETRY_SOURCE": "cloudflare",

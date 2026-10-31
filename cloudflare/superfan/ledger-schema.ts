@@ -73,6 +73,10 @@ export const MIGRATIONS: string[] = [
      message TEXT NOT NULL
    );
    CREATE INDEX tail_samples_recent ON tail_samples(component, minute DESC);`,
+  // Findings from before notices count as mailed: only new ones go out.
+  `ALTER TABLE findings ADD COLUMN notified_at INTEGER;
+   UPDATE findings SET notified_at = last_seen;
+   ALTER TABLE spend_days ADD COLUMN emails INTEGER NOT NULL DEFAULT 0;`,
 ];
 
 /** Applies pending migrations; safe to call on every Durable Object start. */
