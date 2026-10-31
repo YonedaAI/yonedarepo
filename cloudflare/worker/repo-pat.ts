@@ -3,6 +3,7 @@
 // and is asked on every request (strict: no cache), through a D1 lookup from digest to
 // account. The SourceRepository maps the scopes (`_pat` credentials) onto its own.
 import type { PatScope } from '../../shared/contracts/pat-scopes';
+import { auditMember } from './platform-audit';
 import { type OrgAccess, orgAccess } from './platform-org-access';
 import { ApiError, type Json } from './repo-ops';
 import { toBase64 } from './repo-stores';
@@ -98,6 +99,7 @@ export async function issuePat(env: Env, account: string, request: Json, label?:
   )
     .bind(tokenHash, account, id, created.expires_at)
     .run();
+  await auditMember(env, account);
   return {
     id,
     token,
@@ -118,6 +120,7 @@ export async function revokePat(env: Env, account: string, id: string) {
   await env.INDEX.prepare('DELETE FROM platform_tokens WHERE workspace=? AND id=?')
     .bind(account, id)
     .run();
+  await auditMember(env, account);
   return revoked;
 }
 
