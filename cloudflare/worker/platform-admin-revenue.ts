@@ -6,7 +6,7 @@
 // Nothing is estimated. Net revenue is money kept, before Stripe's fees, which are not recorded;
 // so it is not profit and is not called that. Credit sold and unused is a liability, kept apart.
 // A cost is shown only where the ledger recorded one: a model call's, at list rates.
-import type { AdminRevenue } from '../../shared/admin-billing';
+import type { AdminRevenue } from '../../shared/admin-revenue';
 import { managed } from './platform-admin-billing';
 import { audit } from './platform-admin-queries';
 import { ApiError, type Json } from './repo-ops';

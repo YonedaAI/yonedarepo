@@ -2,7 +2,7 @@
 // kept before Stripe's fees, which the ledger does not hold, so it is called nothing stronger.
 // Sold credit is a liability and stands apart from it. A cost nobody recorded reads "not
 // recorded", never a guess.
-import type { AdminRevenue, AdminRevenueUsage } from '../../../../shared/admin-billing';
+import type { AdminRevenue, AdminRevenueUsage } from '../../../../shared/admin-revenue';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { money } from './adminBillingModel';
 import { when } from './adminModel';

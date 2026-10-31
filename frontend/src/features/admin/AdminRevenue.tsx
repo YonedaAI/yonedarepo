@@ -1,7 +1,7 @@
 // The revenue view on the overview, where ADMIN_BILLING is on: its range, its report and the
 // rebuild from the ledgers.
 import { type FormEvent, useState } from 'react';
-import type { AdminRevenue } from '../../../../shared/admin-billing';
+import type { AdminRevenue } from '../../../../shared/admin-revenue';
 import { Dialog } from '../../components/Dialog';
 import type { Navigate } from '../shell/useRoute';
 import { Failure, Loading } from '../source-platform/SourceStatus';

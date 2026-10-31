@@ -40,6 +40,8 @@ const neutral = new Set([
   '../../shared/account',
   // Contact support's limits and attachment types, shared with the browser; imports nothing.
   '../../shared/support',
+  // The operators' revenue answer, shared with the browser; types only, imports nothing.
+  '../../shared/admin-revenue',
   '../../backend/crates/yoneda-worker/build/worker/shim.mjs',
   '../../backend/crates/yoneda-core/src/platform_tools.json',
 ]);

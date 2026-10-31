@@ -4,7 +4,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import type { AdminRevenue } from '../../../../shared/admin-billing';
+import type { AdminRevenue } from '../../../../shared/admin-revenue';
 import { RevenueReport } from './AdminRevenueReport';
 import { defaultRange, rangeProblem, rebuildAll, recorded, revenuePath } from './adminRevenueModel';
 
