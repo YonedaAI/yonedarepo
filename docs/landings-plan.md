@@ -53,7 +53,7 @@ Landing states are labels worked out from existing data, never new status values
 
 | Fix | Problem | Evidence |
 |---|---|---|
-| **Check every commit's class, not just the head's** | From reading: a server-side branch with logic first and a docs-only head reads as auto-approved. **This may be a review bypass in prod today.** Confirm with a failing test first | `land_gates.rs:71-74` |
+| ~~Check every commit's class, not just the head's~~ | **Done, on prod at `e10b643d`.** The bypass was real in all 3 landing paths: a logic commit under a docs-only head landed with no approval when `auto_approve` was set | `land_gates.rs` |
 | Classify Git pushes | Only server-side commits are classified, so pushes never auto-approve | `repo-commit.ts:102` |
 | Let managed agents post required checks | Requiring `code-review` looks set to make every run fail, because nothing sets `check_posters` | `policy.rs:95-110`, `run.ts:192` |
 | Make `block_at` work, or remove it from the docs | It is null everywhere and overrides are refused, so Slop always passes | `managed-settings.ts:29`, `report.ts:55` |
@@ -141,7 +141,7 @@ We don't build orchestration, so this is **pull, not push**: the platform never 
 
 | Stage | Proof |
 |---|---|
-| 1 | Failing test first for the head-only class; a required managed check passes end to end |
+| 1 | A required managed check passes end to end |
 | 2 | Evidence file per run; 5 per arm; delivery check passes in every run; verdict stated either way |
 | 3 | Rust read tests, including a path-restricted token; browser check |
 | 4 | Collaborator and public reader see the cards; Risk gives the same score twice |

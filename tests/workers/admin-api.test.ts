@@ -8,6 +8,7 @@ import { expect, it, vi } from 'vitest';
 import { accountRoute } from '../../cloudflare/worker/accounts';
 import { PlatformEntrypoint } from '../../cloudflare/worker/platform-entrypoint';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
+import { touchActivity } from '../../cloudflare/worker/repo-activity';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, bindings, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
@@ -79,7 +80,7 @@ it('answers operators only: an operator session or the owner token, never a toke
   const user = await signup('plain_user');
   const bossToken = await token(boss);
   const target = operators();
-  const paths = ['/admin/overview', '/admin/accounts', '/admin/accounts/plain_user', '/admin/repos', '/admin/signups', '/admin/audit'];
+  const paths = ['/admin/overview', '/admin/accounts', '/admin/accounts/plain_user', '/admin/repos', '/admin/repos/largest', '/admin/signups', '/admin/audit'];
   for (const path of paths) {
     expect((await api(path, { cookie: user }, {}, target)).status, path).toBe(403);
     expect((await api(path, { token: bossToken }, {}, target)).status, path).toBe(403);
@@ -208,6 +209,42 @@ it('quarantines and releases repository content as the owner, audited', async ()
     { actor: 'boss', action: 'repo.quarantine', target: repo },
     { actor: 'boss', action: 'repo.release', target: repo },
   ]);
+});
+
+it('lists the largest repositories by sampled size and shows one live, changing nothing', async () => {
+  const boss = await signup('boss');
+  const owner = await signup('big_owner');
+  const repo = async (name: string) =>
+    (await api('/repos', { cookie: owner }, { body: { name, files: [file('a.txt', 'a\n')], author } })).body.id as string;
+  const [small, big, unsampled] = [await repo('small'), await repo('big'), await repo('unsampled')];
+  await touchActivity(scoped, small, 1, 5_000);
+  await touchActivity(scoped, big, 1, 9_100_000_000);
+  await touchActivity(scoped, unsampled, 1);
+  const target = operators();
+  const largest = (await api('/admin/repos/largest', { cookie: boss }, {}, target)).body;
+  expect(largest.items.map((r: any) => [r.name, r.handle, r.db_bytes, r.level])).toEqual([
+    ['big', 'big_owner', 9_100_000_000, 9_000_000_000],
+    ['small', 'big_owner', 5_000, null],
+  ]);
+  const detail = (await api(`/admin/repos/${big}`, { cookie: boss }, {}, target)).body;
+  expect(detail.storage.db_bytes).toBeGreaterThan(4096);
+  expect(detail.storage.table_rows.commits).toBeGreaterThan(0);
+  expect(await audits()).toEqual([]);
+  // A size that cannot be read leaves the rest of the page.
+  const broken = {
+    ...target,
+    SOURCE_REPOS: {
+      idFromName: (n: string) => n,
+      get: () => ({
+        fetch: async (url: string, init: RequestInit) => {
+          const { op } = JSON.parse(String(init.body));
+          if (op === 'repo_storage') throw new Error('authority down');
+          return Response.json({ records: [] });
+        },
+      }),
+    },
+  } as unknown as Env;
+  expect((await api(`/admin/repos/${big}`, { cookie: boss }, {}, broken)).body).toMatchObject({ id: big, storage: null });
 });
 
 it('backfills accounts the other projections know, once', async () => {

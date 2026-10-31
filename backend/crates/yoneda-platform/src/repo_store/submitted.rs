@@ -155,6 +155,10 @@ fn land_one<S: SqlStore>(
     {
         return Ok(json!({ "status": "landed", "version": row["version"], "already": true }));
     }
+    // Refused alone: a failed batch would go back to the combiner's queue, again and again.
+    if super::capacity::landing_refused(db, c, refname, &commit.id)? {
+        return Ok(refused(super::capacity::refusal()));
+    }
     // Review classes and symbol writes travel with the record: semantic auto-approval and
     // symbol-level validation (later work reading other symbols of these files) read them.
     if let Some(classes) = record.get("classes").filter(|v| !v.is_null()) {
@@ -169,12 +173,19 @@ fn land_one<S: SqlStore>(
             &[json!(commit.id.hex()), touch["path"].clone(), touch["symbols"].clone(), c["now"].clone()],
         )?;
     }
-    // Auto-approval judges all a landing would bring: a chain is adopted before its gates.
-    if !settings.policy.auto_approve.is_empty()
+    // Auto-approval and a path grant judge all a landing would bring: a chain is adopted
+    // before either, a cost only they pay.
+    let restricted = actor.grant.is_some();
+    if (restricted || !settings.policy.auto_approve.is_empty())
         && !parents_here(db, &commit)?
         && !adopt_chain(db, c, settings, records)?
     {
         return Ok(json!({ "status": "need_chain" }));
+    }
+    if restricted
+        && let Err(e) = super::grants::require_landing(db, &commit, &touches, refname, &actor.grant)
+    {
+        return Ok(refused(e));
     }
     if let Err(e) = require_gates(db, &commit, refname, settings) {
         return Ok(refused(e));

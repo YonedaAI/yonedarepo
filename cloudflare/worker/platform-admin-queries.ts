@@ -1,6 +1,7 @@
 // The admin pages' reads of the D1 projections (operators only; platform-admin.ts checks): the
 // overview's totals, the account and repository listings, the sign-up feed and the audit
 // log. Listings page backwards by creation time (`before`, a millisecond time).
+import { storageLevel } from './repo-storage';
 import type { Env, Json } from './types';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -136,6 +137,20 @@ export async function listRepos(env: Env, q: string | null, before: string | nul
     )
     .all<{ created_at: number }>();
   return page(results);
+}
+
+/** `GET repos/largest`: repositories by the database size last sampled, largest first, with
+ * the highest alert level each reached. */
+export async function largestRepos(env: Env) {
+  const { results } = await env.INDEX.prepare(
+    `SELECT ${REPO_COLUMNS},a.db_bytes FROM platform_activity a
+       JOIN platform_repos r ON r.id=a.repo
+       LEFT JOIN platform_handles h ON h.workspace=r.workspace
+       WHERE a.db_bytes IS NOT NULL ORDER BY a.db_bytes DESC,r.id LIMIT ?`,
+  )
+    .bind(PAGE)
+    .all<{ db_bytes: number }>();
+  return { items: results.map((r) => ({ ...r, level: storageLevel(r.db_bytes) })) };
 }
 
 /** One repository's listing row (its owner, for acting as the owner), or null. */
