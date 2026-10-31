@@ -7,7 +7,8 @@ use yoneda_core::{Error, Result};
 
 /// A personal access token the adapter verified against its account: the account's
 /// principal (never human, so break-glass stays out of reach), `repo:admin` as the owner,
-/// and the other account scopes as the repository scopes of the same name. On another
+/// and the other `repo:` scopes as the repository scopes of the same name; an `account:`
+/// scope is about the account, so it adds nothing here. On another
 /// account's repository the token holds only what both it and the membership role allow
 /// (`repo:admin` counting as every scope); on a public repository it is not a member of,
 /// it reads as a public reader (its organization limit still holds). The adapter enforces
@@ -25,6 +26,7 @@ pub(super) fn account_token(
     let mut admin = false;
     for scope in &held {
         match scope.as_str() {
+            crate::accounts::SSH_KEYS_SCOPE => {}
             "repo:admin" => admin = true,
             "repo:read" | "repo:write" | "repo:land" | "repo:review" => {
                 scopes.push(scope["repo:".len()..].to_owned())

@@ -15,7 +15,7 @@
 // page, its /auth/<provider>/* routes answer 404. Callback URLs: https://dev.yonedarepo.com/auth/github/callback
 // and https://dev.yonedarepo.com/auth/google/callback. Deploy uploads them when the secrets file has them.
 // /api/managed is proxied to the managed agents Worker (MANAGED service binding, deployed first).
-// /install.sh and /downloads/* (worker/downloads.ts): the CLI installer and releases and the public Claude Code marketplace, from the DOWNLOADS bucket that cargo xtask downloads stages and uploads.
+// /install.sh, /install.ps1 and /downloads/* (worker/downloads.ts): the CLI installers and releases and the public Claude Code marketplace, from the DOWNLOADS bucket that cargo xtask downloads stages and uploads.
 // Site analytics (worker/site-events.ts): one cookieless SITE_EVENTS data point per public HTML page view and per sign-up,
 // into the Analytics Engine dataset yonedarepo_dev_site_events (created on first write; infra plan/prune do not track it;
 // underscores, not hyphens: the dataset is a table name in Analytics Engine SQL).

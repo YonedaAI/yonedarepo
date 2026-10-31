@@ -40,7 +40,7 @@
   border-radius: 999px;
   background: var(--surface-2);
   color: var(--text);
-  font-size: 13px;
+  font-size: var(--text-md);
   font-weight: 500;
 }
 .agents-menu {
@@ -82,8 +82,8 @@
 }
 .agents-heading {
   margin: 0;
-  font-size: 20px;
-  font-weight: 500;
+  font-size: var(--text-3xl);
+  font-weight: var(--weight-heading);
 }
 .button-link {
   display: inline-flex;
@@ -95,7 +95,7 @@
   border-radius: 7px;
   background: var(--surface);
   color: var(--text);
-  font-size: 14px;
+  font-size: var(--text-base);
   font-weight: 500;
   text-decoration: none;
 }
@@ -134,7 +134,7 @@
 }
 .agent-card h3 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--text-lg);
   font-weight: 500;
   color: var(--text);
 }
@@ -176,7 +176,7 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 13px;
+  font-size: var(--text-md);
   color: var(--muted);
 }
 .managed-meter {
@@ -205,7 +205,7 @@
   color: var(--warn);
 }
 .managed-figure {
-  font-size: 22px;
+  font-size: var(--text-2xl);
   font-weight: 600;
   color: var(--text);
 }
@@ -214,7 +214,7 @@
   grid-template-columns: max-content minmax(0, 1fr);
   gap: 6px 14px;
   margin: 0;
-  font-size: 14px;
+  font-size: var(--text-md);
 }
 .managed-facts dt {
   color: var(--muted);
@@ -307,7 +307,7 @@
 }
 .agent-field textarea {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: var(--text-mono);
 }
 .agent-repo-tools {
   display: flex;
@@ -360,7 +360,7 @@
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface-2);
-  font-size: 12px;
+  font-size: var(--text-sm);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -374,12 +374,6 @@
 }
 .agent-runs-table .chip {
   margin-left: 4px;
-}
-.billing-cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
 }
 .plugin-actions {
   display: flex;
@@ -412,7 +406,7 @@
 }
 .repo-plugins h3 {
   margin: 16px 0 8px;
-  font-size: 14px;
+  font-size: var(--text-base);
 }
 /* The ⋮ menu of a set-up agent. */
 .agent-menu {
@@ -449,7 +443,7 @@
   border-radius: 5px;
   background: none;
   color: var(--text);
-  font-size: 14px;
+  font-size: var(--text-base);
   text-align: left;
 }
 .agent-menu-list button:hover:not(:disabled),
@@ -494,8 +488,8 @@
 }
 .agent-setup-head h1 {
   margin: 0;
-  font-size: 22px;
-  font-weight: 500;
+  font-size: var(--text-3xl);
+  font-weight: var(--weight-heading);
 }
 .agent-setup-head p {
   margin: 4px 0 0;
@@ -510,12 +504,12 @@
 .agent-setup-section h2,
 .agent-detail h2 {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--text-lg);
   font-weight: 600;
   color: var(--muted);
 }
 .agent-detail h2 {
-  font-size: 15px;
+  font-size: var(--text-xl);
   color: var(--text);
 }
 .agent-panel {
@@ -555,7 +549,7 @@
 }
 .agent-field textarea {
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: var(--text-mono);
 }
 .agent-cols {
   display: grid;
@@ -589,7 +583,7 @@ input.agent-fixed:focus-visible,
   margin: 0;
   padding: 10px 12px;
   font-family: var(--mono);
-  font-size: 12.5px;
+  font-size: var(--text-mono-dense);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -737,8 +731,8 @@ input.agent-fixed:focus-visible,
   align-items: center;
   gap: 8px;
   margin: 0;
-  font-size: 20px;
-  font-weight: 500;
+  font-size: var(--text-3xl);
+  font-weight: var(--weight-heading);
 }
 .agent-detail-grid {
   display: grid;
@@ -769,7 +763,7 @@ input.agent-fixed:focus-visible,
 }
 .agent-detail-side h2 {
   margin-top: 8px;
-  font-size: 12px;
+  font-size: var(--text-xs);
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -793,7 +787,7 @@ input.agent-fixed:focus-visible,
 /* A repository's managed agents. */
 .repo-agents-reviewers {
   margin: 0 0 10px;
-  font-size: 14px;
+  font-size: var(--text-base);
 }
 .repo-managed-agents {
   display: flex;
@@ -810,7 +804,7 @@ input.agent-fixed:focus-visible,
 }
 .repo-managed-head h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--text-xl);
   font-weight: 500;
 }
 .repo-agent-latest {

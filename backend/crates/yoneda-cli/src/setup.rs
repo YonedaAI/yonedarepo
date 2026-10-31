@@ -166,9 +166,7 @@ pub struct Places {
 impl Places {
     fn from_env() -> Result<Self> {
         Ok(Self {
-            home: std::env::var_os("HOME")
-                .map(PathBuf::from)
-                .ok_or_else(|| Error::new("HOME is not set"))?,
+            home: crate::credentials::home_dir()?,
             codex_home: std::env::var_os("CODEX_HOME").map(PathBuf::from),
             xdg_config: std::env::var_os("XDG_CONFIG_HOME")
                 .filter(|v| !v.is_empty())

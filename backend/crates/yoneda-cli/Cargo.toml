@@ -26,6 +26,8 @@ serde_json.workspace = true
 # `--json` output types and their committed JSON Schemas (`schemas/v1`).
 schemars.workspace = true
 base64 = "0.23.1"
+# The fingerprint of a local key, to recognise it among the account's.
+sha2.workspace = true
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
 tokio = { version = "1", features = ["rt", "macros", "time", "sync"] }
 uuid = { version = "1", features = ["v4"] }

@@ -23,7 +23,7 @@ import { agentPages } from './browser-agent-flow.mjs';
 import { managedAgentPages } from './browser-managed-agents-flow.mjs';
 import { forkPages, orgPages, releasePages } from './browser-collab-flow.mjs';
 import { b64, Session, secondAccount, sleep, until } from './client.mjs';
-import { atRepo, repoPath } from './repo-urls.mjs';
+import { atRepo, openRepo, repoPath } from './repo-urls.mjs';
 
 const author = { name: 'Browser gate', email: 'kit@yonedarepo.invalid' };
 
@@ -131,17 +131,20 @@ export async function signIn(page, origin, { KIT_USERNAME, KIT_LOGIN, KIT_PASSWO
   await settle(page.getByRole('button', { name: 'New repository' }).first(), [page.getByRole('alert')], { timeoutMs: 30_000, what: 'sign-in' });
 }
 
-/** The account menu's Settings page (its summary is labelled "Account: <name>"). */
-export async function accountSettings(page) {
+/** A settings page: the account menu's Account item (its summary is labelled "Account: <name>"),
+ * then the sidebar's Account group. */
+export async function accountSettings(page, section = 'General') {
   const menu = page.locator('details.account-menu');
   await menu.getByLabel(/^Account:/).click();
-  await menu.getByRole('link', { name: 'Account' }).click();
-  await page.getByRole('heading', { level: 1, name: 'Settings' }).waitFor();
+  await menu.getByRole('link', { name: 'Account', exact: true }).click();
+  await page.getByRole('navigation', { name: 'Account', exact: true }).getByRole('link', { name: section, exact: true }).click();
+  await page.getByRole('heading', { level: 1, name: section, exact: true }).waitFor();
 }
 
 /** "New repository" opens a dialog that creates a platform repository seeded with a README. */
 export async function newRepository(page, name) {
   await page.getByRole('button', { name: 'New repository' }).first().click();
+  await page.getByRole('menuitem', { name: 'Create repository' }).click();
   const dialog = page.getByRole('dialog', { name: 'New repository' });
   await dialog.getByLabel('Repository name').fill(name);
   await dialog.getByRole('button', { name: 'Create repository' }).click();
@@ -163,7 +166,7 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
     assert.equal((await account.raw('GET', `/api/v1/repos/${id}`)).status, 404, 'Deleted repository is still served');
     m.repo_deleted = true;
   });
-  await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).waitFor();
+  await page.getByRole('button', { name: `Switch repository (current: ${name})` }).waitFor();
   await atRepo(page, account, id);
   await page.getByRole('region', { name: 'Files' }).getByText('README.md').first().waitFor();
   await shot('source-code');
@@ -202,7 +205,7 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
   // Git, the CLI and MCP live on the platform API host, never the app's own origin.
   m.clone_url = await cloneLines(page, page.locator('.source-connect'), { api, id, name, path: await repoPath(account, id) }, 'Connect');
   await shot('source-connect');
-  await accountSettings(page);
+  await accountSettings(page, 'Tokens');
   await page.getByRole('heading', { name: 'Personal access tokens' }).waitFor();
   await shot('account-settings');
   m.source_pages = 'code,history,branches,changes,settings,connect,account-settings';
@@ -223,7 +226,7 @@ export async function cloneLines(page, scope, { api, id, name, path }, what) {
   const https = await blocks.nth(1).locator('code').innerText();
   assert.equal(https, `git clone ${api}${path}.git ${name}`, `${what}: the HTTPS line`);
   await scope.getByText(`yoneda login --origin ${api}`, { exact: true }).first().waitFor();
-  assert.equal(await scope.getByRole('link', { name: 'Settings → Personal tokens' }).getAttribute('href'), '/settings#personal-tokens', `${what}: the personal token link`);
+  assert.equal(await scope.getByRole('link', { name: 'Settings → Personal tokens' }).getAttribute('href'), '/settings/tokens', `${what}: the personal token link`);
   return https;
 }
 
@@ -280,7 +283,7 @@ export async function changeLanded(page, { origin, kit, account, repo: { id, nam
   Object.assign(m, { change: change.number, head: made.commit, author: member.name });
 
   // The source pages end on account settings: back to the repository through the sidebar.
-  await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).click();
+  await openRepo(page, name);
   await atRepo(page, account, id);
   await page.getByRole('navigation', { name: 'Repository' }).getByRole('link', { name: 'Changes' }).click();
   await page.getByRole('link', { name: /Browser gate change/ }).click();

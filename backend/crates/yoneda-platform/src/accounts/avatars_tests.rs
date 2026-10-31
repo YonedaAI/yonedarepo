@@ -213,7 +213,7 @@ fn the_avatar_migration_is_fresh_repeatable_and_upgrades_a_version_eight_store()
         .unwrap()
         .len()
     };
-    assert_eq!(versions(&fresh), 9);
+    assert_eq!(versions(&fresh), 10);
 
     // Upgrade: a version-8 store with an identity keeps it, with no picture yet.
     let db = NativeStore::memory().unwrap();
@@ -258,7 +258,7 @@ fn the_avatar_migration_is_fresh_repeatable_and_upgrades_a_version_eight_store()
     )
     .unwrap();
     assert_eq!(get(&db), json!({"source":null,"version":null}));
-    assert_eq!(versions(&db), 9);
+    assert_eq!(versions(&db), 10);
     // The next sign-in brings the picture.
     at(
         &db,
@@ -268,5 +268,5 @@ fn the_avatar_migration_is_fresh_repeatable_and_upgrades_a_version_eight_store()
     .unwrap();
     assert_eq!(serve(&db), json!({"provider_url": GITHUB_AVATAR}));
     get(&db);
-    assert_eq!(versions(&db), 9);
+    assert_eq!(versions(&db), 10);
 }

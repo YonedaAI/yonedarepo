@@ -1,82 +1,5 @@
-/* The shell's popovers: the sidebar's repository switcher and the top bar's Getting
-   started checklist. */
-.repo-switcher {
-  position: relative;
-}
-.switcher-button {
-  width: 100%;
-  justify-content: flex-start;
-  min-height: 36px;
-  padding: 7px 10px;
-  border: 1px solid var(--line);
-  background: var(--surface);
-  color: var(--text);
-  font-size: 13px;
-}
-.switcher-button:hover {
-  background: var(--surface-2);
-  filter: none;
-}
-.switcher-name {
-  flex: 1;
-  overflow: hidden;
-  text-align: left;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.switcher-panel {
-  position: absolute;
-  z-index: 20;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 8px;
-  border: 1px solid var(--line-strong);
-  border-radius: 9px;
-  background: var(--surface);
-  box-shadow: 0 12px 32px var(--shadow);
-}
-.switcher-panel input {
-  padding: 7px 9px;
-  font-size: 13px;
-}
-.switcher-list {
-  max-height: 280px;
-  margin: 0;
-  padding: 0;
-  overflow-y: auto;
-  list-style: none;
-}
-.switcher-list a {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 8px;
-  border-radius: 6px;
-  font-size: 13px;
-}
-.switcher-list a:hover,
-.switcher-list a:focus-visible {
-  background: var(--surface-2);
-}
-.switcher-list small {
-  margin-left: auto;
-  color: var(--muted);
-  font-size: 10px;
-}
-.switcher-row-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.switcher-empty {
-  margin: 4px;
-  color: var(--muted);
-  font-size: 12px;
-}
+/* The shell's popovers: the top bar's Getting started checklist. The repository picker's is
+   in repo-picker.css. */
 .getting-started {
   position: relative;
 }
@@ -88,7 +11,7 @@
   border: 1px solid var(--line);
   border-radius: 999px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
   cursor: pointer;
   list-style: none;
 }
@@ -143,7 +66,7 @@
   align-items: center;
   gap: 9px;
   min-height: 36px;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .getting-started-panel li > span {
   flex: 1;
@@ -156,7 +79,7 @@
 }
 .getting-started-panel li a {
   color: var(--accent-text);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .getting-started-panel li button {
   min-height: 28px;
@@ -164,7 +87,7 @@
   border: 1px solid var(--line-strong);
   background: transparent;
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 /* A failure's platform reference: small and muted under the plain message. */
 .failure-reference {
@@ -172,10 +95,48 @@
   margin-top: 2px;
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .sidebar .source-error {
   flex-wrap: wrap;
   margin: 4px 6px 8px;
-  font-size: 12px;
+  font-size: var(--text-sm);
+}
+/* The rail's + menu, beside its button (below the rail's row on a phone). The rail is above
+   the sidebar only while the menu is open, so the picker's backdrop still covers it. */
+.rail:has(.rail-menu[open]) {
+  z-index: 41;
+}
+.rail-menu {
+  position: relative;
+}
+.rail-menu > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.rail-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.rail-menu[open] > summary {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.rail-menu .account-dropdown {
+  top: 0;
+  right: auto;
+  left: calc(100% + 8px);
+  width: 232px;
+}
+.rail-menu .account-dropdown .account-item:focus-visible {
+  background: var(--surface-2);
+  color: var(--text);
+}
+@media (max-width: 800px) {
+  .rail-menu .account-dropdown {
+    position: fixed;
+    top: 114px;
+    right: 16px;
+    left: 16px;
+    width: auto;
+  }
 }

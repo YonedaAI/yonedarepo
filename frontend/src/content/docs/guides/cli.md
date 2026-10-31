@@ -20,22 +20,29 @@ On macOS or Linux:
 curl -fsSL https://yonedarepo.com/install.sh | sh
 ```
 
-The script picks the build for your machine, downloads it from yonedarepo.com, checks it against the release's published SHA-256 sums, and only then installs `yoneda` and `git-remote-yoneda` into `~/.local/bin`. That directory must be on your `PATH` for Git to find the helper; the script says so when it is not. Nothing runs as root.
+On Windows, in PowerShell:
+
+```powershell
+irm https://yonedarepo.com/install.ps1 | iex
+```
+
+The script picks the build for your machine, downloads it from yonedarepo.com, checks it against the release's published SHA-256 sums, and only then installs `yoneda` and `git-remote-yoneda` into `~/.local/bin` (`%LOCALAPPDATA%\Programs\yoneda` on Windows). That directory must be on your `PATH` for Git to find the helper; the script says so when it is not, and on Windows adds it to your user `PATH`. Nothing runs as root or needs admin rights.
+
+It also installs `cloudflared`, which [Git over SSH](/docs/guides/git-remotes#ssh) goes through: Cloudflare's own release at a pinned version, checked against a pinned SHA-256. A working `cloudflared` already on your `PATH` is left alone. If the download fails the install still succeeds with a warning, because HTTPS Git works without it.
 
 | Builds | |
 |---|---|
 | macOS | Apple silicon (arm64) and Intel (x86-64) |
 | Linux | x86-64 and arm64, statically linked (any distribution) |
+| Windows | x86-64 and arm64 |
 
 | Variable | Changes |
 |---|---|
-| `YONEDA_INSTALL_DIR` | Where to install (default `~/.local/bin`) |
+| `YONEDA_INSTALL_DIR` | Where to install (default `~/.local/bin`, or `%LOCALAPPDATA%\Programs\yoneda` on Windows) |
 | `YONEDA_VERSION` | Which release (default the latest) |
-| `YONEDA_TARGET` | `darwin-arm64`, `darwin-x64`, `linux-x64` or `linux-arm64` instead of the detected one |
+| `YONEDA_TARGET` | `darwin-arm64`, `darwin-x64`, `linux-x64`, `linux-arm64`, `windows-x64` or `windows-arm64` instead of the detected one |
 
 For example `curl -fsSL https://yonedarepo.com/install.sh | YONEDA_INSTALL_DIR=/usr/local/bin sh`. Run the same command again to update. The release's files and sums are listed in [latest.json](https://yonedarepo.com/downloads/cli/latest.json).
-
-> [!NOTE] Windows has no prebuilt CLI. Use stock Git, the web app and MCP there, which need nothing installed.
 
 ## Sign in
 
@@ -45,7 +52,7 @@ yoneda login --no-browser     # print the link and code without opening a browse
 yoneda login --with-token     # read a token from stdin instead
 ```
 
-`yoneda login` prints a code like `BCDF-GHJK` and opens the approval page (`/device`). Approve it there, choosing the token's scopes (default `repo:read`, `repo:write`, `repo:land`), expiry (default 30 days) and repositories. The code expires after 10 minutes and works once. Each approved login appears under **Settings → Signed-in CLIs**, where signing it out revokes its token.
+`yoneda login` prints a code like `BCDF-GHJK` and opens the approval page (`/device`). Approve it there, choosing the token's scopes (default `repo:read`, `repo:write`, `repo:land` and `account:ssh-keys`, which `yoneda ssh setup` uses), expiry (default 30 days) and repositories. The code expires after 10 minutes and works once. Each approved login appears under **Settings → Signed-in CLIs**, where signing it out revokes its token and removes the SSH keys it added.
 
 `yoneda logout` removes the stored token.
 

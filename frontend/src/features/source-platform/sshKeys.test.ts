@@ -2,7 +2,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { SshCloneLine } from './CodeParts';
-import { SshKeyTable, SshSetup } from './SshKeys';
+import { SshKeyDialog, SshKeyTable, SshSetup } from './SshKeys';
 import { publicKeyProblem, type SshKey, sshCloneCommand, suggestedTitle } from './sshKeyModel';
 import type { Loaded } from './useSource';
 
@@ -55,21 +55,53 @@ describe('SSH key table', () => {
   });
 });
 
+describe('adding an SSH key', () => {
+  const dialog = () =>
+    renderToStaticMarkup(createElement(SshKeyDialog, { onAdded: () => {}, onClose: () => {} }));
+  it('asks for the title and the public key in a dialog, with the CLI way beside them', () => {
+    const html = dialog();
+    expect(html).toContain('id="ssh-title"');
+    expect(html).toContain('<textarea id="ssh-key"');
+    expect(html).toContain('yoneda ssh-key add');
+    expect(html).toMatch(/<button type="submit"[^>]*disabled=""[^>]*>Add SSH key<\/button>/);
+  });
+});
+
 describe('SshSetup', () => {
   const setup = (access: unknown) =>
-    renderToStaticMarkup(createElement(SshSetup, { access } as never));
-  it('shows the tunnel ssh config and the clone URL', () => {
-    const html = setup({
-      front_door: 'tunnel',
-      host: 'ssh.yonedarepo.com',
-      clone_url: 'ssh://git@ssh.yonedarepo.com/<repository id>.git',
-      ssh_config: 'Host ssh.yonedarepo.com\n  ProxyCommand cloudflared access ssh --hostname %h\n',
-    });
-    expect(html).toContain('install cloudflared');
+    renderToStaticMarkup(
+      createElement(SshSetup, { access, origin: 'https://api.yonedarepo.com' } as never),
+    );
+  const tunnel = {
+    front_door: 'tunnel',
+    host: 'ssh.yonedarepo.com',
+    clone_url: 'ssh://git@ssh.yonedarepo.com/<repository id>.git',
+    ssh_config: 'Host ssh.yonedarepo.com\n  ProxyCommand cloudflared access ssh --hostname %h\n',
+  };
+  it('gives two commands, each one Copy: install, then yoneda ssh setup', () => {
+    const html = setup(tunnel);
+    expect(html).toContain('aria-label="Copy Install the yoneda CLI"');
+    expect(html).toContain('<code>curl -fsSL https://yonedarepo.com/install.sh | sh</code>');
+    expect(html).toContain('aria-label="Copy Set up SSH on this machine"');
+    expect(html).toContain('<code>yoneda ssh setup</code>');
+    expect(html).toContain('ssh://git@ssh.yonedarepo.com/&lt;repository id&gt;.git');
+  });
+  it('offers both operating systems, the current one pressed', () => {
+    const html = setup(tunnel);
+    expect(html).toContain('>macOS &amp; Linux</button>');
+    expect(html).toContain('>Windows</button>');
+    expect(html).toMatch(/aria-pressed="true"[^>]*>macOS &amp; Linux/);
+  });
+  it('keeps the config lines behind Manual setup, only on the tunnel', () => {
+    const html = setup(tunnel);
+    expect(html).toContain('<summary>Manual setup</summary>');
     expect(html).toContain(
       '<pre>Host ssh.yonedarepo.com\n  ProxyCommand cloudflared access ssh --hostname %h\n</pre>',
     );
-    expect(html).toContain('ssh://git@ssh.yonedarepo.com/&lt;repository id&gt;.git');
+    expect(html).not.toContain('Once per machine');
+    expect(setup({ ...tunnel, front_door: 'connect', ssh_config: null })).not.toContain(
+      'Manual setup',
+    );
   });
   it('says when SSH is not open, and shows nothing while loading', () => {
     expect(setup({ front_door: null, host: null, clone_url: null, ssh_config: null })).toContain(
@@ -112,10 +144,11 @@ describe('SSH in the Clone menu', () => {
       `<code>git clone ssh://git@ssh.dev.yonedarepo.com/${REPO}.git demo</code>`,
     );
     expect(shown).toContain('aria-label="Copy SSH"');
-    expect(shown).toContain('href="/settings#ssh-keys"');
+    expect(shown).toContain('href="/settings/ssh-keys"');
+    expect(shown).toContain('yoneda ssh setup');
     const direct = line({ ...tunnel, front_door: 'connect', ssh_config: null });
     expect(direct).toContain('Copy SSH');
-    expect(direct).not.toContain('/settings#ssh-keys');
+    expect(direct).not.toContain('/settings/ssh-keys');
     expect(line(off)).toBe('');
     expect(line(undefined)).toBe('');
   });

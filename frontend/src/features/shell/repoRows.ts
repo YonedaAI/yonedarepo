@@ -1,5 +1,6 @@
-// The sidebar's repositories: every platform repository the account can use, by name. A
-// public one carries a badge; other accounts' public repositories are on Explore, not here.
+// The account's repositories as rows: every platform repository it can use, by name, for the
+// picker and the Repositories page. A public one carries a badge; other accounts' public
+// repositories are on Explore, and in the picker only as favorites.
 import type { Visibility } from '../source-platform/repoAccess';
 
 /** `GET /api/v1/repos`: `role` is `owner` for the account's own repositories. */
@@ -19,6 +20,10 @@ export type RepoRow = {
   name: string;
   /** Another account's repository this account is a member of: `owner · role`. */
   shared?: string;
+  /** Its owner, by handle where it has one. */
+  owner?: string;
+  /** That owner is the viewer: the row shows its name alone. */
+  own?: boolean;
   /** Anyone may read it. */
   public?: boolean;
 };
@@ -29,26 +34,33 @@ export const rowLabel = (row: RepoRow) => {
   return labels.length ? `${row.name}, ${labels.join(', ')}` : undefined;
 };
 
-export function repoRows(platform: PlatformRepo[]): RepoRow[] {
+/** `self`: the viewer's own names. */
+export function repoRows(
+  platform: PlatformRepo[],
+  self: (string | null | undefined)[] = [],
+): RepoRow[] {
   return platform
-    .map((repo) => ({
-      repo: repo.id,
-      name: repo.name || repo.id,
-      shared:
-        repo.role && repo.role !== 'owner'
-          ? `${repo.owner_handle ?? repo.owner} · ${repo.role}`
-          : undefined,
-      ...(repo.visibility === 'public' ? { public: true } : {}),
-    }))
+    .map((repo) => {
+      const owner = repo.owner_handle ?? repo.owner;
+      return {
+        repo: repo.id,
+        name: repo.name || repo.id,
+        shared: repo.role && repo.role !== 'owner' ? `${owner} · ${repo.role}` : undefined,
+        ...(owner ? { owner } : {}),
+        ...(owner && self.includes(owner) ? { own: true } : {}),
+        ...(repo.visibility === 'public' ? { public: true } : {}),
+      };
+    })
     .sort((a, b) => a.name.localeCompare(b.name) || a.repo.localeCompare(b.repo));
 }
 
-/** The repository switcher's rows for `query`: name or owner containing it, any case, in
- * listing order. */
+/** The rows for `query`: `owner/name` containing it, any case, in listing order. */
 export function matchRows(rows: RepoRow[], query: string): RepoRow[] {
   const q = query.trim().toLowerCase();
   if (!q) return rows;
   return rows.filter(
-    (r) => r.name.toLowerCase().includes(q) || (r.shared ?? '').toLowerCase().includes(q),
+    (r) =>
+      `${r.owner ?? ''}/${r.name}`.toLowerCase().includes(q) ||
+      (r.shared ?? '').toLowerCase().includes(q),
   );
 }

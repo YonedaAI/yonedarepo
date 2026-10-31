@@ -1,11 +1,14 @@
 #!/bin/sh
-# Installs the YonedaRepo CLI: yoneda and its Git helper git-remote-yoneda.
+# Installs the YonedaRepo CLI: yoneda and its Git helper git-remote-yoneda, and cloudflared,
+# which Git over SSH goes through (on Windows, install.ps1 does the same).
 #
 #   curl -fsSL https://yonedarepo.com/install.sh | sh
 #
 # Downloads the prebuilt binaries for this machine (macOS or Linux, arm64 or x86-64) from
 # the site's /downloads, checks the archive against the release's SHA256SUMS, and only
-# then installs both programs into ~/.local/bin. Nothing runs as root.
+# then installs both programs into ~/.local/bin. cloudflared is Cloudflare's own release at
+# the version pinned below, unless a working one is already on PATH. Without it HTTPS Git
+# still works, so a failed download only warns. Nothing runs as root.
 #
 # Environment:
 #   YONEDA_INSTALL_DIR     where to install (default ~/.local/bin)
@@ -16,10 +19,16 @@ set -eu
 
 site="${YONEDA_DOWNLOAD_BASE:-__YONEDA_SITE__}"
 dir="${YONEDA_INSTALL_DIR:-$HOME/.local/bin}"
+cloudflared_version=2026.10.7
+cloudflared_base=https://github.com/cloudflare/cloudflared/releases/download
 
 fail() {
   printf 'yoneda install: %s\n' "$1" >&2
   exit 1
+}
+
+warn() {
+  printf 'yoneda install: %s\n' "$1" >&2
 }
 
 if command -v curl >/dev/null 2>&1; then
@@ -55,7 +64,29 @@ case "$target" in
   darwin-x64 | Darwin-x86_64) target=darwin-x64 ;;
   linux-x64 | Linux-x86_64 | Linux-amd64) target=linux-x64 ;;
   linux-arm64 | Linux-aarch64 | Linux-arm64) target=linux-arm64 ;;
+  MINGW* | MSYS* | CYGWIN*) fail "on Windows, run this in PowerShell: irm $site/install.ps1 | iex" ;;
   *) fail "no prebuilt yoneda for $target; build it from source with cargo" ;;
+esac
+
+# Each asset's SHA-256 at cloudflared_version, checked against the file itself (see
+# docs/runbook.md for how to move the pin; install.ps1 pins the same version).
+case "$target" in
+  darwin-arm64)
+    cloudflared_asset=cloudflared-darwin-arm64.tgz
+    cloudflared_sum=3586ccf397e98e5f437e60e7c307ca6ac463e110580503af8bb8e6f9ebf831bd
+    ;;
+  darwin-x64)
+    cloudflared_asset=cloudflared-darwin-amd64.tgz
+    cloudflared_sum=02f3edfd87684dd5b705607688e4eb4b323f6e777b81e7b3a85af556aa356848
+    ;;
+  linux-x64)
+    cloudflared_asset=cloudflared-linux-amd64
+    cloudflared_sum=1f99fb518b83dec2ba8d870a7cc991d82a77e6196295a3d2754ba17ab9f91872
+    ;;
+  linux-arm64)
+    cloudflared_asset=cloudflared-linux-arm64
+    cloudflared_sum=3df43aedc9ff291d1735b5cb576cb97e0b157488796db2e32b28aecabb445775
+    ;;
 esac
 
 tmp=$(mktemp -d)
@@ -93,10 +124,49 @@ for program in yoneda git-remote-yoneda; do
   mv -f "$dir/.$program.new" "$dir/$program"
 done
 
+# Copied in place like the programs above. Every failure warns and returns: yoneda itself
+# is installed by now, and a download that fails its checksum is never unpacked or run.
+install_cloudflared() {
+  if cloudflared --version >/dev/null 2>&1; then
+    printf 'cloudflared is already installed: %s\n' "$(command -v cloudflared)"
+    return
+  fi
+  if "$dir/cloudflared" --version >/dev/null 2>&1; then
+    printf 'cloudflared is already installed: %s\n' "$dir/cloudflared"
+    return
+  fi
+  download="$tmp/$cloudflared_asset"
+  if ! fetch "$cloudflared_base/$cloudflared_version/$cloudflared_asset" "$download"; then
+    warn "could not download cloudflared; Git over SSH needs it, HTTPS Git works without it"
+    return
+  fi
+  actual=$(digest "$download")
+  if [ "$actual" != "$cloudflared_sum" ]; then
+    rm -f "$download"
+    warn "cloudflared checksum mismatch: expected $cloudflared_sum, got $actual; not installing it"
+    return
+  fi
+  case "$cloudflared_asset" in
+    *.tgz)
+      if ! tar -xzf "$download" -C "$tmp/unpacked" cloudflared; then
+        warn "could not unpack cloudflared; Git over SSH needs it, HTTPS Git works without it"
+        return
+      fi
+      program="$tmp/unpacked/cloudflared"
+      ;;
+    *) program="$download" ;;
+  esac
+  cp "$program" "$dir/.cloudflared.new"
+  chmod 755 "$dir/.cloudflared.new"
+  mv -f "$dir/.cloudflared.new" "$dir/cloudflared"
+  printf 'Installed cloudflared %s in %s\n' "$cloudflared_version" "$dir"
+}
+
 printf 'Installed yoneda %s (%s) in %s\n' "$version" "$target" "$dir"
+install_cloudflared
 # shellcheck disable=SC2016 # $PATH is printed for the reader to paste, not expanded.
 case ":$PATH:" in
   *":$dir:"*) ;;
   *) printf 'Add it to your PATH, for example: export PATH="%s:$PATH"\n' "$dir" ;;
 esac
-printf 'Next: yoneda login\n'
+printf 'Next: yoneda login, then yoneda ssh setup for Git over SSH\n'

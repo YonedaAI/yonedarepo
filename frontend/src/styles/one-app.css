@@ -1,5 +1,6 @@
 /* The one app shell: sidebar repository rows, the repository list, a repository's head and
-   chips, the Code tab, History segments, Settings and the New repository dialog. */
+   chips, the Code tab, History segments, a repository's Settings and the New repository
+   dialog. Account settings are in account-settings.css. */
 .rail-repo-name,
 .rail-repo-shared {
   overflow: hidden;
@@ -9,7 +10,7 @@
 .rail-repo-shared {
   margin-left: auto;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--text-sm);
 }
 /* Home */
 .home-repos {
@@ -67,7 +68,7 @@
   margin-bottom: 12px;
 }
 .repo-head h1 {
-  font-size: 24px;
+  font-size: var(--text-3xl);
   margin: 0;
   overflow-wrap: anywhere;
 }
@@ -85,7 +86,7 @@
   border-radius: 999px;
   background: var(--surface);
   color: var(--muted);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 a.chip:hover {
   border-color: var(--blue);
@@ -97,7 +98,7 @@ a.chip:hover {
   gap: 6px;
   padding: 3px 10px;
   border-radius: 999px;
-  font-size: 12px;
+  font-size: var(--text-sm);
   line-height: inherit;
 }
 .source-empty-state {
@@ -140,7 +141,7 @@ a.chip:hover {
 }
 .toolbar-link {
   color: var(--blue-text);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .clone-menu {
   position: relative;
@@ -173,7 +174,7 @@ a.chip:hover {
 }
 .clone-hint {
   margin: -4px 0 8px;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
 }
 .clone-hint a {
   color: var(--blue-text);
@@ -189,7 +190,7 @@ a.chip:hover {
   border: 1px solid var(--line);
   border-bottom: 0;
   border-radius: 8px 8px 0 0;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .latest-commit strong {
   font-weight: 500;
@@ -220,7 +221,7 @@ a.chip:hover {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 8px;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .file-table td {
   padding: 8px 14px;
@@ -276,12 +277,12 @@ a.chip:hover {
   font-weight: 600;
 }
 .readme-body h2 {
-  font-size: 22px;
+  font-size: var(--text-2xl);
   padding-bottom: 6px;
   border-bottom: 1px solid var(--line);
 }
 .readme-body h3 {
-  font-size: 17px;
+  font-size: var(--text-xl);
 }
 .readme-body p {
   color: var(--text);
@@ -313,7 +314,7 @@ a.chip:hover {
   border-radius: 0;
   min-height: 34px;
   padding: 6px 12px;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .segmented button + button {
   border-left: 1px solid var(--line-strong);
@@ -340,7 +341,7 @@ a.chip:hover {
   padding: 8px 10px;
   border-radius: 6px;
   color: var(--muted);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .settings-nav a:hover {
   background: var(--surface-2);
@@ -355,11 +356,11 @@ a.chip:hover {
   max-width: 820px;
 }
 .settings-body h2 {
-  font-size: 18px;
+  font-size: var(--text-xl);
   margin: 0 0 12px;
 }
 .settings-body h3 {
-  font-size: 14px;
+  font-size: var(--text-base);
   font-weight: 600;
   margin: 20px 0 6px;
 }
@@ -414,11 +415,11 @@ a.chip:hover {
 }
 .settings-saved {
   color: var(--success);
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .settings-problem {
   color: var(--danger);
-  font-size: 12px;
+  font-size: var(--text-sm);
 }
 .settings-url {
   max-width: 280px;
@@ -437,19 +438,13 @@ a.chip:hover {
   grid-template-columns: max-content 1fr;
   gap: 8px 16px;
   margin: 0 0 8px;
-  font-size: 13px;
+  font-size: var(--text-md);
 }
 .settings-facts dt {
   color: var(--muted);
 }
 .settings-facts dd {
   margin: 0;
-}
-.account-settings {
-  padding: 28px 32px 48px;
-}
-.account-settings h1 {
-  font-size: 24px;
 }
 .new-repository-actions {
   display: flex;
@@ -480,6 +475,8 @@ a.chip:hover {
   }
   .file-name {
     width: auto;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   .file-message {
     display: none;
@@ -490,10 +487,31 @@ a.chip:hover {
   }
 }
 .page-heading h1 {
-  font-size: 28px;
+  font-size: var(--text-3xl);
   font-weight: 600;
   margin-bottom: 6px;
 }
 .page-heading p {
   margin-bottom: 0;
+}
+/* A repository until its import lands. */
+.import-status p {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.import-status p:last-child {
+  margin-bottom: 0;
+}
+.import-status .source-meta {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.import-status strong,
+.import-notice strong {
+  color: var(--text);
+}
+.import-failed {
+  border: 1px solid var(--danger-line);
+  background: var(--danger-soft);
 }

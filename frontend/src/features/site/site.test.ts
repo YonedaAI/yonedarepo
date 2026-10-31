@@ -76,7 +76,7 @@ describe('site routes', () => {
     // A handle-shaped first segment is a profile (repoNames.ts); anything else is home.
     expect(parse('/nowhere')).toEqual({ view: 'profile', handle: 'nowhere' });
     expect(parse('/no-where')).toEqual({ view: 'home' });
-    expect(parse('/settings')).toEqual({ view: 'settings' });
+    expect(parse('/settings')).toEqual({ view: 'settings', section: 'general' });
     expect(parse('/source/explore')).toEqual({ view: 'explore' });
   });
 
@@ -92,7 +92,7 @@ describe('site routes', () => {
     expect(siteView({ view: 'site', site: { page: 'pricing' } }, out, false)).toEqual({
       page: 'pricing',
     });
-    expect(siteView({ view: 'settings' }, out, false)).toBeUndefined();
+    expect(siteView({ view: 'settings', section: 'general' }, out, false)).toBeUndefined();
   });
 });
 

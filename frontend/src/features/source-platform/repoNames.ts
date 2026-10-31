@@ -40,6 +40,9 @@ export type NamedRoute =
   /** A readable repository address not resolved to an id yet; `rest` is what follows the name. */
   | { view: 'repo-name'; owner: string; name: string; rest: string; search: string };
 
+/** A repository's id, as an address carries it. */
+export const REPO_ID = /^r[0-9a-f]{20}$/;
+
 const names = new Map<string, { owner: string; name: string }>();
 
 /** Records that repository `repo` is `/<owner>/<name>`; an owner without a handle is ignored. */

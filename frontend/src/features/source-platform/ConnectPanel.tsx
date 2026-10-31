@@ -8,10 +8,10 @@ import {
   cloneCommand,
   codexToml,
   httpsCloneCommand,
-  installCommand,
   loginCommand,
   mcpUrl,
 } from './connect';
+import { InstallCommand } from './InstallCommand';
 import { Failure } from './SourceStatus';
 import { sourceApi } from './sourceApi';
 import { CopyBlock } from './TokenParts';
@@ -41,7 +41,7 @@ export function CloneCommands({
         text={httpsCloneCommand(origin, repo, name)}
       />
       <p className="source-meta clone-hint">
-        <a href="/settings#personal-tokens">Settings → Personal tokens</a>
+        <a href="/settings/tokens">Settings → Personal tokens</a>
       </p>
     </>
   );
@@ -81,19 +81,20 @@ export function AgentConnectHelp({ origin }: { origin: string }) {
       <section aria-labelledby="connect-cli">
         <h2 id="connect-cli">The yoneda CLI</h2>
         <p className="source-meta">
-          Installs <code>yoneda</code> and <code>git-remote-yoneda</code> into{' '}
-          <code>~/.local/bin</code> on macOS and Linux. Signing in opens your browser to approve;
-          the token is stored with mode 0600.
+          Installs <code>yoneda</code> and <code>git-remote-yoneda</code>, with cloudflared for Git
+          over SSH, into <code>~/.local/bin</code> on macOS and Linux and{' '}
+          <code>%LOCALAPPDATA%\Programs\yoneda</code> on Windows. Signing in opens your browser to
+          approve; the token is stored with mode 0600.
         </p>
-        <CopyBlock label="Install the yoneda CLI" text={installCommand(origin)} />
+        <InstallCommand origin={origin} />
         <CopyBlock label="Sign in" text={loginCommand(origin)} />
       </section>
       <section aria-labelledby="connect-agents">
         <h2 id="connect-agents">Agents (MCP)</h2>
         <p className="source-meta">
           One endpoint for all your repositories: every tool takes a <code>repo</code> argument.
-          Authenticate with a personal access token from <a href="/settings">Settings</a> in the{' '}
-          <code>YONEDA_TOKEN</code> environment variable.
+          Authenticate with a personal access token from <a href="/settings/tokens">Settings</a> in
+          the <code>YONEDA_TOKEN</code> environment variable.
         </p>
         <CopyBlock label="MCP URL" text={mcpUrl(origin)} />
         <CopyBlock

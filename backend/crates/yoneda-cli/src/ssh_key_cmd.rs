@@ -1,7 +1,7 @@
 //! `yoneda ssh-key …`: the account's SSH public keys, for Git over SSH. The platform
 //! parses and fingerprints a key; this reads it, catches the usual mistakes (a private key,
 //! a file of several keys) before sending, and prints what the platform answers.
-use crate::api::encode;
+use crate::api::{Api, Failure, encode};
 use crate::command::SshKeyCommand;
 use crate::error::{Context, Error, Result};
 use crate::human;
@@ -113,8 +113,19 @@ fn when(value: &Value) -> String {
     format!("{year:04}-{month:02}-{day:02}")
 }
 
+/// Adds `key` to the account as `title` (see [`default_title`]); the platform's answer.
+pub async fn add(
+    api: &Api,
+    key: &PublicKey,
+    title: Option<String>,
+) -> std::result::Result<Value, Failure> {
+    let title = default_title(title, key, host_name());
+    api.post("/ssh-keys", &json!({ "title": title, "key": key.line }))
+        .await
+}
+
 /// How to use the key, from the platform's `ssh` answer: on the Cloudflare Tunnel front door,
-/// cloudflared once and the `~/.ssh/config` entry; then the clone command.
+/// `yoneda ssh setup` once (or the entry by hand); then the clone command.
 pub fn setup(ssh: &Value) -> String {
     let Some(host) = ssh["host"].as_str() else {
         return "Git over SSH is not open on this platform yet; use HTTPS with a token meanwhile."
@@ -123,9 +134,8 @@ pub fn setup(ssh: &Value) -> String {
     let clone = format!("Then: git clone ssh://git@{host}/<repository id>.git");
     match ssh["ssh_config"].as_str() {
         Some(config) => format!(
-            "Git over SSH goes through Cloudflare Tunnel. Once per machine:\n\
-             1. Install cloudflared: https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/downloads/\n\
-             2. Add to ~/.ssh/config:\n\n{}\n{clone}",
+            "Git over SSH goes through Cloudflare Tunnel. Once per machine, run `yoneda ssh setup`,\n\
+             or install cloudflared and add to ~/.ssh/config:\n\n{}\n{clone}",
             config
                 .lines()
                 .map(|l| format!("    {l}\n"))
@@ -140,10 +150,7 @@ pub async fn run(origin: Option<&str>, command: SshKeyCommand) -> Result<()> {
     match command {
         SshKeyCommand::Add { source, title } => {
             let key = public_key(&read_source(&source)?)?;
-            let title = default_title(title, &key, host_name());
-            let added = api
-                .post("/ssh-keys", &json!({ "title": title, "key": key.line }))
-                .await?;
+            let added = add(&api, &key, title).await?;
             human!(
                 "Added {} {}  {}",
                 text(&added["id"]),
@@ -237,7 +244,7 @@ mod tests {
             "ssh_config": "Host ssh.yonedarepo.com\n  ProxyCommand cloudflared access ssh --hostname %h\n",
         });
         let printed = setup(&tunnel);
-        assert!(printed.contains("Install cloudflared"), "{printed}");
+        assert!(printed.contains("yoneda ssh setup"), "{printed}");
         assert!(printed.contains(
             "    Host ssh.yonedarepo.com\n      ProxyCommand cloudflared access ssh --hostname %h\n"
         ));

@@ -1,7 +1,9 @@
 // The Code tab's toolbar and summary: branch and tag picker, Clone, and the latest commit.
 import { CircleAlert, CircleCheck, CircleDashed, Copy } from 'lucide-react';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useRef, useState } from 'react';
+import { useMenuDismiss } from '../shell/menuDismiss';
 import { CloneCommands } from './ConnectPanel';
+import { SSH_SETUP_COMMAND } from './connect';
 import { ago } from './fileActivity';
 import { usePeople } from './people';
 import { Failure } from './SourceStatus';
@@ -72,8 +74,8 @@ export function SshCloneLine({
       <CopyBlock label="SSH" text={command} />
       {access?.front_door === 'tunnel' && (
         <p className="source-meta clone-hint">
-          Needs cloudflared and an <code>~/.ssh/config</code> entry once:{' '}
-          <a href="/settings#ssh-keys">Settings → SSH keys</a>.
+          Run <code>{SSH_SETUP_COMMAND}</code> once:{' '}
+          <a href="/settings/ssh-keys">Settings → SSH keys</a>.
         </p>
       )}
     </>
@@ -100,8 +102,11 @@ export function CloneButton({
   origin: string;
 }) {
   const [open, setOpen] = useState(false);
+  const menu = useRef<HTMLDetailsElement>(null);
+  useMenuDismiss(menu);
   return (
     <details
+      ref={menu}
       className="clone-menu"
       onToggle={(event) => setOpen(event.currentTarget.open)}
       onKeyDown={(event) => {

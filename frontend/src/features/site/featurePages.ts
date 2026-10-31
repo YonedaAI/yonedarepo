@@ -93,7 +93,7 @@ export const FEATURE_PAGES: FeaturePage[] = [
       },
       {
         title: 'SSH',
-        text: 'Ed25519, ECDSA or RSA keys, added with `yoneda ssh-key add`.',
+        text: 'Ed25519, ECDSA or RSA keys, added with `yoneda ssh setup`.',
       },
       {
         title: 'Your commits, unchanged',

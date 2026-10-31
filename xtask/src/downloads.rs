@@ -2,12 +2,12 @@
 //! Worker serves (cloudflare/worker/downloads.ts has the layout).
 //!
 //! `stage` builds the `yoneda` CLI for each target, packs `yoneda` and `git-remote-yoneda`
-//! into `yoneda-<version>-<target>.tar.gz`, writes SHA256SUMS, `cli/latest.json` and
-//! `cli/LATEST`, zips the Claude Code plugin (plugins/yoneda) and fills in the public
-//! marketplace (plugins/public-marketplace.json) with the zip's address and sha256, all
-//! under `target/downloads/<env>/` at their bucket keys. macOS targets build with Cargo on
-//! a Mac; Linux targets are static musl builds with `cargo zigbuild` (cargo-zigbuild and
-//! zig on PATH). `upload` puts the staged files into `<prefix>-downloads` with wrangler,
+//! into `yoneda-<version>-<target>.tar.gz` (a `.zip` of the `.exe` files on Windows), writes
+//! SHA256SUMS, `cli/latest.json` and `cli/LATEST`, zips the Claude Code plugin (plugins/yoneda)
+//! and fills in the public marketplace (plugins/public-marketplace.json) with the zip's address
+//! and sha256, all under `target/downloads/<env>/` at their bucket keys. macOS targets build
+//! with Cargo on a Mac; Linux targets are static musl builds and Windows targets MinGW builds,
+//! both with `cargo zigbuild` (cargo-zigbuild and zig on PATH). `upload` puts the staged files into `<prefix>-downloads` with wrangler,
 //! the version pointers last, so a reader never sees a LATEST whose files are missing;
 //! `--dry-run` prints the commands instead.
 use crate::process::{Result, run};
@@ -17,11 +17,13 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 /// The published targets: name, Rust target, and whether it is built with cargo-zigbuild.
-pub(crate) const TARGETS: [(&str, &str, bool); 4] = [
+pub(crate) const TARGETS: [(&str, &str, bool); 6] = [
     ("darwin-arm64", "aarch64-apple-darwin", false),
     ("darwin-x64", "x86_64-apple-darwin", false),
     ("linux-x64", "x86_64-unknown-linux-musl", true),
     ("linux-arm64", "aarch64-unknown-linux-musl", true),
+    ("windows-x64", "x86_64-pc-windows-gnu", true),
+    ("windows-arm64", "aarch64-pc-windows-gnullvm", true),
 ];
 const PROGRAMS: [&str; 2] = ["yoneda", "git-remote-yoneda"];
 /// Keys that change between releases: uploaded after everything they point at.
@@ -46,10 +48,8 @@ pub(crate) fn execute(args: &[String]) -> Result<()> {
                 })
                 .collect();
             if targets.is_empty() {
-                return Err(
-                    "--targets names none of darwin-arm64, darwin-x64, linux-x64, linux-arm64"
-                        .into(),
-                );
+                let names: Vec<&str> = TARGETS.iter().map(|(name, ..)| *name).collect();
+                return Err(format!("--targets names none of {}", names.join(", ")).into());
             }
             stage(&staged, site, &cli_version()?, &targets)
         }
@@ -99,8 +99,46 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
         .collect()
 }
 
+fn windows(target: &str) -> bool {
+    target.starts_with("windows-")
+}
+
 pub(crate) fn archive_name(version: &str, target: &str) -> String {
-    format!("yoneda-{version}-{target}.tar.gz")
+    let extension = if windows(target) { "zip" } else { "tar.gz" };
+    format!("yoneda-{version}-{target}.{extension}")
+}
+
+/// The files of `PROGRAMS` as `target` builds them.
+fn program_files(target: &str) -> Vec<String> {
+    let suffix = if windows(target) { ".exe" } else { "" };
+    PROGRAMS.iter().map(|p| format!("{p}{suffix}")).collect()
+}
+
+/// Packs a target's programs: a zip on Windows, whose installer unpacks with what ships in
+/// the box. COPYFILE_DISABLE keeps macOS tar from adding AppleDouble `._` files.
+fn pack(target: &str, bin_dir: &str, archive: &Path) -> Result<()> {
+    let programs = program_files(target);
+    let status = if windows(target) {
+        Command::new("zip")
+            .args(["-q", "-j", "-X"])
+            .arg(std::env::current_dir()?.join(archive))
+            .args(programs)
+            .current_dir(bin_dir)
+            .status()?
+    } else {
+        Command::new("tar")
+            .env("COPYFILE_DISABLE", "1")
+            .arg("-czf")
+            .arg(archive)
+            .args(["-C", bin_dir])
+            .args(programs)
+            .status()?
+    };
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("packing {} failed", archive.display()).into())
+    }
 }
 
 /// `sha256sum` lines: `<hex>  <file>`, sorted by file.
@@ -131,6 +169,7 @@ pub(crate) fn manifest(site: &str, version: &str, built: &[(&str, u64, String)])
     json!({
         "version": version,
         "install": format!("curl -fsSL {site}/install.sh | sh"),
+        "install_windows": format!("irm {site}/install.ps1 | iex"),
         "sha256sums": format!("{site}/downloads/cli/{version}/SHA256SUMS"),
         "targets": targets,
     })
@@ -175,18 +214,7 @@ fn stage(staged: &Path, site: &str, version: &str, targets: &[&(&str, &str, bool
         )?;
         let name = archive_name(version, target);
         let archive = release.join(&name);
-        let bin_dir = format!("target/{triple}/release");
-        // COPYFILE_DISABLE keeps macOS tar from adding AppleDouble `._` files.
-        let status = Command::new("tar")
-            .env("COPYFILE_DISABLE", "1")
-            .arg("-czf")
-            .arg(&archive)
-            .args(["-C", &bin_dir])
-            .args(PROGRAMS)
-            .status()?;
-        if !status.success() {
-            return Err(format!("packing {name} failed").into());
-        }
+        pack(target, &format!("target/{triple}/release"), &archive)?;
         let bytes = std::fs::read(&archive)?;
         built.push((*target, bytes.len() as u64, sha256_hex(&bytes)));
         println!("staged {name} ({} bytes)", bytes.len());
@@ -337,6 +365,37 @@ mod tests {
             "https://yonedarepo.com/downloads/cli/0.1.0/yoneda-0.1.0-linux-arm64.tar.gz"
         );
         assert_eq!(m["targets"]["linux-arm64"]["size"], 7);
+        assert_eq!(
+            m["install_windows"],
+            "irm https://yonedarepo.com/install.ps1 | iex"
+        );
+    }
+
+    #[test]
+    fn windows_targets_ship_zips_of_exe_files_built_with_zig() {
+        assert_eq!(
+            archive_name("0.1.0", "windows-x64"),
+            "yoneda-0.1.0-windows-x64.zip"
+        );
+        assert_eq!(
+            archive_name("0.1.0", "windows-arm64"),
+            "yoneda-0.1.0-windows-arm64.zip"
+        );
+        assert_eq!(
+            archive_name("0.1.0", "darwin-x64"),
+            "yoneda-0.1.0-darwin-x64.tar.gz"
+        );
+        assert_eq!(
+            program_files("windows-x64"),
+            ["yoneda.exe", "git-remote-yoneda.exe"]
+        );
+        assert_eq!(program_files("linux-x64"), ["yoneda", "git-remote-yoneda"]);
+        for name in ["windows-x64", "windows-arm64"] {
+            assert!(
+                TARGETS.iter().any(|(n, _, zig)| *n == name && *zig),
+                "{name}"
+            );
+        }
     }
 
     #[test]

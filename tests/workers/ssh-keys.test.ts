@@ -5,6 +5,7 @@ import { SignJWT } from 'jose';
 import { expect, it, vi } from 'vitest';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import type { Env } from '../../cloudflare/worker/types';
+import { workspace } from '../../cloudflare/worker/workspace';
 import { api, author, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
@@ -91,6 +92,196 @@ it('adds, lists and removes SSH keys; a key belongs to one account at a time', a
   // Once removed, another account may register it, and lookups find the new holder.
   expect((await api('/ssh-keys', { cookie: bob }, { body: { title: 'mine', key: ED25519 } })).status).toBe(200);
   expect((await internal('lookup', { fingerprint: FINGERPRINT })).body.account).toBe('ssh_bob');
+});
+
+const token = async (cookie: string, name: string, scopes: string[], repos?: string[]) =>
+  (await api('/tokens', { cookie }, { body: { name, scopes, ...(repos && { repos }) } })).body;
+
+it('holds an account:ssh-keys token to /ssh-keys: it lists and removes, and nothing else', async () => {
+  const cookie = await signup('ssh_only');
+  const r = await repo(cookie, 'ssh-only');
+  const only = await token(cookie, 'only', ['account:ssh-keys']);
+  expect(only.scopes).toEqual(['account:ssh-keys']);
+  const auth = { token: only.token };
+
+  const key = (await api('/ssh-keys', { cookie }, { body: { title: 'laptop', key: ED25519 } })).body;
+  const listed = await api('/ssh-keys', auth);
+  expect(listed.status).toBe(200);
+  expect(listed.body.keys.map((k: any) => k.id)).toEqual([key.id]);
+  expect((await api(`/ssh-keys/${key.id}`, auth, { method: 'DELETE' })).status).toBe(200);
+
+  // A key reads, writes and lands everywhere, so only a token that can already do so adds one.
+  const added = await api('/ssh-keys', auth, { body: { title: 'x', key: ED25519 } });
+  expect([added.status, added.body.error.code]).toEqual([403, 'FORBIDDEN']);
+  expect((await api('/ssh-keys', { cookie })).body.keys).toEqual([]);
+
+  const body = { body: { name: 'nope' } };
+  for (const [path, init] of [
+    ['/repos', {}],
+    ['/repos', body],
+    ['/repos/import', body],
+    [`/repos/${r}`, {}],
+    [`/repos/${r}/refs`, {}],
+    [`/repos/${r}/tree`, {}],
+    [`/repos/${r}/tokens`, {}],
+    [`/repos/${r}/policy`, {}],
+    [`/repos/${r}/members`, {}],
+    [`/repos/${r}?confirm=ssh-only`, { method: 'DELETE' }],
+    [`/repos/${r}/mcp`, { body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } }],
+    ['/mcp', { body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } }],
+    ['/tokens', {}],
+    ['/tokens', { body: { name: 'wider', scopes: ['repo:admin'] } }],
+    [`/tokens/${only.id}`, { method: 'DELETE' }],
+    ['/device/approve', { body: { user_code: 'BCDFGHJK', scopes: ['repo:admin'], expires_days: 1 } }],
+    ['/orgs', {}],
+    ['/orgs', body],
+    ['/activity', {}],
+    ['/support', { body: { subject: 's', message: 'm' } }],
+    ['/admin/accounts', {}],
+    ['/account/avatar', {}],
+    ['/resolve/ssh_only/ssh-only', {}],
+    [`/repos/${r}/path`, {}],
+  ] as [string, { method?: string; body?: unknown }][]) {
+    const answer = await api(path, auth, init);
+    expect([path, answer.status, answer.body?.error?.code]).toEqual([path, 403, 'FORBIDDEN']);
+  }
+  for (const smart of [
+    `${r}.git/info/refs?service=git-upload-pack`,
+    `${r}.git/info/refs?service=git-receive-pack`,
+  ])
+    expect((await git(smart, only.token)).status).toBe(403);
+  const basic = await platformFetch(
+    new Request(`https://yoneda/git/${r}.git/info/refs?service=git-upload-pack`, {
+      headers: { authorization: `Basic ${btoa(`x:${only.token}`)}`, 'git-protocol': 'version=2' },
+    }),
+    target,
+  );
+  expect(basic.status).toBe(403);
+});
+
+it('adds a key with the CLI login scopes; repo:admin still manages keys and others do not', async () => {
+  const cookie = await signup('ssh_login');
+  const r = await repo(cookie, 'ssh-login');
+  const login = await token(cookie, 'login', ['repo:read', 'repo:write', 'repo:land', 'account:ssh-keys']);
+  const added = await api('/ssh-keys', { token: login.token }, { body: { title: 'laptop', key: ED25519 } });
+  expect(added.status).toBe(200);
+  expect(added.body.ssh).toBeDefined();
+  // It keeps the repository scopes it holds, and gains no others.
+  expect((await api(`/repos/${r}`, { token: login.token })).status).toBe(200);
+  expect((await api('/repos', { token: login.token })).body.repos.map((x: any) => x.id)).toEqual([r]);
+  expect((await api('/tokens', { token: login.token })).status).toBe(403);
+  expect((await api('/repos', { token: login.token }, { body: { name: 'more' } })).status).toBe(403);
+  expect((await api(`/repos/${r}/tokens`, { token: login.token })).status).toBe(403);
+
+  // Short of what a key can do, or short of every repository, it cannot add one.
+  for (const scopes of [['repo:read', 'account:ssh-keys'], ['repo:read', 'repo:write', 'account:ssh-keys']]) {
+    const short = await token(cookie, 'short', scopes);
+    expect((await api('/ssh-keys', { token: short.token }, { body: { title: 'x', key: ECDSA } })).status).toBe(403);
+    expect((await api('/ssh-keys', { token: short.token })).status).toBe(200);
+    await api(`/tokens/${short.id}`, { cookie }, { method: 'DELETE' });
+  }
+  const narrow = await token(cookie, 'narrow', ['repo:read', 'repo:write', 'repo:land', 'account:ssh-keys'], [r]);
+  expect((await api('/ssh-keys', { token: narrow.token }, { body: { title: 'x', key: ECDSA } })).status).toBe(403);
+
+  // Without the scope: repository scopes alone stay out, repo:admin stays in.
+  const old = await token(cookie, 'old', ['repo:read', 'repo:write', 'repo:land']);
+  const refused = await api('/ssh-keys', { token: old.token });
+  expect([refused.status, refused.body.error.message]).toEqual([403, 'Token lacks the account:ssh-keys scope']);
+  const admin = await token(cookie, 'admin', ['repo:admin']);
+  expect((await api('/ssh-keys', { token: admin.token })).status).toBe(200);
+  expect((await api('/ssh-keys', { token: admin.token }, { body: { title: 'x', key: ECDSA } })).status).toBe(200);
+});
+
+const LOGIN = ['repo:read', 'repo:write', 'repo:land', 'account:ssh-keys'];
+/** Who the fingerprint index names, or its error code. */
+async function claimHolder() {
+  const index = target.WORKSPACES.get(target.WORKSPACES.idFromName(`sshkey:${FINGERPRINT}`));
+  const answer = await index.fetch('http://workspace/command', {
+    method: 'POST',
+    body: JSON.stringify({ op: 'ssh_fp_get', fingerprint: FINGERPRINT }),
+  });
+  const body = await answer.json<any>();
+  return body.account ?? body.error.code;
+}
+
+it('removes the keys a token added when it is revoked: the account check, the gateway and open sessions refuse at once', async () => {
+  const cookie = await signup('ssh_revoke');
+  const r = await repo(cookie, 'ssh-revoke');
+  const login = await token(cookie, 'login', LOGIN);
+  const other = await token(cookie, 'other', LOGIN);
+  const key = (await api('/ssh-keys', { token: login.token }, { body: { title: 'laptop', key: ED25519 } })).body;
+  const own = (await api('/ssh-keys', { cookie }, { body: { title: 'mine', key: ECDSA } })).body;
+  const count = (await api('/tokens', { cookie })).body.tokens.find((t: any) => t.id === login.id).ssh_keys;
+  expect(count).toBe(1);
+
+  const lookup = { fingerprint: FINGERPRINT };
+  const session = { account: 'ssh_revoke', key_id: key.id, fingerprint: FINGERPRINT, repo: r, service: 'git-upload-pack' };
+  expect((await internal('lookup', lookup)).status).toBe(200);
+  const open = (await internal('session', session)).body.token as string;
+  expect((await git(`${r}.git/git-upload-pack`, open, 'POST')).status).toBe(200);
+
+  // Adding the same key with another token moves nothing: only `login` takes it away.
+  expect((await api('/ssh-keys', { token: other.token }, { body: { title: 'again', key: ED25519 } })).status).toBe(409);
+  const unrelated = await api(`/tokens/${other.id}`, { cookie }, { method: 'DELETE' });
+  expect(unrelated.body).toEqual({ id: other.id, revoked: true, removed_ssh_keys: [] });
+  expect((await internal('lookup', lookup)).status).toBe(200);
+
+  const revoked = await api(`/tokens/${login.id}`, { cookie }, { method: 'DELETE' });
+  expect(revoked.body).toEqual({
+    id: login.id,
+    revoked: true,
+    removed_ssh_keys: [{ id: key.id, title: 'laptop', fingerprint: FINGERPRINT }],
+  });
+  await expect(
+    workspace(target, 'ssh_revoke', { op: 'ssh_key_check', key_id: key.id, fingerprint: FINGERPRINT }),
+  ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+  expect((await internal('lookup', lookup)).status).toBe(404);
+  expect((await internal('session', session)).status).toBe(401);
+  expect((await git(`${r}.git/git-upload-pack`, open, 'POST')).status).toBe(401);
+  expect(await claimHolder()).toBe('NOT_FOUND');
+
+  // The key the person added stays; a second revocation finds nothing.
+  expect((await api('/ssh-keys', { cookie })).body.keys.map((k: any) => k.id)).toEqual([own.id]);
+  expect((await api(`/tokens/${login.id}`, { cookie }, { method: 'DELETE' })).status).toBe(404);
+});
+
+it('keeps a revocation whose claim release fails: the key is gone and the claim grants nothing', async () => {
+  const cookie = await signup('ssh_stale');
+  const login = await token(cookie, 'login', LOGIN);
+  const key = (await api('/ssh-keys', { token: login.token }, { body: { title: 'laptop', key: ED25519 } })).body;
+  const namespace = scoped.WORKSPACES;
+  const failing = {
+    ...scoped,
+    WORKSPACES: {
+      idFromName: (name: string) => namespace.idFromName(name),
+      get: (id: DurableObjectId) => ({
+        fetch: async (url: string, init: { body: string }) => {
+          if (JSON.parse(init.body).op === 'ssh_fp_release') throw new Error('index unavailable');
+          return namespace.get(id).fetch(url, init);
+        },
+      }),
+    },
+  } as unknown as Env;
+  const revoked = await api(`/tokens/${login.id}`, { cookie }, { method: 'DELETE' }, failing);
+  expect([revoked.status, revoked.body.removed_ssh_keys[0].id]).toEqual([200, key.id]);
+  expect(await claimHolder()).toBe('ssh_stale');
+  expect((await internal('lookup', { fingerprint: FINGERPRINT })).status).toBe(404);
+  // Another account takes the key over from the stale claim.
+  const bob = await signup('ssh_stale_bob');
+  expect((await api('/ssh-keys', { cookie: bob }, { body: { title: 'mine', key: ED25519 } })).status).toBe(200);
+  expect((await internal('lookup', { fingerprint: FINGERPRINT })).body.account).toBe('ssh_stale_bob');
+});
+
+it('refuses a key another account holds and leaves nothing for the token to remove', async () => {
+  const alice = await signup('ssh_held');
+  const held = (await api('/ssh-keys', { cookie: alice }, { body: { title: 'laptop', key: ED25519 } })).body;
+  const bob = await signup('ssh_held_bob');
+  const login = await token(bob, 'login', LOGIN);
+  const refused = await api('/ssh-keys', { token: login.token }, { body: { title: 'mine', key: ED25519 } });
+  expect([refused.status, refused.body.error.code]).toEqual([409, 'ALREADY_EXISTS']);
+  expect((await api('/tokens', { cookie: bob })).body.tokens[0].ssh_keys).toBe(0);
+  expect((await api(`/tokens/${login.id}`, { cookie: bob }, { method: 'DELETE' })).body.removed_ssh_keys).toEqual([]);
+  expect((await internal('lookup', { fingerprint: FINGERPRINT })).body).toEqual({ account: 'ssh_held', key_id: held.id });
 });
 
 it('answers the gateway only with a valid JWT, and only where SSH is configured', async () => {

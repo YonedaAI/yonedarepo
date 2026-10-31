@@ -17,8 +17,9 @@ export function onUnauthorized(listener: () => void) {
 export async function api<T>(
   path: string,
   body?: unknown,
-  /** `method`: PUT for a body that replaces a value (default: GET without a body, else POST). */
-  options?: { signal?: AbortSignal; method?: 'PUT' },
+  /** `method`: PUT for a body that replaces a value (default: GET without a body, else POST).
+   * `timeout`: milliseconds, for a request whose upload takes longer than the default. */
+  options?: { signal?: AbortSignal; method?: 'PUT'; timeout?: number },
 ): Promise<T> {
   // Repository navigation may cancel reads, never an in-flight owner mutation.
   const readSignal = body === undefined ? options?.signal : undefined;
@@ -43,7 +44,7 @@ export async function api<T>(
     timer = setTimeout(() => {
       controller.abort(timeoutError);
       reject(timeoutError);
-    }, 20_000);
+    }, options?.timeout ?? 20_000);
   });
   const request = (async () => {
     const response = await fetch(`/api/${path}`, {

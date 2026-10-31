@@ -1,17 +1,18 @@
 // The shell's sidebar: Browse (Home, Repositories, Explore, Agents: the workspace's managed
-// agents, their runs and settings; Admin for operators), the account's repositories and organizations, then
-// Repository: the switcher and the open repository's pages. On a phone it is the navigation
-// menu the top bar opens.
+// agents, their runs and settings; Admin for operators), then on a settings page Account (those
+// pages); elsewhere Repository (the picker and the open repository's pages), then the account's
+// organizations. On a phone it is the navigation menu the top bar opens.
 import {
   BookOpenText,
   Bot,
   Building2,
   Compass,
+  CreditCard,
   FolderGit2,
-  GitBranch,
   GitCommitHorizontal,
   GitPullRequest,
   House,
+  KeyRound,
   LayoutDashboard,
   NotebookPen,
   Plus,
@@ -21,8 +22,15 @@ import {
   ShieldCheck,
   Sparkles,
   Tag,
+  Terminal,
+  UserRound,
 } from 'lucide-react';
 import type { KeyboardEvent } from 'react';
+import {
+  ACCOUNT_SECTION_TITLES,
+  ACCOUNT_SECTIONS,
+  type AccountSection,
+} from '../account-settings/settingsRoute';
 import { unreadLabel } from '../admin/adminModel';
 import type { OrgSummary } from '../source-platform/orgModel';
 import { Failure } from '../source-platform/SourceStatus';
@@ -34,8 +42,9 @@ import {
   type SourceRoute,
   tabRoute,
 } from '../source-platform/sourceRoute';
-import { RepoSwitcher } from './RepoSwitcher';
-import { type RepoRow, rowLabel } from './repoRows';
+import { RepoPicker } from './RepoPicker';
+import type { RepoRow } from './repoRows';
+import type { Favorites } from './useFavorites';
 import { linkTo, type Navigate } from './useRoute';
 
 /** A row's spoken name: "acme, owner", not the name and its small label run together. */
@@ -53,6 +62,14 @@ export const REPO_PAGES: { id: RepoTab; label: string; Icon: typeof House }[] = 
   { id: 'search', label: 'Search', Icon: Search },
   { id: 'settings', label: 'Settings', Icon: Settings },
 ];
+
+const ACCOUNT_ICONS: Record<AccountSection, typeof House> = {
+  general: UserRound,
+  billing: CreditCard,
+  tokens: KeyRound,
+  'ssh-keys': Terminal,
+  organizations: Building2,
+};
 
 /** Up and Down (Home, End) move between a navigation's links. */
 function arrowKeys(event: KeyboardEvent<HTMLElement>) {
@@ -80,6 +97,9 @@ export function AppSidebar({
   loading,
   rows = [],
   rowsError = '',
+  favorites,
+  picking = false,
+  onPicking = () => {},
   orgs = [],
   route,
   repoName,
@@ -94,6 +114,10 @@ export function AppSidebar({
   loading: boolean;
   rows?: RepoRow[];
   rowsError?: string;
+  favorites?: Favorites;
+  /** The repository picker is open. */
+  picking?: boolean;
+  onPicking?: (open: boolean) => void;
   /** The account's organizations. */
   orgs?: OrgSummary[];
   route: SourceRoute;
@@ -114,6 +138,8 @@ export function AppSidebar({
   const repo = missing ? undefined : routeRepo(route);
   const page = routeTab(route);
   const pages = REPO_PAGES.filter((p) => p.id !== 'settings' || settings);
+  // The settings pages are about the account: its groups replace the repository ones.
+  const onAccount = route.view === 'settings';
   return (
     <aside className="sidebar" id="app-sidebar" aria-label="Sidebar">
       <a className="sidebar-brand" {...linkTo({ view: 'home' }, navigate)}>
@@ -170,47 +196,62 @@ export function AppSidebar({
           </a>
         )}
       </nav>
-      {authenticated && (
-        <nav className="side-nav side-repos" aria-label="Repositories" onKeyDown={arrowKeys}>
-          <p className="side-label">Your repositories</p>
-          <div className="side-scroll">
-            {rows.map((row) => (
-              // biome-ignore lint/a11y/useAriaPropsSupportedByRole: linkTo spreads the href, so this is a link.
+      {authenticated && onAccount && (
+        <nav className="side-nav" aria-label="Account" onKeyDown={arrowKeys}>
+          <p className="side-label">Account</p>
+          {ACCOUNT_SECTIONS.map((section) => {
+            const Icon = ACCOUNT_ICONS[section];
+            return (
               <a
-                key={row.repo}
-                {...current(row.repo === repo)}
-                title={row.shared ? `${row.name} (${row.shared})` : row.name}
-                aria-label={rowLabel(row)}
-                {...linkTo({ view: 'files', repo: row.repo, path: '', ref: 'main' }, navigate)}
+                key={section}
+                {...current(section === route.section)}
+                {...linkTo({ view: 'settings', section }, navigate)}
               >
-                <GitBranch size={15} aria-hidden="true" />
-                <span className="rail-repo-name">{row.name}</span>
-                {row.shared && <small className="rail-repo-shared">{row.shared}</small>}
-                {row.public && (
-                  <small className="rail-repo-public" aria-hidden="true">
-                    Public
-                  </small>
-                )}
+                <Icon size={16} aria-hidden="true" />
+                <span className="side-text">{ACCOUNT_SECTION_TITLES[section]}</span>
               </a>
-            ))}
-            {!rows.length &&
-              (rowsError ? (
-                <Failure error={rowsError} what="your repositories" onRetry={onRetry} />
-              ) : (
-                <span className="side-empty">
-                  {loading ? 'Loading repositories…' : 'No repositories yet'}
-                </span>
-              ))}
-          </div>
-          {onNew && (
+            );
+          })}
+        </nav>
+      )}
+      {(picking || ((authenticated || repo) && !onAccount)) && (
+        <div className="side-section">
+          <p className="side-label">Repository</p>
+          {authenticated && onNew && !rows.length && !loading && !rowsError && !repo && !picking ? (
             <button type="button" className="side-new" onClick={onNew}>
               <Plus size={16} aria-hidden="true" />
               New repository
             </button>
+          ) : (
+            <RepoPicker
+              rows={rows}
+              current={repo}
+              currentName={repoName}
+              loading={loading}
+              error={rowsError}
+              favorites={authenticated ? favorites : undefined}
+              open={picking}
+              onOpenChange={onPicking}
+              navigate={navigate}
+              onNew={onNew}
+            />
           )}
-        </nav>
+          {!rows.length && rowsError && (
+            <Failure error={rowsError} what="your repositories" onRetry={onRetry} />
+          )}
+          {repo && !onAccount && (
+            <nav className="side-nav" aria-label="Repository" onKeyDown={arrowKeys}>
+              {pages.map(({ id, label, Icon }) => (
+                <a key={id} {...current(id === page)} {...linkTo(tabRoute(id, repo), navigate)}>
+                  <Icon size={16} aria-hidden="true" />
+                  <span className="side-text">{label}</span>
+                </a>
+              ))}
+            </nav>
+          )}
+        </div>
       )}
-      {orgs.length > 0 && (
+      {orgs.length > 0 && !onAccount && (
         <nav className="side-nav" aria-label="Organizations" onKeyDown={arrowKeys}>
           <p className="side-label">Organizations</p>
           {orgs.map((o) => (
@@ -227,22 +268,6 @@ export function AppSidebar({
             </a>
           ))}
         </nav>
-      )}
-      {(authenticated || repo) && (
-        <div className="side-section">
-          <p className="side-label">Repository</p>
-          <RepoSwitcher rows={rows} current={repo} currentName={repoName} navigate={navigate} />
-          {repo && (
-            <nav className="side-nav" aria-label="Repository" onKeyDown={arrowKeys}>
-              {pages.map(({ id, label, Icon }) => (
-                <a key={id} {...current(id === page)} {...linkTo(tabRoute(id, repo), navigate)}>
-                  <Icon size={16} aria-hidden="true" />
-                  <span className="side-text">{label}</span>
-                </a>
-              ))}
-            </nav>
-          )}
-        </div>
       )}
       <p className="sidebar-foot">
         <i aria-hidden="true" />

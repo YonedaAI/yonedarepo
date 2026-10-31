@@ -16,6 +16,9 @@ export interface Env {
   COMMIT_SHARDS?: DurableObjectNamespace;
   /** Land combiners, one per branch (platform write path); absent where not deployed. */
   LAND_COMBINERS?: DurableObjectNamespace;
+  /** "request" makes a create wait for its commit shards to start, for comparing benches
+   * (default: they start after the answer, see repo-create.ts). */
+  SHARD_START?: string;
   /** Landing mode: batch (default) or changeset (see repo-changesets.ts). */
   LAND_MODE?: string;
   /** "true" lets a request choose its landing mode (x-yoneda-land-mode), for benchmarks. */
@@ -69,6 +72,8 @@ export interface Env {
   /** Where the operators' sign-up notice goes (platform-signup-notice.ts); EMAIL_CONTACT
    * when unset. */
   ADMIN_NOTIFY_EMAIL?: string;
+  /** Where contact support's emails go (platform-support.ts); unset, the form answers 503. */
+  SUPPORT_EMAIL?: string;
   /** Operators: accounts (comma separated) whose browser sessions may use the admin pages
    * and `/api/v1/admin` (admin-auth.ts). Unset or empty: none. */
   ADMIN_ACCOUNTS?: string;

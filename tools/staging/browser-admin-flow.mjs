@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { Session, sleep, until } from './client.mjs';
 import { see, railOrg } from './browser-collab-flow.mjs';
 import { accountSettings, newRepository, settle } from './browser-flow.mjs';
-import { atRepo } from './repo-urls.mjs';
+import { atRepo, openRepo } from './repo-urls.mjs';
 
 /** Accepts the next window.confirm (revoking asks first). */
 const acceptConfirm = (page) => page.once('dialog', (dialog) => dialog.accept());
@@ -46,16 +46,18 @@ export async function adminPages(page, { api, account, repo: { id, name }, shot,
   cleanup.push(async () => {
     if (!orgDeleted) await account.raw('DELETE', `/api/v1/orgs/${org}?confirm=${org}`);
   });
-  await accountSettings(page);
-  const orgs = page.getByRole('region', { name: 'Organizations', exact: true });
-  await orgs.getByLabel('New organization').fill(org);
-  await orgs.getByRole('button', { name: 'Create organization' }).click();
-  await settle(page.getByRole('heading', { level: 1, name: org }), [orgs.getByRole('alert')], { timeoutMs: 30_000, what: 'creating the organization to delete' });
+  await accountSettings(page, 'Organizations');
+  await page.getByRole('button', { name: 'Create organization' }).click();
+  const createOrg = page.getByRole('dialog', { name: 'Create organization' });
+  await createOrg.getByLabel('Organization name').fill(org);
+  await createOrg.getByRole('button', { name: 'Create organization' }).click();
+  await settle(page.getByRole('heading', { level: 1, name: org }), [createOrg.getByRole('alert')], { timeoutMs: 30_000, what: 'creating the organization to delete' });
 
   // Personal access token, limited to the org: shown once, used, revoked from its row.
-  await accountSettings(page);
+  await accountSettings(page, 'Tokens');
   const pats = page.getByRole('region', { name: 'Personal access tokens', exact: true });
-  const patForm = pats.getByRole('form', { name: 'Create a personal access token' });
+  await pats.getByRole('button', { name: 'Create token' }).click();
+  const patForm = page.getByRole('dialog', { name: 'Create token' }).getByRole('form', { name: 'Create a personal access token' });
   const patName = `kit-pat-${Date.now().toString(36)}`;
   await patForm.getByLabel('Name', { exact: true }).fill(patName);
   await patForm.getByLabel(/^Organization/).selectOption({ label: `Only ${org}` }).catch((e) => {
@@ -83,7 +85,7 @@ export async function adminPages(page, { api, account, repo: { id, name }, shot,
   m.pat_org_limited = org;
 
   // Repository token, limited to docs/: shown once, used, revoked from its row.
-  await page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true }).click();
+  await openRepo(page, name);
   await atRepo(page, account, id);
   await page.getByRole('navigation', { name: 'Repository' }).getByRole('link', { name: 'Settings' }).click();
   await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'Repository tokens' }).click();
@@ -119,7 +121,7 @@ export async function adminPages(page, { api, account, repo: { id, name }, shot,
   await shot('org-delete');
   await confirm.click();
   await settle(page.getByRole('status').filter({ hasText: 'Organization deleted.' }), [danger.getByRole('alert')], { timeoutMs: 30_000, what: 'deleting the organization' });
-  await page.waitForURL('**/settings');
+  await page.waitForURL('**/settings/organizations');
   orgDeleted = true;
   assert.notEqual((await account.raw('GET', `/api/v1/orgs/${org}`)).status, 200, 'the deleted org is still served');
   // Org access is cached up to 1 s per isolate: past that, a reload must not list it.
@@ -129,10 +131,15 @@ export async function adminPages(page, { api, account, repo: { id, name }, shot,
     what: `${org} gone from the caller's orgs`,
   });
   await sleep(1_000);
+  const listed = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/v1/orgs');
   await page.reload();
-  await page.getByRole('heading', { level: 1, name: 'Settings' }).waitFor();
-  assert.equal(await railOrg(page, org).count(), 0, `${org} is still in the sidebar`);
+  await listed;
+  await page.getByRole('heading', { level: 1, name: 'Organizations', exact: true }).waitFor();
   await shot('org-deleted');
+  // Settings pages have no Organizations group: look from Home.
+  await page.getByRole('navigation', { name: 'Browse' }).getByRole('link', { name: 'Home', exact: true }).click();
+  await page.waitForURL((url) => url.pathname === '/');
+  assert.equal(await railOrg(page, org).count(), 0, `${org} is still in the sidebar`);
   m.org_deleted_in_ui = org;
 }
 
@@ -155,7 +162,7 @@ export async function deletedRepoPage(page, { origin, account, shot, cleanup }, 
   cleanup.push(async () => {
     if (!deleted) await remove();
   });
-  const rail = page.getByRole('navigation', { name: 'Repositories' }).getByRole('link', { name, exact: true });
+  const rail = page.getByRole('button', { name: `Switch repository (current: ${name})` });
   await rail.waitFor();
   await atRepo(page, account, id);
   const tabs = page.getByRole('navigation', { name: 'Repository' });

@@ -71,6 +71,15 @@ fn adopt_chain<S: SqlStore>(
     Ok(true)
 }
 
+fn parents_here<S: SqlStore>(db: &S, commit: &CommitRow) -> Result<bool> {
+    for parent in &commit.parents {
+        if rows::commit_row(db, parent)?.is_none() {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 fn refused(error: Error) -> Value {
     json!({ "status": "failed", "code": error.code, "message": error.message })
 }
@@ -94,7 +103,7 @@ pub fn land<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value
 }
 
 /// One member: access, gates and routing errors refuse it alone; storage errors abort the
-/// whole batch (nothing is written before every check passed).
+/// whole batch (nothing lands before every check passed).
 fn land_one<S: SqlStore>(
     db: &S,
     c: &Value,
@@ -160,7 +169,14 @@ fn land_one<S: SqlStore>(
             &[json!(commit.id.hex()), touch["path"].clone(), touch["symbols"].clone(), c["now"].clone()],
         )?;
     }
-    if let Err(e) = require_gates(db, &commit.id, refname, settings) {
+    // Auto-approval judges all a landing would bring: a chain is adopted before its gates.
+    if !settings.policy.auto_approve.is_empty()
+        && !parents_here(db, &commit)?
+        && !adopt_chain(db, c, settings, records)?
+    {
+        return Ok(json!({ "status": "need_chain" }));
+    }
+    if let Err(e) = require_gates(db, &commit, refname, settings) {
         return Ok(refused(e));
     }
     let writes: BTreeSet<String> = touches.iter().map(|t| t.path.clone()).collect();
