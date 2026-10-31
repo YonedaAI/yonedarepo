@@ -8,13 +8,14 @@
 //
 // Repository tokens stay revoked: whoever took the repository over may hold them. A managed
 // agents connection has one, so its owner connects the repository again.
-import { type Credentials, ApiError, caller, type Json, RepoContext } from './repo-ops';
-import { forgetDeleted, isDeletedListed } from './repo-deleted';
+
 import { listRepository } from './repo-create';
+import { forgetDeleted, isDeletedListed } from './repo-deleted';
 import { forgetFork } from './repo-forks';
 import { accessEverywhere } from './repo-head';
 import { dispatchHooks } from './repo-hooks';
 import { scheduleSweep } from './repo-lfs-sweep';
+import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { requirePatScope } from './repo-pat';
 import { handleOf, holdName, releaseNames } from './repo-paths';
 import { dispatchObjects, dispatchProjection } from './repo-projection';
@@ -27,11 +28,7 @@ const nameTaken = (name: string) =>
 
 /** A fork reads its parent's objects, so it needs a parent alive to take it back. */
 async function reRegister(env: Env, parent: string, fork: string) {
-  await caller(
-    env,
-    parent,
-    { _system: 'fork' },
-  )({ op: 'repo_fork_register', fork }).catch((e) => {
+  await caller(env, parent, { _system: 'fork' })({ op: 'repo_fork_register', fork }).catch((e) => {
     if (!['GONE', 'NOT_FOUND'].includes(e?.code)) throw e;
     throw new ApiError(
       'CONFLICT',

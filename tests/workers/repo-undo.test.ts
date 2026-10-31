@@ -5,6 +5,7 @@
 // settles quietly. Unset, nothing here happens.
 import { runInDurableObject } from 'cloudflare:test';
 import { expect, it, vi } from 'vitest';
+import { toolsOf } from '../../cloudflare/worker/account-mcp';
 import { platformJob } from '../../cloudflare/worker/platform-entrypoint';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { sweepDeleted } from '../../cloudflare/worker/repo-deleted';
@@ -185,6 +186,24 @@ it('restores a fork only while its parent lives, and registers it with the paren
   expect((await restore(who, fork, { name: 'child-2' })).status).toBe(200);
 });
 
+it('a repeated delete keeps the due time it promised', async () => {
+  const who = { cookie: await signup('undo_twice') };
+  const { id } = await made(who, 'twice');
+  await remove(who, id, 'twice');
+  const first = await row(id);
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  expect((await remove(who, id, 'twice')).body).toEqual({ deleted: true });
+  expect((await row(id)).purge_at).toBe(first.purge_at);
+  expect(purges(id)).toEqual([]);
+});
+
+it('takes the window from the adapter alone', async () => {
+  const signed = caller(on, 'r0123456789abcdef0123', { _session: { workspace: 'a', principal: 'user:a' } }).sign({ op: 'repo_purge_target', _undo_ms: 0 });
+  expect(signed._undo_ms).toBe(30 * DAY);
+  const unset = caller(off, 'r0123456789abcdef0123', { _session: { workspace: 'a', principal: 'user:a' } }).sign({ op: 'repo_purge_target', _undo_ms: 1 });
+  expect(unset).not.toHaveProperty('_undo_ms');
+});
+
 it('a purge before its time is refused by the authority, whatever sent it', async () => {
   const who = { cookie: await signup('undo_early') };
   const { id } = await made(who, 'early');
@@ -342,6 +361,9 @@ it('a hold freezes the purge of a due repository, and restoring it is allowed', 
   expect((await stored(`platform/v1/${id}/`)).length).toBeGreaterThan(0);
   expect(queued.filter((m) => m.kind === 'platform_purge').length).toBe(1);
   expect(await row(id)).not.toBeNull();
+  // Its org cannot go either, though it owns nothing that is listed.
+  const org_delete = await api(`/orgs/${org}?confirm=${org}`, owner, del, held);
+  expect([org_delete.status, org_delete.body.error.code]).toEqual([423, 'LEGAL_HOLD']);
   // Not even an operator skips it.
   const operator = { cookie: await signup('undo_ops') };
   const refused = await api(`/admin/repos/${id}/purge-now`, operator, { body: {} }, held);
@@ -432,6 +454,13 @@ it('an operator rebuilds the listing from the owner\'s records', async () => {
   const done = await api('/admin/deleted-repos/rebuild', operator, { body: { owner: 'undo_rebuild' } }, on);
   expect([done.status, done.body.repos]).toEqual([200, 1]);
   expect(await row(id)).toEqual({ ...was, sent_at: 0 });
+});
+
+it('says so in the MCP tool only where deleting can be undone', () => {
+  const description = (target: Env) => toolsOf(target).find((t) => t.name === 'repo_delete')?.description;
+  expect(description(off)).toContain('permanently');
+  expect(description(on)).not.toContain('permanently');
+  expect(description(on)).toContain('30 days');
 });
 
 it('tokens need repo:admin to list or restore', async () => {

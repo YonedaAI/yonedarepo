@@ -1,13 +1,15 @@
 // Account settings, one page per section (`settingsRoute.ts`; the sidebar's Account group moves
 // between them): General (the profile, its email, its connected accounts, the theme, a way to
-// Billing), Billing, Tokens, SSH keys and Organizations. Each page is its title (Organizations
-// adds a description and Create organization), then headed cards of rows.
+// Billing), Billing, Tokens, SSH keys, Organizations and, where deleted repositories can be
+// restored, Recently deleted. Each page is its title (Organizations adds a description and
+// Create organization), then headed cards of rows.
 import { SettingsRow, SettingsSection } from '../../components/SettingsSection';
 import type { AccountIdentity } from '../../lib/types';
 import { ThemePicker } from '../shell/ThemePicker';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { AccountOrgs, CreateOrganization } from '../source-platform/AccountOrgs';
 import type { OrgSummary } from '../source-platform/orgModel';
+import { AccountDeleted } from '../source-platform/RecentlyDeleted';
 import { Loading } from '../source-platform/SourceStatus';
 import { SshKeys } from '../source-platform/SshKeys';
 import type { RepoSummary } from '../source-platform/TokenParts';
@@ -31,6 +33,8 @@ interface Props {
   navigate?: Navigate;
   /** A new picture for the signed-in account (the shell's copy, so the menu follows it). */
   onAvatar?: (picture: Pick<AccountIdentity, 'avatar_url' | 'avatar_source'>) => void;
+  /** A repository came back: the shell's lists follow. */
+  onRestored?: () => void;
 }
 
 const BILLING = { view: 'settings', section: 'billing' } as const;
@@ -81,7 +85,7 @@ function General({ identity, loading, onAvatar, navigate }: Props) {
 }
 
 function Section(props: Props) {
-  const { section, identity, loading, repos, orgs, navigate } = props;
+  const { section, identity, loading, repos, orgs, navigate, onRestored } = props;
   if (section === 'general') return <General {...props} />;
   if (!identity) return <NoAccount loading={loading} />;
   switch (section) {
@@ -93,6 +97,8 @@ function Section(props: Props) {
       return <SshKeys />;
     case 'organizations':
       return orgs && navigate ? <AccountOrgs orgs={orgs} navigate={navigate} /> : null;
+    case 'recently-deleted':
+      return <AccountDeleted onRestored={onRestored} />;
   }
 }
 

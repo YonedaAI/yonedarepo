@@ -47,6 +47,8 @@ export class FakePlatform {
   hooks: any[] = [];
   changes: FakeChange[] = [];
   revoked: string[] = [];
+  /** When a deletion, since undone, revoked the listed tokens. */
+  revokedAt: number | null = null;
   /** A credential shape only the platform's scanner knows (the managed pre-filter misses it). */
   scannerRefuses: RegExp | null = null;
   /** The owner's break-glass automation pause (repo status `automation.paused`). */
@@ -152,7 +154,11 @@ export class FakePlatform {
       if (!owner) return refuse('FORBIDDEN', 403);
       // As the platform lists them: scopes are the stored JSON text.
       return ok({
-        tokens: [...this.scopes].map(([name, scopes]) => ({ name, scopes: JSON.stringify(scopes) })),
+        tokens: [...this.scopes].map(([name, scopes]) => ({
+          name,
+          scopes: JSON.stringify(scopes),
+          revoked_at: this.revokedAt,
+        })),
       });
     }
     if (req.method === 'POST' && /^\/repos\/r[0-9a-f]{20}\/tokens$/.test(path)) {

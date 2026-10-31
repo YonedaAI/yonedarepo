@@ -27,7 +27,7 @@ The answer holds the signing secret (`whsec_…`). It is shown once. The URL mus
 | `check` | A check concluded: pass, fail or error |
 | `change` | A change request was opened, commented, landed, closed or deleted (`change.opened`, `change.commented`, `change.landed`, `change.closed`, `change.deleted`) |
 | `release` | A release was published or deleted (`release.published`, `release.deleted`) |
-| `repo` | The repository was deleted (`repo.deleted`, sent once; nothing is delivered after it) |
+| `repo` | The repository was deleted (`repo.deleted`, sent once). Where deleted repositories can be restored for a time, its `purge_at` says when that ends, and `repo.purged` is sent once when it is gone for good; a restored repository gets neither. Nothing is delivered after the last of them |
 
 Leave out `events` to get them all. `paths` limits the commit messages a hook sees to commits inside those paths; change titles and comment text go only to hooks without `paths`.
 

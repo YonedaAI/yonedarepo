@@ -38,7 +38,6 @@ import { parseStore } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { refuseOutsideKeys, verifyPat } from './repo-pat';
 import { pathOf, profile, renameRepository, resolvePath, withPath } from './repo-paths';
-import { restoreRepository } from './repo-restore';
 import { forViewer } from './repo-principal-privacy';
 import {
   ANONYMOUS,
@@ -53,6 +52,7 @@ import {
 } from './repo-public';
 import { quarantineRoute } from './repo-quarantine';
 import { releaseDownload, releasesRoute } from './repo-releases';
+import { restoreRepository } from './repo-restore';
 import { SESSION_BODY_LIMIT } from './repo-session-records';
 import { timed, withTimings } from './repo-timing';
 import { branchesRoute, operations } from './repo-tools';

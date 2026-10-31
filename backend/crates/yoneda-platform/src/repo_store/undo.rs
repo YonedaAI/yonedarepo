@@ -29,9 +29,9 @@ pub(super) fn started(digest: &str) -> bool {
 }
 
 /// The due time of a repository deleted at `deleted_at`, when the command names a window.
-fn due<S: Into<Option<i64>>>(c: &Value, deleted_at: S) -> Option<i64> {
+fn due(c: &Value, deleted_at: Option<i64>) -> Option<i64> {
     let window = c["_undo_ms"].as_i64().filter(|ms| *ms > 0)?;
-    deleted_at.into()?.checked_add(window)
+    deleted_at?.checked_add(window)
 }
 
 /// The due time of this tombstone, while a purge must wait for it.

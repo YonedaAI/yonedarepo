@@ -73,7 +73,7 @@ export type QueueMessage =
       action: string | null;
     }
   | { kind: 'resume'; repo: string; run: string }
-  /** The platform's repo.deleted: clear the repository's reviews. */
+  /** The platform's repo.purged, or a repo.deleted with no purge to come: clear its reviews. */
   | { kind: 'deleted'; repo: string }
   /** Charge the workspace's card for the pending top-up `key`. */
   | { kind: 'topup'; account: string; key: string };

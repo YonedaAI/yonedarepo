@@ -50,6 +50,19 @@ export function kitCredentials() {
   return values;
 }
 
+/** Who purges what this run deletes (`purgeWhatIsDeleted`). */
+let purger = null;
+const DELETED_REPO = /\/repos\/(r[0-9a-f]{20})\?confirm=/;
+
+/**
+ * With the undo window on, a deleted repository waits out its days, and only an operator can
+ * end that. Every teardown of a run goes through `Session`, so from here on each deletion is
+ * followed by the operator's purge, and no run leaves data behind for 30 days.
+ */
+export function purgeWhatIsDeleted(operator) {
+  purger = operator;
+}
+
 /** Bearer or cookie session against one origin; every call is timed. */
 export class Session {
   constructor(origin, { bearer, cookie } = {}) {
@@ -76,6 +89,11 @@ export class Session {
       signal: AbortSignal.timeout(120_000),
     });
     const value = await response.json().catch(() => ({}));
+    const deleted = method === 'DELETE' && response.ok ? DELETED_REPO.exec(path) : null;
+    if (deleted && purger) {
+      const purge = await purger.raw('POST', `/admin/repos/${deleted[1]}/purge-now`, {});
+      if (!purge.ok) console.warn(`${deleted[1]} waits for its undo window: ${purge.status} ${purge.body?.error?.code ?? ''}`);
+    }
     return { status: response.status, ok: response.ok, body: value, ms: performance.now() - started, headers: response.headers };
   }
   /** The response body, or an error carrying the API's code. */

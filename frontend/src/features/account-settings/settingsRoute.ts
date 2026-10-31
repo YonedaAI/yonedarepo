@@ -10,9 +10,15 @@ export const ACCOUNT_SECTION_TITLES = {
   tokens: 'Tokens',
   'ssh-keys': 'SSH keys',
   organizations: 'Organizations',
+  'recently-deleted': 'Recently deleted',
 } as const;
 export type AccountSection = keyof typeof ACCOUNT_SECTION_TITLES;
-export const ACCOUNT_SECTIONS = Object.keys(ACCOUNT_SECTION_TITLES) as AccountSection[];
+/** Where deleted repositories can be restored: in the sidebar only while the platform keeps
+ * them for a time, or there is something on it. */
+export const UNDO_SECTION: AccountSection = 'recently-deleted';
+export const ACCOUNT_SECTIONS = (Object.keys(ACCOUNT_SECTION_TITLES) as AccountSection[]).filter(
+  (section) => section !== UNDO_SECTION,
+);
 
 export type SettingsRoute =
   | { view: 'settings'; section: AccountSection; cardAdded?: never }

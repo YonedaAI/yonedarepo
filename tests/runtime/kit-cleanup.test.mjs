@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createServer } from 'node:net';
 import { test } from 'node:test';
 import { connect } from '../../tools/fanout-bench/driver.mjs';
+import { purgeWhatIsDeleted, Session } from '../../tools/staging/client.mjs';
 import { withRepos } from '../../tools/staging/platform-flow.mjs';
 import { sshFlow } from '../../tools/staging/ssh-flow.mjs';
 
@@ -52,6 +53,27 @@ test('a failing item still deletes its repositories and keeps its own error', as
     /the check failed/,
   );
   assert.equal(platform.deleted.length, 1);
+});
+
+test('with the undo window on, every deletion of a run is followed by the operator\'s purge', async (t) => {
+  const calls = [];
+  t.mock.method(globalThis, 'fetch', async (url, init = {}) => {
+    calls.push(`${init.method} ${new URL(url).pathname} ${init.headers.authorization ?? 'cookie'}`);
+    return new Response('{}', { status: 200 });
+  });
+  const repo = 'r0123456789abcdef0123';
+  const kit = new Session('https://kit.example/api/v1', { cookie: 'session=kit' });
+  purgeWhatIsDeleted(new Session('https://kit.example/api/v1', { bearer: 'operator' }));
+  t.after(() => purgeWhatIsDeleted(null));
+  await kit.raw('DELETE', `/repos/${repo}?confirm=kit-a`);
+  await kit.raw('GET', `/repos/${repo}`);
+  await kit.raw('DELETE', `/repos/${repo}/hooks/1`);
+  assert.deepEqual(calls, [
+    `DELETE /api/v1/repos/${repo} cookie`,
+    `POST /api/v1/admin/repos/${repo}/purge-now Bearer operator`,
+    `GET /api/v1/repos/${repo} cookie`,
+    `DELETE /api/v1/repos/${repo}/hooks/1 cookie`,
+  ]);
 });
 
 test('a passing item that leaked a repository fails', async () => {

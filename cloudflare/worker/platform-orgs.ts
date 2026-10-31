@@ -222,8 +222,7 @@ async function orgRoute(
   }
   if (!resource && del) return deleteOrg(env, org, actor, query.get('confirm') ?? '');
   if (resource === 'repos' && !item && get) return orgRepos(env, org, actor);
-  if (resource === 'repos' && item === 'deleted' && !sub && get)
-    return orgDeleted(env, org, actor);
+  if (resource === 'repos' && item === 'deleted' && !sub && get) return orgDeleted(env, org, actor);
   if (resource === 'hold' && !item) return orgHold(env, auth, org, method, run);
   if (resource === 'repos' && item && sub === 'hold' && !target)
     return orgHold(env, auth, org, method, run, item);

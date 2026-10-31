@@ -189,9 +189,7 @@ export async function purgeRepository(
     ? await caller(env, repo, { _system: 'purge' })({ op: 'repo_purged' })
     : null;
   if (done)
-    await Promise.all(
-      (done.hooks as number[]).map((id) => dispatchHooks(env, repo, `hook:${id}`)),
-    );
+    await Promise.all((done.hooks as number[]).map((id) => dispatchHooks(env, repo, `hook:${id}`)));
   if (eraseOn(env)) await dispatchErase(env, repo);
   if (done) await forgetDeleted(env, repo, done.workspace);
 }
