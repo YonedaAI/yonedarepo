@@ -15,6 +15,7 @@ const PATHS: Record<ManagedAgentDefinition['icon'] | 'custom', string[]> = {
   code: ['M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16'],
   shield: ['M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z', 'M9 12l2 2 4-4'],
   siren: ['M7 18v-6a5 5 0 0110 0v6M5 18h14v3H5zM12 3v2M4.2 6.2l1.4 1.4M19.8 6.2l-1.4 1.4'],
+  compass: ['M12 21a9 9 0 100-18 9 9 0 000 18z', 'M15.5 8.5l-2 5-5 2 2-5 5-2z'],
   custom: ['M12 5v14M5 12h14'],
 };
 

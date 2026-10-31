@@ -10,18 +10,16 @@ import {
   type ModelChoice,
   managedAgent,
 } from '../../shared/managed-agents';
-import { RESULT_CONTRACT } from '../../shared/managed-instructions';
-import { resolveSettings } from '../../shared/managed-settings';
 import { requestTopUp } from './billing';
-import { gatewaySlugs, type ManagedEnv, type RunParams } from './config';
-import { promptDiff } from './diff-prompt';
-import { GATEWAY_HOST, type HarnessParams, harnessStub, PLATFORM_HOST } from './harness';
+import type { ManagedEnv, RunParams } from './config';
+import { type HarnessParams, harnessStub } from './harness';
 import { ledgerStub } from './ledger';
-import { Platform, PlatformError } from './platform';
+import { PlatformError } from './platform';
 import { repoStub } from './repo-agents';
 import { postReport } from './report';
+import { type Prepared, prepare, spec } from './run-prepare';
 import { redact } from './sanitize';
-import { workspaceStub } from './workspace-agents';
+import { postNoPlan, postVerdict, verdictOf } from './verdict';
 
 /** The durable step runner (a Workflow's `step`, or an inline runner in tests). */
 export interface Steps {
@@ -37,93 +35,11 @@ export type Outcome =
 export const POLL_MS = 20_000;
 const TRANSCRIPT_MAX = 1024 * 1024;
 
-interface Prepared {
-  token: string;
-  choices: ModelChoice[];
-  reasoning: string;
-  timeout_ms: number;
-  instructions: string;
-  block_at: string | null;
-  context: {
-    change: number;
-    title: string;
-    branch: string;
-    base: string;
-    head: string;
-    files: string[];
-    /** Every changed file's patch (diff-prompt.ts), so the agent reviews each changed line. */
-    diff: string;
-  };
-}
-
 type Collected = {
   result: Record<string, unknown> | null;
   error: string | null;
   stop: string | null;
 };
-
-async function prepare(
-  env: ManagedEnv,
-  p: RunParams,
-  agent: ManagedAgentDefinition,
-): Promise<Prepared | string> {
-  const connection = await repoStub(env, p.repo).connection();
-  if (!connection || connection.revoked) return 'not_connected';
-  const platform = new Platform(env, { token: connection.token });
-  if ((await platform.automation(p.repo)).paused) return 'automation_paused';
-  const change = await platform.change(p.repo, p.change);
-  if (change.status !== 'open') return 'change_not_open';
-  if (change.head !== p.head) return 'superseded';
-  const stored = await workspaceStub(env, p.account).settings(agent.id);
-  const s = resolveSettings(agent, stored.workspace, stored.repos[p.repo]);
-  const chosen: ModelChoice = { harness: s.harness, provider: s.provider, model: s.model };
-  const choices = [
-    chosen,
-    ...agent.fallback.filter((f) => f.model !== chosen.model || f.harness !== chosen.harness),
-  ];
-  return {
-    token: connection.token,
-    choices,
-    reasoning: s.reasoning,
-    timeout_ms: s.timeout_minutes * 60_000,
-    instructions: s.instructions,
-    block_at: s.block_at,
-    context: {
-      change: p.change,
-      title: String(change.title ?? ''),
-      branch: String(change.branch ?? ''),
-      base: String(change.diff?.base?.commit ?? change.base ?? 'main'),
-      head: p.head,
-      files: ((change.diff?.changes ?? []) as { path: string }[])
-        .map((f) => String(f.path))
-        .slice(0, 200),
-      diff: promptDiff((change.diff?.changes ?? []) as { path: string }[]),
-    },
-  };
-}
-
-/** Everything the runner needs; no credential (the outbound handlers hold them). */
-function spec(env: ManagedEnv, p: RunParams, w: Prepared, choice: ModelChoice) {
-  return {
-    repo: p.repo,
-    branch: w.context.branch,
-    head: p.head,
-    base: w.context.base,
-    platform_origin: `http://${PLATFORM_HOST}`,
-    harness: choice.harness,
-    provider: choice.provider,
-    model: choice.model,
-    reasoning: w.reasoning,
-    timeout_ms: w.timeout_ms,
-    instructions: w.instructions,
-    contract: RESULT_CONTRACT,
-    context: w.context,
-    gateway: {
-      base: `http://${GATEWAY_HOST}${new URL(env.AI_GATEWAY_URL).pathname}`,
-      slugs: gatewaySlugs(env),
-    },
-  };
-}
 
 export async function runAgent(env: ManagedEnv, p: RunParams, step: Steps): Promise<Outcome> {
   const repo = repoStub(env, p.repo);
@@ -143,6 +59,11 @@ export async function runAgent(env: ManagedEnv, p: RunParams, step: Steps): Prom
 
   try {
     const prepared = await step.do('prepare', () => prepare(env, p, agent));
+    if (prepared === 'no_flight_plan') {
+      await step.do('no-plan', () => postNoPlan(env, p, agent));
+      await repo.finish(p.run, p.attempt, 'passed', { summary: 'No flight plan' });
+      return { status: 'stopped', reason: prepared };
+    }
     if (typeof prepared === 'string') {
       await repo.finish(p.run, p.attempt, 'failed', { error: `Not reviewed: ${prepared}` });
       return { status: 'stopped', reason: prepared };
@@ -171,11 +92,15 @@ export async function runAgent(env: ManagedEnv, p: RunParams, step: Steps): Prom
       return { status: 'failed', error: collected.error ?? 'failed' };
     }
     const result = collected.result;
+    const post = agent.verdict ? postVerdict : postReport;
     const report = await step.do('post', () =>
-      postReport(env, p, agent, prepared.token, result, prepared.block_at),
+      post(env, p, agent, prepared.token, result, prepared.block_at),
     );
     // A withheld finding is still a finding: the run is never "passed" with one.
-    const status = report.posted.length + report.withheld.length > 0 ? 'findings' : 'passed';
+    const flagged =
+      report.posted.length + report.withheld.length > 0 ||
+      (agent.verdict && report.value !== 'low');
+    const status = flagged ? 'findings' : 'passed';
     await repo.finish(p.run, p.attempt, status, {
       value: report.value,
       summary: report.summary || null,
@@ -225,7 +150,7 @@ async function attempt(
   // must not land on the same instance); the name it used is the step's result.
   const started = await step.do(`start-${i}`, async () => {
     const name = `${p.run}-${p.attempt}-${i}-${crypto.randomUUID().slice(0, 8)}`;
-    await harnessStub(env, name).begin(params, spec(env, p, w, choice));
+    await harnessStub(env, name).begin(params, spec(env, p, w, choice, agent));
     return { at: Date.now(), name };
   });
   const name = started.name;
@@ -265,19 +190,23 @@ async function attempt(
         `transcripts/${p.repo}/${p.run}/${p.attempt}-${i}.txt`,
         redact(transcript).slice(-TRANSCRIPT_MAX),
       ).catch(() => {});
-    const result =
+    const reported =
       status.phase === 'done' && status.result && typeof status.result === 'object'
         ? (status.result as Record<string, unknown>)
         : null;
+    // A verdict comes from a fixed list; a reply without one is a failed try, not a value.
+    const result = reported && (!agent.verdict || verdictOf(reported)) ? reported : null;
     const error = result
       ? null
       : stop
         ? null
         : String(
             status.error ??
-              (status.phase === 'running'
-                ? 'Timed out'
-                : 'The harness container stopped before it reported'),
+              (reported
+                ? 'The agent finished without a verdict'
+                : status.phase === 'running'
+                  ? 'Timed out'
+                  : 'The harness container stopped before it reported'),
           );
     return { result, error, stop } satisfies Collected;
   });

@@ -74,6 +74,7 @@ const workspace: WorkspaceState = {
     }),
     agentState(1),
     agentState(2),
+    agentState(3),
   ],
   credit: credit(),
   billing: 'coming',
@@ -104,7 +105,7 @@ describe('the Agents overview', () => {
     expect(html).toMatch(
       /aria-label="Code review actions" aria-haspopup="menu" aria-expanded="false"/,
     );
-    expect(html.match(/>Add agent</g)).toHaveLength(2);
+    expect(html.match(/>Add agent</g)).toHaveLength(3);
     expect(html).toContain('href="/agents/security-review/configure"');
     expect(html).toContain('href="/agents/code-review"');
     expect(html).toContain('href="/agents/runs"');

@@ -16,7 +16,7 @@ A run is charged for two things:
 | Model use | The model's tokens at the provider's list price, plus 30% |
 | Container time | $0.0017 a minute, billed by the second |
 
-Before each model call the run holds its worst-case cost, then settles on the usage the model reports. Model spend per run is capped: $1 for Code review, $3 for Security review and $0.50 for Slop review; a run stops there. Current model prices are on the [pricing page](/pricing).
+Before each model call the run holds its worst-case cost, then settles on the usage the model reports. Model spend per run is capped: $1 for Code review, $3 for Security review, $0.50 for Slop review and $0.50 for Intent drift; a run stops there. Current model prices are on the [pricing page](/pricing).
 
 ## Where to see usage
 
