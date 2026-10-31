@@ -52,14 +52,15 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
             }
             Ok(json!({"sent":true}))
         }
+        SigninOp::DeviceNoted => super::auth_events::device_noted(db, c, now),
         SigninOp::Logout => {
-            db.query(
-                "DELETE FROM workspace_records WHERE id=?",
-                &[json!(format!(
-                    "session:{}",
-                    hash(c, "session_hash", &[64])?
-                ))],
-            )?;
+            let key = format!("session:{}", hash(c, "session_hash", &[64])?);
+            // A cookie for no session logged nobody out, and leaves no row.
+            let held = get(db, &key).is_ok();
+            db.query("DELETE FROM workspace_records WHERE id=?", &[json!(key)])?;
+            if held {
+                super::auth_events::note(db, c, "auth.logout", now, json!({}))?;
+            }
             Ok(json!({"authenticated":false}))
         }
         SigninOp::Login | SigninOp::Recover => {
@@ -90,6 +91,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
                 )
             };
             if !valid {
+                super::auth_events::login_failed(db, c, now)?;
                 return Ok(json!({"authenticated":false}));
             }
             if recovery {
@@ -100,12 +102,19 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
                     "DELETE FROM workspace_records WHERE id LIKE 'session:%' OR id LIKE 'grant:%'",
                     &[],
                 )?;
-                super::tokens::revoke_all(db, now)?;
-                super::ssh_keys::remove_all(db, now)?;
+                let tokens = super::tokens::revoke_all(db, now)?;
+                let ssh_keys = super::ssh_keys::remove_all(db, now)?;
                 super::identities::remove_all(db)?;
-                audit(db, "account.recovered", now, json!({}))?;
+                let orgs = super::orgs::hints(db)?;
+                audit(
+                    db,
+                    "account.recovered",
+                    now,
+                    json!({"tokens":tokens,"ssh_keys":ssh_keys,"orgs":orgs}),
+                )?;
             } else {
                 session(db, c, now)?;
+                super::auth_events::note(db, c, "auth.login", now, json!({"method":"password"}))?;
             }
             Ok(public_account(&a))
         }
