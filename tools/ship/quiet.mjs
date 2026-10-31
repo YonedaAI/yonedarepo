@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-// The only door between a deploy or kit run and a public Actions log. This repository is
-// public, so everything a command prints is dropped except lines allowed here: wrangler's
-// failures can name the account's email, and kit reasons and metrics name accounts and
-// repository ids. The job summary is closed the same way (xtask tables append to it). The
-// allowed lines say what failed; the why stays off GitHub: rerun the command locally.
-//   node tools/ship/quiet.mjs deploy|kit -- <command> [args...]
+// The only door between a deploy and a public Actions log. This repository is public, so
+// everything a command prints is dropped except lines allowed here: wrangler's failures can
+// name the account's email, and a smoke's details quote API replies. The job summary is closed
+// the same way (xtask tables append to it). The allowed lines say what failed; the why stays
+// off GitHub: rerun the command locally.
+//   node tools/ship/quiet.mjs deploy|smoke -- <command> [args...]
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
@@ -13,13 +13,14 @@ const GUARD = /^(Refusing|Stopping)\b/;
 const WRANGLER_FAILED = /^wrangler [ -~]* failed \(exit status: \d+\)$/;
 // Rows of the deploy timings table (step, seconds, ok or FAILED), never the smoke's details.
 const TIMING = /^\| .+ \| +[0-9.]+ +\| +(ok|FAILED)? +\|$/;
-const KIT_RESULT = /^(PASS|FAIL|SKIP) (\S+) (\d+ms)/;
+// Rows of the smoke table (check, result, detail): the check and its result only.
+const SMOKE_ROW = /^\| (.+?) +\| (pass|FAIL) +\| /;
 
 /** What `line` may show on a public log, or null. */
 export function publicLine(profile, line) {
-  if (profile === 'kit') {
-    const result = line.match(KIT_RESULT);
-    return result ? `${result[1]} ${result[2]} ${result[3]}` : null;
+  if (profile === 'smoke') {
+    const row = line.match(SMOKE_ROW);
+    return row ? `${row[2]} ${row[1]}` : null;
   }
   if (GUARD.test(line) || WRANGLER_FAILED.test(line)) return `::error::${line}`;
   return TIMING.test(line) ? line : null;
@@ -48,8 +49,8 @@ export function runQuiet(profile, command, args, write = (line) => console.log(l
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   const [profile, separator, command, ...args] = process.argv.slice(2);
-  if (!['deploy', 'kit'].includes(profile) || separator !== '--' || !command) {
-    console.error('Usage: quiet.mjs deploy|kit -- <command> [args...]');
+  if (!['deploy', 'smoke'].includes(profile) || separator !== '--' || !command) {
+    console.error('Usage: quiet.mjs deploy|smoke -- <command> [args...]');
     process.exit(2);
   }
   process.exitCode = await runQuiet(profile, command, args);

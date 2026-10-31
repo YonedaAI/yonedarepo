@@ -1,6 +1,6 @@
 //! The real-world kit evidence a prod deploy needs. Decisions are pure functions over gathered
 //! facts, like the rest of deploy_guard.
-use crate::deploy_guard::{Facts, short, tree_of};
+use crate::deploy_guard::{Facts, Options, short, tree_of};
 use crate::infra::inventory;
 use crate::infra::spec::{Env, Lock, Spec};
 use crate::process::Result;
@@ -8,13 +8,49 @@ use serde_json::Value;
 use std::path::Path;
 
 /// Real-world kit evidence, newest first: `.local/staging/realworld*.json`.
-const EVIDENCE_DIR: &str = ".local/staging";
+pub(crate) const EVIDENCE_DIR: &str = ".local/staging";
+
+/// What a full kit run records: every item except those that run only when named
+/// (tools/staging-realworld.mjs, `wanted`).
+pub(crate) const FULL_KIT: [&str; 22] = [
+    "0", "browser", "31", "6", "7", "19", "20", "23", "25", "8", "9", "10", "12", "13", "14", "15",
+    "16", "18", "21", "27", "28", "17",
+];
 
 /// The kit's browser gate (tools/staging/browser-flow.mjs). Like every item in the evidence, it
 /// must pass when present; while the kit can still run without it, its absence is allowed.
 /// Set to true once every kit run records it.
 pub(crate) const BROWSER_ITEM: &str = "browser";
 const BROWSER_REQUIRED: bool = false;
+
+/// The newest evidence is a full kit that passed at exactly HEAD, recording HEAD's tree: what a
+/// `live-tests` status claims.
+pub(crate) fn full_kit_passes(facts: &Facts) -> Result<()> {
+    let at_head = Facts {
+        trees: Default::default(),
+        ..facts.clone()
+    };
+    evidence_passes(facts.evidence.as_ref(), &at_head)?;
+    let evidence = facts.evidence.as_ref().ok_or("No kit evidence")?;
+    if evidence["tree"].as_str().is_none() {
+        return Err(
+            "Refusing: the newest kit evidence records no tree. Run the full kit again.".into(),
+        );
+    }
+    let items = evidence["items"].as_array().ok_or("No kit items")?;
+    let missing: Vec<&str> = FULL_KIT
+        .into_iter()
+        .filter(|id| !items.iter().any(|item| item["id"] == *id))
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "Refusing: the newest kit evidence is not a full kit (no item {}). Run `node tools/staging-realworld.mjs`.",
+        missing.join(", ")
+    )
+    .into())
+}
 
 /// The commits item 0 saw live.
 fn evidence_revisions(evidence: &Value) -> Vec<String> {
@@ -73,7 +109,7 @@ pub(crate) fn evidence_passes(evidence: Option<&Value>, facts: &Facts) -> Result
 }
 
 /// The most recently modified `realworld*.json` evidence file, parsed.
-fn newest_evidence(dir: &Path) -> Result<Option<Value>> {
+pub(crate) fn newest_evidence(dir: &Path) -> Result<Option<Value>> {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return Ok(None);
     };
@@ -98,8 +134,12 @@ fn newest_evidence(dir: &Path) -> Result<Option<Value>> {
 }
 
 /// The facts only a prod deploy needs: the dev Workers' revisions, the newest kit evidence and
-/// the trees of the commits they name.
-pub(crate) async fn prod_facts(facts: &mut Facts) -> Result<()> {
+/// the trees of the commits they name; from a merged ship PR, its head's GitHub statuses.
+pub(crate) async fn prod_facts(facts: &mut Facts, options: &Options) -> Result<()> {
+    if let Some(head) = &options.ship_head {
+        facts.ship = Some(crate::deploy_ship::gather(head).await?);
+        return Ok(());
+    }
     let dev = Spec::load(&Env::Dev)?;
     for worker in inventory::deployables(&dev, &Lock::load(&Env::Dev)?)? {
         if worker.health.is_some() {

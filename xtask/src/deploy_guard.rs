@@ -13,6 +13,8 @@ pub(crate) struct Options {
     pub allow_active: bool,
     /// `--prebuilt <dir>`: deploy CI's tested outputs instead of building (deploy_prebuilt).
     pub prebuilt: Option<std::path::PathBuf>,
+    /// `--ship-head <sha>`: the merged ship PR's head, on a runner (deploy_ship).
+    pub ship_head: Option<String>,
 }
 
 impl Options {
@@ -23,6 +25,7 @@ impl Options {
             confirm: flag("--confirm"),
             allow_active: flag("--allow-active"),
             prebuilt: crate::deploy_prebuilt::dir_arg(args)?,
+            ship_head: crate::deploy_ship::head_arg(args)?,
         })
     }
 }
@@ -43,6 +46,8 @@ pub(crate) struct Facts {
     pub dev_revisions: Vec<(String, Option<String>)>,
     /// Prod only: the newest real-world kit evidence.
     pub evidence: Option<Value>,
+    /// With `--ship-head`: the PR head's GitHub statuses, read instead of the two above.
+    pub ship: Option<crate::deploy_ship::ShipFacts>,
 }
 
 impl Facts {
@@ -74,10 +79,16 @@ pub(crate) fn preflight(env: &Env, spec: &Spec, facts: &Facts, options: &Options
         .into());
     }
     if !env.is_prod() {
-        return Ok(());
+        return match options.ship_head {
+            Some(_) => Err("--ship-head is for a prod deploy.".into()),
+            None => Ok(()),
+        };
     }
     if !options.confirm {
         return Err("Refusing to deploy prod without --confirm.".into());
+    }
+    if options.ship_head.is_some() {
+        return crate::deploy_ship::passes(facts);
     }
     if facts.dev_revisions.is_empty() {
         return Err("Refusing prod: no dev Worker reports a /health revision.".into());

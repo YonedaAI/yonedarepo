@@ -185,7 +185,7 @@ pub(crate) async fn run(
     let started = Instant::now();
     let mut facts = guard::git_facts(spec)?;
     if env.is_prod() {
-        crate::deploy_evidence::prod_facts(&mut facts).await?;
+        crate::deploy_evidence::prod_facts(&mut facts, options).await?;
     }
     guard::preflight(env, spec, &facts, options)?;
     timings.record("preflight: clean tree, branch tip", started, true);

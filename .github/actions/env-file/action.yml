@@ -31,8 +31,7 @@ runs:
         while IFS='=' read -r _ value; do
           if [ -n "$value" ]; then echo "::add-mask::$value"; fi
         done < "$file"
-        # The names the deploy (spec secrets_file, deploy_credentials) and the kit (client.mjs)
-        # read; each takes its own keys from the one file.
+        # The spec's secrets_file, beside deploy_credentials' name: each reads its keys from it.
         secrets=staging.env
         if [ "$ENV_NAME" = prod ]; then secrets=prod.env; fi
-        for name in "$secrets" staging-kit.env staging-bench.env; do cp "$file" "$dir/$name"; done
+        cp "$file" "$dir/$secrets"

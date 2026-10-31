@@ -1,7 +1,7 @@
 name: Deploy dev
 # For later, when development slows: today dev deploys from the owner's checkout
-# (`cargo xtask deploy --env dev`, AGENTS.md) and from the ship (ship.yml), and this workflow
-# stays disabled on GitHub until the owner turns it on (`gh workflow enable deploy-dev.yml`).
+# (`cargo xtask deploy --env dev`, AGENTS.md), and this workflow stays disabled on GitHub
+# until the owner turns it on (`gh workflow enable deploy-dev.yml`).
 # By hand only. It builds everything from source at the tip of dev (Wasm, frontend, and the
 # runtime image unless its inputs match what dev runs), deploys with the same command and guards
 # as a local deploy (xtask refuses unless HEAD is the tip of dev), then runs the smoke. This
@@ -15,8 +15,7 @@ on:
         default: false
 permissions:
   contents: read
-# A deploy is never cancelled part-way: a second dispatch waits for the first, and for a ship's
-# deploy and kit, which hold this group too.
+# A deploy is never cancelled part-way: a second dispatch waits for the first.
 concurrency:
   group: deploy-dev
   cancel-in-progress: false
@@ -49,7 +48,7 @@ jobs:
           if [ "$ALLOW_ACTIVE" = "true" ]; then flags="--allow-active"; fi
           node tools/ship/quiet.mjs deploy -- cargo xtask deploy --env dev $flags
       - name: Smoke
-        run: node tools/ship/quiet.mjs deploy -- cargo xtask infra smoke --env dev
+        run: node tools/ship/quiet.mjs smoke -- cargo xtask infra smoke --env dev
       - name: Remove the secrets files
         if: always()
         run: rm -rf ~/.config/yonedarepo

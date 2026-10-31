@@ -1,17 +1,18 @@
 name: Deploy prod
-# Prod deploys from a merged ship PR (docs/ship-pipeline.md): on the push to main, it finds the
-# Ship run that tested the merge's tree, deploys with that run's evidence, publishes the CLI if
-# its version is new, runs the prod smoke and watches prod for 30 minutes. Any other push to
-# main deploys nothing. By hand (workflow_dispatch, dry run by default) it is a re-run of the
-# same steps for main's tip, for instance after the busy-container check stopped a deploy.
+# Prod deploys from a merged ship PR (docs/ship-pipeline.md): on the push to main it finds the
+# PR's head, deploys, publishes the CLI if its version is new, runs the runner's smoke and
+# watches prod for 30 minutes. Any other push to main deploys nothing. By hand
+# (workflow_dispatch, dry run by default) it is a re-run of the same steps for main's tip, for
+# instance after the busy-container check stopped a deploy.
 #
-# xtask refuses unless HEAD is the tip of main, every dev Worker runs its tree, the kit passed
-# for its tree and no container instance is busy (a rollout kills runs). `allow_active` exists
-# only on the manual form and is never the default. Nothing here rolls back: a repository that
-# ran a migration refuses older binaries (SCHEMA_TOO_NEW); the docs have the manual steps.
+# `--ship-head` makes xtask require, for the PR head: HEAD's tree, the owner's live-tests status
+# for that tree, and a successful Ship run (Check and Full suite). HEAD must be the tip of main
+# and no container instance busy (a rollout kills runs). `allow_active` exists only on the manual
+# form and is never the default. Nothing here rolls back: a repository that ran a migration
+# refuses older binaries (SCHEMA_TOO_NEW); the docs have the manual steps.
 #
-# This repository is public: deploy and kit output go through tools/ship/quiet.mjs, and the
-# monitor prints counts only (Superfan mails the details privately).
+# This repository is public: deploy output goes through tools/ship/quiet.mjs, and the monitor
+# prints counts only (Superfan mails the details privately).
 on:
   push:
     branches: [main]
@@ -42,12 +43,10 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
-      actions: read
       pull-requests: read
     outputs:
       ship: ${{ steps.find.outputs.ship }}
       pr_head: ${{ steps.find.outputs.pr_head }}
-      run_id: ${{ steps.find.outputs.run_id }}
     steps:
       # Only the owner, only from main: a merge or a re-run by anyone else stops here.
       - name: Owner-only gate
@@ -78,26 +77,19 @@ jobs:
     permissions:
       contents: read
       actions: read
+      statuses: read
     outputs:
       started_at: ${{ steps.started.outputs.at }}
       cli_needed: ${{ steps.cli.outputs.needed }}
     env:
       PR_HEAD: ${{ needs.gate.outputs.pr_head }}
-      RUN_ID: ${{ needs.gate.outputs.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.sha }}
-      # The guard reads the PR head's tree: the dev Workers and the evidence name that commit.
+      # The guard compares the PR head's tree with HEAD's.
       - name: Fetch the tip of main and the PR head for the deploy guard
         run: git fetch --no-tags --depth=1 origin +main:refs/remotes/origin/main "$PR_HEAD"
-      - name: Download the Ship run's evidence
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          tree=$(git rev-parse 'HEAD^{tree}')
-          mkdir -p .local/staging
-          gh run download "$RUN_ID" -n "realworld-$tree" -D .local/staging
       - uses: ./.github/actions/setup
       - uses: ./.github/actions/env-file
         with:
@@ -108,13 +100,14 @@ jobs:
         run: echo "at=$(date +%s)000" >> "$GITHUB_OUTPUT"
       - name: Deploy prod
         env:
+          GH_TOKEN: ${{ github.token }}
           DRY_RUN: ${{ inputs.dry_run }}
           ALLOW_ACTIVE: ${{ inputs.allow_active }}
         run: |
           # A prod deploy reads no token file (the Mac uses wrangler's login): wrangler takes this.
           CLOUDFLARE_API_TOKEN=$(sed -n 's/^CLOUDFLARE_API_TOKEN=//p' ~/.config/yonedarepo/deploy-prod.env)
           export CLOUDFLARE_API_TOKEN
-          flags=(--confirm)
+          flags=(--confirm --ship-head "$PR_HEAD")
           if [ "$DRY_RUN" = "true" ]; then flags+=(--dry-run); fi
           if [ "$ALLOW_ACTIVE" = "true" ]; then flags+=(--allow-active); fi
           node tools/ship/quiet.mjs deploy -- cargo xtask deploy --env prod "${flags[@]}"
@@ -171,12 +164,15 @@ jobs:
         if: always()
         run: rm -rf ~/.config/yonedarepo
 
+  # What a runner can do without a browser or a kit account: the frontend, every /health at the
+  # shipped revision, and the owner's API through the front. The browser, CLI and SSH smoke stay
+  # on the Mac (docs/ship-pipeline.md).
   smoke:
     name: Prod smoke
     needs: deploy
     if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
     environment: production
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -187,25 +183,11 @@ jobs:
         with:
           content: ${{ secrets.YONEDA_ENV_FILE }}
           env: prod
-      # Item 26's ProxyCommand on the tunnel front door.
-      - name: Install cloudflared
-        env:
-          VERSION: 2026.10.7
-          SHA256: 70b1a1e0f46033ffc8d90b406e554044ba6cbf2e4360295ef1163aed31e09393
-        run: |
-          curl -fsSL -o "$RUNNER_TEMP/cloudflared.deb" "https://github.com/cloudflare/cloudflared/releases/download/$VERSION/cloudflared-linux-amd64.deb"
-          echo "$SHA256  $RUNNER_TEMP/cloudflared.deb" | sha256sum -c -
-          sudo dpkg -i "$RUNNER_TEMP/cloudflared.deb"
-      - name: Build the CLI the smoke drives
-        run: cargo build -p yoneda-cli --release --quiet
       - name: Smoke
-        run: node tools/ship/quiet.mjs kit -- node tools/staging-realworld.mjs --prod --only 0,browser,26,12,13,14,15,16,17
-      - name: Pass table
-        if: always()
-        run: node tools/ship/evidence.mjs --table prod-smoke || true
+        run: node tools/ship/quiet.mjs smoke -- cargo xtask infra smoke --env prod
       - name: Remove the secrets files
         if: always()
-        run: rm -rf ~/.config/yonedarepo .local/staging
+        run: rm -rf ~/.config/yonedarepo
 
   monitor:
     name: Monitor (30 minutes)

@@ -2,18 +2,14 @@
 // monitor calls a failure. Each runs against fakes; nothing here reaches GitHub or prod.
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { resolve } from 'node:path';
 import { test } from 'node:test';
-import { allPassed, minimal, newest, table } from '../../tools/ship/evidence.mjs';
-import { findShip, shipPull, shipRun } from '../../tools/ship/find-ship.mjs';
+import { findShip, shipPull } from '../../tools/ship/find-ship.mjs';
 import { fresh, plural, watch } from '../../tools/ship/monitor.mjs';
 import { publicLine, runQuiet } from '../../tools/ship/quiet.mjs';
 import { treeOf } from '../../tools/staging/client.mjs';
 
 const SHA = 'a'.repeat(40);
-const TREE = 'b'.repeat(40);
 const PRIVATE = ['kitabc123', 'delivered+kitabc123@resend.dev', 'owner@example.com', 'r0123456789abcdef', 'tok_secret'];
 
 test('deploy output: guards and timing rows pass, anything that can name an account does not', () => {
@@ -39,75 +35,25 @@ test('deploy output: guards and timing rows pass, anything that can name an acco
     assert.equal(publicLine('deploy', line), null, line);
 });
 
-test('kit output: only status, item and time, never a reason or a table', () => {
-  assert.equal(publicLine('kit', 'PASS 13 1234ms'), 'PASS 13 1234ms');
-  assert.equal(publicLine('kit', 'FAIL 12 88ms (kit account kitabc123: repo r0123456789abcdef refused owner@example.com)'), 'FAIL 12 88ms');
-  for (const line of ['… 12 CLI: device login', '| 12 | CLI | PASS | 1.0 s | account=kitabc123 |', 'Left repositories: kit-cli-1', 'Evidence: /home/runner/x.json'])
-    assert.equal(publicLine('kit', line), null, line);
+test('smoke output: each check and its result, never the detail', () => {
+  assert.equal(publicLine('smoke', '| frontend GET /      | pass | https://yonedarepo.com/ serves HTML |'), 'pass frontend GET /');
+  assert.equal(publicLine('smoke', `| owner GET /api/v1/repos (platform proxy) | FAIL | HTTP 500: {"account":"${PRIVATE[0]}"} |`), 'FAIL owner GET /api/v1/repos (platform proxy)');
+  for (const line of ['| Check | Result | Detail |', '|---|---|---|', 'prod smoke at abc', 'No OWNER_TOKEN in the secrets file', PRIVATE[2]]) assert.equal(publicLine('smoke', line), null, line);
 });
 
 test('runQuiet keeps the exit code, closes the job summary and names no detail', async () => {
   const lines = [];
   process.env.GITHUB_STEP_SUMMARY = '/nonexistent/summary';
-  const script = `console.log('PASS 0 1ms'); console.error('FAIL 1 2ms (${PRIVATE[1]})'); console.log(process.env.GITHUB_STEP_SUMMARY ?? 'FAIL closed 3ms'); process.exit(3)`;
-  const code = await runQuiet('kit', process.execPath, ['-e', script], (l) => lines.push(l));
+  const script = `console.log('| a | pass | ${PRIVATE[1]} |'); console.error('| b | FAIL | ${PRIVATE[2]} |'); console.log('| ' + (process.env.GITHUB_STEP_SUMMARY ?? 'closed') + ' | pass | x |'); process.exit(3)`;
+  const code = await runQuiet('smoke', process.execPath, ['-e', script], (l) => lines.push(l));
   delete process.env.GITHUB_STEP_SUMMARY;
   assert.equal(code, 3);
   const shown = lines.join('\n');
-  assert.match(shown, /^PASS 0 1ms$/m);
-  assert.match(shown, /^FAIL 1 2ms$/m);
-  assert.match(shown, /^FAIL closed 3ms$/m);
-  assert.match(shown, /kit exited 3/);
+  assert.match(shown, /^pass a$/m);
+  assert.match(shown, /^FAIL b$/m);
+  assert.match(shown, /^pass closed$/m);
+  assert.match(shown, /smoke exited 3/);
   for (const secret of PRIVATE) assert.ok(!shown.includes(secret));
-});
-
-const kit = (status = 'pass') => ({
-  schema: 1,
-  origin: 'https://dev.yonedarepo.com',
-  platform: 'https://yonedarepo-dev-platform.mlong-f01.workers.dev',
-  tree: TREE,
-  recorded_at: '2026-10-31T00:00:00.000Z',
-  items: [
-    { id: '0', title: 'Live revisions (/health)', status: 'pass', ms: 5, metrics: { front: SHA, platform: SHA, account: PRIVATE[0] } },
-    { id: '12', title: 'CLI', status, ms: 1500, reason: `kit ${PRIVATE[1]}`, metrics: { repo: PRIVATE[3], owner: PRIVATE[2] } },
-  ],
-});
-
-test('minimal evidence holds only allowed fields, and what the prod guard reads', () => {
-  const out = minimal(kit());
-  const text = JSON.stringify(out);
-  for (const value of [...PRIVATE, 'origin', 'mlong-f01', 'reason']) assert.ok(!text.includes(value), value);
-  assert.deepEqual(Object.keys(out), ['schema', 'tree', 'recorded_at', 'items']);
-  assert.deepEqual(out.items[0], { id: '0', title: 'Live revisions (/health)', status: 'pass', ms: 5, metrics: { front: SHA, platform: SHA } });
-  assert.deepEqual(out.items[1].metrics, {});
-  assert.throws(() => minimal({ ...kit(), tree: null }), /no tree/);
-  const noRevision = kit();
-  noRevision.items[0].metrics.front = 'kitabc123';
-  assert.throws(() => minimal(noRevision), /front revision/);
-});
-
-test('allPassed refuses a skip as the prod guard does, and the table names no detail', () => {
-  assert.ok(allPassed(kit()));
-  assert.ok(!allPassed(kit('skip')));
-  assert.ok(!allPassed(kit('fail')));
-  assert.ok(!allPassed({ items: [] }));
-  const shown = table(kit('fail'));
-  assert.match(shown, /1 of 2 passed/);
-  for (const secret of PRIVATE) assert.ok(!shown.includes(secret));
-});
-
-test('newest picks the latest evidence of its prefix', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'ship-evidence-'));
-  try {
-    writeFileSync(join(dir, 'realworld-1.json'), '{"n":1}');
-    writeFileSync(join(dir, 'realworld-2.json'), '{"n":2}');
-    writeFileSync(join(dir, 'prod-smoke-3.json'), '{"n":3}');
-    utimesSync(join(dir, 'realworld-1.json'), new Date(), new Date(Date.now() + 5000));
-    assert.equal(newest(dir, 'realworld').n, 1);
-    assert.throws(() => newest(dir, 'browser-gate'), /No browser-gate/);
-  } finally {
-    rmSync(dir, { recursive: true });
-  }
 });
 
 test('treeOf reads a commit in the checkout and gives null for anything else', () => {
@@ -129,18 +75,6 @@ const pull = (over = {}) => ({
   head: { ref: 'dev', sha: SHA, repo: { full_name: REPO } },
   ...over,
 });
-const run = (over = {}) => ({
-  id: 7,
-  run_number: 7,
-  event: 'pull_request',
-  conclusion: 'success',
-  head_sha: SHA,
-  head_branch: 'dev',
-  head_repository: { full_name: REPO },
-  path: '.github/workflows/ship.yml',
-  ...over,
-});
-
 test('a ship PR is merged, from this repository, from dev, into main, and made this commit', () => {
   const where = { repo: REPO, sha: MERGE };
   assert.ok(shipPull([pull()], where));
@@ -155,33 +89,21 @@ test('a ship PR is merged, from this repository, from dev, into main, and made t
     assert.equal(shipPull([other], where), undefined);
 });
 
-test('evidence counts only from a successful Ship run of this repository', () => {
-  const where = { repo: REPO, head: SHA };
-  assert.equal(shipRun([run(), run({ id: 8, run_number: 8 })], where).id, 8);
-  for (const forged of [
-    run({ head_repository: { full_name: 'someone/yonedarepo' } }),
-    run({ head_branch: 'patch-1' }),
-    run({ path: '.github/workflows/evil.yml' }),
-    run({ conclusion: 'failure' }),
-    run({ event: 'workflow_dispatch' }),
-    run({ head_sha: MERGE }),
-  ])
-    assert.equal(shipRun([forged], where), undefined);
-});
-
-function github({ pulls = [pull()], runs = [run()], status = 200 }) {
-  return async (url) => {
-    const body = url.includes('/commits/') ? pulls : { workflow_runs: runs };
-    return { ok: status === 200, status, json: async () => body };
-  };
+function github({ pulls = [pull()], status = 200 }) {
+  return async () => ({ ok: status === 200, status, json: async () => pulls });
 }
 const find = (fake) => findShip({ fetch: github(fake), sleep: async () => {}, token: 't', repo: REPO, sha: MERGE });
 
-test('findShip: a ship, not a ship, and a merged ship nothing tested', async () => {
-  assert.deepEqual(await find({}), { ship: true, pr_head: SHA, run_id: 7 });
+test('findShip: a ship, not a ship, and an API failure', async () => {
+  assert.deepEqual(await find({}), { ship: true, pr_head: SHA });
   assert.deepEqual(await find({ pulls: [] }), { ship: false });
-  await assert.rejects(find({ runs: [] }), /No successful Ship run/);
   await assert.rejects(find({ status: 403 }), /GitHub answered 403/);
+});
+
+test('findShip waits out the index behind a fresh push', async () => {
+  const replies = [[], [pull()]];
+  const fetch = async () => ({ ok: true, json: async () => replies.shift() });
+  assert.deepEqual(await findShip({ fetch, sleep: async () => {}, token: 't', repo: REPO, sha: MERGE }), { ship: true, pr_head: SHA });
 });
 
 const HOUR = '2026-10-31T10:00:00.000Z';

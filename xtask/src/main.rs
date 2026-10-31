@@ -14,6 +14,7 @@ mod deploy_live;
 mod deploy_prebuilt;
 mod deploy_registry;
 mod deploy_secrets;
+mod deploy_ship;
 mod dev;
 mod downloads;
 mod infra;
