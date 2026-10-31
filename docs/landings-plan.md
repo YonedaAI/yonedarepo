@@ -198,6 +198,32 @@ We don't build orchestration, so this is **pull, not push**: the platform never 
 4. A finding left unresolved blocks through the required-check route from stage 1.
 5. **Watch two side effects:** each push drops human approvals, and each run adds up to 21 comments against a 2,000 cap, past which the post is refused.
 
+## 9. CTC, Code Traffic Control
+
+**CTC clears code for landing.** Rules only: it never writes code, assigns work or starts agents. Flight Path is the overall idea, Landings replace the pull request, and CTC decides.
+
+| Job | What it does | State |
+|---|---|---|
+| Clearance | `platform_ctc::clearance` returns Cleared, Hold or GoAround with reasons, for one exact head | Built on `claude/tower-clearance` |
+| Land when cleared | Per-repo switch: a cleared Landing lands with no one calling `git_land` | Built on `claude/tower-clearance`, off |
+| Record | Each decision, with its reasons, head and inputs, in `changes.clearance`; newest 32 per Landing | Built on `claude/tower-clearance` |
+| Traffic warnings | A session is told when an open Landing touches its files or symbols | Building, `claude/ctc-traffic` |
+| Separation and hold | A Landing waits when one ahead touches the same files, and says why | Building |
+| Sequencing | The order of Landings, from the queue | Building |
+| Radar | One board of every open Landing | Building |
+
+Conservative rules: a fork needs an approval of its head, a repo with no rules never auto-lands, drafts and any failed check hold, and High risk holds.
+
+## 10. Order to reach prod
+
+Two schema changes, `0044` and `0045`, ship in two waves, so a rollback stays safe.
+
+1. **Wave 1, on dev:** binaries accept both versions without applying them.
+2. **Wave 2, after wave 1 is on prod:** merge `claude/tower-clearance`, which holds auto Landings, the rename, land when cleared and CTC; then `claude/landing-flight` from `9396f593`; then `claude/ctc-traffic`. Apply both migrations.
+3. **Harness commit `0158fb50`** with wave 2: a container rollout for Intent drift.
+
+Switches stay off on prod until each is watched on dev: `LAND_WHEN_CLEARED`, then per-repo settings.
+
 ## Verification
 
 | Stage | Proof |
