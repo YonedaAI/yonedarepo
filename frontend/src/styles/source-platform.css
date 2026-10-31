@@ -208,7 +208,9 @@ button.danger:not(:disabled) {
   border-top: 1px solid var(--line-strong);
   font-weight: 600;
 }
+/* Relative: a screen-reader label in a cell stays in this scroller, not the page's width. */
 .source-table-wrap {
+  position: relative;
   overflow-x: auto;
 }
 .source-table {

@@ -50,7 +50,7 @@ function RunsTable({
             <th>Head</th>
             <th>Result</th>
             <th>Model</th>
-            <th>Cost</th>
+            <th className="num">Cost</th>
             <th>Duration</th>
             <th>Status</th>
           </tr>
@@ -92,7 +92,7 @@ function RunsTable({
                   </span>
                 )}
               </td>
-              <td>{formatCost(run.cost_usd)}</td>
+              <td className="num">{formatCost(run.cost_usd)}</td>
               <td>{runDuration(run)}</td>
               <td>
                 <StatusChip run={run} />
@@ -246,12 +246,12 @@ export function AgentRunDetail({
                       {detail.cost.map((c) => (
                         <tr key={`${c.at}:${c.amount}:${c.note ?? ''}:${c.input_tokens ?? ''}`}>
                           <td>{costLabel(c)}</td>
-                          <td>{formatCost(costUsd(c))}</td>
+                          <td className="num">{formatCost(costUsd(c))}</td>
                         </tr>
                       ))}
-                      <tr>
+                      <tr className="total">
                         <th scope="row">Total</th>
-                        <td>{formatCost(detail.run.cost_usd)}</td>
+                        <td className="num">{formatCost(detail.run.cost_usd)}</td>
                       </tr>
                     </tbody>
                   </table>
