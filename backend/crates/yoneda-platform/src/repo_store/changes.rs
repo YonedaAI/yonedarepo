@@ -81,7 +81,7 @@ pub(super) fn text(c: &Value, key: &str, max: usize) -> Result<Option<String>> {
 }
 
 /// The open change on `branch` (a short name), if any.
-fn open_on<S: SqlStore>(db: &S, branch: &str) -> Result<Option<i64>> {
+pub(super) fn open_on<S: SqlStore>(db: &S, branch: &str) -> Result<Option<i64>> {
     Ok(db
         .query(
             "SELECT number FROM changes WHERE branch=? AND status='open'",
