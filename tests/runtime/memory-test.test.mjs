@@ -11,7 +11,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { armSummary, compareArms, fisherExact } from '../../tools/staging/arm-stats.mjs';
-import { addedLines, ARMS, branchName, DEFAULT_RUNS, deliveryOf, forkName, isTestFork, judgeTrap, memoryEstimate, MIN_RUNS, opencodeUsage, planText, runProblems, schedule } from '../../tools/staging/memory-plan.mjs';
+import { addedLines, ARMS, branchName, DEFAULT_RUNS, deliveryOf, forkName, isTestFork, judgeTrap, memoryEstimate, MIN_RUNS, opencodeUsage, retryableClone, planText, runProblems, schedule } from '../../tools/staging/memory-plan.mjs';
 import { deleteFork, scanHidden } from '../../tools/staging/memory-run.mjs';
 import { anchoredFiles, armPrompt, seedOrder, TRAPS } from '../../tools/staging/memory-traps.mjs';
 import { fillResults, RESULTS_END, RESULTS_START, resultsMarkdown, verdict } from '../../tools/staging/memory-verdict.mjs';
@@ -379,4 +379,10 @@ test('--memory-test prints its estimate and starts nothing without --yes, and re
   const few = kit('--memory-test', '--memory-runs', '4');
   assert.notEqual(few.status, 0);
   assert.match(few.stderr, /at least 5/);
+});
+
+test('only a clone the platform answered with 503 is retried', () => {
+  assert.equal(retryableClone('error: RPC failed; HTTP 503 curl 22'), true);
+  assert.equal(retryableClone('fatal: repository not found'), false);
+  assert.equal(retryableClone(undefined), false);
 });
