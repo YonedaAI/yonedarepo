@@ -131,6 +131,21 @@ fn a_shards_status_says_what_its_database_holds() {
 }
 
 #[test]
+fn a_full_shard_refuses_a_new_record_and_answers_a_repeat() {
+    let (h, root) = seeded();
+    let s = shard();
+    let built = commit_in(&h, &s, AGENT, json!(root), "a.txt");
+    let record = |commit: &Value| {
+        json!({"op": "store_record", "commit": commit, "tree": built["tree"], "parents": built["parents"],
+            "generation": 2, "base_version": 1, "principal": "x", "message": "m", "read_set": [],
+            "touches": [], "objects": built["raw"], "_storage_guard": 1})
+    };
+    assert_eq!(on(&s, record(&built["commit"])).unwrap()["already"], true);
+    let other = json!("0".repeat(40));
+    assert_eq!(on(&s, record(&other)).unwrap_err().code, "REPO_FULL");
+}
+
+#[test]
 fn shards_verify_what_they_record_and_only_the_platform_reaches_them() {
     let (h, root) = seeded();
     let s = shard();

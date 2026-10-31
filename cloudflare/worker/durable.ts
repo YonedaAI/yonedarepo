@@ -8,6 +8,22 @@ const OVERLOAD = /overloaded|queued for too long|too many requests queued/i;
 /** Seconds a client waits before retrying a request the platform was too busy to serve. */
 export const RETRY_AFTER_SECONDS = 1;
 
+/** Where a repository's database refuses new work, in bytes: `databaseSize` as Durable Object
+ * SQLite reports it (writes failed at about 10.7 GB in the 10-31 spike). */
+const STORAGE_GUARD_BYTES = 9e9;
+
+/**
+ * What a command to a repository carries for the authority to refuse new work near the size
+ * limit (repo_store::capacity). Nothing unless `REPO_STORAGE_GUARD` is `on`; a byte count there
+ * sets another limit, for tests (the variable is never client input).
+ */
+export function storageGuard(env: { REPO_STORAGE_GUARD?: string }) {
+  const guard = env.REPO_STORAGE_GUARD;
+  if (guard === 'on') return { _storage_guard: STORAGE_GUARD_BYTES };
+  const bytes = Number(guard);
+  return guard && Number.isSafeInteger(bytes) && bytes > 0 ? { _storage_guard: bytes } : {};
+}
+
 /**
  * A failure that says nothing about the request: a Durable Object overloaded, reset or
  * briefly unreachable (Cloudflare marks these `.overloaded` or `.retryable`). The same

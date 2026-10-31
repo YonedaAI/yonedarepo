@@ -37,6 +37,9 @@ pub(super) fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         break_glass::refuse_if_paused(db)?;
     }
     grants::precheck(db, op, c, &actor.grant)?;
+    if capacity::refuses(op) {
+        capacity::refuse_if_full(db, c)?;
+    }
     let result = run(db, c, op, &actor, &settings)?;
     Ok(grants::redact(op, &actor.grant, result))
 }
