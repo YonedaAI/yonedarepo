@@ -22,6 +22,7 @@ import { deviceApprove, deviceCode, deviceToken, tokenRoute } from './platform-t
 import { accountSearch } from './repo-account-search';
 import { deleteRepository, listDeleted, listRepositories } from './repo-admin';
 import { agentRecords } from './repo-agent-records';
+import { audited } from './repo-audit';
 import { breakGlass } from './repo-break-glass';
 import { changeLogStatus } from './repo-changelog';
 import { changesRoute, setAutoLandings } from './repo-changes';
@@ -257,7 +258,7 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   }
   if (resource === 'retention' && req.method === 'PUT') {
     const { keep_versions, keep_days } = await bodyOf(req);
-    return ctx.call({ op: 'repo_set_retention', keep_versions, keep_days });
+    return audited(env, repo, ctx.call({ op: 'repo_set_retention', keep_versions, keep_days }));
   }
   if (get && resource === 'diff')
     return run('git_diff', {
@@ -307,7 +308,7 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return withHeadRefresh(
       env,
       repo,
-      ctx.call({ op: 'repo_set_policy', policy: (await bodyOf(req)).policy }),
+      audited(env, repo, ctx.call({ op: 'repo_set_policy', policy: (await bodyOf(req)).policy })),
     );
   if (resource === 'auto-landings' && req.method === 'PUT')
     return setAutoLandings(ctx, await bodyOf(req));
@@ -346,18 +347,26 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     const created = await withHeadRefresh(
       env,
       repo,
-      ctx.call({
-        op: 'repo_token_create',
-        name: body.name,
-        scopes: body.scopes,
-        paths: body.paths ?? null,
-        _secret: secret,
-      }),
+      audited(
+        env,
+        repo,
+        ctx.call({
+          op: 'repo_token_create',
+          name: body.name,
+          scopes: body.scopes,
+          paths: body.paths ?? null,
+          _secret: secret,
+        }),
+      ),
     );
     return { ...created, token: secret };
   }
   if (resource === 'tokens' && sha && req.method === 'DELETE')
-    return withHeadRefresh(env, repo, ctx.call({ op: 'repo_token_revoke', name: sha }));
+    return withHeadRefresh(
+      env,
+      repo,
+      audited(env, repo, ctx.call({ op: 'repo_token_revoke', name: sha })),
+    );
   throw new ApiError('NOT_FOUND', 'Unknown API path');
 }
 

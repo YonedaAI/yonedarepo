@@ -82,7 +82,7 @@ Tokens stay revoked. Managed connections must reconnect.
 
 **Events to add:** login, logout, failed login, OAuth, device approval; repo token create and revoke; visibility, rename, repo delete and restore, retention, webhook create and delete; hold set and release. Org events gain their missing actor.
 
-**Delivery:** events must commit with state (`AGENTS.md`), so repo events need an outbox table: the next `repo_store` migration, in two waves. New queue kind `platform_audit`, only after every binary knows it, since unknown kinds are acknowledged and dropped.
+**Delivery:** events must commit with state (`AGENTS.md`). Repo events do, with no migration: they wait in `hook_outbox` under hook id 0, which no hook has, and the adapter copies them after the answer. A copy that fails waits for the repo's next audited change or its purge. A new queue kind `platform_audit` would retry sooner, but only after every binary knows it, since unknown kinds are acknowledged and dropped.
 
 **Integrity:** a hash chain in each row, as `txlog` does. Old rows seal to R2 under `audit/v1/<org>/`, a prefix no purge touches. Retention per org.
 

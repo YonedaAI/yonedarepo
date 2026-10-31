@@ -73,7 +73,8 @@ describe('org audit routes and paths', () => {
     expect(auditWho(row)).toBe('alice');
     expect(auditWho({ ...row, actor: null })).toBe('Not recorded');
     expect(auditLabel('org.member_put')).toBe('Member added or changed');
-    expect(auditLabel('webhook.created')).toBe('webhook.created');
+    expect(auditLabel('repo.policy_changed')).toBe('Landing rules changed');
+    expect(auditLabel('kind.from_later')).toBe('kind.from_later');
     expect(auditDetail(row)).toBe('account: bob · role: member');
     expect(auditDetail({ ...row, details: { scopes: ['repo:read', 'repo:land'] } })).toBe(
       'scopes: repo:read, repo:land',

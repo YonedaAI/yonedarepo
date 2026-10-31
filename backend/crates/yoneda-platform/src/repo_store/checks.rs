@@ -3,6 +3,7 @@
 //! policy's runner (a command in a Container, or one model review call), and completes
 //! it. Only completions from the current epoch count, so a stale or duplicated executor
 //! can never record a result.
+use super::audit_outbox;
 use super::rows::{self, Policy, Runner, Settings, check_name, object_id};
 use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
@@ -14,7 +15,12 @@ const LEASE_SLACK_MS: i64 = 5 * 60 * 1000;
 
 /// Owner-only: replace the landing policy. Results recorded under the old digest stop
 /// counting for gates, as they were produced under different rules.
-pub fn set_policy<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
+pub fn set_policy<S: SqlStore>(
+    db: &S,
+    c: &Value,
+    principal: &str,
+    settings: &Settings,
+) -> Result<Value> {
     let (_, json, digest) = Policy::parse(&c["policy"])?;
     let now = number(c, "now")?;
     db.query(
@@ -30,6 +36,13 @@ pub fn set_policy<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Val
             json!(now),
         ],
     )?;
+    if digest != settings.policy_digest {
+        let event = json!({
+            "digest": digest, "previous": settings.policy_digest,
+            "required_checks": json["required_checks"], "approvals": json["approvals"],
+        });
+        audit_outbox::record(db, c, "repo.policy_changed", principal, event)?;
+    }
     Ok(json!({ "policy": json, "policy_digest": digest }))
 }
 

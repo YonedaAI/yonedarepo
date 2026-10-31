@@ -1,6 +1,7 @@
 // Source platform operations shared by the HTTP API and MCP. Each takes plain arguments
 // and returns JSON; the SourceRepository Durable Object and Rust compute decide, this
 // module only moves objects between the cache tiers and those deciders.
+import { auditOn } from './account-audit';
 import { durableJson, storageGuard } from './durable';
 import { type HoldAnswer, holdSwitch, verifiedHold } from './platform-legal-hold';
 import type { OrgAccess } from './platform-org-access';
@@ -42,7 +43,8 @@ export type Credentials =
         | 'lfs'
         | 'quarantine'
         | 'erase'
-        | 'land-when-cleared';
+        | 'land-when-cleared'
+        | 'audit';
       /** No undo window for this caller: a purge nobody may undo (a failed create taken back, an
        * operator's purge). */
       _undo_ms?: 0;
@@ -57,6 +59,7 @@ const CREDENTIAL_KEYS = [
   '_storage_guard',
   '_hold',
   '_undo_ms',
+  '_audit',
 ];
 export class ApiError extends Error {
   constructor(
@@ -91,6 +94,8 @@ const KEEPS_REFS = new Set([
   'repo_status',
   'repo_storage',
   'repo_hold_owner',
+  'repo_audit_pending',
+  'repo_audit_done',
   'repo_refs',
   'repo_snapshot',
   'repo_log',
@@ -143,6 +148,7 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
       ...auth,
       ...storageGuard(env),
       ...holdSwitch(env),
+      ...(auditOn(env) && { _audit: 'on' }),
     };
   };
   const once = async (command: Json, hold?: HoldAnswer) => {

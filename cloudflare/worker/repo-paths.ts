@@ -8,6 +8,7 @@
 // not read answers exactly as one that names nothing.
 import { normalizeHandle } from '../../shared/account';
 import { profileAvatarUrl } from './avatars';
+import { audited } from './repo-audit';
 import { refreshHead } from './repo-head';
 import { ApiError, type Credentials, caller, type Json, type RepoContext } from './repo-ops';
 import { admitAnonymous } from './repo-public';
@@ -205,7 +206,7 @@ export async function renameRepository(ctx: RepoContext, name: unknown): Promise
   const owner = String(checked.workspace);
   await holdName(ctx.env, owner, ctx.repo, checked.name);
   try {
-    await ctx.call({ op: 'repo_rename', name: checked.name });
+    await audited(ctx.env, ctx.repo, ctx.call({ op: 'repo_rename', name: checked.name }));
   } catch (e) {
     await holdName(ctx.env, owner, ctx.repo, checked.previous).catch(() => {});
     throw e;

@@ -263,18 +263,12 @@ fn only_allow_listed_fields_enter_and_unknown_kinds_leave_no_row() {
     let events = json!([
         {"seq":1,"kind":"org.member_put","at":1,"data":{"account":"bob","role":"member",
             "actor":"user:alice",secret:"hunter2-hunter2","token_hash":"f".repeat(64),"note":"x"}},
-        {"seq":2,"kind":"repo.token_created","at":2,"data":{"id":"t",secret:"hunter2-hunter2"}},
+        {"seq":2,"kind":"repo.not_listed","at":2,"data":{"id":"t",secret:"hunter2-hunter2"}},
         {"seq":3,"kind":"org.team_created","at":3,"data":{"team":{"nested":true},"id":"seven"}},
     ]);
     assert_eq!(append(&db, ORG, events), json!({"appended":2,"cursor":3}));
     let stored = raw(&db);
-    for leaked in [
-        "_secret",
-        "hunter2",
-        "ffffffff",
-        "note",
-        "repo.token_created",
-    ] {
+    for leaked in ["_secret", "hunter2", "ffffffff", "note", "repo.not_listed"] {
         assert!(!stored.contains(leaked), "{leaked} in {stored}");
     }
     // Fields of the wrong type are dropped, not stringified.
@@ -327,6 +321,158 @@ fn reasons_are_scanned_and_capped() {
             .contains("ghp_")
     );
     assert!(!raw(&db).contains("aB3dE6gH9jK2mN5p"));
+}
+
+#[test]
+fn a_repository_is_a_source_with_a_cursor_of_its_own() {
+    const REPO: &str = "r0123456789abcdef0123";
+    let source = format!("repo:{REPO}");
+    let db = log();
+    let event = |seq: i64| {
+        json!({"seq":seq,"kind":"repo.deleted","at":seq,
+            "data":{"name":"demo","actor":"user:alice","repo":"r00000000000000000099"}})
+    };
+    append(&db, &source, json!([event(4), event(9)]));
+    // Handed over again, as after an answer lost between the log and the repository.
+    append(&db, &source, json!([event(4), event(9)]));
+    append(
+        &db,
+        ORG,
+        json!([{"seq":1,"kind":"org.created","at":1,"data":{}}]),
+    );
+    let items = rows(&db);
+    assert_eq!(items.len(), 3);
+    assert_eq!(items[1]["source"], source);
+    assert_eq!(items[1]["source_seq"], 9);
+    assert_eq!(items[1]["actor"], "user:alice");
+    // The repository is the source's, whatever the event says.
+    assert_eq!(items[1]["details"], json!({"repo":REPO,"name":"demo"}));
+    assert_eq!(
+        ok(&db, json!({"op":"audit_cursor","source":source}))["cursor"],
+        9
+    );
+}
+
+#[test]
+fn a_repository_event_names_nobody_when_it_names_no_actor() {
+    let source = "repo:r0123456789abcdef0123";
+    let db = log();
+    append(
+        &db,
+        source,
+        json!([{"seq":1,"kind":"repo.deleted","at":1,"data":{"name":"demo"}}]),
+    );
+    assert_eq!(rows(&db)[0]["actor"], Value::Null);
+}
+
+#[test]
+fn a_source_is_an_account_or_a_repository_id() {
+    let db = log();
+    for source in [
+        "repo:",
+        "repo:demo",
+        "repo:R0123456789abcdef0123",
+        "device:X",
+    ] {
+        let e = at(&db, 1000, json!({"op":"audit_cursor","source":source})).unwrap_err();
+        assert_eq!(e.code, "INVALID_INPUT", "{source}");
+    }
+}
+
+#[test]
+fn repository_events_keep_only_their_listed_fields() {
+    let db = log();
+    let source = "repo:r0123456789abcdef0123";
+    let digest = "ab".repeat(32);
+    let shared = json!({"name":"demo","actor":"user:alice","_secret":"yrp_nope","token_hash":"x"});
+    let event = |seq: i64, kind: &str, more: Value| {
+        let mut data = shared.clone();
+        for (key, value) in more.as_object().unwrap() {
+            data[key] = value.clone();
+        }
+        json!({"seq":seq,"kind":kind,"at":seq,"data":data})
+    };
+    let events = json!([
+        event(
+            1,
+            "repo.created",
+            json!({"visibility":"private","parent":"r00000000000000000009"})
+        ),
+        event(2, "repo.deleted", json!({})),
+        event(3, "repo.restored", json!({"previous":"old"})),
+        event(4, "repo.renamed", json!({"previous":"old"})),
+        event(5, "repo.visibility_changed", json!({"visibility":"public"})),
+        event(
+            6,
+            "repo.member_put",
+            json!({"account":"team:acme/devs","role":"read","previous":"write"})
+        ),
+        event(7, "repo.member_removed", json!({"account":"bob"})),
+        event(
+            8,
+            "repo.token_created",
+            json!({"token":"ci","scopes":["read","check:lint"],"paths":{"x":1}})
+        ),
+        event(9, "repo.token_revoked", json!({"token":"ci"})),
+        event(
+            10,
+            "repo.policy_changed",
+            json!({"digest":digest,"previous":digest,"required_checks":["unit"],"approvals":2,"policy":{"x":1}})
+        ),
+        event(
+            11,
+            "repo.retention_changed",
+            json!({"keep_versions":100,"keep_days":10})
+        ),
+        event(
+            12,
+            "webhook.created",
+            json!({"id":"3","url":"https://ci.example.com/tok3n?key=abc"})
+        ),
+        event(
+            13,
+            "webhook.deleted",
+            json!({"id":"3","url":"https://ci.example.com/tok3n?key=abc"})
+        ),
+    ]);
+    append(&db, source, events);
+    let repo = "r0123456789abcdef0123";
+    let items = rows(&db);
+    assert_eq!(items.len(), 13);
+    let details = |kind: &str| {
+        items
+            .iter()
+            .find(|row| row["kind"] == kind)
+            .map(|row| row["details"].clone())
+            .unwrap()
+    };
+    assert_eq!(
+        details("repo.created"),
+        json!({"repo":repo,"name":"demo","visibility":"private","parent":"r00000000000000000009"})
+    );
+    assert_eq!(details("repo.deleted"), json!({"repo":repo,"name":"demo"}));
+    assert_eq!(
+        details("repo.member_put"),
+        json!({"repo":repo,"name":"demo","account":"team:acme/devs","role":"read","previous":"write"})
+    );
+    assert_eq!(
+        details("repo.token_created"),
+        json!({"repo":repo,"name":"demo","token":"ci","scopes":["read","check:lint"]})
+    );
+    assert_eq!(
+        details("repo.policy_changed"),
+        json!({"repo":repo,"name":"demo","digest":digest,"previous":digest,"required_checks":["unit"],"approvals":2})
+    );
+    assert_eq!(
+        details("repo.retention_changed"),
+        json!({"repo":repo,"name":"demo","keep_versions":100,"keep_days":10})
+    );
+    assert_eq!(
+        details("webhook.created"),
+        json!({"repo":repo,"name":"demo","id":"3","host":"ci.example.com"})
+    );
+    assert!(!raw(&db).contains("yrp_nope"));
+    assert!(!raw(&db).contains("tok3n"));
 }
 
 #[test]

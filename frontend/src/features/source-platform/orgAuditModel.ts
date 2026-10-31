@@ -29,6 +29,21 @@ export const AUDIT_KINDS: Record<string, string> = {
   'ssh_key.added': 'SSH key added',
   'ssh_key.removed': 'SSH key removed',
   'account.recovered': 'Account recovered',
+  'repo.created': 'Repository created',
+  'repo.deleted': 'Repository deleted',
+  'repo.restored': 'Repository restored',
+  'repo.renamed': 'Repository renamed',
+  'repo.visibility_changed': 'Repository visibility changed',
+  'repo.member_put': 'Repository member added or changed',
+  'repo.member_removed': 'Repository member removed',
+  'repo.token_created': 'Repository token created',
+  'repo.token_revoked': 'Repository token revoked',
+  'repo.policy_changed': 'Landing rules changed',
+  'repo.retention_changed': 'Retention changed',
+  'webhook.created': 'Webhook created',
+  'webhook.deleted': 'Webhook deleted',
+  'legal_hold.set': 'Legal hold set',
+  'legal_hold.released': 'Legal hold released',
 };
 
 const search = (filters: AuditFilters, more: [string, string][] = []) => {

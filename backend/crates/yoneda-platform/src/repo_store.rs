@@ -21,6 +21,7 @@ mod adopt;
 mod agent_context;
 mod agent_reads;
 mod annotated;
+mod audit_outbox;
 pub(crate) mod auth;
 mod authorize;
 mod auto_landing;

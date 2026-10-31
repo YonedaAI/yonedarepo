@@ -5,6 +5,7 @@ import { afterAnswer, deferred } from './background';
 import { bounded, boundedRetry, failureCode } from './durable';
 import { orgArg, orgCaller, orgCommand } from './platform-orgs';
 import { asyncStore, dispatchStore } from './repo-artifacts-store';
+import { auditRepo } from './repo-audit';
 import { commit } from './repo-commit';
 import { refreshHead } from './repo-head';
 import { defaultBranchSoon, startImport } from './repo-import';
@@ -183,6 +184,8 @@ export async function createRepository(env: Env, requester: Credentials, body: J
     if (later) await timed('create.queue', () => bounded(INIT_MS, dispatchStore(env, id)));
     const created = await populate(env, ctx, store, { name, visibility, owner }, body);
     await startShards(env, id);
+    // Only now: a create that failed is taken back as if it never was.
+    await auditRepo(env, id);
     return created;
   } catch (e) {
     await takeBack(env, ctx, owner, name, accepted);
@@ -263,6 +266,7 @@ export async function importRepository(env: Env, requester: Credentials, body: J
   await timed('import.list', () => listRepository(env, id, owner, name, visibility));
   const tokens = await timed('import.tokens', () => issueTokens(ctx, body.tokens));
   const workflow = await timed('import.workflow', () => startWorkflow(env, params));
+  await auditRepo(env, id);
   return { id, import: workflow, branch: branch ?? null, max_commits: max, ...tokens };
 }
 

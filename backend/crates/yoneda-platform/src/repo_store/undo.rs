@@ -12,6 +12,7 @@
 //! is `policy_digest`, as `erase` marks `object_store`: it needs no migration, an older binary
 //! never reads it on a tombstone, and nothing bound to the digest can run again, as a marked
 //! tombstone never comes back. `repo_purged` closes it, once, queueing `repo.purged`.
+use super::audit_outbox;
 use super::auth::Actor;
 use super::deletion;
 use super::rows::{self, Settings};
@@ -81,7 +82,12 @@ pub(super) fn facts(c: &Value, settings: &Settings, deleted_at: Option<i64>) -> 
 /// changes nothing: the adapter first holds the name and re-registers a fork. Again on a live
 /// repository answers `already`, so a retry repeats what an attempt left undone. Only the
 /// deletion is undone: its tokens stay revoked.
-pub(super) fn restore<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value> {
+pub(super) fn restore<S: SqlStore>(
+    db: &S,
+    c: &Value,
+    actor: &Actor,
+    settings: &Settings,
+) -> Result<Value> {
     let already = settings.deleted_at.is_none();
     let name = match &c["name"] {
         Value::Null => settings.name.clone(),
@@ -93,6 +99,9 @@ pub(super) fn restore<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Re
             "UPDATE repo_settings SET deleted_at=NULL,name=? WHERE id='repository'",
             &[json!(name)],
         )?;
+        let previous = (name != settings.name).then_some(&settings.name);
+        let event = json!({ "previous": previous });
+        audit_outbox::record(db, c, "repo.restored", &actor.principal, event)?;
     }
     let mut answer = facts(c, settings, settings.deleted_at);
     answer["name"] = json!(name);

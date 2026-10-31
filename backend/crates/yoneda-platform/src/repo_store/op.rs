@@ -18,6 +18,8 @@ op_names! {
         Activity = "repo_activity",
         AdoptCommit = "repo_adopt_commit",
         AgentContext = "repo_agent_context",
+        AuditDone = "repo_audit_done",
+        AuditPending = "repo_audit_pending",
         AutoLandings = "repo_auto_landings",
         BeginCommit = "repo_begin_commit",
         BisectList = "repo_bisect_list",

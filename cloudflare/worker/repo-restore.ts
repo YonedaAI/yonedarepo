@@ -10,6 +10,7 @@
 // agents connection has one: its owner saves the agent once, which mints a new token.
 
 import { asyncStore, dispatchStore } from './repo-artifacts-store';
+import { audited } from './repo-audit';
 import { listRepository } from './repo-create';
 import { forgetDeleted, isDeletedListed } from './repo-deleted';
 import { forgetFork } from './repo-forks';
@@ -97,7 +98,7 @@ export async function restoreRepository(env: Env, auth: Credentials, repo: strin
   });
   try {
     if (facts.parent) await reRegister(env, facts.parent, repo);
-    await ctx.call({ op: 'repo_restore', name: chosen });
+    await audited(env, repo, ctx.call({ op: 'repo_restore', name: chosen }));
   } catch (e) {
     await release();
     throw e;

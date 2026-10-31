@@ -64,6 +64,7 @@ impl Harness {
             None if principal == "platform:derive" => c["_system"] = json!("derive"),
             None if principal == "platform:commits" => c["_system"] = json!("commits"),
             None if principal == "platform:hooks" => c["_system"] = json!("hooks"),
+            None if principal == "platform:audit" => c["_system"] = json!("audit"),
             None if principal == "platform:erase" => c["_system"] = json!("erase"),
             None if principal == "platform:fork" => c["_system"] = json!("fork"),
             None if principal == "platform:lfs" => c["_system"] = json!("lfs"),
@@ -1645,6 +1646,7 @@ mod access_gates;
 mod account_access;
 mod activity;
 mod agent_reads;
+mod audit_outbox;
 mod auto_approval;
 mod auto_landing_pushes;
 mod auto_landings;

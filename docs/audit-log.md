@@ -24,6 +24,16 @@ Who did what in an organization, for its owners. It's behind `AUDIT_LOG`, off by
 | `pat.created`, `pat.revoked` | A member's account, for tokens limited to that org |
 | `ssh_key.added`, `ssh_key.removed` | A member's account, to every org they belong to, since a key reaches all of them |
 | `account.recovered` | A member's account: it revoked their tokens and keys |
+| `legal_hold.set`, `legal_hold.released` | The owner's account, for the org or one of its repositories |
+| `repo.created`, `repo.deleted`, `repo.restored`, `repo.renamed` | The repository. A fork and an import are creates; a fork names its `parent` |
+| `repo.visibility_changed` | The repository |
+| `repo.member_put`, `repo.member_removed` | The repository, for an account or a team |
+| `repo.token_created`, `repo.token_revoked` | The repository, for its own `yrp_` tokens |
+| `repo.policy_changed` | The repository: its landing rules, by digest, required checks and approvals |
+| `repo.retention_changed` | The repository |
+| `webhook.created`, `webhook.deleted` | The repository, with the URL's host only |
+
+Repository events are for repositories an org owns. A person's repository has no log, so its events are dropped when they're copied. A change that changes nothing, such as setting the same visibility, leaves no row, and neither does a failed action or a create that failed part way.
 
 A person's sign-ins stay on their own `workspace_events` and never reach an org: `auth.login`, `auth.logout`, `auth.login_failed`, `auth.device_approved` and `auth.device_denied`. Failed logins share one row an hour, since the address limiter (30 a minute) and the account's own limit (10 a minute) still allow thousands a day. Each person keeps their newest 1,000 sign-in rows.
 
@@ -33,7 +43,9 @@ A person's sign-ins stay on their own `workspace_events` and never reach an org:
 2. After the answer, the adapter copies new events to `audit:<org>`, a sibling instance in `WORKSPACES`.
 3. The log keeps a cursor per source, so a repeated copy appends nothing and a failed one is picked up by the next.
 
-A failed or slow log never fails or slows the action. The org's own events also catch up on every read. A member's wait for that member's next credential change.
+A failed or slow log never fails or slows the action. The org's own events also catch up on every read. A member's wait for that member's next credential change. A repository's wait in the repository for its next audited change, or for its purge, which copies them before the erase. A read doesn't reach them: the page would have to call every repository the org owns.
+
+A repository's events wait in `hook_outbox`, under hook id 0, which no hook has (`repo_store/audit_outbox.rs`). That table was already an ordered outbox, so this needs no `repo_store` migration, and an older binary leaves those rows alone.
 
 `seq` is the order rows reached the log, and `at` is when they happened, so rows from different sources can differ.
 

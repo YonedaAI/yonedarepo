@@ -5,7 +5,7 @@
 //! and only then deletes those rows and advances the anchor, in this one transaction. A
 //! rerun after a crash at any step plans the same bytes again, and a repeated `done` is a
 //! no-op, so no entry is lost or archived twice.
-use super::super::{hook_events, projection_plan, rows};
+use super::super::{audit_outbox, hook_events, projection_plan, rows};
 use super::archive;
 use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
@@ -62,8 +62,9 @@ impl Retention {
 }
 
 /// `repo_set_retention` (owner): `keep_versions` (at least 64) and/or `keep_days` (1-3650).
-pub fn set_retention<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+pub fn set_retention<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
     let mut retention = Retention::of(db)?;
+    let before = retention.json();
     let field = |key: &str| c.get(key).filter(|v| !v.is_null());
     if field("keep_versions").is_none() && field("keep_days").is_none() {
         return Err(bad("Give keep_versions and/or keep_days"));
@@ -85,6 +86,10 @@ pub fn set_retention<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "INSERT INTO txlog_retention(id,keep_versions,keep_ms) VALUES(1,?,?) ON CONFLICT(id) DO UPDATE SET keep_versions=excluded.keep_versions,keep_ms=excluded.keep_ms",
         &[json!(retention.keep_versions), json!(retention.keep_ms)],
     )?;
+    let event = retention.json();
+    if event != before {
+        audit_outbox::record(db, c, "repo.retention_changed", principal, event)?;
+    }
     Ok(retention.json())
 }
 
