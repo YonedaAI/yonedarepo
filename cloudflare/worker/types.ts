@@ -7,6 +7,8 @@ export type Envelope = {
   workspace?: string;
   /** An account email job's confirmation token (platform-email-verify.ts); never logged. */
   token?: string;
+  /** A classify job's pushed commits, parents first (repo-classify.ts). */
+  commits?: string[];
 };
 export interface Env {
   WORKSPACES: DurableObjectNamespace;

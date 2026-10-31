@@ -44,6 +44,7 @@ op_names! {
         CheckRelease = "repo_check_release",
         CheckRequest = "repo_check_request",
         CheckRun = "repo_check_run",
+        ClassesPending = "repo_classes_pending",
         CloneAccess = "repo_clone_access",
         Commit = "repo_commit",
         ContractList = "repo_contract_list",

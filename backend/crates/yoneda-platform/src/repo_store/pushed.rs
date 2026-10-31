@@ -30,7 +30,8 @@ const BASE_WALK: usize = 10_000;
 /// objects: [{id, kind}], check, read_set?}`; `check` starts platform checks (the pushed
 /// tips), which carry the push's declared reads. With
 /// `staged`, every object also carries its `data_b64` and is staged with its commit;
-/// `dispatch_objects` then says whether the adapter must ask for the drain to R2.
+/// `dispatch_objects` then says whether the adapter must ask for the drain to R2, and
+/// `classify` whether to queue the push's commits for the classifier (`classes::pending`).
 pub fn record<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings) -> Result<Value> {
     actor.require("write")?;
     super::git_http::whole_repository(actor)?;
@@ -72,7 +73,12 @@ pub fn record<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings
             )?);
         }
     }
-    Ok(json!({ "recorded": recorded, "check_runs": runs, "dispatch_objects": dispatch }))
+    // Classes only serve semantic approval, so a push queues the classifier only where the
+    // policy can use them.
+    let classify = !settings.policy.auto_approve.is_empty();
+    Ok(
+        json!({ "recorded": recorded, "check_runs": runs, "dispatch_objects": dispatch, "classify": classify }),
+    )
 }
 
 /// Stages a pushed commit's objects (each checked against its id) and accepts them: reads
