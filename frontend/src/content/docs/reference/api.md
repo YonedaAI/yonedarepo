@@ -90,7 +90,7 @@ All paths start with `/repos/<id>`.
 | `GET`, `POST /releases`; `GET`, `DELETE /releases/<tag>` | Releases |
 | `PUT`, `GET /releases/<tag>/assets/<name>` | Upload a release asset (the body is the file), download one |
 | `PUT /policy`, `PUT /visibility` | Landing rules, public or private |
-| `PUT /auto-landings` | Automatic Landings: `{create?, agents?}`, owner or admin. `GET /repos/<id>` answers them as `landings` |
+| `PUT /auto-landings` | Automatic Landings: `{create?, agents?, land_when_cleared?, findings_block?}`, owner or admin. `GET /repos/<id>` answers them as `landings` |
 | `GET`, `PUT /lfs` | The Git LFS quota |
 | `GET`, `POST /members`; `DELETE /members/<account>` | Members |
 | `GET`, `POST /tokens`; `DELETE /tokens/<name>` | Repository tokens |

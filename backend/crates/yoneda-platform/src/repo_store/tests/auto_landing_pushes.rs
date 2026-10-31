@@ -7,7 +7,10 @@ const HOOKS: &str = "platform:hooks";
 
 fn on(h: &Harness) {
     let set = h.ok(OWNER, json!({"op":"repo_auto_landings","create":true}));
-    assert_eq!(set, json!({"create": true, "agents": false}));
+    assert_eq!(
+        set,
+        json!({"create": true, "agents": false, "land_when_cleared": false, "findings_block": false})
+    );
 }
 
 /// A commit of `message` on `parent`, not on any branch yet.
@@ -43,7 +46,7 @@ fn off_is_the_default_and_a_push_opens_nothing() {
     let status = h.ok(OWNER, json!({"op":"repo_status"}));
     assert_eq!(
         status["landings"],
-        json!({"create": false, "agents": false})
+        json!({"create": false, "agents": false, "land_when_cleared": false, "findings_block": false})
     );
     let id = commit(&h, &root, "src/a.rs", "Add a");
     let moved = push(&h, "fix", &id, None);
@@ -58,12 +61,21 @@ fn the_switches_belong_to_the_owner_and_leave_the_policy_alone() {
     let refused = h.run(AGENT, json!({"op":"repo_auto_landings","create":true}));
     assert_eq!(code(refused), "FORBIDDEN");
     let both = json!({"op":"repo_auto_landings","create":true,"agents":true});
-    assert_eq!(h.ok(OWNER, both), json!({"create": true, "agents": true}));
+    assert_eq!(
+        h.ok(OWNER, both),
+        json!({"create": true, "agents": true, "land_when_cleared": false, "findings_block": false})
+    );
     // Each is set alone; the other stays.
     let one = json!({"op":"repo_auto_landings","agents":false});
-    assert_eq!(h.ok(OWNER, one), json!({"create": true, "agents": false}));
+    assert_eq!(
+        h.ok(OWNER, one),
+        json!({"create": true, "agents": false, "land_when_cleared": false, "findings_block": false})
+    );
     let status = h.ok(OWNER, json!({"op":"repo_status"}));
-    assert_eq!(status["landings"], json!({"create": true, "agents": false}));
+    assert_eq!(
+        status["landings"],
+        json!({"create": true, "agents": false, "land_when_cleared": false, "findings_block": false})
+    );
     assert_eq!(status["policy_digest"], before);
     let bad = h.run(OWNER, json!({"op":"repo_auto_landings","create":"yes"}));
     assert_eq!(code(bad), "INVALID_INPUT");

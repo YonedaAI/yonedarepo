@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { type Conflict, ConflictList, ReviewButtons } from './CommitGates';
 import type { ChangeDetail } from './changeModel';
+import { LandedAutomatically } from './LandWhenCleared';
 import { HELD_NOTE, useRepoHold } from './LegalHold';
 import { usePeople } from './people';
 import { useReadOnly } from './repoAccess';
@@ -64,6 +65,7 @@ export function ChangeGates({
           .
         </p>
       )}
+      <LandedAutomatically change={change} />
       {status === 'closed' && <p className="source-change-banner">Closed without landing.</p>}
       {!head && status !== 'landed' && (
         <p className="source-change-banner">

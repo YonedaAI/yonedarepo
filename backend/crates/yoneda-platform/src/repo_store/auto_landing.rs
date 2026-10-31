@@ -4,10 +4,11 @@
 //! `land::append`. A server-side commit only records, so it moves nothing and isn't one.
 //!
 //! The row costs nothing: a hook hears it only by asking (`hooks::AUTO_LANDINGS`), and managed
-//! agents skip it unless the second switch is on. The two switches are columns of
-//! `repo_settings`, set by `repo_auto_landings`, read back in `repo_status`, and not part of
-//! `policy`: a policy change alters the digest every recorded check is bound to. A binary that
-//! doesn't know them ignores the columns and opens nothing, so rollback is safe.
+//! agents skip it unless the second switch is on. The switches, these two and the two
+//! `land_when_cleared` reads, are columns of `repo_settings`, set by `repo_auto_landings`, read
+//! back in `repo_status`, and not part of `policy`: a policy change alters the digest every
+//! recorded check is bound to. A binary that doesn't know them ignores the columns and opens
+//! nothing, so rollback is safe.
 use super::rows::{self, CommitRow, RecordedGraph};
 use super::{change_hooks, changes};
 use crate::storage::{SqlStore, bad};
@@ -25,13 +26,29 @@ const MAIN: &str = "refs/heads/main";
 /// and the chain and landing checks have already caught what landed.
 const WALK: u64 = 256;
 
-/// The repository's two switches, both off until the owner turns them on.
+/// The repository's switches, all off until the owner turns them on.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, JsonSchema)]
 pub struct AutoLandings {
     /// A push opens a Landing.
     pub create: bool,
     /// Managed agents run on those Landings. Off, opening one starts nothing.
     pub agents: bool,
+    /// The platform lands an open Landing once it clears (`land_when_cleared`).
+    pub land_when_cleared: bool,
+    /// Unresolved agent findings refuse every landing, not only show.
+    pub findings_block: bool,
+}
+
+impl AutoLandings {
+    /// The switches a `repo_settings` row holds.
+    pub(super) fn of(row: &Value) -> Self {
+        Self {
+            create: row["auto_landings"] == 1,
+            agents: row["auto_landing_agents"] == 1,
+            land_when_cleared: row["land_when_cleared"] == 1,
+            findings_block: row["findings_block"] == 1,
+        }
+    }
 }
 
 fn switch(c: &Value, key: &str) -> Result<Option<bool>> {
@@ -44,20 +61,26 @@ fn switch(c: &Value, key: &str) -> Result<Option<bool>> {
     }
 }
 
-/// `repo_auto_landings {create?, agents?}`: sets the switches it names and answers both.
+/// `repo_auto_landings {create?, agents?, land_when_cleared?, findings_block?}`: sets the
+/// switches it names and answers all of them.
 pub fn set<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
-    let (create, agents) = (switch(c, "create")?, switch(c, "agents")?);
+    let keys = ["create", "agents", "land_when_cleared", "findings_block"];
+    let [create, agents, cleared, findings] = keys.map(|key| switch(c, key));
     let rows = db.query(
         "UPDATE repo_settings SET auto_landings=COALESCE(?1,auto_landings),\
-         auto_landing_agents=COALESCE(?2,auto_landing_agents) WHERE id='repository' \
-         RETURNING auto_landings,auto_landing_agents",
-        &[json!(create.map(i64::from)), json!(agents.map(i64::from))],
+         auto_landing_agents=COALESCE(?2,auto_landing_agents),\
+         land_when_cleared=COALESCE(?3,land_when_cleared),\
+         findings_block=COALESCE(?4,findings_block) WHERE id='repository' \
+         RETURNING auto_landings,auto_landing_agents,land_when_cleared,findings_block",
+        &[
+            json!(create?.map(i64::from)),
+            json!(agents?.map(i64::from)),
+            json!(cleared?.map(i64::from)),
+            json!(findings?.map(i64::from)),
+        ],
     )?;
     let row = rows.first().ok_or_else(|| rows::corrupt("repo_settings"))?;
-    Ok(json!(AutoLandings {
-        create: row["auto_landings"] == 1,
-        agents: row["auto_landing_agents"] == 1,
-    }))
+    Ok(json!(AutoLandings::of(row)))
 }
 
 /// The branch's short name, unless a Landing never proposes it: `main`, `release*`, and

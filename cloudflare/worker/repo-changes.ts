@@ -8,6 +8,7 @@ import { diff } from './repo-diff';
 import { followForkChange, openForkChange } from './repo-forks';
 import { notifyHooks } from './repo-hooks';
 import { changeInstruments, instrumentsOn } from './repo-instruments';
+import { landChecksOn } from './repo-land-check';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 
 const changeNumber = (value: unknown) => {
@@ -105,10 +106,16 @@ export const changeOperations = {
     notified(ctx, ctx.call({ op: 'repo_change_delete', number: changeNumber(a.number) })),
 };
 
-/** `PUT /auto-landings {create?, agents?}`: the repository's switches, kept out of `policy`,
- * whose digest every recorded check binds to (repo_store/auto_landing.rs). */
-export const setAutoLandings = (ctx: RepoContext, { create, agents }: Json) =>
-  ctx.call({ op: 'repo_auto_landings', create, agents });
+/** `PUT /auto-landings {create?, agents?, land_when_cleared?, findings_block?}`: the repository's
+ * switches, kept out of `policy`, whose digest every recorded check binds to
+ * (repo_store/auto_landing.rs). Land when cleared needs its queue job, so where the platform
+ * doesn't run that, turning it on is refused and doesn't look done. */
+export const setAutoLandings = (ctx: RepoContext, switches: Json) => {
+  const { create, agents, land_when_cleared, findings_block } = switches;
+  if (land_when_cleared === true && !landChecksOn(ctx.env))
+    throw new ApiError('NOT_SUPPORTED', 'Land when cleared is not available here yet');
+  return ctx.call({ op: 'repo_auto_landings', create, agents, land_when_cleared, findings_block });
+};
 
 /** `GET|POST /changes`, `GET|DELETE /changes/:n`, `POST /changes/:n/comments|close|reopen`,
  * `GET /changes/:n/gates|route|instruments`. */

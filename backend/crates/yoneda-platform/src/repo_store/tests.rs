@@ -58,6 +58,9 @@ impl Harness {
             None if principal == "platform:projection" => c["_system"] = json!("projection"),
             None if principal == "platform:import" => c["_system"] = json!("import"),
             None if principal == "platform:merge" => c["_system"] = json!("merge"),
+            None if principal == "platform:land-when-cleared" => {
+                c["_system"] = json!("land-when-cleared")
+            }
             None if principal == "platform:derive" => c["_system"] = json!("derive"),
             None if principal == "platform:commits" => c["_system"] = json!("commits"),
             None if principal == "platform:hooks" => c["_system"] = json!("hooks"),
@@ -1677,6 +1680,7 @@ mod history_fill;
 mod hooks;
 mod land_cas;
 mod land_shapes;
+mod land_when_cleared;
 mod landed_tickets;
 mod legal_hold;
 mod lfs;

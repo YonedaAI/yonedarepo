@@ -26,7 +26,7 @@ pub struct Settings {
     pub parent: Option<(String, u64)>,
     /// Who reads it besides its owner and members (`visibility`).
     pub visibility: Visibility,
-    /// The repository's automatic Landings switches.
+    /// The repository's Landing switches.
     pub auto_landings: AutoLandings,
 }
 
@@ -108,10 +108,7 @@ pub fn settings<S: SqlStore>(db: &S) -> Result<Settings> {
             )
         }),
         visibility: Visibility::parse(&text("visibility")?)?,
-        auto_landings: AutoLandings {
-            create: row["auto_landings"] == 1,
-            agents: row["auto_landing_agents"] == 1,
-        },
+        auto_landings: AutoLandings::of(&row),
     })
 }
 

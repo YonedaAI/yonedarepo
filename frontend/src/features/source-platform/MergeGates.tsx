@@ -3,6 +3,7 @@
 // (`GET /changes/:n/gates`). The server decides; enforced requirements come first, and the
 // ones landing does not wait for are marked.
 import type { ChangeGates, GateRequirement } from '../../../../shared/contracts/change-gates';
+import { WillLandNote } from './LandWhenCleared';
 import { Failure, Loading } from './SourceStatus';
 import type { Loaded } from './useSource';
 
@@ -33,6 +34,7 @@ export function MergeGates({ gates }: { gates: Loaded<ChangeGates> }) {
     <section className="source-gates source-merge-gates" aria-labelledby="gates-heading">
       <h3 id="gates-heading">Clearance</h3>
       <p className="source-merge-gates-summary">{gatesHeading(data)}</p>
+      {data.land_when_cleared && <WillLandNote clearance={data.land_when_cleared} />}
       <ul>
         {shown.map((r) => (
           <li key={`${r.kind}:${r.name}`} data-state={r.state}>

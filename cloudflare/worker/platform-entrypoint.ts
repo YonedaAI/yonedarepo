@@ -1,7 +1,8 @@
 // Worker entrypoint for the source platform alone: HTTP, Git over SSH's front doors (inbound
 // TCP and the tunnel gateway's keep-alive cron; platform-ssh-gateway.ts), plus its own queue
 // jobs (checks, store creation, object and ref projection, derived data, clone packs, webhooks,
-// account emails, the operators' sign-up notice). No agent runs, harnesses, providers or budgets.
+// clearance, account emails, the operators' sign-up notice). No agent runs, harnesses, providers
+// or budgets.
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { AccountCreated } from './account-index';
 import { withWaitUntil } from './background';
@@ -21,6 +22,8 @@ import { sweepDeleted } from './repo-deleted';
 import { deriveAfterLanding } from './repo-derived';
 import { eraseJob } from './repo-erase';
 import { hookJob } from './repo-hooks';
+import { LAND_CHECK } from './repo-land-check';
+import { landCheckJob } from './repo-land-cleared';
 import { lfsSweepJob } from './repo-lfs-sweep';
 import { PACK_BUILD, packBuildJob } from './repo-pack-jobs';
 import { projectObjects, projectRefs } from './repo-projection';
@@ -66,6 +69,10 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
     message.ack();
   } else if (envelope.kind === 'platform_hooks') {
     const outcome = await hookJob(env, envelope);
+    if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
+    else message.ack();
+  } else if (envelope.kind === LAND_CHECK) {
+    const outcome = await landCheckJob(env, envelope, message.attempts);
     if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
     else message.ack();
   } else if (envelope.kind === 'platform_lfs_sweep') {

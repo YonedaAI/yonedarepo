@@ -10,7 +10,7 @@
 //! the change page keeps every comment.
 use crate::storage::SqlStore;
 use serde_json::{Value, json};
-use yoneda_core::Result;
+use yoneda_core::{Result, git_object::ObjectId};
 
 pub const MAX_FINDINGS: u64 = 10;
 pub const MAX_BODY_CHARS: u64 = 400;
@@ -56,6 +56,24 @@ pub(super) fn of_change<S: SqlStore>(db: &S, number: &Value, head: &Value) -> Re
         "open": count.first().map_or(json!(0), |r| r["n"].clone()),
         "findings": findings,
     }))
+}
+
+/// Open findings from tokens, which is how agents post, on the open change whose head is
+/// `commit` on base `refname`; a person's comment is theirs to resolve and isn't one.
+pub(super) fn agent_findings<S: SqlStore>(db: &S, commit: &ObjectId, refname: &str) -> Result<u64> {
+    let change = db.query(
+        "SELECT c.number FROM changes c JOIN refs r ON r.name='refs/heads/'||c.branch \
+         WHERE c.status='open' AND 'refs/heads/'||c.base=? AND r.commit_id=? LIMIT 1",
+        &[json!(refname), json!(commit.hex())],
+    )?;
+    let Some(number) = change.first().map(|row| row["number"].clone()) else {
+        return Ok(0);
+    };
+    let count = db.query(
+        &format!("{} AND k.principal LIKE 'token:%'", open("COUNT(*) AS n")),
+        &[number.clone(), number],
+    )?;
+    Ok(count.first().and_then(|r| r["n"].as_u64()).unwrap_or(0))
 }
 
 /// The open findings of `branch`'s open change; null when it has none open.

@@ -26,7 +26,8 @@ vi.mock('./useSource', () => ({
 }));
 
 const { ChangeTable, StatusFilter } = await import('./RepoChanges');
-const { changesPath, landingState } = await import('./changeModel');
+const { changesPath, landedAutomatically, landingState } = await import('./changeModel');
+const { LandedAutomatically, WillLandNote } = await import('./LandWhenCleared');
 const { ChangeView } = await import('./ChangeView');
 const { ChangeSessions } = await import('./ChangeSessions');
 const { MergeGates } = await import('./MergeGates');
@@ -281,11 +282,81 @@ describe('changes list', () => {
     expect(landingState(open, gates(false, 'blocked', false))).toBe('In flight');
   });
 
+  it('calls a Landing landed automatically only from the record of its landing', () => {
+    const record = {
+      outcome: 'landed' as const,
+      head: 'a'.repeat(40),
+      by: 'platform:land-when-cleared',
+      at: 1,
+      version: 2,
+      approved_by: ['user:ada'],
+      gates: [{ name: 'ci', why: 'Passed' }],
+    };
+    expect(landedAutomatically({ status: 'landed', clearance: record })).toBe(record);
+    expect(landedAutomatically({ status: 'landed' })).toBeNull();
+    expect(landedAutomatically({ status: 'open', clearance: record })).toBeNull();
+    const refused = {
+      outcome: 'refused',
+      head: 'a',
+      code: 'CONFLICT',
+      reason: 'x',
+      at: 1,
+    } as const;
+    expect(landedAutomatically({ status: 'landed', clearance: refused })).toBeNull();
+    // Computed, so its state is what it was.
+    expect(landingState({ status: 'open', title: 'Retry' })).toBe('In flight');
+  });
+
   it('marks the selected status filter as pressed', () => {
     const filter = html(StatusFilter, { value: 'landed', onChange: () => {} });
     expect(filter).toContain('<legend class="sr-only">Status</legend>');
     expect(filter).toContain('aria-pressed="true">Landed');
     expect(filter.match(/aria-pressed="false"/g)).toHaveLength(3);
+  });
+});
+
+describe('land when cleared', () => {
+  const clearance = (over: object) => ({ waiting: [], refused: null, ...over });
+
+  it('says what an open Landing waits for', () => {
+    const note = html(WillLandNote, {
+      clearance: clearance({
+        waiting: [{ code: 'GATES', reason: 'Approvals: 0 of 1 approvals' }],
+      }),
+    });
+    expect(note).toContain('Will land when cleared.');
+    expect(note).toContain('Waiting for:');
+    expect(note).toContain('Approvals: 0 of 1 approvals');
+    expect(note).not.toContain('did not land');
+  });
+
+  it('says when nothing is in the way, and why the last attempt failed', () => {
+    const clear = html(WillLandNote, { clearance: clearance({}) });
+    expect(clear).toContain('Nothing is in the way');
+    const refused = html(WillLandNote, {
+      clearance: clearance({ refused: { code: 'RISK_HIGH', reason: 'Risk is High (60)', at: 1 } }),
+    });
+    expect(refused).toContain('The last attempt did not land.');
+    expect(refused).toContain('Risk is High (60)');
+    expect(refused).toContain('It tries again');
+    expect(refused).not.toContain('Nothing is in the way');
+  });
+
+  it("shows a landed Landing its reason trail, and a person's landing none", () => {
+    const change = {
+      status: 'landed',
+      clearance: {
+        outcome: 'landed',
+        at: 1,
+        approved_by: ['user:ada'],
+        gates: [{ name: 'ci', why: 'Passed (token:ci)' }],
+      },
+    };
+    const trail = html(LandedAutomatically, { change });
+    expect(trail).toContain('Landed automatically');
+    expect(trail).toContain('Approved by ada');
+    expect(trail).toContain('Passed (token:ci)');
+    expect(html(LandedAutomatically, { change: { status: 'landed' } })).toBe('');
   });
 });
 

@@ -82,7 +82,8 @@ function outcome(sha: string, status: Json) {
  * Lands `sha` on `ref` (see the module comment). A queued landing waits for the branch's
  * combiner, or drains the queue itself when the combiner cannot be reached. No caller
  * rebuilds a merge against a moving head. `inAuthority`: the caller knows the authority
- * already records `sha` (a commit pushed with Git), so no shard is asked for it.
+ * already records `sha` (a commit pushed with Git), so no shard is asked for it. `guard` goes
+ * with the landing: what the clearance job's own role has to name (repo-land-cleared.ts).
  */
 export async function landWithMerge(
   ctx: RepoContext,
@@ -91,8 +92,9 @@ export async function landWithMerge(
   fastForwardOnly = false,
   mode: LandMode = landMode(ctx.env),
   inAuthority = false,
+  guard: Json = {},
 ) {
-  const landed = await landOn(ctx, ref, sha, fastForwardOnly, mode, inAuthority);
+  const landed = await landOn(ctx, ref, sha, fastForwardOnly, mode, inAuthority, guard);
   // This isolate's next read and begin see its own landing (others pass min_version).
   forgetHead(ctx.repo, typeof landed.version === 'number' ? landed.version : undefined, sha);
   return landed;
@@ -105,6 +107,7 @@ async function landOn(
   fastForwardOnly: boolean,
   mode: LandMode,
   inAuthority: boolean,
+  guard: Json,
 ) {
   // Batched landing serves main (the branch with a published head); other branches, and
   // a branch landed for the first time, take the queued path.
@@ -122,6 +125,7 @@ async function landOn(
     commit: sha,
     fast_forward_only: fastForwardOnly,
     ...(fastForwardOnly ? {} : { enqueue: true }),
+    ...guard,
   };
   const landed = await timed('land.request', () =>
     inAuthority ? ctx.call(land) : adoptAndLand(ctx, sha, land),

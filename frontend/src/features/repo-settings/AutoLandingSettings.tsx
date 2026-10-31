@@ -1,6 +1,6 @@
-// Settings → Landing rules: the repository's two automatic Landings switches, both off until
-// the owner turns them on. They live beside the policy, not in it (`PUT /auto-landings`), so
-// each saves at once and no recorded check is voided.
+// Settings → Landing rules: the repository's automatic Landings switches, all off until the
+// owner turns them on. They live beside the policy, not in it (`PUT /auto-landings`), so each
+// saves at once and no recorded check is voided.
 import { useState } from 'react';
 import type { AutoLandings } from '../../../../shared/contracts/repo-status';
 import { Failure } from '../source-platform/SourceStatus';
@@ -67,6 +67,36 @@ export function AutoLandingSettings({
             <small className="subtle">
               The agents set up on this repository run on them, at their usual price. Off, they run
               only on Landings someone opened on purpose.
+            </small>
+          </span>
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={landings.land_when_cleared}
+            onChange={(e) => set({ land_when_cleared: e.target.checked })}
+          />
+          <span>
+            Land when cleared
+            <small className="subtle">
+              The platform lands an open Landing once its head clears: every gate ready, no
+              unresolved comment or failed check, Risk not High. A rule must ask for an approval or
+              a check, and a fork needs an approval. A Landing already cleared lands on its next
+              event.
+            </small>
+          </span>
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            checked={landings.findings_block}
+            onChange={(e) => set({ findings_block: e.target.checked })}
+          />
+          <span>
+            Block landing on unresolved agent findings
+            <small className="subtle">
+              Refuses every landing on main and release branches, by anyone, until an agent's
+              findings are resolved or fixed.
             </small>
           </span>
         </label>

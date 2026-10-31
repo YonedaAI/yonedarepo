@@ -30,7 +30,23 @@ export type Change = {
   source_branch?: string | null;
   /** `auto`: a push opened it and nobody has claimed it. */
   origin?: 'explicit' | 'auto';
+  /** What the platform last did with it (Land when cleared); absent on platforms before it. */
+  clearance?: ClearanceRecord | null;
 };
+
+/** The record on a Landing the platform tried to land (`land_when_cleared.rs`). */
+export type ClearanceRecord =
+  | {
+      outcome: 'landed';
+      head: string;
+      by: string;
+      at: number;
+      version: number | null;
+      approved_by: string[];
+      /** The requirements that decided it. */
+      gates: { name: string; why: string }[];
+    }
+  | { outcome: 'refused'; head: string; code: string; reason: string; at: number };
 
 /** A landing on main that no change names (`direct_landings.rs`). */
 export type DirectLanding = {
@@ -82,6 +98,12 @@ export function landingState(
   if (gates?.ready) return 'Cleared to land';
   const blocked = gates?.requirements.some((r) => r.enforced && r.state === 'blocked');
   return blocked ? 'Go-around' : 'In flight';
+}
+
+/** The record of a Landing the platform landed, or nothing. A later row can't be this one's. */
+export function landedAutomatically(change: Pick<Change, 'status' | 'clearance'>) {
+  const record = change.clearance;
+  return change.status === 'landed' && record?.outcome === 'landed' ? record : null;
 }
 
 export type Side = 'old' | 'new';

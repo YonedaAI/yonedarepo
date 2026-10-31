@@ -123,6 +123,10 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
                 "Only the platform merger lands queued work",
             ))
         }
+        R::LandClearance if !actor.can("clearance") => Err(Error::new(
+            "FORBIDDEN",
+            "Only the platform's clearance job asks this",
+        )),
         R::SetPolicy | R::AutoLandings => actor.require_owner(),
         // Admins manage other members; only the owner manages admins (`members`).
         R::Members | R::MemberPut | R::MemberRemove => actor.require_owner(),
@@ -169,6 +173,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::LandBatch
         | R::LandChangesets
         | R::LandClaim
+        | R::LandClearance
         | R::LandRelease
         | R::LandStatus
         | R::LandSubmitted

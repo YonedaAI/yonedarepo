@@ -101,6 +101,22 @@ describe('automatic Landings', () => {
     expect(on).toMatch(/<input[^>]*checked=""[^>]*><span>Open a Landing/);
     expect(on).not.toContain('disabled=""');
   });
+  it('shows Land when cleared and blocking findings as their own switches', () => {
+    const page = (landings: object) =>
+      html(AutoLandingSettings, { repo, landings, onChanged: () => {} });
+    const off = page({ create: false, agents: false });
+    expect(off).toMatch(/<input type="checkbox"\/><span>Land when cleared/);
+    expect(off).toContain('Risk not High');
+    expect(off).toMatch(
+      /<input type="checkbox"\/><span>Block landing on unresolved agent findings/,
+    );
+    const on = page({ land_when_cleared: true, findings_block: true });
+    expect(on).toMatch(/<input[^>]*checked=""[^>]*><span>Land when cleared/);
+    expect(on).toMatch(/<input[^>]*checked=""[^>]*><span>Block landing/);
+    expect(autoLandingsRequest('r1', { land_when_cleared: true }).body).toEqual({
+      land_when_cleared: true,
+    });
+  });
   it('sets one switch at a time', () => {
     expect(autoLandingsRequest('r1', { agents: true })).toEqual({
       path: '/repos/r1/auto-landings',

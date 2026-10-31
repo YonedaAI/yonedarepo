@@ -59,7 +59,7 @@ const status = (viewer: Viewer, policy = noChecks): RepoStatus => ({
   objects: {},
   bundled: false,
   automation: null,
-  landings: { create: false, agents: false },
+  landings: { create: false, agents: false, land_when_cleared: false, findings_block: false },
   parent: null,
   forks: 0,
   grant: null,

@@ -22,7 +22,7 @@ yoneda change create retry --title "Retry on 503" -m "Adds backoff"
 
 ## A Landing for every push
 
-Two switches under **Settings → Landing rules**, both off, set each repository's automatic Landings:
+Two switches under **Settings → Landing rules**, both off, set each repository's automatic Landings (a third, [Land when cleared](#land-when-cleared), lands them):
 
 | Switch | What it does |
 |---|---|
@@ -123,6 +123,30 @@ yoneda change land 12
 ```
 
 Landing on a protected branch needs the land scope and the required approvals and checks on the head. If the base moved meanwhile, the platform merges on the server, as on [Concurrent pushes](/docs/guides/pushing). When a branch is behind, you can also [rebase it on the server](/docs/guides/merge-rebase) first.
+
+## Land when cleared
+
+**Settings → Landing rules → Land when cleared**, off by default, has the platform land an open Landing once it clears, so nobody has to press Land. It looks again whenever something could clear it: a check passing, an approval, a comment resolved, a new head, or a Landing opened. Nothing polls, and it starts no agent.
+
+The Landing page says **Will land when cleared** and what it's waiting for. It lands the exact head it evaluated, against the Landing's base, only when all of these hold:
+
+| Rule | Otherwise |
+|---|---|
+| Every required check and approval passes on this head | It waits |
+| The rules ask for an approval or a check, or the head was approved | It waits: with nothing asked for, pushing would be landing |
+| A Landing from a fork has an approval of this head | It waits, whatever the rules accept |
+| No failed check on this head, required or not | It waits |
+| No unresolved review comment, and it isn't a draft | It waits |
+| Automation isn't paused, and no legal hold applies | It stays open |
+| Every path-limited token that worked on it covers all it would land | It stays open |
+| Risk isn't High, the repository isn't full, and it merges cleanly | It stays open with the reason |
+
+- A newer push or a rejection that arrives first stops it, even once the landing has joined the queue.
+- A refused landing stays open with its reason. Only the next event tries again, and a Landing already cleared when you turn this on lands on its next event.
+- After it lands the page says **Landed automatically**, with who approved and the gates that decided it. The log's actor is `platform:land-when-cleared`, and webhooks fire as for any landing.
+- `yoneda change` and the **Land** button work as before, and don't apply these rules.
+
+**Block landing on unresolved agent findings**, also off by default, refuses every landing on a protected branch, by anyone, while an agent's finding on the Landing is unresolved. A person's comment doesn't count: only Land when cleared waits for those.
 
 ## Close, reopen, delete
 

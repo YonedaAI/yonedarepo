@@ -41,12 +41,16 @@ export type RepoStatus = {
   visibility: Visibility;
 };
 
-/** The repository's two switches, both off until the owner turns them on. */
+/** The repository's switches, all off until the owner turns them on. */
 export type AutoLandings = {
   /** Managed agents run on those Landings. Off, opening one starts nothing. */
   agents: boolean;
   /** A push opens a Landing. */
   create: boolean;
+  /** Unresolved agent findings refuse every landing, not only show. */
+  findings_block: boolean;
+  /** The platform lands an open Landing once it clears (`land_when_cleared`). */
+  land_when_cleared: boolean;
 };
 
 export type ForkParent = {
@@ -144,7 +148,7 @@ export type Withheld = {
 export const repoStatusSchema = {
   "$defs": {
     "AutoLandings": {
-      "description": "The repository's two switches, both off until the owner turns them on.",
+      "description": "The repository's switches, all off until the owner turns them on.",
       "properties": {
         "agents": {
           "description": "Managed agents run on those Landings. Off, opening one starts nothing.",
@@ -153,11 +157,21 @@ export const repoStatusSchema = {
         "create": {
           "description": "A push opens a Landing.",
           "type": "boolean"
+        },
+        "findings_block": {
+          "description": "Unresolved agent findings refuse every landing, not only show.",
+          "type": "boolean"
+        },
+        "land_when_cleared": {
+          "description": "The platform lands an open Landing once it clears (`land_when_cleared`).",
+          "type": "boolean"
         }
       },
       "required": [
         "create",
-        "agents"
+        "agents",
+        "land_when_cleared",
+        "findings_block"
       ],
       "type": "object"
     },

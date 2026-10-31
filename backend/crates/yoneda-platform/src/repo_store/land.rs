@@ -3,7 +3,8 @@
 //! (stale read), a platform merge commit, or a stale parent.
 //!
 //! `git_land` takes no expected-old by design: the caller names a commit, not the branch
-//! value it saw. The compare-and-swap is against the branch inside this transaction, and
+//! value it saw (only the platform's clearance job names one: `land_when_cleared`). The
+//! compare-and-swap is against the branch inside this transaction, and
 //! the commit's base version and read set are checked against the log entries after it.
 //! A commit begun from the published head (`begin_from_head`, `repo-commit-shard.ts`) never
 //! called the authority, so landing is its first optimistic-concurrency check. A stock

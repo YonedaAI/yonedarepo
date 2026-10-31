@@ -140,7 +140,7 @@ Dropping undelivered runs means the test measures agents that got the memory. Ho
 3. **Slop:** the existing `slop-review` value, last 5 heads.
 4. **Risk:** worked out by the platform, in Rust, with no model call and no cost: review classes, files and lines touched, sensitive paths, open findings. The same input always gives the same score, and the page shows why. Calibrate against real landings before showing a percentage.
 
-Built, behind `LANDING_INSTRUMENTS` (off): `GET /changes/:n/instruments`, `repo_change_instruments`, `platform_risk.rs`, `Instruments.tsx`. No schema migration, no policy field. Landing never reads Risk.
+Built, behind `LANDING_INSTRUMENTS` (off): `GET /changes/:n/instruments`, `repo_change_instruments`, `platform_risk.rs`, `Instruments.tsx`. No schema migration, no policy field. A person's landing never reads Risk; only Land when cleared does, below.
 
 | Risk input | Points |
 |---|---|
@@ -186,6 +186,35 @@ Ships **before** stage 6.
 | Open list | Managed asks for the event's branch, and for `origin=explicit` with agents off |
 | Direct landings | `repo_changes {direct}`, from main's first-parent chain, newest 1,000 entries; imports left out |
 | On-base check | Head, chain and landing rows, then a walk of at most 256 generations. Past that an old branch may get a row with an empty diff |
+
+## 6a. Land when cleared
+
+`git_land` needs a caller, so with this off a Landing is a better PR. With it on, the platform lands an open Landing when its gates go green. It evaluates rules and moves a ref; it starts no agent.
+
+**Built:** `repo_store/land_when_cleared.rs`, `cloudflare/worker/repo-land-cleared.ts`, `repo-land-check.ts`. Behind `LAND_WHEN_CLEARED` (off everywhere) and a per-repo switch (off).
+
+| Part | Choice |
+|---|---|
+| Switches | `repo_settings.land_when_cleared`, `findings_block`, in `0044`; `PUT /auto-landings`. Not in `policy` |
+| Trigger | An op that can clear a Landing names it in `land_checks` (`triggers.rs`): check passed, approval, comment resolved, new head, review class, Landing opened or reopened. The adapter strips the field and queues `platform_land_check`. A lost message costs that trigger, not the next |
+| Job kind known first | `LAND_WHEN_CLEARED` stays off through the deploy that ships the handler, and goes on in a later one. A rollback past the handler drops messages, which waits for the next trigger |
+| Exact head | The job asks `repo_land_clearance`, then calls `repo_land` with `expected_head`. That call runs the rules again in its own transaction. A landing that needs a merge queues as `slow`, and claim and batch run them again, so a newer push or a rejection stops a ticket too |
+| Identity | `_system: land-when-cleared`, actor `platform:land-when-cleared`. The role lands only a Landing it names |
+| Record | `changes.clearance`, JSON: who approved and the deciding requirements, or the refusal's code and reason. Never a status |
+| Audit | None: the org audit log takes events from account authorities only (`audit_log.rs`). The record and the log's actor stand in |
+
+**Holds beyond the gates:** draft title, failed check on the head (required or not: this is how `block_at` reached reads), unresolved line comment, stale read, automation pause, legal hold, `REPO_FULL`, a path-limited token that worked on it not covering the landing, Risk High or not scored.
+
+**Two holds the owner didn't list:**
+
+| Hold | Why |
+|---|---|
+| Fork needs an approval of its head | A reader can fork, so green rules with no approvals would land a stranger's commit |
+| Nothing required | With no approval or check asked for, every push lands, and `write` becomes `land` |
+
+**Findings:** `findings_block` is enforced in `land_gates::gates`, so it refuses every landing on a protected base, explicit ones too. It counts open findings from tokens (`go_around`). Findings withheld from a line aren't counted, since nothing can resolve them; they reach the check's value instead.
+
+**Rollback:** the `0044` text changed. Applied by this binary, it fails `MIGRATION_DRIFT` under any binary holding the earlier text, so a rollback target needs this text first. Ship a wave 1 with this `0044` before raising `APPLY_THROUGH`.
 
 ## 7. Flight plan and Intent drift
 

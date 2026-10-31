@@ -205,7 +205,7 @@ it('opens a Landing per push once the owner turns it on, and a push-then-create 
   const agent = (await api(`/repos/${repo}/tokens`, { cookie }, { body: { name: 'agent', scopes: ['read', 'write'] } })).body.token as string;
   const status = await api(`/repos/${repo}`, { cookie });
   const main = (await api(`/repos/${repo}/refs`, { cookie })).body.refs['refs/heads/main'] as string;
-  expect(status.body.landings).toEqual({ create: false, agents: false });
+  expect(status.body.landings).toEqual({ create: false, agents: false, land_when_cleared: false, findings_block: false });
 
   // Off: exactly as before.
   const off = await push(repo, agent, 'refs/heads/off', null, await commitOf(main, 'off\n'));
@@ -216,9 +216,9 @@ it('opens a Landing per push once the owner turns it on, and a push-then-create 
   const denied = await api(`/repos/${repo}/auto-landings`, { token: agent }, { method: 'PUT', body: { create: true } });
   expect(denied.status).toBe(403);
   const set = await api(`/repos/${repo}/auto-landings`, { cookie }, { method: 'PUT', body: { create: true } });
-  expect(set.body).toEqual({ create: true, agents: false });
+  expect(set.body).toEqual({ create: true, agents: false, land_when_cleared: false, findings_block: false });
   const after = await api(`/repos/${repo}`, { cookie });
-  expect(after.body.landings).toEqual({ create: true, agents: false });
+  expect(after.body.landings).toEqual({ create: true, agents: false, land_when_cleared: false, findings_block: false });
   expect(after.body.policy_digest).toBe(status.body.policy_digest);
 
   const on = await push(repo, agent, 'refs/heads/feature', null, await commitOf(main, 'on\n'));

@@ -7,6 +7,8 @@ export type ChangeGates = {
   base_protected: boolean;
   /** The change's head commit (null once its branch is gone). */
   head: string | null;
+  /** With the repository's switch on: what the platform waits for before it lands this. */
+  land_when_cleared?: Clearance | null;
   number: number;
   /** Every enforced requirement is ready: the head can land now. */
   ready: boolean;
@@ -15,7 +17,29 @@ export type ChangeGates = {
   status: string;
 };
 
-export type GateKind = "approvals" | "status" | "check" | "comments" | "freshness" | "automation";
+/** What stands between an open Landing and the platform landing it. */
+export type Clearance = {
+  /** Why the last attempt on this head did not land, if it did not. */
+  refused: ClearanceRefusal | null;
+  /** Everything in the way now; empty when it would land on the next trigger. */
+  waiting: ClearanceHold[];
+};
+
+/** One thing the platform waits for. */
+export type ClearanceHold = {
+  code: string;
+  /** One line of why. */
+  reason: string;
+};
+
+/** An attempt that did not land. */
+export type ClearanceRefusal = {
+  at: number;
+  code: string;
+  reason: string;
+};
+
+export type GateKind = "approvals" | "status" | "check" | "comments" | "freshness" | "automation" | "findings";
 
 /** One thing landing needs (or that is worth knowing before it). */
 export type GateRequirement = {
@@ -33,6 +57,72 @@ export type GateState = "ready" | "waiting" | "blocked";
 
 export const changeGatesSchema = {
   "$defs": {
+    "Clearance": {
+      "description": "What stands between an open Landing and the platform landing it.",
+      "properties": {
+        "refused": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClearanceRefusal"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Why the last attempt on this head did not land, if it did not."
+        },
+        "waiting": {
+          "description": "Everything in the way now; empty when it would land on the next trigger.",
+          "items": {
+            "$ref": "#/$defs/ClearanceHold"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "waiting",
+        "refused"
+      ],
+      "type": "object"
+    },
+    "ClearanceHold": {
+      "description": "One thing the platform waits for.",
+      "properties": {
+        "code": {
+          "type": "string"
+        },
+        "reason": {
+          "description": "One line of why.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "reason"
+      ],
+      "type": "object"
+    },
+    "ClearanceRefusal": {
+      "description": "An attempt that did not land.",
+      "properties": {
+        "at": {
+          "format": "int64",
+          "type": "integer"
+        },
+        "code": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "reason",
+        "at"
+      ],
+      "type": "object"
+    },
     "GateKind": {
       "oneOf": [
         {
@@ -64,6 +154,11 @@ export const changeGatesSchema = {
         {
           "const": "automation",
           "description": "Automation paused (break glass).",
+          "type": "string"
+        },
+        {
+          "const": "findings",
+          "description": "Unresolved agent findings, with the repository's switch on.",
           "type": "string"
         }
       ]
@@ -124,6 +219,17 @@ export const changeGatesSchema = {
         "string",
         "null"
       ]
+    },
+    "land_when_cleared": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Clearance"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "With the repository's switch on: what the platform waits for before it lands this."
     },
     "number": {
       "format": "int64",

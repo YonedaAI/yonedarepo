@@ -45,6 +45,13 @@ fn shaped(mut row: Value) -> Value {
     if let Some(fields) = row.as_object_mut() {
         fields.remove("branch_head");
         fields.insert("head".into(), head);
+        // What the platform last did with it (`land_when_cleared`), as stored or nothing.
+        if let Some(record) = fields.get_mut("clearance") {
+            *record = record
+                .as_str()
+                .and_then(|text| serde_json::from_str(text).ok())
+                .unwrap_or(Value::Null);
+        }
     }
     row
 }

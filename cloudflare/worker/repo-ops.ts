@@ -8,6 +8,7 @@ import { archivedObjects } from './repo-archive';
 import { noteBundles } from './repo-bundles';
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
+import { sendLandChecks } from './repo-land-check';
 import { type CachedObject, parseStore, RepoObjects, type TreeEntry } from './repo-objects';
 import type { PatGrant } from './repo-pat';
 import { adoptCommit, unrecorded } from './repo-shards';
@@ -40,7 +41,8 @@ export type Credentials =
         | 'fork'
         | 'lfs'
         | 'quarantine'
-        | 'erase';
+        | 'erase'
+        | 'land-when-cleared';
       /** No undo window for this caller: a purge nobody may undo (a failed create taken back, an
        * operator's purge). */
       _undo_ms?: 0;
@@ -102,6 +104,7 @@ const KEEPS_REFS = new Set([
   'repo_tokens',
   'repo_members',
   'repo_land_status',
+  'repo_land_clearance',
   'repo_git_access',
   'repo_git_walk',
   'repo_clone_access',
@@ -150,6 +153,7 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
       if (!KEEPS_REFS.has(command.op)) noteWrite(repo);
     });
     if (value.error) throw new ApiError(value.error.code, value.error.message);
+    await sendLandChecks(env, repo, value);
     return value;
   };
   // A commit the authority has not seen may live in its commit shard: adopt, then retry.
@@ -192,11 +196,13 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
  * each in its own transaction; a failed one answers `{error}` without stopping the rest. */
 export async function batch(env: Env, repo: string, commands: Json[]): Promise<Json[]> {
   const stub = () => env.SOURCE_REPOS.get(env.SOURCE_REPOS.idFromName(repo));
-  return timed(`do.${commands.map((c) => c.op).join('+')}`, () =>
+  const answers = await timed(`do.${commands.map((c) => c.op).join('+')}`, () =>
     durableJson<Json[]>(stub, 'https://source-repository/batch', JSON.stringify(commands)),
   ).finally(() => {
     if (commands.some((c) => !KEEPS_REFS.has(c.op))) noteWrite(repo);
   });
+  await Promise.all(answers.map((answer) => sendLandChecks(env, repo, answer)));
+  return answers;
 }
 
 /** One repository, as seen by one authenticated caller. */

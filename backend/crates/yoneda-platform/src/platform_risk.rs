@@ -2,7 +2,8 @@
 //! holds, with no model call and no cost. It adds points, so a reader can check the sum, and
 //! what cannot be read never lowers it: a commit with no class, or one the walk could not
 //! reach, scores above any class, and a file with no line counts adds points of its own.
-//! Informational only: landing never reads it. The weights are uncalibrated; see
+//! A person's landing never reads it; the platform's own (`repo-land-cleared.ts`) won't land a
+//! High, as a conservative rule the owner can see. The weights are uncalibrated; see
 //! `docs/landings-plan.md`.
 use crate::platform_instruments::{
     CommitFacts, FileFacts, RiskInput, RiskLevel, RiskReading, RiskReason,

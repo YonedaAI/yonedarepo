@@ -208,6 +208,14 @@ A repository's Durable Object refuses writes at about 10.7 GB of `databaseSize` 
 
 Rollout: D1 migration 0010 before the Worker, as the deploy does. Deleting data lowers the size at once, but delete in small batches: one 950 MB delete reset an object for minutes.
 
+## Land when cleared
+
+`LAND_WHEN_CLEARED=on` on the platform Worker (`infra/envs/<env>.json`; unset or `off`: no job is queued, and a repository can't turn the switch on) has what can clear a Landing queue a `platform_land_check` job (docs/landings-plan.md).
+
+- **Rollout.** A queue job of a kind a Worker doesn't know is acked and dropped (`platformJob`), so deploy this code with the variable `off`, let the rollout finish, then deploy again with it `on`.
+- **Rolling back.** Set it `off` first. A job that reaches a binary without the handler is dropped, and its Landing waits for its next trigger: nothing is lost, and nothing lands late by itself.
+- **A Landing that didn't land.** Its page gives the reason, and `changes.clearance` holds it. The next check, review, resolved comment or push tries again.
+
 ## Creating a repository's store
 
 Artifacts is the projected mirror: a new repository's commits, pushes, reads and clones go through its authority, R2 and the outboxes. With `ASYNC_STORE=on` on the platform Worker (`infra/envs/<env>.json`; unset or `off`: the create waits for Artifacts, up to 28 s over three attempts), a create answers without Artifacts, and a `platform_store` queue job creates the store.

@@ -5,8 +5,9 @@
 //! trips instead of 100 racing merges. The lease orders merge construction; it never
 //! blocks commits, reads or other branches.
 use super::land_tickets::{finish, status};
+use super::land_when_cleared;
 use super::merging;
-use super::rows::{self, RecordedGraph, branch_ref, current_version};
+use super::rows::{self, RecordedGraph, Settings, branch_ref, current_version};
 use crate::storage::{SqlStore, number};
 use serde_json::{Value, json};
 use yoneda_core::{
@@ -53,7 +54,7 @@ pub fn busy<S: SqlStore>(db: &S, refname: &str, now: i64) -> Result<bool> {
 /// Takes the branch's lease (if free) and returns the pending batch to merge. Stale reads
 /// fail immediately; the rest come with the trees needed for a three-way merge. A waiter
 /// passes its `ticket`: once settled, that answers instead (one call per poll, not two).
-pub fn claim<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+pub fn claim<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value> {
     let refname = branch_ref(c)?;
     let now = number(c, "now")?;
     if c.get("ticket").is_some_and(|t| !t.is_null()) {
@@ -70,7 +71,7 @@ pub fn claim<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     // `slow_only`: changeset landing settles the path-disjoint items itself and leaves
     // only those on the same files to merges.
     let pending = db.query(
-        "SELECT ticket,commit_id FROM land_queue WHERE refname=? AND status='pending' AND slow>=? ORDER BY ticket LIMIT ?",
+        "SELECT ticket,commit_id,principal FROM land_queue WHERE refname=? AND status='pending' AND slow>=? ORDER BY ticket LIMIT ?",
         &[json!(refname), json!(i64::from(c["slow_only"] == true)), json!(BATCH)],
     )?;
     if pending.is_empty() {
@@ -92,6 +93,15 @@ pub fn claim<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             db,
             &ObjectId::parse(row["commit_id"].as_str().unwrap_or_default())?,
         )?;
+        // A Landing that cleared when it was queued has to still be cleared.
+        if land_when_cleared::by_job(&row)
+            && let Err(error) = land_when_cleared::still_cleared(db, &commit, &refname, settings)
+        {
+            let result = json!({ "code": error.code, "message": error.message });
+            finish(db, &row["ticket"], "failed", result.clone(), now)?;
+            failed.push(json!({ "ticket": row["ticket"], "status": "failed", "result": result }));
+            continue;
+        }
         if merging::on_head(db, &commit, &head)? {
             items.push(
                 json!({ "ticket": row["ticket"], "commit": commit.id, "fast_forward": true }),

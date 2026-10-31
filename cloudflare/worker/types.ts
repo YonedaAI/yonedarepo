@@ -11,6 +11,8 @@ export type Envelope = {
   commits?: string[];
   /** Failed attempts a store job follows (repo-store-create.ts). */
   attempt?: number;
+  /** The Landing a clearance job looks at (repo-land-cleared.ts). */
+  number?: number;
 };
 export interface Env {
   WORKSPACES: DurableObjectNamespace;
@@ -44,6 +46,10 @@ export interface Env {
   /** `on`: a change's page shows its Slop and Risk cards (repo-instruments.ts; unset or
    * anything else: no route, and the page asks for nothing). */
   LANDING_INSTRUMENTS?: string;
+  /** `on`: what can clear a Landing queues a clearance job, and a repository can turn on Land
+   * when cleared (repo-land-check.ts; unset or anything else: no job, and the switch is refused).
+   * Set it only once every Worker on the queue knows the job. */
+  LAND_WHEN_CLEARED?: string;
   /** `on` (with FAST_IMPORT, PACK_CACHE and PUSH_BUNDLES): a public GitHub repository's import
    * also fetches it directly, and main lands from that (repo-import-direct.ts; unset or
    * anything else: Artifacts' fetch alone). */
