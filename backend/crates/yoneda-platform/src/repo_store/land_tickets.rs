@@ -21,6 +21,9 @@ pub fn enqueue<S: SqlStore>(
     {
         return Ok(json!({ "landed": true, "already": true, "ref": refname, "commit": commit.id }));
     }
+    if super::capacity::landing_refused(db, c, &refname, &commit.id)? {
+        return Err(super::capacity::refusal());
+    }
     require_gates(db, &commit.id, &refname, settings)?;
     let existing = db.query(
         "SELECT ticket FROM land_queue WHERE refname=? AND commit_id=? AND status='pending'",

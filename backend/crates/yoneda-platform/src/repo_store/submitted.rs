@@ -146,6 +146,10 @@ fn land_one<S: SqlStore>(
     {
         return Ok(json!({ "status": "landed", "version": row["version"], "already": true }));
     }
+    // Refused alone: a failed batch would go back to the combiner's queue, again and again.
+    if super::capacity::landing_refused(db, c, refname, &commit.id)? {
+        return Ok(refused(super::capacity::refusal()));
+    }
     // Review classes and symbol writes travel with the record: semantic auto-approval and
     // symbol-level validation (later work reading other symbols of these files) read them.
     if let Some(classes) = record.get("classes").filter(|v| !v.is_null()) {

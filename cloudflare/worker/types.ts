@@ -23,6 +23,8 @@ export interface Env {
   LAND_MODE?: string;
   /** "true" lets a request choose its landing mode (x-yoneda-land-mode), for benchmarks. */
   LAND_MODE_OVERRIDE?: string;
+  /** `on`: a repository's database refuses new work from 9 GB (unset or `off`: never). */
+  REPO_STORAGE_GUARD?: string;
   /** Platform check executors (one fresh container per run attempt). */
   CHECK_RUNNERS: DurableObjectNamespace<import('./check-container').CheckContainer>;
   OBJECT_PUSHES: DurableObjectNamespace<import('./repo-push-queue').ObjectPushQueue>;

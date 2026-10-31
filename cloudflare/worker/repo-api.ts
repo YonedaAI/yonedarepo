@@ -93,6 +93,8 @@ const STATUS: Record<string, number> = {
   ACCOUNT_SUSPENDED: 403,
   // Withheld by the repository's owner (quarantine): known, deliberately not served.
   QUARANTINED: 451,
+  // The repository's database is at its size limit: new work is refused, reads go on.
+  REPO_FULL: 507,
 };
 export const statusOf = (code: string, known: boolean) => STATUS[code] ?? (known ? 400 : 500);
 const COMMIT_BODY_LIMIT = 64 * 1024 * 1024;

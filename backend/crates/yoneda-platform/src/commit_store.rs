@@ -62,6 +62,7 @@ fn record<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     {
         return Ok(json!({ "commit": id, "already": true, "dispatch_objects": false }));
     }
+    capacity::refuse_if_full(db, c)?;
     let mut objects = Vec::new();
     for object in c["objects"]
         .as_array()
