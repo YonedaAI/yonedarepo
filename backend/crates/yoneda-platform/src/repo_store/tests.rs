@@ -1629,6 +1629,7 @@ mod access_gates;
 mod account_access;
 mod activity;
 mod agent_reads;
+mod auto_approval;
 mod batches;
 mod bound_parameters;
 mod branch_policy;

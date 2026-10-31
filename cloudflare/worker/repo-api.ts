@@ -270,7 +270,13 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   }
   if (resource === 'import' && get) {
     await ctx.call({ op: 'repo_status' }); // read access first
-    const status = await env.PLATFORM_IMPORT.get(`import-${repo}`).then((i) => i.status());
+    const status = await env.PLATFORM_IMPORT.get(`import-${repo}`)
+      .then((i) => i.status())
+      .catch((e) => {
+        if (String(e?.message).includes('instance.not_found'))
+          throw new ApiError('NOT_FOUND', 'This repository has no import');
+        throw e;
+      });
     return { import: `import-${repo}`, ...status };
   }
   // Access changes republish main's head (begins and reads decide access from it).

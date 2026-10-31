@@ -62,8 +62,11 @@ export async function sshKeyRoute(
     const listed = await workspace(env, manager(auth, false), { op: 'ssh_key_list' });
     return { keys: listed.keys, ssh: sshAccess(env) };
   }
-  if (!id && method === 'POST')
-    return { ...(await addKey(env, manager(auth, true), await body())), ssh: sshAccess(env) };
+  if (!id && method === 'POST') {
+    const account = manager(auth, true);
+    const token = '_pat' in auth ? auth._pat.id : null;
+    return { ...(await addKey(env, account, token, await body())), ssh: sshAccess(env) };
+  }
   if (id && method === 'DELETE') return removeKey(env, manager(auth, false), id);
   throw new ApiError('NOT_FOUND', 'Unknown API path');
 }
@@ -87,14 +90,16 @@ export function sshAccess(env: Env) {
 
 /** Adds a key to the account, then claims its fingerprint. A fingerprint another account
  * holds with a live key refuses the add (and undoes it); a claim whose key is gone is
- * taken over. */
-async function addKey(env: Env, account: string, request: Json) {
+ * taken over. The account records `token` (null: a signed-in person), and revoking that
+ * token removes the key. */
+async function addKey(env: Env, account: string, token: string | null, request: Json) {
   const id = `ssh_${hex(crypto.getRandomValues(new Uint8Array(8)))}`;
   const added = await workspace(env, account, {
     op: 'ssh_key_add',
     id,
     title: request.title,
     public_key: request.key,
+    token_id: token,
   });
   const claim = { op: 'ssh_fp_claim', account, key_id: id };
   let claimed = await index(env, added.fingerprint, claim);
@@ -110,10 +115,22 @@ async function addKey(env: Env, account: string, request: Json) {
 /** Removes a key: the account's removal is the revocation; the claim's release follows. */
 async function removeKey(env: Env, account: string, id: string) {
   const removed = await workspace(env, account, { op: 'ssh_key_remove', id });
-  await index(env, removed.fingerprint, { op: 'ssh_fp_release', account, key_id: id }).catch(
-    () => {}, // a claim left behind grants nothing (lookups re-check the account)
-  );
+  await releaseClaims(env, account, [{ id, fingerprint: removed.fingerprint }]);
   return { id, deleted: true };
+}
+
+/** Releases the claims of keys the account has removed. A failure changes nothing: a claim
+ * left behind grants nothing (lookups re-check the account). */
+export async function releaseClaims(
+  env: Env,
+  account: string,
+  keys: { id: string; fingerprint: string }[],
+) {
+  await Promise.allSettled(
+    keys.map((key) =>
+      index(env, key.fingerprint, { op: 'ssh_fp_release', account, key_id: key.id }),
+    ),
+  );
 }
 
 /** A live key's check (account, organizations as hinted), or null when it is not live. */

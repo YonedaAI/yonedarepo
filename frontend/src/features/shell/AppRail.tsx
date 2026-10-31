@@ -1,7 +1,8 @@
 // The narrow icon rail: Browse (Home), the open repository's Changes (the repository list when
-// none is open), the Search page, New repository, and the sidebar's collapse toggle.
-import { GitPullRequest, House, PanelLeftClose, PanelLeftOpen, Plus, Search } from 'lucide-react';
+// none is open), the Search page, the + menu, and the sidebar's collapse toggle.
+import { GitPullRequest, House, PanelLeftClose, PanelLeftOpen, Search } from 'lucide-react';
 import { routeRepo, routeTab, type SourceRoute } from '../source-platform/sourceRoute';
+import { NewMenu } from './NewMenu';
 import { linkTo, type Navigate } from './useRoute';
 
 export function AppRail({
@@ -12,6 +13,7 @@ export function AppRail({
   onToggle,
   navigate,
   onNew,
+  onImport,
 }: {
   authenticated: boolean;
   route: SourceRoute;
@@ -22,6 +24,7 @@ export function AppRail({
   onToggle: () => void;
   navigate: Navigate;
   onNew: () => void;
+  onImport: () => void;
 }) {
   const repo = missing ? undefined : routeRepo(route);
   const page = routeTab(route);
@@ -61,17 +64,7 @@ export function AppRail({
       >
         <Search size={18} aria-hidden="true" />
       </a>
-      {authenticated && (
-        <button
-          type="button"
-          className="rail-item"
-          aria-label="New repository"
-          title="New repository"
-          onClick={onNew}
-        >
-          <Plus size={18} aria-hidden="true" />
-        </button>
-      )}
+      {authenticated && <NewMenu onCreate={onNew} onImport={onImport} />}
       <button
         type="button"
         className="rail-item rail-toggle"

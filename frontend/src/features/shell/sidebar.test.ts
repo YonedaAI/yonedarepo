@@ -56,6 +56,19 @@ describe('sidebar', () => {
     expect(html.indexOf('Choose a repository')).toBeLessThan(html.indexOf('acme'));
   });
 
+  it('orders Browse, Repository, then Organizations, with no group for an account with none', () => {
+    const route: SourceRoute = { view: 'changes', repo: a };
+    const orgs = [{ org: 'acme', role: 'owner' }];
+    const html = sidebar({ route, orgs, rows: [{ repo: a, name: 'parser' }] });
+    const at = (label: string) => html.indexOf(`<p class="side-label">${label}</p>`);
+    expect(at('Browse')).toBeGreaterThanOrEqual(0);
+    expect(at('Repository')).toBeGreaterThan(at('Browse'));
+    expect(html.indexOf('aria-label="Repository"')).toBeGreaterThan(at('Repository'));
+    expect(at('Organizations')).toBeGreaterThan(html.indexOf('aria-label="Repository"'));
+    const none = sidebar({ route, orgs: [], rows: [{ repo: a, name: 'parser' }] });
+    expect(none).not.toContain('Organizations');
+  });
+
   it('offers New repository for an account with none, and the picker while they load', () => {
     const onNew = () => {};
     const empty = sidebar({ rows: [], onNew });
@@ -153,7 +166,10 @@ describe('the Account group', () => {
     const html = sidebar({
       route: { view: 'settings', section: 'general' },
       rows: [{ repo: a, name: 'parser' }],
+      orgs: [{ org: 'acme', role: 'owner' }],
     });
+    expect(html).not.toContain('aria-label="Organizations"');
+    expect(html).not.toContain('acme');
     expect(html).toContain('aria-label="Account"');
     expect(html).toContain('aria-label="Browse"');
     expect(html).not.toContain('aria-label="Repositories"');
@@ -163,9 +179,11 @@ describe('the Account group', () => {
     const asked = sidebar({
       route: { view: 'settings', section: 'general' },
       rows: [{ repo: a, name: 'parser' }],
+      orgs: [{ org: 'acme', role: 'owner' }],
       picking: true,
     });
     expect(asked).toContain('role="combobox"');
+    expect(asked).not.toContain('aria-label="Organizations"');
     expect(asked).toContain('aria-label="Account"');
     expect(asked).not.toContain('aria-label="Repository"');
   });
@@ -257,6 +275,7 @@ describe('a repository that is gone', () => {
           onToggle: () => {},
           navigate: () => {},
           onNew: () => {},
+          onImport: () => {},
         }),
       );
       expect(shortcuts).not.toContain(`href="/source/${a}`);
@@ -366,6 +385,7 @@ describe('icon rail', () => {
         onToggle: () => {},
         navigate: () => {},
         onNew: () => {},
+        onImport: () => {},
         ...props,
       }),
     );

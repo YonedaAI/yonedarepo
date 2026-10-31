@@ -1,7 +1,8 @@
 // N6 exit gates: comment-only changes are auto-routed by policy; parser failures are
 // unknown (never safe); stale symbol handles are rejected; codemods reduce to one commit.
-import { expect, it } from 'vitest';
-import { api, author, file, signup, usePlatformFixture } from './repo-fixture';
+import { describe, expect, it } from 'vitest';
+import type { Env } from '../../cloudflare/worker/types';
+import { api, author, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -42,6 +43,53 @@ it('never auto-approves agent instructions or a mode change, even under docs', a
   const exec = await make([{ ...file('README.md', 'retries: 3\n'), type: 'exec' }]);
   expect(await gates(exec.commit)).toMatchObject({ ready: false, auto_approved: false, review_class: 'unknown' });
   expect((await api(`${repo}/land`, bot, { body: { ref: 'main', commit: exec.commit } })).body.error.code).toBe('NOT_READY');
+});
+
+// Auto-approval covers everything that would land, not the head alone. Both paths: batch
+// (shard records through the combiner, as prod runs) and the queued path (adopted first).
+describe.each([
+  ['batch', { ...scoped, LAND_MODE: 'batch' } as unknown as Env],
+  ['changeset', { ...scoped, LAND_MODE: 'changeset' } as unknown as Env],
+])('auto-approval of a branch in %s mode', (_mode, target) => {
+  async function branch(name: string) {
+    const owner = { cookie: await signup(name) };
+    const policy = { required_checks: [], approvals: 1, auto_approve: ['comment_only', 'docs'] };
+    const created = await api('/repos', owner, { body: { name, policy, files: [file('src/lib.rs', LIB), file('README.md', 'retries: 3\n')], author } }, target);
+    const repo = `/repos/${created.body.id}`;
+    const bot = { token: (await api(`${repo}/tokens`, owner, { body: { name: 'bot', scopes: ['read', 'write', 'land'] } }, target)).body.token as string };
+    const commit = async (changes: unknown[], parent?: string) =>
+      (await api(`${repo}/commits`, bot, { body: { ...(parent ? { parent, base_version: 1 } : { ref: 'main' }), changes, message: 'change', author } }, target)).body.commit as string;
+    const land = (id: string) => api(`${repo}/land`, bot, { body: { ref: 'main', commit: id } }, target);
+    const gates = async (id: string) => (await api(`${repo}/commits/${id}`, bot, {}, target)).body.gates;
+    const mainFile = async (path: string) => (await api(`${repo}/blob?path=${path}`, owner, {}, target)).body.content;
+    return { owner, repo, bot, commit, land, gates, mainFile };
+  }
+  const LOGIC = LIB.replace('    1\n', '    10\n');
+
+  it('refuses logic under a docs-only head until a human approves', async () => {
+    const { owner, repo, commit, land, gates, mainFile } = await branch('smuggler');
+    const logic = await commit([file('src/lib.rs', LOGIC)]);
+    const head = await commit([file('README.md', 'retries: 4\n')], logic);
+    const refused = await land(head);
+    expect([refused.status, refused.body.error?.code]).toEqual([409, 'NOT_READY']);
+    expect(await mainFile('src/lib.rs')).toBe(LIB);
+    // The answers agree with landing, and still name the head's own class.
+    expect(await gates(head)).toMatchObject({ ready: false, auto_approved: false, review_class: 'docs' });
+    expect((await api(`${repo}/commits/${head}/reviews`, owner, { body: { decision: 'approve' } }, target)).status).toBe(200);
+    expect((await land(head)).body.landed).toBe(true);
+    expect(await mainFile('src/lib.rs')).toBe(LOGIC);
+  });
+
+  it('keeps auto-approving a lone docs commit and a docs-only chain', async () => {
+    const { commit, land, gates, mainFile } = await branch('prose');
+    const lone = await commit([file('README.md', 'retries: 4\n')]);
+    expect(await gates(lone)).toMatchObject({ ready: true, auto_approved: true, review_class: 'docs' });
+    expect((await land(lone)).body.landed).toBe(true);
+    const first = await commit([file('README.md', 'retries: 5\n')]);
+    const second = await commit([file('src/lib.rs', LIB.replace('// try once', '// a single attempt'))], first);
+    expect((await land(second)).body.landed).toBe(true);
+    expect(await mainFile('README.md')).toBe('retries: 5\n');
+  });
 });
 
 it('edits symbols by handle and rejects stale handles', async () => {

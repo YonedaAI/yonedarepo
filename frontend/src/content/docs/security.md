@@ -18,7 +18,7 @@ summary: How access is checked, what a push is checked for, how checks are sandb
 | Repository token | `yrp_` | One repository, optionally some paths; scopes `read`, `write`, `check`, `review`, `land` |
 | SSH key | | Acts as its account over Git |
 
-- The server keeps only a hash of each token and checks it on every request. Revoking a token or removing an SSH key takes effect on the next request.
+- The server keeps only a hash of each token and checks it on every request. Revoking a token or removing an SSH key takes effect on the next request. Revoking a token also removes the SSH keys it added.
 - A path-restricted token is enforced on every read, search, blame and cache path. Git and LFS refuse path-restricted tokens.
 - Device login follows RFC 8628: single-use `XXXX-XXXX` codes that expire after 10 minutes, approved in a signed-in browser.
 

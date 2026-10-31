@@ -21,10 +21,12 @@ fn plural(n: usize, one: &str) -> String {
 pub(super) fn policy<S: SqlStore>(
     db: &S,
     id: &ObjectId,
+    base: &str,
     settings: &rows::Settings,
     enforced: bool,
 ) -> Result<Vec<GateRequirement>> {
-    let gate = land_gates::gates(db, id, settings)?;
+    let refname = format!("refs/heads/{base}");
+    let gate = land_gates::gates(db, &rows::recorded(db, id)?, &refname, settings)?;
     let key = [json!(id.hex()), json!(settings.policy_digest)];
     let checks = db.query(
         "SELECT name,status,principal FROM checks WHERE commit_id=? AND policy_digest=?",

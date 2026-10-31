@@ -102,7 +102,7 @@ pub fn gates<S: SqlStore>(
     match (status.as_str(), &head) {
         ("open", Some(head)) => {
             let id = ObjectId::parse(head)?;
-            requirements.extend(policy(db, &id, settings, base_protected)?);
+            requirements.extend(policy(db, &id, &base, settings, base_protected)?);
             requirements.push(comments(db, &change["number"])?);
             requirements.push(freshness(db, &id, &base)?);
             if let Some(pause) = break_glass::paused(db)? {

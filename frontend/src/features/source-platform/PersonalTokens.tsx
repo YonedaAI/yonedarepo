@@ -21,6 +21,7 @@ import {
   ScopeChecks,
   ShownOnce,
 } from './TokenParts';
+import { revokePat } from './tokenRevoke';
 import type { Loaded } from './useSource';
 
 export type Pat = {
@@ -37,6 +38,8 @@ export type Pat = {
   origin?: 'login' | null;
   /** The machine a login token was signed in on (null when unknown). */
   host?: string | null;
+  /** How many live SSH keys it added: revoking it removes them. */
+  ssh_keys?: number;
 };
 
 export function PatTable({
@@ -124,13 +127,6 @@ export function patBody(form: {
     ...(form.repos.length ? { repos: form.repos } : {}),
     ...(form.org ? { org: form.org } : {}),
   };
-}
-
-/** Revokes a personal token after confirming, then re-reads the list. */
-export async function revokePat(token: Pat, tokens: Loaded<unknown>, what = 'Clients using it') {
-  if (!window.confirm(`Revoke ${token.name}? ${what} stop working immediately.`)) return;
-  await sourceApi(`/tokens/${encodeURIComponent(token.id)}`, { method: 'DELETE' });
-  tokens.reload();
 }
 
 /** Optional organization limit: the token reaches only that org's repositories and cannot
@@ -241,12 +237,14 @@ export function PersonalTokens({
   const tokens = onlyTokens(all, (t) => !isDeviceLogin(t));
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [secret, setSecret] = useState('');
 
   async function revoke(token: Pat) {
     setError('');
+    setNotice('');
     try {
-      await revokePat(token, tokens);
+      setNotice((await revokePat(token, tokens)) ?? '');
     } catch (e) {
       setError((e as Error).message);
     }
@@ -286,6 +284,11 @@ export function PersonalTokens({
         </div>
       )}
       <PatTable tokens={tokens} repos={repos} onRevoke={revoke} />
+      {notice && (
+        <p className="source-meta settings-block" role="status">
+          {notice}
+        </p>
+      )}
       {error && (
         <div className="settings-block">
           <Failure error={error} />
