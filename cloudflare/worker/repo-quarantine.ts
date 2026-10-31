@@ -15,7 +15,7 @@
 // itself, and its stored transcript document is deleted here. A purge runs once the
 // record's retention passes (the quarantine job, leased and fenced like the LFS sweep), or
 // at once when the owner repeats the target id as `confirm`.
-import { purgePrefix } from './repo-admin';
+import { derivedPrefix, purgePrefix } from './repo-admin';
 import { bundleKey, type Location, locate } from './repo-bundles';
 import { edgeDelete } from './repo-cache-tiers';
 import { accessEverywhere } from './repo-head';
@@ -25,9 +25,6 @@ import { ApiError, caller, type Json, type RepoContext, target, walk } from './r
 import { seedPrefix } from './repo-seed';
 import { transcriptKey } from './repo-session-records';
 import { ownSpec, parseStore } from './repo-stores';
-
-/** Every cache derived from the repository's content (search, packs, symbols, facts, views). */
-const derivedPrefix = (repo: string) => `derived/v1/${repo}/`;
 
 import type { Env, Envelope } from './types';
 

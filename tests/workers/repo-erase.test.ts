@@ -4,6 +4,7 @@
 import { runInDurableObject } from 'cloudflare:test';
 import { expect, it, vi } from 'vitest';
 import { platformJob } from '../../cloudflare/worker/platform-entrypoint';
+import { purgeRepository } from '../../cloudflare/worker/repo-admin';
 import { backfillObject, eraseJob } from '../../cloudflare/worker/repo-erase';
 import { deliverHook } from '../../cloudflare/worker/repo-hooks';
 import { LandCombiner } from '../../cloudflare/worker/repo-land-combiner';
@@ -26,6 +27,21 @@ async function drain(repo: string, target: Env = on) {
     await platformJob(target, { body, attempts: 1, ack() {}, retry() {} } as unknown as Message<any>);
   }
   throw new Error('the jobs never finished');
+}
+
+/** Stored as a search index, a pack, symbols and facts are: file content. */
+async function derived(repo: string) {
+  const keys = ['search/index', 'packs/v2/abc', 'symbols/v1/ts/abc', 'facts/v1/abc'].map((k) => `derived/v1/${repo}/${k}`);
+  await Promise.all(keys.map((key) => bindings.OBJECTS.put(key, 'hunter2')));
+  return keys;
+}
+const stored = async (prefix: string) => (await bindings.OBJECTS.list({ prefix })).objects.map((o) => o.key);
+
+/** Delivers one queued job as the queue does, reporting how it settled. */
+async function deliver(body: any, target: Env = on) {
+  let settled = 'unsettled';
+  await platformJob(target, { body, attempts: 2, ack: () => void (settled = 'ack'), retry: () => void (settled = 'retry') } as unknown as Message<any>);
+  return settled;
 }
 
 const authority = (repo: string) => bindings.SOURCE_REPOS.get(bindings.SOURCE_REPOS.idFromName(repo));
@@ -64,8 +80,10 @@ const remove = (who: { cookie: string }, id: string, name: string, target: Env =
 it('changes nothing while REPO_ERASE is off', async () => {
   const who = { cookie: await signup('erase_off') };
   const id = await filled(who, 'kept', off);
+  const keys = await derived(id);
   expect((await remove(who, id, 'kept', off)).status).toBe(200);
   await drain(id, off);
+  expect((await stored(`derived/v1/${id}/`)).sort()).toEqual([...keys].sort());
   expect(queued.filter((m) => m.kind === 'platform_erase')).toEqual([]);
   expect(await count(id, 'commits')).toBeGreaterThan(0);
   expect(await count(id, 'commit_paths')).toBe(7000 + 1);
@@ -131,6 +149,65 @@ it('clears every commit shard and seals it, and a woken shard recreates nothing'
   expect((await shardCall(on, id, 3, { op: 'store_erase' })).erased).toBe(true);
   const status = await api(`/repos/${id}`, who, {}, on);
   expect([status.status, status.body.error?.code]).toEqual([404, 'GONE']);
+});
+
+it('deletes the derived caches, which hold file content, only for that repository', async () => {
+  const who = { cookie: await signup('erase_derived') };
+  const id = await filled(who, 'derives');
+  const other = await filled(who, 'neighbour');
+  await derived(id);
+  const kept = await derived(other);
+  expect((await remove(who, id, 'derives')).status).toBe(200);
+  await drain(id);
+  expect(await stored(`derived/v1/${id}/`)).toEqual([]);
+  expect((await stored(`derived/v1/${other}/`)).sort()).toEqual([...kept].sort());
+});
+
+it('starts the wipe from the purge itself, once, after the objects are gone', async () => {
+  const who = { cookie: await signup('erase_attach') };
+  const id = await filled(who, 'attached');
+  expect((await remove(who, id, 'attached')).status).toBe(200);
+  await purgeRepository(on, id);
+  expect(queued.filter((m) => m.kind === 'platform_erase' && m.repo_id === id).map((m) => m.job_id)).toEqual(['start']);
+  // The purge alone wipes nothing.
+  expect(await count(id, 'commits')).toBeGreaterThan(0);
+  // The job purges again without starting another job, or it would never end.
+  const [start] = queued.splice(queued.findIndex((m) => m.kind === 'platform_erase'), 1);
+  await eraseJob(on, start);
+  expect(queued.filter((m) => m.kind === 'platform_erase' && m.repo_id === id)).toEqual([]);
+  expect(await count(id, 'commits')).toBe(0);
+});
+
+it('settles a purge job delivered again after the wipe', async () => {
+  const who = { cookie: await signup('erase_replay') };
+  const id = await filled(who, 'replayed');
+  expect((await remove(who, id, 'replayed')).status).toBe(200);
+  const purge = queued.find((m) => m.kind === 'platform_purge' && m.repo_id === id);
+  await drain(id);
+  expect((await rows(authority(id), 'SELECT object_store FROM repo_settings'))[0].object_store).toBe('erased');
+
+  const target = await caller(on, id, { _system: 'purge' })({ op: 'repo_purge_target' });
+  expect(target.object_store).toBe('erased');
+  expect(await deliver(purge)).toBe('ack');
+  // The wipe it starts again finds nothing to do and stops.
+  expect(await deliver(queued.find((m) => m.kind === 'platform_erase' && m.repo_id === id))).toBe('ack');
+  queued.splice(0, queued.length, ...queued.filter((m) => m.kind !== 'platform_erase'));
+  expect((await rows(authority(id), 'SELECT object_store FROM repo_settings'))[0].object_store).toBe('erased');
+});
+
+it('tells a revoked token GONE after the wipe, as managed cleanup needs', async () => {
+  const who = { cookie: await signup('erase_managed') };
+  const created = await api('/repos', who, { body: { name: 'managed', files: [file('a.md', 'a\n')], author, tokens: [{ name: 'managed', scopes: ['read'] }] } }, on);
+  const id = created.body.id as string;
+  const token = { token: created.body.tokens[0].token as string };
+  expect((await api(`/repos/${id}`, token, {}, on)).status).toBe(200);
+  expect((await remove(who, id, 'managed')).status).toBe(200);
+  await drain(id);
+  expect(await count(id, 'tokens')).toBe(0);
+  // Not NOT_FOUND or UNAUTHORIZED: the managed Worker clears a repository's reviews on GONE
+  // alone, and its token is the only credential it has.
+  const gone = await api(`/repos/${id}`, token, {}, on);
+  expect([gone.status, gone.body.error?.code]).toEqual([404, 'GONE']);
 });
 
 it('leaves a live repository and its shards alone, whatever a job asks', async () => {
