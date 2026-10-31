@@ -1,7 +1,7 @@
 // Importing an external Git repository: Artifacts (faked over a real platform-built
 // source repository's objects) fetches it; first-parent history is recorded with file
 // changes from verified trees and the branch lands. Steps retry like a Workflow.
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { type ImportStep, runImport } from '../../cloudflare/worker/repo-import';
 import type { Env } from '../../cloudflare/worker/types';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
@@ -198,7 +198,8 @@ function masterRemote(sourceStore: string, head: string) {
       return {
         ...repo,
         info: async () => ({ remote: `https://artifacts.test/${name}`, defaultBranch: 'main' }),
-        log: async (options: any) => (options?.ref === 'main' ? [] : repo.log(options)),
+        // Only a branch named at import has a log; HEAD resolves to nothing.
+        log: async (options: any) => (options?.ref === 'master' ? repo.log(options) : []),
       };
     },
   };
@@ -219,8 +220,14 @@ it("imports the remote's default branch as main when none is named, and fails a 
   const created = await api('/repos/import', owner, { body: { name: 'hello', url: 'https://git.example/hello.git' } }, env);
   expect([created.status, created.body.branch]).toEqual([200, null]);
   expect(started.params.branch).toBeUndefined();
+  // The remote names its default branch in its Git advertisement; nothing else does.
+  const advertised = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+    new Response(`001e# service=git-upload-pack\n0000${'0'.repeat(4)}${head} HEAD\0multi_ack symref=HEAD:refs/heads/master agent=git/2\n0000`),
+  );
   expect(await runImport(env, started.params, step)).toMatchObject({ commit: head, version: 1 });
-  expect(remote.asked).toEqual([undefined]);
+  expect(String(advertised.mock.calls[0]?.[0])).toBe('https://git.example/hello.git/info/refs?service=git-upload-pack');
+  advertised.mockRestore();
+  expect(remote.asked).toEqual(['master']);
   // The default branch's history is this repository's main.
   expect((await api(`/repos/${created.body.id}/refs`, owner, {}, env)).body.refs).toEqual({ 'refs/heads/main': head });
   expect((await api(`/repos/${created.body.id}/blob?path=a.txt`, owner, {}, env)).body.content).toBe('master\n');
