@@ -452,16 +452,37 @@ describe('each agent on its fixtures', () => {
     });
   }
 
-  it('slop-review holds findings at medium and never blocks (its reading is maintained)', async () => {
+  it('slop-review holds findings at medium and, by default, never blocks', async () => {
     const h = await ready('slop-review');
     fakeGateway();
     const high = { summary: 's', findings: [{ ...FIXTURES['slop-review'].trigger.expected[0], severity: 'high' }] };
     h.harness.scripts = [{ result: high }];
-    expect((await put(h, 'slop-review', { settings: { block_at: 'medium' } })).status).toBe(400);
     await deliver(h, opened(h));
     expect(await run(h, h.created[0])).toMatchObject({ value: 'medium' });
     expect(h.platform.comments[0].body).toContain('**Medium:');
     expect(h.platform.checks[0]).toMatchObject({ status: 'pass', evidence: expect.objectContaining({ value: 'medium' }) });
+  });
+
+  for (const [block_at, status] of [['medium', 'fail'], ['high', 'pass']] as const)
+    it(`slop-review set to block at ${block_at}: a medium reading is a ${status}`, async () => {
+      const h = await ready('slop-review');
+      fakeGateway();
+      h.harness.scripts = [{ result: result('slop-review') }];
+      expect((await put(h, 'slop-review', { settings: { block_at } })).status).toBe(200);
+      await deliver(h, opened(h));
+      expect(await run(h, h.created[0])).toMatchObject({ value: 'medium' });
+      expect(h.platform.checks[0]).toMatchObject({ status, evidence: expect.objectContaining({ value: 'medium' }) });
+    });
+
+  it('a repository can turn off the block its workspace set', async () => {
+    const h = await ready('slop-review');
+    fakeGateway();
+    h.harness.scripts = [{ result: result('slop-review') }];
+    expect((await put(h, 'slop-review', { settings: { block_at: 'medium' } })).status).toBe(200);
+    expect((await put(h, 'slop-review', { scope: h.platform.repo, settings: { block_at: null } })).status).toBe(200);
+    await deliver(h, opened(h));
+    await run(h, h.created[0]);
+    expect(h.platform.checks[0]).toMatchObject({ status: 'pass' });
   });
 });
 

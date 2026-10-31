@@ -219,6 +219,7 @@ describe('the set-up form', () => {
   it('pre-selects every repository and Active at first set-up, all repositories with none, else what is set', () => {
     expect(initialForm(state('code-review'), repos)).toEqual({
       trigger: state('code-review').settings.trigger,
+      block_at: null,
       all_repos: false,
       repos: [repoA, repoB],
       active: true,
@@ -259,6 +260,12 @@ describe('the set-up form', () => {
       repos: [repoA, repoB],
     });
     expect(updateBody(enabled, { ...form, active: false })).toEqual({ active: false });
+    expect(form.block_at).toBeNull();
+    const slop = state('slop-review', setUp({ enabled_repos: [repoA] }));
+    expect(updateBody(slop, { ...initialForm(slop, repos), block_at: 'high' })).toEqual({
+      settings: { block_at: 'high' },
+    });
+    expect(updateBody(enabled, { ...form, block_at: 'high' })).toEqual({});
     // Whatever the form holds besides, the body names only editable keys.
     const tampered = { ...form, name: 'Mine', model: 'x', instructions: 'y' } as typeof form;
     for (const body of [updateBody(enabled, tampered), updateBody(fresh, tampered)]) {

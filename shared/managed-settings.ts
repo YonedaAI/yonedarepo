@@ -1,8 +1,9 @@
 // An agent's effective settings: the maintained defaults, then the workspace's overrides, then
 // a repository's. Managed agents are locked down: YonedaRepo maintains everything but when they
-// run (`trigger`), so only that is ever applied or accepted; overrides of other fields stored
-// before the lock are kept but ignored. Overrides are validated here, for the managed Worker
-// (authoritative) and the settings form (early feedback) alike.
+// run (`trigger`) and the level that fails a level agent's check (`block_at`), so only those are
+// ever applied or accepted; overrides of other fields stored before the lock are kept but
+// ignored. Overrides are validated here, for the managed Worker (authoritative) and the settings
+// form (early feedback) alike.
 import {
   type AgentSettings,
   HARNESS_PROVIDERS,
@@ -26,7 +27,7 @@ const FIELDS: readonly (keyof AgentSettings)[] = [
   'block_at',
 ];
 /** What a workspace may change on a managed agent (repositories and Active are not settings). */
-export const EDITABLE_FIELDS: readonly (keyof AgentSettings)[] = ['trigger'];
+export const EDITABLE_FIELDS: readonly (keyof AgentSettings)[] = ['trigger', 'block_at'];
 /** Everything else is maintained by YonedaRepo. */
 export const LOCKED_FIELDS = FIELDS.filter((f) => !EDITABLE_FIELDS.includes(f));
 export const MAX_INSTRUCTIONS = 20_000;

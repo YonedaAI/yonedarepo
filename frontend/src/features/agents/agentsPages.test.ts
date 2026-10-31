@@ -177,15 +177,17 @@ describe("an agent's pages", () => {
           `${label}<input class="agent-fixed" readOnly="" aria-readonly="true" value="${value}"/>`,
         ),
       );
-    // Nothing maintained is an editable control: only the trigger selects, filters, repos and Active.
+    // Nothing maintained is an editable control: only the trigger selects, the level that blocks
+    // landing, filters, repos and Active.
     expect(html.match(/<input(?![^>]*readOnly)[^>]*type="(text|number)"/g)).toBeNull();
-    expect(html.match(/<select/g)).toHaveLength(2);
+    expect(html.match(/<select/g)).toHaveLength(3);
     expect(html).toContain(
       '<section class="agent-fixed agent-instructions" aria-labelledby="instructions-label"><pre tabindex="0">',
     );
     expect(html).toContain('Lower is better');
     expect(html).toContain('<code>slop-review: medium</code>');
-    expect(html).not.toContain('Block landing at');
+    expect(html).toContain('Block landing at');
+    expect(html).toContain('Never (report only)');
     expect(html).toContain('On every push');
     expect(html).toContain('Ready for review');
     expect(html).toContain('unless its title starts with Draft: or WIP:');
@@ -294,6 +296,7 @@ describe("an agent's pages", () => {
     expect(html).toContain('href="/agents/code-review">Cancel<');
     expect(html).toContain('Pass or fail');
     expect(html).toContain('<code>code-review: fail</code>');
+    expect(html).not.toContain('Block landing at');
     // All repositories: the choice is on and the checklist is disabled, every box shown ticked.
     expect(html).toMatch(/type="radio" name="repo-scope" checked=""\/>/);
     expect(html).toMatch(/<fieldset class="agent-panel-row agent-repo-choice" disabled="">/);
