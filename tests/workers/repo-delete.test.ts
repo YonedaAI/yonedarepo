@@ -57,6 +57,8 @@ it('deletes a repository into a tombstone and purges its objects', async () => {
   // Retrying is safe and queues the purge again.
   expect((await api(`${repo}?confirm=doomed`, { cookie }, { method: 'DELETE' }, local)).body).toEqual({ deleted: true });
 
+  // Search indexes, packs and facts hold file content, so purge takes them too.
+  await local.OBJECTS.put(`derived/v1/${id}/search/v4/segment`, 'file content');
   const purges = queued.filter((m) => m.kind === 'platform_purge' && m.repo_id === id);
   expect(purges.length).toBe(2);
   let acked = 0;
@@ -64,6 +66,7 @@ it('deletes a repository into a tombstone and purges its objects', async () => {
   expect(acked).toBe(1);
   expect(await keys(`store/v1/yr-${id}/`)).toEqual([]);
   expect(await keys(`platform/v1/${id}/`)).toEqual([]);
+  expect(await keys(`derived/v1/${id}/`)).toEqual([]);
   // Purging twice is a no-op.
   await platformJob(local, { body: purges[1], attempts: 1, ack: () => void acked++, retry: () => {} } as unknown as Message<any>);
   expect(acked).toBe(2);
