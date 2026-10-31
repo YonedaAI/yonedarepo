@@ -102,3 +102,41 @@
   margin: 4px 6px 8px;
   font-size: var(--text-sm);
 }
+/* The rail's + menu, beside its button (below the rail's row on a phone). The rail is above
+   the sidebar only while the menu is open, so the picker's backdrop still covers it. */
+.rail:has(.rail-menu[open]) {
+  z-index: 41;
+}
+.rail-menu {
+  position: relative;
+}
+.rail-menu > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.rail-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.rail-menu[open] > summary {
+  background: var(--surface-3);
+  color: var(--text);
+}
+.rail-menu .account-dropdown {
+  top: 0;
+  right: auto;
+  left: calc(100% + 8px);
+  width: 232px;
+}
+.rail-menu .account-dropdown .account-item:focus-visible {
+  background: var(--surface-2);
+  color: var(--text);
+}
+@media (max-width: 800px) {
+  .rail-menu .account-dropdown {
+    position: fixed;
+    top: 114px;
+    right: 16px;
+    left: 16px;
+    width: auto;
+  }
+}

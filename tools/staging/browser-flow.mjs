@@ -144,6 +144,7 @@ export async function accountSettings(page, section = 'General') {
 /** "New repository" opens a dialog that creates a platform repository seeded with a README. */
 export async function newRepository(page, name) {
   await page.getByRole('button', { name: 'New repository' }).first().click();
+  await page.getByRole('menuitem', { name: 'Create repository' }).click();
   const dialog = page.getByRole('dialog', { name: 'New repository' });
   await dialog.getByLabel('Repository name').fill(name);
   await dialog.getByRole('button', { name: 'Create repository' }).click();

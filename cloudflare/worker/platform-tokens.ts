@@ -3,6 +3,7 @@
 // signed in to their account (session cookie), directly or by approving a device code;
 // the device then redeems its code once for the token. Codes live in their own authority
 // instance (`device:<user code>`) for ten minutes and hold no token, only grants.
+import { releaseClaims } from './platform-ssh-keys';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import { base64url, issuePat, requirePatScope, revokePat, sha } from './repo-pat';
 import type { Env } from './types';
@@ -58,7 +59,12 @@ export async function tokenRoute(
     return { tokens: listed.tokens };
   }
   if (!id && method === 'POST') return issuePat(env, person(auth), await body());
-  if (id && method === 'DELETE') return revokePat(env, manager(auth), id);
+  if (id && method === 'DELETE') {
+    const account = manager(auth);
+    const revoked = await revokePat(env, account, id);
+    await releaseClaims(env, account, revoked.removed_ssh_keys);
+    return revoked;
+  }
   throw new ApiError('NOT_FOUND', 'Unknown API path');
 }
 

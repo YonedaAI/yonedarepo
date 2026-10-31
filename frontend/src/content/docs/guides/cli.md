@@ -52,7 +52,7 @@ yoneda login --no-browser     # print the link and code without opening a browse
 yoneda login --with-token     # read a token from stdin instead
 ```
 
-`yoneda login` prints a code like `BCDF-GHJK` and opens the approval page (`/device`). Approve it there, choosing the token's scopes (default `repo:read`, `repo:write`, `repo:land` and `account:ssh-keys`, which `yoneda ssh setup` uses), expiry (default 30 days) and repositories. The code expires after 10 minutes and works once. Each approved login appears under **Settings → Signed-in CLIs**, where signing it out revokes its token.
+`yoneda login` prints a code like `BCDF-GHJK` and opens the approval page (`/device`). Approve it there, choosing the token's scopes (default `repo:read`, `repo:write`, `repo:land` and `account:ssh-keys`, which `yoneda ssh setup` uses), expiry (default 30 days) and repositories. The code expires after 10 minutes and works once. Each approved login appears under **Settings → Signed-in CLIs**, where signing it out revokes its token and removes the SSH keys it added.
 
 `yoneda logout` removes the stored token.
 

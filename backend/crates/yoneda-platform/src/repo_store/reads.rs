@@ -203,6 +203,11 @@ pub fn commit<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Val
         return Ok(json!({ "commit": id, "tree": row.tree, "parents": row.parents }));
     }
     let key = [json!(id.hex())];
+    // The gates read as landing on `ref`; a commit alone names no target, so main.
+    let target = match c["ref"].is_string() {
+        true => branch_ref(c)?,
+        false => "refs/heads/main".to_owned(),
+    };
     Ok(json!({
         "commit": id, "tree": row.tree, "parents": row.parents, "generation": row.generation,
         "base_version": row.base_version, "principal": row.principal, "message": row.message,
@@ -215,7 +220,7 @@ pub fn commit<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Val
         "review_classes": super::classes::for_commit(db, &id)?,
         "symbol_touches": super::symbols::as_json(&super::symbols::for_commit(db, &id)?),
         "break_glass": super::break_glass::for_commit(db, &id)?,
-        "gates": gates(db, &id, settings)?,
+        "gates": gates(db, &row, &target, settings)?,
     }))
 }
 

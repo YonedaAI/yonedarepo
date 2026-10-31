@@ -203,7 +203,11 @@ pub fn show<S: SqlStore>(
         None => None,
     };
     change["head_commit"] = match head {
-        Some(id) => reads::commit(db, &json!({ "commit": id }), settings)?,
+        Some(id) => reads::commit(
+            db,
+            &json!({ "commit": id, "ref": change["base"] }),
+            settings,
+        )?,
         None => Value::Null,
     };
     change["comments"] = json!(super::change_comments::of(db, &change["number"])?);

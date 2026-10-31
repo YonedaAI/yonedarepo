@@ -45,6 +45,24 @@ Same five items as the owner's list, with one swap: load tests move before archi
 | 5 | Search across repos | Nothing | Yes |
 | 6 | Global regions | 1–5, then gates below | Stage by stage |
 
+**Updated 2026-10-31:** the owner moved [Landings](landings-plan.md) and the memory test ahead of the load tests. Current order:
+
+1. Item 1: track repo size.
+2. Erase deleted repos (below).
+3. Landings stage 1: fix the gates. Landings stage 2: memory and context test.
+4. Remaining Landings stages.
+5. Items 2–6 here, in order.
+
+## Erase deleted repos
+
+**Deleting a repo doesn't erase its database.** It marks the repo gone and purges its R2 files, but nothing clears its SQLite; `deleteAll` appears nowhere in the code. Dev lists 51 repos but holds 1,556 repo objects with data. Prod holds 238. Commit messages, paths and sessions of deleted repos stay stored indefinitely, so this is a privacy and a cost problem.
+
+1. **Wipe after purge.** Once the purge job finishes, clear the repo object and its 64 shards, combiners and head holder.
+2. **Keep the GONE answer.** A wiped object would answer `NOT_FOUND`. Keep the tombstone row, or decide that `NOT_FOUND` is fine, before building.
+3. **Delete in small batches.** The spike shows one big delete can reset an object for minutes. `deleteAll` needs its own test on a large object.
+4. **Backfill** existing tombstones on dev, then prod.
+5. **Check the privacy text** in `frontend/src/content/legal/privacy.md`; the owner reviews any change.
+
 ## 1. Track repo size
 
 1. **Spike first, in a throwaway dev Worker with its own SQLite Durable Object.** Fill it past 10 GB, then answer:
