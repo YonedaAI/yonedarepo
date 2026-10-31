@@ -28,6 +28,7 @@ import { compactLog } from './repo-compaction';
 import { createRepository, importRepository, tokenSecret } from './repo-create';
 import { refreshHead } from './repo-head';
 import { hooksRoute, notifyHooks } from './repo-hooks';
+import { importProgress } from './repo-import-start';
 import { lfsRoute } from './repo-lfs';
 import { repoMcp } from './repo-mcp';
 import { membersRoute } from './repo-members';
@@ -285,24 +286,7 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     if (!log) throw new ApiError('NOT_FOUND', 'This run has no log');
     return { run_id: sha, log: await log.text() };
   }
-  if (resource === 'import' && get) {
-    const { history_import } = await ctx.call({ op: 'repo_status' }); // read access first
-    const status = await env.PLATFORM_IMPORT.get(`import-${repo}`)
-      .then((i) => i.status())
-      .catch((e) => {
-        if (String(e?.message).includes('instance.not_found'))
-          throw new ApiError('NOT_FOUND', 'This repository has no import');
-        throw e;
-      });
-    // A Workflow that died cannot end its history: a repository must not wait on it.
-    const dead = ['errored', 'terminated'].includes(String(status.status));
-    if (history_import && dead)
-      await caller(env, repo, { _system: 'import' })({
-        op: 'repo_record_imported_end',
-        reason: 'The import stopped before its history was in.',
-      });
-    return { import: `import-${repo}`, ...status, history: dead ? null : history_import };
-  }
+  if (resource === 'import' && get) return importProgress(ctx);
   // Access changes republish main's head (begins and reads decide access from it).
   if (resource === 'visibility' && req.method === 'PUT')
     return setVisibility(ctx, await bodyOf(req));

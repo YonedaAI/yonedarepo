@@ -210,6 +210,8 @@ export const endWithoutMirror =
 type Landed = Awaited<ReturnType<typeof landHead>>;
 /** Where a request that landed its import's head leaves that run's timing. */
 export const headKey = (repo: string) => `platform/v1/${repo}/import-head.json`;
+/** What starts the import's Workflow, until it has run (repo-import-start). */
+export const askedKey = (repo: string) => `platform/v1/${repo}/import-asked.json`;
 
 /** From the request to main usable, stage by stage. */
 export const headTiming = (

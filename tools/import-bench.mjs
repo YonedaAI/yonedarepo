@@ -4,7 +4,8 @@
 // does, then imported under a new name. A run times the request to main usable (files read,
 // the server's own stages from the Workflow's timing), a real `git clone` of ours started
 // that moment (checked against the commit count and with `git fsck`), and history's fill. It
-// deletes its repository unless --keep. Credentials come from the environment
+// deletes its repository unless --keep. It also times what the client waits for: the import's
+// answer, a poll seeing main and the first read, each with its Server-Timing. Credentials come from the environment
 // (YONEDA_USERNAME / YONEDA_PASSWORD, or DEV_OWNER_USERNAME / DEV_OWNER_PASSWORD); a token
 // reaches Git through the environment only. Evidence: .local/import-bench/<time>.json.
 // Usage: node tools/import-bench.mjs --url https://<platform host> [--git https://<Git host>]
@@ -49,7 +50,11 @@ async function call(path, init = {}) {
     headers: { 'content-type': 'application/json', cookie },
     body: init.body ? JSON.stringify(init.body) : undefined,
   });
-  return { status: response.status, body: await response.json().catch(() => ({})) };
+  return {
+    status: response.status,
+    body: await response.json().catch(() => ({})),
+    timing: response.headers.get('server-timing'),
+  };
 }
 
 const wait = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -98,7 +103,14 @@ async function ownClone(repo) {
     GIT_CONFIG_KEY_0: 'http.extraHeader',
     GIT_CONFIG_VALUE_0: `Authorization: Bearer ${minted.body.token}`,
   };
-  const [whole, shallow] = await Promise.all([timedClone(remote, env), timedClone(remote, env, ['--depth', '1'])]);
+  const named = (what, clone) =>
+    clone.catch((e) => {
+      throw new Error(`${what}: ${e.message}`);
+    });
+  const [whole, shallow] = await Promise.all([
+    named('whole clone', timedClone(remote, env)),
+    named('clone of depth 1', timedClone(remote, env, ['--depth', '1'])),
+  ]);
   assert.equal(shallow.commits, 1, 'A clone of depth 1 is not shallow');
   return { ...whole, depth_clone_s: shallow.clone_s };
 }
@@ -111,7 +123,7 @@ async function run(source, n) {
   });
   assert.equal(created.status, 200, JSON.stringify(created.body));
   const repo = created.body.id;
-  const result = { source, repo };
+  const result = { source, repo, answer_s: seconds(started), answer_timing: created.timing };
   let head = null;
   let progress = 0;
   let clone = null;
@@ -121,9 +133,13 @@ async function run(source, n) {
       const status = await call(`/repos/${repo}`);
       head ??= status.body.refs?.find((r) => r.name === 'refs/heads/main')?.commit_id ?? null;
       if (head && !result.usable_s) {
+        result.main_seen_s = seconds(started);
+        const reading = performance.now();
         const tree = await call(`/repos/${repo}/tree?ref=main`);
         assert.equal(tree.status, 200, 'Main landed but its files do not read');
         result.usable_s = seconds(started);
+        result.read_s = seconds(reading);
+        result.read_timing = tree.timing;
         result.filling_at_usable = status.body.history_import ?? null;
         // Started the moment it should work, whatever history is doing.
         clone = ownClone(repo);
@@ -135,7 +151,9 @@ async function run(source, n) {
         progress = fill.recorded;
         result.progress_seen = true;
       }
+      const looking = performance.now();
       const answer = await call(`/repos/${repo}/import`);
+      result.import_look_s = Math.max(result.import_look_s ?? 0, seconds(looking));
       if (answer.body.status === 'errored' || answer.body.status === 'terminated')
         throw new Error(`The import ${answer.body.status}: ${JSON.stringify(answer.body.error)}`);
       if (answer.body.status === 'complete') {
@@ -168,7 +186,13 @@ const spread = (list) => {
 const server = (key) => (r) => (r.timing ? r.timing[key] / 1000 : undefined);
 const MEASURES = [
   ['usable: request to files read, s (client)', (r) => r.usable_s],
+  ['  the import request answered, s (client)', (r) => r.answer_s],
+  ['  main seen by a poll, s (client)', (r) => r.main_seen_s],
+  ['  the first read of files, s (client)', (r) => r.read_s],
+  ['  slowest look at the import, s (client)', (r) => r.import_look_s],
+  ['  server landed to files read, s', (r) => (r.timing ? Number((r.usable_s - r.timing.usable_ms / 1000).toFixed(1)) : undefined)],
   ['  request to Artifacts asked, s (server)', server('start_ms')],
+  ['  request to the Workflow running, s (server)', server('workflow_ms')],
   ['  Artifacts fetching the remote, s (server)', server('artifacts_ms')],
   ['  direct: GitHub naming its head, s (server)', server('remote_ms')],
   ['  direct: the pack arriving and read, s (server)', server('pack_ms')],

@@ -2,8 +2,10 @@
 // from that pack beside Artifacts' own fetch. GitHub is a fake serving a real pack of a
 // synthetic history; Artifacts a fake that holds the same history once told it has finished.
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { withWaitUntil } from '../../cloudflare/worker/background';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { githubRemote, remoteHead } from '../../cloudflare/worker/repo-git-remote';
+import { stillFilling } from '../../cloudflare/worker/repo-git-mirror';
 import { type ImportStep, runImport, startImport } from '../../cloudflare/worker/repo-import';
 import { directImport, PACK_BYTES } from '../../cloudflare/worker/repo-import-direct';
 import type { Env } from '../../cloudflare/worker/types';
@@ -154,7 +156,9 @@ async function gitFetch(env: Env, id: string, token: string, lines: string[]) {
     }),
     env,
   );
-  return { status: response.status, ...asGit(new Uint8Array(await response.arrayBuffer()), true) };
+  const answer = new Uint8Array(await response.arrayBuffer());
+  const opening = new TextDecoder('latin1').decode(answer).split('packfile\n')[0];
+  return { status: response.status, shallow: [...opening.matchAll(/shallow ([0-9a-f]{40})/g)].map((m) => m[1]), ...asGit(answer, true) };
 }
 
 const whole = (head: string) => [`want ${head}`, 'ofs-delta', 'no-progress', 'done'];
@@ -229,11 +233,41 @@ describe('a repository fetched directly', () => {
     expect(await gitFetch(env, id, token, whole(past.head))).toMatchObject({ error: null, pack: bytes.length });
   });
 
-  it('makes a shallow clone wait for Artifacts, which alone serves it, sending nothing before', async () => {
+  it('serves a clone of any depth or filter from the stored pack, with Artifacts still fetching', async () => {
+    const past = await history(5);
+    const bytes = await pack(past.objects);
+    github({ head: past.head, pack: bytes });
+    const mirror = artifacts(past);
+    const { env, params, id, token } = await asked(mirror, 'shaped');
+    await directImport(env, params);
+    // Depth 1 reads as a shallow clone of the head, with the rest of the pack lying unused in
+    // it; a deeper one reads as whole, which it is. Neither can be missing anything.
+    const shallow = await gitFetch(env, id, token, [`want ${past.head}`, 'deepen 1', 'ofs-delta', 'done']);
+    expect(shallow).toMatchObject({ status: 200, error: null, pack: bytes.length, shallow: [past.head] });
+    const deeper = await gitFetch(env, id, token, [`want ${past.head}`, 'deepen 3', 'ofs-delta', 'done']);
+    expect(deeper).toMatchObject({ status: 200, error: null, pack: bytes.length, shallow: [] });
+    const partial = await gitFetch(env, id, token, [`want ${past.head}`, 'filter blob:none', 'ofs-delta', 'done']);
+    expect(partial).toMatchObject({ status: 200, error: null, pack: bytes.length });
+  });
+
+  it('serves a depth from the stored pack after history too, where the walk cannot', async () => {
+    const past = await history(5);
+    const bytes = await pack(past.objects);
+    github({ head: past.head, pack: bytes });
+    const mirror = artifacts(past);
+    const { env, params, id, token } = await asked(mirror, 'shapedafter');
+    await directImport(env, params);
+    mirror.state.done = true;
+    await runImport(env, params, running);
+    const shallow = await gitFetch(env, id, token, [`want ${past.head}`, 'deepen 1', 'ofs-delta', 'done']);
+    expect(shallow).toMatchObject({ status: 200, error: null, pack: bytes.length, shallow: [past.head] });
+  });
+
+  it('makes a fetch only Artifacts can serve wait for it, sending nothing before', async () => {
     const past = await history(5);
     github({ head: past.head, pack: await pack(past.objects) });
     const mirror = artifacts(past);
-    const { env, params, id, token } = await asked(mirror, 'shaped');
+    const { env, params, id, token } = await asked(mirror, 'relative');
     await directImport(env, params);
     const shallowPack = await pack(past.objects.slice(0, 3));
     const original = globalThis.fetch;
@@ -249,8 +283,32 @@ describe('a repository fetched directly', () => {
     setTimeout(() => {
       mirror.state.done = true;
     }, 300);
-    const shallow = await gitFetch(env, id, token, [`want ${past.head}`, 'deepen 1', 'ofs-delta', 'done']);
-    expect(shallow).toMatchObject({ error: null, pack: shallowPack.length });
+    const relative = await gitFetch(env, id, token, [`want ${past.head}`, 'deepen 1', 'deepen-relative', 'ofs-delta', 'done']);
+    expect(relative).toMatchObject({ error: null, pack: shallowPack.length });
+  });
+
+  it('says why when a fetch cannot be served, what it waited and that nothing was sent', () => {
+    const refused = new Error('still importing (1 of 2283 commits): it takes no changes');
+    expect(stillFilling(refused, 40).message).not.toMatch(/waiting/);
+    const { code, message } = stillFilling(refused, 20_009);
+    expect(code).toBe('IMPORT_IN_PROGRESS');
+    expect(message).toMatch(/still importing \(1 of 2283 commits\)/);
+    expect(message).toMatch(/after waiting 20 s/);
+    expect(message).toMatch(/nothing was sent/i);
+    expect(message).toMatch(/try again/i);
+  });
+
+  it('stores and serves a pack larger than one multipart part', async () => {
+    const past = await history(3);
+    const noise = new Uint8Array(6 * 1024 * 1024);
+    for (let at = 0; at < noise.length; at += 65536) crypto.getRandomValues(noise.subarray(at, at + 65536));
+    past.objects.push(await object('blob', noise));
+    const bytes = await pack(past.objects);
+    expect(bytes.length).toBeGreaterThan(5 * 1024 * 1024);
+    github({ head: past.head, pack: bytes });
+    const { env, params, id, token } = await asked(artifacts(past), 'parts');
+    await directImport(env, params);
+    expect(await gitFetch(env, id, token, whole(past.head))).toMatchObject({ error: null, pack: bytes.length });
   });
 
   it('keeps the limit the import asked for, and clones still get the whole history', async () => {
@@ -425,6 +483,153 @@ describe('from the request', () => {
     const noted = await (await env.OBJECTS.get(`platform/v1/${id}/import-head.json`))?.json<any>();
     expect(noted.landed_by).toBe('request');
     expect((await api(repo, owner, {}, env)).body.refs.map((r: any) => r.commit_id)).toEqual([past.head]);
+  });
+});
+
+describe('the stored pack beside landing', () => {
+  /** `env` whose list of recent packs is written only once `released`. */
+  function heldList(env: Env, released: Promise<unknown>) {
+    const held = env.OBJECTS;
+    const OBJECTS = new Proxy(held, {
+      get(target, key) {
+        if (key === 'put')
+          return async (name: string, ...rest: [never, never]) => {
+            if (name.endsWith('/recent')) await released;
+            return target.put(name, ...rest);
+          };
+        const value = (target as any)[key];
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    return { ...env, OBJECTS } as Env;
+  }
+
+  it('lands without waiting to list the pack, which a clone can already read', async () => {
+    const past = await history(4);
+    const bytes = await pack(past.objects);
+    github({ head: past.head, pack: bytes });
+    const { env, owner, params, repo, id, token } = await asked(artifacts(past), 'listed');
+    let release = () => {};
+    const held = heldList(env, new Promise<void>((done) => (release = done)));
+    const landing = directImport(held, params);
+    while ((await api(repo, owner, {}, env)).body.refs.length === 0);
+    expect(await gitFetch(env, id, token, whole(past.head))).toMatchObject({ error: null, pack: bytes.length });
+    release();
+    expect(await landing).toMatchObject({ landed_by: 'direct' });
+    expect(await env.OBJECTS.get(`derived/v1/${id}/packs/v2/recent`)).not.toBeNull();
+  });
+
+  it('keeps main when the list cannot be written', async () => {
+    const past = await history(4);
+    github({ head: past.head, pack: await pack(past.objects) });
+    const { env, owner, params, repo } = await asked(artifacts(past), 'unlisted');
+    const refusal = Promise.reject(new Error('no'));
+    refusal.catch(() => {});
+    const failing = heldList(env, refusal);
+    expect(await directImport(failing, params)).toMatchObject({ landed_by: 'direct' });
+    expect((await api(repo, owner, {}, env)).body.refs.map((r: any) => r.commit_id)).toEqual([past.head]);
+  });
+});
+
+describe('the answer to an import', () => {
+  const body = { name: 'answered', url: URL_OF, branch: 'main', max_commits: 50 };
+  const unknown = () => {
+    throw new Error('instance.not_found');
+  };
+  async function answered(workflows: object, name: string, extra: object = {}) {
+    const past = await history(3);
+    github({ head: past.head, pack: await pack(past.objects) });
+    const mirror = artifacts(past);
+    mirror.state.done = true;
+    const owner = { cookie: await signup(`answer_${name}`) };
+    (scoped as any).ARTIFACTS = mirror;
+    const env = { ...scoped, ARTIFACTS: mirror, PLATFORM_IMPORT: workflows, FAST_IMPORT: 'on', DIRECT_IMPORT: 'on', PACK_CACHE: 'on', PUSH_BUNDLES: 'on', ...extra } as unknown as Env;
+    const work: Promise<unknown>[] = [];
+    const created = await withWaitUntil(
+      (w) => work.push(w),
+      () => api('/repos/import', owner, { body: { ...body, name } }, env),
+    );
+    expect(created.status).toBe(200);
+    return { env, owner, past, work, repo: `/repos/${created.body.id}`, id: created.body.id as string };
+  }
+
+  it('does not wait for the Workflow, and meanwhile an import reads as on its way', async () => {
+    const asked_for: any[] = [];
+    let release = (_: unknown) => {};
+    const held = new Promise((done) => (release = done));
+    const workflows = { create: (o: any) => (asked_for.push(o), held), get: unknown };
+    const { env, owner, repo, work } = await answered(workflows, 'waiting');
+    expect(asked_for).toHaveLength(1);
+    const look = await api(`${repo}/import`, owner, {}, env);
+    expect([look.status, look.body.status]).toEqual([200, 'queued']);
+    release({ id: 'x' });
+    await Promise.all(work);
+  });
+
+  it('starts the Workflow from a look at the import when the request could not', async () => {
+    const asked_for: any[] = [];
+    const workflows = {
+      create: async (o: any) => {
+        asked_for.push(o);
+        if (asked_for.length === 1) throw new Error('workflows are down');
+        return { id: o.id };
+      },
+      get: unknown,
+    };
+    const { env, owner, repo, id, work } = await answered(workflows, 'restarted');
+    await Promise.all(work);
+    // Within the time the request's own create has, a look leaves that to finish.
+    expect((await api(`${repo}/import`, owner, {}, env)).body.status).toBe('queued');
+    expect(asked_for).toHaveLength(1);
+    const kept = await (await env.OBJECTS.get(`platform/v1/${id}/import-asked.json`))?.json<any>();
+    await env.OBJECTS.put(`platform/v1/${id}/import-asked.json`, JSON.stringify({ ...kept, asked_at: Date.now() - 60_000 }));
+    expect((await api(`${repo}/import`, owner, {}, env)).body.status).toBe('queued');
+    expect(asked_for).toHaveLength(2);
+    expect(asked_for[1].id).toBe(asked_for[0].id);
+    expect(asked_for[1].params.url).toBe(asked_for[0].params.url);
+  });
+
+  it('takes a Workflow that already exists as started', async () => {
+    const workflows = {
+      create: async () => {
+        throw new Error('instance.already_exists');
+      },
+      get: unknown,
+    };
+    const { env, owner, repo, work } = await answered(workflows, 'existing');
+    await Promise.all(work);
+    expect((await api(`${repo}/import`, owner, {}, env)).status).toBe(200);
+  });
+
+  it('waits for the Workflow when what would start it later cannot be kept', async () => {
+    const created: any[] = [];
+    const workflows = { create: async (o: any) => (created.push(o), { id: o.id }), get: unknown };
+    const lost = new Proxy(scoped.OBJECTS, {
+      get(target, key) {
+        if (key === 'put')
+          return async (name: string, ...rest: [never, never]) => {
+            if (name.endsWith('/import-asked.json')) throw new Error('R2 is down');
+            return target.put(name, ...rest);
+          };
+        const value = (target as any)[key];
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+    const { work } = await answered(workflows, 'nonote', { OBJECTS: lost });
+    expect(created).toHaveLength(1);
+    await Promise.all(work);
+  });
+
+  it('never makes a page wait on a slow Workflow, and a repository never imported still has no import', async () => {
+    const workflows = { create: async (o: any) => ({ id: o.id }), get: async () => ({ status: () => new Promise(() => {}) }) };
+    const { env, owner, repo, work } = await answered(workflows, 'slowstatus');
+    await Promise.all(work);
+    const look = await api(`${repo}/import`, owner, {}, env);
+    expect([look.status, look.body.status]).toEqual([200, 'running']);
+
+    const plain = await api('/repos', owner, { body: { name: 'plain', files: [file('a.txt', 'a\n')], message: 'a', author } }, env);
+    const empty = { ...env, PLATFORM_IMPORT: { get: unknown } } as unknown as Env;
+    expect((await api(`/repos/${plain.body.id}/import`, owner, {}, empty)).status).toBe(404);
   });
 });
 
