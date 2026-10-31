@@ -35,7 +35,7 @@ curl -H "Authorization: Bearer $YONEDA_TOKEN" \
 
 - Commit messages are kept up to 4,000 characters.
 - **Public remotes only.** A remote that needs credentials fails the import; there is no field for a remote token.
-- There is no import button in the web app or CLI command for remotes yet.
+- In the web app, choose the + button, then **Add GitHub repository**: public GitHub repositories, newest 5,000 commits. There is no CLI command for remotes yet.
 
 ## From a local directory
 

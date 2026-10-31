@@ -63,6 +63,13 @@ describe('reads the server could not answer', () => {
     expect(error?.status).toBe(500);
   });
 
+  it('never retries a read marked once: its failure is the answer', async () => {
+    answer(failure(500, 'INTERNAL'));
+    const { error } = await settle(sourceApi('/repos/r/import', { once: true }));
+    expect(calls).toHaveLength(1);
+    expect(error?.status).toBe(500);
+  });
+
   it('never retries a write, nor a request the server refused', async () => {
     answer(failure(503, 'OVERLOADED'));
     const write = await settle(sourceApi('/repos', { body: { name: 'x' } }));
