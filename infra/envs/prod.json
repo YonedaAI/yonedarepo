@@ -136,6 +136,7 @@
         "Site traffic (worker/platform-site-traffic.ts) reads the front Worker's yonedarepo_prod_site_events dataset (SITE_EVENTS_DATASET)",
         "through the Analytics Engine SQL API: CF_ACCOUNT_ID plus the optional secret ANALYTICS_READ_TOKEN (Account Analytics Read).",
         "Without the token, traffic reports are unavailable and nothing else changes.",
+        "ADMIN_BILLING=on adds the operators' billing routes (platform-admin-billing.ts) and starts the managed Worker's nightly reconcile from this Worker's cron; set it on the managed Worker too.",
         "Admin pages (/api/v1/admin, platform-admin.ts): ADMIN_ACCOUNTS lists the operator accounts (comma separated; empty: only OWNER_TOKEN/Access). The sign-up notice goes to ADMIN_NOTIFY_EMAIL (empty: EMAIL_CONTACT). Credit grants and balances call the managed Worker's /admin/accounts/<account>/credit over MANAGED with MANAGED_ADMIN_TOKEN (optional secret, the managed Worker's own value; unset: grants are refused). MANAGED binds the managed Worker, which binds this one as PLATFORM: a fresh environment deploys this Worker once without MANAGED first."
       ],
       "secrets": [
@@ -203,6 +204,7 @@
           "CF_ACCOUNT_ID": "{account_id}",
           "SITE_EVENTS_DATASET": "yonedarepo_prod_site_events",
           "ADMIN_ACCOUNTS": "magnetonio",
+          "ADMIN_BILLING": "off",
           "ADMIN_NOTIFY_EMAIL": "",
           "SUPPORT_EMAIL": "support@yonedalabs.ai"
         },
@@ -468,6 +470,11 @@
         "\"coming\"). Stripe's webhook endpoint is https://managed.yonedarepo.com/stripe/webhook, events",
         "setup_intent.succeeded, payment_intent.succeeded, payment_intent.payment_failed. A saved card",
         "unlocks PROMO_CREDIT_USD once; a balance under $5 is topped up by $20 off-session.",
+        "ADMIN_BILLING=on (with the platform Worker's) adds the operators' billing routes, the nightly",
+        "reconcile and three webhook events: charge.refunded, charge.dispute.created, charge.dispute.closed.",
+        "Refunds also need STRIPE_REFUND_KEY (optional secret: a restricted key, Refunds write; unset: the",
+        "refund route answers NOT_CONFIGURED) and the vars REFUND_MAX_USD and REFUND_DAILY_USD (per refund,",
+        "and per UTC day across all accounts; unset: every refund is refused).",
         "Deployed before the front Worker, which binds it as MANAGED."
       ],
       "secrets": [
@@ -476,6 +483,7 @@
       "optional_secrets": [
         "AI_GATEWAY_TOKEN",
         "MANAGED_ADMIN_TOKEN",
+        "STRIPE_REFUND_KEY",
         "STRIPE_SECRET_KEY",
         "STRIPE_WEBHOOK_SECRET"
       ],
@@ -500,6 +508,7 @@
           "PUBLIC_URL": "https://managed.yonedarepo.com",
           "AI_GATEWAY_URL": "https://gateway.ai.cloudflare.com/v1/{account_id}/{prefix}-managed-agents",
           "AI_GATEWAY_PROVIDERS": "claude=anthropic,codex=openai,zai=custom-zai,mimo=custom-mimo",
+          "ADMIN_BILLING": "off",
           "PROMO_CREDIT_USD": "100"
         },
         "secrets_store_secrets": [
