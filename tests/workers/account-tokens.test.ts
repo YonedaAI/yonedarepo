@@ -40,7 +40,7 @@ it('issues personal tokens to a signed-in account, lists them without secrets an
   expect(listed.body.tokens.map((t: any) => t.name)).toEqual(['laptop', 'ci']);
   expect(JSON.stringify(listed.body)).not.toContain(issued.token);
   expect(Object.keys(listed.body.tokens[0]).sort()).toEqual(
-    ['created_at', 'expires_at', 'host', 'id', 'last_used_at', 'name', 'org', 'origin', 'repos', 'scopes'],
+    ['created_at', 'expires_at', 'host', 'id', 'last_used_at', 'name', 'org', 'origin', 'repos', 'scopes', 'ssh_keys'],
   );
   // Only a session issues tokens; a token cannot mint more, or list them without repo:admin.
   expect((await api('/tokens', { token: issued.token }, { body: { name: 'x', scopes: ['repo:read'] } })).status).toBe(401);
@@ -50,7 +50,7 @@ it('issues personal tokens to a signed-in account, lists them without secrets an
 
   expect((await api('/repos', { token: issued.token })).body).toEqual({ repos: [] });
   const revoked = await api(`/tokens/${issued.id}`, { cookie }, { method: 'DELETE' });
-  expect(revoked.body).toEqual({ id: issued.id, revoked: true });
+  expect(revoked.body).toEqual({ id: issued.id, revoked: true, removed_ssh_keys: [] });
   const refused = await api('/repos', { token: issued.token });
   expect([refused.status, refused.body.error.code]).toEqual([401, 'UNAUTHORIZED']);
   expect((await api(`/tokens/${issued.id}`, { cookie }, { method: 'DELETE' })).status).toBe(404);

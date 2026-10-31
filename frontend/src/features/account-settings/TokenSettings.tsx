@@ -9,11 +9,11 @@ import {
   onlyTokens,
   type Pat,
   PersonalTokens,
-  revokePat,
 } from '../source-platform/PersonalTokens';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { when } from '../source-platform/sourceApi';
 import type { RepoSummary } from '../source-platform/TokenParts';
+import { revokePat } from '../source-platform/tokenRevoke';
 import { type Loaded, useSource } from '../source-platform/useSource';
 
 export function CliTable({
@@ -85,6 +85,7 @@ export function TokenSettings({
 }) {
   const tokens = useSource<{ tokens: Pat[] }>('/tokens');
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const clis = onlyTokens(tokens, isDeviceLogin);
   return (
     <>
@@ -92,19 +93,25 @@ export function TokenSettings({
       <SettingsSection id="cli" title="Signed-in CLIs">
         <p className="source-meta settings-block">
           Each <code>yoneda login</code> you approved holds a personal token, labelled with its
-          machine. Signing one out revokes its token.
+          machine. Signing one out revokes its token and removes the SSH keys it added.
         </p>
         <CliTable
           tokens={clis}
           onSignOut={async (t) => {
             setError('');
+            setNotice('');
             try {
-              await revokePat(t, tokens, 'That CLI and its agents');
+              setNotice((await revokePat(t, tokens, 'That CLI and its agents')) ?? '');
             } catch (e) {
               setError((e as Error).message);
             }
           }}
         />
+        {notice && (
+          <p className="source-meta settings-block" role="status">
+            {notice}
+          </p>
+        )}
         {error && (
           <div className="settings-block">
             <Failure error={error} />
