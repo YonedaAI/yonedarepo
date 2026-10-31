@@ -38,6 +38,13 @@ export function RepoByName({
   }, [id]);
   if (repoMissing(found.code))
     return <RepoNotFound navigate={navigate} authenticated={authenticated} onSignIn={onSignIn} />;
-  if (found.error) return <Failure error={found.error} onRetry={found.reload} />;
-  return <Loading what={`${route.owner}/${route.name}`} />;
+  return (
+    <div className="repo-page">
+      {found.error ? (
+        <Failure error={found.error} onRetry={found.reload} />
+      ) : (
+        <Loading what={`${route.owner}/${route.name}`} />
+      )}
+    </div>
+  );
 }

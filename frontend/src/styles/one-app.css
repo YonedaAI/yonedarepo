@@ -167,13 +167,6 @@ a.chip:hover {
   padding: 2px 10px;
   font-size: var(--text-sm);
 }
-/* One command, one line: a broken URL can't be read, and Copy is the way to take it. */
-.clone-dropdown .source-copy pre,
-.clone-dropdown .source-copy code {
-  overflow-wrap: normal;
-  white-space: pre;
-  word-break: normal;
-}
 .clone-hint {
   margin: -2px 0 10px;
   font-size: var(--text-sm);

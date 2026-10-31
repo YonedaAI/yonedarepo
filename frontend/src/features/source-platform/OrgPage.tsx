@@ -159,9 +159,16 @@ export function OrgPage({
   const [account, setAccount] = useState('');
   const [role, setRole] = useState<OrgRole>('member');
 
-  if (loaded.loading && !loaded.data) return <Loading what="the organization" />;
-  if (loaded.error || !loaded.data)
-    return <Failure error={loaded.error ?? 'Organization not found'} onRetry={loaded.reload} />;
+  if (!loaded.data || loaded.error)
+    return (
+      <div className="org-page">
+        {loaded.loading && !loaded.data ? (
+          <Loading what="the organization" />
+        ) : (
+          <Failure error={loaded.error ?? 'Organization not found'} onRetry={loaded.reload} />
+        )}
+      </div>
+    );
   const data = loaded.data;
   const manages = data.role === 'owner';
   const base = `/orgs/${org}`;

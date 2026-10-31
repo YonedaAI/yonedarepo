@@ -123,8 +123,7 @@ export function SshKeyDialog({ onAdded, onClose }: { onAdded: () => void; onClos
     <Dialog title="Add SSH key" onClose={onClose} locked={busy} initialFocus="#ssh-key">
       <form onSubmit={add} className="source-token-form">
         <p className="source-meta">
-          Paste the contents of a <code>.pub</code> file, for example{' '}
-          <code>~/.ssh/id_ed25519.pub</code>, or run{' '}
+          Paste a <code>.pub</code> file, or run{' '}
           <code>yoneda ssh-key add ~/.ssh/id_ed25519.pub</code>.
         </p>
         <label htmlFor="ssh-title" className="source-field">

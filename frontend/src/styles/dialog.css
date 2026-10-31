@@ -117,6 +117,9 @@
   display: grid;
   margin-top: 0;
 }
+.dialog .source-token-form > button:last-child {
+  justify-self: end;
+}
 .dialog form .source-checks label {
   display: flex;
   gap: 8px;

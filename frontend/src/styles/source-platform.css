@@ -354,6 +354,13 @@ button.danger:not(:disabled) {
   color: var(--muted);
   font-size: var(--text-sm);
 }
+/* One command, one line: a broken URL can't be read, and Copy is the way to take it. */
+.source-copy pre,
+.source-copy code {
+  overflow-wrap: normal;
+  white-space: pre;
+  word-break: normal;
+}
 .source-copy pre {
   margin: 0;
   padding: 10px 12px;
