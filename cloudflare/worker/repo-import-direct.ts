@@ -5,7 +5,8 @@
 //    every object, and into R2 as the pack a clone of that head is served (repo-pack-cache);
 // 2. the head's trees and files are written as bundles, as a push's are (its commit is not:
 //    a commit in the store of record says the walk can serve it, repo-pack-build);
-// 3. main lands at the head, once both are durable, so files and `git clone` work at once.
+// 3. main lands at the head, once both are durable, so files and `git clone` work at once
+//    (a `--depth` too: repo-git-mirror's `importedClone` answers those from the same pack).
 // Artifacts still ends up holding the whole history, as for any import: only it can serve a
 // fetch other than a clone of the head, since first parents are all that is recorded. Its
 // Workflow carries on as before, finds main landed and then records history, from this pack
@@ -80,7 +81,7 @@ export async function directImport(env: Env, params: ImportParams): Promise<Timi
       const read_at = Date.now();
       const [objects] = await Promise.all([
         copy.write({ op: 'import_head', tip: head }, BUNDLES),
-        writer.finish(0),
+        writer.complete(),
       ]);
       const stored_at = Date.now();
       const call = caller(env, params.repo, { _system: 'import' });
@@ -94,6 +95,9 @@ export async function directImport(env: Env, params: ImportParams): Promise<Timi
       });
       await call({ op: 'repo_import', ref: 'main', commit: head });
       const landed_at = Date.now();
+      // Two R2 calls no reader waits for, so not before main; an unlisted pack is only kept
+      // longer than it would have been.
+      await writer.keep().catch((e) => console.warn(`stored pack not listed: ${e?.message ?? e}`));
       const asked = params.asked_at ?? started;
       return {
         landed_by: 'direct',

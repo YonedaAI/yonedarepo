@@ -8,7 +8,8 @@
 // that the mirror holds too (its other refs are hidden commits), and nothing may be withheld
 // (a mirror still holds quarantined blobs). Any other fetch gets the answer it got before. A
 // filter is not sent on, since Artifacts has none: a partial clone receives every file, which
-// Git accepts.
+// Git accepts. A direct import's stored pack answers most of these before Artifacts can
+// (`importedClone`); a fetch nothing can serve waits for Artifacts, then is refused whole.
 import { directImportOn, wholeClone } from './repo-import-direct';
 import { advertised, fetchPack, type ShallowLines } from './repo-mirror-git';
 import type { RepoObjects } from './repo-objects';
@@ -25,26 +26,31 @@ export type Asked = {
 };
 
 /** The refusal of a fetch the mirror could not serve while history is still arriving (`e`,
- * the authority's, says how far it came). Nothing was sent: the walk stops where the
- * recorded history does, so a pack built from it would be missing commits. */
-export function stillFilling(e: any) {
+ * the authority's, says how far it came), `waited_ms` after it was asked. Nothing was sent:
+ * the walk stops where the recorded history does, so a pack built from it would be missing
+ * commits. */
+export function stillFilling(e: any, waited_ms: number) {
   const reached = /\(\d+ of \d+ commits\)/.exec(String(e?.message))?.[0] ?? '';
+  const waited = waited_ms < 1000 ? '' : ` after waiting ${Math.round(waited_ms / 1000)} s`;
   return new ApiError(
     'IMPORT_IN_PROGRESS',
-    `This repository's history is still importing ${reached} and this fetch cannot be served yet; nothing was sent. Try again shortly`,
+    `This repository's history is still importing ${reached} and this fetch needs a copy of all of it, which is not ready${waited}; nothing was sent. Try again in a minute`,
   );
 }
 
-/** A whole clone of what a direct import fetched, while history is still arriving, from the
- * pack it stored (the first thing that holds it all): `head`, then that pack. Null for any
+/** What a client that has nothing gets from a direct import's stored pack, the first thing
+ * that holds all of the history: `lead`, then that pack. A pack holding the whole history can
+ * only give a fetch more than it asked for, so a filter (as on the mirror) and a depth get it
+ * too: depth 1 is that clone with the head marked shallow, and any other depth the whole
+ * clone, the commits at that depth being more than this history can tell yet. Null for any
  * other fetch, and for wants that are not this repository's current tips. */
 export async function importedClone(
   ctx: RepoContext,
   objects: RepoObjects,
   asked: Json,
-  head: Uint8Array,
+  lead: (lines: ShallowLines) => Uint8Array,
 ) {
-  const shaped = asked.depth != null || asked.omit_blobs || asked.shallows?.length;
+  const shaped = asked.deepen_relative || asked.shallows?.length;
   if (!directImportOn(objects.env) || asked.haves.length > 0 || shaped) return null;
   if (await objects.withholdsAny()) return null;
   const stored = await storedPack(
@@ -54,9 +60,31 @@ export async function importedClone(
   if (!stored) return null;
   const { refs } = await ctx.call({ op: 'repo_refs' });
   const tips = new Set(Object.values(refs as Json));
-  if (asked.wants.every((want: string) => tips.has(want))) return sendStored(head, stored, CHUNK);
+  if (asked.wants.every((want: string) => tips.has(want))) {
+    const shallow = asked.depth === 1 ? [...new Set<string>(asked.wants)] : [];
+    return sendStored(lead({ shallow, unshallow: [] }), stored, CHUNK);
+  }
   await stored.body.cancel();
   return null;
+}
+
+/** Answers a fetch the walk refused because history is still arriving: from what a direct
+ * import stored (version 2 and side-band 64k, as it is stored), else from the mirror, which
+ * may mean waiting for Artifacts to finish, bounded by the store (STORE_WAIT_MS). */
+export async function fetchWhileFilling(
+  ctx: RepoContext,
+  objects: RepoObjects,
+  asked: Json,
+  lead: (lines: ShallowLines) => Uint8Array,
+  band: number,
+  refused: unknown,
+) {
+  const started = Date.now();
+  const served =
+    (band === CHUNK ? await importedClone(ctx, objects, asked, lead) : null) ??
+    (await mirrorClone(ctx, objects, asked, lead, band, true));
+  if (served) return served;
+  throw stillFilling(refused, Date.now() - started);
 }
 
 /** Whether a mirror can answer this: the checks above, none of which read an object.
