@@ -40,6 +40,9 @@ export interface Env {
   /** `on`: a new branch's `ref_chain` stores only what lies above main's (unset or anything
    * else: its whole first-parent history, up to 5,000 rows; repo-archive-switches.ts). */
   REF_CHAIN_SHARED?: string;
+  /** `on`: commit shards forget a batch-landed commit once the authority holds it (unset or
+   * anything else: they keep their copy until vacuum; repo-changesets.ts). */
+  SHARD_FORGET_RECORDED?: string;
   /** `on`: destructive ops wait for the owner's legal hold answer, and the hold routes
    * exist (unset or anything else: neither; platform-legal-hold.ts). */
   LEGAL_HOLD?: string;

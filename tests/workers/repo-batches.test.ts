@@ -2,9 +2,11 @@
 // their commit shard's records in one authority call per batch (access re-checked then,
 // no adoption), reads are served from the published head with read-your-writes, and
 // main's Git view gets one commit per batch.
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
+import { projectChangesets } from '../../cloudflare/worker/repo-changesets';
+import { shardRecord } from '../../cloudflare/worker/repo-shards';
 import type { Env } from '../../cloudflare/worker/types';
-import { api, author, bindings, file, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, bindings, fakeCombiners, file, runCombinersUnder, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 const batched = { ...scoped, LAND_MODE: 'batch' } as unknown as Env;
@@ -199,4 +201,72 @@ it('lands the tip of a chain on an unmoved main as one fast-forward', async () =
   expect((await api(`${repo}/refs`, owner, {}, batched)).body.refs['refs/heads/main']).toBe(parent);
   for (const path of ['c1.txt', 'c3.txt'])
     expect((await api(`${repo}/blob?path=${path}&min_version=2`, owner, {}, batched)).body.content).toBe(`${path}\n`);
+});
+
+/** Lands `count` path-disjoint commits as one batch; answers the repository and the commits. */
+async function landedBatch(name: string, target: Env, count = 4) {
+  runCombinersUnder(target);
+  const { owner, repo } = await repoWith(name, [file('a.txt', '0\n')], target);
+  const made = await Promise.all(Array.from({ length: count }, (_, i) => commitOn(repo, owner, [file(`w/${i}.txt`, `${i}\n`)], target)));
+  const landed = await Promise.all(made.map((m) => landOn(repo, owner, m.body.commit, target)));
+  expect(landed.map((l) => l.status)).toEqual(Array(count).fill(200));
+  return { owner, repo, id: repo.slice('/repos/'.length), commits: made.map((m) => m.body.commit as string) };
+}
+
+const heldInShards = async (target: Env, id: string, commits: string[]) => (await Promise.all(commits.map((c) => shardRecord(target, id, c)))).filter(Boolean).length;
+
+it('keeps shard copies of batch-landed commits unless the switch forgets them', async () => {
+  const { id, repo, owner, commits } = await landedBatch('kept_copies', batched);
+  expect((await api(`${repo}/blob?path=w/3.txt`, owner, {}, batched)).body.content).toBe('3\n');
+  expect(await heldInShards(batched, id, commits)).toBe(commits.length);
+});
+
+it('forgets shard copies once the authority holds them, and everything still reads', async () => {
+  const forgets = { ...batched, SHARD_FORGET_RECORDED: 'on' } as unknown as Env;
+  const { id, repo, owner, commits } = await landedBatch('forgot_copies', forgets);
+  expect((await api(`${repo}/blob?path=w/3.txt`, owner, {}, forgets)).body.content).toBe('3\n');
+  await vi.waitFor(async () => expect(await heldInShards(forgets, id, commits)).toBe(0));
+  // Main's history still names them all, and their files read by commit.
+  const refs = (await api(`${repo}/refs`, owner, {}, forgets)).body.refs;
+  const history = await ancestors(repo, owner, refs['refs/heads/main'], forgets);
+  for (const commit of commits) expect(history.has(commit)).toBe(true);
+  const blob = await api(`${repo}/blob?commit=${commits[0]}&path=w/0.txt`, owner, {}, forgets);
+  expect(blob.body.content).toBe('0\n');
+  // New work builds on them: the walk down a chain stops where the copies stopped.
+  const next = await commitOn(repo, owner, [file('w/next.txt', 'n\n')], forgets);
+  expect((await landOn(repo, owner, next.body.commit, forgets)).status).toBe(200);
+  expect((await api(`${repo}/blob?path=w/next.txt`, owner, {}, forgets)).body.content).toBe('n\n');
+});
+
+it('plans again when a projector that forgot the records got there first', async () => {
+  const forgets = { ...batched, SHARD_FORGET_RECORDED: 'on' } as unknown as Env;
+  // Landings project nothing here, so the versions wait for the two projectors below.
+  const parked = {
+    idFromName: fakeCombiners.idFromName,
+    get: (name: string) => (name.endsWith('#projector') ? { catchUp: async () => 0, kick: async () => {} } : fakeCombiners.get(name)),
+  };
+  const { id, owner, repo, commits } = await landedBatch('forget_race', { ...forgets, LAND_COMBINERS: parked } as unknown as Env);
+  // This projector has planned when the other one records and forgets.
+  let raced = false;
+  const SOURCE_REPOS = {
+    idFromName: (name: string) => bindings.SOURCE_REPOS.idFromName(name),
+    get(object: DurableObjectId) {
+      const stub = bindings.SOURCE_REPOS.get(object);
+      return {
+        fetch: async (url: string, init: { body: string }) => {
+          const answer = await stub.fetch(url, init);
+          if (!raced && JSON.parse(init.body).op === 'repo_changeset_plan') {
+            raced = true;
+            expect(await projectChangesets(forgets, id)).toBeGreaterThan(0);
+          }
+          return answer;
+        },
+      };
+    },
+  };
+  const late = { ...forgets, SOURCE_REPOS } as unknown as Env;
+  expect(await projectChangesets(late, id)).toBe(0);
+  expect(raced).toBe(true);
+  expect(await heldInShards(forgets, id, commits)).toBe(0);
+  expect((await api(`${repo}/blob?path=w/1.txt`, owner, {}, forgets)).body.content).toBe('1\n');
 });
