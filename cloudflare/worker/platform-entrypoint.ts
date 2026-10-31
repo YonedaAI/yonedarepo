@@ -13,6 +13,7 @@ import { sshFrontDoor, sshKeepAlive } from './platform-ssh-gateway';
 import { welcomeJob } from './platform-welcome-email';
 import { purgeRepository } from './repo-admin';
 import { executeCheckRun } from './repo-checks';
+import { CLASSIFY, classifyJob } from './repo-classify';
 import { deriveAfterLanding } from './repo-derived';
 import { hookJob } from './repo-hooks';
 import { lfsSweepJob } from './repo-lfs-sweep';
@@ -45,6 +46,9 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
     message.ack();
   } else if (envelope.kind === 'platform_derive') {
     await oneAtATime(() => deriveAfterLanding(env, envelope));
+    message.ack();
+  } else if (envelope.kind === CLASSIFY) {
+    await oneAtATime(() => classifyJob(env, envelope));
     message.ack();
   } else if (envelope.kind === PACK_BUILD) {
     await oneAtATime(() => packBuildJob(env, envelope));

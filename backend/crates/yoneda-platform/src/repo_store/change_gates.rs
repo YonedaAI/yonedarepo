@@ -126,12 +126,16 @@ pub fn gates<S: SqlStore>(
             ),
             true,
         )),
-        (other, _) => requirements.push(requirement(
+        (other, head) => requirements.push(requirement(
             GateKind::Status,
             "Status",
             GateState::Blocked,
-            match other {
-                "landed" => format!("Already landed on {base}"),
+            match (other, head) {
+                ("landed", _) => format!("Already landed on {base}"),
+                (_, None) => format!(
+                    "Closed: the branch {} no longer exists",
+                    change["branch"].as_str().unwrap_or("")
+                ),
                 _ => "Closed without landing; reopen it to land".to_owned(),
             },
             true,

@@ -27,8 +27,9 @@ pub struct Policy {
     pub auto_approve: Vec<String>,
     /// Who may post each required check by hand: `owner` or `token:<name>` (token names are
     /// never reused). A required check named by a runner comes only from the platform's run;
-    /// any other required check defaults to the owner alone. Omitted when empty, so policies
-    /// that never bind posters keep their digest.
+    /// any other required check defaults to the owner and tokens minted with its
+    /// `check:<name>` scope. Omitted when empty, so policies that never bind posters keep
+    /// their digest.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     #[schemars(extend("propertyNames" = {"pattern": CHECK_NAME_PATTERN}))]
     pub check_posters: BTreeMap<String, Vec<String>>,
@@ -94,8 +95,11 @@ impl Policy {
 
     /// Whether `principal` may record `name` by hand. A runner's result comes only from the
     /// platform's fenced run, so posting it would overwrite that run; informational checks
-    /// (neither required nor a runner) are open to any `check` scope.
-    pub fn may_post(&self, name: &str, principal: &str, owner: bool) -> Result<()> {
+    /// (neither required nor a runner) are open to any `check` scope. With no posters bound,
+    /// `scoped` says the caller's token was minted for this check: a scope and not a name,
+    /// so it holds when a reconnect mints the token anew, and the policy (and its digest)
+    /// stays as the owner wrote it.
+    pub fn may_post(&self, name: &str, principal: &str, owner: bool, scoped: bool) -> Result<()> {
         let allowed = if self.runners.contains_key(name) {
             false
         } else if !self.required_checks.iter().any(|c| c == name) {
@@ -105,7 +109,7 @@ impl Policy {
                 Some(posters) => posters
                     .iter()
                     .any(|p| p == principal || (owner && p == "owner")),
-                None => owner,
+                None => owner || scoped,
             }
         };
         if allowed {

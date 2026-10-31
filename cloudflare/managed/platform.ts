@@ -112,6 +112,9 @@ export class Platform {
   createHook(repo: string, url: string, events: string[]) {
     return this.#call('POST', `/repos/${repo}/hooks`, { url, events });
   }
+  tokens(repo: string) {
+    return this.#call('GET', `/repos/${repo}/tokens`);
+  }
   revokeToken(repo: string, name: string) {
     return this.#call('DELETE', `/repos/${repo}/tokens/${encodeURIComponent(name)}`);
   }

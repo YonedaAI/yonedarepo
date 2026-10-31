@@ -77,6 +77,7 @@ fn run<S: SqlStore>(
         R::MergePlan => merging::plan(db, c),
         R::PathHistory => history::path_history(db, c),
         R::RecordClasses => classes::record(db, c),
+        R::ClassesPending => classes::pending(db, c),
         R::RecordSymbols => symbols::record(db, c),
         R::StaleReads => symbols::stale_reads(db, c),
         R::RecordContract => contracts::record(db, c, principal),

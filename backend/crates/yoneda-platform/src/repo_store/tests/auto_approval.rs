@@ -329,3 +329,113 @@ fn submitted_docs_land_alone_and_as_a_chain() {
     let chain = submit_chain(&h, &[&first, &second]);
     assert_eq!(outcome(&chain, 0).0, "queued", "{chain}");
 }
+
+/// One commit pushed on `parent` touching `path`.
+fn pushed(h: &Harness, parent: &str, path: &str, blob: &str) -> (String, Value) {
+    let tree = h.ok(
+        OWNER,
+        json!({"op":"repo_commit","commit":parent,"brief":true}),
+    )["tree"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (id, mut item) = super::pushed::pushed(parent, &tree, path);
+    item["touches"] =
+        json!([{"path":path,"op":"add","old_blob":null,"new_blob":blob,"mode":"blob"}]);
+    let answer = super::pushed::record(h, AGENT, json!([item])).unwrap();
+    (id, answer)
+}
+
+const BLOB: &str = "1111111111111111111111111111111111111111";
+
+#[test]
+fn a_push_is_classified_only_where_the_policy_auto_approves() {
+    let (plain, root) = seeded();
+    let (_, answer) = pushed(&plain, &root, "docs/a.md", BLOB);
+    assert_eq!(answer["classify"], false);
+    let (h, root) = repo();
+    let (_, answer) = pushed(&h, &root, "docs/a.md", BLOB);
+    assert_eq!(answer["classify"], true);
+}
+
+#[test]
+fn pending_lists_pushed_commits_with_no_class_and_their_files() {
+    let (h, root) = repo();
+    let (first, _) = pushed(&h, &root, "docs/a.md", BLOB);
+    let (second, _) = pushed(&h, &first, "docs/b.md", BLOB);
+    let done = classified(&h, &root, "docs/c.md", "docs");
+    let pending = json!({"op":"repo_classes_pending","commits":[first,second,done]});
+    assert_eq!(code(h.run(OWNER, pending.clone())), "FORBIDDEN");
+    assert_eq!(code(h.run(AGENT, pending.clone())), "FORBIDDEN");
+    let answer = h.ok(CLASSIFIER, pending);
+    let listed = answer["pending"].as_array().unwrap();
+    assert_eq!(listed.len(), 2, "{answer}");
+    assert_eq!(listed[0]["commit"], json!(first));
+    assert_eq!(listed[1]["commit"], json!(second));
+    assert_eq!(
+        listed[0]["touches"],
+        json!([{"path":"docs/a.md","op":"add","old_blob":null,"new_blob":BLOB,"mode":"blob"}])
+    );
+
+    // A commit unknown here (say, forgotten after a purge) is left out, not an error.
+    let unknown = "2".repeat(40);
+    let answer = h.ok(
+        CLASSIFIER,
+        json!({"op":"repo_classes_pending","commits":[unknown]}),
+    );
+    assert_eq!(answer["pending"], json!([]));
+
+    let many: Vec<String> = (0..33).map(|_| "3".repeat(40)).collect();
+    assert_eq!(
+        code(h.run(
+            CLASSIFIER,
+            json!({"op":"repo_classes_pending","commits":many}),
+        )),
+        "INVALID_INPUT"
+    );
+}
+
+#[test]
+fn pending_stops_at_the_file_budget_a_commit_cannot_be_read_past() {
+    let (h, root) = repo();
+    let tree = h.ok(
+        OWNER,
+        json!({"op":"repo_commit","commit":root,"brief":true}),
+    )["tree"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (id, mut item) = super::pushed::pushed(&root, &tree, "wide");
+    let files: Vec<Value> = (0..300)
+        .map(|n| json!({"path":format!("docs/{n}.md"),"op":"add","old_blob":null,"new_blob":BLOB,"mode":"blob"}))
+        .collect();
+    item["touches"] = json!(files);
+    super::pushed::record(&h, AGENT, json!([item])).unwrap();
+    let answer = h.ok(
+        CLASSIFIER,
+        json!({"op":"repo_classes_pending","commits":[id]}),
+    );
+    assert_eq!(
+        answer["pending"][0]["touches"].as_array().unwrap().len(),
+        201,
+        "one past the budget, so the job sees it is over"
+    );
+}
+
+#[test]
+fn a_pushed_commit_classified_docs_auto_approves_and_logic_needs_a_human() {
+    let (h, root) = repo();
+    let (docs, _) = pushed(&h, &root, "docs/a.md", BLOB);
+    assert_eq!(
+        gates(&h, &docs)["auto_approved"],
+        false,
+        "not classified yet"
+    );
+    assert_eq!(land(&h, &docs), "NOT_READY");
+    classify(&h, &docs, "docs/a.md", "docs");
+    assert_eq!(gates(&h, &docs)["auto_approved"], true);
+
+    let (logic, _) = pushed(&h, &docs, "src/a.rs", BLOB);
+    classify(&h, &logic, "src/a.rs", "logic");
+    assert_eq!(land(&h, &logic), "NOT_READY");
+}
