@@ -2,10 +2,15 @@
 //! Every read, search, write, review, land and contract record checks them; anything
 //! outside the grant is refused with one uniform error, so refusals reveal nothing about
 //! what exists there.
+use super::land_gates::older_commits_pass;
 use super::op::{MaintenanceOp, RepoOp as R, StoreOp};
-use crate::storage::bad;
+use super::rows::{self, CommitRow};
+use crate::storage::{SqlStore, bad};
 use serde_json::Value;
-use yoneda_core::{Error, Result, txlog::Access};
+use yoneda_core::{
+    Error, Result,
+    txlog::{Access, PathTouch},
+};
 
 /// `None`: the whole repository. Entries are file paths or directory prefixes.
 pub type Grant = Option<Vec<String>>;
@@ -76,14 +81,42 @@ pub fn filter(grant: &Grant, items: Vec<Value>, key: &str) -> Vec<Value> {
         .collect()
 }
 
-/// Grant checks that must pass before an operation runs: writes stay inside the grant,
-/// and reviewing, checking or landing a commit requires seeing all of its changes.
-pub fn precheck<S: crate::storage::SqlStore>(
+/// Whether a commit's recorded changes stay inside the grant. No record proves nothing.
+fn inside(grant: &Grant, touches: &[PathTouch]) -> bool {
+    !touches.is_empty() && touches.iter().all(|t| allows(grant, &t.path))
+}
+
+/// Refuses a restricted caller unless all a landing on `refname` would bring is inside its
+/// grant: `commit` (`touches`, given for a commit not adopted here) and every commit under
+/// it down to where they meet the ref.
+pub fn require_landing<S: SqlStore>(
     db: &S,
-    op: StoreOp,
-    c: &Value,
+    commit: &CommitRow,
+    touches: &[PathTouch],
+    refname: &str,
     grant: &Grant,
 ) -> Result<()> {
+    let older = |id: &_| Ok(inside(grant, &rows::touches(db, id)?));
+    if inside(grant, touches) && older_commits_pass(db, commit, refname, older)? {
+        Ok(())
+    } else {
+        Err(outside())
+    }
+}
+
+/// `require_landing` for a commit recorded here.
+fn require_recorded<S: SqlStore>(
+    db: &S,
+    commit: &CommitRow,
+    refname: &str,
+    grant: &Grant,
+) -> Result<()> {
+    require_landing(db, commit, &rows::touches(db, &commit.id)?, refname, grant)
+}
+
+/// Grant checks that must pass before an operation runs: writes stay inside the grant, and
+/// reviewing, checking or landing a commit requires seeing all it would bring.
+pub fn precheck<S: SqlStore>(db: &S, op: StoreOp, c: &Value, grant: &Grant) -> Result<()> {
     if grant.is_none() {
         return Ok(());
     }
@@ -98,10 +131,16 @@ pub fn precheck<S: crate::storage::SqlStore>(
                 require(grant, path.as_str().unwrap_or_default())?;
             }
         }
-        StoreOp::Repo(R::Land | R::LandEnqueue | R::Review | R::Check | R::CheckRequest) => {
-            let id = super::rows::object_id(c, "commit")?;
-            for touch in super::rows::touches(db, &id)? {
-                require(grant, &touch.path)?;
+        StoreOp::Repo(R::Land | R::LandEnqueue) => {
+            let commit = rows::commit_row(db, &rows::object_id(c, "commit")?)?;
+            let commit = commit.ok_or_else(outside)?;
+            require_recorded(db, &commit, &rows::branch_ref(c)?, grant)?;
+        }
+        // These name no target, so main, as a commit's gates read (`reads::commit`). A commit
+        // not here yet is left to answer NOT_FOUND: the adapter adopts it and retries.
+        StoreOp::Repo(R::Review | R::Check | R::CheckRequest) => {
+            if let Some(commit) = rows::commit_row(db, &rows::object_id(c, "commit")?)? {
+                require_recorded(db, &commit, "refs/heads/main", grant)?;
             }
         }
         StoreOp::Repo(R::PathHistory | R::RecordContract) => {
