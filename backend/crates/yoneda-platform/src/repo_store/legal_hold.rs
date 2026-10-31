@@ -19,7 +19,7 @@
 //! step is the shards' `store_erase`, which waits for an answer of its own (`commit_store`).
 //!
 //! The undo window's purge goes through `repo_purge_target` and needs nothing new. Landing stays
-//! off the list, but the platform's own landing asks anyway (`land_when_cleared`): with a person
+//! off the list, but the platform's own landing asks anyway (`land_when_cleared/state.rs`): with a person
 //! landing, a person answers for it.
 use super::op::{MaintenanceOp as M, QuarantineOp as Q, RepoOp as R, StoreOp};
 use serde_json::Value;

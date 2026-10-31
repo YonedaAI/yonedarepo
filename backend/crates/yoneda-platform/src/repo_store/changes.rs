@@ -45,15 +45,23 @@ fn shaped(mut row: Value) -> Value {
     if let Some(fields) = row.as_object_mut() {
         fields.remove("branch_head");
         fields.insert("head".into(), head);
-        // What the platform last did with it (`land_when_cleared`), as stored or nothing.
-        if let Some(record) = fields.get_mut("clearance") {
-            *record = record
-                .as_str()
-                .and_then(|text| serde_json::from_str(text).ok())
-                .unwrap_or(Value::Null);
+        // CTC's decisions on it (`land_when_cleared`), when it has any.
+        let decided = fields.remove("clearance");
+        let text = decided.as_ref().and_then(Value::as_str);
+        if let Some(log) = text.and_then(|text| serde_json::from_str(text).ok()) {
+            fields.insert("clearances".into(), log);
         }
     }
     row
+}
+
+/// A row of a list, which has no use for each Landing's decisions.
+fn listed(row: Value) -> Value {
+    let mut change = shaped(row);
+    if let Some(fields) = change.as_object_mut() {
+        fields.remove("clearances");
+    }
+    change
 }
 
 pub(super) fn get<S: SqlStore>(db: &S, number: i64) -> Result<Value> {
@@ -222,7 +230,8 @@ pub fn list<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
         &format!("{CHANGE} WHERE (?1='all' OR c.status=?1){only} ORDER BY c.number DESC LIMIT ?2"),
         &params,
     )?;
-    let mut answer = json!({ "changes": rows.into_iter().map(shaped).collect::<Vec<_>>() });
+    let rows = rows.into_iter().map(listed).collect::<Vec<_>>();
+    let mut answer = json!({ "changes": rows });
     if c["direct"] == true && ["landed", "all"].contains(&status) {
         answer["direct"] = json!(super::direct_landings::recent(db, limit)?);
     }

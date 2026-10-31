@@ -1,10 +1,12 @@
-// The clearance job: lands an open Landing once its exact head has cleared, for a repository
-// with the switch on. The authority decides (repo_store/land_when_cleared.rs); this carries out
-// what only an adapter can: a fork's newest head, the Risk of the head's diff, and the landing,
-// which names the head it evaluated so a newer push can't slip in. The platform evaluates rules
-// and moves a ref; it starts no agent. A refused or conflicted landing leaves the Landing open
-// with its reason, and only the next trigger tries again. Queues deliver at least once: a
-// duplicate finds the Landing landed, or shares its queue ticket.
+// The clearance job, CTC's first: lands an open Landing once its exact head has cleared, for a
+// repository with the switch on. The authority decides, in one pure function
+// (platform_ctc.rs), and records each decision with its reasons and the head it judged. This
+// carries out what only an adapter can: a fork's newest head, the Risk of the head's diff, and
+// the landing, which names the head it evaluated so a newer push can't slip in. The platform
+// evaluates rules and moves a ref; it starts no agent, and no model is asked anything. A refused
+// or conflicted landing leaves the Landing open with its reason, and only the next trigger tries
+// again. Queues deliver at least once: a duplicate finds the Landing landed, or shares its
+// queue ticket.
 import { landMode } from './repo-changesets';
 import { followForkChange } from './repo-forks';
 import { changeInstruments } from './repo-instruments';
@@ -21,48 +23,45 @@ const UNSETTLED = new Set(['TIMEOUT', 'INTERNAL']);
 
 const UNFINISHED = 'The platform could not finish this landing; its next event tries again';
 
-type Refuse = (code: string, message: string) => Promise<unknown>;
-
 /** Leaves why on the Landing, which stays open. */
 const failed = (ctx: RepoContext, number: number, head: string, code: string, message: string) =>
   ctx.call({ op: 'repo_land_clearance', number, failed: { head, code, message } });
 
-/** Whether Risk holds the head: High, or not known. Conservative, and the owner can see why. */
-async function riskRefused(ctx: RepoContext, number: number, head: string, refuse: Refuse) {
+/** The head's Risk for the decision (level null: it could not be scored), or null if the head
+ * moved since, which asked for its own job. */
+async function headRisk(ctx: RepoContext, number: number, head: string) {
   const newest = (await changeInstruments(ctx, number)).heads?.[0];
-  // The head moved since the clearance: that move asked for its own job.
-  if (newest?.commit !== head) return true;
+  if (newest?.commit !== head) return null;
   const risk = newest.risk;
-  if (risk?.level === 'low' || risk?.level === 'medium') return false;
-  if (!risk) await refuse('RISK_UNKNOWN', 'Risk could not be scored for this head');
-  else {
-    const why = (risk.reasons as Json[]).filter((r) => r.points > 0).map((r) => r.why);
-    await refuse('RISK_HIGH', `Risk is High (${risk.score}): ${why.join('; ')}`);
-  }
-  return true;
+  const why = ((risk?.reasons ?? []) as Json[]).filter((r) => r.points > 0).map((r) => r.why);
+  return { level: risk?.level ?? null, score: risk?.score ?? 0, why };
 }
 
-/** Tries to land the Landing; the head it evaluated goes in `tried`, for the job's last word. */
+/** Asks CTC about the Landing and lands it if cleared. The authority records what it decides;
+ * the head goes in `tried`, for the job's last word. */
 async function attempt(ctx: RepoContext, number: number, tried: { head?: string }) {
-  const answer = await ctx.call({ op: 'repo_land_clearance', number });
-  if (answer.state !== 'cleared') return;
-  const head: string = answer.commit;
+  const asked = await ctx.call({ op: 'repo_land_clearance', number });
+  // Decided and recorded: only a head waiting for its score goes on.
+  if (asked.needs_risk !== true) return;
+  const head: string = asked.commit;
   tried.head = head;
-  const refuse: Refuse = (code, message) => failed(ctx, number, head, code, message);
   try {
     // A fork's pushes reach the parent when someone looks. Moving the mirror is a new head, which
     // asks for its own job; this one has nothing left to land.
-    if (answer.source_repo) {
-      const change = { ...answer, status: 'open', head };
+    if (asked.source_repo) {
+      const change = { ...asked, status: 'open', head };
       if (await followForkChange(ctx.env, ctx.repo, change)) return;
     }
-    if (await riskRefused(ctx, number, head, refuse)) return;
+    const risk = await headRisk(ctx, number, head);
+    if (!risk) return;
+    const judged = await ctx.call({ op: 'repo_land_clearance', number, risk });
+    if (judged.state !== 'cleared') return;
     const guard = { clearance: number, expected_head: head };
-    await landWithMerge(ctx, answer.ref, head, false, landMode(ctx.env), true, guard);
+    await landWithMerge(ctx, asked.ref, head, false, landMode(ctx.env), true, guard);
   } catch (e) {
     if (!(e instanceof ApiError) || UNSETTLED.has(e.code)) throw e;
     // A new head has its own turn, and this one's reason is no use to it.
-    if (e.code !== 'HEAD_MOVED') await refuse(e.code, e.message);
+    if (e.code !== 'HEAD_MOVED') await failed(ctx, number, head, e.code, e.message);
   }
 }
 

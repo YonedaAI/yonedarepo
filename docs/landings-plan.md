@@ -187,23 +187,28 @@ Ships **before** stage 6.
 | Direct landings | `repo_changes {direct}`, from main's first-parent chain, newest 1,000 entries; imports left out |
 | On-base check | Head, chain and landing rows, then a walk of at most 256 generations. Past that an old branch may get a row with an empty diff |
 
-## 6a. Land when cleared
+## 6a. CTC: land when cleared
 
-`git_land` needs a caller, so with this off a Landing is a better PR. With it on, the platform lands an open Landing when its gates go green. It evaluates rules and moves a ref; it starts no agent.
+`git_land` needs a caller, so with this off a Landing is a better PR. With it on, CTC (Code Traffic Control) lands an open Landing when its gates go green. It evaluates rules and moves a ref; it starts no agent. No sequencing, radar or traffic warnings yet.
 
-**Built:** `repo_store/land_when_cleared.rs`, `cloudflare/worker/repo-land-cleared.ts`, `repo-land-check.ts`. Behind `LAND_WHEN_CLEARED` (off everywhere) and a per-repo switch (off).
+**Built:** `platform_ctc.rs`, `repo_store/land_when_cleared.rs`, `cloudflare/worker/repo-land-cleared.ts`, `repo-land-check.ts`. Behind `LAND_WHEN_CLEARED` (off everywhere) and a per-repo switch (off).
+
+**One decision.** `platform_ctc::clearance(&LandingState) -> Cleared | Hold { reasons } | GoAround { reasons }` is pure: it reads nothing and calls nothing. The page, the job, the land call and a ticket's claim and batch all ask it, so "what is this waiting for" and "may this land" can't disagree. No model is asked anything: an agent's verdict reaches it only as a check result or a comment already recorded.
 
 | Part | Choice |
 |---|---|
 | Switches | `repo_settings.land_when_cleared`, `findings_block`, in `0044`; `PUT /auto-landings`. Not in `policy` |
 | Trigger | An op that can clear a Landing names it in `land_checks` (`triggers.rs`): check passed, approval, comment resolved, new head, review class, Landing opened or reopened. The adapter strips the field and queues `platform_land_check`. A lost message costs that trigger, not the next |
 | Job kind known first | `LAND_WHEN_CLEARED` stays off through the deploy that ships the handler, and goes on in a later one. A rollback past the handler drops messages, which waits for the next trigger |
-| Exact head | The job asks `repo_land_clearance`, then calls `repo_land` with `expected_head`. That call runs the rules again in its own transaction. A landing that needs a merge queues as `slow`, and claim and batch run them again, so a newer push or a rejection stops a ticket too |
+| Exact head | The job asks `repo_land_clearance`; with only Risk missing it reads the diff and asks again with the score; then `repo_land` with `expected_head`. That call decides again in its own transaction. A landing that needs a merge queues as `slow`, and claim and batch decide again, so a newer push or a rejection stops a ticket too |
 | Identity | `_system: land-when-cleared`, actor `platform:land-when-cleared`. The role lands only a Landing it names |
-| Record | `changes.clearance`, JSON: who approved and the deciding requirements, or the refusal's code and reason. Never a status |
+| Record | `changes.clearance`, in `0044`: the job's decisions as JSON, newest first, each with its reasons, the head it judged, the state it judged and the version if it landed. `clearances` in `GET /changes/:n`. A recorded state replays to the same decision. Newest 32 per Landing, identical ones skipped; a landing is the last thing recorded. Never a status |
 | Audit | None: the org audit log takes events from account authorities only (`audit_log.rs`). The record and the log's actor stand in |
 
-**Holds beyond the gates:** draft title, failed check on the head (required or not: this is how `block_at` reached reads), unresolved line comment, stale read, automation pause, legal hold, `REPO_FULL`, a path-limited token that worked on it not covering the landing, Risk High or not scored.
+| Decision | Reasons |
+|---|---|
+| Go-around: the work has to answer | Failed required check or rejection, failed check on the head (required or not: this is how `block_at` reached reads), blocking findings, stale read, a merge that conflicted |
+| Hold: it can come without new work | Check or approval still to come, draft title, unresolved line comment, automation pause, legal hold, `REPO_FULL`, a path-limited token that worked on it not covering the landing, Risk High or not scored |
 
 **Two holds the owner didn't list:**
 
@@ -214,7 +219,7 @@ Ships **before** stage 6.
 
 **Findings:** `findings_block` is enforced in `land_gates::gates`, so it refuses every landing on a protected base, explicit ones too. It counts open findings from tokens (`go_around`). Findings withheld from a line aren't counted, since nothing can resolve them; they reach the check's value instead.
 
-**Rollback:** the `0044` text changed. Applied by this binary, it fails `MIGRATION_DRIFT` under any binary holding the earlier text, so a rollback target needs this text first. Ship a wave 1 with this `0044` before raising `APPLY_THROUGH`.
+**Rollback:** `0044` carries these columns on dev, and wave 1 has to ship that text: the digest is computed from it, so a binary with earlier text fails `MIGRATION_DRIFT` on a store that applied it.
 
 ## 7. Flight plan and Intent drift
 

@@ -1,0 +1,182 @@
+use super::*;
+use crate::platform_instruments::RiskLevel;
+
+/// A reason's code, and what brings it about.
+type Case = (&'static str, fn(&mut LandingState));
+
+fn low() -> Option<RiskScore> {
+    Some(RiskScore {
+        level: Some(RiskLevel::Low),
+        score: 5,
+        why: Vec::new(),
+    })
+}
+
+/// A Landing nothing stands in the way of.
+fn clear() -> LandingState {
+    LandingState {
+        gates_ready: true,
+        approvals: 1,
+        approved_by: vec!["user:ada".into()],
+        requirements: vec![line("Approvals", RequirementState::Ready)],
+        base_exists: true,
+        risk: low(),
+        ..LandingState::default()
+    }
+}
+
+fn line(name: &str, state: RequirementState) -> Requirement {
+    Requirement {
+        name: name.into(),
+        state,
+        why: "why".into(),
+    }
+}
+
+fn codes(clearance: &Clearance) -> Vec<&str> {
+    clearance
+        .reasons()
+        .iter()
+        .map(|r| r.code.as_str())
+        .collect()
+}
+
+#[test]
+fn a_clear_landing_is_cleared_and_says_nothing() {
+    assert_eq!(clearance(&clear()), Clearance::Cleared);
+    assert!(clearance(&clear()).reasons().is_empty());
+}
+
+#[test]
+fn each_rule_holds_on_its_own() {
+    let cases: Vec<Case> = vec![
+        ("DRAFT", |s| s.draft = true),
+        ("GATES", |s| {
+            s.gates_ready = false;
+            s.requirements = vec![line("Approvals", RequirementState::Waiting)];
+        }),
+        ("GATES", |s| s.gates_ready = false),
+        ("COMMENTS", |s| s.unresolved_comments = true),
+        ("NO_BASE", |s| s.base_exists = false),
+        ("AUTOMATION_PAUSED", |s| {
+            s.paused_by = Some("user:ada".into())
+        }),
+        ("OUTSIDE_GRANT", |s| s.outside_grant = true),
+        ("LEGAL_HOLD", |s| s.legal_hold = Some("Held".into())),
+        ("REPO_FULL", |s| s.repo_full = Some("Full".into())),
+        ("RISK_NOT_SCORED", |s| s.risk = None),
+        ("RISK_UNKNOWN", |s| {
+            s.risk = Some(RiskScore {
+                level: None,
+                score: 0,
+                why: Vec::new(),
+            })
+        }),
+        ("RISK_HIGH", |s| {
+            s.risk = Some(RiskScore {
+                level: Some(RiskLevel::High),
+                score: 60,
+                why: vec!["Touches workflows".into()],
+            })
+        }),
+        ("FORK_NEEDS_APPROVAL", |s| {
+            s.from_fork = true;
+            s.approvals = 0;
+            s.auto_approved = true;
+        }),
+        ("NOTHING_REQUIRED", |s| s.approvals = 0),
+    ];
+    for (code, change) in cases {
+        let mut state = clear();
+        change(&mut state);
+        let decided = clearance(&state);
+        assert_eq!(decided.decision(), Decision::Hold, "{code}");
+        assert_eq!(codes(&decided), [code]);
+    }
+}
+
+#[test]
+fn what_the_work_has_to_answer_goes_around() {
+    let cases: Vec<Case> = vec![
+        ("GATES", |s| {
+            s.gates_ready = false;
+            s.requirements = vec![line("unit", RequirementState::Blocked)];
+        }),
+        ("FINDINGS", |s| {
+            s.gates_ready = false;
+            s.open_findings = 2;
+        }),
+        ("CHECK_FAILED", |s| s.failed_checks = vec!["lint".into()]),
+        ("CONFLICT", |s| s.conflict = Some("Stale read".into())),
+    ];
+    for (code, change) in cases {
+        let mut state = clear();
+        change(&mut state);
+        let decided = clearance(&state);
+        assert_eq!(decided.decision(), Decision::GoAround, "{code}");
+        assert_eq!(codes(&decided), [code]);
+    }
+}
+
+#[test]
+fn a_go_around_outranks_a_hold_and_keeps_every_reason() {
+    let mut state = clear();
+    state.draft = true;
+    state.failed_checks = vec!["lint".into()];
+    let decided = clearance(&state);
+    assert_eq!(decided.decision(), Decision::GoAround);
+    assert_eq!(codes(&decided), ["CHECK_FAILED", "DRAFT"]);
+}
+
+#[test]
+fn risk_is_asked_for_only_when_nothing_else_stands_in_the_way() {
+    let mut state = clear();
+    state.risk = None;
+    assert!(clearance(&state).needs_risk());
+    state.draft = true;
+    assert!(!clearance(&state).needs_risk());
+    assert_eq!(codes(&clearance(&state)), ["DRAFT"]);
+    state.risk = low();
+    assert!(!clearance(&state).needs_risk());
+}
+
+#[test]
+fn an_auto_approved_landing_or_a_required_check_is_evidence() {
+    let mut state = clear();
+    state.approvals = 0;
+    state.auto_approved = true;
+    assert_eq!(clearance(&state), Clearance::Cleared);
+    state.auto_approved = false;
+    state.rules_ask = true;
+    assert_eq!(clearance(&state), Clearance::Cleared);
+}
+
+#[test]
+fn the_same_state_always_gives_the_same_decision() {
+    let mut state = clear();
+    state.draft = true;
+    state.unresolved_comments = true;
+    state.failed_checks = vec!["a".into(), "b".into()];
+    let first = clearance(&state);
+    let replayed: LandingState =
+        serde_json::from_value(serde_json::to_value(&state).unwrap()).unwrap();
+    assert_eq!(replayed, state);
+    assert_eq!(clearance(&replayed), first);
+}
+
+#[test]
+fn a_failed_attempt_goes_around_only_for_what_the_work_must_answer() {
+    assert_eq!(
+        attempt_failed("CONFLICT", "x").decision(),
+        Decision::GoAround
+    );
+    assert_eq!(
+        attempt_failed("STALE_PARENT", "x").decision(),
+        Decision::GoAround
+    );
+    assert_eq!(attempt_failed("UNFINISHED", "x").decision(), Decision::Hold);
+    assert_eq!(
+        attempt_failed("REPO_FULL", "x").reasons()[0].code,
+        "REPO_FULL"
+    );
+}

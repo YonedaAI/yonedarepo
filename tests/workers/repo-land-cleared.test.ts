@@ -63,7 +63,8 @@ it('lands the head that cleared, once, as the platform, with its reasons on the 
   expect((await deliver(s.env, opened[0])).acked).toBe(true);
   expect(await mainHead(s)).toBe(s.main);
   const gates = await api(`/repos/${s.repo}/changes/1/gates`, { cookie: s.cookie }, {}, s.env);
-  expect(gates.body.land_when_cleared.waiting[0].code).toBe('GATES');
+  expect(gates.body.land_when_cleared.decision).toBe('hold');
+  expect(gates.body.land_when_cleared.reasons[0].code).toBe('GATES');
 
   const reviewed = await approve(s, id);
   expect(reviewed.status, JSON.stringify(reviewed.body)).toBe(200);
@@ -74,12 +75,16 @@ it('lands the head that cleared, once, as the platform, with its reasons on the 
   expect(await mainHead(s)).toBe(id);
   const landed = await change(s);
   expect(landed.status).toBe('landed');
-  expect(landed.clearance).toMatchObject({ outcome: 'landed', by: 'platform:land-when-cleared', head: id, approved_by: [`user:lwc_lands`] });
+  const why = landed.clearances[0];
+  expect(why).toMatchObject({ decision: 'cleared', actor: 'platform:land-when-cleared', head: id, reasons: [] });
+  expect(why.state.approved_by).toEqual(['user:lwc_lands']);
+  expect(why.state.risk.level).toBe('low');
+  expect(why.landed_version).toBeGreaterThan(0);
   expect(queued.some((m) => m.kind === 'platform_derive' && m.repo_id === s.repo), 'webhooks fan out from it').toBe(true);
 
   // A duplicate delivery finds nothing to do.
   expect((await deliver(s.env, cleared[0])).acked).toBe(true);
-  expect((await change(s)).clearance.version).toBe(landed.clearance.version);
+  expect((await change(s)).clearances).toEqual(landed.clearances);
 });
 
 it('merges a Landing whose base moved, on the queue, and the ticket records why', async () => {
@@ -96,7 +101,8 @@ it('merges a Landing whose base moved, on the queue, and the ticket records why'
   await deliver(s.env, jobs(s)[0]);
   const landed = await change(s);
   expect(landed.status).toBe('landed');
-  expect(landed.clearance).toMatchObject({ outcome: 'landed', head: id, by: 'platform:land-when-cleared' });
+  expect(landed.clearances[0]).toMatchObject({ decision: 'cleared', head: id, actor: 'platform:land-when-cleared' });
+  expect(landed.clearances[0].landed_version).toBeGreaterThan(0);
   expect(await mainHead(s)).not.toBe(other);
 });
 
@@ -116,7 +122,8 @@ it('leaves a conflicted Landing open with its reason and never comes back on its
   expect(jobs(s), 'a refusal asks for no job').toEqual([]);
   const shown = await change(s);
   expect(shown.status).toBe('open');
-  expect(shown.clearance).toMatchObject({ outcome: 'refused', head: id, code: 'CONFLICT' });
+  expect(shown.clearances[0]).toMatchObject({ decision: 'go_around', head: id });
+  expect(shown.clearances[0].reasons[0].code).toBe('CONFLICT');
   const gates = await api(`/repos/${s.repo}/changes/1/gates`, { cookie: s.cookie }, {}, s.env);
   expect(gates.body.land_when_cleared.refused.reason).toMatch(/a\.md/);
 });
@@ -136,8 +143,11 @@ it('holds a High Risk head and says why', async () => {
   await deliver(s.env, jobs(s)[0]);
   const shown = await change(s);
   expect(shown.status).toBe('open');
-  expect(shown.clearance).toMatchObject({ outcome: 'refused', code: 'RISK_HIGH', head: id });
-  expect(shown.clearance.reason).toMatch(/Risk is High/);
+  expect(shown.clearances[0]).toMatchObject({ decision: 'hold', head: id });
+  expect(shown.clearances[0].reasons[0].code).toBe('RISK_HIGH');
+  expect(shown.clearances[0].reasons[0].reason).toMatch(/Risk is High/);
+  const gates = await api(`/repos/${s.repo}/changes/1/gates`, { cookie: s.cookie }, {}, s.env);
+  expect(gates.body.land_when_cleared.reasons).toEqual(shown.clearances[0].reasons);
   expect(await mainHead(s)).toBe(s.main);
 });
 
@@ -197,7 +207,7 @@ it('lands a fork\'s newest head only with its own approval', async () => {
   await deliver(local, wanted()[0]);
   expect(await mainOf()).toBe(main);
   const gates = await api(`/repos/${parent}/changes/1/gates`, alice, {}, local);
-  expect(gates.body.land_when_cleared.waiting.map((w: Json) => w.code)).toEqual(['FORK_NEEDS_APPROVAL']);
+  expect(gates.body.land_when_cleared.reasons.map((w: Json) => w.code)).toEqual(['FORK_NEEDS_APPROVAL']);
 
   // Approved, but the fork pushed since: the mirror moves and the approval doesn't follow.
   expect((await api(`/repos/${parent}/commits/${first}/reviews`, alice, { body: { decision: 'approve' } }, local)).status).toBe(200);

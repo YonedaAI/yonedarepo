@@ -282,27 +282,21 @@ describe('changes list', () => {
     expect(landingState(open, gates(false, 'blocked', false))).toBe('In flight');
   });
 
-  it('calls a Landing landed automatically only from the record of its landing', () => {
-    const record = {
-      outcome: 'landed' as const,
+  it('calls a Landing landed automatically only from the decision that landed it', () => {
+    const row = {
       head: 'a'.repeat(40),
-      by: 'platform:land-when-cleared',
+      decision: 'cleared' as const,
+      reasons: [],
+      state: { approved_by: ['user:ada'], requirements: [{ name: 'ci', why: 'Passed' }] },
+      landed_version: 2,
+      actor: 'platform:land-when-cleared',
       at: 1,
-      version: 2,
-      approved_by: ['user:ada'],
-      gates: [{ name: 'ci', why: 'Passed' }],
     };
-    expect(landedAutomatically({ status: 'landed', clearance: record })).toBe(record);
+    const held = { ...row, decision: 'hold' as const, landed_version: null };
+    expect(landedAutomatically({ status: 'landed', clearances: [row, held] })).toBe(row);
     expect(landedAutomatically({ status: 'landed' })).toBeNull();
-    expect(landedAutomatically({ status: 'open', clearance: record })).toBeNull();
-    const refused = {
-      outcome: 'refused',
-      head: 'a',
-      code: 'CONFLICT',
-      reason: 'x',
-      at: 1,
-    } as const;
-    expect(landedAutomatically({ status: 'landed', clearance: refused })).toBeNull();
+    expect(landedAutomatically({ status: 'landed', clearances: [held] })).toBeNull();
+    expect(landedAutomatically({ status: 'open', clearances: [row] })).toBeNull();
     // Computed, so its state is what it was.
     expect(landingState({ status: 'open', title: 'Retry' })).toBe('In flight');
   });
@@ -315,29 +309,44 @@ describe('changes list', () => {
   });
 });
 
-describe('land when cleared', () => {
-  const clearance = (over: object) => ({ waiting: [], refused: null, ...over });
+describe('CTC on a Landing', () => {
+  const clearance = (over: object) => ({ decision: 'hold', reasons: [], refused: null, ...over });
 
   it('says what an open Landing waits for', () => {
     const note = html(WillLandNote, {
       clearance: clearance({
-        waiting: [{ code: 'GATES', reason: 'Approvals: 0 of 1 approvals' }],
+        reasons: [{ code: 'GATES', reason: 'Approvals: 0 of 1 approvals' }],
       }),
     });
-    expect(note).toContain('Will land when cleared.');
+    expect(note).toContain('CTC: will land when cleared.');
     expect(note).toContain('Waiting for:');
     expect(note).toContain('Approvals: 0 of 1 approvals');
     expect(note).not.toContain('did not land');
   });
 
+  it('says when the work goes back', () => {
+    const note = html(WillLandNote, {
+      clearance: clearance({
+        decision: 'go_around',
+        reasons: [{ code: 'CHECK_FAILED', reason: 'slop-review failed on this head' }],
+      }),
+    });
+    expect(note).toContain('CTC: go-around.');
+    expect(note).toContain('slop-review failed on this head');
+    expect(note).not.toContain('will land');
+  });
+
   it('says when nothing is in the way, and why the last attempt failed', () => {
-    const clear = html(WillLandNote, { clearance: clearance({}) });
+    const clear = html(WillLandNote, { clearance: clearance({ decision: 'cleared' }) });
     expect(clear).toContain('Nothing is in the way');
     const refused = html(WillLandNote, {
-      clearance: clearance({ refused: { code: 'RISK_HIGH', reason: 'Risk is High (60)', at: 1 } }),
+      clearance: clearance({
+        decision: 'cleared',
+        refused: { code: 'CONFLICT', reason: 'Merge conflicts on a.md', at: 1 },
+      }),
     });
     expect(refused).toContain('The last attempt did not land.');
-    expect(refused).toContain('Risk is High (60)');
+    expect(refused).toContain('Merge conflicts on a.md');
     expect(refused).toContain('It tries again');
     expect(refused).not.toContain('Nothing is in the way');
   });
@@ -345,15 +354,21 @@ describe('land when cleared', () => {
   it("shows a landed Landing its reason trail, and a person's landing none", () => {
     const change = {
       status: 'landed',
-      clearance: {
-        outcome: 'landed',
-        at: 1,
-        approved_by: ['user:ada'],
-        gates: [{ name: 'ci', why: 'Passed (token:ci)' }],
-      },
+      clearances: [
+        {
+          decision: 'cleared',
+          landed_version: 2,
+          at: 1,
+          state: {
+            approved_by: ['user:ada'],
+            requirements: [{ name: 'ci', why: 'Passed (token:ci)' }],
+          },
+        },
+      ],
     };
     const trail = html(LandedAutomatically, { change });
     expect(trail).toContain('Landed automatically');
+    expect(trail).toContain('by CTC');
     expect(trail).toContain('Approved by ada');
     expect(trail).toContain('Passed (token:ci)');
     expect(html(LandedAutomatically, { change: { status: 'landed' } })).toBe('');

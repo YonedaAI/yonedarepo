@@ -210,11 +210,11 @@ Rollout: D1 migration 0010 before the Worker, as the deploy does. Deleting data 
 
 ## Land when cleared
 
-`LAND_WHEN_CLEARED=on` on the platform Worker (`infra/envs/<env>.json`; unset or `off`: no job is queued, and a repository can't turn the switch on) has what can clear a Landing queue a `platform_land_check` job (docs/landings-plan.md).
+`LAND_WHEN_CLEARED=on` on the platform Worker (`infra/envs/<env>.json`; unset or `off`: no job is queued, and a repository can't turn the switch on) has what can clear a Landing queue a `platform_land_check` job for CTC (docs/landings-plan.md).
 
 - **Rollout.** A queue job of a kind a Worker doesn't know is acked and dropped (`platformJob`), so deploy this code with the variable `off`, let the rollout finish, then deploy again with it `on`.
 - **Rolling back.** Set it `off` first. A job that reaches a binary without the handler is dropped, and its Landing waits for its next trigger: nothing is lost, and nothing lands late by itself.
-- **A Landing that didn't land.** Its page gives the reason, and `changes.clearance` holds it. The next check, review, resolved comment or push tries again.
+- **A Landing that didn't land.** Its page gives the reason, and `changes.clearance` keeps each decision with the head it judged. The next check, review, resolved comment or push tries again.
 
 ## Creating a repository's store
 

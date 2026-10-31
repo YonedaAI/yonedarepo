@@ -206,7 +206,7 @@ fn run<S: SqlStore>(
         }
         R::LandEnqueue => land_when_cleared::refuse_bare_land(actor)
             .and_then(|()| land_tickets::enqueue(db, c, principal, settings)),
-        R::LandClearance => land_when_cleared::clearance(db, c, settings),
+        R::LandClearance => land_when_cleared::ask(db, c, settings),
         R::LandStatus => land_tickets::status(db, c),
         R::LandClaim => land_queue::claim(db, c, settings),
         R::LandBatch => land_batch::land_batch(db, c, principal, settings),

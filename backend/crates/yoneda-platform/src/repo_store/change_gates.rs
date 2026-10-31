@@ -7,11 +7,12 @@
 //! switch on, unresolved agent findings. Unresolved review comments and a base that moved on
 //! are shown, never enforced: landing merges on the server and refuses only a real conflict.
 //! Land when cleared is stricter than a person is, so with its switch on the answer adds what
-//! the platform still waits for (`land_when_cleared`). Computed from existing rows, apart from
+//! CTC decides (`platform_ctc`). Computed from existing rows, apart from
 //! that attempt's reason.
 use super::auth::Actor;
 use super::changes::{self, number_of, whole_repository};
 use super::{break_glass, rows};
+use crate::platform_ctc::{Decision, Reason};
 use crate::storage::SqlStore;
 use schemars::JsonSchema;
 use serde::Serialize;
@@ -37,24 +38,17 @@ pub struct ChangeGates {
     pub requirements: Vec<GateRequirement>,
     /// With the repository's switch on: what the platform waits for before it lands this.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub land_when_cleared: Option<Clearance>,
+    pub land_when_cleared: Option<LandingClearance>,
 }
 
-/// What stands between an open Landing and the platform landing it.
+/// CTC's decision on an open Landing, as the platform would land it.
 #[derive(Debug, Serialize, JsonSchema)]
-pub struct Clearance {
+pub struct LandingClearance {
+    pub decision: Decision,
     /// Everything in the way now; empty when it would land on the next trigger.
-    pub waiting: Vec<ClearanceHold>,
+    pub reasons: Vec<Reason>,
     /// Why the last attempt on this head did not land, if it did not.
     pub refused: Option<ClearanceRefusal>,
-}
-
-/// One thing the platform waits for.
-#[derive(Debug, Clone, Serialize, JsonSchema)]
-pub struct ClearanceHold {
-    pub code: String,
-    /// One line of why.
-    pub reason: String,
 }
 
 /// An attempt that did not land.

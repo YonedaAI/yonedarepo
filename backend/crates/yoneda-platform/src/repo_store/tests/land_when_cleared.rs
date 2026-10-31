@@ -1,6 +1,7 @@
 //! Land when cleared: with the repository's switch on, a queue job lands an open Landing once
-//! its exact head clears. Each test plays the job: `repo_land_clearance`, then `repo_land` with
-//! the head it evaluated. Off, nothing changes.
+//! its exact head clears. Each test plays the job: `repo_land_clearance`, again with the head's
+//! Risk once nothing else stands in the way, then `repo_land` with the head it evaluated. Every
+//! decision is recorded with its reasons and that head. Off, nothing changes.
 use super::forks::{FORK_ID, FORKER, fork};
 use super::*;
 use crate::storage::SqlStore;
@@ -37,8 +38,21 @@ fn landing(h: &Harness, name: &str) -> i64 {
         .unwrap()
 }
 
+/// The job's decision: it scores Risk only when asked to.
 fn assess(h: &Harness, number: i64) -> Value {
-    h.ok(LANDER, json!({"op":"repo_land_clearance","number":number}))
+    let first = h.ok(LANDER, json!({"op":"repo_land_clearance","number":number}));
+    if first["needs_risk"] != true {
+        return first;
+    }
+    scored(h, number, "low")
+}
+
+fn scored(h: &Harness, number: i64, level: &str) -> Value {
+    let risk = json!({"level":level,"score":10,"why":["Small"]});
+    h.ok(
+        LANDER,
+        json!({"op":"repo_land_clearance","number":number,"risk":risk}),
+    )
 }
 
 fn land(h: &Harness, number: i64, head: &str) -> yoneda_core::Result<Value> {
@@ -81,8 +95,13 @@ fn reviewer(h: &Harness) -> &'static str {
     "token:reviewer"
 }
 
+fn decisions(h: &Harness, number: i64) -> Vec<Value> {
+    let shown = change(h, number);
+    shown["clearances"].as_array().cloned().unwrap_or_default()
+}
+
 fn waiting(answer: &Value) -> Vec<&str> {
-    answer["waiting"]
+    answer["reasons"]
         .as_array()
         .unwrap()
         .iter()
@@ -97,6 +116,7 @@ fn cleared() -> (Harness, String, String, i64) {
     let id = branch(&h, AGENT, &root, "fix", "src/a.rs");
     let number = landing(&h, "fix");
     h.approve_and_check(&id);
+    assert_eq!(assess(&h, number)["state"], "cleared");
     (h, root, id, number)
 }
 
@@ -119,7 +139,7 @@ fn off_changes_nothing() {
     assert_eq!(assess(&h, number)["state"], "off");
     assert_eq!(code(land(&h, number, &id)), "NOT_READY");
     assert_eq!(change(&h, number)["status"], "open");
-    assert_eq!(change(&h, number)["clearance"], Value::Null);
+    assert_eq!(decisions(&h, number), Vec::<Value>::new());
     // Reads hold nothing new.
     let gates = h.ok(OWNER, json!({"op":"repo_change_gates","number":number}));
     assert!(gates.get("land_when_cleared").is_none(), "{gates}");
@@ -128,7 +148,7 @@ fn off_changes_nothing() {
     // An explicit landing is the same as ever.
     h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":id}));
     assert_eq!(change(&h, number)["status"], "landed");
-    assert_eq!(change(&h, number)["clearance"], Value::Null);
+    assert_eq!(decisions(&h, number), Vec::<Value>::new());
 }
 
 #[test]
@@ -184,13 +204,14 @@ fn a_cleared_landing_lands_as_the_platform_with_its_reasons() {
     assert_eq!(main_head(&h), id);
     let shown = change(&h, number);
     assert_eq!(shown["status"], "landed");
-    let record = &shown["clearance"];
-    assert_eq!(record["outcome"], "landed");
-    assert_eq!(record["by"], LANDER);
+    let record = &shown["clearances"][0];
+    assert_eq!(record["decision"], "cleared");
+    assert_eq!(record["actor"], LANDER);
     assert_eq!(record["head"], id);
-    assert_eq!(record["version"], landed["version"]);
-    assert_eq!(record["approved_by"], json!([OWNER]));
-    let gates = record["gates"].as_array().unwrap();
+    assert_eq!(record["landed_version"], landed["version"]);
+    assert_eq!(record["state"]["approved_by"], json!([OWNER]));
+    assert_eq!(record["state"]["risk"]["level"], "low", "{record}");
+    let gates = record["state"]["requirements"].as_array().unwrap();
     assert!(gates.iter().any(|g| g["name"] == "unit"), "{record}");
     assert!(gates.iter().any(|g| g["name"] == "Approvals"), "{record}");
     // The log says who moved main, and webhooks read that entry as for any landing.
@@ -205,13 +226,19 @@ fn it_says_what_it_is_waiting_for_and_lands_nothing() {
     let id = branch(&h, AGENT, &root, "fix", "src/a.rs");
     let number = landing(&h, "fix");
     let answer = assess(&h, number);
-    assert_eq!(answer["state"], "waiting");
+    assert_eq!(answer["state"], "hold");
     assert_eq!(waiting(&answer), ["GATES", "GATES"], "{answer}");
+    // The page's answer is the job's: one function decides both.
     let gates = h.ok(OWNER, json!({"op":"repo_change_gates","number":number}));
-    assert_eq!(gates["land_when_cleared"]["waiting"], answer["waiting"]);
+    assert_eq!(gates["land_when_cleared"]["decision"], "hold");
+    assert_eq!(gates["land_when_cleared"]["reasons"], answer["reasons"]);
     assert_eq!(code(land(&h, number, &id)), "GATES");
     assert_eq!(main_head(&h), json!(root));
-    assert_eq!(change(&h, number)["clearance"], Value::Null);
+    let recorded = decisions(&h, number);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0]["decision"], "hold");
+    assert_eq!(recorded[0]["head"], id);
+    assert_eq!(recorded[0]["reasons"], answer["reasons"]);
 }
 
 #[test]
@@ -236,7 +263,7 @@ fn a_race_with_a_new_push_lands_nothing() {
     assert_eq!(main_head(&h), json!(root));
     assert_eq!(change(&h, number)["status"], "open");
     // The new head has no approvals of its own, so its job waits.
-    assert_eq!(assess(&h, number)["state"], "waiting");
+    assert_eq!(assess(&h, number)["state"], "hold");
 }
 
 #[test]
@@ -292,7 +319,9 @@ fn a_duplicate_delivery_lands_once() {
     assert_eq!(again["already"], true, "{again}");
     assert_eq!(assess(&h, number)["state"], "done");
     assert_eq!(landings(&h), 2, "the seed and this one");
-    assert_eq!(change(&h, number)["clearance"]["version"], first["version"]);
+    let recorded = decisions(&h, number);
+    assert_eq!(recorded.len(), 2, "cleared, then landed: {recorded:?}");
+    assert_eq!(recorded[0]["landed_version"], first["version"]);
 }
 
 #[test]
@@ -351,11 +380,8 @@ fn a_queued_landing_records_its_reasons_when_it_lands() {
     let (h, root, id, number) = cleared();
     moved_on(&h, &root);
     let ticket = land(&h, number, &id).unwrap()["ticket"].clone();
-    assert_eq!(
-        change(&h, number)["clearance"],
-        Value::Null,
-        "not landed yet"
-    );
+    let queued = &decisions(&h, number)[0];
+    assert_eq!(queued["landed_version"], Value::Null, "not landed yet");
     let claim = h.ok(MERGER, json!({"op":"repo_land_claim","ref":"main"}));
     let blob = yoneda_core::git_object::hash_object(ObjectKind::Blob, b"x\n");
     let merge = h
@@ -375,9 +401,11 @@ fn a_queued_landing_records_its_reasons_when_it_lands() {
     );
     let shown = change(&h, number);
     assert_eq!(shown["status"], "landed");
-    assert_eq!(shown["clearance"]["outcome"], "landed");
-    assert_eq!(shown["clearance"]["by"], LANDER);
-    assert_eq!(shown["clearance"]["approved_by"], json!([OWNER]));
+    let record = &shown["clearances"][0];
+    assert_eq!(record["decision"], "cleared");
+    assert_eq!(record["actor"], LANDER);
+    assert!(record["landed_version"].is_u64(), "{record}");
+    assert_eq!(record["state"]["approved_by"], json!([OWNER]));
 }
 
 #[test]
@@ -509,17 +537,19 @@ fn a_pause_refuses_and_a_resume_lets_the_next_trigger_land() {
 #[test]
 fn a_legal_hold_refuses_and_says_so() {
     let (h, _root, id, number) = cleared();
-    let held = json!({"op":"repo_land_clearance","number":number,"_hold":{"held":true}});
+    let risk = json!({"level":"low","score":10,"why":[]});
+    let held = json!({"op":"repo_land_clearance","number":number,"risk":risk.clone(),
+        "_hold":{"held":true}});
     let answer = h.ok(LANDER, held);
     assert_eq!(waiting(&answer), ["LEGAL_HOLD"], "{answer}");
-    let record = change(&h, number)["clearance"].clone();
-    assert_eq!(record["outcome"], "refused");
-    assert_eq!(record["code"], "LEGAL_HOLD");
+    let record = decisions(&h, number)[0].clone();
+    assert_eq!(record["decision"], "hold");
+    assert_eq!(record["reasons"][0]["code"], "LEGAL_HOLD");
     assert_eq!(record["head"], id);
     // Not answered yet: the adapter asks the owner and sends it again.
     let unasked = h.run(
         LANDER,
-        json!({"op":"repo_land_clearance","number":number,"_hold":null}),
+        json!({"op":"repo_land_clearance","number":number,"risk":risk,"_hold":null}),
     );
     assert_eq!(code(unasked), "HOLD_UNCHECKED");
     let land_held = h.run(
@@ -533,10 +563,12 @@ fn a_legal_hold_refuses_and_says_so() {
 #[test]
 fn a_full_repository_refuses_and_says_so() {
     let (h, _root, id, number) = cleared();
-    let full = json!({"op":"repo_land_clearance","number":number,"_storage_guard":1});
+    let risk = json!({"level":"low","score":10,"why":[]});
+    let full = json!({"op":"repo_land_clearance","number":number,"risk":risk,
+        "_storage_guard":1});
     let answer = h.ok(LANDER, full);
     assert_eq!(waiting(&answer), ["REPO_FULL"], "{answer}");
-    assert_eq!(change(&h, number)["clearance"]["code"], "REPO_FULL");
+    assert_eq!(decisions(&h, number)[0]["reasons"][0]["code"], "REPO_FULL");
     let land_full = h.run(
         LANDER,
         json!({"op":"repo_land","ref":"main","commit":id,"clearance":number,
@@ -599,7 +631,7 @@ fn a_stale_read_is_a_conflict_with_a_visible_reason() {
     let answer = assess(&h, number);
     assert_eq!(waiting(&answer), ["CONFLICT"], "{answer}");
     assert!(
-        answer["waiting"][0]["reason"]
+        answer["reasons"][0]["reason"]
             .as_str()
             .unwrap()
             .contains("src/lib.rs")
@@ -610,21 +642,22 @@ fn a_stale_read_is_a_conflict_with_a_visible_reason() {
 fn a_failed_landing_stays_open_with_its_reason_and_starts_nothing() {
     let (h, _root, id, number) = cleared();
     let failed = json!({"op":"repo_land_clearance","number":number,
-        "failed":{"head":id,"code":"RISK_HIGH","message":"Risk is High"}});
+        "failed":{"head":id,"code":"CONFLICT","message":"Merge conflicts on a.md"}});
     let answer = h.ok(LANDER, failed.clone());
     assert!(answer.get("land_checks").is_none(), "{answer}");
     let shown = change(&h, number);
     assert_eq!(shown["status"], "open");
-    assert_eq!(shown["clearance"]["outcome"], "refused");
-    assert_eq!(shown["clearance"]["code"], "RISK_HIGH");
+    assert_eq!(shown["clearances"][0]["decision"], "go_around");
+    assert_eq!(shown["clearances"][0]["reasons"][0]["code"], "CONFLICT");
+    assert_eq!(shown["clearances"][0]["head"], id);
     let gates = h.ok(OWNER, json!({"op":"repo_change_gates","number":number}));
     assert_eq!(
         gates["land_when_cleared"]["refused"]["reason"],
-        "Risk is High"
+        "Merge conflicts on a.md"
     );
     // A later attempt at this head can still land it, and the record then says so.
     land(&h, number, &id).unwrap();
-    assert_eq!(change(&h, number)["clearance"]["outcome"], "landed");
+    assert!(decisions(&h, number)[0]["landed_version"].is_u64());
     assert_eq!(
         code(h.run(OWNER, failed)),
         "FORBIDDEN",
@@ -729,11 +762,128 @@ fn a_failed_check_that_is_not_required_still_holds_it() {
     let answer = assess(&h, number);
     assert_eq!(waiting(&answer), ["CHECK_FAILED"], "{answer}");
     assert!(
-        answer["waiting"][0]["reason"]
+        answer["reasons"][0]["reason"]
             .as_str()
             .unwrap()
             .contains("slop-review")
     );
+}
+
+#[test]
+fn a_failed_gate_is_a_go_around_and_a_missing_one_is_a_hold() {
+    let (h, root) = seeded();
+    switch_on(&h);
+    let id = branch(&h, AGENT, &root, "fix", "src/a.rs");
+    let number = landing(&h, "fix");
+    assert_eq!(assess(&h, number)["state"], "hold");
+    let failed = json!({"op":"repo_check","commit":id,"name":"unit","status":"fail"});
+    h.ok(CI, failed);
+    let answer = assess(&h, number);
+    assert_eq!(answer["state"], "go_around", "{answer}");
+    let first = answer["reasons"][0]["reason"].as_str().unwrap();
+    assert!(first.contains("unit"), "{answer}");
+    let gates = h.ok(OWNER, json!({"op":"repo_change_gates","number":number}));
+    assert_eq!(gates["land_when_cleared"]["decision"], "go_around");
+}
+
+#[test]
+fn risk_is_scored_last_and_a_high_head_is_held_for_a_person() {
+    let (h, root) = seeded();
+    switch_on(&h);
+    let id = branch(&h, AGENT, &root, "fix", "src/a.rs");
+    let number = landing(&h, "fix");
+    let ask = json!({"op":"repo_land_clearance","number":number});
+    // Something else stands in the way: the diff isn't read.
+    assert!(h.ok(LANDER, ask.clone()).get("needs_risk").is_none());
+    h.approve_and_check(&id);
+    let first = h.ok(LANDER, ask);
+    assert_eq!(first["needs_risk"], true, "{first}");
+    assert_eq!(first["commit"], id);
+    assert_eq!(
+        decisions(&h, number).len(),
+        1,
+        "asking for a score decides nothing"
+    );
+    let answer = scored(&h, number, "high");
+    assert_eq!(answer["state"], "hold");
+    assert_eq!(waiting(&answer), ["RISK_HIGH"], "{answer}");
+    assert_eq!(code(land(&h, number, &id)), "RISK_HIGH");
+    let gates = h.ok(OWNER, json!({"op":"repo_change_gates","number":number}));
+    assert_eq!(gates["land_when_cleared"]["reasons"], answer["reasons"]);
+    // Scored again, it clears: review classes can arrive after a score.
+    assert_eq!(scored(&h, number, "medium")["state"], "cleared");
+    land(&h, number, &id).unwrap();
+    assert_eq!(change(&h, number)["status"], "landed");
+}
+
+#[test]
+fn a_head_the_job_could_not_score_is_held() {
+    let (h, _root, _id, number) = cleared();
+    let unknown = json!({"level":null,"score":0,"why":[]});
+    let answer = h.ok(
+        LANDER,
+        json!({"op":"repo_land_clearance","number":number,"risk":unknown}),
+    );
+    assert_eq!(waiting(&answer), ["RISK_UNKNOWN"], "{answer}");
+}
+
+#[test]
+fn every_decision_is_recorded_once_with_its_head_and_replays() {
+    let (h, root) = seeded();
+    switch_on(&h);
+    let id = branch(&h, AGENT, &root, "fix", "src/a.rs");
+    let number = landing(&h, "fix");
+    assess(&h, number);
+    assess(&h, number);
+    assert_eq!(decisions(&h, number).len(), 1, "the same decision again");
+    let check = json!({"op":"repo_check","commit":id,"name":"unit","status":"pass"});
+    h.ok(CI, check);
+    assess(&h, number);
+    assert_eq!(decisions(&h, number).len(), 2, "its reasons changed");
+    let review = json!({"op":"repo_review","commit":id,"decision":"approve"});
+    h.ok(OWNER, review);
+    assess(&h, number);
+    land(&h, number, &id).unwrap();
+    let recorded = decisions(&h, number);
+    let said: Vec<&str> = recorded
+        .iter()
+        .map(|r| r["decision"].as_str().unwrap())
+        .collect();
+    assert_eq!(said, ["cleared", "cleared", "hold", "hold"], "newest first");
+    assert!(recorded.iter().all(|r| r["head"] == id));
+    // Rules only, on what was recorded: the same state gives the same decision.
+    for row in &recorded {
+        let state = serde_json::from_value(row["state"].clone()).unwrap();
+        let again = crate::platform_ctc::clearance(&state);
+        assert_eq!(json!(again.decision()), row["decision"]);
+        assert_eq!(json!(again.reasons()), row["reasons"]);
+    }
+}
+
+#[test]
+fn the_record_stays_bounded_and_keeps_the_landing() {
+    let (h, _root, id, number) = cleared();
+    for n in 0..80 {
+        let failed = json!({"head":id,"code":"UNFINISHED","message":format!("Try {n}")});
+        h.ok(
+            LANDER,
+            json!({"op":"repo_land_clearance","number":number,"failed":failed}),
+        );
+    }
+    assert_eq!(decisions(&h, number).len(), 32);
+    assert_eq!(
+        assess(&h, number)["state"],
+        "cleared",
+        "the job scores it again"
+    );
+    land(&h, number, &id).unwrap();
+    let recorded = decisions(&h, number);
+    assert_eq!(recorded.len(), 32);
+    assert!(recorded[0]["landed_version"].is_u64());
+    // A list reads no decisions: they're for the Landing's page.
+    let listed = h.ok(OWNER, json!({"op":"repo_changes","status":"landed"}));
+    assert!(listed["changes"][0].get("clearances").is_none(), "{listed}");
+    assert!(listed["changes"][0].get("clearance").is_none(), "{listed}");
 }
 
 #[test]

@@ -30,23 +30,22 @@ export type Change = {
   source_branch?: string | null;
   /** `auto`: a push opened it and nobody has claimed it. */
   origin?: 'explicit' | 'auto';
-  /** What the platform last did with it (Land when cleared); absent on platforms before it. */
-  clearance?: ClearanceRecord | null;
+  /** CTC's decisions on it, newest first; absent where it has none, and from a list. */
+  clearances?: ClearanceDecision[];
 };
 
-/** The record on a Landing the platform tried to land (`land_when_cleared.rs`). */
-export type ClearanceRecord =
-  | {
-      outcome: 'landed';
-      head: string;
-      by: string;
-      at: number;
-      version: number | null;
-      approved_by: string[];
-      /** The requirements that decided it. */
-      gates: { name: string; why: string }[];
-    }
-  | { outcome: 'refused'; head: string; code: string; reason: string; at: number };
+/** One recorded decision of CTC on a Landing (`land_when_cleared.rs`). */
+export type ClearanceDecision = {
+  head: string;
+  decision: 'cleared' | 'hold' | 'go_around';
+  reasons: { code: string; reason: string }[];
+  /** What it judged. Null: an attempt the rules cleared that still failed. */
+  state: { approved_by: string[]; requirements: { name: string; why: string }[] } | null;
+  /** The version the decision landed at: this one answers "why did this land?". */
+  landed_version: number | null;
+  actor: string;
+  at: number;
+};
 
 /** A landing on main that no change names (`direct_landings.rs`). */
 export type DirectLanding = {
@@ -100,10 +99,10 @@ export function landingState(
   return blocked ? 'Go-around' : 'In flight';
 }
 
-/** The record of a Landing the platform landed, or nothing. A later row can't be this one's. */
-export function landedAutomatically(change: Pick<Change, 'status' | 'clearance'>) {
-  const record = change.clearance;
-  return change.status === 'landed' && record?.outcome === 'landed' ? record : null;
+/** The decision that landed a Landing, or nothing when a person landed it. */
+export function landedAutomatically(change: Pick<Change, 'status' | 'clearances'>) {
+  if (change.status !== 'landed') return null;
+  return change.clearances?.find((row) => row.landed_version !== null) ?? null;
 }
 
 export type Side = 'old' | 'new';
