@@ -61,7 +61,7 @@ fn save_cursor<S: SqlStore>(db: &S, version: u64, ticket: i64) -> Result<()> {
 }
 
 /// The highest ticket below which every queued landing has finished.
-fn watermark<S: SqlStore>(db: &S) -> Result<i64> {
+pub(super) fn watermark<S: SqlStore>(db: &S) -> Result<i64> {
     let row = &db.query(
         "SELECT (SELECT MIN(ticket) FROM land_queue WHERE status='pending') AS p, (SELECT COALESCE(MAX(ticket),0) FROM land_queue) AS h",
         &[],

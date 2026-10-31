@@ -351,6 +351,45 @@ fn compaction_waits_for_held_cursors_and_is_the_owners_or_the_platforms() {
 }
 
 #[test]
+fn a_hold_too_far_behind_the_head_stops_holding_a_due_segment() {
+    // Exactly the limit behind: a stalled stream still holds. One more: it does not.
+    let (h, _, _) = grown(17_407);
+    let r2 = Store::default();
+    h.ok(
+        OWNER,
+        json!({"op":"repo_set_retention","keep_versions":100,"keep_days":30}),
+    );
+    let plan = |hold: u64| h.ok(OWNER, json!({"op":"repo_compact_plan","hold":hold}));
+    let held = plan(1_023);
+    assert_eq!(
+        (&held["due"], &held["hold_released"]),
+        (&json!(false), &Value::Null)
+    );
+    let released = plan(1_022);
+    assert_eq!(
+        (&released["due"], &released["hold_released"]),
+        (&json!(true), &json!(true))
+    );
+    // Only when the hold is what stopped it: a segment retention keeps releases nothing.
+    h.ok(
+        OWNER,
+        json!({"op":"repo_set_retention","keep_versions":1_000_000}),
+    );
+    let kept = plan(1);
+    assert_eq!(
+        (&kept["due"], &kept["hold_released"]),
+        (&json!(false), &Value::Null)
+    );
+
+    // And the same hold on `done` does not undo the plan: the rows move.
+    h.ok(
+        OWNER,
+        json!({"op":"repo_set_retention","keep_versions":100}),
+    );
+    assert_eq!(compact_once(&h, &r2, json!({"hold": 1}))["floor"], 1_024);
+}
+
+#[test]
 fn old_entries_leave_by_age_as_well_as_by_count() {
     let (h, _, _) = grown(1_100);
     let r2 = Store::default();
