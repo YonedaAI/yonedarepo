@@ -63,6 +63,15 @@ describe('reads the server could not answer', () => {
     expect(error?.status).toBe(500);
   });
 
+  it('shows a full repository in its own words, without retrying', async () => {
+    const said = "This repository's database is full";
+    answer(failure(507, 'REPO_FULL', said));
+    const { error } = await settle(sourceApi('/repos/r0000000000000000000a'));
+    expect(calls).toHaveLength(1);
+    expect(error?.code).toBe('REPO_FULL');
+    expect(error?.message).toBe(said);
+  });
+
   it('never retries a write, nor a request the server refused', async () => {
     answer(failure(503, 'OVERLOADED'));
     const write = await settle(sourceApi('/repos', { body: { name: 'x' } }));
