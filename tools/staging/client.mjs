@@ -9,6 +9,9 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 export const CONFIG_DIR = join(homedir(), '.config/yonedarepo');
+/** Sent by every browser context the kit opens: site analytics leave these pages out and the
+ * Web Analytics beacon stays off them (cloudflare/worker/site-events.ts OWN_TRAFFIC_HEADER). */
+export const OWN_TRAFFIC = { 'x-yoneda-own-traffic': '1' };
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 export const b64 = (text) => Buffer.from(text).toString('base64');
 export const requestId = (label) => `${label}-${randomBytes(12).toString('hex')}`;

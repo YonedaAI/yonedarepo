@@ -5,12 +5,21 @@ import type { Env } from './types';
 const TITLED = ['og:title', 'twitter:title'];
 const DESCRIBED = ['description', 'og:description', 'twitter:description'];
 
+/** The served page, and its canonical address when the head found one: a site page's or a public
+ * repository's. Any other path is the app's shell, which answers 200 whether or not it exists. */
+export type WebsitePage = { response: Response; canonical?: string };
+
 /** Resolve public metadata before scripts run; private account data never enters the head. A
  * site page is served from its prerendered copy with its own head (seo-head.ts). */
-export async function websiteAssets(req: Request, env: Env): Promise<Response> {
+export async function websitePage(req: Request, env: Env): Promise<WebsitePage> {
   // The prerendered copies are served at their pages' own addresses only.
   if (new URL(req.url).pathname.startsWith('/_site/'))
-    return new Response('Not found', { status: 404, headers: { 'cache-control': 'no-store' } });
+    return {
+      response: new Response('Not found', {
+        status: 404,
+        headers: { 'cache-control': 'no-store' },
+      }),
+    };
   const site = await siteHead(req, env);
   const asked = site?.asset ? new Request(new URL(site.asset, req.url), req) : req;
   let assets = await env.ASSETS.fetch(asked);
@@ -20,16 +29,18 @@ export async function websiteAssets(req: Request, env: Env): Promise<Response> {
     headers.delete('if-none-match');
     headers.delete('if-modified-since');
     const complete = await env.ASSETS.fetch(new Request(asked, { headers }));
-    if (!complete.headers.get('content-type')?.includes('text/html')) return assets;
+    if (!complete.headers.get('content-type')?.includes('text/html')) return { response: assets };
     assets = complete;
   }
-  if (!assets.headers.get('content-type')?.includes('text/html')) return assets;
+  if (!assets.headers.get('content-type')?.includes('text/html')) return { response: assets };
   const origin = publicOrigin(req, env.PUBLIC_APP_ORIGIN);
   if (!origin)
-    return new Response('Invalid public application origin', {
-      status: 500,
-      headers: { 'cache-control': 'no-store' },
-    });
+    return {
+      response: new Response('Invalid public application origin', {
+        status: 500,
+        headers: { 'cache-control': 'no-store' },
+      }),
+    };
   const head: PageHead = site ?? (await appHead(req, env));
   // HTMLRewriter escapes quotes; escape ampersands so hostname text cannot become an entity.
   const attr = (text: string) => text.replaceAll('&', '&amp;');
@@ -55,7 +66,7 @@ export async function websiteAssets(req: Request, env: Env): Promise<Response> {
     statusText: assets.statusText,
     headers,
   });
-  return new HTMLRewriter()
+  const rewritten = new HTMLRewriter()
     .on('title', {
       element(element) {
         if (head.title) element.setInnerContent(head.title);
@@ -85,6 +96,7 @@ export async function websiteAssets(req: Request, env: Env): Promise<Response> {
       },
     })
     .transform(html);
+  return { response: rewritten, canonical: head.canonical };
 }
 
 export function publicOrigin(req: Request, configured?: string): string | null {

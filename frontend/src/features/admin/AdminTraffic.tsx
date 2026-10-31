@@ -1,6 +1,7 @@
 // Admin traffic: the site's cookieless analytics (platform-site-traffic.ts), page views per day for 30
-// days, then the top pages, referrers, countries, campaigns and sign-ups by source over the
-// chosen window (7 or 30 days). Page views, not visitors: nothing identifies a visitor.
+// days, Cloudflare Web Analytics beside the Worker's count, then the top pages, referrers,
+// countries, campaigns and sign-ups by source over the chosen window (7 or 30 days). Page views,
+// not visitors: nothing identifies a visitor.
 import { useState } from 'react';
 import type {
   SiteTrafficResult,
@@ -10,6 +11,7 @@ import type {
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { useSource } from '../source-platform/useSource';
 import { DayChart } from './AdminParts';
+import { TrafficCheck, TrafficFilterNote } from './AdminTrafficCheck';
 import { countryName, lastThirtyDays, providerLabel } from './adminModel';
 
 const count = (n: number) => Math.round(n).toLocaleString('en-US');
@@ -105,12 +107,14 @@ export function AdminTraffic() {
         Page views, not unique visitors: nothing identifies a visitor, so none are counted. Bots are
         left out; counts are sampled.
       </p>
+      <TrafficFilterNote since={t.filtered_since} />
       <DayChart
         id="admin-views-chart"
         title="Page views, last 30 days"
         unit="page views"
         days={lastThirtyDays(t.views_by_day)}
       />
+      <TrafficCheck days={t.days} views={t.views_total} web_analytics={t.web_analytics} />
       <div className="admin-grid">
         <TopList id="admin-top-pages" title="Top pages" label="Path" rows={t.top_pages} />
         <TopList

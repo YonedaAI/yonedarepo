@@ -2,6 +2,7 @@
 // cookieless site events (site-events.ts) back through the Analytics Engine SQL API with an
 // Account Analytics Read token. Bot-flagged page views are left out; sign-ups are real accounts
 // and all count. Counts sum `_sample_interval`, so they stay right when Analytics Engine samples.
+// Web Analytics' own numbers (platform-web-analytics.ts) come along as a cross-check.
 import type {
   SiteTraffic,
   SiteTrafficResult,
@@ -10,7 +11,8 @@ import type {
   TrafficSignupSource,
   TrafficWindow,
 } from '../../shared/site-traffic';
-import { SITE_EVENT_BLOBS as B, SITE_EVENT_BOT } from './site-events';
+import { webAnalytics } from './platform-web-analytics';
+import { SITE_EVENT_BLOBS as B, SITE_EVENT_BOT, SITE_EVENT_FILTERED } from './site-events';
 import type { Env } from './types';
 
 // Interpolated into SQL as the table name: only an ordinary identifier is accepted.
@@ -20,6 +22,8 @@ const TOP = 25;
 
 type QueryName =
   | 'views_by_day'
+  | 'views_total'
+  | 'filtered_since'
   | 'top_pages'
   | 'top_referrers'
   | 'countries'
@@ -40,6 +44,8 @@ export function trafficQueries(dataset: string, days: TrafficWindow): Record<Que
     `SELECT ${B.provider} AS provider, ${B.referrer} AS referrer, ${B.utmSource} AS utm_source, ${B.utmCampaign} AS utm_campaign, SUM(_sample_interval) AS count FROM ${dataset} WHERE ${B.event} = 'signup' AND ${since(n)} GROUP BY provider, referrer, utm_source, utm_campaign ORDER BY count DESC LIMIT ${TOP} FORMAT JSON`;
   return {
     views_by_day: `SELECT formatDateTime(toStartOfInterval(timestamp, INTERVAL '1' DAY), '%Y-%m-%d') AS day, SUM(_sample_interval) AS views FROM ${dataset} WHERE ${views} AND ${since(30)} GROUP BY day ORDER BY day ASC FORMAT JSON`,
+    views_total: `SELECT SUM(_sample_interval) AS views FROM ${dataset} WHERE ${views} AND ${since(days)} FORMAT JSON`,
+    filtered_since: `SELECT MIN(timestamp) AS since FROM ${dataset} WHERE ${B.event} = 'pageview' AND ${SITE_EVENT_FILTERED} = 1 FORMAT JSON`,
     top_pages: top(B.path),
     top_referrers: top(B.referrer, ` AND ${B.referrer} != ''`),
     countries: top(B.country, ` AND ${B.country} != ''`),
@@ -73,13 +79,19 @@ export async function siteTraffic(
   };
   try {
     const names = Object.keys(queries) as QueryName[];
-    const answers = await Promise.all(names.map((name) => run(queries[name])));
+    const [answers, web_analytics] = await Promise.all([
+      Promise.all(names.map((name) => run(queries[name]))),
+      webAnalytics(env, days, fetcher),
+    ]);
     const rows = Object.fromEntries(names.map((name, i) => [name, answers[i]])) as Record<
       QueryName,
       Row[]
     >;
     const traffic: SiteTraffic = {
       days,
+      filtered_since: filteredSince(rows.filtered_since[0]),
+      views_total: num(rows.views_total[0]?.views),
+      web_analytics,
       views_by_day: rows.views_by_day.map((r) => ({ day: text(r.day), views: num(r.views) })),
       top_pages: rows.top_pages.map(count),
       top_referrers: rows.top_referrers.map(count),
@@ -102,6 +114,11 @@ const num = (value: unknown) => {
   return Number.isFinite(n) ? n : 0;
 };
 const text = (value: unknown) => (typeof value === 'string' ? value : '');
+// With no matching row the SQL API answers MIN(timestamp) as the epoch, not as no rows.
+const filteredSince = (r: Row | undefined) => {
+  const day = text(r?.since).slice(0, 10);
+  return day && !day.startsWith('1970') ? day : null;
+};
 const count = (r: Row): TrafficCount => ({ key: text(r.key), count: num(r.count) });
 const campaign = (r: Row): TrafficCampaign => ({
   utm_source: text(r.utm_source),

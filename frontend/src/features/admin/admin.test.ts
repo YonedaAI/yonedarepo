@@ -11,6 +11,7 @@ import {
   type SourceRoute,
 } from '../source-platform/sourceRoute';
 import { AdminRoot } from './AdminRoot';
+import { TrafficCheck, TrafficFilterNote } from './AdminTrafficCheck';
 import {
   accountsPath,
   barHeights,
@@ -200,5 +201,37 @@ describe('admin pages', () => {
       signups: { loading: false, reload: () => {}, error: 'Operators only' },
     });
     expect(failed).toContain('role="alert"');
+  });
+});
+
+describe('admin traffic labels', () => {
+  const note = (since: string | null) =>
+    renderToStaticMarkup(createElement(TrafficFilterNote, { since }));
+  const check = (web_analytics: object) =>
+    renderToStaticMarkup(
+      createElement(TrafficCheck, { days: 7, views: 1234, web_analytics } as never),
+    );
+
+  it('says when filtering began, and that older rows stay as they were', () => {
+    const html = note('2026-11-02');
+    expect(html).toContain('Filtering began on 2026-11-02');
+    expect(html).toContain('Older rows cannot be cleaned');
+    expect(note(null)).toContain('No page view has been recorded under these rules yet');
+  });
+
+  it('names what each count measures, side by side', () => {
+    const html = check({ ok: true, host: 'yonedarepo.com', page_loads: 56, visits: 7 });
+    expect(html).toContain('Worker page views');
+    expect(html).toContain('Web Analytics page loads');
+    expect(html).toContain('Web Analytics visits');
+    expect(html).toContain('1,234');
+    expect(html).toContain('yonedarepo.com');
+  });
+
+  it('keeps the Worker count and says why when Web Analytics is missing', () => {
+    const failed = check({ ok: false, reason: 'query_failed' });
+    expect(failed).toContain('1,234');
+    expect(failed).toContain('Web Analytics could not be read');
+    expect(check({ ok: false, reason: 'not_configured' })).toContain('WEB_ORIGIN');
   });
 });

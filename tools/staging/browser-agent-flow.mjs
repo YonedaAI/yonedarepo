@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 import { missingText } from './agent-tools-plan.mjs';
 import { see } from './browser-collab-flow.mjs';
-import { sleep } from './client.mjs';
+import { OWN_TRAFFIC, sleep } from './client.mjs';
 import { atRepo, openRepo } from './repo-urls.mjs';
 
 /** The Repository navigation's highlighted entries (exactly one on every repository page). */
@@ -116,7 +116,7 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
 export async function agentToolPages({ origin, cookie, repo, expect, dir, headed = false }, m) {
   const browser = await chromium.launch({ channel: 'chrome', headless: !headed });
   try {
-    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: OWN_TRAFFIC });
     const [name, ...value] = cookie.split('=');
     await context.addCookies([{ name, value: value.join('='), url: origin }]);
     const page = await context.newPage();

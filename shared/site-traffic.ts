@@ -1,6 +1,7 @@
 // The admin Traffic page's wire shape: cookieless site analytics read back from Workers
 // Analytics Engine (cloudflare/worker/platform-site-traffic.ts). Counts are sampled page views and
-// sign-ups, not unique visitors: nothing identifies a visitor, so none can be counted.
+// sign-ups, not unique visitors: nothing identifies a visitor, so none can be counted. Web
+// Analytics' figures are Cloudflare's own, from the beacon, shown beside them as a cross-check.
 
 export type TrafficWindow = 7 | 30;
 
@@ -24,9 +25,22 @@ export interface TrafficSignupSource {
   count: number;
 }
 
+/** Cloudflare Web Analytics over the report's window: bots left out by Cloudflare, and sampled. */
+export type WebAnalyticsCheck =
+  | { ok: true; host: string; page_loads: number; visits: number }
+  /** `not_configured`: the account id, site origin or read token is unset. `query_failed`: the
+   * GraphQL API refused or failed the query; the rest of the report still stands. */
+  | { ok: false; reason: 'not_configured' | 'query_failed' };
+
 export interface SiteTraffic {
   /** The window of the top lists and campaigns, in days. */
   days: TrafficWindow;
+  /** The UTC day (`YYYY-MM-DD`) of the earliest page view under the real-pages rule, null when
+   * there is none yet. Rows before it hold unknown paths and can't be cleaned. */
+  filtered_since: string | null;
+  /** Non-bot page views over `days`. */
+  views_total: number;
+  web_analytics: WebAnalyticsCheck;
   /** Non-bot page views per UTC day over the last 30 days (`YYYY-MM-DD`), oldest first. */
   views_by_day: { day: string; views: number }[];
   top_pages: TrafficCount[];

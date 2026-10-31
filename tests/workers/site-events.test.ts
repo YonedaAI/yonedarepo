@@ -1,11 +1,14 @@
 // Cookieless site analytics on the front Worker: one Analytics Engine point per public HTML
 // page view and per sign-up, never an IP address, cookie or visitor id, and the Cloudflare Web
-// Analytics beacon on public pages only when its token is configured. Simulated bindings only.
+// Analytics beacon on public pages only when its token is configured. Only real pages count: the
+// build's site routes and public repositories, never a path the app would show as Not Found.
+// Simulated bindings only.
 import { env } from 'cloudflare:workers';
 import { reset } from 'cloudflare:test';
 import { afterEach, expect, it, vi } from 'vitest';
 import { frontFetch } from '../../cloudflare/worker/front-routes';
 import {
+  OWN_TRAFFIC_HEADER,
   readSignupSource,
   takeSignupSource,
   withSignupSource,
@@ -18,6 +21,18 @@ afterEach(async () => {
 });
 
 const page = '<!doctype html><html><head><title>YonedaRepo</title></head><body></body></html>';
+const route = (path: string, sitemap = true) => ({ path, name: path, title: path, description: path, kind: 'page', sitemap });
+const manifest = {
+  routes: ['/', '/pricing', '/blog', '/docs/guides/sessions', '/company/about'].map((path) => route(path)).concat(route('/signup', false)),
+  aliases: { '/company': '/company/about' },
+};
+/** The platform's anonymous answer for a repository: only alice/compiler is public. */
+const publicRepos = () =>
+  vi.fn(async (req: Request) =>
+    new URL(req.url).pathname.toLowerCase() === '/api/v1/resolve/alice/compiler'
+      ? Response.json({ handle: 'alice', name: 'compiler', path: '/alice/compiler' })
+      : Response.json({ error: { code: 'NOT_FOUND' } }, { status: 404 }),
+  );
 function site(extra: Partial<Env> = {}) {
   const points: AnalyticsEngineDataPoint[] = [];
   const using = {
@@ -25,10 +40,13 @@ function site(extra: Partial<Env> = {}) {
     PLATFORM: undefined,
     SITE_EVENTS: { writeDataPoint: vi.fn((p: AnalyticsEngineDataPoint) => points.push(p)) },
     ASSETS: {
-      fetch: async (req: Request) =>
-        new URL(req.url).pathname.startsWith('/assets/')
+      fetch: async (req: Request) => {
+        const { pathname } = new URL(req.url);
+        if (pathname === '/_site/routes.json') return Response.json(manifest);
+        return pathname.startsWith('/assets/')
           ? new Response('export {}', { headers: { 'content-type': 'text/javascript' } })
-          : new Response(page, { headers: { 'content-type': 'text/html; charset=utf-8' } }),
+          : new Response(page, { headers: { 'content-type': 'text/html; charset=utf-8' } });
+      },
     },
     ...extra,
   } as unknown as Env;
@@ -70,7 +88,7 @@ it('records one point for a public page view: path, referring site, country, dev
       'launch',
       '',
     ],
-    doubles: [0],
+    doubles: [0, 1],
   });
   const recorded = JSON.stringify(points);
   for (const secret of ['203.0.113.77', 'x@example.com', 'item?id', 'Safari']) expect(recorded).not.toContain(secret);
@@ -89,13 +107,11 @@ it('records nothing for the API, static assets, signed-in requests, non-GET or a
   expect(unbound.status).toBe(200);
 });
 
-it('keeps repository pages at owner/name, drops its own host as a referrer and flags bots', async () => {
-  const { using, points } = site();
+it('counts a public repository by its own address, drops its own host as a referrer and flags bots', async () => {
+  const fetch = publicRepos();
+  const { using, points } = site({ PLATFORM: { fetch } as unknown as Fetcher });
   await frontFetch(
-    get('/alice/compiler/tree/main/src/secret-plan.md', {
-      ...visitor,
-      referer: 'https://yonedarepo.test/explore',
-    }),
+    get('/Alice/compiler', { ...visitor, referer: 'https://yonedarepo.test/explore' }),
     using,
   );
   await frontFetch(
@@ -116,7 +132,86 @@ it('keeps repository pages at owner/name, drops its own host as a referrer and f
     ['/docs/guides/sessions', '', 'DE', 'bot'],
     ['/blog', '', 'DE', 'mobile'],
   ]);
-  expect(points.map((p) => p.doubles)).toEqual([[0], [1], [0]]);
+  expect(points.map((p) => p.doubles)).toEqual([[0, 1], [1, 1], [0, 1]]);
+});
+
+it('counts site pages at their one address: an alias, a trailing slash, sign-up and Explore', async () => {
+  const { using, points } = site();
+  for (const path of ['/', '/company', '/pricing/', '/signup', '/explore', '/source/explore'])
+    await frontFetch(get(path), using);
+  expect(points.map((p) => p.blobs?.[1])).toEqual([
+    '/',
+    '/company/about',
+    '/pricing',
+    '/signup',
+    '/source/explore',
+    '/source/explore',
+  ]);
+});
+
+it('records nothing for a path the app would show as Not Found, and still serves it', async () => {
+  const { using, points } = site({ PLATFORM: { fetch: publicRepos() } as unknown as Fetcher });
+  for (const path of [
+    '/wp',
+    '/wordpress',
+    '/wp-json',
+    '/cms',
+    '/press',
+    '/news',
+    '/site',
+    '/wp-login.php',
+    '/wp/wp-login.php',
+    '/wp-includes/js/jquery/jquery.js',
+    '/docs/nope',
+    '/blog/nope',
+    '/features/nope',
+    '/agents',
+    '/search',
+  ]) {
+    const response = await frontFetch(get(path), using);
+    expect(response.status, path).toBe(200);
+  }
+  expect(points).toEqual([]);
+});
+
+it('never names a private repository, and counts none it cannot confirm', async () => {
+  const hidden = site({ PLATFORM: { fetch: publicRepos() } as unknown as Fetcher });
+  await frontFetch(get('/alice/secret-plans'), hidden.using);
+  expect(hidden.points).toEqual([]);
+  const down = vi.fn(async () => new Response('unavailable', { status: 503 }));
+  const outage = site({ PLATFORM: { fetch: down } as unknown as Fetcher });
+  await frontFetch(get('/alice/compiler'), outage.using);
+  expect(outage.points).toEqual([]);
+  const unbound = site();
+  await frontFetch(get('/alice/compiler'), unbound.using);
+  expect(unbound.points).toEqual([]);
+});
+
+it('spends no platform call on deciding: one-segment and deep paths ask nothing and are not counted', async () => {
+  const fetch = publicRepos();
+  const { using, points } = site({ PLATFORM: { fetch } as unknown as Fetcher });
+  await frontFetch(get('/alice'), using);
+  await frontFetch(get('/alice/compiler/tree/main/src/secret-plan.md'), using);
+  expect(points).toEqual([]);
+  expect(fetch.mock.calls.filter(([req]) => new URL(req.url).pathname.startsWith('/api/'))).toEqual([]);
+  // A public repository's page asks once, for its head; the count reuses that answer.
+  fetch.mockClear();
+  await frontFetch(get('/alice/compiler'), using);
+  expect(points).toHaveLength(1);
+  expect(fetch.mock.calls.filter(([req]) => new URL(req.url).pathname.startsWith('/api/'))).toHaveLength(1);
+});
+
+it("leaves the live tests' browser out of both counts and changes nothing else about the page", async () => {
+  const { using, points } = site({ WEB_ANALYTICS_TOKEN: token });
+  const marked = { ...visitor, [OWN_TRAFFIC_HEADER]: '1' };
+  const response = await frontFetch(get('/pricing', marked), using);
+  expect(response.status).toBe(200);
+  expect(await response.text()).not.toContain('cloudflareinsights');
+  expect(points).toEqual([]);
+  // Only the exact mark counts as ours; anything else is an ordinary visitor.
+  const other = await frontFetch(get('/pricing', { ...visitor, [OWN_TRAFFIC_HEADER]: 'yes' }), using);
+  expect(await other.text()).toContain('cloudflareinsights');
+  expect(points).toHaveLength(1);
 });
 
 it('a writer failure never breaks the page', async () => {
@@ -129,7 +224,7 @@ it('a writer failure never breaks the page', async () => {
   });
   const response = await frontFetch(get('/pricing'), using);
   expect(response.status).toBe(200);
-  expect(await response.text()).toContain('<title>YonedaRepo</title>');
+  expect(await response.text()).toContain('<title>/pricing</title>');
 });
 
 const token = '0123456789abcdef0123456789abcdef';
@@ -175,7 +270,7 @@ it('records an email sign-up with its landing source, never the account or addre
     {
       indexes: ['signup'],
       blobs: ['signup', '', 'news.ycombinator.com', 'FR', 'desktop', 'hn', '', 'x'.repeat(64), 'email'],
-      doubles: [0],
+      doubles: [0, 1],
     },
   ]);
   expect(JSON.stringify(points)).not.toContain('carol');
