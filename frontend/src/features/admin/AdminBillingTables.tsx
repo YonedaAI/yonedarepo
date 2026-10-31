@@ -7,7 +7,7 @@ import type {
   AdminTopUp,
 } from '../../../../shared/admin-billing';
 import { PagedStatus, usePaged } from './AdminParts';
-import { ledgerPath, money, usagePath } from './adminBillingModel';
+import { ledgerPath, money, moneyDown, usagePath } from './adminBillingModel';
 import { when } from './adminModel';
 
 /** Why a top-up can't be refunded, as the server would answer; null when it can. */
@@ -15,7 +15,7 @@ function refundBlocked(billing: AdminBilling, t: AdminTopUp) {
   if (!billing.refund.configured) return 'Refunds are not set up here';
   if (billing.refund.max_usd === null || billing.refund.daily_usd === null)
     return 'Refund limits are not set';
-  if (t.disputed) return 'Disputed: no refund until it closes';
+  if (t.disputed) return 'Disputed';
   if (t.status !== 'succeeded' || !t.payment_intent) return 'Not charged';
   if (t.refundable_usd <= 0) return 'Nothing left to refund';
   return null;
@@ -32,7 +32,6 @@ export function TopUpsTable({
   return (
     <div className="source-table-wrap">
       <table className="source-table admin-table">
-        <caption className="sr-only">Top-ups</caption>
         <thead>
           <tr>
             <th>When</th>
@@ -64,7 +63,7 @@ export function TopUpsTable({
                 <td className="admin-mono">{t.payment_intent ?? 'none'}</td>
                 <td>{money(t.refunded_usd)}</td>
                 <td>{money(t.frozen_usd)}</td>
-                <td>{money(t.unspent_usd)}</td>
+                <td>{moneyDown(t.unspent_usd)}</td>
                 <td>
                   <button
                     type="button"
@@ -92,7 +91,6 @@ export function RefundsTable({ billing }: { billing: AdminBilling }) {
   return (
     <div className="source-table-wrap">
       <table className="source-table admin-table">
-        <caption className="sr-only">Refunds</caption>
         <thead>
           <tr>
             <th>When</th>
@@ -131,7 +129,6 @@ export function DisputesTable({ billing }: { billing: AdminBilling }) {
   return (
     <div className="source-table-wrap">
       <table className="source-table admin-table">
-        <caption className="sr-only">Disputes</caption>
         <thead>
           <tr>
             <th>Opened</th>
@@ -166,7 +163,6 @@ export function LedgerTable({ account }: { account: string }) {
       {paged.items.length > 0 && (
         <div className="source-table-wrap">
           <table className="source-table admin-table">
-            <caption className="sr-only">Ledger entries</caption>
             <thead>
               <tr>
                 <th>When</th>
@@ -200,7 +196,6 @@ export function UsageTable({ account }: { account: string }) {
       {paged.items.length > 0 && (
         <div className="source-table-wrap">
           <table className="source-table admin-table">
-            <caption className="sr-only">Usage per agent run</caption>
             <thead>
               <tr>
                 <th>When</th>

@@ -333,10 +333,21 @@
   color: var(--muted);
 }
 /* One user's Billing section (features/admin/AdminBilling.tsx) and its dialogs. */
+.admin-billing .admin-facts a {
+  color: var(--accent-text);
+  text-decoration: underline;
+}
 .admin-billing {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  min-width: 0;
+}
+.admin-billing .source-table-wrap {
+  /* Holds the header's sr-only text, which would otherwise widen the page at phone width. */
+  position: relative;
+  max-width: 100%;
+  overflow-x: auto;
 }
 .admin-notice {
   margin: 0;

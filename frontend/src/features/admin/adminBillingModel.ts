@@ -12,12 +12,17 @@ export const usagePath = (account: string, before?: number) =>
 export const money = (usd: number) => `${usd < 0 ? '-' : ''}$${Math.abs(usd).toFixed(2)}`;
 
 const cents = (usd: number) => Math.round(usd * 100);
+/** Credit is kept in micro-USD and refunds are whole cents: what is available rounds down. The
+ * small term only absorbs binary fractions, like 14.99 * 100. */
+const centsDown = (usd: number) => Math.floor(usd * 100 + 1e-6);
 
-/** A form's starting amount: the unspent credit, else all that can be refunded, in whole cents
- * rounded down. */
+/** Credit that can be refunded: `$14.99` for $14.999, never a cent that is not there. */
+export const moneyDown = (usd: number) => money(centsDown(usd) / 100);
+
+/** A form's starting amount: the unspent credit, else all that can be refunded. */
 export function defaultRefund(topUp: AdminTopUp) {
   const usd = topUp.unspent_usd > 0 ? topUp.unspent_usd : topUp.refundable_usd;
-  return (Math.floor(usd * 100 + 1e-6) / 100).toFixed(2);
+  return (centsDown(usd) / 100).toFixed(2);
 }
 
 export type RefundPlan = {
@@ -49,8 +54,8 @@ export function refundPlan(
 ): RefundPlan {
   const amount = Number(text);
   const problem = refundProblem(topUp, text, amount, max);
-  const spent = Math.max(0, cents(amount || 0) - Math.round(topUp.unspent_usd * 100)) / 100;
-  const after = (cents(balance) - cents(amount || 0)) / 100;
+  const spent = Math.max(0, cents(amount || 0) - centsDown(topUp.unspent_usd)) / 100;
+  const after = (centsDown(balance) - cents(amount || 0)) / 100;
   return { amount: amount || 0, problem, spent, after, negative: after < 0 };
 }
 

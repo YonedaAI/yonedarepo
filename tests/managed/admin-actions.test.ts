@@ -80,6 +80,9 @@ describe('pausing billing', () => {
     const view = await state(h);
     expect(view.top_ups.find((t: any) => t.id === key)).toMatchObject({ status: 'failed', error: 'Billing paused' });
     expect(view.top_up_failed).toBeNull();
+    // The customer sees no failed top-up for an operator's decision.
+    const billing = await (await browserApi(h, '/billing')).json<any>();
+    expect(billing.top_ups.map((t: any) => t.id)).not.toContain(key);
   });
 
   it('requires a reason, and paused true or false', async () => {

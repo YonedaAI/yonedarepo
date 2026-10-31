@@ -12,6 +12,7 @@ import {
   billingPath,
   defaultRefund,
   money,
+  moneyDown,
   refundConfirm,
   refundPlan,
   refundResult,
@@ -54,7 +55,7 @@ export function RefundForm({
   return (
     <form className="admin-billing-form" onSubmit={submit}>
       <p>
-        {topUp.id}: {money(topUp.amount_usd)} charged, {money(topUp.unspent_usd)} unspent,{' '}
+        {topUp.id}: {money(topUp.amount_usd)} charged, {moneyDown(topUp.unspent_usd)} unspent,{' '}
         {money(topUp.refundable_usd)} refundable. The balance is{' '}
         {money(billing.balance.balance_usd)}.
       </p>

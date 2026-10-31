@@ -15,6 +15,7 @@ import {
   defaultRefund,
   ledgerPath,
   money,
+  moneyDown,
   refundConfirm,
   refundPlan,
   refundResult,
@@ -74,6 +75,18 @@ describe('what a refund would do', () => {
       after: 15,
       negative: false,
     });
+  });
+
+  it('rounds what is left down, as the server counts it, never up to a cent that is not there', () => {
+    // $14.999 unspent: $15.00 is over it, and the server would refuse it as spent credit.
+    expect(refundPlan(topUp(), 25, '15')).toMatchObject({ spent: 0.01 });
+    expect(refundPlan(topUp(), 25, '14.99')).toMatchObject({ spent: 0 });
+    // A balance of $14.999: $15.00 leaves it negative.
+    expect(refundPlan(topUp({ unspent_usd: 20 }), 14.999, '15')).toMatchObject({
+      negative: true,
+      after: -0.01,
+    });
+    expect(moneyDown(14.999)).toBe('$14.99');
   });
 
   it('says how much is spent credit', () => {

@@ -151,11 +151,14 @@ export function topUp(sql: SqlStorage, key: string): PendingTopUp | null {
   };
 }
 
+const STOPPED = 'Billing paused';
+
 /** A pending top-up dropped because charging stopped: nothing failed at the card, so nothing
- * tells the customer to replace it. */
+ * tells the customer to replace it, and it is left out of what they are shown (`topUps`). */
 export function cancelTopUp(sql: SqlStorage, key: string, now: number) {
   sql.exec(
-    "UPDATE top_ups SET status = 'failed', error = 'Billing paused', settled_at = ? WHERE key = ? AND status = 'pending'",
+    "UPDATE top_ups SET status = 'failed', error = ?, settled_at = ? WHERE key = ? AND status = 'pending'",
+    STOPPED,
     now,
     key,
   );
@@ -205,7 +208,9 @@ export function topUps(sql: SqlStorage, limit = 50): TopUp[] {
       error: string | null;
       created_at: number;
     }>(
-      'SELECT key, amount, status, error, created_at FROM top_ups ORDER BY created_at DESC, key DESC LIMIT ?',
+      `SELECT key, amount, status, error, created_at FROM top_ups WHERE error IS NOT ?
+       ORDER BY created_at DESC, key DESC LIMIT ?`,
+      STOPPED,
       limit,
     )
     .toArray()

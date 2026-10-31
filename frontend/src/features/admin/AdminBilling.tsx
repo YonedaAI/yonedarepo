@@ -145,7 +145,9 @@ export function AdminBillingSection({ account, name }: { account: string; name: 
           <ActionButtons billing={billing} onAction={setAction} />
           <h4 className="home-label">Top-ups</h4>
           <TopUpsTable billing={billing} onRefund={setRefunding} />
+          {billing.refunds.length > 0 && <h4 className="home-label">Refunds</h4>}
           <RefundsTable billing={billing} />
+          {billing.disputes.length > 0 && <h4 className="home-label">Disputes</h4>}
           <DisputesTable billing={billing} />
           <h4 className="home-label">Usage per agent run</h4>
           <UsageTable account={account} />
