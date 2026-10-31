@@ -508,10 +508,6 @@ a.chip:hover {
   .file-message {
     display: none;
   }
-  .clone-dropdown {
-    left: 0;
-    right: auto;
-  }
 }
 .page-heading h1 {
   font-size: var(--text-3xl);
