@@ -6,7 +6,9 @@ import { type ImportAnswer, importView, mayBeImport } from './importModel';
 import type { RepoStatus } from './repoStatus';
 import { sourceApi } from './sourceApi';
 
-export const IMPORT_POLL_MS = 1000;
+/** While the code is awaited; history's progress needs less. */
+export const IMPORT_POLL_MS = 500;
+const HISTORY_POLL_MS = 1000;
 /** Reads that may fail in a row before the page says it has lost track. */
 const STALLED_AFTER = 3;
 
@@ -91,7 +93,7 @@ export function useHistoryFill(
       } catch {
         // The next read tells; the page keeps showing the last it knew.
       }
-      if (!controller.signal.aborted) timer = setTimeout(read, IMPORT_POLL_MS);
+      if (!controller.signal.aborted) timer = setTimeout(read, HISTORY_POLL_MS);
     };
     void read();
     return () => {

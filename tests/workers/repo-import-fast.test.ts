@@ -3,7 +3,9 @@
 // (no real Git objects: the chain's ids and trees are made up), so counts are exact.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
-import { type ImportStep, runImport } from '../../cloudflare/worker/repo-import';
+import { mirrorClone } from '../../cloudflare/worker/repo-git-mirror';
+import { type ImportStep, runImport, startImport } from '../../cloudflare/worker/repo-import';
+import { withWaitUntil } from '../../cloudflare/worker/background';
 import { gitObjectId } from '../../cloudflare/worker/repo-objects';
 import type { Env } from '../../cloudflare/worker/types';
 import { asGit } from './git-answer';
@@ -34,7 +36,7 @@ async function treeId(entries: Entry[]) {
 
 /** Commit `n` (1 is the oldest) of a chain where each changes `src/lib/mod<n % 40>.txt`
  * plus `extra(n)` files of a directory of its own. */
-async function chain(total: number, extra: (n: number) => number = () => 0, truncatedAt = 0) {
+async function chain(total: number, extra: (n: number) => number = () => 0, truncatedAt = 0, renameAt = 0) {
   const trees = new Map<string, Entry[]>();
   const put = async (entries: Entry[]) => {
     const id = await treeId(entries);
@@ -45,6 +47,10 @@ async function chain(total: number, extra: (n: number) => number = () => 0, trun
   const commits: any[] = [];
   for (let n = 1; n <= total; n++) {
     mods = new Map(mods).set(`mod${n % 40}.txt`, FILE(n, 'mod'));
+    if (n === renameAt) {
+      mods.set('moved.txt', mods.get('mod1.txt') as string);
+      mods.delete('mod1.txt');
+    }
     const lib = await put([...mods].sort().map(([name, id]) => entry(name, id, 'blob')));
     const src = await put([entry('lib', lib, 'tree')]);
     const files = Array.from({ length: extra(n) }, (_, i) => entry(`f${i}.txt`, FILE(n, `f${i}`), 'blob'));
@@ -182,6 +188,28 @@ it('lands the head at once, then fills history in behind it, reading as partial 
   expect(after.body.history ?? null).toBeNull();
 });
 
+it.each(['on', 'off'])('records an exact rename as its delete and add, with FAST_IMPORT %s', async (FAST_IMPORT) => {
+  // Spotted by the tree diff, which no touch can carry as one: spf13/cobra's newest 250
+  // commits hold one, and it ended that history at 1 of 950.
+  const history = await chain(5, undefined, 0, 4);
+  const { env, owner, params, repo } = await imported(remoteOf(history), `rename_${FAST_IMPORT}`);
+  const step: ImportStep = {
+    async do(_name, _config, callback) {
+      for (;;)
+        try {
+          return await callback();
+        } catch (e: any) {
+          if (e?.code !== 'IMPORT_IN_PROGRESS') throw e;
+        }
+    },
+  };
+  const result: any = await runImport({ ...env, FAST_IMPORT } as Env, params, step);
+  expect(result.stopped).toBeUndefined();
+  expect(result.commits).toBe(5);
+  const renamed = await api(`${repo}/commits/${hex('c', 4)}`, owner, {}, env);
+  expect(renamed.body.paths.map((p: any) => `${p.op}:${p.path}`)).toEqual(['delete:src/lib/mod1.txt', 'add:src/lib/mod4.txt', 'add:src/lib/moved.txt']);
+});
+
 it('asks for main to be projected at once when the remote calls it something else', async () => {
   const { env, params } = await imported(remoteOf(await chain(3)), 'named', 5000, 'master');
   queued.length = 0;
@@ -258,6 +286,41 @@ it('stops a truncated import at its boundary, complete', async () => {
   // The oldest kept commit's changes are against its real parent, as in the slow path.
   const oldest = await api(`${repo}/commits/${hex('c', 3)}`, owner, {}, env);
   expect(oldest.body.paths.map((p: any) => p.path)).toEqual(['src/lib/mod3.txt']);
+});
+
+describe('a request that starts its own import', () => {
+  it('fetches and lands from the request, and the Workflow finds it done', async () => {
+    const history = await chain(40);
+    const remote = remoteOf(history);
+    const owner = { cookie: await signup('fast_request') };
+    (scoped as any).ARTIFACTS = remote;
+    let started: any;
+    const workflows = { create: async (options: any) => ((started = options), { id: options.id }), get: async () => ({ status: async () => ({ status: 'running' }) }) };
+    const env = { ...scoped, ARTIFACTS: remote, PLATFORM_IMPORT: workflows, FAST_IMPORT: 'on' } as unknown as Env;
+    const lent: Promise<unknown>[] = [];
+    const created = await withWaitUntil(
+      (work) => void lent.push(work),
+      () => api('/repos/import', owner, { body: { name: 'from_request', url: 'https://git.example/src.git', branch: 'main', max_commits: 5000 } }, env),
+    );
+    await Promise.all(lent);
+    const repo = `/repos/${created.body.id}`;
+    // No Workflow step has run: main is there, and history waits for it.
+    const status = (await api(repo, owner, {}, env)).body;
+    expect(status.refs[0].commit_id).toBe(history.head);
+    expect(status.history_import).toEqual({ recorded: 1, total: 40 });
+    const result: any = await runImport(env, started.params, stepper().step);
+    expect(result).toMatchObject({ commit: history.head, commits: 40, version: 1, timing: { landed_by: 'request' } });
+    expect(result.timing.usable_ms).toBeGreaterThanOrEqual(0);
+    expect((await api(`${repo}/log?ref=main&limit=200`, owner, {}, env)).body.commits).toHaveLength(40);
+  });
+
+  it('lands once when the request and the Workflow race', async () => {
+    const history = await chain(5);
+    const { env, owner, params, repo } = await imported(remoteOf(history), 'race');
+    await Promise.all([startImport(env, params), startImport(env, params)]);
+    const status = (await api(repo, owner, {}, env)).body;
+    expect([status.version, status.refs[0].commit_id]).toEqual([1, history.head]);
+  });
 });
 
 describe('a fill that cannot finish', () => {
@@ -439,22 +502,67 @@ describe('a clone as soon as main lands', () => {
     expect([v2, caps]).toEqual([200, expect.stringContaining('ls-refs')]);
   });
 
-  it('never takes the mirror\'s word for what a reader may fetch', async () => {
-    const { env, id, head, repo, owner, token } = await landed('mirror_refused');
-    const hidden = hex('c', 7);
-    const mirror = serveMirror({ 'refs/heads/main': head, [`refs/yoneda/c/${hidden}`]: hidden });
-    // A commit the mirror holds and no branch or tag reaches.
-    expect((await gitFetch(env, id, token, [`want ${hidden}`, 'done'])).error).toMatch(/^IMPORT_IN_PROGRESS/);
-    // Off, nothing goes to the mirror.
-    const off = { ...env, FAST_IMPORT: 'off' } as Env;
-    expect((await gitFetch(off, id, token, [`want ${head}`, 'done'])).error).toMatch(/^IMPORT_IN_PROGRESS/);
-    expect(mirror.asked).toHaveLength(0);
-    // A mirror still holds a withheld blob.
-    const made = await api(`${repo}/quarantine`, owner, { body: { blob: hex('b', 0), path: 'readme.md', reason: 'a leaked password' } }, env);
-    expect(made.status).toBe(200);
-    expect((await gitFetch(env, id, token, [`want ${head}`, 'done'])).error).toMatch(/^IMPORT_IN_PROGRESS/);
-    expect(mirror.asked).toHaveLength(0);
-    mirror.restore();
+  describe('while history fills, refuses with a reason to retry, and sends no partial history', () => {
+    const refused = /^IMPORT_IN_PROGRESS: .*still importing \(1 of 30 commits\).*[Tt]ry again/;
+    const sentNothing = (answer: { pack: number; error: string | null }) => {
+      expect(answer.error).toMatch(refused);
+      expect(answer.pack).toBe(0);
+    };
+
+    it('for a want no branch or tag reaches, though the mirror holds it', async () => {
+      const { env, id, head, token } = await landed('refuse_hidden');
+      const hidden = hex('c', 7);
+      const mirror = serveMirror({ 'refs/heads/main': head, [`refs/yoneda/c/${hidden}`]: hidden });
+      sentNothing(await gitFetch(env, id, token, [`want ${hidden}`, 'done']));
+      expect(mirror.asked).toHaveLength(0);
+      mirror.restore();
+    });
+
+    it('with the switch off', async () => {
+      const { env, id, head, token } = await landed('refuse_off');
+      const mirror = serveMirror({ 'refs/heads/main': head });
+      sentNothing(await gitFetch({ ...env, FAST_IMPORT: 'off' } as Env, id, token, [`want ${head}`, 'done']));
+      expect(mirror.asked).toHaveLength(0);
+      mirror.restore();
+    });
+
+    it('for a store that cannot be cloned', async () => {
+      const objects = { env: { FAST_IMPORT: 'on' }, store: {} } as never;
+      expect(await mirrorClone({} as never, objects, { wants: [] }, () => new Uint8Array(), 0, true)).toBeNull();
+    });
+
+    it('while a blob is withheld', async () => {
+      const { env, id, head, repo, owner, token } = await landed('refuse_withheld');
+      const mirror = serveMirror({ 'refs/heads/main': head });
+      const made = await api(`${repo}/quarantine`, owner, { body: { blob: hex('b', 0), path: 'readme.md', reason: 'a leaked password' } }, env);
+      expect(made.status).toBe(200);
+      sentNothing(await gitFetch(env, id, token, [`want ${head}`, 'done']));
+      expect(mirror.asked).toHaveLength(0);
+      mirror.restore();
+    });
+
+    it('when the mirror fails to list its refs, or to send a first byte', async () => {
+      const { env, id, head, token } = await landed('refuse_down');
+      const down = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('busy', { status: 503 }));
+      sentNothing(await gitFetch(env, id, token, [`want ${head}`, 'done']));
+      down.mockRestore();
+    });
+
+    it('over protocol 0 too, as an error Git shows', async () => {
+      const { env, id, head, token } = await landed('refuse_v0');
+      const down = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('busy', { status: 503 }));
+      const response = await platformFetch(
+        new Request(`https://yoneda/git/${id}.git/git-upload-pack`, {
+          method: 'POST',
+          headers: { authorization: `Basic ${btoa(`git:${token}`)}` },
+          body: `${pkt(`want ${head} side-band-64k ofs-delta\n`)}0000${pkt('done\n')}`,
+        }),
+        env,
+      );
+      expect(response.status).toBe(409);
+      expect(await response.text()).toMatch(/still importing \(1 of 30 commits\).*[Tt]ry again/);
+      down.mockRestore();
+    });
   });
 
   it('answers as before when the mirror has not got main, or cannot answer', async () => {

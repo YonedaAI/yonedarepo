@@ -128,7 +128,8 @@ fn run<S: SqlStore>(
         R::ContractList => agent_reads::contract_list(db, c),
         R::PinList => agent_reads::pin_list(db, actor),
         R::BisectList => agent_reads::bisect_list(db, c, actor),
-        R::AgentContext => agent_context::context(db, c, actor, settings),
+        R::AgentContext => agent_context::context(db, c, actor, settings)
+            .and_then(|found| history_fill::note(db, found)),
         R::ChangeCreate => changes::create(db, c, actor),
         R::Changes => changes::list(db, c, actor),
         R::ChangeShow => changes::show(db, c, actor, settings),

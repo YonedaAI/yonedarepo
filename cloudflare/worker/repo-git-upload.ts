@@ -9,7 +9,7 @@
 import { deferred } from './background';
 import { transient } from './durable';
 import { compute } from './repo-compute';
-import { mirrorClone } from './repo-git-mirror';
+import { mirrorClone, stillFilling } from './repo-git-mirror';
 import { UploadSession, wasmMemoryBytes } from './repo-git-sessions';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
@@ -92,9 +92,9 @@ export async function uploadPack(
     // The mirror already holds all of it. Until `done`, nothing is common: only the mirror
     // can tell which haves it shares, and it leaves them out of the pack.
     if (!request.done) return new Response(acknowledge([]), { headers: RESULT });
-    const served = await mirror(acknowledge([]));
+    const served = await mirrorClone(ctx, objects, request, () => acknowledge([]), band, true);
     if (served) return served;
-    throw e;
+    throw stillFilling(e);
   }
   const ack = acknowledge(walk.common);
   if (!request.done) return new Response(ack, { headers: RESULT });

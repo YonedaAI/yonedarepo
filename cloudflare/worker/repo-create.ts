@@ -1,12 +1,13 @@
 // Creating platform repositories: the owner (or the operator for a named workspace) creates
 // a repository, optionally seeded with files or imported from a Git remote, and may issue its
 // first repository tokens in the same request.
-import { afterAnswer } from './background';
+import { afterAnswer, deferred } from './background';
 import { bounded, boundedRetry, failureCode } from './durable';
 import { orgArg, orgCaller, orgCommand } from './platform-orgs';
 import { asyncStore, dispatchStore } from './repo-artifacts-store';
 import { commit } from './repo-commit';
 import { refreshHead } from './repo-head';
+import { defaultBranchSoon, startImport } from './repo-import';
 import { newStore, type ObjectStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { requirePatScope } from './repo-pat';
@@ -224,6 +225,7 @@ export async function importRepository(env: Env, requester: Credentials, body: J
   const asked_at = Date.now();
   if (env.PLATFORM_OBJECT_STORE === 'r2')
     throw new ApiError('NOT_SUPPORTED', 'Importing a remote needs the Artifacts object store');
+  const fast = env.FAST_IMPORT === 'on';
   const visibility = visibilityOf(body.visibility);
   const url = String(body.url ?? '');
   if (!/^https:\/\/[^\s]+$/.test(url))
@@ -234,6 +236,8 @@ export async function importRepository(env: Env, requester: Credentials, body: J
   const id = newRepoId();
   const name = typeof body.name === 'string' && body.name ? body.name : id;
   const owner = auth._session.workspace;
+  // Beside the writes below, so that Artifacts can be asked as soon as they end.
+  const named = fast && !branch ? defaultBranchSoon(url) : Promise.resolve(null);
   await holdName(env, owner, id, name);
   const ctx = new RepoContext(env, id, caller(env, id, auth));
   await ctx
@@ -251,10 +255,9 @@ export async function importRepository(env: Env, requester: Credentials, body: J
     });
   await listRepository(env, id, auth._session.workspace, name, visibility);
   const tokens = await issueTokens(ctx, body.tokens);
-  const instance = await env.PLATFORM_IMPORT.create({
-    id: `import-${id}`,
-    params: { repo: id, url, branch, max, asked_at },
-  });
+  const params = { repo: id, url, branch: branch ?? (await named) ?? undefined, max, asked_at };
+  if (fast) deferred(() => startImport(env, params));
+  const instance = await env.PLATFORM_IMPORT.create({ id: `import-${id}`, params });
   return { id, import: instance.id, branch: branch ?? null, max_commits: max, ...tokens };
 }
 
