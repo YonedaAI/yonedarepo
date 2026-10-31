@@ -52,7 +52,7 @@ function UsersTable({ q, navigate }: { q: string; navigate: Navigate }) {
                 <th>Signed up with</th>
                 <th>Created</th>
                 <th>Last seen</th>
-                <th>Repositories</th>
+                <th className="admin-num">Repositories</th>
                 <th>Status</th>
               </tr>
             </thead>
@@ -68,7 +68,7 @@ function UsersTable({ q, navigate }: { q: string; navigate: Navigate }) {
                   <td>{providerLabel(a.provider)}</td>
                   <td>{when(a.created_at)}</td>
                   <td>{when(a.last_seen_at)}</td>
-                  <td>{a.repos}</td>
+                  <td className="admin-num">{a.repos}</td>
                   <td>
                     <Status account={a} />
                   </td>

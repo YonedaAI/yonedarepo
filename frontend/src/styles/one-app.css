@@ -471,6 +471,7 @@ a.chip:hover {
 @media (max-width: 800px) {
   .repo-page,
   .home-repos,
+  .org-page,
   .account-settings {
     padding: 16px;
   }

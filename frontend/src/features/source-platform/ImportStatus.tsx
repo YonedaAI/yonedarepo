@@ -65,8 +65,7 @@ export function HistoryImportStatus({ progress }: { progress: HistoryFill }) {
         </strong>
       </p>
       <p className="source-meta">
-        All the files are here and it can be cloned. History, blame and search show what has arrived
-        so far, and this repository takes changes when it finishes.
+        All the files are here. History, blame and search fill in as commits arrive.
       </p>
     </div>
   );

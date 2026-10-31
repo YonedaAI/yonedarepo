@@ -135,7 +135,13 @@ export function RepoPage({
               </p>
             )}
             {data && progress.phase === 'none' && (
-              <StatusChips repo={repo} status={data} owner={owner} navigate={navigate} />
+              <StatusChips
+                repo={repo}
+                status={data}
+                owner={owner}
+                readOnly={access.readOnly}
+                navigate={navigate}
+              />
             )}
             {access.fork && data && progress.phase === 'none' && (
               <ForkButton
@@ -150,8 +156,7 @@ export function RepoPage({
           {data && <RepoHoldBanner repo={repo} />}
           {drift.map((p) => (
             <p key={p.refname} role="alert" className="source-error">
-              {p.refname.replace(/^refs\/heads\//, '')} in the Git object store has drifted from the
-              landed branch and is no longer updated: {p.detail}
+              {p.refname.replace(/^refs\/heads\//, '')} stopped updating for Git clients.
             </p>
           ))}
           {status.error && (

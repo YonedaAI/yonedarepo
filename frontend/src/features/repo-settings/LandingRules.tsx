@@ -12,7 +12,7 @@ export function LandingRules({ draft, change }: { draft: Policy; change: (next: 
   const auto = draft.auto_approve ?? [];
   return (
     <>
-      <label className="source-field">
+      <label className="source-field settings-wide">
         Approvals needed to land on main
         <input
           type="number"

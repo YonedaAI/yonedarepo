@@ -62,7 +62,7 @@ function Row({
           <small className="admin-sub">{repo.id}</small>
         </td>
         <td>{repo.handle ?? repo.owner}</td>
-        <td>{dbSize(repo.db_bytes)}</td>
+        <td className="admin-num">{dbSize(repo.db_bytes)}</td>
         <td>{alert && <span className="admin-status admin-status-suspended">{alert}</span>}</td>
         <td>
           <button type="button" className="quiet" aria-expanded={open} onClick={onToggle}>
@@ -105,7 +105,7 @@ export function LargestRepos({ navigate }: { navigate: Navigate }) {
               <tr>
                 <th>Repository</th>
                 <th>Owner</th>
-                <th>Database</th>
+                <th className="admin-num">Database</th>
                 <th>Alert</th>
                 <th aria-label="Details" />
               </tr>

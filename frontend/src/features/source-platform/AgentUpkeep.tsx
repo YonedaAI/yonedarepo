@@ -88,7 +88,7 @@ export function AgentBisects({ repo, navigate }: { repo: string; navigate: Navig
     return (
       <section aria-labelledby="bisects-heading">
         <EmptyState id="bisects-heading" title="No searches yet">
-          When an agent looks for the commit that broke a check, the search shows up here.
+          When an agent looks for a commit that broke a check, it shows up here.
         </EmptyState>
       </section>
     );

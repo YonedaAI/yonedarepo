@@ -151,7 +151,7 @@ export function AdminBillingSection({ account, name }: { account: string; name: 
           <DisputesTable billing={billing} />
           <h4 className="home-label">Usage per agent run</h4>
           <UsageTable account={account} />
-          <h4 className="home-label">Ledger</h4>
+          <h4 className="home-label">Credit entries</h4>
           <LedgerTable account={account} />
         </>
       )}

@@ -137,7 +137,7 @@ export function BillingSettings({ workspace }: { workspace: string }) {
                     <thead>
                       <tr>
                         <th>Date (UTC)</th>
-                        <th>Amount</th>
+                        <th className="num">Amount</th>
                         <th>Status</th>
                       </tr>
                     </thead>
@@ -145,7 +145,7 @@ export function BillingSettings({ workspace }: { workspace: string }) {
                       {billing.top_ups.map((t) => (
                         <tr key={t.id}>
                           <td>{topUpDay(t.created_at)}</td>
-                          <td>{formatCost(t.amount_usd)}</td>
+                          <td className="num">{formatCost(t.amount_usd)}</td>
                           <td>
                             <span className={`chip run-${topUpTone(t.status)}`}>
                               {topUpStatusLabel(t.status)}
@@ -169,8 +169,8 @@ export function BillingSettings({ workspace }: { workspace: string }) {
                       <tr>
                         <th>Repository</th>
                         <th>Agent</th>
-                        <th>Runs</th>
-                        <th>Cost</th>
+                        <th className="num">Runs</th>
+                        <th className="num">Cost</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -178,22 +178,22 @@ export function BillingSettings({ workspace }: { workspace: string }) {
                         <tr key={`${u.repo}:${u.agent}`}>
                           <td>{u.repo_name}</td>
                           <td>{agentName(u.agent)}</td>
-                          <td>{u.runs}</td>
-                          <td>{formatCost(u.cost_usd)}</td>
+                          <td className="num">{u.runs}</td>
+                          <td className="num">{formatCost(u.cost_usd)}</td>
                         </tr>
                       ))}
-                      <tr>
+                      <tr className="total">
                         <th scope="row" colSpan={2}>
                           Total
                         </th>
-                        <td>{totals.runs}</td>
-                        <td>{formatCost(totals.cost_usd)}</td>
+                        <td className="num">{totals.runs}</td>
+                        <td className="num">{formatCost(totals.cost_usd)}</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
               ) : (
-                <p className="source-empty">No agent has run yet, so nothing has been used.</p>
+                <p className="source-empty">No agent has run yet.</p>
               )}
             </SettingsSection>
           </>

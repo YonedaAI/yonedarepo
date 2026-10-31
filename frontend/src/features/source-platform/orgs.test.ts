@@ -135,11 +135,9 @@ describe('account organizations', () => {
     expect(page).not.toContain('No organizations yet');
   });
 
-  it('says there are none in a card of its own', () => {
+  it('says there are none in the shared empty state', () => {
     const page = html(AccountOrgs, { orgs: loaded({ orgs: [] }), navigate });
-    expect(page).toContain(
-      '<div class="settings-card settings-empty"><h2>No organizations yet</h2>',
-    );
+    expect(page).toContain('<div class="empty-state"><h2>No organizations yet</h2>');
     expect(page).not.toContain('class="org-row"');
   });
 

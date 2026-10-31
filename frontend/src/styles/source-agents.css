@@ -42,12 +42,19 @@
   color: var(--muted);
   font-weight: 400;
 }
+.agent-filter :is(select, input) {
+  padding: 3px 8px;
+  min-height: 30px;
+  font-size: var(--text-md);
+}
 .agent-filter select {
   field-sizing: content;
-  padding: 3px 8px;
-  min-height: 28px;
-  font-size: var(--text-md);
   width: auto;
+}
+.agent-filters button {
+  min-height: 30px;
+  padding: 3px 12px;
+  font-size: var(--text-md);
 }
 .agent-sessions,
 .agent-contracts,

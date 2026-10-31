@@ -109,10 +109,7 @@ export function loadState<T>(loaded: Loaded<T>, what: string) {
 export function BillingComing({ children }: { children?: React.ReactNode }) {
   return (
     <div className="agents-billing-note" role="note">
-      <p>
-        {children ??
-          'Setting up billing is coming. Until then, the agents YonedaRepo maintains run on your starting credit.'}
-      </p>
+      <p>{children ?? 'Billing is coming. Until then, agents run on your starting credit.'}</p>
       <button type="button" disabled title="Billing is not available yet">
         Set up billing
       </button>

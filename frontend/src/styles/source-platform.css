@@ -147,7 +147,7 @@
 .source-actions input {
   width: 160px;
 }
-button.danger {
+button.danger:not(:disabled) {
   background: var(--danger-fill);
 }
 .source-check-pass {
@@ -195,6 +195,18 @@ button.danger {
 .source-patch-note {
   background: var(--surface-2);
   color: var(--muted);
+}
+.source-table th.num,
+.source-table td.num {
+  text-align: right;
+}
+.source-table td.num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.source-table tr.total :is(th, td) {
+  border-top: 1px solid var(--line-strong);
+  font-weight: 600;
 }
 .source-table-wrap {
   overflow-x: auto;
@@ -258,8 +270,10 @@ button.danger {
   min-height: 56px;
   margin-bottom: 8px;
 }
-/* Tokens, device approval and the Connect panel. */
-.source-tokens section,
+/* The organization page, device approval and the Connect panel. */
+.source-tokens section {
+  margin: 0 0 28px;
+}
 .source-connect section,
 .source-device form {
   margin: 0 0 28px;
@@ -270,10 +284,26 @@ button.danger {
   font-size: var(--text-xl);
   margin: 0 0 6px;
 }
+/* A short form is one row: its fields share the width, its button stays its own size and
+   lines up with them. What can't sit in a row (a fieldset, a wide field) takes its own. */
 .source-token-form {
-  display: grid;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
   gap: 12px;
   margin-top: 12px;
+}
+.source-token-form > * {
+  min-width: 0;
+}
+.source-token-form > .source-field {
+  flex: 1 1 200px;
+  max-width: none;
+}
+.source-token-form
+  > :is(fieldset, p, .source-field-wide, .settings-wide, .source-note, .source-error) {
+  flex: 1 1 100%;
+  max-width: none;
 }
 .source-field {
   display: grid;

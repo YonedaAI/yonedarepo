@@ -114,6 +114,7 @@
   overflow-wrap: anywhere;
 }
 .dialog .source-token-form {
+  display: grid;
   margin-top: 0;
 }
 .dialog form .source-checks label {

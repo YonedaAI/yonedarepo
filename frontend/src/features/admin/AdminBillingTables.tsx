@@ -184,7 +184,7 @@ export function LedgerTable({ account }: { account: string }) {
           </table>
         </div>
       )}
-      <PagedStatus paged={paged as never} what="the ledger" empty="No ledger entries." />
+      <PagedStatus paged={paged as never} what="the credit entries" empty="No credit entries." />
     </>
   );
 }

@@ -29,7 +29,7 @@ export function ReleaseTable({
     <ul className="source-changes" aria-label="Releases" aria-busy={releases.loading}>
       {rows.map((r) => (
         <li key={r.tag}>
-          <span className="source-change-status">{r.tag}</span>
+          <code>{r.tag}</code>
           <a
             href={hrefOf(r.tag)}
             onClick={(e) => {

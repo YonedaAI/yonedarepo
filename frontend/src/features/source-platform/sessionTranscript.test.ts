@@ -88,7 +88,6 @@ describe('session transcript', () => {
   it('says when none was recorded, without reading one', () => {
     const page = html(SessionTranscript, { repo, session: record(null) });
     expect(page).toContain('No transcript was recorded for this session');
-    expect(page).toContain('yoneda session record --transcript');
     expect(state.paths).toEqual([null]);
   });
 

@@ -159,8 +159,7 @@ export function ReleaseBody({
     <article aria-labelledby="release-heading">
       <h2 id="release-heading">{r.title}</h2>
       <p className="source-meta">
-        <span className="source-change-status">{r.tag}</span> · {people.principal(r.created_by)} ·{' '}
-        {when(r.created_at)}
+        <code>{r.tag}</code> · {people.principal(r.created_by)} · {when(r.created_at)}
         {r.commit_id && (
           <>
             {' '}

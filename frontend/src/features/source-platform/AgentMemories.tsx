@@ -94,7 +94,7 @@ function MemoryRow({
         {m.stale && <span className="chip memory-stale">stale: the code changed since</span>}
       </div>
       {m.quarantined ? (
-        <p className="source-meta">Withheld by the repository's owner (quarantine).</p>
+        <p className="source-meta">Withheld by the repository's owner.</p>
       ) : (
         <p className="memory-text">{m.text}</p>
       )}

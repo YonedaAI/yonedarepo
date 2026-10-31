@@ -63,7 +63,7 @@ export function SshKeyTable({
   );
 }
 
-/** One machine's setup: install the CLI, then `yoneda ssh setup`, one Copy each. The config
+/** One machine's setup: install the CLI, sign in, then `yoneda ssh setup`, one Copy each. The config
  * lines stay behind Manual setup for a machine where neither can run. */
 export function SshSetup({ access, origin }: { access?: SshAccess; origin: string }) {
   if (!access) return null;
@@ -74,10 +74,10 @@ export function SshSetup({ access, origin }: { access?: SshAccess; origin: strin
   return (
     <>
       <InstallCommand origin={origin} />
+      <CopyBlock label="Sign in" text={loginCommand(origin)} />
       <CopyBlock label="Set up SSH on this machine" text={SSH_SETUP_COMMAND} />
       <p className="source-meta">
-        Sign in first with <code>{loginCommand(origin)}</code>. Then clone with{' '}
-        <code>{access.clone_url}</code>.
+        Then clone with <code>{access.clone_url}</code>.
       </p>
       {access.ssh_config && (
         <details className="source-details">

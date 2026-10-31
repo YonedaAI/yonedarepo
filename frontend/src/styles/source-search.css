@@ -35,6 +35,16 @@
   font-size: var(--text-sm);
   margin: 4px 0 12px;
 }
+.repo-search-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.repo-search-form input:not([type="checkbox"]) {
+  flex: 1 1 240px;
+}
 .search-word {
   display: flex;
   align-items: center;
