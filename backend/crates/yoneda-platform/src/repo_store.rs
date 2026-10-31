@@ -42,6 +42,7 @@ mod classes;
 mod contracts;
 mod deletion;
 mod dispatch;
+mod erase;
 mod fork_copy;
 mod forks;
 mod git_http;

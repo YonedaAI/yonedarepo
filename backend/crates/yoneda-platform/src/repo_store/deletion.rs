@@ -3,7 +3,8 @@
 //! revoked, and the adapter purges the object store asynchronously (the platform purger
 //! asks for the store of record through `repo_purge_target`). Nothing is erased here, so
 //! the deletion commits in one transaction with no I/O. Hooks subscribed to `repo` get one
-//! `repo.deleted` payload, delivered from the tombstone by the hooks job.
+//! `repo.deleted` payload, delivered from the tombstone by the hooks job. The erase job
+//! empties the tombstone afterwards (`erase`).
 use super::auth::Actor;
 use super::hook_events::{Event, enqueue};
 use super::hooks;
@@ -18,22 +19,28 @@ pub fn gone() -> Error {
     Error::new("GONE", "Repository was deleted")
 }
 
-/// Whether `op` still runs on a tombstone: the (idempotent) delete, the purge read, and the
-/// delivery of hook payloads already queued (`repo.deleted` among them).
-pub fn allowed_when_deleted(op: StoreOp) -> bool {
-    matches!(
-        op,
-        StoreOp::Repo(
-            RepoOp::Delete | RepoOp::PurgeTarget | RepoOp::HookClaim | RepoOp::HookSettle
-        )
-    )
+/// Whether `op` still runs on a tombstone: the purge read, the erase, and until it is
+/// erased, the (idempotent) delete and the delivery of hook payloads already queued
+/// (`repo.deleted` among them).
+pub fn allowed_when_deleted(op: StoreOp, settings: &Settings) -> bool {
+    match op {
+        StoreOp::Repo(RepoOp::PurgeTarget | RepoOp::ErasePlan | RepoOp::EraseStep) => true,
+        StoreOp::Repo(RepoOp::Delete | RepoOp::HookClaim | RepoOp::HookSettle) => {
+            !settings.erased()
+        }
+        _ => false,
+    }
 }
 
-/// On a tombstone, hook delivery belongs to the platform's hooks job alone: anyone else is
-/// answered GONE, as for every other operation.
+/// On a tombstone, hook delivery and the erase belong to their platform jobs alone: anyone
+/// else is answered GONE, as for every other operation.
 pub fn tombstone_caller(op: StoreOp, actor: &Actor, settings: &Settings) -> Result<()> {
-    let delivery = matches!(op, StoreOp::Repo(RepoOp::HookClaim | RepoOp::HookSettle));
-    if settings.deleted_at.is_some() && delivery && !actor.can("hooks") {
+    let job = match op {
+        StoreOp::Repo(RepoOp::HookClaim | RepoOp::HookSettle) => Some("hooks"),
+        StoreOp::Repo(RepoOp::ErasePlan | RepoOp::EraseStep) => Some("erase"),
+        _ => None,
+    };
+    if settings.deleted_at.is_some() && job.is_some_and(|scope| !actor.can(scope)) {
         return Err(gone());
     }
     Ok(())

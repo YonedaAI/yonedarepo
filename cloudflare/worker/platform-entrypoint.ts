@@ -15,6 +15,7 @@ import { purgeRepository } from './repo-admin';
 import { executeCheckRun } from './repo-checks';
 import { CLASSIFY, classifyJob } from './repo-classify';
 import { deriveAfterLanding } from './repo-derived';
+import { dispatchErase, ERASE, eraseJob, eraseOn } from './repo-erase';
 import { hookJob } from './repo-hooks';
 import { lfsSweepJob } from './repo-lfs-sweep';
 import { PACK_BUILD, packBuildJob } from './repo-pack-jobs';
@@ -65,6 +66,10 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
     message.ack();
   } else if (envelope.kind === 'platform_purge') {
     await purgeRepository(env, envelope.repo_id);
+    if (eraseOn(env)) await dispatchErase(env, envelope.repo_id);
+    message.ack();
+  } else if (envelope.kind === ERASE) {
+    await eraseJob(env, envelope);
     message.ack();
   } else if (envelope.kind === SIGNUP_NOTICE) {
     const outcome = await signupNoticeJob(env, envelope, message.attempts);

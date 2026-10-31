@@ -120,6 +120,10 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         R::HooksFanout | R::HookClaim | R::HookSettle if !actor.can("hooks") => {
             Err(Error::new("FORBIDDEN", "Only the platform delivers hooks"))
         }
+        // Only the platform's erase job plans and runs an erase.
+        R::ErasePlan | R::EraseStep if !actor.can("erase") => {
+            Err(Error::new("FORBIDDEN", "Only the platform erases"))
+        }
         R::BreakGlass => actor.require_human_owner(),
         R::SetVisibility | R::Rename => actor.require_repo_owner(),
         R::CloneAccess => actor.require_human_reader(),
@@ -139,6 +143,8 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::Commit
         | R::ContractList
         | R::Contracts
+        | R::ErasePlan
+        | R::EraseStep
         | R::GitAccess
         | R::GitWalk
         | R::HookClaim

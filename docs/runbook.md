@@ -186,6 +186,15 @@ A repository's Durable Object refuses writes at about 10.7 GB of `databaseSize` 
 
 Rollout: D1 migration 0010 before the Worker, as the deploy does. Deleting data lowers the size at once, but delete in small batches: one 950 MB delete reset an object for minutes.
 
+## Erasing deleted repositories
+
+Deleting a repository leaves a tombstone and purges its objects. With `REPO_ERASE=on` on the platform Worker (unset: nothing changes), the end of the purge job queues `platform_erase`, which empties the rest; `infra/envs/<env>.json` carries the variable.
+
+- **Order.** It waits while a hook has payloads left, sending their jobs again every 5 minutes, and gives up on a hook once it is switched off or 24 hours after the deletion. Then it clears all 64 commit shards (`deleteAll`, then a seal: a shard woken later answers GONE and recreates nothing) and the combiners, purges again, and deletes the authority's rows in transactions of at most 2,000 rows or 8 MB. It never starts while a fork is listed.
+- **What stays.** The repository object, with its empty tables, its migration record and a `repo_settings` row holding only `deleted_at`, so it keeps answering GONE. `object_store='erased'` marks it. `repo.erase` log lines carry ids and counts.
+- **Recovery.** Every part repeats safely. A job lost to the dead-letter queue leaves a tombstone partly erased and still answering GONE; run the backfill.
+- **Backfill.** `cargo xtask admin erase-backfill --env dev --dry-run` lists tombstones and their sizes without changing anything; `--confirm` erases them, one at a time, and needs `REPO_ERASE=on`. It walks Cloudflare's object list (ids only), so it wakes every repository object, and needs `OWNER_TOKEN` in the secrets file and a token that can read Durable Object namespaces in `CLOUDFLARE_API_TOKEN` or `--token-file`. `--delay-ms` (default 1000) spaces objects, `--limit` stops early and `--after <cursor>`, printed per page, resumes. A tombstone whose store does not lead back to its object id is reported as `unnamed` and left alone.
+
 ## Recovery
 
 Queues are at least once: redelivery is expected, so consumers must be idempotent (leases, epochs, idempotency keys). The dead-letter queue is diagnostic transport evidence; the repository Durable Object's records remain authoritative. Check the repository's current state before retrying anything by hand.
