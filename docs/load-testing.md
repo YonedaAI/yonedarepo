@@ -196,8 +196,9 @@ Agents are half the sessions because the product is built for them. The result o
 
 1. Deploy (the three regional clients must exist), then warn the owner. Cost basis: about $0.60 per million platform requests at list price, so 65,000 requests is about $0.04, and background derive jobs add to that. Assume under $1. No caps change.
 2. `node tools/platform-real-use.mjs --setup-only`: first run signs up 24 accounts, about 3 minutes, because `AUTH_LIMITER` allows 30 sign-ins a minute. Each sign-up sends a welcome mail to Resend's test inbox.
-3. Make sure nothing else runs on dev and no deploy can happen during it.
-4. `node tools/platform-real-use.mjs --yes`.
+3. `cargo xtask admin internal --env dev realuse0 realuse1 …`, with the names from `.local/platform-live/pool-real-use.json`, so these accounts stay out of the traffic figures.
+4. Make sure nothing else runs on dev and no deploy can happen during it.
+5. `node tools/platform-real-use.mjs --yes`.
 
 **Doesn't cover:** real-history repositories, real container checks, model calls, SSH, anonymous public traffic, and more than 150 sessions at once. Those have their own stages above.
 
