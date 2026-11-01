@@ -51,8 +51,7 @@ async function madeOrFound(session, body) {
   const { repos } = await session.get('/api/v1/repos');
   const { id } = repos.find((repo) => repo.name === body.name);
   const { refs } = await session.get(`/api/v1/repos/${id}/refs`);
-  const main = refs.find((ref) => ref.name === 'refs/heads/main');
-  return { id, commit: main?.commit ?? main?.commit_id };
+  return { id, commit: refs['refs/heads/main'] };
 }
 
 /** Signs every account in, signing up the missing, then makes the missing repositories. */
