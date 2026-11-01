@@ -109,7 +109,9 @@ function Log({
   const paged = usePaged<AuditEntry>((before) => auditPath(filters, before));
   const [opened, setOpened] = useState<number | null>(null);
   const detailed = (paged.first.data as { detailed?: boolean } | undefined)?.detailed === true;
-  useEffect(() => onDetailed(detailed), [detailed, onDetailed]);
+  useEffect(() => {
+    onDetailed(detailed);
+  }, [detailed, onDetailed]);
   const filtered = JSON.stringify(filters) !== JSON.stringify(NO_FILTERS);
   return (
     <>
