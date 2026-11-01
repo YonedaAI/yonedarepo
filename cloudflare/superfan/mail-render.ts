@@ -223,7 +223,8 @@ function render(site: MailSite, findings: FindingRow[], urgent: boolean): Mail {
     .map((g) => item(g, site))
     .sort((a, b) => a.rank - b.rank || b.count - a.count);
   const more = items.length > 1 ? ` +${items.length - 1} more` : '';
-  const subject = `[${site.env}] ${capital(items[0].title)}${more}`;
+  const tag = urgent ? `URGENT ${site.env}` : site.env;
+  const subject = `[${tag}] ${capital(items[0].title)}${more}`;
   const things = items.length === 1 ? '1 thing' : `${items.length} things`;
   const heading = urgent
     ? `Needs attention now on ${site.env}.`

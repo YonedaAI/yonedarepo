@@ -53,7 +53,7 @@
           "ADMIN_NOTIFY_EMAIL": "hello@yonedarepo.com",
           "EMAIL_FROM": "YonedaRepo <hello@yonedarepo.com>",
           "WATCH_SCRIPT": "{prefix}-platform",
-          "WATCH_URL": "https://{prefix}-platform.{subdomain}.workers.dev",
+          "WATCH_URL": "https://api.yonedarepo.com",
           "TELEMETRY_SOURCE": "cloudflare",
           "SUPERFAN_MODEL": "mimo-v2.6-flash",
           "MIMO_TOKEN_PLAN_REGION": "sgp",

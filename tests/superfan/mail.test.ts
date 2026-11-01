@@ -73,10 +73,10 @@ const dead = (id = 'derived_jobs') => [
 
 describe('subject', () => {
   it('leads with the environment and the worst thing, in plain words', () => {
-    expect(renderUrgent(DEV, dead()).subject).toBe('[dev] 1,066 background jobs failed');
+    expect(renderUrgent(DEV, dead()).subject).toBe('[URGENT dev] 1,066 background jobs failed');
     const prod = { ...DEV, env: 'prod' };
     const down = row('front_worker:health', { health: 503 });
-    expect(renderUrgent(prod, [down]).subject).toBe('[prod] Website health check failing');
+    expect(renderUrgent(prod, [down]).subject).toBe('[URGENT prod] Website health check failing');
   });
 
   it('names the worst first and counts the rest as one item each', () => {
@@ -85,7 +85,7 @@ describe('subject', () => {
       row('check_runs:dead_lettered', { dead_lettered: 2 }),
       row('api_worker:health', { health: null }),
     ]);
-    expect(subject).toBe('[dev] API health check failing +2 more');
+    expect(subject).toBe('[URGENT dev] API health check failing +2 more');
   });
 
   it('is one line under any findings', () => {
@@ -120,7 +120,7 @@ describe('blocks', () => {
       row('check_runs:dead_lettered', { dead_lettered: 2 }),
     ]);
     expect(both.text).toContain('2 check runs failed');
-    expect(both.subject).toBe('[dev] 1,066 background jobs failed +1 more');
+    expect(both.subject).toBe('[URGENT dev] 1,066 background jobs failed +1 more');
   });
 
   it('merges rows of one cause across findings, keeping the earliest and the most seen', () => {

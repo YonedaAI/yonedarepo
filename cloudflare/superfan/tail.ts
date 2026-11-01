@@ -57,6 +57,8 @@ const OBJECT_CLASSES: Record<string, TailComponent> = {
 const RESOURCE_KILLS = new Set(['exceededCpu', 'exceededMemory']);
 /** Logged by pushCommit (repo-object-push.ts) when Artifacts refuses a push and it retries: as
  * text, or as JSON from the shared logger. Superfan deploys first, so it reads both. */
+/** Every deploy restarts Durable Objects, and calls in flight then throw this: it isn't a fault. */
+const DEPLOY_RESET = /Durable Object reset because its code was updated/;
 const PUSH_RETRY = /^object store push attempt \d+|"event":"object\.push_retry"/;
 /** Logged by compactLog (repo-compaction.ts) when a hold has stalled a repository's log. */
 export const STALL_SAMPLE = 'compaction.stalled';
@@ -210,7 +212,9 @@ export function aggregate(events: TraceItem[], script: string, wide = false): Ta
     if (!component) continue;
     const r = row(minute, component);
     const status = (item.event as { response?: { status?: number } } | null)?.response?.status;
-    const thrown = item.outcome === 'exception' || item.exceptions.length > 0;
+    const real = item.exceptions.filter((e) => !DEPLOY_RESET.test(e.message));
+    const thrown =
+      real.length > 0 || (item.outcome === 'exception' && item.exceptions.length === 0);
     const killed = RESOURCE_KILLS.has(item.outcome);
     r.invocations++;
     if (thrown) r.exceptions++;
@@ -218,7 +222,7 @@ export function aggregate(events: TraceItem[], script: string, wide = false): Ta
     if (thrown || killed || (status ?? 0) >= 500) r.errors++;
     r.errorLogs += item.logs.filter((l) => l.level === 'error').length;
     r.hist[bucket(item.wallTime)]++;
-    for (const e of item.exceptions)
+    for (const e of real)
       if (r.samples.length < MAX_SAMPLES)
         r.samples.push({ name: redact(e.name), message: redact(e.message) });
     for (const l of item.logs)

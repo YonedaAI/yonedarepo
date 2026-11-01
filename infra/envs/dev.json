@@ -60,7 +60,7 @@
           "ADMIN_NOTIFY_EMAIL": "hello@yonedarepo.com",
           "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>",
           "WATCH_SCRIPT": "{prefix}-platform",
-          "WATCH_URL": "https://{prefix}-platform.{subdomain}.workers.dev",
+          "WATCH_URL": "https://api.dev.yonedarepo.com",
           "WATCH_WIDE": "on",
           "WATCH_FRONT_URL": "https://dev.yonedarepo.com",
           "DEADMAN_URL": "https://{prefix}-deadman.{subdomain}.workers.dev",
