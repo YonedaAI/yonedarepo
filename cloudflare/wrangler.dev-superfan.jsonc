@@ -76,7 +76,7 @@
     "TELEMETRY_SOURCE": "cloudflare",
     "WATCH_FRONT_URL": "https://dev.yonedarepo.com",
     "WATCH_SCRIPT": "yonedarepo-dev-platform",
-    "WATCH_URL": "https://yonedarepo-dev-platform.mlong-f01.workers.dev",
+    "WATCH_URL": "https://api.dev.yonedarepo.com",
     "WATCH_WIDE": "on"
   },
   "workers_dev": true

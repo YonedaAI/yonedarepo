@@ -43,6 +43,8 @@ const wideEnv = (overrides: Partial<SuperfanEnv> = {}) =>
     ...overrides,
   });
 const down = () => new Response('down', { status: 503 });
+const urgentMail = (m: { body: Record<string, any> }) =>
+  m.body.text.startsWith('Needs attention now');
 const quiet = async (d: ReturnType<typeof deps>, now: number) =>
   feed(
     d.ledger,
@@ -316,6 +318,31 @@ describe('log lines before and after the shared logger', () => {
   });
 });
 
+describe('a deploy', () => {
+  it('does not count the restart of its own Durable Objects as a fault', () => {
+    const event = (message: string) =>
+      ({
+        scriptName: 'yonedarepo-dev-platform',
+        outcome: 'exception',
+        eventTimestamp: Date.now(),
+        wallTime: 5,
+        cpuTime: 1,
+        event: { request: { url: 'https://x.test/' }, response: { status: 500 } },
+        logs: [],
+        exceptions: [{ name: 'Error', message, timestamp: Date.now() }],
+        diagnosticsChannelEvents: [],
+        scriptTags: [],
+        scriptVersion: { id: 'v' },
+        entrypoint: 'SshGateway',
+      }) as unknown as TraceItem;
+    const count = (message: string) =>
+      aggregate([event(message)], 'yonedarepo-dev-platform', true)
+        .reduce((n, row) => n + row.exceptions, 0);
+    expect(count('Durable Object reset because its code was updated.')).toBe(0);
+    expect(count('Something real broke')).toBe(1);
+  });
+});
+
 describe('new signals', () => {
   it('a reconcile mismatch is urgent, mailed at once, and names no account', async () => {
     const calls = fakeUpstreams(analytics());
@@ -334,7 +361,7 @@ describe('new signals', () => {
     await runWatch(e, d);
     expect(await finding(d, 'billing:reconcile_mismatches')).toMatchObject({ level: 'urgent' });
     expect(calls.mail).toHaveLength(1);
-    expect(calls.mail[0].body.subject).toBe(`[URGENT ${SCRIPT}] billing reconcile_mismatches`);
+    expect(calls.mail[0].body.subject).toBe('[URGENT dev] 1 billing mismatch with Stripe');
     expect(calls.mail[0].body.text).toContain('docs/incidents.md');
     expect(JSON.stringify([calls.mail, calls.model])).not.toContain('acct-secret-name');
   });
@@ -373,11 +400,11 @@ describe('new signals', () => {
     await logged(d, start, line(8.1e9));
     await runWatch(e, d);
     expect(await finding(d, 'storage:storage_8gb')).toMatchObject({ level: 'digest' });
-    expect(calls.mail[0].body.subject).toBe(`[${SCRIPT}] 1 new finding`);
+    expect(calls.mail[0].body.subject).toBe('[dev] Repository past 8 GB');
     await logged(d, start, line(9.1e9));
     await runWatch(e, d);
     expect(await finding(d, 'storage:storage_9gb')).toMatchObject({ level: 'urgent' });
-    expect(calls.mail[1].body.subject).toBe(`[URGENT ${SCRIPT}] storage storage_9gb`);
+    expect(calls.mail[1].body.subject).toBe('[URGENT dev] Repository past 9 GB');
   });
 
   it('dead letters on every queue are urgent', async () => {
@@ -399,7 +426,8 @@ describe('new signals', () => {
       'managed_worker:dead_lettered',
     ]);
     expect(calls.mail).toHaveLength(1);
-    expect(calls.mail[0].body.subject).toContain('+4 more');
+    // Each queue's count and its waiting messages are one item.
+    expect(calls.mail[0].body.subject).toBe('[URGENT dev] 3 managed agent runs failed +2 more');
     expect((await finding(d, 'check_runs:dead_lettered')).summary).toContain('dead_lettered=2');
   });
 
@@ -482,7 +510,7 @@ describe('two levels', () => {
     const d = deps(e, { now: start });
     expect(await runQuick(e, d)).toMatchObject({ outcome: 'ok', urgent: 1 });
     expect(calls.mail).toHaveLength(1);
-    expect(calls.mail[0].body.subject).toBe(`[URGENT ${SCRIPT}] front_worker health`);
+    expect(calls.mail[0].body.subject).toBe('[URGENT dev] Website health check failing');
     expect(calls.model).toHaveLength(0);
     expect((await d.ledger.status(start)).spend.emails).toBe(0);
     expect(await finding(d, 'front_worker:health')).toMatchObject({
@@ -537,7 +565,7 @@ describe('two levels', () => {
       true,
     );
     await runWatch(e, d);
-    expect(calls.mail.filter((m) => m.body.subject.includes('URGENT'))).toHaveLength(1);
+    expect(calls.mail.filter(urgentMail)).toHaveLength(1);
     expect((await finding(d, 'front_worker:health')).occurrences).toBe(2);
     expect(await keys(d)).toContain('front_worker:error_rate+exceptions');
   });
@@ -561,7 +589,7 @@ describe('two levels', () => {
     for (let i = 0; i < DAILY_EMAIL_CAP; i++) await d.ledger.claimNotice(start, DAILY_EMAIL_CAP, 20);
     await runQuick(e, d);
     expect(calls.mail).toHaveLength(1);
-    expect(calls.mail[0].body.subject).toContain('URGENT');
+    expect(urgentMail(calls.mail[0])).toBe(true);
     expect((await d.ledger.status(start)).spend.emails).toBe(DAILY_EMAIL_CAP);
   });
 
@@ -582,7 +610,7 @@ describe('two levels', () => {
     clock.now += 5 * 60_000;
     await feed(d.ledger, hour(recent(clock.now)), clock.now, true);
     await runWatch(e, d);
-    expect(calls.mail.filter((m) => m.body.text.includes('front_worker'))).toHaveLength(1);
+    expect(calls.mail.filter((m) => m.body.text.includes('Website health'))).toHaveLength(1);
   });
 
   it('stays quiet about a problem that has not gone away', async () => {
@@ -610,7 +638,7 @@ describe('two levels', () => {
       await runQuick(e, d);
       clock.now += 5 * 60_000;
     }
-    const urgent = () => calls.mail.filter((m) => m.body.subject.includes('URGENT'));
+    const urgent = () => calls.mail.filter(urgentMail);
     expect(urgent()).toHaveLength(URGENT_PER_DAY);
     const sent = URGENT_PER_DAY;
     calls.routes[`${FRONT_URL}/health`] = down;
@@ -716,7 +744,7 @@ describe('two levels', () => {
     ]);
     expect(findings.every((f) => f.level === 'digest')).toBe(true);
     expect(calls.mail).toHaveLength(1);
-    expect(calls.mail[0].body.subject).toBe(`[${SCRIPT}] 2 new findings`);
+    expect(calls.mail[0].body.subject).toBe('[dev] API health check failing +1 more');
   });
 });
 

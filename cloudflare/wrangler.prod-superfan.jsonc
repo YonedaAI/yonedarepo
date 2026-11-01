@@ -67,7 +67,7 @@
     "SUPERFAN_MODEL": "mimo-v2.6-flash",
     "TELEMETRY_SOURCE": "cloudflare",
     "WATCH_SCRIPT": "yonedarepo-prod-platform",
-    "WATCH_URL": "https://yonedarepo-prod-platform.mlong-f01.workers.dev"
+    "WATCH_URL": "https://api.yonedarepo.com"
   },
   "workers_dev": true
 }
