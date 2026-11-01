@@ -22,6 +22,8 @@ yoneda status --brief    # one line, no network: repository, branch, commits not
 
 ## The loop
 
+Before you start, file a flight plan: `yoneda flight-plan -m <goal> [--scope <text>]` (or MCP `git_flight_plan` with `branch` and `session_id` set to `$YONEDA_SESSION_ID`). One or two sentences on what this work sets out to do, for this branch, pushed or not. The landing shows the goal to whoever reviews it, and the Intent drift agent, where it is on, compares it with the diff. Nothing refuses a push without one; a landing with none just reads "No flight plan". Never put a secret in it (a plan holding a credential is refused).
+
 1. **Commit small and often.** One logical change per commit. Small commits merge cleanly on the server; large ones conflict.
 2. **Land with `git push origin main`.** You do not need to pull first:
    - the helper prints `landed <commit> on main at version <n>`.
