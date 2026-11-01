@@ -8,7 +8,9 @@
 // Only accounts are known here. A repository token names none without a lookup its path must
 // not gain (platform-write-origin.ts), and a signed-out reader has none: our tools mark those
 // requests themselves (OWN_TRAFFIC_HEADER).
+
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { Flights } from './flights';
 import { log } from './log';
 import type { Env } from './types';
 
@@ -38,7 +40,7 @@ type Platform = { internalAccounts(): Promise<string[]> };
 
 const noted = new AsyncLocalStorage<Noted>();
 let held: { at: number; accounts: Set<string> } | null = null;
-let reading: Promise<void> | null = null;
+const reading = new Flights<void>();
 
 /** Runs a platform request with a place for `noteAccount` to leave its account. */
 export const withRequestAccount = <T>(run: () => T) => noted.run({ account: null }, run);
@@ -74,17 +76,15 @@ async function read(env: Env): Promise<string[]> {
 /** Refreshes the list; a failed read keeps the last one and tries again next time. */
 async function refresh(env: Env, now: number) {
   if (held && now - held.at < LIST_MS) return;
-  reading ??= read(env)
-    .then((accounts) => {
-      held = { at: now, accounts: new Set(accounts) };
-    })
-    .catch((e) => {
-      log.warn('internal_accounts.unread', { error: e });
-    })
-    .finally(() => {
-      reading = null;
-    });
-  await reading;
+  await reading.join('list', () =>
+    read(env)
+      .then((accounts) => {
+        held = { at: now, accounts: new Set(accounts) };
+      })
+      .catch((e) => {
+        log.warn('internal_accounts.unread', { error: e });
+      }),
+  ).work;
 }
 
 /** The accounts flagged internal, as this isolate holds them; null when it has never read them. */

@@ -8,7 +8,9 @@
 // earlier (the holder's copy, then this isolate's), never older than a version this
 // isolate already served, and never older than this isolate's own ref writes. A reader that
 // must see a write made elsewhere passes its version as `min_version`.
+
 import { rpcValue } from './durable';
+import { Flights } from './flights';
 import { readFromHead } from './repo-head';
 import { ApiError, caller, type Json, type RepoContext, target, writesTo } from './repo-ops';
 import type { Env } from './types';
@@ -19,16 +21,9 @@ const PINNED_ORIGIN = 'https://snapshots.yoneda.internal';
 /** Platform reads made on behalf of callers the published head already authorized. */
 const platform = (env: Env, repo: string) => caller(env, repo, { _system: 'projection' });
 
-const loading = new Map<string, Promise<Json>>();
+const loading = new Flights<Json>();
 /** One load per key at a time in this isolate; concurrent callers share it. */
-function once(key: string, load: () => Promise<Json>) {
-  let pending = loading.get(key);
-  if (!pending) {
-    pending = load().finally(() => loading.delete(key));
-    loading.set(key, pending);
-  }
-  return pending;
-}
+const once = (key: string, load: () => Promise<Json>) => loading.join(key, load).work;
 
 /** The caller's read access and main's published head, as `readFromHead`; null also when
  * main does not exist yet (an empty repository has no published head). */
