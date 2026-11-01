@@ -123,7 +123,10 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     assert_eq!(vars["TRAFFIC_REPORT"], "off");
     // Sign-ups run here too; off until the owner clears the privacy text.
     assert_eq!(vars["REGION_SIGNALS"], "off");
-    assert_eq!(vars.as_object().map(|v| v.len()), Some(8));
+    // Observability O1's two switches stay off until dev has run them.
+    assert_eq!(vars["REQUEST_IDS"], "off");
+    assert_eq!(vars["CLIENT_ERRORS"], "off");
+    assert_eq!(vars.as_object().map(|v| v.len()), Some(10));
     assert_eq!(
         agents["analytics_engine_datasets"],
         json!([{"binding": "SITE_EVENTS", "dataset": "yonedarepo_prod_site_events"}])

@@ -64,6 +64,19 @@ it('logs an unexpected 500 with its operation, code, repository, revision and id
   ]);
 });
 
+it('logs what no route caught, and lets it stay an exception for Cloudflare to count', async () => {
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const req = new Request(`https://yoneda/api/v1/repos/${REPO}/log`);
+  await expect(
+    served({ env: bindings, req }, async () => {
+      throw new Error('nothing caught this');
+    }),
+  ).rejects.toThrow('nothing caught this');
+  expect(lines(logged)).toEqual([
+    expect.objectContaining({ event: 'request.failed', code: 'UNCAUGHT', status: 500, repo: REPO, error: 'nothing caught this' }),
+  ]);
+});
+
 const SECRETS = [
   'Bearer yrp_abcdefghijklmnopqrstuvwxyz0123',
   'https://x:ghp_abcdef0123456789@artifacts.example.com/r.git',

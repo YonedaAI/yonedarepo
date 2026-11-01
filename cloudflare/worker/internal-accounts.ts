@@ -9,6 +9,7 @@
 // not gain (platform-write-origin.ts), and a signed-out reader has none: our tools mark those
 // requests themselves (OWN_TRAFFIC_HEADER).
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { log } from './log';
 import type { Env } from './types';
 
 const LIST_MS = 5 * 60 * 1000;
@@ -58,7 +59,7 @@ async function refresh(env: Env, now: number) {
       held = { at: now, accounts: new Set(accounts) };
     })
     .catch((e) => {
-      console.warn(`internal accounts unread: ${e?.message ?? e}`);
+      log.warn('internal_accounts.unread', { error: e });
     })
     .finally(() => {
       reading = null;

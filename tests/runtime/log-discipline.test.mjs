@@ -46,7 +46,7 @@ test('every platform queue send goes through carriedQueue, so a job keeps its re
   for (const file of await sources(`${ROOT}/worker`)) {
     if (file.endsWith('request-scope.ts')) continue;
     const text = code(await readFile(file, 'utf8'));
-    if (/(?<!carriedQueue\()env\.PLATFORM_QUEUE\.send(?:Batch)?\(|\(env\.PLATFORM_CHECKS\s*\?\?\s*env\.PLATFORM_QUEUE\)\.send/.test(text))
+    if (/(?<!carriedQueue\()env\.PLATFORM_QUEUE\.send(?:Batch)?\(|(?<!carriedQueue)\(env\.PLATFORM_CHECKS\s*\?\?\s*env\.PLATFORM_QUEUE\)\.send/.test(text))
       offenders.push(file);
   }
   assert.deepEqual(offenders, []);
