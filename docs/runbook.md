@@ -325,15 +325,14 @@ Setup, once per environment. xtask does not know this resource kind, so `tools/p
 
 1. Check the names and credentials, with no network: `node tools/platform-analytics.mjs setup --env dev --dry-run`. This proves names only, not access.
 2. Create what is missing: `node tools/platform-analytics.mjs setup --env dev`. It reads `BASIN_TOKEN` (an R2 "Admin Read & Write" account API token) from `~/.config/yonedarepo/basin.env`, uses `CLOUDFLARE_API_TOKEN` or the wrangler login for the Cloudflare API, prints no credential, and is safe to run again. That token needs **Pipelines Write**, **Workers R2 Data Catalog Write** and **Workers R2 Storage Write**; it reads first, so a token without the first two stops before anything exists, and names what is missing. It answers the `binding` to add.
-3. Add that binding to the platform Worker's `config` in `infra/envs/<env>.json`, then run `cargo xtask infra gen` and deploy:
+3. Add that binding to the platform Worker's `config` in `infra/envs/<env>.json`, then run `cargo xtask infra gen` and deploy. Dev has it; prod does not yet.
 
    ```jsonc
-   // Example only, not in the specs yet: the stream's id, not the pipeline's.
+   // The stream's id, not the pipeline's.
    "pipelines": [{ "binding": "CHANGELOG", "stream": "<stream id from setup>" }]
    ```
 
-4. Delete the leftover `yonedarepo_platform_dev_changes_v1` stream by hand; `infra prune` does not know the kind.
-5. Land something twice, wait out the first flush (3 to 7 minutes), then run `node tools/platform-analytics.mjs status --env dev`.
+4. Land something twice, wait out the first flush (3 to 7 minutes), then run `node tools/platform-analytics.mjs status --env dev`.
 
 | Resource | dev | prod |
 |---|---|---|
