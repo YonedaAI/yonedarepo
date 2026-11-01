@@ -57,7 +57,7 @@ Before starting, say what the work sets out to do. It is written on purpose, and
 yoneda flight-plan -m "Retry failed fetches twice" --scope "src/net only"
 ```
 
-The plan is for this clone's branch, pushed or not (`--branch` and `--change` name another; over MCP, `git_flight_plan`). The change page shows the goal of the newest plan for its branch, and a change with none says **No flight plan**. Plans are encouraged, never required: nothing refuses a push without one. The [Intent drift agent](/docs/agents/review-agents), when you turn it on, compares the goal with the diff. A goal and a scope each hold up to 2,000 bytes, and a plan holding a credential is refused.
+The plan is for this clone's branch, pushed or not (`--branch` and `--change` name another; over MCP, `git_flight_plan`; in the web app, **Flight plan** on the Add file and Edit forms). The change page shows the goal of the newest plan for its branch, and a change with none says **No flight plan**. Plans are encouraged, never required: nothing refuses a push without one. The [Intent drift agent](/docs/agents/review-agents), when you turn it on, compares the goal with the diff. A goal and a scope each hold up to 2,000 bytes, and a plan holding a credential is refused.
 
 ## Review
 

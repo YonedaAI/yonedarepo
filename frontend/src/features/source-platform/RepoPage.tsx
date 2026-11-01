@@ -173,7 +173,7 @@ export function RepoPage({
           {!status.error && (progress.phase === 'none' || route.view === 'repo-settings') && (
             <div className="repo-view">
               {route.view === 'files' && (
-                <RepoFiles route={route} status={data} navigate={navigate} />
+                <RepoFiles route={route} status={data} navigate={navigate} account={username} />
               )}
               {route.view === 'overview' && <RepoOverview route={route} onNavigate={navigate} />}
               {(route.view === 'history' ||

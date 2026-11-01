@@ -17,21 +17,31 @@ const pending = (kit, repo, number) =>
 
 /** Approved, with every check passed, on a head that moved on: nothing lands until the new head has
  * its own approval, and then only the new head. */
-async function staleHead({ kit, repo, crew, reviewer, dir }) {
+export async function staleHead({ kit, repo, crew, reviewer, dir, mark = () => {} }) {
   const old = await pushedLanding(kit, repo, dir, { branch: 'fail/stale', message: 'Stale one', files: { 'src/stale.ts': 'export const v = 1;\n' } });
+  mark('push and Landing');
   await review(reviewer, repo, old.head);
+  mark('approve the old head');
   const next = await pushWork(kit, dir, { branch: 'fail/stale', from: null, message: 'Stale two', files: { 'src/stale.ts': 'export const v = 2;\n' } });
+  mark('push the new head');
   await settled(async () => (await change(kit, repo, old.number)).head === next, 'the Landing at its new head');
+  mark('Landing reads the new head');
   await passCheck(crew.ci, repo, old.head);
+  mark('check on the old head');
   await staysOpen(kit, repo, old.number, 'the old head landed');
+  mark('nothing lands (fixed wait)');
   const said = await nowSaid(kit, repo, old.number, (s) => s.decision === 'hold', 'CTC to hold the new head');
+  mark('CTC holds the new head');
   assert.deepEqual([...new Set(reasonCodes(said))], ['GATES'], JSON.stringify(said));
   assert.ok(said.reasons.some((r) => r.reason.startsWith('Approvals: 0')), `the old head's approval counted: ${JSON.stringify(said)}`);
   await passCheck(crew.ci, repo, next);
+  mark('check on the new head');
   await review(reviewer, repo, next);
+  mark('approve the new head');
   const landed = await landedOf(kit, repo, old.number);
+  mark('landed');
   assert.equal(landed.landed_commit, next, 'it landed the older head');
-  return `old head approved and passed: stayed open; new head v${landed.landed_version}`;
+  return { said: `old head approved and passed: stayed open; new head v${landed.landed_version}`, number: old.number, head: next };
 }
 
 /** A required check fails and comes back; one nobody requires fails too, and that alone sends a
@@ -203,7 +213,7 @@ export async function flightFailures(kit, { web, credentials }, m) {
   const dir = await cloneOf(kit, repo, 'fail');
   const s = { kit, repo, crew, reviewer, dir, web, m };
   const leg = legs(m);
-  await leg('F1', 'Stale head', () => staleHead(s));
+  await leg('F1', 'Stale head', async () => (await staleHead(s)).said);
   await leg('F2', 'Failed check', () => failedCheck(s));
   await leg('F3', 'Path-limited token sees nothing', () => pathLimited(s));
   await leg('F4', 'A fork needs an approval of its head', () => flightFork(kit, { reviewer }));

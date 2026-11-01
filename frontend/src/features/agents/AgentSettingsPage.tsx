@@ -26,7 +26,7 @@ import {
   workspacePath,
 } from './agentsModel';
 import { BlockField, RepoPicker, TriggerFields } from './settingsParts';
-import { type AgentForm, formProblem, initialForm, updateBody } from './setupForm';
+import { type AgentForm, formProblem, initialForm, NO_REPO_CHOSEN, updateBody } from './setupForm';
 
 type Space = { workspace?: string };
 
@@ -187,7 +187,8 @@ function SetupForm({
           />
         </div>
       </section>
-      {(error || problem) && <Failure error={error || problem} />}
+      {problem === NO_REPO_CHOSEN && <p className="source-meta">{problem}</p>}
+      {(error || (problem && problem !== NO_REPO_CHOSEN)) && <Failure error={error || problem} />}
       {saved && (
         <p role="status" className="source-meta agent-setup-saved">
           {saved}

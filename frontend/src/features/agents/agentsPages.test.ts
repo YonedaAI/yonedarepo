@@ -194,9 +194,13 @@ describe("an agent's pages", () => {
     expect(html).toContain('unless its title starts with Draft: or WIP:');
     expect(html).toContain('+ Add filters');
     expect(html).toContain('All repositories, including new ones');
-    expect(html.match(/type="checkbox" checked=""/g)).toHaveLength(2);
+    // Nothing is chosen for you: a paid agent starts only where you ask, and that is no error.
+    expect(html.match(/type="checkbox" checked=""/g)).toBeNull();
+    expect(html).toContain('0 of 2 selected');
+    expect(html).toContain('Choose at least one repository');
+    expect(html).not.toContain('role="alert"');
     expect(html).toMatch(/type="checkbox" role="switch" aria-checked="true" checked=""/);
-    expect(html).toMatch(/<button type="submit">Add agent<\/button>/);
+    expect(html).toMatch(/<button type="submit" disabled="">Add agent<\/button>/);
     expect(html).not.toContain('>Cancel<');
   });
 

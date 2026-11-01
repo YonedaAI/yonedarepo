@@ -223,7 +223,7 @@ const only = chosenItems(values);
 // The model check needs the platform's review key, the webhook gate a receiver and the
 // members, forks (22) and orgs (24) gates a second account, and real agents (29) spend on a
 // model, so a full kit run leaves them out unless named.
-const wanted = (id) => (only ? only.has(id) : !['model', 'hooks', 'members', 'reads', '22', '24', '26', '29', '32', '45'].includes(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
+const wanted = (id) => (only ? only.has(id) : !['model', 'hooks', 'members', 'reads', '22', '24', '26', '29', '32', '45', 'f1'].includes(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
 
 if (values.prod)
   Object.assign(values, {
@@ -350,7 +350,7 @@ await step('9', '1000-writer burst (platform API)', (m) => fanout(1000, m));
 await step('10', 'Many-repo burst (20 repos x 10 writers)', (m) =>
   BENCH_KEY ? manyRepoBurst(platformAccount, { client: values.client, key: BENCH_KEY, target: values.platform }, m) : { skip: 'BENCH_KEY not in staging-bench.env' },
 );
-if (['12', '13', '14', '15', '16', '17', '18', '21', '27', '28', '29', '32', '45', ...FEATURE_ITEMS].some(wanted)) {
+if (['12', '13', '14', '15', '16', '17', '18', '21', '27', '28', '29', '32', '45', 'f1', ...FEATURE_ITEMS].some(wanted)) {
   const cli = new CliKit({ api: values.api, bin: values['cli-bin'] ?? resolve(root, 'target/release'), platformAccount });
   const repo = {};
   try {

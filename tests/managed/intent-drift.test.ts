@@ -78,12 +78,12 @@ describe('intent drift', () => {
     expect(h.harness.started).toEqual([]);
   });
 
-  it('is a level agent named intent-drift that never blocks by default', () => {
+  it('is a level agent named intent-drift that fails its check at high by default', () => {
     expect(managedAgent('intent-drift')).toMatchObject({
       check: 'intent-drift',
       value_type: 'level',
       verdict: true,
-      defaults: { block_at: null },
+      defaults: { block_at: 'high' },
     });
   });
 
@@ -117,10 +117,10 @@ describe('intent drift', () => {
   });
 
   it.each([
-    ['on_course', 'low', 'passed'],
-    ['partial', 'medium', 'findings'],
-    ['off_course', 'high', 'findings'],
-  ])('%s reads as %s and posts one comment and a check', async (verdict, value, status) => {
+    ['on_course', 'low', 'passed', 'pass'],
+    ['partial', 'medium', 'findings', 'pass'],
+    ['off_course', 'high', 'findings', 'fail'],
+  ])('%s reads as %s and posts one comment and a check', async (verdict, value, status, passed) => {
     const { h, outcome, check } = await run({
       summary: 'Compared the goal with the diff.',
       verdict,
@@ -134,14 +134,18 @@ describe('intent drift', () => {
     expect(comment.body).toContain('Adds a cache');
     expect(check).toMatchObject({
       name: 'intent-drift',
-      status: 'pass',
+      status: passed,
       commit: HEAD_A,
       evidence: expect.objectContaining({ agent: 'intent-drift', value, verdict }),
     });
     expect(await stored(h, h.created[0].run)).toMatchObject({ status, value });
   });
 
-  it('fails the check at the level a repository blocks at', async () => {
+  it.each([
+    ['medium', 'partial', 'fail'],
+    ['medium', 'on_course', 'pass'],
+    [null, 'off_course', 'pass'],
+  ])('set to block at %s, %s is a %s', async (block_at, verdict, status) => {
     const h = harness(newRepo());
     h.platform.change({ flight_plan: PLAN });
     await enable(h);
@@ -151,17 +155,17 @@ describe('intent drift', () => {
         {
           method: 'PUT',
           headers: { cookie: 'session=owner', 'content-type': 'application/json' },
-          body: JSON.stringify({ settings: { block_at: 'high' } }),
+          body: JSON.stringify({ settings: { block_at } }),
         },
       ),
       h.env,
     );
     expect(set.status).toBe(200);
     fakeGateway();
-    h.harness.scripts = [{ result: { summary: 's', verdict: 'off_course', findings: [] } }];
+    h.harness.scripts = [{ result: { summary: 's', verdict, findings: [] } }];
     await open(h);
     await runAgent(h.env, h.created[0], inline);
-    expect(h.platform.checks[0]).toMatchObject({ status: 'fail' });
+    expect(h.platform.checks[0]).toMatchObject({ status });
   });
 
   it('with no plan runs no model and no container, and the check says so', async () => {

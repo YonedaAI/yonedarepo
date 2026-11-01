@@ -6,7 +6,8 @@
 // next time the owner's session reaches the managed API (the web app asks right after it
 // creates or imports one), never by polling.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MANAGED_AGENTS } from '../../shared/managed-agents';
+import { MANAGED_AGENTS, managedAgent } from '../../shared/managed-agents';
+import { resolveSettings } from '../../shared/managed-settings';
 import type { QueueMessage } from '../../cloudflare/managed/config';
 import { consume } from '../../cloudflare/managed/dispatch';
 import { managedFetch } from '../../cloudflare/managed/index';
@@ -57,11 +58,14 @@ describe('locked maintained fields', () => {
 
   it('lets an owner set the level that blocks, on a level agent only', async () => {
     const h = harness();
-    const res = await put(h, 'slop-review', { settings: { block_at: 'high' } });
+    const res = await put(h, 'slop-review', { settings: { block_at: 'medium' } });
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ settings: { block_at: 'high' }, customized: ['block_at'] });
+    expect(await res.json()).toMatchObject({ settings: { block_at: 'medium' }, customized: ['block_at'] });
+    // Never is a choice now the default blocks: it is kept, and the default clears it.
     const off = await put(h, 'slop-review', { settings: { block_at: null } });
-    expect(await off.json()).toMatchObject({ settings: { block_at: null }, customized: [] });
+    expect(await off.json()).toMatchObject({ settings: { block_at: null }, customized: ['block_at'] });
+    const back = await put(h, 'slop-review', { settings: { block_at: 'high' } });
+    expect(await back.json()).toMatchObject({ settings: { block_at: 'high' }, customized: [] });
     for (const [agent, value] of [
       ['slop-review', 'low'],
       ['slop-review', 'fail'],
@@ -69,6 +73,38 @@ describe('locked maintained fields', () => {
       ['security-review', 'high'],
     ])
       expect((await put(h, agent, { settings: { block_at: value } })).status).toBe(400);
+  });
+
+  describe('settings saved before bad verdicts blocked by default', () => {
+    const blockAt = async (h: Harness, agent: string) =>
+      (await (await api(h, '')).json<any>()).agents.find((a: any) => a.id === agent).settings.block_at;
+    const saved = (h: Harness, agent: 'slop-review' | 'intent-drift', scope: string, block_at: unknown) =>
+      workspaceStub(h.env, h.platform.account).save(agent, scope, { block_at } as any, 'owner');
+
+    it('a workspace that never chose gets the new default', async () => {
+      const h = harness();
+      expect(await blockAt(h, 'slop-review')).toBe('high');
+      expect(await blockAt(h, 'intent-drift')).toBe('high');
+    });
+    it('a saved level stays, and so does a saved Never', async () => {
+      const h = harness();
+      await saved(h, 'slop-review', '', 'medium');
+      await saved(h, 'intent-drift', '', null);
+      expect(await blockAt(h, 'slop-review')).toBe('medium');
+      expect(await blockAt(h, 'intent-drift')).toBeNull();
+    });
+    it('a repository keeps what it saved over its workspace', () => {
+      const stored = { workspace: { block_at: 'medium' }, repos: { r1: { block_at: null } } } as any;
+      const agent = managedAgent('slop-review')!;
+      expect(resolveSettings(agent, stored.workspace, stored.repos.r1).block_at).toBeNull();
+      expect(resolveSettings(agent, stored.workspace, stored.repos.r2).block_at).toBe('medium');
+      expect(resolveSettings(agent).block_at).toBe('high');
+    });
+  });
+
+  it('never lets a pass or fail agent hold a level', () => {
+    expect(managedAgent('code-review')?.defaults.block_at).toBeNull();
+    expect(managedAgent('security-review')?.defaults.block_at).toBeNull();
   });
 
   it('ignores overrides stored before the lock: every workspace runs the maintained defaults', async () => {
