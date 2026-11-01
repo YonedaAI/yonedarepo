@@ -1,6 +1,6 @@
 # Incidents
 
-What each alert means, the first check, and the way out. Alerts come by email from Superfan (`cloudflare/superfan/`) and the dead-man (`cloudflare/superfan/deadman.ts`), and name a component and a signal, as in `front_worker health`.
+What each alert means, the first check, and the way out. Alerts come by email from Superfan (`cloudflare/superfan/`) and the dead-man (`cloudflare/superfan/deadman.ts`). A mail says what's wrong in plain words; each row below starts with those words, then the signal name `GET /findings` shows. Mail wording lives in `cloudflare/superfan/mail-copy.ts`.
 
 Today this is dev only: `WATCH_WIDE=on` and the dead-man are not on prod.
 
@@ -34,35 +34,35 @@ Counted log events stay open for 20 hours after the last one, because some are l
 
 | Alert | Means | First check | Way out |
 |---|---|---|---|
-| `api_worker health` | Platform `/health` isn't answering 200 as `yonedarepo-platform`: API, Git and MCP may be down | `curl -i https://api.<env>.yonedarepo.com/health`, then its Observability errors | New since the last deploy: roll back |
-| `front_worker health` | The site isn't answering 200 as `yonedarepo` | `curl -i` the site's `/health`; check the route and the front Worker's errors | New since the last deploy: roll back |
-| `billing reconcile_mismatches` | Stripe, a ledger and the rollup disagree | Managed Worker logs, `event = billing.reconcile.mismatch`: account and `problem`. Nothing has changed money: the reconcile only reads | Don't refund or rerun until explained. Stop charges if money is moving wrongly |
-| `storage storage_9gb` | A repository's database is past 9 GB. SQLite refuses writes at about 10.7 GB | Platform logs, `event = repo.storage`, for the repository; admin Repositories page | `docs/runbook.md`, "Alerts" and compaction. Vacuum or split before it fills |
-| `derived_jobs dead_lettered`, `dead_letter_backlog` | A platform job gave up after its retries. The queue is shared with checks | Platform logs, `event = job.failed`. Dead letters have no consumer and expire with the queue's retention | Fix the cause, then requeue by hand before they expire |
-| `check_runs dead_lettered` | A check run gave up | Platform logs, `event = job.failed` | As above |
-| `managed_worker dead_lettered`, `dead_letter_backlog` | A managed agent run or reconcile job gave up | Managed logs, `event = managed.queue` | As above |
+| API health check failing (`api_worker health`) | Platform `/health` isn't answering 200 as `yonedarepo-platform`: API, Git and MCP may be down | `curl -i https://api.<env>.yonedarepo.com/health`, then its Observability errors | New since the last deploy: roll back |
+| Website health check failing (`front_worker health`) | The site isn't answering 200 as `yonedarepo` | `curl -i` the site's `/health`; check the route and the front Worker's errors | New since the last deploy: roll back |
+| Billing mismatch with Stripe (`billing reconcile_mismatches`) | Stripe, a ledger and the rollup disagree | Managed Worker logs, `event = billing.reconcile.mismatch`: account and `problem`. Nothing has changed money: the reconcile only reads | Don't refund or rerun until explained. Stop charges if money is moving wrongly |
+| Repository past 9 GB (`storage storage_9gb`) | A repository's database is past 9 GB. SQLite refuses writes at about 10.7 GB | Platform logs, `event = repo.storage`, for the repository; admin Repositories page | `docs/runbook.md`, "Alerts" and compaction. Vacuum or split before it fills |
+| Background jobs failed (`derived_jobs dead_lettered`, `dead_letter_backlog`) | A platform job gave up after its retries. The queue is shared with checks | Platform logs, `event = job.failed`. Dead letters have no consumer and expire with the queue's retention | Fix the cause, then requeue by hand before they expire |
+| Check runs failed (`check_runs dead_lettered`) | A check run gave up | Platform logs, `event = job.failed` | As above |
+| Managed agent runs failed (`managed_worker dead_lettered`, `dead_letter_backlog`) | A managed agent run or reconcile job gave up | Managed logs, `event = managed.queue` | As above |
 | Mail from the dead-man: `Superfan has stopped` | Superfan has gone quiet for about 25 minutes, can't be reached, or can't mail. **Nothing is watching this env** | `GET /heartbeat`. Then Superfan's Observability, and its Cron Triggers in the dashboard | Redeploy Superfan, or fix its recipient, sender or Resend key. The mail repeats every 6 hours until it recovers |
 
 ## Digest alerts
 
 | Alert | Means | First check | Way out |
 |---|---|---|---|
-| `<component> error_rate`, `exceptions`, `error_logs` | More than 2% of 20+ invocations failed, or errors are piling up | The finding's narrative, then that Worker's Observability | New since the last deploy: roll back |
-| `<component> p95_wall_ms` | p95 doubled from its baseline, by 100 ms or more | Observability, the slowest operations | A burst on dev explains most of these |
-| `<component> resource_kills` | Killed for CPU or memory | Observability, `exceededCpu` or `exceededMemory` | Find the repository or job; a large one needs a bound |
-| `storage storage_8gb` | A repository's database is past 8 GB | As `storage_9gb` | Plan compaction or a split now |
-| `derived_jobs compaction_stalls` | A hold has stalled a repository's log | `GET /repos/:id/compaction`: `held` says why | `docs/runbook.md`, "A stalled log raises an alarm" |
-| `cron failed_crons` | The minute cron threw, or logged a failed step | Platform logs: `undo.sweep_failed`, `compaction.sweep_failed`, `ssh.keepalive_failed`, `billing.reconcile`, `billing.reconcile_failed` | Each step runs alone, so one failing leaves the others running |
-| `cron cron_missing` | No cron ran for an hour, with other traffic arriving. Purges, compaction, SSH keep-alive and the nightly reconcile have stopped | Cron Triggers on the platform Worker. A new cron can take 15 minutes to fire | Redeploy the platform Worker |
-| `land_queue land_failures` | Over 5 land batches failed in 20 hours | Platform logs, `land.batch_failed`, `land.submitted_batch_failed`, `land.step_failed`: `repo` and `error` | Lost compare-and-swaps aren't counted, so these are real |
-| `land_queue land_timeouts` | Over 10 landers waited 20 seconds with no answer in 20 hours | Platform logs, `event = land.timed_out`. Expected in a 1,000-writer burst on dev | Landers retry until 2 minutes; a repository with many needs a look |
-| `derived_jobs`, `check_runs`, `managed_worker` `backlog`, `backlog_growth` | Over 50 messages waiting, or more than doubled | Is the consumer running? Observability on that Worker | Usually a stuck or slow job |
-| `derived_jobs lag_ms`, `retries_per_message` | Jobs waited over 2 minutes, or retry more than once on average | `event = job.failed` | As above |
-| `object_push_queue push_retries` | Artifacts refused over 5 pushes | Platform logs, `object store push attempt` or `event = object.push_retry` | Usually busy and clears itself |
-| `check_runs container_disk_percent` | A check container passed 85% disk | Check container metrics | Check image and workspace size |
-| `deadman deadman_stale` | The dead-man hasn't checked in 20 minutes, or can't be read. If Superfan stops now, nobody is told | `GET /health` on the dead-man; its Cron Triggers | Redeploy the dead-man |
-| `telemetry tail_silent` | No tail events this hour. Every tail signal is blind | `GET /status`; is `tail_consumers` still on the Worker? | Redeploy the platform, then Superfan |
-| `telemetry fetch_failed`, `config`, `token_missing`, `disabled` | Analytics can't be read: queues and dead letters are blind | The finding's summary names the cause | Fix `CF_ANALYTICS_TOKEN` or the config |
+| Calls failing, or errors (`<component> error_rate`, `exceptions`, `error_logs`) | More than 2% of 20+ invocations failed, or errors are piling up | The finding's narrative, then that Worker's Observability | New since the last deploy: roll back |
+| Calls slowed (`<component> p95_wall_ms`) | p95 doubled from its baseline, by 100 ms or more | Observability, the slowest operations | A burst on dev explains most of these |
+| Calls killed for CPU or memory (`<component> resource_kills`) | Killed for CPU or memory | Observability, `exceededCpu` or `exceededMemory` | Find the repository or job; a large one needs a bound |
+| Repository past 8 GB (`storage storage_8gb`) | A repository's database is past 8 GB | As `storage_9gb` | Plan compaction or a split now |
+| Repository log compaction stalled (`derived_jobs compaction_stalls`) | A hold has stalled a repository's log | `GET /repos/:id/compaction`: `held` says why | `docs/runbook.md`, "A stalled log raises an alarm" |
+| Scheduled task failures (`cron failed_crons`) | The minute cron threw, or logged a failed step | Platform logs: `undo.sweep_failed`, `compaction.sweep_failed`, `ssh.keepalive_failed`, `billing.reconcile`, `billing.reconcile_failed` | Each step runs alone, so one failing leaves the others running |
+| Scheduled tasks have stopped (`cron cron_missing`) | No cron ran for an hour, with other traffic arriving. Purges, compaction, SSH keep-alive and the nightly reconcile have stopped | Cron Triggers on the platform Worker. A new cron can take 15 minutes to fire | Redeploy the platform Worker |
+| Landing batches failed (`land_queue land_failures`) | Over 5 land batches failed in 20 hours | Platform logs, `land.batch_failed`, `land.submitted_batch_failed`, `land.step_failed`: `repo` and `error` | Lost compare-and-swaps aren't counted, so these are real |
+| Landings waited over 20 seconds (`land_queue land_timeouts`) | Over 10 landers waited 20 seconds with no answer in 20 hours | Platform logs, `event = land.timed_out`. Expected in a 1,000-writer burst on dev | Landers retry until 2 minutes; a repository with many needs a look |
+| Jobs or runs waiting (`derived_jobs`, `check_runs`, `managed_worker` `backlog`, `backlog_growth`) | Over 50 messages waiting, or more than doubled | Is the consumer running? Observability on that Worker | Usually a stuck or slow job |
+| Jobs waited to start, or keep retrying (`derived_jobs lag_ms`, `retries_per_message`) | Jobs waited over 2 minutes, or retry more than once on average | `event = job.failed` | As above |
+| Git pushes refused and retried (`object_push_queue push_retries`) | Artifacts refused over 5 pushes | Platform logs, `object store push attempt` or `event = object.push_retry` | Usually busy and clears itself |
+| Check containers at high disk (`check_runs container_disk_percent`) | A check container passed 85% disk | Check container metrics | Check image and workspace size |
+| Dead-man check has stopped (`deadman deadman_stale`) | The dead-man hasn't checked in 20 minutes, or can't be read. If Superfan stops now, nobody is told | `GET /health` on the dead-man; its Cron Triggers | Redeploy the dead-man |
+| Monitoring has stopped receiving events (`telemetry tail_silent`) | No tail events this hour. Every tail signal is blind | `GET /status`; is `tail_consumers` still on the Worker? | Redeploy the platform, then Superfan |
+| Monitoring can't read analytics, or is misconfigured (`telemetry fetch_failed`, `config`, `token_missing`, `disabled`) | Analytics can't be read: queues and dead letters are blind | The finding's summary names the cause | Fix `CF_ANALYTICS_TOKEN` or the config |
 
 ## Blind spots that remain
 
