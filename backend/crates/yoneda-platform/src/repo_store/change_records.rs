@@ -114,6 +114,10 @@ fn labelled(mut record: Map<String, Value>) -> Value {
         .unwrap_or("other")
         .to_owned();
     record.insert("actor_kind".into(), json!(kind));
+    // Reserved now because a stream's fields can't change once it exists. Empty until the
+    // repository stores which credential acted; the adapter drops nulls.
+    record.insert("credential_id".into(), Value::Null);
+    record.insert("credential_kind".into(), Value::Null);
     Value::Object(record)
 }
 
