@@ -261,7 +261,7 @@
           "ASYNC_STORE": "on",
           "LANDING_INSTRUMENTS": "on",
           "LAND_WHEN_CLEARED": "on",
-          "AGENT_SIGNUP": "off",
+          "AGENT_SIGNUP": "on",
           "NEWSLETTER": "on",
           "ADMIN_NOTIFY_EMAIL": "",
           "SUPPORT_EMAIL": "support@yonedalabs.ai",
