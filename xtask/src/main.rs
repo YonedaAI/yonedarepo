@@ -24,6 +24,7 @@ mod internal_accounts;
 mod layers;
 mod layout;
 mod local_config;
+mod newsletter_export;
 mod process;
 mod revenue_rebuild;
 mod search_backfill;

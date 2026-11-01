@@ -3,7 +3,8 @@
 //! `POST /api/v1/admin/backfill` as the owner (OWNER_TOKEN from the env's secrets file), one
 //! page at a time until the last. Repeating it adds nothing. `admin erase-backfill` is in
 //! `erase_backfill`, `admin search-backfill` in `search_backfill`,
-//! `admin revenue-rebuild` in `revenue_rebuild`, `admin internal` in `internal_accounts`.
+//! `admin revenue-rebuild` in `revenue_rebuild`, `admin internal` in `internal_accounts`,
+//! `admin newsletter-export` in `newsletter_export`.
 use crate::infra::inventory::{self, Deployable};
 use crate::infra::spec::{Env, Lock, Spec};
 use crate::process::Result;
@@ -17,8 +18,9 @@ pub(crate) async fn execute(args: &[String]) -> Result<()> {
         Some("search-backfill") => crate::search_backfill::execute(args).await,
         Some("revenue-rebuild") => crate::revenue_rebuild::execute(args).await,
         Some("internal") => crate::internal_accounts::execute(args).await,
+        Some("newsletter-export") => crate::newsletter_export::execute(args).await,
         _ => Err(
-            "cargo xtask admin backfill-accounts|erase-backfill|search-backfill|revenue-rebuild|internal --env dev|prod"
+            "cargo xtask admin backfill-accounts|erase-backfill|search-backfill|revenue-rebuild|internal|newsletter-export --env dev|prod"
                 .into(),
         ),
     }
