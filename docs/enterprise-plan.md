@@ -7,9 +7,9 @@ Four things enterprise buyers ask about deletion and records. Nothing that works
 | Need | Status | Stage |
 |---|---|---|
 | Org owners delete their org's repos | Built and tested with a session and MCP | Add the missing token and second-owner tests |
-| Deleted data really gone | Built behind `REPO_ERASE`: on in dev, off in prod | 1 |
-| Undo window | Built behind `REPO_UNDO_DAYS`: 30 days in dev, unset in prod | 2 |
-| Legal hold | Built behind `LEGAL_HOLD`: on in dev, off in prod | 3 |
+| Deleted data really gone | Built behind `REPO_ERASE`: on in dev, and in prod from the next ship | 1 |
+| Undo window | Built behind `REPO_UNDO_DAYS`: 30 days in dev, and in prod from the next ship | 2 |
+| Legal hold | Built behind `LEGAL_HOLD`: on in dev, and in prod from the next ship | 3 |
 | Audit log | Built behind `AUDIT_LOG`: off in both | 4 |
 
 Operators never get a general delete. Operator actions stay reversible.

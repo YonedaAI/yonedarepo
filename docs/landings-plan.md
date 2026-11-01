@@ -344,7 +344,7 @@ Conservative rules: a fork needs an approval of its head, a repo with no rules n
 
 `main` applies through `0044`. Dev applies through `0045`, and every branch this plan names is merged into dev, so the next ship takes `0045` and the newest harness to prod.
 
-`LAND_WHEN_CLEARED` goes on in `infra/envs/prod.json` with that ship: `main` already holds the job's handler, and kit items 34, 43 and 44 must pass on dev first. A repository's own switch stays off until its owner sets it. `LANDING_INSTRUMENTS` stays off on prod.
+`LAND_WHEN_CLEARED` goes on in `infra/envs/prod.json` with that ship: `main` already holds the job's handler, and kit items 34, 43 and 44 must pass on dev first. A repository's own switch stays off until its owner sets it. `LANDING_INSTRUMENTS` goes on with the same ship.
 
 ## Verification
 

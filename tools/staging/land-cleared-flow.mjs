@@ -85,8 +85,9 @@ async function separation(kit, reviewer, m) {
     m.separation = held.reasons.find((r) => r.code === 'SEPARATION').reason;
     await line.release();
     released = true;
-    // Closing what stood in front asks again for what it held.
-    await kit.pat().post(repo.path(`/changes/${line.front.number}/close`));
+    // The resume asks again too, so what stood in front may land first; closing it does the same.
+    const closed = await kit.pat().raw('POST', repo.path(`/changes/${line.front.number}/close`));
+    assert.ok(closed.ok || /landed/.test(closed.body?.error?.message ?? ''), `closing the front: ${closed.status}`);
     const landed = await settled(async () => {
       const read = await change(kit, repo, reader.number);
       return read.status === 'landed' && read;
