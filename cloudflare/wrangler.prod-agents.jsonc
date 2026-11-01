@@ -145,8 +145,8 @@
     "REGION_SIGNALS": "off",
     "REQUEST_IDS": "off",
     "SEO_INDEXING": "on",
-    "TRAFFIC_EVENTS": "off",
-    "TRAFFIC_REPORT": "off",
+    "TRAFFIC_EVENTS": "on",
+    "TRAFFIC_REPORT": "on",
     "WEB_ANALYTICS_TOKEN": "fd30d727a0dc4d4c949dee535977d1b2"
   },
   "workers_dev": true
