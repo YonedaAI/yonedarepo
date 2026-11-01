@@ -87,8 +87,8 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     assert_eq!(platform["vars"]["WEB_ORIGIN"], "https://yonedarepo.com");
     assert_eq!(platform["ratelimits"][0]["namespace_id"], "1001");
     assert_eq!(platform["placement"]["region"], "aws:us-east-1");
-    assert_eq!(platform["vars"]["TRAFFIC_EVENTS"], "off");
-    assert_eq!(platform["vars"]["TRAFFIC_REPORT"], "off");
+    assert_eq!(platform["vars"]["TRAFFIC_EVENTS"], "on");
+    assert_eq!(platform["vars"]["TRAFFIC_REPORT"], "on");
     assert_eq!(platform["vars"]["REGION_SIGNALS"], "off");
     assert_eq!(
         platform["analytics_engine_datasets"],
@@ -118,9 +118,9 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     // Sign-ins run here too, so the switch is set with the platform Worker's.
     assert_eq!(vars["AUDIT_LOG"], "off");
     // The ping and platform client counts: dev measures them first (docs/load-testing.md).
-    assert_eq!(vars["TRAFFIC_EVENTS"], "off");
+    assert_eq!(vars["TRAFFIC_EVENTS"], "on");
     // Internal accounts leave the ping too, so it is set with the platform Worker's.
-    assert_eq!(vars["TRAFFIC_REPORT"], "off");
+    assert_eq!(vars["TRAFFIC_REPORT"], "on");
     // Sign-ups run here too; off until the owner clears the privacy text.
     assert_eq!(vars["REGION_SIGNALS"], "off");
     // Observability O1's two switches stay off until dev has run them.
