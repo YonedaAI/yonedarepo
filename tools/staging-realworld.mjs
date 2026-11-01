@@ -98,11 +98,7 @@
 //          in the Docker sandbox, one fresh fork per run. Prints its estimate and starts only with
 //          --yes: tools/staging/memory-flow.mjs)
 //        node tools/staging-realworld.mjs --feature-tests [--headed]
-//          (= --only 0,12,33-42,17, no model: CTC, Landings, flight plan and go-around, search across
-//          repositories, the Clone panel, admin Revenue and Traffic, org delete during create, the
-//          audit log and the empty states, by API, CLI, Git, MCP and in Chrome on the run's own
-//          session. 34 and 41 skip with a note while LAND_WHEN_CLEARED and AUDIT_LOG are off.
-//          Evidence feature-gate-*. A full run does all but those two, unless the switch is on)
+//          (= --only 0,12,33-42,17, no model: tools/staging/feature-items.mjs)
 //        node tools/staging-realworld.mjs --memory-page [--headed]
 //          (= --only 0,12,32,17, dev only, no model: a session record, its transcript and context
 //          delivery behind a change, read by API and in Chrome: tools/staging/memory-page-flow.mjs)
@@ -115,22 +111,14 @@ import { parseArgs, promisify } from 'node:util';
 import { bigClone } from './staging/big-clone-flow.mjs';
 import { browserFlow } from './staging/browser-flow.mjs';
 import { compactionFlow } from './staging/compaction-flow.mjs';
-import { ctcTraffic } from './staging/ctc-flow.mjs';
 import { cliChangeRequest } from './staging/change-flow.mjs';
 import { accountMcp, cleanupRepos, cliCleanup, revokePat, serverReads } from './staging/cli-account-flow.mjs';
-import { adminPages } from './staging/admin-pages-flow.mjs';
-import { auditFlow } from './staging/audit-flow.mjs';
-import { clonePanel } from './staging/clone-panel-flow.mjs';
 import { cliConcurrency, cliLoginRepo, cliTransactional } from './staging/cli-flow.mjs';
 import { CliKit } from './staging/cli-tools.mjs';
 import { Recorder, Session, accountSession, kitCredentials, purgeWhatIsDeleted, readEnvFile, secondAccount, treeOf } from './staging/client.mjs';
 import { agentHooks } from './staging/agent-hooks-flow.mjs';
-import { emptyStates } from './staging/empty-state-flow.mjs';
-import { goAroundFlow } from './staging/go-around-flow.mjs';
-import { landWhenCleared } from './staging/land-cleared-flow.mjs';
-import { landingsFlow } from './staging/landings-flow.mjs';
-import { orgRace } from './staging/org-race-flow.mjs';
-import { searchFlow } from './staging/search-flow.mjs';
+import { featureItems } from './staging/feature-items.mjs';
+import { chosenItems, FEATURE_ITEMS, featureRun, offSwitches } from './staging/kit-gates.mjs';
 import { agentRun } from './staging/agent-run-flow.mjs';
 import { forkFlow } from './staging/fork-flow.mjs';
 import { gitSemantics } from './staging/git-semantics-flow.mjs';
@@ -231,44 +219,7 @@ const { values } = parseArgs({
   },
 });
 const root = fileURLToPath(new URL('../', import.meta.url));
-const FEATURE_ITEMS = ['33', '34', '35', '36', '37', '38', '39', '40', '41', '42'];
-// A skip in the newest realworld evidence refuses a prod deploy (xtask/src/deploy_evidence.rs), so
-// a full run keeps these out of it while their platform switch is off: listed under `not_run`,
-// with the reason. Named with --only or --feature-tests, they record their skip.
-const SWITCHED = ['34', '41'];
-const only = values['feature-tests']
-  ? new Set(['0', '12', ...FEATURE_ITEMS, '17'])
-  : values['git-semantics']
-  ? new Set(['0', '12', '13', '18', '21', '23', '27', '17', ...(values.ssh ? ['26'] : [])])
-  : values['agent-hooks']
-  ? new Set(['0', '12', '28', '17'])
-  : values['memory-page']
-  ? new Set(['0', '12', '32', '17'])
-  : values.agents
-  ? new Set(['0', '12', '29', '17'])
-  : values.ssh
-  ? new Set(['0', '26'])
-  : values.visibility
-  ? new Set(['0', '31'])
-  : values.orgs
-  ? new Set(['0', '24'])
-  : values.lfs
-  ? new Set(['0', '25'])
-  : values['model-check']
-  ? new Set(['0', 'model'])
-  : values.webhooks
-    ? new Set(['0', 'hooks'])
-    : values.members
-      ? new Set(['0', 'members'])
-      : values.forks
-        ? new Set(['0', '22'])
-      : values['reads-sessions']
-        ? new Set(['0', 'reads'])
-        : values.browser
-          ? new Set(['0', 'browser'])
-          : values.only
-            ? new Set(values.only.split(','))
-            : null;
+const only = chosenItems(values);
 // The model check needs the platform's review key, the webhook gate a receiver and the
 // members, forks (22) and orgs (24) gates a second account, and real agents (29) spend on a
 // model, so a full kit run leaves them out unless named.
@@ -432,22 +383,7 @@ if (['12', '13', '14', '15', '16', '17', '18', '21', '27', '28', '29', '32', ...
     await step('32', 'Change evidence (no model): session record, transcript and context delivery, by API and in Chrome', (m) =>
       memoryPage(cli, { browser: { origin: values.origin, kit, headed: values.headed } }, m),
     );
-    const web = { chrome: { origin: values.origin, root, headed: values.headed, cookie: account.cookie }, account };
-    let member;
-    const credentials = { second: async () => (member ??= await secondAccount(values.origin, kit)) };
-    const feature = { ...web, credentials };
-    await step('33', 'CTC: traffic warnings on start and read, radar by API, MCP and page, path-limited token sees nothing', (m) => ctcTraffic(cli, feature, m));
-    await step('34', 'CTC lands: an approval lands it, High Risk holds, separation holds behind tickets (needs LAND_WHEN_CLEARED)', (m) => landWhenCleared(cli, { web, credentials }, m));
-    await step('35', 'Landings: per-push switch, adoption, direct landings, computed states, the rename', (m) => landingsFlow(cli, feature, m));
-    await step('36', 'Flight plan and go-around: filed or refused cleanly, findings reach a session, findings_block refuses', (m) => goAroundFlow(cli, web, m));
-    await step('37', 'Search across repositories: REST, CLI, MCP, page; private stays private, revoked token refused, beyond the 25 cap', (m) => searchFlow(cli, feature, m));
-    await step('38', 'Clone panel: no token line when public, one when private, Copy, phone width', (m) => clonePanel(cli, web, m));
-    await step('39', 'Admin: Revenue, revenue-rebuild, Traffic without our own traffic (the dev owner)', (m) => adminPages({ chrome: web.chrome, kitSession: platformAccount, prod: values.prod }, m));
-    await step('40', 'Org delete during create: one of the two wins, nothing stranded; the org pages', (m) => orgRace({ ...feature, platform: platformAccount }, m));
-    await step('41', 'Audit: repository events in the org log, filters, chain, exports, page (needs AUDIT_LOG)', (m) =>
-      auditFlow({ platform: platformAccount, kitName: account.name, chrome: web.chrome, cookie: account.cookie, origin: values.origin, credentials }, m),
-    );
-    await step('42', 'Shared empty state on Sessions, Landings and CTC, wide and at 375 px', (m) => emptyStates(cli, web, m));
+    await featureItems(step, { cli, kit, account, platformAccount, values, root });
     await step('17', 'Delete kit repos via yoneda, 404 after, PAT revoked', (m) => cliCleanup(cli, m));
   } finally {
     // Never leave a live token behind; leftover repos: --cleanup-repos kit-cli / kit-mcp.
@@ -460,16 +396,13 @@ if (['12', '13', '14', '15', '16', '17', '18', '21', '27', '28', '29', '32', ...
 // Only the model check calls a model (the platform's own AI check, < $0.01).
 // The tree of the commit item 0 saw live: the prod guard takes a merge commit of the same tree.
 const tree = treeOf(root, rec.items.find((i) => i.id === '0')?.metrics.front);
-// A full run, not one that named them: see SWITCHED.
-const notRun = only ? [] : rec.items.filter((i) => SWITCHED.includes(i.id) && i.status === 'skip').map(({ id, title, reason }) => ({ id, title, reason }));
-rec.items = rec.items.filter((i) => !notRun.some((n) => n.id === i.id));
-const evidence = { schema: 1, origin: values.origin, platform: values.platform, tree, recorded_at: new Date().toISOString(), items: rec.items, not_run: notRun };
+const { ran, notRun } = offSwitches(rec.items, only);
+rec.items = ran;
+const evidence = { schema: 1, origin: values.origin, platform: values.platform, tree, recorded_at: new Date().toISOString(), items: ran, not_run: notRun };
 await mkdir(resolve(root, '.local/staging'), { recursive: true });
 // Smoke-only evidence keeps its own name: the prod guard reads the newest realworld*.json.
 const smoke = ['model', 'hooks', 'members', 'reads', 'browser', '22', '24', '25', '26', '31'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));
-// A run of feature items alone is no full kit, so it keeps out of what the prod guard reads.
-const features = only && [...only].every((id) => ['0', '12', '17', ...FEATURE_ITEMS].includes(id)) && FEATURE_ITEMS.some((id) => only.has(id));
-const gate = features ? 'feature-gate' : values['git-semantics'] ? 'git-semantics-gate' : values['agent-hooks'] ? 'agent-hooks-gate' : values.agents ? 'agents-gate' : values['memory-page'] ? 'memory-page-gate' : null;
+const gate = featureRun(only) ? 'feature-gate' : values['git-semantics'] ? 'git-semantics-gate' : values['agent-hooks'] ? 'agent-hooks-gate' : values.agents ? 'agents-gate' : values['memory-page'] ? 'memory-page-gate' : null;
 const prefix = gate ?? { model: 'model-check', hooks: 'webhook-gate', members: 'members-gate', reads: 'reads-gate', browser: 'browser-gate', 22: 'forks-gate', 24: 'orgs-gate', 25: 'lfs-gate', 31: 'visibility-gate' }[smoke] ?? (values.prod ? 'prod-smoke' : 'realworld');
 const file = resolve(root, `.local/staging/${prefix}-${Date.now()}.json`);
 await writeFile(file, `${JSON.stringify(evidence, null, 2)}\n`);

@@ -23,7 +23,7 @@
 "frontend/src/App.tsx" = 510
 "frontend/src/features/source-platform/sourceRoute.ts" = 344
 "shared/managed-agents.ts" = 504
-"tools/staging-realworld.mjs" = 426
+"tools/staging-realworld.mjs" = 406
 "tools/staging/browser-flow.mjs" = 325
 "tools/staging/managed-live.mjs" = 427
 "tools/staging/size-ladder.mjs" = 311
