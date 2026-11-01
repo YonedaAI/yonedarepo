@@ -96,8 +96,8 @@ export async function postNoReading(env: ManagedEnv, p: RunParams, agent: Manage
   const connection = await repoStub(env, p.repo).connection();
   if (!connection || connection.revoked) return;
   const platform = new Platform(env, { token: connection.token });
-  const required = (await platform.status(p.repo)).policy?.required_checks ?? [];
-  if (!required.includes(agent.check)) return;
+  const { required, paused } = await platform.landingChecks(p.repo);
+  if (paused || !required.includes(agent.check)) return;
   const change = await platform.change(p.repo, p.change);
   if (change.status !== 'open' || change.head !== p.head) return;
   const ref = reference(p, 'summary');

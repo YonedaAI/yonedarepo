@@ -89,7 +89,7 @@ pub(super) fn notify<S: SqlStore>(
     db: &S,
     event: &'static str,
     action: &str,
-    actor: &Actor,
+    actor: &str,
     now: i64,
     extra: Option<(&str, Value)>,
 ) -> Result<Vec<Value>> {
@@ -99,7 +99,7 @@ pub(super) fn notify<S: SqlStore>(
         at_ms: now,
         fields: [
             ("action".to_owned(), json!(action)),
-            ("actor".to_owned(), json!(actor.principal)),
+            ("actor".to_owned(), json!(actor)),
         ]
         .into_iter()
         .chain(extra.map(|(k, v)| (k.to_owned(), v)))
@@ -166,7 +166,14 @@ pub fn delete<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings
     )?;
     let told = undo::facts(c, settings, Some(now))["purge_at"].as_i64();
     let purge_at = told.map(|at| ("purge_at", json!(super::hooks::iso(at))));
-    let hooks = notify(db, "repo.deleted", "deleted", actor, now, purge_at)?;
+    let hooks = notify(
+        db,
+        "repo.deleted",
+        "deleted",
+        &actor.principal,
+        now,
+        purge_at,
+    )?;
     audit_outbox::record(db, c, "repo.deleted", &actor.principal, json!({}))?;
     Ok(answer(false, hooks, now))
 }

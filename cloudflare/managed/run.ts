@@ -13,7 +13,7 @@ import {
 } from '../../shared/managed-agents';
 import { log, warned } from '../worker/log';
 import { requestTopUp } from './billing';
-import type { ManagedEnv, RunParams } from './config';
+import { AUTOMATION_PAUSED, type ManagedEnv, notReviewed, type RunParams } from './config';
 import { type HarnessParams, harnessStub } from './harness';
 import { ledgerStub } from './ledger';
 import { PlatformError } from './platform';
@@ -67,7 +67,7 @@ export async function runAgent(env: ManagedEnv, p: RunParams, step: Steps): Prom
       return { status: 'stopped', reason: prepared };
     }
     if (typeof prepared === 'string') {
-      await repo.finish(p.run, p.attempt, 'failed', { error: `Not reviewed: ${prepared}` });
+      await repo.finish(p.run, p.attempt, 'failed', { error: notReviewed(prepared) });
       return { status: 'stopped', reason: prepared };
     }
     let collected: Collected = { result: null, error: 'No model was tried', stop: null };
@@ -117,6 +117,12 @@ export async function runAgent(env: ManagedEnv, p: RunParams, step: Steps): Prom
       withheld: report.withheld.length,
     };
   } catch (e: any) {
+    // Paused as it reported: the resume runs it again, and no landing has anything to hear.
+    if (e instanceof PlatformError && e.code === 'AUTOMATION_PAUSED') {
+      const error = notReviewed(AUTOMATION_PAUSED);
+      await repo.finish(p.run, p.attempt, 'failed', { error });
+      return { status: 'failed', error };
+    }
     const error =
       e instanceof PlatformError && (e.status === 401 || e.status === 403)
         ? 'The repository token was refused; disable and enable the agent to reconnect'

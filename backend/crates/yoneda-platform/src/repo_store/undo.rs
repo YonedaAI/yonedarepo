@@ -122,7 +122,7 @@ pub(super) fn purged<S: SqlStore>(
     }
     if settings.policy_digest != PURGED && !settings.erased() {
         let now = number(c, "now")?;
-        deletion::notify(db, "repo.purged", "purged", actor, now, None)?;
+        deletion::notify(db, "repo.purged", "purged", &actor.principal, now, None)?;
         db.query(
             "UPDATE repo_settings SET policy_digest=? WHERE id='repository'",
             &[json!(PURGED)],

@@ -129,6 +129,16 @@ export const CASES = {
     goal: DRIFT_GOAL,
     expect: { slop: 'low', drift: 'high', outcome: 'go-around' },
   },
+  // Committed while automation is paused: nothing runs or fails until the resume.
+  paused: {
+    id: 'paused',
+    path: 'src/paused.js',
+    content: NO_PLAN.replaceAll('clamp', 'paused'),
+    message: 'Add a helper during a pause',
+    branch: 'during-a-pause',
+    goal: CLEAN_GOAL,
+    expect: { slop: 'low', drift: 'low', outcome: 'landed' },
+  },
   // The same off-course work, with an owner who chose Never: an explicit setting wins.
   never: {
     id: 'never',

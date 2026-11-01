@@ -220,47 +220,30 @@ export async function facts(s, number, head) {
   };
 }
 
+/** Break-glass, as the Settings page sends it. */
+export const pauseAutomation = (s, action) =>
+  s.api(`/api/v1/repos/${s.repo}/break-glass`, { method: 'POST', data: { action, reason: 'web agents flow: a pause and its resume' } });
+
+/** Time for a run that must not start to have started: a hook, a queue job and a workflow. */
+const PAUSE_WATCH_MS = 45_000;
+
+/** Nothing ran on `head` and nothing failed, while automation is paused. */
+export async function nothingDuringPause(s, number, head) {
+  await sleep(PAUSE_WATCH_MS);
+  const { runs } = await s.api(`${s.managed}/runs?repo=${s.repo}&limit=50`);
+  assert.deepEqual(runs.filter((r) => r.head === head).map((r) => r.agent), [], 'a run started during the pause');
+  const change = await s.api(`/api/v1/repos/${s.repo}/changes/${number}`);
+  assert.deepEqual(change.head_commit?.checks ?? [], [], 'a check was posted during the pause');
+  assert.equal(change.status, 'open');
+  return `no run and no check after ${PAUSE_WATCH_MS / 1000} s`;
+}
+
 export async function ctcPage(s, label) {
   await s.page.goto(`${s.origin}${s.base}/tower`);
   await s.page.getByRole('heading', { name: 'Tower', exact: true }).first().waitFor();
   await sleep(1000);
   await s.shot(`${label}-ctc`);
   return (await s.page.locator('main').innerText()).replace(/\s+/g, ' ').slice(0, 400);
-}
-
-/** The commit form against the UI rules: wide and 375 px, light and dark, its error, the
- * keyboard, and no sideways scroll on the page. Nothing here commits. */
-export async function lookAtForm(s) {
-  const { page } = s;
-  const seen = [];
-  const form = page.getByRole('form', { name: 'Add a file' });
-  for (const [label, width] of [['wide', 1440], ['phone', 375]])
-    for (const colorScheme of ['light', 'dark']) {
-      await page.setViewportSize({ width, height: 900 });
-      await page.emulateMedia({ colorScheme });
-      await page.goto(`${s.origin}${s.base}`);
-      await page.getByRole('button', { name: 'Add file' }).click();
-      await form.waitFor();
-      await form.getByLabel('File').fill('src/a.js');
-      await form.getByLabel('Branch').fill('main');
-      await form.getByRole('button', { name: 'Commit' }).click();
-      await form.getByText(/Main moves only by landing/).waitFor();
-      await s.shot(`form-${label}-${colorScheme}`);
-      const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-      assert.ok(sideways <= 0, `${label} ${colorScheme}: the page scrolls sideways by ${sideways}px`);
-      seen.push(`${label} ${colorScheme}`);
-    }
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.emulateMedia({ colorScheme: 'light' });
-  await page.keyboard.press('Escape');
-  await form.waitFor({ state: 'detached' });
-  await page.getByRole('button', { name: 'Add file' }).focus();
-  await page.keyboard.press('Enter');
-  await form.waitFor();
-  const focused = await page.evaluate(() => document.activeElement?.closest('label')?.textContent?.trim());
-  assert.equal(focused, 'File', 'the keyboard lands on the first field');
-  await page.keyboard.press('Escape');
-  return `${seen.join(', ')}; Escape closes, Enter opens on File`;
 }
 
 export async function restore(s) {

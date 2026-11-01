@@ -84,6 +84,12 @@ export class Platform {
     const status = await this.status(repo);
     return { paused: Boolean(status.automation?.paused), onAuto: status.landings?.agents === true };
   }
+  /** The checks this repository's landings wait for, and whether automation is paused. */
+  async landingChecks(repo: string) {
+    const status = await this.status(repo);
+    const required: string[] = status.policy?.required_checks ?? [];
+    return { required, paused: Boolean(status.automation?.paused) };
+  }
   /** The newest 200 open changes, of one branch or of those opened on purpose when asked, so
    * the platform filters first and a repository's other rows can't push the wanted one out. */
   openChanges(repo: string, only: { branch?: string | null; explicit?: boolean } = {}) {
