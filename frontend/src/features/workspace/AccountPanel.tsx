@@ -46,7 +46,6 @@ export function AccountPanel({
   const [recovery, setRecovery] = useState('');
   const [recovered, setRecovered] = useState(false);
   const identifierHelp = useId();
-  const emailHelp = useId();
   if (recovery)
     return (
       <section className="account-panel">
@@ -158,13 +157,9 @@ export function AccountPanel({
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
-                aria-describedby={emailHelp}
                 placeholder="you@example.com"
               />
             </label>
-            <p id={emailHelp} className="field-help">
-              Kept private. Your public name comes from the part before the @.
-            </p>
           </>
         ) : (
           <>
