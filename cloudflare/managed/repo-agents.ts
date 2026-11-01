@@ -10,7 +10,7 @@ import type {
   RunFinding,
   RunStatus,
 } from '../../shared/managed-agents';
-import { AUTOMATION_PAUSED, type ManagedEnv, notReviewed } from './config';
+import type { ManagedEnv } from './config';
 import {
   type Connection,
   readConnection,
@@ -18,30 +18,22 @@ import {
   signatureMatches,
   writeConnection,
 } from './repo-connection';
-import { agentSummary, clearRepository, listRuns, runById, runFindings } from './repo-runs';
+import {
+  agentSummary,
+  type Claim,
+  claimRun,
+  clearRepository,
+  listRuns,
+  OPEN_SQL,
+  runById,
+  runFindings,
+} from './repo-runs';
 import { migrate, REPO_SCHEMA } from './schema';
 
 export type { Connection } from './repo-connection';
+export type { Claim } from './repo-runs';
 
-const OPEN: RunStatus[] = ['queued', 'running', 'paused'];
-const OPEN_SQL = `('${OPEN.join("','")}')`;
-
-export interface Claim {
-  run: string;
-  attempt: number;
-  created: boolean;
-  /** Still waiting for its Workflow instance (a lost start is retried). */
-  queued: boolean;
-  superseded: string[];
-}
 export type PostedFinding = RunFinding;
-
-const shortAgent: Record<ManagedAgentId, string> = {
-  'code-review': 'cr',
-  'security-review': 'sr',
-  'slop-review': 'sl',
-  'intent-drift': 'id',
-};
 
 export class RepoAgents extends DurableObject<ManagedEnv> {
   constructor(ctx: DurableObjectState, env: ManagedEnv) {
@@ -134,65 +126,7 @@ export class RepoAgents extends DurableObject<ManagedEnv> {
     head: string,
     choice: { harness: string; provider: string; model: string },
   ): Claim | null {
-    return this.#tx((sql) => {
-      const on = sql
-        .exec('SELECT 1 FROM agents WHERE agent = ? AND enabled = 1', agent)
-        .toArray().length;
-      if (!on) return null;
-      const existing = sql
-        .exec<{ id: string; attempt: number; status: RunStatus; error: string | null }>(
-          'SELECT id, attempt, status, error FROM runs WHERE agent = ? AND change = ? AND head = ?',
-          agent,
-          change,
-          head,
-        )
-        .toArray()[0];
-      // A pause stopped this head before it had an answer: it gets another try.
-      if (existing?.error === notReviewed(AUTOMATION_PAUSED)) {
-        sql.exec(
-          `UPDATE runs SET status = 'queued', attempt = attempt + 1, error = NULL, finished_at = NULL
-           WHERE id = ?`,
-          existing.id,
-        );
-        const attempt = existing.attempt + 1;
-        return { run: existing.id, attempt, created: false, queued: true, superseded: [] };
-      }
-      if (existing)
-        return {
-          run: existing.id,
-          attempt: existing.attempt,
-          created: false,
-          queued: existing.status === 'queued',
-          superseded: [],
-        };
-      const now = Date.now();
-      const superseded = sql
-        .exec<{ id: string }>(
-          `UPDATE runs SET status = 'superseded', finished_at = ?, error = 'A newer push replaced this head'
-           WHERE agent = ? AND change = ? AND head <> ? AND status IN ${OPEN_SQL} RETURNING id`,
-          now,
-          agent,
-          change,
-          head,
-        )
-        .toArray()
-        .map((r) => r.id);
-      const run = `${repo}-${shortAgent[agent]}-${change}-${head.slice(0, 12)}`;
-      sql.exec(
-        `INSERT INTO runs (id, repo, agent, change, head, status, harness, provider, model, created_at)
-         VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
-        run,
-        repo,
-        agent,
-        change,
-        head,
-        choice.harness,
-        choice.provider,
-        choice.model,
-        now,
-      );
-      return { run, attempt: 1, created: true, queued: true, superseded };
-    });
+    return this.#tx((sql) => claimRun(sql, repo, agent, change, head, choice));
   }
 
   /** Why a workflow attempt must stop, or null while it is the run's current attempt. */
