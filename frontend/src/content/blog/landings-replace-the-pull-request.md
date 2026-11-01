@@ -33,4 +33,4 @@ Our test script played the second account, the review finding, the check and a c
 
 ## Where this stands
 
-Landings and flight plans are live on production. Automatic landing is on for dev and off for production while we watch it. We have tested automatic landing one Landing at a time, plus one race of two, so we have no figures for it at volume.
+Landings and flight plans are live on production. Automatic landing is a per-repository switch, off by default. We have tested automatic landing one Landing at a time, plus one race of two, so we have no figures for it at volume.

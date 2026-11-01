@@ -244,7 +244,7 @@
           "ADMIN_BILLING": "off",
           "ASYNC_STORE": "off",
           "LANDING_INSTRUMENTS": "off",
-          "LAND_WHEN_CLEARED": "off",
+          "LAND_WHEN_CLEARED": "on",
           "AGENT_SIGNUP": "off",
           "NEWSLETTER": "on",
           "ADMIN_NOTIFY_EMAIL": "",

@@ -97,7 +97,6 @@ This test led to 7 fixes a script had hidden: the web app couldn't commit; the p
 | Gap | Why it matters |
 |---|---|
 | Slop and Intent drift are scripted in 43, 44 and 45 | They prove the read and the card, not the agents. `tools/staging/web-agents-flow.mjs` is the real run of those; its results are above |
-| Legal hold or `REPO_FULL` lifted | Nothing asks again; the Landing waits for its next event. Read from the code, not tested |
-| The switch turned on over a Landing that already cleared | The same: nothing asks. Read from the code, not tested |
+| Legal hold or `REPO_FULL` lifted, or the switch turned on over a Landing that already cleared | Each asks again, tested in `tests/workers` and the Rust tests, not yet in a live run |
 | Risk bands | Measured over 42,494 open-source landings and the signals don't separate (landings plan, stage 4): High catches 8 of 122 reverted, in effect on size. So Risk holds nothing and stays a beta reading; only platform outcomes can calibrate it |
 | Rate at volume | One Landing at a time, plus one race of two |

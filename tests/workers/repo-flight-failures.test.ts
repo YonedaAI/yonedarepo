@@ -3,6 +3,7 @@
 // delivered again and again, since a live queue redelivers only when it chooses to.
 import { expect, it } from 'vitest';
 import { platformJob } from '../../cloudflare/worker/platform-entrypoint';
+import { sampleStorage } from '../../cloudflare/worker/repo-storage';
 import type { Env, Envelope } from '../../cloudflare/worker/types';
 import { api, author, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
@@ -61,6 +62,38 @@ it('holds a cleared Landing at the storage limit, and the next job lands it with
   expect(held.clearances[0]).toMatchObject({ decision: 'hold', head: id });
   expect(held.clearances[0].reasons.map((r: { code: string }) => r.code)).toContain('REPO_FULL');
   expect(await head(s)).toBe(s.main);
+  await deliver(on, job);
+  expect((await change(s, number)).status).toBe('landed');
+});
+
+it('asks again when a size reading finds room, with no event on the Landing', async () => {
+  const s = await setUp('flight_room');
+  const id = await branch(s, 'fix', 'src/fix.ts');
+  const { number } = (await open(s, 'fix')).body;
+  await approve(s, id);
+  await deliver(full, jobs(s)[0]);
+  await sampleStorage(full, s.repo, 1);
+  expect(jobs(s), 'still full').toEqual([]);
+  await sampleStorage(on, s.repo, 10 * 60 * 1000 + 1);
+  const [job] = jobs(s);
+  expect(job?.number).toBe(number);
+  await deliver(on, job);
+  expect((await change(s, number)).status).toBe('landed');
+});
+
+it('asks when the switch goes on over a Landing that already cleared', async () => {
+  const s = await setUp('flight_late');
+  const off = (land_when_cleared: boolean) => api(`/repos/${s.repo}/auto-landings`, { cookie: s.cookie }, { method: 'PUT', body: { land_when_cleared } }, on);
+  await off(false);
+  const id = await branch(s, 'fix', 'src/fix.ts');
+  const { number } = (await open(s, 'fix')).body;
+  await approve(s, id);
+  expect(jobs(s)).toEqual([]);
+  const turned = await off(true);
+  expect(turned.body.land_when_cleared).toBe(true);
+  expect(turned.body.land_checks, 'clients never see it').toBeUndefined();
+  const [job] = jobs(s);
+  expect(job?.number).toBe(number);
   await deliver(on, job);
   expect((await change(s, number)).status).toBe('landed');
 });

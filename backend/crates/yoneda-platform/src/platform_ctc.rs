@@ -127,6 +127,10 @@ impl Clearance {
 pub(crate) const AUTOMATION_PAUSED: &str = "AUTOMATION_PAUSED";
 /// Held behind a Landing ahead in the queue (`repo_store::land_when_cleared::separation`).
 pub(crate) const SEPARATION: &str = "SEPARATION";
+/// Held by the owner's legal hold; its lifting asks again.
+pub(crate) const LEGAL_HOLD: &str = "LEGAL_HOLD";
+/// Held at the storage limit; room coming back asks again.
+pub(crate) const REPO_FULL: &str = "REPO_FULL";
 /// A refused attempt the work has to answer; any other is a hold.
 const GOES_AROUND: [&str; 5] = [
     "CONFLICT",
@@ -213,14 +217,9 @@ fn holds(state: &LandingState, back: &[Reason]) -> Vec<Reason> {
         state
             .legal_hold
             .iter()
-            .map(|w| reason("LEGAL_HOLD", w.clone())),
+            .map(|w| reason(LEGAL_HOLD, w.clone())),
     );
-    wait.extend(
-        state
-            .repo_full
-            .iter()
-            .map(|w| reason("REPO_FULL", w.clone())),
-    );
+    wait.extend(state.repo_full.iter().map(|w| reason(REPO_FULL, w.clone())));
     wait.extend(state.ahead.iter().map(|ahead| {
         let on = ahead.paths.join(", ");
         let why = format!(

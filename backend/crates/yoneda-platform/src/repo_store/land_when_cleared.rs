@@ -103,7 +103,11 @@ fn judge<S: SqlStore>(
 /// decision on the Landing's head, recorded; or with `failed`, why an attempt did not land. Cleared
 /// without `confirm`, it answers `confirm: true` and records nothing: the job hasn't decided yet,
 /// and only `confirm` carries the adapter's answers, which cost a call to the owner's authority.
+/// `{hold_lifted: true}` names no Landing and decides nothing: `triggers` adds what the hold held.
 pub fn ask<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value> {
+    if c["hold_lifted"] == true {
+        return Ok(json!({ "state": "asked" }));
+    }
     let landing = number_of(c)?;
     if let Some(failed) = c.get("failed").filter(|f| f.is_object()) {
         return failed_attempt(db, c, landing, failed);

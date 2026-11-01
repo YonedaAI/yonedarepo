@@ -138,3 +138,5 @@ Repository deletion and editable 1–6-agent run rosters are implemented and dep
 - **Reject and fix.** Review offers two choices: Reject (recorded with a reason, nothing ships) and Reject and fix (the owner writes what to change; an agent applies that request to the rejected result on the same working branch, fresh checks run, and the revised result is shown again as the new Agents' pick, with the rejected one kept in history). Builds on `reject_candidate` and the existing continuation/repair flow.
 
 - 2026-10-27: The agent-run layer and demo workspace were removed (frontend, kit, agent-era docs); the product is the source platform only. The removed state is preserved on branch `agent-run-workspaces`.
+
+- 2026-11-01: Stop. No new work on legal hold, the audit log, analytics, archive, Basin, regions, probes, service levels or revenue; what is built stays behind its switch. Session forks are dropped. Artifacts is on its way out of the platform. Dev no longer mails anyone: its Superfan and dead-man have no address.

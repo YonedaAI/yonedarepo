@@ -3,13 +3,13 @@
 // destructive path answers 423 until it is released, landing and reads never noticing. A
 // hold that cannot be read refuses; queue jobs come back later rather than failing into the
 // dead-letter queue. Off, the check does not run and the routes do not exist.
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { platformJob } from '../../cloudflare/worker/platform-entrypoint';
 import { purgeRepository } from '../../cloudflare/worker/repo-admin';
 import { eraseJob } from '../../cloudflare/worker/repo-erase';
 import { quarantineJob } from '../../cloudflare/worker/repo-quarantine';
 import { shardCall } from '../../cloudflare/worker/repo-shards';
-import type { Env } from '../../cloudflare/worker/types';
+import type { Env, Envelope } from '../../cloudflare/worker/types';
 import { api, author, bindings, delayed, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
@@ -136,6 +136,81 @@ it('hold changes reach the org audit log, an operator\'s with its layer and acto
     ['legal_hold.set', `user:${org}_a`, 'owner'],
     ['legal_hold.set', 'hold_ops', 'operator'],
   ].sort());
+});
+
+describe('a lifted hold and Tower', () => {
+  const clearing = { ...on, LAND_WHEN_CLEARED: 'on' } as unknown as Env;
+  const JOB = 'platform_land_check';
+  const jobs = (repo: string) => {
+    const mine = queued.filter((m) => m.kind === JOB && m.repo_id === repo);
+    queued.splice(0, queued.length, ...queued.filter((m) => !mine.includes(m)));
+    return mine as Envelope[];
+  };
+  const deliver = async (env: Env, body: Envelope) => {
+    const message = { body, attempts: 1, ack() {}, retry() {} };
+    await platformJob(env, message as unknown as Message<Envelope>);
+  };
+  /** An org's repository with a Landing that an approval cleared, held at its job. */
+  async function heldLanding(name: string) {
+    const org = `hold_${name}_${++orgs}`;
+    const owner = { cookie: await signup(`${org}_a`) };
+    await api('/orgs', owner, { body: { name: org } }, clearing);
+    const policy = { approvals: 1, required_checks: [] };
+    const created = await api('/repos', owner, { body: { name: 'app', owner: org, policy, files: [file('a.txt', 'a\n')], author } }, clearing);
+    const repo = created.body.id as string;
+    const token = (await api(`/repos/${repo}/tokens`, owner, { body: { name: 'agent', scopes: ['read', 'write'] } }, clearing)).body.token as string;
+    await api(`/repos/${repo}/auto-landings`, owner, { method: 'PUT', body: { land_when_cleared: true } }, clearing);
+    const made = await api(`/repos/${repo}/commits`, { token }, { body: { parent: created.body.commit, base_version: 1, message: 'fix', author, changes: [file('b.txt', 'b\n')] } }, clearing);
+    await api(`/repos/${repo}/refs/batch`, { token }, { body: { updates: [{ ref: 'fix', commit: made.body.commit, expected: null }] } }, clearing);
+    const { number } = (await api(`/repos/${repo}/changes`, { token }, { body: { branch: 'fix', title: 'fix' } }, clearing)).body;
+    await api(`/repos/${repo}/commits/${made.body.commit}/reviews`, owner, { body: { decision: 'approve' } }, clearing);
+    const change = async () => (await api(`/repos/${repo}/changes/${number}`, owner, {}, clearing)).body;
+    return { org, owner, repo, number, change };
+  }
+  async function landsOnceLifted({ repo, number, change }: Awaited<ReturnType<typeof heldLanding>>, release: () => Promise<unknown>) {
+    const [held] = jobs(repo);
+    await deliver(clearing, held);
+    const { clearances } = await change();
+    expect(clearances[0].reasons.map((r: { code: string }) => r.code)).toEqual(['LEGAL_HOLD']);
+    expect((await change()).status).toBe('open');
+    await release();
+    const [ask, ...rest] = jobs(repo);
+    expect(rest).toEqual([]);
+    expect(ask.number).toBeUndefined();
+    await deliver(clearing, ask);
+    const [land] = jobs(repo);
+    expect(land.number).toBe(number);
+    await deliver(clearing, land);
+    expect((await change()).status).toBe('landed');
+  }
+
+  it('asks again when a hold on one repository lifts', async () => {
+    const landing = await heldLanding('one');
+    const { org, owner, repo } = landing;
+    await api(`/orgs/${org}/repos/${repo}/hold`, owner, { body: {} }, clearing);
+    await landsOnceLifted(landing, () => api(`/orgs/${org}/repos/${repo}/hold`, owner, del, clearing));
+  });
+
+  it('asks again on every repository when a hold on the org lifts', async () => {
+    const landing = await heldLanding('org');
+    const { org, owner } = landing;
+    await api(`/orgs/${org}/hold`, owner, { body: {} }, clearing);
+    await landsOnceLifted(landing, () => api(`/orgs/${org}/hold`, owner, del, clearing));
+  });
+
+  it('asks again when an operator lifts theirs', async () => {
+    const landing = await heldLanding('operator');
+    const ops = { cookie: await signup('hold_ops') };
+    await api(`/admin/repos/${landing.repo}/hold`, ops, { body: {} }, clearing);
+    await landsOnceLifted(landing, () => api(`/admin/repos/${landing.repo}/hold`, ops, del, clearing));
+  });
+
+  it('a release that lifted nothing asks nothing', async () => {
+    const { org, owner, repo } = await heldLanding('nothing');
+    jobs(repo);
+    await api(`/orgs/${org}/repos/${repo}/hold`, owner, del, clearing);
+    expect(jobs(repo)).toEqual([]);
+  });
 });
 
 it('a token limited to other repositories cannot touch this one\'s hold', async () => {

@@ -10,7 +10,7 @@ import { log, warned } from './log';
 import { recordJob } from './platform-client-events';
 import { landMode } from './repo-changesets';
 import { followForkChange } from './repo-forks';
-import { landChecksOn } from './repo-land-check';
+import { HOLD_LIFTED, landChecksOn } from './repo-land-check';
 import { landWithMerge } from './repo-landing';
 import { ApiError, caller, RepoContext } from './repo-ops';
 import { refusalReason } from './repo-usage';
@@ -61,22 +61,26 @@ async function attempt(ctx: RepoContext, number: number, tried: { head?: string 
   }
 }
 
-/** The `platform_land_check` queue job. `retry`: seconds until the queue delivers it again. */
+/** The `platform_land_check` queue job, for one Landing or, after a legal hold lifted, for what
+ * the hold held: the answer names those, and each gets a job of its own (repo-land-check.ts).
+ * `retry`: seconds until the queue delivers it again. */
 export async function landCheckJob(env: Env, envelope: Envelope, attempts: number) {
   const number = envelope.number;
-  if (!landChecksOn(env) || typeof number !== 'number') return {};
+  const lifted = envelope.job_id === HOLD_LIFTED;
+  if (!landChecksOn(env) || (typeof number !== 'number' && !lifted)) return {};
   const repo = envelope.repo_id;
   const ctx = new RepoContext(env, repo, caller(env, repo, { _system: 'land-when-cleared' }));
   const tried: { head?: string } = {};
   try {
-    await attempt(ctx, number, tried);
+    if (typeof number === 'number') await attempt(ctx, number, tried);
+    else await ctx.call({ op: 'repo_land_clearance', hold_lifted: true });
     return {};
   } catch (e) {
     // The repository or the Landing is gone: nothing to come back for.
     if (e instanceof ApiError && !UNSETTLED.has(e.code)) return {};
     if (attempts < ATTEMPTS) return { retry: RETRY_S * attempts };
     log.warn('land_check.gave_up', { error: e });
-    if (tried.head)
+    if (tried.head && typeof number === 'number')
       await failed(ctx, number, tried.head, 'UNFINISHED', UNFINISHED).catch(
         warned('land_check.not_recorded', { repo: ctx.repo }),
       );

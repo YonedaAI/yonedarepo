@@ -32,6 +32,7 @@ fn prod_workers() -> Vec<Deployable> {
 fn evidence(revision: &str, status: &str) -> serde_json::Value {
     json!({"items": [
         {"id": "0", "title": "Live revisions", "status": "pass", "metrics": {"front": revision, "platform": revision}},
+        {"id": BROWSER_ITEM, "title": "Browser", "status": "pass", "metrics": {}},
         {"id": "1", "title": "Create project", "status": status, "metrics": {}}
     ]})
 }
@@ -668,13 +669,10 @@ fn deploy_without_an_env_is_refused_and_the_legacy_env_is_gone() {
 }
 
 #[test]
-fn the_browser_item_must_pass_whenever_the_kit_recorded_it() {
+fn the_browser_item_must_be_in_the_evidence_and_pass() {
     let with_browser = |status: &str| {
         let mut evidence = evidence(HEAD, "pass");
-        evidence["items"]
-            .as_array_mut()
-            .unwrap()
-            .push(json!({"id": BROWSER_ITEM, "title": "Browser", "status": status, "metrics": {}}));
+        evidence["items"][1]["status"] = json!(status);
         evidence
     };
     evidence_passes(Some(&with_browser("pass")), &good_prod()).unwrap();
@@ -684,8 +682,15 @@ fn the_browser_item_must_pass_whenever_the_kit_recorded_it() {
             .to_string();
         assert!(error.contains("kit item browser"), "{error}");
     }
-    // Not yet required (deploy_evidence::BROWSER_REQUIRED): evidence without the item still passes.
-    evidence_passes(Some(&evidence(HEAD, "pass")), &good_prod()).unwrap();
+    let mut no_browser = evidence(HEAD, "pass");
+    no_browser["items"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|item| item["id"] != BROWSER_ITEM);
+    let error = evidence_passes(Some(&no_browser), &good_prod())
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("no browser item"), "{error}");
     let no_item_zero = json!({"items": [{"id": "browser", "status": "pass"}]});
     assert!(evidence_passes(Some(&no_item_zero), &good_prod()).is_err());
 }
