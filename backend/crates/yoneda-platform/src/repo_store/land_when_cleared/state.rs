@@ -164,7 +164,7 @@ pub(super) fn landing_state<S: SqlStore>(
         approvals: gate["approvals"].as_u64().unwrap_or(0),
         approved_by: approvers(db, &commit.id)?,
         auto_approved: gate["auto_approved"] == true,
-        rules_ask: !settings.policy.required_checks.is_empty(),
+        rules_ask: !settings.policy.required_checks.is_empty() || settings.policy.approvals > 0,
         from_fork: change["source_repo"].is_string(),
         failed_checks: failed_checks(db, commit, settings)?,
         unresolved_comments: comments(db, &change["number"])?.state != GateState::Ready,

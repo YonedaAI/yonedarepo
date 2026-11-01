@@ -29,7 +29,7 @@ pub struct LandingState {
     pub approved_by: Vec<String>,
     /// A review class the policy auto-approves covers all it would land.
     pub auto_approved: bool,
-    /// The policy requires a check.
+    /// The policy requires a check or an approval.
     pub rules_ask: bool,
     /// Proposed from a fork.
     pub from_fork: bool,
