@@ -342,7 +342,7 @@
     "FAST_IMPORT": "on",
     "LANDING_INSTRUMENTS": "on",
     "LAND_MODE": "batch",
-    "LAND_WHEN_CLEARED": "off",
+    "LAND_WHEN_CLEARED": "on",
     "LFS_S3_BUCKET": "yonedarepo-dev-platform-objects",
     "LFS_S3_ENDPOINT": "https://f011d0ee02b23cad26b4b38151b204ad.r2.cloudflarestorage.com",
     "PACK_CACHE": "on",
