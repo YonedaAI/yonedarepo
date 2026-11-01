@@ -9,6 +9,7 @@ import { clonePanel } from './clone-panel-flow.mjs';
 import { secondAccount } from './client.mjs';
 import { ctcTraffic } from './ctc-flow.mjs';
 import { emptyStates } from './empty-state-flow.mjs';
+import { flightAgent } from './flight-agent-flow.mjs';
 import { flightFailures } from './flight-failures-flow.mjs';
 import { flightPath } from './flight-path-flow.mjs';
 import { goAroundFlow } from './go-around-flow.mjs';
@@ -38,4 +39,8 @@ export async function featureItems(step, { cli, kit, account, platformAccount, v
   await step('42', 'Shared empty state on Sessions, Landings and CTC, wide and at 375 px', (m) => emptyStates(cli, web, m));
   await step('43', 'Flight Path: one Landing from flight plan to black box, landing by itself (needs LAND_WHEN_CLEARED)', (m) => flightPath(cli, { web, credentials }, m));
   await step('44', 'Flight Path failures: stale head, failed check, path limits, fork, races, pause, no rules, rollback (needs LAND_WHEN_CLEARED)', (m) => flightFailures(cli, { web, credentials }, m));
+  const { 'agent-model': model, 'agent-timeout': timeoutS, 'agent-budget': budgetUsd, yes } = values;
+  await step('45', `Flight Path with a real agent (${model}) in the sandbox: --only 0,12,45,17 --yes, a model's quota`, (m) =>
+    flightAgent(cli, { root, web, credentials, model, timeoutS: Number(timeoutS), budgetUsd: Number(budgetUsd), yes }, m),
+  );
 }

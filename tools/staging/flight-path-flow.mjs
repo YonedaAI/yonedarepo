@@ -10,7 +10,7 @@ import { writeFileSync } from 'node:fs';
 import { hook } from './agent-hooks-flow.mjs';
 import { see } from './browser-collab-flow.mjs';
 import { cloneOf, openPage, pushWork, settled, writeInto } from './feature-kit.mjs';
-import { flightLanding } from './flight-landing-flow.mjs';
+import { flightLanding, OPENS_FINDING } from './flight-landing-flow.mjs';
 import { ACTOR, change, flightRepo, landedOf, landingOf, legs, passCheck, pilotEnv, pushedLanding, review } from './flight-kit.mjs';
 import { BRANCH, FILE, FIRST_MESSAGE, FIX_LINE, GOAL, injected, MEMORY, MOVED, net, OTHER, readFile, stopSession, SUMMARY } from './flight-session.mjs';
 import { withChrome } from './kit-chrome.mjs';
@@ -38,7 +38,7 @@ async function preflight(kit, credentials, m) {
   const landed = await landedOf(kit, repo, moved.number, 'CTC to land the pre-flight Landing');
   assert.equal(landed.clearances[0].actor, ACTOR, `who landed the pre-flight Landing: ${JSON.stringify(landed.clearances[0])}`);
   const dir = await cloneOf(kit, repo, 'flight-pilot');
-  return { kit, repo, crew, reviewer, other, dir, b };
+  return { kit, repo, crew, reviewer, other, dir, b, file: FILE, title: FIRST_MESSAGE, session: `claude-code:${SESSION}`, ...OPENS_FINDING };
 }
 
 /** 1: filed before there is a Landing, for a branch not pushed yet. */

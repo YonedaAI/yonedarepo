@@ -14,6 +14,7 @@ test('a full run names nothing, and --only names what it lists', () => {
 
 test('each gate runs its items, and the first flag wins over --only', () => {
   assert.deepEqual(chosen({ 'feature-tests': true }), ['0', '12', ...FEATURE_ITEMS, '17']);
+  assert.deepEqual(chosen({ 'flight-path': true }), ['0', '12', '43', '44', '17']);
   assert.deepEqual(chosen({ 'git-semantics': true }), ['0', '12', '13', '18', '21', '23', '27', '17']);
   assert.deepEqual(chosen({ 'git-semantics': true, ssh: true }), ['0', '12', '13', '18', '21', '23', '27', '17', '26']);
   assert.deepEqual(chosen({ agents: '4', only: '0' }), ['0', '12', '29', '17']);
@@ -24,6 +25,7 @@ test('each gate runs its items, and the first flag wins over --only', () => {
 test('feature items alone are no full kit; with anything else they are', () => {
   assert.equal(featureRun(new Set(['0', '12', '33', '17'])), true);
   assert.equal(featureRun(new Set(['0', '39'])), true);
+  assert.equal(featureRun(new Set(['0', '12', '45', '17'])), true, 'a real agent is no full kit either');
   assert.equal(featureRun(new Set(['0', '12', '17'])), false);
   assert.equal(featureRun(new Set(['0', '6', '33'])), false);
   assert.equal(featureRun(null), false);

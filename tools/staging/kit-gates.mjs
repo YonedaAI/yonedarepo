@@ -32,7 +32,10 @@ export function chosenItems(values) {
 
 /** A run of feature items alone is no full kit, so its evidence keeps out of what the prod guard
  * reads. */
-export const featureRun = (only) => Boolean(only) && [...only].every((id) => ['0', '12', '17', ...FEATURE_ITEMS].includes(id)) && FEATURE_ITEMS.some((id) => only.has(id));
+export const featureRun = (only) => {
+  const items = [...FEATURE_ITEMS, '45'];
+  return Boolean(only) && [...only].every((id) => ['0', '12', '17', ...items].includes(id)) && items.some((id) => only.has(id));
+};
 
 /**
  * A skip in the newest realworld evidence refuses a prod deploy (xtask/src/deploy_evidence.rs), so

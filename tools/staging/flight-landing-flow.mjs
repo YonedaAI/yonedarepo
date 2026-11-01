@@ -8,12 +8,12 @@ import { hook } from './agent-hooks-flow.mjs';
 import { see } from './browser-collab-flow.mjs';
 import { openPage, refusal, settled, writeInto } from './feature-kit.mjs';
 import { ACTOR, change, decisionOn, gates, landedOf, nowSaid, onMainTimes, passCheck, pilotEnv, reasonCodes, review, SETTLE_MS } from './flight-kit.mjs';
-import { BRANCH, FILE, FIRST_MESSAGE, FIX_LINE, GOAL, injected, MEMORY, readFile, stopSession, SUMMARY } from './flight-session.mjs';
+import { BRANCH, FILE, FIX_LINE, GOAL, injected, MEMORY, readFile, stopSession, SUMMARY } from './flight-session.mjs';
 import { rowWith, withChrome } from './kit-chrome.mjs';
 import { McpClient } from './mcp-client.mjs';
 import { glass } from './ticket-line.mjs';
 
-const FINDING = 'High: retry() still allows 5 tries, past the gateway limit of 3';
+export const OPENS_FINDING = { findingLine: FIX_LINE + 1, finding: 'High: retry() still allows 5 tries, past the gateway limit of 3' };
 const SECOND = 'kit-flight-2';
 const FIXED = 'Kit flight session 2: answered the finding, retry() stops at 3.';
 const FIX_MESSAGE = 'Answer the finding: stop at 3 tries';
@@ -21,14 +21,14 @@ const FIX_MESSAGE = 'Answer the finding: stop at 3 tries';
 /** 7: both Landings on the radar with their overlap and the warning on record. Then the other
  * pilot's Landing takes a ticket, this one waits behind it with SEPARATION, and they land in that
  * order: its landing changes what this one read, which sends this one around. */
-async function traffic(f, web, m) {
-  const { kit, repo, b, number } = f;
+export async function traffic(f, web, m) {
+  const { kit, repo, b, number, file, title, session } = f;
   const api = kit.pat();
   const { landings } = await api.get(repo.path('/ctc'));
   const row = landings.find((l) => l.number === number);
   const meet = row?.overlaps.find((o) => o.landing === b.number);
-  assert.ok(meet?.paths.includes(FILE), `the radar's overlap: ${JSON.stringify(row)}`);
-  const { deliveries } = await api.get(repo.path('/context/deliveries?session_id=claude-code:kit-flight'));
+  assert.ok(meet?.paths.includes(file), `the radar's overlap: ${JSON.stringify(row)}`);
+  const { deliveries } = await api.get(repo.path(`/context/deliveries?session_id=${encodeURIComponent(session)}`));
   const warned = deliveries.flatMap((d) => d.items ?? []).filter((i) => i.type === 'traffic').map((i) => i.id);
   assert.ok(warned.includes(b.number), `the session's record holds no warning of #${b.number}: ${warned}`);
 
@@ -45,13 +45,13 @@ async function traffic(f, web, m) {
     const [front, behind] = [b.number, number].map((n) => line.find((l) => l.number === n));
     assert.deepEqual(front.place, { position: 1, line: 'queued', ticket }, 'the ticket leads the line');
     const held = behind.reasons.find((r) => r.code === 'SEPARATION');
-    assert.ok(held?.reason.includes(`Landing ${b.number}`) && held.reason.includes(FILE), `what it waits for: ${JSON.stringify(behind.reasons)}`);
+    assert.ok(held?.reason.includes(`Landing ${b.number}`) && held.reason.includes(file), `what it waits for: ${JSON.stringify(behind.reasons)}`);
     assert.equal(behind.place.position, 2, `its place: ${JSON.stringify(behind.place)}`);
     await withChrome({ ...web.chrome, name: 'flight-ctc' }, m, async ({ page, shot }) => {
       await openPage(page, { origin: web.chrome.origin, account: web.account }, repo, '/ctc');
       const table = page.getByRole('region', { name: 'CTC', exact: true }).getByRole('table');
       await see(table.getByText(`1 · queued, ticket ${ticket}`), 'the ticket on the radar');
-      await see(rowWith(table, 'row', FIRST_MESSAGE).getByText(held.reason), 'separation on the radar');
+      await see(rowWith(table, 'row', title).getByText(held.reason), 'separation on the radar');
       await shot('ctc-held');
     });
   } finally {
@@ -61,14 +61,14 @@ async function traffic(f, web, m) {
   assert.ok(answered.ok, `the ticket: ${refusal(answered)} ${JSON.stringify(answered.body).slice(0, 200)}`);
   f.otherLanded = (await landedOf(kit, repo, b.number, 'the ticket to land the other Landing')).landed_version;
   const said = await nowSaid(kit, repo, number, (s) => reasonCodes(s).includes('CONFLICT'), 'what landed first to send this one around');
-  assert.ok(said.reasons.some((r) => r.reason.includes(FILE)), `the conflict names the file: ${JSON.stringify(said.reasons)}`);
+  assert.ok(said.reasons.some((r) => r.reason.includes(file)), `the conflict names the file: ${JSON.stringify(said.reasons)}`);
   return `warned; held behind #${b.number} (ticket), it landed v${f.otherLanded}; this one: ${said.decision} ${reasonCodes(said)}`;
 }
 
 /** 8: an agent's finding on a head a person approved and CI passed: nothing lands, and it says why. */
-async function finding(f, web, m) {
+export async function finding(f, web, m) {
   const { kit, repo, crew, number, first } = f;
-  await crew.agent.post(repo.path(`/changes/${number}/comments`), { commit: first, path: FILE, line: FIX_LINE + 1, side: 'new', body: FINDING });
+  await crew.agent.post(repo.path(`/changes/${number}/comments`), { commit: first, path: f.file, line: f.findingLine, side: 'new', body: f.finding });
   await passCheck(crew.ci, repo, first);
   await review(f.reviewer, repo, first);
   const held = await decisionOn(kit, repo, number, first, 'FINDINGS');
@@ -88,7 +88,7 @@ async function finding(f, web, m) {
 
 /** 9: the next session pulls the finding, merges main, fixes it and pushes; approvals drop. */
 async function goAround(f) {
-  const { kit, repo, crew, number, dir, first } = f;
+  const { kit, repo, crew, number, dir, first, finding: FINDING } = f;
   const envFile = kit.path('flight-claude-env-2');
   writeFileSync(envFile, '');
   const started = await hook(kit, 'claude-start', { session_id: SECOND, cwd: dir, hook_event_name: 'SessionStart', source: 'startup' }, pilotEnv(kit, crew.pilot, null, { CLAUDE_ENV_FILE: envFile }));
@@ -128,7 +128,7 @@ async function goAround(f) {
  * nothing, and its finding has to stop counting. CTC holds for what is missing until the last
  * approval, which lands this exact head. Three more check results race the approval: every one
  * asks for a job, so duplicates reach the queue. */
-async function cleared(f) {
+export async function cleared(f) {
   const { kit, repo, crew, number, head } = f;
   await passCheck(crew.agent, repo, head, 'slop-review', { agent: 'slop-review', value: 'low' });
   await passCheck(crew.agent, repo, head, 'intent-drift', { agent: 'intent-drift', value: 'low', verdict: 'On course' });
@@ -147,7 +147,7 @@ async function cleared(f) {
 }
 
 /** 11: it lands by itself, once. Nobody here called land for it. */
-async function landsOnce(f, web, m) {
+export async function landsOnce(f, web, m) {
   const { kit, repo, number, head, dir } = f;
   const landed = await landedOf(kit, repo, number);
   const ms = Math.round(performance.now() - f.approvedAt);
