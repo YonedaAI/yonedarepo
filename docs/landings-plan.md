@@ -256,6 +256,8 @@ Rules only: CTC warns, holds and orders. It writes no code, assigns no work and 
 2. Wave 2: the binary that applies `0045`. Rollback goes to wave 1, never earlier.
 3. Warn the owner, then roll the harness image with the managed Worker. Intent drift is off until a workspace enables it, and a change with no plan starts no container.
 
+**Applied in one deploy on dev** (`claude/flight-e2e`): the owner chose one-deploy ships while prod has no users. `APPLY_THROUGH` is 45, so rollback goes only to a binary that knows entry 45.
+
 ## 8. Go-around
 
 We don't build orchestration, so this is **pull, not push**: the platform never wakes an agent.
@@ -306,3 +308,5 @@ Switches stay off on prod until each is watched on dev: `LAND_WHEN_CLEARED`, the
 | 6 | Switches off: behaviour identical, kit 22 of 22. On: push creates one Landing, costs no agent run, fork proposals still work |
 | 7 | Rollback across both waves; old CLI unaffected |
 | 8 | A finding reaches a new session through `git_context` |
+
+The whole path, one Landing end to end: [flight-path-test-plan.md](flight-path-test-plan.md).
