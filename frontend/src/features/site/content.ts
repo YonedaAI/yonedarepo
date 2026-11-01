@@ -13,7 +13,7 @@ export type Post = Page & {
   category: string;
   /** Orders posts of one date (lower first), e.g. the parts of a paper series. */
   order: number;
-  /** The hero image, a path under `frontend/public/blog/<slug>/`. */
+  /** The hero image, a path under `frontend/public/blog/<slug>/`; empty for a post with none. */
   image: string;
   imageAlt: string;
   caption: string;
