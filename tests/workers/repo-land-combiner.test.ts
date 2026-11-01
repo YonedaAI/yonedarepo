@@ -2,7 +2,7 @@
 // polling the authority; it builds the batches and answers each settled ticket. If the
 // combiner is unreachable, landers fall back to polling and still land.
 import { expect, it, vi } from 'vitest';
-import { LandBatcher } from '../../cloudflare/worker/repo-land-combiner';
+import { LandBatcher } from '../../cloudflare/worker/repo-land-batcher';
 import { caller } from '../../cloudflare/worker/repo-ops';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, bindings, file, scoped, signup, usePlatformFixture } from './repo-fixture';

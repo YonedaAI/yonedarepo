@@ -111,3 +111,11 @@ export async function serveHere(
   answer.headers.set('server-timing', header);
   return answer;
 }
+
+/** A combiner's `fetch`: only with REGION_HINT_TEST on, for the instances named
+ * `region-serve:<hint>`. A stored key keeps the instance where it started. */
+export async function servedHere(ctx: DurableObjectState, env: Env, request: Request) {
+  if (env.REGION_HINT_TEST !== 'on') return new Response('Not found', { status: 404 });
+  await ctx.storage.put('placed', true);
+  return serveHere(request, env, (work) => ctx.waitUntil(work));
+}

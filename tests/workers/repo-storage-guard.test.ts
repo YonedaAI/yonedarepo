@@ -9,7 +9,7 @@ import { projectChangesets } from '../../cloudflare/worker/repo-changesets';
 import { compute } from '../../cloudflare/worker/repo-compute';
 import { forgetHead } from '../../cloudflare/worker/repo-head';
 import { deliverHook, fanoutHooks } from '../../cloudflare/worker/repo-hooks';
-import { LandBatcher } from '../../cloudflare/worker/repo-land-combiner';
+import { LandBatcher } from '../../cloudflare/worker/repo-land-batcher';
 import { caller } from '../../cloudflare/worker/repo-ops';
 import { shardRecord } from '../../cloudflare/worker/repo-shards';
 import type { Env } from '../../cloudflare/worker/types';

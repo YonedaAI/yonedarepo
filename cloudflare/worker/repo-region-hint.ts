@@ -4,7 +4,7 @@
 // a new repository named `region-hint-*` can take one: a location hint counts only at an object's
 // first `get`, a create's id is always new, and nothing here touches an existing object. No
 // request is routed by this: the platform Worker stays where it is pinned.
-import { ApiError, type Json, type RepoContext } from './repo-ops';
+import { ApiError, type Credentials, type Json, type RepoContext } from './repo-ops';
 import type { Env } from './types';
 
 const HINTS = new Set(['enam', 'weur', 'apac']);
@@ -67,6 +67,13 @@ export async function placeCombiners(env: Env, repo: string) {
 /** The data center a trace page names. */
 export const coloOf = (trace: string) => /^colo=([A-Z]{3})$/m.exec(trace)?.[1] ?? null;
 
+/** A combiner's answer to `where`. `keep` stores a key, so a combiner made here is a stored
+ * object: one that held nothing could start elsewhere later. `erase` removes it. */
+export async function placedHere(storage: DurableObjectStorage, keep: boolean) {
+  if (keep) await storage.put('placed', true);
+  return whereHere();
+}
+
 /** The data center this code runs in, or null: never a guess. */
 export async function whereHere() {
   const answer = await fetch(TRACE, { signal: AbortSignal.timeout(TRACE_MS) }).catch(() => null);
@@ -82,12 +89,14 @@ async function whereObject(stub: () => DurableObjectStub, url: string) {
 
 /** `GET /repos/<id>/where`: where this code, each of this repository's objects and the asker's
  * account authority run. */
-export async function whereRepository(ctx: RepoContext, account: string | null): Promise<Json> {
+export async function whereRepository(ctx: RepoContext, auth: Credentials): Promise<Json> {
   // Owner only, and a deleted repository answers as one (`repo_storage` refuses the rest).
   await ctx.call({ op: 'repo_storage' });
   const { env, repo } = ctx;
   const shards = env.COMMIT_SHARDS;
   const stub = () => env.SOURCE_REPOS.get(env.SOURCE_REPOS.idFromName(repo));
+  const account =
+    '_session' in auth ? auth._session.workspace : '_pat' in auth && auth._pat.workspace;
   const owned = account ? env.WORKSPACES.idFromName(`account:${account}`) : null;
   const [worker, authority, shard, combiners, own] = await Promise.all([
     whereHere(),

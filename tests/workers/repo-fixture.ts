@@ -20,7 +20,7 @@ import { type CheckReport, completeContainerCheck } from '../../cloudflare/worke
 import { compute } from '../../cloudflare/worker/repo-compute';
 import { HeadHolder } from '../../cloudflare/worker/repo-head-holder';
 import { toBase64 } from '../../cloudflare/worker/repo-objects';
-import { LandBatcher } from '../../cloudflare/worker/repo-land-combiner';
+import { LandBatcher } from '../../cloudflare/worker/repo-land-batcher';
 import { projectObjects } from '../../cloudflare/worker/repo-projection';
 import { PushBatcher } from '../../cloudflare/worker/repo-push-queue';
 import type { Env } from '../../cloudflare/worker/types';
