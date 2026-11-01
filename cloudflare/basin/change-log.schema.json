@@ -31,6 +31,8 @@
     { "name": "land_latency_ms", "type": "int64", "required": false },
     { "name": "queue_wait_ms", "type": "int64", "required": false },
     { "name": "queued_by", "type": "string", "required": false },
-    { "name": "error_code", "type": "string", "required": false }
+    { "name": "error_code", "type": "string", "required": false },
+    { "name": "credential_id", "type": "string", "required": false },
+    { "name": "credential_kind", "type": "string", "required": false }
   ]
 }

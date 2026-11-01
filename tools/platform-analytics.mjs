@@ -8,9 +8,10 @@
 // Credentials: ~/.config/yonedarepo/basin.env, or the environment over it. BASIN_TOKEN is
 // an R2 "Admin Read & Write" account API token: Basin Catalog write for the sink, Basin SQL
 // read for queries. `setup` also needs the Cloudflare API: CLOUDFLARE_API_TOKEN, else the
-// wrangler login. No credential is printed: all output goes through `scrub`.
+// wrangler login, holding the PERMISSIONS below. No credential is printed: all output goes
+// through `scrub`. A dry run makes no network call, so it proves names, not access.
 // Usage: node tools/platform-analytics.mjs setup [--env dev|prod] [--dry-run]
-//        node tools/platform-analytics.mjs <landed SHA | hourly | rates | n9 | status | all>
+//        node tools/platform-analytics.mjs <landed SHA | hourly | daily | rates | n9 | status | all>
 //             [--env dev|prod] [--since ISO] [--dry-run]
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
@@ -45,6 +46,12 @@ const [NAMESPACE, TABLE] = ['platform', 'changes_v1'];
 const ROLL_SECONDS = values.env === 'prod' ? 300 : 60;
 /** Account limit on each of streams, sinks and pipelines. */
 const MAX_PER_ACCOUNT = 20;
+/** What the Cloudflare API token needs, by route. */
+const PERMISSIONS = [
+  ['/pipelines/', 'Pipelines Write'],
+  ['/basin-catalog', 'Workers R2 Data Catalog Write'],
+  ['/r2/', 'Workers R2 Storage Write'],
+];
 
 const CREDENTIALS_FILE = join(homedir(), '.config/yonedarepo/basin.env');
 function envFile(path) {
@@ -89,37 +96,44 @@ const planned = () => ({
 async function setup() {
   requireToken();
   const bearer = controlToken();
-  const api = async (path, body) => {
+  const request = async (path, body) => {
     const response = await fetch(`${API}/accounts/${ACCOUNT}${path}`, {
       method: body ? 'POST' : 'GET',
       headers: { authorization: `Bearer ${bearer}`, 'content-type': 'application/json' },
       body: body && JSON.stringify(body),
     });
     const value = await response.json().catch(() => ({}));
-    assert.ok(response.ok && value.success !== false, `${path}: ${response.status} ${JSON.stringify(value.errors ?? [])}`);
-    return value.result;
+    const missing = PERMISSIONS.find(([route]) => path.startsWith(route))?.[1];
+    const hint = response.status === 403 && missing ? ` (the Cloudflare API token needs ${missing})` : '';
+    assert.ok(response.ok && value.success !== false, `${path}: ${response.status} ${JSON.stringify(value.errors ?? [])}${hint}`);
+    return value;
   };
+  const api = async (path, body) => (await request(path, body)).result;
   const ensure = async (path, name, body) => {
-    const listed = await api(path);
-    const found = listed.find((item) => item.name === name);
+    // Lists are paged, so ask by name (a substring filter) and count from the total.
+    const found = (await api(`${path}?name=${name}`)).find((item) => item.name === name);
     if (found) return { ...found, created: false };
-    assert.ok(listed.length < MAX_PER_ACCOUNT, `${path}: the account is at its limit of ${MAX_PER_ACCOUNT}`);
+    const { result_info: listed } = await request(`${path}?per_page=1`);
+    assert.ok((listed?.total_count ?? 0) < MAX_PER_ACCOUNT, `${path}: the account is at its limit of ${MAX_PER_ACCOUNT}`);
     return { ...(await api(path, body)), created: true };
   };
 
+  const base = '/pipelines/v1';
+  // Reads first: a token missing a permission stops here, before anything exists.
+  const { warehouses } = await api('/basin-catalog');
+  await api(`${base}/streams?per_page=1`);
   const { buckets } = await api(`/r2/buckets?name_contains=${BUCKET}`);
   const bucketCreated = !buckets.some((b) => b.name === BUCKET);
   if (bucketCreated) await api('/r2/buckets', { name: BUCKET });
-  const { warehouses } = await api('/basin-catalog');
   const catalogEnabled = !warehouses.some((w) => w.bucket === BUCKET && w.status === 'active');
   if (catalogEnabled) await api(`/basin-catalog/${BUCKET}/enable`, {});
 
-  const base = '/pipelines/v1';
   // Worker binding only: nothing else may write to this stream. Everything here is
-  // immutable once created, so a schema change is a new `_v2` stream.
+  // immutable once created, so a schema change is a new `_v2` stream. Events that miss the
+  // schema are dropped in silence, and neither format default is documented: both are set.
   const stream = await ensure(`${base}/streams`, STREAM, {
     name: STREAM,
-    format: { type: 'json' },
+    format: { type: 'json', timestamp_format: 'rfc3339', unstructured: false },
     schema: { fields: schema().fields },
     http: { enabled: false, authentication: true },
     worker_binding: { enabled: true },
@@ -131,12 +145,13 @@ async function setup() {
     config: { account_id: ACCOUNT, bucket: BUCKET, namespace: NAMESPACE, table_name: TABLE, token, rolling_policy: { interval_seconds: ROLL_SECONDS } },
   });
   const pipeline = await ensure(`${base}/pipelines`, PIPELINE, { name: PIPELINE, sql: insert });
-  const listed = (await api(`${base}/pipelines`)).find((p) => p.name === PIPELINE);
+  // The list has no failure_reason: only a pipeline's own GET does.
+  const running = await api(`${base}/pipelines/${pipeline.id}`);
   return {
     env: values.env,
     created: { bucket: bucketCreated, catalog: catalogEnabled, stream: stream.created, sink: sink.created, pipeline: pipeline.created },
-    pipeline_status: listed?.status ?? null,
-    failure_reason: listed?.failure_reason ?? null,
+    pipeline_status: running.status ?? null,
+    failure_reason: running.failure_reason ?? null,
     binding: { pipelines: [{ binding: 'CHANGELOG', stream: stream.id }] },
   };
 }
@@ -158,7 +173,10 @@ async function sql(query) {
 // GROUP BY, not DISTINCT ON: Basin SQL rejects DISTINCT ON under a second aggregate once
 // the table spans several files.
 // actor_kind 'test' rows are the labelled probe events sent to verify the pipeline.
-// Accepted changes: a landed version that was not an octopus batch, or a commit a batch landed.
+// A landing is a commit a batch landed, or a version that carried one change of its own: not
+// the batch's own version, nor an import, ref move or ref delete, which change nothing a
+// writer made. Rows do not name the repository's base branch, so any branch counts.
+const LANDING = `(event = 'merged' OR (event = 'land' AND merged_landings = 0 AND kind IN ('commit', 'merge', 'revert', 'changeset')))`;
 const changes = `WITH changes AS (
   SELECT event_key,
     MAX(event) AS event,
@@ -184,9 +202,14 @@ const changes = `WITH changes AS (
     MAX(error_code) AS error_code,
     MAX(occurred_at) AS occurred_at
   FROM ${NAMESPACE}.${TABLE} WHERE occurred_at >= '${since}' AND actor_kind <> 'test' GROUP BY event_key
+), outcomes AS (
+  SELECT * FROM changes WHERE event = 'refused' OR ${LANDING}
 ), accepted AS (
-  SELECT * FROM changes WHERE event = 'merged' OR (event = 'land' AND merged_landings = 0)
+  SELECT * FROM outcomes WHERE event <> 'refused'
 )`;
+const rollup = (unit, limit) => `${changes} SELECT date_trunc('${unit}', occurred_at) AS ${unit}, COUNT(*) AS accepted_changes,
+      COUNT(DISTINCT repo) AS repos, AVG(land_latency_ms) AS avg_land_latency_ms
+    FROM accepted GROUP BY date_trunc('${unit}', occurred_at) ORDER BY ${unit} DESC LIMIT ${limit}`;
 const SHA = /^[0-9a-f]{40}$/;
 const queries = {
   // S15 across repositories: when (and where) did commit X land?
@@ -195,27 +218,26 @@ const queries = {
     return `${changes} SELECT repo, ref, version, event, kind, actor, occurred_at, land_latency_ms, queue_wait_ms
       FROM changes WHERE "commit" = '${sha}' AND event IN ('land', 'merged') ORDER BY occurred_at LIMIT 50`;
   },
-  hourly: () => `${changes} SELECT date_trunc('hour', occurred_at) AS hour, COUNT(*) AS accepted_changes,
-      COUNT(DISTINCT repo) AS repos, AVG(land_latency_ms) AS avg_land_latency_ms
-    FROM accepted GROUP BY date_trunc('hour', occurred_at) ORDER BY hour DESC LIMIT 168`,
+  hourly: () => rollup('hour', 168),
+  daily: () => rollup('day', 90),
   // Conflicts are refused queued landings; repairs are post-land revert proposals; base_lag
   // counts versions that landed between a writer's read and its landing.
   rates: () => `${changes} SELECT repo,
-      SUM(CASE WHEN event <> 'refused' AND NOT (event = 'land' AND merged_landings > 0) THEN 1 ELSE 0 END) AS accepted,
+      SUM(CASE WHEN ${LANDING} THEN 1 ELSE 0 END) AS accepted,
       SUM(CASE WHEN event = 'refused' THEN 1 ELSE 0 END) AS refused,
-      SUM(CASE WHEN event = 'refused' THEN 1.0 ELSE 0.0 END) / COUNT(*) AS conflict_rate,
-      SUM(CASE WHEN repairs > 0 THEN 1.0 ELSE 0.0 END) / NULLIF(SUM(CASE WHEN event <> 'refused' THEN 1 ELSE 0 END), 0) AS repair_rate,
-      SUM(CASE WHEN base_lag > 0 THEN 1 ELSE 0 END) AS landed_after_concurrent_writes,
+      SUM(CASE WHEN event = 'refused' THEN 1.0 ELSE 0.0 END) / NULLIF(SUM(CASE WHEN event = 'refused' OR ${LANDING} THEN 1 ELSE 0 END), 0) AS conflict_rate,
+      SUM(CASE WHEN ${LANDING} AND repairs > 0 THEN 1.0 ELSE 0.0 END) / NULLIF(SUM(CASE WHEN ${LANDING} THEN 1 ELSE 0 END), 0) AS repair_rate,
+      SUM(CASE WHEN ${LANDING} AND base_lag > 0 THEN 1 ELSE 0 END) AS landed_after_concurrent_writes,
       SUM(CASE WHEN event = 'land' AND merged_landings > 0 THEN 1 ELSE 0 END) AS octopus_batches
     FROM changes GROUP BY repo ORDER BY accepted DESC LIMIT 100`,
   // N9 inputs for cost per accepted change: attempts, accepted, check executor time, size.
   n9: () => `${changes} SELECT actor_kind, actor,
-      SUM(CASE WHEN event = 'refused' THEN 0 WHEN event = 'land' AND merged_landings > 0 THEN 0 ELSE 1 END) AS accepted,
+      SUM(CASE WHEN event = 'refused' THEN 0 ELSE 1 END) AS accepted,
       SUM(CASE WHEN event = 'refused' THEN 1 ELSE 0 END) AS refused,
       SUM(COALESCE(check_runs, 0)) AS check_runs, SUM(COALESCE(check_run_ms, 0)) AS check_run_ms,
       SUM(COALESCE(paths_changed, 0)) AS paths_changed, SUM(COALESCE(repairs, 0)) AS repairs,
       approx_percentile_cont(land_latency_ms, 0.5) AS p50_land_latency_ms
-    FROM changes WHERE NOT (event = 'land' AND merged_landings > 0) GROUP BY actor_kind, actor ORDER BY accepted DESC LIMIT 100`,
+    FROM outcomes GROUP BY actor_kind, actor ORDER BY accepted DESC LIMIT 100`,
   status: () => `SELECT COUNT(*) AS rows_ingested, COUNT(DISTINCT event_key) AS distinct_events,
       MIN(occurred_at) AS first_event, MAX(occurred_at) AS last_event, MAX(__ingest_ts) AS last_ingest
     FROM ${NAMESPACE}.${TABLE}`,
@@ -224,7 +246,7 @@ const queries = {
 async function main() {
   const [command = 'all', arg] = positionals;
   if (command === 'setup') return dryRun ? planned() : setup();
-  const names = command === 'all' ? ['status', 'hourly', 'rates', 'n9'] : [command];
+  const names = command === 'all' ? ['status', 'hourly', 'daily', 'rates', 'n9'] : [command];
   const out = { env: values.env, since };
   for (const name of names) {
     assert.ok(queries[name], `Unknown query ${name}`);

@@ -323,8 +323,8 @@ After a landing, the derive job streams one change record per landed version, me
 
 Setup, once per environment. xtask does not know this resource kind, so `tools/platform-analytics.mjs` makes it. Dev first; bind prod after a soak.
 
-1. Check the names and credentials, with no network: `node tools/platform-analytics.mjs setup --env dev --dry-run`.
-2. Create what is missing: `node tools/platform-analytics.mjs setup --env dev`. It reads `BASIN_TOKEN` (an R2 "Admin Read & Write" account API token) from `~/.config/yonedarepo/basin.env`, uses `CLOUDFLARE_API_TOKEN` or the wrangler login for the Cloudflare API, prints no credential, and is safe to run again. It answers the `binding` to add.
+1. Check the names and credentials, with no network: `node tools/platform-analytics.mjs setup --env dev --dry-run`. This proves names only, not access.
+2. Create what is missing: `node tools/platform-analytics.mjs setup --env dev`. It reads `BASIN_TOKEN` (an R2 "Admin Read & Write" account API token) from `~/.config/yonedarepo/basin.env`, uses `CLOUDFLARE_API_TOKEN` or the wrangler login for the Cloudflare API, prints no credential, and is safe to run again. That token needs **Pipelines Write**, **Workers R2 Data Catalog Write** and **Workers R2 Storage Write**; it reads first, so a token without the first two stops before anything exists, and names what is missing. It answers the `binding` to add.
 3. Add that binding to the platform Worker's `config` in `infra/envs/<env>.json`, then run `cargo xtask infra gen` and deploy:
 
    ```jsonc
@@ -344,6 +344,8 @@ Setup, once per environment. xtask does not know this resource kind, so `tools/p
 | Table | `platform.changes_v1` | `platform.changes_v1` |
 
 Limits: 20 each of streams, sinks and pipelines per account, 1 GB/s per stream, 5 MB per request (the job splits its sends at 4 MB). Streams, sinks and pipelines cannot be changed once created. Pricing was not found.
+
+The stream's `credential_id` and `credential_kind` columns are reserved and empty. A record is built from the log entry and the repository's rows, and neither holds the credential, so filling them is a repository change in two waves (`docs/analytics-plan.md`, Phase 3). They exist now because the stream cannot take a column later.
 
 **Gaps are expected and counted.** Queries on this table give a floor, not a total. `GET /repos/:id/changelog` shows the cursor: `version`, `sent`, `failures`, `last_error`, `stalled_since`, `gaps` and `last_gap`. Each gap also logs `changelog.gap` with its range and reason.
 
