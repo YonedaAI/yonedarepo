@@ -346,7 +346,7 @@
     "LFS_S3_ENDPOINT": "https://f011d0ee02b23cad26b4b38151b204ad.r2.cloudflarestorage.com",
     "PACK_CACHE": "on",
     "PUSH_BUNDLES": "on",
-    "REGION_HINT_TEST": "off",
+    "REGION_HINT_TEST": "on",
     "REGION_SIGNALS": "off",
     "REPO_ERASE": "on",
     "SITE_EVENTS_DATASET": "yonedarepo_dev_site_events",

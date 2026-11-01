@@ -223,7 +223,7 @@
           "TRAFFIC_EVENTS": "on",
           "TRAFFIC_REPORT": "on",
           "REGION_SIGNALS": "off",
-          "REGION_HINT_TEST": "off",
+          "REGION_HINT_TEST": "on",
           "PUSH_BUNDLES": "on",
           "PACK_CACHE": "on",
           "WEB_ORIGIN": "{origin}",
