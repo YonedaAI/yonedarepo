@@ -207,6 +207,84 @@ fn once_a_purge_has_started_nothing_restores() {
     assert_eq!(delete(&h)["purge_started"], true);
 }
 
+fn purge_now(h: &Harness) -> Value {
+    h.ok(OWNER, json!({"op":"repo_purge_now"}))
+}
+
+#[test]
+fn its_owner_purges_it_now_and_nothing_brings_it_back() {
+    let h = Harness::new();
+    delete(&h);
+    let started = purge_now(&h);
+    assert_eq!(started["workspace"], "ws-1");
+    assert_eq!(started["name"], "demo");
+    assert_eq!(started["finished"], false);
+    assert!(rows::settings(&h.db).unwrap().purge_started());
+    assert_eq!(code(h.run(OWNER, json!({"op":"repo_restore"}))), "GONE");
+    assert_eq!(
+        code(h.run(OWNER, json!({"op":"repo_restore","check":true}))),
+        "GONE"
+    );
+    // The window no longer holds the job back, as this mark is the owner's word.
+    assert_eq!(code(purge_target(&h)), "OK");
+}
+
+#[test]
+fn a_repeated_purge_changes_nothing_and_says_when_it_finished() {
+    let h = Harness::new();
+    let id = hook(&h);
+    delete(&h);
+    purge_now(&h);
+    assert_eq!(purge_now(&h)["finished"], false);
+    h.ok(PURGE, json!({"op":"repo_purged"}));
+    assert_eq!(purge_now(&h)["finished"], true);
+    h.ok(PURGE, json!({"op":"repo_purged"}));
+    let events: Vec<Value> = drain(&h, &id).iter().map(|b| b["event"].clone()).collect();
+    assert_eq!(events, [json!("repo.deleted"), json!("repo.purged")]);
+}
+
+#[test]
+fn only_the_owners_account_purges_and_everyone_else_is_told_gone() {
+    let h = Harness::new();
+    h.ok(
+        OWNER,
+        json!({"op":"repo_member_put","account":"dana","role":"admin"}),
+    );
+    delete(&h);
+    for who in ["member:dana", "platform:fork", "platform:purge"] {
+        assert_eq!(
+            code(h.run(who, json!({"op":"repo_purge_now"}))),
+            "GONE",
+            "{who}"
+        );
+    }
+    assert!(!rows::settings(&h.db).unwrap().purge_started());
+    assert_eq!(restore(&h, None)["name"], "demo");
+}
+
+#[test]
+fn a_live_repository_has_nothing_to_purge() {
+    let h = Harness::new();
+    assert_eq!(
+        code(h.run("token:agent", json!({"op":"repo_purge_now"}))),
+        "FORBIDDEN"
+    );
+    assert_eq!(
+        code(h.run(OWNER, json!({"op":"repo_purge_now"}))),
+        "CONFLICT"
+    );
+    assert!(!rows::settings(&h.db).unwrap().purge_started());
+}
+
+#[test]
+fn an_erased_tombstone_has_nobody_left_to_purge_it() {
+    let h = Harness::new();
+    delete(&h);
+    purge_now(&h);
+    while h.ok(ERASE, json!({"op":"repo_erase_step"}))["done"] != true {}
+    assert_eq!(code(h.run(OWNER, json!({"op":"repo_purge_now"}))), "GONE");
+}
+
 #[test]
 fn past_its_due_time_a_repository_no_purge_reached_still_restores() {
     let h = Harness::new();

@@ -149,6 +149,17 @@ it('purges through the route, as queued', async () => {
   expect((await rows()).find((r) => r.action === 'repo.purge_now')).toMatchObject({ target: s.id, outcome: 'queued' });
 });
 
+it("follows an owner's purge to its end, as an operator's", async () => {
+  const s = await repository('audit_owner_purged');
+  const undo = { ...on, REPO_UNDO_DAYS: '30' } as unknown as Env;
+  await api(`/repos/${s.id}?confirm=audit_owner_purged`, s, { method: 'DELETE' }, undo);
+  expect((await api(`/repos/${s.id}/purge`, s, { body: {} }, undo)).status).toBe(200);
+  const row = async () => (await rows()).find((r) => r.action === 'repo.purge_owner');
+  expect(await row()).toMatchObject({ target: s.id, outcome: 'queued', actor_kind: 'person' });
+  await settlePurge(on, s.id, 'completed');
+  expect((await row())?.outcome).toBe('completed');
+});
+
 it('records staff opening a private repository, once, and not a public one or ours', async () => {
   const s = await repository('audit_private');
   const read = (id: string) => api(`/admin/repos/${id}`, owner, {}, on);

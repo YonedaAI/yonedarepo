@@ -63,6 +63,23 @@ fn every_action(h: &Harness, send: impl Fn(Value) -> Value) {
 }
 
 #[test]
+fn an_owners_purge_is_recorded_once_with_who_asked() {
+    let h = Harness::new();
+    let unseen = pending(&h).len();
+    h.ok(OWNER, on(json!({"op":"repo_delete","confirm":"demo"})));
+    h.ok(OWNER, on(json!({"op":"repo_purge_now"})));
+    h.ok(OWNER, on(json!({"op":"repo_purge_now"})));
+    let events = pending(&h);
+    assert_eq!(
+        kinds(&events[unseen..]),
+        ["repo.deleted", "repo.purge_requested"]
+    );
+    let requested = &events.last().unwrap()["data"];
+    assert_eq!(requested["actor"], OWNER);
+    assert_eq!(requested["name"], "demo");
+}
+
+#[test]
 fn with_the_switch_off_nothing_is_written() {
     let h = Harness::new();
     every_action(&h, |c| c);

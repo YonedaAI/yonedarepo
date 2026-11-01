@@ -24,7 +24,8 @@ pub fn gone() -> Error {
 /// Whether `op` still runs on a tombstone: the purge's and the erase's own ops, and until it
 /// is erased, the (idempotent) delete, whose hold is whose (a hold may be placed on a tombstone
 /// until it is purged), and the delivery of hook payloads and audit events already queued
-/// (`repo.deleted` among them). Until a purge reaches it, a restore (`undo`), and the quarantine job, whose
+/// (`repo.deleted` among them), and the owner's purge, which a repeat finishes (`undo`). Until a
+/// purge reaches it, a restore (`undo`), and the quarantine job, whose
 /// deadlines the undo window must not push back; it alone gets those (`_system`, set by the
 /// adapter), before anyone is told who they are.
 pub fn allowed_when_deleted(op: StoreOp, c: &Value, settings: &Settings) -> bool {
@@ -34,6 +35,7 @@ pub fn allowed_when_deleted(op: StoreOp, c: &Value, settings: &Settings) -> bool
         ) => true,
         StoreOp::Repo(
             RepoOp::Delete
+            | RepoOp::PurgeNow
             | RepoOp::HoldOwner
             | RepoOp::HookClaim
             | RepoOp::HookSettle
@@ -59,7 +61,7 @@ pub fn allowed_when_deleted(op: StoreOp, c: &Value, settings: &Settings) -> bool
 /// On a tombstone, hook delivery, audit events and the erase belong to their platform jobs
 /// alone, and who owns it to the platform: anyone else is answered GONE, as for every other
 /// operation. So is a restore, but for the owner's account and the platform reading what it
-/// lists.
+/// lists, and a purge asked for now, but for the owner's account.
 pub fn tombstone_caller(op: StoreOp, c: &Value, actor: &Actor, settings: &Settings) -> Result<()> {
     if settings.deleted_at.is_none() {
         return Ok(());
@@ -78,6 +80,7 @@ pub fn tombstone_caller(op: StoreOp, c: &Value, actor: &Actor, settings: &Settin
                 Err(gone())
             };
         }
+        StoreOp::Repo(RepoOp::PurgeNow) if !actor.repo_owner() => return Err(gone()),
         _ => None,
     };
     if job.is_some_and(|scope| !actor.can(scope)) {

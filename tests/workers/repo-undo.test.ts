@@ -40,6 +40,8 @@ const remove = (who: { cookie: string }, id: string, name: string, target: Env =
   api(`/repos/${id}?confirm=${name}`, who, del, target);
 const restore = (who: any, id: string, body: any = {}, target: Env = on) =>
   api(`/repos/${id}/restore`, who, { body }, target);
+const purge = (who: any, id: string, target: Env = on) =>
+  api(`/repos/${id}/purge`, who, { body: {} }, target);
 
 /** Delivers one queued job as the queue does, reporting how it settled. */
 async function deliver(body: any, target: Env = on) {
@@ -394,6 +396,182 @@ it('an operator purges now, audited, and nobody else can', async () => {
   expect(audited).toEqual({ actor: 'undo_ops', target: id });
   // Once more after teardown raced it: nothing to do, and no failure.
   expect((await api(path, operator, { body: {} }, on)).status).toBe(200);
+});
+
+it('its owner purges it now: the row goes at once, nothing restores it, and it is audited', async () => {
+  const who = { cookie: await signup('undo_purged') };
+  const { id } = await made(who, 'forever');
+  await remove(who, id, 'forever');
+  queued.length = 0;
+
+  const done = await purge(who, id);
+  expect([done.status, done.body]).toEqual([200, { purged: true }]);
+  // Before any job has run: the list has dropped it and the mark has beaten a restore.
+  expect((await api('/repos/deleted', who, {}, on)).body.repos).toEqual([]);
+  const refused = await restore(who, id);
+  expect([refused.status, refused.body.error.code]).toEqual([404, 'GONE']);
+  expect((await stored(`platform/v1/${id}/`)).length).toBeGreaterThan(0);
+
+  const jobs = purges(id);
+  expect(jobs.map((m) => m.job_id)).toEqual([`now-${id}`]);
+  expect(await deliver(jobs[0])).toBe('ack');
+  expect(await stored(`platform/v1/${id}/`)).toEqual([]);
+  expect(await row(id)).toBeNull();
+  expect((await workspace(on, 'undo_purged', { op: 'deleted_repo_list' })).repos).toEqual([]);
+  expect((await restore(who, id)).body.error.code).toBe('GONE');
+
+  const audited = await bindings.INDEX.prepare("SELECT actor,target,detail FROM admin_audit WHERE action='repo.purge_owner'").first<any>();
+  expect(audited).toMatchObject({ actor: 'undo_purged', target: id });
+  expect(JSON.parse(audited.detail)).toMatchObject({ name: 'forever', owner: 'undo_purged', queued: true });
+  // Its name was free already, and stays so.
+  expect((await made(who, 'forever')).id).not.toBe(id);
+});
+
+it('only its owner purges it', async () => {
+  const who = { cookie: await signup('undo_mine') };
+  const admin = { cookie: await signup('undo_admin') };
+  const stranger = { cookie: await signup('undo_stranger') };
+  const { id } = await made(who, 'mine');
+  const other = await made(who, 'other');
+  expect((await api(`/repos/${id}/members`, who, { body: { account: 'undo_admin', role: 'admin' } }, on)).status).toBe(200);
+  const issue = async (name: string, grant: any) =>
+    ({ token: (await api('/tokens', who, { body: { name, ...grant } }, on)).body.token as string });
+  const reader = await issue('reader', { scopes: ['repo:read'] });
+  const elsewhere = await issue('elsewhere', { scopes: ['repo:admin'], repos: [other.id] });
+  const adminToken = await issue('admin', { scopes: ['repo:admin'] });
+
+  const live = await purge(who, id);
+  expect([live.status, live.body.error.code]).toEqual([409, 'CONFLICT']);
+  await remove(who, id, 'mine');
+  queued.length = 0;
+  for (const [caller_, status] of [[admin, 404], [stranger, 404], [reader, 403], [elsewhere, 403]] as const)
+    expect((await purge(caller_, id)).status, JSON.stringify(caller_)).toBe(status);
+  expect(purges(id)).toEqual([]);
+  expect((await api('/repos/deleted', who, {}, on)).body.repos).toHaveLength(1);
+  // Nothing they sent got in the way of a restore, or of a token that may.
+  expect((await restore(who, id)).status).toBe(200);
+  await remove(who, id, 'mine');
+  expect((await purge(adminToken, id)).status).toBe(200);
+});
+
+it('a repository under a legal hold is refused with the reason, and still restores', async () => {
+  const held = { ...on, LEGAL_HOLD: 'on' } as unknown as Env;
+  const owner = { cookie: await signup('undo_purge_held') };
+  const org = 'undo_purge_held_org';
+  expect((await api('/orgs', owner, { body: { name: org } }, held)).status).toBe(200);
+  const { id } = await made(owner, 'held', held, org);
+  await remove(owner, id, 'held', held);
+  expect((await api(`/orgs/${org}/hold`, owner, { body: {} }, held)).status).toBe(200);
+  queued.length = 0;
+
+  const refused = await purge(owner, id, held);
+  expect([refused.status, refused.body.error.code]).toEqual([423, 'LEGAL_HOLD']);
+  expect(refused.body.error.message).toMatch(/legal hold/);
+  expect(purges(id)).toEqual([]);
+  expect((await api(`/orgs/${org}/repos/deleted`, owner, {}, held)).body.repos).toHaveLength(1);
+  expect((await stored(`platform/v1/${id}/`)).length).toBeGreaterThan(0);
+  expect((await restore(owner, id, {}, held)).status).toBe(200);
+});
+
+it('a repeated purge is safe, whenever it comes', async () => {
+  const who = { cookie: await signup('undo_again') };
+  const { id } = await made(who, 'again');
+  const hook = await api(`/repos/${id}/hooks`, who, { body: { url: 'https://example.com/hook', events: ['repo'] } }, on);
+  const sent: (string | null)[] = [];
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    sent.push(new Request(input as RequestInfo, init).headers.get('x-yoneda-event'));
+    return new Response('ok');
+  });
+  await remove(who, id, 'again');
+  await deliverHook(on, id, hook.body.id);
+  queued.length = 0;
+
+  expect((await purge(who, id)).status).toBe(200);
+  expect((await purge(who, id)).status).toBe(200);
+  const jobs = purges(id);
+  expect(jobs).toHaveLength(2);
+  expect(await Promise.all(jobs.map((job) => deliver(job)))).toEqual(['ack', 'ack']);
+  await deliverHook(on, id, hook.body.id);
+  await deliverHook(on, id, hook.body.id);
+  expect(sent).toEqual(['repo.deleted', 'repo.purged']);
+  expect(await row(id)).toBeNull();
+
+  // Long after it finished: the same answer, and nothing to send.
+  queued.length = 0;
+  const later = await purge(who, id);
+  expect([later.status, later.body]).toEqual([200, { purged: true }]);
+  expect(purges(id)).toEqual([]);
+  expect(await row(id)).toBeNull();
+  expect((await workspace(on, 'undo_again', { op: 'deleted_repo_list' })).repos).toEqual([]);
+});
+
+it('a purge whose job was lost is sent again by the sweep', async () => {
+  const who = { cookie: await signup('undo_lost_job') };
+  const { id } = await made(who, 'lost');
+  await remove(who, id, 'lost');
+  expect((await purge(who, id)).status).toBe(200);
+  // Not a day of this window has passed, and the job it just sent has time to run.
+  expect(await sweep(0.1)).toEqual([]);
+  const jobs = await sweep(0.5);
+  expect(jobs.map((m) => m.job_id)).toEqual([`due-${id}`]);
+  expect(await deliver(jobs[0])).toBe('ack');
+  expect(await stored(`platform/v1/${id}/`)).toEqual([]);
+  expect(await row(id)).toBeNull();
+});
+
+it('a purge that could not be queued is finished by asking again', async () => {
+  const who = { cookie: await signup('undo_retry') };
+  const { id } = await made(who, 'retry');
+  await remove(who, id, 'retry');
+  const down = { ...on, PLATFORM_QUEUE: { ...fakeQueue, send: async () => { throw new Error('queue is down'); } } } as unknown as Env;
+  expect((await purge(who, id, down)).status).toBeGreaterThanOrEqual(500);
+  // Asked for is asked for: it can't be restored, and the row stays to be asked again.
+  expect((await restore(who, id)).body.error.code).toBe('GONE');
+  expect((await api('/repos/deleted', who, {}, on)).body.repos).toHaveLength(1);
+  queued.length = 0;
+  expect((await purge(who, id)).status).toBe(200);
+  expect(purges(id)).toHaveLength(1);
+  expect((await api('/repos/deleted', who, {}, on)).body.repos).toEqual([]);
+});
+
+it('a purged fork takes nothing from its parent', async () => {
+  const who = { cookie: await signup('undo_fork_purge') };
+  const { id: parent } = await made(who, 'parent');
+  const forked = await api(`/repos/${parent}/fork`, who, { body: { name: 'child' } }, on);
+  const fork = forked.body.id as string;
+  await remove(who, fork, 'child');
+  queued.length = 0;
+  expect((await purge(who, fork)).status).toBe(200);
+  expect(await runPurges(fork)).toEqual(['ack']);
+  expect((await api(`/repos/${parent}/blob?path=a.txt`, who, {}, on)).status).toBe(200);
+  expect((await remove(who, parent, 'parent')).status).toBe(200);
+});
+
+it('with the window off there is nothing to purge but what it promised', async () => {
+  const who = { cookie: await signup('undo_purge_off') };
+  const plain = await made(who, 'plain', off);
+  await remove(who, plain.id, 'plain', off);
+  expect((await purge(who, plain.id, off)).status).toBe(404);
+  const promised = await made(who, 'promised');
+  await remove(who, promised.id, 'promised');
+  expect((await purge(who, promised.id, off)).status).toBe(200);
+  expect((await api('/repos/deleted', who, {}, off)).body.repos).toEqual([]);
+});
+
+it('an organization\'s owners purge its repositories, and its members cannot', async () => {
+  const owner = { cookie: await signup('undo_org_purger') };
+  const member = { cookie: await signup('undo_org_helper') };
+  const org = 'undo_org_purge';
+  expect((await api('/orgs', owner, { body: { name: org } }, on)).status).toBe(200);
+  expect((await api(`/orgs/${org}/members`, owner, { body: { account: 'undo_org_helper', role: 'member' } }, on)).status).toBe(200);
+  const { id } = await made(owner, 'team', on, org);
+  await remove(owner, id, 'team');
+  expect((await purge(member, id)).status).toBe(404);
+  expect((await purge(owner, id)).status).toBe(200);
+  expect((await api(`/orgs/${org}/repos/deleted`, owner, {}, on)).body.repos).toEqual([]);
+  const audited = await bindings.INDEX.prepare("SELECT actor,detail FROM admin_audit WHERE action='repo.purge_owner' AND target=?").bind(id).first<any>();
+  expect(audited.actor).toBe('undo_org_purger');
+  expect(JSON.parse(audited.detail).owner).toBe(org);
 });
 
 it('an org lists and restores its own, and a gone org purges on schedule', async () => {

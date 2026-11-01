@@ -64,7 +64,7 @@ curl -X POST   https://yonedarepo.com/api/v1/orgs/acme/hold -H "Authorization: B
 curl -X DELETE https://yonedarepo.com/api/v1/orgs/acme/hold -H "Authorization: Bearer $TOKEN"
 ```
 
-While it stands, these answer `423 LEGAL_HOLD`: deleting the repository or the organization, purging it, purging quarantined content, retiring a mirror, deleting a release or a change, and vacuum. Everything else goes on: landing, reads, compaction, deleting a branch (its history stays), removing a member, and quarantine still withholds content from being served. A hold also stops the erasure of a repository already deleted, until it is released.
+While it stands, these answer `423 LEGAL_HOLD`: deleting the repository or the organization, purging it (the **Delete** on Recently deleted included), purging quarantined content, retiring a mirror, deleting a release or a change, and vacuum. Everything else goes on: landing, reads, compaction, deleting a branch (its history stays), removing a member, and quarantine still withholds content from being served. A hold also stops the erasure of a repository already deleted, until it is released.
 
 Any member can see a hold; only owners change it, and a token needs `repo:admin`. Operators can place a hold too, on an organization or on any repository, and only an operator can release theirs. Every change is recorded with who made it.
 

@@ -34,6 +34,7 @@ export const AUDIT_KINDS: Record<string, string> = {
   'repo.created': 'Repository created',
   'repo.deleted': 'Repository deleted',
   'repo.restored': 'Repository restored',
+  'repo.purge_requested': 'Repository permanently deleted',
   'repo.renamed': 'Repository renamed',
   'repo.visibility_changed': 'Repository visibility changed',
   'repo.member_put': 'Repository member added or changed',

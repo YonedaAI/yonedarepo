@@ -192,6 +192,7 @@ fn run<S: SqlStore>(
             pushed::bundles::require_system(actor).and_then(|()| pushed::bundles::locate(db, c))
         }
         R::Delete => deletion::delete(db, c, actor, settings),
+        R::PurgeNow => undo::purge_now(db, c, actor, settings),
         R::PurgeTarget => deletion::purge_target(db, c, actor, settings),
         R::Purged => undo::purged(db, c, actor, settings),
         R::Restore => undo::restore(db, c, actor, settings),

@@ -434,11 +434,12 @@ fn repository_events_keep_only_their_listed_fields() {
             "webhook.deleted",
             json!({"id":"3","url":"https://ci.example.com/tok3n?key=abc"})
         ),
+        event(14, "repo.purge_requested", json!({})),
     ]);
     append(&db, source, events);
     let repo = "r0123456789abcdef0123";
     let items = rows(&db);
-    assert_eq!(items.len(), 13);
+    assert_eq!(items.len(), 14);
     let details = |kind: &str| {
         items
             .iter()
@@ -451,6 +452,10 @@ fn repository_events_keep_only_their_listed_fields() {
         json!({"repo":repo,"name":"demo","visibility":"private","parent":"r00000000000000000009"})
     );
     assert_eq!(details("repo.deleted"), json!({"repo":repo,"name":"demo"}));
+    assert_eq!(
+        details("repo.purge_requested"),
+        json!({"repo":repo,"name":"demo"})
+    );
     assert_eq!(
         details("repo.member_put"),
         json!({"repo":repo,"name":"demo","account":"team:acme/devs","role":"read","previous":"write"})

@@ -99,6 +99,7 @@ All paths start with `/repos/<id>`.
 | `POST /break-glass` | Owner-only [recovery and automation pause](/docs/guides/break-glass) (signed-in session) |
 | `DELETE /?confirm=<name>` | Delete the repository |
 | `POST /restore` | Restore a deleted repository, optionally under a new `name` (needs `repo:admin`; its tokens stay revoked) |
+| `POST /purge` | Delete a deleted repository for good, now. It cannot be restored afterwards, and asking again is safe. The owner's account or an organization's owners, as for `/restore` (needs `repo:admin`) |
 | `POST /mcp` | The repository MCP endpoint |
 
 ## Error codes
