@@ -7,8 +7,8 @@ export const AGENTS = [
   { id: 'slop-review', name: 'Slop review', check: 'slop-review' },
   { id: 'intent-drift', name: 'Intent drift', check: 'intent-drift' },
 ];
-/** A container's start, a model's reply and the workflow's 20 s poll, twice over. */
-const AGENT_MS = 8 * 60_000;
+/** Slop's own limit, 15 minutes, and a minute for the workflow to say so. */
+const AGENT_MS = 16 * 60_000;
 /** CTC's job after the last check. */
 const LAND_MS = 3 * 60_000;
 const TERMINAL = new Set(['passed', 'findings', 'failed', 'superseded', 'cancelled', 'paused']);
@@ -27,6 +27,17 @@ async function runsOn(s, head) {
     }
     await sleep(5_000);
   }
+}
+
+/** Every run on the repository with its transcript and cost lines, before cleanup takes them. */
+export async function keepRuns(s) {
+  const { runs } = await s.api(`${s.managed}/runs?repo=${s.repo}&limit=50`);
+  const kept = [];
+  for (const run of runs) {
+    const detail = await s.api(`${s.managed}/runs/${s.repo}/${encodeURIComponent(run.id)}`).catch((e) => ({ error: e.message }));
+    kept.push({ run, transcript_tail: String(detail.transcript ?? '').slice(-4000), cost: detail.cost ?? null, error: detail.error ?? null });
+  }
+  return kept;
 }
 
 /** Stops the flow before it can pass the cap. */
