@@ -1,5 +1,5 @@
-// The changes web-agents-flow.mjs commits from the browser: one that should fly, one sloppy, one
-// that drifts from its flight plan. All invented code. `expect` is what a sensible reviewer would
+// The changes web-agents-flow.mjs commits from the browser: one that should fly, one with no plan,
+// one sloppy, one that drifts from its flight plan. All invented code. `expect` is what a sensible reviewer would
 // say, read against the runs afterwards.
 const lines = (...text) => `${text.join('\n')}\n`;
 
@@ -13,7 +13,9 @@ const CLEAN = lines(
   '}',
 );
 
+// Six or more medium readings on distinct lines: Slop reads high only from five (HIGH_LEVEL_FINDINGS).
 const SLOPPY = lines(
+  '// Returns the tax on an order.',
   'export function total(items) {',
   "  console.log('items', items);",
   "  console.log('DEBUG total called');",
@@ -23,16 +25,32 @@ const SLOPPY = lines(
   '  const unused = items.length * 2;',
   '  const alsoUnused = items.map((i) => i.price);',
   '  let result = 0;',
-  '  // loop over items',
+  '  // Sorts the items by name.',
   '  for (let i = 0; i < items.length; i++) {',
-  '    // add price to result',
+  '    // Removes the item from the cart.',
   '    result = result + items[i].price;',
   '  }',
   '  return result;',
   '}',
   '',
-  '// total but again, copied so we have it',
+  '// Returns the tax on an order.',
   'export function total2(items) {',
+  "  console.log('items', items);",
+  '  // TODO: fix this later',
+  '  // const old = items.reduce((a, b) => a + b.price, 0);',
+  '  const unused = items.length * 2;',
+  '  let result = 0;',
+  '  for (let i = 0; i < items.length; i++) {',
+  '    result = result + items[i].price;',
+  '  }',
+  '  return result;',
+  '}',
+  '',
+  '// Returns the tax on an order.',
+  'export function total3(items) {',
+  "  console.log('items', items);",
+  '  // TODO: fix this later',
+  '  const unused = items.length * 2;',
   '  let result = 0;',
   '  for (let i = 0; i < items.length; i++) {',
   '    result = result + items[i].price;',
@@ -63,6 +81,13 @@ const OFF_COURSE = lines(
   '}',
 );
 
+const NO_PLAN = lines(
+  '/** `value`, held between `low` and `high`. */',
+  'export function clamp(value, low, high) {',
+  '  return Math.min(high, Math.max(low, value));',
+  '}',
+);
+
 const CLEAN_GOAL = 'Add a backoffMs helper that doubles the wait on each retry and caps it at a limit';
 const DRIFT_GOAL = 'Fix the spelling of "recieve" in the README';
 export const FIXED_GOAL = 'Add a total() that sums item prices';
@@ -77,6 +102,15 @@ export const CASES = {
     goal: CLEAN_GOAL,
     expect: { slop: 'low', drift: 'low', outcome: 'landed' },
   },
+  noplan: {
+    id: 'noplan',
+    path: 'src/clamp.js',
+    content: NO_PLAN,
+    message: 'Add a clamp helper',
+    branch: 'no-plan-clamp',
+    goal: '',
+    expect: { slop: 'low', drift: 'no_plan', outcome: 'landed' },
+  },
   sloppy: {
     id: 'sloppy',
     path: SLOPPY_FILE,
@@ -84,7 +118,7 @@ export const CASES = {
     message: 'Add a cart total',
     branch: 'sloppy-cart',
     goal: FIXED_GOAL,
-    expect: { slop: 'medium or high', drift: 'low', outcome: 'go-around' },
+    expect: { slop: 'high', drift: 'low', outcome: 'go-around' },
   },
   drift: {
     id: 'drift',
@@ -95,14 +129,15 @@ export const CASES = {
     goal: DRIFT_GOAL,
     expect: { slop: 'low', drift: 'high', outcome: 'go-around' },
   },
-  default: {
-    id: 'default',
-    path: 'src/payments-default.js',
+  // The same off-course work, with an owner who chose Never: an explicit setting wins.
+  never: {
+    id: 'never',
+    path: 'src/payments-never.js',
     content: OFF_COURSE,
     message: 'Fix another README spelling mistake',
-    branch: 'drift-default',
+    branch: 'drift-never',
     goal: DRIFT_GOAL,
-    expect: { drift: 'high', outcome: 'lands: nothing blocks by default' },
+    expect: { drift: 'high', outcome: 'landed' },
   },
 };
 
@@ -112,5 +147,7 @@ export const FIX = {
   path: SLOPPY_FILE,
   content: TIDY,
   message: 'Tidy the cart total',
+  // A Landing keeps the title of the commit that opened it.
+  landing: 'Add a cart total',
   expect: { slop: 'low', drift: 'low', outcome: 'landed' },
 };

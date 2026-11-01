@@ -7,7 +7,7 @@
 // credit, and the flow stops before the cap.
 //
 //   set -a; . ~/.config/yonedarepo/dev-owner.env; set +a
-//   node tools/staging/web-agents-flow.mjs [--only clean,sloppy,drift,default] [--keep]
+//   node tools/staging/web-agents-flow.mjs [--only clean,noplan,sloppy,drift,never] [--keep]
 //        [--cap-usd 5] [--origin https://dev.yonedarepo.com]
 //
 // The login is kept in <root>/.local/agents-live/session.json, 0600, so a rerun is no new session.
@@ -25,7 +25,7 @@ import { AGENTS, addAgent, commitFromPage, createRepository, ctcPage, facts, pag
 const { values } = parseArgs({
   options: {
     origin: { type: 'string', default: 'https://dev.yonedarepo.com' },
-    only: { type: 'string', default: 'clean,sloppy,drift,default' },
+    only: { type: 'string', default: 'clean,noplan,sloppy,drift,never' },
     keep: { type: 'boolean', default: false },
     headed: { type: 'boolean', default: false },
     'cap-usd': { type: 'string', default: '5' },
@@ -140,7 +140,7 @@ async function main() {
   const asking = page.getByRole('dialog', { name: 'Choose your handle' });
   await page.addLocatorHandler(asking, () => asking.getByRole('button', { name: 'Not now' }).click());
   const name = `agents-live-${ts}`;
-  const s = { context, page, name, origin, out, capUsd: CAP_USD, api: (path, init) => api(context, path, init), shot: (label) => shot(page, label) };
+  const s = { context, page, name, origin, out, capUsd: CAP_USD, defaultBlock: 'high', api: (path, init) => api(context, path, init), shot: (label) => shot(page, label) };
   let failed = false;
   try {
     const { repos } = await api(context, '/api/v1/repos');
@@ -159,19 +159,19 @@ async function main() {
 
     await step('Create a repository from the dialog', () => createRepository(s));
     await step('Landing rules: 0 approvals, 2 required checks, the 3 switches', () => turnOnRules(s));
-    for (const agent of AGENTS) await step(`Add ${agent.name}, blocking at medium`, () => addAgent(s, agent, 'medium'));
+    for (const agent of AGENTS) await step(`Add ${agent.name}, Block landing at left alone`, () => addAgent(s, agent));
 
-    for (const id of chosen.filter((x) => x !== 'default')) await flyCase(s, CASES[id]);
+    for (const id of chosen.filter((x) => x !== 'never')) await flyCase(s, CASES[id]);
 
     if (chosen.includes('sloppy') && out.cases.sloppy?.facts?.status === 'open') {
       // The go-around, answered from the web too: edit the file on its branch, and agents look again.
       const at = `/files/${SLOPPY_FILE}?ref=${encodeURIComponent(CASES.sloppy.branch)}`;
       await flyCase(s, FIX, { at, edit: true });
     }
-    if (chosen.includes('default')) {
-      // What a user who never touches Block landing at gets on the same off-course change.
-      for (const agent of AGENTS) await step(`Set ${agent.name} back to never blocking`, () => addAgent(s, agent, ''));
-      await flyCase(s, CASES.default);
+    if (chosen.includes('never')) {
+      // A user can still lower it: the same off-course work, with Never chosen on the page.
+      for (const agent of AGENTS) await step(`Set ${agent.name} to Never`, () => addAgent(s, agent, ''));
+      await flyCase(s, CASES.never);
     }
   } catch (e) {
     failed = true;
@@ -197,6 +197,7 @@ async function main() {
     await context.storageState({ path: sessionFile }).catch(() => {});
     await browser.close();
   }
+  console.table(Object.entries(out.cases).map(([id, c]) => ({ case: id, slop: c.facts?.slop.value, drift: c.facts?.drift.value, status: c.facts?.status, page: c.page?.state, expected: c.expected?.outcome })));
   console.log(`\nEvidence: ${dir}\nSpent: $${out.spent_usd}`);
   console.table(out.steps.map(({ step: n, title, ms, result }) => ({ n, title: title.slice(0, 60), s: (ms / 1000).toFixed(1), result: result.slice(0, 60) })));
   return failed ? 1 : 0;

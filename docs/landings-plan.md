@@ -56,7 +56,7 @@ Landing states are labels worked out from existing data, never new status values
 | ~~Check every commit's class, not just the head's~~ | **Done, on prod at `e10b643d`.** The bypass was real in all 3 landing paths: a logic commit under a docs-only head landed with no approval when `auto_approve` was set | `land_gates.rs` |
 | Classify Git pushes | Only server-side commits are classified, so pushes never auto-approve | `repo-commit.ts:102` |
 | Let managed agents post required checks | Requiring `code-review` looks set to make every run fail, because nothing sets `check_posters` | `policy.rs:95-110`, `run.ts:192` |
-| Make `block_at` work, or remove it from the docs | It is null everywhere and overrides are refused, so Slop always passes | `managed-settings.ts:29`, `report.ts:55` |
+| ~~Make `block_at` work, or remove it from the docs~~ | **Done.** Owner, 2026-10-31: bad verdicts block by default, so `block_at` defaults to `high` for Slop and Intent drift. An explicit level or Never wins; a change with no plan stays `no_plan`, which passes | `managed-settings.ts:29`, `report.ts:55` |
 | Reach `high` | Level agents are capped at medium | `report.ts:72` |
 | Close changes whose branch was deleted | They stay open, blocked forever | `branches.rs:77` |
 

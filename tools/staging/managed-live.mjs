@@ -314,7 +314,7 @@ async function main() {
                 run.value === 'fail' ? 'fail' : 'pass',
                 'the check matches the value',
               );
-            else assert.equal(check.status, 'pass', 'Slop never blocks by default');
+            else assert.equal(check.status, run.value === 'high' ? 'fail' : 'pass', 'Slop fails from high by default');
             const detail = await managed.get(`/runs/${ctx.repo.id}/${encodeURIComponent(run.id)}`);
             assert.ok(
               typeof detail.transcript === 'string' && detail.transcript.length > 0,

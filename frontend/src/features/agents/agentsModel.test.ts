@@ -262,8 +262,12 @@ describe('the set-up form', () => {
     expect(updateBody(enabled, { ...form, active: false })).toEqual({ active: false });
     expect(form.block_at).toBeNull();
     const slop = state('slop-review', setUp({ enabled_repos: [repoA] }));
-    expect(updateBody(slop, { ...initialForm(slop, repos), block_at: 'high' })).toEqual({
-      settings: { block_at: 'high' },
+    expect(initialForm(slop, repos).block_at).toBe('high');
+    expect(updateBody(slop, { ...initialForm(slop, repos), block_at: 'medium' })).toEqual({
+      settings: { block_at: 'medium' },
+    });
+    expect(updateBody(slop, { ...initialForm(slop, repos), block_at: null })).toEqual({
+      settings: { block_at: null },
     });
     expect(updateBody(enabled, { ...form, block_at: 'high' })).toEqual({});
     // Whatever the form holds besides, the body names only editable keys.

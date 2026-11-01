@@ -7,7 +7,7 @@ import { linkTo, type Navigate } from '../shell/useRoute';
 import { ALL_REPOS_LABEL, BLOCK_HELP, READY_HELP } from './agentsModel';
 import { filterRepos, parseFilters } from './setupForm';
 
-/** The level at or above which a level agent's check fails; off unless the owner chooses one. */
+/** The level at or above which a level agent's check fails: High until the owner chooses. */
 export function BlockField({
   value,
   onChange,

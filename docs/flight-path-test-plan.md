@@ -7,6 +7,8 @@ One Landing through every step, on dev, with the real API, CLI, Git and browser.
 | Scripted flight and failures | `node tools/staging-realworld.mjs --flight-path` (items 43, 44) | Free |
 | Real agent | `node tools/staging-realworld.mjs --only 0,12,45,17 --yes` (item 45) | A model's quota |
 | What the kit can't force | `pnpm exec vitest run --config tests/workers/vitest.config.ts tests/workers/repo-flight-failures.test.ts` | Free |
+| Real agents from the web app | `node tools/staging/web-agents-flow.mjs` (dev owner, one saved login in `.local/agents-live/`) | Real model credit, capped by `--cap-usd`, default $5 |
+| F1 timed | `F1_RUNS=10 node tools/staging-realworld.mjs --only 0,12,f1,17` | Free |
 
 **Result, 2026-10-31 on dev `56338b40`: all 12 legs pass, scripted and with a real agent, and all 10 failure cases pass, 8 live and 2 in `tests/workers`.** The live run found no new product bug; 5 were found by reading the code first and fixed before it. Evidence: `.local/staging/feature-gate-1793502289532.json` (43), `feature-gate-1793503271690.json` (44), `feature-gate-1793502983913.json` and `flight-agent-1793502872961/` (45).
 
@@ -50,11 +52,27 @@ Needs `LAND_WHEN_CLEARED=on` and `LANDING_INSTRUMENTS=on` on the platform Worker
 
 `zai-coding-plan/glm-5.3` through opencode in the Docker sandbox, 2 runs, 55.4 s in all: 6,752 input, 1,016 output and 65,792 cached tokens. opencode reported $0: this model bills the coding plan's quota. It filed its plan, kept to the memory's 3 tries unasked, heard the finding from its context, merged main and added the 100 ms delay. The other Landing, the check, the approval and the finding were scripted. Host unchanged. Egress refused only the sandbox's own probes and opencode's `models.opencode.ai`.
 
+## Real agents from the web app
+
+Nothing is scripted past the clicks: `web-agents-flow.mjs` creates a repository in the dialog, sets 0 approvals and 2 required checks, turns on the 3 switches and adds Slop and Intent drift with **Block landing at** left alone. Each commit is made on the Files page, and the open Landing has to show the values without a reload.
+
+| Case | Change | Expected |
+|---|---|---|
+| Clean | A small helper that matches its plan | Slop low, on course, lands by itself |
+| No plan | A small helper, no flight plan | `no_plan`, no container, lands: a missing plan never blocks |
+| Sloppy | Dead code, debug lines, 3 copies of a function | Slop high, check fails, goes around; a tidy Edit on the branch lands it |
+| Drift | Plan says fix a typo, diff adds payments | Off course, check fails, goes around |
+| Never | The same drift, with Never chosen on both agents | Off course, check passes, lands: an explicit setting wins |
+
+**Bad verdicts block by default** (owner, 2026-10-31): `block_at` is `high` for Slop and Intent drift. `partial` and a medium Slop reading pass. With Land when cleared any failed check goes around, required or not.
+
+**Settings saved earlier:** a saved level or a saved Never wins; unset gets `high`. Never wasn't stored while it was the default, so a workspace that picked it then can't be told from one that never chose, and blocks at `high` now.
+
 ## Unverified
 
 | Gap | Why it matters |
 |---|---|
-| Slop and Intent drift are scripted in 43, 44 and 45 | They prove the read and the card, not the agents. `tools/staging/managed-live.mjs` is the real run of those |
+| Slop and Intent drift are scripted in 43, 44 and 45 | They prove the read and the card, not the agents. `tools/staging/web-agents-flow.mjs` is the real run of those, from a commit made in the browser |
 | Legal hold or `REPO_FULL` lifted | Nothing asks again; the Landing waits for its next event. Read from the code, not tested |
 | The switch turned on over a Landing that already cleared | The same: nothing asks. Read from the code, not tested |
 | One slow run of F1 | 65 s against 17 and 18 s, with no land timing recorded that run. Land waits have measured 2.9 to 8.9 s since; not reproduced, not explained |

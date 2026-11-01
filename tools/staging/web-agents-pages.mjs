@@ -106,7 +106,10 @@ export async function addAgent(s, agent, block) {
     if (wanted) await box.check();
     else await box.uncheck();
   }
-  await page.getByLabel('Block landing at').selectOption(block);
+  // Left alone, the form shows what the agent does with nothing chosen.
+  const level = page.getByLabel('Block landing at');
+  if (block === undefined) assert.equal(await level.inputValue(), s.defaultBlock, 'the level the form starts on');
+  else await level.selectOption(block);
   await s.shot(`add-${agent.id}`);
   await page.getByRole('button', { name: /^(Add agent|Save changes)$/ }).click();
   await page.waitForURL(new RegExp(`/agents/${agent.id}(\\?|$)|/agents/${agent.id}/configure`));
@@ -114,9 +117,9 @@ export async function addAgent(s, agent, block) {
   await page.unroute(`**/api/managed/workspaces/*/agents/${agent.id}`);
   const state = (await s.api(s.managed)).agents.find((a) => a.id === agent.id);
   assert.ok(state.enabled_repos.includes(s.repo), `${agent.id} is not on the repository`);
-  assert.equal(state.settings.block_at, block || null, 'the level read back');
+  assert.equal(state.settings.block_at, block === undefined ? s.defaultBlock : block || null, 'the level read back');
   await s.shot(`agent-${agent.id}`);
-  return `on, block ${block || 'never'}, model ${state.settings.provider}/${state.settings.model}`;
+  return `on, block ${block === undefined ? `${s.defaultBlock} (default)` : block || 'never'}, model ${state.settings.provider}/${state.settings.model}`;
 }
 
 /** The Files page's form, filled as a person would, on the branch or file `at` points to. */
@@ -134,7 +137,7 @@ export async function commitFromPage(s, c, { at = '', edit = false } = {}) {
   await form.getByRole('button', { name: 'Commit' }).click();
   await page.waitForURL(/\/changes\/\d+$/, { timeout: 30_000 });
   const number = Number(page.url().match(/(\d+)$/)[1]);
-  await page.getByRole('heading', { level: 2, name: c.message }).waitFor();
+  await page.getByRole('heading', { level: 2, name: c.landing ?? c.message }).waitFor();
   await s.shot(`${c.id}-landing-opened`);
   return number;
 }
@@ -145,7 +148,8 @@ export async function pageShows(s, c, number) {
   const started = Date.now();
   const cards = page.locator('.source-instruments');
   await cards.getByText(/Slop/).waitFor({ timeout: AGENT_MS });
-  await cards.getByText(/Intent drift/).waitFor({ timeout: AGENT_MS });
+  // No plan, no reading: the check passes and there is no card to wait for.
+  if (c.goal !== '') await cards.getByText(/Intent drift/).waitFor({ timeout: AGENT_MS });
   await page.waitForFunction(() => !document.querySelector('.source-instruments')?.textContent.includes('Not reviewed yet'), null, { timeout: AGENT_MS });
   const shownS = Math.round((Date.now() - started) / 1000);
   await s.shot(`${c.id}-instruments`);

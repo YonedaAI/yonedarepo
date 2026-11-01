@@ -42,7 +42,8 @@ export interface AgentSettings {
   timeout_minutes: number;
   instructions: string;
   trigger: Trigger;
-  /** For level agents: the value at or above which the check fails (null: never blocks). */
+  /** For level agents: the value at or above which the check fails. Bad verdicts block unless
+   * the owner chooses otherwise, so the default is `high`; null is that choice, never blocking. */
   block_at: RunValue | null;
 }
 
@@ -135,7 +136,7 @@ export const MANAGED_AGENTS: readonly ManagedAgentDefinition[] = [
       timeout_minutes: 15,
       instructions: MANAGED_INSTRUCTIONS['slop-review'],
       trigger: TRIGGER,
-      block_at: null,
+      block_at: 'high',
     },
     fallback: [{ harness: 'opencode', provider: 'zai', model: 'glm-5.3-flash' }],
     cost_cap_usd: 0.5,
@@ -159,7 +160,7 @@ export const MANAGED_AGENTS: readonly ManagedAgentDefinition[] = [
       timeout_minutes: 15,
       instructions: MANAGED_INSTRUCTIONS['intent-drift'],
       trigger: TRIGGER,
-      block_at: null,
+      block_at: 'high',
     },
     fallback: [{ harness: 'opencode', provider: 'zai', model: 'glm-5.3-flash' }],
     cost_cap_usd: 0.5,
