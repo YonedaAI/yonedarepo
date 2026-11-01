@@ -97,7 +97,11 @@ export async function sourceApi<T = any>(path: string, init: ApiInit = {}): Prom
     if (repo) for (const listener of goneListeners) listener(repo);
     const raw = String(value.error?.message ?? `Request failed (${response.status})`);
     if (fault) {
-      const reference = referenceOf(raw) ?? response.headers.get('cf-ray') ?? undefined;
+      const reference =
+        referenceOf(raw) ??
+        response.headers.get('x-request-id') ??
+        response.headers.get('cf-ray') ??
+        undefined;
       throw new SourceApiError(
         code,
         reference ? `${SERVER_FAILURE} Reference: ${reference}` : SERVER_FAILURE,

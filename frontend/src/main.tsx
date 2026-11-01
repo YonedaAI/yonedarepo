@@ -5,6 +5,7 @@ import { AppErrorBoundary, reloadAfterStaleChunk } from './components/AppErrorBo
 import { applyTheme, readTheme } from './features/shell/theme';
 import { rememberLanding, tabStorage } from './features/site/landingSource';
 import { sendPagePing } from './features/site/pagePing';
+import { reportClientError } from './features/site/clientErrors';
 import './styles.css';
 
 // Vite reports a failed dynamic import of a replaced chunk after a deploy.
@@ -15,6 +16,11 @@ window.addEventListener('vite:preloadError', (event) => {
   } catch {
     // Storage can be unavailable; the error boundary still shows a reload action.
   }
+});
+
+// What React's boundary never sees: an error thrown outside a render.
+window.addEventListener('error', (event) => {
+  if (event.error) void reportClientError(event.error);
 });
 
 // Where this tab's visitor came from, for counting sign-ups by source (no cookie).

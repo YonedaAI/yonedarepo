@@ -5,6 +5,7 @@
 // proxied on the same origin, as is the managed agents Worker's browser API (/api/managed).
 // Repositories, Git, tokens and MCP all live on the platform Worker.
 import { accountRoute } from './accounts';
+import { clientError } from './client-errors';
 import { isInstaller, serveDownload, serveInstallScript } from './downloads';
 import { error, response } from './http';
 import { oauthRoute } from './oauth';
@@ -44,6 +45,7 @@ export async function frontFetch(req: Request, env: Env): Promise<Response> {
     return withWebAnalytics(req, page, env);
   }
   if (url.pathname === '/api/e') return sitePing(req, env);
+  if (url.pathname === '/api/client-error') return clientError(req, env);
   if (url.pathname.startsWith('/api/v1/'))
     return env.PLATFORM
       ? env.PLATFORM.fetch(carriedRequest(req))
