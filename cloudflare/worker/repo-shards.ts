@@ -182,6 +182,16 @@ export function shardOutboxes(env: Env, repo: string): Promise<Json[]> {
   );
 }
 
+/** What the shards hold in all, from their status: bytes, and their row estimates by table. */
+export function shardUsage(statuses: Json[]) {
+  const table_rows: Record<string, number> = {};
+  for (const status of statuses)
+    for (const [table, rows] of Object.entries(status?.table_rows ?? {}))
+      table_rows[table] = (table_rows[table] ?? 0) + Number(rows);
+  const db_bytes = statuses.reduce((n, status) => n + Number(status?.db_bytes ?? 0), 0);
+  return { db_bytes, table_rows };
+}
+
 /** One view of several outboxes: total pending and the oldest entry. */
 export function mergeOutboxes(outboxes: Json[]) {
   const oldest = outboxes

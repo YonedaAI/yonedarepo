@@ -242,7 +242,7 @@ Code and 7 tests exist. It ran on platform-dev and was lost when that stack was 
 4. Document the setup in `docs/runbook.md`; xtask does not know this resource kind.
 5. Soak on dev, then bind prod.
 
-Limits: 20 streams, sinks and pipelines per account; 1 GB/s per stream; 5 MB per request. Pricing not found.
+Limits: 20 streams, sinks and pipelines per account; 1 GB/s per stream; 5 MB per request. Generally available since 2026-10-01. Prices and the soak's gates: [load testing](load-testing.md#basin-soak-budget).
 
 ## 5. Search across repos
 
@@ -332,8 +332,8 @@ A summary is 2^17 bits (16 KiB, 32 KB as hex), a repo's folded content and path 
 | # | Stage | Gate to continue |
 |---|---|---|
 | R1 | Spike 1 (`req.cf` through a binding), then record region on accounts and sample write-traffic continent per account in Analytics Engine | Ships alone; no behaviour change |
-| R2 | Load test stage 6 from bench Workers placed in Europe and Asia | **Real delay measured** |
-| R3 | Remaining spikes (below) | All answered |
+| R2 | Load test stage 6 from the regional clients in Europe and Asia ([distance](load-testing.md#distance)) | **Real delay measured** |
+| R3 | [Remaining spikes](#r3-spikes-rechecked-2026-11-01) | All answered |
 | R4 | Move activity to per-cell storage; add repo → cell table | Kit green, no behaviour change |
 | R5 | Add `cells` to `infra/envs`, based on `Spec::ephemeral`, keeping LFS and SSH secrets with each cell's own bucket keys, and `WorkspaceAuthority` by `script_name`. `enam` keeps today's names | **Existing generated wrangler files byte-identical** |
 | R6 | Edge Worker on a parallel dev hostname, passing everything through. Rebind the three direct paths: front `PLATFORM` (`front-routes.ts:33,46`), managed `PLATFORM` (`managed/platform.ts:44`), SSH `SELF` (`platform-ssh-gateway.ts:43`). Resolve readable Git names at the edge | Full kit passes through it |
@@ -400,11 +400,11 @@ Medians in ms at the client. A person there adds their own last mile. North Amer
 
 **What the design must be** (from this result; the cell work itself isn't built or measured):
 
-1. **Requests run where they arrive.** No `placement` on the Workers. Placement is per Worker, so a pin can't differ by region, and with none, one Worker may be enough where the plan drew one per cell. Not tried as such.
+1. **Requests run where they arrive.** No `placement` on the Workers. Placement is per Worker, so a pin can't differ by region, and with none, one Worker may be enough where the plan drew one per cell. Not tried as such. Without a pin, [rate limits split by location](#r3-spikes-rechecked-2026-11-01).
 2. **A repository's region is fixed at create,** by location hint on the first `get` of all its objects. An account's is fixed at sign-up.
 3. **One R2 bucket per region,** chosen by the repository's region.
 4. **D1 leaves the hot path.** No `ypat_` request can wait on a primary an ocean away. A replica answered only 13 of 20 reads, and it can lag behind a revoked token, so replicas with bookmarks, or a token lookup that doesn't need D1, must be proven first.
-5. **Background work runs in the region.** Europe: queues with jurisdiction `eu`. Asia: no queue can promise that, so Durable Object alarms.
+5. **Background work runs in the region.** Europe: queues with jurisdiction `eu`, which holds the messages there but [not the consumer](#r3-spikes-rechecked-2026-11-01). Asia: no queue can promise that, so Durable Object alarms.
 6. **Artifacts:** a new `eu` namespace for Europe. Asia runs on R2 alone, which is untested on dev.
 7. **Containers per region,** one entry each, accepting that a container may not sit beside its object.
 8. **What exists stays in `enam`** until a copy tool exists.
@@ -446,7 +446,7 @@ Read in Cloudflare's docs on 2026-10-31. Measured figures for what this saves ar
 
 | Hop | Cloudflare's way | What it can't do |
 |---|---|---|
-| Worker pin | Remove `placement`: Workers then "run in a data center closest to where the request was received" | Placement is per Worker, not per hostname or request. [Regional Services](https://developers.cloudflare.com/data-localization/how-to/workers/) can force execution in-region on a custom domain, but not on `workers.dev`, not for subrequests, and not for queues or cron. Code and secrets still deploy globally |
+| Worker pin | Remove `placement`: Workers then "run in a data center closest to where the request was received" | Placement is per Worker, not per hostname or request. [Regional Services](https://developers.cloudflare.com/data-localization/how-to/workers/) can force execution in-region on a custom domain only, not for subrequests, and not for queues or cron. Code and secrets still deploy globally |
 | Static assets | Drop `run_worker_first: true`, or list only the paths that need it: assets then come from the edge without the Worker. [Up to 100 patterns](https://developers.cloudflare.com/workers/static-assets/routing/worker-script/) | The front's page metadata and analytics run first today, so those paths must keep it |
 | Repository objects, combiners, shards | [`locationHint`](https://developers.cloudflare.com/durable-objects/reference/data-location/) on the first `get`: `enam`, `weur`, `apac` and more. Or `jurisdiction('eu')` for a guarantee | A hint is best effort, and counts once. **Objects never move.** `sam`, `afr` and `me` don't spawn objects. Jurisdictions are `eu`, `us` and `fedramp`: **Asia can't have a guarantee.** A jurisdiction changes an object's id, so existing names can't take one |
 | Account authorities | The same, at sign-up | One account has one home, so a person who travels pays for it |
@@ -612,23 +612,32 @@ The 3 runs' evidence files were removed with their worktree, so these tables can
 | push | 493 (389–548) | 0 |
 <!-- region-results:end -->
 
-**R3 spikes the docs answer:**
+### R3 spikes, rechecked 2026-11-01
 
-| Spike | Answer |
-|---|---|
-| 1. Can an Artifacts namespace be regional? | Only by jurisdiction, `eu` or `us`, when it's created |
-| 2. Placement on RPC | Still contradicts itself: placement "only affects `fetch` handlers", and the page's own example relies on RPC. Not measured |
-| 3. Where does a Durable Object land? Does a hint work through our bindings? | **Yes, both.** `weur` landed in AMS and `apac` in SIN, 3 of 3, for the authority, first shard, combiner, head holder and projector, through the platform's bindings and a Worker binding by `script_name`. `enam` scatters across IAD, EWR, ORD, ATL and MIA. Containers: not guaranteed beside their object, by the docs; not measured |
-| 4. Is D1 read replication GA, and does it meet the bound? | No GA found; public beta since 2025-04-10. On dev, with `first-unconstrained` and a new session per read, 13 of 20 reads were local in Europe and in Asia. **The 1-second access bound wasn't tested:** a stale replica, or `first-primary`, which would cross again |
-| 5. Where do R2 and D1 live? | `ENAM`, both |
+Every page was reread on this date; the date in each row is the page's own. **Three spikes are answered, two can't be answered from the docs, and the recheck found two changes to the design.**
 
-### Spikes for R3
+| Spike | Answer | Source |
+|---|---|---|
+| 1. Can an Artifacts namespace be regional? | **Answered.** Only by jurisdiction, `eu` or `us`, when it's created. It can't change, and there are no hints | [Data localization](https://developers.cloudflare.com/artifacts/guides/data-localization/), 2026-08-13 |
+| 2. Does placement apply to RPC? | **Not answered.** The page still says twice that placement "does not affect RPC methods or named entrypoints", and its own example forwards to a placed Worker "via RPC", which "runs near your database". **It stops mattering once the Workers have no placement,** which the design already requires. Today's `accountCreated` still depends on it. Answer it with two Workers and a trace from inside the RPC method | [Placement](https://developers.cloudflare.com/workers/configuration/placement/), 2026-10-12 |
+| 3. Where do a Durable Object and its container land with a hint? | **Object: answered,** measured: `weur` in AMS and `apac` in SIN, 3 of 3, through the platform's bindings and a Worker binding by `script_name`; `enam` scatters across IAD, EWR, ORD, ATL and MIA. The docs also add `apac-ne` and `apac-se`, and prefer `apac`. **Container: not answered.** "Not guaranteed to run in the same location", and a restart can move it. The placement page now lists `APAC`, `SAM`, `ME`, `OC` and `AFR`; the April changelog still lists four. Not tried on this account | [Data location](https://developers.cloudflare.com/durable-objects/reference/data-location/), 2026-06-26; [Architecture](https://developers.cloudflare.com/containers/platform-details/architecture/), 2026-09-30; [Placement](https://developers.cloudflare.com/containers/concepts/placement/), 2026-10-01; [Changelog](https://developers.cloudflare.com/changelog/product/containers/), 2026-04-05 |
+| 4. Is D1 read replication GA, and does it meet the bound? | **Answered: no GA found, and it can't promise the bound.** The release notes' last entry is "public beta", 2025-04-10; the guide no longer says beta, and names no GA. "A read replica may be arbitrarily out of date", so nothing bounds how long a revoked token could still read as live. Only `first-primary`, which crosses, or a bookmark taken after the revocation, can. Dev's 13 of 20 local reads show speed, not freshness | [Read replication](https://developers.cloudflare.com/d1/best-practices/read-replication/), 2026-08-10; [Release notes](https://developers.cloudflare.com/d1/platform/release-notes/) |
+| 5. Where do R2 and D1 live today? | **Answered,** measured: `ENAM`, both. Every D1 answer names its server in `served_by_region` and `served_by_primary` | [Read replication](https://developers.cloudflare.com/d1/best-practices/read-replication/), 2026-08-10 |
 
-1. Can an Artifacts namespace be regional?
-2. Does placement apply to RPC? Cloudflare's page contradicts itself, and `accountCreated` uses RPC.
-3. Where do a Durable Object and its container really land with a location hint? Cloudflare doesn't guarantee they're together.
-4. Is D1 read replication GA, and does it meet the bound with `withSession`?
-5. Where do the R2 bucket and D1 primary live today?
+**What changes in the design:**
+
+1. **Queue jurisdiction doesn't place the consumer.** "Workers can produce to and consume from a restricted queue from any location": a jurisdiction holds where messages are stored and processed, not where the consumer's code runs. So item 5 of "What the design must be" is half an answer for Europe too. Keep the jurisdiction, and prove where a consumer ran with a trace. If it isn't in Europe, Europe needs Durable Object alarms, as Asia does. [Queues data location](https://developers.cloudflare.com/queues/configuration/data-location/), 2026-10-12.
+2. **Rate limits stop being one limit.** The limiter is "local to the Cloudflare location" where the Worker runs, and requests elsewhere count separately. Today the pin keeps one counter. With no pin, `AUTH_LIMITER`'s 30 a minute becomes 30 a minute per location, so a password guesser spread across locations gets many times that. Sign-in needs a limiter in a Durable Object, which is the docs' own answer for one strict limit. Stage 6 measures today's single counter. [Rate limiting](https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/), 2026-10-21.
+
+**Still open, and how to close them:**
+
+| Question | The docs | Close it by |
+|---|---|---|
+| Does `request.cf` report the client or the placed location? | Neither page says. `colo` is "the data center that the request hit" | Countries other than the US in R1's `blob4`, once `REGION_SIGNALS` is on |
+| Where does a queue consumer run? | [Not stated](https://developers.cloudflare.com/queues/reference/how-queues-works/), 2026-04-21 | A trace from inside a consumer, on a queue with and without `eu` |
+| Where do Workflows run? | [Not stated](https://developers.cloudflare.com/workflows/reference/limits/), 2026-09-21 | A trace from a step. Managed agents stay single, so this can wait |
+
+Two smaller notes: `cf-placement`, which the region tools read, "may be removed before Smart Placement exits beta", and [Regional Services](https://developers.cloudflare.com/data-localization/how-to/workers/) (2026-07-23) applies only to a custom domain and names no Asian region.
 
 ### Known hard parts
 

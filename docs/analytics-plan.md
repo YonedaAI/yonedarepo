@@ -195,7 +195,7 @@ What this changes:
 | Phase | Proof |
 |---|---|
 | 1 | Our own traffic reads 0 after a live test run; every chart follows the range |
-| 2 | Landings counted by Basin match the repository's log, on dev |
+| 2 | Landings counted by Basin match the repository's log, on dev (`tools/platform-basin-soak.mjs`) |
 | 3 | A refused landing appears with its reason; a human approval and an agent approval read differently; rollback tested on dev |
 | 4 | Two tokens read as two credentials; a person's session is never an agent |
 | 5 | No cookie set, no IP stored; hash changes daily |

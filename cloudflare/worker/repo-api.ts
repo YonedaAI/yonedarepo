@@ -27,7 +27,7 @@ import { audited } from './repo-audit';
 import { breakGlass } from './repo-break-glass';
 import { changeLogStatus } from './repo-changelog';
 import { changesRoute, setAutoLandings } from './repo-changes';
-import { compactLog } from './repo-compaction';
+import { compactionRead, compactLog } from './repo-compaction';
 import { createRepository, importRepository, tokenSecret } from './repo-create';
 import { refreshHead } from './repo-head';
 import { hooksRoute } from './repo-hooks';
@@ -206,13 +206,7 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   if (resource === 'compact' && post) return compactLog(env, repo, ctx.call);
   // The owner's read of the floor, tail and database size; changes nothing (the load tests'
   // sampler, tools/fanout-bench/sampler.mjs).
-  if (resource === 'compaction' && get) {
-    const [compaction, storage] = await Promise.all([
-      ctx.call({ op: 'repo_compact_status' }),
-      ctx.call({ op: 'repo_storage' }),
-    ]);
-    return { ...compaction, storage };
-  }
+  if (resource === 'compaction' && get) return compactionRead(ctx, query.shards === '1');
   // Where this repository's objects run (repo-region-hint.ts); off, an unknown path.
   if (resource === 'where' && get && regionHintTest(env)) return whereRepository(ctx, auth);
   if (resource === 'retention' && req.method === 'PUT') {

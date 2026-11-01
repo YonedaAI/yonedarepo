@@ -7,7 +7,8 @@
 import { log } from './log';
 import { archiveKey } from './repo-archive';
 import { changeLogHold, skipChangeLog } from './repo-changelog';
-import { ApiError, type Call, caller, type Json } from './repo-ops';
+import { ApiError, type Call, caller, type Json, type RepoContext } from './repo-ops';
+import { shardOutboxes, shardUsage } from './repo-shards';
 import { carriedQueue } from './request-scope';
 import type { Env, Envelope } from './types';
 
@@ -84,6 +85,17 @@ export async function compactLog(env: Env, repo: string, call: Call, max = SEGME
     more: segments === max,
     ...(stopped ? { held: stopped } : {}),
   };
+}
+
+/** The owner's read of the floor, tail and database size. With `shards`, the 64 commit shards'
+ * size too: 64 more calls, asked only after the authority has allowed the read. */
+export async function compactionRead(ctx: RepoContext, shards: boolean) {
+  const [compaction, storage] = await Promise.all([
+    ctx.call({ op: 'repo_compact_status' }),
+    ctx.call({ op: 'repo_storage' }),
+  ]);
+  if (!shards) return { ...compaction, storage };
+  return { ...compaction, storage, shards: shardUsage(await shardOutboxes(ctx.env, ctx.repo)) };
 }
 
 /** One run as the platform. Never throws: a failure is logged and a later run tries again. A
