@@ -18,6 +18,36 @@ const RECONCILE_AT = { hour: 3, minute: 17 };
 
 export const adminBillingOn = (env: Env) => env.ADMIN_BILLING === 'on';
 
+/** The managed agents Worker's admin credit route for `account`; null when it is not bound
+ * or has no bearer here. */
+export async function managedCredit(
+  env: Env,
+  method: 'GET' | 'POST',
+  account: string,
+  body?: Json,
+) {
+  if (!env.MANAGED || !env.MANAGED_ADMIN_TOKEN) return null;
+  const answer = await env.MANAGED.fetch(
+    `https://managed/admin/accounts/${encodeURIComponent(account)}/credit`,
+    {
+      method,
+      headers: {
+        authorization: `Bearer ${env.MANAGED_ADMIN_TOKEN}`,
+        'content-type': 'application/json',
+        ...carriedHeaders(),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    },
+  );
+  const value = await answer.json<Json>().catch(() => ({}) as Json);
+  if (!answer.ok)
+    throw new ApiError(
+      answer.status === 400 ? 'INVALID_INPUT' : 'PUSH_FAILED',
+      value.error?.message ?? `The managed agents Worker answered ${answer.status}`,
+    );
+  return value;
+}
+
 /** The managed Worker's answer, or its refusal as this API's own. */
 export async function managed(
   env: Env,

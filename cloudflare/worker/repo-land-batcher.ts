@@ -47,7 +47,8 @@ export class LandBatcher {
       this.#waiters.set(ticket, list);
       setTimeout(() => {
         const waiting = this.#waiters.get(ticket) ?? [];
-        if (waiting.includes(resolve)) log.warn('land.timed_out', { repo: target.repo, phase: 'wait' });
+        if (waiting.includes(resolve))
+          log.warn('land.timed_out', { repo: target.repo, phase: 'wait' });
         const left = waiting.filter((r) => r !== resolve);
         if (left.length) this.#waiters.set(ticket, left);
         else this.#waiters.delete(ticket);
@@ -68,7 +69,8 @@ export class LandBatcher {
       const submission = { item, at: Date.now(), resolve };
       this.#submissions.push(submission);
       setTimeout(() => {
-        if (this.#submissions.includes(submission)) log.warn('land.timed_out', { repo: target.repo, phase: 'submit' });
+        if (this.#submissions.includes(submission))
+          log.warn('land.timed_out', { repo: target.repo, phase: 'submit' });
         this.#submissions = this.#submissions.filter((s) => s !== submission);
         resolve(null);
       }, timeoutMs);

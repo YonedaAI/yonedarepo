@@ -9,7 +9,7 @@
 // answer. A deletion waits that bound out before it answers (`dropDeletedHead`).
 
 import { rpcValue } from './durable';
-import { log } from './log';
+import { log, warned } from './log';
 import { teamEntries } from './platform-org-access';
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
@@ -197,9 +197,7 @@ function beginFloor(repo: string, paths: string[]) {
 export async function refreshHead(env: Env, repo: string, access = false) {
   noteWrite(repo);
   heads.delete(repo);
-  await holder(env, repo)
-    ?.refresh(repo, access)
-    .catch((e) => log.warn('head.refresh_failed', { error: e }));
+  await holder(env, repo)?.refresh(repo, access).catch(warned('head.refresh_failed', { repo }));
 }
 
 /** After the authority became a tombstone: drops main's published head everywhere before

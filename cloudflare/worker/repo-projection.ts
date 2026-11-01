@@ -15,35 +15,24 @@ import { putRaw } from './repo-stores';
 import { carriedQueue } from './request-scope';
 import type { Env, Envelope } from './types';
 
+const dispatch = (env: Env, job: Omit<Envelope, 'v'>) =>
+  carriedQueue(env.PLATFORM_QUEUE).send({ v: 1, ...job });
+
 export async function dispatchProjection(env: Env, repo: string) {
-  await carriedQueue(env.PLATFORM_QUEUE).send({
-    v: 1,
-    kind: 'platform_project',
-    repo_id: repo,
-    job_id: 'refs',
-  });
+  await dispatch(env, { kind: 'platform_project', repo_id: repo, job_id: 'refs' });
 }
 
 /** Asks for a deleted repository's object store and platform objects to be purged, now if
  * its window allows (`purge`), or whatever the window says (`now`: no window applies). Never
  * sent for later: see repo-deleted.ts. */
 export async function dispatchPurge(env: Env, repo: string, job: 'purge' | 'now' = 'purge') {
-  await carriedQueue(env.PLATFORM_QUEUE).send({
-    v: 1,
-    repo_id: repo,
-    job_id: `${job}-${repo}`,
-    kind: 'platform_purge',
-  });
+  await dispatch(env, { kind: 'platform_purge', repo_id: repo, job_id: `${job}-${repo}` });
 }
 
 /** Asks for a drain of the authority's object outbox, or of commit shard `shard`'s. */
 export async function dispatchObjects(env: Env, repo: string, shard?: number) {
-  await carriedQueue(env.PLATFORM_QUEUE).send({
-    v: 1,
-    kind: 'platform_objects',
-    repo_id: repo,
-    job_id: shard === undefined ? 'objects' : `shard:${shard}`,
-  });
+  const job_id = shard === undefined ? 'objects' : `shard:${shard}`;
+  await dispatch(env, { kind: 'platform_objects', repo_id: repo, job_id });
 }
 
 // Rounds of up to 64 commits per invocation: each object write is a subrequest, and a
