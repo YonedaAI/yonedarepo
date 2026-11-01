@@ -1,11 +1,12 @@
 // The memory test (`--memory-test`, stage 2 of docs/landings-plan.md, dev only, real agents, the
 // model's quota): does an agent do better with YonedaRepo's memory and context than with a
-// plain clone? Two arms on the Docker sandbox (agent-sandbox.mjs), `plain` (stock Git, no
-// plugin, nothing on its fork) and `memory` (the yoneda plugin, with a trap's memories on its
-// fork), the same prompt but for one tool paragraph, in blocks of one run per arm so both
-// meet the same provider. Every run gets its own fresh fork of a real-history repository,
-// since memories can't be deleted and forks copy none (memory-traps.mjs: the traps and how
-// delivery is kept realistic; memory-run.mjs: one run). The owner's account forks `oss-cobra`,
+// plain clone? Three arms on the Docker sandbox (agent-sandbox.mjs): `plain` (stock Git, no
+// plugin, nothing on its fork), `context` (the yoneda plugin, with every memory but the trap
+// on its fork) and `memory` (the same plus the trap memory), the same prompt but for one tool
+// paragraph, in blocks of one run per arm so all meet the same provider. Every run gets its own
+// fresh fork of a real-history repository, since memories can't be deleted and forks copy none
+// (memory-traps.mjs: the traps and how delivery is kept realistic; memory-run.mjs: one run).
+// The owner's account forks `oss-cobra`,
 // `oss-commander` and `oss-click`; every ref of those parents must be as it was at the end.
 // Forks are deleted after their block, on any failure, on Ctrl-C and, for one left by a killed
 // process, when the next run starts. The host checkouts and remotes are snapshotted around it
@@ -60,17 +61,22 @@ async function sweepStale(ctx) {
 
 function writeSummary(ctx, extra = {}) {
   const { records, file, ws, model, ts, started } = ctx;
-  const body = { schema: 1, ts, started, model, arms: ARMS, traps: TRAPS.map((t) => ({ id: t.id, repo: t.repo, rule: t.rule })), verdict: verdict(records), records: records.map(({ usage, ...rest }) => rest), errors: ctx.errors, forks_deleted: ctx.deleted, forks_swept: ctx.swept, ...extra };
+  const body = { schema: 2, ts, started, model, arms: ARMS, traps: TRAPS.map((t) => ({ id: t.id, repo: t.repo, rule: t.rule })), verdict: verdict(records), records: records.map(({ usage, ...rest }) => rest), errors: ctx.errors, forks_deleted: ctx.deleted, forks_swept: ctx.swept, ...extra };
   writeFileSync(file, `${ws.scrub(JSON.stringify(body, null, 2))}\n`);
   return body;
 }
 
-/** One block: both arms' runs at once, then each judged, then their forks deleted. A setup
- * failure stops the whole test (it would repeat); a failed judgement costs that run. */
+/** One block: every arm prepared at once (a `yoneda::` clone takes minutes, and one by one a
+ * block would pay for each), then all its agents started together, each run judged and their
+ * forks deleted. A setup failure stops the whole test (it would repeat); a failed judgement
+ * costs that run. */
 async function runBlock(ctx, { trap, round }) {
   const runs = [];
   try {
-    for (const arm of ARMS) runs.push(await prepareRun(ctx, { trap, arm, round, parent: ctx.parents.get(trap.repo).id }));
+    const prepared = await Promise.allSettled(ARMS.map((arm) => prepareRun(ctx, { trap, arm, round, parent: ctx.parents.get(trap.repo).id })));
+    runs.push(...prepared.filter((p) => p.status === 'fulfilled').map((p) => p.value));
+    const refused = prepared.find((p) => p.status === 'rejected');
+    if (refused) throw refused.reason;
     const outcomes = await Promise.all(runs.map((r) => runAgent(r.job)));
     for (const [i, run] of runs.entries())
       try {
@@ -153,11 +159,13 @@ export async function memoryRun(base, { runs, parallel = 1, model, timeoutS, bud
 /** Prints the answer; a real run also fills the plan's results section. Returns the exit code. */
 export function report(summary, { root, fill }) {
   const v = summary.verdict;
-  console.log(`\n${v.answer}\nTrap avoided: memory ${v.avoided.memory.yes}/${v.avoided.memory.n}, plain ${v.avoided.plain.yes}/${v.avoided.plain.n}, Fisher p = ${v.fisher_p.toFixed(4)}`);
+  const { memory, context, plain } = v.avoided;
+  console.log(`\n${v.answer}\nTrap avoided: memory ${memory.yes}/${memory.n}, context ${context.yes}/${context.n}, plain ${plain.yes}/${plain.n}, Fisher p (memory vs context) = ${v.fisher_p.toFixed(4)}`);
+  console.log(`Context against plain: ${v.context_answer}.\nReading: ${v.reading}.\nTokens: ${v.tokens}.`);
   for (const line of summary.errors) console.error(`  ! ${line}`);
   console.log(`Evidence: ${summary.file}`);
   const trouble = summary.errors.length > 0 || summary.host_drift.length > 0 || summary.forks_left.length > 0 || summary.tokens_left.length > 0;
-  if (fill && v.avoided.memory.n && v.avoided.plain.n) {
+  if (fill && memory.n && context.n && plain.n) {
     const doc = join(root, 'docs/landings-plan.md');
     const commit = execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
     writeFileSync(doc, fillResults(readFileSync(doc, 'utf8'), resultsMarkdown(v, { recorded_at: summary.finished, model: summary.model, evidence: relative(root, summary.file), commit })));

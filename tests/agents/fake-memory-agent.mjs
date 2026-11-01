@@ -4,8 +4,9 @@
 // alone it takes the task's natural answer and falls into the trap, and it keeps the rule only
 // if the rule reached it through the session's context. With the yoneda plugin configured it
 // starts a session the way opencode does, "reads" the trap's file and looks at the system
-// text it was given; on the plain arm there is no plugin and so no rule. It prints opencode's
-// JSON event shapes, so the run's tokens and reads are parsed as a real run's are.
+// text it was given; on the plain arm there is no plugin and so no rule, and on the context arm
+// the plugin has no such memory to give. It prints opencode's JSON event shapes, so the run's
+// tokens and reads are parsed as a real run's are.
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';

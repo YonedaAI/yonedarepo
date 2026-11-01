@@ -1,8 +1,8 @@
 // The memory test's pure parts (tools/staging/memory-plan.mjs, memory-traps.mjs,
 // memory-verdict.mjs, arm-stats.mjs): the schedule and its guarded fork names, opencode's event
-// shapes as recorded from real runs, each trap's oracle, the prompt's one difference between
-// arms, the scan that keeps a rule hidden, what makes a run invalid, the verdict, and the
-// command line's refusals.
+// shapes as recorded from real runs, each trap's oracle, what separates the three arms, the scan
+// that keeps a rule hidden, what reached a session, what makes a run invalid, the verdict, and
+// the command line's refusals.
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -10,10 +10,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { armSummary, compareArms, fisherExact } from '../../tools/staging/arm-stats.mjs';
-import { addedLines, ARMS, branchName, DEFAULT_RUNS, deliveryOf, forkName, isTestFork, judgeTrap, memoryEstimate, MIN_RUNS, opencodeUsage, retryableClone, planText, runProblems, schedule } from '../../tools/staging/memory-plan.mjs';
+import { armSummary, compareArms, fisherExact, pairedBlocks, signTest } from '../../tools/staging/arm-stats.mjs';
+import { addedLines, ARMS, branchName, DEFAULT_RUNS, deliveryOf, forkName, hookReport, isTestFork, judgeTrap, memoryEstimate, MIN_RUNS, opencodeUsage, retryableClone, planText, runProblems, schedule, shownIn } from '../../tools/staging/memory-plan.mjs';
 import { deleteFork, scanHidden } from '../../tools/staging/memory-run.mjs';
-import { anchoredFiles, armPrompt, seedOrder, TRAPS } from '../../tools/staging/memory-traps.mjs';
+import { anchoredFiles, armMemories, armPrompt, seedOrder, TRAPS } from '../../tools/staging/memory-traps.mjs';
 import { fillResults, RESULTS_END, RESULTS_START, resultsMarkdown, verdict } from '../../tools/staging/memory-verdict.mjs';
 
 const trap = (id) => TRAPS.find((t) => t.id === id);
@@ -21,12 +21,14 @@ const patch = (...lines) => `@@ -1,1 +1,${lines.length} @@\n context\n${lines.ma
 const judged = (id, changes) => judgeTrap(trap(id), { head: 'b'.repeat(40), base: 'a'.repeat(40), changes }).outcome;
 
 test('summaries refuse claims below 3 samples and compare arms descriptively', () => {
-  assert.deepEqual(armSummary([]), { n: 0, mean: null, sd: null, min: null, max: null, note: 'no samples' });
+  assert.deepEqual(armSummary([]), { n: 0, mean: null, median: null, sd: null, min: null, max: null, note: 'no samples' });
   const two = armSummary([10, 20, Number.NaN]);
   assert.equal(two.n, 2);
   assert.equal(two.note, 'n<3: no claim');
   const three = armSummary([2, 4, 6]);
   assert.deepEqual([three.mean, three.sd, three.min, three.max, three.note], [4, 2, 2, 6, null]);
+  assert.equal(armSummary([9, 1, 5]).median, 5);
+  assert.equal(armSummary([100, 1, 3, 2]).median, 2.5, 'one slow run does not move it the way it moves a mean');
   assert.match(compareArms([1, 2], [3, 4, 5]).claim, /n<3/);
   assert.match(compareArms([1, 2, 3], [2, 3, 4]).claim, /overlap/);
   const separate = compareArms([9, 10, 11], [19, 20, 21]);
@@ -45,6 +47,24 @@ test('Fisher exact two-sided p matches known tables', () => {
   assert.ok(fisherExact(3, 0, 0, 3) >= 0.05);
 });
 
+test('the sign test matches known binomial tails', () => {
+  assert.equal(signTest(0, 0), 1);
+  assert.equal(signTest(3, 3), 1);
+  assert.equal(signTest(5, 0), 0.0625, 'the most 5 blocks can show');
+  assert.equal(signTest(6, 0), 0.03125);
+  assert.equal(signTest(0, 6), 0.03125);
+  assert.equal(signTest(5, 1), 0.21875);
+  assert.ok(Math.abs(signTest(8, 1) - 0.0390625) < 1e-12, 'one block against at 9 blocks still counts');
+});
+
+test('paired blocks compare within a block and leave ties out of the test', () => {
+  const p = pairedBlocks([[10, 20], [100, 400], [300, 300], [50, 25], [Number.NaN, 5], [undefined, 5], [1, 0]]);
+  assert.deepEqual([p.n, p.lower, p.higher, p.ties], [5, 2, 2, 1]);
+  assert.equal(p.median_ratio, 0.75, 'a block with b = 0 has no ratio');
+  assert.equal(p.sign_p, 1);
+  assert.equal(pairedBlocks([]).median_ratio, null);
+});
+
 test('every arm gets the same traps in blocks, and fewer than 5 runs are refused', () => {
   const blocks = schedule(DEFAULT_RUNS, TRAPS);
   assert.equal(blocks.length, DEFAULT_RUNS);
@@ -58,18 +78,21 @@ test('every arm gets the same traps in blocks, and fewer than 5 runs are refused
 test('only forks this test named can be deleted', () => {
   const name = forkName(1793247123965, 'frozen-file', 'memory', 2);
   assert.ok(isTestFork(name));
+  assert.deepEqual(ARMS, ['plain', 'context', 'memory']);
+  for (const arm of ARMS) assert.ok(isTestFork(forkName(1793247123965, 'env-prefix', arm, 1)), arm);
   assert.equal(branchName('frozen-file', 2), 'memtest/frozen-file-2');
   for (const other of ['oss-cobra', 'oss-commander', 'oss-click', 'claude-code', 'memtest-', 'memtest-1-x-other-1', `${name}-copy`, `x${name}`, '', null]) assert.ok(!isTestFork(other), String(other));
 });
 
 test('the estimate names runs, time and quota', () => {
   const e = memoryEstimate({ runs: 6, parallel: 1, timeoutS: 600, traps: 3 });
-  assert.deepEqual([e.agents, e.forks, e.typical_minutes, e.worst_minutes, e.tokens], [12, 12, 27, 69, 1_200_000]);
-  assert.equal(memoryEstimate({ runs: 6, parallel: 2, timeoutS: 600, traps: 3 }).typical_minutes, 14);
+  assert.deepEqual([e.agents, e.forks, e.typical_minutes, e.worst_minutes, e.tokens], [18, 18, 35, 85, 3_390_000]);
+  assert.equal(memoryEstimate({ runs: 6, parallel: 2, timeoutS: 600, traps: 3 }).typical_minutes, 18);
   const text = planText({ runs: 6, parallel: 1, timeoutS: 600, model: 'zai-coding-plan/glm-5.3', traps: TRAPS });
-  assert.match(text, /12 real agent runs \(6 per arm\), 12 forks, 3 traps/);
-  assert.match(text, /about 27 min, at worst 69 min/);
-  assert.match(text, /1\.2 M tokens/);
+  assert.match(text, /18 real agent runs \(6 per arm: plain, context, memory\), 18 forks, 3 traps/);
+  assert.match(text, /3 agents at once/);
+  assert.match(text, /about 35 min, at worst 85 min/);
+  assert.match(text, /3\.4 M tokens/);
 });
 
 // As recorded from opencode 2.2 in .local/staging/realuser-*/*.events.jsonl.
@@ -119,6 +142,39 @@ test("the read counter counts opencode's lower-case read, and only whole files a
   assert.deepEqual(opencodeUsage([]).tokens.total, 0);
 });
 
+test('tokens without cache reads leave out only what the cache re-read', () => {
+  const used = opencodeUsage([finish('prt_1', { input: 900, output: 40, reasoning: 10, cache: { read: 4800, write: 5 } })]);
+  assert.equal(used.fresh_tokens, 950);
+  assert.equal(used.tokens.total, 5755);
+});
+
+test('reading counts shell slices, distinct files and every byte of looking', () => {
+  const shell = (id, command, output = 'x'.repeat(100)) => tool(id, 'shell', { status: 'completed', input: { command }, output });
+  const used = opencodeUsage([
+    shell('s1', 'sed -n 1535,1575p command.go'),
+    shell('s2', "sed -n '10,20p' /work/lib/help.js 2>/dev/null && head -5 flag_groups.go active_help.go"),
+    shell('s3', 'head -n 20 ./command.go'),
+    shell('s4', "sed -i 's/a/b/' command.go"),
+    shell('s5', 'git -C /work log --oneline -5 && git -C /work status --short'),
+    shell('s6', 'grep -rn "Visible\\|Hidden;x" *.go | grep -v _test | head -20'),
+    shell('s7', 'yoneda grep Hidden'),
+    shell('s8', 'yoneda memory add decision -m note'),
+    shell('s9', 'git add a.go && git commit -m x && git push origin b'),
+    shell('s10', 'node /tmp/opencode/check.mjs'),
+    tool('g1', 'grep', { status: 'completed', input: { pattern: 'x' }, output: 'y'.repeat(50) }),
+    tool('g2', 'glob', { status: 'error', input: { pattern: '*.go' }, error: 'ripgrep execution failed' }),
+    whole('/work/command.go'),
+    whole('/work/lib/help.js'),
+  ]);
+  assert.equal(used.partial_reads, 5, 'sed, sed, 2 files of head, head');
+  assert.equal(used.whole_file_reads, 2);
+  assert.equal(used.file_reads, 7);
+  assert.equal(used.files_read, 4, 'command.go, lib/help.js, flag_groups.go and active_help.go, each once');
+  const reads = ['/work/command.go', '/work/lib/help.js'].map((p) => `Read file ${p}, lines 1-40\n1: x`.length);
+  assert.equal(used.read_bytes, 100 * 6 + 50 + reads[0] + reads[1], 'sed, sed and head, head, log, grep and yoneda grep; no sed -i, memory add, commit or node');
+  assert.equal(used.failed_calls, 1);
+});
+
 test('added lines come from the unified patch, without its headers', () => {
   const changes = [{ path: 'a.go', patch: '--- a/a.go\n+++ b/a.go\n@@ -1,2 +1,3 @@\n one\n-two\n+three\n+four\n' }, { path: 'bin', patch: null }];
   assert.deepEqual(addedLines(changes), { 'a.go': ['three', 'four'], bin: [] });
@@ -164,8 +220,9 @@ test('no push leaves nothing to judge', () => {
 
 test('the prompt differs between arms only in the tool paragraph', () => {
   for (const t of TRAPS) {
-    const [plain, memory] = ARMS.map((arm) => armPrompt(t, branchName(t.id, 1), arm).split('\n'));
+    const [plain, context, memory] = ARMS.map((arm) => armPrompt(t, branchName(t.id, 1), arm).split('\n'));
     assert.deepEqual(plain.slice(0, -1), memory.slice(0, -1), t.id);
+    assert.deepEqual(context, memory, `${t.id}: the two plugin arms are told exactly the same`);
     assert.notEqual(plain.at(-1), memory.at(-1));
     assert.match(plain.at(-1), /^Tools: /);
     assert.match(memory.at(-1), /^Tools: /);
@@ -173,6 +230,21 @@ test('the prompt differs between arms only in the tool paragraph', () => {
   }
   assert.doesNotMatch(armPrompt(TRAPS[0], 'b', 'plain'), /yoneda|memor/i);
   assert.throws(() => armPrompt(TRAPS[0], 'b', 'other'));
+});
+
+test('the trap memory is the one thing between the context and memory arms', () => {
+  for (const t of TRAPS) {
+    const [plain, context, memory] = ARMS.map((arm) => armMemories(t, arm));
+    assert.deepEqual(plain, [], `${t.id}: nothing on the plain arm`);
+    assert.equal(context.length, 12);
+    assert.equal(memory.length, 13);
+    assert.deepEqual(memory.filter((m) => !m.trap), context, `${t.id}: the same memories in the same order`);
+    assert.deepEqual(memory.filter((m) => m.trap).map((m) => m.text), [t.memory.text]);
+    assert.ok(!context.some((m) => m.text === t.memory.text));
+    for (const pattern of t.hidden.filter((h) => !h.includes('[[')))
+      assert.ok(!context.some((m) => new RegExp(pattern, 'i').test(m.text)), `${t.id}: no other memory gives the rule away (${pattern})`);
+  }
+  assert.equal(armMemories(TRAPS[2], 'context').some((m) => /\b78\b/.test(m.text)), false);
 });
 
 test('no prompt gives a rule away', () => {
@@ -228,12 +300,47 @@ test('a delivery is found by memory id, with its trigger and place', () => {
   assert.equal(deliveryOf(undefined, 1).delivered, false);
 });
 
+test('what reached a session reads back per trigger and item type', () => {
+  const shown = shownIn([
+    { trigger: 'start', bytes: 2000, items: [memoryItem(13), memoryItem(12), { type: 'session', id: 1 }] },
+    { trigger: 'prompt', bytes: 500, items: [memoryItem(12), memoryItem(3)] },
+  ]);
+  assert.deepEqual(shown, { start: true, triggers: ['start', 'prompt'], bytes: 2500, by_type: { memory: 4, session: 1 }, memories: [13, 12, 3] });
+  assert.deepEqual(shownIn(undefined), { start: false, triggers: [], bytes: 0, by_type: {}, memories: [] });
+  assert.equal(shownIn([{ trigger: 'read', bytes: 1, items: [memoryItem(1)] }]).start, false);
+});
+
+const RULE = TRAPS[2].memory.text;
+const hookLine = (event, output) => JSON.stringify({ at: 1, event, payload: {}, output });
+
+test('the hook log says what the session was really handed', () => {
+  const log = [hookLine('opencode-start', '# YonedaRepo context'), hookLine('opencode-prompt', `context:\n- [constraint] ${RULE} (src/click/exceptions.py) #1`), hookLine('opencode-read', ''), hookLine('opencode-shell', RULE), 'not json', ''];
+  const seen = hookReport(log, RULE);
+  assert.equal(seen.rule_seen, true);
+  assert.equal(seen.start_bytes, '# YonedaRepo context'.length);
+  assert.ok(seen.injected_bytes > RULE.length);
+  assert.equal(hookReport(log.slice(0, 1), RULE).rule_seen, false);
+  assert.equal(hookReport([hookLine('opencode-shell', RULE)], RULE).rule_seen, false, 'only what is injected counts');
+  assert.deepEqual(hookReport([], RULE), { start_bytes: 0, injected_bytes: 0, rule_seen: false });
+});
+
 test('a run is invalid unless delivery holds in its arm and the agent finished', () => {
   const good = { code: 0, killed: null, session: 's' };
   const delivered = { delivered: true };
-  assert.deepEqual(runProblems({ ...good, arm: 'memory', delivery: delivered }), []);
+  const start = { deliveries: [{ trigger: 'start', items: [] }], hook: { start_bytes: 2000, injected_bytes: 2500, rule_seen: false } };
+  const seen = { ...start, hook: { ...start.hook, rule_seen: true } };
+  assert.deepEqual(runProblems({ ...good, arm: 'memory', delivery: delivered, ...seen }), []);
+  assert.deepEqual(runProblems({ ...good, arm: 'context', memories: 12, ...start }), []);
   assert.deepEqual(runProblems({ ...good, arm: 'plain', deliveries: [], memories: 0, yonedaCalls: 0 }), []);
-  assert.match(runProblems({ ...good, arm: 'memory', delivery: { delivered: false } })[0], /not delivered/);
+  assert.match(runProblems({ ...good, arm: 'memory', delivery: { delivered: false }, ...start })[0], /not delivered/);
+  assert.match(runProblems({ ...good, arm: 'memory', delivery: delivered, ...start })[0], /never handed it over/);
+  assert.match(runProblems({ ...good, arm: 'memory', delivery: delivered, ...seen, deliveries: [{ trigger: 'prompt', items: [] }] })[0], /no start context/);
+  assert.match(runProblems({ ...good, arm: 'context', ...start, hook: null })[0], /no start context/);
+  assert.match(runProblems({ ...good, arm: 'context', ...start, hook: { start_bytes: 0 } })[0], /no start context/);
+  assert.match(runProblems({ ...good, arm: 'context' })[0], /no start context was delivered/);
+  assert.match(runProblems({ ...good, arm: 'context', ...start, trapOnFork: true })[0], /trap memory is on the context arm/);
+  assert.match(runProblems({ ...good, arm: 'context', ...seen })[0], /reached the context arm/);
+  assert.match(runProblems({ ...good, arm: 'plain', hook: { start_bytes: 0 } })[0], /hook log/);
   assert.match(runProblems({ ...good, arm: 'plain', deliveries: [{}] })[0], /1 context deliveries/);
   assert.match(runProblems({ ...good, arm: 'plain', memories: 3 })[0], /3 memories/);
   assert.match(runProblems({ ...good, arm: 'plain', yonedaCalls: 1 })[0], /1 yoneda/);
@@ -242,50 +349,122 @@ test('a run is invalid unless delivery holds in its arm and the agent finished',
   assert.match(runProblems({ arm: 'plain', code: 0 })[0], /no session id/);
 });
 
-const record = (trapId, arm, outcome, extra = {}) => ({ trap: trapId, arm, valid: true, oracle: { outcome }, landed: true, tokens: 100, ms: 1000, whole_file_reads: 2, delivery: { delivered: true }, ...extra });
-const both = (n, memory, plain, ids = TRAPS.map((t) => t.id)) => Array.from({ length: n }, (_, i) => [record(ids[i % ids.length], 'memory', i < memory ? 'avoided' : 'fell'), record(ids[i % ids.length], 'plain', i < plain ? 'avoided' : 'fell')]).flat();
+const shownStart = { start: true, triggers: ['start', 'prompt'], bytes: 2500, by_type: { memory: 10 }, memories: [1, 2, 3], trap: false };
+const record = (trapId, arm, round, outcome, extra = {}) => ({
+  trap: trapId,
+  arm,
+  round,
+  valid: true,
+  oracle: { outcome },
+  landed: true,
+  tokens: 100,
+  fresh_tokens: 40,
+  ms: 1000,
+  files_read: 3,
+  whole_file_reads: 2,
+  read_bytes: 1000,
+  tool_calls: 8,
+  shown: arm === 'plain' ? { start: false, triggers: [], bytes: 0, by_type: {}, memories: [], trap: false } : { ...shownStart, trap: arm === 'memory' },
+  hook: arm === 'plain' ? null : { start_bytes: 2000, injected_bytes: 2500, rule_seen: arm === 'memory' },
+  ...extra,
+});
+const all = (n, memory, plain, ids = TRAPS.map((t) => t.id), context = 0) =>
+  Array.from({ length: n }, (_, i) => {
+    const on = ids[i % ids.length];
+    return [record(on, 'memory', i + 1, i < memory ? 'avoided' : 'fell'), record(on, 'context', i + 1, i < context ? 'avoided' : 'fell'), record(on, 'plain', i + 1, i < plain ? 'avoided' : 'fell')];
+  }).flat();
 
-test('memory helped takes significance and more than one trap', () => {
-  const v = verdict(both(6, 6, 0));
+test('memory helped takes significance over the context arm and more than one trap', () => {
+  const v = verdict(all(6, 6, 0));
   assert.equal(v.answer, 'memory helped');
   assert.ok(Math.abs(v.fisher_p - 0.002165) < 1e-5);
-  assert.deepEqual(v.traps.map((t) => [t.memory.yes, t.memory.n, t.plain.yes, t.plain.n]), [[2, 2, 0, 2], [2, 2, 0, 2], [2, 2, 0, 2]]);
+  assert.equal(v.fisher_p, v.fisher.memory_context, 'the headline is the one comparison that differs by the trap memory alone');
+  assert.ok(Math.abs(v.fisher.context_plain - 1) < 1e-9);
+  assert.deepEqual(v.traps.map((t) => [t.memory.yes, t.memory.n, t.context.yes, t.context.n, t.plain.yes, t.plain.n]), [[2, 2, 0, 2, 0, 2], [2, 2, 0, 2, 0, 2], [2, 2, 0, 2, 0, 2]]);
   assert.deepEqual(v.too_easy, []);
+  assert.equal(v.context_answer, 'context alone made no difference to the trap');
+});
+
+test('a trap context avoids alone is not a win for memory', () => {
+  const v = verdict(all(6, 6, 0, undefined, 6));
+  assert.match(v.answer, /no difference shown/, 'memory added nothing on top of context');
+  assert.match(v.context_answer, /look for a leak/);
+  assert.deepEqual(v.too_easy, TRAPS.map((t) => t.id));
 });
 
 test('one trap alone decides nothing', () => {
-  assert.match(verdict(both(6, 6, 0, ['frozen-file'])).answer, /one trap decided it/);
+  assert.match(verdict(all(6, 6, 0, ['frozen-file'])).answer, /one trap decided it/);
 });
 
 test('no difference and a worse result are stated as such', () => {
-  assert.match(verdict(both(6, 3, 3)).answer, /no difference shown/);
-  assert.equal(verdict(both(6, 0, 6)).answer, 'memory did worse');
-  assert.deepEqual(verdict(both(6, 6, 1)).too_easy, [TRAPS[0].id]);
+  assert.match(verdict(all(6, 3, 0, undefined, 3)).answer, /no difference shown/);
+  assert.equal(verdict(all(6, 0, 0, undefined, 6)).answer, 'memory did worse');
+  assert.deepEqual(verdict(all(6, 6, 1)).too_easy, [TRAPS[0].id]);
+  assert.match(verdict(all(6, 6, 6)).context_answer, /did worse/);
 });
 
 test('invalid runs do not count, and too few valid runs give no answer', () => {
-  const records = both(6, 6, 0);
-  for (const r of records.filter((x) => x.arm === 'memory').slice(0, 2)) Object.assign(r, { valid: false, delivery: { delivered: false } });
+  const records = all(6, 6, 0);
+  for (const r of records.filter((x) => x.arm === 'memory').slice(0, 2)) Object.assign(r, { valid: false, shown: { ...r.shown, trap: false }, hook: { ...r.hook, rule_seen: false } });
   const v = verdict(records);
-  assert.match(v.answer, /^no answer: 4 memory and 6 plain/);
-  assert.deepEqual(v.invalid, { plain: 0, memory: 2 });
-  assert.deepEqual([v.delivered.yes, v.delivered.n], [4, 6]);
+  assert.match(v.answer, /^no answer: 4 memory, 6 context and 6 plain/);
+  assert.deepEqual(v.invalid, { plain: 0, context: 0, memory: 2 });
+  assert.deepEqual([v.delivered.memory.trap.yes, v.delivered.memory.trap.n], [4, 6], 'delivery counts every run, valid or not');
   assert.equal(v.avoided.memory.n, 4);
+  assert.deepEqual([v.context_answer, verdict(all(4, 4, 0)).reading], ['no answer', 'no answer: 4 paired blocks, 5 are needed']);
 });
 
-test('tokens, time, reads and landing compare the arms', () => {
-  const records = both(6, 6, 0).map((r) => (r.arm === 'memory' ? { ...r, tokens: 200, landed: false } : r));
+test('delivery is reported for all three arms', () => {
+  const { memory, context, plain } = verdict(all(6, 6, 0)).delivered;
+  assert.deepEqual([memory.context.yes, memory.trap.yes, memory.memories.median], [6, 6, 3]);
+  assert.deepEqual([context.context.yes, context.trap.yes, context.memories.median], [6, 0, 3]);
+  assert.deepEqual([plain.context.yes, plain.trap.yes, plain.memories.max, plain.bytes.max], [0, 0, 0, 0]);
+  assert.deepEqual([memory.items, plain.items], [{ memory: 60 }, {}]);
+  const seen = all(6, 6, 0);
+  seen.find((r) => r.arm === 'context').hook.rule_seen = true;
+  assert.equal(verdict(seen).delivered.context.trap.yes, 1, 'what the hooks handed over counts, not only what the platform recorded');
+});
+
+test('min, median and max per arm, and tokens, reads and landing compare the arms', () => {
+  const records = all(6, 6, 0).map((r) => (r.arm === 'memory' ? { ...r, tokens: 200, landed: false } : r));
   const v = verdict(records);
-  assert.equal(v.tokens.ratio, 2);
-  assert.deepEqual([v.landing.memory.yes, v.landing.plain.yes], [0, 6]);
+  const { min, median, max, n } = v.measures.memory.tokens;
+  assert.deepEqual([min, median, max, n], [200, 200, 200, 6]);
+  assert.equal(v.paired.memory_plain.tokens.median_ratio, 2);
+  assert.deepEqual([v.paired.memory_plain.tokens.higher, v.paired.memory_plain.tokens.sign_p], [6, 0.03125]);
+  assert.deepEqual([v.landing.memory.yes, v.landing.context.yes, v.landing.plain.yes], [0, 6, 6]);
   assert.ok(v.landing.fisher_p < 0.01);
 });
 
+/** Six blocks with the context arm's `key` scaled per block. */
+const contextScaled = (key, factors) => {
+  const records = all(factors.length, factors.length, 0);
+  for (const r of records.filter((x) => x.arm === 'context')) r[key] *= factors[r.round - 1];
+  return verdict(records);
+};
+
+test('whether context reduces reading is answered block by block', () => {
+  const less = contextScaled('read_bytes', [0.5, 0.5, 0.5, 0.5, 0.5, 0.5]);
+  assert.match(less.reading, /^less reading \(6 lower, 0 higher, 0 tied, median 0\.50, sign test p = 0\.0313\)/);
+  assert.match(contextScaled('read_bytes', [2, 2, 2, 2, 2, 2]).reading, /^more reading/);
+  assert.match(contextScaled('read_bytes', [0.5, 0.5, 0.5, 0.5, 0.5, 2]).reading, /^no difference shown in reading \(5 lower, 1 higher/);
+  assert.match(contextScaled('read_bytes', [0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 2]).reading, /^less reading \(8 lower, 1 higher/);
+  assert.match(contextScaled('tokens', [3, 3, 3, 3, 3, 3]).tokens, /^more tokens/);
+  assert.match(contextScaled('tokens', [1, 1, 1, 1, 1, 1]).tokens, /^no difference shown in tokens \(0 lower, 0 higher, 6 tied/);
+});
+
 test('the results section is filled between its markers and nowhere else', () => {
-  const v = verdict(both(6, 6, 0));
+  const v = verdict(all(6, 6, 0));
   const text = resultsMarkdown(v, { recorded_at: '2026-10-31T12:00:00Z', model: 'zai-coding-plan/glm-5.3', evidence: '.local/staging/memory-test-1.json', commit: 'abc1234' });
-  assert.match(text, /\*\*Answer: memory helped\.\*\* Trap avoided: memory 6\/6, plain 0\/6, Fisher p = 0\.0022/);
-  assert.match(text, /\| frozen-file \| 2\/2 \| 0\/2 \|/);
+  assert.match(text, /\*\*Answer: memory helped\.\*\* Trap avoided: memory 6\/6, context 0\/6, plain 0\/6\. Fisher p: memory vs context 0\.0022, memory vs plain 0\.0022, context vs plain 1\.0000/);
+  assert.match(text, /\*\*Context against plain:\*\* context alone made no difference to the trap\. Reading: no difference shown in reading/);
+  assert.match(text, /\| frozen-file \| 2\/2 \| 0\/2 \| 0\/2 \|/);
+  assert.match(text, /\| Tokens \| 100 \(100-100\) \| 100 \(100-100\) \| 100 \(100-100\) \|/);
+  assert.match(text, /\| Bytes read \| 0 \/ 0 \/ 6 \| 1\.00 \| 1\.0000 \|/);
+  assert.match(text, /\| Start context \| 6\/6 \| 6\/6 \| 0\/6 \|/);
+  assert.match(text, /\| Trap memory \| 6\/6 \| 0\/6 \| 0\/6 \|/);
+  assert.match(text, /\| Items by type \| memory 60 \| memory 60 \| none \|/);
+  assert.match(text, /Invalid runs: 0 memory, 0 context, 0 plain/);
   const doc = `before\n${RESULTS_START}\nold\n${RESULTS_END}\nafter\n`;
   const filled = fillResults(doc, 'new');
   assert.equal(filled, `before\n${RESULTS_START}\nnew\n${RESULTS_END}\nafter\n`);
@@ -370,7 +549,7 @@ const kit = (...args) => spawnSync(process.execPath, ['tools/staging-realworld.m
 test('--memory-test prints its estimate and starts nothing without --yes, and refuses --prod', () => {
   const plan = kit('--memory-test');
   assert.equal(plan.status, 0, plan.stderr);
-  assert.match(plan.stdout, /12 real agent runs/);
+  assert.match(plan.stdout, /18 real agent runs \(6 per arm/);
   assert.match(plan.stdout, /Nothing started/);
   const prod = kit('--memory-test', '--prod', '--yes');
   assert.notEqual(prod.status, 0);

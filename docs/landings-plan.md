@@ -64,21 +64,21 @@ New policy fields must be left out when empty. Otherwise the policy digest chang
 
 ## 2. Memory and context test
 
-**Question: does an agent do better with our memory and context than with a plain clone?** Nothing has shown that yet. The one earlier run used more tokens with our read tools: 121.6k vs 52.7k, on a small fixture, with no memory arm.
+**Question: does an agent do better with our memory and context than with a plain clone?** The first run showed memory avoids a trap a plain clone falls into, but it put context and memory in one arm, so it says nothing about context alone. An earlier run on a small fixture used more tokens with our read tools: 121.6k vs 52.7k, with no memory arm.
 
 **Setup:**
 
 1. New flow on the Docker sandbox. Restore `armSummary`, `compareArms` and `fisherExact` from `34a63b3a^`.
 2. Real history only: `oss-cobra`, `oss-commander`, `oss-click`, or a size-ladder import.
-3. **One fork per arm.** Memories can't be deleted, and forks copy none, so a trap on a shared repo would contaminate every later run.
+3. **One fork per run.** Memories can't be deleted, and forks copy none, so a trap on a shared repo would contaminate every later run.
 4. Plant a trap that code, docs and Git history don't reveal, and that a memory explains. Write an automatic pass or fail check for it.
-5. Two arms: plain clone, and `yoneda` with context and memory.
+5. Three arms, in paired blocks so all meet the same provider: plain clone; `yoneda` with context and no trap memory; `yoneda` with context and the trap memory.
 6. At least 5 runs per arm. 3 per arm can't reach significance on Fisher's test.
-7. Confirm in each run that the trap memory was delivered in one arm and absent in the other.
+7. Confirm in each run which memories and context were delivered, in all three arms: the trap memory reached the memory arm and neither of the others.
 
-**Score:** trap avoided first, then tokens from `step_finish`, time and landing success. Fix the read counter, which matched `Read` when opencode's tool is `read`.
+**Score:** trap avoided first, then tokens from `step_finish`, time, landing success and files read: min, median and max per arm, Fisher's test on the trap, and each measure paired by block. Fix the read counter, which matched `Read` when opencode's tool is `read`.
 
-**Also check live, without a model:** a session record, transcript and context delivery all appear on the change page. Kit item 28 already replays the hooks.
+**Also check live, without a model:** a session record, transcript and context delivery all appear on the Landing page. Kit item 28 already replays the hooks.
 
 **Use:** opencode with `zai-coding-plan/glm-5.3`, the model today's runs use. The sandbox image has only opencode, so no Claude Code arm yet. Warn the owner first if a run costs money.
 
@@ -86,7 +86,9 @@ If memory doesn't help, fix that before building Instruments around it.
 
 ### Results
 
-Built, not run yet: `tools/staging/memory-flow.mjs`. The run fills this section. Run it with `set -a; . ~/.config/yonedarepo/dev-owner.env; set +a`, then `node tools/staging-realworld.mjs --memory-test`, which prints the estimate; add `--yes` to start.
+The run fills this section. Run it with `set -a; . ~/.config/yonedarepo/dev-owner.env; set +a`, then `node tools/staging-realworld.mjs --memory-test`, which prints the estimate; add `--yes` to start.
+
+First run, two arms, 2026-10-31 on `e65eb761` (`.local/staging/memory-test-1793474668732.json`): memory with context avoided the trap 6/6, plain 0/6, Fisher p = 0.0022. Its reads missed shell `sed` and `head`, and opencode's `grep` and `glob` failed in every call, as the sandbox had no ripgrep.
 
 <!-- memory-test-results:start -->
 Run 2026-10-31T19:59:45.613Z on `e65eb761`, `zai-coding-plan/glm-5.3`. Evidence: `.local/staging/memory-test-1793474668732.json`.
@@ -116,15 +118,19 @@ Trap memory delivered in 6/6 memory runs. Invalid runs: 0 memory, 0 plain.
 | Traps | 3 made-up rules, one per repository, each a different kind: `frozen-file` on `oss-cobra` (where code goes), `env-prefix` on `oss-commander` (what a name must be), `exit-code` on `oss-click` (what a value must be) |
 | Hidden | Before an agent starts, the fork's tree, commit messages and history are scanned for each rule; a hit stops the test |
 | Oracle | Reads the pushed branch's diff through the API; the agent's code is never run |
-| Forks | One per run, per arm. Only the memory arm's fork gets memories, so nothing can leak to the plain arm |
+| Arms | `plain`: stock Git, no plugin, no memories. `context`: the plugin and `yoneda` tools, with the 12 other memories. `memory`: the same plus the trap memory, told the same words. The trap memory is the one difference between the last two |
+| Context | A fresh fork has no sessions, open Landings or contracts, so context here is the landing rules, the memories and the `yoneda` read tools. The Delivered table's item types show it |
+| Forks | One per run, per arm, so nothing can leak between arms |
 | Token | The owner's, limited to the fork and its parent, `repo:read` and `repo:write`, revoked after the run. **A token of the fork alone can't push to it** ("Objects this fork inherits need read on its parent"), so an agent could write to its parent. Nothing tells it to, it has no land scope, and every ref of each parent is compared at the end |
-| Delivery | 13 memories per fork, the trap oldest. The start packet is the 8 newest, so the trap reaches an agent only through its file or the prompt's words, behind 2 newer memories on the same file |
-| Invalid run | Memory arm: the trap memory didn't read back as delivered. Plain arm: any delivery, any memory, or a `yoneda` read call. Either arm: the agent didn't finish. Reported per arm and never counted |
-| Answer | "Memory helped" needs Fisher p < 0.05, at least 5 valid runs per arm and more than one trap improved |
+| Delivery | 13 memories on the memory arm's fork, the trap oldest, and the other 12 on the context arm's. The start packet is the 8 newest, so the trap reaches an agent only through its file or the prompt's words, behind 2 newer memories on the same file |
+| Delivery check | Two sides per run: what the platform recorded (`/context/deliveries`) and what the plugin's hooks handed the session (the hook log) |
+| Invalid run | Memory arm: the trap memory didn't read back as delivered and handed over. Context arm: the trap memory on its fork or handed over. Both: no start context. Plain arm: any delivery, any memory, a hook log or a `yoneda` read call. Any arm: the agent didn't finish. Reported per arm and never counted |
+| Reading | Files read, whole-file reads and bytes read: `read`, `grep`, `glob`, shell `cat`, `head` and `sed -n`, and every command that only looks, `yoneda` read calls included, so a tool that moves reading elsewhere gets no credit |
+| Answer | "Memory helped" compares memory with context: Fisher p < 0.05, at least 5 valid runs per arm and more than one trap improved. Reading and tokens compare context with plain block by block: a sign test p < 0.05, which takes 6 of 6 blocks or 8 of 9 |
 
 Dropping undelivered runs means the test measures agents that got the memory. How often it was delivered is reported apart, as a product number.
 
-**Dry run:** `node tests/agents/e2e.mjs --only none --memory-stub 6` runs the whole flow locally in the sandbox with a scripted agent that keeps a rule only if it reached its context. It proves the plumbing, not the answer. `--only 32` is the change evidence check without a browser.
+**Dry run:** `node tests/agents/e2e.mjs --only none --memory-stub 6` runs the whole flow locally in the sandbox with a scripted agent that keeps a rule only if it reached its context. It proves the plumbing, not the answer. `--only 32` is the Landing evidence check without a browser.
 
 ## 3. Route read and timeline
 
