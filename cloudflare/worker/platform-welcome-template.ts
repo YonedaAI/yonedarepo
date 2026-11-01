@@ -106,6 +106,37 @@ export function renderVerify({
   });
 }
 
+/** The Flight log's double opt-in. Every Flight log email carries the unsubscribe link. */
+export function renderNewsletterConfirm({
+  origin,
+  contact,
+  confirmUrl,
+  unsubscribeUrl,
+}: Omit<WelcomeConfig, 'verifyUrl'> & {
+  confirmUrl: string;
+  unsubscribeUrl: string;
+}): WelcomeEmail {
+  return render(contact, {
+    subject: 'Confirm your YonedaRepo updates',
+    heading: 'Confirm your updates',
+    blocks: [
+      {
+        kind: 'link',
+        text: 'Open the link and press Confirm to get updates on what YonedaRepo ships. The link works for 7 days.',
+        href: confirmUrl,
+        label: 'Confirm your updates',
+      },
+      {
+        kind: 'p',
+        text: "If you didn't ask for this, ignore this email: we send nothing more unless the link is used.",
+      },
+      { kind: 'link', text: "Don't want to hear from us?", href: unsubscribeUrl, label: 'Unsubscribe' },
+      { kind: 'contact' },
+    ],
+    why: `You're getting this because someone entered this address on the Flight log page at ${origin}. If it wasn't you, ignore it or tell us at ${contact}.`,
+  });
+}
+
 function render(contact: string, email: Email): WelcomeEmail {
   const contactLine = `Questions or feedback? Reply to this email or write to ${contact}.`;
   const text = [

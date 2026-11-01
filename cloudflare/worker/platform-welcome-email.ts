@@ -22,7 +22,8 @@ function off(reason: string) {
   log.warn('email.off', { reason });
 }
 
-function config(env: Env) {
+/** What every email needs, or undefined while email is off here. */
+export function config(env: Env) {
   const missing: string[] = (['EMAIL_FROM', 'EMAIL_CONTACT', 'WEB_ORIGIN'] as const).filter(
     (name) => !env[name]?.trim(),
   );

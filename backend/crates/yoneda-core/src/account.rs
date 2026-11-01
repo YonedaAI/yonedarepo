@@ -108,6 +108,7 @@ pub const RESERVED_HANDLES: &[&str] = &[
     "teams",
     "terms",
     "undefined",
+    "updates",
     "user",
     "users",
     "webhooks",
