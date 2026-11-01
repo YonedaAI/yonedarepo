@@ -146,7 +146,29 @@ All of it follows the UI rules in `AGENTS.md`.
 
 - Dev has no real users, so dev proves the code works and only prod gives real numbers. Check it with seeded data and stubs.
 - Basin counts are a floor with no history.
-- Analytics Engine write, query and price limits aren't in our docs. Spike them before Phase 1 step 3. If `COUNT(DISTINCT)` on a hash isn't supported, Phase 5 changes.
+
+### Analytics Engine limits
+
+Spiked 2026-10-31: Cloudflare's docs, then read-only queries on `yonedarepo_dev_site_events` (2,486 points).
+
+| Question | Answer | Source |
+|---|---|---|
+| Blobs | 20 a point, 16 KB in total | [Limits](https://developers.cloudflare.com/analytics/analytics-engine/limits/) |
+| Doubles | 20 a point | Limits |
+| Index | 1 a point, 96 bytes | Limits |
+| Index cardinality | No limit published. A value unique to each row is "not recommended": it slows aggregates | [Sampling](https://developers.cloudflare.com/analytics/analytics-engine/sampling/) |
+| Writes a request | 250. We write at most 1, or 2 with `REGION_SIGNALS` on (1 write in 10) | Limits |
+| Query rate | **No number published.** One statement a request, 10 KiB long; over a limit answers 429, 503 or 507 with `Retry-After` | [SQL API limits](https://developers.cloudflare.com/analytics/sql-api/limits/) |
+| Retention | Three months | Limits |
+| Price | Workers Paid includes 10M points and 1M reads a month, then $0.25 and $1.00 a million. Billing isn't active yet | [Pricing](https://developers.cloudflare.com/analytics/analytics-engine/pricing/) |
+| `COUNT(DISTINCT blob)` | **Works**, run on dev. `uniq()` answers 422 | [Aggregates](https://developers.cloudflare.com/analytics/analytics-engine/sql-reference/aggregate-functions/), dev |
+
+What this changes:
+
+- **Phase 5 can use `COUNT(DISTINCT)`, but not on today's index.** It counts stored rows, and Analytics Engine drops rows when one index is busy: dev kept 948 of 2,627 points in one hour, `_sample_interval` up to 11. The docs say unique counts are only reliable on the index, so the visitor hash has to be the point's index. Not tested yet.
+- **Sampling isn't only ours.** Any count can be an estimate, so `≈` follows `_sample_interval` as well as our 1 in 10 on reads.
+- **90 days has no comparison.** The period before it is past retention.
+- **Weeks are folded in the Worker.** `INTERVAL '1' WEEK` answers 422, and `toStartOfWeek` returned a Sunday where the docs say Monday.
 
 ## Verification
 
