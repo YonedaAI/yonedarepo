@@ -1,8 +1,11 @@
-// Superfan Worker: the platform-only Worker's tail consumer, an hourly cron pass over its
-// telemetry, and an authenticated read endpoint for findings. Findings reach the owner by
-// private email (notify.ts) and nowhere public.
-import { isWatchable, type SuperfanEnv } from './config';
+// Superfan Worker: the tail consumer of an environment's Workers, an hourly cron pass over
+// their telemetry, a five-minute quick pass for urgent signals on the wide watch, and an
+// authenticated read endpoint for findings. Findings reach the owner by private email (notify.ts)
+// and nowhere public. /heartbeat is public: the dead-man (deadman.ts) reads it, and it says only
+// when passes last ran.
+import { isWatchable, type SuperfanEnv, wideOn } from './config';
 import { noticesOn } from './notify';
+import { QUICK_CRON, runQuick } from './quick';
 import { aggregate } from './tail';
 import { ledgerStub, runWatch } from './watch';
 
@@ -29,6 +32,8 @@ async function authorized(req: Request, env: SuperfanEnv) {
 
 export async function superfanFetch(req: Request, env: SuperfanEnv): Promise<Response> {
   const url = new URL(req.url);
+  if (url.pathname === '/heartbeat')
+    return json({ ...(await ledgerStub(env).beats()), notices: noticesOn(env) });
   if (!['/findings', '/status', '/run'].includes(url.pathname)) return refuse('NOT_FOUND', 404);
   if (!(await authorized(req, env))) return refuse('UNAUTHORIZED', 401);
   const ledger = ledgerStub(env);
@@ -50,6 +55,7 @@ export async function superfanFetch(req: Request, env: SuperfanEnv): Promise<Res
             : 'waiting_on_token',
       model: env.SUPERFAN_MODEL,
       notices: noticesOn(env) ? 'email' : 'off',
+      wide: wideOn(env),
       ...(await ledger.status(now)),
     });
   }
@@ -60,10 +66,10 @@ export async function superfanFetch(req: Request, env: SuperfanEnv): Promise<Res
   return json({ findings: await ledger.findings(status, limit) });
 }
 
-/** Counts one batch of the platform Worker's tail events; other producers are ignored. */
+/** Counts one batch of the watched Workers' tail events; other producers are ignored. */
 export async function superfanTail(events: TraceItem[], env: SuperfanEnv) {
   if (!isWatchable(env.WATCH_SCRIPT)) return;
-  const rows = aggregate(events, env.WATCH_SCRIPT);
+  const rows = aggregate(events, env.WATCH_SCRIPT, wideOn(env));
   if (rows.length) await ledgerStub(env).ingest(rows, Date.now());
 }
 
@@ -72,7 +78,7 @@ export default {
   async tail(events, env) {
     await superfanTail(events, env);
   },
-  async scheduled(_controller, env, ctx) {
-    ctx.waitUntil(runWatch(env));
+  async scheduled(controller, env, ctx) {
+    ctx.waitUntil(controller.cron === QUICK_CRON ? runQuick(env) : runWatch(env));
   },
 } satisfies ExportedHandler<SuperfanEnv>;

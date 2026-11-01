@@ -289,7 +289,8 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
             "yonedarepo-dev-agents-managed",
             "yonedarepo-dev-agents",
             "yonedarepo-dev-bench",
-            "yonedarepo-dev-bench2"
+            "yonedarepo-dev-bench2",
+            "yonedarepo-dev-deadman"
         ]
     );
     let hosts: Vec<Vec<(String, bool)>> = workers.iter().map(hosts_of).collect();
@@ -308,6 +309,7 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
                 host("https://dev.yonedarepo.com/*", false)
             ],
             vec![host("hook-receiver.yonedaai.org", true)],
+            vec![],
             vec![],
         ]
     );

@@ -14,6 +14,11 @@ export const ANALYTICS_TOKEN = 'fixture-analytics-token-not-real';
 export const MODEL_KEY = 'tp-fixture-model-key-not-real';
 export const MODEL_URL = 'https://token-plan-sgp.xiaomimimo.com/anthropic/v1/messages';
 export const SCRIPT = 'yonedarepo-dev-platform';
+export const FRONT_SCRIPT = 'yonedarepo-dev-agents';
+export const MANAGED_SCRIPT = 'yonedarepo-dev-agents-managed';
+export const FRONT_URL = 'https://dev.yonedarepo.example';
+export const SUPERFAN_URL = 'https://yonedarepo-dev-superfan.example.workers.dev';
+export const DEADMAN_URL = 'https://yonedarepo-dev-deadman.example.workers.dev';
 export const RESEND_URL = 'https://api.resend.com/emails';
 export const RESEND_KEY = 're_fixture_key_not_real';
 const NS = {
@@ -23,6 +28,9 @@ const NS = {
 };
 const JOBS = '44444444444444444444444444444444';
 const DEAD_LETTER = '55555555555555555555555555555555';
+const CHECKS = '77777777777777777777777777777777';
+const MANAGED_RUNS = '88888888888888888888888888888888';
+const MANAGED_DEAD_LETTER = '99999999999999999999999999999999';
 const APP = '66666666-6666-4666-8666-666666666666';
 const ACCOUNT = '0123456789abcdef0123456789abcdef';
 
@@ -52,8 +60,10 @@ export function lookup(path: string): Response | null {
   if (path === `/accounts/${ACCOUNT}/queues?per_page=100`)
     return ok([
       { queue_name: `${SCRIPT}-jobs`, queue_id: JOBS },
-      { queue_name: `${SCRIPT}-checks`, queue_id: 'a'.repeat(32) },
+      { queue_name: `${SCRIPT}-checks`, queue_id: CHECKS },
       { queue_name: `${SCRIPT}-dead-letter`, queue_id: DEAD_LETTER },
+      { queue_name: 'yonedarepo-dev-managed-runs', queue_id: MANAGED_RUNS },
+      { queue_name: 'yonedarepo-dev-managed-dead-letter', queue_id: MANAGED_DEAD_LETTER },
     ]);
   if (path === `/accounts/${ACCOUNT}/containers/applications`)
     return ok([{ name: `${SCRIPT}-checkcontainer`, id: APP }]);
@@ -63,7 +73,24 @@ export function lookup(path: string): Response | null {
 export interface Traffic {
   backlog?: [number, number];
   repoKills?: number;
+  checksBacklog?: [number, number];
+  managedBacklog?: [number, number];
+  /** Messages moved to a dead letter queue this hour, per source queue. */
+  deadLettered?: { jobs?: number; checks?: number; managed?: number };
+  /** Messages waiting in a dead letter queue. */
+  deadBacklog?: { platform?: number; managed?: number };
 }
+
+const backlogRows = (queueId: string, values: number[]) =>
+  values.map((messages, i) => ({
+    avg: { messages },
+    dimensions: { queueId, datetimeFiveMinutes: `2026-10-20T14:${30 + 5 * i}:00Z` },
+  }));
+const deadRow = (queueId: string, billableOperations: number) => ({
+  avg: { lagTime: 0, retryCount: 1 },
+  dimensions: { queueId, actionType: 'DeleteMessage', outcome: 'dlq' },
+  sum: { billableOperations },
+});
 
 /** One GraphQL account result; defaults describe a quiet hour. */
 export function account(t: Traffic = {}) {
@@ -76,21 +103,27 @@ export function account(t: Traffic = {}) {
         fatalInternalErrors: 0,
       },
     })),
-    backlog: (t.backlog ?? [2, 3]).map((messages, i) => ({
-      avg: { messages },
-      dimensions: { queueId: JOBS, datetimeFiveMinutes: `2026-10-20T14:${30 + 5 * i}:00Z` },
-    })),
+    backlog: [
+      ...backlogRows(JOBS, t.backlog ?? [2, 3]),
+      ...backlogRows(CHECKS, t.checksBacklog ?? [0, 1]),
+      ...backlogRows(MANAGED_RUNS, t.managedBacklog ?? [0, 0]),
+      ...backlogRows(DEAD_LETTER, [t.deadBacklog?.platform ?? 0]),
+      ...backlogRows(MANAGED_DEAD_LETTER, [t.deadBacklog?.managed ?? 0]),
+    ],
     queueOps: [
       {
         avg: { lagTime: 3000, retryCount: 0 },
-        dimensions: { actionType: 'ReadMessage', outcome: '' },
+        dimensions: { queueId: JOBS, actionType: 'ReadMessage', outcome: '' },
         sum: { billableOperations: 50 },
       },
       {
         avg: { lagTime: 0, retryCount: 0 },
-        dimensions: { actionType: 'WriteMessage', outcome: '' },
+        dimensions: { queueId: JOBS, actionType: 'WriteMessage', outcome: '' },
         sum: { billableOperations: 50 },
       },
+      ...(t.deadLettered?.jobs ? [deadRow(JOBS, t.deadLettered.jobs)] : []),
+      ...(t.deadLettered?.checks ? [deadRow(CHECKS, t.deadLettered.checks)] : []),
+      ...(t.deadLettered?.managed ? [deadRow(MANAGED_RUNS, t.deadLettered.managed)] : []),
     ],
     containers: [{ max: { diskUsagePercentage: 12 } }],
   };
@@ -100,6 +133,11 @@ const CLASSES: Partial<Record<TailComponent, string>> = {
   source_repository: 'SourceRepository',
   object_push_queue: 'ObjectPushQueue',
   check_runs: 'CheckContainer',
+  land_queue: 'LandCombiner',
+  commit_shards: 'CommitShard',
+  pack_builder: 'PackBuilder',
+  ssh_gateway: 'SshGateway',
+  workspace_authority: 'WorkspaceAuthority',
 };
 
 export interface Calls {
@@ -109,20 +147,25 @@ export interface Calls {
   errors?: number;
   logs?: { level: string; message: unknown[] }[];
   script?: string;
+  /** Durable Object class, where it is not the component's own. */
+  object?: string;
+  status?: number;
 }
 
 /** TraceItem-shaped events: `errors` of them threw, all took `wallMs`. */
 export function traces(c: Calls, at: number): TraceItem[] {
-  const object = CLASSES[c.component];
+  const object = c.object ?? CLASSES[c.component];
   const event =
-    c.component === 'api_worker'
+    c.component === 'api_worker' || c.component === 'front_worker'
       ? {
           request: { url: 'https://platform/api/v1/x', method: 'GET', headers: {} },
-          response: { status: 200 },
+          response: { status: c.status ?? 200 },
         }
       : c.component === 'derived_jobs'
         ? { queue: 'yonedarepo-dev-platform-jobs', batchSize: 1 }
-        : { rpcMethod: 'fetch' };
+        : c.component === 'cron'
+          ? { cron: '* * * * *', scheduledTime: at }
+          : { rpcMethod: 'fetch' };
   return Array.from({ length: c.count }, (_, i) => {
     const thrown = i < (c.errors ?? 0);
     return {
@@ -134,7 +177,7 @@ export function traces(c: Calls, at: number): TraceItem[] {
         : [],
       diagnosticsChannelEvents: [],
       scriptName: c.script ?? SCRIPT,
-      ...(object ? { entrypoint: object } : {}),
+      ...(object ? { entrypoint: object } : c.component === 'cron' ? { entrypoint: 'default' } : {}),
       outcome: thrown ? 'exception' : 'ok',
       executionModel: object ? 'durableObject' : 'stateless',
       truncated: false,
@@ -157,8 +200,18 @@ export function hour(at: number, overrides: Partial<Record<TailComponent, Partia
 }
 
 /** What the tail handler stores for these events. */
-export const feed = (ledger: DurableObjectStub<SuperfanLedger>, events: TraceItem[], now: number) =>
-  ledger.ingest(aggregate(events, SCRIPT), now);
+export const feed = (
+  ledger: DurableObjectStub<SuperfanLedger>,
+  events: TraceItem[],
+  now: number,
+  wide = false,
+) => ledger.ingest(aggregate(events, SCRIPT, wide), now);
+
+/** One log line of a named event, as `traces` carries it. */
+export const logLine = (event: string, level = 'log', fields: Record<string, unknown> = {}) => ({
+  level,
+  message: [JSON.stringify({ event, ...fields })],
+});
 
 export interface FakeCalls {
   graphql: RequestInit[];
@@ -167,6 +220,8 @@ export interface FakeCalls {
   mail: { headers: Headers; body: Record<string, any> }[];
   /** Resend's answer; a fixture can make it fail. */
   mailAnswer: () => Response;
+  /** A URL's answer, set by a test; health endpoints default to healthy. */
+  routes: Record<string, () => Response>;
 }
 
 /** Routes fetch to the fakes; `graphql` decides the analytics reply per call. */
@@ -180,6 +235,9 @@ export function fakeUpstreams(
     model: [],
     mail: [],
     mailAnswer: () => Response.json({ id: 'fixture-email' }),
+    routes: {
+      [`${FRONT_URL}/health`]: () => Response.json({ service: 'yonedarepo', v: 1 }),
+    },
   };
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = String(input instanceof Request ? input.url : input);
@@ -187,6 +245,8 @@ export function fakeUpstreams(
       calls.graphql.push(init ?? {});
       return graphql();
     }
+    const route = calls.routes[url];
+    if (route) return route();
     if (url === 'https://yonedarepo-dev-platform.example.workers.dev/health')
       return Response.json({ service: 'yonedarepo-platform', v: 1, revision: 'fixture' });
     if (url === RESEND_URL) {
@@ -256,5 +316,6 @@ export function deps(e: SuperfanEnv, clock: { now: number }): WatchDeps {
     ...productionDeps(e),
     ledger: e.LEDGER.get(e.LEDGER.idFromName(crypto.randomUUID())),
     now: () => clock.now,
+    pause: async () => {},
   };
 }

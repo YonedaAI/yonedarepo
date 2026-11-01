@@ -80,7 +80,7 @@ The `monitor` job polls every 5 minutes for 30 minutes (`tools/ship/monitor.mjs`
 
 - **New finding:** an open finding that wasn't open when the job started, or first seen since the deploy began. The job fails at once with a line like `1 new finding`.
 - **Two bad polls in a row** (health not at the revision, or Superfan unreadable) fail the job. So does a watch with no telemetry on any poll.
-- **Details:** `POST /run` and the hourly cron both mail open findings not yet mailed to `ADMIN_NOTIFY_EMAIL` (`cloudflare/superfan/notify.ts`). One digest per pass, at most 8 digests per UTC day; the rest wait for the next pass. A reopened finding mails again only if its last mail is over 6 hours old. Dev's address is empty: its bursts fire rules on purpose. Model spend keeps its own daily cap, and a finding without a narrative is mailed with its summary.
+- **Details:** `POST /run` and the hourly cron both mail open findings not yet mailed to `ADMIN_NOTIFY_EMAIL` (`cloudflare/superfan/notify.ts`). One digest per pass, at most 8 digests per UTC day; the rest wait for the next pass. A reopened finding mails again only if its last mail is over 6 hours old. Dev mails too, so a burst there, which fires rules on purpose, sends digests. Model spend keeps its own daily cap, and a finding without a narrative is mailed with its summary. With `WATCH_WIDE=on` (dev, not yet prod) urgent findings mail at once, outside that cap: [incidents.md](incidents.md).
 
 ## Rollback
 
@@ -100,4 +100,4 @@ None of this has run on GitHub. `actionlint` and local tests pass; no workflow, 
 - The prod deploy builds the runtime image on the runner (`Source::Dockerfile`) inside a 60-minute job.
 - `downloads stage` on `macos-latest` (Xcode's x86_64 target, zig 0.17.0, cargo-zigbuild 0.24.0) has only run on the owner's Mac.
 - GitHub's reply shapes for statuses and workflow runs are from its docs; the tests use fakes. `live-tests` has never been set for real.
-- Resend from Superfan has only run against a fake.
+- Resend from Superfan and the dead-man has only run against a fake.

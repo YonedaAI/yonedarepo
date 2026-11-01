@@ -25,8 +25,14 @@
         "Containers Read (all read-only). Secrets, set from stdin (~/.config/yonedarepo/staging.env):",
         "CF_ANALYTICS_TOKEN  API token with the read permissions above",
         "SUPERFAN_READ_TOKEN bearer for GET /findings, GET /status, POST /run",
-        "New findings mail ADMIN_NOTIFY_EMAIL through Resend (superfan/notify.ts, the Secrets Store secret Resend-Yoneda), at most",
-        "8 digests a UTC day. Empty here: dev's bursts fire rules on purpose, so dev mails nobody.",
+        "New findings mail ADMIN_NOTIFY_EMAIL through Resend (superfan/notify.ts, the Secrets Store secret Resend-Yoneda): at most",
+        "8 digests a UTC day. Dev's bursts fire rules on purpose, so expect digests after a burst.",
+        "WATCH_WIDE=on is the wide watch: the front and managed Workers (both name this Worker in tail_consumers), crons,",
+        "every Durable Object class, the land queue, every queue, reconcile mismatches and repository storage; urgent",
+        "findings mail at once, outside the digest cap, at most 6 a UTC day per signal, and a quick pass every five minutes",
+        "(*/5, the cron quick.ts names) checks only those, so a site that is down is told in minutes. The token needs no more",
+        "permissions. docs/incidents.md has what each alert means. Off (prod until the owner says): the hourly digest alone.",
+        "WATCH_FRONT_URL is the site as people reach it. DEADMAN_URL is the dead-man (role deadman), which this Worker watches back.",
         "Deployed first: the dev platform names this Worker in tail_consumers."
       ],
       "secrets": [
@@ -45,15 +51,19 @@
         },
         "triggers": {
           "crons": [
-            "7 * * * *"
+            "7 * * * *",
+            "*/5 * * * *"
           ]
         },
         "vars": {
           "CF_ACCOUNT_ID": "{account_id}",
-          "ADMIN_NOTIFY_EMAIL": "",
+          "ADMIN_NOTIFY_EMAIL": "hello@yonedarepo.com",
           "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>",
           "WATCH_SCRIPT": "{prefix}-platform",
           "WATCH_URL": "https://{prefix}-platform.{subdomain}.workers.dev",
+          "WATCH_WIDE": "on",
+          "WATCH_FRONT_URL": "https://dev.yonedarepo.com",
+          "DEADMAN_URL": "https://{prefix}-deadman.{subdomain}.workers.dev",
           "TELEMETRY_SOURCE": "cloudflare",
           "SUPERFAN_MODEL": "mimo-v2.6-flash",
           "MIMO_TOKEN_PLAN_REGION": "sgp",
@@ -531,6 +541,11 @@
         "name": "{prefix}-agents-managed",
         "main": "managed/index.ts",
         "compatibility_date": "2026-10-07",
+        "tail_consumers": [
+          {
+            "service": "{prefix}-superfan"
+          }
+        ],
         "d1_databases": [
           {
             "binding": "REVENUE",
@@ -708,6 +723,11 @@
         "name": "{prefix}-agents",
         "main": "worker/front-index.ts",
         "compatibility_date": "2026-10-07",
+        "tail_consumers": [
+          {
+            "service": "{prefix}-superfan"
+          }
+        ],
         "compatibility_flags": [
           "nodejs_compat"
         ],
@@ -902,6 +922,63 @@
           "mode": "targeted",
           "region": "aws:us-east-1"
         }
+      }
+    },
+    {
+      "role": "deadman",
+      "file": "wrangler.dev-deadman.jsonc",
+      "notes": [
+        "Dev dead-man (cloudflare/superfan/deadman.ts): says so when Superfan stops. Every five minutes it reads",
+        "Superfan's public /heartbeat over the network and mails ADMIN_NOTIFY_EMAIL through Resend after 3 bad checks",
+        "in a row, then at most every 6 hours. Its own script, cron and state, and it imports nothing from Superfan;",
+        "Superfan reads its /health in turn. A cron Worker because Cloudflare's Health Checks need a Pro zone, and",
+        "yonedarepo.com is Free; docs/incidents.md says why. No secrets of its own. Last in deploy order: Superfan",
+        "must be up before the first check."
+      ],
+      "secrets": [],
+      "ephemeral": false,
+      "config": {
+        "name": "{prefix}-deadman",
+        "main": "superfan/deadman.ts",
+        "compatibility_date": "2026-10-07",
+        "workers_dev": true,
+        "preview_urls": false,
+        "observability": {
+          "enabled": true
+        },
+        "triggers": {
+          "crons": [
+            "*/5 * * * *"
+          ]
+        },
+        "vars": {
+          "SUPERFAN_URL": "https://{prefix}-superfan.{subdomain}.workers.dev",
+          "ADMIN_NOTIFY_EMAIL": "hello@yonedarepo.com",
+          "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>"
+        },
+        "secrets_store_secrets": [
+          {
+            "binding": "RESEND_API_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "Resend-Yoneda"
+          }
+        ],
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "STATE",
+              "class_name": "DeadmanState"
+            }
+          ]
+        },
+        "migrations": [
+          {
+            "tag": "v1",
+            "new_sqlite_classes": [
+              "DeadmanState"
+            ]
+          }
+        ]
       }
     }
   ],
