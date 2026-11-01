@@ -10,6 +10,9 @@ use serde_json::Value;
 #[serde(deny_unknown_fields)]
 pub struct Login {
     pub origin: String,
+    /// The agent signed up, for `login --agent`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
     /// The signed-in account, when the platform names it (device login).
     pub account: Option<String>,
     pub expires_at: Option<String>,

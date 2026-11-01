@@ -7,6 +7,9 @@ use yoneda_core::{Error, Result};
 mod access;
 #[cfg(test)]
 mod access_tests;
+#[cfg(test)]
+mod agent_tokens_tests;
+mod agents;
 mod audit_details;
 mod audit_log;
 #[cfg(test)]

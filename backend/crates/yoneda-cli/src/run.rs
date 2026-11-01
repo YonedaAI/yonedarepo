@@ -68,19 +68,21 @@ async fn run(command: Command) -> Result<()> {
             origin,
             with_token,
             browser,
+            agent,
         } => {
             login::login(
                 &target::account_origin(origin.as_deref())?,
                 with_token,
                 browser,
+                agent,
             )
             .await
         }
-        Command::Logout { origin } => {
+        Command::Logout { origin, agent } => {
             let origin = origin
                 .map(|o| crate::credentials::normalize_origin(&o))
                 .transpose()?;
-            login::logout(origin.as_deref())
+            login::logout(origin.as_deref(), agent)
         }
         Command::AuthToken { origin, show } => crate::auth_token::print(origin.as_deref(), show),
         Command::Repo { origin, command } => account::run(origin.as_deref(), command).await,

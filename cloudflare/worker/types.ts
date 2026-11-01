@@ -67,6 +67,8 @@ export interface Env {
    * when cleared (repo-land-check.ts; unset or anything else: no job, and the switch is refused).
    * Set it only once every Worker on the queue knows the job. */
   LAND_WHEN_CLEARED?: string;
+  /** `on`: `yoneda login --agent <name>` signs an agent up through the device flow. */
+  AGENT_SIGNUP?: string;
   /** `on` (with FAST_IMPORT, PACK_CACHE and PUSH_BUNDLES): a public GitHub repository's import
    * also fetches it directly, and main lands from that (repo-import-direct.ts; unset or
    * anything else: Artifacts' fetch alone). */

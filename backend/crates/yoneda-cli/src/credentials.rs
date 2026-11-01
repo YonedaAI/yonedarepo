@@ -1,6 +1,10 @@
 //! The platform token: `YONEDA_TOKEN`, else `~/.config/yoneda/credentials` written by
 //! `yoneda login` with mode 0600. No OS keychain. A stored token is sent only to the
 //! origin it was stored for; the value is never printed or passed on a command line.
+//!
+//! An agent has a slot of its own (`yoneda/agents/<name>/credentials`), so a person and their
+//! agent stay signed in side by side. A run picks one with `YONEDA_AGENT`, which Git's helper
+//! inherits too; an agent with no login there gets none, and never borrows the person's.
 use crate::error::{Context, Error, Result};
 use serde::{Deserialize, Serialize};
 use std::ffi::OsString;
@@ -93,13 +97,48 @@ pub fn home_dir() -> Result<PathBuf> {
     .ok_or_else(|| Error::new("HOME is not set"))
 }
 
-/// `$XDG_CONFIG_HOME/yoneda/credentials`, else `~/.config/yoneda/credentials`.
+/// `$XDG_CONFIG_HOME`, else `~/.config`.
+fn config_home() -> Result<PathBuf> {
+    match std::env::var_os("XDG_CONFIG_HOME").filter(|v| !v.is_empty()) {
+        Some(dir) => Ok(PathBuf::from(dir)),
+        None => Ok(home_dir()?.join(".config")),
+    }
+}
+
+/// The agent this run acts as, by name (`YONEDA_AGENT`; empty: none).
+pub const AGENT_ENV: &str = "YONEDA_AGENT";
+
+/// The agent `YONEDA_AGENT` names, if any.
+pub fn env_agent() -> Option<String> {
+    std::env::var(AGENT_ENV).ok().filter(|v| !v.is_empty())
+}
+
+/// This run's store: the agent's when `YONEDA_AGENT` names one, else the person's.
 pub fn default_path() -> Result<PathBuf> {
-    let base = match std::env::var_os("XDG_CONFIG_HOME").filter(|v| !v.is_empty()) {
-        Some(dir) => PathBuf::from(dir),
-        None => home_dir()?.join(".config"),
+    path_for(env_agent().as_deref())
+}
+
+/// `$XDG_CONFIG_HOME/yoneda/credentials` (else under `~/.config`), or `agent`'s slot there.
+pub fn path_for(agent: Option<&str>) -> Result<PathBuf> {
+    slot(&config_home()?, agent)
+}
+
+/// The platform's rule for an agent's name, which also keeps it one path component.
+fn slot(config: &Path, agent: Option<&str>) -> Result<PathBuf> {
+    let dir = config.join("yoneda");
+    let Some(name) = agent else {
+        return Ok(dir.join("credentials"));
     };
-    Ok(base.join("yoneda").join("credentials"))
+    let word = |b: u8| b.is_ascii_lowercase() || b.is_ascii_digit();
+    let valid = name.len() <= 32
+        && name.as_bytes().first().copied().is_some_and(word)
+        && name.bytes().all(|b| word(b) || b == b'-' || b == b'_');
+    if !valid {
+        return Err(Error::usage(format!(
+            "{name:?} is not an agent's name: 1-32 lowercase letters, digits, - and _"
+        )));
+    }
+    Ok(dir.join("agents").join(name).join("credentials"))
 }
 
 /// Normalizes an origin to `scheme://host[:port]` without a trailing slash.
@@ -147,14 +186,22 @@ pub fn store(path: &Path, origin: &str, token: &Token) -> Result<()> {
     std::fs::rename(&staging, path).context(format!("replacing {}", path.display()))
 }
 
+fn missing(origin: &str, agent: Option<&str>) -> String {
+    match agent {
+        Some(agent) => format!(
+            "No token for agent {agent} on {origin}: run `yoneda login --agent {agent} --origin {origin}`"
+        ),
+        None => format!(
+            "No token for {origin}: set YONEDA_TOKEN or run `yoneda login --origin {origin}`"
+        ),
+    }
+}
+
 /// The token for `origin`: `YONEDA_TOKEN` (`env`) wins; a stored token must belong to
 /// the same origin.
 pub fn load(path: &Path, origin: &str, env: Option<String>) -> Result<Token> {
-    load_optional(path, origin, env)?.ok_or_else(|| {
-        Error::new(format!(
-            "No token for {origin}: set YONEDA_TOKEN or run `yoneda login --origin {origin}`"
-        ))
-    })
+    load_optional(path, origin, env)?
+        .ok_or_else(|| Error::new(missing(origin, env_agent().as_deref())))
 }
 
 /// The token for `origin` as `load` finds it, or `None` when there is none (a caller that
@@ -272,6 +319,79 @@ mod tests {
         assert!(remove(&path, None)?);
         assert!(!path.exists() && !remove(&path, None)?);
         Ok(())
+    }
+
+    #[test]
+    fn a_persons_login_stays_where_it_always_was() -> Result<()> {
+        let dir = tempfile::tempdir().context("tempdir")?;
+        let person = slot(dir.path(), None)?;
+        assert_eq!(person, dir.path().join("yoneda").join("credentials"));
+        // As an earlier CLI left it: a stored login reads as before.
+        std::fs::create_dir_all(dir.path().join("yoneda")).context("mkdir")?;
+        std::fs::write(
+            &person,
+            r#"{"origin":"https://a.example","token":"ypat_old"}"#,
+        )
+        .context("write")?;
+        let read = load(&person, "https://a.example", None)?;
+        assert_eq!(read.secret(), "ypat_old");
+        Ok(())
+    }
+
+    #[test]
+    fn an_agent_and_its_person_stay_signed_in_side_by_side() -> Result<()> {
+        let dir = tempfile::tempdir().context("tempdir")?;
+        let origin = "https://a.example";
+        let person = slot(dir.path(), None)?;
+        let bot = slot(dir.path(), Some("bot"))?;
+        let other = slot(dir.path(), Some("other"))?;
+        assert_ne!(person, bot);
+        assert_ne!(bot, other);
+        store(&person, origin, &Token::new("ypat_person")?)?;
+        store(&bot, origin, &Token::new("ypat_bot")?)?;
+        assert_eq!(load(&person, origin, None)?.secret(), "ypat_person");
+        assert_eq!(load(&bot, origin, None)?.secret(), "ypat_bot");
+        // An agent with no login of its own never borrows the person's.
+        assert!(load_optional(&other, origin, None)?.is_none());
+        assert!(remove(&bot, None)?);
+        assert_eq!(load(&person, origin, None)?.secret(), "ypat_person");
+        store(&bot, origin, &Token::new("ypat_bot")?)?;
+        assert!(remove(&person, None)?);
+        assert_eq!(load(&bot, origin, None)?.secret(), "ypat_bot");
+        Ok(())
+    }
+
+    #[test]
+    fn an_agents_slot_is_private_and_its_name_stays_inside_it() -> Result<()> {
+        let dir = tempfile::tempdir().context("tempdir")?;
+        for bad in ["../x", "a/b", "Bot", ".", "..", "a b", &"x".repeat(33)] {
+            assert!(slot(dir.path(), Some(bad)).is_err(), "{bad}");
+        }
+        let bot = slot(dir.path(), Some("review-bot_2"))?;
+        assert!(bot.starts_with(dir.path().join("yoneda")));
+        store(&bot, "https://a.example", &Token::new("ypat_bot")?)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = |p: &Path| -> Result<u32> {
+                let meta = std::fs::metadata(p).context("stat")?;
+                Ok(meta.permissions().mode() & 0o777)
+            };
+            assert_eq!(mode(&bot)?, 0o600);
+            let parent = bot.parent().ok_or_else(|| Error::new("no parent"))?;
+            assert_eq!(mode(parent)?, 0o700);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn says_how_an_agent_signs_in_when_it_has_no_login() {
+        assert!(missing("https://a.example", None).contains("yoneda login --origin"));
+        let agent = missing("https://a.example", Some("bot"));
+        assert!(
+            agent.contains("yoneda login --agent bot --origin"),
+            "{agent}"
+        );
     }
 
     #[test]

@@ -20,12 +20,15 @@ export const accountName = (account: string, showEmails = false) =>
   showEmails ? account : account.replace(EMAIL, HIDDEN_ACCOUNT);
 
 /**
- * A principal as people read it: `user:ada` → `ada`, `token:ci` → `ci (token)`, anything else
- * as it is; an email address in it becomes HIDDEN_ACCOUNT unless `showEmails`.
+ * A principal as people read it: `user:ada` → `ada`, `token:ci` → `ci (token)`,
+ * `agent:ada/bot` → `bot (agent of ada)`, anything else as it is; an email address in it becomes
+ * HIDDEN_ACCOUNT unless `showEmails`.
  */
 export function principalName(principal: string, showEmails = false): string {
   const [kind, ...rest] = principal.split(':');
   const name = rest.join(':');
+  const [owner, agent] = name.split('/');
+  if (kind === 'agent' && agent) return `${agent} (agent of ${accountName(owner, showEmails)})`;
   const shown =
     name && kind === 'user' ? name : name && kind === 'token' ? `${name} (token)` : principal;
   return accountName(shown, showEmails);

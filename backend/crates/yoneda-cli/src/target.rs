@@ -18,7 +18,10 @@ pub fn account_origin(flag: Option<&str>) -> Result<String> {
     let env = std::env::var("YONEDA_ORIGIN")
         .ok()
         .filter(|v| !v.trim().is_empty());
-    let stored = credentials::stored_origin(&credentials::default_path()?);
+    // An agent not signed in yet still means the platform its person uses. This is the origin
+    // alone: the token never crosses between the two stores.
+    let stored = credentials::stored_origin(&credentials::default_path()?)
+        .or_else(|| credentials::stored_origin(&credentials::path_for(None).ok()?));
     credentials::normalize_origin(
         flag.map(str::to_owned)
             .or(env)

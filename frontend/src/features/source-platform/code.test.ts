@@ -81,6 +81,8 @@ describe('directory activity', () => {
     expect(ago(0, 86_400_000)).toBe('yesterday');
     expect(principalName('user:ada')).toBe('ada');
     expect(principalName('token:ci')).toBe('ci (token)');
+    expect(principalName('agent:ada/review-bot')).toBe('review-bot (agent of ada)');
+    expect(principalName('agent:ada@example.com/bot')).toBe(`bot (agent of ${HIDDEN_ACCOUNT})`);
     expect(principalName('system')).toBe('system');
   });
   it('never shows an email-named account unless the page allows it', () => {

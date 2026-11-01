@@ -1,6 +1,7 @@
 // Device login approval (`/device`): `yoneda login` shows a user code; the signed-in owner
 // enters it here (or arrives with ?code=), picks scopes, expiry and repositories, and
 // approves or denies. The CLI then receives a personal access token; this page never does.
+// `yoneda login --agent <name>` is the same code for a narrower grant (DeviceAgent.tsx).
 import { type FormEvent, useState } from 'react';
 import {
   DEFAULT_EXPIRY_DAYS,
@@ -10,6 +11,13 @@ import {
   PAT_SCOPES,
   type PatScope,
 } from './connect';
+import {
+  AGENT_DEFAULT_SCOPES,
+  AgentFields,
+  type AgentForm,
+  agentGrant,
+  agentProblem,
+} from './DeviceAgent';
 import { Failure, Loading } from './SourceStatus';
 import { SourceApiError, sourceApi } from './sourceApi';
 import { ExpirySelect, RepoAllowlist, type RepoSummary, ScopeChecks } from './TokenParts';
@@ -50,9 +58,20 @@ export function DevicePage({ code: initial }: { code: string }) {
   const [scopes, setScopes] = useState<PatScope[]>(DEVICE_PAT_SCOPES);
   const [days, setDays] = useState(DEFAULT_EXPIRY_DAYS);
   const [allow, setAllow] = useState<string[]>([]);
+  const [form, setForm] = useState<AgentForm>({
+    scopes: AGENT_DEFAULT_SCOPES,
+    days: DEFAULT_EXPIRY_DAYS,
+    all: false,
+    repos: [],
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const valid = isUserCode(code);
+  const pending = useSource<{ agent: string | null; host: string | null }>(
+    valid ? `/device/pending?code=${normalizeUserCode(code)}` : null,
+  );
+  const agent = pending.data?.agent ?? null;
 
   async function decide(deny: boolean) {
     setBusy(true);
@@ -61,9 +80,13 @@ export function DevicePage({ code: initial }: { code: string }) {
       await sourceApi('/device/approve', {
         body: {
           user_code: normalizeUserCode(code),
-          scopes,
-          expires_days: days,
-          ...(allow.length ? { repos: allow } : {}),
+          ...(agent
+            ? agentGrant(form)
+            : {
+                scopes,
+                expires_days: days,
+                ...(allow.length ? { repos: allow } : {}),
+              }),
           ...(deny ? { deny: true } : {}),
         },
       });
@@ -78,15 +101,15 @@ export function DevicePage({ code: initial }: { code: string }) {
     event.preventDefault();
     void decide(false);
   };
-  const valid = isUserCode(code);
+  const ready = agent ? !agentProblem(form) : scopes.length > 0;
 
   return (
     <div className="source-device">
-      <h1>Connect a device</h1>
-      {repos.loading && !repos.data && <Loading what="your account" />}
+      <h1>{agent ? 'Connect an agent' : 'Connect a device'}</h1>
+      {((repos.loading && !repos.data) || pending.loading) && <Loading what="your account" />}
       {repos.error && <Failure error={repos.error} onRetry={repos.reload} />}
       {outcome && <DeviceOutcome outcome={outcome} />}
-      {repos.data && !outcome && (
+      {repos.data && !pending.loading && !outcome && (
         <form onSubmit={submit} className="source-token-form">
           <p>
             Approve only a code that <code>yoneda login</code> just showed you.
@@ -104,11 +127,28 @@ export function DevicePage({ code: initial }: { code: string }) {
               required
             />
           </label>
-          <ScopeChecks legend="Access" options={PAT_SCOPES} value={scopes} onChange={setScopes} />
-          <ExpirySelect id="device-expiry" value={days} onChange={setDays} />
-          <RepoAllowlist repos={repos.data.repos} value={allow} onChange={setAllow} />
+          {agent ? (
+            <AgentFields
+              agent={agent}
+              host={pending.data?.host}
+              repos={repos.data.repos}
+              form={form}
+              onChange={(next) => setForm({ ...form, ...next })}
+            />
+          ) : (
+            <>
+              <ScopeChecks
+                legend="Access"
+                options={PAT_SCOPES}
+                value={scopes}
+                onChange={setScopes}
+              />
+              <ExpirySelect id="device-expiry" value={days} onChange={setDays} />
+              <RepoAllowlist repos={repos.data.repos} value={allow} onChange={setAllow} />
+            </>
+          )}
           <div className="source-actions">
-            <button type="submit" disabled={busy || !valid || scopes.length === 0}>
+            <button type="submit" disabled={busy || !valid || !ready}>
               {busy ? 'Approving…' : 'Approve'}
             </button>
             <button

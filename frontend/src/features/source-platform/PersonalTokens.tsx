@@ -34,8 +34,9 @@ export type Pat = {
   created_at: number;
   expires_at: number | null;
   last_used_at: number | null;
-  /** `login`: made by `yoneda login` (the device flow); null: made on the website. */
-  origin?: 'login' | null;
+  /** `login`: made by `yoneda login` (the device flow); `agent:<name>`: by `yoneda login
+   * --agent`; null: made on the website. */
+  origin?: 'login' | `agent:${string}` | null;
   /** The machine a login token was signed in on (null when unknown). */
   host?: string | null;
   /** How many live SSH keys it added: revoking it removes them. */
@@ -103,7 +104,10 @@ export function PatTable({
 
 /** A token `yoneda login` made (the platform records its origin; older ones were marked by
  * their client name when origins began to be recorded). */
-export const isDeviceLogin = (token: Pat) => token.origin === 'login';
+export const isDeviceLogin = (token: Pat) => token.origin === 'login' || isAgent(token);
+
+/** A token an agent signed up for; its name is the agent's. */
+export const isAgent = (token: Pat) => Boolean(token.origin?.startsWith('agent:'));
 
 /** Only `which` of the account's tokens, keeping the read's state. */
 export const onlyTokens = (

@@ -26,6 +26,7 @@ const USE_RESOLUTION: i64 = 60_000;
 pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: TokenOp, now: i64) -> Result<Value> {
     match op {
         TokenOp::Create => create(db, c, now),
+        TokenOp::AgentRoom => super::agents::check_room(db, c, now),
         TokenOp::List => {
             account(db)?;
             let rows = db.query(
@@ -152,12 +153,17 @@ fn create<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         return Err(bad("Token names are 1-64 printable characters"));
     }
     let grant = grant(c)?;
-    // Only the device flow labels a token as a login (with the CLI's host).
+    // Only the device flow labels a token, as a login or an agent (with the CLI's host).
     let origin = match &c["origin"] {
         Value::Null => None,
-        Value::String(origin) if origin == "login" => Some("login"),
-        _ => return Err(bad("origin must be login, or null")),
+        Value::String(origin) if origin == "login" => Some(origin.as_str()),
+        Value::String(origin) if super::agents::named(origin).is_some() => Some(origin.as_str()),
+        _ => return Err(bad("origin must be login, an agent, or null")),
     };
+    if let Some(agent) = origin.and_then(super::agents::named) {
+        super::agents::allow(&grant)?;
+        super::agents::room(db, agent, now)?;
+    }
     let host = label(c, "host")?;
     if origin.is_none() && host.is_some() {
         return Err(bad("Only a login token names its host"));
