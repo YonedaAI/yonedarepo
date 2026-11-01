@@ -5,6 +5,7 @@ import { TRAFFIC_RANGES, type TrafficRange } from '../../shared/site-traffic';
 import { log } from './log';
 import { num, type SqlRow, sqlReader, text } from './platform-analytics-sql';
 import { type TrafficSpan, trafficSpan } from './platform-traffic-queries';
+import { agentReport } from './repo-usage';
 import {
   SITE_EVENT_BLOBS as B,
   SITE_EVENT_DURATION,
@@ -19,6 +20,7 @@ export const opsOn = (env: Env) => env.OPS_REPORT === 'on';
 export const adminReports = (env: Env): AdminReports => ({
   operations: opsOn(env),
   visitors: env.VISITORS === 'on',
+  agents: agentReport(env),
 });
 
 const rangeOf = (value: string | null): TrafficRange =>

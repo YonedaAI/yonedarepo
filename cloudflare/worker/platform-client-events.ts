@@ -6,15 +6,27 @@
 // outcome and how long the answer took, and an account that's ours leaves no point. With
 // REPO_ANALYTICS on, a clone, push or landing also holds the repository, bytes and how a landing
 // went (repo-usage.ts), still in the one point, indexed by repository so one busy repository
-// can't thin another's figures. Budget: docs/load-testing.md. Off unless TRAFFIC_EVENTS is `on`.
+// can't thin another's figures. With AGENT_REPORT on, an agent's point also holds a digest of its
+// token's id and a client name from a fixed list, and all its reads are written, so a credential
+// that only reads isn't missed. Budget: docs/load-testing.md. Off unless TRAFFIC_EVENTS is `on`.
 // A browser session is not a client here: it counts on the site, and only its landings count here,
 // under their own event, so the Traffic page's client figures stay the same.
+
+import { AGENT_CLIENTS } from '../../shared/platform-reports';
 import { afterAnswer, deferred } from './background';
-import { isInternal, requestAccount } from './internal-accounts';
+import { isInternal, type RequestAgent, requestAccount } from './internal-accounts';
 import { log } from './log';
 import { GIT_PATH } from './readable-paths';
-import { packDetail, repoAnalytics, requestActor, requestUsage, type Usage } from './repo-usage';
+import {
+  packDetail,
+  repoAnalytics,
+  requestActor,
+  requestAgent,
+  requestUsage,
+  type Usage,
+} from './repo-usage';
 import { countryOf, isOwnTraffic } from './site-events';
+import { sha } from './storage';
 import type { Env } from './types';
 
 export type ClientKind = 'cli' | 'git' | 'mcp' | 'token';
@@ -34,6 +46,7 @@ const EVERY: Record<Operation, number> = {
 };
 const MCP = /^\/api\/v1\/(?:repos\/r[0-9a-f]{20}\/)?mcp$/;
 const CLI_AGENT = /^yoneda-cli\//;
+const CREDENTIAL_LENGTH = 16;
 
 const plain = (method: string): Operation =>
   method === 'GET' || method === 'HEAD' ? 'read' : 'write';
@@ -68,15 +81,28 @@ export function outcomeOf(status: number): Outcome {
 const BROWSER_LANDING: Seen = { client: 'browser', operation: 'land' };
 const ACTIVITY = new Set(['land', 'mcp', 'write']);
 
+/** The client an agent names, in its token's name or else its user agent: both are its own word,
+ * so only the list's key is kept. */
+function selfReported(agent: RequestAgent, req: Request) {
+  const said = [agent.name, req.headers.get('user-agent') ?? ''].map((s) => s.toLowerCase());
+  const names = Object.keys(AGENT_CLIENTS);
+  return said.flatMap((s) => names.filter((name) => s.includes(name)))[0] ?? '';
+}
+
+/** What an agent's point adds: which credential, by a digest, and the client it named. */
+async function agentBlobs(agent: RequestAgent, req: Request) {
+  return [(await sha(agent.id)).slice(0, CREDENTIAL_LENGTH), selfReported(agent, req)];
+}
+
 /** What goes on a point with REPO_ANALYTICS on, read when it's written: a pack's point waits for
  * its last byte. A request refused as its caller's, or for a repository it can't see, names no
  * repository: figures can't be put on one by asking for it. */
-function usageFields(usage: Usage, seen: Seen, res: Response) {
+function usageFields(usage: Usage, seen: Seen, res: Response, agent: boolean) {
   packDetail(usage);
   const refused = outcomeOf(res.status) === 'unauthorized' || res.status === 404;
   const repo = refused ? '' : (usage.repo ?? '');
   const failed = usage.detail === 'refused' && res.status >= 500;
-  const person = requestActor();
+  const person = agent ? 'agent' : requestActor();
   return {
     repo,
     operation: usage.landing && ACTIVITY.has(seen.operation) ? 'land' : seen.operation,
@@ -104,18 +130,20 @@ export function recordClient(
   if (env.TRAFFIC_EVENTS !== 'on' || !env.SITE_EVENTS) return;
   try {
     if (isOwnTraffic(req)) return;
-    const usage = requestUsage(env);
+    const agent = requestAgent(env);
+    // A request that reached no repository still says which agent made it.
+    const usage = requestUsage(env) ?? (agent ? {} : null);
     const seen = clientRequest(req, new URL(req.url)) ?? (usage?.landing ? BROWSER_LANDING : null);
     if (!seen) return;
-    const every = EVERY[seen.operation];
+    const every = agent ? 1 : EVERY[seen.operation];
     if (random() * every >= 1) return;
     const report = env.TRAFFIC_REPORT === 'on';
     const held = req.headers.has('authorization') && res.status !== 401 && res.status !== 403;
     const empty = ['', '', '', '', ''];
     const doubles = [0, 1, every, held ? 1 : 0, 1];
     const browser = seen.client === 'browser';
-    const write = () => {
-      const added = usage ? usageFields(usage, seen, res) : null;
+    const write = (credential: string[] = []) => {
+      const added = usage ? usageFields(usage, seen, res, Boolean(agent)) : null;
       if (browser && !added?.repo) return;
       const blobs = [
         browser ? 'repo' : 'client',
@@ -131,7 +159,7 @@ export function recordClient(
       const point = report
         ? {
             indexes,
-            blobs: [...blobs, outcomeOf(res.status), ...(added?.blobs ?? [])],
+            blobs: [...blobs, outcomeOf(res.status), ...(added?.blobs ?? []), ...credential],
             doubles: [...doubles, Math.max(Date.now() - started, 0), ...(added?.doubles ?? [])],
           }
         : { indexes, blobs, doubles };
@@ -145,7 +173,8 @@ export function recordClient(
     }
     const finish = async () => {
       await pack;
-      if (!account || (await isInternal(env, account)) === false) write();
+      if (account && (await isInternal(env, account)) !== false) return;
+      write(agent ? await agentBlobs(agent, req) : []);
     };
     if (pack) {
       // A stream can't be awaited here: nothing reads it until this answer is returned.

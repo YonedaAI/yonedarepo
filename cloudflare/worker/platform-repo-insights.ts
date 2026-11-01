@@ -42,6 +42,7 @@ async function usageRows(env: Env, repo: string, span: TrafficSpan, fetcher: typ
 
 const WHO: Record<string, string> = {
   person: 'person',
+  agent: 'agent',
   personal_token: 'token',
   repo_token: 'token',
   platform: 'platform',

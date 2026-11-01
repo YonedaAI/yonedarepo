@@ -34,6 +34,7 @@ import {
   signups,
 } from './platform-admin-queries';
 import { rebuildRollup, revenue } from './platform-admin-revenue';
+import { agentView } from './platform-agent-report';
 import { setAsideAuditRow } from './platform-audit-set-aside';
 import { operatorOrgHold, operatorRepoHold } from './platform-holds';
 import { infraReport } from './platform-infra-report';
@@ -118,6 +119,7 @@ async function operatorRoute(
   if (section === 'traffic' && id === 'landings' && get) return landingReport(env, query);
   if (section === 'operations' && !id && get) return operationsReport(env, query);
   if (section === 'visitors' && !id && get) return visitorReport(env, query);
+  if (section === 'agents' && !id && get) return agentView(env, query);
   if (section === 'infrastructure' && !id && get) return infraReport(env);
   if (section === 'backfill' && !id && post) {
     const after = (await body().catch(() => ({}) as Json)).after;

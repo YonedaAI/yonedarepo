@@ -69,8 +69,8 @@ it.each([['not json'], ['{}'], ['{"scripts":[],"queues":{"a":1},"d1":"d","r2":"b
 );
 
 it('says which tabs exist here', () => {
-  expect(adminReports({} as Env)).toEqual({ operations: false, visitors: false });
-  expect(adminReports({ OPS_REPORT: 'on', VISITORS: 'on' } as Env)).toEqual({ operations: true, visitors: true });
+  expect(adminReports({} as Env)).toEqual({ operations: false, visitors: false, agents: false });
+  expect(adminReports({ OPS_REPORT: 'on', VISITORS: 'on' } as Env)).toEqual({ operations: true, visitors: true, agents: false });
 });
 
 it('reads a queue: the last backlog, the worst wait, and dead letters', () => {

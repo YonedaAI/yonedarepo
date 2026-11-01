@@ -19,24 +19,29 @@ const LIST_LIMIT = 10_000;
 /** The owner token's and operators' scripts: ours, whoever runs them. */
 const OPERATOR = '_admin';
 
-/** Who a request's credentials were. A person is a signed-in session; a token may be an agent, a
- * script or a person at a terminal, which only Phase 4 of docs/analytics-plan.md can tell. */
-export type CredentialKind = 'person' | 'personal_token' | 'repo_token' | 'anonymous';
+/** Who a request's credentials were. A person is a signed-in session. A token is a script or a
+ * person at a terminal, or an agent with AGENT_REPORT on (`RequestAgent`). */
+export type CredentialKind = 'person' | 'agent' | 'personal_token' | 'repo_token' | 'anonymous';
+/** An agent's credential: its token's id, and the name it signed up with. */
+export type RequestAgent = { id: string; name: string };
 type Noted = {
   account: string | null;
   actor?: CredentialKind;
+  agent?: RequestAgent;
   /** What the request did to a repository (repo-usage.ts, which the front Worker never loads). */
   usage?: object;
 };
 /** What of `Credentials` (repo-ops.ts) names an account. Both Workers load this module, and the
  * front Worker imports no platform module, so it says so here. */
 type Named = {
-  _pat?: { workspace: string };
+  _pat?: { workspace: string; id?: string; principal?: string };
   _session?: { workspace: string; human?: true };
   _token?: string;
   _anonymous?: true;
 };
 type Platform = { internalAccounts(): Promise<string[]> };
+
+const AGENT_PRINCIPAL = 'agent:';
 
 const noted = new AsyncLocalStorage<Noted>();
 let held: { at: number; accounts: Set<string> } | null = null;
@@ -55,6 +60,10 @@ export function noteAccount(auth: object | null) {
   else if (_pat || _session) request.actor = 'personal_token';
   else if (_token) request.actor = 'repo_token';
   else if (_anonymous) request.actor = 'anonymous';
+  // `agent:<account>/<name>`: the platform's own reading of the token's origin, never a claim.
+  const principal = _pat?.principal ?? '';
+  if (_pat?.id && principal.startsWith(AGENT_PRINCIPAL))
+    request.agent = { id: _pat.id, name: principal.slice(principal.lastIndexOf('/') + 1) };
 }
 
 /** The account the running request's credentials named, or null. */

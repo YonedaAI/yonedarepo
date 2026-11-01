@@ -43,6 +43,10 @@ export const SITE_EVENT_BLOBS = {
   actor: 'blob15',
   reason: 'blob16',
   detail: 'blob17',
+  /** Platform points of an agent with AGENT_REPORT on: 16 hex of a digest of the token's id, and
+   * the client it named, from AGENT_CLIENTS. */
+  credential: 'blob18',
+  agentClient: 'blob19',
 } as const;
 /** `double1`: 1 when the request looked automated, else 0. */
 export const SITE_EVENT_BOT = 'double1';

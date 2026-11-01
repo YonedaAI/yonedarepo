@@ -1,8 +1,9 @@
 // The operators' admin pages (`/admin/*`): Overview, Users (and one user), Sign-ups, Repositories,
-// Audit log, Traffic and, where they exist, Visitors, Operations and Infrastructure, under one bar. The sidebar shows the entry only to
+// Audit log, Traffic and, where they exist, Visitors, Agents, Operations and Infrastructure, under one bar. The sidebar shows the entry only to
 // operators; the API refuses everyone else whatever this page shows.
 import { linkTo, type Navigate } from '../shell/useRoute';
 import type { Loaded } from '../source-platform/useSource';
+import { AdminAgents } from './AdminAgents';
 import { AdminAudit } from './AdminAudit';
 import { AdminRepos, AdminSignups, AdminUsers } from './AdminLists';
 import { AdminInfrastructure, AdminOperations } from './AdminOperations';
@@ -78,6 +79,7 @@ export function AdminRoot({
       {section === 'audit' && <AdminAudit />}
       {section === 'traffic' && <AdminTraffic />}
       {section === 'visitors' && <AdminVisitors />}
+      {section === 'agents' && <AdminAgents />}
       {section === 'operations' && <AdminOperations />}
       {section === 'infrastructure' && (
         <>

@@ -139,6 +139,9 @@ describe('its words', () => {
     expect(reasonLabel('some_new_code')).toBe('Something else');
     expect(whoLabel('person')).toBe('People in the browser');
     expect(whoLabel('repo_token')).toBe('Tokens and agents');
+    expect(whoLabel('agent')).toBe('Agents');
+    expect(whoLabel('token', true)).toBe('Other tokens');
+    expect(whoLabel('person', true)).toBe('People in the browser');
   });
 
   it('adds a day up to one bar', () => {
