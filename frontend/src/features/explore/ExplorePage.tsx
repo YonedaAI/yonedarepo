@@ -13,13 +13,7 @@ import { createdOn, type ExploreRepo, exploreList, explorePath, ownerName } from
 
 type Page = { repos: ExploreRepo[] };
 
-export function ExplorePage({
-  authenticated,
-  navigate,
-}: {
-  authenticated: boolean;
-  navigate: Navigate;
-}) {
+export function ExplorePage({ navigate }: { navigate: Navigate }) {
   const first = useSource<Page>(explorePath());
   const [later, setLater] = useState<ExploreRepo[][]>([]);
   const [busy, setBusy] = useState(false);

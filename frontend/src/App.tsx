@@ -354,9 +354,7 @@ export function App() {
                 onNew={() => setCreating(true)}
               />
             )}
-            {route.view === 'explore' && (
-              <ExplorePage authenticated={session.authenticated} navigate={navigate} />
-            )}
+            {route.view === 'explore' && <ExplorePage navigate={navigate} />}
             {route.view === 'global-search' && (
               <SearchPage
                 key={tick}
