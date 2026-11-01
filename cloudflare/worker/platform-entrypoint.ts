@@ -3,6 +3,7 @@
 // jobs (checks, store creation, object and ref projection, derived data, clone packs, webhooks,
 // clearance, account emails, the Flight log's confirmations, the operators' sign-up notice). No agent runs, harnesses, providers
 // or budgets.
+
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { AccountCreated } from './account-index';
 import { internalAccounts } from './internal-accounts';
@@ -10,6 +11,7 @@ import { log, served } from './log';
 import { accountCreated, SIGNUP_NOTICE } from './platform-accounts';
 import { nightlyReconcile } from './platform-admin-billing';
 import { verifyEmail } from './platform-email-verify';
+import { projectHandle } from './platform-handles';
 import { settleFailedJob } from './platform-job-settle';
 import { laterIfHeld } from './platform-legal-hold';
 import { NEWSLETTER_JOB, sweepNewsletter } from './platform-newsletter';
@@ -137,6 +139,10 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
   /** A new account (RPC from the front Worker, or SELF): indexes it, queues the operators'
    * sign-up notice and its welcome email. Not on any HTTP route, so only Workers bound to
    * this one can ask. */
+  /** The front Worker's handle pick reaches D1 here (account-handles.ts). */
+  handleChosen(account: string, handle: string) {
+    return projectHandle(this.env, account, handle);
+  }
   accountCreated(account: string, details?: AccountCreated) {
     return accountCreated(this.env, account, details);
   }
