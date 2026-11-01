@@ -1,4 +1,5 @@
-// The Flight log (`/updates`): email only, plus an unticked consent box. Whether it takes sign-ups
+// The Flight log (`/updates`): email only, plus an unticked consent box, over the three kinds of
+// email the list sends. Whether it takes sign-ups
 // is the platform's answer (NEWSLETTER): until it says yes the page reads Coming soon, with no
 // form, and the space is held so nothing moves when it does. After a sign-up every address reads
 // the same, because the platform never says who is already on the list.
@@ -12,6 +13,25 @@ import { siteLink } from './SiteLayout';
 import { SiteRadar } from './SiteRadar';
 
 const FAILED = 'Could not sign you up. Try again in a minute.';
+/** What the list sends, and only that. Nothing promises a schedule or early access: no release
+ * has a set date, and nothing in the product can let a subscriber in ahead of anyone else. */
+const SENT = [
+  {
+    label: 'Releases',
+    title: 'What we shipped',
+    line: 'What changed on the platform and in the CLI.',
+  },
+  {
+    label: 'Features',
+    title: 'What’s new to try',
+    line: 'A note when a new feature is ready to use.',
+  },
+  {
+    label: 'Engineering',
+    title: 'How it was built',
+    line: 'The numbers behind the work, like our global-scale tests.',
+  },
+];
 type Field = 'email' | 'consent' | 'form';
 type Problem = { field: Field; message: string };
 
@@ -35,7 +55,7 @@ export function formProblem(email: string, consent: boolean): Problem | null {
   return null;
 }
 
-function SignUpForm({ onSent }: { onSent: () => void }) {
+export function SignUpForm({ onSent }: { onSent: () => void }) {
   const [email, setEmail] = useState('');
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -82,7 +102,7 @@ function SignUpForm({ onSent }: { onSent: () => void }) {
           checked={consent}
           onChange={(event) => setConsent(event.target.checked)}
         />
-        <span>Email me what YonedaRepo ships. I can unsubscribe at any time.</span>
+        <span>Email me YonedaRepo updates. I can unsubscribe at any time.</span>
       </label>
       <button type="submit" className="site-button" disabled={busy}>
         Get updates
@@ -108,20 +128,33 @@ export function SiteUpdates() {
       live = false;
     };
   }, []);
-  if (state === 'sent')
-    return <Frame title="Check your inbox" line="Open the link in the email to confirm." />;
   return (
-    <Frame title="Flight log" line="Updates on what we ship, by email.">
-      {state === 'open' && <SignUpForm onSent={() => setState('sent')} />}
-      {state === 'closed' && <p className="site-updates-soon">Coming soon</p>}
-    </Frame>
+    <>
+      {state === 'sent' ? (
+        <Frame title="Check your inbox" line="Open the link in the email to confirm." />
+      ) : (
+        <Frame title="Flight log" line="Updates on what we ship, by email, when there’s news.">
+          {state === 'open' && <SignUpForm onSent={() => setState('sent')} />}
+          {state === 'closed' && <p className="site-updates-soon">Coming soon</p>}
+        </Frame>
+      )}
+      <ul className="site-cells site-tiles site-updates-sent">
+        {SENT.map(({ label, title, line }) => (
+          <li key={label}>
+            <span className="site-updates-label">{label}</span>
+            <h2>{title}</h2>
+            <span>{line}</span>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }
 
 const LINKS = {
   confirm: {
     title: 'Confirm updates',
-    line: 'Press Confirm to start getting updates on what we ship.',
+    line: 'Press Confirm to start getting updates from YonedaRepo.',
     button: 'Confirm',
     path: 'v1/newsletter/confirm',
     doneTitle: 'You’re on the list',

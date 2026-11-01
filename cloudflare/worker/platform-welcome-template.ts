@@ -122,7 +122,7 @@ export function renderNewsletterConfirm({
     blocks: [
       {
         kind: 'link',
-        text: 'Open the link and press Confirm to get updates on what YonedaRepo ships. The link works for 7 days.',
+        text: 'Open the link and press Confirm to get YonedaRepo updates. The link works for 7 days.',
         href: confirmUrl,
         label: 'Confirm your updates',
       },

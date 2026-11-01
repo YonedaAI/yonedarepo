@@ -67,8 +67,8 @@
   isolation: isolate;
   display: grid;
   place-items: center;
-  min-height: 620px;
-  padding: 88px var(--site-gutter);
+  min-height: 480px;
+  padding: 72px var(--site-gutter);
 }
 .site-updates-body {
   position: relative;
@@ -145,6 +145,18 @@
   font-size: var(--fs-sm);
 }
 
+/* What the list sends: the site's own tiles, under the form. */
+.site-updates-sent h2 {
+  margin: 0;
+  font-size: var(--fs-md);
+  line-height: 1.3;
+}
+.site-updates-label {
+  margin-bottom: var(--sp-1);
+  color: var(--site-faint);
+  font-size: var(--fs-xs);
+}
+
 @media (max-width: 800px) {
   .site-band-cta {
     padding-block: 72px;
@@ -153,7 +165,7 @@
     font-size: var(--fs-2xl);
   }
   .site-updates {
-    min-height: 520px;
+    min-height: 420px;
     padding-block: 56px;
   }
 }

@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { formatSourceRoute, parseSourceRoute } from '../source-platform/sourceRoute';
 import { SiteHome } from './SiteHome';
-import { formProblem, SiteUpdates, SiteUpdatesLink } from './SiteUpdates';
+import { formProblem, SignUpForm, SiteUpdates, SiteUpdatesLink } from './SiteUpdates';
 import { seoManifest } from './seo';
 
 const render = (element: ReturnType<typeof createElement>) => renderToStaticMarkup(element);
@@ -45,6 +45,15 @@ describe('the form', () => {
     expect(formProblem(' Ada@Example.com ', true)).toBeNull();
   });
 
+  it('asks for an email address and consent, and nothing else, with the box unticked', () => {
+    const form = render(createElement(SignUpForm, { onSent: () => {} }));
+    const inputs = form.match(/<input[^>]*>/g) ?? [];
+    expect(inputs).toHaveLength(2);
+    expect(inputs[0]).toContain('type="email"');
+    expect(inputs[1]).toContain('type="checkbox"');
+    expect(inputs[1]).not.toContain('checked');
+  });
+
   it('shows no form before the platform says it is open', () => {
     const page = render(createElement(SiteUpdates));
     expect(page).toContain('Flight log');
@@ -59,6 +68,31 @@ describe('the form', () => {
     const incomplete = render(createElement(SiteUpdatesLink, { ...props, token: '' }));
     expect(incomplete).toContain('invalid, used or expired');
     expect(incomplete).not.toContain('<form');
+  });
+});
+
+describe('what the list sends', () => {
+  const page = render(createElement(SiteUpdates));
+
+  it('names its three kinds of email under the form', () => {
+    expect(page.match(/<h2>/g)).toHaveLength(3);
+    for (const title of ['What we shipped', 'What’s new to try', 'How it was built'])
+      expect(page).toContain(title);
+  });
+
+  it('promises no schedule and no early access', () => {
+    expect(page.toLowerCase()).not.toMatch(
+      /early access|every (week|month|release)|weekly|monthly/,
+    );
+  });
+
+  it('stays off the pages an emailed link opens', () => {
+    const link = createElement(SiteUpdatesLink, {
+      action: 'confirm',
+      token: 'abc',
+      navigate: () => {},
+    });
+    expect(render(link)).not.toContain('site-updates-sent');
   });
 });
 
