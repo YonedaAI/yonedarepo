@@ -20,7 +20,7 @@ import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
 import { OWN_TRAFFIC } from './client.mjs';
 import { CASES, FIX, SLOPPY_FILE } from './web-agents-cases.mjs';
-import { AGENTS, addAgent, commitFromPage, createRepository, ctcPage, facts, pageShows, restore, spentSoFar, turnOnRules } from './web-agents-pages.mjs';
+import { AGENTS, addAgent, commitFromPage, createRepository, ctcPage, facts, lookAtForm, pageShows, restore, spentSoFar, turnOnRules } from './web-agents-pages.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -28,6 +28,7 @@ const { values } = parseArgs({
     only: { type: 'string', default: 'clean,noplan,sloppy,drift,never' },
     keep: { type: 'boolean', default: false },
     headed: { type: 'boolean', default: false },
+    looks: { type: 'boolean', default: false },
     'cap-usd': { type: 'string', default: '5' },
   },
 });
@@ -166,6 +167,7 @@ async function main() {
     await step('Landing rules: 0 approvals, 2 required checks, the 3 switches', () => turnOnRules(s));
     for (const agent of AGENTS) await step(`Add ${agent.name}, Block landing at left alone`, () => addAgent(s, agent));
 
+    if (values.looks) await step('The form: wide, phone, light, dark, error, keyboard', () => lookAtForm(s));
     for (const id of chosen.filter((x) => x !== 'never')) await flyCase(s, CASES[id]);
 
     if (chosen.includes('sloppy') && out.cases.sloppy?.facts?.status === 'open') {
