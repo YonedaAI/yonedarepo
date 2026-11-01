@@ -216,12 +216,12 @@ describe('overview cards', () => {
 });
 
 describe('the set-up form', () => {
-  it('pre-selects every repository and Active at first set-up, all repositories with none, else what is set', () => {
+  it('starts with no repository chosen and Active: adding an agent spends only where asked', () => {
     expect(initialForm(state('code-review'), repos)).toEqual({
       trigger: state('code-review').settings.trigger,
       block_at: null,
       all_repos: false,
-      repos: [repoA, repoB],
+      repos: [],
       active: true,
     });
     expect(initialForm(state('code-review'), [])).toMatchObject({ all_repos: true, repos: [] });
@@ -235,8 +235,8 @@ describe('the set-up form', () => {
 
   it('sends only the trigger, repositories and Active, never a field YonedaRepo maintains', () => {
     const fresh = state('code-review');
-    expect(updateBody(fresh, initialForm(fresh, repos))).toEqual({
-      repos: [repoA, repoB],
+    expect(updateBody(fresh, { ...initialForm(fresh, repos), repos: [repoB] })).toEqual({
+      repos: [repoB],
       active: true,
     });
     const enabled = state('code-review', setUp());
@@ -295,11 +295,9 @@ describe('the set-up form', () => {
 
   it('flags a bad form early', () => {
     const agent = state('code-review');
-    expect(formProblem(agent, initialForm(agent, repos))).toBe('');
+    expect(formProblem(agent, { ...initialForm(agent, repos), repos: [repoA] })).toBe('');
     expect(formProblem(agent, initialForm(agent, []))).toBe('');
-    expect(formProblem(agent, { ...initialForm(agent, repos), repos: [] })).toMatch(
-      /at least one repository/,
-    );
+    expect(formProblem(agent, initialForm(agent, repos))).toMatch(/at least one repository/);
     const many = Array.from({ length: 30 }, (_, i) => `p${i}/`);
     const form = initialForm(agent, repos);
     expect(formProblem(agent, { ...form, trigger: { ...form.trigger, paths: many } })).not.toBe('');

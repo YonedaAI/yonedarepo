@@ -22,15 +22,16 @@ export interface AgentForm {
   active: boolean;
 }
 
-/** The form for an agent: when it runs and where. At its first set-up every repository the
- * caller owns is chosen, or, with none yet, all repositories including new ones. */
+/** The form for an agent: when it runs and where. At its first set-up nothing is chosen, since
+ * an agent spends credit wherever it runs; with no repositories to choose from, it joins those
+ * to come, which the page says. */
 export function initialForm(agent: AgentState, repos: { id: string }[]): AgentForm {
   const first = agent.created_at === null;
   return {
     trigger: { ...agent.settings.trigger },
     block_at: agent.settings.block_at,
     all_repos: first ? repos.length === 0 : agent.all_repos,
-    repos: first ? repos.map((r) => r.id) : [...agent.enabled_repos],
+    repos: first ? [] : [...agent.enabled_repos],
     active: first ? true : agent.active,
   };
 }
@@ -64,6 +65,9 @@ export function updateBody(agent: AgentState, form: AgentForm): AgentUpdate {
   return body;
 }
 
+/** No repository chosen: where a set-up starts, so a hint and never an error. */
+export const NO_REPO_CHOSEN = 'Choose at least one repository, or all repositories.';
+
 /** The form's first problem (the server checks again), or '' when it can be saved. */
 export function formProblem(agent: ManagedAgentDefinition, form: AgentForm): string {
   try {
@@ -72,8 +76,7 @@ export function formProblem(agent: ManagedAgentDefinition, form: AgentForm): str
     if (e instanceof SettingsError) return e.message;
     throw e;
   }
-  if (!form.all_repos && form.repos.length === 0)
-    return 'Choose at least one repository, or all repositories.';
+  if (!form.all_repos && form.repos.length === 0) return NO_REPO_CHOSEN;
   return '';
 }
 
