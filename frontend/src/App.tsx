@@ -354,9 +354,7 @@ export function App() {
                 onNew={() => setCreating(true)}
               />
             )}
-            {route.view === 'explore' && (
-              <ExplorePage authenticated={session.authenticated} navigate={navigate} />
-            )}
+            {route.view === 'explore' && <ExplorePage navigate={navigate} />}
             {route.view === 'global-search' && (
               <SearchPage
                 key={tick}
@@ -400,7 +398,6 @@ export function App() {
                 navigate={navigate}
                 authenticated={session.authenticated}
                 onSignIn={() => setPanel('account')}
-                onNew={() => setCreating(true)}
               />
             )}
             {route.view === 'admin' &&
@@ -470,7 +467,6 @@ export function App() {
                   platform.reload();
                   favorites.reload();
                 }}
-                onNew={() => setCreating(true)}
               />
             )}
           </>

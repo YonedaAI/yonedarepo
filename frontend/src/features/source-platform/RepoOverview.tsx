@@ -129,7 +129,7 @@ export function RepoOverview({
       </div>
       {route.at !== undefined && (
         <p className="source-note" role="status">
-          Time travel: generated from {route.ref} as of log version {route.at}.
+          Showing {route.ref} at version {route.at}.
         </p>
       )}
       {view.error && <Failure error={view.error} onRetry={view.reload} />}
@@ -137,8 +137,7 @@ export function RepoOverview({
       {data && (
         <>
           <p className="source-meta">
-            Generated from commit <code>{shortSha(data.commit)}</code> · {data.files_analyzed}{' '}
-            source files analysed · references are matched by name, not type-checked.
+            From commit <code>{shortSha(data.commit)}</code> · {data.files_analyzed} source files
           </p>
           {data.files_truncated && (
             <p className="source-note" role="status">

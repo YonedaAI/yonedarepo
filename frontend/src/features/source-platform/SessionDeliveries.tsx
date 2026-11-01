@@ -1,6 +1,7 @@
 // The context a coding session was given: the start packet's items, then each injection
 // (a file it read, a new prompt), as the agent hooks recorded them. Labels are the items'
 // current text; a prompt itself is never kept.
+import { formatBytes } from '../repo-settings/lfsQuota';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import {
   type DeliveredItem as DeliveredItemRow,
@@ -12,6 +13,8 @@ import { deliveredKey } from './routeModel';
 import { Failure, Loading } from './SourceStatus';
 import { when } from './sourceApi';
 import { useSource } from './useSource';
+
+const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /** One delivered item: a link where it has a page, else its kind and label. */
 export function DeliveredItem({
@@ -63,13 +66,12 @@ export function SessionDeliveries({
       ) : loaded.error ? (
         <Failure error={loaded.error} onRetry={loaded.reload} />
       ) : !loaded.data?.deliveries.length ? (
-        <p className="source-empty">
-          No context was recorded for this session (its CLI may predate continuous context).
-        </p>
+        <p className="source-empty">No context was recorded for this session.</p>
       ) : (
         <>
           <p className="source-meta">
-            {loaded.data.deliveries.length} deliveries · {loaded.data.bytes} bytes in all
+            {count(loaded.data.deliveries.length, 'delivery', 'deliveries')} ·{' '}
+            {formatBytes(loaded.data.bytes)} in all
             {loaded.data.truncated ? ' · showing the first 500' : ''}
           </p>
           <ol className="agent-list session-deliveries">
@@ -78,8 +80,8 @@ export function SessionDeliveries({
                 <span>
                   <strong>{deliveryCause(d)}</strong>{' '}
                   <span className="source-meta">
-                    · {d.items.length} items · {d.bytes} bytes · {people.principal(d.principal)} ·{' '}
-                    {when(d.at)}
+                    · {count(d.items.length, 'item', 'items')} · {formatBytes(d.bytes)} ·{' '}
+                    {people.principal(d.principal)} · {when(d.at)}
                   </span>
                 </span>
                 <ul className="memory-anchors">

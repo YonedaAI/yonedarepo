@@ -4,6 +4,7 @@
 // breakdown (model calls and container time).
 import type { ManagedRun, RunDetail, WorkspaceState } from '../../../../shared/managed-agents';
 import { MANAGED_AGENTS } from '../../../../shared/managed-agents';
+import { EmptyState } from '../../components/EmptyState';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { shortSha, when } from '../source-platform/sourceApi';
 import { useSource } from '../source-platform/useSource';
@@ -36,9 +37,7 @@ function RunsTable({
 }) {
   if (!runs.length)
     return (
-      <p className="source-empty">
-        No runs yet. An enabled agent runs when a Landing opens or is pushed.
-      </p>
+      <EmptyState title="No runs yet">An agent runs when a Landing opens or is pushed.</EmptyState>
     );
   return (
     <div className="source-table-wrap">
@@ -51,7 +50,7 @@ function RunsTable({
             <th>Head</th>
             <th>Result</th>
             <th>Model</th>
-            <th>Cost</th>
+            <th className="num">Cost</th>
             <th>Duration</th>
             <th>Status</th>
           </tr>
@@ -93,7 +92,7 @@ function RunsTable({
                   </span>
                 )}
               </td>
-              <td>{formatCost(run.cost_usd)}</td>
+              <td className="num">{formatCost(run.cost_usd)}</td>
               <td>{runDuration(run)}</td>
               <td>
                 <StatusChip run={run} />
@@ -247,12 +246,12 @@ export function AgentRunDetail({
                       {detail.cost.map((c) => (
                         <tr key={`${c.at}:${c.amount}:${c.note ?? ''}:${c.input_tokens ?? ''}`}>
                           <td>{costLabel(c)}</td>
-                          <td>{formatCost(costUsd(c))}</td>
+                          <td className="num">{formatCost(costUsd(c))}</td>
                         </tr>
                       ))}
-                      <tr>
+                      <tr className="total">
                         <th scope="row">Total</th>
-                        <td>{formatCost(detail.run.cost_usd)}</td>
+                        <td className="num">{formatCost(detail.run.cost_usd)}</td>
                       </tr>
                     </tbody>
                   </table>

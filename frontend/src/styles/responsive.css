@@ -91,10 +91,6 @@
   .account-panel {
     padding: 20px;
   }
-  .workspace-start {
-    margin: 28px auto;
-    padding: 0 24px;
-  }
 }
 @media (max-width: 480px) {
   .dialog {

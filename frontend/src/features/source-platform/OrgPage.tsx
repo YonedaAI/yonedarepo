@@ -96,13 +96,7 @@ function OrgRepos({
   if (repos.loading && !repos.data) return <Loading what="repositories" />;
   if (repos.error) return <Failure error={repos.error} onRetry={repos.reload} />;
   const list = [...(repos.data?.repos ?? [])].sort((a, b) => a.name.localeCompare(b.name));
-  if (list.length === 0)
-    return (
-      <p className="source-empty">
-        No repositories you can use yet. Owners create them with New repository and this
-        organization as the owner.
-      </p>
-    );
+  if (list.length === 0) return <p className="source-empty">No repositories you can use yet.</p>;
   return (
     <ul className="org-repos">
       {list.map((r) => (
@@ -165,9 +159,16 @@ export function OrgPage({
   const [account, setAccount] = useState('');
   const [role, setRole] = useState<OrgRole>('member');
 
-  if (loaded.loading && !loaded.data) return <Loading what="the organization" />;
-  if (loaded.error || !loaded.data)
-    return <Failure error={loaded.error ?? 'Organization not found'} onRetry={loaded.reload} />;
+  if (!loaded.data || loaded.error)
+    return (
+      <div className="org-page">
+        {loaded.loading && !loaded.data ? (
+          <Loading what="the organization" />
+        ) : (
+          <Failure error={loaded.error ?? 'Organization not found'} onRetry={loaded.reload} />
+        )}
+      </div>
+    );
   const data = loaded.data;
   const manages = data.role === 'owner';
   const base = `/orgs/${org}`;
@@ -186,8 +187,8 @@ export function OrgPage({
     <div className="org-page source-tokens">
       <h1>{data.org}</h1>
       <p className="source-meta">
-        Organization created {when(data.created_at)} by {data.created_by.replace(/^user:/, '')}. You
-        are {data.role === 'owner' ? 'an owner' : 'a member'} ({ORG_ROLE_HELP[data.role]}).
+        Created {when(data.created_at)} by {data.created_by.replace(/^user:/, '')}. You are{' '}
+        {data.role === 'owner' ? 'an owner' : 'a member'}.
       </p>
       {data.audit_log && manages && <OrgTabs org={org} tab={tab} navigate={navigate} />}
       {tab === 'audit' && data.audit_log && manages && <OrgAudit org={org} />}

@@ -38,8 +38,7 @@ export function BillingSettings({ workspace }: { workspace: string }) {
   return (
     <>
       <p className="source-meta">
-        Every platform feature is free. Managed agent runs are paid for from your credit: their
-        model calls at the provider&apos;s rate plus 30%, and their container time.
+        Every platform feature is free. Managed agent runs use your credit.
       </p>
       {loadState(loaded, 'billing') ??
         (billing && totals && (
@@ -57,8 +56,7 @@ export function BillingSettings({ workspace }: { workspace: string }) {
                 }
                 detail={
                   <>
-                    {formatCost(billing.credit.granted_usd)} of credit added so far, including the
-                    starting credit added when you set up your first agent.{' '}
+                    {formatCost(billing.credit.granted_usd)} added so far,{' '}
                     {formatCost(billing.credit.used_usd)} used.
                   </>
                 }
@@ -123,8 +121,8 @@ export function BillingSettings({ workspace }: { workspace: string }) {
                   title="No card on file."
                   detail={
                     billing.billing === 'stripe'
-                      ? 'Add a card to unlock the promotional credit, create your own agents and top up automatically.'
-                      : 'Card billing is coming. Until then, the agents YonedaRepo maintains run on your starting credit.'
+                      ? 'Add a card to unlock the promotional credit and top up automatically.'
+                      : 'Card billing is coming. Until then, agents run on your starting credit.'
                   }
                   action={
                     !offerPromo && <AddCardButton workspace={workspace} billing={billing.billing} />
@@ -139,7 +137,7 @@ export function BillingSettings({ workspace }: { workspace: string }) {
                     <thead>
                       <tr>
                         <th>Date (UTC)</th>
-                        <th>Amount</th>
+                        <th className="num">Amount</th>
                         <th>Status</th>
                       </tr>
                     </thead>
@@ -147,7 +145,7 @@ export function BillingSettings({ workspace }: { workspace: string }) {
                       {billing.top_ups.map((t) => (
                         <tr key={t.id}>
                           <td>{topUpDay(t.created_at)}</td>
-                          <td>{formatCost(t.amount_usd)}</td>
+                          <td className="num">{formatCost(t.amount_usd)}</td>
                           <td>
                             <span className={`chip run-${topUpTone(t.status)}`}>
                               {topUpStatusLabel(t.status)}
@@ -171,8 +169,8 @@ export function BillingSettings({ workspace }: { workspace: string }) {
                       <tr>
                         <th>Repository</th>
                         <th>Agent</th>
-                        <th>Runs</th>
-                        <th>Cost</th>
+                        <th className="num">Runs</th>
+                        <th className="num">Cost</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -180,22 +178,22 @@ export function BillingSettings({ workspace }: { workspace: string }) {
                         <tr key={`${u.repo}:${u.agent}`}>
                           <td>{u.repo_name}</td>
                           <td>{agentName(u.agent)}</td>
-                          <td>{u.runs}</td>
-                          <td>{formatCost(u.cost_usd)}</td>
+                          <td className="num">{u.runs}</td>
+                          <td className="num">{formatCost(u.cost_usd)}</td>
                         </tr>
                       ))}
-                      <tr>
+                      <tr className="total">
                         <th scope="row" colSpan={2}>
                           Total
                         </th>
-                        <td>{totals.runs}</td>
-                        <td>{formatCost(totals.cost_usd)}</td>
+                        <td className="num">{totals.runs}</td>
+                        <td className="num">{formatCost(totals.cost_usd)}</td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
               ) : (
-                <p className="source-empty">No agent has run yet, so nothing has been used.</p>
+                <p className="source-empty">No agent has run yet.</p>
               )}
             </SettingsSection>
           </>

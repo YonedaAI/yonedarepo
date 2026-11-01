@@ -38,10 +38,7 @@ export function RepoManagedAgents({
       </div>
       {loadState(loaded, 'agents') ??
         (on.length === 0 ? (
-          <p className="source-empty">
-            No managed agent reviews this repository yet. Add one from the Agents page to review
-            every change.
-          </p>
+          <p className="source-empty">No managed agent reviews this repository yet.</p>
         ) : (
           <div className="source-table-wrap">
             <table className="source-table">

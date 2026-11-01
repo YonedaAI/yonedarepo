@@ -75,10 +75,7 @@ export function ChecksSettings({
   return (
     <>
       <h3>Checks the platform runs</h3>
-      <p className="source-meta">
-        Defined here, never by the commit under test, so a change cannot weaken its own check. Each
-        runs on the exact commit before it can land.
-      </p>
+      <p className="source-meta">Each runs on the exact commit before it can land.</p>
       {runners.length === 0 && <p className="source-empty">No checks yet. Add one below.</p>}
       {runners.map(([name, runner]) => (
         <RunnerEditor
@@ -97,9 +94,7 @@ export function ChecksSettings({
       />
       <h3>Who may post each reported check</h3>
       <p className="source-meta">
-        Required checks without a runner are posted from outside. By default only the owner may post
-        one; list <code>owner</code> and <code>token:&lt;name&gt;</code> entries to allow a
-        repository token (e.g. CI).
+        Only the owner may post by default. Add <code>token:&lt;name&gt;</code> to allow a token.
       </p>
       {posted.length === 0 ? (
         <p className="source-empty">No reported checks are required.</p>

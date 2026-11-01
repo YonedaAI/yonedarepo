@@ -113,8 +113,7 @@ export function OrgHoldSection({
         />
       ) : (
         <p className="source-meta">
-          A hold keeps everything the organization owns from being deleted, including repositories
-          made later. Landing and reads carry on.
+          A hold stops anything the organization owns from being deleted.
         </p>
       )}
       {manages && (

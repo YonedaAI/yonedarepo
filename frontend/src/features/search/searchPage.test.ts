@@ -119,7 +119,7 @@ describe('the Search page', () => {
 
   it('offers a first repository to an account without one', () => {
     const html = page({ route: { view: 'global-search', q: 'retry' }, repos: [] });
-    expect(html).toContain('You have no repositories to search yet.');
+    expect(html).toContain('No repositories to search yet');
     expect(html).toContain('New repository');
   });
 

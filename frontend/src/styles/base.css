@@ -46,9 +46,15 @@ select {
   border: 1px solid var(--line-strong);
   background: var(--surface);
   border-radius: 5px;
-  padding: 10px 12px;
+  /* Beside a button in a row: the same 38px. */
+  min-height: 38px;
+  padding: 8px 12px;
   color: var(--text);
   min-width: 0;
+}
+input[type="checkbox"],
+input[type="radio"] {
+  min-height: 0;
 }
 input:focus-visible,
 textarea:focus-visible,

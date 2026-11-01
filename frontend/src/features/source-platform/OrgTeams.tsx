@@ -115,8 +115,7 @@ export function OrgTeams({
     <section aria-labelledby="org-teams-heading">
       <h2 id="org-teams-heading">Teams</h2>
       <p className="source-meta">
-        Give a team a role on a repository in its Members settings as{' '}
-        <code>{teamEntry(org, '<team>')}</code>.
+        Repository Settings → Members: add a team as <code>{teamEntry(org, '<team>')}</code>.
       </p>
       {teams.length === 0 ? (
         <p className="source-empty">No teams yet.</p>

@@ -6,6 +6,8 @@ import type {
   ManagedRun,
   RunTile,
 } from '../../../../shared/managed-agents';
+import { EmptyState } from '../../components/EmptyState';
+import { linkTo, type Navigate } from '../shell/useRoute';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { when } from '../source-platform/sourceApi';
 import type { Loaded } from '../source-platform/useSource';
@@ -85,24 +87,35 @@ export function StatusChip({ run }: { run: Pick<ManagedRun, 'status' | 'value'> 
 }
 
 function Unavailable() {
-  return (
-    <div className="source-empty-state">
-      <p>
-        <strong>Managed agents are not available here.</strong> This deployment does not run
-        YonedaRepo&apos;s managed agents.
-      </p>
-    </div>
-  );
+  return <EmptyState title="Managed agents are not available here" />;
 }
 
 function NotOwner() {
   return (
-    <div className="source-empty-state">
-      <p>
-        <strong>Only a workspace owner can see its agents.</strong> Ask an owner of this account or
-        organization, or pick a workspace you own.
-      </p>
-    </div>
+    <EmptyState title="Only a workspace owner can see its agents">
+      Ask an owner, or pick a workspace you own.
+    </EmptyState>
+  );
+}
+
+export function NoSuchAgent({
+  agent,
+  space,
+  navigate,
+}: {
+  agent: string;
+  space: { workspace?: string };
+  navigate: Navigate;
+}) {
+  return (
+    <EmptyState
+      title={`There is no agent called “${agent}”`}
+      action={
+        <a className="button-link" {...linkTo({ view: 'agents-home', ...space }, navigate)}>
+          See all agents
+        </a>
+      }
+    />
   );
 }
 
@@ -118,10 +131,7 @@ export function loadState<T>(loaded: Loaded<T>, what: string) {
 export function BillingComing({ children }: { children?: React.ReactNode }) {
   return (
     <div className="agents-billing-note" role="note">
-      <p>
-        {children ??
-          'Setting up billing is coming. Until then, the agents YonedaRepo maintains run on your starting credit.'}
-      </p>
+      <p>{children ?? 'Billing is coming. Until then, agents run on your starting credit.'}</p>
       <button type="button" disabled title="Billing is not available yet">
         Set up billing
       </button>

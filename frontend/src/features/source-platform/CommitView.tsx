@@ -55,7 +55,7 @@ export function CommitView({
           ))}
         </p>
         {d.read_set.length > 0 && (
-          <p className="source-meta">Declared read set: {d.read_set.join(', ')}</p>
+          <p className="source-meta">Files read: {d.read_set.join(', ')}</p>
         )}
       </header>
       <CommitLanding

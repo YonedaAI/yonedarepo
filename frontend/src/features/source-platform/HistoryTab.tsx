@@ -72,7 +72,11 @@ export function HistoryTab({
         <RepoTransactions repo={route.repo} onNavigate={navigate} />
       )}
       {route.view === 'branches' && (
-        <RepoBranches repo={route.repo} canWrite={canMoveBranches(status?.viewer)} />
+        <RepoBranches
+          repo={route.repo}
+          canWrite={canMoveBranches(status?.viewer)}
+          viewerKnown={status !== undefined}
+        />
       )}
     </section>
   );

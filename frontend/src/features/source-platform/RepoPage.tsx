@@ -43,7 +43,6 @@ export function RepoPage({
   navigate,
   onDeleted,
   onMissing,
-  onNew,
   onSignIn,
   onLoaded,
 }: {
@@ -58,7 +57,6 @@ export function RepoPage({
   onDeleted: () => void;
   /** The repository is not there for this viewer (deleted, unknown, private or not theirs). */
   onMissing: () => void;
-  onNew: () => void;
   onSignIn?: () => void;
   /** The loaded name and visibility, and whether the viewer may change settings, for the
    * shell's header and sidebar. */
@@ -100,14 +98,7 @@ export function RepoPage({
       });
   }, [data, repo, owner, onLoaded]);
   if (missing)
-    return (
-      <RepoNotFound
-        navigate={navigate}
-        onNew={onNew}
-        authenticated={authenticated}
-        onSignIn={onSignIn}
-      />
-    );
+    return <RepoNotFound navigate={navigate} authenticated={authenticated} onSignIn={onSignIn} />;
   return (
     // Members see email-named accounts as they are; anyone reading only because the repository
     // is public sees "member" instead (people.ts).
@@ -144,7 +135,13 @@ export function RepoPage({
               </p>
             )}
             {data && progress.phase === 'none' && (
-              <StatusChips repo={repo} status={data} owner={owner} navigate={navigate} />
+              <StatusChips
+                repo={repo}
+                status={data}
+                owner={owner}
+                readOnly={access.readOnly}
+                navigate={navigate}
+              />
             )}
             {access.fork && data && progress.phase === 'none' && (
               <ForkButton
@@ -159,8 +156,7 @@ export function RepoPage({
           {data && <RepoHoldBanner repo={repo} />}
           {drift.map((p) => (
             <p key={p.refname} role="alert" className="source-error">
-              {p.refname.replace(/^refs\/heads\//, '')} in the Git object store has drifted from the
-              landed branch and is no longer updated: {p.detail}
+              {p.refname.replace(/^refs\/heads\//, '')} stopped updating for Git clients.
             </p>
           ))}
           {status.error && (

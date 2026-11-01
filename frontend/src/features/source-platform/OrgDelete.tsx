@@ -45,9 +45,8 @@ export function DeleteOrganization({
     <section aria-labelledby="org-delete-heading" className="source-danger">
       <h2 id="org-delete-heading">Delete organization</h2>
       <p>
-        Deleting removes its members and teams, and its name is retired. It cannot be undone. An
-        organization that still owns repositories cannot be deleted: delete them first. Type{' '}
-        <strong>{org}</strong> to confirm.
+        This can&apos;t be undone. Delete its repositories first. Type <strong>{org}</strong> to
+        confirm.
       </p>
       {repoCount !== undefined && repoCount > 0 && (
         <p className="source-meta">
@@ -57,8 +56,7 @@ export function DeleteOrganization({
       {inWindow > 0 && (
         <p className="source-meta">
           {inWindow} deleted {inWindow === 1 ? 'repository' : 'repositories'} can still be restored.
-          Deleting the organization ends that: only its owners can restore them, and they are purged
-          on schedule.
+          After this, only their owners can restore them.
         </p>
       )}
       {held && <p className="source-meta">{HELD_NOTE}</p>}

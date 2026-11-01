@@ -48,17 +48,6 @@
 .settings-card p {
   margin: 0;
 }
-.settings-empty {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  align-items: center;
-  padding: 56px 22px;
-  text-align: center;
-}
-.settings-empty h2 {
-  margin: 0;
-}
 /* The text wraps below the action rather than narrow past reading. */
 .settings-row {
   display: flex;

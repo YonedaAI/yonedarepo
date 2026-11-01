@@ -15,8 +15,7 @@
   display: grid;
   gap: 12px;
 }
-.welcome-story h1,
-.workspace-start h1 {
+.welcome-story h1 {
   font-size: clamp(36px, 4.5vw, 58px);
   font-weight: 600;
   line-height: 1.12;
@@ -124,26 +123,6 @@ details.account-panel[open] {
   display: block;
   overflow-wrap: anywhere;
   padding: 18px 0;
-}
-.workspace-start {
-  max-width: 1000px;
-  margin: 40px auto;
-  padding: 0 40px;
-}
-.workspace-start > p {
-  max-width: 55ch;
-  font-size: var(--text-lg);
-}
-.workspace-start-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: stretch;
-  gap: 12px;
-  margin: 12px 0 32px;
-}
-.workspace-start-actions > button {
-  min-height: 44px;
-  padding: 0 18px;
 }
 .workspace-loading {
   text-align: center;

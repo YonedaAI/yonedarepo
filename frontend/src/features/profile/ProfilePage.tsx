@@ -1,7 +1,8 @@
 // A profile (`/<handle>`): who it is (avatar or initial, name, handle, person or organization),
 // then two tabs: Overview, the pinned or most recently active repositories as cards, and
 // Repositories, every public repository as a list. An unknown handle is a not-found page.
-import { Building2, Compass, GitBranch, User } from 'lucide-react';
+import { Building2, GitBranch, User } from 'lucide-react';
+import { EmptyState } from '../../components/EmptyState';
 import { Avatar } from '../shell/Avatar';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { ago } from '../source-platform/fileActivity';
@@ -54,13 +55,18 @@ function RepoCard({ repo, navigate }: { repo: ProfileRepo; navigate: Navigate })
 function NotFound({ handle, navigate }: { handle: string; navigate: Navigate }) {
   return (
     <section className="profile" aria-labelledby="profile-heading">
-      <h1 id="profile-heading">No account named {handle}</h1>
-      <p className="source-meta">
-        There is no person or organization at this address, or it was renamed.
-      </p>
-      <a className="quiet profile-explore" {...linkTo({ view: 'explore' }, navigate)}>
-        <Compass size={16} aria-hidden="true" /> Explore public repositories
-      </a>
+      <EmptyState
+        level={1}
+        id="profile-heading"
+        title={`No account named ${handle}`}
+        action={
+          <a className="button-link" {...linkTo({ view: 'explore' }, navigate)}>
+            Explore public repositories
+          </a>
+        }
+      >
+        It may have been renamed.
+      </EmptyState>
     </section>
   );
 }
@@ -76,9 +82,17 @@ export function ProfilePage({
 }) {
   const profile = useSource<Profile>(profilePath(handle));
   if (profile.code === 'NOT_FOUND') return <NotFound handle={handle} navigate={navigate} />;
-  if (profile.error) return <Failure error={profile.error} onRetry={profile.reload} />;
   const p = profile.data;
-  if (!p) return <Loading what={`${handle}’s profile`} />;
+  if (profile.error || !p)
+    return (
+      <div className="profile">
+        {profile.error ? (
+          <Failure error={profile.error} onRetry={profile.reload} />
+        ) : (
+          <Loading what={`${handle}’s profile`} />
+        )}
+      </div>
+    );
   const repos = p.repositories;
   // Before the cards render, so their links already carry the readable address (idempotent).
   for (const r of repos) rememberRepoName(r.id, p.handle, r.name);

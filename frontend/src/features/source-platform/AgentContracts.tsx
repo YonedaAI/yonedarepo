@@ -2,6 +2,7 @@
 // symbol, newest first. A symbol's record history opens on demand, with whether its latest
 // record still holds on main (authored) or the code changed since (stale: out of date).
 import { useState } from 'react';
+import { EmptyState } from '../../components/EmptyState';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { appendPage, type ContractGroup, type ContractRecord, groupContracts } from './agentModel';
 import { usePeople } from './people';
@@ -97,31 +98,25 @@ export function AgentContracts({ repo, navigate }: { repo: string; navigate: Nav
       setBusy(false);
     }
   }
+  if (records.length === 0)
+    return (
+      <section aria-labelledby="contracts-heading">
+        <EmptyState id="contracts-heading" title="No contracts yet">
+          When an agent writes a note on a function or type, it shows up here.
+        </EmptyState>
+      </section>
+    );
   return (
     <section aria-labelledby="contracts-heading">
       <h2 id="contracts-heading">Contracts</h2>
       <p className="agent-subtitle">
         Short notes on functions and types that agents read before changing them.
       </p>
-      {records.length === 0 ? (
-        <div className="source-empty-state">
-          <p>
-            <strong>No contracts yet.</strong> A contract is a short note on a function or type:
-            what it takes, what it returns, what it changes, what can go wrong, and what must always
-            stay true. Agents read it before changing that code, and it's marked out of date when
-            the code changes.
-          </p>
-          <p className="source-meta">
-            Agents add one with the MCP tool <code>symbol_contract_record</code>.
-          </p>
-        </div>
-      ) : (
-        <ul className="agent-contracts" aria-label="Contracts">
-          {groupContracts(records).map((g) => (
-            <ContractRow key={`${g.path}:${g.symbol}`} repo={repo} group={g} navigate={navigate} />
-          ))}
-        </ul>
-      )}
+      <ul className="agent-contracts" aria-label="Contracts">
+        {groupContracts(records).map((g) => (
+          <ContractRow key={`${g.path}:${g.symbol}`} repo={repo} group={g} navigate={navigate} />
+        ))}
+      </ul>
       {error && (
         <p role="alert" className="source-error">
           {error}

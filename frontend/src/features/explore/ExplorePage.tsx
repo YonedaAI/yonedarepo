@@ -2,6 +2,7 @@
 // not. Each opens on its files; "Load more" reads the page before the oldest shown.
 import { ArrowRight, GitBranch } from 'lucide-react';
 import { useState } from 'react';
+import { EmptyState } from '../../components/EmptyState';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { PublicBadge } from '../source-platform/PublicBadge';
 import { rememberRepoName } from '../source-platform/repoNames';
@@ -12,13 +13,7 @@ import { createdOn, type ExploreRepo, exploreList, explorePath, ownerName } from
 
 type Page = { repos: ExploreRepo[] };
 
-export function ExplorePage({
-  authenticated,
-  navigate,
-}: {
-  authenticated: boolean;
-  navigate: Navigate;
-}) {
+export function ExplorePage({ navigate }: { navigate: Navigate }) {
   const first = useSource<Page>(explorePath());
   const [later, setLater] = useState<ExploreRepo[][]>([]);
   const [busy, setBusy] = useState(false);
@@ -43,10 +38,9 @@ export function ExplorePage({
       <div className="page-heading">
         <h1 id="explore-heading">Explore</h1>
       </div>
-      <p className="source-meta">
-        Public repositories: anyone can read and clone them, even without an account.
-        {authenticated && ' Make one of yours public from its Settings → Visibility.'}
-      </p>
+      {repos.length > 0 && (
+        <p className="source-meta">Public repositories anyone can read and clone.</p>
+      )}
       {first.loading && !first.data && <Loading what="public repositories" />}
       {first.error && (
         <Failure
@@ -57,9 +51,7 @@ export function ExplorePage({
           }}
         />
       )}
-      {first.data && repos.length === 0 && (
-        <p className="source-empty">No public repositories yet.</p>
-      )}
+      {first.data && repos.length === 0 && <EmptyState title="No public repositories yet" />}
       {repos.length > 0 && (
         <ul className="home-repo-list" aria-label="Public repositories" aria-busy={busy}>
           {repos.map((r) => (

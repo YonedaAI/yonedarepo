@@ -178,7 +178,7 @@ export function AdminUser({
                 type="text"
                 maxLength={200}
                 value={note}
-                placeholder="Why (shown in the ledger)"
+                placeholder="Why (shown in the credit entries)"
                 onChange={(event) => setNote(event.target.value)}
               />
             </label>
@@ -192,7 +192,7 @@ export function AdminUser({
       {!a.billing && a.credit && a.credit.entries.length > 0 && (
         <section className="home-section" aria-labelledby="admin-user-ledger">
           <h3 id="admin-user-ledger" className="home-label">
-            Latest ledger entries
+            Latest credit entries
           </h3>
           <div className="source-table-wrap">
             <table className="source-table admin-table">

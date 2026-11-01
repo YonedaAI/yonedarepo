@@ -118,7 +118,8 @@
 .admin-search input {
   flex: 1;
   min-width: 0;
-  padding: 8px 0;
+  min-height: 36px;
+  padding: 0;
   border: 0;
   background: transparent;
   color: var(--text);

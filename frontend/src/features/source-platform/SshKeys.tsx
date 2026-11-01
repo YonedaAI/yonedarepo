@@ -63,7 +63,7 @@ export function SshKeyTable({
   );
 }
 
-/** One machine's setup: install the CLI, then `yoneda ssh setup`, one Copy each. The config
+/** One machine's setup: install the CLI, sign in, then `yoneda ssh setup`, one Copy each. The config
  * lines stay behind Manual setup for a machine where neither can run. */
 export function SshSetup({ access, origin }: { access?: SshAccess; origin: string }) {
   if (!access) return null;
@@ -74,11 +74,10 @@ export function SshSetup({ access, origin }: { access?: SshAccess; origin: strin
   return (
     <>
       <InstallCommand origin={origin} />
+      <CopyBlock label="Sign in" text={loginCommand(origin)} />
       <CopyBlock label="Set up SSH on this machine" text={SSH_SETUP_COMMAND} />
       <p className="source-meta">
-        Sign in first with <code>{loginCommand(origin)}</code>. The setup uses your{' '}
-        <code>id_ed25519</code> key or makes one, adds it here and writes its{' '}
-        <code>~/.ssh/config</code> entry. Then clone with <code>{access.clone_url}</code>.
+        Then clone with <code>{access.clone_url}</code>.
       </p>
       {access.ssh_config && (
         <details className="source-details">
@@ -124,8 +123,7 @@ export function SshKeyDialog({ onAdded, onClose }: { onAdded: () => void; onClos
     <Dialog title="Add SSH key" onClose={onClose} locked={busy} initialFocus="#ssh-key">
       <form onSubmit={add} className="source-token-form">
         <p className="source-meta">
-          Paste the contents of a <code>.pub</code> file, for example{' '}
-          <code>~/.ssh/id_ed25519.pub</code>, or run{' '}
+          Paste a <code>.pub</code> file, or run{' '}
           <code>yoneda ssh-key add ~/.ssh/id_ed25519.pub</code>.
         </p>
         <label htmlFor="ssh-title" className="source-field">

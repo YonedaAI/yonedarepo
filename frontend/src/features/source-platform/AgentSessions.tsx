@@ -1,6 +1,7 @@
 // Agents → Sessions: every coding session recorded on the repository, newest first, one row
 // per session with the commits it produced; filtered by CLI, model or branch.
 import { useEffect, useId, useState } from 'react';
+import { EmptyState } from '../../components/EmptyState';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import {
   appendPage,
@@ -18,24 +19,12 @@ import { Failure, Loading } from './SourceStatus';
 import { shortSha, sourceApi, when } from './sourceApi';
 import { useSource } from './useSource';
 
-/** How sessions get here, for the empty state. */
-export function HowSessionsAreRecorded() {
+/** A repository with no sessions, and how the first one appears. */
+export function NoSessions() {
   return (
-    <div className="source-empty-state">
-      <p>
-        <strong>No sessions recorded yet.</strong> A session record says which coding session
-        produced a commit: the CLI, the model, a short summary and its transcript (credentials
-        redacted).
-      </p>
-      <p>
-        The Yoneda plugins for Claude Code and opencode record one for each commit pushed in a turn.
-        From any other agent, after pushing:{' '}
-        <code>
-          yoneda session record --cli &lt;cli&gt; --summary &lt;text&gt; --model &lt;model&gt;
-        </code>{' '}
-        (or MCP <code>git_session_record</code>).
-      </p>
-    </div>
+    <EmptyState id="sessions-heading" title="No sessions yet">
+      Work with an agent and push your changes to record the first session.
+    </EmptyState>
   );
 }
 
@@ -87,8 +76,8 @@ function SessionRow({
         <span className="agent-summary">{summaryText(s)}</span>
       </a>
       <span className="source-meta">
-        {people.principal(s.recorded_by)} · {when(s.at)} · {reads} declared read
-        {reads === 1 ? '' : 's'}
+        {people.principal(s.recorded_by)} · {when(s.at)} · {reads} file
+        {reads === 1 ? '' : 's'} read
         {s.transcript
           ? ` · ${transcriptLabel(s)}`
           : s.transcript_ref && (
@@ -150,14 +139,22 @@ export function AgentSessions({
   }
   const set = (key: keyof SessionFilters) => (value: string) =>
     setFilters((f) => ({ ...f, [key]: value }));
+  if (rows.length === 0 && !filtered)
+    return (
+      <section aria-labelledby="sessions-heading">
+        <NoSessions />
+      </section>
+    );
   return (
     <section aria-labelledby="sessions-heading">
       <div className="agent-head">
         <div>
           <h2 id="sessions-heading">Sessions</h2>
-          <p className="agent-subtitle">
-            Which coding session made each commit: the tool, the model and a short summary.
-          </p>
+          {rows.length > 0 && (
+            <p className="agent-subtitle">
+              Which session made each commit: the tool, the model and a summary.
+            </p>
+          )}
         </div>
         <div className="agent-filters">
           <Filter label="CLI" value={filters.cli} options={data.clis} onChange={set('cli')} />
@@ -175,13 +172,9 @@ export function AgentSessions({
           Only the newest 2,000 commits of {filters.ref} were searched for sessions.
         </p>
       )}
-      {rows.length === 0 &&
-        (filtered ? (
-          <p className="source-empty">No sessions match these filters.</p>
-        ) : (
-          <HowSessionsAreRecorded />
-        ))}
-      {rows.length > 0 && (
+      {rows.length === 0 ? (
+        <p className="source-empty">No sessions match these filters.</p>
+      ) : (
         <ul className="agent-sessions" aria-label="Sessions" aria-busy={first.loading}>
           {groupSessions(rows).map((g) => (
             <SessionRow key={g.key} repo={repo} records={g.records} navigate={navigate} />

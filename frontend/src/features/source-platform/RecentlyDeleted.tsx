@@ -117,9 +117,9 @@ export function DeletedList({
   if (repos.length === 0)
     return (
       <p className="source-empty">
-        Nothing here.
-        {days > 0 &&
-          ` A deleted repository stays here for ${Math.ceil(days)} ${days > 1 ? 'days' : 'day'}, then it is purged for good.`}
+        {days > 0
+          ? `Nothing deleted in the last ${Math.ceil(days)} ${days > 1 ? 'days' : 'day'}.`
+          : 'Nothing here.'}
       </p>
     );
   return (

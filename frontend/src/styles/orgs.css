@@ -1,4 +1,8 @@
 /* Organizations: the org page's teams and lists, and team entries among repository members. */
+.org-page {
+  max-width: 1024px;
+  padding: 24px 32px 48px;
+}
 .org-repos,
 .org-teams,
 .org-team-members {
@@ -61,6 +65,14 @@
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 0.75rem;
+}
+.org-team-actions .source-token-form {
+  flex: 1 1 280px;
+  flex-wrap: nowrap;
+  margin-top: 0;
+}
+.org-page .admin-tabs {
+  margin-bottom: 16px;
 }
 .member-kind {
   border: 1px solid var(--line);

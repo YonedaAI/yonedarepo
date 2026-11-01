@@ -141,7 +141,7 @@ export function RepoTokens({ repo }: { repo: string }) {
             />
           </label>
           <ScopeChecks legend="Scopes" options={OPTIONS} value={scopes} onChange={setScopes} />
-          <label htmlFor="repo-token-paths" className="source-field">
+          <label htmlFor="repo-token-paths" className="source-field settings-wide">
             Paths (optional)
             <input
               id="repo-token-paths"
@@ -152,7 +152,7 @@ export function RepoTokens({ repo }: { repo: string }) {
               aria-describedby="repo-token-paths-help"
             />
             <span id="repo-token-paths-help" className="source-meta">
-              Files or directories, comma separated. Leave empty for the whole repository.
+              Comma separated. Leave empty for the whole repository.
             </span>
           </label>
           <button type="submit" disabled={busy || !name || scopes.length === 0}>

@@ -9,6 +9,7 @@ import {
   Network,
   Plus,
 } from 'lucide-react';
+import { EmptyState } from '../../components/EmptyState';
 import { describeFailure } from '../source-platform/SourceStatus';
 import { AccountPanel } from './AccountPanel';
 
@@ -86,21 +87,17 @@ export function WorkspaceWelcome({
       </section>
     );
   return (
-    <section className="workspace-start">
-      <div className="intent-symbol">
-        <GitBranch size={28} />
-      </div>
-      <h1>Your first repository.</h1>
-      <p>
-        Create one here, then clone and push with Git, or connect an agent through the CLI or MCP.
-        Commits are checked, reviewed and landed on the server.
-      </p>
-      <div className="workspace-start-actions">
+    <EmptyState
+      level={1}
+      title="No repositories yet"
+      action={
         <button type="button" onClick={onNew}>
-          <Plus size={17} />
+          <Plus size={17} aria-hidden="true" />
           New repository
         </button>
-      </div>
-    </section>
+      }
+    >
+      Create one, then clone it and push with Git.
+    </EmptyState>
   );
 }

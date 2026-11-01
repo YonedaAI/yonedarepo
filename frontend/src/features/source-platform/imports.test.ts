@@ -228,7 +228,7 @@ describe('a history filling in behind a landed main', () => {
     const progress = { recorded: 120, total: 233 };
     const shown = renderToStaticMarkup(createElement(HistoryImportStatus, { progress }));
     expect(shown).toContain('Importing 120 of 233 commits');
-    expect(shown).toContain('what has arrived so far');
+    expect(shown).toContain('fill in as commits arrive');
     expect(shown).toContain('role="status"');
   });
 

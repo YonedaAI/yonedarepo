@@ -254,12 +254,7 @@ export function PersonalTokens({
     <SettingsSection id="pat" title="Personal access tokens">
       <SettingsRow
         title="Git, agents and CI"
-        detail={
-          <>
-            Use a token as your Git password, or give one to a cloud agent.{' '}
-            <code>yoneda login</code> creates its own.
-          </>
-        }
+        detail="Use a token as your Git password, or give one to a cloud agent."
         action={
           <button type="button" className="quiet" onClick={() => setCreating(true)}>
             Create token
