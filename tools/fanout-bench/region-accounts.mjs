@@ -21,6 +21,11 @@ export class RegionSession {
     const row = answer.failed ? { ok: false, status: 0, error: 'BENCH_CLIENT', message: answer.failed } : answer.results[0];
     return { status: row.status, ok: row.ok, body: row.value ?? {}, error: row.error, message: row.message };
   }
+  async get(path) {
+    const answer = await this.raw('GET', path);
+    if (!answer.ok) throw new Error(`GET ${path}: ${answer.status} ${answer.error} ${answer.message ?? ''}`);
+    return answer.body;
+  }
   async post(path, body = {}) {
     const answer = await this.raw('POST', path, body);
     if (!answer.ok) throw new Error(`POST ${path}: ${answer.status} ${answer.error} ${answer.message ?? ''}`);

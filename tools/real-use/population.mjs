@@ -41,6 +41,20 @@ async function save(file, pool) {
   await writeFile(file, `${JSON.stringify({ ...pool, saved_at: new Date().toISOString() }, null, 2)}\n`);
 }
 
+/** Makes a repository, or finds it where a setup that stopped made it without saving it. */
+async function madeOrFound(session, body) {
+  try {
+    return await session.post('/api/v1/repos', body);
+  } catch (e) {
+    if (!/NAME_TAKEN/.test(e.message)) throw e;
+  }
+  const { repos } = await session.get('/api/v1/repos');
+  const { id } = repos.find((repo) => repo.name === body.name);
+  const { refs } = await session.get(`/api/v1/repos/${id}/refs`);
+  const main = refs.find((ref) => ref.name === 'refs/heads/main');
+  return { id, commit: main?.commit ?? main?.commit_id };
+}
+
 /** Signs every account in, signing up the missing, then makes the missing repositories. */
 export async function preparePool({ arm, target, call, kitPassword, accounts, reposPerAccount, files, regions, log }) {
   const file = poolPath(`real-use-${arm}`);
@@ -62,7 +76,7 @@ export async function preparePool({ arm, target, call, kitPassword, accounts, re
     const name = seedName(arm, i, r);
     const seed = seedFiles(name, files);
     const body = { name, ...(arm === 'region' && { region_hint: serveOf(i) }), policy: { required_checks: [], approvals: 0 }, files: Object.entries(seed).map(([path, text]) => ({ path, content_b64: b64(text) })), message: 'Seed', author: AUTHOR };
-    const { id, commit } = await sessions[i].post('/api/v1/repos', body);
+    const { id, commit } = await madeOrFound(sessions[i], body);
     pool.repos.push({ id, name, owner: i, seed_commit: commit, files });
     await save(file, pool);
     log(`repository ${pool.repos.length}`);
