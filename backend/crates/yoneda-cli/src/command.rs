@@ -213,8 +213,7 @@ pub struct Anchor {
 pub enum HookEvent {
     /// Claude Code SessionStart: the repository's context, and the session id exported.
     ClaudeStart,
-    /// Claude Code PostToolUse on Read/Grep: records the files read, and adds the memories
-    /// and contracts on them that this session has not been shown yet.
+    /// Claude Code PostToolUse on Read/Grep: records the files read, adds what is unseen on them.
     ClaudeRead,
     /// Claude Code UserPromptSubmit: adds what is relevant to the prompt, not shown yet.
     ClaudePrompt,
@@ -255,6 +254,7 @@ pub enum Command {
         origin: Option<String>,
         with_token: bool,
         browser: bool,
+        agent: Option<String>,
     },
     Logout {
         origin: Option<String>,

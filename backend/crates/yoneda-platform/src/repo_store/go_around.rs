@@ -22,7 +22,8 @@ fn open(select: &str) -> String {
          FROM change_comments WHERE change_number=? GROUP BY principal) \
          SELECT {select} FROM change_comments k JOIN newest n ON n.principal=k.principal \
          WHERE k.change_number=? AND k.path IS NOT NULL AND k.resolved_at IS NULL \
-         AND (k.principal NOT LIKE 'token:%' OR k.commit_id=n.looked_at)"
+         AND ((k.principal NOT LIKE 'token:%' AND k.principal NOT LIKE 'agent:%') \
+         OR k.commit_id=n.looked_at)"
     )
 }
 
@@ -38,7 +39,7 @@ pub(super) fn open_count<S: SqlStore>(db: &S, number: &Value) -> Result<u64> {
 pub(super) fn from_people<S: SqlStore>(db: &S, number: &Value) -> Result<u64> {
     let count = db.query(
         &format!(
-            "{} AND k.principal NOT LIKE 'token:%'",
+            "{} AND k.principal NOT LIKE 'token:%' AND k.principal NOT LIKE 'agent:%'",
             open("COUNT(*) AS n")
         ),
         &[number.clone(), number.clone()],
@@ -89,7 +90,10 @@ pub(super) fn agent_findings<S: SqlStore>(db: &S, commit: &ObjectId, refname: &s
         return Ok(0);
     };
     let count = db.query(
-        &format!("{} AND k.principal LIKE 'token:%'", open("COUNT(*) AS n")),
+        &format!(
+            "{} AND (k.principal LIKE 'token:%' OR k.principal LIKE 'agent:%')",
+            open("COUNT(*) AS n")
+        ),
         &[number.clone(), number],
     )?;
     Ok(count.first().and_then(|r| r["n"].as_u64()).unwrap_or(0))

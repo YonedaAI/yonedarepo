@@ -3,6 +3,7 @@
 //! mints the personal token when the approved code is first redeemed, so a code is single
 //! use and no secret waits in storage. Poll outcomes are answers, not errors, so the poll
 //! bookkeeping (interval, consumption) commits with them.
+use super::agents;
 use super::op::DeviceOp;
 use super::*;
 use subtle::ConstantTimeEq;
@@ -29,9 +30,11 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: DeviceOp, now: i64) -> 
             if client.trim().is_empty()
                 || client.chars().count() > 64
                 || client.chars().any(char::is_control)
+                || agents::claims(&client)
             {
                 return Err(bad("client_name must be 1-64 printable characters"));
             }
+            let client = agents::asked(c)?.unwrap_or(client);
             // The machine the CLI runs on, labelling the token it receives.
             let host = label(c, "host")?;
             db.query("DELETE FROM device_codes WHERE user_code=?", &[json!(code)])?;
@@ -42,21 +45,17 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: DeviceOp, now: i64) -> 
             Ok(json!({"user_code":code,"expires_at":now+LIFETIME_MS,"interval":INTERVAL_MS/1000}))
         }
         DeviceOp::Approve => {
-            let Some(row) = row else {
-                return Err(Error::new("NOT_FOUND", "Unknown or used code"));
-            };
-            if expires(&row) <= now {
-                return Err(Error::new("EXPIRED_TOKEN", "This code has expired"));
-            }
-            if row["status"] != "pending" {
-                return Err(Error::new("NOT_FOUND", "Unknown or used code"));
-            }
+            let row = waiting(row, now)?;
             let account = string(c, "account")?;
             let deny = c["deny"] == true;
             let grant = if deny {
                 Value::Null
             } else {
-                super::tokens::grant(c)?
+                let grant = super::tokens::grant(c)?;
+                if agent_of(&row).is_some() {
+                    agent_grant(c, &grant)?;
+                }
+                grant
             };
             db.query(
                 "UPDATE device_codes SET status=?,account=?,grant_json=? WHERE user_code=?",
@@ -70,6 +69,10 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: DeviceOp, now: i64) -> 
             Ok(json!({"approved":!deny,"client_name":row["client_name"],"host":row["host"]}))
         }
         DeviceOp::Poll => poll(db, &code, live, c, now),
+        DeviceOp::Show => {
+            let row = waiting(row, now)?;
+            Ok(json!({"agent":agent_of(&row),"host":row["host"]}))
+        }
     }
 }
 
@@ -121,8 +124,39 @@ fn poll<S: SqlStore>(
     let grant: Value = serde_json::from_str(row["grant_json"].as_str().unwrap_or("null"))
         .map_err(|_| bad("Corrupt device grant"))?;
     Ok(
-        json!({"status":"APPROVED","account":row["account"],"grant":grant,"client_name":row["client_name"],"host":row["host"]}),
+        json!({"status":"APPROVED","account":row["account"],"grant":grant,"client_name":row["client_name"],"agent":agent_of(row),"host":row["host"]}),
     )
+}
+
+/// A code still waiting for a person's decision.
+fn waiting(row: Option<Value>, now: i64) -> Result<Value> {
+    let Some(row) = row else {
+        return Err(Error::new("NOT_FOUND", "Unknown or used code"));
+    };
+    if expires(&row) <= now {
+        return Err(Error::new("EXPIRED_TOKEN", "This code has expired"));
+    }
+    if row["status"] != "pending" {
+        return Err(Error::new("NOT_FOUND", "Unknown or used code"));
+    }
+    Ok(row)
+}
+
+fn agent_of(row: &Value) -> Option<&str> {
+    row["client_name"].as_str().and_then(agents::named)
+}
+
+/// What approving an agent asks beyond a login: the switch, a grant it may hold, and all
+/// repositories only when chosen (`repos` absent means all for a login, and here means none).
+fn agent_grant(c: &Value, grant: &Value) -> Result<()> {
+    if c["agent_signup"] != true {
+        return Err(Error::new("NOT_SUPPORTED", "Agent sign-up is off"));
+    }
+    agents::allow(grant)?;
+    if grant["repos"].is_null() && c["all_repos"] != true {
+        return Err(bad("Choose repositories for this agent, or all of them"));
+    }
+    Ok(())
 }
 
 fn expires(row: &Value) -> i64 {

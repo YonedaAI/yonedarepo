@@ -1,7 +1,8 @@
 /* Account settings: one centered column as wide as an agent's Configure page, of sections: each
    a heading above a card of rows (text on the left, one action on the right, a thin rule between
    them). */
-.account-settings {
+.account-settings,
+.source-device {
   width: 100%;
   max-width: 1024px;
   margin: 0 auto;

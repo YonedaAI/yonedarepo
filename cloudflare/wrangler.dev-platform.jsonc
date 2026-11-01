@@ -52,6 +52,7 @@
 // REPO_STORAGE_GUARD=on: a repository whose history database reaches 9.4 GB answers 507 REPO_FULL to new work; reads, deletes and accepted work go on (docs/runbook.md). Off on prod until a ship turns it on.
 // REPO_SIZE_GUARD=on: a repository whose Git objects reach the published 10 GB answers 507 REPO_SIZE_LIMIT to pushes and new commits (docs/runbook.md). Off on prod until a ship turns it on.
 // LAND_WHEN_CLEARED=on: what can clear a Landing queues a platform_land_check job, and a repository can turn on Land when cleared (repo-land-check.ts). Set it only once every Worker on the queue knows the job: deploy with it off first (docs/runbook.md).
+// AGENT_SIGNUP=on: yoneda login --agent <name> signs an agent up through the device flow (worker/platform-tokens.ts). Off, a code asking for an agent is refused; agents already signed up keep working.
 // NEWSLETTER=on opens the Flight log sign-up at /updates (worker/platform-newsletter.ts, D1 newsletter_subscribers). It needs the optional secret NEWSLETTER_KEY, which signs unsubscribe links: never change it while the list is in use. Unset, off or without the key: no form, nothing stored, nothing sent. privacy.md must list this data first (docs/runbook.md).
 // ASYNC_STORE=on: a create answers without Artifacts and a platform_store queue job creates the store (repo-store-create.ts). Set it only once every Worker on the queue knows the job: deploy with it off first (docs/runbook.md).
 // DIRECT_IMPORT=on (with FAST_IMPORT, PACK_CACHE and PUSH_BUNDLES) also fetches a public GitHub repository from the Worker when it is imported, and lands main from that pack beside Artifacts' own fetch (docs/direct-import.md).
@@ -347,6 +348,7 @@
     "LANDING_INSTRUMENTS": "on",
     "LAND_MODE": "batch",
     "LAND_WHEN_CLEARED": "on",
+    "AGENT_SIGNUP": "off",
     "LFS_S3_BUCKET": "yonedarepo-dev-platform-objects",
     "LFS_S3_ENDPOINT": "https://f011d0ee02b23cad26b4b38151b204ad.r2.cloudflarestorage.com",
     "NEWSLETTER": "on",

@@ -11,7 +11,8 @@ vi.mock('./useSource', () => ({ useSource: () => state.value }));
 
 const { ConnectPanel, DeleteRepository } = await import('./ConnectPanel');
 const { DeviceOutcome, DevicePage, deviceFailure } = await import('./DevicePage');
-const { PatDialog, PatTable } = await import('./PersonalTokens');
+const { AGENT_DEFAULT_SCOPES, agentGrant, agentProblem } = await import('./DeviceAgent');
+const { isDeviceLogin, PatDialog, PatTable } = await import('./PersonalTokens');
 const { RepoTokenTable, RepoTokens } = await import('./RepoTokens');
 const { AccountSettings } = await import('../account-settings/AccountSettings');
 const { CliTable } = await import('../account-settings/TokenSettings');
@@ -35,6 +36,87 @@ const now = 1_800_000_000_000;
 
 beforeEach(() => {
   state.value = { loading: true, reload: () => {} };
+});
+
+describe('an agent asking through device login', () => {
+  const asking = { repos, agent: 'review-bot', host: 'ci-1' };
+
+  it('says who is asking, with no repository chosen and thirty days', () => {
+    state.value = loaded({ data: asking });
+    const page = html(DevicePage, { code: 'BCDF-GHJK' });
+    expect(page).toContain('Connect an agent');
+    expect(page).toContain('review-bot');
+    expect(page).toContain('ci-1');
+    expect(page).toContain('Choose at least one repository, or all repositories.');
+    expect(page).toMatch(/<option value="30" selected="">30 days<\/option>/);
+    expect(page).toMatch(/<option value="90">90 days<\/option>/);
+    expect(page).not.toMatch(/value="repo:|type="checkbox" checked=""[^>]*\/>demo/);
+    expect(page).toMatch(/<button type="submit" disabled="">Approve<\/button>/);
+  });
+
+  it('offers repository work and nothing else, reading and writing ticked', () => {
+    state.value = loaded({ data: asking });
+    const page = html(DevicePage, { code: 'BCDF-GHJK' });
+    expect(page).toMatch(/checked=""\/>Read/);
+    expect(page).toMatch(/checked=""\/>Write/);
+    expect(page).toMatch(/type="checkbox"\/>Land/);
+    expect(page).toMatch(/type="checkbox"\/>Review/);
+    expect(page).not.toMatch(/\/>Admin</);
+    expect(page).not.toContain('SSH keys');
+  });
+
+  it('with no repositories yet, says so and leaves all repositories as the choice', () => {
+    state.value = loaded({ data: { ...asking, repos: [] } });
+    const page = html(DevicePage, { code: 'BCDF-GHJK' });
+    expect(page).toContain('No repositories yet.');
+    expect(page).toContain('All repositories, including ones created later');
+  });
+
+  it('what approving sends: the chosen list, or all repositories by name', () => {
+    const form = { scopes: AGENT_DEFAULT_SCOPES, days: 30, all: false, repos: [repo] };
+    expect(agentGrant(form)).toEqual({
+      scopes: ['repo:read', 'repo:write'],
+      expires_days: 30,
+      repos: [repo],
+    });
+    expect(agentGrant({ ...form, all: true })).toEqual({
+      scopes: ['repo:read', 'repo:write'],
+      expires_days: 30,
+      all_repos: true,
+    });
+    expect(agentProblem({ ...form, repos: [] })).toMatch(/at least one repository/);
+    expect(agentProblem({ ...form, all: true, repos: [] })).toBe('');
+    expect(agentProblem({ ...form, scopes: [] })).toMatch(/access/);
+  });
+
+  it('a person asking stays on the login form', () => {
+    state.value = loaded({ data: { repos, agent: null, host: null } });
+    const page = html(DevicePage, { code: 'BCDF-GHJK' });
+    expect(page).toContain('Connect a device');
+    expect(page).toContain('SSH keys');
+  });
+
+  it('a signed-in agent reads as one and is signed out in the same table', () => {
+    const agent = {
+      id: 'pat_0123456789abcdef',
+      name: 'review-bot',
+      scopes: ['repo:read'],
+      repos: [repo],
+      created_at: now - day,
+      expires_at: now + 29 * day,
+      last_used_at: null,
+      origin: 'agent:review-bot',
+      host: 'ci-1',
+    };
+    expect(isDeviceLogin(agent as any)).toBe(true);
+    const page = html(CliTable, {
+      tokens: loaded({ data: { tokens: [agent] } }),
+      onSignOut: () => {},
+      now,
+    });
+    expect(page).toContain('Agent review-bot');
+    expect(page).toContain('aria-label="Sign out agent review-bot"');
+  });
 });
 
 describe('personal access tokens', () => {

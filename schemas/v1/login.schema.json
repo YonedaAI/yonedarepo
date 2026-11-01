@@ -11,6 +11,13 @@
             "null"
           ]
         },
+        "agent": {
+          "description": "The agent signed up, for `login --agent`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
         "credentials": {
           "description": "The credentials file the token was stored in (mode 0600).",
           "type": "string"

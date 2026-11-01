@@ -140,6 +140,25 @@ fn a_re_review_replaces_a_tokens_findings_and_a_persons_stay() {
 }
 
 #[test]
+fn an_agents_findings_are_replaced_like_a_tokens_and_wait_for_nobody() {
+    const AGENT_BOT: &str = "agent:owner/bot";
+    let (h, head, number) = setup();
+    finding(&h, AGENT_BOT, number, &head, 3, "First pass");
+    assert_eq!(lines(&context(&h)), [3]);
+    let second = push(&h, "fix", &head, Some(&head));
+    h.ok(
+        AGENT_BOT,
+        json!({"op":"repo_change_comment","number":number,"commit":second,"body":"Passed."}),
+    );
+    assert_eq!(lines(&context(&h)), Vec::<u64>::new());
+    finding(&h, AGENT_BOT, number, &second, 5, "Second pass");
+    assert_eq!(
+        super::super::go_around::from_people(&h.db, &json!(number)).unwrap(),
+        0
+    );
+}
+
+#[test]
 fn the_list_is_bounded_and_the_bodies_are_cut() {
     let (h, head, number) = setup();
     let limit = super::super::go_around::MAX_FINDINGS;

@@ -18,7 +18,7 @@ import { orgAccess } from './platform-org-access';
 import { orgsRoute } from './platform-orgs';
 import { sshKeyRoute } from './platform-ssh-keys';
 import { SUPPORT_BODY_LIMIT, supportRoute } from './platform-support';
-import { deviceApprove, deviceCode, deviceToken, tokenRoute } from './platform-tokens';
+import { deviceCode, deviceRoute, deviceToken, tokenRoute } from './platform-tokens';
 import { accountSearch } from './repo-account-search';
 import { deleteRepository, listDeleted, listRepositories } from './repo-admin';
 import { agentRecords } from './repo-agent-records';
@@ -132,13 +132,8 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return tokenRoute(env, auth, req.method, parts[1], () => bodyOf(req));
   if (parts[0] === 'ssh-keys' && parts.length <= 2)
     return sshKeyRoute(env, auth, req.method, parts[1], () => bodyOf(req));
-  if (
-    parts[0] === 'device' &&
-    parts[1] === 'approve' &&
-    parts.length === 2 &&
-    req.method === 'POST'
-  )
-    return deviceApprove(env, auth, await bodyOf(req));
+  if (parts[0] === 'device' && parts.length === 2)
+    return deviceRoute(env, auth, parts[1], req, url, () => bodyOf(req));
   if (parts[0] === 'activity' && parts.length === 1 && req.method === 'GET')
     return accountActivity(env, auth);
   if (parts[0] === 'search' && parts.length === 1 && req.method === 'GET')

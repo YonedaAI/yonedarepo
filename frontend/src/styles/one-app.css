@@ -465,7 +465,8 @@ a.chip:hover {
   .repo-page,
   .home-repos,
   .org-page,
-  .account-settings {
+  .account-settings,
+  .source-device {
     padding: 16px;
   }
   .repo-settings {

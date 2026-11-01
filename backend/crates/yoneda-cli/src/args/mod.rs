@@ -107,11 +107,18 @@ pub fn parse(args: &[String]) -> Result<Command> {
     };
     Ok(match command.as_str() {
         "login" => {
-            let p = simple(rest, &["with-token", "no-browser"])?;
+            let p = Parsed::new(rest, &["origin", "agent"], &["with-token", "no-browser"])?;
+            p.at_most(0)?;
+            if p.on("with-token") && p.flag("agent").is_some() {
+                return Err(Error::usage(
+                    "--agent signs up through the browser, not with a token",
+                ));
+            }
             Command::Login {
                 origin: p.flag("origin"),
                 with_token: p.on("with-token"),
                 browser: !p.on("no-browser"),
+                agent: p.flag("agent"),
             }
         }
         "logout" => Command::Logout {
@@ -337,9 +344,20 @@ mod tests {
             Some(Command::Login {
                 origin: None,
                 with_token: false,
-                browser: false
+                browser: false,
+                agent: None
             })
         );
+        assert_eq!(
+            parsed("login --agent review-bot").ok(),
+            Some(Command::Login {
+                origin: None,
+                with_token: false,
+                browser: true,
+                agent: Some("review-bot".into())
+            })
+        );
+        assert!(parsed("login --agent bot --with-token").is_err());
         assert_eq!(
             parsed("repo create web --owner acme").ok(),
             Some(Command::Repo {

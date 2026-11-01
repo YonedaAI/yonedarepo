@@ -68,11 +68,13 @@ async fn run(command: Command) -> Result<()> {
             origin,
             with_token,
             browser,
+            agent,
         } => {
             login::login(
                 &target::account_origin(origin.as_deref())?,
                 with_token,
                 browser,
+                agent,
             )
             .await
         }

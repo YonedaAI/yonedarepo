@@ -14,7 +14,8 @@ export type { PatScope };
 /** A verified personal token, as the adapter passes it to the platform. */
 export type PatGrant = {
   workspace: string;
-  /** `user:<account>`: the account acts, never as a person (no break-glass). */
+  /** `user:<account>`: the account acts, never as a person (no break-glass). An agent's token
+   * reads `agent:<account>/<name>`: an actor of its own, under that account. */
   principal: string;
   id: string;
   scopes: PatScope[];
@@ -57,13 +58,14 @@ export async function verifyPat(env: Env, token: string): Promise<PatGrant | nul
     await env.INDEX.prepare('DELETE FROM platform_tokens WHERE token_hash=?').bind(tokenHash).run();
     return null;
   }
+  const agent = agentOf(checked.origin);
   const org: string | null = checked.org ?? null;
   // An org-limited token acts only through that org.
   const hints: string[] = (checked.orgs ?? []).filter((o: string) => !org || o === org);
   const orgs = await orgAccess(env, row.workspace, hints);
   return {
     workspace: row.workspace,
-    principal: `user:${row.workspace}`,
+    principal: agent ? `agent:${row.workspace}/${agent}` : `user:${row.workspace}`,
     id: checked.id,
     scopes: checked.scopes,
     repos: checked.repos ?? null,
@@ -74,9 +76,13 @@ export async function verifyPat(env: Env, token: string): Promise<PatGrant | nul
 
 /** Issues a token to `account` (the caller authenticated the account itself) and returns
  * its secret, once. The authority validates the grant; the lookup row follows its commit. */
-/** How a token was made: `yoneda login` on `host` (the device flow only; never a caller's
- * claim), or on the website (no label). */
-export type PatLabel = { origin: 'login'; host: string | null };
+/** How a token was made: `yoneda login` on `host`, or by an agent named `agent:<name>` (the
+ * device flow only; never a caller's claim), or on the website (no label). */
+export type PatLabel = { origin: 'login' | `agent:${string}`; host: string | null };
+
+/** The agent a token's origin names, if any. */
+const agentOf = (origin: unknown) =>
+  typeof origin === 'string' && origin.startsWith('agent:') ? origin.slice('agent:'.length) : null;
 
 export async function issuePat(env: Env, account: string, request: Json, label?: PatLabel) {
   const token = `ypat_${base64url(crypto.getRandomValues(new Uint8Array(32)))}`;

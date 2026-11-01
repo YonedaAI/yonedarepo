@@ -45,6 +45,7 @@ op_names! {
         List = "pat_list",
         Check = "pat_check",
         Revoke = "pat_revoke",
+        AgentRoom = "pat_agent_room",
     }
 }
 op_names! {
@@ -63,6 +64,7 @@ op_names! {
         Create = "device_create",
         Approve = "device_approve",
         Poll = "device_poll",
+        Show = "device_show",
     }
 }
 op_names! {
