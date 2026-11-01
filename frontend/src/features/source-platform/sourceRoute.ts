@@ -156,8 +156,7 @@ export function parseSourceRoute(pathname: string, search: string, hash = ''): S
       : { view: 'search', repo, query };
   }
   if (view === 'context' || view === 'insights') return { view, repo };
-  // `/ctc` is the page's address from before it was Tower; links to it are out there.
-  if (view === 'tower' || view === 'ctc') return { view: 'tower', repo };
+  if (view === 'tower' || view === 'ctc') return { view: 'tower', repo }; // Old links use /ctc.
   // `/landings` is the same page under its UI name; `/changes` stays the address.
   if (view === 'changes' || view === 'landings') {
     const number = Number(rest[0]);
