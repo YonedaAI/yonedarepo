@@ -32,6 +32,7 @@ const OWN_ROOTS = new Set([
   'signup',
   'source',
   'terms',
+  'updates',
 ]);
 
 export type NamedRoute =

@@ -11,6 +11,7 @@ import { SiteHome } from './SiteHome';
 import { SiteLayout } from './SiteLayout';
 import { SiteCompany, SiteLegal } from './SitePages';
 import { SitePricing } from './SitePricing';
+import { SiteUpdates, SiteUpdatesLink } from './SiteUpdates';
 import { documentTitle, pageTitle } from './seo';
 import { SIGNED_IN_HINT, type SitePage } from './siteRoute';
 
@@ -70,6 +71,10 @@ export function SiteRoot({
         <SiteCompany page={site.page} navigate={navigate} />
       )}
       {site.page === 'legal' && <SiteLegal doc={site.doc} navigate={navigate} />}
+      {site.page === 'updates' && <SiteUpdates />}
+      {site.page === 'updates-link' && (
+        <SiteUpdatesLink action={site.action} token={site.token} navigate={navigate} />
+      )}
       {site.page === 'signin' && (
         <section className="site-signin" aria-labelledby="signin-heading">
           <h1 id="signin-heading">{title}</h1>

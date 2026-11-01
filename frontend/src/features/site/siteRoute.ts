@@ -1,5 +1,5 @@
 // The public site's addresses (`/features`, `/features/<feature>`, `/pricing`, `/docs/...`, `/blog/...`,
-// `/company/...`, `/signin`, `/signup`, `/terms`, `/privacy`) and when `/` shows the public home instead of the app.
+// `/company/...`, `/signin`, `/signup`, `/terms`, `/privacy`, `/updates`) and when `/` shows the public home instead of the app.
 import type { SourceRoute } from '../source-platform/sourceRoute';
 
 export type SitePage =
@@ -13,13 +13,19 @@ export type SitePage =
   | { page: 'about' }
   | { page: 'vision' }
   | { page: 'legal'; doc: 'terms' | 'privacy' }
-  | { page: 'signin'; mode: 'login' | 'signup' };
+  | { page: 'signin'; mode: 'login' | 'signup' }
+  | { page: 'updates' }
+  /** An emailed Flight log link: the page's button acts on its token, opening it changes nothing. */
+  | { page: 'updates-link'; action: 'confirm' | 'unsubscribe'; token: string };
 
 export const DOCS_HOME = 'introduction';
 const SLUG = /^[a-z0-9][a-z0-9-]*$/;
 
 /** A site page for a path's segments, or undefined for the app's own paths. */
-export function parseSitePath(parts: string[]): SitePage | undefined {
+export function parseSitePath(
+  parts: string[],
+  params = new URLSearchParams(),
+): SitePage | undefined {
   const [root, ...rest] = parts;
   if (root === 'features' && !rest.length) return { page: 'features' };
   if (root === 'features' && rest.length === 1 && SLUG.test(rest[0]))
@@ -36,6 +42,13 @@ export function parseSitePath(parts: string[]): SitePage | undefined {
     return { page: 'about' };
   if (root === 'company' && rest.length === 1 && rest[0] === 'vision') return { page: 'vision' };
   if ((root === 'terms' || root === 'privacy') && !rest.length) return { page: 'legal', doc: root };
+  if (root === 'updates' && !rest.length) return { page: 'updates' };
+  if (
+    root === 'updates' &&
+    rest.length === 1 &&
+    (rest[0] === 'confirm' || rest[0] === 'unsubscribe')
+  )
+    return { page: 'updates-link', action: rest[0], token: params.get('token') ?? '' };
   return undefined;
 }
 
@@ -56,6 +69,8 @@ export function formatSitePage(site: SitePage): string {
       return site.mode === 'login' ? '/signin' : '/signup';
     case 'legal':
       return `/${site.doc}`;
+    case 'updates-link':
+      return `/updates/${site.action}?token=${encodeURIComponent(site.token)}`;
     default:
       return `/${site.page}`;
   }

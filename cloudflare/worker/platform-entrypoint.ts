@@ -1,7 +1,7 @@
 // Worker entrypoint for the source platform alone: HTTP, Git over SSH's front doors (inbound
 // TCP and the tunnel gateway's keep-alive cron; platform-ssh-gateway.ts), plus its own queue
 // jobs (checks, store creation, object and ref projection, derived data, clone packs, webhooks,
-// clearance, account emails, the operators' sign-up notice). No agent runs, harnesses, providers
+// clearance, account emails, the Flight log's confirmations, the operators' sign-up notice). No agent runs, harnesses, providers
 // or budgets.
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { AccountCreated } from './account-index';
@@ -12,6 +12,8 @@ import { nightlyReconcile } from './platform-admin-billing';
 import { verifyEmail } from './platform-email-verify';
 import { settleFailedJob } from './platform-job-settle';
 import { laterIfHeld } from './platform-legal-hold';
+import { NEWSLETTER_JOB, sweepNewsletter } from './platform-newsletter';
+import { newsletterJob } from './platform-newsletter-email';
 import { platformFetch } from './platform-routes';
 import { signupNoticeJob } from './platform-signup-notice';
 import { sshFrontDoor, sshKeepAlive } from './platform-ssh-gateway';
@@ -106,6 +108,10 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
     const outcome = await welcomeJob(env, envelope, message.attempts);
     if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
     else message.ack();
+  } else if (envelope.kind === NEWSLETTER_JOB) {
+    const outcome = await newsletterJob(env, envelope, message.attempts);
+    if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
+    else message.ack();
   } else message.ack(); // not a platform job
 }
 
@@ -135,7 +141,8 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
     return verifyEmail(this.env, account, change);
   }
   /** Every minute: keeps the SSH gateway (and its tunnel) running, sends the purges that
-   * came due and this minute's compaction jobs; once a night, starts the billing reconcile.
+   * came due and this minute's compaction jobs; once a night, starts the billing reconcile and
+   * forgets unconfirmed Flight log addresses.
    * None stops the others. */
   async scheduled(controller: ScheduledController) {
     const logged = (event: string) => (e: unknown) => log.error(event, { error: e });
@@ -146,6 +153,9 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
         sweepCompaction(this.env).catch(logged('compaction.sweep_failed')),
         nightlyReconcile(this.env, controller.scheduledTime).catch(
           logged('billing.reconcile_failed'),
+        ),
+        sweepNewsletter(this.env, controller.scheduledTime).catch(
+          logged('newsletter.sweep_failed'),
         ),
       ]),
     );

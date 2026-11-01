@@ -31,6 +31,7 @@ import {
 import { rebuildRollup, revenue } from './platform-admin-revenue';
 import { operatorOrgHold, operatorRepoHold } from './platform-holds';
 import { currentHold } from './platform-legal-hold';
+import { exportSubscribers, subscriberCount } from './platform-newsletter';
 import { orgArg } from './platform-orgs';
 import { purgeOrphan } from './platform-orphan-purge';
 import { trafficReport } from './platform-site-traffic';
@@ -74,8 +75,12 @@ export async function adminRoute(
   const get = method === 'GET';
   const post = method === 'POST';
   const hold = action === 'hold' && !record && (post || method === 'DELETE');
-  if (section === 'overview' && !id && get)
-    return { ...(await overview(env)), billing: adminBillingOn(env) };
+  if (section === 'overview' && !id && get) {
+    const newsletter = await subscriberCount(env);
+    return { ...(await overview(env)), billing: adminBillingOn(env), newsletter };
+  }
+  if (section === 'newsletter' && !id && get)
+    return exportSubscribers(env, actor, query.get('after'));
   if (section === 'signups' && !id && get) return signups(env, query.get('since'));
   if (section === 'audit' && !id && get) return auditLog(env, query.get('before'));
   if (section === 'traffic' && !id && get) return trafficReport(env, query);

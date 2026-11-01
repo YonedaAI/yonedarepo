@@ -14,8 +14,8 @@
   margin: 0 0 var(--sp-4);
   max-width: 18ch;
   font-size: var(--fs-hero);
-  line-height: 1.08;
-  letter-spacing: -0.03em;
+  line-height: 1.14;
+  letter-spacing: -0.018em;
 }
 .site-feature-hero .site-hero-lead {
   padding-top: 0;

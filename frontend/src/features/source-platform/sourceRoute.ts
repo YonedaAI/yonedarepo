@@ -137,7 +137,7 @@ export function parseSourceRoute(pathname: string, search: string, hash = ''): S
     return { view: 'settings', section: 'tokens' };
   if ((root === 'source' && repo === 'explore' && !view) || (root === 'explore' && !repo))
     return { view: 'explore' };
-  const site = parseSitePath(parts);
+  const site = parseSitePath(parts, params);
   if (site) return { view: 'site', site };
   if (root !== 'source') return parseNamedPath(parts, search) ?? { view: 'home' };
   if (!repo || !REPO_ID.test(repo)) return { view: 'home' };

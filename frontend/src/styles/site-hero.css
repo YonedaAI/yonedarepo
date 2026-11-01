@@ -1,4 +1,4 @@
-/* The home hero: a short bold headline and a muted paragraph side by side, then the button
+/* The home hero: a short open headline and a muted paragraph side by side, then the button
    with the "works with any agent" strip. On a phone: headline, paragraph, then the row. */
 .site-hero.site-band {
   display: grid;
@@ -13,10 +13,11 @@
 .site-hero h1 {
   grid-area: title;
   margin: 0;
-  max-width: 13ch;
+  max-width: 16ch;
   font-size: var(--fs-hero);
-  line-height: 1.08;
-  letter-spacing: -0.03em;
+  line-height: 1.14;
+  letter-spacing: -0.018em;
+  text-wrap: balance;
 }
 .site-hero-lead {
   grid-area: lead;

@@ -61,6 +61,9 @@ export function pageTitle(site: SitePage): string {
       return LEGAL_PAGES[site.doc].title;
     case 'signin':
       return site.mode === 'login' ? 'Sign in' : 'Create your account';
+    case 'updates':
+    case 'updates-link':
+      return 'Flight log';
   }
 }
 
@@ -121,6 +124,10 @@ export function seoManifest(): SeoManifest {
     route({ page: 'vision' }, COMPANY_PAGES.vision.summary),
     route({ page: 'legal', doc: 'terms' }, LEGAL_PAGES.terms.summary),
     route({ page: 'legal', doc: 'privacy' }, LEGAL_PAGES.privacy.summary),
+    route(
+      { page: 'updates' },
+      'Release, feature and engineering updates from YonedaRepo, by email.',
+    ),
     route({ page: 'signin', mode: 'login' }, '', { sitemap: false }),
     route({ page: 'signin', mode: 'signup' }, '', { sitemap: false }),
   ];

@@ -118,6 +118,11 @@ export interface Env {
   /** Where the operators' sign-up notice goes (platform-signup-notice.ts); EMAIL_CONTACT
    * when unset. */
   ADMIN_NOTIFY_EMAIL?: string;
+  /** `on` opens the Flight log sign-up (platform-newsletter.ts); unset or anything else, or with
+   * NEWSLETTER_KEY or email unset: nothing is stored or sent and the page says Coming soon. */
+  NEWSLETTER?: string;
+  /** Signs the Flight log's unsubscribe links; changing it breaks every link already mailed. */
+  NEWSLETTER_KEY?: string;
   /** Where contact support's emails go (platform-support.ts); unset, the form answers 503. */
   SUPPORT_EMAIL?: string;
   /** Operators: accounts (comma separated) whose browser sessions may use the admin pages

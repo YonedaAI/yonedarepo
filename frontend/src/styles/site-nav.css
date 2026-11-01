@@ -7,7 +7,7 @@
   border: 0;
   background: transparent;
   font: inherit;
-  font-weight: 500;
+  font-size: var(--fs-sm);
   cursor: pointer;
 }
 .site-menu-button-trigger.current,
