@@ -26,6 +26,7 @@ const HELPER = 'tools/own-traffic.mjs';
 const NOT_THE_PLATFORM = new Map([
   ['tools/check-setup-bench.mjs', 'a check server on this machine'],
   ['tools/platform-analytics.mjs', 'Cloudflare and Basin APIs'],
+  ['tools/platform-basin-soak.mjs', 'Cloudflare and Basin APIs'],
   ['tools/ship/find-ship.mjs', 'GitHub'],
   ['tools/ship/monitor.mjs', 'Superfan and /health, which is not a client request'],
   ['tools/staging/webhook-flow.mjs', "the bench Worker's hook box"],

@@ -15,12 +15,6 @@ pub use crate::command::*;
 use crate::error::{Error, Result};
 use parser::{Parsed, with};
 
-fn simple(rest: &[String], switches: &[&str]) -> Result<Parsed> {
-    let p = Parsed::new(rest, &["origin"], switches)?;
-    p.at_most(0)?;
-    Ok(p)
-}
-
 fn setup(rest: &[String]) -> Result<Command> {
     let p = Parsed::new(rest, &["origin"], &[])?;
     let agent = match p.exactly(1, "setup claude|codex|gemini|opencode")?[0].as_str() {
