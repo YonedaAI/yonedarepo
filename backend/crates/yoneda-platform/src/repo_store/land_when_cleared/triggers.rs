@@ -5,9 +5,10 @@
 //! switch on: off, an op reads nothing more and its answer is what it was. Failing checks,
 //! rejections and refused attempts can't clear anything, so a job never asks for a job. The one
 //! thing that clears a Landing from outside it is the way ahead clearing: whatever takes a
-//! Landing out of the queue asks again for those held behind one (`separated`). Only a
+//! Landing out of the queue asks again for those held behind one (`held_for`). Only a
 //! separation hold is asked for, and a separation refusal asks nothing, so that can't go round.
-use crate::platform_ctc::SEPARATION;
+//! The owner's resume is the other: it asks for what the pause held, which nothing else would.
+use crate::platform_ctc::{AUTOMATION_PAUSED, SEPARATION};
 use crate::repo_store::op::{ForkOp, RepoOp as R, StoreOp};
 use crate::repo_store::rows::{self, Settings};
 use crate::storage::SqlStore;
@@ -55,14 +56,18 @@ fn moved_since<S: SqlStore>(db: &S, since: u64) -> Result<Vec<Value>> {
     )
 }
 
-/// Open Landings the newest decision on which is a separation hold.
-fn separated<S: SqlStore>(db: &S) -> Result<Vec<Value>> {
+/// Open Landings the newest decision on which names `code`.
+fn held_for<S: SqlStore>(db: &S, code: &str) -> Result<Vec<Value>> {
     db.query(
         "SELECT number FROM (SELECT number,clearance FROM changes WHERE status='open' \
          ORDER BY number DESC LIMIT ?) \
          WHERE instr(json_extract(clearance,'$[0].reasons'),?)>0 LIMIT ?",
-        &[json!(HELD), json!(SEPARATION), json!(MOST)],
+        &[json!(HELD), json!(code), json!(MOST)],
     )
+}
+
+fn separated<S: SqlStore>(db: &S) -> Result<Vec<Value>> {
+    held_for(db, SEPARATION)
 }
 
 /// What moved, with whoever was held behind it.
@@ -110,6 +115,7 @@ fn affected<S: SqlStore>(
             with_separated(db, moved_since(db, since)?)
         }
         R::ChangeClose | R::LandChangesets | R::LandSubmitted => separated(db),
+        R::BreakGlass if c["action"] == "resume_automation" => held_for(db, AUTOMATION_PAUSED),
         R::LandClaim if result["failed"].as_array().is_some_and(|f| !f.is_empty()) => separated(db),
         R::LandClearance if c["failed"].is_object() && c["failed"]["code"] != SEPARATION => {
             separated(db)

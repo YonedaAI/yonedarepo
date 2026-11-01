@@ -516,11 +516,11 @@ fn a_path_limited_authors_grant_must_cover_all_it_would_land() {
 }
 
 /// The owner, signed in, sets the automation pause.
-fn pause(h: &Harness, action: &str) {
+fn pause(h: &Harness, action: &str) -> Value {
     let person = json!({"workspace":"ws-1","principal":OWNER,"human":true});
     let command = json!({"op":"repo_break_glass","action":action,"reason":"Stop","now":1,
         "_session":person});
-    execute_repo_store(&h.db, command).unwrap();
+    execute_repo_store(&h.db, command).unwrap()
 }
 
 #[test]
@@ -532,6 +532,28 @@ fn a_pause_refuses_and_a_resume_lets_the_next_trigger_land() {
     assert_eq!(code(land(&h, number, &id)), "AUTOMATION_PAUSED");
     pause(&h, "resume_automation");
     assert_eq!(assess(&h, number)["state"], "cleared");
+}
+
+/// Nothing about a held Landing changes when the owner resumes, so resuming has to ask: with no
+/// later event a cleared head would sit open for good.
+#[test]
+fn a_resume_asks_again_for_what_the_pause_held() {
+    let (h, _root, id, number) = cleared();
+    pause(&h, "pause_automation");
+    assert_eq!(waiting(&assess(&h, number)), ["AUTOMATION_PAUSED"]);
+    let resumed = pause(&h, "resume_automation");
+    assert_eq!(resumed["land_checks"], json!([number]), "{resumed}");
+    assert_eq!(assess(&h, number)["state"], "cleared");
+    land(&h, number, &id).unwrap();
+    assert_eq!(main_head(&h), json!(id));
+}
+
+#[test]
+fn a_resume_with_nothing_held_asks_for_nothing() {
+    let (h, _root, _id, _number) = cleared();
+    pause(&h, "pause_automation");
+    let resumed = pause(&h, "resume_automation");
+    assert!(resumed.get("land_checks").is_none(), "{resumed}");
 }
 
 #[test]
