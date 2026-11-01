@@ -1,11 +1,12 @@
 // Writes of Git objects to R2, each confirmed: once per key per isolate (concurrent writers
 // of one object share a write), retried through R2's transient errors.
+import { Flights } from './flights';
 import type { CachedObject } from './repo-stores';
 import { fromBase64 } from './repo-stores';
 import type { Env } from './types';
 
 /** R2 writes in flight in this isolate, and keys known written, by key. */
-const writing = new Map<string, Promise<void>>();
+const writing = new Flights<void>();
 const written = new Set<string>();
 const WRITTEN_KEYS = 50_000;
 const sameObjectBusy = (e: unknown) => /\b10058\b/.test(String((e as Error)?.message ?? e));
@@ -55,12 +56,7 @@ export function putBytes(env: Env, key: string, kind: string, body: Uint8Array) 
 
 function writeOnce(env: Env, key: string, kind: string, body: () => Uint8Array | string) {
   if (written.has(key)) return Promise.resolve();
-  let write = writing.get(key);
-  if (!write) {
-    write = putOnce(env, key, kind, body()).finally(() => writing.delete(key));
-    writing.set(key, write);
-  }
-  return write;
+  return writing.join(key, () => putOnce(env, key, kind, body())).work;
 }
 
 async function putOnce(env: Env, key: string, kind: string, body: Uint8Array | string) {

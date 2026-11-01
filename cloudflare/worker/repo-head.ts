@@ -9,6 +9,7 @@
 // answer. A deletion waits that bound out before it answers (`dropDeletedHead`).
 
 import { rpcValue } from './durable';
+import { Flights } from './flights';
 import { log, warned } from './log';
 import { teamEntries } from './platform-org-access';
 import { awaitProjection } from './repo-changesets';
@@ -34,7 +35,7 @@ const landings = new Map<string, { version: number; paths: string[] | null }[]>(
 const built = new Map<string, string[]>();
 const BUILT = 1024;
 const accesses = new Map<string, Json>();
-const loading = new Map<string, Promise<Json>>();
+const loading = new Flights<Json>();
 
 type Holder = {
   head(repo: string, minVersion: number, since?: number, access?: string | null): Promise<Json>;
@@ -71,14 +72,7 @@ async function tokenDigest(credentials: Json): Promise<string | null> {
 }
 
 /** One fetch per key at a time in this isolate; concurrent callers share it. */
-function once(key: string, load: () => Promise<Json>) {
-  let pending = loading.get(key);
-  if (!pending) {
-    pending = load().finally(() => loading.delete(key));
-    loading.set(key, pending);
-  }
-  return pending;
-}
+const once = (key: string, load: () => Promise<Json>) => loading.join(key, load).work;
 
 async function headOf(env: Env, repo: string, minVersion: number): Promise<Json> {
   const cached = heads.get(repo);
