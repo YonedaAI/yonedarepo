@@ -8,11 +8,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { blobIds, cloneSteps, commitPack, flatTree, pushSteps } from '../../tools/fanout-bench/git-forms.mjs';
+import { clean, passwordFrom, regionAccount, RegionSession } from '../../tools/fanout-bench/region-accounts.mjs';
 import { joined, netCreate, sample } from '../../tools/fanout-bench/region-matrix.mjs';
-import { describeMatrix, estimateMatrix, pairRequests, repoName, seedFiles } from '../../tools/fanout-bench/region-plan.mjs';
+import { armRequests, armsOf, describeMatrix, estimateMatrix, repoName, seedFiles } from '../../tools/fanout-bench/region-plan.mjs';
 import { probe, validProbe } from '../../tools/fanout-bench/region-probe.js';
-import { latencyTable, placementTable, renderRegionResults, replaceRegionResults } from '../../tools/fanout-bench/region-results.mjs';
-import { runStep, runSteps, validSteps } from '../../tools/fanout-bench/region-steps.js';
+import { hopsOf, hopTable, latencyTable, placementTable, renderRegionResults, replaceRegionResults } from '../../tools/fanout-bench/region-results.mjs';
+import { REGION_VERSION, runStep, runSteps, servedFrom, validSteps } from '../../tools/fanout-bench/region-steps.js';
 import { clientUrl, placedClients, regionalClients } from '../../tools/fanout-bench/regions.mjs';
 import { describeRun, estimateRun, perSession } from '../../tools/real-use/estimate.mjs';
 import { activity, DEFAULTS, MIX, peakLoad, randomStream, ratePerMinute, simHour, zipfIndex, ZONES } from '../../tools/real-use/plan.mjs';
@@ -64,6 +65,41 @@ test('a step that must hold a text fails without it, and bytes go as bytes', asy
   assert.deepEqual([wrong.ok, wrong.error], [false, 'WRONG_CONTENT']);
 });
 
+test('the platform answers from the region when asked, and a page stays with the front Worker', async () => {
+  const stub = stubbedFetch(() => new Response('from the public path'));
+  const asked = [];
+  const namespace = {
+    idFromName: (name) => name,
+    get(id, options) {
+      asked.push({ id, options });
+      return { fetch: async (url, init) => (assert.equal(init.signal, undefined), new Response(`served ${url}`)) };
+    },
+  };
+  const serve = servedFrom({ LAND_COMBINERS: namespace }, 'weur');
+  const [api, git, page] = await runSteps('https://x', [{ label: 'a', path: '/api/v1/repos' }, { label: 'b', path: '/git/r.git/info/refs' }, { label: 'c', path: '/' }], false, serve);
+  stub.restore();
+  assert.deepEqual(asked, [{ id: 'region-serve:weur', options: { locationHint: 'weur' } }]);
+  assert.deepEqual([api.bytes, git.bytes], ['served https://x/api/v1/repos'.length, 'served https://x/git/r.git/info/refs'.length]);
+  assert.equal(page.bytes, 'from the public path'.length);
+  assert.equal(stub.seen.length, 1);
+});
+
+test('a test account is made where its first request runs, and keeps nothing it should not', async () => {
+  const sent = [];
+  const answers = [{ status: 401, ok: false }, { status: 200, ok: true, ms: 9, server: null, cookie: 'yoneda=abc', value: { username: 'someone' } }];
+  const call = async (client, body) => (sent.push({ client, ...body }), { results: [answers.shift()] });
+  const { session, row } = await regionAccount({ call, client: 'eu', serve: 'weur', name: 'regionhint_eu_region', kitPassword: 'kit' });
+  assert.deepEqual(sent.map((s) => s.steps[0].path), ['/api/auth/login', '/api/auth/signup']);
+  assert.ok(sent.every((s) => s.client === 'eu' && s.serve === 'weur'));
+  assert.equal(sent[1].steps[0].json.email, 'delivered+regionhint_eu_region@resend.dev');
+  assert.equal(sent[1].steps[0].json.password, passwordFrom('kit', 'regionhint_eu_region'));
+  assert.deepEqual([session.name, session.cookie], ['someone', 'yoneda=abc']);
+  assert.equal(row.cookie, undefined);
+  assert.deepEqual(clean({ ms: 1, value: 1, cookie: 'x' }), { ms: 1 });
+  assert.ok(session instanceof RegionSession);
+  await assert.rejects(regionAccount({ call: async () => ({ failed: 'gone' }), client: 'na', name: 'x', kitPassword: 'kit' }), /could not sign in/);
+});
+
 test('the Worker takes only small, well-formed batches', () => {
   assert.ok(validSteps([{ label: 'clone.pack', path: '/git/x' }]));
   for (const bad of [[], 'x', [{ label: 'a', path: 'relative' }], [{ label: 'a', path: '//elsewhere' }], [{ label: 'BAD LABEL', path: '/a' }], Array(13).fill({ label: 'a', path: '/a' })]) assert.ok(!validSteps(bad), JSON.stringify(bad).slice(0, 60));
@@ -75,30 +111,36 @@ test('the probe times each piece through its binding, and a failed piece says so
   const stub = stubbedFetch(() => new Response('colo=FRA\nloc=DE\n'));
   const namespace = (text) => ({ idFromName: (n) => n, get: () => ({ fetch: async () => new Response(text) }) });
   const env = {
-    INDEX: { prepare: () => ({ bind: () => ({ run: async () => ({ meta: { served_by_region: 'ENAM', served_by_primary: true } }) }) }) },
+    INDEX: {
+      prepare: () => ({ bind: () => ({ run: async () => ({ meta: { served_by_region: 'ENAM', served_by_primary: true } }) }) }),
+      withSession: () => ({ prepare: () => ({ bind: () => ({ run: async () => ({ meta: { served_by_region: 'WEUR', served_by_primary: false } }) }) }) }),
+    },
     WORKSPACES: namespace('{}'),
     OBJECTS: { head: async () => null, list: async () => ({ objects: [{ key: 'k', size: 9 }] }), get: async () => ({ arrayBuffer: async () => new ArrayBuffer(9) }) },
+    REGIONAL_OBJECTS: { put: async () => null, head: async () => null, get: async () => ({ arrayBuffer: async () => new ArrayBuffer(9) }) },
+    LAND_COMBINERS: namespace('{}'),
     SOURCE_REPOS: namespace('{"db_bytes":1}'),
     COMMIT_SHARDS: { idFromName: (n) => n, get: () => ({ fetch: async () => new Response('down', { status: 500 }) }) },
   };
-  const out = await probe(env, 'https://x', { samples: 3, account: 'kit', repos: [{ id: REPO, data: 'weur' }] });
+  const out = await probe(env, 'https://x', { samples: 3, account: 'kit', repos: [{ id: REPO, data: 'weur' }], serve: 'weur' });
   stub.restore();
-  assert.deepEqual(Object.keys(out.pieces), ['trace', 'platform_health', 'd1', 'account_authority', 'r2_head', 'r2_get', 'repo_weur', 'shard_weur']);
+  assert.deepEqual(Object.keys(out.pieces), ['trace', 'platform_health', 'd1', 'd1_session', 'account_authority', 'r2_head', 'r2_get', 'r2_local_put', 'r2_local_get', 'r2_local_head', 'serve_object', 'repo_weur', 'shard_weur']);
   assert.equal(out.pieces.repo_weur.ms.length, 2, 'the first sample is kept apart');
   assert.equal(out.pieces.repo_weur.failed, 0);
   assert.deepEqual([out.pieces.shard_weur.failed, out.pieces.shard_weur.ms.length], [3, 0]);
   assert.match(out.pieces.shard_weur.error, /shard read: 500/);
   assert.equal(out.d1.served_by_region, 'ENAM');
+  assert.equal(out.d1_session.served_by_region, 'WEUR');
 });
 
 test('clients are refused off dev, and refused together when placement did not apply', async () => {
   assert.throws(() => regionalClients({ key: 'k', target: 'https://api.yonedarepo.com' }), /dev only/);
   assert.match(clientUrl('eu'), /^https:\/\/yonedarepo-dev-region-eu\./);
-  const answers = { na: { bench: 1, colo: 'IAD' }, eu: { bench: 1, colo: 'IAD' } };
+  const answers = { na: { bench: REGION_VERSION, colo: 'IAD' }, eu: { bench: REGION_VERSION, colo: 'IAD' } };
   await assert.rejects(placedClients({ call: async (n) => answers[n] }, ['na', 'eu']), /not apart/);
   await assert.rejects(placedClients({ call: async () => ({ failed: 'gone' }) }, ['na']), /deploy the regional clients/);
   await assert.rejects(placedClients({ call: async () => ({ bench: 0, colo: 'IAD' }) }, ['na']), /deploy it/);
-  const fine = await placedClients({ call: async (n) => ({ bench: 1, colo: n === 'na' ? 'IAD' : 'FRA' }) }, ['na', 'eu']);
+  const fine = await placedClients({ call: async (n) => ({ bench: REGION_VERSION, colo: n === 'na' ? 'IAD' : 'FRA' }) }, ['na', 'eu']);
   assert.equal(fine.eu.colo, 'FRA');
 });
 
@@ -138,31 +180,43 @@ test('a create is compared without the wait only a hinted create has', () => {
   assert.equal(sample({ ms: 1, value: { tokens: ['secret'] } }).value, undefined);
 });
 
-test('the matrix plan is the sequence it sends', () => {
-  assert.equal(repoName('s', 1, 'eu', 'weur'), 'region-hint-s-1-eu-weur');
-  const o = { reads: 2, clones: 1, lands: 1, pushes: 1 };
-  assert.equal(pairRequests(o), 2 + 6 + 3 + 2 + 2);
+test('the plan is the sequence it sends', () => {
+  assert.equal(repoName('s', 1, 'eu', 'region'), 'region-hint-s-1-eu-region');
+  assert.deepEqual(armsOf('eu'), [{ arm: 'today', data: 'enam' }, { arm: 'region', data: 'weur', serve: 'weur' }]);
+  assert.deepEqual(armsOf('ap')[1], { arm: 'region', data: 'apac', serve: 'apac' });
+  const o = { reads: 2, clones: 1, lands: 1, pushes: 1, signIns: 1, searches: 1, pages: 1 };
+  assert.equal(armRequests(o, 'region'), 1 + 2 + 6 + 3 + 2 + 2 + 1);
+  assert.equal(armRequests(o, 'today'), armRequests(o, 'region') + 2, 'only today has the page');
   const e = estimateMatrix();
-  assert.equal(e.pairs, 27);
-  assert.match(describeMatrix(e), /27 test repositories made and deleted/);
+  assert.equal(e.arms, 18);
+  assert.match(describeMatrix(e), /18 test repositories made and deleted/);
   const files = seedFiles('a', 3);
   assert.equal(Object.keys(files).length, 3);
   assert.notEqual(seedFiles('b', 3)['f00.txt'], files['f00.txt'], 'no shared content, so no shared cache');
 });
 
-const record = (pairs, extra = {}) => ({ revision: 'a'.repeat(40), recorded_at: '2026-10-31T00:00:00Z', result: { runs: 1, clients: { na: { colo: 'IAD', loc: 'US' } }, pairs, probes: [], mac_git: [], ...extra } });
-const opRow = (ms) => ({ ok: true, ms, server: ms / 2 });
+const record = (arms, extra = {}) => ({ revision: 'a'.repeat(40), recorded_at: '2026-10-31T00:00:00Z', result: { runs: 1, clients: { na: { colo: 'IAD', loc: 'US' } }, arms, probes: [], mac_git: [], ...extra } });
+const opRow = (ms, timing = '') => ({ ok: true, ms, server: ms / 2, timing });
 
 test('results come from evidence: failures are counted, not averaged, and gaps say so', () => {
-  const pair = (ms) => ({ client: 'eu', data: 'weur', where: { authority: 'FRA', shard: 'AMS' }, ops: { read_token: [opRow(9999), opRow(ms), opRow(ms + 2)], land: [opRow(ms), { ok: false, ms: 1, status: 500 }] } });
-  const table = latencyTable([record([pair(100), pair(200), pair(300)])], 'ms');
-  const row = table.split('\n').find((l) => l.startsWith('| Europe | weur'));
+  const arm = (ms) => ({ client: 'eu', arm: 'region', data: 'weur', where: { worker: 'FRA', authority: 'FRA', shard: 'AMS' }, ops: { read_token: [opRow(9999), opRow(ms), opRow(ms + 2)], land: [opRow(ms), { ok: false, ms: 1, status: 500 }] } });
+  const table = latencyTable([record([arm(100), arm(200), arm(300)])], 'ms');
+  const row = table.split('\n').find((l) => l.startsWith('| Europe | In region, weur'));
   assert.match(row, /\| 200 \(100–300\) \|/, 'the cold first read is out, and each run counts once');
   assert.match(row, /\(3 failed\)/);
-  assert.ok(table.split('\n').find((l) => l.startsWith('| Asia | apac')).includes('not measured'));
-  assert.match(placementTable([record([pair(1)])]), /\| weur \| 1 \| FRA ×1 \| AMS ×1 \| unread ×1/);
+  assert.ok(table.split('\n').find((l) => l.startsWith('| Asia | Today')).includes('not measured'));
+  assert.match(placementTable([record([arm(1)])]), /\| Europe \| region \| weur \| FRA ×1 \| FRA ×1 \| AMS ×1 \| unread ×1/);
   assert.equal(renderRegionResults([]), 'None yet.');
   assert.throws(() => replaceRegionResults('no markers', 'x'), /markers are missing/);
+});
+
+test('what an operation reached comes from its phases, and a reach-nothing answer says none', () => {
+  const rows = [opRow(1, 'total;dur=90.0;desc="1", do.repo_head;dur=2.0;desc="1", hop.r2;dur=80.0;desc="2", hop.d1;dur=40.0;desc="1"'), opRow(2, 'hop.r2;dur=100.0;desc="2"'), { ok: false, timing: 'hop.queue;dur=1.0;desc="1"' }];
+  assert.deepEqual(hopsOf(rows), { r2: { calls: 2, ms: 80 }, d1: { calls: 0.5, ms: 40 } });
+  const arm = { client: 'eu', arm: 'region', data: 'weur', ops: { read_pat: rows, list: [opRow(1)] } };
+  const table = hopTable([record([arm])]);
+  assert.match(table, /\| Read, personal token \| none \| r2 2× 80 ms, d1 0.5× 40 ms \| none \|/);
+  assert.match(table, /\| List \| none \| none \| none \|/);
 });
 
 test('the day has a rhythm, follows the sun and sums to the plan', () => {

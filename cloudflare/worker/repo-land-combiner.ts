@@ -15,7 +15,8 @@ import { HeadHolder } from './repo-head-holder';
 import { claimCommand } from './repo-land-poll';
 import { landBatch, type Settled } from './repo-merge';
 import { caller, type Json, RepoContext } from './repo-ops';
-import { whereHere } from './repo-region-hint';
+import { regionHintTest, whereHere } from './repo-region-hint';
+import { serveHere } from './repo-region-serve';
 import { RefsHolder } from './repo-snapshots';
 import type { Env } from './types';
 
@@ -285,6 +286,14 @@ export class LandCombiner extends DurableObject<Env> {
   refresh(repo: string, access = false) {
     this.#refs.forget();
     return this.#head.refresh(repo, access);
+  }
+
+  /** REGION_HINT_TEST only: the platform's routes, run here (repo-region-serve.ts), for the
+   * instances named `region-serve:<hint>`. A stored key keeps the instance where it started. */
+  async fetch(request: Request) {
+    if (!regionHintTest(this.env)) return new Response('Not found', { status: 404 });
+    await this.ctx.storage.put('placed', true);
+    return serveHere(request, this.env, (work) => this.ctx.waitUntil(work));
   }
 
   /** The data center this instance runs in (REGION_HINT_TEST only). `keep` stores a key, so a

@@ -4,7 +4,7 @@
 // live run. Artifacts and queues are the fixture's fakes; no latency here means anything.
 import { afterEach, expect, it, vi } from 'vitest';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
-import { runPair } from '../../tools/fanout-bench/region-matrix.mjs';
+import { runArm } from '../../tools/fanout-bench/region-matrix.mjs';
 import { DEFAULTS, seedBlobs, seedFiles } from '../../tools/fanout-bench/region-plan.mjs';
 import { runSteps } from '../../tools/fanout-bench/region-steps.js';
 import { Actor } from '../../tools/real-use/actor.mjs';
@@ -89,33 +89,39 @@ it('the clone and push forms get a pack and a push report, as Git would', async 
   expect(Object.keys(refs).some((ref) => ref.startsWith('refs/heads/ci/'))).toBe(true);
 });
 
-it('one pair of the latency matrix runs its whole sequence and keeps no token', async () => {
-  const cookie = await signup('matrixowner');
+const armOptions = { ...DEFAULTS, reads: 3, clones: 2, lands: 2, pushes: 2, searches: 2, pages: 1, signIns: 1, files: 6 };
+
+/** A client that runs each step in this workerd, as the regional client would. */
+async function armWorld(target: Env, name: string) {
+  const cookie = await signup(name);
   const pat = (await api('/tokens', { cookie }, { body: { name: 'matrix', scopes: ['repo:read', 'repo:write', 'repo:land', 'repo:admin'], expires_days: 1 } })).body.token;
-  const where = { ...fakeCombiners, get: (name: string) => ({ ...fakeCombiners.get(name), where: async () => 'TST' }) };
-  const hinted = { ...scoped, REGION_HINT_TEST: 'on', LAND_COMBINERS: where } as unknown as Env;
-  const repos: { id: string; name: string }[] = [];
-  vi.stubGlobal('fetch', (url: string, init: RequestInit) => platformFetch(new Request(url, init), hinted));
-  const options = { ...DEFAULTS, reads: 3, clones: 2, lands: 2, pushes: 2, files: 6 };
+  vi.stubGlobal('fetch', (url: string, init: RequestInit) => platformFetch(new Request(url, init), target));
   const call = async (_client: string, { steps }: { steps: any[] }) => ({ results: await runSteps('https://yoneda', steps) });
-  const pair = await runPair({ call, pat, ledger: { add: async (r: { id: string; name: string }) => void repos.push(r) } }, { stamp: 'test', run: 1, client: 'eu', data: 'weur', options });
-  expect(pair.failed).toBeUndefined();
-  expect(pair.stop).toBeUndefined();
-  expect(repos.map((r) => r.name)).toEqual(['region-hint-test-1-eu-weur']);
-  expect(pair.where).toMatchObject({ combiner: 'TST' });
-  const failed = Object.values(pair.ops as Record<string, any[]>).flat().filter((r) => !r.ok);
+  const account = { signIn: async () => ({ row: { label: 'sign_in', ok: true, status: 200, ms: 1, server: null } }) };
+  return { call, front: call, pat, account };
+}
+
+it('one arm of the same-region test runs its whole sequence and keeps no token', async () => {
+  const where = { ...fakeCombiners, get: (name: string) => ({ ...fakeCombiners.get(name), where: async () => 'TST' }) };
+  const hinted = { ...scoped, REGION_HINT_TEST: 'on', ACCOUNT_SEARCH: 'on', LAND_COMBINERS: where } as unknown as Env;
+  const world = await armWorld(hinted, 'matrixowner');
+  const repos: { id: string; name: string }[] = [];
+  const ledger = { add: async (r: { id: string; name: string }) => void repos.push(r) };
+  const arm = await runArm({ ...world, ledger, assets: [] }, { stamp: 'test', run: 1, client: 'eu', arm: { arm: 'region', data: 'weur', serve: 'weur' }, options: armOptions });
+  expect(arm.failed).toBeUndefined();
+  expect(arm.stop).toBeUndefined();
+  expect(repos.map((r) => r.name)).toEqual(['region-hint-test-1-eu-region']);
+  expect(arm.where).toMatchObject({ combiner: 'TST' });
+  const failed = Object.values(arm.ops as Record<string, any[]>).flat().filter((r) => !r.ok);
   expect(failed.map((r) => `${r.label} ${r.status} ${r.error} ${r.message}`)).toEqual([]);
-  expect(Object.keys(pair.ops).sort()).toEqual(['clone', 'commit', 'create', 'land', 'list', 'push', 'read_pat', 'read_token']);
-  expect(pair.ops.push).toHaveLength(2);
+  expect(Object.keys(arm.ops).sort()).toEqual(['clone', 'commit', 'create', 'land', 'list', 'push', 'read_pat', 'read_token', 'search', 'sign_in']);
+  expect(arm.ops.push).toHaveLength(2);
   // The create's answer carries a token; a sample never does.
-  expect(JSON.stringify(pair)).not.toMatch(/yrp_|ypat_/);
+  expect(JSON.stringify(arm)).not.toMatch(/yrp_|ypat_/);
 });
 
-it('a matrix stops rather than measure a platform that ignored the hint', async () => {
-  const cookie = await signup('matrixoff');
-  const pat = (await api('/tokens', { cookie }, { body: { name: 'matrix', scopes: ['repo:read', 'repo:write', 'repo:land', 'repo:admin'], expires_days: 1 } })).body.token;
-  vi.stubGlobal('fetch', (url: string, init: RequestInit) => platformFetch(new Request(url, init), scoped));
-  const call = async (_client: string, { steps }: { steps: any[] }) => ({ results: await runSteps('https://yoneda', steps) });
-  const pair = await runPair({ call, pat, ledger: { add: async () => {} } }, { stamp: 'off', run: 1, client: 'na', data: 'enam', options: { ...DEFAULTS, files: 2 } });
-  expect(pair.stop).toMatch(/REGION_HINT_TEST is off/);
+it('a test stops rather than measure a platform that ignored the hint', async () => {
+  const world = await armWorld(scoped, 'matrixoff');
+  const arm = await runArm({ ...world, ledger: { add: async () => {} }, assets: [] }, { stamp: 'off', run: 1, client: 'na', arm: { arm: 'today', data: 'enam' }, options: { ...armOptions, pages: 0, files: 2 } });
+  expect(arm.stop).toMatch(/REGION_HINT_TEST is off/);
 });

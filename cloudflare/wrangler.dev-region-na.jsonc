@@ -4,7 +4,8 @@
 // Targeted placement holds one Worker near one cloud region, so each region needs its own Worker; bench and
 // bench2 stay in aws:us-east-1 for the load stages' 1-against-2 comparison.
 // The bindings are read by its dependency probe only, which times one read of each piece from here. It runs
-// only those reads, behind BENCH_KEY (from stdin, the same value as bench's).
+// only those reads, plus one small object in its own test bucket, behind BENCH_KEY (from stdin, the same value as bench's).
+// LAND_COMBINERS reaches the instance named region-serve:<hint>, which runs the platform's routes in that region (repo-region-serve.ts, REGION_HINT_TEST).
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
@@ -29,6 +30,11 @@
       {
         "class_name": "CommitShard",
         "name": "COMMIT_SHARDS",
+        "script_name": "yonedarepo-dev-platform"
+      },
+      {
+        "class_name": "LandCombiner",
+        "name": "LAND_COMBINERS",
         "script_name": "yonedarepo-dev-platform"
       },
       {

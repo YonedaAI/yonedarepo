@@ -10,7 +10,6 @@ export const CLIENTS = {
   eu: { role: 'region-eu', near: 'weur', label: 'Europe', placed: 'aws:eu-central-1' },
   ap: { role: 'region-ap', near: 'apac', label: 'Asia', placed: 'aws:ap-southeast-1' },
 };
-export const DATA_REGIONS = ['enam', 'weur', 'apac'];
 
 /** A regional client's URL, from dev's spec. */
 export const clientUrl = (name, spec = devSpec()) => `https://${spec.prefix}-${CLIENTS[name].role}.${spec.subdomain}.workers.dev`;

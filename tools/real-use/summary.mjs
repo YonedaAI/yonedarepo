@@ -1,5 +1,6 @@
 // What a run adds up to: per region and step, and per simulated hour so the day's rhythm shows.
 // Client time is what the region saw; server time is `Server-Timing` total, where one came back.
+import { hopsOf } from '../fanout-bench/region-results.mjs';
 import { failed, refused } from './run.mjs';
 import { classOf } from './sessions.mjs';
 
@@ -44,13 +45,15 @@ export function summarize({ rows, counts, ms, stopped, settled }, { plan, placed
     stopped,
     settled,
     ran_ms: ms,
-    plan: { minutes: plan.minutes, peak_sessions: plan.peakSessions, peak_per_minute: Number(plan.peakPerMinute.toFixed(1)), accounts: plan.accounts, repositories: plan.accounts * plan.reposPerAccount, seed: plan.seed },
+    plan: { arm: plan.arm, minutes: plan.minutes, peak_sessions: plan.peakSessions, peak_per_minute: Number(plan.peakPerMinute.toFixed(1)), accounts: plan.accounts, repositories: plan.accounts * plan.reposPerAccount, seed: plan.seed },
     clients: placed,
     sessions: counts,
     all: figures(rows),
     by_region_class: grouped(rows, (r) => `${r.region} ${classOf(r.label)}`),
     by_region_label: grouped(rows, (r) => `${r.region} ${r.label}`),
     by_minute: grouped(rows, (r) => String(minuteOf(r))),
+    // What each region's requests still reached (`hop.*`, on the region arm only).
+    hops: Object.fromEntries([...new Set(rows.map((r) => r.region))].sort().map((region) => [region, hopsOf(rows.filter((r) => r.region === region))])),
     failures: failures(rows),
     server: sampler,
   };

@@ -172,6 +172,9 @@ export async function route(req: Request, env: Env, url: URL, auth: Credentials)
   return repo ? forViewer(env, value, () => caller(env, repo, auth)({ op: 'repo_status' })) : value;
 }
 
+const signedAccount = (auth: Credentials) =>
+  '_session' in auth ? auth._session.workspace : '_pat' in auth ? auth._pat.workspace : null;
+
 async function routed(req: Request, env: Env, url: URL, auth: Credentials): Promise<Json> {
   const parts = url.pathname.split('/').filter(Boolean).slice(2); // after api/v1
   if (parts[0] === 'tokens' && parts.length <= 2)
@@ -265,7 +268,8 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return { ...compaction, storage };
   }
   // Where this repository's objects run (repo-region-hint.ts); off, an unknown path.
-  if (resource === 'where' && get && regionHintTest(env)) return whereRepository(ctx);
+  if (resource === 'where' && get && regionHintTest(env))
+    return whereRepository(ctx, signedAccount(auth));
   if (resource === 'retention' && req.method === 'PUT') {
     const { keep_versions, keep_days } = await bodyOf(req);
     return audited(env, repo, ctx.call({ op: 'repo_set_retention', keep_versions, keep_days }));

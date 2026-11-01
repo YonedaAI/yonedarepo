@@ -4,7 +4,9 @@
 // Targeted placement holds one Worker near one cloud region, so each region needs its own Worker; bench and
 // bench2 stay in aws:us-east-1 for the load stages' 1-against-2 comparison.
 // The bindings are read by its dependency probe only, which times one read of each piece from here. It runs
-// only those reads, behind BENCH_KEY (from stdin, the same value as bench's).
+// only those reads, plus one small object in its own test bucket, behind BENCH_KEY (from stdin, the same value as bench's).
+// REGIONAL_OBJECTS is a test bucket holding one probe object. A location hint counts only when a bucket is first made, so before the first deploy: wrangler r2 bucket create {prefix}-region-weur --location weur (docs/runbook.md).
+// LAND_COMBINERS reaches the instance named region-serve:<hint>, which runs the platform's routes in that region (repo-region-serve.ts, REGION_HINT_TEST).
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
@@ -32,6 +34,11 @@
         "script_name": "yonedarepo-dev-platform"
       },
       {
+        "class_name": "LandCombiner",
+        "name": "LAND_COMBINERS",
+        "script_name": "yonedarepo-dev-platform"
+      },
+      {
         "class_name": "WorkspaceAuthority",
         "name": "WORKSPACES",
         "script_name": "yonedarepo-dev-platform"
@@ -49,6 +56,10 @@
     {
       "binding": "OBJECTS",
       "bucket_name": "yonedarepo-dev-platform-objects"
+    },
+    {
+      "binding": "REGIONAL_OBJECTS",
+      "bucket_name": "yonedarepo-dev-region-weur"
     }
   ],
   "workers_dev": true

@@ -49,7 +49,7 @@ export function hintedEnv(env: Env, hint: string): Env {
   const namespaces: Partial<Env> = { SOURCE_REPOS: hinted(env.SOURCE_REPOS, hint) };
   if (env.COMMIT_SHARDS) namespaces.COMMIT_SHARDS = hinted(env.COMMIT_SHARDS, hint);
   if (env.LAND_COMBINERS) namespaces.LAND_COMBINERS = hinted(env.LAND_COMBINERS, hint);
-  return Object.assign(Object.create(env), namespaces, { SHARD_START: 'request' });
+  return { ...env, ...namespaces, SHARD_START: 'request' };
 }
 
 const combinerNames = (repo: string) => [`${repo}:main`, `${repo}#head`, `${repo}#projector`];
@@ -80,14 +80,16 @@ async function whereObject(stub: () => DurableObjectStub, url: string) {
   return answer?.ok ? coloOf(await answer.text()) : null;
 }
 
-/** `GET /repos/<id>/where`: where the Worker and each of this repository's objects run. */
-export async function whereRepository(ctx: RepoContext): Promise<Json> {
+/** `GET /repos/<id>/where`: where this code, each of this repository's objects and the asker's
+ * account authority run. */
+export async function whereRepository(ctx: RepoContext, account: string | null): Promise<Json> {
   // Owner only, and a deleted repository answers as one (`repo_storage` refuses the rest).
   await ctx.call({ op: 'repo_storage' });
   const { env, repo } = ctx;
   const shards = env.COMMIT_SHARDS;
   const stub = () => env.SOURCE_REPOS.get(env.SOURCE_REPOS.idFromName(repo));
-  const [worker, authority, shard, combiners] = await Promise.all([
+  const owned = account ? env.WORKSPACES.idFromName(`account:${account}`) : null;
+  const [worker, authority, shard, combiners, own] = await Promise.all([
     whereHere(),
     whereObject(stub, 'https://source-repository/where'),
     shards
@@ -102,7 +104,8 @@ export async function whereRepository(ctx: RepoContext): Promise<Json> {
           : null,
       ),
     ),
+    owned ? whereObject(() => env.WORKSPACES.get(owned), 'http://workspace/where') : null,
   ]);
   const [main, head, projector] = combiners;
-  return { worker, authority, shard, combiner: main, head, projector };
+  return { worker, authority, shard, combiner: main, head, projector, account: own };
 }

@@ -128,7 +128,7 @@ it("where answers the owner, says nothing it did not read, and refuses anyone el
   expect(where.status).toBe(200);
   expect(where.body).toMatchObject({ worker: 'TST', combiner: 'TST', head: 'TST', projector: 'TST' });
   // The Rust objects read the page themselves: a code or null, depending on this machine.
-  for (const colo of [where.body.authority, where.body.shard]) expect(colo === null || /^[A-Z]{3}$/.test(colo)).toBe(true);
+  for (const colo of [where.body.authority, where.body.shard, where.body.account]) expect(colo === null || /^[A-Z]{3}$/.test(colo)).toBe(true);
   const refused = await api(`/repos/${repo.id}/where`, { cookie: stranger }, {}, env);
   expect(refused.status).toBeGreaterThanOrEqual(403);
   expect(refused.body.worker).toBeUndefined();

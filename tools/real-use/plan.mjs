@@ -36,6 +36,9 @@ export const activity = (who, hour) => (who === 'agent' ? Math.max(AGENT_FLOOR, 
 /** The simulated UTC hour `minute` of a run reaches, one day over the run. */
 export const simHour = (minute, minutes, startUtc = 0) => (startUtc + (24 * minute) / minutes) % 24;
 
+/** The data region each client region's accounts live in, on the `region` arm. */
+export const homeOf = { na: 'enam', eu: 'weur', ap: 'apac' };
+
 const load = (kind, region, hour) => MIX[kind].share * ZONES[region].share * activity(MIX[kind].who, hour + ZONES[region].utc);
 const total = (hour) => Object.keys(MIX).reduce((sum, kind) => sum + Object.keys(ZONES).reduce((n, region) => n + load(kind, region, hour), 0), 0);
 
@@ -74,4 +77,8 @@ export function zipfIndex(random, size) {
   return size - 1;
 }
 
-export const DEFAULTS = { minutes: 60, peakSessions: 150, accounts: 24, reposPerAccount: 3, files: 60, seed: 1, gitEvery: 120, sampleSeconds: 120, startUtc: 0 };
+/** `region`: each region's accounts and repositories live there, and are served there. `today`:
+ * everything in enam behind the pinned Worker, as now. Same requests, same seed. */
+export const ARMS = ['region', 'today'];
+
+export const DEFAULTS = { arm: 'region', minutes: 60, peakSessions: 150, accounts: 24, reposPerAccount: 3, files: 60, seed: 1, gitEvery: 120, sampleSeconds: 120, startUtc: 0 };

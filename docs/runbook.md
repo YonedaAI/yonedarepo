@@ -370,6 +370,15 @@ Refused landings are not skipped by a jump: they stay in the queue table, and co
 
 **Schema changes need a new stream.** Basin accepts an event that does not match the stream and drops it later without an error, so `records_and_the_stream_schema_agree` fails when `change_records.rs` and `cloudflare/basin/change-log.schema.json` disagree. To change a field, add a `_v2` stream, sink and pipeline, and bind the new stream. The `user error` metrics in GraphQL show dropped events.
 
+## Regional clients and the same-region test
+
+`yonedarepo-dev-region-na`, `-eu` and `-ap` are clients placed in each region, dev only (`tools/fanout-bench/region-worker.js`, [global scale plan](global-scale-plan.md#same-region-test)). `REGION_HINT_TEST` turns the test on; it's off, and absent from prod.
+
+1. **Test buckets, once, before the first deploy.** A location hint counts only when a bucket is first made, and wrangler refuses a binding to a missing bucket: `wrangler r2 bucket create yonedarepo-dev-region-weur --location weur` and the same for `apac`. Each holds one probe object.
+2. **D1 replication, for the replica figure:** `PUT /accounts/<account>/d1/database/<id>` with `{"read_replication":{"mode":"auto"}}`. Queries outside `withSession` stay on the primary, so the platform doesn't change. Turning it off takes up to 24 hours to stop.
+3. **Run:** set `REGION_HINT_TEST` to `on` in `infra/envs/dev.json`, `cargo xtask infra gen --env dev`, deploy, `node tools/platform-region-matrix.mjs --yes`. Set it off and deploy again afterwards.
+4. **A stopped run:** `node tools/platform-region-matrix.mjs --cleanup` deletes the test repositories in `.local/platform-live/region-hint-repos.json`, as their owners, and nothing else.
+
 ## Recovery
 
 Queues are at least once: redelivery is expected, so consumers must be idempotent (leases, epochs, idempotency keys). The dead-letter queue is diagnostic transport evidence; the repository Durable Object's records remain authoritative. Check the repository's current state before retrying anything by hand.

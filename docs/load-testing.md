@@ -179,26 +179,37 @@ The mix, as printed by `--dry-run`:
 
 Agents are half the sessions because the product is built for them. The result of the arithmetic: 155 sessions a minute and about 30 requests/s at the peak, about 5,600 sessions and 65,000 requests in the hour.
 
+**Two arms, same day and same seed.** The owner's rule is that data stays in its region, so the default arm is `region`.
+
+| | `--arm region` (default) | `--arm today` |
+|---|---|---|
+| Accounts, repositories | Each region's start there, `region-hint-sim-*`, by location hint | All near the pinned Worker, `real-use-*` |
+| Who answers | The platform's routes in that region ([same-region test](global-scale-plan.md#same-region-test)) | The pinned Worker |
+| Pages and assets | The front Worker, pinned: this arm can't move them | The same |
+| What's left | `hop.*` in each answer lists what still left the region; the summary totals it | – |
+
 **How it runs:**
 
-1. People go through `dev.yonedarepo.com` with a session cookie, so the front Worker is in the path. Agents go to `api.dev.yonedarepo.com` with a `yrp_` or `ypat_` token.
+1. People carry a session cookie, and on `today` go through `dev.yonedarepo.com`, so the front Worker is in the path. Agents go to `api.dev.yonedarepo.com` with a `yrp_` or `ypat_` token.
 2. Each region's requests leave a client Worker placed there (`yonedarepo-dev-region-na`, `-eu`, `-ap`). They enter Cloudflare in that region, as a real user's would, less the user's own last mile.
-3. Workers can't run Git, so `git` sessions send Git's own requests as bytes (`tools/fanout-bench/git-forms.mjs`). Real `git` runs from the Mac every 2 minutes: clone, commit, push, fetch. The Mac's Cloudflare location is whatever a trace reports (San José, Costa Rica on 2026-10-31), not one of the three regions.
+3. Workers can't run Git, so `git` sessions send Git's own requests as bytes (`tools/fanout-bench/git-forms.mjs`). Real `git` runs from the Mac every 2 minutes: clone, commit, push, fetch. It reaches only the public path, so on `region` it uses only North American repositories. The Mac's Cloudflare location is whatever a trace reports (San José, Costa Rica on 2026-10-31), not one of the three regions.
 4. Checks are reports (`POST /commits/<id>/checks`). **No container starts and no model runs,** so the run costs only requests.
 5. Arrivals are open loop: a slow platform meets the same people, as in life.
 6. `tests/workers/real-use-scripts.test.ts` plays every script through the real routes, so a stale request form fails there, not an hour in.
 
 **Stop rules,** judged each 15 s over the last minute, per class, from 20 requests up: errors above 1%, p95 over 3× target, or a Cloudflare limit error. Targets: read 1 s, write 3 s (the budget above), Git clone 6 s (ours; the budget has none). A lost race (`409 CONFLICT`, `MERGE_REQUIRED`, `STALE_HEAD`, `STALE_PARENT`, `NOT_READY`, `ALREADY_EXISTS`) is counted but isn't an error.
 
-**What it leaves:** accounts `realuse0`… and repositories `real-use-<a>-<r>` stay in `.local/platform-live/pool-real-use.json` for the next run. Each account's password is derived from the kit's, never stored. Tokens are fresh, revoked at the end, and expire in a day. Rows go to `real-use-<stamp>.rows.jsonl`, the summary to one timestamped evidence file. A lock file refuses a second run.
+**What it leaves:** accounts `realuse_<arm>_<n>` and their repositories stay in `.local/platform-live/pool-real-use-<arm>.json` for the next run. Each account's password is derived from the kit's, never stored. Tokens are fresh, revoked at the end, and expire in a day. Rows go to `real-use-<stamp>.rows.jsonl`, the summary to one timestamped evidence file. A lock file refuses a second run.
 
 **Before the hour:**
 
 1. Deploy (the three regional clients must exist), then warn the owner. Cost basis: about $0.60 per million platform requests at list price, so 65,000 requests is about $0.04, and background derive jobs add to that. Assume under $1. No caps change.
-2. `node tools/platform-real-use.mjs --setup-only`: first run signs up 24 accounts, about 3 minutes, because `AUTH_LIMITER` allows 30 sign-ins a minute. Each sign-up sends a welcome mail to Resend's test inbox.
-3. `cargo xtask admin internal --env dev realuse0 realuse1 …`, with the names from `.local/platform-live/pool-real-use.json`, so these accounts stay out of the traffic figures.
+2. `node tools/platform-real-use.mjs --setup-only`: first run signs up 24 accounts, about 2 minutes, because `AUTH_LIMITER` allows 30 sign-ins a minute. Each sign-up sends a welcome mail to Resend's test inbox.
+3. `cargo xtask admin internal --env dev <names>`, with the names from `.local/platform-live/pool-real-use-<arm>.json`, so these accounts stay out of the traffic figures.
 4. Make sure nothing else runs on dev and no deploy can happen during it.
 5. `node tools/platform-real-use.mjs --yes`.
+
+**On the `region` arm,** one serving object answers each region, where a Worker would scale wider, so its concurrency isn't a finding about a real region. Queue jobs stay on the pinned Worker in both arms.
 
 **Doesn't cover:** real-history repositories, real container checks, model calls, SSH, anonymous public traffic, and more than 150 sessions at once. Those have their own stages above.
 

@@ -1,9 +1,12 @@
 #!/usr/bin/env node
 // One day of real use on dev, in an hour (docs/load-testing.md, Real-use simulation): accounts and
-// repositories in three regions, sessions of people and agents at their own pace, sent from a
-// client Worker in each region, and real Git from this machine. `--dry-run` prints the plan and
-// sends nothing. Accounts and repositories are kept for the next run; tokens are not. Dev only.
-// Usage: node tools/platform-real-use.mjs --dry-run | --yes [--minutes 60] [--peak-sessions 150]
+// repositories in three regions, sessions of people and agents at their own pace, each sent from a
+// client Worker in its region. On the `region` arm, the default, each region's data lives there
+// and the platform's routes run there, so requests stay in the region as far as today's stack
+// can. `--arm today` plays the same day through the pinned Worker, for comparing. Real Git runs
+// from this machine. `--dry-run` prints the plan and sends nothing. Accounts and repositories are
+// kept for the next run; tokens are not. Dev only; the region arm needs REGION_HINT_TEST=on.
+// Usage: node tools/platform-real-use.mjs --dry-run | --yes [--arm region|today] [--minutes 60]
 import assert from 'node:assert/strict';
 import { createWriteStream } from 'node:fs';
 import { mkdir, rm, writeFile } from 'node:fs/promises';
@@ -17,13 +20,14 @@ import { startSampler } from './fanout-bench/sampler.mjs';
 import { OWN_TRAFFIC, readEnvFile } from './staging/client.mjs';
 import { describeRun, estimateRun } from './real-use/estimate.mjs';
 import { macGitLoop } from './real-use/mac-loop.mjs';
-import { DEFAULTS, ZONES } from './real-use/plan.mjs';
+import { ARMS, DEFAULTS, ZONES } from './real-use/plan.mjs';
 import { mintCredentials, populationOf, preparePool } from './real-use/population.mjs';
 import { playDay } from './real-use/run.mjs';
 import { renderSummary, summarize } from './real-use/summary.mjs';
 
 const { values } = parseArgs({
   options: {
+    arm: { type: 'string', default: DEFAULTS.arm },
     api: { type: 'string', default: 'https://api.dev.yonedarepo.com' },
     front: { type: 'string', default: 'https://dev.yonedarepo.com' },
     minutes: { type: 'string', default: String(DEFAULTS.minutes) },
@@ -42,7 +46,9 @@ const { values } = parseArgs({
 const api = values.api.replace(/\/$/, '');
 const front = values.front.replace(/\/$/, '');
 requireDev([api, front]);
+assert.ok(ARMS.includes(values.arm), `--arm is one of ${ARMS}`);
 const plan = await estimateRun({
+  arm: values.arm,
   minutes: Number(values.minutes),
   peakSessions: Number(values['peak-sessions']),
   accounts: Number(values.accounts),
@@ -74,42 +80,43 @@ const controller = new AbortController();
 process.once('SIGINT', () => controller.abort());
 let credentials = null;
 try {
-  const { pool, sessions } = await preparePool({ origin: front, kitPassword: kit.KIT_PASSWORD, accounts: plan.accounts, reposPerAccount: plan.reposPerAccount, files: plan.files, log });
-  if (values['setup-only']) process.exit(0);
   const regions = Object.keys(ZONES);
-  const regional = (target) => regionalClients({ key: BENCH_KEY, target });
-  const clients = { [api]: regional(api), [front]: regional(front) };
+  const clients = { [api]: regionalClients({ key: BENCH_KEY, target: api }), [front]: regionalClients({ key: BENCH_KEY, target: front }) };
   const placed = await placedClients(clients[api], regions);
   log(`Clients: ${JSON.stringify(placed)}`);
+  const { pool, sessions } = await preparePool({ arm: plan.arm, target: api, call: clients[api].call, kitPassword: kit.KIT_PASSWORD, accounts: plan.accounts, reposPerAccount: plan.reposPerAccount, files: plan.files, regions, log });
+  if (values['setup-only']) process.exit(0);
   const html = await (await fetch(`${front}/`, { headers: { ...OWN_TRAFFIC } })).text();
   const assets = [...new Set([...html.matchAll(/(?:src|href)="(\/assets\/[^"]+\.(?:js|css))"/g)].map((m) => m[1]))].slice(0, 2);
   const repos = pool.repos.filter((r) => r.owner < plan.accounts);
   const run = stampOf(new Date()).slice(0, 19).toLowerCase().replace(/[^0-9t]/g, '');
-  credentials = await mintCredentials({ pool, sessions, run, repos });
-  const population = populationOf({ pool, sessions, credentials, repos, api, front, regions });
+  credentials = await mintCredentials({ sessions, run, repos });
+  const population = populationOf({ arm: plan.arm, pool, sessions, credentials, repos, api, front, regions });
   const rowsFile = createWriteStream(resolve(EVIDENCE_DIR, `real-use-${run}.rows.jsonl`));
   const owners = new Map(repos.map((r) => [r.id, sessions[r.owner]]));
   const sampler = startSampler({
-    session: { call: (method, path) => owners.get(/r[0-9a-f]{20}/.exec(path)?.[0]).raw(method, path).then((a) => ({ status: a.status, body: a.body })) },
+    session: { call: (method, path) => owners.get(/r[0-9a-f]{20}/.exec(path)?.[0]).raw(method, `/api/v1${path}`).then((a) => ({ status: a.status, body: a.body })) },
     repos: repos.map((r) => r.id),
     analytics: CF_ANALYTICS_TOKEN ? cloudflareReaders({ token: CF_ANALYTICS_TOKEN, spec: devSpec() }) : null,
     every_ms: plan.sampleSeconds * 1000,
     log,
   });
+  const nearPublic = repos.map((repo, i) => ({ repo, token: credentials.tokens[i] })).filter(({ repo }) => plan.arm === 'today' || pool.accounts[repo.owner].client === 'na');
   const day = await playDay({
     plan,
     population,
     assets,
     log,
     signal: controller.signal,
-    send: (region, target, steps, parallel) => clients[target].call(region, { steps, parallel }),
+    send: (region, target, steps, parallel, serve) => clients[target].call(region, { steps, parallel, ...(serve && { serve }) }),
     onRow: (row) => rowsFile.write(`${JSON.stringify(row)}\n`),
-    sideJobs: [macGitLoop({ api, repos, tokens: credentials.tokens, every_s: plan.gitEvery, random: Math.random })],
+    // Git reaches only the public path, so only repositories that path is near.
+    sideJobs: [macGitLoop({ api, repos: nearPublic.map((r) => r.repo), tokens: nearPublic.map((r) => r.token), every_s: plan.gitEvery, random: Math.random })],
   });
   rowsFile.end();
   const server = await sampler.stop({ settle_ms: 30_000 });
   const summary = summarize(day, { plan, placed, sampler: server.summary });
-  await evidence(`real-use-${plan.minutes}m`, api, { summary }, { client: 'regional clients and real Git from the Mac', quiet: true });
+  await evidence(`real-use-${plan.arm}-${plan.minutes}m`, api, { summary }, { client: 'regional clients and real Git from the Mac', quiet: true });
   console.log(renderSummary(summary));
   log(`Stopped: ${day.stopped}. ${summary.all.requests} requests, ${summary.all.failed} failed, ${summary.all.conflicts} conflicts, ${day.counts.dropped} sessions dropped.`);
   process.exitCode = day.stopped === 'finished' ? 0 : 3;

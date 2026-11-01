@@ -319,39 +319,104 @@ So the region is read where the request arrives and passed on as a value. Git ov
 
 **Write sample:** `write_origin` points in the site events dataset, one write in 10, with the continent and a digest of the account. A repository token's digest is its repository's, because naming the account would add a lookup (safety rule 8).
 
-### Latency matrix (stage R2, spikes for R3)
+### Keeping data in its region
 
-What someone far from our data gets, and what changes when it sits near them. `tools/platform-region-matrix.mjs`, built 2026-10-31.
+**The owner's rule, 2026-10-31: data doesn't go across continents.** A request from Europe is served by Europe's Workers, Durable Objects and storage, and likewise Asia, on Cloudflare only. This replaces stage R2's client × data matrix as the main output. No cells or routing are built here: this says what the design must be.
 
-**How it measures:**
+**Status:** hop map read from code and config; "measured" cells wait for the same-region test below, which has not run on dev.
 
-1. **Clients.** One Worker each in North America (`aws:us-east-1`), Europe (`aws:eu-central-1`) and Asia (`aws:ap-southeast-1`). Targeted placement holds a whole Worker near one cloud region, so `bench` and `bench2` can't do this, and moving `bench2` would break the load stages' 1-against-2 comparison. Each answers with the colo it really ran in, and the run stops if two share one.
-2. **Data.** `REGION_HINT_TEST`, off everywhere and absent from prod. On, a create of a new repository named `region-hint-*` takes `region_hint` (`enam`, `weur`, `apac`), passed to the first `get` of its authority, 64 shards, combiner, head holder and projector. Existing repositories can't take one: a create's id is always new. No routing changes.
-3. **Through the pinned Worker.** Each client reads a file, lists, clones, commits, lands, pushes and creates, on its own fresh repository. Read and write as a person's request would: client to edge to the Worker in `aws:us-east-1` to the object and back.
-4. **Without it.** Each client also times one read of each piece through a binding: D1, the account authority, R2, each repository object. That's what moving a piece near that client would change, which the pinned path can't show.
-5. **Where objects landed.** `GET /repos/<id>/where` has each object fetch Cloudflare's trace page and answers the colo. That's the method [Where Durable Objects Live](https://where.durableobjects.live) uses; Cloudflare documents no API for it.
+#### Hop map: where each operation goes today
 
-**What stays in the US today:**
+For a person or agent in Europe or Asia. **Crosses** means the hop leaves their continent. Everything here is read from code and `infra/envs/dev.json`; the two facts already measured are R2 and D1 (`ENAM`, Cloudflare API, 2026-10-31).
 
-| Piece | Where | Source |
+| Operation | Hop | Runs in | Crosses? |
+|---|---|---|---|
+| Every request | Client to the nearest Cloudflare colo | Their region | No |
+| Every request | Colo to the pinned Worker (front or platform) | `aws:us-east-1` | **Yes** |
+| Page | Front Worker first for every path, assets too (`run_worker_first: true`) | `aws:us-east-1` | **Yes** |
+| Page | The page's API calls: front to platform over a service binding | `aws:us-east-1` | **Yes** |
+| Sign-in | Rate limiter, then the account's `WorkspaceAuthority` | Colo of the Worker; authority near the pinned Worker | **Yes** |
+| Any `ypat_` request | D1 lookup, then the account authority, then any org authority, uncached | D1 primary `ENAM`; authorities near the Worker | **Yes**, 2 or more hops |
+| Any cookie request | Account authority (`session`), then any org authority | Near the Worker | **Yes** |
+| `yrp_` request | No D1 and no account authority; the repository decides | – | No extra hop |
+| Read, list | Head holder (a `LandCombiner`), then the repository authority for what it lacks | Near the Worker | **Yes** |
+| Read | Object tiers: memory, Cache API in the Worker's colo, R2, then shard or Artifacts | R2 `ENAM`; Artifacts unknown | **Yes** on a miss |
+| Clone | Repository authority for access, refs and the walk; R2 for bundles and stored packs | Near the Worker; R2 `ENAM` | **Yes** |
+| Clone, imported history | Artifacts | Unknown | Unknown |
+| Push | R2 writes (bundles), authority records, queue sends | R2 `ENAM`; queue location undocumented | **Yes** |
+| Commit | Head holder, then a commit shard | Near the Worker | **Yes** |
+| Land | Shard read, the branch's combiner, the repository authority | Near the Worker | **Yes** |
+| Search | D1 listing, the owner's `search:` directory, each repository's head and R2 index segments | D1 `ENAM`; R2 `ENAM` | **Yes** |
+| Repository create | Account authority (name), repository authority, D1 listing, queue (Artifacts store), 64 shards, head holder | All of the above | **Yes** |
+| After any write | Queue consumer on the pinned Worker: projection to Artifacts, derive, compaction, hooks | `aws:us-east-1` | **Yes** |
+| Large pushes | Pack build in a container | Constrained to `ENAM` | **Yes** |
+| Checks, managed agents | Containers | Constrained to `ENAM` | **Yes** |
+
+New Durable Objects land near whoever first asks for them, so today that's near the pinned Worker: **every Durable Object is in the US because the Workers are.**
+
+#### For each crossing hop, the Cloudflare way
+
+Read in Cloudflare's docs on 2026-10-31. **Nothing here is measured yet except as marked.**
+
+| Hop | Cloudflare's way | What it can't do |
 |---|---|---|
-| R2 objects bucket | `ENAM`, no jurisdiction | Cloudflare API, 2026-10-31 |
-| D1 primary | `ENAM`, read replication disabled | Cloudflare API, 2026-10-31 |
-| Front and platform Workers | Pinned to `aws:us-east-1` | `infra/envs/dev.json` |
-| Check, pack and SSH containers, managed harness | Constrained to `ENAM` | `infra/envs/dev.json` |
-| Artifacts | **Not known.** A namespace can take a jurisdiction, `eu` or `us`, only when it's created. Nothing says which data centers serve it, and ours has none | [Cloudflare docs](https://developers.cloudflare.com/artifacts/guides/data-localization/) |
+| Worker pin | Remove `placement`: Workers then "run in a data center closest to where the request was received" | Placement is per Worker, not per hostname or request. [Regional Services](https://developers.cloudflare.com/data-localization/how-to/workers/) can force execution in-region on a custom domain, but not on `workers.dev`, not for subrequests, and not for queues or cron. Code and secrets still deploy globally |
+| Static assets | Drop `run_worker_first: true`, or list only the paths that need it: assets then come from the edge without the Worker. [Up to 100 patterns](https://developers.cloudflare.com/workers/static-assets/routing/worker-script/) | The front's page metadata and analytics run first today, so those paths must keep it |
+| Repository objects, combiners, shards | [`locationHint`](https://developers.cloudflare.com/durable-objects/reference/data-location/) on the first `get`: `enam`, `weur`, `apac` and more. Or `jurisdiction('eu')` for a guarantee | A hint is best effort, and counts once. **Objects never move.** `sam`, `afr` and `me` don't spawn objects. Jurisdictions are `eu`, `us` and `fedramp`: **Asia can't have a guarantee.** A jurisdiction changes an object's id, so existing names can't take one |
+| Account authorities | The same, at sign-up | One account has one home, so a person who travels pays for it |
+| R2 | [One bucket per region](https://developers.cloudflare.com/r2/reference/data-location/): location hint `weur`, `apac`, or jurisdiction `eu` | A hint counts only the first time a name is created, and no bucket moves. No read replicas. [Local Uploads](https://developers.cloudflare.com/r2/buckets/local-uploads/) (open beta) writes near the client and then **replicates to the bucket across regions**, and refuses jurisdiction buckets: it breaks the rule, so it's out |
+| D1 reads | [Read replication](https://developers.cloudflare.com/d1/best-practices/read-replication/) with `withSession`: replicas in ENAM, WNAM, WEUR, EEUR, APAC and OC, no extra charge. Without `withSession`, everything still goes to the primary | Public beta since 2025-04-10; no GA found. Replicas lag, so a revoked token can read as live unless the session starts at a bookmark or `first-primary` |
+| D1 writes | Always the primary. One database per region ([hint at creation](https://developers.cloudflare.com/d1/configuration/data-location/); jurisdiction `eu`, `us`, `fedramp`, fixed for life) | No multi-writer: a shared table has one home continent. **So nothing global can be written from a region without crossing** |
+| Cached objects | [Cache API](https://developers.cloudflare.com/workers/runtime-apis/cache/) in each colo; our objects are immutable, so it's safe | Per colo, never replicated. `cache.put` doesn't work with Tiered Cache. Our own comment says it stores nothing on `workers.dev`, so it needs a custom domain. A first read in each colo still reaches R2 |
+| Queues | [Jurisdiction](https://developers.cloudflare.com/queues/configuration/data-location/) `eu`, `us` or `fedramp`, at creation only | **No location hint, and nothing for Asia.** By default messages are handled "across Cloudflare's global network". Where a consumer runs isn't stated |
+| Workflows | Nothing documented | No location or jurisdiction on the limits page. Not checked further |
+| Artifacts | [Namespace jurisdiction](https://developers.cloudflare.com/artifacts/guides/data-localization/) `eu` or `us`, at creation only, for every repo in it | **No hints and nothing for Asia.** Ours has none and can't take one, so Europe needs a new namespace |
+| Containers | [`constraints.regions`](https://developers.cloudflare.com/containers/platform-details/placement/) (`WEUR`, `EEUR`, `APAC`, …) or `jurisdiction` per container entry | [A container isn't guaranteed to run where its Durable Object does](https://developers.cloudflare.com/containers/platform-details/architecture/). The April changelog lists only ENAM, WNAM, EEUR and WEUR; the placement page adds APAC. Unverified until tried. One entry per class, so a region is a class or a Worker of its own (safety rule 4) |
+| Metadata | [Customer Metadata Boundary](https://developers.cloudflare.com/data-localization/compatibility/) | Logs and analytics for Durable Objects aren't available outside the US under it. A Durable Object's id is logged outside its jurisdiction. Analytics Engine has no region control. These hold metadata, not repository content |
 
-**R3 spikes the docs answer** (read 2026-10-31):
+**What can't be done on Cloudflare today:**
 
-| Spike | Answer |
-|---|---|
-| 2. Placement on RPC | Still contradicts itself: the page says placement affects only `fetch` handlers, and its own example relies on RPC. Not measured here |
-| 4. D1 read replication | No state of GA or beta on the page; replicas in ENAM, WNAM, WEUR, EEUR, APAC and OC, at no extra charge. `withSession` and bookmarks needed |
-| 5. Where R2 and D1 live | ENAM, both. See the table above |
+1. **A guarantee in Asia.** Durable Objects, R2 and D1 take hints there, which are best effort. No jurisdiction exists.
+2. **Artifacts in Asia.** No hint and no jurisdiction. R2 is already the store of record (`repo-projection.ts`), so an Asian repository has to run without Artifacts. `R2Store` exists, used only locally today. Imports refuse it (`repo-create.ts:240`), and it has never run on dev.
+3. **Queues in Asia.** Background work there has no way to stay put. The alternative is Durable Object alarms in the repository's own object, which runs where it landed.
+4. **Moving what exists.** Objects, buckets, namespaces and D1 jurisdictions are fixed at creation, so today's repositories stay in `enam` until a copy tool exists.
+5. **A global write from a region.** Names, handles and sign-in lookups have one home.
+
+#### Same-region test
+
+`tools/platform-region-matrix.mjs`. **Not run: dev is held for the ship.**
+
+**Why it can run without a cell.** A Durable Object's code runs where the object landed, and it's the platform's code. Behind `REGION_HINT_TEST`, an instance of `LandCombiner` named `region-serve:<hint>` runs the platform's real routes, started in `enam`, `weur` or `apac` by a location hint (`repo-region-serve.ts`). A client Worker in that region reaches it through a binding, and nothing else can. No new class, no routing change, and no existing request goes this way.
+
+| | Today's path | In-region path |
+|---|---|---|
+| Client | Worker in `aws:us-east-1`, `aws:eu-central-1` or `aws:ap-southeast-1` | The same |
+| Code | Pinned platform Worker | Platform routes in the region's serving object |
+| Repository objects | `enam` | Hinted: region's `enam`, `weur` or `apac` |
+| Account | Signed up through the pinned path | Signed up in the region, so its authority starts there |
+| R2, D1, queues, Artifacts | As today | **As today, on purpose:** these are what the test counts |
+
+**What it reports:**
+
+1. **Which hops still leave.** Each binding that can leave is wrapped, and each call lands in `Server-Timing` as `hop.r2`, `hop.d1`, `hop.authority`, `hop.queue`, `hop.artifacts`, `hop.shard`, `hop.combiner`. That makes the hop map above measured. What a combiner or repository object calls for itself isn't counted.
+2. **Where it ran.** `GET /repos/<id>/where` has the code, each object and the account authority fetch Cloudflare's trace page and answer their colo. That's how [Where Durable Objects Live](https://where.durableobjects.live) works; Cloudflare documents no API for it.
+3. **Each piece from each region,** through a binding: D1 by primary and through a session, R2 in the platform's bucket and in a test bucket made with that region's hint, the account authority, the repository objects.
+
+**Not tested:** the queue consumer stays on the pinned Worker, so background work crosses in both paths, and R2 stays in `ENAM` on the in-region path. A test bucket gives R2's local number, not a whole path on it, because queue jobs read the platform's bucket. Real Git can't reach the in-region path, so clone and push there are Git's request forms.
 
 <!-- region-results:start (tools/platform-region-matrix.mjs --results) -->
 None yet.
 <!-- region-results:end -->
+
+**R3 spikes the docs answer:**
+
+| Spike | Answer |
+|---|---|
+| 1. Can an Artifacts namespace be regional? | Only by jurisdiction, `eu` or `us`, when it's created |
+| 2. Placement on RPC | Still contradicts itself: placement "only affects `fetch` handlers", and the page's own example relies on RPC. Not measured |
+| 3. Where do a Durable Object and its container land? | Not guaranteed together, by the docs. Not measured |
+| 4. Is D1 read replication GA? | No GA found; public beta since 2025-04-10 |
+| 5. Where do R2 and D1 live? | `ENAM`, both |
 
 ### Spikes for R3
 

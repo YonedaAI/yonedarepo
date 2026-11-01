@@ -36,6 +36,7 @@ const CHECKED_ELSEWHERE = new Map([
   ['tools/staging/client.mjs', 'Session.headers'],
   ['tools/staging/mcp-client.mjs', 'McpClient.headers'],
   ['tools/fanout-bench/requests.js', 'headers'],
+  ['tools/fanout-bench/region-steps.js', 'the init runStep builds, tested in region-tools.test.mjs'],
   ['tools/staging/cli-tools.mjs', "the proxy forwards the CLI's own headers"],
 ]);
 /** Stock Git over SSH: the protocol has no header to carry, so these runs stay counted. */
