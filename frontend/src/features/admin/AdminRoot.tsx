@@ -7,6 +7,7 @@ import { AdminAudit } from './AdminAudit';
 import { AdminRepos, AdminSignups, AdminUsers } from './AdminLists';
 import { AdminInfrastructure, AdminOperations } from './AdminOperations';
 import { AdminOverview } from './AdminOverview';
+import { AdminServiceLevels } from './AdminServiceLevels';
 import { AdminTraffic } from './AdminTraffic';
 import { AdminUser } from './AdminUser';
 import { AdminVisitors } from './AdminVisitors';
@@ -78,7 +79,12 @@ export function AdminRoot({
       {section === 'traffic' && <AdminTraffic />}
       {section === 'visitors' && <AdminVisitors />}
       {section === 'operations' && <AdminOperations />}
-      {section === 'infrastructure' && <AdminInfrastructure />}
+      {section === 'infrastructure' && (
+        <>
+          <AdminInfrastructure />
+          <AdminServiceLevels />
+        </>
+      )}
     </section>
   );
 }
