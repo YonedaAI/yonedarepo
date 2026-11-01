@@ -1,14 +1,16 @@
-// This week's features as kit items (33-42), no model: CTC, Landings, flight plan and go-around,
+// This week's features as kit items (33-44), no model: CTC, Landings, flight plan and go-around,
 // search across repositories, the Clone panel, admin Revenue and Traffic, org delete during
-// create, the audit log and the empty states, by API, CLI, Git, MCP and in Chrome. They hold one
-// session: the browser items reuse the run's cookie and the second account signs in once. 34 and
-// 41 skip with a note while LAND_WHEN_CLEARED and AUDIT_LOG are off.
+// create, the audit log, the empty states and the whole Flight Path, by API, CLI, Git, MCP and in
+// Chrome. They hold one session: the browser items reuse the run's cookie and the second account
+// signs in once. 34, 41, 43 and 44 skip with a note while LAND_WHEN_CLEARED and AUDIT_LOG are off.
 import { adminPages } from './admin-pages-flow.mjs';
 import { auditFlow } from './audit-flow.mjs';
 import { clonePanel } from './clone-panel-flow.mjs';
 import { secondAccount } from './client.mjs';
 import { ctcTraffic } from './ctc-flow.mjs';
 import { emptyStates } from './empty-state-flow.mjs';
+import { flightFailures } from './flight-failures-flow.mjs';
+import { flightPath } from './flight-path-flow.mjs';
 import { goAroundFlow } from './go-around-flow.mjs';
 import { landWhenCleared } from './land-cleared-flow.mjs';
 import { landingsFlow } from './landings-flow.mjs';
@@ -34,4 +36,6 @@ export async function featureItems(step, { cli, kit, account, platformAccount, v
     auditFlow({ platform: platformAccount, kitName: account.name, chrome: web.chrome, cookie: account.cookie, origin, credentials }, m),
   );
   await step('42', 'Shared empty state on Sessions, Landings and CTC, wide and at 375 px', (m) => emptyStates(cli, web, m));
+  await step('43', 'Flight Path: one Landing from flight plan to black box, landing by itself (needs LAND_WHEN_CLEARED)', (m) => flightPath(cli, { web, credentials }, m));
+  await step('44', 'Flight Path failures: stale head, failed check, path limits, fork, races, pause, no rules, rollback (needs LAND_WHEN_CLEARED)', (m) => flightFailures(cli, { web, credentials }, m));
 }
