@@ -127,7 +127,7 @@ Agree these before the first run. They are starting targets, not commitments.
 
 ## Visitor budget
 
-`VISITORS` adds a daily rotating, salted hash to browser pings, and opens the admin Visitors tab. It needs D1 migration `0016`. Off by default, and it stays off until the owner has reviewed `privacy.md`. Written before the code.
+`VISITORS` adds a daily rotating, salted hash to browser pings, and opens the admin Visitors tab. It needs D1 migration `0016`. Off by default. Written before the code.
 
 | Measure | Target |
 |---|---|

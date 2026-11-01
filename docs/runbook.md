@@ -374,7 +374,7 @@ Our own and test accounts stay out of every figure once `TRAFFIC_REPORT` is on.
 
 `OPERATOR_AUDIT=on` on the platform Worker needs D1 migration `0015`, which a deploy applies first. Unset it to roll back: the log reads as it did, and the new columns stay, unused.
 
-`VISITORS=on` goes on both Workers, and needs D1 migration `0016`. Keep it off until the owner has reviewed `privacy.md` (the lines are in [docs/analytics-plan.md](analytics-plan.md#phase-5-visitors-and-the-funnel)). Unset it to roll back: pings go back to what they were. Stored hashes stay until Analytics Engine drops them at three months, and the salts that made them are gone within two days.
+`VISITORS=on` goes on both Workers, and needs D1 migration `0016`. Unset it to roll back: pings go back to what they were. Stored hashes stay until Analytics Engine drops them at three months, and the salts that made them are gone within two days.
 
 `REPO_ANALYTICS=on` on the platform Worker, with `TRAFFIC_EVENTS` and `TRAFFIC_REPORT` on, adds the repository, bytes and a landing's outcome to its points, and opens the repository Insights page and the landing and repository reports. Unset it to roll back: the points go back to what they were and the page leaves the sidebar. Points already written stay until Analytics Engine drops them at three months, and they name a repository only by its id. Budget: [docs/load-testing.md](load-testing.md).
 

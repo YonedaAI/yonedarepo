@@ -91,26 +91,12 @@ Steps 1 and 2 as built: `recordClient` (`platform-client-events.ts`) writes the 
 
 **Decision: a daily rotating, salted hash, no cookie.** It gives unique daily visitors and approximate sessions without tracking anyone across days.
 
-**The cost:** new versus returning visitors isn't possible. That would need a cookie, which breaks `privacy.md:147`. Add one later only with consent and the owner's word.
+**The cost:** new versus returning visitors isn't possible. That would need a cookie. Add one later only on the owner's word.
 
 1. Visitors, sessions, entry and exit pages, referrers, countries, device, browser.
 2. Store sign-up referrer and UTM in D1 against the account, so a campaign can be followed to a repository.
 3. Funnel: Visitor → Docs → Sign-up → Repository → First push → First landing.
 4. Retention: active again a week later.
-
-**Before `VISITORS` goes on anywhere with real people:** the owner reviews `privacy.md`. These lines are no longer true with it on, or need adding to:
-
-| Line | Today | Must say |
-|---|---|---|
-| 71 | "we store no IP addresses, cookies or visitor identifiers, so a count cannot be traced back to you" | No IP address or cookie is stored. A browser's ping holds a hash of its address and user agent with a salt we delete within two days, so it can tell one browser within a day and can't follow it to the next, or be worked back to an address |
-| 73 to 77 | The list of what a view records | Adds the one-day hash and the browser family (Chrome, Safari and so on) |
-| 79 | "never your account or email address" | The referring site and campaign tags are kept with the new account, so a campaign can be followed to a repository. The count itself still names nobody |
-| 95 | "count, in aggregate, which public pages are read" | Adds: and how many browsers visit a day, and what they go on to do |
-| 112 | "page-view and sign-up counts are kept for three months" | Adds the hash, kept three months with the view, and an account's sign-up source, kept with the account until it's deleted |
-
-Line 153 stays true: no cookie is set. Line 6 is why this stays off: "we update this page before we start collecting it".
-
-Not caused by Phase 5, but the same review should settle them: platform points aren't listed anywhere, and with `REPO_ANALYTICS` they hold a repository id, credential kind, bytes and a landing's outcome. With `OPERATOR_AUDIT`, the operator log keeps the account name of anyone refused at the admin API, and a staff member's time zone and request id: line 67, Request logs, is the nearest place.
 
 As built:
 
@@ -172,7 +158,7 @@ All of it follows the UI rules in `AGENTS.md`.
 
 | Step | Needs |
 |---|---|
-| `TRAFFIC_EVENTS` on | Privacy text reviewed, then "ship" |
+| `TRAFFIC_EVENTS` on | "ship" |
 | `AUDIT_LOG` on | "ship" |
 | Basin bound | Dev soak, then "ship" |
 

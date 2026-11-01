@@ -1,6 +1,5 @@
-// Who a browser's ping was, for one day (front Worker, VISITORS, off until the owner has reviewed
-// privacy.md): a SHA-256 of the day's random salt, the address and the user agent, which are read
-// here and stored nowhere. No cookie. The salt is deleted within two days, so the hash says "the
+// Who a browser's ping was, for one day (front Worker, VISITORS): a SHA-256 of the day's random
+// salt, the address and the user agent, which are read here and stored nowhere. No cookie. The salt is deleted within two days, so the hash says "the
 // same browser today" and can't follow anyone to the next day, or be worked back to an address.
 // Budget: docs/load-testing.md.
 import type { SignupRegion } from './region';

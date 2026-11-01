@@ -198,7 +198,7 @@ export interface Env {
    * dead letters. Unset, the tab says it isn't set up. */
   OPS_RESOURCES?: string;
   /** `on` adds a daily rotating, salted hash to browser pings and opens the admin Visitors tab
-   * (site-visitors.ts); set on both Workers. Off until the owner has reviewed privacy.md. */
+   * (site-visitors.ts); set on both Workers. */
   VISITORS?: string;
   /** `on` records a new account's region and samples where writes come from (region.ts). */
   REGION_SIGNALS?: string;
