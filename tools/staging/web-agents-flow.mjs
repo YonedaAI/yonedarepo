@@ -7,7 +7,7 @@
 // credit, and the flow stops before the cap.
 //
 //   set -a; . ~/.config/yonedarepo/dev-owner.env; set +a
-//   node tools/staging/web-agents-flow.mjs [--only clean,noplan,sloppy,drift,never] [--keep]
+//   node tools/staging/web-agents-flow.mjs [--only clean,noplan,sloppy,drift,paused,never] [--keep]
 //        [--cap-usd 5] [--origin https://dev.yonedarepo.com]
 //
 // The login is kept in <root>/.local/agents-live/session.json, 0600, so a rerun is no new session.
@@ -20,12 +20,12 @@ import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
 import { OWN_TRAFFIC } from './client.mjs';
 import { CASES, FIX, SLOPPY_FILE } from './web-agents-cases.mjs';
-import { AGENTS, addAgent, commitFromPage, createRepository, ctcPage, facts, keepRuns, lookAtForm, pageShows, restore, spentSoFar, turnOnRules } from './web-agents-pages.mjs';
+import { AGENTS, addAgent, commitFromPage, createRepository, ctcPage, facts, keepRuns, lookAtForm, nothingDuringPause, pageShows, pauseAutomation, restore, spentSoFar, turnOnRules } from './web-agents-pages.mjs';
 
 const { values } = parseArgs({
   options: {
     origin: { type: 'string', default: 'https://dev.yonedarepo.com' },
-    only: { type: 'string', default: 'clean,noplan,sloppy,drift,never' },
+    only: { type: 'string', default: 'clean,noplan,sloppy,drift,paused,never' },
     keep: { type: 'boolean', default: false },
     headed: { type: 'boolean', default: false },
     looks: { type: 'boolean', default: false },
@@ -115,7 +115,7 @@ async function flyCase(s, c, options) {
   const record = {};
   out.cases[c.id] = record;
   record.expected = c.expect;
-  const number = await step(`${c.id}: commit from the Files page`, () => commitFromPage(s, c, options));
+  const number = options?.opened ?? (await step(`${c.id}: commit from the Files page`, () => commitFromPage(s, c, options)));
   record.number = Number(number);
   const seen = await step(`${c.id}: the open page shows the agents' values, unreloaded`, async () => {
     const shown = await pageShows(s, c, record.number);
@@ -168,7 +168,17 @@ async function main() {
     for (const agent of AGENTS) await step(`Add ${agent.name}, Block landing at left alone`, () => addAgent(s, agent));
 
     if (values.looks) await step('The form: wide, phone, light, dark, error, keyboard', () => lookAtForm(s));
-    for (const id of chosen.filter((x) => x !== 'never')) await flyCase(s, CASES[id]);
+    for (const id of chosen.filter((x) => x !== 'never' && x !== 'paused')) await flyCase(s, CASES[id]);
+    if (chosen.includes('paused')) {
+      // Nothing is started by hand: the resume alone has to wake the agents.
+      const c = CASES.paused;
+      await step('Pause automation', () => pauseAutomation(s, 'pause_automation').then(() => 'paused'));
+      const number = Number(await step('paused: commit from the Files page', () => commitFromPage(s, c)));
+      const { head } = await s.api(`/api/v1/repos/${s.repo}/changes/${number}`);
+      await step('paused: nothing runs and nothing fails', () => nothingDuringPause(s, number, head));
+      await step('Resume automation', () => pauseAutomation(s, 'resume_automation').then(() => 'resumed'));
+      await flyCase(s, c, { opened: number });
+    }
 
     if (chosen.includes('sloppy') && out.cases.sloppy?.facts?.status === 'open') {
       // The go-around, answered from the web too: edit the file on its branch, and agents look again.

@@ -220,6 +220,24 @@ export async function facts(s, number, head) {
   };
 }
 
+/** Break-glass, as the Settings page sends it. */
+export const pauseAutomation = (s, action) =>
+  s.api(`/api/v1/repos/${s.repo}/break-glass`, { method: 'POST', data: { action, reason: 'web agents flow: a pause and its resume' } });
+
+/** Time for a run that must not start to have started: a hook, a queue job and a workflow. */
+const PAUSE_WATCH_MS = 45_000;
+
+/** Nothing ran on `head` and nothing failed, while automation is paused. */
+export async function nothingDuringPause(s, number, head) {
+  await sleep(PAUSE_WATCH_MS);
+  const { runs } = await s.api(`${s.managed}/runs?repo=${s.repo}&limit=50`);
+  assert.deepEqual(runs.filter((r) => r.head === head).map((r) => r.agent), [], 'a run started during the pause');
+  const change = await s.api(`/api/v1/repos/${s.repo}/changes/${number}`);
+  assert.deepEqual(change.head_commit?.checks ?? [], [], 'a check was posted during the pause');
+  assert.equal(change.status, 'open');
+  return `no run and no check after ${PAUSE_WATCH_MS / 1000} s`;
+}
+
 export async function ctcPage(s, label) {
   await s.page.goto(`${s.origin}${s.base}/tower`);
   await s.page.getByRole('heading', { name: 'Tower', exact: true }).first().waitFor();
