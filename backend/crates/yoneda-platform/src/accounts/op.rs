@@ -108,6 +108,7 @@ op_names! {
     pub(crate) enum OrgOp {
         Create = "org_create",
         Access = "org_access",
+        Retired = "org_retired",
         TeamExists = "team_exists",
         HintAdd = "org_hint_add",
         HintRemove = "org_hint_remove",

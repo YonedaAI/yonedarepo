@@ -17,6 +17,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: OrgOp, now: i64) -> Res
     match op {
         OrgOp::Create => create(db, c, now),
         OrgOp::Access => access(db, c),
+        // No record at all is false: a workspace an operator provisions has none.
+        OrgOp::Retired => Ok(json!({ "retired": retired(db) })),
         // Whether a team exists (a repository grants roles only to existing teams).
         OrgOp::TeamExists => {
             org(db)?;
@@ -105,6 +107,11 @@ pub(super) fn org<S: SqlStore>(db: &S) -> Result<String> {
         }
         _ => Err(Error::new("NOT_FOUND", "No such organization")),
     }
+}
+
+/// Whether this authority is a deleted org's tombstone, which is final: its name is retired.
+fn retired<S: SqlStore>(db: &S) -> bool {
+    get(db, "account").is_ok_and(|a| a["kind"] == "org" && !a["deleted_at"].is_null())
 }
 
 pub(super) fn personal(c: &Value) -> Result<String> {
