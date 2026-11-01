@@ -307,6 +307,11 @@ button.danger:not(:disabled) {
   gap: 12px;
   margin-top: 12px;
 }
+/* Landings owns this form's layout: it stays a stack. */
+.source-token-form.source-open-change {
+  display: grid;
+  align-items: normal;
+}
 .source-token-form > * {
   min-width: 0;
 }
