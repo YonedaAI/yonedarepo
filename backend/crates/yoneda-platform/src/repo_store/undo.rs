@@ -11,7 +11,10 @@
 //! repository past its due time that a legal hold kept from purging still restores. The mark
 //! is `policy_digest`, as `erase` marks `object_store`: it needs no migration, an older binary
 //! never reads it on a tombstone, and nothing bound to the digest can run again, as a marked
-//! tombstone never comes back. `repo_purged` closes it, once, queueing `repo.purged`. A build
+//! tombstone never comes back. `repo_purged` closes it, once, queueing `repo.purged`. The owner,
+//! signed in, need not wait for the due time: `repo_purge_now` puts the same mark, under the same
+//! legal hold, so a restore loses from that commit on, before any job has run. No token can ask:
+//! one can delete, and this window is what survives a stolen one. A build
 //! older than the mark purged without it, so `repo_restore {check}` also names the store and the
 //! head, and the adapter looks for them before it commits (`repo-restore-held.ts`).
 use super::audit_outbox;
@@ -128,6 +131,38 @@ pub(super) fn restore<S: SqlStore>(
         answer["head"] = head(db)?;
     }
     Ok(answer)
+}
+
+/// The refusal for anything but the owner, signed in. The adapter says the same to a token.
+pub(super) fn needs_a_person() -> Error {
+    Error::new(
+        "FORBIDDEN",
+        "Only the owner, signed in, can delete a repository for good. A token can't",
+    )
+}
+
+/// `repo_purge_now`: the owner, signed in, gives up the rest of the window. From this commit on
+/// nothing restores it, so the adapter's steps after it repeat safely: asking again is what
+/// finishes an attempt that died, and `finished` says there is nothing left to send. Recorded
+/// once, by whoever marked it; the sweep's own purge records nothing here.
+pub(super) fn purge_now<S: SqlStore>(
+    db: &S,
+    c: &Value,
+    actor: &Actor,
+    settings: &Settings,
+) -> Result<Value> {
+    if settings.deleted_at.is_none() {
+        return Err(Error::new("CONFLICT", "That repository is not deleted"));
+    }
+    if !settings.purge_started() {
+        start_purge(db, settings)?;
+        audit_outbox::record(db, c, "repo.purge_requested", &actor.principal, json!({}))?;
+    }
+    Ok(json!({
+        "name": settings.name,
+        "workspace": settings.workspace,
+        "finished": settings.policy_digest == PURGED,
+    }))
 }
 
 /// `repo_purged`: the purge job's last report. Queues `repo.purged` once and answers the hooks

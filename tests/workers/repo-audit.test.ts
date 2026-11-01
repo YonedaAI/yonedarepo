@@ -254,6 +254,17 @@ it("a purge copies what is waiting: a repository's last event outlives the erase
   expect(kinds(await repoRows('acme'))).toEqual(['repo.created', 'repo.deleted']);
 });
 
+it("an owner's purge reaches the org log with who asked, before the repository goes", async () => {
+  const alice = { cookie: await signup('audit_purge_now') };
+  await makeOrg(alice, 'acme');
+  const id = await makeRepo(alice, 'acme');
+  await api(`/repos/${id}?confirm=app`, alice, { method: 'DELETE' }, undo);
+  expect((await api(`/repos/${id}/purge`, alice, { body: {} }, undo)).status).toBe(200);
+  const rows = await repoRows('acme');
+  expect(kinds(rows)).toEqual(['repo.created', 'repo.deleted', 'repo.purge_requested']);
+  expect(rows.at(-1)).toMatchObject({ actor: 'user:audit_purge_now', details: { repo: id, name: 'app' } });
+});
+
 it('copies run after the answer, so a slow log costs the action nothing', async () => {
   const alice = { cookie: await signup('audit_slow') };
   await makeOrg(alice, 'acme');

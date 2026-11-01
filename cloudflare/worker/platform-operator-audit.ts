@@ -1,8 +1,8 @@
 // The operator log (OPERATOR_AUDIT, D1 migration 0015): who did what from the admin pages, split
 // into People and System so test cleanup and backfills leave what a person reads, with the request
 // behind each row. It also records what never reached it: a caller refused at the door, an
-// operator's action that failed, a purge's way to its end, and staff opening a customer's private
-// repository. A failed write is logged and changes no answer. A row holds no token, secret, IP
+// operator's action that failed, a purge's way to its end, an owner's included, and staff opening
+// a customer's private repository. A failed write is logged and changes no answer. A row holds no token, secret, IP
 // address or user agent. Budget: docs/load-testing.md.
 import { afterAnswer } from './background';
 import { log } from './log';
@@ -23,7 +23,7 @@ const OUTCOMES = new Set(['success', 'failed', 'denied', 'requested', 'queued', 
 /** Words a detail's key can't hold. A row is written by our own code; this is its seat belt. */
 const SECRET = /token|secret|password|authorization|cookie|credential|signature|api_?key/i;
 const SYSTEM_ACTION = /backfill|rebuild/;
-const PURGES = "('repo.purge_now','repo.purge_orphan')";
+const PURGES = "('repo.purge_now','repo.purge_orphan','repo.purge_owner')";
 /** A purge ends long after it was asked for, and no row should wait longer than this. */
 const PURGE_MS = 30 * DAY_MS;
 const DENIED_MS = 5 * 60_000;

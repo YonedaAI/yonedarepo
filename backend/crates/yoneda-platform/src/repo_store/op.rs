@@ -97,6 +97,7 @@ op_names! {
         ProjectionObjects = "repo_projection_objects",
         ProjectionPending = "repo_projection_pending",
         ProjectionResult = "repo_projection_result",
+        PurgeNow = "repo_purge_now",
         PurgeTarget = "repo_purge_target",
         Purged = "repo_purged",
         RebasePlan = "repo_rebase_plan",

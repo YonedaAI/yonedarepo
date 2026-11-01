@@ -98,6 +98,7 @@ const KINDS: &[(&str, &[(&str, Field)])] = &[
         ],
     ),
     ("repo.deleted", &[("repo", Word), ("name", Word)]),
+    ("repo.purge_requested", &[("repo", Word), ("name", Word)]),
     (
         "repo.restored",
         &[("repo", Word), ("name", Word), ("previous", Word)],

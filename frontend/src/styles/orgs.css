@@ -81,3 +81,44 @@
   font-size: var(--text-sm);
   padding: 0 0.3rem;
 }
+/* Recently deleted: names run first, and a row's buttons keep to the right edge. */
+.deleted-list:focus {
+  outline: none;
+}
+.deleted-all {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+.deleted-repos li {
+  flex-wrap: wrap;
+}
+.deleted-repos li > strong {
+  overflow-wrap: anywhere;
+}
+.deleted-repos li > .source-meta {
+  flex: 1 1 12rem;
+}
+.deleted-repos .source-error {
+  flex: 1 1 100%;
+}
+@media (max-width: 640px) {
+  .deleted-repos li > :is(strong, .source-meta, form) {
+    flex: 1 1 100%;
+  }
+  .deleted-repos li > button:first-of-type {
+    margin-left: auto;
+  }
+}
+.deleted-refused {
+  display: block;
+}
+.deleted-refused p {
+  margin: 0;
+  color: inherit;
+}
+.deleted-refused ul {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}

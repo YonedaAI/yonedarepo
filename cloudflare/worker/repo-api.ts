@@ -54,6 +54,7 @@ import {
   limitAnonymous,
   setVisibility,
 } from './repo-public';
+import { purgeDeleted } from './repo-purge';
 import { quarantineRoute } from './repo-quarantine';
 import { regionHintTest, whereRepository } from './repo-region-hint';
 import { releaseDownload, releasesRoute } from './repo-releases';
@@ -166,6 +167,7 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return deleteRepository(env, auth, repo, url.searchParams.get('confirm') ?? '');
   if (resource === 'restore' && !sha && post)
     return restoreRepository(env, auth, repo, (await bodyOf(req).catch(() => ({}) as Json)).name);
+  if (resource === 'purge' && !sha && post) return purgeDeleted(env, auth, repo);
   if (resource === 'refs' && sha === 'batch' && !sub && post)
     return batchRefs(ctx, await bodyOf(req));
   if (!resource && get) return withPath(env, repo, await run('git_status', {}));

@@ -34,6 +34,7 @@ pub(crate) fn refuses(op: StoreOp) -> bool {
         op,
         StoreOp::Repo(
             R::Delete
+                | R::PurgeNow
                 | R::PurgeTarget
                 | R::EraseStep
                 | R::ReleaseDelete
