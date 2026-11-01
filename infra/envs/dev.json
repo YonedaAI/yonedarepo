@@ -66,7 +66,6 @@
         },
         "vars": {
           "CF_ACCOUNT_ID": "{account_id}",
-          "ADMIN_NOTIFY_EMAIL": "hello@yonedarepo.com",
           "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>",
           "WATCH_SCRIPT": "{prefix}-platform",
           "WATCH_URL": "https://api.dev.yonedarepo.com",
@@ -1221,7 +1220,6 @@
         },
         "vars": {
           "SUPERFAN_URL": "https://{prefix}-superfan.{subdomain}.workers.dev",
-          "ADMIN_NOTIFY_EMAIL": "hello@yonedarepo.com",
           "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>"
         },
         "secrets_store_secrets": [

@@ -20,7 +20,8 @@ export interface DeadmanEnv {
   STATE: DurableObjectNamespace<DeadmanState>;
   /** The Superfan Worker's base URL. */
   SUPERFAN_URL: string;
-  ADMIN_NOTIFY_EMAIL: string;
+  /** Unset on dev: it watches, and mails nobody. */
+  ADMIN_NOTIFY_EMAIL?: string;
   EMAIL_FROM: string;
   RESEND_API_KEY: SecretsStoreSecret;
 }
@@ -85,6 +86,7 @@ const failed = (detail: Record<string, unknown>) =>
 
 /** Mails the owner; true once Resend took it. Never logs the key. */
 async function mail(env: DeadmanEnv, what: string, now: number) {
+  if (!env.ADMIN_NOTIFY_EMAIL) return false;
   const key = (await env.RESEND_API_KEY.get().catch(() => ''))?.trim();
   if (!key) {
     failed({ reason: 'RESEND_API_KEY is empty or unreadable' });
