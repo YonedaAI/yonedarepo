@@ -41,6 +41,8 @@ const held = (env: Env, name: string) =>
     (e) => (e?.code === 'NOT_FOUND' ? false : Promise.reject(e)),
   );
 
+type HandleProjector = { handleChosen(account: string, handle: string): Promise<void> };
+
 /** `PUT /api/auth/handle {handle}` for an email-named account: HANDLE_INVALID,
  * HANDLE_RESERVED, HANDLE_TAKEN, or HANDLE_FIXED for an account named by its handle. */
 export async function setHandle(env: Env, account: string, requested: unknown): Promise<Json> {
@@ -65,10 +67,7 @@ export async function setHandle(env: Env, account: string, requested: unknown): 
     await workspace(env, String(set.previous), { op: 'handle_release', account }).catch(
       warned('handle.release_failed', { account }),
     );
-  await env.INDEX.prepare(
-    'INSERT INTO platform_handles(workspace,handle) VALUES(?,?) ON CONFLICT(workspace) DO UPDATE SET handle=excluded.handle',
-  )
-    .bind(account, name)
-    .run();
+  // D1 is the platform's; the front Worker has no database.
+  await ((env.PLATFORM ?? env.SELF) as unknown as HandleProjector).handleChosen(account, name);
   return { handle: name };
 }
