@@ -161,7 +161,8 @@
 .site-nav {
   max-width: var(--site-frame);
   margin: 0 auto;
-  padding: 10px var(--site-gutter);
+  /* The logo and the account buttons sit on the frame's side rules, outside the content's gutter. */
+  padding: 10px 0;
   display: flex;
   align-items: center;
   gap: 24px;

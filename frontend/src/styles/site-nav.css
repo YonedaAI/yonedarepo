@@ -140,7 +140,9 @@
 @media (min-width: 801px) {
   .site-nav {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    /* Equal sides keep the sections centred; max-content stops them running into Sign in. */
+    grid-template-columns: minmax(max-content, 1fr) auto minmax(max-content, 1fr);
+    gap: clamp(12px, 2vw, 24px);
     position: relative;
   }
   .site-brand {
