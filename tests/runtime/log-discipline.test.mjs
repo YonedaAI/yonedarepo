@@ -6,8 +6,13 @@ import { join } from 'node:path';
 import test from 'node:test';
 
 const ROOT = 'cloudflare';
-/** The logger writes the lines. Superfan's one call moves with Phase O2, which owns that Worker. */
-const MAY_CALL_CONSOLE = new Set(['cloudflare/worker/log.ts', 'cloudflare/superfan/notify.ts']);
+/** The logger writes the lines. Superfan's notices and its dead-man stay bare: what watches the
+ * platform must not depend on the code it watches. */
+const MAY_CALL_CONSOLE = new Set([
+  'cloudflare/worker/log.ts',
+  'cloudflare/superfan/notify.ts',
+  'cloudflare/superfan/deadman.ts',
+]);
 
 async function sources(directory = ROOT) {
   const entries = await readdir(directory, { withFileTypes: true });
