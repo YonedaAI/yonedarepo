@@ -51,7 +51,7 @@ Intent drift posts no line comments. Its summary comment gives the verdict and w
 
 Findings that cannot be placed on a line of the diff, or that look like a credential, are left out. So are findings past the 2,000 comments a change can hold; they still count toward the check.
 
-A failed check blocks landing when the repository's [landing rules](/docs/guides/repositories#landing-rules) list it in `required_checks`. With **Land when cleared** on, any failed check sends the Landing around, required or not. Otherwise it is advice.
+A failed check blocks landing when the repository's [landing rules](/docs/guides/repositories#landing-rules) list it in `required_checks`. With **Land when cleared** on, any failed check sends the Landing around, required or not. Otherwise it is advice. Line comments don't hold a Landing unless **Block landing on unresolved agent findings** is on.
 
 ## Go-around
 

@@ -169,7 +169,7 @@ pub(super) fn landing_state<S: SqlStore>(
         rules_ask: !settings.policy.required_checks.is_empty() || settings.policy.approvals > 0,
         from_fork: change["source_repo"].is_string(),
         failed_checks: failed_checks(db, commit, settings)?,
-        unresolved_comments: go_around::open_count(db, &change["number"])? > 0,
+        unresolved_comments: go_around::from_people(db, &change["number"])? > 0,
         base_exists: base_head.is_some(),
         conflict,
         paused_by: break_glass::paused(db)?

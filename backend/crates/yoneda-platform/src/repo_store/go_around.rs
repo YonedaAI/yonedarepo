@@ -33,6 +33,19 @@ pub(super) fn open_count<S: SqlStore>(db: &S, number: &Value) -> Result<u64> {
     Ok(count.first().and_then(|r| r["n"].as_u64()).unwrap_or(0))
 }
 
+/// How many of them are a person's, which wait for an answer. An agent has its say on a landing
+/// through its check, and its findings stop one only with the owner's switch (`agent_findings`).
+pub(super) fn from_people<S: SqlStore>(db: &S, number: &Value) -> Result<u64> {
+    let count = db.query(
+        &format!(
+            "{} AND k.principal NOT LIKE 'token:%'",
+            open("COUNT(*) AS n")
+        ),
+        &[number.clone(), number.clone()],
+    )?;
+    Ok(count.first().and_then(|r| r["n"].as_u64()).unwrap_or(0))
+}
+
 /// The open findings of change `number`, whose current head is `head`.
 pub(super) fn of_change<S: SqlStore>(db: &S, number: &Value, head: &Value) -> Result<Value> {
     let findings = db.query(

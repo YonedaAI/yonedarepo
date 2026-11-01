@@ -208,7 +208,7 @@ Ships **before** stage 6.
 | Decision | Reasons |
 |---|---|
 | Go-around: the work has to answer | Failed required check or rejection, failed check on the head (required or not: this is how `block_at` reached reads), blocking findings, stale read, a merge that conflicted |
-| Hold: it can come without new work | Check or approval still to come, draft title, unresolved line comment, automation pause, legal hold, `REPO_FULL`, a path-limited token that worked on it not covering the landing, Risk High or not scored |
+| Hold: it can come without new work | Check or approval still to come, draft title, a person's unresolved line comment, automation pause, legal hold, `REPO_FULL`, a path-limited token that worked on it not covering the landing, Risk High or not scored |
 
 **Two holds the owner didn't list:**
 
@@ -217,7 +217,7 @@ Ships **before** stage 6.
 | Fork needs an approval of its head | A reader can fork, so green rules with no approvals would land a stranger's commit |
 | Nothing required | With no approval or check asked for, every push lands, and `write` becomes `land` |
 
-**Findings:** `findings_block` is enforced in `land_gates::gates`, so it refuses every landing on a protected base, explicit ones too. It counts open findings from tokens (`go_around`). Findings withheld from a line aren't counted, since nothing can resolve them; they reach the check's value instead.
+**Findings:** an agent's say on a landing is its check. With `findings_block` off, its findings show and hold nothing, however many: found live, when one low nit on a passing head held a Landing for nobody. `findings_block` is enforced in `land_gates::gates`, so it refuses every landing on a protected base, explicit ones too. It counts open findings from tokens (`go_around`). Findings withheld from a line aren't counted, since nothing can resolve them; they reach the check's value instead.
 
 **Rollback:** `0044` carries these columns on dev, and wave 1 has to ship that text: the digest is computed from it, so a binary with earlier text fails `MIGRATION_DRIFT` on a store that applied it.
 
