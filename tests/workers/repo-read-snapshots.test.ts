@@ -4,7 +4,10 @@
 // pinned versions from an immutable snapshot cache; refs from a snapshot at most two
 // `REFS_MS` old (or at least at the reader's `min_version`). Grants hold on every path.
 import { expect, it, vi } from 'vitest';
+import { projectChangesets } from '../../cloudflare/worker/repo-changesets';
 import { HeadHolder } from '../../cloudflare/worker/repo-head-holder';
+import { caller } from '../../cloudflare/worker/repo-ops';
+import { shardRecord } from '../../cloudflare/worker/repo-shards';
 import { REFS_MS, RefsHolder } from '../../cloudflare/worker/repo-snapshots';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, bindings, file, scoped, signup, usePlatformFixture } from './repo-fixture';
@@ -198,4 +201,32 @@ it("serves refs through the land combiner's head role", async () => {
   const moved = await api(`${repo}/branches`, owner, { body: { ref: 'topic', commit, expected: null } }, target);
   expect((await role.refs(id, moved.body.version)).refs['refs/heads/topic']).toBe(commit);
   expect((await api(`${repo}/refs`, owner, {}, target)).body.refs['refs/heads/topic']).toBe(commit);
+});
+
+it('shows a reader who names a landing the files a stale copy of main is missing', async () => {
+  // The holder is never told of the landing, as for a reader in another isolate for a moment.
+  const combiners = scoped.LAND_COMBINERS as unknown as { idFromName(name: string): string; get(name: string): object };
+  const env = {
+    ...scoped,
+    LAND_MODE: 'batch',
+    LAND_COMBINERS: { idFromName: combiners.idFromName, get: (name: string) => ({ ...combiners.get(name), refresh: async () => {} }) },
+  } as unknown as Env;
+  const owner = { cookie: await signup('namedlanding') };
+  const created = await api('/repos', owner, {
+    body: { name: 'namedlanding', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', 'a\n')], author, tokens: [{ name: 'agent', scopes: ['read', 'write', 'land'] }] },
+  }, env);
+  const { id } = created.body;
+  const repo = `/repos/${id}`;
+  const made = await api(`${repo}/commits`, owner, { body: { ref: 'main', changes: [file('b.txt', 'b\n')], message: 'b', author } }, env);
+  const items = [{ credentials: caller(env, id, { _token: created.body.tokens[0].token }).sign({}), records: [await shardRecord(env, id, made.body.commit)] }];
+  const landed = await caller(env, id, { _system: 'merge' })({ op: 'repo_land_submitted', ref: 'main', items });
+  const version = landed.items[0].version as number;
+  expect(await projectChangesets(env, id)).toBe(1);
+  const names = async (query: string) => (await api(`${repo}/tree?path=&ref=main${query}`, owner, {}, env)).body.entries.map((e: any) => e.name);
+  expect(await names('')).toEqual(['a.txt']);
+  expect((await api(`${repo}/blob?path=b.txt&ref=main`, owner, {}, env)).status).toBe(404);
+  expect(await names(`&min_version=${version}`)).toEqual(['a.txt', 'b.txt']);
+  expect((await api(`${repo}/blob?path=b.txt&ref=main&min_version=${version}`, owner, {}, env)).body.content).toBe('b\n');
+  const refs = await api(`${repo}/refs?min_version=${version}`, owner, {}, env);
+  expect(refs.body.version).toBeGreaterThanOrEqual(version);
 });
