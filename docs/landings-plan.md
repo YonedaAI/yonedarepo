@@ -91,24 +91,47 @@ The run fills this section. Run it with `set -a; . ~/.config/yonedarepo/dev-owne
 First run, two arms, 2026-10-31 on `e65eb761` (`.local/staging/memory-test-1793474668732.json`): memory with context avoided the trap 6/6, plain 0/6, Fisher p = 0.0022. Its reads missed shell `sed` and `head`, and opencode's `grep` and `glob` failed in every call, as the sandbox had no ripgrep.
 
 <!-- memory-test-results:start -->
-Run 2026-10-31T19:59:45.613Z on `e65eb761`, `zai-coding-plan/glm-5.3`. Evidence: `.local/staging/memory-test-1793474668732.json`.
+Run 2026-11-01T17:28:44.505Z on `1186cc17`, `zai-coding-plan/glm-5.3`. Evidence: `.local/staging/memory-test-1793551929111.json`.
 
-**Answer: memory helped.** Trap avoided: memory 6/6, plain 0/6, Fisher p = 0.0022.
+**Answer: memory helped.** Trap avoided: memory 6/6, context 0/6, plain 0/6. Fisher p: memory vs context 0.0022, memory vs plain 0.0022, context vs plain 1.0000.
 
-| Trap | Memory avoided | Plain avoided |
-|---|---|---|
-| frozen-file | 2/2 | 0/2 |
-| env-prefix | 2/2 | 0/2 |
-| exit-code | 2/2 | 0/2 |
+**Context against plain:** context alone made no difference to the trap. Reading: no difference shown in reading (5 lower, 1 higher, 0 tied, median 0.89, sign test p = 0.2188). Tokens: no difference shown in tokens (3 lower, 3 higher, 0 tied, median 1.01, sign test p = 1.0000).
 
-| Measure | Memory, mean (range) | Plain, mean (range) | Memory / plain | Claim |
-|---|---|---|---|---|
-| Tokens | 227,073 (69,924-500,798) | 111,429 (52,600-254,744) | 2.04 | ranges overlap: no difference shown |
-| Time, ms | 96,379 (40,587-143,125) | 46,289 (28,147-77,799) | 2.08 | ranges overlap: no difference shown |
-| Whole-file reads | 1 (0-2) | 1 (0-2) | 1.00 | ranges overlap: no difference shown |
+| Trap | Memory avoided | Context avoided | Plain avoided |
+|---|---|---|---|
+| frozen-file | 2/2 | 0/2 | 0/2 |
+| env-prefix | 2/2 | 0/2 | 0/2 |
+| exit-code | 2/2 | 0/2 | 0/2 |
 
-Landing success: memory 6/6, plain 6/6, Fisher p = 1.0000.
-Trap memory delivered in 6/6 memory runs. Invalid runs: 0 memory, 0 plain.
+| Measure, median (min-max) | Memory | Context | Plain |
+|---|---|---|---|
+| Tokens | 139,231 (84,195-558,157) | 89,688 (65,407-362,600) | 123,873 (45,094-313,625) |
+| Tokens without cache reads | 19,812 (7,651-32,397) | 16,648 (7,862-24,932) | 13,825 (3,558-21,081) |
+| Time, ms | 91,299 (58,413-156,200) | 70,250 (57,194-139,763) | 63,473 (19,768-88,820) |
+| Files read | 3 (2-4) | 2 (1-3) | 2 (1-5) |
+| Whole-file reads | 0 (0-2) | 1 (0-2) | 1 (0-2) |
+| Bytes read | 26,859 (5,176-48,191) | 23,237 (5,305-37,360) | 26,143 (6,433-34,787) |
+| Tool calls | 17 (11-26) | 13 (8-23) | 15 (9-32) |
+
+| Context against plain, per block | Lower / higher / tied | Median ratio | Sign test p |
+|---|---|---|---|
+| Tokens | 3 / 3 / 0 | 1.01 | 1.0000 |
+| Tokens without cache reads | 0 / 6 / 0 | 1.29 | 0.0313 |
+| Time, ms | 1 / 5 / 0 | 1.49 | 0.2188 |
+| Files read | 2 / 1 / 3 | 1.00 | 1.0000 |
+| Whole-file reads | 0 / 0 / 6 | 1.00 | 1.0000 |
+| Bytes read | 5 / 1 / 0 | 0.89 | 0.2188 |
+| Tool calls | 4 / 2 / 0 | 0.79 | 0.6875 |
+
+| Delivered | Memory | Context | Plain |
+|---|---|---|---|
+| Start context | 6/6 | 6/6 | 0/6 |
+| Trap memory | 6/6 | 0/6 | 0/6 |
+| Memories shown, median (min-max) | 11 (11-13) | 10 (10-12) | 0 (0-0) |
+| Context bytes, median (min-max) | 2,840 (2,696-3,094) | 2,556 (2,410-2,815) | 0 (0-0) |
+| Items by type | memory 70 | memory 64 | none |
+
+Landing success: memory 6/6, context 6/6, plain 6/6. Invalid runs: 0 memory, 0 context, 0 plain.
 <!-- memory-test-results:end -->
 
 **How it is built:**
