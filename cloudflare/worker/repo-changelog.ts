@@ -241,7 +241,10 @@ export async function emitChangeLog(env: Env, repo: string): Promise<ChangeLogSt
       at: new Date().toISOString(),
     };
     log.error('changelog.emit_failed', { repo, ...error });
-    state = await giveBack(env, repo, claimed, error).catch(() => state);
+    state = await giveBack(env, repo, claimed, error).catch((e) => {
+      log.warn('changelog.give_back_failed', { repo, error: e });
+      return state;
+    });
   }
   return state;
 }

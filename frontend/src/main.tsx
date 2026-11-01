@@ -3,9 +3,9 @@ import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { AppErrorBoundary, reloadAfterStaleChunk } from './components/AppErrorBoundary';
 import { applyTheme, readTheme } from './features/shell/theme';
+import { reportClientError } from './features/site/clientErrors';
 import { rememberLanding, tabStorage } from './features/site/landingSource';
 import { sendPagePing } from './features/site/pagePing';
-import { reportClientError } from './features/site/clientErrors';
 import './styles.css';
 
 // Vite reports a failed dynamic import of a replaced chunk after a deploy.

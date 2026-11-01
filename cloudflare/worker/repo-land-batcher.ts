@@ -1,6 +1,6 @@
 // The land combiner's logic (repo-land-combiner.ts), apart from the Durable Object so tests can run
 // it in-process with their own bindings: submissions and tickets, each step landing what waits.
-import { log } from './log';
+import { log, warned } from './log';
 import { kickProjection, landChangesets } from './repo-changesets';
 import { refreshHead } from './repo-head';
 import { claimCommand } from './repo-land-poll';
@@ -166,7 +166,7 @@ export class LandBatcher {
     } catch (e: any) {
       await merger
         .call({ op: 'repo_land_release', ref: target.ref, epoch: claim.epoch })
-        .catch(() => {});
+        .catch(warned('land.release_failed', { repo: target.repo }));
       // A lost compare-and-swap rebuilds at once; anything else waits a moment.
       if (e?.code !== 'STALE_HEAD') log.warn('land.batch_failed', { repo: target.repo, error: e });
       await this.schedule(e?.code === 'STALE_HEAD' ? 0 : 1000);
@@ -178,6 +178,7 @@ export class LandBatcher {
   /** The queue is empty: tickets still awaited were settled elsewhere (a polling lander). */
   async #reconcile(merger: RepoContext) {
     for (const ticket of [...this.#waiters.keys()]) {
+      // A status that cannot be read stays awaited: the next empty queue asks again.
       const status: Json | null = await merger
         .call({ op: 'repo_land_status', ticket })
         .catch(() => null);

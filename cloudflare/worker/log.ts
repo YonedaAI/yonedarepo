@@ -220,6 +220,14 @@ export const log = {
   error: (event: string, fields: Fields = {}) => write('error', event, fields),
 };
 
+/** A `.catch` for a failure nobody is waiting on: a line, and null for the caller's fallback. */
+export const warned =
+  (event: string, fields: Fields = {}) =>
+  (e: unknown): null => {
+    log.warn(event, { ...fields, error: e });
+    return null;
+  };
+
 /** The route of `req`: never an account, a repository's name or a file path. */
 export function operationOf(req: Request) {
   const parts = new URL(req.url).pathname.split('/').filter(Boolean);

@@ -4,10 +4,12 @@
 // account sign-in (password, and GitHub / Google at /auth/*), and the platform's public API
 // proxied on the same origin, as is the managed agents Worker's browser API (/api/managed).
 // Repositories, Git, tokens and MCP all live on the platform Worker.
+
 import { accountRoute } from './accounts';
 import { clientError } from './client-errors';
 import { isInstaller, serveDownload, serveInstallScript } from './downloads';
 import { error, response } from './http';
+import { logFailure } from './log';
 import { oauthRoute } from './oauth';
 import { GIT_PATH, legacyRedirect } from './readable-paths';
 import { carriedRequest } from './request-scope';
@@ -59,6 +61,7 @@ export async function frontFetch(req: Request, env: Env): Promise<Response> {
     if (authResponse) return authResponse;
     return error('NOT_FOUND', 'Unknown API route', 404);
   } catch (e: any) {
+    if (!e.code) logFailure(e, 'REQUEST_FAILED', 409);
     return error(e.code ?? 'REQUEST_FAILED', e.message ?? 'Request failed', 409);
   }
 }

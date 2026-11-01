@@ -148,7 +148,7 @@ export class SharedShardAsk {
         return askEveryShard(this.env, this.repo, [...ids], false);
       });
       this.#next = { ids, answer };
-      this.#last = answer.catch(() => {});
+      this.#last = answer.catch(() => {}); // Only ordering: each waiter has `answer` itself.
     }
     const batch = this.#next;
     batch.ids.add(id);

@@ -34,7 +34,9 @@ export function rustCall<T>(call: () => T): T {
 export function settleRust() {
   try {
     if (typeof settle === 'function') settle();
-  } catch {}
+  } catch {
+    // Settling cannot help here: the next call into Rust fails as this one did, and logs.
+  }
 }
 
 /** `call` (a JSON answer from Rust), once more after settling when the instance answered

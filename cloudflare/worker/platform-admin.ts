@@ -184,6 +184,7 @@ async function accountDetail(env: Env, account: string) {
     listRepos(env, null, null, account),
     workspace(env, account, { op: 'pat_list' })
       .then((r) => (Array.isArray(r.tokens) ? r.tokens.length : 0))
+      // A read that fails leaves a blank on the operator's page, not an error over the rest.
       .catch(() => null),
     managed(env, 'GET', account).catch(() => null),
   ]);

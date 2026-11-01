@@ -4,6 +4,7 @@
 // it reloads in the background; an access change reloads it before that change answers,
 // so the access snapshot it serves is never older than the last change it was told of.
 // It also serves the trees commits build on (see `trees`).
+import { warned } from './log';
 import { parseStore, RepoObjects, type TreeEntry } from './repo-objects';
 import { caller, type Json } from './repo-ops';
 import { TreeMemo } from './repo-tree-memo';
@@ -64,7 +65,7 @@ export class HeadHolder {
   ): Promise<Json> {
     let head = this.#head;
     if (head && head.version >= minVersion) {
-      if (this.#stale) void this.#load(repo, 0).catch(() => {});
+      if (this.#stale) void this.#load(repo, 0).catch(warned('head.reload_failed', { repo }));
     } else head = await this.#load(repo, minVersion);
     const access =
       accessVersion !== undefined && accessVersion !== head.access_version
@@ -91,7 +92,7 @@ export class HeadHolder {
   async refresh(repo: string, access = false) {
     this.#stale = true;
     if (!access) {
-      void this.#load(repo, 0).catch(() => {});
+      void this.#load(repo, 0).catch(warned('head.reload_failed', { repo }));
       return;
     }
     this.#generation++;
@@ -184,7 +185,7 @@ export class HeadHolder {
     if (typeof root !== 'string') return;
     const dirs = new Set(['', ...this.#hot]);
     const warming: Promise<unknown> = this.#walk(repo, root, dirs, head.head.id, before)
-      .catch(() => {})
+      .catch(() => {}) // A warm start missed: the first read walks the tree itself.
       .finally(() => {
         if (this.#warming === warming) this.#warming = null;
       });
@@ -194,7 +195,7 @@ export class HeadHolder {
   /** Settles once no load or warming is running (tests stop in-process holders with it). */
   async idle() {
     while (this.#loading || this.#warming) {
-      await this.#loading?.catch(() => {});
+      await this.#loading?.catch(() => {}); // Only waiting: its own caller has the failure.
       await this.#warming;
     }
   }

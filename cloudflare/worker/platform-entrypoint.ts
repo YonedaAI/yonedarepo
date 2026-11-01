@@ -41,7 +41,7 @@ import type { Env, Envelope } from './types';
 let heavy: Promise<unknown> = Promise.resolve();
 function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
   const run = heavy.then(work, work);
-  heavy = run.catch(() => {});
+  heavy = run.catch(() => {}); // The queue's next job runs anyway; `run`'s caller has the failure.
   return run;
 }
 

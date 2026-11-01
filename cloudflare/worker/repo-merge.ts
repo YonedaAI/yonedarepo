@@ -206,6 +206,7 @@ export async function landBatch(merger: RepoContext, claim: Json): Promise<Settl
 async function stagedOf(merger: RepoContext, commit: string): Promise<CachedObject[]> {
   const fromShard = await shardStagedOf(merger.env, merger.repo, commit);
   if (fromShard.length) return fromShard;
+  // An authority that cannot answer leaves the commit to the slower tiers.
   const here = await caller(merger.env, merger.repo, { _system: 'projection' })({
     op: 'repo_staged_objects',
     commit,

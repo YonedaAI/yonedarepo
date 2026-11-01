@@ -161,7 +161,7 @@ export class ProjectionRunner {
     // A projection already running may have planned before this caller's changesets.
     if (this.#running) {
       this.#again = true;
-      await this.#running.catch(() => 0);
+      await this.#running.catch(() => 0); // Only waiting: it logs its own failure.
     }
     this.#running ??= (async () => {
       let projected = 0;

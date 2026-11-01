@@ -7,7 +7,7 @@
 // twice. The message is untrusted: plain text only, and one line of it in the subject.
 
 import { fileSize, SUPPORT_MESSAGE_LIMIT } from '../../shared/support';
-import { log } from './log';
+import { log, warned } from './log';
 import { digest } from './platform-email-verify';
 import { type Attachment, attachmentOf } from './platform-support-attachment';
 import { RESEND_EMAILS, resendKey } from './platform-welcome-email';
@@ -82,7 +82,7 @@ async function factsOf(env: Env, account: string) {
   )
     .bind(account)
     .first<{ handle: string | null; repos: number }>()
-    .catch(() => null);
+    .catch(warned('support.context_failed', { account }));
 }
 
 type SupportRequest = {
@@ -192,7 +192,9 @@ export async function supportRoute(
   );
   if (failed) {
     log.error('email.support.failed', { account, ...failed });
-    await workspace(env, account, { op: 'support_release' }).catch(() => {});
+    await workspace(env, account, { op: 'support_release' }).catch(
+      warned('support.release_failed', { account }),
+    );
     throw new ApiError('SUPPORT_SEND_FAILED', 'Your message was not sent. Try again in a moment.');
   }
   return { sent: true, email: reply };

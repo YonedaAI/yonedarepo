@@ -149,6 +149,7 @@ export async function linkTo(
       ...fields(identity),
     });
   } catch (e: any) {
+    // A claim left behind grants nothing (sign-in re-checks the account).
     if (!live) await claims(env, key, { op: 'identity_claim_release', account }).catch(() => {});
     if (e?.code === 'UNAUTHORIZED') return { kind: 'error', code: 'session' };
     if (e?.code === 'ALREADY_EXISTS') return { kind: 'error', code: 'provider_linked' };

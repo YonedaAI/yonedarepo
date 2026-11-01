@@ -137,6 +137,7 @@ export async function openForkChange(ctx: RepoContext, a: Json) {
 export async function followForkChange(env: Env, parent: string, change: Json) {
   if (change.status !== 'open' || !change.source_repo) return false;
   const fork = caller(env, change.source_repo, { _system: 'fork' });
+  // A fork that cannot answer looks unmoved: the next read of the change asks again.
   const refs = await fork({ op: 'repo_refs' }).catch(() => null);
   const head = refs?.refs?.[`refs/heads/${change.source_branch}`];
   if (!head || head === change.head) return false;

@@ -73,7 +73,7 @@ export async function importProgress(ctx: RepoContext) {
   const { env, repo } = ctx;
   const { history_import } = await ctx.call({ op: 'repo_status' }); // read access first
   const asked = workflowStatus(env, repo);
-  asked.catch(() => {});
+  asked.catch(() => {}); // Raced below; losing that race must not leave it unhandled.
   const late = new Promise<null>((done) => setTimeout(() => done(null), STATUS_WAIT_MS));
   const status =
     (await Promise.race([asked, late])) ??

@@ -218,6 +218,7 @@ export async function shardLanded(
       op: 'store_staged_objects',
       commit,
       ...(withRecord ? { with_record: true } : {}),
+      // A shard that cannot answer leaves the object to the slower tiers.
     }).catch(() => ({ objects: [] }));
     if (found.objects.length || found.record)
       return { objects: found.objects as CachedObject[], record: found.record ?? null };

@@ -17,7 +17,9 @@
 // The packs stream back to this Worker, which frames them as side-band packets (what a
 // clone is served), checks each one's SHA-1 trailer and stores it (PackWriter) unless a
 // blob was withheld meanwhile.
+
 import { Container } from '@cloudflare/containers';
+import { warned } from './log';
 import { requestBody } from './repo-git-http';
 import { advertiseV2, uploadPackV2 } from './repo-git-v2';
 import { caller, type Json, RepoContext } from './repo-ops';
@@ -111,7 +113,7 @@ export async function buildPacks(
     }
     return report;
   } finally {
-    await instance.destroy().catch(() => {});
+    await instance.destroy().catch(warned('container.destroy_failed'));
   }
 }
 

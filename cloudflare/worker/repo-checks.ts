@@ -7,6 +7,7 @@
 import type { CheckJob } from './check-container';
 import { capacityUnavailable } from './container-capacity';
 import { transient } from './durable';
+import { log, warned } from './log';
 import { replay } from './repo-commit';
 import { dispatchHooks } from './repo-hooks';
 import { modelCheck } from './repo-model-check';
@@ -146,11 +147,15 @@ export async function completeContainerCheck(env: Env, report: CheckReport, resu
 
 /** Records an executor failure: an error outcome, which records no check and can re-run. */
 export async function failCheckRun(env: Env, report: CheckReport, e: any) {
+  log.warn('check.executor_failed', { repo: report.repo, run: report.run.run_id, error: e });
   const errored = await complete(env, report, 'error', {
     error: String(e?.message ?? e).slice(0, 500),
     code: e?.code ?? 'CHECK_EXECUTOR',
   });
-  if (errored.hooks) await dispatchHooks(env, report.repo).catch(() => {});
+  if (errored.hooks)
+    await dispatchHooks(env, report.repo).catch(
+      warned('hooks.dispatch_failed', { repo: report.repo }),
+    );
 }
 
 const complete = (env: Env, { repo, run }: CheckReport, outcome: string, evidence: Json) =>
@@ -168,7 +173,8 @@ async function settle(env: Env, report: CheckReport, outcome: string, evidence: 
   const { repo, run } = report;
   try {
     const completed = await complete(env, report, outcome, evidence);
-    if (completed.hooks) await dispatchHooks(env, repo).catch(() => {});
+    if (completed.hooks)
+      await dispatchHooks(env, repo).catch(warned('hooks.dispatch_failed', { repo }));
     await proposeRepairs(env, repo, run, completed.repair ?? []);
     const call = caller(env, repo, { _system: 'checks' });
     for (const id of (completed.bisects ?? []) as string[]) {

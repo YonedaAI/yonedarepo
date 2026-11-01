@@ -90,7 +90,8 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
       const { principal, suspended } = await sessionCheck(req, env);
       // The account menu's picture; a failed lookup only means initials.
       const avatar = principal
-        ? await avatarInfo(env, principal.workspace).catch(() => null)
+        ? // No picture is the page's plain fallback: a person's initials.
+          await avatarInfo(env, principal.workspace).catch(() => null)
         : null;
       result = response(
         principal

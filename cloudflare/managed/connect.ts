@@ -2,6 +2,7 @@
 // the agents' scoped token and webhook when an agent is set up on it, and, once no agent of the
 // workspace is set up there, the token revoked and the webhook swapped for a repo.deleted-only
 // notice (so a later deletion still clears its reviews).
+import { warned } from '../worker/log';
 import { HOOK_EVENTS, type ManagedEnv, NOTICE_EVENTS, TOKEN_NAME, TOKEN_SCOPES } from './config';
 import { type Json, Platform, PlatformError } from './platform';
 import { repoStub } from './repo-agents';
@@ -78,7 +79,7 @@ const alreadyGone = (e: unknown) => {
  */
 export async function disconnect(env: ManagedEnv, req: Request, repo: string) {
   const stub = repoStub(env, repo);
-  const connection = await stub.connection().catch(() => null);
+  const connection = await stub.connection().catch(warned('managed.connection_read_failed'));
   if (!connection || connection.revoked) return;
   const owner = new Platform(env, { forward: req });
   await owner.revokeToken(repo, connection.token_name).catch(alreadyGone);

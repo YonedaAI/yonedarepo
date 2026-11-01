@@ -46,6 +46,7 @@ export async function authorizeObjects(ctx: RepoContext, wanted: Json[], commitI
     if (object.kind === 'commit') continue;
     const path = String(object.path ?? '');
     if (!path || !(await decide(ctx, [path])).paths[0]) throw outside();
+    // Fails closed: an object that cannot be placed under a readable path is refused.
     const entry = await walk(objects, where.tree, path).catch(() => null);
     const kind = entry?.type === 'tree' ? 'tree' : 'blob';
     if (!entry || entry.id !== object.id || kind !== object.kind) throw outside();
@@ -211,7 +212,7 @@ async function* readPage(page: Page): AsyncGenerator<Json> {
     );
     const results = await Promise.race([reading, late]).finally(() => clearTimeout(timer ?? null));
     if (results === 'late') {
-      reading.catch(() => {});
+      reading.catch(() => {}); // Abandoned at the deadline, which is logged below.
       logPage(page, 'objects.deadline', { phase: page.phase });
       if (page.served > 0) return;
       throw new ApiError('TIMEOUT', `Reading objects took over ${PAGE_DEADLINE.ms} ms; retry`);

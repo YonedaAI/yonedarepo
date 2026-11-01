@@ -29,7 +29,10 @@ async function record(req: Request, env: Env) {
   if (site && site !== 'same-origin') return;
   if (!sentByBrowser(req)) return;
   const address = req.headers.get('cf-connecting-ip') ?? 'local';
-  if (env.AUTH_LIMITER && !(await env.AUTH_LIMITER.limit({ key: `client-error:${address}` })).success)
+  if (
+    env.AUTH_LIMITER &&
+    !(await env.AUTH_LIMITER.limit({ key: `client-error:${address}` })).success
+  )
     return;
   const text = await req.text();
   if (text.length > BODY_LIMIT) return;

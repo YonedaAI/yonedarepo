@@ -102,6 +102,7 @@ export async function lfsHttp(
   const auth = await authenticate(req, env).catch((e) => e as Error);
   if (auth instanceof Error) {
     const code = failureCode(auth);
+    if (!STATUS[code]) logFailure(auth, code, 500, { service: 'lfs' });
     return lfsError(STATUS[code] ?? 500, `${code}: ${auth.message}`);
   }
   if (!auth) return lfsError(401, 'Use a repository or personal access token as the password');

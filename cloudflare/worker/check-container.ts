@@ -1,7 +1,9 @@
 // The platform's check executor: the pinned runtime image started in `check-server`
 // mode. It receives files and argv from the Worker and returns evidence; it holds no
 // platform credentials and has no network, so a check cannot reach or alter the platform.
+
 import { Container } from '@cloudflare/containers';
+import { warned } from './log';
 import { jsonBody, STREAM_TYPE, streamBody } from './platform-check-stream';
 import {
   type CheckReport,
@@ -56,7 +58,7 @@ export async function startCheck(instance: CheckInstance): Promise<Started> {
   } catch (e) {
     // The start failure is the answer (the consumer tells capacity from other causes);
     // a kill of an instance that never ran may fail too and must not replace it.
-    await instance.destroy().catch(() => {});
+    await instance.destroy().catch(warned('container.destroy_failed'));
     throw e;
   }
   return { secret, startMs: Date.now() - starting };
@@ -114,7 +116,7 @@ export async function launchCheck(
   const finished = withDeadline(
     executeCheck(instance, job, started),
     executorDeadlineMs(job.timeout_seconds),
-    () => instance.destroy().catch(() => {}),
+    () => instance.destroy().catch(warned('container.destroy_failed')),
   );
   keep(
     finished.then(

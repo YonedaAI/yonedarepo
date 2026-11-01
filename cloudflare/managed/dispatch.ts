@@ -5,7 +5,7 @@
 
 import { type ManagedAgentId, managedAgent, readyForReview } from '../../shared/managed-agents';
 import { resolveSettings, triggerMatches } from '../../shared/managed-settings';
-import { log } from '../worker/log';
+import { log, warned } from '../worker/log';
 import { reconcileAccount, reconcileAll } from './admin-reconcile';
 import { runRefund } from './admin-refund';
 import { runTopUp } from './billing';
@@ -98,7 +98,7 @@ export async function purgeTranscripts(env: ManagedEnv, repo: string) {
  */
 async function onDeleted(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'deleted' }>) {
   const stub = repoStub(env, m.repo);
-  const connection = await stub.connection().catch(() => null);
+  const connection = await stub.connection().catch(warned('managed.connection_read_failed'));
   if (!connection) return;
   const gone = await new Platform(env, { token: connection.token }).status(m.repo).then(
     () => false,
