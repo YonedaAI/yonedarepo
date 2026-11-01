@@ -47,4 +47,4 @@ On dev on October 31, two Landings racing on different files both landed. Two ra
 
 ## Limits
 
-Automatic landing is a per-repository switch, off by default, and it's off across production for now. There the Tower page shows what Tower would say and nothing lands on its own. A High Risk score holds a Landing, and that score isn't calibrated against real outcomes yet. We've tested one Landing at a time and one race of two, so rate at volume is unmeasured. And when a legal hold lifts or a full repository gets room, nothing tells Tower to look again: from reading the code, the Landing waits for its next event.
+Automatic landing is a per-repository switch, off by default, and it's off across production for now. There the Tower page shows what Tower would say and nothing lands on its own. Risk is a beta reading that doesn't hold a Landing, because it isn't calibrated against real outcomes yet. We've tested one Landing at a time and one race of two, so rate at volume is unmeasured. And when a legal hold lifts or a full repository gets room, nothing tells Tower to look again: from reading the code, the Landing waits for its next event.

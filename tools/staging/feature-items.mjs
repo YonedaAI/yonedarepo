@@ -27,7 +27,7 @@ export async function featureItems(step, { cli, kit, account, platformAccount, v
   const credentials = { second: async () => (member ??= await secondAccount(origin, kit)) };
   const feature = { ...web, credentials };
   await step('33', 'CTC: traffic warnings on start and read, radar by API, MCP and page, separation, path-limited token sees nothing', (m) => ctcTraffic(cli, feature, m));
-  await step('34', 'CTC lands: an approval lands it, High Risk holds, separation holds behind a ticket (needs LAND_WHEN_CLEARED)', (m) => landWhenCleared(cli, { web, credentials }, m));
+  await step('34', 'CTC lands: an approval lands it, High Risk holds nothing, separation holds behind a ticket (needs LAND_WHEN_CLEARED)', (m) => landWhenCleared(cli, { web, credentials }, m));
   await step('35', 'Landings: per-push switch, adoption, direct landings, computed states, the rename', (m) => landingsFlow(cli, feature, m));
   await step('36', 'Flight plan and go-around: filed or refused cleanly, findings reach a session, findings_block refuses', (m) => goAroundFlow(cli, web, m));
   await step('37', 'Search across repositories: REST, CLI, MCP, page; private stays private, revoked token refused, beyond the 25 cap', (m) => searchFlow(cli, feature, m));

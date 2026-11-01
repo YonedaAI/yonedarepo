@@ -3,12 +3,13 @@
 //! Landing's state (`state`) and `platform_ctc::clearance`, a pure function of that state,
 //! decides. The page asks the same function what a Landing is waiting for (`shown`).
 //!
-//! The job asks here (`ask`), again with the head's Risk once nothing else stands in the way,
-//! then lands that head with `repo_land`, naming the Landing and the head it evaluated. That
-//! call decides again in its own transaction (`guard`), so nothing that arrived between the
-//! calls slips through: not a newer push, not a rejection. A landing that has to wait for a
-//! merge joins the queue, whose claim and batch decide a third time (`still_cleared`), so a
-//! ticket answers for its Landing as of the moment it lands.
+//! The job asks here (`ask`), again with `confirm` once nothing else stands in the way, so the
+//! adapter's answers are read only for a Landing that would land. It then lands that head with
+//! `repo_land`, naming the Landing and the head it evaluated. That call decides again in its own
+//! transaction (`guard`), so nothing that arrived between the calls slips through: not a newer
+//! push, not a rejection. A landing that has to wait for a merge joins the queue, whose claim and
+//! batch decide a third time (`still_cleared`), so a ticket answers for its Landing as of the
+//! moment it lands.
 //!
 //! Every decision the job makes is recorded on the Landing (`record`), so "why did this land?"
 //! always has an answer. Every decision also looks at who is ahead in the queue (`separation`).
@@ -22,9 +23,9 @@ use super::change_gates::LandingClearance;
 use super::changes::{self, number_of};
 use super::rows::{self, CommitRow, Settings};
 use super::traffic::Queue;
-use crate::platform_ctc::{Clearance, Decision, LandingState, Reason, RiskScore, clearance};
-use crate::storage::{SqlStore, bad, number};
-use record::{decision_row, failed_attempt, last_refusal, record, scored_risk};
+use crate::platform_ctc::{Clearance, Decision, LandingState, Reason, clearance};
+use crate::storage::{SqlStore, number};
+use record::{decision_row, failed_attempt, last_refusal, record};
 use serde_json::{Value, json};
 use state::{Answers, landing_state};
 use yoneda_core::{Error, Result, git_object::ObjectId};
@@ -77,7 +78,6 @@ fn judge<S: SqlStore>(
     settings: &Settings,
     queue: &Queue,
     answers: Answers,
-    risk: Option<RiskScore>,
 ) -> Result<Option<Judged>> {
     let Some(head) = change["head"]
         .as_str()
@@ -88,7 +88,7 @@ fn judge<S: SqlStore>(
     let id = ObjectId::parse(head)?;
     let refname = format!("refs/heads/{}", change["base"].as_str().unwrap_or_default());
     let commit = rows::recorded(db, &id)?;
-    let mut state = landing_state(db, change, &commit, &refname, settings, answers, risk)?;
+    let mut state = landing_state(db, change, &commit, &refname, settings, answers)?;
     state.ahead = separation::ahead(db, queue, change, &id, &refname)?;
     let decided = clearance(&state);
     Ok(Some(Judged {
@@ -99,9 +99,10 @@ fn judge<S: SqlStore>(
     }))
 }
 
-/// `repo_land_clearance {number, risk?, failed?: {head, code, message}}`, the job's own op: CTC's
-/// decision on the Landing's head, recorded; or with `failed`, why an attempt did not land. With
-/// only Risk missing it answers `needs_risk` and records nothing: the job hasn't decided yet.
+/// `repo_land_clearance {number, confirm?, failed?: {head, code, message}}`, the job's own op: CTC's
+/// decision on the Landing's head, recorded; or with `failed`, why an attempt did not land. Cleared
+/// without `confirm`, it answers `confirm: true` and records nothing: the job hasn't decided yet,
+/// and only `confirm` carries the adapter's answers, which cost a call to the owner's authority.
 pub fn ask<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value> {
     let landing = number_of(c)?;
     if let Some(failed) = c.get("failed").filter(|f| f.is_object()) {
@@ -111,13 +112,8 @@ pub fn ask<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value>
         return Ok(json!({ "state": "off" }));
     }
     let change = changes::get(db, landing)?;
-    let risk: Option<RiskScore> = c
-        .get("risk")
-        .filter(|r| r.is_object())
-        .map(|risk| serde_json::from_value(risk.clone()).map_err(|_| bad("risk is malformed")))
-        .transpose()?;
-    // A score means nothing else stood in the way, so the adapter's answers are worth having.
-    let answers = risk.is_some().then_some(c);
+    let confirming = c["confirm"] == true;
+    let answers = confirming.then_some(c);
     let now = number(c, "now")?;
     let queue = Queue::read(db, settings, now)?;
     let Some(Judged {
@@ -125,7 +121,7 @@ pub fn ask<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value>
         refname,
         state,
         decided,
-    }) = judge(db, &change, settings, &queue, answers, risk)?
+    }) = judge(db, &change, settings, &queue, answers)?
     else {
         return Ok(json!({ "state": "done" }));
     };
@@ -133,8 +129,8 @@ pub fn ask<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value>
         "state": decided.decision(), "reasons": decided.reasons(), "ref": refname, "commit": commit,
         "source_repo": change["source_repo"], "source_branch": change["source_branch"],
     });
-    if decided.needs_risk() {
-        answer["needs_risk"] = json!(true);
+    if matches!(decided, Clearance::Cleared) && !confirming {
+        answer["confirm"] = json!(true);
         return Ok(answer);
     }
     let row = decision_row(&json!(commit), &decided, Some(&state), None, now);
@@ -169,9 +165,8 @@ pub(super) fn guard<S: SqlStore>(
     if !settings.auto_landings.land_when_cleared {
         return Err(off());
     }
-    let risk = scored_risk(&change, &expected);
     let queue = Queue::read(db, settings, crate::storage::number(c, "now")?)?;
-    cleared(number, judge(db, &change, settings, &queue, Some(c), risk)?).map(Some)
+    cleared(number, judge(db, &change, settings, &queue, Some(c))?).map(Some)
 }
 
 fn cleared(number: i64, judged: Option<Judged>) -> Result<Cleared> {
@@ -238,13 +233,12 @@ pub(super) fn still_cleared<S: SqlStore>(
     let number = rows.first().and_then(|r| r["number"].as_i64());
     let number = number.ok_or_else(moved)?;
     let change = changes::get(db, number)?;
-    let risk = scored_risk(&change, &commit.id);
     let queue = Queue::read(db, settings, now)?;
-    cleared(number, judge(db, &change, settings, &queue, None, risk)?)
+    cleared(number, judge(db, &change, settings, &queue, None)?)
 }
 
 /// What the page shows of an open Landing with the switch on (`GET /changes/:n/gates`): the same
-/// decision, on the Risk the job last scored, and why the last attempt on this head failed.
+/// decision, and why the last attempt on this head failed.
 pub(super) fn shown<S: SqlStore>(
     db: &S,
     change: &Value,
@@ -264,18 +258,14 @@ pub(super) fn shown<S: SqlStore>(
     )
 }
 
-/// What CTC says of an open Landing as it stands, on the Risk the job last scored, whether or
-/// not the repository's switch is on. Reads what `judge` reads, and records nothing.
+/// What CTC says of an open Landing as it stands, whether or not the repository's switch is on.
+/// Reads what `judge` reads, and records nothing.
 pub(super) fn decided_on<S: SqlStore>(
     db: &S,
     change: &Value,
     settings: &Settings,
     queue: &Queue,
 ) -> Result<Option<(Decision, Vec<Reason>)>> {
-    let risk = change["head"]
-        .as_str()
-        .and_then(|head| ObjectId::parse(head).ok())
-        .and_then(|head| scored_risk(change, &head));
-    let judged = judge(db, change, settings, queue, None, risk)?;
+    let judged = judge(db, change, settings, queue, None)?;
     Ok(judged.map(|Judged { decided, .. }| (decided.decision(), decided.reasons().to_vec())))
 }

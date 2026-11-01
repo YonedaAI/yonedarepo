@@ -72,6 +72,7 @@ describe('Instruments', () => {
     state.value = loaded({ number: 3, heads: [head({ risk: risk('medium', 40) as never })] });
     const page = html();
     expect(page).toContain('Risk (beta)');
+    expect(page).not.toContain('High holds');
     expect(page).not.toContain('Slop');
   });
 
@@ -145,7 +146,7 @@ describe('Instruments', () => {
     }
     expect(page).toContain('.github/workflows/ci.yml');
     expect(page).toContain('+20');
-    expect(page).toContain('Only Land when cleared reads it');
+    expect(page).toContain('not calibrated yet');
     expect(page).not.toContain('Does not affect landing');
     expect(page).not.toContain('%');
     expect(page.match(/tone-warn/g)).toHaveLength(1);

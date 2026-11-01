@@ -78,5 +78,5 @@ Nothing is scripted past the clicks: `web-agents-flow.mjs` creates a repository 
 | Legal hold or `REPO_FULL` lifted | Nothing asks again; the Landing waits for its next event. Read from the code, not tested |
 | The switch turned on over a Landing that already cleared | The same: nothing asks. Read from the code, not tested |
 | One slow run of F1 | 65 s against 17 and 18 s, with no land timing recorded that run. Land waits have measured 2.9 to 8.9 s since; not reproduced, not explained |
-| Risk bands | Not calibrated (landings plan, stage 4). High holds a Landing on an uncalibrated score |
+| Risk bands | Measured over 42,494 open-source landings and the signals don't separate (landings plan, stage 4): High catches 8 of 122 reverted, in effect on size. So Risk holds nothing and stays a beta reading; only platform outcomes can calibrate it |
 | Rate at volume | One Landing at a time, plus one race of two |

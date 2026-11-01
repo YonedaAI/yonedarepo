@@ -139,10 +139,11 @@ Tower decides by rules alone, and asks no model. The Landing page shows that sam
 | No unresolved review comment, and it isn't a draft | It waits |
 | Automation isn't paused, and no legal hold applies | It stays open |
 | Every path-limited token that worked on it covers all it would land | It stays open |
-| Risk isn't High, and the repository isn't full | It stays open with the reason |
+| The repository isn't full | It stays open with the reason |
 | It merges cleanly | Go-around, with the reason |
 | No Landing ahead in the queue wrote what it read, or read what it writes | It waits, naming that Landing, and Tower looks again once the way clears |
 
+- Risk is a beta reading on the Landing page. It doesn't hold a Landing.
 - A newer push or a rejection that arrives first stops it, even once the landing has joined the queue.
 - A refused landing stays open with its reason. Only the next event tries again, and a Landing already cleared when you turn this on lands on its next event.
 - After it lands the page says **Landed automatically**, with who approved and the gates that decided it. The log's actor is `platform:land-when-cleared`, and webhooks fire as for any landing.

@@ -2,7 +2,7 @@
 //! database. Nothing here decides. Stricter than a person's landing, who can weigh what a rule
 //! can't, so it gathers more than `land_gates::gates`, which judges checks, approvals and
 //! rejections as it does for anyone.
-use crate::platform_ctc::{LandingState, Requirement, RequirementState, RiskScore};
+use crate::platform_ctc::{LandingState, Requirement, RequirementState};
 use crate::repo_store::change_gates::{GateState, policy};
 use crate::repo_store::rows::{self, CommitRow, Settings};
 use crate::repo_store::{
@@ -140,8 +140,7 @@ fn outside_a_grant<S: SqlStore>(
     Ok(false)
 }
 
-/// The state of `commit`, the head of `change`, landing on `refname`. `risk` as the caller has
-/// it, since only the adapter can read a diff.
+/// The state of `commit`, the head of `change`, landing on `refname`.
 pub(super) fn landing_state<S: SqlStore>(
     db: &S,
     change: &Value,
@@ -149,7 +148,6 @@ pub(super) fn landing_state<S: SqlStore>(
     refname: &str,
     settings: &Settings,
     answers: Answers,
-    risk: Option<RiskScore>,
 ) -> Result<LandingState> {
     let title = change["title"].as_str().unwrap_or_default().to_lowercase();
     let gate = land_gates::gates(db, commit, refname, settings)?;
@@ -177,7 +175,6 @@ pub(super) fn landing_state<S: SqlStore>(
         outside_grant: outside_a_grant(db, change, commit, refname)?,
         legal_hold: None,
         repo_full: None,
-        risk,
         ahead: Vec::new(),
     };
     if let Some(c) = answers {
