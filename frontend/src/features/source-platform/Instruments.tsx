@@ -3,6 +3,7 @@
 // (`GET /changes/:n/instruments`, from check evidence, so anyone who can read the change sees
 // them). The server decides every value. A card with nothing real behind it isn't shown, and
 // while there is nothing to show (loading, a failed read, no heads) neither is the block.
+import { useEffect } from 'react';
 import type {
   ChangeInstruments,
   HeadReading,
@@ -92,8 +93,22 @@ function RiskReasons({ risk }: { risk: RiskReading }) {
   );
 }
 
-export function Instruments({ repo, number }: { repo: string; number: number }) {
-  const { data } = useSource<ChangeInstruments>(`/repos/${repo}/changes/${number}/instruments`);
+export function Instruments({
+  repo,
+  number,
+  reading = 0,
+}: {
+  repo: string;
+  number: number;
+  /** Goes up when a check may have reported: read again, keeping the cards on screen. */
+  reading?: number;
+}) {
+  const { data, reload } = useSource<ChangeInstruments>(
+    `/repos/${repo}/changes/${number}/instruments`,
+  );
+  useEffect(() => {
+    if (reading) reload();
+  }, [reading, reload]);
   const heads = data?.heads ?? [];
   const [head] = heads;
   const agents = AGENT_CARDS.filter(({ check }) => heads.some((h) => readingOf(check)(h) !== null));

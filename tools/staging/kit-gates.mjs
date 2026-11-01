@@ -33,7 +33,7 @@ export function chosenItems(values) {
 /** A run of feature items alone is no full kit, so its evidence keeps out of what the prod guard
  * reads. */
 export const featureRun = (only) => {
-  const items = [...FEATURE_ITEMS, '45'];
+  const items = [...FEATURE_ITEMS, '45', 'f1'];
   return Boolean(only) && [...only].every((id) => ['0', '12', '17', ...items].includes(id)) && items.some((id) => only.has(id));
 };
 
