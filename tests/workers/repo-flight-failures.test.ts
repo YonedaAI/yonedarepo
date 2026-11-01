@@ -1,5 +1,5 @@
 // The Flight Path's failure cases the live kit can't force (tools/staging/flight-failures-flow.mjs
-// runs the rest): a repository at its storage limit, since no test fills 9 GB, and a clearance job
+// runs the rest): a repository at its storage limit, since no test fills it, and a clearance job
 // delivered again and again, since a live queue redelivers only when it chooses to.
 import { expect, it } from 'vitest';
 import { platformJob } from '../../cloudflare/worker/platform-entrypoint';

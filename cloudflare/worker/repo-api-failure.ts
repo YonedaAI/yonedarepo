@@ -44,8 +44,10 @@ const STATUS: Record<string, number> = {
   ACCOUNT_SUSPENDED: 403,
   // Withheld by the repository's owner (quarantine): known, deliberately not served.
   QUARANTINED: 451,
-  // The repository's database is at its size limit: new work is refused, reads go on.
+  // The repository's database is at its limit: new work is refused, reads go on.
   REPO_FULL: 507,
+  // The repository's Git objects reached the published size: no more pushes or new commits.
+  REPO_SIZE_LIMIT: 507,
   // Operators' billing: no refund key or no way to the managed Worker, and a refund a
   // configured limit refuses, or one blocked by an open dispute.
   NOT_CONFIGURED: 503,
@@ -63,6 +65,7 @@ const PLANNED = new Set([
   'OVERLOADED',
   'CREATE_UNAVAILABLE',
   'REPO_FULL',
+  'REPO_SIZE_LIMIT',
   'NOT_CONFIGURED',
   'SUPPORT_UNAVAILABLE',
   'SUPPORT_SEND_FAILED',

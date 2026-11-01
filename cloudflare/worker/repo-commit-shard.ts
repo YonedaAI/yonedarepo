@@ -15,6 +15,7 @@ import type { CachedObject, RepoObjects, TreeEntry } from './repo-objects';
 import { caller, type Json, type RepoContext } from './repo-ops';
 import { dispatchObjects } from './repo-projection';
 import { recordInShard, shardOf, shardRecord } from './repo-shards';
+import { addCommitted } from './repo-size';
 import { timed } from './repo-timing';
 
 const STAGE_OBJECTS = 256;
@@ -170,6 +171,7 @@ export async function commitInShard(
     }),
     edge,
   ]);
+  addCommitted(ctx.env, ctx.repo, all);
   // Platform checks start on every recorded commit: with runners, the authority adopts it
   // now to queue them.
   let checkRuns: Json[] = [];

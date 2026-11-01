@@ -33,6 +33,12 @@ pub trait SqlStore: Clone + 'static {
     fn database_size(&self) -> Result<u64>;
 }
 
+/// What a person is told when a repository is too full for new work, from the size guard or
+/// from the database itself: the adapter says the same (`REPO_FULL_MESSAGE`, durable.ts).
+pub const REPO_FULL_MESSAGE: &str = "This repository has reached its activity limit. New commits \
+     and Landings are refused; reading, cloning and deleting still work. To keep going, start a \
+     new repository or contact support.";
+
 /// A failed SQL statement or commit: `REPO_FULL` when the database refused it for its size
 /// (Durable Object SQLite's limit, or SQLite's `SQLITE_FULL`), `DATABASE` otherwise.
 pub fn sql_error(message: impl Into<String>) -> Error {
@@ -42,12 +48,10 @@ pub fn sql_error(message: impl Into<String>) -> Error {
         "SQLITE_FULL",
     ];
     let message = message.into();
-    let code = if FULL.iter().any(|m| message.contains(m)) {
-        "REPO_FULL"
-    } else {
-        "DATABASE"
-    };
-    Error::new(code, message)
+    if FULL.iter().any(|m| message.contains(m)) {
+        return Error::new("REPO_FULL", REPO_FULL_MESSAGE);
+    }
+    Error::new("DATABASE", message)
 }
 
 pub fn bad(message: &str) -> Error {

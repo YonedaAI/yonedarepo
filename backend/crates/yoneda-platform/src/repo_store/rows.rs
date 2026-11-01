@@ -28,6 +28,8 @@ pub struct Settings {
     pub visibility: Visibility,
     /// The repository's Landing switches.
     pub auto_landings: AutoLandings,
+    /// The size of its Git objects (`capacity`); `None` until migration 0046 has run.
+    pub git_bytes: Option<u64>,
 }
 
 impl Settings {
@@ -111,6 +113,7 @@ pub fn settings<S: SqlStore>(db: &S) -> Result<Settings> {
         }),
         visibility: Visibility::parse(&text("visibility")?)?,
         auto_landings: AutoLandings::of(&row),
+        git_bytes: row["git_bytes"].as_u64(),
     })
 }
 

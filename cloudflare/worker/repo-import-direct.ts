@@ -94,7 +94,7 @@ export async function directImport(env: Env, params: ImportParams): Promise<Timi
         generation,
         touches: commit.touches ?? [],
       });
-      await call({ op: 'repo_import', ref: 'main', commit: head });
+      await call({ op: 'repo_import', ref: 'main', commit: head, pack_bytes: bytes });
       const landed_at = Date.now();
       // Two R2 calls no reader waits for, so not before main; an unlisted pack is only kept
       // longer than it would have been.

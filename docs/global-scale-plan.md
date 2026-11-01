@@ -73,14 +73,14 @@ Same five items as the owner's list, with one swap: load tests move before archi
 2. **Add op `repo_storage`** (owner and `_system` only): database bytes, plus row estimates per large table from `max(rowid)`. `worker-0.8.7` already has `SqlStorage::database_size()`; reach it through `CloudStore`. Extend `store_status` for shards.
 3. **Sample without new D1 writes.** At the end of the derive job, at most every 10 minutes per repo, read `repo_storage` and add `db_bytes` to the existing `touchActivity` write (`repo-activity.ts`). New column by migration `0010`.
 4. **Show it.** Admin repo detail and a "largest repos" list. Reuse `platform-admin.ts:212` and `platform-admin-queries.ts`.
-5. **Alert.** Log `repo.storage` at 5, 8 and 9 GB, and show it in admin.
-6. **Clean refusal, behind `REPO_STORAGE_GUARD`.** At 9 GB, refuse **new work only**: prepare, record, record pushed, import and new landing submissions answer 507 `REPO_FULL`.
+5. **Alert.** Log `repo.storage` at 5, 8, 9 and 9.4 GB, and show it in admin.
+6. **Clean refusal, behind `REPO_STORAGE_GUARD`.** At 9.4 GB, refuse **new work only**: prepare, record, record pushed, import and new landing submissions answer 507 `REPO_FULL`, and so does anything else a client can repeat that adds rows (new branches and tags, Landings, comments, sessions, memories, releases, flight plans).
    - **Everything else keeps working,** so work already accepted can finish: projection, changeset recording, hook fan-out and settle, adoption, compaction, checks, token revocation, quarantine, deletes and migrations. Refusing these would stall compaction and branch reads (`compaction.rs:114`, `rows.rs:157`).
    - **In `batch` landing mode, refuse per item.** A whole-batch refusal requeues forever and clients see TIMEOUT (`repo-land-combiner.ts:98,135`).
    - The headroom matters: a pending migration on a full database blocks every command, reads included (`source_repository.rs:26`).
 7. **Map the raw failure.** Today a full database reaches clients as HTTP 400 `DATABASE`, which reads as their fault. Map storage-full to `REPO_FULL` too.
 
-Thresholds confirmed by the spike: keep 5, 8 and 9 GB.
+Thresholds confirmed by the spike: keep 5, 8 and 9 GB. **Two limits (owner, 2026-10-31):** the published 10 GB is a repository's Git objects, which live in object storage (`REPO_SIZE_GUARD`, `docs/runbook.md`). This database has its own internal limit: small commits can fill it with little code, so it never appears as a user-facing number. It stops new work at 9.4 GB, from the numbers below.
 
 ### Spike results (dev, 2026-10-31; one object, deleted afterwards)
 
@@ -99,6 +99,37 @@ What this changes:
 1. **Step 7:** the failure may not arrive as `DATABASE`; it can be thrown when the transaction commits. Test the real path through the Rust adapter.
 2. **Archive:** delete in small batches with a byte budget per transaction. One big delete can take a repo offline for minutes. Find the safe batch size on dev first.
 3. **Migrations:** small ones work at the limit, so the headroom matters less than first thought. A migration that rewrites rows is still untested there.
+
+### Where the history database stops: 9.4 GB (2026-10-31)
+
+**9,400,000,000 keeps the worst case we measured below what Cloudflare publishes**, so that case holds whether Cloudflare enforces its published number or the higher one the spike met. The lead set it on 2026-10-31.
+
+| Limit | Bytes | Above 9.4 GB |
+|---|---|---|
+| Cloudflare's published limit, "1 GB = 1,000,000,000 bytes" | 10,000,000,000 | **600,000,000** |
+| Last size accepted in the spike | 10,713,108,480 | 1,313,108,480 |
+| 10 GiB, the wall we infer | 10,737,418,240 | 1,337,418,240 |
+
+What can land after the limit, measured on native SQLite with the full schema (not workerd):
+
+| Writer | Size | Bound |
+|---|---|---|
+| One commit that started under the cap | 63 MB at about 50-byte paths, 274 MB at 512-byte paths | 100,000 changed files |
+| A push of several commits, or a fill wave | Not measured; about 450 MB at most (estimate) | Only the Worker's 128 MB of memory |
+| Landings not yet projected | 2.9 KB each: 174 MB for 10 minutes' stall at 100/s | **Nothing**: 208,000 pending fill the 600 MB |
+| A batch of 256 one-file landings | 0.3 MB at landing, 0.7 MB at projection | 256 |
+| Pending hook events | 82 MB at most (computed) | 20 hooks, 1,000 events, 4 KB |
+| Schema-only migration | 20 KB | |
+| Compaction | Shrinks | |
+| **Data-rewriting migration** | About 1.7 GB at 9.4 GB, by `0042`'s 17.7% | **Doesn't fit** |
+
+Worst case that coincides: 530 MB measured, 706 MB with the estimate. 530 MB fits in 600 MB with 70 MB spare. **706 MB is 106 MB over the published number**, though under the spike's limit: that needs a stalled projector, full hook queues and the largest possible commit at once.
+
+**A leak this closed:** a new branch copied up to 5,000 `ref_chain` rows, 1.2 MB each here, and nothing refused it. 499 new branches, or five 100-branch batches, would have spent the 600 MB. New branches and the other repeatable writers are now refused. What stays open is small and needs a flood: reviews, check results, tokens, members, settings, context deliveries, up to 32 KB a call.
+
+A 10 GB limit here would have had no room at all against the published number. The urgent mail at 9 GB leaves 400 MB of warning: 27 hours at 1 landing/s, 16 minutes at 100/s.
+
+Measured beside this: a one-file landing costs 4 KB all told (1,024 landings in four batches, projected), against the 5–6 KB estimate above, so about 2.3M landings reach 9.4 GB.
 
 ## 2. Load tests (stages 2 and 3)
 

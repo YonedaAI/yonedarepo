@@ -1,5 +1,6 @@
 // The land combiner's logic (repo-land-combiner.ts), apart from the Durable Object so tests can run
 // it in-process with their own bindings: submissions and tickets, each step landing what waits.
+import { noteFull } from './durable';
 import { log, warned } from './log';
 import { kickProjection, landChangesets } from './repo-changesets';
 import { refreshHead } from './repo-head';
@@ -103,6 +104,8 @@ export class LandBatcher {
     // Each lander reports its batch's authority call (size and wall time) in Server-Timing.
     const timing = { size: batch.length, ms: Date.now() - started };
     const again: Submission[] = [];
+    if (out.items.some((r: Json) => r.code === 'REPO_FULL'))
+      noteFull(merger.repo, 'repo_land_submitted');
     for (const [i, submission] of batch.entries()) {
       if (out.items[i].status === 'deferred') again.push(submission);
       else

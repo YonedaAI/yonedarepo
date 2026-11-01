@@ -310,6 +310,13 @@ describe('log lines before and after the shared logger', () => {
     expect(counted(line)).toEqual({ storage_9gb: 1 });
   });
 
+  it('reads a repository at the limit from its size, or from a refusal', () => {
+    const line = logger('repo.storage', 'info', { threshold: 9.4e9, db_bytes: 9.4e9 });
+    expect(counted(line)).toEqual({ storage_full: 1 });
+    expect(counted(logger('repo.storage', 'info', { db_bytes: 9.3e9 }))).toEqual({ storage_9gb: 1 });
+    expect(counted(logger('repo.full', 'warn', { repo: 'r0', op: 'repo_land' }))).toEqual({ storage_full: 1 });
+  });
+
   it('counts a line logged as an object, and ignores one that only mentions an event', () => {
     const object = { level: 'error', message: [{ event: 'billing.reconcile.mismatch' }] };
     expect(counted(object as never)).toEqual({ reconcile_mismatches: 1 });
@@ -389,7 +396,7 @@ describe('new signals', () => {
     expect(await keys(d)).toEqual([]);
   });
 
-  it('storage: 5 GB is silent, 8 GB waits for the digest, 9 GB is urgent', async () => {
+  it('storage: 5 GB is silent, 8 GB waits for the digest, 9 GB and the limit are urgent', async () => {
     const calls = fakeUpstreams(analytics());
     const e = wideEnv();
     const d = deps(e, { now: start });
@@ -405,6 +412,10 @@ describe('new signals', () => {
     await runWatch(e, d);
     expect(await finding(d, 'storage:storage_9gb')).toMatchObject({ level: 'urgent' });
     expect(calls.mail[1].body.subject).toBe('[URGENT dev] Repository past 9 GB');
+    await logged(d, start, logLine('repo.full', 'log', { repo: 'r0', op: 'repo_land' }));
+    await runWatch(e, d);
+    expect(await finding(d, 'storage:storage_full')).toMatchObject({ level: 'urgent' });
+    expect(calls.mail[2].body.subject).toBe('[URGENT dev] Repository history reached its limit');
   });
 
   it('dead letters on every queue are urgent', async () => {
