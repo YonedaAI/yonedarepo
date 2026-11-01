@@ -284,6 +284,8 @@ Conservative rules: a fork needs an approval of its head, a repo with no rules n
 
 ## 10. Order to reach prod
 
+**2026-10-31:** with no users on prod, the owner chose to ship wave 1 and CTC together, which applies `0044` in one deploy. The two-wave rollback didn't apply to that ship; `0045` still ships later on its own.
+
 Two schema changes, `0044` and `0045`, ship in two waves, so a rollback stays safe.
 
 1. **Wave 1, on dev:** binaries accept both versions without applying them.

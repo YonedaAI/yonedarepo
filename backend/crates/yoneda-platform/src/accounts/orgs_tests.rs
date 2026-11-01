@@ -394,6 +394,20 @@ fn a_repository_being_created_holds_the_org_and_a_deleted_org_refuses_new_names(
 }
 
 #[test]
+fn only_a_deleted_org_counts_as_retired() {
+    let retired = |db: &NativeStore| ok(db, json!({"op":"org_retired"}))["retired"].clone();
+    assert_eq!(retired(&person("alice")), false);
+    assert_eq!(retired(&NativeStore::memory().unwrap()), false);
+    let db = acme();
+    assert_eq!(retired(&db), false);
+    ok(
+        &db,
+        json!({"op":"org_delete","actor":"alice","confirm":"acme","_hold":"off"}),
+    );
+    assert_eq!(retired(&db), true);
+}
+
+#[test]
 fn the_team_id_migration_numbers_existing_teams_and_continues_after_them() {
     let old = NativeStore::memory().unwrap();
     old.query(

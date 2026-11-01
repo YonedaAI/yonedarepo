@@ -137,7 +137,6 @@ All of it follows the UI rules in `AGENTS.md`.
 
 | Step | Needs |
 |---|---|
-| Wave 1 first | Prod takes `wave-1` (`163a4a0b`) before wave 2, or rollback breaks |
 | `TRAFFIC_EVENTS` on | Privacy text reviewed, then "ship" |
 | `AUDIT_LOG` on | "ship" |
 | Basin bound | Dev soak, then "ship" |
