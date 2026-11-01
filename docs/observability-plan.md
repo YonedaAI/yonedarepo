@@ -45,6 +45,21 @@ Rules:
 - New paths sit behind a switch where they touch the request path.
 - Prices and limits for Workers Logs and Notifications aren't in our docs: check before relying on them.
 
+## O1 request budget
+
+Written before the code. What a healthy request may spend on O1, with `REQUEST_IDS` and `CLIENT_ERRORS` on. With them off (the default) it spends one object per request, in the `AsyncLocalStorage` store the request already has for `waitUntil`.
+
+| Item | Budget |
+|---|---|
+| Added subrequests, Durable Object round trips, queue sends, D1 or R2 reads | **0** |
+| Added log lines on a healthy request | **0** |
+| Added CPU per request | under **50 µs** at the entry Worker, measured in workerd |
+| Added bytes per hop | one `x-request-id` header, at most 64 bytes of value |
+| Added bytes per queue message | one `request_id` field, at most 64 bytes |
+| Added Wasm calls per Durable Object request | one header read |
+
+Failure paths are not on that budget: a line is written only when something already went wrong, at most 4,000 characters, and never awaited. `POST /api/client-error` is rate limited per address and takes at most 2 KB.
+
 ## Phase O1: See failures
 
 1. Log every unexpected 500: operation, error code, repository id, revision.
