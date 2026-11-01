@@ -58,6 +58,10 @@
   }
 
   function Test-Working([string] $Program) {
+    # An .exe can't run outside Windows, and starting one there opens it in another app.
+    if (($null -ne $IsWindows) -and (-not $IsWindows) -and ($Program -like '*.exe')) {
+      return $false
+    }
     try {
       & $Program --version *> $null
       return $LASTEXITCODE -eq 0
