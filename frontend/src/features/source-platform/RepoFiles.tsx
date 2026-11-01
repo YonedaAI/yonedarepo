@@ -4,13 +4,14 @@ import { type ReactNode, useState } from 'react';
 import { EmptyState } from '../../components/EmptyState';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { BranchPicker, CloneButton, LatestCommit } from './CodeParts';
+import { CommitFile } from './CommitFile';
 import { readQuery, useActivity, useCommitMessages, useListing } from './codeData';
 import { currentApiOrigin } from './connect';
 import { FileBlame } from './FileBlame';
 import { FileTable } from './FileTable';
 import { FileText } from './FileText';
 import { Markdown } from './markdown';
-import type { RepoStatus } from './repoStatus';
+import { canMoveBranches, type RepoStatus } from './repoStatus';
 import { Failure, Loading } from './SourceStatus';
 import type { SourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
@@ -48,16 +49,27 @@ export function RepoFiles({
   route,
   status,
   navigate,
+  account,
 }: {
   route: Route;
   status?: RepoStatus;
   navigate: Navigate;
+  /** The signed-in account, named on a commit made here. */
+  account?: string;
 }) {
   const ref = apiRef(route.ref, status?.refs);
   // A line belongs to the file on screen: every link away leaves it behind.
   const { line, ...place } = route;
   const listing = useListing(route.repo, ref, route.path, route.at);
   const [blaming, setBlaming] = useState(false);
+  // The place the form was opened on: moving to another closes it.
+  const here = `${route.ref}:${route.path}`;
+  const [writingAt, setWritingAt] = useState<string | null>(null);
+  const writing = writingAt === here;
+  const canCommit =
+    canMoveBranches(status?.viewer) &&
+    route.at === undefined &&
+    !route.ref.startsWith('refs/tags/');
   const tree = listing.value?.kind === 'tree' ? listing.value : undefined;
   const activity = useActivity(
     route.repo,
@@ -104,6 +116,11 @@ export function RepoFiles({
           ))}
         </nav>
         <span className="source-toolbar-end">
+          {canCommit && tree && !writing && (
+            <button type="button" className="quiet" onClick={() => setWritingAt(here)}>
+              Add file
+            </button>
+          )}
           <VersionPicker
             repo={route.repo}
             at={route.at}
@@ -146,6 +163,27 @@ export function RepoFiles({
       {listing.value && route.at === undefined && (
         <LatestCommit repo={route.repo} commit={listing.value.commit} commitLink={commitLink} />
       )}
+      {writing && listing.value && (
+        <CommitFile
+          repo={route.repo}
+          place={{ from: route.ref, head: listing.value.commit, account }}
+          dir={route.path}
+          editing={
+            listing.value.kind === 'file'
+              ? { path: route.path, content: listing.value.content }
+              : undefined
+          }
+          onCancel={() => setWritingAt(null)}
+          onCommitted={(done, path) => {
+            setWritingAt(null);
+            navigate(
+              done.change
+                ? { view: 'change', repo: route.repo, number: done.change }
+                : { ...place, ref: done.branch, path },
+            );
+          }}
+        />
+      )}
       {tree && (
         <>
           {tree.entries.length === 0 ? (
@@ -177,6 +215,11 @@ export function RepoFiles({
             <span>
               {listing.value.size} bytes{listing.value.executable ? ' · executable' : ''}
             </span>
+            {canCommit && listing.value.encoding === 'utf-8' && !writing && (
+              <button type="button" className="quiet" onClick={() => setWritingAt(here)}>
+                Edit
+              </button>
+            )}
             {route.at === undefined && listing.value.encoding === 'utf-8' && ref && (
               <button
                 type="button"

@@ -186,6 +186,11 @@
 .source-open-change .source-field {
   max-width: none;
 }
+/* The page's own width: it holds a file. */
+.source-open-change.source-commit-file {
+  max-width: none;
+  margin-bottom: 12px;
+}
 .source-reviews {
   margin: 8px 0 0;
   padding-left: 18px;
