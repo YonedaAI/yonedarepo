@@ -218,6 +218,12 @@
   "observability": {
     "enabled": true
   },
+  "pipelines": [
+    {
+      "binding": "CHANGELOG",
+      "stream": "4ff4b2c0c4ec4234934fa94498ab73c5"
+    }
+  ],
   "placement": {
     "mode": "targeted",
     "region": "aws:us-east-1"

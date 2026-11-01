@@ -7,6 +7,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { test } from 'node:test';
 
 const tool = new URL('../../tools/platform-analytics.mjs', import.meta.url).pathname;
@@ -32,7 +33,8 @@ function run(args, env) {
   });
 }
 
-/** Answers like the Cloudflare API from `state`, recording every write. */
+/** Answers like the Cloudflare API from `state`, recording every write. Lists page at 10 with
+ * a `name` substring filter, and only a single pipeline's GET has `failure_reason`. */
 async function standIn({ state, refuse }) {
   const writes = [];
   const server = createServer((request, response) => {
@@ -41,13 +43,14 @@ async function standIn({ state, refuse }) {
       text += chunk;
     });
     request.on('end', () => {
-      const path = request.url.replace(/^\/accounts\/[0-9a-f]+/, '');
+      const url = new URL(request.url, 'http://stand-in');
+      const path = url.pathname.replace(/^\/client\/v4/, '').replace(/^\/accounts\/[0-9a-f]+/, '');
       const body = text ? JSON.parse(text) : undefined;
       const answer = (status, value) => {
         response.writeHead(status, { 'content-type': 'application/json' });
         response.end(JSON.stringify(value));
       };
-      if (refuse?.(path, body)) return answer(403, { success: false, errors: [{ message: `refused ${JSON.stringify(body)} ${request.headers.authorization}` }] });
+      if (refuse?.(path, body, request.method)) return answer(403, { success: false, errors: [{ message: `refused ${JSON.stringify(body)} ${request.headers.authorization}` }] });
       if (request.method === 'POST') {
         writes.push({ path, body, bearer: request.headers.authorization });
         const kind = path.split('/').at(-1);
@@ -56,7 +59,13 @@ async function standIn({ state, refuse }) {
       }
       if (path.startsWith('/r2/buckets')) return answer(200, { success: true, result: { buckets: state.buckets } });
       if (path === '/basin-catalog') return answer(200, { success: true, result: { warehouses: state.warehouses } });
-      return answer(200, { success: true, result: state[path.split('/').at(-1)] });
+      const one = /^\/pipelines\/v1\/pipelines\/(.+)$/.exec(path);
+      if (one) return answer(200, { success: true, result: { ...state.pipelines.find((p) => p.id === one[1]), status: 'running', failure_reason: state.failure_reason ?? null } });
+      const name = url.searchParams.get('name') ?? '';
+      const matching = state[path.split('/').at(-1)].filter((item) => item.name.includes(name));
+      const perPage = Number(url.searchParams.get('per_page') ?? 10);
+      const result = matching.slice(0, perPage);
+      return answer(200, { success: true, result, result_info: { count: result.length, page: 1, per_page: perPage, total_count: matching.length } });
     });
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -115,6 +124,8 @@ test('setup creates the bucket, catalog, stream, sink and pipeline in order, onc
     const [, , stream, sink, pipeline] = api.writes.map((w) => w.body);
     assert.deepEqual(stream.worker_binding, { enabled: true });
     assert.equal(stream.http.enabled, false);
+    // Neither default is documented, and a mismatch drops every event in silence.
+    assert.deepEqual(stream.format, { type: 'json', timestamp_format: 'rfc3339', unstructured: false });
     assert.ok(stream.schema.fields.some((f) => f.name === 'queued_by'));
     assert.equal(sink.config.token, SECRET, 'the catalog token goes to the sink, and only there');
     assert.equal(pipeline.sql, 'INSERT INTO yonedarepo_dev_changes_sink_v1 SELECT * FROM yonedarepo_dev_changes_v1');
@@ -160,6 +171,141 @@ test('stops at the account limit rather than asking for a twenty-first', async (
     api.close();
     rmSync(dir, { recursive: true });
   }
+});
+
+test('a stream past the first page of the listing is found, not created twice', async () => {
+  const dir = home();
+  const state = empty();
+  state.streams = Array.from({ length: 12 }, (_, i) => ({ id: `s${i}`, name: `other_${i}` }));
+  state.streams.push({ id: 'ours', name: 'yonedarepo_dev_changes_v1' });
+  const api = await standIn({ state });
+  try {
+    const output = await run(['setup'], { HOME: dir, ANALYTICS_API_BASE: api.base, CLOUDFLARE_API_TOKEN: CONTROL });
+    assert.equal(output.code, 0, output.stderr);
+    assert.ok(!api.writes.some((w) => w.path === '/pipelines/v1/streams'), 'it asked for a second stream');
+    assert.deepEqual(JSON.parse(output.stdout).binding, { pipelines: [{ binding: 'CHANGELOG', stream: 'ours' }] });
+  } finally {
+    api.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+test('a pipeline that failed says why: only its own GET carries the reason', async () => {
+  const dir = home();
+  const state = { ...empty(), failure_reason: 'bucket not found' };
+  const api = await standIn({ state });
+  try {
+    const output = await run(['setup'], { HOME: dir, ANALYTICS_API_BASE: api.base, CLOUDFLARE_API_TOKEN: CONTROL });
+    assert.equal(output.code, 0, output.stderr);
+    assert.equal(JSON.parse(output.stdout).failure_reason, 'bucket not found');
+  } finally {
+    api.close();
+    rmSync(dir, { recursive: true });
+  }
+});
+
+for (const [route, permission] of [
+  ['/pipelines/', 'Pipelines Write'],
+  ['/basin-catalog', 'Workers R2 Data Catalog Write'],
+]) {
+  test(`a token without ${permission} stops before anything exists, and says so`, async () => {
+    const dir = home();
+    const api = await standIn({ state: empty(), refuse: (path) => path.startsWith(route) });
+    try {
+      const output = await run(['setup'], { HOME: dir, ANALYTICS_API_BASE: api.base, CLOUDFLARE_API_TOKEN: CONTROL });
+      assert.notEqual(output.code, 0);
+      clean(output);
+      assert.ok(output.stderr.includes(permission), output.stderr);
+      assert.deepEqual(api.writes, [], 'a half-made setup');
+    } finally {
+      api.close();
+      rmSync(dir, { recursive: true });
+    }
+  });
+}
+
+test('the stream reserves the credential columns as optional: a stream cannot change later', () => {
+  const { fields } = JSON.parse(readFileSync(new URL('../../cloudflare/basin/change-log.schema.json', import.meta.url)));
+  for (const name of ['credential_id', 'credential_kind']) {
+    assert.deepEqual(fields.find((f) => f.name === name), { name, type: 'string', required: false });
+  }
+});
+
+/** The tool's own SQL, printed by a dry run, over `rows` in SQLite. SQLite is not Basin SQL:
+ * this proves what the queries count, not that Basin accepts them. */
+async function counted(name, rows) {
+  const dir = home(null);
+  try {
+    const printed = await run([name, '--dry-run', '--since', '2026-01-01T00:00:00Z'], { HOME: dir });
+    assert.equal(printed.code, 0, printed.stderr);
+    const db = new DatabaseSync(':memory:');
+    db.exec(`ATTACH ':memory:' AS platform`);
+    db.exec(`CREATE TABLE platform.changes_v1(event_key, event, repo, version, ticket, ref, "commit", kind, actor, actor_kind, paths_changed,
+      read_set_size, base_lag, merged_landings, checks_passed, checks_failed, check_runs, check_run_ms, repairs, land_latency_ms, queue_wait_ms,
+      error_code, occurred_at, __ingest_ts)`);
+    const lengths = { hour: 13, day: 10 };
+    db.function('date_trunc', (unit, at) => at.slice(0, lengths[unit]));
+    db.aggregate('approx_percentile_cont', { start: null, step: (_, value, _fraction) => value, result: (value) => value });
+    const insert = db.prepare(
+      'INSERT INTO platform.changes_v1(event_key, event, repo, version, ref, kind, actor, actor_kind, merged_landings, land_latency_ms, repairs, occurred_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+    );
+    for (const r of rows) {
+      insert.run(r.key, r.event, r.repo ?? 'r1', r.version ?? null, 'refs/heads/main', r.kind ?? null, 'user:a', r.actor_kind ?? 'user', r.merged ?? null, r.latency ?? 10, r.repairs ?? 0, r.at ?? '2026-02-01T10:30:00.000Z');
+    }
+    const answer = db.prepare(JSON.parse(printed.stdout)[name].query).all();
+    db.close();
+    return answer;
+  } finally {
+    rmSync(dir, { recursive: true });
+  }
+}
+
+const log = [
+  { key: 'r1:v1', event: 'land', kind: 'commit', merged: 0, version: 1 },
+  { key: 'r1:v2', event: 'land', kind: 'merge', merged: 0, version: 2 },
+  { key: 'r1:v3', event: 'land', kind: 'revert', merged: 0, version: 3 },
+  { key: 'r1:v4', event: 'land', kind: 'changeset', merged: 0, version: 4, repairs: 1 },
+  // Re-sent: at least once, and the same key counts once.
+  { key: 'r1:v4', event: 'land', kind: 'changeset', merged: 0, version: 4, repairs: 1 },
+  // Not landings: nothing changed by a writer.
+  { key: 'r1:v5', event: 'land', kind: 'import', merged: 0, version: 5 },
+  { key: 'r1:v6', event: 'land', kind: 'ref_move', merged: 0, version: 6 },
+  { key: 'r1:v7', event: 'land', kind: 'ref_delete', merged: 0, version: 7 },
+  // A batch counts its two commits, not itself.
+  { key: 'r1:v8', event: 'land', kind: 'merge', merged: 2, version: 8 },
+  { key: 'r1:v8:a', event: 'merged', version: 8 },
+  { key: 'r1:v8:b', event: 'merged', version: 8 },
+  { key: 'r1:t1', event: 'refused' },
+  { key: 'r1:v9', event: 'land', kind: 'commit', merged: 0, version: 9, actor_kind: 'test' },
+  // Next day, another repository.
+  { key: 'r2:v1', event: 'land', kind: 'commit', merged: 0, version: 1, repo: 'r2', at: '2026-02-02T03:00:00.000Z' },
+  { key: 'r2:v2', event: 'land', kind: 'import', merged: 0, version: 2, repo: 'r2', at: '2026-02-02T03:00:00.000Z' },
+];
+
+test('the rollups count landings: no imports, ref moves, ref deletes, batches, refusals or probes', async () => {
+  assert.deepEqual(
+    (await counted('hourly', log)).map((row) => [row.hour, row.accepted_changes, row.repos]),
+    [['2026-02-02T03', 1, 1], ['2026-02-01T10', 6, 1]],
+  );
+});
+
+test('daily rolls up by day', async () => {
+  assert.deepEqual(
+    (await counted('daily', log)).map((row) => [row.day, row.accepted_changes, row.repos]),
+    [['2026-02-02', 1, 1], ['2026-02-01', 6, 1]],
+  );
+});
+
+test('rates are of landings and refusals alone', async () => {
+  const [one, two] = await counted('rates', log);
+  assert.deepEqual([one.repo, one.accepted, one.refused, one.octopus_batches], ['r1', 6, 1, 1]);
+  assert.equal(one.conflict_rate, 1 / 7);
+  assert.equal(one.repair_rate, 1 / 6);
+  assert.deepEqual([two.repo, two.accepted, two.refused], ['r2', 1, 0]);
+});
+
+test('n9 counts accepted changes per actor the same way', async () => {
+  assert.deepEqual((await counted('n9', log)).map((row) => [row.actor, row.accepted, row.refused]), [['user:a', 7, 1]]);
 });
 
 test('setup without a token stops before any call, and queries print their SQL on a dry run', async () => {

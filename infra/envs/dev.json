@@ -420,6 +420,12 @@
             "class_name": "PlatformImportWorkflow"
           }
         ],
+        "pipelines": [
+          {
+            "binding": "CHANGELOG",
+            "stream": "4ff4b2c0c4ec4234934fa94498ab73c5"
+          }
+        ],
         "analytics_engine_datasets": [
           {
             "binding": "SITE_EVENTS",
