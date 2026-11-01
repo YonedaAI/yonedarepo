@@ -9,6 +9,7 @@ import { authenticate } from './auth';
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { error, readJson, response } from './http';
 import { noteAccount } from './internal-accounts';
+import { logFailure } from './log';
 import { accountActivity } from './platform-account-activity';
 import { adminRoute } from './platform-admin';
 import { auditExport, auditExportOrg } from './platform-audit-export';
@@ -63,6 +64,7 @@ import { timed, withTimings } from './repo-timing';
 import { batchRefs, branchesRoute, operations } from './repo-tools';
 import { vacuum } from './repo-vacuum';
 import { humanView } from './repo-views';
+import { ensureScope } from './request-scope';
 import type { Env } from './types';
 
 const STATUS: Record<string, number> = {
@@ -388,11 +390,13 @@ async function withHeadRefresh(env: Env, repo: string, change: Promise<Json>) {
   return done;
 }
 
-export async function repoApi(req: Request, env: Env): Promise<Response> {
-  // Failures outside a route (authentication, MCP framing) are mapped like a route's.
-  const { value, header } = await withTimings(() => handle(req, env).catch(failure));
-  if (header) value.headers.set('server-timing', header);
-  return value;
+export function repoApi(req: Request, env: Env): Promise<Response> {
+  return ensureScope({ env, req }, async () => {
+    // Failures outside a route (authentication, MCP framing) are mapped like a route's.
+    const { value, header } = await withTimings(() => handle(req, env).catch(failure));
+    if (header) value.headers.set('server-timing', header);
+    return value;
+  });
 }
 
 async function handle(req: Request, env: Env): Promise<Response> {
@@ -505,12 +509,25 @@ async function handle(req: Request, env: Env): Promise<Response> {
 /** A JSON answer, or the API error a failure maps to. */
 const answer = (run: () => Promise<Json>) => run().then(response, failure);
 
+/** 5xx answers the platform means to give: load, a limit, or a service it says is not set up.
+ * Each is a state of the system, counted by status; none is a fault to investigate. */
+const PLANNED = new Set([
+  'OVERLOADED',
+  'CREATE_UNAVAILABLE',
+  'REPO_FULL',
+  'NOT_CONFIGURED',
+  'SUPPORT_UNAVAILABLE',
+  'SUPPORT_SEND_FAILED',
+]);
+
 /** The API error a failure maps to: an overloaded or unreachable Durable Object is 503
- * OVERLOADED with Retry-After (clients retry it), anything unexpected 500 INTERNAL. */
+ * OVERLOADED with Retry-After (clients retry it), anything unexpected 500 INTERNAL. A failed
+ * statement in the authority answers 400 for now, but is no fault of the caller's. */
 function failure(e: any): Response {
   const code = failureCode(e);
   const message = String(e?.message ?? e).slice(0, 500);
   const status = statusOf(code, e instanceof ApiError || typeof e?.code === 'string');
+  if ((status >= 500 && !PLANNED.has(code)) || code === 'DATABASE') logFailure(e, code, status);
   const refused =
     e instanceof ApiError && e.details
       ? response({ error: { code, message, details: e.details } }, status)
