@@ -223,7 +223,11 @@ fn a_restore_check_names_the_store_and_the_head_to_look_for() {
     let check = h.ok(OWNER, json!({"op":"repo_restore","check":true}));
     let settings = rows::settings(&h.db).unwrap();
     assert_eq!(check["object_store"], settings.object_store.as_str());
-    assert_eq!(check["head"], Value::Null, "a repository with no refs loses nothing");
+    assert_eq!(
+        check["head"],
+        Value::Null,
+        "a repository with no refs loses nothing"
+    );
 
     h.db.query(
         "INSERT INTO refs(name,commit_id,version) VALUES('refs/heads/side','aaa',1),('refs/heads/main','bbb',2)",
@@ -231,7 +235,10 @@ fn a_restore_check_names_the_store_and_the_head_to_look_for() {
     )
     .unwrap();
     let check = h.ok(OWNER, json!({"op":"repo_restore","check":true}));
-    assert_eq!(check["head"], json!({"commit":"bbb","bundle":null,"staged":false}));
+    assert_eq!(
+        check["head"],
+        json!({"commit":"bbb","bundle":null,"staged":false})
+    );
 
     h.db.query(
         "INSERT INTO bundled_objects(id,bundle,at,size,kind) VALUES('bbb','b1',0,1,'commit')",
@@ -244,7 +251,10 @@ fn a_restore_check_names_the_store_and_the_head_to_look_for() {
     )
     .unwrap();
     let check = h.ok(OWNER, json!({"op":"repo_restore","check":true}));
-    assert_eq!(check["head"], json!({"commit":"bbb","bundle":"b1","staged":true}));
+    assert_eq!(
+        check["head"],
+        json!({"commit":"bbb","bundle":"b1","staged":true})
+    );
 }
 
 #[test]

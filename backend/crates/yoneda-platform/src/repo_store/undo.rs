@@ -11,7 +11,9 @@
 //! repository past its due time that a legal hold kept from purging still restores. The mark
 //! is `policy_digest`, as `erase` marks `object_store`: it needs no migration, an older binary
 //! never reads it on a tombstone, and nothing bound to the digest can run again, as a marked
-//! tombstone never comes back. `repo_purged` closes it, once, queueing `repo.purged`.
+//! tombstone never comes back. `repo_purged` closes it, once, queueing `repo.purged`. A build
+//! older than the mark purged without it, so `repo_restore {check}` also names the store and the
+//! head, and the adapter looks for them before it commits (`repo-restore-held.ts`).
 use super::audit_outbox;
 use super::auth::Actor;
 use super::deletion;
@@ -77,6 +79,21 @@ pub(super) fn facts(c: &Value, settings: &Settings, deleted_at: Option<i64>) -> 
     })
 }
 
+/// What a restore looks for: main's head, or the newest ref's, and where a push keeps it.
+/// Null with no refs: such a repository has nothing to lose.
+fn head<S: SqlStore>(db: &S) -> Result<Value> {
+    let rows = db.query(
+        "SELECT r.commit_id AS commit_id,\
+         (SELECT bundle FROM bundled_objects WHERE id=r.commit_id) AS bundle,\
+         EXISTS(SELECT 1 FROM staged_objects WHERE id=r.commit_id) AS staged \
+         FROM refs r ORDER BY r.name='refs/heads/main' DESC,r.version DESC LIMIT 1",
+        &[],
+    )?;
+    Ok(rows.first().map_or(Value::Null, |row| {
+        json!({ "commit": row["commit_id"], "bundle": row["bundle"], "staged": row["staged"] == 1 })
+    }))
+}
+
 /// `repo_restore {name?, check?}`: the owner's account brings a tombstone no purge has reached
 /// back (`deletion::allowed_when_deleted`), under `name` when it names one. With `check`,
 /// changes nothing: the adapter first holds the name and re-registers a fork. Again on a live
@@ -106,6 +123,10 @@ pub(super) fn restore<S: SqlStore>(
     let mut answer = facts(c, settings, settings.deleted_at);
     answer["name"] = json!(name);
     answer["already"] = json!(already);
+    if c["check"] == true && !already {
+        answer["object_store"] = json!(settings.object_store);
+        answer["head"] = head(db)?;
+    }
     Ok(answer)
 }
 

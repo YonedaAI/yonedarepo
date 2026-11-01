@@ -534,7 +534,7 @@ it('a tombstone the window never scheduled is not restored, even with its object
   const who = { cookie: await signup('undo_unlisted') };
   const { id } = await made(who, 'unlisted', off);
   await remove(who, id, 'unlisted', off);
-  expect((await stored(`store/v1/yr-${id}/`)).length).toBeGreaterThan(0);
+  expect((await stored(`platform/v1/${id}/`)).length).toBeGreaterThan(0);
   const refused = await restore(who, id);
   expect([refused.status, refused.body.error.code]).toEqual([404, 'GONE']);
   expect(refused.body.error.message).toMatch(/too long ago/);

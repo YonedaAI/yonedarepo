@@ -34,7 +34,7 @@ const { values } = parseArgs({
   options: {
     go: { type: 'boolean', default: false },
     only: { type: 'string', default: 'undo,hold,erase,backfill' },
-    rung: { type: 'string', default: 'kubernetes' },
+    rung: { type: 'string', default: 'svelte' },
     'import-min': { type: 'string', default: '120' },
     'erase-min': { type: 'string', default: '120' },
     'backfill-delay-ms': { type: 'string', default: '1000' },
