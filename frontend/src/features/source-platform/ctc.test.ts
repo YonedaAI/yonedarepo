@@ -128,7 +128,7 @@ describe('the page', () => {
   it('says so when nothing is open', () => {
     state.value = loaded({ land_when_cleared: true, landings: [], truncated: false });
     const html = page();
-    expect(html).toContain('No open Landings');
+    expect(html).toContain('Nothing on the radar');
     expect(html).not.toContain('<table');
   });
 

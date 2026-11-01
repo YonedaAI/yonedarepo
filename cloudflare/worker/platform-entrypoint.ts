@@ -10,6 +10,7 @@ import { log, served } from './log';
 import { accountCreated, SIGNUP_NOTICE } from './platform-accounts';
 import { nightlyReconcile } from './platform-admin-billing';
 import { verifyEmail } from './platform-email-verify';
+import { settleFailedJob } from './platform-job-settle';
 import { laterIfHeld } from './platform-legal-hold';
 import { platformFetch } from './platform-routes';
 import { signupNoticeJob } from './platform-signup-notice';
@@ -155,11 +156,7 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
     await Promise.all(
       batch.messages.map((message) =>
         inScope({ env: this.env, job: message.body }, () =>
-          platformJob(this.env, message).catch((e) => {
-            // Which job failed and why, for `wrangler tail`; the queue retries it.
-            log.error('job.failed', { error: e });
-            message.retry();
-          }),
+          platformJob(this.env, message).catch((e) => settleFailedJob(message, e)),
         ),
       ),
     );

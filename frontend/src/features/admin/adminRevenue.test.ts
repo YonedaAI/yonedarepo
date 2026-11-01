@@ -106,10 +106,11 @@ describe('the takings', () => {
 });
 
 describe('the words', () => {
-  it('labels the numbers as the ledger’s, and names what checks them', () => {
+  it('says where the numbers come from and what checks them, in plain words', () => {
     const text = html();
-    expect(text).toContain('ledger');
-    expect(text).toContain('reconcile');
+    expect(text).toContain('billing records');
+    expect(text).toContain('Stripe');
+    expect(text).not.toMatch(/ledger|reconcile/i);
   });
 
   it('never says profit', () => {

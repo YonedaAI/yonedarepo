@@ -241,7 +241,7 @@
           "ADMIN_BILLING": "on",
           "ASYNC_STORE": "on",
           "LANDING_INSTRUMENTS": "on",
-          "LAND_WHEN_CLEARED": "off",
+          "LAND_WHEN_CLEARED": "on",
           "ADMIN_NOTIFY_EMAIL": "",
           "SUPPORT_EMAIL": "support@yonedalabs.ai",
           "REQUEST_IDS": "off"

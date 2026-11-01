@@ -135,8 +135,8 @@ export function RepoCtc({ repo, ...links }: Links & { repo: string }) {
         </p>
       )}
       {data?.landings.length === 0 && (
-        <EmptyState title="No open Landings">
-          Each one shows here with what it's waiting for and where it meets another.
+        <EmptyState title="Nothing on the radar">
+          When Landings are open, you'll see what's cleared, what's waiting and where they overlap.
         </EmptyState>
       )}
       {data && data.landings.length > 0 && (
