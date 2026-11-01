@@ -92,6 +92,78 @@ Probes send `x-yoneda-own-traffic: 1`, so they leave the Traffic page, and `user
 
 **Known limit:** that's one point from spans. A request can also carry the client point of `TRAFFIC_EVENTS`, so the worst case with both is 2, as `docs/analytics-plan.md` already allows for `REGION_SIGNALS`.
 
+## O4 steps 2 to 4: tracing, what's measured, and the budget
+
+Written before the code, 2026-11-01. Not yet measured on dev.
+
+### Does Workers tracing follow our requests?
+
+**Not the way we call things.** Checked 2026-11-01. Automatic tracing is in early beta.
+
+| Hop | Used here for | Docs say |
+|---|---|---|
+| Durable Object RPC method | Little | **Followed.** Caller and callee spans, linked by `jsrpc.caller_span_id` ([spans](https://developers.cloudflare.com/workers/observability/traces/spans-and-attributes/)) |
+| Durable Object `stub.fetch()` | Every repository command | A caller span, `durable_object_subrequest`. Nothing says the object's work joins the trace |
+| Service binding `fetch()` | Front Worker to platform | Not mentioned. A [report from April 2026](https://github.com/cloudflare/workers-sdk/discussions/11062) saw no spans; no staff reply |
+| Queue send to consumer | Every job | Two ends are traced apart. No link described |
+| Trace context across hops | Everything above | Listed "coming soon" in October 2025, with no date since ([discussion](https://github.com/cloudflare/workers-sdk/discussions/11062)) |
+
+So it can't replace the request id, which already crosses each of those hops by hand. Non-I/O spans may show 0 ms ([limits](https://developers.cloudflare.com/workers/observability/traces/known-limitations/)), and stored traces bill from 1 December 2026 ([traces](https://developers.cloudflare.com/workers/observability/traces/)).
+
+Only a real trace settles the `stub.fetch()` row. Dev's spec holds the switch, `observability.traces.enabled`, off, at 1% of requests, on the platform and front Workers. Nothing depends on it, and prod has none.
+
+### What's measured
+
+**No targets are set.** They come after 30 days of data. Until then this says what each number means.
+
+| Operation | Counts | 1 in |
+|---|---|---|
+| API read | `GET` and `HEAD` under `/api/v1/`, not `/api/v1/admin` | 10 |
+| Landing | `POST /api/v1/repos/:repo/land` | 1 |
+| Git clone | `POST .../git-upload-pack`, so a fetch too | 1 |
+| Git push | `POST .../git-receive-pack` | 1 |
+| Repository create | `POST /api/v1/repos` | 1 |
+
+| Result | Means |
+|---|---|
+| Good | Under 400 |
+| Refused | 400 to 499: the client's request, a lost race or a rate limit. Left out of the failure rate |
+| Failed | 500 or over, or the Worker died with no answer |
+| Failure rate | Failed over good plus failed |
+| Latency | p50, p95 and p99 of good requests, on the server, until the answer's headers |
+
+A landing through MCP's `git_land` isn't counted: it's one `POST` among many tools.
+
+Three choices worth knowing:
+
+1. **Latency comes from the Worker, not the tail.** The tail's wall time [includes `waitUntil` and isn't the last byte](https://developers.cloudflare.com/workers/observability/metrics-and-analytics/), so a landing's background work would read as latency.
+2. **A clone's time stops when the pack starts.** Timing the whole stream means wrapping every pack in JavaScript. So the clone check gives the whole time instead, for one small repository, from outside.
+3. **A Worker that dies writes no point.** Superfan's tail writes one for it, or kills would never count against the failure rate.
+
+Our own tools are kept apart, by the `x-yoneda-own-traffic` mark. On dev that's nearly everything.
+
+| Switch | Worker | Off | On |
+|---|---|---|---|
+| `SERVICE_LEVELS` | Platform | No point | One point per measured request |
+| `SERVICE_LEVELS` | Superfan | No point | Deaths from the tail, and each synthetic result, up to 90 days |
+
+### Budget
+
+| Item | Budget |
+|---|---|
+| Off | One more string read per timed request: 0 lines, 0 points |
+| On, any timed request | One URL parse. `Math.random()` is shared with spans, so still one a request |
+| On, measured | 1 Analytics Engine point, after the answer, inside `waitUntil` |
+| A request also picked for spans | The same point: one, not two |
+| Log lines | 0 added |
+| Subrequests, Durable Object round trips, bytes on the answer, anything awaited | **0** |
+| Superfan tail | 1 point per dead request. 0 on a healthy one, and no request |
+| Superfan synthetic pass | 1 point per result: at most 5 a pass, 1,440 a day |
+| Infrastructure tab | 3 SQL statements a view, operators only |
+| Frontend | Under 3 KB of JavaScript, no new dependency |
+
+As with spans, a request can also carry its `TRAFFIC_EVENTS` client point, so 2 at worst. Analytics Engine includes 10M points a month.
+
 ## O1 request budget
 
 Written before the code. What a healthy request may spend on O1, with `REQUEST_IDS` and `CLIENT_ERRORS` on. With them off (the default) it spends one object per request, in the `AsyncLocalStorage` store the request already has for `waitUntil`.
