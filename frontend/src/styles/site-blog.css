@@ -94,6 +94,10 @@
   padding: var(--sp-6) 0 48px;
   border-top: 1px solid var(--site-line);
 }
+/* With no hero image the text takes the whole width. */
+.blog-featured:not(:has(.blog-media)) {
+  grid-template-columns: minmax(0, 1fr);
+}
 .blog-featured-text {
   display: flex;
   flex-direction: column;
@@ -230,6 +234,13 @@
   margin: 0;
   font-size: clamp(30px, 4vw, var(--fs-3xl));
   line-height: 1.15;
+}
+/* With no hero image the body keeps the gap the hero would have left. */
+.blog-post-head + .blog-body {
+  margin-top: var(--sp-6);
+}
+.blog-body .markdown-table {
+  margin-bottom: var(--sp-4);
 }
 .blog-hero,
 .blog-figure {
