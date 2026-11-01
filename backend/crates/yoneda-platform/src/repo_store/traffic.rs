@@ -35,9 +35,16 @@ const MAX_ROWS: u64 = 5000;
 
 /// A commit is on `w.base` when it is the base's head, on its first-parent chain, or landed on
 /// it. The head is asked first because a base that has not moved since chains began has none.
+/// A base sharing main holds main's rows below its own, on the proof `ref_chain::below` reads:
+/// main's row one under the base's oldest is that commit's first parent.
 const ON_BASE: &str = "(w.id=(SELECT commit_id FROM refs WHERE name=w.base) \
      OR EXISTS (SELECT 1 FROM ref_chain b WHERE b.ref=w.base AND b.commit_id=w.id) \
-     OR EXISTS (SELECT 1 FROM landings l WHERE l.commit_id=w.id AND l.refname=w.base))";
+     OR EXISTS (SELECT 1 FROM landings l WHERE l.commit_id=w.id AND l.refname=w.base) \
+     OR EXISTS (SELECT 1 FROM ref_chain b JOIN commits k ON k.id=b.commit_id \
+         JOIN ref_chain m ON m.ref='refs/heads/main' AND m.depth=b.depth-1 \
+             AND m.commit_id=json_extract(k.parents,'$[0]') \
+         JOIN ref_chain o ON o.ref=m.ref AND o.commit_id=w.id AND o.depth<=m.depth \
+         WHERE b.ref=w.base AND b.depth=(SELECT MIN(depth) FROM ref_chain WHERE ref=w.base)))";
 
 /// Where to start, and what to stop at.
 #[derive(Debug, Clone)]

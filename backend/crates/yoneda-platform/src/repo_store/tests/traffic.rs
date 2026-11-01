@@ -396,3 +396,52 @@ fn a_warning_costs_the_same_however_long_the_history_or_many_the_landings() {
         "{none:?} then {many:?}"
     );
 }
+
+/// A Landing on `stack` that left main below where `stack` did: its own commit is one file, and
+/// the main commit under it, which `stack` also holds, is none of its work.
+fn stacked_landing(switches: Value) -> (Harness, i64) {
+    let (h, root) = super::batches::open();
+    *h.switches.borrow_mut() = switches;
+    let landed = |parent: &str, path: &str| {
+        let id = h
+            .commit(
+                AGENT,
+                Some(parent),
+                1,
+                json!([file(path, "x\n")]),
+                json!([]),
+            )
+            .unwrap();
+        h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":id}));
+        id
+    };
+    let older = landed(&root, "old.rs");
+    let newer = landed(&older, "new.rs");
+    branch(&h, "stack", &newer, &["stack.rs"], json!([]));
+    branch(&h, "work", &older, &["work.rs"], json!([]));
+    let number = h.ok(
+        AGENT,
+        json!({"op":"repo_change_create","branch":"work","base":"stack","title":"Work"}),
+    )["number"]
+        .as_i64()
+        .unwrap();
+    (h, number)
+}
+
+#[test]
+fn a_base_sharing_mains_chain_stops_the_walk_where_a_whole_chain_would() {
+    for switches in [json!({}), json!({"_ref_chain":"shared"})] {
+        let (h, number) = stacked_landing(switches.clone());
+        let ask = |path: &str| json!({"paths":[path],"types":["memory","contract"]});
+        assert_eq!(
+            seen(&relevant(&h, ask("work.rs"))),
+            [warned(number, "file", "work.rs")],
+            "{switches}"
+        );
+        assert_eq!(
+            seen(&relevant(&h, ask("old.rs"))),
+            [],
+            "main's commit under the base is not this Landing's work: {switches}"
+        );
+    }
+}
