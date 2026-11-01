@@ -317,6 +317,29 @@ Deleting a repository leaves a tombstone and purges its objects. With `REPO_ERAS
 - **Older code.** A build without the window leaves listed repositories alone: nothing sends their purge. A job already sent to the queue is the one exception, and the sweep sends only what is due.
 - **An org deleted during the window.** Nobody can restore its repositories any more, as only its owners could, and its name is retired for good. They purge on schedule. The org's delete page warns; a hold refuses the delete.
 - **Operator.** `POST /admin/repos/<id>/purge-now` purges one deleted repository at once. It is audited and refused under a hold, and there is no public way to skip the window: the window exists to survive a stolen token. The kit calls it after every deletion when the window is on and `OWNER_TOKEN` is in `staging.env`. `POST /admin/repos/<id>/purge-orphan {confirm: <name>}` deletes and purges a live repository whose org is gone, which nobody else can reach. It is audited as `repo.purge_orphan`, refused under a hold even with `LEGAL_HOLD` off, and refused for any owner that is not a deleted org, a provisioned workspace with no record included. `POST /admin/deleted-repos/rebuild {owner}` rebuilds one owner's D1 rows from its records; `cargo xtask admin erase-backfill --confirm` finds tombstones with no row, and each goes back on the schedule.
+## Enterprise checks
+
+`node tools/staging/dev-checks.mjs --go` proves sections 1-3 of [enterprise-plan.md](enterprise-plan.md) live, on dev only. Without `--go` it prints its plan and calls nothing. Dev runs `REPO_UNDO_DAYS=0.0035`, a short test window of about 5 minutes, and `LEGAL_HOLD=on`, set in `infra/envs/dev.json` only; a run refuses a window over 72 minutes.
+
+| `--only` | What it proves | Time |
+|---|---|---|
+| `undo` | Through the window, API and Git answer as deleted while every copy stays. A restore inside it brings back the bytes, the date and the member, with the old token dead. Past it, a restore is refused and every copy goes | 10 minutes |
+| `hold` | Owner and operator are refused every destructive path, on a live repository, a tombstone past its due time, a personal repository and a whole org. Lifting lets the erase finish. Every operator action is in `admin_audit`, and the org log is read when `AUDIT_LOG` is on | 15 minutes |
+| `erase` | A new import of a `size-ladder.json` rung (`--rung`, default kubernetes: 58 pushes, 1.68 million objects), its caches filled, deleted, then D1, each R2 prefix, the Artifacts mirror and the object read from outside. Also the erase's jobs, requests and cost | 2 hours |
+| `backfill` | `erase-backfill --dry-run` and an estimate of `--confirm`, which this tool can't send | 1 hour |
+| `hold-wait` | A lifted hold with no `purge-now` waits for the sweep. Runs alone | 6 hours |
+
+The default is `undo,hold,erase,backfill`. `erase` needs its source and plan first, which make no platform call: see the top of the tool.
+
+Everything it makes is named `dev-check-…` and is deleted however a step ends. The owner's test repositories can't be named. Evidence: `.local/dev-checks/<stamp>/` under the repository root, with `results.md`, `results.json`, the tail of each large erase and the backfill log.
+
+What it can't prove, and reports as skipped or by log line rather than as a pass:
+
+- **Cache API.** Copies are per colo, immutable for a year, and can't be listed. A purge leaves them. Every read answers 404 first.
+- **Commit shards and combiners.** Nothing reads them from outside, so the proof is the `repo.erase` line that follows their clearing, and the workerd tests.
+- **Per-transaction caps.** The log counts rows per job, not per transaction.
+- **Org log.** Owners' hold events can be read only with `AUDIT_LOG=on`.
+
 ## Operators' billing
 
 The Billing section of an admin user page, and refunds, disputes and the nightly reconcile behind it. Off by default: without `ADMIN_BILLING=on` the routes answer 404 and the new Stripe events are ignored.
