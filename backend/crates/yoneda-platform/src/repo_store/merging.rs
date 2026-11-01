@@ -64,7 +64,7 @@ pub fn reads_untouched<S: SqlStore>(db: &S, commit: &CommitRow, refname: &str) -
 /// is pinned to main's head (what the author read), so on an unprotected branch it can
 /// postdate another landing there that the commit does not contain (a pushed commit on the
 /// base after a teammate landed): that branch's landings count from its parent's landing on
-/// it. Protected refs keep the base version.
+/// it, or from the move that set it to that parent. Protected refs keep the base version.
 fn branch_since<S: SqlStore>(db: &S, commit: &CommitRow, refname: &str) -> Result<u64> {
     let Some(parent) = commit.parents.first().filter(|_| !rows::protected(refname)) else {
         return Ok(commit.base_version);
@@ -73,12 +73,20 @@ fn branch_since<S: SqlStore>(db: &S, commit: &CommitRow, refname: &str) -> Resul
         "SELECT MIN(version) AS version FROM landings WHERE commit_id=? AND refname=?",
         &[json!(parent.hex()), json!(refname)],
     )?;
-    Ok(landed
+    let since = landed
         .first()
         .and_then(|row| row["version"].as_u64())
         .map_or(commit.base_version, |version| {
             version.min(commit.base_version)
-        }))
+        });
+    // A ref set to the commit's own parent, as a new base is, changed nothing the commit read:
+    // only what came after counts. Anywhere else, it can't be proven independent (`stale_read`).
+    let later = rows::entries(db, since, current_version(db)?, Some(refname))?;
+    let set_here = later
+        .iter()
+        .rev()
+        .find(|entry| entry.paths.is_empty() && entry.new.as_ref() == Some(parent));
+    Ok(set_here.map_or(since, |entry| entry.version))
 }
 
 pub fn outcome_error(refname: &str, head: &ObjectId, outcome: OccOutcome) -> Error {

@@ -52,6 +52,9 @@ fn committed(file: &str) -> Value {
         "wrangler.prod-agents-managed.jsonc" => {
             include_str!("../../../cloudflare/wrangler.prod-agents-managed.jsonc")
         }
+        "wrangler.prod-deadman.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.prod-deadman.jsonc")
+        }
         other => panic!("no golden for {other}"),
     };
     jsonc::parse(text).unwrap()
@@ -115,9 +118,10 @@ fn prod_spec_regenerates_the_committed_prod_configs() {
             "yonedarepo-prod-superfan",
             "yonedarepo-prod-platform",
             "yonedarepo-prod-agents-managed",
-            "yonedarepo-prod-agents"
+            "yonedarepo-prod-agents",
+            "yonedarepo-prod-deadman"
         ],
-        "the platform's tail consumer first, then platform, managed agents, agents; no bench in prod"
+        "the platform's tail consumer first, then platform, managed agents, agents, the dead-man last; no bench in prod"
     );
     let files: Vec<&str> = spec.workers.iter().map(|w| w.file.as_str()).collect();
     assert!(

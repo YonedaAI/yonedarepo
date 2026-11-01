@@ -62,7 +62,9 @@
           "EMAIL_FROM": "YonedaRepo <hello@yonedarepo.com>",
           "WATCH_SCRIPT": "{prefix}-platform",
           "WATCH_URL": "https://api.yonedarepo.com",
+          "WATCH_WIDE": "on",
           "WATCH_FRONT_URL": "https://yonedarepo.com",
+          "DEADMAN_URL": "https://{prefix}-deadman.{subdomain}.workers.dev",
           "RELEASE_COMPARE": "off",
           "PROBES": "off",
           "SERVICE_LEVELS": "off",
@@ -682,6 +684,11 @@
             "binding": "REVIEWS",
             "class_name": "ManagedReviewWorkflow"
           }
+        ],
+        "tail_consumers": [
+          {
+            "service": "{prefix}-superfan"
+          }
         ]
       }
     },
@@ -847,6 +854,68 @@
               "limit": 30,
               "period": 60
             }
+          }
+        ],
+        "tail_consumers": [
+          {
+            "service": "{prefix}-superfan"
+          }
+        ]
+      }
+    },
+    {
+      "role": "deadman",
+      "file": "wrangler.prod-deadman.jsonc",
+      "notes": [
+        "Prod dead-man (cloudflare/superfan/deadman.ts): says so when Superfan stops. Every five minutes it reads",
+        "Superfan's public /heartbeat over the network and mails ADMIN_NOTIFY_EMAIL through Resend after 3 bad checks",
+        "in a row, then at most every 6 hours. Its own script, cron and state, and it imports nothing from Superfan;",
+        "Superfan reads its /health in turn. A cron Worker because Cloudflare's Health Checks need a Pro zone, and",
+        "yonedarepo.com is Free; docs/incidents.md says why. No secrets of its own. Last in deploy order: Superfan",
+        "must be up before the first check."
+      ],
+      "secrets": [],
+      "ephemeral": false,
+      "config": {
+        "name": "{prefix}-deadman",
+        "main": "superfan/deadman.ts",
+        "compatibility_date": "2026-10-07",
+        "workers_dev": true,
+        "preview_urls": false,
+        "observability": {
+          "enabled": true
+        },
+        "triggers": {
+          "crons": [
+            "*/5 * * * *"
+          ]
+        },
+        "vars": {
+          "SUPERFAN_URL": "https://{prefix}-superfan.{subdomain}.workers.dev",
+          "ADMIN_NOTIFY_EMAIL": "hello@yonedarepo.com",
+          "EMAIL_FROM": "YonedaRepo <hello@yonedarepo.com>"
+        },
+        "secrets_store_secrets": [
+          {
+            "binding": "RESEND_API_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "Resend-Yoneda"
+          }
+        ],
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "STATE",
+              "class_name": "DeadmanState"
+            }
+          ]
+        },
+        "migrations": [
+          {
+            "tag": "v1",
+            "new_sqlite_classes": [
+              "DeadmanState"
+            ]
           }
         ]
       }

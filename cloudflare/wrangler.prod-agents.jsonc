@@ -137,6 +137,11 @@
       "service": "yonedarepo-prod-agents-managed"
     }
   ],
+  "tail_consumers": [
+    {
+      "service": "yonedarepo-prod-superfan"
+    }
+  ],
   "vars": {
     "ADMIN_ACCOUNTS": "magnetonio",
     "AUDIT_LOG": "off",

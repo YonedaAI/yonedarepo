@@ -73,6 +73,7 @@
     "ADMIN_NOTIFY_EMAIL": "hello@yonedarepo.com",
     "CF_ACCOUNT_ID": "f011d0ee02b23cad26b4b38151b204ad",
     "DAILY_CAP_MICROUSD": "1000000",
+    "DEADMAN_URL": "https://yonedarepo-prod-deadman.mlong-f01.workers.dev",
     "EMAIL_FROM": "YonedaRepo <hello@yonedarepo.com>",
     "MIMO_TOKEN_PLAN_REGION": "sgp",
     "PROBES": "off",
@@ -82,7 +83,8 @@
     "TELEMETRY_SOURCE": "cloudflare",
     "WATCH_FRONT_URL": "https://yonedarepo.com",
     "WATCH_SCRIPT": "yonedarepo-prod-platform",
-    "WATCH_URL": "https://api.yonedarepo.com"
+    "WATCH_URL": "https://api.yonedarepo.com",
+    "WATCH_WIDE": "on"
   },
   "workers_dev": true
 }

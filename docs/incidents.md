@@ -2,7 +2,7 @@
 
 What each alert means, the first check, and the way out. Alerts come by email from Superfan (`cloudflare/superfan/`) and the dead-man (`cloudflare/superfan/deadman.ts`). A mail says what's wrong in plain words; each row below starts with those words, then the signal name `GET /findings` shows. Mail wording lives in `cloudflare/superfan/mail-copy.ts`.
 
-Today this is dev only: `WATCH_WIDE=on` and the dead-man are not on prod.
+`WATCH_WIDE=on` and the dead-man are set for both environments; prod gets them at its next ship.
 
 ## Roll back
 
@@ -92,7 +92,6 @@ Both alerts are `AUDIT_LOG` on. The rule behind them: the erase stays blocked, w
 
 A finding spells out 3 rows and counts the rest. `GET /findings` shows the same; the rest are in the logs, one line per row per look. Only a repository id and an event number can reach a finding: nothing else on the line does.
 
-Prod has no wide watch, so there these arrive in the hourly digest, not at once.
 
 ## Blind spots that remain
 
