@@ -18,7 +18,7 @@ import { gitSession } from './fanout-bench/mac-git.mjs';
 import { regionAccount } from './fanout-bench/region-accounts.mjs';
 import { runArm } from './fanout-bench/region-matrix.mjs';
 import { accountName, armsOf, DEFAULTS, describeMatrix, estimateMatrix, MIN_RUNS } from './fanout-bench/region-plan.mjs';
-import { updateRegionResults } from './fanout-bench/region-results.mjs';
+import { pieceTable, replicaTable, updateRegionResults } from './fanout-bench/region-results.mjs';
 import { CLIENTS, placedClients, regionalClients } from './fanout-bench/regions.mjs';
 import { OWN_TRAFFIC, readEnvFile, Session } from './staging/client.mjs';
 
@@ -118,8 +118,10 @@ if (values['probe-only']) {
       return { client, run: 1, ...(await regional.call(client, { probe: { samples: 20, account: session.name, repos: [] } })) };
     }),
   );
-  await evidence('region-probe', url, { runs: 0, clients: placed, arms: [], probes, mac_git: [] }, { client: `regional clients: ${clients.join(', ')}`, quiet: true });
-  console.error(`Results rebuilt from ${await updateRegionResults()} evidence files`);
+  const record = await evidence('region-probe', url, { runs: 0, clients: placed, arms: [], probes, mac_git: [] }, { client: `regional clients: ${clients.join(', ')}`, quiet: true });
+  // Printed, not written: the doc's tables are rebuilt from every evidence file, and evidence dies
+  // with its worktree, so a rebuild here could leave a run's tables with nothing behind them.
+  console.log(`${pieceTable([record])}\n\n${replicaTable([record])}`);
   process.exit(0);
 }
 

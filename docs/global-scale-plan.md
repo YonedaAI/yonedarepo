@@ -345,7 +345,7 @@ Medians in ms at the client. A person there adds their own last mile. North Amer
 1. **The US pins are what keep data in the US.** Remove them and hint the objects, and code, repository objects and accounts all ran in the region, 3 runs of 3: **Amsterdam for Europe, Singapore for Asia.**
 2. **Move the Worker, the repository objects and the account together, first.** That one step gives everything in bold above. Neither half alone was measured, and from the hop counts a repository moved without its Worker pays an ocean per call.
 3. **Then R2.** It's the largest piece left: one read is 140 ms from Europe and 277 ms from Asia, against 33 and 102 ms from a bucket made in that region. It's what's holding search and push.
-4. **Then D1.** Every `ypat_` request and every create pays it: 99 ms from Europe, 234 ms from Asia. **The plan's suspicion was half right:** D1 is the floor, but the account authority isn't once it's local (11 and 8 ms). Read replicas haven't helped yet (below).
+4. **Then D1.** Every `ypat_` request and every create pays it: 99 ms from Europe, 234 ms from Asia. **The plan's suspicion was half right:** D1 is the floor, but the account authority isn't once it's local (11 and 8 ms). **Read replicas work when a read reaches one:** 18 ms in Europe and 48 ms in Asia, on 13 of 20 reads. The other 7 still went to the primary, at 102 and 266 ms.
 5. **Queues and background work have no in-region answer.** Asia needs another way to run them.
 6. **What doesn't move:** Asia can't get a guarantee, and Artifacts and Queues have no Asian placement at all. See below.
 
@@ -356,7 +356,7 @@ Medians in ms at the client. A person there adds their own last mile. North Amer
 1. **Requests run where they arrive.** No `placement` on the Workers. Placement is per Worker, so a pin can't differ by region, and with none, one Worker may be enough where the plan drew one per cell. Not tried as such.
 2. **A repository's region is fixed at create,** by location hint on the first `get` of all its objects. An account's is fixed at sign-up.
 3. **One R2 bucket per region,** chosen by the repository's region.
-4. **D1 leaves the hot path.** No `ypat_` request can wait on a primary an ocean away. Replicas, or a token lookup that doesn't need D1, must be proven first.
+4. **D1 leaves the hot path.** No `ypat_` request can wait on a primary an ocean away. A replica answered only 13 of 20 reads, and it can lag behind a revoked token, so replicas with bookmarks, or a token lookup that doesn't need D1, must be proven first.
 5. **Background work runs in the region.** Europe: queues with jurisdiction `eu`. Asia: no queue can promise that, so Durable Object alarms.
 6. **Artifacts:** a new `eu` namespace for Europe. Asia runs on R2 alone, which is untested on dev.
 7. **Containers per region,** one entry each, accepting that a container may not sit beside its object.
@@ -447,7 +447,8 @@ Read in Cloudflare's docs on 2026-10-31. Measured figures for what this saves ar
 
 | Hop | Operations | One call, Europe | One call, Asia | With the Cloudflare way |
 |---|---|---|---|---|
-| D1 | `ypat_` requests, search, create | 99 ms | 234 ms | Replica: no gain yet, below |
+| D1 read | `ypat_` requests, search | 99 ms | 234 ms | Replica: 18 and 48 ms, on 13 of 20 reads |
+| D1 write | Create | Not timed alone | Not timed alone | None: always the primary |
 | R2, platform bucket | Clone, push, search, a read that misses | 140 ms | 277 ms | Bucket in region: 33 and 102 ms |
 | Queue send | Create; repository writes | About 57 ms | About 178 ms | No location control. Where it goes is unknown |
 | Queue consumer | All background work | Not timed | Not timed | None for Asia |
@@ -464,6 +465,8 @@ Read in Cloudflare's docs on 2026-10-31. Measured figures for what this saves ar
 7. **One serving object answered each region,** one more local hop than a Worker would pay: 10 ms in Europe, 3 ms in Asia.
 
 <!-- region-results:start (tools/platform-region-matrix.mjs --results) -->
+The 3 runs' evidence files were removed with their worktree, so these tables can't be rebuilt, and the tool refuses to try.
+
 3 runs, last at `18a1b287`, 2026-11-01. Cells: median of run medians in ms (min–max of run medians).
 
 **Clients**
@@ -546,13 +549,13 @@ Read in Cloudflare's docs on 2026-10-31. Measured figures for what this saves ar
 | repo_apac | not measured | not measured | not measured |
 | shard_apac | not measured | not measured | 7 (7–9) |
 
-**D1 through a session, with read replication on**
+**D1 through a session, with read replication on** (20 reads per client, 2026-11-01, soon after replication was turned on, so a settled share may differ; the `d1_session` row above predates per-read recording)
 
 | Client | Answered by |
 |---|---|
-| North America | not measured |
-| Europe | not measured |
-| Asia | not measured |
+| North America | ENAM: 20 reads, median 9 ms |
+| Europe | ENAM: 7 reads, median 102 ms; WEUR: 13 reads, median 18 ms |
+| Asia | ENAM: 7 reads, median 266 ms; APAC: 13 reads, median 48 ms |
 
 **Real Git from the Mac**
 
@@ -569,7 +572,7 @@ Read in Cloudflare's docs on 2026-10-31. Measured figures for what this saves ar
 | 1. Can an Artifacts namespace be regional? | Only by jurisdiction, `eu` or `us`, when it's created |
 | 2. Placement on RPC | Still contradicts itself: placement "only affects `fetch` handlers", and the page's own example relies on RPC. Not measured |
 | 3. Where does a Durable Object land? Does a hint work through our bindings? | **Yes, both.** `weur` landed in AMS and `apac` in SIN, 3 of 3, for the authority, first shard, combiner, head holder and projector, through the platform's bindings and a Worker binding by `script_name`. `enam` scatters across IAD, EWR, ORD, ATL and MIA. Containers: not guaranteed beside their object, by the docs; not measured |
-| 4. Is D1 read replication GA? | No GA found; public beta since 2025-04-10 |
+| 4. Is D1 read replication GA, and does it meet the bound? | No GA found; public beta since 2025-04-10. On dev, with `first-unconstrained` and a new session per read, 13 of 20 reads were local in Europe and in Asia. **The 1-second access bound wasn't tested:** a stale replica, or `first-primary`, which would cross again |
 | 5. Where do R2 and D1 live? | `ENAM`, both |
 
 ### Spikes for R3
