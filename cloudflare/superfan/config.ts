@@ -122,8 +122,8 @@ export function watchSite(env: SuperfanEnv): WatchSite {
   if (!WATCHABLE.has(env.WATCH_SCRIPT))
     throw new Error('WATCH_SCRIPT must name the isolated platform-only Worker');
   const url = new URL(env.WATCH_URL);
-  if (url.protocol !== 'https:' || !url.hostname.startsWith(`${env.WATCH_SCRIPT}.`))
-    throw new Error('WATCH_URL must be the watched Worker over HTTPS');
+  // The script is checked above; its URL may be a custom host, as `api.dev.yonedarepo.com` is.
+  if (url.protocol !== 'https:') throw new Error('WATCH_URL must be the watched Worker over HTTPS');
   const wide = wideOn(env);
   const front = wide || probesOn(env) ? httpsUrl('WATCH_FRONT_URL', env.WATCH_FRONT_URL) : null;
   const deadman = wide && env.DEADMAN_URL ? httpsUrl('DEADMAN_URL', env.DEADMAN_URL) : null;

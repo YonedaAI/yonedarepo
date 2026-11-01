@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { dailyCap, isWatchable } from '../../cloudflare/superfan/config';
+import { dailyCap, isWatchable, watchSite } from '../../cloudflare/superfan/config';
+import devSpec from '../../infra/envs/dev.json';
+import prodSpec from '../../infra/envs/prod.json';
 import { runWatch } from '../../cloudflare/superfan/watch';
 import {
   ANALYTICS_TOKEN,
@@ -290,6 +292,16 @@ describe('superfan watch pass', () => {
         occurrences: 1,
       },
     ]);
+  });
+
+  it('watches the hosts the two environments really use, and refuses plain HTTP', async () => {
+    for (const spec of [devSpec, prodSpec]) {
+      const [, url] = JSON.stringify(spec).match(/"WATCH_URL":"([^"]+)"/) ?? [];
+      expect(watchSite(testEnv({ WATCH_URL: url })).healthUrl).toBe(`${url}/health`);
+    }
+    expect(() => watchSite(testEnv({ WATCH_URL: 'http://api.yonedarepo.com' }))).toThrow(
+      'WATCH_URL must be the watched Worker over HTTPS',
+    );
   });
 
   it('looks the ids up by name when the config sets none', async () => {
