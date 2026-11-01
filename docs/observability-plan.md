@@ -177,7 +177,7 @@ A real stall, found by the agents-live test: the jobs queue's consumer got no in
 | Which queue | `<prefix>-platform-jobs`. **There's no separate hook queue:** webhook deliveries are `platform_hooks` jobs on it, so this one rule covers both |
 | Why not the gap alone | An idle queue has long gaps. They mean nothing |
 | Why not the gap and the backlog | Backlog is per minute. A burst after an idle minute has a backlog and no stall |
-| Why 15 s | The longest normal gap measured was 14.6 s, so a message rarely waits longer |
+| Why 30 s | The longest normal gap measured was 14.6 s, so a message rarely waits longer |
 | Where the gap comes from | Tail events: their timestamps are exact, and analytics stops at the minute |
 | A long job | Not a stall: the gap runs from the end of one invocation to the start of the next |
 

@@ -195,7 +195,7 @@ async function refsSnapshot(env: Env, repo: string, minVersion: number): Promise
  * isolate's readers. */
 export class RefsHolder {
   #refs: { value: Json; at: number } | null = null;
-  #loading: Promise<Json> | null = null;
+  #loads = new Flights<Json>();
 
   constructor(private readonly env: Env) {}
 
@@ -206,8 +206,7 @@ export class RefsHolder {
     let value: Json = held?.value ?? {};
     for (let attempt = 0; attempt < 2; attempt++) {
       // A load already running may have started before the version this caller needs.
-      this.#loading ??= this.#load(repo);
-      value = await this.#loading;
+      value = await this.#load(repo);
       if (value.version >= minVersion) break;
     }
     return value;
@@ -216,22 +215,20 @@ export class RefsHolder {
   /** Refs moved (a landing, projection or access change): the next reader reloads. */
   forget() {
     this.#refs = null;
-    this.#loading = null;
+    this.#loads = new Flights();
   }
 
   #load(repo: string): Promise<Json> {
+    const loads = this.#loads;
     const started = Date.now();
-    const load: Promise<Json> = platform(
-      this.env,
-      repo,
-    )({ op: 'repo_refs' })
-      .then((value) => {
-        if (this.#loading === load) this.#refs = { value, at: started };
+    return loads.join(repo, () =>
+      platform(
+        this.env,
+        repo,
+      )({ op: 'repo_refs' }).then((value) => {
+        if (this.#loads === loads) this.#refs = { value, at: started };
         return value;
-      })
-      .finally(() => {
-        if (this.#loading === load) this.#loading = null;
-      });
-    return load;
+      }),
+    ).work;
   }
 }
