@@ -352,7 +352,7 @@
     "SSH_HOST": "ssh.dev.yonedarepo.com",
     "SUPPORT_EMAIL": "support@yonedalabs.ai",
     "TRAFFIC_EVENTS": "on",
-    "TRAFFIC_REPORT": "off",
+    "TRAFFIC_REPORT": "on",
     "WEB_ORIGIN": "https://dev.yonedarepo.com",
     "WORKERS_SUBDOMAIN": "mlong-f01"
   },

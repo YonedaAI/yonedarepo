@@ -3,8 +3,8 @@
 // the server decided and asks again while it is on screen; a poll that fails keeps the last
 // answer up and says so.
 import { useEffect, useRef } from 'react';
-import { EmptyState } from '../../components/EmptyState';
 import type { CtcRadar, RadarLanding } from '../../../../shared/contracts/ctc-radar';
+import { EmptyState } from '../../components/EmptyState';
 import {
   CTC_POLL_MS,
   ctcPath,
