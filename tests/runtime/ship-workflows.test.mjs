@@ -64,6 +64,42 @@ test('deploy output reaches the log only through quiet.mjs', () => {
   }
 });
 
+test('the secret scan keeps findings out of the public log and fails closed', () => {
+  const text = code(read('ci.yml'));
+  assert.match(text, /fetch-depth: 0/);
+  assert.match(text, /cargo xtask health secrets --base "\$BASE"/);
+  assert.doesNotMatch(text, /gitleaks-action/);
+  // gitleaks prints authors and emails with these; only our own report line reaches the log.
+  for (const name of files) assert.doesNotMatch(code(read(name)), /gitleaks (git|dir|detect|protect)|--verbose/, name);
+  assert.match(text, /sha256sum -c -/);
+});
+
+test('Check runs every health gate, in step with `cargo xtask check`', () => {
+  const text = code(read('ci.yml'));
+  const arm = readFileSync(join(ROOT, 'xtask/src/commands.rs'), 'utf8');
+  for (const gate of ['lines', 'migrations', 'secrets', 'size']) {
+    assert.match(text, new RegExp(`cargo xtask health ${gate}`), gate);
+    assert.match(arm, new RegExp(`health::check_${gate}`), gate);
+  }
+  // Before its use: the xtask tests plant a fake secret, and the Wasm must exist for the budget.
+  assert.ok(text.indexOf('Install gitleaks') < text.indexOf('cargo test -p xtask --bins'));
+  assert.ok(text.indexOf('worker-build --release') < text.indexOf('cargo xtask health size'));
+  assert.ok(text.indexOf('pnpm --dir frontend build') < text.indexOf('cargo xtask health size'));
+});
+
+test('the nightly is one job with no secrets, no artifacts and no deploy, on this repository', () => {
+  const text = read('nightly.yml');
+  const nightly = jobs(text);
+  assert.deepEqual(Object.keys(nightly), ['differential']);
+  assert.match(text, /^permissions:\n {2}contents: read$/m);
+  assert.match(text, /^ {4}- cron: '\d+ \d+ \* \* \*'$/m);
+  assert.match(nightly.differential, /if: github\.repository == 'YonedaAI\/yonedarepo'/);
+  assert.match(nightly.differential, /timeout-minutes: \d+/);
+  assert.match(nightly.differential, /YONEDA_DIFF_SEED_START: \$\{\{ github\.run_number \}\}00/);
+  assert.match(nightly.differential, /--lib differential -- --ignored/);
+  assert.doesNotMatch(code(text), /secrets|environment:|xtask deploy/);
+});
+
 test('Check and Full are reusable and keep their manual runs, in a group of their own', () => {
   for (const name of ['ci.yml', 'full.yml']) {
     const text = read(name);

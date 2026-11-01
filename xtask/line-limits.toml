@@ -1,0 +1,32 @@
+# Source files over the 300-line rule, with their nonblank lines, excluding inline test
+# modules (xtask/src/health/lines.rs). This list only shrinks: split a file, then run
+# `cargo xtask health lines --update`. Never add an entry or raise a count.
+[files]
+"backend/crates/yoneda-cli/src/agent_hook.rs" = 382
+"backend/crates/yoneda-cli/src/command.rs" = 365
+"backend/crates/yoneda-cli/src/output/repo.rs" = 309
+"backend/crates/yoneda-cli/src/remote/push.rs" = 318
+"backend/crates/yoneda-core/src/git_object/pack_walk.rs" = 304
+"backend/crates/yoneda-pack-builder/src/git.rs" = 360
+"backend/crates/yoneda-platform/src/accounts/orgs.rs" = 303
+"backend/crates/yoneda-platform/src/platform_git_receive.rs" = 335
+"backend/crates/yoneda-platform/src/platform_git_upload.rs" = 545
+"backend/crates/yoneda-platform/src/platform_git_verify.rs" = 364
+"backend/crates/yoneda-platform/src/repo_store/staging.rs" = 325
+"backend/crates/yoneda-platform/src/secret_scan.rs" = 334
+"backend/crates/yoneda-ssh-gateway/src/bridge.rs" = 349
+"cloudflare/worker/repo-api.ts" = 528
+"cloudflare/worker/repo-bundles.ts" = 364
+"cloudflare/worker/repo-git-objects.ts" = 353
+"cloudflare/worker/repo-objects.ts" = 418
+"cloudflare/worker/repo-projection.ts" = 360
+"frontend/src/App.tsx" = 510
+"frontend/src/features/source-platform/sourceRoute.ts" = 344
+"shared/managed-agents.ts" = 504
+"tools/staging-realworld.mjs" = 426
+"tools/staging/browser-flow.mjs" = 325
+"tools/staging/managed-live.mjs" = 427
+"tools/staging/size-ladder.mjs" = 311
+"xtask/src/deploy_live.rs" = 312
+"xtask/src/downloads.rs" = 306
+"xtask/src/infra/spec.rs" = 322

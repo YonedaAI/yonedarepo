@@ -1,0 +1,6 @@
+# Budget in bytes: the size measured on 2026-10-31 plus 5%, rounded up to 10 KB (docs/code-health.md).
+# A jump fails `cargo xtask health size`; a rise on purpose is a reviewed edit of this file.
+wasm = 6120000
+js = 1050000
+css = 140000
+dist = 3570000

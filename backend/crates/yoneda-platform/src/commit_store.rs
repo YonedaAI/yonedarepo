@@ -13,7 +13,7 @@ use yoneda_core::{
     git_object::{Commit, ObjectId, ObjectKind, hash_object},
 };
 
-const MIGRATIONS: [(i64, &str); 2] = [
+pub(crate) const MIGRATIONS: [(i64, &str); 2] = [
     (1, include_str!("migrations/commit_store/0001_commits.sql")),
     (
         2,

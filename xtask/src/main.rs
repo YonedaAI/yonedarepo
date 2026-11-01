@@ -18,6 +18,7 @@ mod deploy_ship;
 mod dev;
 mod downloads;
 mod erase_backfill;
+mod health;
 mod infra;
 mod internal_accounts;
 mod layers;
