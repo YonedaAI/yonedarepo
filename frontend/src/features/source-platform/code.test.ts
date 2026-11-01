@@ -23,6 +23,38 @@ const entry = (version: number, paths: string[], refname = 'refs/heads/main'): L
   committed_at_ms: version * 1000,
 });
 
+describe('a comment on a Landing', () => {
+  const body = (text: string) =>
+    html(CommentItem, {
+      comment: {
+        id: 1,
+        principal: 'token:yoneda-managed-agents',
+        body: text,
+        at: 1,
+        resolved_at: null,
+      },
+    });
+  const RUN = 'r7d8d4bee74abf3a3a49e-sl-1-db7d52c6dd26';
+
+  it('reads as written, not as its Markdown', () => {
+    const page = body('**Slop review**: low on `db7d52c6dd`\n\nNothing to tidy.');
+    expect(page).toContain('<strong>Slop review</strong>');
+    expect(page).toContain('<code>db7d52c6dd</code>');
+    expect(page).not.toContain('**');
+  });
+  it('leaves off the reference a run finds its comment by', () => {
+    for (const ref of [`${RUN}#summary`, `${RUN}#3`]) {
+      const page = body(`Done.\n\n_Slop review by YonedaRepo managed agents · ${ref}_`);
+      expect(page).toContain('<em>Slop review by YonedaRepo managed agents</em>');
+      expect(page).not.toContain(RUN);
+    }
+  });
+  it('keeps what a person wrote, and never as markup', () => {
+    expect(body('See a · b_')).toContain('See a · b_');
+    expect(body('<img src=x onerror=alert(1)>')).not.toContain('<img');
+  });
+});
+
 describe('directory activity', () => {
   const log = [
     entry(1, ['README.md', 'src/a.rs', 'src/net/b.rs']),

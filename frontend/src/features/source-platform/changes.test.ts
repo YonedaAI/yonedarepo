@@ -633,3 +633,15 @@ describe('merge gates', () => {
     expect(state.paths).toContain('/repos/r0123456789abcdef0123/changes/3/gates');
   });
 });
+
+describe('a Landing the gates saw land first', () => {
+  const gates = (status: string) =>
+    ({ status, ready: false, requirements: [{ enforced: true, state: 'blocked' }] }) as never;
+  const open = { status: 'open', title: 'Add a helper' } as const;
+
+  it('never reads as a go-around while its own read catches up', () => {
+    expect(landingState(open, gates('landed'))).toBe('Landed');
+    expect(landingState(open, gates('closed'))).toBe('Closed');
+    expect(landingState(open, gates('open'))).toBe('Go-around');
+  });
+});

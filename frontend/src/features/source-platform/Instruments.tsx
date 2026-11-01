@@ -86,8 +86,8 @@ function RiskReasons({ risk }: { risk: RiskReading }) {
         ))}
       </ul>
       <p className="source-meta">
-        Beta: worked out from these four inputs, with no model. Not calibrated yet. Does not affect
-        landing.
+        Beta: worked out from these four inputs, with no model. Not calibrated yet. Only Land when
+        cleared reads it: High holds.
       </p>
     </>
   );

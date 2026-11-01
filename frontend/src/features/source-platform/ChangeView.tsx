@@ -53,6 +53,7 @@ export function ChangeView({
   useLandingWatch(c?.status === 'open', gates, () => {
     detail.reload();
     setReading((n) => n + 1);
+    onChanged?.();
   });
   const grouped = useMemo(
     () => c && groupComments(c.comments, c.head, diffAnchors(c.diff?.changes ?? [])),

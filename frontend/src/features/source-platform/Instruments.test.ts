@@ -145,7 +145,8 @@ describe('Instruments', () => {
     }
     expect(page).toContain('.github/workflows/ci.yml');
     expect(page).toContain('+20');
-    expect(page).toContain('Does not affect landing');
+    expect(page).toContain('Only Land when cleared reads it');
+    expect(page).not.toContain('Does not affect landing');
     expect(page).not.toContain('%');
     expect(page.match(/tone-warn/g)).toHaveLength(1);
     expect(page.match(/tone-good/g)).toHaveLength(1);
