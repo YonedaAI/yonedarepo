@@ -44,7 +44,6 @@
     ]
   },
   "vars": {
-    "ADMIN_NOTIFY_EMAIL": "hello@yonedarepo.com",
     "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>",
     "SUPERFAN_URL": "https://yonedarepo-dev-superfan.mlong-f01.workers.dev"
   },
