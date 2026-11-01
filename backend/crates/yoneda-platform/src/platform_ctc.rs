@@ -219,12 +219,7 @@ fn holds(state: &LandingState, back: &[Reason]) -> Vec<Reason> {
             .iter()
             .map(|w| reason(LEGAL_HOLD, w.clone())),
     );
-    wait.extend(
-        state
-            .repo_full
-            .iter()
-            .map(|w| reason(REPO_FULL, w.clone())),
-    );
+    wait.extend(state.repo_full.iter().map(|w| reason(REPO_FULL, w.clone())));
     wait.extend(state.ahead.iter().map(|ahead| {
         let on = ahead.paths.join(", ");
         let why = format!(

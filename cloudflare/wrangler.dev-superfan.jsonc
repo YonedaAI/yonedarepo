@@ -8,7 +8,7 @@
 // CF_ANALYTICS_TOKEN  API token with the read permissions above
 // SUPERFAN_READ_TOKEN bearer for GET /findings, GET /status, POST /run
 // New findings mail ADMIN_NOTIFY_EMAIL through Resend (superfan/notify.ts, the Secrets Store secret Resend-Yoneda): at most
-// 8 digests a UTC day. Dev's bursts fire rules on purpose, so expect digests after a burst.
+// 8 digests a UTC day. Dev has no address, so it mails nobody.
 // WATCH_WIDE=on is the wide watch: the front and managed Workers (both name this Worker in tail_consumers), crons,
 // every Durable Object class, the land queue, every queue, reconcile mismatches and repository storage; urgent
 // findings mail at once, outside the digest cap, at most 6 a UTC day per signal, and a quick pass every five minutes

@@ -331,10 +331,10 @@ We don't build orchestration, so this is **pull, not push**: the platform never 
 | Clearance | `platform_ctc::clearance` returns Cleared, Hold or GoAround with reasons, for one exact head | Built, on dev and prod |
 | Land when cleared | Per-repo switch: a cleared Landing lands with no one calling `git_land` | Built. On in dev; on in prod from the next ship |
 | Record | Each decision, with its reasons, head and inputs, in `changes.clearance`; newest 32 per Landing | Built, on dev and prod |
-| Traffic warnings | A session is told when an open Landing touches its files or symbols | Built on dev |
-| Separation and hold | A Landing waits when one ahead touches the same files, and says why | Built on dev |
-| Sequencing | The order of Landings, from the queue | Built on dev |
-| Radar | One board of every open Landing | Built on dev |
+| Traffic warnings | A session is told when an open Landing touches its files or symbols | Built, on dev and prod |
+| Separation and hold | A Landing waits when one ahead touches the same files, and says why | Built, on dev and prod |
+| Sequencing | The order of Landings, from the queue | Built, on dev and prod |
+| Radar | One board of every open Landing | Built, on dev and prod |
 
 Conservative rules: a fork needs an approval of its head, a repo with no rules never auto-lands, and drafts and any failed check hold.
 
@@ -342,7 +342,7 @@ Conservative rules: a fork needs an approval of its head, a repo with no rules n
 
 **2026-10-31:** with no users on prod, the owner chose to ship wave 1 and CTC together, which applies `0044` in one deploy. The two-wave rollback didn't apply to that ship; `0045` still ships later on its own.
 
-`main` applies through `0044`. Dev applies through `0045`, and every branch this plan names is merged into dev, so the next ship takes `0045`, the traffic work and the newest harness to prod.
+`main` applies through `0044`. Dev applies through `0045`, and every branch this plan names is merged into dev, so the next ship takes `0045` and the newest harness to prod.
 
 `LAND_WHEN_CLEARED` goes on in `infra/envs/prod.json` with that ship: `main` already holds the job's handler, and kit items 34, 43 and 44 must pass on dev first. A repository's own switch stays off until its owner sets it. `LANDING_INSTRUMENTS` stays off on prod.
 
