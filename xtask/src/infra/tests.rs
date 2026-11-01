@@ -684,3 +684,53 @@ fn job_summary_tables_are_markdown_with_escaped_cells() {
         "### deploy dev at abc\n\n| Worker | Detail |\n| --- | --- |\n| w | a \\| b c |\n\n"
     );
 }
+
+/// Prod runs what dev runs. A variable may differ only for the reason given here.
+#[test]
+fn prod_has_every_switch_dev_has() {
+    const OWN: [(&str, &str); 11] = [
+        ("EMAIL_FROM", "its own sender"),
+        ("ADMIN_NOTIFY_EMAIL", "dev mails nobody"),
+        ("ADMIN_ACCOUNTS", "its own operators"),
+        ("WATCH_URL", "its own host"),
+        ("WATCH_FRONT_URL", "its own host"),
+        ("PUBLIC_URL", "its own host"),
+        ("SSH_HOST", "its own host"),
+        ("SITE_EVENTS_DATASET", "its own dataset"),
+        ("WEB_ANALYTICS_TOKEN", "its own site"),
+        ("SEO_INDEXING", "only prod is indexed"),
+        ("REGION_HINT_TEST", "a dev test"),
+    ];
+    const DEV_TEST: (&str, &str) = ("PROBE_LANDING", "a dev test: off, and frozen");
+    let parse = |text: &str| serde_json::from_str::<serde_json::Value>(text).unwrap();
+    let (dev, prod) = (parse(DEV), parse(PROD));
+    let vars = |spec: &serde_json::Value, role: &str| {
+        let workers = spec["workers"].as_array().unwrap();
+        let worker = workers.iter().find(|w| w["role"] == role);
+        worker.map(|w| w["config"]["vars"].clone())
+    };
+    for worker in prod["workers"].as_array().unwrap() {
+        let role = worker["role"].as_str().unwrap();
+        let Some(in_dev) = vars(&dev, role) else {
+            continue;
+        };
+        let in_prod = &worker["config"]["vars"];
+        let empty = serde_json::Map::new();
+        let names = |vars: &serde_json::Value| {
+            vars.as_object()
+                .unwrap_or(&empty)
+                .keys()
+                .cloned()
+                .collect::<Vec<_>>()
+        };
+        for name in names(&in_dev).into_iter().chain(names(in_prod)) {
+            let excused = OWN.iter().chain([&DEV_TEST]).any(|(own, _)| *own == name);
+            assert!(
+                excused || in_dev[&name] == in_prod[&name],
+                "{role} {name}: dev {} prod {}",
+                in_dev[&name],
+                in_prod[&name]
+            );
+        }
+    }
+}

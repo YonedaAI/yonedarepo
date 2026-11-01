@@ -96,7 +96,7 @@ A rollback's row names what `/health` reports afterwards. Superfan rolls back wi
 
 1. Read the mail, or `GET /findings` on Superfan with `SUPERFAN_READ_TOKEN`.
 2. Check the ship for migrations and Durable Object class changes: the diff from the last prod revision for `MIGRATIONS` in `backend/crates/yoneda-platform/src` (repository, account and commit-store schemas), `cloudflare/migrations`, and `migrations` in `infra/envs/prod.json`.
-3. **None:** from the owner's checkout, `cargo xtask rollback --env prod --confirm`. It rolls every Worker back one deployment, skips with a line any Worker with no earlier version, such as one on its first deployment, and refuses while containers are busy. Check `/health`.
+3. **None:** from the owner's checkout, `cargo xtask rollback --env prod --confirm`. It rolls every Worker back one deployment and refuses while containers are busy. Check `/health`.
 4. **A repository schema migration:** fix forward with a new ship, or roll back only to the wave-1 binary that accepts the new version (`docs/global-scale-plan.md`, rule 3). Cloudflare blocks rollback across a Durable Object class change.
 5. **Bundled pushes:** see Object bundles in the [runbook](runbook.md#recovery).
 6. After a rollback `main` is ahead of prod. The fix ships as the next PR.

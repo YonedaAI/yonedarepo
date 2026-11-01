@@ -108,15 +108,12 @@ describe('synthetic results', () => {
   });
 });
 
-it('is on for dev, off for prod, and tracing is off on dev and absent from prod', () => {
+it('is on for dev and prod, and tracing is off on dev and absent from prod', () => {
   const worker = (text: string, role: string) =>
     JSON.parse(text).workers.find((w: { role: string }) => w.role === role).config;
-  for (const [text, level] of [
-    [devSpec, 'on'],
-    [prodSpec, 'off'],
-  ]) {
-    expect(worker(text, 'superfan').vars.SERVICE_LEVELS).toBe(level);
-    expect(worker(text, 'platform').vars.SERVICE_LEVELS).toBe(level);
+  for (const text of [devSpec, prodSpec]) {
+    expect(worker(text, 'superfan').vars.SERVICE_LEVELS).toBe('on');
+    expect(worker(text, 'platform').vars.SERVICE_LEVELS).toBe('on');
     expect(worker(text, 'superfan').analytics_engine_datasets).toEqual(
       worker(text, 'platform').analytics_engine_datasets,
     );

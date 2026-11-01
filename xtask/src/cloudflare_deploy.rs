@@ -117,7 +117,11 @@ fn parse_inventory(success: bool, stdout: &[u8], stderr: &[u8]) -> Result<Value>
     if success {
         return Ok(serde_json::from_slice(stdout)?);
     }
-    if crate::infra::wrangler::worker_missing(stderr) {
+    let diagnostic = String::from_utf8_lossy(stderr).to_lowercase();
+    if diagnostic.contains("10007")
+        || diagnostic.contains("worker does not exist")
+        || (diagnostic.contains("worker \"") && diagnostic.contains("not found"))
+    {
         return Ok(json!([]));
     }
     Err("Cannot inventory Worker secrets; refusing to overwrite them. Check Wrangler login, account and permissions.".into())

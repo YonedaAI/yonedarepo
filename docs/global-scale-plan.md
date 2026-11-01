@@ -1,6 +1,6 @@
 # Scale and global plan
 
-Status: frozen on 2026-11-01. Built: item 1, erase, item 5 (`ACCOUNT_SEARCH`, on in dev, off in prod) and archive stage A (four switches, off). Regions stopped at R1's sampling and a same-region test. The rest is plan. Written 2026-10-30 at dev `169fb5b0`.
+Status: frozen on 2026-11-01. Built: item 1, erase, item 5 (`ACCOUNT_SEARCH`, on in dev, and in prod from the next ship) and archive stage A (four switches, off). Regions stopped at R1's sampling and a same-region test. The rest is plan. Written 2026-10-30 at dev `169fb5b0`.
 
 ## Context
 
