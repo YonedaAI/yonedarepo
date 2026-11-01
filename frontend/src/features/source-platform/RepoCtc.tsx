@@ -99,7 +99,9 @@ function Row({ landing: l, ...links }: Links & { landing: RadarLanding }) {
 export function RepoCtc({ repo, ...links }: Links & { repo: string }) {
   const radar = useSource<CtcRadar>(ctcPath(repo));
   const { reload } = radar;
-  useEffect(() => visibleEvery(CTC_POLL_MS, reload), [reload]);
+  useEffect(() => {
+    return visibleEvery(CTC_POLL_MS, reload);
+  }, [reload]);
   const kept = useRef<CtcRadar | undefined>(undefined);
   if (radar.data) kept.current = radar.data;
   const data = radar.data ?? kept.current;
