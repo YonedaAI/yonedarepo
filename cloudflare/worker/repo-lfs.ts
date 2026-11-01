@@ -14,9 +14,11 @@
 // Locks: stock clients ask `POST locks/verify` before every push and `GET locks` for
 // `git lfs locks`. Both answer empty lists (no file is ever locked); creating a lock is
 // refused with 501 and unlocking answers 404, each with a message `git lfs` shows.
+
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { toHex } from './hmac';
 import { readJson } from './http';
+import { log, logFailure } from './log';
 import { retrier } from './repo-git-retry';
 import { inheritObjects } from './repo-lfs-inherit';
 import { lfsKey, scheduleSweep, sweepLfs } from './repo-lfs-sweep';
@@ -132,7 +134,8 @@ export async function lfsHttp(
     if ('_anonymous' in auth && ['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND', 'GONE'].includes(code))
       return lfsError(401, 'Use a repository or personal access token as the password');
     const status = STATUS[code] ?? (e instanceof ApiError ? 400 : 500);
-    if (status >= 500 && status !== 501 && status !== 507) console.error(`git lfs failed: ${code}`);
+    if (status >= 500 && status !== 501 && status !== 507)
+      logFailure(e, code, status, { service: 'lfs' });
     return lfsError(status, `${code}: ${String(e?.message ?? e).slice(0, 500)}`);
   }
 }
@@ -220,9 +223,7 @@ async function storedSha256(env: Env, key: string, head: R2Object) {
 async function discard(ctx: RepoContext, oid: string) {
   const { sweep_at } = await ctx.call({ op: 'repo_lfs_discard', oid });
   await scheduleSweep(ctx.env, ctx.repo, sweep_at);
-  await sweepLfs(ctx.env, ctx.repo).catch((e) =>
-    console.warn(`lfs sweep after discard failed: ${e?.message ?? e}`),
-  );
+  await sweepLfs(ctx.env, ctx.repo).catch((e) => log.warn('lfs.sweep_failed', { error: e }));
 }
 
 /** `POST verify {oid, size}`: after an upload, the stored bytes are checked (size and

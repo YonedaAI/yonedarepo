@@ -7,7 +7,9 @@
 // its copy, and every other isolate decides on a copy fetched at most ACCESS_MS ago, so a
 // revoked token or removed member is refused everywhere within ACCESS_MS of the change's
 // answer. A deletion waits that bound out before it answers (`dropDeletedHead`).
+
 import { rpcValue } from './durable';
+import { log } from './log';
 import { teamEntries } from './platform-org-access';
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
@@ -197,7 +199,7 @@ export async function refreshHead(env: Env, repo: string, access = false) {
   heads.delete(repo);
   await holder(env, repo)
     ?.refresh(repo, access)
-    .catch((e) => console.warn(`head refresh failed: ${e?.message ?? e}`));
+    .catch((e) => log.warn('head.refresh_failed', { error: e }));
 }
 
 /** After the authority became a tombstone: drops main's published head everywhere before
@@ -244,7 +246,7 @@ export async function headTrees(
   const shared = holder(env, repo);
   if (!shared) return null;
   return rpcValue(shared.trees(repo, root, paths, commit)).catch((e) => {
-    console.warn(`head trees failed: ${e?.message ?? e}`);
+    log.warn('head.trees_failed', { error: e });
     return null;
   });
 }

@@ -7,6 +7,7 @@
 // or conflicted landing leaves the Landing open with its reason, and only the next trigger tries
 // again. Queues deliver at least once: a duplicate finds the Landing landed, or shares its
 // queue ticket.
+import { log } from './log';
 import { landMode } from './repo-changesets';
 import { followForkChange } from './repo-forks';
 import { changeInstruments } from './repo-instruments';
@@ -79,7 +80,7 @@ export async function landCheckJob(env: Env, envelope: Envelope, attempts: numbe
     // The repository or the Landing is gone: nothing to come back for.
     if (e instanceof ApiError && !UNSETTLED.has(e.code)) return {};
     if (attempts < ATTEMPTS) return { retry: RETRY_S * attempts };
-    console.warn(`land check gave up: ${(e as Error)?.message ?? e}`);
+    log.warn('land_check.gave_up', { error: e });
     if (tried.head) await failed(ctx, number, tried.head, 'UNFINISHED', UNFINISHED).catch(() => {});
     return {};
   }

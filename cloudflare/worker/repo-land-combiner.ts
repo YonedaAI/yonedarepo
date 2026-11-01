@@ -8,10 +8,12 @@
 // answers every waiter whose ticket it settled. Waiting is held in memory: if the combiner
 // is evicted its ticket waiters fall back to polling, so nothing is lost. The same class, named `<repo>#projector`
 // and `<repo>#head`, is the repository's changeset projector and published-head holder.
+
 import { DurableObject } from 'cloudflare:workers';
+import { log } from './log';
 import { ProjectionRunner } from './repo-changesets';
 import { HeadHolder } from './repo-head-holder';
-import { failed, LandBatcher, type Target } from './repo-land-batcher';
+import { LandBatcher, type Target } from './repo-land-batcher';
 import type { Json } from './repo-ops';
 import { placedHere } from './repo-region-hint';
 import { servedHere } from './repo-region-serve';
@@ -41,7 +43,7 @@ export class LandCombiner extends DurableObject<Env> {
         await this.#batcher.step();
       } while (this.#again);
     })()
-      .catch((e) => failed('land.step_failed', this.#batcher.target?.repo, e))
+      .catch((e) => log.warn('land.step_failed', { repo: this.#batcher.target?.repo, error: e }))
       .finally(() => {
         this.#running = null;
       });

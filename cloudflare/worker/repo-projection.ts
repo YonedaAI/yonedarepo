@@ -4,23 +4,31 @@
 // exactly what landed: one receive-pack carries every object Artifacts lacks plus the ref
 // update, with the last projected value as an expected-old lease; a refusal is recorded
 // as drift and left for the owner, never forced.
+
+import { log } from './log';
 import { bundledPlaces, holdsBundles, locate, noteBundles, type Wanted } from './repo-bundles';
 import { compute } from './repo-compute';
 import { fromBase64, parseStore, RepoObjects, toBase64 } from './repo-objects';
 import { caller, type Json } from './repo-ops';
 import { shardCall } from './repo-shards';
 import { putRaw } from './repo-stores';
+import { carriedQueue } from './request-scope';
 import type { Env, Envelope } from './types';
 
 export async function dispatchProjection(env: Env, repo: string) {
-  await env.PLATFORM_QUEUE.send({ v: 1, kind: 'platform_project', repo_id: repo, job_id: 'refs' });
+  await carriedQueue(env.PLATFORM_QUEUE).send({
+    v: 1,
+    kind: 'platform_project',
+    repo_id: repo,
+    job_id: 'refs',
+  });
 }
 
 /** Asks for a deleted repository's object store and platform objects to be purged, now if
  * its window allows (`purge`), or whatever the window says (`now`: no window applies). Never
  * sent for later: see repo-deleted.ts. */
 export async function dispatchPurge(env: Env, repo: string, job: 'purge' | 'now' = 'purge') {
-  await env.PLATFORM_QUEUE.send({
+  await carriedQueue(env.PLATFORM_QUEUE).send({
     v: 1,
     repo_id: repo,
     job_id: `${job}-${repo}`,
@@ -30,7 +38,7 @@ export async function dispatchPurge(env: Env, repo: string, job: 'purge' | 'now'
 
 /** Asks for a drain of the authority's object outbox, or of commit shard `shard`'s. */
 export async function dispatchObjects(env: Env, repo: string, shard?: number) {
-  await env.PLATFORM_QUEUE.send({
+  await carriedQueue(env.PLATFORM_QUEUE).send({
     v: 1,
     kind: 'platform_objects',
     repo_id: repo,
@@ -246,7 +254,7 @@ async function dropCarriers(objects: RepoObjects, carriers: string[]) {
   const bodies = carriers.map((commit) => compute({ op: 'ref_delete', commit }).push_b64);
   await objects
     .push(fromBase64(combine(bodies)))
-    .catch((e) => console.warn(`carrier refs not deleted: ${e?.message ?? e}`));
+    .catch((e) => log.warn('projection.carrier_refs_kept', { error: e }));
 }
 
 /** The commit each planned object came with: a staged one is in that commit's shard. */

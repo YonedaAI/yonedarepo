@@ -15,6 +15,8 @@ pub struct Request {
     pub path: String,
     pub query: String,
     pub authorization: Option<String>,
+    /// The request this build descends from, for log lines; empty when it is not sent.
+    pub request_id: String,
     pub body: Vec<u8>,
 }
 
@@ -44,6 +46,7 @@ pub fn read_request(reader: &mut impl BufRead) -> io::Result<Request> {
     let (path, query) = target.split_once('?').unwrap_or((&target, ""));
     let mut length = 0usize;
     let mut authorization = None;
+    let mut request_id = String::new();
     loop {
         next(&mut line)?;
         let header = line.trim_end();
@@ -59,6 +62,7 @@ pub fn read_request(reader: &mut impl BufRead) -> io::Result<Request> {
                 length = value.parse().map_err(|_| invalid("content-length"))?;
             }
             "authorization" => authorization = Some(value.to_owned()),
+            "x-request-id" if valid_id(value) => request_id = value.to_owned(),
             "transfer-encoding" => return Err(invalid("chunked requests are not accepted")),
             _ => {}
         }
@@ -73,8 +77,17 @@ pub fn read_request(reader: &mut impl BufRead) -> io::Result<Request> {
         path: path.to_owned(),
         query: query.to_owned(),
         authorization,
+        request_id,
         body,
     })
+}
+
+/// Only what an id is made of reaches a log line.
+fn valid_id(id: &str) -> bool {
+    id.len() <= 64
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
 }
 
 /// A whole answer.
@@ -152,6 +165,15 @@ mod tests {
         assert_eq!(request.query, "filter=blob:none");
         assert_eq!(request.authorization.as_deref(), Some("Bearer s"));
         assert_eq!(request.body, b"abc");
+        assert_eq!(request.request_id, "");
+        let named = b"GET /stats HTTP/1.1\r\nX-Request-Id: 8f1c2d3e4a5b6c7d-SJC\r\n\r\n";
+        let named = read_request(&mut &named[..]).expect("request");
+        assert_eq!(named.request_id, "8f1c2d3e4a5b6c7d-SJC");
+        let forged = b"GET /stats HTTP/1.1\r\nX-Request-Id: a\"b\r\n\r\n";
+        assert_eq!(
+            read_request(&mut &forged[..]).expect("request").request_id,
+            ""
+        );
         let big = format!(
             "POST / HTTP/1.1\r\nContent-Length: {}\r\n\r\n",
             MAX_BODY + 1

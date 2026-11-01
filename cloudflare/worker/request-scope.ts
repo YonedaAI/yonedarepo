@@ -81,7 +81,10 @@ export function carriedQueue<T extends Queue<Envelope>>(queue: T): T {
   const stamp = (body: Envelope) => ({ ...body, request_id: requestId(scope) });
   return {
     send: (body: Envelope, options?: QueueSendOptions) => queue.send(stamp(body), options),
-    sendBatch: (messages: Iterable<MessageSendRequest<Envelope>>, options?: QueueSendBatchOptions) =>
+    sendBatch: (
+      messages: Iterable<MessageSendRequest<Envelope>>,
+      options?: QueueSendBatchOptions,
+    ) =>
       queue.sendBatch(
         [...messages].map((message) => ({ ...message, body: stamp(message.body) })),
         options,

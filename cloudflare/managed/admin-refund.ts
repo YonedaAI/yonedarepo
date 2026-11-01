@@ -3,7 +3,9 @@
 // in the ledger), and only then is Stripe asked. Whatever stops that, `runRefund` finishes it:
 // it asks Stripe whether the refund exists, makes it under one idempotency key if not, and
 // settles from the answer. It runs inline, from the queue after the alarm, and on the webhook.
+
 import type { AdminRefund } from '../../shared/admin-billing';
+import { log } from '../worker/log';
 import { actorOf, idOf, microOf, reasonOf } from './admin-input';
 import { BillingRefusal, resumeAll } from './billing';
 import { limitMicrousd, type ManagedEnv } from './config';
@@ -120,9 +122,7 @@ export async function refund(env: ManagedEnv, account: string, body: Record<stri
     await runRefund(env, account, id);
   } catch (e: any) {
     // Recorded and armed: the answer is `open`, and the alarm finishes it.
-    console.error(
-      JSON.stringify({ event: 'billing.refund', message: String(e?.message ?? e).slice(0, 200) }),
-    );
+    log.error('billing.refund', { error: e });
   }
   const now = await ledger.refund(id);
   if (!now) throw new BillingRefusal('INTERNAL', 'The refund record is missing', 500);

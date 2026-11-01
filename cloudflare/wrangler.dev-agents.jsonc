@@ -22,6 +22,8 @@
 // No IP, cookie or visitor id; signed-in requests (session cookie), /api, /auth and assets are skipped.
 // WEB_ANALYTICS_TOKEN: the Cloudflare Web Analytics site token; set, the front Worker adds the beacon to public pages; empty, none.
 // ADMIN_ACCOUNTS: the platform Worker's operator list, repeated here for the session answer's is_admin (the admin entry in the sidebar); keep the two equal.
+// REQUEST_IDS=on puts the request id on every response and carries it to Durable Objects, queue jobs and containers (worker/request-scope.ts). Off, failure lines still carry it and nothing else changes. No order to deploy in: a message or request without it mints one.
+// CLIENT_ERRORS=on: POST /api/client-error logs what browsers report, message and route only, rate limited by AUTH_LIMITER (worker/client-errors.ts). Off, it answers 204 and does nothing.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
@@ -139,8 +141,10 @@
   "vars": {
     "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
     "AUDIT_LOG": "off",
+    "CLIENT_ERRORS": "off",
     "PUBLIC_APP_ORIGIN": "https://dev.yonedarepo.com",
     "REGION_SIGNALS": "off",
+    "REQUEST_IDS": "off",
     "TRAFFIC_EVENTS": "on",
     "TRAFFIC_REPORT": "on",
     "WEB_ANALYTICS_TOKEN": "70b90cc7e849429fa25cc64897ebfd2b"

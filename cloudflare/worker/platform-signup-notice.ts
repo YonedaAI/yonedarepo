@@ -5,6 +5,8 @@
 // sign-up an earlier email covered sends nothing; a redelivery that races the record of a
 // sent email repeats Resend's Idempotency-Key (24 hours; the sign-ups it names), so no notice
 // goes out twice.
+
+import { log } from './log';
 import { digest } from './platform-email-verify';
 import {
   backoff,
@@ -14,6 +16,7 @@ import {
   transient,
 } from './platform-welcome-email';
 import { escapeHtml } from './platform-welcome-template';
+import { carriedQueue } from './request-scope';
 import type { Env, Envelope } from './types';
 
 export const NOTICE_WINDOW_MS = 5 * 60_000;
@@ -58,7 +61,7 @@ export async function signupNoticeJob(
   if (state && row.created_at <= state.through) return {}; // an earlier email named it
   if (state && now - state.sent_at < NOTICE_WINDOW_MS) {
     const wait = Math.ceil((state.sent_at + NOTICE_WINDOW_MS - now) / 1000);
-    await env.PLATFORM_QUEUE.send(envelope, { delaySeconds: Math.max(1, wait) });
+    await carriedQueue(env.PLATFORM_QUEUE).send(envelope, { delaySeconds: Math.max(1, wait) });
     return {};
   }
   // The first notice names only this window's sign-ups, never the whole backfilled index.
@@ -109,7 +112,7 @@ export async function signupNoticeJob(
 
 function failed(attempts: number, again: boolean, detail: Record<string, unknown>) {
   if (attempts < MAX_ATTEMPTS && again) return { retry: backoff(attempts) };
-  console.error(JSON.stringify({ event: 'email.signup_notice.failed', attempts, ...detail }));
+  log.error('email.signup_notice.failed', { attempts, ...detail });
   return {};
 }
 

@@ -10,6 +10,7 @@
 // container's lifecycle state, CheckContainer's the same, and ObjectPushQueue keeps none.
 
 import { durableJson } from './durable';
+import { log } from './log';
 import { audit } from './platform-admin-queries';
 import { currentHold } from './platform-legal-hold';
 import { dispatchErase, eraseOn, purgeObjects } from './repo-admin';
@@ -31,7 +32,7 @@ const HOOK_WAIT_SECONDS = 300;
 const WIDTH = 6;
 
 function progress(repo: string, phase: string, details: Json = {}) {
-  console.log(JSON.stringify({ event: 'repo.erase', repo, phase, ...details }));
+  log.info('repo.erase', { repo, phase, ...details });
 }
 
 type Erasable = { erase(): Promise<void> };

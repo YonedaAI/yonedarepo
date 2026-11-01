@@ -4,6 +4,7 @@
 // history with large files (claude-code's 16 MiB demo.gif, several versions) ended 503 on
 // exceeded resources. A client that asks with `large: true` gets such blobs as a stub
 // (`{id, kind, size, large}`) and downloads each one's bytes on its own request instead.
+import { log } from './log';
 import { compute } from './repo-compute';
 import { decide, outside } from './repo-grants';
 import { guardInherited } from './repo-inherit';
@@ -139,26 +140,23 @@ function logPage(page: Page, event: string, extra: Json = {}) {
   // This isolate's Wasm memory (it only grows): a page that pushed it up shows here.
   const wasm = compute({ op: 'memory' }).wasm_bytes ?? null;
   const { ctx, wanted, start, index, served, missing, bytes, read, largest, large, raw } = page;
-  console.log(
-    JSON.stringify({
-      event,
-      repo: ctx.repo,
-      requested: wanted.length,
-      after: start,
-      index,
-      served,
-      missing: missing.length,
-      bytes,
-      read,
-      largest,
-      large,
-      raw,
-      ms: Date.now() - page.began,
-      tiers: page.objects.hits,
-      wasm,
-      ...extra,
-    }),
-  );
+  log.info(event, {
+    repo: ctx.repo,
+    requested: wanted.length,
+    after: start,
+    index,
+    served,
+    missing: missing.length,
+    bytes,
+    read,
+    largest,
+    large,
+    raw,
+    ms: Date.now() - page.began,
+    tiers: page.objects.hits,
+    wasm,
+    ...extra,
+  });
 }
 
 /**

@@ -5,8 +5,10 @@
 // reports, then schedules itself for when the authority says work is next due. A batch or
 // verify that arms the sweep (`sweep_at`) schedules it the same way. Deleting is idempotent
 // and a lost report only lets the lease run out, so redelivery is safe.
+
 import { failureCode } from './durable';
 import { caller } from './repo-ops';
+import { carriedQueue } from './request-scope';
 import type { Env, Envelope } from './types';
 
 /** An LFS object's R2 key, under its repository's prefix (so a purge removes it too). */
@@ -34,7 +36,10 @@ export async function scheduleSweep(env: Env, repo: string, at: unknown) {
     repo_id: repo,
     job_id: `lfs-sweep-${at}`,
   };
-  await env.PLATFORM_QUEUE.send(envelope, delaySeconds > 0 ? { delaySeconds } : undefined);
+  await carriedQueue(env.PLATFORM_QUEUE).send(
+    envelope,
+    delaySeconds > 0 ? { delaySeconds } : undefined,
+  );
 }
 
 /** Sweeps `repo`'s orphans now; answers when the sweep is next due (null: nothing waits). */

@@ -19,6 +19,7 @@ mod compute;
 mod git_http;
 mod source_repository;
 mod stack;
+mod telemetry;
 pub use commit_shard::CommitShard;
 pub use source_repository::SourceRepository;
 

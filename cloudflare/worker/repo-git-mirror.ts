@@ -10,6 +10,7 @@
 // filter is not sent on, since Artifacts has none: a partial clone receives every file, which
 // Git accepts. A direct import's stored pack answers most of these before Artifacts can
 // (`importedClone`); a fetch nothing can serve waits for Artifacts, then is refused whole.
+import { log } from './log';
 import { directImportOn, wholeClone } from './repo-import-direct';
 import { advertised, fetchPack, type ShallowLines } from './repo-mirror-git';
 import type { RepoObjects } from './repo-objects';
@@ -124,7 +125,7 @@ export async function mirrorClone(
     if (next.done) return null;
     first = next.value;
   } catch (e: any) {
-    console.warn(`mirror clone unavailable: ${e?.code ?? ''} ${e?.message ?? e}`);
+    log.warn('git.mirror_unavailable', { code: e?.code, error: e });
     return null;
   }
   const packet = (bytes: Uint8Array) => (band ? sideBand(1, bytes, band) : bytes);

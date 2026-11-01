@@ -2,8 +2,10 @@
 // queues the event; the queue consumer (at least once) finds the open change the event is
 // about, claims one run per enabled agent for its head (idempotent), and starts that run's
 // Workflow instance (also idempotent: the instance id is the run and attempt).
+
 import { type ManagedAgentId, managedAgent, readyForReview } from '../../shared/managed-agents';
 import { resolveSettings, triggerMatches } from '../../shared/managed-settings';
+import { log } from '../worker/log';
 import { reconcileAccount, reconcileAll } from './admin-reconcile';
 import { runRefund } from './admin-refund';
 import { runTopUp } from './billing';
@@ -108,13 +110,13 @@ async function onDeleted(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'dele
     },
   );
   if (!gone) {
-    console.warn(JSON.stringify({ event: 'managed.delete_refused', repo: m.repo }));
+    log.warn('managed.delete_refused', { repo: m.repo });
     return;
   }
   const transcripts = await purgeTranscripts(env, m.repo);
   await workspaceStub(env, connection.account).forget(m.repo);
   await stub.purge();
-  console.log(JSON.stringify({ event: 'managed.repo_purged', repo: m.repo, transcripts }));
+  log.info('managed.repo_purged', { repo: m.repo, transcripts });
 }
 
 /** Starts a run's Workflow instance; an instance that already exists is left alone. */
@@ -250,13 +252,7 @@ export async function consume(batch: MessageBatch<QueueMessage>, env: ManagedEnv
       else if (m.kind === 'rollup') await ledgerStub(env, m.account).rollupRebuild();
       message.ack();
     } catch (e: any) {
-      console.error(
-        JSON.stringify({
-          event: 'managed.queue',
-          code: e?.code ?? 'ERROR',
-          message: String(e?.message ?? e).slice(0, 200),
-        }),
-      );
+      log.error('managed.queue', { code: e?.code ?? 'ERROR', error: e });
       message.retry({ delaySeconds: 30 });
     }
   }

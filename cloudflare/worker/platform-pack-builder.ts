@@ -24,6 +24,7 @@ import { caller, type Json, RepoContext } from './repo-ops';
 import { type Fresh, PART, PackWriter, packKey } from './repo-pack-cache';
 import { CHUNK, concat, sideBand } from './repo-pack-stream';
 import { parseStore } from './repo-stores';
+import { carriedHeaders } from './request-scope';
 import type { Env } from './types';
 
 export const PACK_PORT = 8080;
@@ -83,7 +84,7 @@ export async function buildPacks(
       const answer = await instance.containerFetch(
         new Request(`http://packs${path}`, {
           method: body === undefined ? 'GET' : 'POST',
-          headers: { authorization: `Bearer ${secret}` },
+          headers: { authorization: `Bearer ${secret}`, ...carriedHeaders() },
           body,
         }),
       );

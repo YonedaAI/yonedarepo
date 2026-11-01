@@ -5,8 +5,10 @@
 // older code purges any tombstone a queue hands it, and SourceRepository has no alarm. Each
 // row carries the due time it was promised, so a rollback of the switch keeps that promise: the
 // sweep runs either way, and the authority refuses a purge that comes early (repo_store/undo.rs).
+
 import { ApiError, type Json } from './repo-ops';
 import { DAY_MS, undoMs } from './repo-undo-window';
+import { carriedQueue } from './request-scope';
 import type { Env, Envelope } from './types';
 import { workspace } from './workspace';
 
@@ -77,7 +79,7 @@ export async function sweepDeleted(env: Env, now = Date.now()) {
     repo_id: repo,
     job_id: `due-${repo}`,
   });
-  await env.PLATFORM_QUEUE.sendBatch(results.map(({ id }) => ({ body: job(id) })));
+  await carriedQueue(env.PLATFORM_QUEUE).sendBatch(results.map(({ id }) => ({ body: job(id) })));
   return results.length;
 }
 

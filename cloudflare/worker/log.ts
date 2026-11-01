@@ -6,7 +6,7 @@
 // Fields are allow-listed: a key that is not in FIELDS is dropped, so a spread of some object
 // cannot put a credential or file content in a log. Every string value is scrubbed as well,
 // because an error message quotes whatever failed.
-import { currentScope, requestId, withRequestId, inScope, type Seed } from './request-scope';
+import { currentScope, inScope, requestId, type Seed, withRequestId } from './request-scope';
 
 const FIELDS = [
   'account',
@@ -14,37 +14,92 @@ const FIELDS = [
   'at',
   'attempt',
   'attempts',
-  'bytes',
+  'builder',
   'by',
+  'bytes',
+  'cache',
+  'client_ms',
   'code',
   'count',
-  'domain',
+  'cpu_ms',
+  'db_bytes',
+  'edge',
   'elapsed_ms',
+  'entries',
   'error',
-  'event_id',
+  'exit_code',
+  'fetch',
+  'first_byte_ms',
+  'floor',
+  'from_platform',
+  'forks',
+  'from',
   'head',
+  'hooks',
   'host',
   'id',
   'index',
+  'label',
+  'large',
+  'largest',
+  'ledger_usd',
+  'line',
   'message',
   'method',
+  'mirror',
   'missing',
   'ms',
+  'name',
+  'objects',
   'operation',
   'outcome',
+  'packs',
   'path',
+  'peak_mib',
   'phase',
+  'pid',
+  'platform_ms',
+  'problem',
   'provider',
+  'r2',
+  'ran_s',
+  'raw',
+  'raw_mib',
+  'read',
+  'read_wait_ms',
   'reason',
   'requested',
   'retrying',
   'route',
+  'rows',
+  'rollup_usd',
   'run',
+  'sent_mib',
   'served',
   'service',
+  'start_ms',
+  'stalled',
+  'started',
   'status',
   'step',
+  'store',
+  'stripe_usd',
+  'tail',
+  'tail_rows',
+  'threshold',
+  'tiers',
+  'tip',
+  'to',
+  'top_up',
+  'total_ms',
+  'transcripts',
+  'transient',
   'tries',
+  'tunnel',
+  'url',
+  'walk_ms',
+  'wasm',
+  'wasm_mib',
   'why',
 ] as const;
 const ALLOWED: ReadonlySet<string> = new Set(FIELDS);
@@ -70,12 +125,15 @@ const REDACTIONS: [RegExp, string | ((found: string) => string)][] = [
   [/\b(Bearer|Basic|token)\s+[^\s"',;]+/gi, `$1 ${REDACTED}`],
   [/:\/\/[^/\s"'@]+@/g, `://${REDACTED}@`],
   [
-    /([?&;\s"'](?:[a-z_-]*(?:token|secret|password|passwd|key|signature|credential)|sig|auth|authorization|cookie|x-amz-[a-z-]+)["']?[=:]\s*["']?)[^&\s"';,]+/gi,
+    /((?:^|[?&;\s"'])(?:[a-z_-]*(?:token|secret|password|passwd|key|signature|credential)|sig|auth|authorization|cookie|x-amz-[a-z-]+)["']?[=:]\s*["']?)[^&\s"';,]+/gi,
     `$1${REDACTED}`,
   ],
   [/\byoneda_account=[^\s;"']+/g, `yoneda_account=${REDACTED}`],
   [/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_.-]+/g, REDACTED],
-  [/\b(?:yrp_|ypat_|yoneda\.|ttp-|tp-|sk-|sk_|rk_|whsec_|ghp_|gho_|ghs_|github_pat_)[A-Za-z0-9._-]+/g, REDACTED],
+  [
+    /\b(?:yrp_|ypat_|yoneda\.|ttp-|tp-|sk-|sk_|rk_|whsec_|ghp_|gho_|ghs_|github_pat_)[A-Za-z0-9._-]+/g,
+    REDACTED,
+  ],
   [/[^\s"'<>(),;:]+@[^\s"'<>(),;:]+\.[^\s"'<>(),;:]+/g, '[email]'],
   [/[A-Za-z0-9_+=-]{33,}/g, (found) => (KEPT.test(found) ? found : REDACTED)],
 ];
@@ -117,7 +175,11 @@ function allowed(fields: Record<string, unknown>, depth = 0) {
 }
 
 const errorValue = (e: unknown, depth: number) =>
-  typeof e === 'string' ? scrub(e) : typeof e === 'object' && e !== null ? errorText(e) : value(e, depth);
+  typeof e === 'string'
+    ? scrub(e)
+    : typeof e === 'object' && e !== null
+      ? errorText(e)
+      : value(e, depth);
 
 const repoIn = (url?: string) => url && /\/(r[0-9a-f]{20})(?:[/.?]|$)/.exec(url)?.[1];
 
@@ -134,6 +196,8 @@ function line(level: Level, event: string, fields: Fields) {
     revision: scope?.env?.BUILD_REVISION,
   };
   const { repo: _repo, job: _job, kind: _kind, ...rest } = fields;
+  const code = (rest.error as { code?: unknown } | undefined)?.code;
+  if (rest.code === undefined && typeof code === 'string') rest.code = code;
   const text = JSON.stringify({ ...head, ...allowed(rest) });
   return text.length <= LINE_LIMIT ? text : JSON.stringify({ ...head, truncated: true });
 }

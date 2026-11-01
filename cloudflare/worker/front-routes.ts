@@ -9,6 +9,7 @@ import { isInstaller, serveDownload, serveInstallScript } from './downloads';
 import { error, response } from './http';
 import { oauthRoute } from './oauth';
 import { GIT_PATH, legacyRedirect } from './readable-paths';
+import { carriedRequest } from './request-scope';
 import { isSeoFile, seoFile } from './seo-files';
 import { recordPageView } from './site-events';
 import { sitePing } from './site-ping';
@@ -31,7 +32,7 @@ export async function frontFetch(req: Request, env: Env): Promise<Response> {
   // Git over HTTPS by readable path is the platform's (`/<handle>/<name>.git`).
   if (GIT_PATH.test(url.pathname))
     return env.PLATFORM
-      ? env.PLATFORM.fetch(req)
+      ? env.PLATFORM.fetch(carriedRequest(req))
       : error('NOT_FOUND', 'The source platform is not bound', 404);
   if (!url.pathname.startsWith('/api/')) {
     const moved = env.PLATFORM
@@ -45,11 +46,11 @@ export async function frontFetch(req: Request, env: Env): Promise<Response> {
   if (url.pathname === '/api/e') return sitePing(req, env);
   if (url.pathname.startsWith('/api/v1/'))
     return env.PLATFORM
-      ? env.PLATFORM.fetch(req)
+      ? env.PLATFORM.fetch(carriedRequest(req))
       : error('NOT_FOUND', 'The source platform is not bound', 404);
   if (url.pathname.startsWith('/api/managed/'))
     return env.MANAGED
-      ? env.MANAGED.fetch(req)
+      ? env.MANAGED.fetch(carriedRequest(req))
       : error('NOT_FOUND', 'Managed agents are not available here', 404);
   try {
     const authResponse = await accountRoute(req, env);

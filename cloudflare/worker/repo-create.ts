@@ -1,8 +1,10 @@
 // Creating platform repositories: the owner (or the operator for a named workspace) creates
 // a repository, optionally seeded with files or imported from a Git remote, and may issue its
 // first repository tokens in the same request.
+
 import { afterAnswer, deferred } from './background';
 import { bounded, boundedRetry, failureCode } from './durable';
+import { log } from './log';
 import { orgArg, orgCaller, orgCommand } from './platform-orgs';
 import { asyncStore, dispatchStore } from './repo-artifacts-store';
 import { auditRepo } from './repo-audit';
@@ -106,7 +108,7 @@ export function newRepoId() {
 }
 
 function unavailable(cause: any) {
-  console.warn(`repository create failed: ${cause?.message ?? cause}`);
+  log.warn('repo.create_failed', { error: cause });
   return new ApiError('CREATE_UNAVAILABLE', 'The repository could not be created now; try again');
 }
 
@@ -119,7 +121,7 @@ function unavailable(cause: any) {
 function startShards(env: Env, id: string) {
   const start = () =>
     timed('create.shards', () => boundedRetry(SHARD_START_MS, () => shardOutboxes(env, id))).catch(
-      (e) => console.warn(`commit shards did not start: ${e?.message ?? e}`),
+      (e) => log.warn('shard.start_failed', { error: e }),
     );
   return env.SHARD_START === 'request' ? start() : afterAnswer(start);
 }
@@ -138,7 +140,7 @@ async function takeBack(
   name: string,
   accepted: boolean,
 ) {
-  const left = (e: any) => console.warn(`failed create left behind: ${e?.message ?? e}`);
+  const left = (e: any) => log.warn('repo.create_left_behind', { error: e });
   const repo = ctx.repo;
   await bounded(
     TAKE_BACK_MS,

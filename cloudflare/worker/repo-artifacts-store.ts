@@ -2,11 +2,13 @@
 // create may be left to a queue job (`ASYNC_STORE`; repo-store-create), so a store can be
 // missing for a while after its repository exists: reads find it empty, and what needs it
 // says so (`STORE_PENDING`) or waits for it (`ready`).
+
 import { bounded, rpcValue } from './durable';
 import { largeReceivePack } from './repo-large-files';
 import { gone } from './repo-mirror-git';
 import type { ObjectStore } from './repo-stores';
 import { record, timed } from './repo-timing';
+import { carriedQueue } from './request-scope';
 import type { Env } from './types';
 
 /** Per-isolate: a repository's remote never changes. */
@@ -35,7 +37,12 @@ export const asyncStore = (env: Env) =>
 /** Asks for the repository's own store. Sent only with `asyncStore`: see docs/runbook.md
  * for the order a new job kind reaches the Workers in. */
 export async function dispatchStore(env: Env, repo: string) {
-  await env.PLATFORM_QUEUE.send({ v: 1, kind: STORE_JOB, repo_id: repo, job_id: 'store' });
+  await carriedQueue(env.PLATFORM_QUEUE).send({
+    v: 1,
+    kind: STORE_JOB,
+    repo_id: repo,
+    job_id: 'store',
+  });
 }
 
 /** Whether `e` says Artifacts has no such repository (yet). */

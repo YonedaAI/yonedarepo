@@ -26,3 +26,10 @@ pub fn platform_compute(input: &str) -> String {
 /// fresh instance a pointer into the old one's memory (`memory access out of bounds`).
 #[wasm_bindgen(js_name = wasmSettle, wasm_bindgen = ::worker::wasm_bindgen)]
 pub fn wasm_settle() {}
+
+/// Panics, and nothing else: the one way to prove a real panic reaches the logs and the
+/// instance recovers (`tests/workers/wasm-panic.test.ts`). No route or input reaches it.
+#[wasm_bindgen(js_name = wasmPanicProbe, wasm_bindgen = ::worker::wasm_bindgen)]
+pub fn wasm_panic_probe() -> String {
+    panic!("wasm panic probe")
+}

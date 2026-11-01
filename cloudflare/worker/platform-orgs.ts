@@ -4,8 +4,10 @@
 // accounts exist, keeps each member's org hint in their own authority (which org
 // authorities to ask on their requests, org-access.ts) and drops this isolate's org access
 // copies after a change, so removals reach repositories within ACCESS_MS.
+
 import { ACCOUNT_IDENTIFIER_HELP, normalizeAccountIdentifier } from '../../shared/account';
 import { auditOn, auditOrg } from './account-audit';
+import { log } from './log';
 import { auditPage, auditVerify } from './platform-audit-read';
 import { orgHold } from './platform-holds';
 import { holdSwitch } from './platform-legal-hold';
@@ -77,7 +79,7 @@ async function hint(env: Env, account: string, org: string, add: boolean) {
   const done = workspace(env, account, { op, org });
   // A stale hint costs one lookup that grants nothing, so a failed removal only logs.
   if (add) await done;
-  else await done.catch((e) => console.warn(`org hint removal failed: ${e?.message ?? e}`));
+  else await done.catch((e) => log.warn('org.hint_removal_failed', { error: e }));
 }
 
 /** The repositories of `org` its caller can see: all for an owner, otherwise those shared

@@ -5,6 +5,7 @@
 // run in the background, on demand for a read, or twice at once without harm. Main's
 // history keeps the pushed commits: a lone changeset on main's head becomes main as
 // itself, anything else a merge of main and the landed commits (platform_project.rs).
+import { log } from './log';
 import { dispatchRuns } from './repo-checks';
 import { dispatchDerive } from './repo-derived';
 import { refreshHead } from './repo-head';
@@ -115,19 +116,17 @@ export async function projectChangesets(env: Env, repo: string): Promise<number>
     // The authority holds these now; a copy left by a failure only costs its rows.
     if (env.SHARD_FORGET_RECORDED === 'on' && records.length)
       caching.push(
-        forgetChain(env, repo, records).catch((e) =>
-          console.warn(`shard forget failed: ${e?.message ?? e}`),
-        ),
+        forgetChain(env, repo, records).catch((e) => log.warn('shard.forget_failed', { error: e })),
       );
     projected += built.projected.length;
     refs.add(String(plan.ref));
     if (recorded.dispatch_objects)
       await dispatchObjects(env, repo).catch((e) =>
-        console.warn(`object drain request failed: ${e?.message ?? e}`),
+        log.warn('object.drain_request_failed', { error: e }),
       );
     // Post-land checks on main's new head (the combined result of the landed work).
     await dispatchRuns(env, repo, recorded.check_runs).catch((e) =>
-      console.warn(`check dispatch failed: ${e?.message ?? e}`),
+      log.warn('check.dispatch_failed', { error: e }),
     );
     // Reads at the latest version walk the head's new trees: cache them in R2 now (beside
     // the next round) rather than have every reader ask the authority's staged copies.
@@ -144,7 +143,7 @@ export async function projectChangesets(env: Env, repo: string): Promise<number>
       Promise.all([
         dispatchProjection(env, repo),
         ...[...refs].map((ref) => dispatchDerive(env, repo, ref)),
-      ]).catch((e) => console.warn(`dispatch after projection failed: ${e?.message ?? e}`)),
+      ]).catch((e) => log.warn('dispatch.after_projection_failed', { error: e })),
       refreshHead(env, repo),
     ]);
   return projected;
@@ -220,7 +219,7 @@ export async function landChangesets(merger: RepoContext, ref: string): Promise<
   if (out.landed.length)
     await Promise.all([
       kickProjection(merger.env, merger.repo).catch((e) =>
-        console.warn(`projection kick failed: ${e?.message ?? e}`),
+        log.warn('projection.kick_failed', { error: e }),
       ),
       refreshHead(merger.env, merger.repo),
     ]);

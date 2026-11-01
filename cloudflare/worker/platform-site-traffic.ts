@@ -17,6 +17,7 @@ import {
   type TrafficRange,
   type TrafficSignupSource,
 } from '../../shared/site-traffic';
+import { log } from './log';
 import {
   type QueryName,
   type TrafficSpan,
@@ -115,9 +116,7 @@ export async function siteTraffic(
     };
     return { ok: true, traffic };
   } catch (e) {
-    console.error(
-      JSON.stringify({ event: 'site_traffic.failed', error: String((e as Error)?.message ?? e) }),
-    );
+    log.error('site_traffic.failed', { error: e });
     return { ok: false, reason: 'query_failed' };
   }
 }

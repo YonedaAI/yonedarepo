@@ -46,6 +46,7 @@
 // ASYNC_STORE=on: a create answers without Artifacts and a platform_store queue job creates the store (repo-store-create.ts). Set it only once every Worker on the queue knows the job: deploy with it off first (docs/runbook.md).
 // DIRECT_IMPORT=on (with FAST_IMPORT, PACK_CACHE and PUSH_BUNDLES) also fetches a public GitHub repository from the Worker when it is imported, and lands main from that pack beside Artifacts' own fetch (docs/direct-import.md).
 // Admin pages (/api/v1/admin, platform-admin.ts): ADMIN_ACCOUNTS lists the operator accounts (comma separated; empty: only OWNER_TOKEN/Access). The sign-up notice goes to ADMIN_NOTIFY_EMAIL (empty: EMAIL_CONTACT). Credit grants and balances call the managed Worker's /admin/accounts/<account>/credit over MANAGED with MANAGED_ADMIN_TOKEN (optional secret, the managed Worker's own value; unset: grants are refused). MANAGED binds the managed Worker, which binds this one as PLATFORM: a fresh environment deploys this Worker once without MANAGED first.
+// REQUEST_IDS=on puts the request id on every response and carries it to Durable Objects, queue jobs and containers (worker/request-scope.ts). Off, failure lines still carry it and nothing else changes. No order to deploy in: a message or request without it mints one.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
@@ -331,6 +332,7 @@
     "LFS_S3_ENDPOINT": "https://f011d0ee02b23cad26b4b38151b204ad.r2.cloudflarestorage.com",
     "PUSH_BUNDLES": "on",
     "REGION_SIGNALS": "off",
+    "REQUEST_IDS": "off",
     "SITE_EVENTS_DATASET": "yonedarepo_prod_site_events",
     "SSH_FRONT_DOOR": "tunnel",
     "SSH_HOST": "ssh.yonedarepo.com",

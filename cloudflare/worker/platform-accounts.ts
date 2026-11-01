@@ -6,6 +6,7 @@
 import { type AccountCreated, accountSummary, recordAccount } from './account-index';
 import { queueWelcome } from './platform-email-verify';
 import { isRegion, regionSignals } from './region';
+import { carriedQueue } from './request-scope';
 import type { Env } from './types';
 
 const PROVIDERS: readonly string[] = ['email', 'github', 'google'];
@@ -21,7 +22,7 @@ export async function accountCreated(env: Env, account: string, details: Account
     details.provider && PROVIDERS.includes(details.provider) ? details.provider : 'email';
   const region = regionSignals(env) && isRegion(details.region) ? details.region : undefined;
   await recordAccount(env, account, provider, Date.now(), region);
-  await env.PLATFORM_QUEUE.send({
+  await carriedQueue(env.PLATFORM_QUEUE).send({
     v: 1,
     kind: SIGNUP_NOTICE,
     repo_id: '',

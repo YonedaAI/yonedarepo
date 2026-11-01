@@ -15,6 +15,7 @@
 // itself, and its stored transcript document is deleted here. A purge runs once the
 // record's retention passes (the quarantine job, leased and fenced like the LFS sweep), or
 // at once when the owner repeats the target id as `confirm`.
+
 import { derivedPrefix, purgePrefix } from './repo-admin';
 import { bundleKey, type Location, locate } from './repo-bundles';
 import { edgeDelete } from './repo-cache-tiers';
@@ -26,6 +27,7 @@ import { voidSummary } from './repo-search-directory';
 import { seedPrefix } from './repo-seed';
 import { transcriptKey } from './repo-session-records';
 import { ownSpec, parseStore } from './repo-stores';
+import { carriedQueue } from './request-scope';
 
 import type { Env, Envelope } from './types';
 
@@ -189,7 +191,10 @@ export async function schedulePurge(env: Env, repo: string, at: unknown) {
     repo_id: repo,
     job_id: `quarantine-${at}`,
   };
-  await env.PLATFORM_QUEUE.send(envelope, delaySeconds > 0 ? { delaySeconds } : undefined);
+  await carriedQueue(env.PLATFORM_QUEUE).send(
+    envelope,
+    delaySeconds > 0 ? { delaySeconds } : undefined,
+  );
 }
 
 /** Purges `repo`'s due records and works on its mirror's retirement; answers when the job

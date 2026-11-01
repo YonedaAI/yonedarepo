@@ -8,6 +8,7 @@
 
 import { deferred } from './background';
 import { transient } from './durable';
+import { log } from './log';
 import { compute } from './repo-compute';
 import { fetchWhileFilling, mirrorClone } from './repo-git-mirror';
 import { UploadSession, wasmMemoryBytes } from './repo-git-sessions';
@@ -168,7 +169,8 @@ export async function sendPack(
   const hand = () => handOff(objects.env, objects.repo, fresh as Fresh);
   if (worth && store === 'skipped') {
     store = 'handed off';
-    if (!deferred(hand)) await hand().catch((e) => console.warn(`pack hand-off failed: ${e}`));
+    if (!deferred(hand))
+      await hand().catch((e) => log.warn('git.pack.handoff_failed', { error: e }));
   }
   logPack('git.pack.start', objects.repo, tally, { objects: count, store });
   const storing = new Storing(writer, tally, worth ? hand : undefined);
@@ -189,9 +191,7 @@ export async function sendPack(
           controller.enqueue(sent);
         }
       } catch (e: any) {
-        logPack('git.pack.failed', objects.repo, tally, {
-          error: `${e?.code ?? 'ERROR'}: ${String(e?.message ?? e).slice(0, 300)}`,
-        });
+        logPack('git.pack.failed', objects.repo, tally, { code: e?.code, error: e });
         await storing.abort();
         failed(controller, band, e);
       }

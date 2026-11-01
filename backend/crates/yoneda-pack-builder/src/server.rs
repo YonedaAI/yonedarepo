@@ -24,6 +24,14 @@ pub struct Server {
 
 const JSON: &str = "application/json";
 
+/// A log line's `fields`, naming the request the Worker sent, when it sent one.
+fn traced(request: &Request, fields: &str) -> String {
+    if request.request_id.is_empty() {
+        return fields.to_owned();
+    }
+    format!(r#""request_id":{},{fields}"#, quote(&request.request_id))
+}
+
 impl Server {
     pub fn new(token: String, builder: Builder) -> Self {
         Self {
@@ -94,11 +102,12 @@ impl Server {
                     f.objects,
                     f.cost.json()
                 );
-                log("pack.fetched", &body[1..body.len() - 1]);
+                log("pack.fetched", &traced(request, &body[1..body.len() - 1]));
                 let _ = respond(out, 200, JSON, body.as_bytes());
             }
             Err(e) => {
-                log("pack.fetch_failed", &format!(r#""error":{}"#, quote(&e)));
+                let failed = format!(r#""error":{}"#, quote(&e));
+                log("pack.fetch_failed", &traced(request, &failed));
                 error(out, 500, &e)
             }
         }
@@ -124,9 +133,15 @@ impl Server {
         match &packed {
             Ok(p) => log(
                 "pack.built",
-                &format!(r#""bytes":{},{}"#, p.bytes, p.cost.json()),
+                &traced(
+                    request,
+                    &format!(r#""bytes":{},{}"#, p.bytes, p.cost.json()),
+                ),
             ),
-            Err(e) => log("pack.failed", &format!(r#""error":{}"#, quote(e))),
+            Err(e) => log(
+                "pack.failed",
+                &traced(request, &format!(r#""error":{}"#, quote(e))),
+            ),
         }
         if let Ok(mut last) = self.last.lock() {
             *last = Some(packed);

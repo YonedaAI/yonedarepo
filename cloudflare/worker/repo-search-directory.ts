@@ -2,13 +2,14 @@
 // ACCOUNT_SEARCH. A directory only narrows a search across repositories, so nothing here ever
 // fails what called it: a change that can't reach it logs and moves on, and a row it left
 // behind is void at worst, or unreachable once the repository is unlisted.
+import { log } from './log';
 import { caller, type Json } from './repo-ops';
 import type { Env } from './types';
 import { searchDirectory } from './workspace';
 
 export const accountSearchOn = (env: Env) => env.ACCOUNT_SEARCH === 'on';
 
-const warned = (e: any) => console.warn(`search directory: ${e?.message ?? e}`);
+const warned = (e: any) => log.warn('search.directory_failed', { error: e });
 
 /** Who owns `repo`: the account its directory belongs to. A tombstone still says. */
 export async function ownerOf(env: Env, repo: string) {

@@ -8,6 +8,7 @@
 // Budget (docs/global-scale-plan.md): 25 repositories' code per page, the newest that can
 // match, 4 at a time, and the newest 25 repositories' records on the first page, since records
 // have no summary. Page time is bounded, and `next` continues from the last repository started.
+import { log } from './log';
 import { reachOf } from './repo-admin';
 import { SEARCH_GROUPS } from './repo-derived';
 import { ApiError, type Credentials, type Json } from './repo-ops';
@@ -105,7 +106,7 @@ async function askDirectory(env: Env, owner: string, rows: Listed[], query: stri
     const asked = searchDirectory(env, owner, { op: 'search_match', query, repos });
     return (await Promise.race([asked, late])).maybe as string[];
   } catch (e: any) {
-    console.warn(`search directory: ${e?.message ?? e}`);
+    log.warn('search.directory_failed', { error: e });
     return rows.map((r) => r.id);
   } finally {
     clearTimeout(timer);

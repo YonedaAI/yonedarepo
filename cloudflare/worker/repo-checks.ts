@@ -3,6 +3,7 @@
 // commit's files to a fresh CheckContainer, which runs the check and completes the run on
 // its own (keeping the output tail in R2), or, for a model runner, makes one review call on
 // the commit's diff and completes the run itself.
+
 import type { CheckJob } from './check-container';
 import { capacityUnavailable } from './container-capacity';
 import { transient } from './durable';
@@ -12,6 +13,7 @@ import { modelCheck } from './repo-model-check';
 import { parseStore, RepoObjects } from './repo-objects';
 import { type Call, caller, type Json, RepoContext } from './repo-ops';
 import { checkFiles } from './repo-seed';
+import { carriedHeaders, carriedQueue, REQUEST_ID_HEADER } from './request-scope';
 import type { Env, Envelope } from './types';
 
 /** A claimed run as its executor reports it: the run and the evidence gathered so far. */
@@ -47,7 +49,7 @@ export async function dispatchRuns(env: Env, repo: string, runs: Json[] | undefi
   // Re-sending a still-queued run is safe (claims are fenced) and recovers a lost message.
   const queued = (runs ?? []).filter((r) => r.status === 'queued');
   if (queued.length === 0) return;
-  await (env.PLATFORM_CHECKS ?? env.PLATFORM_QUEUE).sendBatch(
+  await carriedQueue(env.PLATFORM_CHECKS ?? env.PLATFORM_QUEUE).sendBatch(
     queued.map((run) => ({
       body: { v: 1, kind: 'platform_check', repo_id: repo, job_id: String(run.id) } as Envelope,
     })),
@@ -182,7 +184,7 @@ async function settle(env: Env, report: CheckReport, outcome: string, evidence: 
  * counts toward the queue's max_retries, so waiting cannot drop a run into the DLQ. */
 async function later(env: Env, envelope: Envelope, seconds: number) {
   const delaySeconds = Math.min(MAX_DELAY_SECONDS, Math.max(1, Math.ceil(seconds)));
-  await (env.PLATFORM_CHECKS ?? env.PLATFORM_QUEUE).send(envelope, { delaySeconds });
+  await carriedQueue(env.PLATFORM_CHECKS ?? env.PLATFORM_QUEUE).send(envelope, { delaySeconds });
 }
 
 /**
@@ -220,7 +222,13 @@ export async function executeCheckRun(env: Env, envelope: Envelope): Promise<voi
     const executor = env.CHECK_RUNNERS.get(
       env.CHECK_RUNNERS.idFromName(`${run.run_id}:${run.epoch}`),
     );
-    await executor.launch(job, { ...report, evidence });
+    await executor.launch(
+      { ...job, request_id: carriedHeaders()?.[REQUEST_ID_HEADER] },
+      {
+        ...report,
+        evidence,
+      },
+    );
   } catch (e) {
     if (!capacityUnavailable(e)) return failCheckRun(env, report, e);
     await call({ op: 'repo_check_release', run_id: run.run_id, epoch: run.epoch });

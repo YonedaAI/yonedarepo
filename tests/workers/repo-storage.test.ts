@@ -99,12 +99,12 @@ it('logs repo.storage once per level crossed, not every sample', async () => {
   expect(crossings()).toEqual([]);
   await touchActivity(scoped, repo, 2, 5_000_000_000);
   await touchActivity(scoped, repo, 3, 5_100_000_000);
-  expect(crossings()).toEqual([{ event: 'repo.storage', repo, level: 5_000_000_000, db_bytes: 5_000_000_000 }]);
+  expect(crossings()).toEqual([{ event: 'repo.storage', level: 'info', repo, threshold: 5_000_000_000, db_bytes: 5_000_000_000 }]);
   await touchActivity(scoped, repo, 4, 9_500_000_000);
-  expect(crossings().map((e) => e.level)).toEqual([5_000_000_000, 8_000_000_000, 9_000_000_000]);
+  expect(crossings().map((e) => e.threshold)).toEqual([5_000_000_000, 8_000_000_000, 9_000_000_000]);
   // Back under a level (data deleted) and over it again is a new crossing.
   await touchActivity(scoped, repo, 5, 7_000_000_000);
   await touchActivity(scoped, repo, 6, 8_000_000_000);
-  expect(crossings().map((e) => e.level)).toEqual([5_000_000_000, 8_000_000_000, 9_000_000_000, 8_000_000_000]);
+  expect(crossings().map((e) => e.threshold)).toEqual([5_000_000_000, 8_000_000_000, 9_000_000_000, 8_000_000_000]);
   log.mockRestore();
 });

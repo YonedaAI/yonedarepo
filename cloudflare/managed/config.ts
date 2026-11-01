@@ -15,6 +15,9 @@ import type { WorkspaceAgents } from './workspace-agents';
 export interface ManagedEnv {
   /** The deployed commit, set by `cargo xtask deploy`; /health reports it. */
   BUILD_REVISION?: string;
+  /** `on`: the request id goes on every response and travels with each hop
+   * (worker/request-scope.ts). */
+  REQUEST_IDS?: string;
   REPOS: DurableObjectNamespace<RepoAgents>;
   WORKSPACES: DurableObjectNamespace<WorkspaceAgents>;
   LEDGER: DurableObjectNamespace<CreditLedger>;

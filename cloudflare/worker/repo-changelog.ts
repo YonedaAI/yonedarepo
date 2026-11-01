@@ -8,6 +8,7 @@
 // repository waiting. A repository with no cursor starts at its head (as a new webhook does:
 // start_for_new_hook), and a stream that stalls past MAX_STALL_MS or the authority's
 // MAX_HOLD_VERSIONS stops holding log compaction and jumps to the head, leaving a logged gap.
+import { log } from './log';
 import { ApiError, caller, type Json, type RepoContext } from './repo-ops';
 import type { Env } from './types';
 
@@ -110,7 +111,7 @@ export async function changeLogHold(env: Env, repo: string) {
     return Math.min(state.version, ...live);
   } catch (e: any) {
     const message = String(e?.message ?? e).slice(0, 200);
-    console.error(JSON.stringify({ event: 'changelog.hold_failed', repo, message }));
+    log.error('changelog.hold_failed', { repo, message });
     return undefined;
   }
 }
@@ -138,13 +139,13 @@ export async function skipChangeLog(env: Env, repo: string, head: number, reason
         last_gap: gap,
       };
       if (await swapCursor(env, repo, cursor.etag, state)) {
-        console.error(JSON.stringify({ event: 'changelog.gap', repo, ...gap }));
+        log.error('changelog.gap', { repo, ...gap });
         return state;
       }
     }
   } catch (e: any) {
     const message = String(e?.message ?? e).slice(0, 200);
-    console.error(JSON.stringify({ event: 'changelog.skip_failed', repo, message }));
+    log.error('changelog.skip_failed', { repo, message });
   }
   return null;
 }
@@ -239,7 +240,7 @@ export async function emitChangeLog(env: Env, repo: string): Promise<ChangeLogSt
       message: String(e?.message ?? e).slice(0, 200),
       at: new Date().toISOString(),
     };
-    console.error(JSON.stringify({ event: 'changelog.emit_failed', repo, ...error }));
+    log.error('changelog.emit_failed', { repo, ...error });
     state = await giveBack(env, repo, claimed, error).catch(() => state);
   }
   return state;

@@ -4,6 +4,7 @@
 // the getting-started steps. Each repository's numbers come from its D1 summary (the
 // authority's `repo_activity` answer); a view re-reads at most REFRESHES authorities whose
 // summary is missing, touched since or old, and reports the rest as pending.
+import { log } from './log';
 import { accountOf, listRepositories } from './repo-admin';
 import { type Credentials, caller, type Json } from './repo-ops';
 import type { Env } from './types';
@@ -149,7 +150,7 @@ export async function accountActivity(
     read.map((id) =>
       refresh(env, id, now).then(
         (summary) => summaries.set(id, summary),
-        (e) => console.warn(`activity read failed for ${id}: ${e?.message ?? e}`),
+        (e) => log.warn('activity.read_failed', { repo: id, error: e }),
       ),
     ),
   );

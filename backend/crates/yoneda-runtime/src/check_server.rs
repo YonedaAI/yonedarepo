@@ -32,7 +32,7 @@ pub(crate) fn router(secret: String) -> axum::Router {
                                 .into_response();
                         }
                     };
-                    answer(check_runner::run(request, arrived).await)
+                    answer(traced(&headers, check_runner::run(request, arrived)).await)
                 }
             }),
         )
@@ -45,7 +45,8 @@ pub(crate) fn router(secret: String) -> axum::Router {
                     if !authorized(&secret, &headers) {
                         return forbidden();
                     }
-                    answer(check_stream::run_stream(body.into_data_stream(), arrived).await)
+                    let run = check_stream::run_stream(body.into_data_stream(), arrived);
+                    answer(traced(&headers, run).await)
                 }
             }),
         )
@@ -56,6 +57,37 @@ fn authorized(secret: &str, headers: &axum::http::HeaderMap) -> bool {
     !secret.is_empty()
         && headers.get("authorization").and_then(|v| v.to_str().ok())
             == Some(format!("Bearer {secret}").as_str())
+}
+
+/// The request this check descends from, as the Worker names it; only the characters an id
+/// has reach a log line.
+fn request_id(headers: &axum::http::HeaderMap) -> &str {
+    headers
+        .get("x-request-id")
+        .and_then(|v| v.to_str().ok())
+        .filter(|id| {
+            id.len() <= 64
+                && id
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'))
+        })
+        .unwrap_or("")
+}
+
+/// `check`, with a line as it starts and ends that a Worker's log line can be matched to. The
+/// outcome goes in the line, never what the check printed: that is the repository's content.
+async fn traced<T>(
+    headers: &axum::http::HeaderMap,
+    check: impl Future<Output = Result<T>>,
+) -> Result<T> {
+    let request_id = request_id(headers);
+    tracing::info!(event = "check.started", request_id);
+    let result = check.await;
+    match &result {
+        Ok(_) => tracing::info!(event = "check.finished", request_id),
+        Err(e) => tracing::warn!(event = "check.failed", request_id, error_code = %e.code),
+    }
+    result
 }
 
 fn forbidden() -> axum::response::Response {

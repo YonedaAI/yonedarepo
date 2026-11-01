@@ -7,6 +7,9 @@
 // unknown kind is acked and dropped (platform-entrypoint.ts). So `LAND_WHEN_CLEARED` stays off
 // through the deploy that ships the handler and goes on in a later one (docs/runbook.md); a
 // rollback past the handler drops messages, which waits for the next trigger and loses nothing.
+
+import { log } from './log';
+import { carriedQueue } from './request-scope';
 import type { Env, Json } from './types';
 
 export const LAND_CHECK = 'platform_land_check';
@@ -23,7 +26,7 @@ export async function sendLandChecks(env: Env, repo: string, answer: Json) {
     body: { v: 1 as const, kind: LAND_CHECK, repo_id: repo, job_id: String(number), number },
   }));
   // The op committed: this can't fail it.
-  await env.PLATFORM_QUEUE.sendBatch(jobs).catch((e: Error) =>
-    console.warn(`land check dispatch failed: ${e?.message ?? e}`),
-  );
+  await carriedQueue(env.PLATFORM_QUEUE)
+    .sendBatch(jobs)
+    .catch((e: Error) => log.warn('land_check.dispatch_failed', { error: e }));
 }

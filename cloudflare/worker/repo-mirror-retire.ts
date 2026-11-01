@@ -16,6 +16,7 @@
 //    deleted (already gone counts), and `retired` closes the retirement.
 // Reads keep working throughout: from the mirror until the switch, from the store of record
 // after it (a store still naming the deleted mirror finds nothing there and reads on).
+import { log } from './log';
 import { noteBundles } from './repo-bundles';
 import { accessEverywhere } from './repo-head';
 import {
@@ -88,7 +89,7 @@ export async function retireMirror(env: Env, repo: string): Promise<number | nul
     // Not a failure: the job comes back after the hold, and its lease runs out meanwhile.
     if (e?.code === 'LEGAL_HOLD') throw e;
     const detail = `${e?.code ?? 'ERROR'}: ${String(e?.message ?? e).slice(0, 400)}`;
-    console.warn(`mirror retirement of ${repo} stopped: ${detail}`);
+    log.warn('mirror.retire_stopped', { repo, why: detail });
     await call({ op: 'repo_mirror_failed', epoch, detail }).catch(() => {});
     return Date.now() + RETRY_MS;
   }

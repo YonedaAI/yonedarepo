@@ -10,6 +10,7 @@ import {
   failCheckRun,
   withDeadline,
 } from './repo-checks';
+import { inScope, REQUEST_ID_HEADER } from './request-scope';
 import type { Env } from './types';
 
 export type CheckJob = {
@@ -17,6 +18,8 @@ export type CheckJob = {
   timeout_seconds: number;
   /** The files at the checked tree (within the runner's scope), content as raw bytes. */
   files: { path: string; type: string; data: Uint8Array }[];
+  /** The request this check descends from, for the runtime's log lines. */
+  request_id?: string;
 };
 
 /** The container operations one check needs (the Durable Object, or a test double). */
@@ -67,7 +70,11 @@ export async function executeCheck(instance: CheckInstance, job: CheckJob, start
       instance.containerFetch(
         new Request(`http://check${path}`, {
           method: 'POST',
-          headers: { 'content-type': type, authorization: `Bearer ${started.secret}` },
+          headers: {
+            'content-type': type,
+            authorization: `Bearer ${started.secret}`,
+            ...(job.request_id && { [REQUEST_ID_HEADER]: job.request_id }),
+          },
           body,
           signal: AbortSignal.timeout((job.timeout_seconds + 30) * 1000),
         }),
@@ -123,7 +130,18 @@ export class CheckContainer extends Container<Env> {
   sleepAfter = '2m';
 
   launch(job: CheckJob, report: CheckReport): Promise<void> {
-    return launchCheck(this, this.env, job, report, (work) => this.ctx.waitUntil(work));
+    const scope = {
+      env: this.env,
+      job: {
+        repo_id: report.repo,
+        job_id: String(report.run.run_id),
+        kind: 'platform_check',
+        request_id: job.request_id,
+      },
+    };
+    return inScope(scope, () =>
+      launchCheck(this, this.env, job, report, (work) => this.ctx.waitUntil(work)),
+    );
   }
 
   /** An instance left idle (its caller vanished mid-run) is killed, not asked to stop. */

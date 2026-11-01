@@ -4,8 +4,10 @@
 // the events wait in the repository for its next change, or for its purge, and the log's
 // cursor per source drops a repeat. A person has no log, so their repository's events are
 // settled unread. Off, no command asks for events, so none of this runs.
+
 import { auditOn } from './account-audit';
 import { afterAnswer } from './background';
+import { log } from './log';
 import { caller, type Json } from './repo-ops';
 import type { Env } from './types';
 import { auditLog, workspace } from './workspace';
@@ -14,7 +16,7 @@ const PAGE = 100;
 /** Pages one copy moves; a longer backlog waits for the next. */
 const ROUNDS = 5;
 
-const warned = (e: any) => console.warn(`repository audit copy failed: ${e?.message ?? e}`);
+const warned = (e: any) => log.warn('audit.repo_copy_failed', { error: e });
 
 /** Whether `owner` is an organization: it answers for itself, and a person doesn't. */
 const isOrg = (env: Env, owner: string) =>

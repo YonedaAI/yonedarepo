@@ -10,6 +10,7 @@
 // legal hold, and no account can ask for it: the undo window exists to survive a stolen token.
 // Every action writes admin_audit.
 // Contact emails appear in these answers only.
+
 import { normalizeAccountIdentifier } from '../../shared/account';
 import { accountSummary, recordAccount } from './account-index';
 import { isAdminAccount } from './admin-auth';
@@ -39,6 +40,7 @@ import { ApiError, type Credentials, caller, type Json, RepoContext } from './re
 import { dispatchPurge } from './repo-projection';
 import { quarantineRoute } from './repo-quarantine';
 import { backfillSummaries } from './repo-search-summary';
+import { carriedHeaders } from './request-scope';
 import type { Env } from './types';
 import { workspace } from './workspace';
 
@@ -215,6 +217,7 @@ async function managed(env: Env, method: 'GET' | 'POST', account: string, body?:
       headers: {
         authorization: `Bearer ${env.MANAGED_ADMIN_TOKEN}`,
         'content-type': 'application/json',
+        ...carriedHeaders(),
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
     },
