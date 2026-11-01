@@ -1,0 +1,215 @@
+/* The Flight Path's panels under the route: the instrument dials and the clearance strip. */
+/* Instruments on the route's grid: each dial starts on a fix's line. */
+.fp-instruments {
+  padding: var(--sp-5) 0 var(--sp-5) var(--site-gutter);
+  border-top: 1px solid var(--site-line);
+}
+.fp-dials {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fp-dials li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--sp-3);
+  align-items: center;
+  max-width: none;
+  padding-right: var(--sp-3);
+}
+.fp-dial {
+  display: block;
+  width: clamp(88px, 11vw, 136px);
+}
+.fp-dial-face {
+  fill: var(--fp-face);
+}
+.fp-dial-rim {
+  fill: none;
+  stroke: var(--fp-face-ink);
+  stroke-width: 0.75;
+  opacity: 0.25;
+}
+.fp-dial-letter {
+  fill: var(--fp-face-ink);
+  font-size: 9px;
+  font-weight: 500;
+  text-anchor: middle;
+}
+.fp-dial-tick {
+  stroke: var(--fp-face-ink);
+  stroke-width: 1;
+  opacity: 0.7;
+}
+.fp-dial-scale {
+  fill: none;
+  stroke: var(--fp-face-ink);
+  stroke-width: 1;
+  opacity: 0.7;
+}
+.fp-band {
+  fill: none;
+  stroke-width: 5;
+}
+.fp-band-good {
+  stroke: var(--fp-face-good);
+}
+.fp-band-warn {
+  stroke: var(--fp-face-warn);
+}
+.fp-band-bad {
+  stroke: var(--fp-face-bad);
+}
+.fp-dial-needle {
+  stroke: var(--fp-face-ink);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.fp-dial-hub {
+  fill: var(--fp-face-ink);
+}
+.fp-dial-index {
+  fill: var(--fp-face-ink);
+}
+.fp-dial-dot,
+.fp-dial-centre {
+  fill: none;
+  stroke: var(--fp-face-ink);
+  stroke-width: 1.5;
+}
+.fp-dial-bar {
+  stroke: var(--fp-face-good);
+  stroke-width: 3.5;
+  stroke-linecap: round;
+}
+.fp-dial-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--sp-2);
+  font-size: var(--fs-sm);
+}
+.fp-dial-value {
+  color: var(--site-text);
+  font-size: var(--fs-md);
+  font-weight: 500;
+}
+.fp-dial-detail {
+  font-size: var(--fs-xs);
+  line-height: 1.35;
+}
+
+/* The flight strip: a long slip in printed compartments, as in a control tower, ending in the
+   decision lit like an annunciator. */
+.fp-clearance {
+  padding: var(--sp-5) var(--site-gutter);
+  border-top: 1px solid var(--site-line);
+}
+.fp-strip {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1.5fr) minmax(0, 0.7fr) minmax(0, 1fr) auto;
+  background: var(--site-bg);
+  border: 1px solid var(--site-line-strong);
+}
+.fp-strip > * {
+  padding: var(--sp-3) var(--sp-4);
+}
+.fp-strip > * + * {
+  border-left: 1px solid var(--site-line-strong);
+}
+.fp-strip ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--sp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.fp-strip li,
+.fp-strip-approval p:last-child {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-1);
+  max-width: none;
+  color: var(--site-text);
+  white-space: nowrap;
+}
+.fp-strip svg {
+  flex: none;
+  color: var(--site-good);
+}
+.fp-strip-id {
+  display: flex;
+  align-items: center;
+  color: var(--site-text);
+  font-family: var(--font-display);
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.fp-strip-label {
+  font-size: var(--fs-xs);
+}
+.fp-strip-line p:last-child {
+  color: var(--site-text);
+}
+.fp-strip .fp-strip-cleared {
+  display: flex;
+  align-items: center;
+  padding-inline: var(--sp-5);
+  background: var(--site-good);
+  color: var(--site-accent-text);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.fp-black-box {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--site-gutter);
+  border-top: 1px solid var(--site-line);
+  font-size: var(--fs-sm);
+}
+.fp-black-box::before {
+  content: "";
+  flex: none;
+  width: 16px;
+  height: 11px;
+  border-radius: 2px;
+  background: var(--site-warn);
+}
+
+@media (max-width: 700px) {
+  .fp-instruments {
+    padding-right: var(--site-gutter);
+  }
+  .fp-dials {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--sp-4);
+  }
+  .fp-dials li {
+    padding-right: 0;
+  }
+  .fp-dial {
+    width: 96px;
+  }
+  .fp-strip {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .fp-strip > div {
+    border-top: 1px solid var(--site-line-strong);
+  }
+  .fp-strip-checks {
+    grid-column: 1 / -1;
+    border-left: 0;
+  }
+  .fp-strip .fp-strip-approval {
+    border-left: 0;
+  }
+  .fp-strip-cleared {
+    grid-row: 1;
+    grid-column: 2;
+  }
+}
