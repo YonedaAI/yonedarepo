@@ -81,6 +81,9 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
   grep <query> [--path <p>] [-i] [-w|--word] [--at <version>]
   search <query> [--in code,memories,commits,sessions,changes] [--limit <n>] [--path <p>] [-w|--word]
          [--ref <b>] [--at <version>]   code, memories, commits, sessions and changes at once
+  search <query> --all [--in <groups>] [--limit <n>] [-w|--word] [--after <next>]
+                                      across your repositories: main's code, and the newest 25's
+                                      records; --after continues from a page's next
   blame <path> [--ref <b>] [--at <version>]
   diff [<base>] [<head>] [--path <p>] [--at <version>]
   symbols <path> [--at <version>]
