@@ -16,6 +16,8 @@ const neutral = new Set([
   // The logger and the request's scope; they import only each other and types.
   './log',
   './request-scope',
+  // Work in flight in one isolate; imports nothing.
+  './flights',
   // Durable Object call with one retry on a reset instance; imports nothing.
   './durable',
   // Container SDK errors proving no instance was allocated (capacity); imports nothing.
