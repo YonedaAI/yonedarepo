@@ -4,6 +4,7 @@
 // and nowhere public. /heartbeat is public: the dead-man (deadman.ts) reads it, and it says only
 // when passes last ran.
 import { isWatchable, type SuperfanEnv, wideOn } from './config';
+import { parseDeploy } from './ledger-deploys';
 import { noticesOn } from './notify';
 import { QUICK_CRON, runQuick } from './quick';
 import { aggregate } from './tail';
@@ -34,14 +35,23 @@ export async function superfanFetch(req: Request, env: SuperfanEnv): Promise<Res
   const url = new URL(req.url);
   if (url.pathname === '/heartbeat')
     return json({ ...(await ledgerStub(env).beats()), notices: noticesOn(env) });
-  if (!['/findings', '/status', '/run'].includes(url.pathname)) return refuse('NOT_FOUND', 404);
+  if (!['/findings', '/status', '/run', '/deploys'].includes(url.pathname))
+    return refuse('NOT_FOUND', 404);
   if (!(await authorized(req, env))) return refuse('UNAUTHORIZED', 401);
   const ledger = ledgerStub(env);
   if (url.pathname === '/run') {
     if (req.method !== 'POST') return refuse('METHOD_NOT_ALLOWED', 405);
     return json(await runWatch(env));
   }
+  if (url.pathname === '/deploys' && req.method === 'POST') {
+    const row = parseDeploy(await req.json().catch(() => null), env.WATCH_SCRIPT);
+    if (!row) return refuse('INVALID_DEPLOY', 400);
+    await ledger.recordDeploy(row);
+    return json({ recorded: true });
+  }
   if (req.method !== 'GET') return refuse('METHOD_NOT_ALLOWED', 405);
+  const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 200);
+  if (url.pathname === '/deploys') return json({ deploys: await ledger.deploys(limit) });
   if (url.pathname === '/status') {
     const now = Date.now();
     return json({
@@ -56,13 +66,13 @@ export async function superfanFetch(req: Request, env: SuperfanEnv): Promise<Res
       model: env.SUPERFAN_MODEL,
       notices: noticesOn(env) ? 'email' : 'off',
       wide: wideOn(env),
+      last_deploy: (await ledger.deploys(1))[0] ?? null,
       ...(await ledger.status(now)),
     });
   }
   const status = url.searchParams.get('status') ?? 'open';
   if (status !== 'open' && status !== 'resolved' && status !== 'all')
     return refuse('INVALID_STATUS', 400);
-  const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 200);
   return json({ findings: await ledger.findings(status, limit) });
 }
 

@@ -10,6 +10,7 @@ mod deploy_exec;
 mod deploy_guard;
 mod deploy_image;
 mod deploy_inputs;
+mod deploy_ledger;
 mod deploy_live;
 mod deploy_prebuilt;
 mod deploy_registry;

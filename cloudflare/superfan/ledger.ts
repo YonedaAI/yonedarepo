@@ -4,6 +4,7 @@
 // or double-mail.
 import { DurableObject } from 'cloudflare:workers';
 import type { SuperfanEnv } from './config';
+import { type DeployRow, insertDeploy, latestRevision, recentDeploys } from './ledger-deploys';
 import {
   type Level,
   type NarrativeStatus,
@@ -47,6 +48,9 @@ export interface FindingRow {
   last_seen: string;
   resolved_at: string | null;
   notified_at: string | null;
+  /** The release it was first seen on, and the latest; null when neither was known. */
+  revision: string | null;
+  last_revision: string | null;
 }
 
 export const utcDay = (now: number) => new Date(now).toISOString().slice(0, 10);
@@ -85,6 +89,19 @@ export class SuperfanLedger extends DurableObject<SuperfanEnv> {
 
   marks(start: number) {
     return markWindow(this.ctx.storage.sql, start);
+  }
+
+  /** One row of the deploy ledger; a repeat changes nothing. */
+  recordDeploy(row: DeployRow) {
+    this.#tx((sql) => insertDeploy(sql, row));
+  }
+
+  deploys(limit: number) {
+    return recentDeploys(this.ctx.storage.sql, limit);
+  }
+
+  latestRevision() {
+    return latestRevision(this.ctx.storage.sql);
   }
 
   /** A quick pass finished; a full pass's beat is its finished run. */

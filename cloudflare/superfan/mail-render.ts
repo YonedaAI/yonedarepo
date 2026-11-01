@@ -33,6 +33,8 @@ interface Item {
   detail: string | null;
   since: string | null;
   seen: string;
+  /** The release it began on, and the one it is on now if that differs. */
+  release: string | null;
   first: string;
   link: { label: string; href: string } | null;
   guess: string | null;
@@ -75,6 +77,15 @@ const seen = (times: number) =>
     : times === 2
       ? 'Seen twice.'
       : `Seen ${times.toLocaleString('en-US')} times.`;
+
+const short = (revision: string) => revision.slice(0, 12);
+/** Which release to look at: a mail reader's "what changed?". */
+function release({ revision, last_revision: last }: FindingRow) {
+  if (!revision) return null;
+  return last && last !== revision
+    ? `First on ${short(revision)}, now on ${short(last)}.`
+    : `On ${short(revision)}.`;
+}
 
 type Stored = { signals?: { name: string; value: number | null; baseline?: number }[] };
 type Samples = { exception_samples?: unknown[] };
@@ -130,12 +141,14 @@ function item(group: Group, site: MailSite): Item {
   const earliest = rows.map((f) => f.first_seen).sort()[0];
   const link: Link | undefined = copy.link?.(component);
   const [only] = rows;
+  const oldest = rows.reduce((a, b) => (b.first_seen < a.first_seen ? b : a));
   return {
     title: copy.title(facts),
     means: typeof copy.means === 'string' ? copy.means : copy.means(facts),
     detail: copy.reason ? only.summary.slice(0, DETAIL_MAX) : null,
     since: readable(earliest),
     seen: seen(Math.max(...rows.map((f) => f.occurrences))),
+    release: release(oldest),
     first: copy.firstOn?.[component] ?? copy.first,
     link: link
       ? { label: link.label, href: `${link.api ? site.api : site.site}${link.path}` }
@@ -147,7 +160,8 @@ function item(group: Group, site: MailSite): Item {
   };
 }
 
-const when = (i: Item) => [i.since && `Since ${i.since}.`, i.seen].filter(Boolean).join(' ');
+const when = (i: Item) =>
+  [i.since && `Since ${i.since}.`, i.seen, i.release].filter(Boolean).join(' ');
 
 function plain(heading: string, items: Item[]) {
   const block = (i: Item) =>

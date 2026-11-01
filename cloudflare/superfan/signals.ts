@@ -135,9 +135,11 @@ export function problems(r: ComponentReport): { key: string; level: Level; fired
 export function observation(
   r: ComponentReport,
   p: ReturnType<typeof problems>[number],
+  revision: string | null = null,
 ): Observation {
   return {
     key: p.key,
+    revision,
     component: r.component,
     kind: 'anomaly',
     level: p.level,

@@ -5,12 +5,18 @@ export interface Health {
   ok: boolean;
   status: number | null;
   latencyMs: number;
+  /** The commit it reports; null when it did not say. */
+  revision?: string | null;
 }
 
 /** The `service` each Worker's /health answers with. */
 export const PLATFORM_SERVICE = 'yonedarepo-platform';
 export const FRONT_SERVICE = 'yonedarepo';
 const PROBE_RETRY_MS = 2_000;
+const COMMIT = /^[0-9a-f]{40}$/;
+
+export const revisionOf = (body: Row | null) =>
+  typeof body?.revision === 'string' && COMMIT.test(body.revision) ? body.revision : null;
 
 /** A Worker's public health endpoint; also keeps one tail event flowing per run. */
 export async function probe(url: string, service = PLATFORM_SERVICE): Promise<Health> {
@@ -22,6 +28,7 @@ export async function probe(url: string, service = PLATFORM_SERVICE): Promise<He
       ok: res.ok && body?.service === service,
       status: res.status,
       latencyMs: Date.now() - started,
+      revision: revisionOf(body),
     };
   } catch {
     return { ok: false, status: null, latencyMs: Date.now() - started };

@@ -1,6 +1,7 @@
 //! Live state of a deployed environment: `/health` revisions, busy containers, and the
 //! `rollback` / `status` commands.
 use crate::deploy_guard::{self as guard, Options, short};
+use crate::deploy_ledger as ledger;
 use crate::infra::inventory::{self, Deployable};
 use crate::infra::spec::{Env, Lock, Spec};
 use crate::infra::wrangler::{self, table};
@@ -42,13 +43,13 @@ async fn health_body(origin: &str, address: Option<std::net::SocketAddr>) -> Opt
         .ok()
 }
 
-fn host_of(origin: &str) -> Option<&str> {
+pub(crate) fn host_of(origin: &str) -> Option<&str> {
     let host = origin.strip_prefix("https://")?;
     Some(host.split(['/', ':']).next().unwrap_or(host))
 }
 
 /// The origin host's first A record from 1.1.1.1 (DNS over HTTPS, no local resolver).
-async fn public_address(origin: &str) -> Option<std::net::SocketAddr> {
+pub(crate) async fn public_address(origin: &str) -> Option<std::net::SocketAddr> {
     let answer: Value = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
@@ -220,11 +221,43 @@ pub(crate) async fn rollback(args: &[String]) -> Result<()> {
     }
     let spec = Spec::load(&env)?;
     let workers = inventory::deployables(&spec, &Lock::load(&env)?)?;
+    let started_at = ledger::now_ms();
+    let outcome = roll_back_each(&env, &spec, &workers, &options);
+    if !options.dry_run {
+        record_rollback(&env, &spec, &workers, outcome.is_ok(), started_at).await;
+    }
+    outcome?;
+    status_table(&env, &workers).await
+}
+
+/// What the rollback left running goes in the ledger: its revision comes from `/health`, not
+/// from HEAD. Superfan rolls back too, so this reaches the previous release's Superfan.
+async fn record_rollback(
+    env: &Env,
+    spec: &Spec,
+    workers: &[Deployable],
+    ok: bool,
+    started_at: u64,
+) {
+    let platform = workers.iter().find(|w| w.role == "platform");
+    let live = match platform {
+        Some(worker) => live_revision(worker).await,
+        None => None,
+    };
+    let Some(revision) = live else {
+        println!("WARNING: deploy ledger not written: the platform /health is unreadable.");
+        return;
+    };
+    let entry = ledger::Entry::new(env, &revision, ledger::Kind::Rollback, ok, started_at);
+    ledger::record(spec, workers, &entry).await;
+}
+
+fn roll_back_each(env: &Env, spec: &Spec, workers: &[Deployable], options: &Options) -> Result<()> {
     let message = format!("cargo xtask rollback --env {}", env.name());
     for worker in workers.iter().rev() {
         if env.is_prod() && worker.has_containers {
             let active = active_instances(&spec.account_id, worker)?;
-            guard::active_gate(&env, &worker.name, active, &options)?;
+            guard::active_gate(env, &worker.name, active, options)?;
         }
         if options.dry_run {
             println!(
@@ -245,7 +278,7 @@ pub(crate) async fn rollback(args: &[String]) -> Result<()> {
             ],
         )?;
     }
-    status_table(&env, &workers).await
+    Ok(())
 }
 
 pub(crate) async fn status(args: &[String]) -> Result<()> {

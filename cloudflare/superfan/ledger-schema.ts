@@ -98,6 +98,21 @@ export const MIGRATIONS: string[] = [
      name TEXT PRIMARY KEY,
      at INTEGER NOT NULL
    );`,
+  // The deploy ledger, and the release each finding was first and last seen on.
+  `ALTER TABLE findings ADD COLUMN revision TEXT;
+   ALTER TABLE findings ADD COLUMN last_revision TEXT;
+   CREATE TABLE deploys (
+     id INTEGER PRIMARY KEY,
+     revision TEXT NOT NULL,
+     env TEXT NOT NULL,
+     who TEXT NOT NULL,
+     kind TEXT NOT NULL CHECK (kind IN ('deploy','rollback')),
+     outcome TEXT NOT NULL CHECK (outcome IN ('ok','failed')),
+     started_at INTEGER NOT NULL,
+     finished_at INTEGER NOT NULL,
+     UNIQUE (revision, started_at)
+   );
+   CREATE INDEX deploys_recent ON deploys(finished_at DESC);`,
 ];
 
 /** Applies pending migrations; safe to call on every Durable Object start. */

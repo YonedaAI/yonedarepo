@@ -166,6 +166,7 @@ async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<Wat
       return null;
     }),
   ]);
+  const revision = site?.health.revision ?? (await ledger.latestRevision());
   const findings: number[] = [];
   const present: string[] = [];
   for (const p of faults.filter((x, i) => faults.findIndex((y) => y.reason === x.reason) === i)) {
@@ -178,6 +179,7 @@ async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<Wat
         kind: 'telemetry',
         signals: [{ name: p.reason, detail: p.message }],
         summary: p.message,
+        revision,
       },
       now,
     );
@@ -206,7 +208,7 @@ async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<Wat
     for (const problem of problems(report)) {
       present.push(problem.key);
       anomalies++;
-      const seen = await ledger.observe(observation(report, problem), now);
+      const seen = await ledger.observe(observation(report, problem, revision), now);
       findings.push(seen.id);
       seenProblems.push({ seen, report });
     }
