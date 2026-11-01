@@ -2,6 +2,7 @@
 // calls these has checked that the caller owns the org.
 import { normalizeAccountIdentifier } from '../../shared/account';
 import { auditCatchUp } from './account-audit';
+import { sealAfterAnswer } from './platform-audit-seal';
 import { ApiError } from './repo-ops';
 import type { Env } from './types';
 import { auditLog } from './workspace';
@@ -33,11 +34,13 @@ export async function auditPage(env: Env, org: string, query: URLSearchParams) {
     throw new ApiError('INVALID_INPUT', 'limit must be 1-200');
   const filters = auditFilters(query);
   await auditCatchUp(env, org);
-  return auditLog(env, org, {
+  const page = await auditLog(env, org, {
     op: 'audit_read',
     ...filters,
     ...(raw !== null && { limit: Number(raw) }),
   });
+  await sealAfterAnswer(env, org);
+  return page;
 }
 
 /** `GET /orgs/:org/audit/verify[?after=<seq>]`: one page of the chain's walk. */

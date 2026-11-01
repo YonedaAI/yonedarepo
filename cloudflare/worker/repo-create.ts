@@ -7,7 +7,7 @@ import { bounded, boundedRetry, failureCode } from './durable';
 import { log } from './log';
 import { orgArg, orgCaller, orgCommand } from './platform-orgs';
 import { asyncStore, dispatchStore } from './repo-artifacts-store';
-import { auditRepo } from './repo-audit';
+import { auditRepo, auditRepoForget } from './repo-audit';
 import { commit } from './repo-commit';
 import { refreshHead } from './repo-head';
 import { defaultBranchSoon, startImport } from './repo-import';
@@ -129,8 +129,8 @@ function startShards(env: Env, id: string) {
 /**
  * Takes back a failed create, so that repeating it finds nothing in its way: the answer
  * waits (boundedly) for the name and the listing, and a repository the authority accepted
- * is deleted after it, tokens and objects with it. Nobody was told its id, so nothing
- * refers to it. Never throws: the failure answered is the create's own. A store or
+ * is deleted after it, tokens and objects with it. Nobody was told its id, so there is
+ * nothing to undo or log. Never throws: the failure answered is the create's own. A store or
  * authority whose create landed after its bound stays, unreachable by name or listing.
  */
 async function takeBack(
@@ -149,7 +149,7 @@ async function takeBack(
   if (!accepted) return;
   await afterAnswer(async () => {
     await ctx.call({ op: 'repo_delete', confirm: name });
-    // Nobody ever saw it, so there is nothing to undo.
+    await auditRepoForget(env, repo);
     await dispatchPurge(env, repo, 'now');
   }).catch(left);
 }

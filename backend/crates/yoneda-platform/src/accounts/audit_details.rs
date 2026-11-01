@@ -25,6 +25,15 @@ use Field::{Count, Text, UrlHost, Word, Words};
 
 /// Each kind's fields. A kind is added here on purpose, with the fields a reader needs.
 const KINDS: &[(&str, &[(&str, Field)])] = &[
+    (
+        "audit.exported",
+        &[
+            ("format", Word),
+            ("kind", Word),
+            ("of_actor", Word),
+            ("before", Count),
+        ],
+    ),
     ("org.created", &[("org", Word)]),
     ("org.deleted", &[("org", Word)]),
     (
@@ -130,6 +139,19 @@ const KINDS: &[(&str, &[(&str, Field)])] = &[
         ],
     ),
     (
+        "repo.break_glass",
+        &[
+            ("repo", Word),
+            ("name", Word),
+            ("action", Word),
+            ("ref", Word),
+            ("commit", Word),
+            ("target", Word),
+            ("version", Count),
+            ("reason", Text),
+        ],
+    ),
+    (
         "repo.retention_changed",
         &[
             ("repo", Word),
@@ -149,6 +171,15 @@ const KINDS: &[(&str, &[(&str, Field)])] = &[
     ),
     (
         "webhook.deleted",
+        &[
+            ("repo", Word),
+            ("name", Word),
+            ("id", Word),
+            ("url", UrlHost),
+        ],
+    ),
+    (
+        "webhook.disabled",
         &[
             ("repo", Word),
             ("name", Word),

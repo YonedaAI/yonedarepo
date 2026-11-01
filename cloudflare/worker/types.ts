@@ -11,6 +11,8 @@ export type Envelope = {
   commits?: string[];
   /** Failed attempts a store job follows (repo-store-create.ts). */
   attempt?: number;
+  /** When an erase job first found the audit log in its way (repo-erase.ts). */
+  blocked_since?: number;
   /** The Landing a clearance job looks at (repo-land-cleared.ts). */
   number?: number;
   /** The request this job descends from (request-scope.ts). Absent on older messages. */

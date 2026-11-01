@@ -9,7 +9,7 @@ import { deferred } from './background';
 import { hmacHex, toHex } from './hmac';
 import { log } from './log';
 import { touchActivity } from './repo-activity';
-import { audited } from './repo-audit';
+import { audited, auditRepo } from './repo-audit';
 import { ApiError, caller, type Json, type RepoContext } from './repo-ops';
 import { carriedQueue } from './request-scope';
 import type { Env, Envelope } from './types';
@@ -175,7 +175,12 @@ export async function deliverHook(
       ...attempt,
     });
     if (settled.stale) return {};
-    if (!settled.delivered) return settled.active ? { retry: seconds(settled.retry_after_ms) } : {};
+    if (!settled.delivered) {
+      if (settled.active) return { retry: seconds(settled.retry_after_ms) };
+      // Switched off for its failures, which the org's log says.
+      await auditRepo(env, repo);
+      return {};
+    }
     if (!settled.more) return {};
   }
   await dispatchHooks(env, repo, `hook:${id}`);

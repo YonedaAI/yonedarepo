@@ -382,3 +382,115 @@ fn events_stay_out_of_webhooks_way() {
     h.ok("platform:purge", json!({"op":"repo_purge_target"}));
     assert!(h.ok(ERASE, json!({"op":"repo_erase_plan"}))["hooks"].is_null());
 }
+
+#[test]
+fn with_the_switch_on_an_erase_waits_for_the_log() {
+    let h = Harness::new();
+    h.ok(OWNER, on(json!({"op":"repo_delete","confirm":"demo"})));
+    h.ok("platform:purge", json!({"op":"repo_purge_target"}));
+    let step = json!({"op":"repo_erase_step"});
+    assert_eq!(h.run(ERASE, on(step.clone())).unwrap_err().code, "CONFLICT");
+    assert_eq!(rows(&h), 1);
+    // It has them: the erase goes through, the rest of the tables with it.
+    h.ok(AUDIT, json!({"op":"repo_audit_done","through":i64::MAX}));
+    while h.ok(ERASE, on(step.clone()))["done"] != true {}
+    assert_eq!(rows(&h), 0);
+}
+
+#[test]
+fn with_the_switch_off_what_is_left_goes_with_the_rest() {
+    let h = Harness::new();
+    h.ok(OWNER, on(json!({"op":"repo_delete","confirm":"demo"})));
+    h.ok("platform:purge", json!({"op":"repo_purge_target"}));
+    assert_eq!(rows(&h), 1);
+    while h.ok(ERASE, json!({"op":"repo_erase_step"}))["done"] != true {}
+    assert_eq!(rows(&h), 0);
+}
+
+#[test]
+fn a_hook_switched_off_for_its_failures_is_an_event() {
+    let h = Harness::new();
+    let made = hook(&h, json!(["repo"])).unwrap();
+    h.ok(AUDIT, json!({"op":"repo_audit_done","through":i64::MAX}));
+    h.db.query("UPDATE hooks SET failures=48", &[]).unwrap();
+    h.ok(OWNER, on(json!({"op":"repo_delete","confirm":"demo"})));
+    h.ok(AUDIT, json!({"op":"repo_audit_done","through":i64::MAX}));
+    let settle = |h: &Harness| {
+        h.db.query("UPDATE hook_outbox SET next_at=0,lease_until=NULL", &[])
+            .unwrap();
+        let claim = h.ok(HOOKS, json!({"op":"repo_hook_claim","hook_id":made["id"]}));
+        h.ok(
+            HOOKS,
+            on(
+                json!({"op":"repo_hook_settle","hook_id":made["id"],"seq":claim["seq"],
+                "attempt":claim["attempt"],"ok":false,"status":500,"ms":1}),
+            ),
+        )
+    };
+    assert_eq!(settle(&h)["active"], true);
+    assert!(pending(&h).is_empty());
+    assert_eq!(settle(&h)["active"], false);
+    let events = pending(&h);
+    assert_eq!(kinds(&events), ["webhook.disabled"]);
+    assert_eq!(events[0]["data"]["actor"], HOOKS);
+    assert_eq!(events[0]["data"]["id"], made["id"].to_string());
+}
+
+#[test]
+fn a_corrupt_event_is_handed_over_as_its_seq_with_what_came_before_it() {
+    let h = Harness::new();
+    let add = |payload: &str| {
+        h.db.query(
+            "INSERT INTO hook_outbox(hook_id,event,payload) VALUES(0,'repo.renamed',?)",
+            &[json!(payload)],
+        )
+        .unwrap();
+    };
+    add(r#"{"name":"good","actor":"user:x","at":1}"#);
+    add("not json");
+    add(r#"{"name":"later","actor":"user:x","at":2}"#);
+    let read = || h.ok(AUDIT, json!({"op":"repo_audit_pending"}));
+    let first = read();
+    assert_eq!(first["events"].as_array().unwrap().len(), 1);
+    assert_eq!(first["corrupt"], 2);
+    // Settling what came before it leaves it first in line, naming the same row.
+    h.ok(
+        AUDIT,
+        json!({"op":"repo_audit_done","through":first["events"][0]["seq"]}),
+    );
+    let next = read();
+    assert_eq!(next["events"], json!([]));
+    assert_eq!(next["corrupt"], 2);
+    assert_eq!(rows(&h), 2);
+    assert!(!next.to_string().contains("not json"));
+}
+
+#[test]
+fn an_event_the_log_would_refuse_is_corrupt_too() {
+    for (n, payload) in ["[1,2]", "{\"name\":\"x\"}", "{\"at\":\"soon\"}"]
+        .iter()
+        .enumerate()
+    {
+        let h = Harness::new();
+        h.db.query(
+            "INSERT INTO hook_outbox(hook_id,event,payload) VALUES(0,'repo.renamed',?)",
+            &[json!(payload)],
+        )
+        .unwrap();
+        let answer = h.ok(AUDIT, json!({"op":"repo_audit_pending"}));
+        assert_eq!(answer["corrupt"], 1, "{n}");
+        assert_eq!(answer["events"], json!([]), "{n}");
+    }
+}
+
+#[test]
+fn nothing_corrupt_answers_null() {
+    let h = Harness::new();
+    h.ok(
+        OWNER,
+        on(json!({"op":"repo_set_visibility","visibility":"public"})),
+    );
+    let answer = h.ok(AUDIT, json!({"op":"repo_audit_pending"}));
+    assert!(answer["corrupt"].is_null());
+    assert_eq!(answer["events"].as_array().unwrap().len(), 1);
+}

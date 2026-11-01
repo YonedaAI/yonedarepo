@@ -7,13 +7,15 @@
 //! is an ordered outbox that needs no migration. Every reader there names a hook or joins
 //! `hooks`, so an older binary leaves these rows alone, and the one that lists any hook's
 //! rows (a repeated delete) would send a job that finds no such hook. The erase wipes them
-//! with the table, so the purge copies what is waiting first.
+//! with the table, so while the switch is on it refuses until the log has them all (`waiting`).
 //!
 //! Only a command carrying the adapter's `_audit` writes, which it sends while `AUDIT_LOG` is
-//! on. A row holds what the action said; what enters the log is decided there
+//! on. A row that can't be handed over is never skipped or dropped: `pending` hands over what
+//! came before it and names it, and it stays first in line, with what follows behind it, until
+//! it is mended. A row holds what the action said; what enters the log is decided there
 //! (`accounts/audit_details.rs`), and whose log it is by the adapter, as a repository doesn't
 //! know whether its owner is an org.
-use super::rows::{Settings, corrupt};
+use super::rows::Settings;
 use crate::storage::{SqlStore, number};
 use serde_json::{Value, json};
 use yoneda_core::Result;
@@ -22,6 +24,15 @@ use yoneda_core::Result;
 pub(super) const OUTBOX: i64 = 0;
 /// Events handed over at once.
 const PAGE: i64 = 100;
+
+/// Whether any event has yet to reach the log.
+pub(super) fn waiting<S: SqlStore>(db: &S) -> Result<bool> {
+    let row = db.query(
+        "SELECT seq FROM hook_outbox WHERE hook_id=? LIMIT 1",
+        &[json!(OUTBOX)],
+    )?;
+    Ok(!row.is_empty())
+}
 
 /// Records `kind`, by `actor`, in the caller's transaction. `name` is the repository's, as
 /// the change left it.
@@ -46,25 +57,34 @@ pub(super) fn record<S: SqlStore>(
     Ok(())
 }
 
-/// `repo_audit_pending {limit?}`: the oldest events waiting, and the owner whose log they go
-/// to (`workspace`).
+/// A row as the log takes it, or `None` for one it never could (`audit_log::append`).
+fn handed_over(row: &Value) -> Option<Value> {
+    let mut data: Value = serde_json::from_str(row["payload"].as_str()?).ok()?;
+    let at = data.as_object_mut()?.remove("at")?;
+    at.is_i64()
+        .then(|| json!({ "seq": row["seq"], "kind": row["event"], "at": at, "data": data }))
+}
+
+/// `repo_audit_pending {limit?}`: the oldest events waiting, the owner whose log they go to
+/// (`workspace`), and the `seq` of a row that stopped the page (`corrupt`, null without one).
 pub(super) fn pending<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value> {
     let limit = c["limit"].as_i64().unwrap_or(PAGE).clamp(1, PAGE);
     let rows = db.query(
         "SELECT seq,event,payload FROM hook_outbox WHERE hook_id=? ORDER BY seq LIMIT ?",
         &[json!(OUTBOX), json!(limit)],
     )?;
-    let events = rows
+    let mut corrupt = Value::Null;
+    let events: Vec<Value> = rows
         .iter()
-        .map(|row| {
-            let payload = row["payload"].as_str().unwrap_or_default();
-            let mut data: Value =
-                serde_json::from_str(payload).map_err(|_| corrupt("audit event"))?;
-            let at = data.as_object_mut().and_then(|d| d.remove("at"));
-            Ok(json!({ "seq": row["seq"], "kind": row["event"], "at": at, "data": data }))
+        .map_while(|row| {
+            let event = handed_over(row);
+            if event.is_none() {
+                corrupt = row["seq"].clone();
+            }
+            event
         })
-        .collect::<Result<Vec<_>>>()?;
-    Ok(json!({ "events": events, "workspace": settings.workspace }))
+        .collect();
+    Ok(json!({ "events": events, "corrupt": corrupt, "workspace": settings.workspace }))
 }
 
 /// `repo_audit_done {through}`: the log has every event up to `through`.

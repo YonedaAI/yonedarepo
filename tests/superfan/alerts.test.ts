@@ -418,6 +418,71 @@ describe('new signals', () => {
     expect(calls.mail[2].body.subject).toBe('[URGENT dev] Repository history reached its limit');
   });
 
+  describe.each([
+    ['audit.event_corrupt', 'audit_event_corrupt', 'An audit event cannot be read'],
+    ['audit.erase_blocked', 'audit_erase_blocked', 'A repository erase is held up'],
+  ])('%s', (event, signal, subject) => {
+    const REPO = 'r0123456789abcdef0123';
+    const key = `derived_jobs:${signal}`;
+
+    it('is urgent on the wide watch, and its finding and mail name the repository and event', async () => {
+      const calls = fakeUpstreams(analytics());
+      const e = wideEnv();
+      const d = deps(e, { now: start });
+      await logged(d, start, logLine(event, 'error', { repo: REPO, seq: 42, message: 'hunter2' }));
+      await runWatch(e, d);
+      const found = await finding(d, key);
+      expect(found.level).toBe('urgent');
+      expect(found.summary).toContain(`${REPO} event 42`);
+      const mail = calls.mail.find((m) => m.body.subject.includes(subject));
+      expect(mail?.body.subject).toBe(`[URGENT dev] ${subject}`);
+      expect(mail?.body.text).toContain(`${REPO} event 42`);
+      expect(mail?.body.html).toContain(`${REPO} event 42`);
+      expect(JSON.stringify([found, mail])).not.toContain('hunter2');
+    });
+
+    it('reaches a digest without the wide watch, which is what prod runs', async () => {
+      const calls = fakeUpstreams(analytics());
+      const e = testEnv({
+        ADMIN_NOTIFY_EMAIL: OWNER,
+        EMAIL_FROM: 'YonedaRepo <hello@yonedarepo.invalid>',
+        RESEND_API_KEY: { get: async () => RESEND_KEY } as SecretsStoreSecret,
+      });
+      const d = deps(e, { now: start });
+      await logged(d, start, logLine(event, 'error', { repo: REPO, seq: 42 }));
+      await runWatch(e, d);
+      const found = await finding(d, key);
+      expect(found.level).toBe('digest');
+      expect(found.summary).toContain(`${REPO} event 42`);
+      expect(calls.mail.map((m) => m.body.text).join()).toContain(`${REPO} event 42`);
+    });
+
+    it('takes ids of the right shape alone, so nothing else in a line reaches a finding', async () => {
+      fakeUpstreams(analytics());
+      const e = wideEnv();
+      const d = deps(e, { now: start });
+      await logged(d, start, logLine(event, 'error', { repo: 'hunter2@example.com', seq: 'yrp_hunter2' }));
+      await runWatch(e, d);
+      const found = await finding(d, key);
+      expect(found.summary).toContain(`${signal}=1`);
+      expect(JSON.stringify(found)).not.toContain('hunter2');
+    });
+
+    it('names a few and counts the rest, and still counts a line with no event in it', async () => {
+      fakeUpstreams(analytics());
+      const e = wideEnv();
+      const d = deps(e, { now: start });
+      await quiet(d, start);
+      const logs = [1, 2, 3, 4, 5].map((n) => logLine(event, 'error', { repo: `r${String(n).repeat(20)}`, seq: n }));
+      await feed(d.ledger, traces({ component: 'derived_jobs', count: 1, wallMs: 60, logs: [...logs, logLine(event, 'error', { repo: REPO })] }, recent(start)), start, true);
+      await runWatch(e, d);
+      const found = await finding(d, key);
+      expect(found.summary).toContain(`${signal}=6`);
+      expect(found.summary).toContain(REPO);
+      expect(found.summary).toContain('and 3 more');
+    });
+  });
+
   it('dead letters on every queue are urgent', async () => {
     const calls = fakeUpstreams(
       analytics({

@@ -389,3 +389,43 @@ fn a_revert_lands_again_on_a_branch_moved_back_below_it() {
     let refs = h.ok(OWNER, json!({"op":"repo_refs"}));
     assert_eq!(refs["refs"]["refs/heads/team"], json!(undo));
 }
+
+#[test]
+fn a_forced_landing_commits_its_audit_event_once_and_only_with_the_switch_on() {
+    let (h, root) = seeded();
+    let waiting = |h: &Harness| {
+        h.db.query("SELECT event,payload FROM hook_outbox WHERE hook_id=0", &[])
+            .unwrap()
+    };
+    let child = child_of(&h, &root, "pub fn a() { 1 }\n");
+    let land = json!({"op":"repo_break_glass","action":"land","ref":"main","commit":child,
+        "expected_old":root,"reason":"check runner is down","_audit":"on"});
+    // A refused action records nothing.
+    let mut stale = land.clone();
+    stale["expected_old"] = json!(child);
+    assert_eq!(code(human(&h, stale)), "STALE_HEAD");
+    assert!(waiting(&h).is_empty());
+
+    glass(&h, land.clone());
+    let again = glass(&h, land);
+    assert_eq!(again["already"], true);
+    let rows = waiting(&h);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0]["event"], "repo.break_glass");
+    let event: Value = serde_json::from_str(rows[0]["payload"].as_str().unwrap()).unwrap();
+    assert_eq!(event["action"], "land");
+    assert_eq!(event["ref"], "refs/heads/main");
+    assert_eq!(event["commit"], json!(child));
+    assert_eq!(event["reason"], "check runner is down");
+    assert_eq!(event["actor"], OWNER);
+
+    // The break_glass answer still names its own row, not the event's.
+    let pause =
+        json!({"op":"repo_break_glass","action":"pause_automation","reason":"x","_audit":"on"});
+    assert_eq!(glass(&h, pause)["break_glass"], 2);
+    assert_eq!(waiting(&h).len(), 2);
+    let off = json!({"op":"repo_break_glass","action":"resume_automation","reason":"y"});
+    glass(&h, off);
+    assert_eq!(waiting(&h).len(), 2);
+    assert_eq!(audit_rows(&h), 3);
+}
