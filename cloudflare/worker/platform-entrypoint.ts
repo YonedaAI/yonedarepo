@@ -40,16 +40,25 @@ import { inScope } from './request-scope';
 import type { Env, Envelope } from './types';
 
 /** Jobs that hold a large push's objects (projection to the object stores, derived data,
- * clone packs) run one at a time in an isolate: side by side, a batch of them exceeded its 128 MB (dev,
- * 2026-10-29: 17 queue invocations killed for memory in ten minutes of size-ladder pushes). */
-let heavy: Promise<unknown> = Promise.resolve();
-function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
-  const run = heavy.then(work, work);
-  heavy = run.catch(() => {}); // The queue's next job runs anyway; `run`'s caller has the failure.
-  return run;
+ * clone packs) run one at a time in a batch: side by side, a batch of them exceeded its 128 MB
+ * (dev, 2026-10-29: 17 queue invocations killed for memory in ten minutes of size-ladder pushes).
+ * The chain belongs to one batch, never the isolate: Workers drops a continuation whose request
+ * has ended, so a chain shared across invocations hung every heavy job after one cancelled batch,
+ * and each hung batch ended in an exception with no log (dev, 2026-11-01: over 600 dead letters). */
+export function oneAtATimeInBatch() {
+  let heavy: Promise<unknown> = Promise.resolve();
+  return <T>(work: () => Promise<T>): Promise<T> => {
+    const run = heavy.then(work, work);
+    heavy = run.catch(() => {}); // The batch's next job runs anyway; `run`'s caller has the failure.
+    return run;
+  };
 }
 
-export async function platformJob(env: Env, message: Message<Envelope>) {
+export async function platformJob(
+  env: Env,
+  message: Message<Envelope>,
+  oneAtATime = oneAtATimeInBatch(),
+) {
   const envelope = message.body;
   if (envelope.kind === 'platform_check') {
     await executeCheckRun(env, envelope);
@@ -168,10 +177,11 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
   /** Jobs of a batch run side by side (they wait on I/O, not CPU; heavy ones one at a
    * time: `oneAtATime`); each settles alone. */
   async queue(batch: MessageBatch<Envelope>) {
+    const oneAtATime = oneAtATimeInBatch();
     await Promise.all(
       batch.messages.map((message) =>
         inScope({ env: this.env, job: message.body }, () =>
-          platformJob(this.env, message).catch((e) => settleFailedJob(message, e)),
+          platformJob(this.env, message, oneAtATime).catch((e) => settleFailedJob(message, e)),
         ),
       ),
     );
