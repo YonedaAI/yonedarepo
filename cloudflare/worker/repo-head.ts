@@ -2,11 +2,14 @@
 // authority round trip. Isolates copy it from the repository's head holder
 // (repo-head-holder.ts) and keep the copy for ACCESS_MS. Stale is safe for the head itself:
 // landing re-checks access and validates the base against the log, and a reader that
-// passes the version it landed at waits until the head reaches it. Access is bounded: the
-// holder reloads before an access change answers, the isolate that served the change drops
-// its copy, and every other isolate decides on a copy fetched at most ACCESS_MS ago, so a
-// revoked token or removed member is refused everywhere within ACCESS_MS of the change's
-// answer. A deletion waits that bound out before it answers (`dropDeletedHead`).
+// passes the version it landed at waits until the head reaches it. So just after a landing
+// a reader that doesn't, in an isolate that didn't land it, can see main without it: for as
+// long as its copy lasts, and a copy fetched while the holder still reloads counts from that
+// fetch. Access is bounded: the holder reloads before an access change answers, the isolate
+// that served the change drops its copy, and every other isolate decides on a copy fetched
+// at most ACCESS_MS ago, so a revoked token or removed member is refused everywhere within
+// ACCESS_MS of the change's answer. A deletion waits that bound out before it answers
+// (`dropDeletedHead`).
 
 import { rpcValue } from './durable';
 import { Flights } from './flights';

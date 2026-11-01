@@ -245,7 +245,10 @@ it('keeps accepted work going at the limit: projection, adoption, hooks, checks,
   // Projection of the landed changeset, then branch reads that need it.
   expect(await projectChangesets(guarded, id)).toBe(1);
   expect((await api(`${repo}/refs`, owner, {}, guarded)).status).toBe(200);
-  expect((await api(`${repo}/blob?path=b.txt`, owner, {}, guarded)).body.content).toBe('b.txt\n');
+  // This landing came straight from the authority's side, as for a reader in another isolate:
+  // the published head may not show it yet, so the reader names the version it needs.
+  const reached = `min_version=${landed.items[0].version}`;
+  expect((await api(`${repo}/blob?path=b.txt&${reached}`, owner, {}, guarded)).body.content).toBe('b.txt\n');
   // A read of a commit still in its shard adopts it; checks and reviews go on it.
   expect((await api(`${repo}/commits/${commit}`, owner, {}, guarded)).status).toBe(200);
   expect((await api(`${repo}/commits/${commit}/checks`, agent, { body: { name: 'unit', status: 'pass' } }, guarded)).status).toBe(200);
