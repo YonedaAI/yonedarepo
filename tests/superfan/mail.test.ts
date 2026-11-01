@@ -335,7 +335,6 @@ describe('copy', () => {
       [
         'api_worker',
         'source_repository',
-        'object_push_queue',
         'check_runs',
         'derived_jobs',
         'land_queue',
@@ -350,7 +349,7 @@ describe('copy', () => {
     );
     const analytics = {
       window: { start: '', end: '' },
-      objectKills: { source_repository: 1, object_push_queue: 1, check_runs: 1 },
+      objectKills: { source_repository: 1, check_runs: 1 },
       queue,
       checks: queue,
       managed: queue,

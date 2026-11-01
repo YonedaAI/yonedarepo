@@ -125,7 +125,7 @@ it('serves a public repository to anyone and keeps a private one invisible', asy
 
 it('lets a signed-in account fork a public repository, never anonymous', async () => {
   // R2-backed stores fork in this fixture (its Artifacts fake cannot).
-  const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2', ARTIFACTS: undefined } as unknown as Env;
+  const local = { ...scoped } as unknown as Env;
   const cookie = await signup('vis_fork_owner');
   const stranger = { cookie: await signup('vis_forker') };
   const make = async (name: string, value: string) =>

@@ -36,7 +36,8 @@ describe('GitHubImportDialog', () => {
   );
   it('says plainly what can be added and how much of it', () => {
     expect(html).toContain('Public GitHub repositories only for now');
-    expect(html).toContain('The newest 5,000 commits are imported');
+    expect(html).toContain('Every branch and tag is imported');
+    expect(html).not.toContain('5,000');
   });
   it('is private by default, with the branch tucked away', () => {
     expect(html).toMatch(/<input[^>]*checked=""[^>]*value="private"/);

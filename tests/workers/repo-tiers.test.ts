@@ -10,7 +10,7 @@ import type { Env } from '../../cloudflare/worker/types';
 import { api, author, bindings, countingOps, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
-const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2' } as unknown as Env;
+const local = { ...scoped } as unknown as Env;
 // Two read batches of 16; the assertions are relative to FILES. 120 files spent most of the
 // file's time on simulated storage I/O (720 ops per cold read), ~10x slower on CI runners.
 const FILES = 32;

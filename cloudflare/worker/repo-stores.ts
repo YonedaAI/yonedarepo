@@ -1,12 +1,8 @@
-// The Git object stores behind repositories: Artifacts (production) or R2 (local
-// development and the fallback the plan keeps open), or none beside the store of record
-// once a purge retired the Artifacts mirror (repo-platform-store). Each repository records
-// which one holds its objects; the tiered reads in front of them live in repo-objects.
+// A repository's Git objects live in R2, the store of record (repo-platform-store), and a fork
+// reads through to its parent's. Each repository records its store; the tiered reads in front
+// of it live in repo-objects.
 
-import { rpcValue } from './durable';
-import { ArtifactsStore, absent, asyncStore, dispatchStore } from './repo-artifacts-store';
 import { PLATFORM_SPEC, PlatformStore } from './repo-platform-store';
-import { R2Store } from './repo-r2-store';
 import type { Env } from './types';
 
 export type TreeEntry = {
@@ -39,71 +35,13 @@ export function toBase64(bytes: Uint8Array) {
 /** The Git object store behind one repository. */
 export interface ObjectStore {
   readonly spec: string;
-  create(): Promise<void>;
   /** Accepts a receive-pack request body and returns Git's report-status. */
   push(body: Uint8Array): Promise<Uint8Array>;
   readCommit(id: string): Promise<CommitHeader | null>;
   readTree(id: string): Promise<TreeEntry[] | null>;
   readBlob(id: string): Promise<Uint8Array | null>;
-  /** Stores a file too large to hold (`size` bytes; `open` streams it from R2 again for
-   * each attempt), reachable without a commit naming it yet: the hidden ref of a carrier
-   * (repo-large-files `largeReceivePack`), whose commit id it answers, or none where the
-   * store keeps objects without refs. */
-  pushFile(
-    id: string,
-    size: number,
-    open: () => Promise<ReadableStream<Uint8Array>>,
-  ): Promise<string | null>;
-  /** Sends a whole receive-pack request, streamed, where the store is a Git remote. */
-  pushStream?(open: () => Promise<ReadableStream<Uint8Array>>): Promise<Uint8Array>;
-  /** A read-only `git clone` remote and short-lived token, where the store supports it. */
-  cloneAccess?(): Promise<{ remote: string; token: string; expires_in_seconds: number }>;
-  /** Waits for a store a create left to the queue, where a store can be late (`STORE_JOB`). */
-  ready?(): Promise<void>;
   /** A fork's store: the parent repository and store its objects fall back to. */
   readonly inherits?: { repo: string; spec: string };
-}
-
-/** A new repository's store, chosen by deployment (`PLATFORM_OBJECT_STORE=r2` locally). */
-export function newStore(env: Env, name: string): ObjectStore {
-  return env.PLATFORM_OBJECT_STORE === 'r2'
-    ? new R2Store(env, name)
-    : new ArtifactsStore(env, name);
-}
-
-/** A fork's own store before it is created: none beside the platform's when its parent
- * has none (a mirror would need history the parent's purge withholds), else a store of
- * this deployment's kind named `yr-<fork>`. */
-export function forkOwnStore(env: Env, parentSpec: string, fork: string): ObjectStore {
-  return PLATFORM_SPEC.test(ownSpec(parentSpec))
-    ? new PlatformStore(env, fork)
-    : newStore(env, `yr-${fork}`);
-}
-
-/**
- * Fork `fork`'s own store: an Artifacts fork of the parent's own store when that is
- * Artifacts (it then holds the parent's projected branches: `inherited`), else a new,
- * empty store (`forkOwnStore`). A parent whose store a job has yet to create holds nothing
- * projected, so a fork of it would be empty too: the fork gets its own job.
- */
-export async function forkStore(env: Env, parentSpec: string, fork: string) {
-  const name = `yr-${fork}`;
-  const parent = /^artifacts:([^/]+)\/([A-Za-z0-9._-]+)$/.exec(ownSpec(parentSpec));
-  if (parent && parent[1] === env.ARTIFACTS_NAMESPACE && env.PLATFORM_OBJECT_STORE !== 'r2') {
-    try {
-      using repo = await env.ARTIFACTS.get(parent[2]);
-      // The fork's initial write token stays here and is dropped, as for create().
-      await rpcValue(repo.fork(name, { defaultBranchOnly: false }));
-      return { spec: new ArtifactsStore(env, name).spec, inherited: true };
-    } catch (e) {
-      if (!asyncStore(env) || !absent(e)) throw e;
-      await dispatchStore(env, fork);
-      return { spec: new ArtifactsStore(env, name).spec, inherited: false };
-    }
-  }
-  const store = forkOwnStore(env, parentSpec, fork);
-  await store.create();
-  return { spec: store.spec, inherited: false };
 }
 
 /** Forks of forks nest their parents' specs; this many levels at most. */
@@ -124,9 +62,8 @@ export function ownSpec(spec: string): string {
   return FORK.test(spec) ? String(JSON.parse(spec.slice(5)).own) : spec;
 }
 
-/** Parses a recorded store: `artifacts:<namespace>/<name>`, `r2:<name>`, `platform:<repo>`
- * (no mirror), or a fork's (`forkSpec`): its own store, carrying the parent it inherits
- * from. */
+/** Parses a recorded store: `platform:<repo>`, or a fork's (`forkSpec`): its own store, carrying
+ * the parent it inherits from. */
 export function parseStore(env: Env, spec: string): ObjectStore {
   if (FORK.test(spec)) {
     const fork = JSON.parse(spec.slice(5));
@@ -135,11 +72,6 @@ export function parseStore(env: Env, spec: string): ObjectStore {
     const own = parseStore(env, fork.own);
     return Object.assign(own, { inherits: { repo: fork.parent, spec: String(fork.store) } });
   }
-  const artifacts = /^artifacts:([^/]+)\/([A-Za-z0-9._-]+)$/.exec(spec);
-  if (artifacts && artifacts[1] === env.ARTIFACTS_NAMESPACE)
-    return new ArtifactsStore(env, artifacts[2]);
-  const r2 = /^r2:([A-Za-z0-9._-]+)$/.exec(spec);
-  if (r2) return new R2Store(env, r2[1]);
   const platform = PLATFORM_SPEC.exec(spec);
   if (platform) return new PlatformStore(env, platform[1]);
   throw new Error('Repository object store is outside this deployment');

@@ -33,14 +33,13 @@ export async function sizes(api, repo) {
   return { authority: c.storage.db_bytes, shards: c.shards.db_bytes, git_bytes: c.storage.git_bytes ?? null, rows: c.storage.table_rows, shard_rows: c.shards.table_rows, head: c.head, floor: c.floor, tail_rows: c.tail_rows, keep_versions: c.retention?.keep_versions ?? null };
 }
 
-/** Sizes once nothing is left to project and two reads in a row agree. */
+/** Sizes once no object waits to be stored and two reads in a row agree. */
 export async function settled(api, repo, { limit = SETTLE_MS, look = LOOK_MS, wait = pause } = {}) {
   const deadline = Date.now() + limit;
   let last = null;
   for (;;) {
     const status = await read(api, `/repos/${repo}`);
-    const behind = Math.max(0, ...(status.projections ?? []).map((p) => p.target_version - p.projected_version));
-    const quiet = (status.objects?.pending ?? 0) === 0 && behind === 0;
+    const quiet = (status.objects?.pending ?? 0) === 0;
     const now = await sizes(api, repo);
     const same = last && now.authority === last.authority && now.shards === last.shards;
     if (quiet && same) return { ...now, settled: true };
@@ -143,10 +142,10 @@ export async function baseline(api, repos) {
   return rows;
 }
 
-/** An arm's repository: a fresh import of the real history, policy set, history filled. */
-export async function importArm(api, { name, source, maxCommits, wait = pause, limit = IMPORT_MS }) {
+/** An arm's repository: a fresh import of the real history, policy set. */
+export async function importArm(api, { name, source, wait = pause, limit = IMPORT_MS }) {
   requireMeasured(name);
-  const { id } = await post(api, '/repos/import', { url: `https://github.com/${source}.git`, name, visibility: 'private', max_commits: maxCommits });
+  const { id } = await post(api, '/repos/import', { url: `https://github.com/${source}.git`, name, visibility: 'private' });
   const deadline = Date.now() + limit;
   for (;;) {
     const state = await read(api, `/repos/${id}/import`);

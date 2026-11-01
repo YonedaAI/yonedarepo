@@ -12,13 +12,14 @@ const MODEL_URL = 'https://api.z.ai/api/anthropic/v1/messages';
 const env = { ...scoped, REVIEW_MODEL_KEY: { get: async () => 'platform-review-test-key' } } as unknown as Env;
 const RUBRIC = 'Fail when SQL is built by concatenating or formatting user input.';
 
+const realFetch = globalThis.fetch;
+
 /** Answers review-model calls with `answer(user prompt)`, recording each request. */
 function stubModel(answer: (prompt: string) => string | Response) {
   const calls: { body: any; headers: Headers }[] = [];
-  const fixture = vi.mocked(globalThis.fetch).getMockImplementation();
-  vi.mocked(globalThis.fetch).mockImplementation(async (input, init) => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = String(input instanceof Request ? input.url : input);
-    if (url !== MODEL_URL) return fixture!(input, init);
+    if (url !== MODEL_URL) return realFetch(input, init);
     const body = JSON.parse(String(init?.body));
     calls.push({ body, headers: new Headers(init?.headers) });
     const out = answer(body.messages[0].content);

@@ -94,12 +94,11 @@ pub(super) fn claim<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     }))
 }
 
-/// `repo_quarantine_purged {claims: [{id, epoch, bytes?}], replacement}`: the claimed content
-/// is deleted, and a blob's `bytes` come off the repository's size. Each record still at its claim's epoch becomes purged (a session record's text
-/// and its session's memories' text, or the text of memories anchored to a blob, are
-/// cleared here, in the same transaction); `purged` counts them. A purged blob requests
-/// the retirement of the repository's Artifacts mirror, whose objects cannot be deleted
-/// one by one (`mirror`: one waits; `replacement` names the store taking its place).
+/// `repo_quarantine_purged {claims: [{id, epoch, bytes?}]}`: the claimed content is deleted,
+/// and a blob's `bytes` come off the repository's size. Each record still at its claim's epoch
+/// becomes purged (a session record's text and its session's memories' text, or the text of
+/// memories anchored to a blob, are cleared here, in the same transaction); `purged` counts
+/// them.
 pub(super) fn done<S: SqlStore>(db: &S, c: &Value, actor: &super::Actor) -> Result<Value> {
     let now = number(c, "now")?;
     let claims = c["claims"]
@@ -107,7 +106,6 @@ pub(super) fn done<S: SqlStore>(db: &S, c: &Value, actor: &super::Actor) -> Resu
         .filter(|list| list.len() <= MAX_CLAIM as usize)
         .ok_or_else(|| bad(&format!("claims must be a list of at most {MAX_CLAIM}")))?;
     let mut purged = 0;
-    let mut mirror = false;
     let mut removed = 0;
     for claim in claims {
         let (Some(id), Some(epoch)) = (claim["id"].as_i64(), claim["epoch"].as_i64()) else {
@@ -120,7 +118,6 @@ pub(super) fn done<S: SqlStore>(db: &S, c: &Value, actor: &super::Actor) -> Resu
         )?;
         let Some(row) = rows.first() else { continue };
         purged += 1;
-        let record = id;
         let id = row["target_id"].as_str().unwrap_or_default();
         match Target::parse(row["target_kind"].as_str().unwrap_or_default())? {
             Target::Session => {
@@ -129,11 +126,10 @@ pub(super) fn done<S: SqlStore>(db: &S, c: &Value, actor: &super::Actor) -> Resu
             }
             Target::Blob => {
                 super::memories::clear_on_blob(db, id)?;
-                mirror |= super::mirror::request(db, c, record, now)?;
                 removed += claim["bytes"].as_u64().unwrap_or_default();
             }
         }
     }
     super::super::capacity::remove_purged(db, removed)?;
-    Ok(json!({ "purged": purged, "mirror": mirror }))
+    Ok(json!({ "purged": purged }))
 }

@@ -278,15 +278,13 @@ describe('log lines before and after the shared logger', () => {
       true,
     )[0].marks;
 
-  it.each([
-    ['the old text', { level: 'warn', message: ['object store push attempt 2 refused: busy'] }],
-    ['the logger JSON', logger('object.push_retry', 'warn', { attempt: 2, reason: 'busy' })],
-  ])('counts a push retry from %s', (_form, line) => {
+  it('counts a push retry against the repository', () => {
+    const line = logger('object.push_retry', 'warn', { attempt: 2, reason: 'busy' });
     const rows = aggregate(
       traces({ component: 'api_worker', count: 3, wallMs: 40, logs: [line] }, start),
       SCRIPT,
     );
-    expect(rows.find((r) => r.component === 'object_push_queue')?.pushRetries).toBe(3);
+    expect(rows.find((r) => r.component === 'source_repository')?.pushRetries).toBe(3);
   });
 
   it.each([

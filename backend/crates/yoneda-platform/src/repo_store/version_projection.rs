@@ -128,7 +128,6 @@ pub fn record<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Val
         &[json!(head.hex()), json!(version), json!(refname)],
     )?;
     super::ref_chain::advance(db, &refname, &head, c)?;
-    super::projection::target(db, &refname, &head, version, now)?;
     Ok(json!({
         "ref": refname, "projected": steps.len(), "head": head, "version": version,
         "dispatch_objects": dispatch, "check_runs": check_runs,

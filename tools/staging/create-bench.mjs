@@ -1,7 +1,7 @@
 // Repository create time, as the New repository dialog asks for it: seeded, one at a time, on
 // the platform's own clock (Server-Timing) and the client's. Each run's repositories are
-// deleted (and purged, where the undo window keeps them) at its end. Compare ASYNC_STORE off
-// and on with the same command on each deploy.
+// deleted (and purged, where the undo window keeps them) at its end. Compare two builds with
+// the same command on each deploy.
 //
 //   node tools/staging/create-bench.mjs [--origin URL] [--runs 3] [--creates 20]
 //

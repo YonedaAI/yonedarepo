@@ -25,7 +25,7 @@ function standIn({ size = () => ({}), answers = {} } = {}) {
         return { floor: 0, head: 10, tail_rows: 10, retention: { keep_versions: 10_000 }, storage: { db_bytes: u.authority, table_rows: { commits: 1 } }, shards: { db_bytes: u.shards, table_rows: {} } };
       }
       if (route === '/refs') return { refs: { 'refs/heads/main': 'c'.repeat(40) } };
-      if (route === '') return { objects: { pending: 0 }, projections: [] };
+      if (route === '') return { objects: { pending: 0 } };
       if (route.endsWith('/check-runs')) return { runs: [{ id: `run-${calls.length}` }] };
       if (route.startsWith('/check-runs/') && route.endsWith('/log')) return { log: 'measured' };
       if (route.startsWith('/check-runs/')) return { id: route.split('/')[2], status: 'passed', result: { evidence: 'x'.repeat(40) } };
@@ -134,11 +134,11 @@ test('an import is its own repository, private, and sets the policy that gates n
     if (path.endsWith('/import')) return { status: 200, ok: true, body: { status: states.shift() }, ms: 1, headers: new Headers() };
     return raw(method, path, body);
   };
-  const repo = await importArm(api, { name: 'archive-measure-on-1', source: 'expressjs/express', maxCommits: 5000, wait: async () => {} });
+  const repo = await importArm(api, { name: 'archive-measure-on-1', source: 'expressjs/express', wait: async () => {} });
   assert.equal(repo.id, REPO);
   const [, , policy] = api.calls.find(([m]) => m === 'PUT');
   assert.deepEqual(policy.policy.required_checks, []);
-  await assert.rejects(importArm(api, { name: 'oss-click', source: 'x/y', maxCommits: 1 }), /Refusing/);
+  await assert.rejects(importArm(api, { name: 'oss-click', source: 'x/y' }), /Refusing/);
 });
 
 const run = ({ branch, landing, shards, evidence = 400, land = 80, settledOk = true }) => ({

@@ -41,11 +41,6 @@ fn destructive() -> Vec<(&'static str, Value)> {
             "platform:quarantine",
             json!({"op":"repo_quarantine_claim","limit":1}),
         ),
-        ("platform:quarantine", json!({"op":"repo_mirror_claim"})),
-        (
-            "platform:quarantine",
-            json!({"op":"repo_mirror_switch","epoch":1}),
-        ),
     ]
 }
 
@@ -66,8 +61,6 @@ fn the_list_is_exactly_the_destructive_ops() {
             "repo_change_delete",
             "repo_delete",
             "repo_erase_step",
-            "repo_mirror_claim",
-            "repo_mirror_switch",
             "repo_purge_now",
             "repo_purge_target",
             "repo_quarantine_claim",

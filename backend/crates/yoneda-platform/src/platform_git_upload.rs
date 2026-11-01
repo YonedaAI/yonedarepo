@@ -22,7 +22,7 @@ use yoneda_core::{
     Error, Result,
     git_object::{
         FileMode, ObjectHasher, ObjectId, ObjectKind, PackWriter, TreeChange, TreeEntry, Walk,
-        decode_tree, diff_trees, encode_delta, encode_tree, hash_object,
+        decode_tree_loose, diff_trees, encode_delta, encode_tree, hash_object,
     },
 };
 
@@ -204,7 +204,7 @@ impl UploadSession {
                     format!("Supplied tree does not match {id}"),
                 ));
             }
-            let entries = decode_tree(data)?;
+            let entries = decode_tree_loose(data)?;
             self.tree_bytes += ENTRY_BYTES
                 + entries
                     .iter()

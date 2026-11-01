@@ -11,7 +11,6 @@ import { keepAllowed, outside } from './repo-grants';
 import { forgetHead, refreshHead } from './repo-head';
 import { type CachedObject, fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, caller, type Json, type RepoContext } from './repo-ops';
-import { dispatchProjection } from './repo-projection';
 import { shardStagedOf } from './repo-shards';
 import { timed } from './repo-timing';
 
@@ -224,11 +223,9 @@ export async function moved(ctx: RepoContext, ref: string) {
   // copy of the head goes now; other isolates serve a stale head safely meanwhile.
   forgetHead(ctx.repo);
   const send = () =>
-    Promise.all([
-      dispatchProjection(ctx.env, ctx.repo),
-      dispatchDerive(ctx.env, ctx.repo, ref),
-      refreshHead(ctx.env, ctx.repo),
-    ]).catch((e) => log.warn('dispatch.after_landing_failed', { error: e }));
+    Promise.all([dispatchDerive(ctx.env, ctx.repo, ref), refreshHead(ctx.env, ctx.repo)]).catch(
+      (e) => log.warn('dispatch.after_landing_failed', { error: e }),
+    );
   if (!deferred(send)) await send();
 }
 

@@ -6,8 +6,25 @@ use crate::platform_compute;
 use crate::repo_store::capacity::{refusal, refuses, size_refusal};
 use crate::repo_store::op::Op;
 use crate::storage::SqlStore;
+use yoneda_core::git_object::{ObjectId, Signature, TzOffset};
 
 const MERGER: &str = "platform:merge";
+
+/// A root commit as a clone records it.
+fn root_commit() -> (String, Value) {
+    let who = Signature {
+        name: "Dev".into(),
+        email: "dev@example.com".into(),
+        seconds: 1_700_000_000,
+        offset: TzOffset::UTC,
+    };
+    let tree = ObjectId::parse(&"2".repeat(40)).unwrap();
+    let commit = Commit::new(tree, &[], &who, &who, "head").unwrap();
+    let id = commit.id().hex();
+    let item = json!({ "commit": id, "data_b64": STANDARD.encode(commit.encode()), "touches": [],
+                       "objects": [{ "id": id, "kind": "commit" }] });
+    (id, item)
+}
 
 fn tree_of(h: &Harness, commit: &str) -> String {
     h.ok(OWNER, json!({"op":"repo_commit","commit":commit}))["tree"]
@@ -94,8 +111,6 @@ fn the_guard_refuses_exactly_the_ops_that_start_new_work() {
             "repo_memory_add",
             "repo_prepare_commit",
             "repo_record_commit",
-            "repo_record_imported",
-            "repo_record_imported_batch",
             "repo_record_pushed",
             "repo_release_create",
             "repo_session_record",
@@ -122,10 +137,6 @@ fn new_work_answers_repo_full_at_the_limit_and_nothing_changes_below_it() {
         (
             OWNER,
             json!({"op":"repo_import","ref":"main","commit":root}),
-        ),
-        (
-            "platform:import",
-            json!({"op":"repo_record_imported","commit":id}),
         ),
     ] {
         let refused = h.run(principal, at_limit(command.clone())).unwrap_err();
@@ -220,11 +231,10 @@ fn a_direct_import_adds_the_pack_it_fetched() {
     let h = Harness::new();
     let all = &crate::repo_store::migration::MIGRATIONS;
     crate::repo_store::migration::migrate_with(&h.db, "repo_schema_migrations", all).unwrap();
-    let id = "1".repeat(40);
+    let (id, record) = root_commit();
     h.ok(
         "platform:import",
-        json!({"op":"repo_record_imported","commit":id,"tree":"2".repeat(40),"parents":[],
-            "message":"head","touches":[]}),
+        json!({"op":"repo_record_pushed","commits":[record]}),
     );
     h.ok(
         "platform:import",
@@ -489,10 +499,6 @@ fn work_already_accepted_keeps_going_at_the_limit() {
     assert_eq!(code(adopted), "OK");
     // Everything below reads or settles: none may answer REPO_FULL.
     for (principal, command) in [
-        (
-            "platform:projection",
-            json!({"op":"repo_projection_pending"}),
-        ),
         (OWNER, json!({"op":"repo_compact_plan"})),
         ("platform:hooks", json!({"op":"repo_hooks_fanout"})),
         (OWNER, json!({"op":"repo_token_revoke","name":"ci"})),

@@ -23,7 +23,7 @@ Wrangler's invocation envelope can contain request metadata. Do not share raw ta
 Worker code writes through `cloudflare/worker/log.ts` and nothing else; `tests/runtime/log-discipline.test.mjs` refuses a bare `console.*` in `cloudflare/` (Superfan's notices and dead-man stay bare: what watches the platform must not depend on it). A line is one JSON object with `event` first, because Superfan's tail and the SSH end-to-end test match on that:
 
 ```json
-{"event":"request.failed","level":"error","request_id":"8f1c2d3e4a5b6c7d-SJC","repo":"r0123…","job":"refs","kind":"platform_project","revision":"abc1234","operation":"GET /api/v1/repos/:repo/log","code":"INTERNAL","status":500,"error":"…"}
+{"event":"request.failed","level":"error","request_id":"8f1c2d3e4a5b6c7d-SJC","repo":"r0123…","job":"objects","kind":"platform_objects","revision":"abc1234","operation":"GET /api/v1/repos/:repo/log","code":"INTERNAL","status":500,"error":"…"}
 ```
 
 | Rule | How |

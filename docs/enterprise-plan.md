@@ -21,7 +21,7 @@ Operators never get a general delete. Operator actions stay reversible.
 Branch `claude/erase-repos`. The mapping added:
 
 - **Live gap:** purge never touches `derived/v1/<repo>/` (search, packs, symbols, facts), which hold file content, or the 64 commit shards, though `privacy.md:101` says code is deleted.
-- Attach the wipe at the end of `purgeRepository`, after the Artifacts loop.
+- Attach the wipe at the end of `purgeRepository`.
 - Keep the `repo_settings` tombstone: without it, calls answer `NOT_FOUND`, not `GONE`, and managed cleanup silently stops (`dispatch.ts:92`).
 - `repo_purge_target` must still answer after the wipe, because the job is at-least-once.
 
@@ -62,7 +62,7 @@ Tokens stay revoked. Managed connections must reconnect.
 
 ## 3. Legal hold
 
-**Blocks:** repo delete, purge and wipe, quarantine purge, mirror retirement, release delete, change delete, vacuum, org delete.
+**Blocks:** repo delete, purge and wipe, quarantine purge, release delete, change delete, vacuum, org delete.
 
 **Doesn't block:** landing, compaction, memory retire, LFS orphan sweep, branch delete (history stays because vacuum is blocked), member removal. Quarantine still withholds content from being served.
 

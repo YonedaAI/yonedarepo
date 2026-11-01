@@ -1,41 +1,14 @@
-// Vacuum: releases hidden refs of commits that are covered by a projected branch or whose
-// unlanded work expired, so the object store's own GC may reclaim them. The authority
-// decides what is safe; the adapter only sends the ref deletions and reports back. Commit
-// shards forget expired commits that nothing newer descends from; branches and pins only
-// ever name commits the authority adopted (with all their ancestors), so they keep theirs.
+// Vacuum: commit shards forget expired commits that nothing newer descends from; branches and
+// pins only ever name commits the authority adopted (with all their ancestors), so they keep
+// theirs.
 import { currentHold } from './platform-legal-hold';
-import { compute } from './repo-compute';
-import { fromBase64, toBase64 } from './repo-objects';
 import type { Json, RepoContext } from './repo-ops';
 import { SHARDS, shardCall, shardOf } from './repo-shards';
 
 export async function vacuum(ctx: RepoContext, args: Json) {
-  const plan = await ctx.call({
-    op: 'repo_vacuum_plan',
-    ...(args.retention_ms ? { retention_ms: Number(args.retention_ms) } : {}),
-  });
-  const objects = await ctx.objects();
-  const released: string[] = [];
-  const failed: Json[] = [];
-  for (const commit of [...plan.covered, ...plan.expired] as string[]) {
-    const request = compute({ op: 'ref_delete', commit });
-    const report = await objects.push(fromBase64(request.push_b64));
-    const outcome = compute({
-      op: 'push_outcome',
-      refname: request.refname,
-      report_b64: toBase64(report),
-    });
-    if (outcome.accepted) released.push(commit);
-    else failed.push({ commit, refused: outcome.refused });
-  }
-  if (released.length > 0) await ctx.call({ op: 'repo_vacuum_done', commits: released });
-  return {
-    covered: plan.covered.length,
-    expired: plan.expired.length,
-    released: released.length,
-    failed,
-    shards: await vacuumShards(ctx, Number(args.retention_ms ?? DEFAULT_RETENTION_MS)),
-  };
+  // The gate: who may vacuum, and no legal hold.
+  await ctx.call({ op: 'repo_vacuum_plan' });
+  return { shards: await vacuumShards(ctx, Number(args.retention_ms ?? DEFAULT_RETENTION_MS)) };
 }
 
 const DEFAULT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;

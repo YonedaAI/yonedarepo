@@ -3,7 +3,7 @@
 use crate::checkout::Checkout;
 use crate::error::Result;
 use crate::human;
-use crate::output::{self, LastLand, Projection, RemoteStatus, Status};
+use crate::output::{self, LastLand, RemoteStatus, Status};
 use serde_json::Value;
 
 /// `status --brief` of an offline checkout: its pinned base only.
@@ -121,22 +121,6 @@ async fn print_remote(co: &Checkout, remote: &Value) -> RemoteStatus {
         );
         report.projected_version = Some(projected);
         report.awaiting_git_commit = waiting;
-    }
-    let store = remote["projections"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .find(|p| p["refname"] == refname.as_str());
-    if let Some(p) = store {
-        let target = p["target_version"].as_u64().unwrap_or_default();
-        let stored = p["projected_version"].as_u64().unwrap_or_default();
-        let status = p["status"].as_str().unwrap_or("unknown");
-        human!("store   object store at version {stored} of {target} ({status})");
-        report.store = Some(Projection {
-            projected_version: stored,
-            target_version: target,
-            status: status.to_owned(),
-        });
     }
     report
 }

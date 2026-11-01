@@ -12,7 +12,6 @@ import { dispatchDerive } from './repo-derived';
 import { refreshHead } from './repo-head';
 import { notifyHooks } from './repo-hooks';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
-import { dispatchProjection } from './repo-projection';
 
 const ACTIONS = ['land', 'revert', 'release_land_lease', 'pause_automation', 'resume_automation'];
 const AUTHOR = { name: 'YonedaRepo break-glass', email: 'break-glass@yonedarepo.invalid' };
@@ -24,16 +23,12 @@ async function nudge(ctx: RepoContext, ref: string, result: Json) {
   if (result.paused === false && !result.already)
     await notifyHooks(ctx.env, ctx.repo).catch(warned('break_glass.hooks_not_nudged'));
   if (!result.landed || result.already) return result;
-  const sent = await Promise.all([
-    dispatchProjection(ctx.env, ctx.repo).then(
+  const sent = [
+    await dispatchDerive(ctx.env, ctx.repo, ref).then(
       () => true,
       () => false,
     ),
-    dispatchDerive(ctx.env, ctx.repo, ref).then(
-      () => true,
-      () => false,
-    ),
-  ]);
+  ];
   return sent.every(Boolean) ? result : { ...result, projection: 'deferred' };
 }
 

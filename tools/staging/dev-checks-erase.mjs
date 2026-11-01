@@ -3,7 +3,7 @@
 // planned, then reads fill its derived caches and a commit, a release and a transcript add what a
 // push does not. It is deleted and left to the window, the sweep, the purge and the erase, with
 // the erase's own log lines tailed for its jobs. Then every copy is read from outside: D1, each
-// R2 prefix, the Artifacts mirror and the object, each of which must have held something first.
+// R2 prefix and the object, each of which must have held something first.
 // A commit shard or a combiner has no outside view, so they are shown by the log line that follows
 // their clearing, and the Cache API by reads alone: neither counts as proven.
 import assert from 'node:assert/strict';
@@ -93,7 +93,7 @@ export function eraseSteps(ctx, { rung, checkpoints, source, importMs, eraseMs }
       s.keys = keys;
       s.prefixes = Object.keys(s.before.r2).length;
       s.refs = Object.keys((await ctx.owner.get(repoPath(s.repo, '/refs'))).refs).length;
-      Object.assign(m, { r2_keys: keys, r2_mib: Math.round(bytes / 1048576), kinds: Object.fromEntries(Object.entries(s.before.r2).map(([p, seen]) => [p, seen.kinds])), mirror: s.before.artifacts?.exists ?? null });
+      Object.assign(m, { r2_keys: keys, r2_mib: Math.round(bytes / 1048576), kinds: Object.fromEntries(Object.entries(s.before.r2).map(([p, seen]) => [p, seen.kinds])) });
     }],
     ['E4', 'Delete it and wait out the window, the sweep, the purge and the erase', async (m) => {
       s.tail = await ctx.tail(s.repo);

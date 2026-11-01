@@ -14,7 +14,7 @@ import { api, author, bindings, delayed, file, queued, scoped, signup, usePlatfo
 
 usePlatformFixture();
 
-const on = { ...scoped, PLATFORM_OBJECT_STORE: 'r2', LEGAL_HOLD: 'on', ADMIN_ACCOUNTS: 'hold_ops' } as unknown as Env;
+const on = { ...scoped, LEGAL_HOLD: 'on', ADMIN_ACCOUNTS: 'hold_ops' } as unknown as Env;
 const OPEN = { required_checks: [], approvals: 0 };
 const REFUSED = [423, 'LEGAL_HOLD'];
 const refused = (answer: { status: number; body: any }) => [answer.status, answer.body.error?.code];
@@ -273,7 +273,7 @@ it('a hold placed on a tombstone keeps it: the purge comes back later, not to th
 
 it('an erase waits out a hold: shards and records stay until it is released', async () => {
   const { org, owner, id, repo } = await held('erase');
-  const erasing = { ...on, REPO_ERASE: 'on', ARTIFACTS: undefined } as unknown as Env;
+  const erasing = { ...on, REPO_ERASE: 'on' } as unknown as Env;
   expect((await api(`${repo}?confirm=app`, owner, del, erasing)).status).toBe(200);
   await api(`/orgs/${org}/repos/${id}/hold`, owner, { body: {} }, erasing);
   const job = { v: 1, kind: 'platform_erase', repo_id: id, job_id: 'start' } as const;

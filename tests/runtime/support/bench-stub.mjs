@@ -69,7 +69,7 @@ export async function startStub({ landing = () => null } = {}) {
       return json({ version: head + 1 }, 200, { 'server-timing': 'total;dur=2' });
     }
     if (resource === 'compaction') return json({ floor: 0, head, tail_rows: head, retention: { keep_versions: 10_000 }, storage: { db_bytes: 8192 + head * 5000, table_rows: { commits: head, txlog: head } } });
-    return json({ version: head, objects: { pending: 0 }, projections: [] });
+    return json({ version: head, objects: { pending: 0 } });
   });
   const client = await listen(async (req, raw) => {
     const origin = `http://127.0.0.1:${req.socket.localPort}`;

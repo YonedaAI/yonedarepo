@@ -22,7 +22,6 @@ import {
   Ledger,
   limitsBroken,
   logLines,
-  mirrorOf,
   parseTail,
   proofTable,
   r2Prefixes,
@@ -99,20 +98,18 @@ test('a test window is labelled, and neither no window nor a long one passes', (
 });
 
 test('the copies of a repository are named from its store', () => {
-  assert.deepEqual(r2Prefixes(ID, `artifacts:ns/yr-${ID}`), [`platform/v1/${ID}/`, `derived/v1/${ID}/`]);
+  assert.deepEqual(r2Prefixes(ID, `platform:${ID}`), [`platform/v1/${ID}/`, `derived/v1/${ID}/`]);
   assert.deepEqual(r2Prefixes(ID, `r2:yr-${ID}`), [`platform/v1/${ID}/`, `derived/v1/${ID}/`, `store/v1/yr-${ID}/`]);
-  assert.deepEqual(mirrorOf(`artifacts:ns/yr-${ID}`), { namespace: 'ns', name: `yr-${ID}` });
-  assert.equal(mirrorOf(`platform:${ID}`), null);
   assert.equal(keyKind(`platform/v1/${ID}/lfs/abc`), 'lfs');
 });
 
 test('gone needs both an empty probe and something there before', () => {
   const empty = { keys: 0 };
-  const before = { d1: { platform_repos: 1 }, r2: { a: { keys: 4 }, b: empty }, artifacts: { exists: true }, object: { state: 'tombstone' } };
-  const after = { d1: { platform_repos: 0 }, r2: { a: empty, b: empty }, artifacts: { exists: false }, object: { state: 'erased' } };
+  const before = { d1: { platform_repos: 1 }, r2: { a: { keys: 4 }, b: empty }, object: { state: 'tombstone' } };
+  const after = { d1: { platform_repos: 0 }, r2: { a: empty, b: empty }, object: { state: 'erased' } };
   assert.deepEqual(copiesLeft(after), []);
   const proof = Object.fromEntries(proofTable(before, after).map((r) => [r.copy, r.verdict]));
-  assert.deepEqual(proof, { 'd1 platform_repos': 'gone', 'r2 a': 'gone', 'r2 b': 'not exercised', 'artifacts mirror': 'gone', 'repository object': 'gone' });
+  assert.deepEqual(proof, { 'd1 platform_repos': 'gone', 'r2 a': 'gone', 'r2 b': 'not exercised', 'repository object': 'gone' });
   const left = { ...after, r2: { a: { keys: 1 }, b: empty }, object: { state: 'tombstone' } };
   assert.deepEqual(copiesLeft(left), ['r2:a=1', 'object:tombstone']);
   assert.equal(proofTable(before, left).find((r) => r.copy === 'r2 a').verdict, 'left');
@@ -208,14 +205,6 @@ test('R2 pages to the end, and a failed page never reads as empty', async () => 
   assert.match(asked[1], /cursor=next/);
   const down = cloudflare({ token: 't', account: 'acc', bucket: 'b', fetchImpl: async () => jsonAnswer({}, 503) });
   await assert.rejects(down.r2('x/'), /HTTP 503/);
-});
-
-test('a mirror is gone only when Cloudflare says so', async () => {
-  const answers = { ok: { status: 0, stdout: '{"name":"yr"}', stderr: '' }, none: { status: 1, stdout: '', stderr: 'Repository not found [code: 10404]' }, down: { status: 1, stdout: '', stderr: 'Authentication error' } };
-  const mirror = (key) => cloudflare({ wrangler: async () => answers[key] }).mirror({ namespace: 'ns', name: 'yr' });
-  assert.deepEqual(await mirror('ok'), { name: 'yr', exists: true });
-  assert.deepEqual(await mirror('none'), { name: 'yr', exists: false });
-  await assert.rejects(mirror('down'), /wrangler exited 1/);
 });
 
 test('every analytics query only reads', () => {

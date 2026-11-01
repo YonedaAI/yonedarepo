@@ -86,7 +86,6 @@ export const D1_ROWS = [
   ['repositories', 'id'],
 ];
 
-const ARTIFACTS = /^artifacts:([^/]+)\/([A-Za-z0-9._-]+)$/;
 const R2_STORE = /^r2:([A-Za-z0-9._-]+)$/;
 
 /** The R2 prefixes that hold a repository of store `store`. `audit/v1/<org>/` is left out on
@@ -94,12 +93,6 @@ const R2_STORE = /^r2:([A-Za-z0-9._-]+)$/;
 export function r2Prefixes(repo, store = '') {
   const r2 = R2_STORE.exec(store);
   return [`platform/v1/${repo}/`, `derived/v1/${repo}/`, ...(r2 ? [`store/v1/${r2[1]}/`] : [])];
-}
-
-/** The Artifacts repository of store `store`, or null when it has no mirror. */
-export function mirrorOf(store = '') {
-  const found = ARTIFACTS.exec(store);
-  return found ? { namespace: found[1], name: found[2] } : null;
 }
 
 /** The first folder under a repository's prefix, for keys `platform/v1/<repo>/<kind>/...`. */
@@ -110,7 +103,6 @@ export function copiesLeft(snapshot) {
   const left = [];
   for (const [table, n] of Object.entries(snapshot.d1)) if (n > 0) left.push(`d1:${table}=${n}`);
   for (const [prefix, seen] of Object.entries(snapshot.r2)) if (seen.keys > 0) left.push(`r2:${prefix}=${seen.keys}`);
-  if (snapshot.artifacts?.exists) left.push(`artifacts:${snapshot.artifacts.name}`);
   if (snapshot.object && snapshot.object.state !== 'erased') left.push(`object:${snapshot.object.state}`);
   return left;
 }
@@ -124,7 +116,6 @@ export function proofTable(before, after) {
   const rows = [];
   for (const [table, n] of Object.entries(after.d1)) rows.push(row(`d1 ${table}`, before.d1[table] ?? 0, n));
   for (const [prefix, seen] of Object.entries(after.r2)) rows.push(row(`r2 ${prefix}`, before.r2[prefix]?.keys ?? 0, seen.keys));
-  rows.push(row('artifacts mirror', before.artifacts?.exists ? 1 : 0, after.artifacts?.exists ? 1 : 0));
   rows.push(row('repository object', before.object ? 1 : 0, !after.object || after.object.state === 'erased' ? 0 : 1));
   return rows;
 }

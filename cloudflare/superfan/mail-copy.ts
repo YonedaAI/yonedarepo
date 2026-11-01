@@ -24,7 +24,6 @@ export const WORD: Record<string, string> = {
   front_worker: 'website',
   managed_worker: 'managed agent',
   source_repository: 'repository',
-  object_push_queue: 'Git push',
   check_runs: 'check',
   derived_jobs: 'background job',
   land_queue: 'landing',
@@ -208,10 +207,9 @@ export const COPY: Copy[] = [
   },
   {
     signals: ['push_retries'],
-    title: (f) =>
-      `${plural(count(f, 'push_retries'), 'Git push', 'Git pushes')} refused and retried`,
-    means: 'The object store is busy. This usually clears itself.',
-    first: 'If it keeps going, find object store push attempts in the platform logs.',
+    title: (f) => `${plural(count(f, 'push_retries'), 'commit', 'commits')} refused and retried`,
+    means: 'The object store refused a commit and it was sent again.',
+    first: 'If it keeps going, find object.push_retry in the platform logs.',
   },
   {
     signals: ['container_disk_percent'],

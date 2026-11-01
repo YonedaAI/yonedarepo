@@ -119,7 +119,6 @@ const KEEPS_REFS = new Set([
   'repo_land_clearance',
   'repo_git_access',
   'repo_git_walk',
-  'repo_clone_access',
   'repo_compact_status',
   'repo_compact_plan',
   'repo_compact_done',

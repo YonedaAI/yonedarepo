@@ -6,9 +6,7 @@
   "main": "../platform/entrypoint.ts",
   "compatibility_date": "2026-10-07",
   "compatibility_flags": ["nodejs_compat"],
-  "vars": {
-    "ARTIFACTS_NAMESPACE": "yoneda-ssh-e2e",
-    "PLATFORM_OBJECT_STORE": "r2",
+  "vars": {,
     "SSH_GATEWAY_SECRET": "local-ssh-e2e-gateway-secret-0123456789"
   },
   "services": [{ "binding": "SELF", "service": "yoneda-ssh-e2e" }],
@@ -16,13 +14,12 @@
     "bindings": [
       { "name": "SOURCE_REPOS", "class_name": "SourceRepository" },
       { "name": "WORKSPACES", "class_name": "WorkspaceAuthority" },
-      { "name": "OBJECT_PUSHES", "class_name": "ObjectPushQueue" },
       { "name": "COMMIT_SHARDS", "class_name": "CommitShard" },
       { "name": "LAND_COMBINERS", "class_name": "LandCombiner" }
     ]
   },
   "migrations": [
-    { "tag": "v1", "new_sqlite_classes": ["SourceRepository", "WorkspaceAuthority", "ObjectPushQueue", "CommitShard", "LandCombiner"] }
+    { "tag": "v1", "new_sqlite_classes": ["SourceRepository", "WorkspaceAuthority", "CommitShard", "LandCombiner"] }
   ],
   "queues": { "producers": [{ "binding": "PLATFORM_QUEUE", "queue": "yoneda-ssh-e2e" }] },
   "r2_buckets": [{ "binding": "OBJECTS", "bucket_name": "yoneda-ssh-e2e" }],

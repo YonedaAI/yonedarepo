@@ -89,36 +89,21 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         R::CheckClaim
         | R::CheckRelease
         | R::CheckComplete
-        | R::ProjectionPending
-        | R::ProjectionResult
         | R::ChangesetPlan
         | R::Head
         | R::ChangesetRecord
         | R::RecordRepair => actor.require("system"),
         // Only the platform's object projector reads or settles the object outbox: a false
         // "projected" would drop the only copy of accepted objects.
-        R::ObjectsPending
-        | R::ObjectsProjected
-        | R::StagedObjects
-        | R::ProjectionObjects
-        | R::ObjectsStored
-            if !actor.can("system") =>
-        {
-            Err(Error::new(
-                "FORBIDDEN",
-                "Only the platform projects staged objects",
-            ))
-        }
-        // Imported history is only recorded by the platform importer, which read it from
-        // the object store; nobody else can declare commits into existence.
-        R::RecordImported | R::RecordImportedBatch | R::RecordImportedEnd
-            if !actor.can("import") =>
-        {
-            Err(Error::new(
-                "FORBIDDEN",
-                "Only the platform importer records imported history",
-            ))
-        }
+        R::ObjectsPending | R::ObjectsProjected | R::StagedObjects if !actor.can("system") => Err(
+            Error::new("FORBIDDEN", "Only the platform projects staged objects"),
+        ),
+        // A clone's refs are set by the platform importer alone: they arrive whole, with no
+        // landing and no gate, into a repository nobody has worked in yet.
+        R::ImportRefs if !actor.can("import") => Err(Error::new(
+            "FORBIDDEN",
+            "Only the platform importer sets imported refs",
+        )),
         R::Review => actor.require("review"),
         // Protected refs need `land`; any other branch lands with `write` (`land_gates::scope`).
         R::Land | R::LandEnqueue => actor.require(land_gates::scope(&rows::branch_ref(c)?)),
@@ -154,7 +139,6 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         }
         R::BreakGlass => actor.require_human_owner(),
         R::SetVisibility | R::Rename => actor.require_repo_owner(),
-        R::CloneAccess => actor.require_human_reader(),
         // Every other op, and a guarded op above whose caller passes its guard, reads.
         R::Activity
         | R::AdoptCommit
@@ -188,6 +172,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::HookSettle
         | R::HooksFanout
         | R::Import
+        | R::ImportRefs
         | R::LandBatch
         | R::LandChangesets
         | R::LandClaim
@@ -200,15 +185,10 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::MergePlan
         | R::ObjectsPending
         | R::ObjectsProjected
-        | R::ObjectsStored
         | R::PathHistory
         | R::PinList
-        | R::ProjectionObjects
         | R::Purged
         | R::RecordClasses
-        | R::RecordImported
-        | R::RecordImportedBatch
-        | R::RecordImportedEnd
         | R::RecordPushed
         | R::RecordSymbols
         | R::Refs

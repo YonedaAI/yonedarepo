@@ -41,7 +41,6 @@ export interface SuperfanEnv {
   DEADMAN_URL?: string;
   /** The watched resources' ids. All unset: looked up by name at run time (resolveIds). */
   NS_SOURCE_REPOSITORY?: string;
-  NS_OBJECT_PUSH_QUEUE?: string;
   NS_CHECK_CONTAINER?: string;
   QUEUE_JOBS_ID?: string;
   QUEUE_DEAD_LETTER_ID?: string;
@@ -69,7 +68,7 @@ export interface SuperfanEnv {
 }
 
 export interface WatchIds {
-  namespaces: { source_repository: string; object_push_queue: string; check_runs: string };
+  namespaces: { source_repository: string; check_runs: string };
   queues: {
     jobs: string;
     deadLetter: string;
@@ -95,7 +94,6 @@ export type WatchTarget = Omit<WatchSite, 'ids'> & WatchIds;
 
 const ID_VARS = [
   'NS_SOURCE_REPOSITORY',
-  'NS_OBJECT_PUSH_QUEUE',
   'NS_CHECK_CONTAINER',
   'QUEUE_JOBS_ID',
   'QUEUE_DEAD_LETTER_ID',
@@ -139,7 +137,6 @@ export function watchSite(env: SuperfanEnv): WatchSite {
   const ids: WatchIds = {
     namespaces: {
       source_repository: id('NS_SOURCE_REPOSITORY', env.NS_SOURCE_REPOSITORY, hex32),
-      object_push_queue: id('NS_OBJECT_PUSH_QUEUE', env.NS_OBJECT_PUSH_QUEUE, hex32),
       check_runs: id('NS_CHECK_CONTAINER', env.NS_CHECK_CONTAINER, hex32),
     },
     queues: {

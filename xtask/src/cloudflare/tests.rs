@@ -4,7 +4,7 @@ fn template() -> Value {
     serde_json::from_str(include_str!("../../../cloudflare/wrangler.jsonc")).unwrap()
 }
 fn manifest() -> Value {
-    json!({"name":"my-platform","account_id":"a".repeat(32),"namespace":"my-namespace",
+    json!({"name":"my-platform","account_id":"a".repeat(32),
         "database_id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"})
 }
 
@@ -101,7 +101,7 @@ fn repeat_configure_changes_only_known_legacy_paths_and_retains_settings_and_sta
         b"CUSTOM_SECRET=fixture-retained\n"
     );
     let mut changed_identity = manifest();
-    changed_identity["namespace"] = json!("another-namespace");
+    changed_identity["database_id"] = json!("cccccccc-cccc-4ccc-8ccc-cccccccccccc");
     assert!(save_configs(&dir, &changed_identity, template()).is_err());
     assert_eq!(std::fs::read(dir.join("platform.json")).unwrap(), first);
 }

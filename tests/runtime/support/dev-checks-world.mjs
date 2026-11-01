@@ -21,7 +21,6 @@ export function world({ windowMs = 300_000, bugs = {}, auditLog = false } = {}) 
     repo.purged = true;
     repo.erased = true;
     repo.r2 = bugs.leaveR2Key ? 1 : 0;
-    repo.mirror = false;
     repo.row = null;
   }
   function tick() {
@@ -53,7 +52,6 @@ export function world({ windowMs = 300_000, bugs = {}, auditLog = false } = {}) 
       visibility: body.visibility,
       created_at: now,
       r2: (body.files?.length ?? 0) * 3 + 1,
-      mirror: true,
       tokens: new Set(tokens),
       members: new Set(),
       holds: {},
@@ -88,7 +86,7 @@ export function world({ windowMs = 300_000, bugs = {}, auditLog = false } = {}) 
       if (!windowMs || bugs.purgeInWindow) purge(repo);
       return ok({ deleted: true });
     }
-    if (method === 'GET' && !rest.length) return ok({ object_store: `artifacts:ns/yr-${repo.id}` });
+    if (method === 'GET' && !rest.length) return ok({ object_store: `platform:${repo.id}` });
     if (method === 'GET' && rest[0] === 'refs') return ok({ refs: { 'refs/heads/main': repo.head } });
     if (method === 'GET' && rest[0] === 'hold') return ok({ held: held(repo) });
     if (method === 'GET') return ok({});
@@ -220,7 +218,6 @@ export function world({ windowMs = 300_000, bugs = {}, auditLog = false } = {}) 
       const keys = prefix.startsWith('platform/') ? (repo?.r2 ?? 0) : repo?.purged ? 0 : 1;
       return { keys, bytes: keys * 10, kinds: keys ? { git: keys } : {}, pages: 1 };
     },
-    mirror: async ({ name }) => ({ name, exists: Boolean(repos.get(name.slice(3))?.mirror) }),
     objects: async () => new Set([...repos.values()].map(object)),
     analytics: async () => ({ r2_bucket_shared: {}, object_requests: 10, object_kills_shared: {} }),
   };

@@ -9,7 +9,7 @@ import { api, author, file, scoped, signup, usePlatformFixture } from './repo-fi
 
 usePlatformFixture();
 const WRITERS = Number(globalThis.process?.env?.PLATFORM_LOAD_WRITERS ?? 100);
-const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2' } as unknown as Env;
+const local = { ...scoped } as unknown as Env;
 const timed = async <T>(work: () => Promise<T>) => {
   const started = performance.now();
   const value = await work();

@@ -86,7 +86,7 @@ export function GitHubImportDialog({
     >
       <form className="new-repository" onSubmit={add}>
         <p className="source-meta import-notice">
-          <strong>Public GitHub repositories only for now.</strong> The newest 5,000 commits are
+          <strong>Public GitHub repositories only for now.</strong> Every branch and tag is
           imported.
         </p>
         <OwnerField account={account} orgs={orgs} initialOwner={initialOwner} disabled={busy} />

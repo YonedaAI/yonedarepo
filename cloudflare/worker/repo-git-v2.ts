@@ -6,7 +6,6 @@
 // side-band 64k. A client that does not ask for version 2 is served version 0 unchanged.
 import { transient } from './durable';
 import { compute } from './repo-compute';
-import { fetchWhileFilling, importedClone, mirrorClone } from './repo-git-mirror';
 import { UploadSession } from './repo-git-sessions';
 import {
   CHUNK,
@@ -17,7 +16,6 @@ import {
   readAll,
   sendPack,
 } from './repo-git-upload';
-import type { ShallowLines } from './repo-mirror-git';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import type { Json, RepoContext } from './repo-ops';
 import type { Fresh } from './repo-pack-cache';
@@ -79,34 +77,16 @@ async function serveFetch(
   const negotiating = !request.done && request.haves.length > 0;
   const walk = { op: 'repo_git_walk', wants: request.wants, haves: request.haves, objects: true };
   const shallow_info = request.depth != null || request.shallows.length > 0;
-  let walked: Json;
-  try {
-    if (negotiating) {
-      const { common } = await ctx.call({ ...walk, common_only: true });
-      if (!common.length) return answer(compute({ op: 'git_v2_fetch_head', nak: true }).body_b64);
-    }
-    walked = await ctx.call({
-      ...walk,
-      shallows: request.shallows,
-      depth: request.depth,
-      deepen_relative: request.deepen_relative,
-    });
-  } catch (e: any) {
-    if (e?.code !== 'IMPORT_IN_PROGRESS') throw e;
-    // The mirror already holds all of it. A round short of `done` is answered `ready`: which
-    // haves it shares only the mirror can tell, and it leaves them out of the pack.
-    const lead = ({ shallow, unshallow }: ShallowLines) =>
-      fromBase64(
-        compute({
-          op: 'git_v2_fetch_head',
-          acknowledged: negotiating ? [] : null,
-          shallow_info,
-          shallow,
-          unshallow,
-        }).body_b64,
-      );
-    return fetchWhileFilling(ctx, objects, request, lead, CHUNK, e);
+  if (negotiating) {
+    const { common } = await ctx.call({ ...walk, common_only: true });
+    if (!common.length) return answer(compute({ op: 'git_v2_fetch_head', nak: true }).body_b64);
   }
+  const walked: Json = await ctx.call({
+    ...walk,
+    shallows: request.shallows,
+    depth: request.depth,
+    deepen_relative: request.deepen_relative,
+  });
   const head = compute({
     op: 'git_v2_fetch_head',
     acknowledged: negotiating ? walked.common : null,
@@ -134,9 +114,6 @@ async function serveFetch(
     stats,
     commits,
     fresh,
-    async (sent) =>
-      (await importedClone(ctx, objects, request, () => sent)) ??
-      mirrorClone(ctx, objects, request, () => sent, CHUNK),
   );
 }
 

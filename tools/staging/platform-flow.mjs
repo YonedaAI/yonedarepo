@@ -1,5 +1,5 @@
 // Platform items of the staging kit, through the public /api/v1 as a signed-in human:
-// `git clone` of protected main from Artifacts checked byte for byte against the API tree,
+// `git clone` of protected main checked byte for byte against the API tree,
 // one check run in a container with no instance left afterwards, and a many-repo burst
 // through the bench client Worker.
 import assert from 'node:assert/strict';
@@ -62,9 +62,9 @@ async function apiTree(platform, repo, commit, path = '', files = new Map()) {
   return files;
 }
 
-export const cloneMatchesApi = (platform, metrics) => withRepos(platform, (newRepo) => cloneCheck(platform, newRepo, metrics));
+export const cloneMatchesApi = ({ api, platform }, metrics) => withRepos(platform, (newRepo) => cloneCheck({ api, platform }, newRepo, metrics));
 
-async function cloneCheck(platform, newRepo, metrics) {
+async function cloneCheck({ api, platform }, newRepo, metrics) {
   const binary = Buffer.from(Array.from({ length: 256 }, (_, i) => i));
   const repo = await newRepo('kit-clone', { required_checks: [], approvals: 0 }, [
     { path: 'README.md', content_b64: b64('# Clone check\n') },
@@ -74,29 +74,27 @@ async function cloneCheck(platform, newRepo, metrics) {
   ]);
   const made = await platform.post(`/repos/${repo.id}/commits`, { ref: 'main', changes: [{ path: 'src/added.txt', content_b64: b64('landed\n') }], message: 'Kit commit', author });
   await platform.post(`/repos/${repo.id}/land`, { ref: 'main', commit: made.commit });
-  const access = await platform.post(`/repos/${repo.id}/clone`, {});
-  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', ...gitConfigEnv({ token: access.token }) };
+  const reader = await platform.post(`/repos/${repo.id}/tokens`, { name: 'kit-clone', scopes: ['read'] });
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', ...gitConfigEnv({ token: reader.token }) };
   const git = (args, cwd) => execFileSync('git', args, { cwd, env, encoding: 'utf8' }).trim();
-  // Batched landing projects main as its own Git commit (N11): the clone must hold the
-  // commit the API reports for main, whose tree contains the landed change.
-  const projected = performance.now();
+  // A batched landing's Git commit is built just after it: the clone must hold the commit the
+  // API reports for main, whose tree contains the landed change.
   const main = await until(
     async () => {
       const head = (await platform.get(`/repos/${repo.id}/refs`)).refs['refs/heads/main'];
-      return head && head !== repo.commit && git(['ls-remote', access.remote, 'refs/heads/main']).split(/\s/)[0] === head && head;
+      return head && head !== repo.commit && head;
     },
-    { timeoutMs: 180_000, intervalMs: 2000, what: 'main projected to Artifacts' },
+    { timeoutMs: 180_000, intervalMs: 2000, what: 'main to move' },
   );
-  metrics.projection_s = ((performance.now() - projected) / 1000).toFixed(1);
   const dir = mkdtempSync(join(tmpdir(), 'yoneda-staging-clone-'));
   try {
     const started = performance.now();
-    git(['clone', '--quiet', access.remote, dir]);
+    git(['clone', '--quiet', `${api}/git/${repo.id}.git`, dir]);
     metrics.clone_ms = Math.round(performance.now() - started);
     assert.equal(git(['rev-parse', 'HEAD'], dir), main, 'Clone HEAD differs from the API main');
     git(['fsck', '--strict'], dir);
     const expected = await apiTree(platform, repo.id, main);
-    assert.ok(expected.has('src/added.txt'), 'Projected main lacks the landed change');
+    assert.ok(expected.has('src/added.txt'), 'Main lacks the landed change');
     const cloned = git(['ls-files'], dir).split('\n').filter(Boolean).sort();
     assert.deepEqual(cloned, [...expected.keys()].sort(), 'Cloned file set differs from the API tree');
     for (const [path, file] of expected) {

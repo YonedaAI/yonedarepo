@@ -27,19 +27,17 @@ pub(crate) fn directory(name: &str) -> Result<PathBuf> {
 pub(crate) fn configure(args: &[String]) -> Result<()> {
     let name = option(args, "--name")?;
     let account = option(args, "--account-id")?;
-    let namespace = option(args, "--namespace")?;
     let subdomain = option(args, "--subdomain")?;
     let database = option(args, "--database-id")?;
     if account.len() != 32
         || !account.bytes().all(|b| b.is_ascii_hexdigit())
-        || !slug(namespace)
         || !slug(subdomain)
         || uuid::Uuid::parse_str(database).is_err()
     {
-        return Err("Invalid account, namespace, workers.dev subdomain or D1 UUID".into());
+        return Err("Invalid account, workers.dev subdomain or D1 UUID".into());
     }
     let dir = directory(name)?;
-    let manifest = json!({"name":name,"account_id":account,"namespace":namespace,"database_id":database,"platform_url":format!("https://{name}.{subdomain}.workers.dev")});
+    let manifest = json!({"name":name,"account_id":account,"database_id":database,"platform_url":format!("https://{name}.{subdomain}.workers.dev")});
     std::fs::create_dir_all(&dir)?;
     private(&dir, true)?;
     let template: Value = serde_json::from_slice(&std::fs::read(crate::layout::PLATFORM_CONFIG)?)?;
@@ -62,7 +60,7 @@ pub(crate) fn configure(args: &[String]) -> Result<()> {
         );
     }
     println!(
-        "Set the D1 UUID with --database-id when configuring. Artifacts namespace creation and billing prerequisites are documented in README.md. Deploy: cargo xtask cloudflare-deploy --name {name}"
+        "Set the D1 UUID with --database-id when configuring. Billing prerequisites are documented in README.md. Deploy: cargo xtask cloudflare-deploy --name {name}"
     );
     Ok(())
 }
@@ -149,12 +147,10 @@ fn configs(mut platform: Value, m: &Value) -> Value {
     platform["main"] = json!("../../../cloudflare/worker/index.ts");
     platform["$schema"] = json!("../../../node_modules/wrangler/config-schema.json");
     platform["assets"]["directory"] = json!("../../../frontend/dist");
-    platform["vars"]["ARTIFACTS_NAMESPACE"] = m["namespace"].clone();
     platform["services"][0]["service"] = m["name"].clone();
     platform
         .as_object_mut()
         .map(|p| p.remove("secrets_store_secrets"));
-    platform["artifacts"][0]["namespace"] = m["namespace"].clone();
     // Platform checks run the pinned runtime image.
     for container in platform["containers"].as_array_mut().into_iter().flatten() {
         container["image"] = json!("../../../cloudflare/containers/Dockerfile");

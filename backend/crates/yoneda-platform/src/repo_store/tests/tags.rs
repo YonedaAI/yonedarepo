@@ -1,8 +1,6 @@
 //! Lightweight tags: created once at a recorded commit (expected old is null), logged as a
-//! ref move, projected like a protected branch, and never moved or deleted.
+//! ref move, and never moved or deleted.
 use super::*;
-
-const PROJECTOR: &str = "platform:projection";
 
 fn tag(h: &Harness, who: &str, name: &str, commit: &str) -> yoneda_core::Result<Value> {
     h.run(
@@ -12,7 +10,7 @@ fn tag(h: &Harness, who: &str, name: &str, commit: &str) -> yoneda_core::Result<
 }
 
 #[test]
-fn tags_are_created_once_logged_and_projected() {
+fn tags_are_created_once_and_logged() {
     let (h, root) = seeded();
     let child = h
         .commit(
@@ -35,15 +33,6 @@ fn tags_are_created_once_logged_and_projected() {
     assert_eq!(entry["kind"], "ref_move");
     assert_eq!(entry["refname"], "refs/tags/v1");
     assert!(entry["old"].is_null());
-    let pending = h.ok(PROJECTOR, json!({"op":"repo_projection_pending"}));
-    assert!(
-        pending["pending"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .any(|p| p["refname"] == "refs/tags/v1" && p["target_commit"] == json!(root)),
-        "{pending}"
-    );
 
     // Creating it again at the same commit is a no-op; anywhere else it is refused.
     assert_eq!(

@@ -1,14 +1,11 @@
-// The object store of a repository with no mirror (its Artifacts mirror retired after a
-// purge, repo-mirror-retire; or a fork of such a repository): the platform's own store of
-// record is all there is. Reads find nothing here that the tiers in front of a store
-// (repo-objects: R2's raw copies and bundles) did not; a commit too large to stage is
-// written there whole (repo-pack-copy), withheld blobs never. There is no `git clone`
-// remote: clones are served by the platform's Git over HTTPS.
+// A repository's object store: the platform's own store of record, and all there is. Reads find
+// nothing here that the tiers in front of a store (repo-objects: R2's raw copies and bundles) did
+// not; a commit too large to stage is written there whole (repo-pack-copy), withheld blobs never.
+// Clones are served by the platform's Git over HTTPS.
 
 import { fromBundles } from './repo-bundles';
 import { compute } from './repo-compute';
 import { withheldOf } from './repo-head';
-import { putLarge } from './repo-large-files';
 import { PackCopy } from './repo-pack-copy';
 import { withheldMap } from './repo-quarantine-guard';
 import { type CommitHeader, fromBase64, type ObjectStore, type TreeEntry } from './repo-stores';
@@ -27,7 +24,6 @@ export class PlatformStore implements ObjectStore {
   get spec() {
     return `platform:${this.repo}`;
   }
-  async create() {}
   /** A receive-pack request (a prepared commit's): its pack written to the store of
    * record, then Git's report for its ref. */
   async push(body: Uint8Array) {
@@ -40,11 +36,6 @@ export class PlatformStore implements ObjectStore {
     } finally {
       await copy.close();
     }
-  }
-  /** A large file streamed into its raw key (hidden refs are not kept here). */
-  async pushFile(id: string, size: number, open: () => Promise<ReadableStream<Uint8Array>>) {
-    await putLarge(this.env, rawKey(this.repo)(id), size, await open());
-    return null;
   }
   /** A commit's tree and parents from the store of record (a push's readback). */
   async readCommit(id: string): Promise<CommitHeader | null> {

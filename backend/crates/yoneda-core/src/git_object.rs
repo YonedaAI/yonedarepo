@@ -1,6 +1,6 @@
 //! Byte-exact Git object model (SHA-1) for server-side commits.
 //!
-//! YonedaRepo builds blobs, trees and commits itself and stores them in Artifacts, so
+//! YonedaRepo builds blobs, trees and commits itself and stores them in R2, so
 //! object ids must match what `git` computes. Decoding is lossless: re-encoding a
 //! decoded object reproduces its original bytes and id.
 mod commit;

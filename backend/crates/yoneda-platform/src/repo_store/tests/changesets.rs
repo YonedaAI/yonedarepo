@@ -332,36 +332,6 @@ fn a_plan_never_holds_more_steps_than_a_record_takes() {
 }
 
 #[test]
-fn vacuum_never_releases_unprojected_changesets() {
-    let (h, root) = seeded();
-    let first = h.landable(&root, 1, json!([file("first.txt", "1\n")]), json!([]));
-    h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":first}));
-    let b = h.landable(&root, 1, json!([file("b.txt", "b\n")]), json!([]));
-    h.enqueue(&b);
-    land_changesets(&h);
-    // Long after retention, with main's earlier projection in sync.
-    *h.now.borrow_mut() += 30 * 24 * 60 * 60 * 1000;
-    h.ok(PROJECTOR, json!({"op":"repo_projection_result","refname":"refs/heads/main","version":2,"outcome":"ok","commit":first}));
-    let held = |h: &Harness| {
-        let plan = h.ok(OWNER, json!({"op":"repo_vacuum_plan"}));
-        let all: Vec<Value> = ["covered", "expired"]
-            .iter()
-            .flat_map(|k| plan[k].as_array().unwrap().clone())
-            .collect();
-        !all.contains(&json!(b))
-    };
-    assert!(held(&h), "the landed changeset's commit is still needed");
-    h.project_all();
-    assert!(
-        held(&h),
-        "projected, but not yet in the object store's main"
-    );
-    let head = h.ok(OWNER, json!({"op":"repo_snapshot","ref":"main"}))["commit"].clone();
-    h.ok(PROJECTOR, json!({"op":"repo_projection_result","refname":"refs/heads/main","version":3,"outcome":"ok","commit":head}));
-    assert!(!held(&h), "reachable from projected main: released");
-}
-
-#[test]
 fn grants_bound_changesets_and_owner_fast_forward_waits_for_projection() {
     let (h, root) = seeded();
     const DOCS: &str = "token:docs";

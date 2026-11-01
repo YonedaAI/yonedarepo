@@ -125,7 +125,6 @@ export function holdSteps(ctx) {
       assert.ok(row?.sent_at > 0, 'the sweep sent its purge and the schedule keeps it');
       const prefix = `platform/v1/${s.tomb.id}/`;
       assert.equal(after.r2[prefix].keys, s.before.r2[prefix].keys, 'R2 keeps every object');
-      if (s.before.artifacts) assert.equal(after.artifacts.exists, s.before.artifacts.exists, 'the mirror stays');
       assert.equal(after.object.state, 'tombstone', 'the erase has not touched it');
       Object.assign(m, { r2_keys_kept: after.r2[prefix].keys, past_due_s: Math.round((ctx.clock.now() - purge_at) / 1000) });
     }],

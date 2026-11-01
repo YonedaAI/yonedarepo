@@ -132,7 +132,6 @@ pub(super) fn append<S: SqlStore>(
         &[json!(refname), json!(commit.id.hex()), json!(version)],
     )?;
     super::ref_chain::advance(db, refname, &commit.id, c)?;
-    super::projection::target(db, refname, &commit.id, version, entry.committed_at_ms)?;
     rows::maybe_checkpoint(db, version, &entry.chain)?;
     // Landing on a working branch moves it as a push does; a fork's mirror (`RefMove`) and a
     // copied or imported ref (`Import`) are nobody's proposal.
@@ -242,9 +241,10 @@ pub fn land<S: SqlStore>(db: &S, c: &Value, principal: &str, settings: &Settings
     ))
 }
 
-/// Seeds an empty repository with a root commit. Owner-only (checked by the dispatcher)
-/// and gate-free by design.
-pub fn import<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
+/// Seeds an empty repository: an owner's root commit, or a clone's default branch, whose
+/// commits `importer` recorded first. Owner-only (checked by the dispatcher) and gate-free by
+/// design.
+pub fn import<S: SqlStore>(db: &S, c: &Value, principal: &str, importer: bool) -> Result<Value> {
     if !db.query("SELECT name FROM refs LIMIT 1", &[])?.is_empty() {
         return Err(Error::new(
             "ALREADY_EXISTS",
@@ -252,7 +252,7 @@ pub fn import<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> 
         ));
     }
     let commit = rows::recorded(db, &object_id(c, "commit")?)?;
-    if !commit.parents.is_empty() && !super::history_import::imported(db, &commit.id)? {
+    if !commit.parents.is_empty() && !importer {
         return Err(Error::new(
             "INVALID_INPUT",
             "Import needs a root commit or imported history",

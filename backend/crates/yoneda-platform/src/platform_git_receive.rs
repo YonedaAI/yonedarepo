@@ -4,7 +4,6 @@
 //! adapter to store. Nothing here moves a ref: the adapter records the commits and then
 //! applies the ref updates through the authority's compare-and-swap paths, with each
 //! command's old id as the expected-old lease (`git_land` takes none; see `repo_store::land`).
-mod import;
 
 use crate::platform_git_verify::{Step, Verified, Verifier};
 use crate::platform_objects::supplied_tree;
@@ -52,9 +51,6 @@ pub struct ReceiveSession {
     scanning: Option<StreamScan>,
     /// The verified commits, handed out a page at a time (`verified_page`).
     verified: Vec<Verified>,
-    /// An import's first-parent chain and how many of its commits are kept (`import`).
-    chain: Vec<import::Link>,
-    kept: usize,
 }
 
 impl Default for ReceiveSession {
@@ -76,8 +72,6 @@ impl ReceiveSession {
             written: 0,
             scanning: None,
             verified: Vec::new(),
-            chain: Vec::new(),
-            kept: 0,
         }
     }
 
@@ -262,8 +256,7 @@ impl ReceiveSession {
 
     /// Instead of `verify`: every commit, tree and blob in the pack becomes a write, in
     /// the same order, except `skip` (`{skip: [id]}`, withheld blobs). For a pack copied
-    /// whole into the store of record (a retired mirror's history, a commit pushed to a
-    /// repository without one); annotated tags are not stored. Answers the writes' count.
+    /// whole into the store of record (a commit too large to stage); annotated tags are not stored. Answers the writes' count.
     pub fn copy(&mut self, input: &Value) -> Result<Value> {
         let skip = input["skip"]
             .as_array()

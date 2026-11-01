@@ -1,12 +1,11 @@
 //! Staged objects: a small commit is accepted once this authority durably holds every
 //! object it built for it, instead of after a write to the object store (R2 writes take
-//! about a second; Artifacts takes one receive-pack per repository at a time). Each
+//! about a second). Each
 //! accepted staged commit gets an object-outbox row in the same transaction; the projector
 //! writes its objects to R2 (the store of record), confirms each write and reports, and
 //! only then are the staged copies dropped. Until then reads fall back to them by id.
 //! Failures stay pending with their reason, visible in `repo_status`; nothing is dropped
-//! unwritten. The object ids stay listed (`commit_objects`) until Artifacts holds the commit
-//! (see projection). Written against `SqlStore` alone, so any authority can own a staging
+//! unwritten. Written against `SqlStore` alone, so any authority can own a staging
 //! area.
 use super::rows::{corrupt, object_id};
 use crate::platform_objects::object_json;

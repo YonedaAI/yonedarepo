@@ -93,8 +93,6 @@ pub struct Context {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CloneMethod {
-    /// An offline checkout by `git clone` with a short-lived read token.
-    GitClone,
     /// An offline checkout from a snapshot of the branch through the API.
     ApiSnapshot,
     /// A lazy `yoneda::` clone: commits and trees; file contents when Git needs them.
@@ -136,15 +134,6 @@ pub struct LastLand {
     pub git_commit: Option<String>,
 }
 
-/// The branch's object store projection.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Projection {
-    pub projected_version: u64,
-    pub target_version: u64,
-    pub status: String,
-}
-
 /// What the platform says about an offline checkout's branch.
 #[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -159,7 +148,6 @@ pub struct RemoteStatus {
     pub projected_version: Option<u64>,
     /// Changesets landed after that version still without a Git commit (of the first 500).
     pub awaiting_git_commit: Option<u64>,
-    pub store: Option<Projection>,
 }
 
 /// `status`.

@@ -14,11 +14,6 @@ fn marked_by_environment() -> bool {
     marked(std::env::var("YONEDA_OWN_TRAFFIC").ok().as_deref())
 }
 
-/// The header line for a `git` the CLI starts itself, when this run is marked.
-pub(crate) fn own_traffic_line() -> Option<String> {
-    marked_by_environment().then(|| format!("{OWN_TRAFFIC}: 1"))
-}
-
 /// The client every platform call goes through.
 pub(crate) fn client() -> Result<reqwest::Client> {
     let mut headers = HeaderMap::new();

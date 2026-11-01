@@ -11,7 +11,7 @@ import { dispatchDerive } from './repo-derived';
 import { refreshHead } from './repo-head';
 import type { CachedObject } from './repo-objects';
 import { caller, type Json, RepoContext, withTrees } from './repo-ops';
-import { dispatchObjects, dispatchProjection } from './repo-projection';
+import { dispatchObjects } from './repo-projection';
 import { forgetChain, shardLanded } from './repo-shards';
 import { timed } from './repo-timing';
 import type { Env } from './types';
@@ -136,14 +136,13 @@ export async function projectChangesets(env: Env, repo: string): Promise<number>
     previous = (built.objects as CachedObject[]).filter((o) => o.kind === 'tree');
   }
   await Promise.all(caching);
-  // The branch moved in Git: project it to Artifacts and derive its search segments and
-  // change log (a lost message only delays them), and republish its head.
+  // The branch moved in Git: derive its search segments and change log (a lost message only
+  // delays them), and republish its head.
   if (projected)
     await Promise.all([
-      Promise.all([
-        dispatchProjection(env, repo),
-        ...[...refs].map((ref) => dispatchDerive(env, repo, ref)),
-      ]).catch((e) => log.warn('dispatch.after_projection_failed', { error: e })),
+      Promise.all([...refs].map((ref) => dispatchDerive(env, repo, ref))).catch((e) =>
+        log.warn('dispatch.after_projection_failed', { error: e }),
+      ),
       refreshHead(env, repo),
     ]);
   return projected;

@@ -26,7 +26,6 @@ pub struct Actor {
     /// A person signed in to their own account (never a token, platform role or script).
     human: bool,
     /// An account's personal access token: whole-repository Git reads with `read`.
-    account_token: bool,
     scopes: Vec<String>,
     /// Directory grant (`None`: whole repository).
     pub grant: super::grants::Grant,
@@ -56,21 +55,6 @@ impl Actor {
             Err(Error::new(
                 "FORBIDDEN",
                 format!("Token needs one of the {} scopes", scopes.join("/")),
-            ))
-        }
-    }
-    /// Git clone access: a person signed in to their own account, or that account's personal
-    /// token with `repo:read`, who may read the whole repository. Repository tokens and
-    /// scripts use the API; a directory grant cannot clone it all.
-    pub fn require_human_reader(&self) -> Result<()> {
-        let reader = (self.human && (self.owner || self.can("read")))
-            || (self.account_token && self.can("read"));
-        if reader && self.grant.is_none() {
-            Ok(())
-        } else {
-            Err(Error::new(
-                "FORBIDDEN",
-                "Git clone access is for a signed-in person who can read the whole repository",
             ))
         }
     }
@@ -125,7 +109,6 @@ fn public_reader(principal: String) -> Actor {
         owner: false,
         member: None,
         human: false,
-        account_token: false,
         scopes: vec!["read".to_owned()],
         grant: None,
         public: true,
@@ -210,7 +193,6 @@ pub fn actor_with(
             owner: false,
             member: None,
             human: false,
-            account_token: false,
             grant: None,
             public: false,
             scopes: std::iter::once("read")
@@ -232,7 +214,6 @@ pub fn actor_with(
                 owner: true,
                 member: None,
                 human,
-                account_token: false,
                 scopes: Vec::new(),
                 grant: None,
                 public: false,
@@ -249,7 +230,6 @@ pub fn actor_with(
                 owner: true,
                 member: None,
                 human,
-                account_token: false,
                 scopes: Vec::new(),
                 grant: None,
                 public: false,
@@ -263,7 +243,6 @@ pub fn actor_with(
             owner: role == Role::Admin,
             member: Some(role),
             human,
-            account_token: false,
             scopes: role.scopes().iter().map(|s| (*s).to_owned()).collect(),
             grant: None,
             public: false,
@@ -281,7 +260,6 @@ pub fn actor_with(
         owner: false,
         member: None,
         human: false,
-        account_token: false,
         scopes: serde_json::from_str(row["scopes"].as_str().unwrap_or("[]"))
             .map_err(|_| bad("Corrupt scopes"))?,
         grant: match row["paths"].as_str() {

@@ -289,7 +289,7 @@ await step('browser', 'Browser: sign in, source pages, a change landed, releases
 await step('31', 'Visibility: anonymous stock-Git clone and page of a public repository; private refuses within 1 s', (m) =>
   visibilityFlow({ origin: values.origin, api: values.api, platform: platformAccount }, m),
 );
-await step('6', 'git clone protected main = API tree (bytes)', (m) => cloneMatchesApi(platformAccount, m));
+await step('6', 'git clone protected main = API tree (bytes)', (m) => cloneMatchesApi({ api: values.api, platform: platformAccount }, m));
 await step('7', 'Check run in a container, 0 left after', (m) => containerCheck(platformAccount, m));
 await step('19', 'Big clone: partial (blob:none, lazy blobs, < 10% of full), shallow, deepen, fsck', (m) =>
   bigClone({ api: values.api, platform: platformAccount, bigFiles: Number(values['big-files']) }, m),

@@ -157,11 +157,11 @@ describe('superfan watch pass', () => {
     expect(finding.summary).toContain('baseline 85ms');
   });
 
-  it('counts Artifacts push retries from platform logs', async () => {
+  it('counts push retries from platform logs', async () => {
     fakeUpstreams(analytics());
     const e = testEnv();
     const d = deps(e, { now: start });
-    const retry = { level: 'warn', message: ['object store push attempt 2 refused: busy'] };
+    const retry = { level: 'warn', message: [JSON.stringify({ event: 'object.push_retry', attempt: 2 })] };
     await feed(d.ledger, hour(recent(start), { api_worker: { count: 100, logs: [] } }), start);
     await feed(
       d.ledger,
@@ -170,7 +170,7 @@ describe('superfan watch pass', () => {
     );
     await runWatch(e, d);
     const [finding] = await d.ledger.findings('open', 1);
-    expect(finding.dedup_key).toBe('object_push_queue:push_retries');
+    expect(finding.dedup_key).toBe('source_repository:push_retries');
     expect(finding.summary).toContain('push_retries=8');
   });
 
@@ -320,7 +320,6 @@ describe('superfan watch pass', () => {
     expect(variables).toMatchObject({
       namespaces: [
         '11111111111111111111111111111111',
-        '22222222222222222222222222222222',
         '33333333333333333333333333333333',
       ],
       queues: ['44444444444444444444444444444444', '55555555555555555555555555555555'],

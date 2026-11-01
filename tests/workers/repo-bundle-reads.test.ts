@@ -1,12 +1,12 @@
-// What bundle readers cost a repository: file reads and the Artifacts projection of one
-// that holds no bundles (a burst of API landings) make no `repo_bundle_locate` call to its
+// What bundle readers cost a repository: file reads and the object projection of one that
+// holds no bundles (a burst of API landings) make no `repo_bundle_locate` call to its
 // authority, and the per-isolate location memo stays bounded. Counts are of Durable Object
 // commands in local workerd.
 import { expect, it } from 'vitest';
 import { isolateLocations, type Location, LocationMemo, locate } from '../../cloudflare/worker/repo-bundles';
-import { projectObjects, projectRefs } from '../../cloudflare/worker/repo-projection';
+import { projectObjects } from '../../cloudflare/worker/repo-projection';
 import type { Env } from '../../cloudflare/worker/types';
-import { api, artifacts, author, bindings, countingOps, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, bindings, countingOps, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -54,17 +54,13 @@ it('reads and projects a repository without bundles with no locate call', async 
   // One staged read per object that missed R2, as before bundles.
   expect(reads.repo_staged_objects).toBeLessThanOrEqual(8);
 
-  // The consumer's jobs: staged objects to R2, then main (its batch's Git commit, built
-  // when main is first read) to Artifacts.
-  const head = (await api(`/repos/${repo}/refs`, owner, {}, env)).body.refs['refs/heads/main'];
+  // The consumer's job: staged objects to R2.
   take();
   for (let round = 0; round < 3 && queued.length; round++)
-    for (const message of queued.splice(0)) {
+    for (const message of queued.splice(0))
       if (message.kind === 'platform_objects') await projectObjects(env, message.repo_id, message.job_id);
-      if (message.kind === 'platform_project') await projectRefs(env, message);
-    }
   expect(take().repo_bundle_locate ?? 0).toBe(0);
-  expect(artifacts.get(`yr-${repo}`)?.has(head)).toBe(true);
+  for (const { commit } of landed) expect(await bindings.OBJECTS.head(`platform/v1/${repo}/git/${commit}`), commit).not.toBeNull();
 });
 
 const place = (n: number): Location => ({ id: n.toString(16).padStart(40, '0'), bundle: 'b'.repeat(64), at: n, size: 1, kind: 'blob' });

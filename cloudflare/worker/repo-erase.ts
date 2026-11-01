@@ -8,7 +8,7 @@
 // repository's audit events to its org's log, erase or no erase, before anything goes.
 //
 // Other per-repository objects hold nothing to erase: PackBuilder's storage is its
-// container's lifecycle state, CheckContainer's the same, and ObjectPushQueue keeps none.
+// container's lifecycle state, and CheckContainer's the same.
 
 import { durableJson } from './durable';
 import { log } from './log';

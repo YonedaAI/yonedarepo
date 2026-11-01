@@ -6,10 +6,12 @@
 // are of R2 reads in local workerd.
 import { beforeEach, expect, it, vi } from 'vitest';
 import { withWaitUntil } from '../../cloudflare/worker/background';
-import { buildPacks, mirrorSource, platformSource } from '../../cloudflare/worker/platform-pack-builder';
-import { packKey } from '../../cloudflare/worker/repo-pack-cache';
+import { buildPacks, platformSource, seedSource } from '../../cloudflare/worker/platform-pack-builder';
+import { keepSeed, packKey, packsPrefix } from '../../cloudflare/worker/repo-pack-cache';
 import { DEBOUNCE_S } from '../../cloudflare/worker/repo-pack-jobs';
+import { CHUNK, sideBand } from '../../cloudflare/worker/repo-pack-stream';
 import type { Env } from '../../cloudflare/worker/types';
+import { asGit } from './git-answer';
 import { bindings, fakeQueue, usePlatformFixture } from './repo-fixture';
 import { count, drainPackBuilds, fakeBuilders, fetchV2, history, on, pkt, pushedRepo, reads, runJob, take } from './repo-pack-fixture';
 
@@ -190,7 +192,7 @@ it('answers a container’s Git remotes only for its own repository', async () =
   const at = (host: string, path: string, init?: RequestInit) => new Request(`http://${host}/${repo}.git/${path}`, { headers: { 'git-protocol': 'version=2' }, ...init });
   const refs = 'info/refs?service=git-upload-pack';
   expect((await platformSource(at('platform.internal', refs), jobs, other)).status).toBe(403);
-  expect((await mirrorSource(at('mirror.internal', refs), jobs, other)).status).toBe(403);
+  expect((await seedSource(at('mirror.internal', refs), jobs, other)).status).toBe(403);
   // Only upload-pack's two requests.
   expect((await platformSource(at('platform.internal', 'info/refs?service=git-receive-pack'), jobs, own)).status).toBe(403);
   expect((await platformSource(at('platform.internal', refs), jobs, own)).status).toBe(200);
@@ -202,11 +204,46 @@ it('answers a container’s Git remotes only for its own repository', async () =
   const zipped = { method: 'POST', body: await gzipped.arrayBuffer(), headers: { 'git-protocol': 'version=2', 'content-encoding': 'gzip' } };
   const unzipped = await platformSource(at('platform.internal', 'git-upload-pack', zipped), jobs, own);
   expect(new TextDecoder('latin1').decode(new Uint8Array(await unzipped.arrayBuffer()))).toContain('packfile');
-  // The mirror is the repository's Artifacts remote, with a read token the Worker minted.
-  const remote = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('refs'));
-  expect(await (await mirrorSource(at('mirror.internal', refs), jobs, own)).text()).toBe('refs');
-  const [target, init] = remote.mock.calls[0] as [string, RequestInit];
-  expect(target).toMatch(/^https:\/\/artifacts\.test\/.+\/info\/refs\?service=git-upload-pack$/);
-  expect(new Headers(init.headers).get('authorization')).toMatch(/^Bearer .+/);
-  expect(new Headers(init.headers).get('git-protocol')).toBe('version=2');
+});
+
+/** A pack answer's side-band 1, whole. */
+function packOf(bytes: Uint8Array) {
+  const parts: Uint8Array[] = [];
+  for (let at = 0; at + 4 <= bytes.length; ) {
+    const size = Number.parseInt(new TextDecoder().decode(bytes.subarray(at, at + 4)), 16);
+    if (size > 4 && bytes[at + 4] === 1) parts.push(bytes.subarray(at + 5, at + size));
+    at += Math.max(size, 4);
+  }
+  return parts.flatMap((part) => [...part]);
+}
+
+it('answers a repository’s stored seed as a Git remote, to its own container only', async () => {
+  const { repo } = await pushedRepo('pack_seed', jobs);
+  const own = { containerId: `id:packs:${repo}` };
+  const other = { containerId: 'id:packs:r00000000000000000000' };
+  const asked = (body: string) => new Request(`http://mirror.internal/${repo}.git/git-upload-pack`, { method: 'POST', body });
+  const lsRefs = `${pkt('command=ls-refs\n')}0000`;
+  const fetchAll = `${pkt('command=fetch\n')}0001${pkt('done\n')}0000`;
+
+  // No seed yet: no tips, and nothing to send.
+  expect(await (await seedSource(asked(lsRefs), jobs, own)).text()).toBe('0000');
+  expect((await seedSource(asked(fetchAll), jobs, own)).status).toBe(404);
+
+  // What an import keeps: the pack as sent to a clone, the band already around it.
+  const pack = Uint8Array.from({ length: 2 * CHUNK + 100 }, (_, i) => (i * 31) % 251);
+  const tips = ['a'.repeat(40), 'b'.repeat(40)];
+  const key = `${packsPrefix(repo)}imported.pack`;
+  await bindings.OBJECTS.put(key, sideBand(1, pack, CHUNK));
+  await keepSeed(jobs, repo, key, tips);
+
+  const advertised = await seedSource(new Request(`http://mirror.internal/${repo}.git/info/refs?service=git-upload-pack`), jobs, own);
+  expect(await advertised.text()).toContain('version 2');
+  const listed = await (await seedSource(asked(lsRefs), jobs, own)).text();
+  expect(listed).toBe(`${pkt(`${tips[0]} refs/heads/seed-0\n`)}${pkt(`${tips[1]} refs/heads/seed-1\n`)}0000`);
+  const sent = new Uint8Array(await (await seedSource(asked(fetchAll), jobs, own)).arrayBuffer());
+  expect(asGit(sent, true)).toMatchObject({ error: null, badBand: null, pack: pack.length });
+  expect(packOf(sent)).toEqual([...pack]);
+
+  // Another repository's container gets neither, whatever it asks.
+  for (const body of [lsRefs, fetchAll]) expect((await seedSource(asked(body), jobs, other)).status).toBe(403);
 });

@@ -43,7 +43,7 @@ YonedaRepo is a Git-compatible source platform for agents and API clients, built
 - Browser/adapter checks: TypeScript, formatting/lint, production build, and Cloudflare Workers runtime integration tests. Use Wrangler/workerd for platform behavior; ordinary Node mocks do not prove DO/R2/Queue behavior.
 - Test important behavior and failure boundaries, especially replay, rollback, migrations, scope isolation, duplicates, cancellation, stale HEAD, acknowledgment loss and restart recovery. Reproduce defects with a failing test before fixing them. Avoid tests that merely repeat implementation.
 - Verify browser changes in the real served app, including empty/loading/error states. Keep accessibility, keyboard navigation and clear selected-versus-published state.
-- Local tests must work without provider keys or paid inference. Live provider, container and Artifacts checks are an explicit separate command. Clearly label simulated incidents and test fixtures.
+- Local tests must work without provider keys or paid inference. Live provider and container checks are an explicit separate command. Clearly label simulated incidents and test fixtures.
 - Before declaring completion, run the relevant gates and record exact results and outstanding blockers. Distinguish source implementation, local test, deployment, live run and user acceptance. Never invent a successful run.
 
 ## Development process (owner rules)
