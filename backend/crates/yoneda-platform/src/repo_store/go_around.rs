@@ -26,9 +26,15 @@ fn open(select: &str) -> String {
     )
 }
 
+/// How many findings change `number` still has open: what a Landing has left to answer. Fewer
+/// than its unresolved comments, since an agent's re-review resolves nothing.
+pub(super) fn open_count<S: SqlStore>(db: &S, number: &Value) -> Result<u64> {
+    let count = db.query(&open("COUNT(*) AS n"), &[number.clone(), number.clone()])?;
+    Ok(count.first().and_then(|r| r["n"].as_u64()).unwrap_or(0))
+}
+
 /// The open findings of change `number`, whose current head is `head`.
 pub(super) fn of_change<S: SqlStore>(db: &S, number: &Value, head: &Value) -> Result<Value> {
-    let count = db.query(&open("COUNT(*) AS n"), &[number.clone(), number.clone()])?;
     let findings = db.query(
         &format!(
             "{} ORDER BY k.commit_id=? DESC,k.id DESC LIMIT ?",
@@ -53,7 +59,7 @@ pub(super) fn of_change<S: SqlStore>(db: &S, number: &Value, head: &Value) -> Re
         .collect();
     Ok(json!({
         "change": number,
-        "open": count.first().map_or(json!(0), |r| r["n"].clone()),
+        "open": open_count(db, number)?,
         "findings": findings,
     }))
 }
