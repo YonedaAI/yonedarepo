@@ -21,10 +21,11 @@ function proxied<T extends object>(
 ) {
   return new Proxy(target, {
     get(t, key) {
-      const value = (t as any)[key];
-      if (typeof value !== 'function') return value;
-      const bound = value.bind(t);
-      return typeof key === 'string' ? wrap(key, bound) : bound;
+      const object = t as any;
+      if (typeof object[key] !== 'function') return object[key];
+      // Called on its object, never `.bind`: on an RPC stub, that's a remote method.
+      const call = (...args: unknown[]) => object[key](...args);
+      return typeof key === 'string' ? wrap(key, call) : call;
     },
   });
 }
