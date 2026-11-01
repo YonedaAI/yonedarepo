@@ -1,10 +1,11 @@
-// The public home (`/` signed out): hero, the problems YonedaRepo answers, the "Build on
+// The public home (`/` signed out): hero, a Flight Path, the problems YonedaRepo answers, the "Build on
 // YonedaRepo" feature tour, the comparison with plain Git and a closing call to action.
 import { ArrowRight, Check } from 'lucide-react';
 import type { Navigate } from '../shell/useRoute';
 import { BUILD_ON } from './buildOn';
 import { SiteBuildOn } from './SiteBuildOn';
 import { SiteCompare } from './SiteCompare';
+import { SiteFlightPath } from './SiteFlightPath';
 import { siteLink } from './SiteLayout';
 import { SiteWorksWith } from './SiteWorksWith';
 
@@ -57,6 +58,8 @@ export function SiteHome({ navigate }: { navigate: Navigate }) {
           <SiteWorksWith />
         </div>
       </section>
+
+      <SiteFlightPath />
 
       <section className="site-band site-problem-band" aria-labelledby="problems-heading">
         <div className="site-problem-intro">
