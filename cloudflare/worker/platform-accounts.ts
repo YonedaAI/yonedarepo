@@ -7,6 +7,7 @@ import { type AccountCreated, accountSummary, recordAccount } from './account-in
 import { queueWelcome } from './platform-email-verify';
 import { isRegion, regionSignals } from './region';
 import { carriedQueue } from './request-scope';
+import { readSignupSource } from './site-events';
 import type { Env } from './types';
 
 const PROVIDERS: readonly string[] = ['email', 'github', 'google'];
@@ -22,6 +23,7 @@ export async function accountCreated(env: Env, account: string, details: Account
     details.provider && PROVIDERS.includes(details.provider) ? details.provider : 'email';
   const region = regionSignals(env) && isRegion(details.region) ? details.region : undefined;
   await recordAccount(env, account, provider, Date.now(), region);
+  if (env.VISITORS === 'on' && details.source) await keepSource(env, account, details.source);
   await carriedQueue(env.PLATFORM_QUEUE).send({
     v: 1,
     kind: SIGNUP_NOTICE,
@@ -32,6 +34,17 @@ export async function accountCreated(env: Env, account: string, details: Account
   if (details.welcome !== false) await queueWelcome(env, account);
 }
 export const SIGNUP_NOTICE = 'admin_signup_notice';
+
+/** Where a new account's visitor came from, so a campaign can be followed to a repository. */
+async function keepSource(env: Env, account: string, sent: unknown) {
+  const s = readSignupSource(sent);
+  if (!s.ref && !s.utm_source && !s.utm_medium && !s.utm_campaign) return;
+  await env.INDEX.prepare(
+    'UPDATE platform_accounts SET signup_ref=?,signup_utm_source=?,signup_utm_medium=?,signup_utm_campaign=? WHERE account=?',
+  )
+    .bind(s.ref, s.utm_source, s.utm_medium, s.utm_campaign, account)
+    .run();
+}
 
 /** Account names the platform's other projections know (repository owners, handles,
  * members, token holders), after `after` in order. Organizations are among them; their

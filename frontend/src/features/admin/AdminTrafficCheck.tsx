@@ -10,7 +10,7 @@ import { changeLabel, figure as count, RANGE_LABELS } from './trafficModel';
 
 const UNKNOWN = '—';
 const crawlers = (n: number) => `${count(n)} search crawler${n === 1 ? '' : 's'}`;
-const CLIENTS: Record<string, string> = {
+export const CLIENTS: Record<string, string> = {
   cli: 'yoneda CLI',
   git: 'Git',
   mcp: 'MCP',

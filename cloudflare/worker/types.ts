@@ -188,6 +188,18 @@ export interface Env {
    * repository Insights page and the admin landing and repository reports (repo-usage.ts). Needs
    * TRAFFIC_EVENTS and TRAFFIC_REPORT on. */
   REPO_ANALYTICS?: string;
+  /** `on` splits the operator log, adds its filters and detail panel, and records failed admin
+   * attempts, purges' ends and staff reads (platform-operator-audit.ts). Needs D1 migration 0015. */
+  OPERATOR_AUDIT?: string;
+  /** `on` opens the admin Operations and Infrastructure tabs (platform-operations-report.ts). */
+  OPS_REPORT?: string;
+  /** What the Infrastructure tab reads, as JSON: `{"scripts":["name"],"queues":{"jobs":"<id>"},
+   * "d1":"<id>","r2":"<bucket>"}`. Ids, no secrets; a queue whose label holds `dead` counts as
+   * dead letters. Unset, the tab says it isn't set up. */
+  OPS_RESOURCES?: string;
+  /** `on` adds a daily rotating, salted hash to browser pings and opens the admin Visitors tab
+   * (site-visitors.ts); set on both Workers. */
+  VISITORS?: string;
   /** `on` records a new account's region and samples where writes come from (region.ts). */
   REGION_SIGNALS?: string;
   /** `on`: a create may ask for a location hint (repo-region-hint.ts). Dev only, for the latency

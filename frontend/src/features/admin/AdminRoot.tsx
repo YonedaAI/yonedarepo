@@ -1,17 +1,20 @@
-// The operators' admin pages (`/admin/*`): Overview, Users (and one user), Sign-ups,
-// Repositories, Audit log and Traffic, under one tab bar. The sidebar shows the entry only to
+// The operators' admin pages (`/admin/*`): Overview, Users (and one user), Sign-ups, Repositories,
+// Audit log, Traffic and, where they exist, Visitors, Operations and Infrastructure, under one bar. The sidebar shows the entry only to
 // operators; the API refuses everyone else whatever this page shows.
 import { linkTo, type Navigate } from '../shell/useRoute';
 import type { Loaded } from '../source-platform/useSource';
-import { AdminAudit, AdminRepos, AdminSignups, AdminUsers } from './AdminLists';
+import { AdminAudit } from './AdminAudit';
+import { AdminRepos, AdminSignups, AdminUsers } from './AdminLists';
+import { AdminInfrastructure, AdminOperations } from './AdminOperations';
 import { AdminOverview } from './AdminOverview';
 import { AdminTraffic } from './AdminTraffic';
 import { AdminUser } from './AdminUser';
+import { AdminVisitors } from './AdminVisitors';
 import {
-  ADMIN_SECTIONS,
   type AdminSection,
   SECTION_LABEL,
   type Signups,
+  shownSections,
   unreadLabel,
 } from './adminModel';
 
@@ -41,7 +44,7 @@ export function AdminRoot({
         <h1 id="admin-heading">Admin</h1>
       </div>
       <nav className="admin-tabs" aria-label="Admin sections">
-        {ADMIN_SECTIONS.map((id) => (
+        {shownSections(signups.data?.reports).map((id) => (
           // biome-ignore lint/a11y/useAriaPropsSupportedByRole: linkTo spreads the href, so this is a link.
           <a
             key={id}
@@ -73,6 +76,9 @@ export function AdminRoot({
       {section === 'repos' && <AdminRepos navigate={navigate} />}
       {section === 'audit' && <AdminAudit />}
       {section === 'traffic' && <AdminTraffic />}
+      {section === 'visitors' && <AdminVisitors />}
+      {section === 'operations' && <AdminOperations />}
+      {section === 'infrastructure' && <AdminInfrastructure />}
     </section>
   );
 }

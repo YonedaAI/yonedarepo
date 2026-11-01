@@ -2,15 +2,12 @@
 // one read (`GET /insights`), which the authority answers first, so what a viewer sees is what
 // they may read. It keeps the last answer up while another range loads.
 import { useState } from 'react';
-import type {
-  RepoInsights as Insights,
-  InsightsCount,
-  RepoContributor,
-} from '../../../../shared/repo-insights';
+import type { RepoInsights as Insights, RepoContributor } from '../../../../shared/repo-insights';
 import type { TrafficRange } from '../../../../shared/site-traffic';
 import { EmptyState } from '../../components/EmptyState';
+import { CountTable, RangePicker } from '../admin/AdminParts';
 import { TimeChart } from '../admin/TimeChart';
-import { figure, RANGE_LABELS } from '../admin/trafficModel';
+import { figure } from '../admin/trafficModel';
 import {
   activityBars,
   INSIGHT_RANGES,
@@ -22,52 +19,6 @@ import {
 import { Person } from './Person';
 import { Failure, Loading } from './SourceStatus';
 import { useSource } from './useSource';
-
-function Counts({
-  id,
-  title,
-  label,
-  rows,
-  name,
-  none,
-}: {
-  id: string;
-  title: string;
-  label: string;
-  rows: InsightsCount[];
-  name: (key: string) => string;
-  none: string;
-}) {
-  return (
-    <section className="home-section" aria-labelledby={id}>
-      <h3 id={id} className="home-label">
-        {title}
-      </h3>
-      {rows.length ? (
-        <div className="source-table-wrap">
-          <table className="source-table admin-table">
-            <thead>
-              <tr>
-                <th>{label}</th>
-                <th className="admin-num">Count</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.key}>
-                  <td>{name(r.key)}</td>
-                  <td className="admin-num">{figure(r.count, r.estimated)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <p className="source-empty">{none}</p>
-      )}
-    </section>
-  );
-}
 
 function Contributors({ rows, more }: { rows: RepoContributor[]; more: boolean }) {
   return (
@@ -139,7 +90,7 @@ function Report({ data, reload }: { data: Insights; reload: () => void }) {
         bars={activityBars(usage.series, usage.bucket)}
       />
       <div className="admin-grid admin-grid-two">
-        <Counts
+        <CountTable
           id="insights-who"
           title="Who"
           label="Used by"
@@ -147,7 +98,7 @@ function Report({ data, reload }: { data: Insights; reload: () => void }) {
           name={whoLabel}
           none="Nobody in this range."
         />
-        <Counts
+        <CountTable
           id="insights-reasons"
           title="Why landings failed"
           label="Reason"
@@ -170,20 +121,7 @@ export function RepoInsights({ repo }: { repo: string }) {
     <section aria-labelledby="insights-heading" className="insights" aria-busy={insights.loading}>
       <div className="source-changes-head">
         <h2 id="insights-heading">Insights</h2>
-        <fieldset className="admin-window">
-          <legend className="sr-only">Range</legend>
-          {INSIGHT_RANGES.map((id) => (
-            <button
-              key={id}
-              type="button"
-              className="quiet"
-              aria-pressed={range === id}
-              onClick={() => setRange(id)}
-            >
-              {RANGE_LABELS[id]}
-            </button>
-          ))}
-        </fieldset>
+        <RangePicker ranges={INSIGHT_RANGES} range={range} onChange={setRange} />
       </div>
       {!data && !insights.error && <Loading what="insights" />}
       {insights.error && <Failure error={insights.error} what="insights" onRetry={reload} />}

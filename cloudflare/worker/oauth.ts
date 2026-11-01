@@ -119,7 +119,8 @@ export async function oauthRoute(req: Request, env: Env): Promise<Response | nul
       outcome = await linkTo(env, identity, flow.account, flow.session_hash);
     else {
       token = randomToken();
-      outcome = await signInWith(env, identity, await sha(token), signupRegion(req, env));
+      const region = signupRegion(req, env);
+      outcome = await signInWith(env, identity, await sha(token), region, source);
     }
   } catch (e) {
     if (e instanceof ProviderError) return clearBinding(req, fail(e.reason, to));

@@ -97,6 +97,51 @@ Agree these before the first run. They are starting targets, not commitments.
 | Worker Wasm | Under 10 KB more. No new dependency |
 | Failed or missing binding | No response changes |
 
+## Operations and infrastructure report budget
+
+`OPS_REPORT` opens the admin Operations and Infrastructure tabs. It reads, and writes nothing to any request's path. Off by default. Written before the code.
+
+| Measure | Target |
+|---|---|
+| Added to any request but these pages | 0 |
+| Operations view | 1 SQL API statement |
+| Infrastructure view | 4 GraphQL requests, one per section so one refused query leaves the others up; held 60 seconds per isolate |
+| GraphQL budget | 300 a 5 minutes for the account: Superfan spends 1 a run, so 10 views a minute is at most 40 |
+| A section that fails | Says so; the others stand |
+| Failed or missing binding | No response changes |
+
+## Operator audit budget
+
+`OPERATOR_AUDIT` splits the operator log, adds its filters and detail panel, and records failed admin attempts and staff reads. It needs D1 migration `0015`. Off by default. Written before the code.
+
+| Measure | Target |
+|---|---|
+| Added to a customer's request | 0 |
+| Staff opening a repository | At most 1 D1 read and 1 D1 write per operator and repository, per isolate and hour, after the answer |
+| Refused admin attempt | At most 1 D1 write per caller, per isolate and 5 minutes, after the answer; at most 60 an isolate an hour, so a stranger can't fill the table |
+| Failed operator action | 1 D1 write after the answer, as a successful one has today |
+| Purge job | 1 D1 update when it ends |
+| Log read | 1 D1 statement a page, 50 rows, as today |
+| What a row can hold | No token, secret, IP address or user agent |
+| A failed audit write | Logged; the answer doesn't change |
+
+## Visitor budget
+
+`VISITORS` adds a daily rotating, salted hash to browser pings, and opens the admin Visitors tab. It needs D1 migration `0016`. Off by default. Written before the code.
+
+| Measure | Target |
+|---|---|
+| Points per ping | 1, as today. No new write |
+| Added to a page request | 0: only pings carry the hash |
+| Cookies, IP addresses or user agents stored | 0 |
+| Salt reads | At most 1 RPC to the platform per front isolate and UTC day, or 1 a minute while it fails; 1 D1 batch per answer |
+| Salt kept | Today's and yesterday's; older ones are deleted, so a past hash can't be rebuilt |
+| Hash | One SHA-256 per ping, after its rate limit |
+| Sign-up | One more field on one RPC, and 1 D1 update, only when it has a source |
+| Visitors view | 1 SQL API statement, at most 20,000 rows, and 3 D1 statements |
+| No salt to be had | The ping is written as today, with no hash: a view is never lost |
+| Failed or missing binding | No response changes |
+
 ## Region signals budget
 
 `platform-write-origin.ts` samples where writes come from, behind `REGION_SIGNALS` (global regions stage R1). Written before the code. Measure on against off before either environment turns it on.

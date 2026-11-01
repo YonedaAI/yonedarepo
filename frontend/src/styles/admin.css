@@ -173,6 +173,33 @@
   white-space: normal;
   color: var(--text-2);
 }
+.admin-audit-open {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--blue-text);
+  font: inherit;
+  text-decoration: underline;
+}
+.admin-audit-panel {
+  display: grid;
+  gap: 4px;
+  margin: 4px 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.admin-audit-panel div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px;
+}
+.admin-audit-panel dt {
+  color: var(--muted);
+}
+.admin-audit-panel dd {
+  margin: 0;
+}
 .admin-status {
   display: inline-block;
   padding: 1px 8px;
@@ -390,6 +417,9 @@
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 12px;
+}
+.org-audit-tools input:not([type="date"]) {
+  width: 130px;
 }
 .org-audit-exports {
   display: flex;

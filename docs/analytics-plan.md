@@ -2,7 +2,7 @@
 
 To save as `docs/analytics-plan.md`.
 
-Status: Phase 1 built behind `TRAFFIC_REPORT`, off. Phase 3 steps 1 and 2 and Phase 6 built behind `REPO_ANALYTICS`, off. The rest is plan. Written 2026-10-31 at dev `4755d9c1`.
+Status: Phase 1 built behind `TRAFFIC_REPORT`, off. Phase 3 steps 1 and 2 and Phase 6 built behind `REPO_ANALYTICS`, Phase 7 behind `OPS_REPORT`, Phase 8 behind `OPERATOR_AUDIT` and Phase 5 behind `VISITORS`, all off. The rest is plan. Written 2026-10-31 at dev `4755d9c1`.
 
 ## What this answers
 
@@ -91,14 +91,22 @@ Steps 1 and 2 as built: `recordClient` (`platform-client-events.ts`) writes the 
 
 **Decision: a daily rotating, salted hash, no cookie.** It gives unique daily visitors and approximate sessions without tracking anyone across days.
 
-**The cost:** new versus returning visitors isn't possible. That would need a cookie, which breaks `privacy.md:147`. Add one later only with consent and the owner's word.
+**The cost:** new versus returning visitors isn't possible. That would need a cookie. Add one later only on the owner's word.
 
 1. Visitors, sessions, entry and exit pages, referrers, countries, device, browser.
 2. Store sign-up referrer and UTM in D1 against the account, so a campaign can be followed to a repository.
 3. Funnel: Visitor → Docs → Sign-up → Repository → First push → First landing.
 4. Retention: active again a week later.
 
-**Before prod:** the owner reviews `privacy.md`. Lines 6, 67, 75, 106 and 147 change. Client points aren't listed there today, which is already a gap.
+As built:
+
+- A hash is one day's, so Visitors adds up daily uniques: the same person on two days counts twice, and the page says so.
+- Sessions are half hours on the clock in which a browser was seen, so a visit across a half hour counts twice.
+- The report reads one row per browser and half hour by `index1`, and folds them in the Worker, at most 20,000 rows. It relies on no `COUNT(DISTINCT)`. Past the limit, or sampled, it's marked as an estimate.
+- Pushes and landings in the funnel are what the Home last kept (`platform_activity`), so a repository nobody has opened lately can read behind.
+- Retention uses `last_seen_at`, which holds only the newest day.
+
+**The spike is still owed.** It needs points on dev, so it can't run locally: with `VISITORS` on, send pings from a few hundred addresses, then compare the row count by `index1` with the pings sent, with and without a burst on another index. If `_sample_interval` drops rows, each browser's rows thin evenly, and the counts must be read as estimates.
 
 ## Phase 6: Repositories
 
@@ -118,6 +126,8 @@ As built, and what it can't say yet:
 1. Operations tab: outcomes and P50/P95/P99 by operation and client.
 2. Infrastructure tab: queue depth and wait, dead letters, retries, failures, storage growth, Worker errors, D1 latency. The data is minutes old, and the page says so.
 
+As built: Operations is one SQL statement. Infrastructure asks GraphQL once per section, so a refused query leaves the others up, and ends its window 5 minutes before now. It needs `OPS_RESOURCES` (`docs/runbook.md`). Storage growth is one bucket over 7 days: Durable Object storage isn't read. Dead letters show what's waiting in a dead-letter queue, and what was moved to one over the hour.
+
 ## Phase 8: Audit
 
 1. Operator log gets a People and System split; People is the default, so test cleanup and backfills leave it.
@@ -126,9 +136,11 @@ As built, and what it can't say yet:
 4. `admin_audit` gets outcome, request id and actor kind (D1 migration, additive).
 5. Purges show requested, queued, completed, failed.
 6. Record staff reading a customer's private content, and failed admin attempts.
-7. Org log: finish `audit-events`. Landing rule changes, forced landings, webhooks and exports need the outbox migration from `docs/enterprise-plan.md`, in two waves.
+7. Org log: done by `audit-events` and `audit-gap`, with no migration: landing rule changes, forced landings, webhooks and exports are all logged (`docs/audit-log.md`), and the page has its filters and exports.
 
-Never audited: reads, or every push and landing.
+Never audited: reads, or every push and landing. The one exception is step 6.
+
+As built: System is the owner token and anything named a backfill or rebuild, so an operator running one by hand lands there too. Rows from before migration `0015` are told apart by their actor and read as done. Only one way lets staff into a repository they aren't members of (`asOwner`, the admin repository page), so a staff read is that page opening on a customer's private repository. The owner token gets no other way in: `GET /repos/<id>/refs` answers it 404. A failed action with its own row, such as an orphan purge, also gets an `admin.failed` row. Scheduled purges have no operator row to update.
 
 ## Phase 9: Later
 
@@ -146,7 +158,7 @@ All of it follows the UI rules in `AGENTS.md`.
 
 | Step | Needs |
 |---|---|
-| `TRAFFIC_EVENTS` on | Privacy text reviewed, then "ship" |
+| `TRAFFIC_EVENTS` on | "ship" |
 | `AUDIT_LOG` on | "ship" |
 | Basin bound | Dev soak, then "ship" |
 
