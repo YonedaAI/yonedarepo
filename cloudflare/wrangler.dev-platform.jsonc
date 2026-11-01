@@ -54,7 +54,6 @@
 // LAND_WHEN_CLEARED=on: what can clear a Landing queues a platform_land_check job, and a repository can turn on Land when cleared (repo-land-check.ts). Set it only once every Worker on the queue knows the job: deploy with it off first (docs/runbook.md).
 // AGENT_SIGNUP=on: yoneda login --agent <name> signs an agent up through the device flow (worker/platform-tokens.ts). Off, a code asking for an agent is refused; agents already signed up keep working.
 // NEWSLETTER=on opens the Flight log sign-up at /updates (worker/platform-newsletter.ts, D1 newsletter_subscribers). It needs the optional secret NEWSLETTER_KEY, which signs unsubscribe links: never change it while the list is in use. Unset, off or without the key: no form, nothing stored, nothing sent. privacy.md must list this data first (docs/runbook.md).
-// REPO_UNDO_DAYS=0.00139 is a SHORT TEST WINDOW, two minutes, for tools/staging/dev-checks.mjs on dev only; the plan is 30 days (docs/runbook.md, Undo window). A value that is not a number means 30, and unset means an immediate purge.
 // LEGAL_HOLD=on refuses every destructive path of a held repository or org and opens the hold routes (worker/platform-legal-hold.ts).
 // ASYNC_STORE=on: a create answers without Artifacts and a platform_store queue job creates the store (repo-store-create.ts). Set it only once every Worker on the queue knows the job: deploy with it off first (docs/runbook.md).
 // DIRECT_IMPORT=on (with FAST_IMPORT, PACK_CACHE and PUSH_BUNDLES) also fetches a public GitHub repository from the Worker when it is imported, and lands main from that pack beside Artifacts' own fetch (docs/direct-import.md).
@@ -367,9 +366,9 @@
     "REPO_ERASE": "on",
     "REPO_SIZE_GUARD": "on",
     "REPO_STORAGE_GUARD": "on",
-    "REPO_UNDO_DAYS": "0.00139",
+    "REPO_UNDO_DAYS": "30",
     "REQUEST_IDS": "off",
-    "SERVICE_LEVELS": "off",
+    "SERVICE_LEVELS": "on",
     "SITE_EVENTS_DATASET": "yonedarepo_dev_site_events",
     "SPAN_SAMPLE": "off",
     "SSH_FRONT_DOOR": "tunnel",

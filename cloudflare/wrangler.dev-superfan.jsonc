@@ -85,7 +85,7 @@
     "PROBES": "off",
     "PROBE_LANDING": "off",
     "RELEASE_COMPARE": "off",
-    "SERVICE_LEVELS": "off",
+    "SERVICE_LEVELS": "on",
     "SUPERFAN_MODEL": "mimo-v2.6-flash",
     "TELEMETRY_SOURCE": "cloudflare",
     "WATCH_FRONT_URL": "https://dev.yonedarepo.com",
