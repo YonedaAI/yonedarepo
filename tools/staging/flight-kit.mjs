@@ -61,6 +61,15 @@ export const gates = (kit, repo, number) => kit.pat().get(repo.path(`/changes/${
 export const passCheck = (session, repo, head, name = CI, evidence) => session.post(repo.path(`/commits/${head}/checks`), { name, status: 'pass', ...(evidence ? { evidence } : {}) });
 export const review = (reviewer, repo, head, decision = 'approve') => reviewer.session.post(repo.path(`/commits/${head}/reviews`), { decision });
 
+/** `read` once it answers, with how long the platform took: a queue job's wait is the number to
+ * watch on a flight. */
+async function timed(read, what, ms) {
+  const started = performance.now();
+  const answer = await settled(read, what, ms);
+  console.log(`        ${Math.round(performance.now() - started)} ms: ${what}`);
+  return answer;
+}
+
 /** The open Landing on `branch`, once a push has opened it. */
 export const landingOf = (kit, repo, branch) =>
   settled(async () => {
@@ -77,14 +86,14 @@ export async function pushedLanding(kit, repo, dir, spec) {
 
 /** Landing `number` once it reads landed. */
 export const landedOf = (kit, repo, number, what = 'CTC to land it') =>
-  settled(async () => {
+  timed(async () => {
     const read = await change(kit, repo, number);
     return read.status === 'landed' && read;
   }, what, QUEUE_MS);
 
 /** The newest decision CTC recorded on `head` that names `code`. */
 export const decisionOn = (kit, repo, number, head, code) =>
-  settled(async () => {
+  timed(async () => {
     const { clearances = [] } = await change(kit, repo, number);
     return clearances.find((c) => c.head === head && c.reasons.some((r) => r.code === code));
   }, `CTC to record ${code} on ${head.slice(0, 7)}`, QUEUE_MS);

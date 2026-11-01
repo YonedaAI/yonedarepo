@@ -8,47 +8,55 @@ One Landing through every step, on dev, with the real API, CLI, Git and browser.
 | Real agent | `node tools/staging-realworld.mjs --only 0,12,45,17 --yes` (item 45) | A model's quota |
 | What the kit can't force | `pnpm exec vitest run --config tests/workers/vitest.config.ts tests/workers/repo-flight-failures.test.ts` | Free |
 
+**Result, 2026-10-31 on dev `56338b40`: all 12 legs and all 10 failure cases pass, scripted and with a real agent.** The live run found no new product bug; 5 were found by reading the code first and fixed before it. Evidence: `.local/staging/feature-gate-1793502289532.json` (43), `feature-gate-1793502983913.json` and `flight-agent-1793502872961/` (45).
+
 Needs `LAND_WHEN_CLEARED=on` and `LANDING_INSTRUMENTS=on` on the platform Worker, `0045` applied, and the harness image rolled for Intent drift. A second live run evicts this one's session, so run it alone. Each test repository sets its own `auto_landings` switches and is deleted by item 17.
 
 ## The twelve legs
 
-| # | Leg | What proves it | Needs | Live |
-|---|---|---|---|---|
-| 1 | Flight plan filed | `yoneda flight-plan` answers filed, for a branch not pushed yet | `0045` | Not run |
-| 2 | Takeoff with context and memory | The real start hook's context holds the memory; the start delivery records it | Memories | Not run |
-| 3 | Agent works and pushes | Read hook warns of the other Landing; the push declares the read; the Stop hook records the session on the commit | Hooks | Not run |
-| 4 | A Landing opens from the push | One row, `origin: auto`, at the pushed head, with the plan filed before it existed | `auto_landings.create`, `0044`, `0045` | Not run |
-| 5 | Route | Commit, session and deliveries by REST; `yoneda change route` | None | Not run |
-| 6 | Instruments | Risk with 4 reasons, same score twice; Slop and Intent drift from check evidence; 3 cards on the page | `LANDING_INSTRUMENTS` | Not run |
-| 7 | CTC warns, holds, orders | Radar overlap; warning on record; a ticket ahead gives `SEPARATION` and place 2, on API and page; the ticket lands first and sends this one around | `LAND_WHEN_CLEARED` | Not run |
-| 8 | A blocking finding | A review token's finding on an approved, passed head: `go_around` with `FINDINGS`, an owner's land refused, chip says Go-around | `findings_block` | Not run |
-| 9 | Go-around | The next session hears it at its start; `yoneda change show` has it; the pilot merges main and pushes; the approval drops; the finding is on the older commit | None | Not run |
-| 10 | Cleared on that exact head | The agent looks again and resolves nothing; CTC holds for the approval alone; then `cleared` on this head | `LAND_WHEN_CLEARED` | Not run |
-| 11 | Lands by itself, once | Nobody calls land; 4 jobs race; one decision holds a version, once on main's first-parent line, version unchanged after 8 s, after the other Landing | Same | Not run |
-| 12 | Black box | Both sessions, the transcript with its context, every decision with reasons, MCP, pages | None | Not run |
+| # | Leg | What proves it | Needs | Scripted (43) | Real agent (45) |
+|---|---|---|---|---|---|
+| 1 | Flight plan filed | `yoneda flight-plan` answers filed, for a branch not pushed yet | `0045` | Pass, 228 ms | Pass, Agent filed it |
+| 2 | Takeoff with context and memory | The real start hook's context holds the memory; the start delivery records it | Memories | Pass, 841 ms | Pass, In its context |
+| 3 | Agent works and pushes | Read hook warns of the other Landing; the push declares the read; the Stop hook records the session on the commit | Hooks | Pass, 3.0 s | Pass, 21.2 s, with 1 to 3 |
+| 4 | A Landing opens from the push | One row, `origin: auto`, at the pushed head, with the plan filed before it existed | `auto_landings.create`, `0044`, `0045` | Pass, 306 ms | Pass, 162 ms |
+| 5 | Route | Commit, session and deliveries by REST; `yoneda change route` | None | Pass, 330 ms | Pass, 139 ms |
+| 6 | Instruments | Risk with 4 reasons, same score twice; Slop and Intent drift from check evidence; 3 cards on the page | `LANDING_INSTRUMENTS` | Pass, 3.1 s | Pass, 162 ms (Risk only) |
+| 7 | CTC warns, holds, orders | Radar overlap; warning on record; a ticket ahead gives `SEPARATION` and place 2, on API and page; the ticket lands first and sends this one around | `LAND_WHEN_CLEARED` | Pass, 22.3 s | Pass, 22.1 s |
+| 8 | A blocking finding | A review token's finding on an approved, passed head: `go_around` with `FINDINGS`, an owner's land refused, chip says Go-around | `findings_block` | Pass, 7.4 s | Pass, 7.7 s |
+| 9 | Go-around | The next session hears it at its start; `yoneda change show` has it; the pilot merges main and pushes; the approval drops; the finding is on the older commit | None | Pass, 7.1 s | Pass, 35.1 s |
+| 10 | Cleared on that exact head | The agent looks again and resolves nothing; CTC holds for the approval alone; then `cleared` on this head | `LAND_WHEN_CLEARED` | Pass, 8.3 s | Pass, 5.1 s |
+| 11 | Lands by itself, once | Nobody calls land; 4 jobs race; one decision holds a version, once on main's first-parent line, version unchanged after 8 s, after the other Landing | Same | Pass, 10.7 s (7.4 s from approval) | Pass, 10.9 s (3.7 s from approval) |
+| 12 | Black box | Both sessions, the transcript with its context, every decision with reasons, MCP, pages | None | Pass, 3.5 s | Pass, 483 ms |
 
 ## Failure cases
 
 | # | Case | What proves it | Where | Live |
 |---|---|---|---|---|
-| F1 | Stale head | Approved and passed on the old head: stays open. The new head lands, not the old one | Live. The race between ask and land: Rust, `HEAD_MOVED` | Not run |
-| F2 | Failed check | Required: `go_around`, a passing rerun lands it. Not required: `go_around` on green gates, page agrees | Live | Not run |
-| F3 | Path-limited token sees nothing | 7 reads answer 403 with no path or title; filing a plan refused; work beyond its grant holds on `OUTSIDE_GRANT` | Live | Not run |
-| F4 | Fork needs an approval of its head | A passing check holds on `FORK_NEEDS_APPROVAL`; approved heads land | Live | Not run |
-| F5 | Two Landings racing | Different files: both land. Same line: one lands, one goes around | Live | Not run |
-| F6 | Automation pause | Approved head holds on `AUTOMATION_PAUSED`; the resume alone lands it | Live | Not run |
-| F7 | Nothing required | A push holds on `NOTHING_REQUIRED` and does not land | Live | Not run |
+| F1 | Stale head | Approved and passed on the old head: stays open. The new head lands, not the old one | Live. The race between ask and land: Rust, `HEAD_MOVED` | Pass, 17 s |
+| F2 | Failed check | Required: `go_around`, a passing rerun lands it. Not required: `go_around` on green gates, page agrees | Live | Pass, 27 s |
+| F3 | Path-limited token sees nothing | 7 reads answer 403 with no path or title; filing a plan refused; work beyond its grant holds on `OUTSIDE_GRANT` | Live | Pass, 14 s |
+| F4 | Fork needs an approval of its head | A passing check holds on `FORK_NEEDS_APPROVAL`; approved heads land | Live | Pass, 36 s |
+| F5 | Two Landings racing | Different files: both land. Same line: one lands, one goes around | Live | Pass, 48 s |
+| F6 | Automation pause | Approved head holds on `AUTOMATION_PAUSED`; the resume alone lands it | Live | Pass, 20 s |
+| F7 | Nothing required | A push holds on `NOTHING_REQUIRED` and does not land | Live | Pass, 22 s |
 | F8 | `REPO_FULL` | Held with the reason, nothing moves, lands with room | `tests/workers`: nothing fills 9 GB live | Passing |
 | F9 | A job retried twice lands once | 4 deliveries, on the head and through the queue: one landing on record | `tests/workers`, since a live queue redelivers when it chooses. Leg 11 races duplicates live | Passing |
-| F10 | A rollback mid-queue | A break-glass revert with a ticket in line: the ticket lands on the revert, the bad line stays out | Live | Not run |
+| F10 | A rollback mid-queue | A break-glass revert with a ticket in line: the ticket lands on the revert, the bad line stays out | Live | Pass, 44 s |
 
 **F10 reads "rollback" as reverting a landed commit.** A deploy rollback past the job's handler drops queued jobs: the entrypoint acks a kind it doesn't know. Nothing tests that loss live; the Landing waits for its next trigger.
+
+## The real agent
+
+`zai-coding-plan/glm-5.3` through opencode in the Docker sandbox, 2 runs, 55.4 s in all: 6,752 input, 1,016 output and 65,792 cached tokens. opencode reported $0: this model bills the coding plan's quota. It filed its plan, kept to the memory's 3 tries unasked, heard the finding from its context, merged main and added the 100 ms delay. The other Landing, the check, the approval and the finding were scripted. Host unchanged. Egress refused only the sandbox's own probes and opencode's `models.opencode.ai`.
 
 ## Unverified
 
 | Gap | Why it matters |
 |---|---|
 | Slop and Intent drift are scripted in 43, 44 and 45 | They prove the read and the card, not the agents. `tools/staging/managed-live.mjs` is the real run of those |
-| Legal hold or `REPO_FULL` lifted | Nothing asks again; the Landing waits for its next event |
+| Legal hold or `REPO_FULL` lifted | Nothing asks again; the Landing waits for its next event. Read from the code, not tested |
+| The switch turned on over a Landing that already cleared | The same: nothing asks. Read from the code, not tested |
+| One slow run of F1 | 65 s against 17 and 18 s, with no land timing recorded that run. Land waits have measured 2.9 to 8.9 s since; not reproduced, not explained |
 | Risk bands | Not calibrated (landings plan, stage 4). High holds a Landing on an uncalibrated score |
 | Rate at volume | One Landing at a time, plus one race of two |
