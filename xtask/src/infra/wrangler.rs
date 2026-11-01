@@ -44,6 +44,30 @@ pub(crate) fn output(account_id: &str, args: &[&str]) -> Result<Vec<u8>> {
     Ok(out.stdout)
 }
 
+/// Whether wrangler's error output says the Worker doesn't exist on the account.
+pub(crate) fn worker_missing(stderr: &[u8]) -> bool {
+    let diagnostic = String::from_utf8_lossy(stderr).to_lowercase();
+    diagnostic.contains("10007")
+        || diagnostic.contains("worker does not exist")
+        || (diagnostic.contains("worker \"") && diagnostic.contains("not found"))
+}
+
+/// `output`, or `None` when the Worker doesn't exist. Any other failure is an error, with
+/// wrangler's own words on stderr.
+pub(crate) fn output_unless_missing(account_id: &str, args: &[&str]) -> Result<Option<Vec<u8>>> {
+    let out = command(account_id, args)
+        .output()
+        .map_err(|error| format!("Cannot start {WRANGLER}: {error}"))?;
+    if out.status.success() {
+        return Ok(Some(out.stdout));
+    }
+    if worker_missing(&out.stderr) {
+        return Ok(None);
+    }
+    std::io::stderr().write_all(&out.stderr)?;
+    Err(format!("{} failed ({})", describe(args), out.status).into())
+}
+
 /// Feeds `input` (a secret payload) through stdin, so it never appears in arguments,
 /// files or logs.
 pub(crate) fn run_with_stdin(account_id: &str, args: &[&str], input: &[u8]) -> Result<()> {

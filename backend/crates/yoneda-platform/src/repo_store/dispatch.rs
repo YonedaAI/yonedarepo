@@ -52,7 +52,7 @@ pub(super) fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     if legal_hold::refuses(op) && !settings.erased() {
         legal_hold::require_free(c, &settings.workspace)?;
     }
-    let since = land_when_cleared::watching(db, op, &settings);
+    let since = land_when_cleared::watching(db, op, c, &settings);
     let mut result = run(db, c, op, &actor, &settings)?;
     land_when_cleared::ask_for_jobs(db, op, c, since, &mut result);
     Ok(grants::redact(op, &actor.grant, result))

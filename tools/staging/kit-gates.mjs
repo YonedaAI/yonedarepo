@@ -1,7 +1,7 @@
 // Which items a run of the kit (tools/staging-realworld.mjs) runs, by its flags.
 
 /** This week's features, run with `--feature-tests` and in a full run (feature-items.mjs). */
-export const FEATURE_ITEMS = ['33', '34', '35', '36', '37', '38', '39', '40', '41', '42', '43', '44'];
+export const FEATURE_ITEMS = ['33', '34', '35', '36', '37', '38', '39', '40', '41', '42', '43', '44', '46'];
 
 /** A flag that runs a gate, and its items; the first flag given wins, then `--only`. */
 const GATES = [

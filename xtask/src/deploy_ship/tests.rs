@@ -267,9 +267,10 @@ fn only_a_full_passing_kit_at_head_sets_live_tests() {
 #[test]
 fn full_kit_lists_what_a_kit_run_without_only_records() {
     let kit = include_str!("../../../tools/staging-realworld.mjs");
-    let all: BTreeSet<&str> = kit
-        .split("await step('")
-        .skip(1)
+    let features = include_str!("../../../tools/staging/feature-items.mjs");
+    let all: BTreeSet<&str> = [kit, features]
+        .iter()
+        .flat_map(|source| source.split("await step('").skip(1))
         .filter_map(|rest| rest.split('\'').next())
         .collect();
     let named_only = kit
@@ -281,7 +282,15 @@ fn full_kit_lists_what_a_kit_run_without_only_records() {
         .split(',')
         .map(|id| id.trim().trim_matches('\''))
         .collect();
-    let expected: BTreeSet<&str> = all.difference(&named_only).copied().collect();
+    let mut expected: BTreeSet<&str> = all.difference(&named_only).copied().collect();
+    // A full run leaves 41 out while AUDIT_LOG is off on dev (kit-gates.mjs). The day it goes on,
+    // this fails until FULL_KIT names 41.
+    let dev: Value = serde_json::from_str(include_str!("../../../infra/envs/dev.json")).unwrap();
+    let workers = dev["workers"].as_array().unwrap();
+    let platform = workers.iter().find(|w| w["role"] == "platform").unwrap();
+    if platform["config"]["vars"]["AUDIT_LOG"] != "on" {
+        expected.remove("41");
+    }
     assert_eq!(expected, FULL_KIT.into_iter().collect());
 }
 

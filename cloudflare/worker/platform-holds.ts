@@ -11,6 +11,7 @@
 import { auditOrg } from './account-audit';
 import { audit } from './platform-admin-queries';
 import { holdsOn } from './platform-legal-hold';
+import { sendHoldLifted } from './repo-land-check';
 import { ApiError, type Credentials, caller, type Json, type RepoContext } from './repo-ops';
 import type { Env } from './types';
 import { workspace } from './workspace';
@@ -58,7 +59,9 @@ export async function orgHold(
     if ((await ownerOf(env, repo)) !== org)
       throw new ApiError('NOT_FOUND', 'This organization does not own that repository');
   }
-  return run({ op: method === 'POST' ? 'org_hold_set' : 'org_hold_release', repo });
+  const done = await run({ op: method === 'POST' ? 'org_hold_set' : 'org_hold_release', repo });
+  if (done.released) await sendHoldLifted(env, org, repo);
+  return done;
 }
 
 /** Sets or lifts the operators' layer: on `owner` as a whole, or on `repo` of it. */
@@ -71,6 +74,7 @@ async function operatorHold(env: Env, actor: string, owner: string, method: stri
   });
   await audit(env, actor, set ? 'legal_hold.set' : 'legal_hold.release', repo ?? owner);
   if (done.org_owned) await auditOrg(env, owner);
+  if (done.released) await sendHoldLifted(env, owner, repo);
   return done;
 }
 

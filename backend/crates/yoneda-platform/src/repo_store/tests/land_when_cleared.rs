@@ -551,6 +551,77 @@ fn a_resume_with_nothing_held_asks_for_nothing() {
     assert!(resumed.get("land_checks").is_none(), "{resumed}");
 }
 
+/// Turning the switch on changes nothing about a Landing, so it has to ask: a head that cleared
+/// beforehand would otherwise wait for an event that may never come.
+#[test]
+fn turning_the_switch_on_asks_for_the_open_landings() {
+    let (h, root) = seeded();
+    let id = branch(&h, AGENT, &root, "fix", "src/a.rs");
+    let number = landing(&h, "fix");
+    h.approve_and_check(&id);
+    branch(&h, AGENT, &root, "gone", "src/b.rs");
+    let closed = landing(&h, "gone");
+    h.ok(OWNER, json!({"op":"repo_change_close","number":closed}));
+    let others = json!({"op":"repo_auto_landings","create":true});
+    assert!(h.ok(OWNER, others).get("land_checks").is_none());
+    let off = json!({"op":"repo_auto_landings","land_when_cleared":false});
+    assert!(h.ok(OWNER, off).get("land_checks").is_none());
+    let on = json!({"op":"repo_auto_landings","land_when_cleared":true});
+    let answer = h.ok(OWNER, on.clone());
+    assert_eq!(answer["land_checks"], json!([number]), "{answer}");
+    let again = h.ok(OWNER, on);
+    assert!(again.get("land_checks").is_none(), "{again}");
+}
+
+/// A hold lifts in the owner's authority, which the repository never hears from: the adapter's
+/// job asks, and only what the hold held comes back.
+#[test]
+fn a_lifted_hold_asks_again_for_what_it_held() {
+    let (h, root, id, number) = cleared();
+    branch(&h, AGENT, &root, "other", "src/b.rs");
+    let unrelated = landing(&h, "other");
+    assert_eq!(assess(&h, unrelated)["state"], "hold");
+    let lifted = json!({"op":"repo_land_clearance","hold_lifted":true});
+    let nothing = h.ok(LANDER, lifted.clone());
+    assert!(nothing.get("land_checks").is_none(), "{nothing}");
+    h.ok(
+        LANDER,
+        json!({"op":"repo_land_clearance","number":number,"confirm":true,
+            "_hold":{"held":true}}),
+    );
+    let asked = h.ok(LANDER, lifted.clone());
+    assert_eq!(asked["land_checks"], json!([number]), "{asked}");
+    assert_eq!(code(h.run(AGENT, lifted)), "FORBIDDEN");
+    assert_eq!(assess(&h, number)["state"], "cleared");
+    land(&h, number, &id).unwrap();
+    assert_eq!(main_head(&h), json!(id));
+}
+
+pub(super) fn held_full(h: &Harness, number: i64) {
+    let full = json!({"op":"repo_land_clearance","number":number,"confirm":true,
+        "_storage_guard":1});
+    assert_eq!(waiting(&h.ok(LANDER, full)), ["REPO_FULL"]);
+}
+
+/// Room comes back with no event on the Landing, so the job that reads the size asks.
+#[test]
+fn reading_the_size_with_room_again_asks_for_what_the_limit_held() {
+    let (h, _root, _id, number) = cleared();
+    let read = |extra: Value| {
+        let mut read = json!({"op":"repo_storage"});
+        read.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        h.ok(OWNER, read)
+    };
+    assert!(read(json!({})).get("land_checks").is_none(), "nothing held");
+    held_full(&h, number);
+    let full = read(json!({"_storage_guard":1}));
+    assert!(full.get("land_checks").is_none(), "{full}");
+    let room = read(json!({}));
+    assert_eq!(room["land_checks"], json!([number]), "{room}");
+}
+
 #[test]
 fn a_legal_hold_refuses_and_says_so() {
     let (h, _root, id, number) = cleared();

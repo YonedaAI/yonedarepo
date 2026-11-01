@@ -24,6 +24,7 @@ test('each gate runs its items, and the first flag wins over --only', () => {
 
 test('feature items alone are no full kit; with anything else they are', () => {
   assert.equal(featureRun(new Set(['0', '12', '33', '17'])), true);
+  assert.equal(featureRun(new Set(['0', '12', '46', '17'])), true, 'agent sign-up alone is no full kit');
   assert.equal(featureRun(new Set(['0', '39'])), true);
   assert.equal(featureRun(new Set(['0', '12', '45', '17'])), true, 'a real agent is no full kit either');
   assert.equal(featureRun(new Set(['0', '12', 'f1', '17'])), true, 'nor is a timing run');
