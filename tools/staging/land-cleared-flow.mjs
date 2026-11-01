@@ -1,9 +1,8 @@
 // Item 34 of the staging kit (no model): CTC lands. It needs LAND_WHEN_CLEARED=on on the platform
-// Worker, deployed after the deploy that ships the job (docs/runbook.md, "Land when cleared"), and
-// LANDING_INSTRUMENTS=on for Risk; while it is off the item stops at once with a note. With it on,
-// on a repository with the switch turned on: an approval lands the head with nobody calling land,
-// as the platform, with why on the record and the page saying so. A High Risk head holds and says
-// why. Separation: with a ticket held in line (ticket-line.mjs), a Landing that read what it writes
+// Worker, deployed after the deploy that ships the job (docs/runbook.md, "Land when cleared");
+// while it is off the item stops at once with a note. With it on, on a repository with the switch
+// turned on: an approval lands the head with nobody calling land, as the platform, with why on the
+// record and the page saying so. A head Risk reads High lands too: Risk holds nothing. Separation: with a ticket held in line (ticket-line.mjs), a Landing that read what it writes
 // is held on the record with SEPARATION, and lands by itself once the way is clear.
 import assert from 'node:assert/strict';
 import { see } from './browser-collab-flow.mjs';
@@ -11,7 +10,7 @@ import { cloneOf, kitRepo, landingOn, openPage, refusal, settled } from './featu
 import { withChrome } from './kit-chrome.mjs';
 import { LINE_FILES, lineBase, lineUp, READ, readerOf } from './ticket-line.mjs';
 
-export const LWC_OFF = 'LAND_WHEN_CLEARED is off on this platform. To run it: deploy the job with the switch off, then set LAND_WHEN_CLEARED=on on the platform Worker in infra/envs/<env>.json (with LANDING_INSTRUMENTS=on) and deploy again; a queue job a Worker does not know is dropped';
+export const LWC_OFF = 'LAND_WHEN_CLEARED is off on this platform. To run it: deploy the job with the switch off, then set LAND_WHEN_CLEARED=on on the platform Worker in infra/envs/<env>.json and deploy again; a queue job a Worker does not know is dropped';
 const ACTOR = 'platform:land-when-cleared';
 const QUEUE_MS = 90_000;
 
@@ -49,18 +48,18 @@ async function lands(kit, repo, dir, reviewer, web, m) {
   m.landed_at = why.landed_version;
 }
 
-/** High Risk holds for a person, and says why; nothing moves. */
-async function holdsHighRisk(kit, repo, dir, reviewer, m) {
+/** A head Risk reads High lands like any other: Risk is a beta reading and holds nothing. */
+async function highRiskLands(kit, repo, dir, reviewer, m) {
   const files = { '.github/workflows/ci.yml': 'on: push\n', 'migrations/0001.sql': 'select 1;\n', 'pnpm-lock.yaml': 'x\n' };
   const landing = await landingOn(kit, repo, dir, { branch: 'kit/risky', title: 'Risky', files });
   await review(reviewer, repo, landing.head);
-  const held = await settled(async () => {
+  const landed = await settled(async () => {
     const read = await change(kit, repo, landing.number);
-    return read.clearances?.find((c) => c.head === landing.head && c.reasons.some((r) => r.code === 'RISK_HIGH'));
-  }, 'CTC to hold the High Risk head', QUEUE_MS);
-  assert.equal(held.decision, 'hold', `a High Risk head: ${JSON.stringify(held)}`);
-  assert.equal((await change(kit, repo, landing.number)).status, 'open', 'a High Risk head landed');
-  m.high_risk = held.reasons[0].reason;
+    return read.status === 'landed' ? read : null;
+  }, 'CTC to land the High Risk head', QUEUE_MS);
+  const why = landed.clearances[0];
+  assert.equal(why.decision, 'cleared', `a High Risk head: ${JSON.stringify(why)}`);
+  m.high_risk_landed_at = why.landed_version;
 }
 
 /** With a ticket held in line, a Landing that read what it writes is held on the record; once
@@ -111,6 +110,6 @@ export async function landWhenCleared(kit, { web, credentials }, m) {
   await kit.pat().post(repo.path('/members'), { account: reviewer.name, role: 'land' });
   const dir = await cloneOf(kit, repo, 'lwc');
   await lands(kit, repo, dir, reviewer, web, m);
-  await holdsHighRisk(kit, repo, dir, reviewer, m);
+  await highRiskLands(kit, repo, dir, reviewer, m);
   await separation(kit, reviewer, m);
 }

@@ -268,9 +268,7 @@ describe('changes list', () => {
         requirements: [],
         land_when_cleared: { decision, reasons: [], refused: null },
       }) as never;
-    expect(landingState(open, gates('hold', true)), 'High Risk, a pause or a queue ahead').toBe(
-      'In flight',
-    );
+    expect(landingState(open, gates('hold', true)), 'a pause or a queue ahead').toBe('In flight');
     expect(
       landingState(open, gates('go_around', true)),
       'a failed check that is not required',

@@ -1,16 +1,7 @@
 use super::*;
-use crate::platform_instruments::RiskLevel;
 
 /// A reason's code, and what brings it about.
 type Case = (&'static str, fn(&mut LandingState));
-
-fn low() -> Option<RiskScore> {
-    Some(RiskScore {
-        level: Some(RiskLevel::Low),
-        score: 5,
-        why: Vec::new(),
-    })
-}
 
 /// A Landing nothing stands in the way of.
 fn clear() -> LandingState {
@@ -20,7 +11,6 @@ fn clear() -> LandingState {
         approved_by: vec!["user:ada".into()],
         requirements: vec![line("Approvals", RequirementState::Ready)],
         base_exists: true,
-        risk: low(),
         ..LandingState::default()
     }
 }
@@ -64,21 +54,6 @@ fn each_rule_holds_on_its_own() {
         ("OUTSIDE_GRANT", |s| s.outside_grant = true),
         ("LEGAL_HOLD", |s| s.legal_hold = Some("Held".into())),
         ("REPO_FULL", |s| s.repo_full = Some("Full".into())),
-        ("RISK_NOT_SCORED", |s| s.risk = None),
-        ("RISK_UNKNOWN", |s| {
-            s.risk = Some(RiskScore {
-                level: None,
-                score: 0,
-                why: Vec::new(),
-            })
-        }),
-        ("RISK_HIGH", |s| {
-            s.risk = Some(RiskScore {
-                level: Some(RiskLevel::High),
-                score: 60,
-                why: vec!["Touches workflows".into()],
-            })
-        }),
         ("FORK_NEEDS_APPROVAL", |s| {
             s.from_fork = true;
             s.approvals = 0;
@@ -126,18 +101,6 @@ fn a_go_around_outranks_a_hold_and_keeps_every_reason() {
     let decided = clearance(&state);
     assert_eq!(decided.decision(), Decision::GoAround);
     assert_eq!(codes(&decided), ["CHECK_FAILED", "DRAFT"]);
-}
-
-#[test]
-fn risk_is_asked_for_only_when_nothing_else_stands_in_the_way() {
-    let mut state = clear();
-    state.risk = None;
-    assert!(clearance(&state).needs_risk());
-    state.draft = true;
-    assert!(!clearance(&state).needs_risk());
-    assert_eq!(codes(&clearance(&state)), ["DRAFT"]);
-    state.risk = low();
-    assert!(!clearance(&state).needs_risk());
 }
 
 #[test]
@@ -195,9 +158,7 @@ fn a_landing_ahead_with_a_read_conflict_holds_it_by_name() {
         held.reasons()[0].reason,
         "Landing 7 is ahead in the queue on src/a.rs, src/b.rs: it lands first"
     );
-    // A go-around outranks it, and Risk is not read for a Landing that has to wait.
-    state.risk = None;
-    assert!(!clearance(&state).needs_risk());
+    // A go-around outranks it.
     state.conflict = Some("stale".into());
     assert_eq!(clearance(&state).decision(), Decision::GoAround);
 }

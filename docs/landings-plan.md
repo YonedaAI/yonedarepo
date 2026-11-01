@@ -140,7 +140,7 @@ Dropping undelivered runs means the test measures agents that got the memory. Ho
 3. **Slop:** the existing `slop-review` value, last 5 heads.
 4. **Risk:** worked out by the platform, in Rust, with no model call and no cost: review classes, files and lines touched, sensitive paths, open findings. The same input always gives the same score, and the page shows why. Calibrate against real landings before showing a percentage.
 
-Built, behind `LANDING_INSTRUMENTS` (off): `GET /changes/:n/instruments`, `repo_change_instruments`, `platform_risk.rs`, `Instruments.tsx`. No schema migration, no policy field. A person's landing never reads Risk; only Land when cleared does, below.
+Built, behind `LANDING_INSTRUMENTS` (off): `GET /changes/:n/instruments`, `repo_change_instruments`, `platform_risk.rs`, `Instruments.tsx`. No schema migration, no policy field. Nothing decides on Risk: not a person's landing, and not Land when cleared.
 
 | Risk input | Points |
 |---|---|
@@ -151,7 +151,7 @@ Built, behind `LANDING_INSTRUMENTS` (off): `GET /changes/:n/instruments`, `repo_
 
 Low below 25, High from 55, score capped at 100. The page shows the level and every reason, not a percentage.
 
-**Not calibrated: measured, and the signals don't separate risky from safe.** The bands stay at 25 and 55 because no cut has evidence behind it; moving them would pick noise. A High holds about 3 Landings in 100 on what is, in effect, a size rule. It stays "Risk (beta)" until real platform landings can be scored against outcomes.
+**Not calibrated: measured, and the signals don't separate risky from safe.** The bands stay at 25 and 55 because no cut has evidence behind it; moving them would pick noise. **Owner, 2026-11-01:** Risk stays visible as "Risk (beta)" and High no longer holds a Landing, until real platform landings can be scored against outcomes. Held, it would have stopped about 3 Landings in 100 on what is, in effect, a size rule.
 
 Dry run (2026-11-01) over 42,494 first-parent landings of 11 repositories: cobra, commander.js, click, vite, react, vue core, tokio, ruff, prometheus, pytest and scikit-learn, newest 5,000 of each. It runs the platform's own classifier and score (`tools/risk-calibrate`). Reverted: a later landing undoes it within 90 days. Fixed: a fix within 30 days deleted its lines (SZZ). Landings too new for the window are left out.
 
@@ -171,7 +171,7 @@ Dry run (2026-11-01) over 42,494 first-parent landings of 11 repositories: cobra
 1. **High catches 8 of 122 reverted landings (6.6%) and fires on 1,204 that weren't (99.3% of its 1,212).** Lift 2.14, 90% interval 0.68-3.14, which includes no effect.
 2. **It catches 171 of 1,551 fixed landings (11.0%) and fires on 1,172 that weren't (87.3% of its 1,343).** Lift 3.41 (2.79-4.50), but SZZ favours big landings by construction, and lines alone beat the score.
 3. **Review class and sensitive paths add nothing measurable.** 68.1% of High landings carry sensitive points, and 197 of 1,404 touch under 200 lines, such as a docs tool bump.
-4. **No cut does better.** Reverted lift goes 1.60, 2.14, 2.57, 1.40, 2.06 from 50 to 70, on 10 down to 2 landings. Fixed lift is flat, 3.04 to 3.68. Holding at most 3% of the other repositories picks 60 for 10 of 11 and 55 for ruff, so 60 is a cheaper hold, not a better one: that choice is the owner's.
+4. **No cut does better.** Reverted lift goes 1.60, 2.14, 2.57, 1.40, 2.06 from 50 to 70, on 10 down to 2 landings. Fixed lift is flat, 3.04 to 3.68. Holding at most 3% of the other repositories picks 60 for 10 of 11 and 55 for ruff, so 60 would be a cheaper hold, not a better one.
 5. **The real classifier moved the bands.** The earlier run assumed classes and put 0.9% in High and 25.2% in Medium; 30.5% of landings touch a file the classifier reads as `unknown`, such as JSON.
 
 Limits: these landings had human review and aren't agent work, so only platform outcomes can settle it. No open findings are counted and a push is assumed classified, so real scores can only be higher. 134 revert pairs were read by hand and nearly all hold up, though some undo a rollout rather than a defect; 52 of 186 reverts found no target. Eight High hits is little evidence, so a small effect isn't ruled out.
@@ -225,15 +225,15 @@ Ships **before** stage 6.
 | Switches | `repo_settings.land_when_cleared`, `findings_block`, in `0044`; `PUT /auto-landings`. Not in `policy` |
 | Trigger | An op that can clear a Landing names it in `land_checks` (`triggers.rs`): check passed, approval, comment resolved, new head, review class, Landing opened or reopened. The adapter strips the field and queues `platform_land_check`. A lost message costs that trigger, not the next |
 | Job kind known first | `LAND_WHEN_CLEARED` stays off through the deploy that ships the handler, and goes on in a later one. A rollback past the handler drops messages, which waits for the next trigger |
-| Exact head | The job asks `repo_land_clearance`; with only Risk missing it reads the diff and asks again with the score; then `repo_land` with `expected_head`. That call decides again in its own transaction. A landing that needs a merge queues as `slow`, and claim and batch decide again, so a newer push or a rejection stops a ticket too |
+| Exact head | The job asks `repo_land_clearance`; a head that would land answers `confirm`, and it asks again with the adapter's answers; then `repo_land` with `expected_head`. That call decides again in its own transaction. A landing that needs a merge queues as `slow`, and claim and batch decide again, so a newer push or a rejection stops a ticket too |
 | Identity | `_system: land-when-cleared`, actor `platform:land-when-cleared`. The role lands only a Landing it names |
-| Record | `changes.clearance`, in `0044`: the job's decisions as JSON, newest first, each with its reasons, the head it judged, the state it judged and the version if it landed. `clearances` in `GET /changes/:n`. A recorded state replays to the same decision. Newest 32 per Landing, identical ones skipped; a landing is the last thing recorded. Never a status |
+| Record | `changes.clearance`, in `0044`: the job's decisions as JSON, newest first, each with its reasons, the head it judged, the state it judged and the version if it landed. `clearances` in `GET /changes/:n`. A recorded state replays to the same decision, except a hold on Risk from before the owner removed it: `state.risk` is ignored. Newest 32 per Landing, identical ones skipped; a landing is the last thing recorded. Never a status |
 | Audit | None: the org audit log takes events from account authorities only (`audit_log.rs`). The record and the log's actor stand in |
 
 | Decision | Reasons |
 |---|---|
 | Go-around: the work has to answer | Failed required check or rejection, failed check on the head (required or not: this is how `block_at` reached reads), blocking findings, stale read, a merge that conflicted |
-| Hold: it can come without new work | Check or approval still to come, draft title, a person's unresolved line comment, automation pause, legal hold, `REPO_FULL`, a path-limited token that worked on it not covering the landing, Risk High or not scored |
+| Hold: it can come without new work | Check or approval still to come, draft title, a person's unresolved line comment, automation pause, legal hold, `REPO_FULL`, a path-limited token that worked on it not covering the landing |
 
 **Two holds the owner didn't list:**
 
@@ -307,7 +307,7 @@ We don't build orchestration, so this is **pull, not push**: the platform never 
 | Sequencing | The order of Landings, from the queue | Building |
 | Radar | One board of every open Landing | Building |
 
-Conservative rules: a fork needs an approval of its head, a repo with no rules never auto-lands, drafts and any failed check hold, and High risk holds.
+Conservative rules: a fork needs an approval of its head, a repo with no rules never auto-lands, and drafts and any failed check hold.
 
 ## 10. Order to reach prod
 

@@ -106,7 +106,7 @@ describe('automatic Landings', () => {
       html(AutoLandingSettings, { repo, landings, onChanged: () => {} });
     const off = page({ create: false, agents: false });
     expect(off).toMatch(/<input type="checkbox"\/><span>Land when cleared/);
-    expect(off).toContain('Risk not High');
+    expect(off).not.toContain('Risk');
     expect(off).toMatch(
       /<input type="checkbox"\/><span>Block landing on unresolved agent findings/,
     );

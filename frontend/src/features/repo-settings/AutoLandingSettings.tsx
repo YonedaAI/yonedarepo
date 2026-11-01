@@ -80,9 +80,8 @@ export function AutoLandingSettings({
             Land when cleared
             <small className="subtle">
               Tower lands an open Landing once its head clears: every gate ready, no failed check or
-              comment from a person left open, Risk not High. A rule must ask for an approval or a
-              check, and a fork needs an approval. A Landing already cleared lands on its next
-              event.
+              comment from a person left open. A rule must ask for an approval or a check, and a
+              fork needs an approval. A Landing already cleared lands on its next event.
             </small>
           </span>
         </label>
