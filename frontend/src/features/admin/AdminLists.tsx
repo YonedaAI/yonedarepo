@@ -11,9 +11,7 @@ import { LargestRepos } from './AdminStorage';
 import {
   type AdminAccount,
   type AdminRepo,
-  type AuditEntry,
   accountsPath,
-  auditPath,
   nameOf,
   providerLabel,
   reposPath,
@@ -195,48 +193,5 @@ export function AdminSignups({
         </li>
       ))}
     </ul>
-  );
-}
-
-const detailText = (detail: AuditEntry['detail']) =>
-  detail
-    ? Object.entries(detail)
-        .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`)
-        .join(', ')
-    : '';
-
-export function AdminAudit() {
-  const paged = usePaged<AuditEntry>((before) => auditPath(before));
-  return (
-    <>
-      {paged.items.length > 0 && (
-        <div className="source-table-wrap">
-          <table className="source-table admin-table">
-            <caption className="sr-only">Operator actions, newest first</caption>
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>Operator</th>
-                <th>Action</th>
-                <th>Target</th>
-                <th>Detail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paged.items.map((e) => (
-                <tr key={e.id}>
-                  <td>{when(e.at)}</td>
-                  <td>{e.actor === '_admin' ? 'owner token' : e.actor}</td>
-                  <td>{e.action}</td>
-                  <td>{e.target}</td>
-                  <td className="admin-detail">{detailText(e.detail)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <PagedStatus paged={paged} what="the audit log" empty="No operator actions yet." />
-    </>
   );
 }

@@ -105,6 +105,38 @@ export type AuditEntry = {
   action: string;
   target: string;
   detail: Record<string, unknown> | null;
+  /** The rest come with OPERATOR_AUDIT on. */
+  outcome?: string;
+  request_id?: string | null;
+  actor_kind?: 'person' | 'system';
+  origin?: string | null;
+  time_zone?: string | null;
+};
+export type AuditFilters = {
+  view: 'people' | 'system';
+  actor: string;
+  action: string;
+  target: string;
+  outcome: string;
+  from: string;
+  to: string;
+};
+export const NO_FILTERS: AuditFilters = {
+  view: 'people',
+  actor: '',
+  action: '',
+  target: '',
+  outcome: '',
+  from: '',
+  to: '',
+};
+export const OUTCOMES: Record<string, string> = {
+  success: 'Done',
+  failed: 'Failed',
+  denied: 'Refused',
+  requested: 'Requested',
+  queued: 'Queued',
+  completed: 'Completed',
 };
 
 export function withQuery(path: string, params: Record<string, string | number | undefined>) {
@@ -120,7 +152,8 @@ export const reposPath = (q: string, before?: number) =>
 export const LARGEST_PATH = '/admin/repos/largest';
 export const repoPath = (repo: string) => `/admin/repos/${repo}`;
 export const signupsPath = (since: number) => `/admin/signups?since=${since}`;
-export const auditPath = (before?: number) => withQuery('/admin/audit', { before });
+export const auditPath = (filters: AuditFilters, before?: number) =>
+  withQuery('/admin/audit', { ...filters, before });
 export const accountPath = (account: string) => `/admin/accounts/${encodeURIComponent(account)}`;
 
 const PROVIDERS: Record<string, string> = { github: 'GitHub', google: 'Google', email: 'Email' };

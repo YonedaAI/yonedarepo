@@ -6,6 +6,7 @@
 // idempotent, so a retried delete repeats whatever a failed attempt left undone.
 
 import { laterIfHeld } from './platform-legal-hold';
+import { settlePurge } from './platform-operator-audit';
 import { teamEntries } from './platform-org-access';
 import { audited, auditRepoLeaving } from './repo-audit';
 import { unlistRepository } from './repo-create';
@@ -219,12 +220,14 @@ export async function purgeJob(env: Env, envelope: Envelope) {
   const run = () => purgeRepository(env, repo, { scheduled, skipWindow: kind === 'now' });
   try {
     await (scheduled ? run() : laterIfHeld(env, envelope, run));
+    await settlePurge(env, repo, 'completed');
   } catch (e: any) {
     if (e?.code === 'NOT_FOUND') return forgetDeleted(env, repo);
     if (e?.code === 'NOT_DUE') {
       const call = caller(env, repo, { _system: 'purge' });
       return parkDeleted(env, repo, await call({ op: 'repo_restore', check: true }));
     }
+    await settlePurge(env, repo, 'failed');
     if (e?.code !== 'LEGAL_HOLD') throw e;
   }
 }

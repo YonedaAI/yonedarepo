@@ -3,7 +3,8 @@
 // operators; the API refuses everyone else whatever this page shows.
 import { linkTo, type Navigate } from '../shell/useRoute';
 import type { Loaded } from '../source-platform/useSource';
-import { AdminAudit, AdminRepos, AdminSignups, AdminUsers } from './AdminLists';
+import { AdminAudit } from './AdminAudit';
+import { AdminRepos, AdminSignups, AdminUsers } from './AdminLists';
 import { AdminInfrastructure, AdminOperations } from './AdminOperations';
 import { AdminOverview } from './AdminOverview';
 import { AdminTraffic } from './AdminTraffic';

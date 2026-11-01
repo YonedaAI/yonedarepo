@@ -116,8 +116,8 @@ Agree these before the first run. They are starting targets, not commitments.
 
 | Measure | Target |
 |---|---|
-| Added to a customer's request | 1 property read: is this credential staff? |
-| Staff read | At most 1 D1 read and 1 D1 write per staff credential and repository, per isolate and hour, after the answer |
+| Added to a customer's request | 0 |
+| Staff opening a repository | At most 1 D1 read and 1 D1 write per operator and repository, per isolate and hour, after the answer |
 | Refused admin attempt | At most 1 D1 write per caller, per isolate and 5 minutes, after the answer; at most 60 an isolate an hour, so a stranger can't fill the table |
 | Failed operator action | 1 D1 write after the answer, as a successful one has today |
 | Purge job | 1 D1 update when it ends |

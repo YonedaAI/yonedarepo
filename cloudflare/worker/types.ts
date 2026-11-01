@@ -188,6 +188,9 @@ export interface Env {
    * repository Insights page and the admin landing and repository reports (repo-usage.ts). Needs
    * TRAFFIC_EVENTS and TRAFFIC_REPORT on. */
   REPO_ANALYTICS?: string;
+  /** `on` splits the operator log, adds its filters and detail panel, and records failed admin
+   * attempts, purges' ends and staff reads (platform-operator-audit.ts). Needs D1 migration 0015. */
+  OPERATOR_AUDIT?: string;
   /** `on` opens the admin Operations and Infrastructure tabs (platform-operations-report.ts). */
   OPS_REPORT?: string;
   /** What the Infrastructure tab reads, as JSON: `{"scripts":["name"],"queues":{"jobs":"<id>"},
