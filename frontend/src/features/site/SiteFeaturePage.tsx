@@ -36,10 +36,7 @@ export function SiteFeaturePage({ slug, navigate }: { slug: string; navigate: Na
           <h1 id="feature-heading">{page.headline}</h1>
           <p className="site-hero-lead">{item.subtitle}</p>
           <div className="site-hero-actions">
-            <a
-              className="site-button site-button-large"
-              {...siteLink({ page: 'signin', mode: 'signup' }, navigate)}
-            >
+            <a className="site-button" {...siteLink({ page: 'signin', mode: 'signup' }, navigate)}>
               Get started <ArrowRight size={18} aria-hidden="true" />
             </a>
             <a className="site-more" {...siteLink({ page: 'docs', slug: page.docs }, navigate)}>

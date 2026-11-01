@@ -130,7 +130,12 @@ export function renderNewsletterConfirm({
         kind: 'p',
         text: "If you didn't ask for this, ignore this email: we send nothing more unless the link is used.",
       },
-      { kind: 'link', text: "Don't want to hear from us?", href: unsubscribeUrl, label: 'Unsubscribe' },
+      {
+        kind: 'link',
+        text: "Don't want to hear from us?",
+        href: unsubscribeUrl,
+        label: 'Unsubscribe',
+      },
       { kind: 'contact' },
     ],
     why: `You're getting this because someone entered this address on the Flight log page at ${origin}. If it wasn't you, ignore it or tell us at ${contact}.`,

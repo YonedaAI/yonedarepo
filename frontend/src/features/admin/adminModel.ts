@@ -28,6 +28,8 @@ export type Overview = {
   signups_per_day: { day: string; count: number }[];
   /** Whether the revenue view exists here (ADMIN_BILLING). */
   billing?: boolean;
+  /** The Flight log's confirmed subscribers, while NEWSLETTER is on. */
+  newsletter?: { confirmed: number } | null;
 };
 export type AdminAccount = {
   account: string;

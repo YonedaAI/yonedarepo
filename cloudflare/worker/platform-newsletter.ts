@@ -12,13 +12,14 @@
 // A confirmation token is random, single use, and stored only as its digest. An unsubscribe link
 // can't work that way: it must keep working from every mail, and the export must be able to
 // print it, so it is the row's id signed with NEWSLETTER_KEY.
-import { normalizeAccountIdentifier } from '../../shared/account';
+import { subscriberEmail } from '../../shared/newsletter';
 import { hmacHex } from './hmac';
 import { error, readJson, response } from './http';
 import { audit } from './platform-admin-queries';
 import { digest } from './platform-email-verify';
 import { config } from './platform-welcome-email';
 import { ApiError } from './repo-ops';
+import { carriedQueue } from './request-scope';
 import type { Env, Envelope, Json } from './types';
 
 export const NEWSLETTER_JOB = 'newsletter_confirm';
@@ -51,13 +52,6 @@ export const confirmUrl = (origin: string, token: string) =>
 export const unsubscribeUrl = (origin: string, token: string) =>
   `${origin}/updates/unsubscribe?token=${token}`;
 
-/** A valid address to mail: the account rules, and no leading `=`, `+` or `-`, which a spreadsheet
- * opening the export would run as a formula. */
-function emailOf(value: unknown) {
-  const email = typeof value === 'string' ? normalizeAccountIdentifier(value) : null;
-  return email?.includes('@') && /^[a-z0-9]/.test(email) ? email : null;
-}
-
 const newToken = () =>
   [...crypto.getRandomValues(new Uint8Array(32))]
     .map((b) => b.toString(16).padStart(2, '0'))
@@ -88,14 +82,14 @@ async function signUp(req: Request, env: Env) {
   if (origin && origin !== new URL(req.url).origin)
     return error('FORBIDDEN', 'Sign up on the website', 403);
   const body = await readJson(req, BODY_LIMIT).catch(() => ({}) as Json);
-  const email = emailOf(body.email);
+  const email = subscriberEmail(body.email);
   if (!email) return error('INVALID_EMAIL', 'Enter a valid email address', 400);
   if (body.consent !== true)
     return error('CONSENT_REQUIRED', 'Tick the box to get updates by email', 400);
   const token = newToken();
   await remember(env, email, await digest(token), Date.now());
   const job: Envelope = { v: 1, kind: NEWSLETTER_JOB, repo_id: '', job_id: 'newsletter', token };
-  await env.PLATFORM_QUEUE.send(job);
+  await carriedQueue(env.PLATFORM_QUEUE).send(job);
   return response({ accepted: true }, 202);
 }
 

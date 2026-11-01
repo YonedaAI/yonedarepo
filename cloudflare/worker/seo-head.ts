@@ -44,6 +44,8 @@ const APP_ROOTS = new Set([
   'search',
   'settings',
   'source',
+  // Only the Flight log's emailed links reach here: `/updates` itself is a site page.
+  'updates',
 ]);
 /** A repository's name (repo_store `repo_init`, frontend repoNames.ts REPO_NAME). */
 const REPO_NAME = /^(?!\.)[A-Za-z0-9._-]{1,100}$/;

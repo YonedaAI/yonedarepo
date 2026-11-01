@@ -92,9 +92,16 @@ mod tests {
 
     #[test]
     fn needs_a_file_to_write_to() {
-        let args: Vec<String> = ["admin", "newsletter-export", "--env", "dev", "--out", "a.csv"]
-            .map(String::from)
-            .to_vec();
+        let args: Vec<String> = [
+            "admin",
+            "newsletter-export",
+            "--env",
+            "dev",
+            "--out",
+            "a.csv",
+        ]
+        .map(String::from)
+        .to_vec();
         assert_eq!(out_path(&args).unwrap().to_str(), Some("a.csv"));
         assert!(out_path(&args[..4]).is_err());
     }

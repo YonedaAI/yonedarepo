@@ -1,0 +1,171 @@
+/* The Flight log: the radar scope (SiteRadar.tsx) behind the home page's closing band and the
+   `/updates` page. Rings only show in the section's outer part: the mask keeps the middle clear
+   for the text and fades the edges into the page, and the rules are the theme's own hairline. */
+.site-radar {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 0;
+  max-width: none;
+  transform: translate(-50%, -50%);
+  fill: none;
+  stroke: var(--site-line-strong);
+  stroke-width: 1;
+  opacity: 0.5;
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(
+    closest-side,
+    transparent 16%,
+    #000 34%,
+    #000 62%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(closest-side, transparent 16%, #000 34%, #000 62%, transparent 100%);
+}
+.site-radar * {
+  vector-effect: non-scaling-stroke;
+}
+.site-radar-return {
+  fill: var(--site-muted);
+  stroke: none;
+}
+
+/* The closing band: a section of its own weight, leading to the Flight log. */
+.site-band-cta {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  padding-block: 112px;
+  text-align: center;
+}
+.site-band-cta > :not(.site-radar) {
+  position: relative;
+}
+.site-band-cta h2 {
+  font-size: var(--fs-3xl);
+  margin: 0 auto var(--sp-3);
+  max-width: 24ch;
+  text-wrap: balance;
+}
+.site-band-cta p {
+  color: var(--site-muted);
+  font-size: var(--fs-md);
+  margin: 0 auto var(--sp-5);
+}
+.site-cta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+}
+
+/* `/updates`: one centred column over the scope, the same place the closing band leads to. */
+.site-updates {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  display: grid;
+  place-items: center;
+  min-height: 620px;
+  padding: 88px var(--site-gutter);
+}
+.site-updates-body {
+  position: relative;
+  width: min(100%, 460px);
+  text-align: center;
+}
+.site-updates h1 {
+  font-size: var(--fs-hero);
+  margin: 0 0 var(--sp-3);
+}
+.site-updates-body > p {
+  margin: 0 auto;
+  font-size: var(--fs-md);
+}
+/* Holds the form's height, so nothing moves when the page learns what to show. */
+.site-updates-slot {
+  min-height: 116px;
+  margin-top: var(--sp-5);
+}
+.site-updates-soon {
+  margin: 0 auto;
+  color: var(--site-text);
+}
+/* The box comes before the button in the source, so Tab reaches it first; on a wide screen the
+   button still sits beside the address. */
+.site-updates-form {
+  /* The form is this page's one job: its row is a step taller than a nav control. */
+  --site-control: 36px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--sp-3) var(--sp-2);
+  text-align: left;
+}
+.site-updates-form > input {
+  min-width: 0;
+  height: var(--site-control);
+  min-height: 0;
+  padding: 0 10px;
+  border: 1px solid var(--site-line-strong);
+  border-radius: 6px;
+  font-size: var(--fs-sm);
+}
+.site-updates-form > input[aria-invalid="true"] {
+  border-color: var(--site-bad);
+}
+.site-updates-form > .site-button {
+  grid-row: 1;
+  grid-column: 2;
+}
+.site-updates-consent {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  color: var(--site-muted);
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+  cursor: pointer;
+}
+.site-updates-consent input {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin: 2px 0 0;
+  accent-color: var(--site-accent);
+}
+.site .site-updates-problem {
+  grid-column: 1 / -1;
+  margin: 0;
+  color: var(--site-bad);
+  font-size: var(--fs-sm);
+}
+
+@media (max-width: 800px) {
+  .site-band-cta {
+    padding-block: 72px;
+  }
+  .site-band-cta h2 {
+    font-size: var(--fs-2xl);
+  }
+  .site-updates {
+    min-height: 520px;
+    padding-block: 56px;
+  }
+}
+@media (max-width: 480px) {
+  /* A smaller scope, or a phone would show none of it. Wider screens need the full size: the
+     second ring has to clear the text. */
+  .site-radar {
+    width: 1100px;
+    height: 1100px;
+  }
+  .site-updates-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .site-updates-form > .site-button {
+    grid-row: auto;
+    grid-column: auto;
+  }
+}

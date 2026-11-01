@@ -43,9 +43,10 @@
   --fs-xl: 24px;
   --fs-2xl: 30px;
   --fs-3xl: 36px;
-  --fs-hero: clamp(36px, 4.2vw, 54px);
+  --fs-hero: clamp(34px, 4vw, 54px);
+  --site-control: 32px;
   --font-body: "Inter", "IBM Plex Sans", system-ui, sans-serif;
-  --font-display: "Inter Tight", "Inter", system-ui, sans-serif;
+  --font-display: var(--font-body);
   /* App components on site pages (the account panel) take the site's theme. */
   --muted: var(--site-muted);
   --line: var(--site-line);
@@ -130,14 +131,14 @@
 .site h3,
 .site h4 {
   color: var(--site-text);
-  line-height: 1.15;
-  letter-spacing: -0.015em;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
 }
-/* Only page and section headings are heavy, in the display face. */
+/* Page and section headings stand out by size, not weight: open and medium. */
 .site h1,
 .site h2 {
   font-family: var(--font-display);
-  font-weight: 600;
+  font-weight: 500;
 }
 .site h3,
 .site h4,
@@ -172,8 +173,9 @@
   /* The wordmark: the one white, display-weight item in the header. */
   color: var(--site-text);
   font-family: var(--font-display);
-  font-weight: 600;
+  font-weight: 500;
   font-size: var(--fs-md);
+  white-space: nowrap;
 }
 .site-brand svg {
   color: var(--site-accent);
@@ -197,7 +199,8 @@
   padding: 6px 10px;
   border-radius: 6px;
   color: var(--site-muted);
-  font-weight: 500;
+  font-size: var(--fs-sm);
+  font-weight: 400;
 }
 .site-nav-link:hover,
 .site-nav-link[aria-current="page"] {
@@ -211,7 +214,7 @@
 }
 .site-theme {
   order: 3;
-  padding: 7px;
+  padding: 6px;
   min-height: 0;
   background: transparent;
   color: var(--site-muted);
@@ -222,44 +225,49 @@
 }
 .site-menu-button {
   display: none;
+  height: var(--site-control);
+  min-height: 0;
+  padding: 0 10px;
   margin-left: auto;
+  font-size: var(--fs-sm);
   background: transparent;
   color: var(--site-text);
   border: 1px solid var(--site-line);
 }
 .site-quiet-link {
-  font-weight: 500;
   color: var(--site-muted);
+  font-size: var(--fs-sm);
+  white-space: nowrap;
 }
 .site-quiet-link:hover {
   color: var(--site-text);
 }
-.site-button {
+/* One button size everywhere, the height of the nav's other controls. */
+.site-button,
+.site-more {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-radius: 7px;
+  justify-content: center;
+  gap: 6px;
+  height: var(--site-control);
+  min-height: 0;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: var(--fs-sm);
+  font-weight: 400;
+  white-space: nowrap;
+}
+.site-button {
+  border: 0;
   background: var(--site-accent);
   color: var(--site-accent-text);
-  font-weight: 500;
 }
 .site-button:hover {
   filter: brightness(1.06);
 }
-.site-button-large {
-  padding: 12px 22px;
-  font-size: var(--fs-md);
-}
 .site-more {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 14px;
   border: 1px solid var(--site-line-strong);
-  border-radius: 7px;
   color: var(--site-muted);
-  font-weight: 500;
 }
 .site-more:hover {
   color: var(--site-text);

@@ -47,6 +47,8 @@ const neutral = new Set([
   '../../shared/contracts/pat-scopes',
   // Account identifier rules (yoneda-core::account's transport counterpart); imports nothing.
   '../../shared/account',
+  // The Flight log's address rule, shared with the /updates form; imports only shared/account.
+  '../../shared/newsletter',
   // Contact support's limits and attachment types, shared with the browser; imports nothing.
   '../../shared/support',
   '../../backend/crates/yoneda-worker/build/worker/shim.mjs',

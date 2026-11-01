@@ -16,7 +16,6 @@ import {
   backoff,
   config,
   MAX_ATTEMPTS,
-  maskAddress,
   RESEND_EMAILS,
   resendKey,
   transient,
@@ -52,7 +51,7 @@ export async function newsletterJob(
   });
   const failed = (detail: Record<string, unknown>) => {
     if (attempts < MAX_ATTEMPTS && detail.transient) return { retry: backoff(attempts) };
-    log.error('email.newsletter.failed', { to: maskAddress(row.email), attempts, ...detail });
+    log.error('email.newsletter.failed', { id: row.id, attempts, ...detail });
     return {};
   };
   let answer: Response;

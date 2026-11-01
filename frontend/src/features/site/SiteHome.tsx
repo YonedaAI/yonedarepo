@@ -7,6 +7,7 @@ import { SiteBuildOn } from './SiteBuildOn';
 import { SiteCompare } from './SiteCompare';
 import { SiteFlightPath } from './SiteFlightPath';
 import { siteLink } from './SiteLayout';
+import { SiteRadar } from './SiteRadar';
 import { SiteWorksWith } from './SiteWorksWith';
 
 /** The problem rows: the pain (struck through), our answer, and the tour panel that solves it. */
@@ -49,11 +50,8 @@ export function SiteHome({ navigate }: { navigate: Navigate }) {
           Path, built for the scale and throughput of agentic coding.
         </p>
         <div className="site-hero-actions">
-          <a
-            className="site-button site-button-large"
-            {...siteLink({ page: 'signin', mode: 'signup' }, navigate)}
-          >
-            Get started <ArrowRight size={18} aria-hidden="true" />
+          <a className="site-button" {...siteLink({ page: 'signin', mode: 'signup' }, navigate)}>
+            Get started <ArrowRight size={14} aria-hidden="true" />
           </a>
           <SiteWorksWith />
         </div>
@@ -93,14 +91,17 @@ export function SiteHome({ navigate }: { navigate: Navigate }) {
       <SiteCompare />
 
       <section className="site-band site-band-cta" aria-labelledby="cta-heading">
+        <SiteRadar />
         <h2 id="cta-heading">Give your agents a repository built for them.</h2>
-        <p>Free platform. Bring stock Git, the CLI or MCP.</p>
-        <a
-          className="site-button site-button-large"
-          {...siteLink({ page: 'signin', mode: 'signup' }, navigate)}
-        >
-          Get started free
-        </a>
+        <p>The platform is free. Works with Git, our CLI and any MCP client.</p>
+        <div className="site-cta-actions">
+          <a className="site-button" {...siteLink({ page: 'updates' }, navigate)}>
+            Get updates
+          </a>
+          <a className="site-more" {...siteLink({ page: 'signin', mode: 'signup' }, navigate)}>
+            Get started
+          </a>
+        </div>
       </section>
     </>
   );
