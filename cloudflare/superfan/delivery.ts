@@ -12,7 +12,7 @@ import { type ComponentReport, report, type Signal, type Snapshot } from './sign
 const MINUTE = 60_000;
 /** Over the 14.6 s the longest normal gap measured on dev; a real stall was 70.7 s. */
 export const GAP_MS = 60_000;
-export const WAITED_MS = 15_000;
+export const WAITED_MS = 30_000;
 /** Longer than the hourly pass's reach, so a pass off the wide watch sees each stall. */
 const LOOKBACK_MS = 70 * MINUTE;
 const KEEP_MS = 2 * 60 * MINUTE;
@@ -96,10 +96,16 @@ export function stallIn(gaps: QueueGap[], { waiting, waited }: QueueMinutes): St
   for (const { queue, from, to } of gaps) {
     const back = minuteOf(to);
     const waitedMs = Math.max(waited[back] ?? 0, waited[back + MINUTE] ?? 0);
+    // An idle queue is no stall: the gap counts from the minute before anything was seen waiting,
+    // as a backlog shows up a sample late.
     let most = 0;
-    for (let at = minuteOf(from); at <= back; at += MINUTE) most = Math.max(most, waiting[at] ?? 0);
-    const gapMs = to - from;
-    if (most > 0 && waitedMs > WAITED_MS && gapMs > (worst?.gapMs ?? 0))
+    let waitingFrom = to;
+    for (let at = minuteOf(from); at <= back; at += MINUTE) {
+      most = Math.max(most, waiting[at] ?? 0);
+      if (waiting[at] && waitingFrom === to) waitingFrom = Math.max(from, at - MINUTE);
+    }
+    const gapMs = to - waitingFrom;
+    if (gapMs > GAP_MS && waitedMs > WAITED_MS && gapMs > (worst?.gapMs ?? 0))
       worst = { queue, gapMs, waiting: Math.ceil(most), waitedMs };
   }
   return worst;

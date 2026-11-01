@@ -159,6 +159,17 @@ describe('staying quiet', () => {
     expect(await keys(d)).toEqual([]);
   });
 
+  it('counts a gap from when work waited: an idle hour, then a short pause, is no stall', () => {
+    const to = Date.parse('2026-11-01T20:50:40Z');
+    const gap = { queue: 'yonedarepo-dev-platform-jobs', from: to - 3_707_000, to };
+    const back = Date.parse('2026-11-01T20:50:00Z');
+    expect(stallIn([gap], { waiting: { [back]: 10 }, waited: { [back]: 15_700 } })).toBeNull();
+    const held = { [back - 120_000]: 10, [back - 60_000]: 10, [back]: 10 };
+    expect(stallIn([gap], { waiting: held, waited: { [back]: 150_000 } })).toMatchObject({
+      gapMs: 220_000,
+    });
+  });
+
   it('stays quiet for a burst after an idle spell: a backlog, and nobody waited', async () => {
     fakeUpstreams(graphql(() => queueReply([[stallTo, 40]], [[stallTo, 900]])));
     const e = wide();
