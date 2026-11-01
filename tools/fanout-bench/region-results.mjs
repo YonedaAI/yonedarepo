@@ -19,6 +19,8 @@ const ARMS = ['today', 'region'];
 const HOP = /hop\.([a-z0-9]+);dur=([\d.]+);desc="(\d+)"/g;
 
 const median = (values) => spread(values)?.median ?? null;
+/** A repository's own authority, however many commands reached it. */
+const AUTHORITY = /do\.[a-z_]+;dur=([\d.]+);desc="(\d+)"/g;
 const cell = (s) => (s ? `${Math.round(s.median)} (${Math.round(s.min)}–${Math.round(s.max)})` : 'not measured');
 const armsOf = (records) => records.flatMap((r) => r.result?.arms ?? []);
 
@@ -55,6 +57,14 @@ export function hopsOf(rows) {
       hop.ms.push(Number(dur));
       seen.set(name, hop);
     }
+  for (const row of rows.filter((r) => r.ok)) {
+    const calls = [...(row.timing ?? '').matchAll(AUTHORITY)];
+    if (!calls.length) continue;
+    const hop = seen.get('repository') ?? { calls: 0, ms: [] };
+    hop.calls += calls.reduce((n, m) => n + Number(m[2]), 0);
+    hop.ms.push(calls.reduce((n, m) => n + Number(m[1]), 0));
+    seen.set('repository', hop);
+  }
   const answers = rows.filter((r) => r.ok).length;
   return Object.fromEntries([...seen].map(([name, hop]) => [name, { calls: Number((hop.calls / answers).toFixed(1)), ms: Math.round(median(hop.ms)) }]));
 }
@@ -107,10 +117,21 @@ export function pieceTable(records) {
 
 export function clientTable(records) {
   const placed = records.at(-1)?.result?.clients ?? {};
+  const rows = Object.entries(placed).map(([name, c]) => `| ${CLIENTS[name].label} | ${CLIENTS[name].placed} | ${c.colo} |`);
+  return ['| Client | Placed near | Ran in colo |', '|---|---|---|', ...rows].join('\n');
+}
+
+/** D1 reads through a session, by the place that answered each one. */
+export function replicaTable(records) {
   const probes = records.flatMap((r) => r.result?.probes ?? []);
-  const served = (read) => [...new Set(probes.map(read).filter(Boolean))].join(', ') || 'not measured';
-  const rows = Object.entries(placed).map(([name, c]) => `| ${CLIENTS[name].label} | ${CLIENTS[name].placed} | ${c.colo} | ${c.loc} |`);
-  return [...['| Client | Placed near | Ran in colo | Country |', '|---|---|---|---|'], ...rows, '', `D1 reads served by: ${served((p) => p.d1?.served_by_region)}. Through a session: ${served((p) => p.d1_session?.served_by_region)}.`].join('\n');
+  const rows = Object.keys(CLIENTS).map((client) => {
+    const byRegion = {};
+    for (const p of probes.filter((q) => q.client === client))
+      for (const [region, ms] of Object.entries(p.d1_session ?? {})) if (Array.isArray(ms)) (byRegion[region] ??= []).push(...ms);
+    const text = Object.entries(byRegion).map(([region, ms]) => `${region}: ${ms.length} reads, median ${median(ms)} ms`).join('; ');
+    return `| ${CLIENTS[client].label} | ${text || 'not measured'} |`;
+  });
+  return ['| Client | Answered by |', '|---|---|', ...rows].join('\n');
 }
 
 /** Real Git from this machine, on today's path: Git can't reach the region's. */
@@ -153,6 +174,10 @@ export function renderRegionResults(records) {
     '',
     pieceTable(records),
     '',
+    '**D1 through a session, with read replication on**',
+    '',
+    replicaTable(records),
+    '',
     '**Real Git from the Mac**',
     '',
     macTable(records),
@@ -167,7 +192,7 @@ export function replaceRegionResults(doc, table) {
 }
 
 export async function regionRecords(dir = EVIDENCE_DIR) {
-  const names = (await readdir(resolve(dir)).catch(() => [])).filter((n) => n.startsWith('region-matrix-') && n.endsWith('.json')).sort();
+  const names = (await readdir(resolve(dir)).catch(() => [])).filter((n) => /^region-(matrix|probe)-.*\.json$/.test(n)).sort();
   return Promise.all(names.map(async (n) => JSON.parse(await readFile(resolve(dir, n), 'utf8'))));
 }
 

@@ -152,7 +152,7 @@ Answers: what cap each pool needs, and whether its queue stays fair between acco
 
 ## Real-use simulation
 
-**The owner's replacement for the 5.7-hour plan:** one hour that behaves like real work, not a request hammer. `tools/platform-real-use.mjs`, built 2026-10-31. Not run for its hour yet.
+**The owner's replacement for the 5.7-hour plan:** one hour that behaves like real work, not a request hammer. `tools/platform-real-use.mjs`, built 2026-10-31. Not run for its hour yet. Proved on dev on 2026-11-01: `region` arm, 2 minutes, 220 requests, 0 failed; `today` arm, 1 minute, 107 requests, 0 failed.
 
 **Every number here is an assumption.** There is no real traffic yet. `--dry-run` counts requests from the scripts themselves, so this table can't drift from the code.
 

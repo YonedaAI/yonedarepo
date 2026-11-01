@@ -12,10 +12,11 @@ import { clean, passwordFrom, regionAccount, RegionSession } from '../../tools/f
 import { joined, netCreate, sample } from '../../tools/fanout-bench/region-matrix.mjs';
 import { armRequests, armsOf, describeMatrix, estimateMatrix, repoName, seedFiles } from '../../tools/fanout-bench/region-plan.mjs';
 import { probe, validProbe } from '../../tools/fanout-bench/region-probe.js';
-import { hopsOf, hopTable, latencyTable, placementTable, renderRegionResults, replaceRegionResults } from '../../tools/fanout-bench/region-results.mjs';
+import { hopsOf, hopTable, latencyTable, placementTable, renderRegionResults, replaceRegionResults, replicaTable } from '../../tools/fanout-bench/region-results.mjs';
 import { REGION_VERSION, runStep, runSteps, servedFrom, validSteps } from '../../tools/fanout-bench/region-steps.js';
 import { clientUrl, placedClients, regionalClients } from '../../tools/fanout-bench/regions.mjs';
 import { describeRun, estimateRun, perSession } from '../../tools/real-use/estimate.mjs';
+import { reviewerOf } from '../../tools/real-use/population.mjs';
 import { activity, DEFAULTS, MIX, peakLoad, randomStream, ratePerMinute, simHour, zipfIndex, ZONES } from '../../tools/real-use/plan.mjs';
 import { failed, judge, playDay, TARGETS } from '../../tools/real-use/run.mjs';
 import { classOf, SCRIPTS } from '../../tools/real-use/sessions.mjs';
@@ -124,13 +125,13 @@ test('the probe times each piece through its binding, and a failed piece says so
   };
   const out = await probe(env, 'https://x', { samples: 3, account: 'kit', repos: [{ id: REPO, data: 'weur' }], serve: 'weur' });
   stub.restore();
-  assert.deepEqual(Object.keys(out.pieces), ['trace', 'platform_health', 'd1', 'd1_session', 'account_authority', 'r2_head', 'r2_get', 'r2_local_put', 'r2_local_get', 'r2_local_head', 'serve_object', 'repo_weur', 'shard_weur']);
+  assert.deepEqual(Object.keys(out.pieces), ['trace', 'platform_health', 'd1', 'account_authority', 'r2_head', 'r2_get', 'r2_local_put', 'r2_local_get', 'r2_local_head', 'serve_object', 'repo_weur', 'shard_weur']);
   assert.equal(out.pieces.repo_weur.ms.length, 2, 'the first sample is kept apart');
   assert.equal(out.pieces.repo_weur.failed, 0);
   assert.deepEqual([out.pieces.shard_weur.failed, out.pieces.shard_weur.ms.length], [3, 0]);
   assert.match(out.pieces.shard_weur.error, /shard read: 500/);
   assert.equal(out.d1.served_by_region, 'ENAM');
-  assert.equal(out.d1_session.served_by_region, 'WEUR');
+  assert.equal(out.d1_session.WEUR.length, 3, 'each read is kept with the place that answered it');
 });
 
 test('clients are refused off dev, and refused together when placement did not apply', async () => {
@@ -212,11 +213,17 @@ test('results come from evidence: failures are counted, not averaged, and gaps s
 
 test('what an operation reached comes from its phases, and a reach-nothing answer says none', () => {
   const rows = [opRow(1, 'total;dur=90.0;desc="1", do.repo_head;dur=2.0;desc="1", hop.r2;dur=80.0;desc="2", hop.d1;dur=40.0;desc="1"'), opRow(2, 'hop.r2;dur=100.0;desc="2"'), { ok: false, timing: 'hop.queue;dur=1.0;desc="1"' }];
-  assert.deepEqual(hopsOf(rows), { r2: { calls: 2, ms: 80 }, d1: { calls: 0.5, ms: 40 } });
+  assert.deepEqual(hopsOf(rows), { r2: { calls: 2, ms: 80 }, d1: { calls: 0.5, ms: 40 }, repository: { calls: 0.5, ms: 2 } });
   const arm = { client: 'eu', arm: 'region', data: 'weur', ops: { read_pat: rows, list: [opRow(1)] } };
   const table = hopTable([record([arm])]);
-  assert.match(table, /\| Read, personal token \| none \| r2 2× 80 ms, d1 0.5× 40 ms \| none \|/);
+  assert.match(table, /\| Read, personal token \| none \| r2 2× 80 ms, d1 0.5× 40 ms, repository 0.5× 2 ms \| none \|/);
   assert.match(table, /\| List \| none \| none \| none \|/);
+});
+
+test('a replica read is reported by the place that answered it', () => {
+  const table = replicaTable([record([], { probes: [{ client: 'ap', d1_session: { APAC: [5, 7, 9], ENAM: [250] } }] })]);
+  assert.match(table, /\| Asia \| APAC: 3 reads, median 7 ms; ENAM: 1 reads, median 250 ms \|/);
+  assert.match(table, /\| Europe \| not measured \|/);
 });
 
 test('the day has a rhythm, follows the sun and sums to the plan', () => {
@@ -232,6 +239,13 @@ test('the day has a rhythm, follows the sun and sums to the plan', () => {
   let busiest = 0;
   for (let h = 0; h < 24; h += 0.25) busiest = Math.max(busiest, Object.keys(MIX).reduce((n, k) => n + Object.keys(ZONES).reduce((m, r) => m + ratePerMinute(k, r, h, 100), 0), 0));
   assert.ok(Math.abs(busiest - 100) < 1e-6, `peak ${busiest}, load ${peakLoad()}`);
+});
+
+test('a reviewer is a neighbour in the region, and never the author', () => {
+  const regions = ['na', 'eu', 'ap'];
+  assert.equal(reviewerOf(0, 24, regions), 3, 'the same region');
+  assert.equal(reviewerOf(23, 24, regions), 2, 'wraps inside it');
+  for (const accounts of [2, 3, 6, 24]) for (let i = 0; i < accounts; i++) assert.notEqual(reviewerOf(i, accounts, regions), i);
 });
 
 test('a seed repeats a run, and popular repositories take most sessions', () => {
