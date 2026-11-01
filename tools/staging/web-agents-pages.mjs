@@ -246,41 +246,6 @@ export async function ctcPage(s, label) {
   return (await s.page.locator('main').innerText()).replace(/\s+/g, ' ').slice(0, 400);
 }
 
-/** The commit form against the UI rules: wide and 375 px, light and dark, its error, the
- * keyboard, and no sideways scroll on the page. Nothing here commits. */
-export async function lookAtForm(s) {
-  const { page } = s;
-  const seen = [];
-  const form = page.getByRole('form', { name: 'Add a file' });
-  for (const [label, width] of [['wide', 1440], ['phone', 375]])
-    for (const colorScheme of ['light', 'dark']) {
-      await page.setViewportSize({ width, height: 900 });
-      await page.emulateMedia({ colorScheme });
-      await page.goto(`${s.origin}${s.base}`);
-      await page.getByRole('button', { name: 'Add file' }).click();
-      await form.waitFor();
-      await form.getByLabel('File').fill('src/a.js');
-      await form.getByLabel('Branch').fill('main');
-      await form.getByRole('button', { name: 'Commit' }).click();
-      await form.getByText(/Main moves only by landing/).waitFor();
-      await s.shot(`form-${label}-${colorScheme}`);
-      const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-      assert.ok(sideways <= 0, `${label} ${colorScheme}: the page scrolls sideways by ${sideways}px`);
-      seen.push(`${label} ${colorScheme}`);
-    }
-  await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.emulateMedia({ colorScheme: 'light' });
-  await page.keyboard.press('Escape');
-  await form.waitFor({ state: 'detached' });
-  await page.getByRole('button', { name: 'Add file' }).focus();
-  await page.keyboard.press('Enter');
-  await form.waitFor();
-  const focused = await page.evaluate(() => document.activeElement?.closest('label')?.textContent?.trim());
-  assert.equal(focused, 'File', 'the keyboard lands on the first field');
-  await page.keyboard.press('Escape');
-  return `${seen.join(', ')}; Escape closes, Enter opens on File`;
-}
-
 export async function restore(s) {
   for (const before of s.agentsBefore) {
     if (!AGENTS.some((a) => a.id === before.id)) continue;

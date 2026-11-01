@@ -20,7 +20,8 @@ import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
 import { OWN_TRAFFIC } from './client.mjs';
 import { CASES, FIX, SLOPPY_FILE } from './web-agents-cases.mjs';
-import { AGENTS, addAgent, commitFromPage, createRepository, ctcPage, facts, keepRuns, lookAtForm, nothingDuringPause, pageShows, pauseAutomation, restore, spentSoFar, turnOnRules } from './web-agents-pages.mjs';
+import { lookAtForm, lookAtPages } from './web-agents-looks.mjs';
+import { AGENTS, addAgent, commitFromPage, createRepository, ctcPage, facts, keepRuns, nothingDuringPause, pageShows, pauseAutomation, restore, spentSoFar, turnOnRules } from './web-agents-pages.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -179,6 +180,8 @@ async function main() {
       await step('Resume automation', () => pauseAutomation(s, 'resume_automation').then(() => 'resumed'));
       await flyCase(s, c, { opened: number });
     }
+    const looked = Object.values(out.cases).find((c) => c.number)?.number;
+    if (values.looks && looked) await step('Risk card and Settings help: wide, phone, light, dark', () => lookAtPages(s, looked));
 
     if (chosen.includes('sloppy') && out.cases.sloppy?.facts?.status === 'open') {
       // The go-around, answered from the web too: edit the file on its branch, and agents look again.
