@@ -15,11 +15,11 @@
   grid-area: title;
   /* Pulls the letters' built-in side space back, so the T lines up with the button below. */
   margin: 0 0 0 -0.05em;
-  max-width: 11ch;
+  /* Wide enough for "The Git platform built", too narrow to take "for" as well. */
+  max-width: 9.35em;
   font-size: var(--fs-hero);
   line-height: 1.14;
   letter-spacing: -0.018em;
-  text-wrap: balance;
 }
 .site-hero-lead {
   grid-area: lead;
