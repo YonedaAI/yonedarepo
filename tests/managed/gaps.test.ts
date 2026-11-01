@@ -237,10 +237,29 @@ describe('automation pause', () => {
       it('spends none of it on a head that has its answer', async () => {
         const h = await waiting(MAX_RUNS_PER_RESUME + 5);
         await deliver(h, event(h, 1), event(h, 2));
+        for (const run of [...h.created]) await runAgent(h.env, run, inline);
         const answered = h.created.length;
-        await deliver(h, resumed(h));
         expect(answered).toBe(2);
+        await deliver(h, resumed(h));
         expect(h.created).toHaveLength(answered + MAX_RUNS_PER_RESUME);
+      });
+
+      it('spends none of it sending a queued run its start again, which costs nothing', async () => {
+        const h = await waiting(MAX_RUNS_PER_RESUME + 5);
+        await deliver(h, event(h, 1), event(h, 2));
+        await deliver(h, resumed(h));
+        const distinct = new Set(h.created.map((c) => c.run));
+        expect(distinct.size).toBe(2 + MAX_RUNS_PER_RESUME);
+      });
+
+      it('counts a run the pause stopped, since that one is paid for again', async () => {
+        const h = await waiting(MAX_RUNS_PER_RESUME + 5);
+        await deliver(h, event(h, 1));
+        h.platform.paused = true;
+        await runAgent(h.env, h.created[0], inline);
+        h.platform.paused = false;
+        await deliver(h, resumed(h));
+        expect(new Set(h.created.slice(1).map((c) => c.run)).size).toBe(MAX_RUNS_PER_RESUME);
       });
 
       it('leaves the rest for their next event, which the limit does not touch', async () => {

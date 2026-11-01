@@ -187,7 +187,7 @@ async function onResumed(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'resu
   const open = await reviewable(platform, m.repo);
   const ctx = { account: connection.account, platform };
   const counts = await reviewChanges(env, m.repo, ctx, agents, open, true, MAX_RUNS_PER_RESUME);
-  if (counts.limited) log.warn('managed.resume_limited', { repo: m.repo, runs: counts.begun });
+  if (counts.limited) log.warn('managed.resume_limited', { repo: m.repo });
 }
 
 /**
@@ -207,7 +207,7 @@ export async function reviewChanges(
 ) {
   const repo = repoStub(env, repoId);
   const workspace = workspaceStub(env, ctx.account);
-  // `begun` counts every run sent off, so a restarted one too; `started` only new heads.
+  // `begun` counts what will be paid for, a restarted run too; `started` only new heads.
   const counts = { started: 0, already: 0, begun: 0, limited: false };
   for (const change of changes) {
     let paths: string[] | null = null;
@@ -248,7 +248,7 @@ export async function reviewChanges(
         change: change.number,
         head: String(change.head),
       });
-      counts.begun++;
+      if (claim.created || claim.restarted) counts.begun++;
       if (claim.created) counts.started++;
     }
   }

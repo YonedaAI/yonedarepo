@@ -72,6 +72,8 @@ export interface Claim {
   created: boolean;
   /** Still waiting for its Workflow instance (a lost start is retried). */
   queued: boolean;
+  /** A new attempt of a run a pause stopped: paid for again, unlike a start sent twice. */
+  restarted?: boolean;
   superseded: string[];
 }
 
@@ -111,7 +113,14 @@ export function claimRun(
       existing.id,
     );
     const attempt = existing.attempt + 1;
-    return { run: existing.id, attempt, created: false, queued: true, superseded: [] };
+    return {
+      run: existing.id,
+      attempt,
+      created: false,
+      queued: true,
+      restarted: true,
+      superseded: [],
+    };
   }
   if (existing)
     return {
