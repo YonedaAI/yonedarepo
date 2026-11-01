@@ -5,8 +5,9 @@
 
 export type TrafficWindow = 7 | 30;
 
-/** Humans: browsers that ran a page's ping. Agents: self-identified AI user agents on the site,
- * and platform clients. Bots: everything else, with page requests no ping confirmed. */
+/** Humans: browsers that ran a page's ping, signed in or not. Agents: self-identified AI user
+ * agents on the site, and platform clients. Bots: everything else, with page requests no ping
+ * confirmed. */
 export type TrafficClass = 'humans' | 'agents' | 'bots';
 
 export interface TrafficCount {
@@ -47,6 +48,8 @@ export interface TrafficClient {
 
 export interface TrafficHeadline {
   humans: number;
+  /** Those with a session, on public pages only. Our own signed-in browsers are among them. */
+  humans_signed_in: number;
   /** Requests from self-identified AI user agents. */
   agents_site: number;
   agents_platform: number;
@@ -60,9 +63,12 @@ export interface SiteTraffic {
   days: TrafficWindow;
   /** Whose top lists these are. */
   class: TrafficClass;
-  /** The UTC day (`YYYY-MM-DD`) of the earliest classed point, null when there is none yet. Rows
-   * before it have no class and count under bots; they can't be cleaned. */
+  /** The UTC day (`YYYY-MM-DD`) of the earliest classed point, null when there is none yet.
+   * Rows before it have no class and count nowhere. */
   classed_since: string | null;
+  /** Whether pings and platform requests are being recorded here. Off, Humans and platform use
+   * are unknown, not zero. */
+  counting: boolean;
   headline: TrafficHeadline;
   web_analytics: WebAnalyticsCheck;
   /** Per UTC day over the last 30 days (`YYYY-MM-DD`), oldest first. */

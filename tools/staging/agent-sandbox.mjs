@@ -11,6 +11,7 @@
 // Why: on 2026-10-28 real agents spawned with `cwd` = their clone worked in the operator's
 // checkout instead, because `opencode run` takes its project directory from $PWD (inherited
 // from the kit), and pushed to the operator's GitHub remote with the operator's credentials.
+import { gitConfigEnv, OWN_TRAFFIC_ENV } from '../own-traffic.mjs';
 
 export const IMAGE = 'yoneda-agent-sandbox:local';
 export const IMAGE_LABEL = 'yoneda.agent-sandbox=1';
@@ -83,6 +84,7 @@ export function sandboxEnv({ origin, token, remote, credential, proxy, plain = f
       : {
           YONEDA_ORIGIN: origin,
           YONEDA_TOKEN: token,
+          ...OWN_TRAFFIC_ENV,
           YONEDA_HOOK_LOG: HOOK_LOG,
           YONEDA_AGENT_WORKDIR: WORKDIR,
           OPENCODE_CONFIG_CONTENT: JSON.stringify({ plugins: [{ package: PLUGIN }] }),
@@ -92,14 +94,15 @@ export function sandboxEnv({ origin, token, remote, credential, proxy, plain = f
     // The bind mount's owner is not the container's agent user, and Docker Desktop's file
     // sharing reports unstable ctimes and inodes: with full stat checks Git takes tracked files
     // for modified and refuses `pull --rebase` ("local changes would be overwritten").
-    GIT_CONFIG_COUNT: plain ? '4' : '3',
-    GIT_CONFIG_KEY_0: 'safe.directory',
-    GIT_CONFIG_VALUE_0: WORKDIR,
-    GIT_CONFIG_KEY_1: 'core.checkStat',
-    GIT_CONFIG_VALUE_1: 'minimal',
-    GIT_CONFIG_KEY_2: 'core.trustctime',
-    GIT_CONFIG_VALUE_2: 'false',
-    ...(plain ? { GIT_CONFIG_KEY_3: `http.${origin}/.extraHeader`, GIT_CONFIG_VALUE_3: `Authorization: Bearer ${token}` } : {}),
+    ...gitConfigEnv({
+      token: plain ? token : undefined,
+      origin,
+      config: [
+        ['safe.directory', WORKDIR],
+        ['core.checkStat', 'minimal'],
+        ['core.trustctime', 'false'],
+      ],
+    }),
     SANDBOX_EXPECTED_ORIGIN: remote,
     SANDBOX_EGRESS_PROXY: proxy,
     HTTPS_PROXY: proxyUrl,

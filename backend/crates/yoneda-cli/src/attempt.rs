@@ -72,12 +72,8 @@ pub async fn sync(co: &mut Checkout, attempt: &str, mcp_url: Option<&str>) -> Re
     let url = mcp_url
         .map(str::to_owned)
         .unwrap_or_else(|| format!("{}/mcp/{}", co.state.origin, co.state.repo));
-    let http = reqwest::Client::builder()
-        .user_agent(concat!("yoneda-cli/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .map_err(|e| Error::new(format!("building the HTTP client: {e}")))?;
     let mut mcp = Mcp {
-        http,
+        http: crate::http::client()?,
         url,
         header: token.header(),
         next_id: 0,

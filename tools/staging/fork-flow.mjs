@@ -14,6 +14,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { b64, secondAccount } from './client.mjs';
+import { gitConfigEnv } from '../own-traffic.mjs';
 
 const author = { name: 'Staging kit', email: 'kit@yonedarepo.invalid' };
 
@@ -32,9 +33,7 @@ export async function forkFlow({ origin, api, kit, platform }, metrics) {
       GIT_TERMINAL_PROMPT: '0',
       GIT_CONFIG_NOSYSTEM: '1',
       GIT_CONFIG_GLOBAL: join(dir, 'gitconfig'),
-      GIT_CONFIG_COUNT: '1',
-      GIT_CONFIG_KEY_0: 'http.extraHeader',
-      GIT_CONFIG_VALUE_0: `Authorization: Bearer ${token}`,
+      ...gitConfigEnv({ token }),
     };
     try {
       return { ok: true, out: execFileSync('git', args, { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim() };

@@ -36,12 +36,24 @@ pub(crate) fn platform(env: &Env) -> Result<(Spec, Vec<Deployable>, String, Stri
     Ok((spec, workers, origin, owner))
 }
 
+/// The client for calls to a deployed platform, marked so the Traffic page leaves them out
+/// (tools/own-traffic.mjs is the same mark for the Node tools).
+pub(crate) fn platform_client(timeout: Duration) -> Result<reqwest::Client> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::HeaderName::from_static("x-yoneda-own-traffic"),
+        reqwest::header::HeaderValue::from_static("1"),
+    );
+    Ok(reqwest::Client::builder()
+        .timeout(timeout)
+        .default_headers(headers)
+        .build()?)
+}
+
 async fn backfill(args: &[String]) -> Result<()> {
     let env = Env::from_args(args)?;
     let (_, _, origin, owner) = platform(&env)?;
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(120))
-        .build()?;
+    let client = platform_client(Duration::from_secs(120))?;
     let (mut after, mut scanned, mut added) = (String::new(), 0, 0);
     loop {
         let response = client

@@ -1,6 +1,8 @@
 // Requests the bench client sends to the target platform, shared by the burst (worker.js)
 // and the open-loop generator (open-loop.js). Each answer is reported, never thrown: one
 // failed request must not hide the other results of its invocation.
+import { OWN_TRAFFIC } from '../own-traffic.mjs';
+
 const AUTHOR = { name: 'Fanout bench', email: 'bench@yonedarepo.invalid' };
 
 /** Client latency (from here) and the target's Server-Timing total of one request. */
@@ -22,6 +24,7 @@ export async function timed(url, init, timeoutMs) {
 
 export const headers = (w) => ({
   'content-type': 'application/json',
+  ...OWN_TRAFFIC,
   ...(w.token ? { authorization: `Bearer ${w.token}` } : { cookie: w.cookie }),
 });
 

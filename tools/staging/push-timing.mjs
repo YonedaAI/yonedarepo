@@ -17,6 +17,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { Session } from './client.mjs';
+import { gitConfigEnv } from '../own-traffic.mjs';
 
 const { values: args } = parseArgs({
   options: {
@@ -60,6 +61,7 @@ function run(cwd, gitArgs, env = {}) {
         GIT_CONFIG_GLOBAL: gitConfig,
         GIT_CONFIG_NOSYSTEM: '1',
         GIT_TERMINAL_PROMPT: '0',
+        ...gitConfigEnv({ origin }),
         PUSH_TIMING_TOKEN: gitToken,
         ...env,
       },

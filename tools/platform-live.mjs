@@ -12,13 +12,14 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { gitConfigEnv, OWN_TRAFFIC } from './own-traffic.mjs';
 
 const { values } = parseArgs({ options: { url: { type: 'string' } } });
 assert.ok(values.url, 'Pass --url of the deployed platform');
 const url = values.url.replace(/\/$/, '');
 const login = await fetch(`${url}/api/auth/login`, {
   method: 'POST',
-  headers: { 'content-type': 'application/json' },
+  headers: { 'content-type': 'application/json', ...OWN_TRAFFIC },
   body: JSON.stringify({ username: process.env.YONEDA_USERNAME, password: process.env.YONEDA_PASSWORD }),
 });
 assert.equal(login.status, 200, 'Login failed; set YONEDA_USERNAME and YONEDA_PASSWORD');
@@ -27,7 +28,7 @@ async function call(path, body, method) {
   const started = Date.now();
   const response = await fetch(`${url}/api/v1${path}`, {
     method: method ?? (body ? 'POST' : 'GET'),
-    headers: { 'content-type': 'application/json', cookie },
+    headers: { 'content-type': 'application/json', ...OWN_TRAFFIC, cookie },
     body: body ? JSON.stringify(body) : undefined,
   });
   const value = await response.json();
@@ -81,9 +82,7 @@ const access = await call(`/repos/${repo.id}/clone`, {});
 const gitEnv = {
   ...process.env,
   GIT_TERMINAL_PROMPT: '0',
-  GIT_CONFIG_COUNT: '1',
-  GIT_CONFIG_KEY_0: 'http.extraHeader',
-  GIT_CONFIG_VALUE_0: `Authorization: Bearer ${access.token}`,
+  ...gitConfigEnv({ token: access.token }),
 };
 const git = (args, cwd) => execFileSync('git', args, { cwd, env: gitEnv, encoding: 'utf8' }).trim();
 const projectedAt = Date.now();

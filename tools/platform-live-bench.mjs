@@ -16,6 +16,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { latency } from './load-metrics.mjs';
+import { gitConfigEnv, OWN_TRAFFIC } from './own-traffic.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -35,7 +36,7 @@ const root = fileURLToPath(new URL('../', import.meta.url));
 
 const login = await fetch(`${url}/api/auth/login`, {
   method: 'POST',
-  headers: { 'content-type': 'application/json' },
+  headers: { 'content-type': 'application/json', ...OWN_TRAFFIC },
   body: JSON.stringify({ username: process.env.YONEDA_USERNAME, password: process.env.YONEDA_PASSWORD }),
 });
 assert.equal(login.status, 200, 'Login failed; set YONEDA_USERNAME and YONEDA_PASSWORD');
@@ -45,7 +46,7 @@ async function call(path, body, token) {
   const started = performance.now();
   const response = await fetch(`${url}/api/v1${path}`, {
     method: body ? 'POST' : 'GET',
-    headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : { cookie }) },
+    headers: { 'content-type': 'application/json', ...OWN_TRAFFIC, ...(token ? { authorization: `Bearer ${token}` } : { cookie }) },
     body: body ? JSON.stringify(body) : undefined,
   });
   const value = await response.json().catch(() => ({}));
@@ -160,7 +161,7 @@ for (let k = 5; k < 65; k++) {
 async function cloneBaseline(id) {
   const access = must(await call(`/repos/${id}/clone`, {}), 'clone access');
   const head = must(await call(`/repos/${id}/refs`), 'refs').refs['refs/heads/main'];
-  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${access.token}` };
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', ...gitConfigEnv({ token: access.token }) };
   const git = (args, cwd) => execFileSync('git', args, { cwd, env, encoding: 'utf8' }).trim();
   for (let waited = 0; git(['ls-remote', access.remote, 'refs/heads/main']).split(/\s/)[0] !== head; waited += 2000) {
     assert.ok(waited < 180_000, 'large repository main was not projected');

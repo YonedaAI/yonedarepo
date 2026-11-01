@@ -1,14 +1,17 @@
 // Cookieless site analytics (front Worker): one Workers Analytics Engine data point per signed-out
-// HTML request and per sign-up, into SITE_EVENTS. A point holds only what the privacy policy lists
-// (page path, referring site's host, country, device class, campaign tags, sign-up provider, the
-// request's class) and never an IP address, cookie, user agent or account (the platform's
-// `write_origin` points, platform-write-origin.ts, are the one kind that names a digest of an
-// account, and are off until the owner clears them). Analytics never decide
-// a response: a missing binding or a failed write records nothing. The app answers 200 at any
-// path, so a request records the page the head found, or, for anything else, its first segment
-// only: scanners' `/wp` stays visible, and nothing inside a repository is ever recorded. The check
-// uses what the head already found (website-metadata.ts), never a call of its own. Who a request
-// was is decided later: it stays unconfirmed unless the page's ping confirms a browser
+// HTML request and per sign-up, into SITE_EVENTS. Page requests stay signed out even though a
+// signed-in reader counts through the ping (site-ping.ts): an unknown path keeps its first segment,
+// which on a signed-in request would be an account's handle, and the Web Analytics beacon reports
+// every address it sees to Cloudflare, which there would name private repositories. A point holds
+// only what the privacy policy lists (page path, referring site's host, country, device class,
+// campaign tags, sign-up provider, the request's class) and never an IP address, cookie, user
+// agent or account (the platform's `write_origin` points, platform-write-origin.ts, are the one
+// kind that names a digest of an account, and are off until the owner clears them). Analytics
+// never decide a response: a missing binding or a failed write records nothing. The app answers
+// 200 at any path, so a request records the page the head found, or, for anything else, its first
+// segment only: scanners' `/wp` stays visible, and nothing inside a repository is ever recorded.
+// The check uses what the head already found (website-metadata.ts), never a call of its own. Who a
+// request was is decided later: it stays unconfirmed unless the page's ping confirms a browser
 // (site-ping.ts), and the traffic queries take pings away from the unconfirmed.
 import { pageClass, type SiteClass, userAgentClass } from './traffic-class';
 import type { Env } from './types';
@@ -38,11 +41,13 @@ export const SITE_EVENT_BOT = 'double1';
  * earliest one dates the classes in each environment. */
 export const SITE_EVENT_CLASSED = 'double2';
 /** Platform points only: `double3` is the requests one point stands for, `double4` is 1 when a
- * token held. */
+ * token held, and `double5` is 1 since our tools carry the mark below: earlier points are our own
+ * tests (on dev, all 8,237 came from one machine in the four hours before this) and stay out. */
 export const SITE_EVENT_WEIGHT = 'double3';
 export const SITE_EVENT_TOKEN = 'double4';
-/** The live tests send this, set to `1` (tools/staging/client.mjs OWN_TRAFFIC): they are not
- * counted. It unlocks nothing: anyone sending it only leaves the analytics. */
+export const SITE_EVENT_MARKED = 'double5';
+/** Our own tools send this, set to `1` (tools/own-traffic.mjs): they are not counted. It unlocks
+ * nothing: anyone sending it only leaves the analytics. */
 export const OWN_TRAFFIC_HEADER = 'x-yoneda-own-traffic';
 
 export type SiteEvent = 'pageview' | 'ping' | 'signup';

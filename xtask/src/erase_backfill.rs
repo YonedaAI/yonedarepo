@@ -119,9 +119,7 @@ pub(crate) async fn execute(args: &[String]) -> Result<()> {
         .await?;
     let id = namespace(&listing, &script).ok_or("The platform has no repository namespace")?;
     let platform = Platform {
-        client: reqwest::Client::builder()
-            .timeout(Duration::from_secs(120))
-            .build()?,
+        client: crate::admin::platform_client(Duration::from_secs(120))?,
         origin,
         owner,
     };

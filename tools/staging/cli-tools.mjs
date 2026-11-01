@@ -9,6 +9,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Session, until } from './client.mjs';
+import { gitConfigEnv, OWN_TRAFFIC_ENV } from '../own-traffic.mjs';
 
 export const PAT_SCOPES = ['repo:read', 'repo:write', 'repo:land', 'repo:review', 'repo:admin'];
 
@@ -39,6 +40,8 @@ export class CliKit {
       GIT_CONFIG_NOSYSTEM: '1',
       GIT_TERMINAL_PROMPT: '0',
       YONEDA_ORIGIN: this.api,
+      ...OWN_TRAFFIC_ENV,
+      ...gitConfigEnv({ origin: this.api }),
       ...(this.token ? { YONEDA_TOKEN: this.token } : {}),
       ...extra,
     };

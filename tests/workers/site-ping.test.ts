@@ -81,6 +81,30 @@ it('records one Human view with the path, referring site and country, and nothin
   for (const secret of ['203.0.113.77', 'Safari', 'Macintosh']) expect(recorded).not.toContain(secret);
 });
 
+it('counts a signed-in reader of a public page as a Human, and keeps nothing of who', async () => {
+  const { using, points, fetch } = site();
+  const cookie = `yoneda_account=alice.${'a'.repeat(64)}`;
+  await frontFetch(ping({ path: '/pricing' }, { ...browser, cookie }), using);
+  await frontFetch(ping({ path: '/alice/compiler' }, { ...browser, cookie }), using);
+  expect(points.map((p) => [p.blobs?.[1], p.blobs?.[9]])).toEqual([
+    ['/pricing', 'signed_in'],
+    ['/alice/compiler', 'signed_in'],
+  ]);
+  expect(JSON.stringify(points[0])).not.toContain('alice');
+  expect(JSON.stringify(points)).not.toContain('a'.repeat(64));
+  for (const [ask] of fetch.mock.calls) expect(ask.headers.has('cookie')).toBe(false);
+});
+
+it.each(['/alice/private-plans', '/settings/tokens', '/settings', '/admin/traffic', '/new'])(
+  'records nothing for a signed-in reader of %s: the app and private repositories stay out',
+  async (path) => {
+    const { using, points } = site();
+    const cookie = `yoneda_account=alice.${'a'.repeat(64)}`;
+    await frontFetch(ping({ path }, { ...browser, cookie }), using);
+    expect(points).toEqual([]);
+  },
+);
+
 it('finds real pages behind any address: an inside page, a public repository and a profile', async () => {
   const { using, points } = site();
   for (const path of [
@@ -135,7 +159,6 @@ it.each([
   ['another origin', { ...browser, origin: 'https://evil.example' }],
   ['no origin', { 'user-agent': SAFARI }],
   ['a cross-site fetch', { ...browser, 'sec-fetch-site': 'cross-site' }],
-  ['a signed-in browser', { ...browser, cookie: `yoneda_account=alice.${'a'.repeat(64)}` }],
   ["the live tests' browser", { ...browser, 'x-yoneda-own-traffic': '1' }],
   ['an AI agent', { ...browser, 'user-agent': 'Mozilla/5.0; Claude-User/1.0' }],
   ['a crawler that runs JavaScript', { ...browser, 'user-agent': 'Googlebot/2.1' }],

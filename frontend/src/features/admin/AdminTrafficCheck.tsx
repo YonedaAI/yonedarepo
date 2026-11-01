@@ -1,6 +1,5 @@
-// The Traffic page's headline and honest labels: humans, agents and bots with what each one means,
-// platform use by client kind, when classes began, and the ping's count beside Cloudflare Web
-// Analytics'. A Web Analytics failure stays in its own section.
+// The Traffic page's headline: humans, agents and bots, platform use by client kind, and the ping's
+// count beside Cloudflare Web Analytics'. A Web Analytics failure stays in its own section.
 import type {
   TrafficClient,
   TrafficHeadline,
@@ -9,6 +8,8 @@ import type {
 } from '../../../../shared/site-traffic';
 
 const count = (n: number) => Math.round(n).toLocaleString('en-US');
+const UNKNOWN = '—';
+const crawlers = (n: number) => `${count(n)} search crawler${n === 1 ? '' : 's'}`;
 const CLIENTS: Record<string, string> = {
   cli: 'yoneda CLI',
   git: 'Git',
@@ -16,59 +17,56 @@ const CLIENTS: Record<string, string> = {
   token: 'API token',
 };
 
-export function TrafficClassNote({ since }: { since: string | null }) {
-  return (
-    <p className="source-meta">
-      {since
-        ? `Classes began on ${since}. Older rows have none, so they count under Bots and unconfirmed and cannot be cleaned.`
-        : 'No request has been classed yet: every row so far counts under Bots and unconfirmed and cannot be cleaned.'}
-    </p>
-  );
-}
-
-export function TrafficHeadlineCards({ headline: h }: { headline: TrafficHeadline }) {
+export function TrafficHeadlineCards({
+  headline: h,
+  counting,
+}: {
+  headline: TrafficHeadline;
+  counting: boolean;
+}) {
+  const signedOut = h.humans - h.humans_signed_in;
   const tiles = [
     {
       label: 'Humans',
-      value: h.humans,
-      caption: 'Browsers that ran a page. A scripted browser can pass as one.',
+      value: counting ? count(h.humans) : UNKNOWN,
+      caption: counting
+        ? `${count(h.humans_signed_in)} signed in, ${count(signedOut)} signed out`
+        : 'Not counted here yet',
     },
     {
       label: 'Agents',
-      value: h.agents_site + h.agents_platform,
-      caption: `${count(h.agents_site)} self-identified on the site, ${count(h.agents_platform)} platform requests.`,
+      value: count(h.agents_site + h.agents_platform),
+      caption: counting
+        ? `${count(h.agents_site)} on the site, ${count(h.agents_platform)} on the platform`
+        : `${count(h.agents_site)} on the site; platform not counted here yet`,
     },
     {
-      label: 'Bots and unconfirmed',
-      value: h.bots,
-      caption: `${count(h.crawlers)} from search crawlers; the rest are scanners and requests no ping confirmed.`,
+      label: 'Bots',
+      value: count(h.bots),
+      caption: `${crawlers(h.crawlers)}, ${count(h.bots - h.crawlers)} unconfirmed`,
     },
   ];
   return (
-    <>
-      <ul className="stat-cards admin-tiles">
-        {tiles.map((tile) => (
-          <li key={tile.label} className="stat-card">
-            <span className="stat-label">{tile.label}</span>
-            <span className="stat-value">{count(tile.value)}</span>
-            <span className="stat-caption">{tile.caption}</span>
-          </li>
-        ))}
-      </ul>
-      <p className="source-meta">
-        Agents on the site are self-identified: a user agent is self-reported. A token the platform
-        accepted is the one solid signal.
-      </p>
-    </>
+    <ul className="stat-cards admin-tiles-three">
+      {tiles.map((tile) => (
+        <li key={tile.label} className="stat-card">
+          <span className="stat-label">{tile.label}</span>
+          <span className="stat-value">{tile.value}</span>
+          <span className="stat-caption">{tile.caption}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
 export function PlatformClients({
   days,
   clients,
+  counting,
 }: {
   days: TrafficWindow;
   clients: TrafficClient[];
+  counting: boolean;
 }) {
   return (
     <section className="home-section" aria-labelledby="admin-platform-clients">
@@ -83,7 +81,7 @@ export function PlatformClients({
                 <th>Client</th>
                 <th>Operation</th>
                 <th className="admin-num">Requests</th>
-                <th className="admin-num">With a valid token</th>
+                <th className="admin-num">With token</th>
               </tr>
             </thead>
             <tbody>
@@ -100,7 +98,7 @@ export function PlatformClients({
         </div>
       ) : (
         <p className="source-empty">
-          No platform requests counted in this window. Counting needs TRAFFIC_EVENTS on.
+          {counting ? 'No platform requests in this window.' : 'Not counted here yet.'}
         </p>
       )}
     </section>
@@ -110,10 +108,12 @@ export function PlatformClients({
 export function TrafficCheck({
   days,
   humans,
+  counting,
   web_analytics: web,
 }: {
   days: TrafficWindow;
   humans: number;
+  counting: boolean;
   web_analytics: WebAnalyticsCheck;
 }) {
   return (
@@ -121,53 +121,38 @@ export function TrafficCheck({
       <h2 id="admin-traffic-check" className="home-label">
         Cross-check, last {days} days
       </h2>
-      <div className="source-table-wrap">
-        <table className="source-table admin-table">
-          <thead>
-            <tr>
-              <th>Count</th>
-              <th>What it measures</th>
-              <th className="admin-num">Total</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Humans</td>
-              <td>Our own ping, sent by browsers that ran a page.</td>
-              <td className="admin-num">{count(humans)}</td>
-            </tr>
-            {web.ok && (
-              <>
-                <tr>
-                  <td>Web Analytics page loads</td>
-                  <td>
-                    Reported by the beacon on {web.host}, so only browsers that ran JavaScript;
-                    Cloudflare's bot filter.
-                  </td>
-                  <td className="admin-num">{count(web.page_loads)}</td>
-                </tr>
-                <tr>
-                  <td>Web Analytics visits</td>
-                  <td>Visits Cloudflare derives from those page loads.</td>
-                  <td className="admin-num">{count(web.visits)}</td>
-                </tr>
-              </>
-            )}
-          </tbody>
-        </table>
-      </div>
-      {web.ok ? (
-        <p className="source-meta">
-          Web Analytics figures are Cloudflare's sampled estimates: at low volume a 30-day figure
-          can read lower than a 7-day one.
-        </p>
-      ) : web.reason === 'not_configured' ? (
-        <p className="source-empty">
-          Web Analytics is not configured here: it needs WEB_ORIGIN beside the traffic settings.
-        </p>
+      {!counting ? (
+        <p className="source-empty">Not counted here yet.</p>
+      ) : web.ok ? (
+        <div className="source-table-wrap">
+          <table className="source-table admin-table">
+            <thead>
+              <tr>
+                <th>Count</th>
+                <th className="admin-num">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Humans, signed out</td>
+                <td className="admin-num">{count(humans)}</td>
+              </tr>
+              <tr>
+                <td>Web Analytics page loads</td>
+                <td className="admin-num">{count(web.page_loads)}</td>
+              </tr>
+              <tr>
+                <td>Web Analytics visits</td>
+                <td className="admin-num">{count(web.visits)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       ) : (
         <p className="source-empty">
-          Web Analytics could not be read just now. The count above is unaffected.
+          {web.reason === 'not_configured'
+            ? 'Web Analytics is not set up here.'
+            : 'Web Analytics could not be read just now.'}
         </p>
       )}
     </section>

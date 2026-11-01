@@ -53,18 +53,24 @@ export async function siteTraffic(
   };
   try {
     const names = Object.keys(queries) as QueryName[];
-    const [answers, web_analytics] = await Promise.all([
-      Promise.all(names.map((name) => run(queries[name]))),
-      webAnalytics(env, days, fetcher),
-    ]);
+    const answers = await Promise.all(names.map((name) => run(queries[name])));
     const rows = Object.fromEntries(names.map((name, i) => [name, answers[i]])) as Record<
       QueryName,
       Row[]
     >;
+    // Web Analytics is the witness for Humans, so it only speaks for the time they were counted.
+    const web_analytics = await webAnalytics(
+      env,
+      days,
+      fetcher,
+      Date.now(),
+      classedAt(rows.classed_since[0]),
+    );
     const traffic: SiteTraffic = {
       days,
       class: who,
       classed_since: classedSince(rows.classed_since[0]),
+      counting: env.TRAFFIC_EVENTS === 'on',
       headline: headline(rows.totals),
       web_analytics,
       by_day: byDay(rows.by_day),
@@ -95,6 +101,11 @@ const classedSince = (r: Row | undefined) => {
   const day = text(r?.since).slice(0, 10);
   return day && !day.startsWith('1970') ? day : null;
 };
+/** The earliest classed point as epoch milliseconds, 0 when there is none. */
+const classedAt = (r: Row | undefined) => {
+  const at = Date.parse(`${text(r?.since).replace(' ', 'T')}Z`);
+  return classedSince(r) && Number.isFinite(at) ? at : 0;
+};
 const count = (r: Row): TrafficCount => ({ key: text(r.key), count: num(r.count) });
 const client = (r: Row): TrafficClient => ({
   client: text(r.client),
@@ -103,17 +114,20 @@ const client = (r: Row): TrafficClient => ({
   with_token: num(r.with_token),
 });
 
-/** Folds rows of event, class and count. Pings confirm page requests, so they leave the bots. */
+/** Folds rows of event, class and count. Signed-out pings confirm page requests, so they leave
+ * the bots; a signed-in page request was never recorded. */
 function headline(rows: Row[]): TrafficHeadline {
   const sum = (test: (r: Row) => boolean) =>
     rows.filter(test).reduce((total, r) => total + num(r.count), 0);
   const page = (r: Row) => r.event === 'pageview';
   const humans = sum((r) => r.event === 'ping');
+  const humans_signed_in = sum((r) => r.event === 'ping' && r.class === 'signed_in');
   return {
     humans,
+    humans_signed_in,
     agents_site: sum((r) => page(r) && r.class === 'agent'),
     agents_platform: sum((r) => r.event === 'client'),
-    bots: Math.max(sum((r) => page(r) && r.class !== 'agent') - humans, 0),
+    bots: Math.max(sum((r) => page(r) && r.class !== 'agent') - (humans - humans_signed_in), 0),
     crawlers: sum((r) => page(r) && r.class === 'crawler'),
   };
 }

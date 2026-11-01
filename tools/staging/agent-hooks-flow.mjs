@@ -19,6 +19,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fakeOpencode, modelCall } from './opencode-fake.mjs';
+import { gitConfigEnv } from '../own-traffic.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const author = { name: 'Staging kit', email: 'kit@yonedarepo.invalid' };
@@ -89,9 +90,7 @@ export async function agentHooks(kit, metrics) {
   const sessionsOf = async (sha) => (await api.get(`/repos/${repo}/commits/${sha}/sessions`)).sessions;
   const [a, h] = [kit.path('hooks-a'), kit.path('hooks-http')];
   const http = kit.env({
-    GIT_CONFIG_COUNT: '1',
-    GIT_CONFIG_KEY_0: `http.${kit.api}/.extraHeader`,
-    GIT_CONFIG_VALUE_0: `Authorization: Bearer ${kit.token}`,
+    ...gitConfigEnv({ token: kit.token, origin: kit.api }),
   });
   await kit.ok('git', ['clone', '-q', kit.remote(repo), a]);
   await kit.ok('git', ['clone', '-q', `${kit.api}/git/${repo}.git`, h], { env: http });

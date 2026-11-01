@@ -1,6 +1,7 @@
 // The admin pages' model (operators only; every answer comes from `/api/v1/admin`, which
 // checks for itself): the sections, the API's shapes and paths, the sign-ups unread marker
 // this browser keeps, and the labels and bar heights the pages show.
+import type { SiteTraffic } from '../../../../shared/site-traffic';
 
 export const ADMIN_SECTIONS = [
   'overview',
@@ -166,6 +167,36 @@ export function lastThirtyDays(rows: { day: string; views: number }[], now = Dat
     const day = new Date((today - 29 + i) * 86_400_000).toISOString().slice(0, 10);
     return { day, count: counts.get(day) ?? 0 };
   });
+}
+
+const DAY_MS = 86_400_000;
+
+/** The Traffic page's one line: what the numbers are, or why they can't be trusted yet. */
+export function trafficNote(
+  t: Pick<SiteTraffic, 'counting' | 'classed_since' | 'days'>,
+  now = Date.now(),
+) {
+  if (!t.counting)
+    return {
+      warn: true,
+      text: 'Not counting here yet: Humans and platform use are unknown, not zero.',
+    };
+  if (!t.classed_since) return { warn: true, text: 'Nothing counted yet.' };
+  const counted = Math.floor((now - Date.parse(t.classed_since)) / DAY_MS) + 1;
+  return counted < t.days
+    ? { warn: true, text: `Counted since ${t.classed_since}: ${counted} of these ${t.days} days.` }
+    : { warn: false, text: 'Page views, not unique visitors.' };
+}
+
+/** Whether the report has nothing in it at all. */
+export function trafficEmpty(t: SiteTraffic) {
+  const { humans, agents_site, agents_platform, bots } = t.headline;
+  return (
+    humans + agents_site + agents_platform + bots === 0 &&
+    t.by_day.length === 0 &&
+    t.signups.last_30.length === 0 &&
+    t.campaigns.length === 0
+  );
 }
 
 /** A country's name from its ISO code, else the code (unknown or unsupported). */

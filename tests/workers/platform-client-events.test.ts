@@ -65,7 +65,7 @@ it('stores the client kind, country, operation and token flag, and nothing that 
     {
       indexes: ['client'],
       blobs: ['client', '', '', 'DE', '', '', '', '', '', 'agent', 'cli', 'land'],
-      doubles: [0, 1, 1, 1],
+      doubles: [0, 1, 1, 1, 1],
     },
   ]);
   const recorded = JSON.stringify(points);

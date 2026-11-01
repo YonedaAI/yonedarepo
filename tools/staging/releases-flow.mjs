@@ -11,6 +11,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { b64 } from './client.mjs';
+import { gitConfigEnv, OWN_TRAFFIC } from '../own-traffic.mjs';
 
 const author = { name: 'Staging kit', email: 'kit@yonedarepo.invalid' };
 const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex');
@@ -28,9 +29,7 @@ export async function releasesFlow({ origin, api, platform }, metrics) {
     GIT_TERMINAL_PROMPT: '0',
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_CONFIG_GLOBAL: join(dir, 'gitconfig'),
-    GIT_CONFIG_COUNT: '1',
-    GIT_CONFIG_KEY_0: 'http.extraHeader',
-    GIT_CONFIG_VALUE_0: `Authorization: Bearer ${minted.token}`,
+    ...gitConfigEnv({ token: minted.token }),
   };
   writeFileSync(env.GIT_CONFIG_GLOBAL, '[user]\n\tname = Staging kit\n\temail = kit@yonedarepo.invalid\n');
   const git = (args, cwd = dir) => {
@@ -45,6 +44,7 @@ export async function releasesFlow({ origin, api, platform }, metrics) {
     fetch(`${origin}/api/v1${path}/releases/v1/assets/kit-asset.bin`, {
       method,
       headers: {
+        ...OWN_TRAFFIC,
         ...(token ? { authorization: `Bearer ${token}` } : { cookie: platform.cookie }),
         ...(body ? { 'content-type': 'application/octet-stream' } : {}),
       },
@@ -75,7 +75,7 @@ export async function releasesFlow({ origin, api, platform }, metrics) {
     const release = { tag: 'v1', title: 'Kit release', notes: 'Release notes from the staging kit.\nSecond line.' };
     const refused = await fetch(`${origin}/api/v1${path}/releases`, {
       method: 'POST',
-      headers: { authorization: `Bearer ${reader.token}`, 'content-type': 'application/json' },
+      headers: { authorization: `Bearer ${reader.token}`, 'content-type': 'application/json', ...OWN_TRAFFIC },
       body: JSON.stringify(release),
     });
     assert.equal(refused.status, 403, 'a read-only token cannot publish');

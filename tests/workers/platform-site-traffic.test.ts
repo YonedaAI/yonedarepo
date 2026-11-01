@@ -8,6 +8,7 @@ import { webAnalytics } from '../../cloudflare/worker/platform-web-analytics';
 import type { Env } from '../../cloudflare/worker/types';
 
 const configured = {
+  TRAFFIC_EVENTS: 'on',
   CF_ACCOUNT_ID: 'f011d0ee02b23cad26b4b38151b204ad',
   SITE_EVENTS_DATASET: 'yonedarepo_dev_site_events',
   ANALYTICS_READ_TOKEN: 'test-read-token',
@@ -34,9 +35,10 @@ it('counts each class its own way in the top lists', () => {
   expect(trafficQueries(D, 7, 'agents').top_pages).toBe(
     `SELECT blob2 AS key, SUM(_sample_interval) AS count FROM ${D} WHERE blob1 = 'pageview' AND blob10 = 'agent' AND timestamp > NOW() - INTERVAL '7' DAY GROUP BY key ORDER BY count DESC LIMIT 25 FORMAT JSON`,
   );
-  // Bots are the other page requests less pings; unclassed old rows count here.
+  // Bots are the other classed page requests less the pings that confirmed one: a signed-in
+  // page request was never recorded, so its ping confirms nothing.
   expect(trafficQueries(D, 30, 'bots').top_pages).toBe(
-    `SELECT blob2 AS key, SUM(_sample_interval * if(blob1 = 'ping', -1, 1)) AS count FROM ${D} WHERE (blob1 = 'ping' OR (blob1 = 'pageview' AND blob10 != 'agent')) AND timestamp > NOW() - INTERVAL '30' DAY GROUP BY key HAVING count > 0 ORDER BY count DESC LIMIT 25 FORMAT JSON`,
+    `SELECT blob2 AS key, SUM(_sample_interval * if(blob1 = 'ping', -1, 1)) AS count FROM ${D} WHERE ((blob1 = 'ping' AND blob10 = 'human') OR (blob1 = 'pageview' AND double2 = 1 AND blob10 != 'agent')) AND timestamp > NOW() - INTERVAL '30' DAY GROUP BY key HAVING count > 0 ORDER BY count DESC LIMIT 25 FORMAT JSON`,
   );
 });
 
@@ -56,6 +58,10 @@ it('builds windowed queries over the one dataset', () => {
   );
   // A platform point stands for `double3` requests.
   for (const sql of [q.by_day, q.totals]) expect(sql).toContain("if(blob1 = 'client', double3, 1.0)");
+  // Points from before classes, and platform points from before our tools were marked, are out.
+  for (const sql of [q.by_day, q.totals])
+    expect(sql).toContain("double2 = 1 AND (blob1 != 'client' OR double5 = 1)");
+  expect(q.clients).toContain("blob1 = 'client' AND double5 = 1");
   expect(q.clients).toContain('SUM(_sample_interval * double3) AS count');
   expect(q.clients).toContain('SUM(_sample_interval * double3 * double4) AS with_token');
   expect(q.by_day).toContain("INTERVAL '30' DAY");
@@ -84,6 +90,7 @@ const answers = (body: string) => {
   if (body.includes('AS day'))
     return [
       { day: '2026-10-29', event: 'ping', class: 'human', count: '12' },
+      { day: '2026-10-29', event: 'ping', class: 'signed_in', count: '1' },
       { day: '2026-10-29', event: 'pageview', class: 'unconfirmed', count: 15 },
       { day: '2026-10-29', event: 'client', class: 'agent', count: 8 },
       { day: '2026-10-30', event: 'pageview', class: '', count: '3' },
@@ -93,6 +100,7 @@ const answers = (body: string) => {
   if (body.includes('blob1 IN'))
     return [
       { event: 'ping', class: 'human', count: '40' },
+      { event: 'ping', class: 'signed_in', count: '6' },
       { event: 'pageview', class: 'unconfirmed', count: '55' },
       { event: 'pageview', class: 'bot', count: '30' },
       { event: 'pageview', class: 'crawler', count: '7' },
@@ -131,11 +139,12 @@ it('runs every query with the read token and folds humans, agents and bots', asy
       days: 30,
       class: 'humans',
       classed_since: '2026-11-02',
-      // 55 unconfirmed + 30 bot + 7 crawler, less the 40 pings that confirmed some of them.
-      headline: { humans: 40, agents_site: 9, agents_platform: 120, bots: 52, crawlers: 7 },
+      counting: true,
+      // 55 unconfirmed + 30 bot + 7 crawler, less the 40 signed-out pings that confirmed some.
+      headline: { humans: 46, humans_signed_in: 6, agents_site: 9, agents_platform: 120, bots: 52, crawlers: 7 },
       web_analytics: { ok: true, host: 'dev.yonedarepo.com', page_loads: 40, visits: 9 },
       by_day: [
-        { day: '2026-10-29', humans: 12, agents: 8, bots: 3 },
+        { day: '2026-10-29', humans: 13, agents: 8, bots: 3 },
         { day: '2026-10-30', humans: 0, agents: 2, bots: 3 },
       ],
       top_pages: [{ key: '/pricing', count: 9 }],
@@ -193,6 +202,29 @@ it('says nothing is classed yet instead of reading the empty answer as 1970', as
   const result = await siteTraffic(configured, 7, 'humans', fetcher as unknown as typeof fetch);
   expect(result.ok && result.traffic.classed_since).toBe(null);
   expect(result.ok && result.traffic.headline.humans).toBe(0);
+});
+
+it('says when requests are not being counted here', async () => {
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) =>
+    url === GRAPHQL ? loads(0, 0) : sqlRows(String(init?.body)),
+  );
+  const off = { ...configured, TRAFFIC_EVENTS: 'off' } as unknown as Env;
+  const result = await siteTraffic(off, 7, 'humans', fetcher as unknown as typeof fetch);
+  expect(result.ok && result.traffic.counting).toBe(false);
+});
+
+it('compares Web Analytics only over the time pings have been counted', async () => {
+  const asked: string[] = [];
+  const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url !== GRAPHQL) {
+      const body = String(init?.body);
+      return Response.json({ data: body.includes('MIN(timestamp)') ? [{ since: '2099-01-01 09:30:00' }] : [] });
+    }
+    asked.push(JSON.parse(String(init?.body)).variables.filter.datetime_geq);
+    return loads(1, 1);
+  });
+  await siteTraffic(configured, 7, 'humans', fetcher as unknown as typeof fetch);
+  expect(asked).toEqual(['2099-01-01T09:30:00.000Z']);
 });
 
 it('asks Web Analytics for this site over the same window, leaving bots out', async () => {
