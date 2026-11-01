@@ -29,6 +29,7 @@ export const AUDIT_KINDS: Record<string, string> = {
   'ssh_key.added': 'SSH key added',
   'ssh_key.removed': 'SSH key removed',
   'account.recovered': 'Account recovered',
+  'audit.exported': 'Audit log exported',
   'repo.created': 'Repository created',
   'repo.deleted': 'Repository deleted',
   'repo.restored': 'Repository restored',
@@ -40,8 +41,10 @@ export const AUDIT_KINDS: Record<string, string> = {
   'repo.token_revoked': 'Repository token revoked',
   'repo.policy_changed': 'Landing rules changed',
   'repo.retention_changed': 'Retention changed',
+  'repo.break_glass': 'Break glass used',
   'webhook.created': 'Webhook created',
   'webhook.deleted': 'Webhook deleted',
+  'webhook.disabled': 'Webhook switched off after failures',
   'legal_hold.set': 'Legal hold set',
   'legal_hold.released': 'Legal hold released',
 };

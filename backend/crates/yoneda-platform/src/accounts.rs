@@ -11,6 +11,7 @@ mod audit_details;
 mod audit_log;
 #[cfg(test)]
 mod audit_log_tests;
+mod audit_seal;
 mod auth_events;
 mod avatars;
 #[cfg(test)]

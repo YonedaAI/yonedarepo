@@ -7,7 +7,7 @@
 //! is an ordered outbox that needs no migration. Every reader there names a hook or joins
 //! `hooks`, so an older binary leaves these rows alone, and the one that lists any hook's
 //! rows (a repeated delete) would send a job that finds no such hook. The erase wipes them
-//! with the table, so the purge copies what is waiting first.
+//! with the table, so while the switch is on it refuses until the log has them all (`waiting`).
 //!
 //! Only a command carrying the adapter's `_audit` writes, which it sends while `AUDIT_LOG` is
 //! on. A row holds what the action said; what enters the log is decided there
@@ -22,6 +22,15 @@ use yoneda_core::Result;
 pub(super) const OUTBOX: i64 = 0;
 /// Events handed over at once.
 const PAGE: i64 = 100;
+
+/// Whether any event has yet to reach the log.
+pub(super) fn waiting<S: SqlStore>(db: &S) -> Result<bool> {
+    let row = db.query(
+        "SELECT seq FROM hook_outbox WHERE hook_id=? LIMIT 1",
+        &[json!(OUTBOX)],
+    )?;
+    Ok(!row.is_empty())
+}
 
 /// Records `kind`, by `actor`, in the caller's transaction. `name` is the repository's, as
 /// the change left it.

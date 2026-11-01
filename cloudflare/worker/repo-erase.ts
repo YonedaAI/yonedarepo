@@ -4,7 +4,8 @@
 // commit shard, the combiners, and in small transactions the authority's own records. The
 // tombstone stays, answering GONE. Each part is repeatable and the authority's rows go last,
 // because they name the combiners to clear, so a job that dies anywhere is simply run again.
-// Logs carry counts and ids, never content.
+// Logs carry counts and ids, never content. With AUDIT_LOG on, this job also carries a deleted
+// repository's audit events to its org's log, erase or no erase, before anything goes.
 //
 // Other per-repository objects hold nothing to erase: PackBuilder's storage is its
 // container's lifecycle state, CheckContainer's the same, and ObjectPushQueue keeps none.
@@ -14,6 +15,7 @@ import { log } from './log';
 import { audit } from './platform-admin-queries';
 import { currentHold } from './platform-legal-hold';
 import { dispatchErase, eraseOn, purgeObjects } from './repo-admin';
+import { auditRepoLeaving } from './repo-audit';
 import { inBatches } from './repo-git-objects';
 import { dispatchHooks } from './repo-hooks';
 import { ApiError, caller, type Json } from './repo-ops';
@@ -28,6 +30,8 @@ const STEPS_PER_JOB = 100;
 /** Seconds between looks while hooks are delivered (each look sends their jobs again, as
  * one that ran out of queue retries is otherwise never replaced). */
 const HOOK_WAIT_SECONDS = 300;
+/** Seconds between looks while the audit log can't be reached, or has more to take. */
+const AUDIT_WAIT_SECONDS = 300;
 /** Objects cleared at once (an invocation keeps six connections open). */
 const WIDTH = 6;
 
@@ -60,8 +64,13 @@ async function clearObjects(env: Env, repo: string, refs: string[]) {
 
 /** The `platform_erase` queue job (see the module comment). */
 export async function eraseJob(env: Env, envelope: Envelope) {
-  if (!eraseOn(env)) return;
   const repo = envelope.repo_id;
+  if (!(await auditRepoLeaving(env, repo))) {
+    const job = envelope.job_id === 'records' ? 'records' : 'start';
+    await dispatchErase(env, repo, job, AUDIT_WAIT_SECONDS);
+    return progress(repo, 'audit');
+  }
+  if (!eraseOn(env)) return;
   const call = caller(env, repo, { _system: 'erase' });
   if (envelope.job_id !== 'records') {
     const plan: Json = await call({ op: 'repo_erase_plan' }).catch((e) => {

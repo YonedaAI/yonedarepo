@@ -7,7 +7,7 @@
 
 import { laterIfHeld } from './platform-legal-hold';
 import { teamEntries } from './platform-org-access';
-import { audited, auditRepoCatchUp } from './repo-audit';
+import { audited, auditRepoLeaving } from './repo-audit';
 import { unlistRepository } from './repo-create';
 import { deletedOf, forgetDeleted, parkDeleted } from './repo-deleted';
 import { forgetFork } from './repo-forks';
@@ -182,15 +182,14 @@ export async function purgeObjects(env: Env, repo: string, skipWindow = false) {
 
 /** The purge job: the objects, then what is left in the databases (repo-erase), which never
  * starts without a purge before it. A purge the undo window put off (`scheduled`) ends with
- * `repo.purged`, once, and leaves the schedule; the immediate kind was told by `repo.deleted`. */
+ * `repo.purged`, once, and leaves the schedule; the immediate kind was told by `repo.deleted`.
+ * Audit events copy first; those that couldn't are the erase job's, even with no erase. */
 export async function purgeRepository(
   env: Env,
   repo: string,
   { scheduled = false, skipWindow = false } = {},
 ) {
-  // Not for a failed create taken back: nobody ever saw it. An operator's purge follows a
-  // delete, whose events have already gone.
-  if (!skipWindow) await auditRepoCatchUp(env, repo);
+  const copied = await auditRepoLeaving(env, repo);
   await purgeObjects(env, repo, skipWindow);
   await dropSummary(env, repo);
   const done = scheduled
@@ -198,7 +197,7 @@ export async function purgeRepository(
     : null;
   if (done)
     await Promise.all((done.hooks as number[]).map((id) => dispatchHooks(env, repo, `hook:${id}`)));
-  if (eraseOn(env)) await dispatchErase(env, repo);
+  if (eraseOn(env) || !copied) await dispatchErase(env, repo);
   if (done) await forgetDeleted(env, repo, done.workspace);
 }
 

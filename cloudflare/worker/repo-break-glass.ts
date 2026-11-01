@@ -5,6 +5,7 @@
 // authority committed are best effort, and the durable state they would nudge (queued
 // check runs, pending ref projections) is picked up again by the next dispatch.
 
+import { audited } from './repo-audit';
 import { replay } from './repo-commit';
 import { dispatchDerive } from './repo-derived';
 import { refreshHead } from './repo-head';
@@ -31,7 +32,7 @@ async function nudge(ctx: RepoContext, ref: string, result: Json) {
   return sent.every(Boolean) ? result : { ...result, projection: 'deferred' };
 }
 
-export async function breakGlass(ctx: RepoContext, body: Json) {
+async function act(ctx: RepoContext, body: Json) {
   const action = String(body.action ?? '');
   if (!ACTIONS.includes(action))
     throw new ApiError('INVALID_INPUT', `action must be one of ${ACTIONS.join(', ')}`);
@@ -71,3 +72,6 @@ export async function breakGlass(ctx: RepoContext, body: Json) {
     ...(made.check_runs_undispatched ? { check_runs_undispatched: true } : {}),
   });
 }
+
+export const breakGlass = (ctx: RepoContext, body: Json) =>
+  audited(ctx.env, ctx.repo, act(ctx, body));

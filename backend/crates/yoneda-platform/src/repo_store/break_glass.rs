@@ -4,6 +4,7 @@
 //! a check runner or queue. Every action needs a reason and is recorded loudly: an audit
 //! row, plus a `break-glass:` actor on its log entry. No action rewrites a ref: recovery is
 //! a new commit fast-forwarded onto the head the human saw (expected old value).
+use super::audit_outbox;
 use super::land::append;
 use super::land_gates::gates;
 use super::rows::{self, CommitRow, Settings, branch_ref, current_version, object_id};
@@ -43,6 +44,7 @@ pub fn execute<S: SqlStore>(
         .ok_or_else(|| bad("Break-glass needs a reason (up to 2000 characters)"))?;
     let audit = Audit {
         db,
+        command: c,
         now: number(c, "now")?,
         principal,
         reason,
@@ -61,6 +63,7 @@ pub fn execute<S: SqlStore>(
 
 struct Audit<'a, S> {
     db: &'a S,
+    command: &'a Value,
     now: i64,
     principal: &'a str,
     reason: &'a str,
@@ -74,11 +77,16 @@ impl<S: SqlStore> Audit<'_, S> {
             &[json!(action), field("ref"), field("commit"), field("target"), field("old"), field("version"),
               json!(self.principal), json!(self.reason), json!(detail.to_string()), json!(self.now)],
         )?;
-        Ok(
-            self.db.query("SELECT last_insert_rowid() AS s", &[])?[0]["s"]
-                .as_i64()
-                .unwrap_or_default(),
-        )
+        let seq = self.db.query("SELECT last_insert_rowid() AS s", &[])?[0]["s"]
+            .as_i64()
+            .unwrap_or_default();
+        let event = json!({
+            "action": action, "ref": field("ref"), "commit": field("commit"),
+            "target": field("target"), "version": field("version"), "reason": self.reason,
+        });
+        let kind = "repo.break_glass";
+        audit_outbox::record(self.db, self.command, kind, self.principal, event)?;
+        Ok(seq)
     }
 
     /// Moves `refname` forward from `head` to `commit` with a loudly attributed log entry.

@@ -6,6 +6,7 @@ import { env as bindings, runInDurableObject } from 'cloudflare:test';
 import { expect, it, vi } from 'vitest';
 import { withWaitUntil } from '../../cloudflare/worker/background';
 import { purgeJob } from '../../cloudflare/worker/repo-admin';
+import { deliverHook } from '../../cloudflare/worker/repo-hooks';
 import { caller } from '../../cloudflare/worker/repo-ops';
 import type { Env, Json } from '../../cloudflare/worker/types';
 import { auditLog } from '../../cloudflare/worker/workspace';
@@ -266,4 +267,55 @@ it('copies run after the answer, so a slow log costs the action nothing', async 
   expect(later.length).toBeGreaterThan(0);
   await Promise.all(later);
   expect(kinds(await repoRows('acme'))).toContain('repo.visibility_changed');
+});
+
+it('forced landings and the other break-glass actions reach the log, once each, with the reason', async () => {
+  const alice = { cookie: await signup('audit_glass') };
+  await makeOrg(alice, 'acme');
+  const gates = { required_checks: ['unit'], approvals: 1, runners: { unit: { command: ['true'], timeout_seconds: 30 } } };
+  const r2 = { ...on, PLATFORM_OBJECT_STORE: 'r2', ARTIFACTS: undefined } as unknown as Env;
+  const created = await api('/repos', alice, { body: { name: 'app', owner: 'acme', policy: gates, files: [file('a.md', 'a\n')], author } }, r2);
+  expect(created.status, JSON.stringify(created.body)).toBe(200);
+  const id = created.body.id as string;
+  const made = await api(`/repos/${id}/commits`, alice, { body: { ref: 'main', changes: [file('a.md', 'b\n')], message: 'two', author } }, r2);
+  const land = { action: 'land', ref: 'main', commit: made.body.commit, expected_old: created.body.commit, reason: 'the runner is down' };
+  const forced = await api(`/repos/${id}/break-glass`, alice, { body: land }, r2);
+  expect(forced.status, JSON.stringify(forced.body)).toBe(200);
+  // A retry is the same landing, and the same row.
+  expect((await api(`/repos/${id}/break-glass`, alice, { body: land }, r2)).body.already).toBe(true);
+  await api(`/repos/${id}/break-glass`, alice, { body: { action: 'pause_automation', reason: 'hold on' } }, r2);
+  const rows = (await repoRows('acme')).filter((row) => row.kind === 'repo.break_glass');
+  expect(rows.map((row) => row.details.action)).toEqual(['land', 'pause_automation']);
+  expect(rows[0].actor).toBe('user:audit_glass');
+  expect(rows[0].details).toMatchObject({ repo: id, name: 'app', ref: 'refs/heads/main', commit: made.body.commit, reason: 'the runner is down' });
+  expect(await waiting(id)).toBe(0);
+});
+
+it('off, a forced landing records nothing', async () => {
+  const alice = { cookie: await signup('audit_glass_off') };
+  const off = { ...scoped, PLATFORM_OBJECT_STORE: 'r2', ARTIFACTS: undefined } as unknown as Env;
+  await api('/orgs', alice, { body: { name: 'acme' } }, off);
+  const id = (await api('/repos', alice, { body: { name: 'app', owner: 'acme', policy, files: [file('a.md', 'a\n')], author } }, off)).body.id as string;
+  const paused = await api(`/repos/${id}/break-glass`, alice, { body: { action: 'pause_automation', reason: 'hold on' } }, off);
+  expect(paused.status, JSON.stringify(paused.body)).toBe(200);
+  expect(await waiting(id)).toBe(0);
+  expect((await auditLog(off, 'acme', { op: 'audit_read' })).items).toEqual([]);
+});
+
+it('a webhook switched off for its failures reaches the log, from a tombstone too', async () => {
+  const alice = { cookie: await signup('audit_hook') };
+  await makeOrg(alice, 'acme');
+  const id = await makeRepo(alice, 'acme');
+  const hook = await api(`/repos/${id}/hooks`, alice, { body: { url: 'https://ci.example.com/hook/tok3n?key=abc', events: ['repo'] } }, on);
+  expect(hook.status, JSON.stringify(hook.body)).toBe(200);
+  await runInDurableObject(bindings.SOURCE_REPOS.get(bindings.SOURCE_REPOS.idFromName(id)), (_, state) => {
+    state.storage.sql.exec('UPDATE hooks SET failures=49');
+  });
+  await api(`/repos/${id}?confirm=app`, alice, { method: 'DELETE' }, on);
+  await deliverHook(on, id, hook.body.id, async () => new Response('no', { status: 500 }));
+  const row = (await repoRows('acme')).at(-1);
+  expect(row?.kind).toBe('webhook.disabled');
+  expect(row?.actor).toBe('platform:hooks');
+  expect(row?.details).toMatchObject({ repo: id, id: String(hook.body.id), host: 'ci.example.com' });
+  expect(JSON.stringify(row)).not.toContain('tok3n');
 });

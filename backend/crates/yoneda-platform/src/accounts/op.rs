@@ -158,8 +158,11 @@ op_names! {
         Pending = "audit_pending",
         Cursor = "audit_cursor",
         Append = "audit_append",
+        Exported = "audit_exported",
         Read = "audit_read",
         Verify = "audit_verify",
+        SealNext = "audit_seal_next",
+        SealDone = "audit_seal_done",
     }
 }
 
