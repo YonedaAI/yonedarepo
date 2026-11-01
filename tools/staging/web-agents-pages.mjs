@@ -41,7 +41,8 @@ export async function spentSoFar(s) {
 export async function createRepository(s) {
   await s.page.goto(`${s.origin}/repositories`);
   await s.page.getByRole('button', { name: 'New repository' }).first().click();
-  const dialog = s.page.getByRole('dialog');
+  await s.page.getByRole('menuitem', { name: 'Create repository' }).click();
+  const dialog = s.page.getByRole('dialog', { name: 'New repository' });
   await dialog.getByLabel('Repository name').fill(s.name);
   await s.shot('new-repository');
   await dialog.getByRole('button', { name: 'Create repository' }).click();
@@ -62,8 +63,8 @@ export async function turnOnRules(s) {
   await page.getByRole('button', { name: /^Save / }).first().click();
   await page.getByText(/^Saved\./).waitFor();
   for (const name of ['Open a Landing for every pushed branch', 'Run agents on automatic Landings', 'Land when cleared']) {
-    const box = page.getByRole('checkbox', { name });
-    await box.check();
+    // Each saves at once, and the box follows the server's answer.
+    await page.getByRole('checkbox', { name }).click();
     await page.waitForFunction((n) => {
       const label = [...document.querySelectorAll('label')].find((l) => l.textContent.includes(n));
       return label?.querySelector('input')?.checked && !label.closest('fieldset').disabled;
@@ -153,11 +154,24 @@ export async function pageShows(s, c, number) {
   await page.waitForFunction(() => !document.querySelector('.source-instruments')?.textContent.includes('Not reviewed yet'), null, { timeout: AGENT_MS });
   const shownS = Math.round((Date.now() - started) / 1000);
   await s.shot(`${c.id}-instruments`);
+  // Every state the chip shows, in order: a flash is a finding, not an outcome. Go-around has to
+  // stand for a full polling beat, Landed ends it.
   const chip = page.locator('.source-change header .source-change-status');
-  await page.waitForFunction(() => /Landed|Go-around/.test(document.querySelector('.source-change header .source-change-status')?.textContent ?? ''), null, { timeout: LAND_MS }).catch(() => {});
-  const state = (await chip.innerText()).trim();
+  const states = [];
+  const until = Date.now() + LAND_MS;
+  let since = Date.now();
+  for (;;) {
+    const now = (await chip.innerText()).trim();
+    if (states.at(-1) !== now) {
+      states.push(now);
+      since = Date.now();
+    }
+    if (now === 'Landed' || (now === 'Go-around' && Date.now() - since > 25_000) || Date.now() > until) break;
+    await sleep(1000);
+  }
+  const state = states.at(-1);
   await s.shot(`${c.id}-landing-final`);
-  return { shownS, state, text: (await cards.innerText()).replace(/\s+/g, ' ').slice(0, 300), number };
+  return { shownS, state, states, text: (await cards.innerText()).replace(/\s+/g, ' ').slice(0, 300), number };
 }
 
 /** The API's word on it, to hold the page to. */

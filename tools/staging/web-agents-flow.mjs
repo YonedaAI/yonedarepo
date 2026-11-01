@@ -65,20 +65,27 @@ async function step(title, body) {
   }
 }
 
+/** The dev owner has no handle yet, and the app asks on load. "Not now" keeps it that way. */
+function notNow(page) {
+  const asking = page.getByRole('dialog', { name: 'Choose your handle' });
+  return page.addLocatorHandler(asking, () => asking.getByRole('button', { name: 'Not now' }).click());
+}
+
 /** Signs in through the form once; a saved session that still works is kept. */
 async function signedIn(browser) {
   const viewport = { width: 1440, height: 1000 };
   if (existsSync(sessionFile)) {
     const context = await browser.newContext({ viewport, extraHTTPHeaders: OWN_TRAFFIC, storageState: sessionFile });
     const answer = await context.request.get(`${origin}/api/auth/session`);
-    if (answer.ok() && (await answer.json()).account) return context;
+    if (answer.ok() && (await answer.json()).authenticated) return context;
     await context.close();
   }
   const { DEV_OWNER_USERNAME: username, DEV_OWNER_PASSWORD: password } = process.env;
   assert.ok(username && password, 'set -a; . ~/.config/yonedarepo/dev-owner.env; set +a');
   const context = await browser.newContext({ viewport, extraHTTPHeaders: OWN_TRAFFIC });
   const page = await context.newPage();
-  await page.goto(origin);
+  await notNow(page);
+  await page.goto(`${origin}/signin`);
   await page.getByRole('navigation', { name: 'Account access' }).getByRole('button', { name: 'Sign in' }).click();
   await page.getByLabel('Username or email').fill(username);
   await page.getByLabel('Password', { exact: true }).fill(password);
@@ -136,16 +143,14 @@ async function main() {
   const context = await signedIn(browser);
   const page = await context.newPage();
   watchPage(page);
-  // The dev owner has no handle yet, and the app asks on load. "Not now" keeps it that way.
-  const asking = page.getByRole('dialog', { name: 'Choose your handle' });
-  await page.addLocatorHandler(asking, () => asking.getByRole('button', { name: 'Not now' }).click());
+  await notNow(page);
   const name = `agents-live-${ts}`;
   const s = { context, page, name, origin, out, capUsd: CAP_USD, defaultBlock: 'high', api: (path, init) => api(context, path, init), shot: (label) => shot(page, label) };
   let failed = false;
   try {
     const { repos } = await api(context, '/api/v1/repos');
     const session = await api(context, '/api/auth/session');
-    const workspace = session.account;
+    const workspace = session.username;
     s.managed = `/api/managed/workspaces/${encodeURIComponent(workspace)}`;
     const state = await api(context, s.managed);
     s.creditBefore = state.credit;
