@@ -2,11 +2,7 @@
 // one read (`GET /insights`), which the authority answers first, so what a viewer sees is what
 // they may read. It keeps the last answer up while another range loads.
 import { useState } from 'react';
-import type {
-  RepoInsights as Insights,
-  InsightsCount,
-  RepoContributor,
-} from '../../../../shared/repo-insights';
+import type { RepoInsights as Insights, RepoContributor } from '../../../../shared/repo-insights';
 import type { TrafficRange } from '../../../../shared/site-traffic';
 import { EmptyState } from '../../components/EmptyState';
 import { CountTable, RangePicker } from '../admin/AdminParts';
