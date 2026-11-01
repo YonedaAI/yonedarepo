@@ -4,10 +4,10 @@
 // Worker's admin route, its bearer kept here), suspension (the account authority refuses
 // every credential until it is lifted), quarantining or releasing repository content as the
 // repository's owner, and legal holds (platform-holds.ts). Refunds and the rest of billing are
-// platform-admin-billing.ts. Marking an account as ours only changes what's counted. Two actions
-// are not reversible: a refund, and purging a deleted
-// repository now, for the live tests' teardown and dev storage. A purge is refused under a legal
-// hold, and no account can ask for it: the undo window exists to survive a stolen token.
+// platform-admin-billing.ts. Marking an account as ours only changes what's counted. Three actions
+// are not reversible: a refund, purging a deleted repository now, for the live tests' teardown
+// and dev storage, and purging an orphan (platform-orphan-purge.ts). A purge is refused under a
+// legal hold, and no account can ask for it: the undo window exists to survive a stolen token.
 // Every action writes admin_audit.
 // Contact emails appear in these answers only.
 import { normalizeAccountIdentifier } from '../../shared/account';
@@ -31,6 +31,7 @@ import { rebuildRollup, revenue } from './platform-admin-revenue';
 import { operatorOrgHold, operatorRepoHold } from './platform-holds';
 import { currentHold } from './platform-legal-hold';
 import { orgArg } from './platform-orgs';
+import { purgeOrphan } from './platform-orphan-purge';
 import { trafficReport } from './platform-site-traffic';
 import { rebuildDeleted } from './repo-deleted';
 import { backfillObject } from './repo-erase';
@@ -119,6 +120,8 @@ export async function adminRoute(
       return quarantineAsOwner(env, actor, id, record, sub, body);
     if (hold) return operatorRepoHold(env, actor, id, method);
     if (action === 'purge-now' && !record && post) return purgeNow(env, actor, id);
+    if (action === 'purge-orphan' && !record && post)
+      return purgeOrphan(env, actor, id, await body());
   }
   throw new ApiError('NOT_FOUND', 'Unknown admin path');
 }
