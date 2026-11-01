@@ -1,8 +1,8 @@
 // The platform's routes run through `serveHere`, as a hinted combiner runs them in a region: real
 // routes, repository objects and D1 (workerd), with each binding that can leave the region counted
 // in Server-Timing. Whether a hop really leaves is a live question; here it only has to be seen.
-import { expect, it } from 'vitest';
-import { serveHere } from '../../cloudflare/worker/repo-region-serve';
+import { expect, it, vi } from 'vitest';
+import { meteredEnv, serveHere } from '../../cloudflare/worker/repo-region-serve';
 import type { Env } from '../../cloudflare/worker/types';
 import { author, bindings, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
@@ -76,4 +76,13 @@ it('a refusal is the same refusal through the region', async () => {
   const answer = await serve('/api/v1/repos', {}, { name: 'x' });
   expect(answer.status).toBe(401);
   expect(answer.body.error.code).toBe('UNAUTHORIZED');
+});
+
+it('the meter calls a real RPC stub as itself: `.bind` on one is a remote call', async () => {
+  const near = meteredEnv({ ...on, LAND_COMBINERS: bindings.LAND_COMBINERS } as Env);
+  const namespace = near.LAND_COMBINERS as DurableObjectNamespace;
+  const stub = namespace.get(namespace.idFromName('region-hint-meter')) as unknown as { where(): Promise<string> };
+  const trace = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response('colo=TST\n'));
+  await expect(stub.where()).resolves.toBe('TST');
+  trace.mockRestore();
 });

@@ -8,7 +8,7 @@
 // .local/platform-live/, one file per run.
 // Usage: node tools/platform-region-matrix.mjs --dry-run | --yes | --results | --cleanup
 import assert from 'node:assert/strict';
-import { readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { EVIDENCE_DIR, evidence, stampOf } from './fanout-bench/driver.mjs';
@@ -55,6 +55,7 @@ if (!values.yes && !values.cleanup) {
 }
 
 const ledgerPath = resolve(EVIDENCE_DIR, 'region-hint-repos.json');
+await mkdir(EVIDENCE_DIR, { recursive: true });
 const held = JSON.parse(await readFile(ledgerPath, 'utf8').catch(() => '[]'));
 const saveLedger = () => writeFile(ledgerPath, `${JSON.stringify(held, null, 2)}\n`);
 const kit = readEnvFile('staging-kit.env');
@@ -94,6 +95,14 @@ async function remove({ id, name, client, arm }) {
   await saveLedger();
 }
 if (values.cleanup) {
+  // What a run that died before its ledger was written left: each test account's own list.
+  for (const client of clients)
+    for (const arm of armsOf(client)) {
+      const { session } = await accountOf(client, arm);
+      const { body } = await session.raw('GET', '/api/v1/repos');
+      for (const { id, name } of body.repos ?? [])
+        if (/^region-hint-(?!sim-)/.test(name) && !held.some((r) => r.id === id)) held.push({ id, name, client, arm: arm.arm });
+    }
   for (const repo of [...held]) await remove(repo);
   console.error(`${held.length} test repositories left`);
   process.exit(held.length ? 3 : 0);
