@@ -31,6 +31,15 @@ fn committed(file: &str) -> Value {
         "wrangler.dev-bench2.jsonc" => {
             include_str!("../../../cloudflare/wrangler.dev-bench2.jsonc")
         }
+        "wrangler.dev-region-na.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-region-na.jsonc")
+        }
+        "wrangler.dev-region-eu.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-region-eu.jsonc")
+        }
+        "wrangler.dev-region-ap.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-region-ap.jsonc")
+        }
         "wrangler.prod-superfan.jsonc" => {
             include_str!("../../../cloudflare/wrangler.prod-superfan.jsonc")
         }
@@ -72,9 +81,12 @@ fn dev_spec_regenerates_the_committed_dev_configs() {
             "wrangler.dev-agents.jsonc",
             "wrangler.dev-bench.jsonc",
             "wrangler.dev-bench2.jsonc",
+            "wrangler.dev-region-na.jsonc",
+            "wrangler.dev-region-eu.jsonc",
+            "wrangler.dev-region-ap.jsonc",
             "wrangler.dev-deadman.jsonc"
         ],
-        "the platform's tail consumer first, then cutover order: platform, the managed agents the front binds, agents; the bench clients, then the dead-man, last"
+        "the platform's tail consumer first, then cutover order: platform, the managed agents the front binds, agents; the bench clients, the regional ones after the platform they bind, then the dead-man, last"
     );
     for (worker, config) in spec.configs(&lock(DEV_LOCK)).unwrap() {
         assert_eq!(

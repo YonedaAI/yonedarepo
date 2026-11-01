@@ -319,6 +319,40 @@ So the region is read where the request arrives and passed on as a value. Git ov
 
 **Write sample:** `write_origin` points in the site events dataset, one write in 10, with the continent and a digest of the account. A repository token's digest is its repository's, because naming the account would add a lookup (safety rule 8).
 
+### Latency matrix (stage R2, spikes for R3)
+
+What someone far from our data gets, and what changes when it sits near them. `tools/platform-region-matrix.mjs`, built 2026-10-31.
+
+**How it measures:**
+
+1. **Clients.** One Worker each in North America (`aws:us-east-1`), Europe (`aws:eu-central-1`) and Asia (`aws:ap-southeast-1`). Targeted placement holds a whole Worker near one cloud region, so `bench` and `bench2` can't do this, and moving `bench2` would break the load stages' 1-against-2 comparison. Each answers with the colo it really ran in, and the run stops if two share one.
+2. **Data.** `REGION_HINT_TEST`, off everywhere and absent from prod. On, a create of a new repository named `region-hint-*` takes `region_hint` (`enam`, `weur`, `apac`), passed to the first `get` of its authority, 64 shards, combiner, head holder and projector. Existing repositories can't take one: a create's id is always new. No routing changes.
+3. **Through the pinned Worker.** Each client reads a file, lists, clones, commits, lands, pushes and creates, on its own fresh repository. Read and write as a person's request would: client to edge to the Worker in `aws:us-east-1` to the object and back.
+4. **Without it.** Each client also times one read of each piece through a binding: D1, the account authority, R2, each repository object. That's what moving a piece near that client would change, which the pinned path can't show.
+5. **Where objects landed.** `GET /repos/<id>/where` has each object fetch Cloudflare's trace page and answers the colo. That's the method [Where Durable Objects Live](https://where.durableobjects.live) uses; Cloudflare documents no API for it.
+
+**What stays in the US today:**
+
+| Piece | Where | Source |
+|---|---|---|
+| R2 objects bucket | `ENAM`, no jurisdiction | Cloudflare API, 2026-10-31 |
+| D1 primary | `ENAM`, read replication disabled | Cloudflare API, 2026-10-31 |
+| Front and platform Workers | Pinned to `aws:us-east-1` | `infra/envs/dev.json` |
+| Check, pack and SSH containers, managed harness | Constrained to `ENAM` | `infra/envs/dev.json` |
+| Artifacts | **Not known.** A namespace can take a jurisdiction, `eu` or `us`, only when it's created. Nothing says which data centers serve it, and ours has none | [Cloudflare docs](https://developers.cloudflare.com/artifacts/guides/data-localization/) |
+
+**R3 spikes the docs answer** (read 2026-10-31):
+
+| Spike | Answer |
+|---|---|
+| 2. Placement on RPC | Still contradicts itself: the page says placement affects only `fetch` handlers, and its own example relies on RPC. Not measured here |
+| 4. D1 read replication | No state of GA or beta on the page; replicas in ENAM, WNAM, WEUR, EEUR, APAC and OC, at no extra charge. `withSession` and bookmarks needed |
+| 5. Where R2 and D1 live | ENAM, both. See the table above |
+
+<!-- region-results:start (tools/platform-region-matrix.mjs --results) -->
+None yet.
+<!-- region-results:end -->
+
 ### Spikes for R3
 
 1. Can an Artifacts namespace be regional?

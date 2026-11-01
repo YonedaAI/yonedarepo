@@ -182,8 +182,14 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
             d(5),
             Step::Secrets { worker: 5 },
             d(6),
+            Step::Secrets { worker: 6 },
+            d(7),
+            Step::Secrets { worker: 7 },
+            d(8),
+            Step::Secrets { worker: 8 },
+            d(9),
         ],
-        "superfan (no /health), platform, agents-managed (optional secrets), agents, bench and bench2 (BENCH_KEY, no /health), deadman (no secrets, no /health)"
+        "superfan (no /health), platform, agents-managed (optional secrets), agents, bench, bench2 and the regional clients (BENCH_KEY, no /health), deadman (no secrets, no /health)"
     );
     assert!(
         !plan.iter().any(|s| matches!(s, Step::ActiveGate { .. })),

@@ -73,9 +73,17 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
         !workers.iter().any(|w| w.role == "bench"),
         "no bench in prod"
     );
+    assert!(
+        !workers.iter().any(|w| w.role.starts_with("region-")),
+        "no regional client in prod"
+    );
 
     let platform = &role(&workers, "platform").config;
     assert_eq!(platform["vars"]["LAND_MODE"], "batch");
+    assert!(
+        platform["vars"].get("REGION_HINT_TEST").is_none(),
+        "location hints are a dev test"
+    );
     assert_eq!(platform["vars"]["WEB_ORIGIN"], "https://yonedarepo.com");
     assert_eq!(platform["ratelimits"][0]["namespace_id"], "1001");
     assert_eq!(platform["placement"]["region"], "aws:us-east-1");
@@ -290,6 +298,9 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
             "yonedarepo-dev-agents",
             "yonedarepo-dev-bench",
             "yonedarepo-dev-bench2",
+            "yonedarepo-dev-region-na",
+            "yonedarepo-dev-region-eu",
+            "yonedarepo-dev-region-ap",
             "yonedarepo-dev-deadman"
         ]
     );
@@ -309,6 +320,9 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
                 host("https://dev.yonedarepo.com/*", false)
             ],
             vec![host("hook-receiver.yonedaai.org", true)],
+            vec![],
+            vec![],
+            vec![],
             vec![],
             vec![],
         ]

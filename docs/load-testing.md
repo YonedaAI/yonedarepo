@@ -1,6 +1,6 @@
 # Load testing the platform for agents
 
-Status: stages 2 and 3 have tools, built 2026-10-31 and tried against a stub only. No stage has run on dev. Written 2026-10-30.
+Status: stages 2 and 3 have tools, built 2026-10-31 and tried against a stub only. No stage has run on dev. The owner replaced their 5.7-hour plan with the one-hour [real-use simulation](#real-use-simulation). Written 2026-10-30.
 
 Goal: find where the platform stops scaling for agents. So far 1,000 writers passed and nothing failed, so the ceiling is unknown.
 
@@ -149,6 +149,57 @@ Answers: what cap each pool needs, and whether its queue stays fair between acco
 
 - Check that `AUTH_LIMITER` (30 a minute) and `PUBLIC_LIMITER` (300 a minute) refuse what they should, and that a large fleet behind one address is not caught by mistake.
 - Run the bench from Europe and Asia. The platform is placed in `aws:us-east-1`.
+
+## Real-use simulation
+
+**The owner's replacement for the 5.7-hour plan:** one hour that behaves like real work, not a request hammer. `tools/platform-real-use.mjs`, built 2026-10-31. Not run for its hour yet.
+
+**Every number here is an assumption.** There is no real traffic yet. `--dry-run` counts requests from the scripts themselves, so this table can't drift from the code.
+
+| Assumption | Value | Why |
+|---|---|---|
+| Day | One 24-hour day played in 60 minutes (a simulated hour is 2.5 minutes) | The owner asked for one hour. Only the day's rhythm is compressed: each session keeps its real pace, with think time between steps |
+| Sessions at once, peak | 150 | A small team product: about 1,500 daily users if 1 in 10 is active at the peak. Sets the rate; `--peak-sessions` changes it |
+| Regions | North America 45%, Europe 35%, Asia 20% | Guess from where developers are. Each follows its own working day (UTC−5, +1, +8), so the load moves round the world |
+| Rhythm, people | Quiet at night (2–3% of peak), busy 09:00–17:00 local, a dip at noon | An office day |
+| Rhythm, agents | Follows people by an hour, never below 30% of peak | People start agents, and some run all night |
+| Accounts, repositories | 24 accounts, 3 repositories each; the popular ones get most sessions (Zipf) | Many accounts, so `ypat_` reads reach many authorities, and a real long tail |
+| Repository content | 60 small files, about 2 KB each | Size is known and skipped on purpose (the owner) |
+
+The mix, as printed by `--dry-run`:
+
+| Session | Share | Who | Requests | Think, s | What it does |
+|---|---|---|---|---|---|
+| `browse` | 28% | Person | 14.0 | 67 | Opens Home and a repository, reads 1–5 files, some blame and history |
+| `review` | 10% | Person | 10.2 | 93 | Reads an open Landing, comments, approves, lands 7 in 10 |
+| `search` | 7% | Person | 8.9 | 53 | Searches across repositories 2–4 times, opens a hit |
+| `agent` | 30% | Agent | 15.0 | 71 | Reads memories, context, tree and files, searches, branches, commits, records a session and a check, opens a Landing, lands 3 in 10 |
+| `mcp` | 15% | Agent | 7.6 | 20 | MCP initialize, tools/list, 3–8 tool calls |
+| `git` | 10% | Agent | 4.6 | 20 | Clone, and a push 4 times in 10 |
+
+Agents are half the sessions because the product is built for them. The result of the arithmetic: 155 sessions a minute and about 30 requests/s at the peak, about 5,600 sessions and 65,000 requests in the hour.
+
+**How it runs:**
+
+1. People go through `dev.yonedarepo.com` with a session cookie, so the front Worker is in the path. Agents go to `api.dev.yonedarepo.com` with a `yrp_` or `ypat_` token.
+2. Each region's requests leave a client Worker placed there (`yonedarepo-dev-region-na`, `-eu`, `-ap`). They enter Cloudflare in that region, as a real user's would, less the user's own last mile.
+3. Workers can't run Git, so `git` sessions send Git's own requests as bytes (`tools/fanout-bench/git-forms.mjs`). Real `git` runs from the Mac every 2 minutes: clone, commit, push, fetch. The Mac's Cloudflare location is whatever a trace reports (San José, Costa Rica on 2026-10-31), not one of the three regions.
+4. Checks are reports (`POST /commits/<id>/checks`). **No container starts and no model runs,** so the run costs only requests.
+5. Arrivals are open loop: a slow platform meets the same people, as in life.
+6. `tests/workers/real-use-scripts.test.ts` plays every script through the real routes, so a stale request form fails there, not an hour in.
+
+**Stop rules,** judged each 15 s over the last minute, per class, from 20 requests up: errors above 1%, p95 over 3× target, or a Cloudflare limit error. Targets: read 1 s, write 3 s (the budget above), Git clone 6 s (ours; the budget has none). A lost race (`409 CONFLICT`, `MERGE_REQUIRED`, `STALE_HEAD`, `STALE_PARENT`, `NOT_READY`, `ALREADY_EXISTS`) is counted but isn't an error.
+
+**What it leaves:** accounts `realuse0`… and repositories `real-use-<a>-<r>` stay in `.local/platform-live/pool-real-use.json` for the next run. Each account's password is derived from the kit's, never stored. Tokens are fresh, revoked at the end, and expire in a day. Rows go to `real-use-<stamp>.rows.jsonl`, the summary to one timestamped evidence file. A lock file refuses a second run.
+
+**Before the hour:**
+
+1. Deploy (the three regional clients must exist), then warn the owner. Cost basis: about $0.60 per million platform requests at list price, so 65,000 requests is about $0.04, and background derive jobs add to that. Assume under $1. No caps change.
+2. `node tools/platform-real-use.mjs --setup-only`: first run signs up 24 accounts, about 3 minutes, because `AUTH_LIMITER` allows 30 sign-ins a minute. Each sign-up sends a welcome mail to Resend's test inbox.
+3. Make sure nothing else runs on dev and no deploy can happen during it.
+4. `node tools/platform-real-use.mjs --yes`.
+
+**Doesn't cover:** real-history repositories, real container checks, model calls, SSH, anonymous public traffic, and more than 150 sessions at once. Those have their own stages above.
 
 ## Running stages 2 and 3
 
