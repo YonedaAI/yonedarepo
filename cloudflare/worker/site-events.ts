@@ -34,6 +34,13 @@ export const SITE_EVENT_BLOBS = {
   /** `write_origin` points only (platform-write-origin.ts); `index1` is the writer's digest. */
   continent: 'blob13',
   writerKind: 'blob14',
+  /** Platform points, in the same places: `outcome` with TRAFFIC_REPORT on, the rest with
+   * REPO_ANALYTICS on (repo-usage.ts). `repo` is empty unless the request was admitted. */
+  outcome: 'blob13',
+  repo: 'blob14',
+  actor: 'blob15',
+  reason: 'blob16',
+  detail: 'blob17',
 } as const;
 /** `double1`: 1 when the request looked automated, else 0. */
 export const SITE_EVENT_BOT = 'double1';
@@ -49,6 +56,12 @@ export const SITE_EVENT_MARKED = 'double5';
 /** Platform points with TRAFFIC_REPORT on: milliseconds until the answer's headers. A streamed
  * clone or push goes on after that. */
 export const SITE_EVENT_DURATION = 'double6';
+/** Platform points with REPO_ANALYTICS on: the pack's bytes, the wait in a landing's queue in
+ * milliseconds, and the rounds the platform repeated a landing. With a pack, `double6` runs to
+ * its last byte. */
+export const SITE_EVENT_BYTES = 'double7';
+export const SITE_EVENT_QUEUE = 'double8';
+export const SITE_EVENT_RETRIES = 'double9';
 /** Our own tools send this, set to `1` (tools/own-traffic.mjs): they are not counted. It unlocks
  * nothing: anyone sending it only leaves the analytics. */
 export const OWN_TRAFFIC_HEADER = 'x-yoneda-own-traffic';

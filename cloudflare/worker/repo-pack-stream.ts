@@ -44,6 +44,7 @@ export function sendStored(
   stats?: PackStats,
 ) {
   if (stats) stats.cache = 'hit';
+  stats?.begin();
   const { readable, writable } = new IdentityTransformStream();
   const write = async (bytes: Uint8Array) => {
     const writer = writable.getWriter();
@@ -57,7 +58,9 @@ export function sendStored(
     if (stats?.report) await write(sideBand(2, stats.line(), band));
     await write(new TextEncoder().encode('0000'));
     await writable.close();
-  })().catch((e) => writable.abort(e).catch(() => {}));
+  })()
+    .catch((e) => writable.abort(e).catch(() => {}))
+    .finally(() => stats?.finish());
   return new Response(readable, { headers: RESULT });
 }
 
@@ -150,9 +153,30 @@ export class PackStats {
   readonly reads = new ReadStats();
   /** Whether the pack came from the store (`hit`), was stored (`stored`), or neither. */
   cache: 'off' | 'hit' | 'miss' | 'storing' | 'stored' = 'off';
+  /** The fetch had nothing: a clone. */
+  fresh = false;
+  /** Settles when a pack that began has gone, or stopped. Unset while no pack began. */
+  ended?: Promise<void>;
+  private settle?: () => void;
   private entries = 0;
   private deltas = 0;
   private bytes = 0;
+
+  /** A pack is about to stream. */
+  begin() {
+    this.ended ??= new Promise((settle) => {
+      this.settle = settle;
+    });
+  }
+
+  finish() {
+    this.settle?.();
+  }
+
+  /** Pack bytes sent so far. */
+  get sentBytes() {
+    return this.bytes;
+  }
 
   /** Counts bytes of a stored pack streamed as they are. */
   streamed(bytes: number) {

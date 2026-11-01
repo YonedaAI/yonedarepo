@@ -77,13 +77,11 @@ export type SourceRoute =
   | { view: 'agents'; repo: string; section: AgentSection }
   | { view: 'session'; repo: string; id: number }
   | { view: 'context'; repo: string }
+  | { view: 'insights'; repo: string }
   | { view: 'repo-settings'; repo: string; section: RepoSettingsSection };
 
-/** The repository's sidebar pages. Overview is the code browser (`files`, `overview`);
- * Commits holds `history`, `transactions`, `branches` and `commit`; Landings holds `change`;
- * Releases holds `release`; Sessions holds the agent sessions and each `session`; Memories
- * the agent memories; Agent tools (`agents`) the other agent records (contracts, pins,
- * bisects). Each page has one sidebar entry, highlighted on every route it holds. */
+/** The repository's sidebar pages, each highlighted on every route it holds: Commits holds
+ * `history`, `transactions`, `branches` and `commit`, and Landings holds `change`. */
 export type RepoTab =
   | 'overview'
   | 'changes'
@@ -92,6 +90,7 @@ export type RepoTab =
   | 'commits'
   | 'sessions'
   | 'context'
+  | 'insights'
   | 'memories'
   | 'releases'
   | 'search'
@@ -156,7 +155,7 @@ export function parseSourceRoute(pathname: string, search: string, hash = ''): S
       ? { view: 'search', repo, query, word: true }
       : { view: 'search', repo, query };
   }
-  if (view === 'context') return { view: 'context', repo };
+  if (view === 'context' || view === 'insights') return { view, repo };
   if (view === 'ctc') return { view: 'ctc', repo };
   // `/landings` is the same page under its UI name; `/changes` stays the address.
   if (view === 'changes' || view === 'landings') {
@@ -286,7 +285,7 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'agents')
     return route.section === 'sessions' ? `${base}/agents` : `${base}/agents/${route.section}`;
   if (route.view === 'session') return `${base}/agents/sessions/${route.id}`;
-  if (route.view === 'context') return `${base}/context`;
+  if (route.view === 'context' || route.view === 'insights') return `${base}/${route.view}`;
   const query = new URLSearchParams();
   const path = route.path.split('/').filter(Boolean).map(encodeURIComponent).join('/');
   if (route.ref !== 'main') query.set('ref', route.ref);
@@ -330,7 +329,8 @@ export function routeTab(route: SourceRoute): RepoTab | undefined {
     case 'session':
       return 'sessions';
     case 'context':
-      return 'context';
+    case 'insights':
+      return route.view;
     case 'search':
       return 'search';
     case 'repo-settings':
@@ -349,7 +349,7 @@ export function tabRoute(tab: RepoTab, repo: string): SourceRoute {
   if (tab === 'releases') return { view: 'releases', repo };
   if (tab === 'sessions') return { view: 'agents', repo, section: 'sessions' };
   if (tab === 'agents') return { view: 'agents', repo, section: 'contracts' };
-  if (tab === 'context') return { view: 'context', repo };
+  if (tab === 'context' || tab === 'insights') return { view: tab, repo };
   if (tab === 'memories') return { view: 'agents', repo, section: 'memories' };
   if (tab === 'search') return { view: 'search', repo, query: '' };
   return { view: 'repo-settings', repo, section: 'rules' };

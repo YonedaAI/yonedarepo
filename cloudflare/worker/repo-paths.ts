@@ -12,6 +12,7 @@ import { audited } from './repo-audit';
 import { refreshHead } from './repo-head';
 import { ApiError, type Credentials, caller, type Json, type RepoContext } from './repo-ops';
 import { admitAnonymous } from './repo-public';
+import { repoAnalytics } from './repo-usage';
 import type { Env } from './types';
 import { workspace } from './workspace';
 
@@ -231,5 +232,10 @@ export async function withPath(env: Env, repo: string, status: Json): Promise<Js
     .bind(repo)
     .first<{ workspace: string }>();
   const handle = row ? await handleOf(env, row.workspace) : null;
-  return { ...status, owner_handle: handle, path: handle ? `/${handle}/${status.name}` : null };
+  const named = {
+    ...status,
+    owner_handle: handle,
+    path: handle ? `/${handle}/${status.name}` : null,
+  };
+  return repoAnalytics(env) ? { ...named, insights: true } : named;
 }

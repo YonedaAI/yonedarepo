@@ -17,10 +17,23 @@ const LIST_LIMIT = 10_000;
 /** The owner token's and operators' scripts: ours, whoever runs them. */
 const OPERATOR = '_admin';
 
-type Noted = { account: string | null };
+/** Who a request's credentials were. A person is a signed-in session; a token may be an agent, a
+ * script or a person at a terminal, which only Phase 4 of docs/analytics-plan.md can tell. */
+export type CredentialKind = 'person' | 'personal_token' | 'repo_token' | 'anonymous';
+type Noted = {
+  account: string | null;
+  actor?: CredentialKind;
+  /** What the request did to a repository (repo-usage.ts, which the front Worker never loads). */
+  usage?: object;
+};
 /** What of `Credentials` (repo-ops.ts) names an account. Both Workers load this module, and the
  * front Worker imports no platform module, so it says so here. */
-type Named = { _pat?: { workspace: string }; _session?: { workspace: string } };
+type Named = {
+  _pat?: { workspace: string };
+  _session?: { workspace: string; human?: true };
+  _token?: string;
+  _anonymous?: true;
+};
 type Platform = { internalAccounts(): Promise<string[]> };
 
 const noted = new AsyncLocalStorage<Noted>();
@@ -34,12 +47,19 @@ export const withRequestAccount = <T>(run: () => T) => noted.run({ account: null
 export function noteAccount(auth: object | null) {
   const request = noted.getStore();
   if (!request || !auth) return;
-  const { _pat, _session } = auth as Named;
+  const { _pat, _session, _token, _anonymous } = auth as Named;
   request.account = _pat?.workspace ?? _session?.workspace ?? request.account;
+  if (_session?.human) request.actor = 'person';
+  else if (_pat || _session) request.actor = 'personal_token';
+  else if (_token) request.actor = 'repo_token';
+  else if (_anonymous) request.actor = 'anonymous';
 }
 
 /** The account the running request's credentials named, or null. */
 export const requestAccount = () => noted.getStore()?.account ?? null;
+
+/** The running request's note, for what else it records (repo-usage.ts). */
+export const requestNote = () => noted.getStore();
 
 async function read(env: Env): Promise<string[]> {
   if (!env.INDEX) return (env.PLATFORM as unknown as Platform).internalAccounts();

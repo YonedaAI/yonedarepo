@@ -18,6 +18,7 @@ import {
   type TrafficSignupSource,
 } from '../../shared/site-traffic';
 import { log } from './log';
+import { num, type SqlRow, sqlReader, text } from './platform-analytics-sql';
 import {
   type QueryName,
   type TrafficSpan,
@@ -25,13 +26,10 @@ import {
   trafficSpan,
 } from './platform-traffic-queries';
 import { webAnalytics } from './platform-web-analytics';
+import { repoAnalytics } from './repo-usage';
 import type { Env } from './types';
 
-// Interpolated into SQL as the table name: only an ordinary identifier is accepted.
-const DATASET = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
-const ACCOUNT = /^[a-f0-9]{32}$/;
-
-type Row = Record<string, unknown>;
+type Row = SqlRow;
 
 /** The filter's class from a query parameter; Humans unless it names another. */
 export const trafficClass = (value: string | null): TrafficClass =>
@@ -58,25 +56,13 @@ export async function siteTraffic(
   fetcher: typeof fetch = fetch,
   now = Date.now(),
 ): Promise<SiteTrafficResult> {
-  const account = env.CF_ACCOUNT_ID ?? '';
-  const dataset = env.SITE_EVENTS_DATASET ?? '';
-  const token = env.ANALYTICS_READ_TOKEN ?? '';
-  if (!ACCOUNT.test(account) || !DATASET.test(dataset) || !token)
-    return { ok: false, reason: 'not_configured' };
+  const sql = sqlReader(env, fetcher);
+  if (!sql) return { ok: false, reason: 'not_configured' };
+  const { dataset, run } = sql;
   const full = env.TRAFFIC_REPORT === 'on';
   const span = trafficSpan(range, now);
   const chart = full ? span : trafficSpan('30d', now);
   const queries = trafficQueries(dataset, span, who, { chart, compare: full });
-  const run = async (sql: string): Promise<Row[]> => {
-    const response = await fetcher(
-      `https://api.cloudflare.com/client/v4/accounts/${account}/analytics_engine/sql`,
-      { method: 'POST', headers: { authorization: `Bearer ${token}` }, body: sql },
-    );
-    if (!response.ok) throw new Error(`Analytics Engine SQL API answered ${response.status}`);
-    const data = ((await response.json()) as { data?: unknown }).data;
-    if (!Array.isArray(data)) throw new Error('Analytics Engine SQL API answered without data');
-    return data as Row[];
-  };
   try {
     const names = Object.keys(queries) as QueryName[];
     const answers = await Promise.all(names.map((name) => run(queries[name] ?? '')));
@@ -102,6 +88,7 @@ export async function siteTraffic(
       class: who,
       classed_since: classedSince(rows.classed_since[0]),
       counting: env.TRAFFIC_EVENTS === 'on',
+      repo_analytics: repoAnalytics(env),
       headline: headline(rows.totals),
       previous: rows.previous && whole ? headline(rows.previous) : null,
       web_analytics,
@@ -121,12 +108,6 @@ export async function siteTraffic(
   }
 }
 
-// Analytics Engine answers 64-bit sums as strings (ClickHouse JSON), smaller ones as numbers.
-const num = (value: unknown) => {
-  const n = Number(value);
-  return Number.isFinite(n) ? n : 0;
-};
-const text = (value: unknown) => (typeof value === 'string' ? value : '');
 // With no matching row the SQL API answers MIN(timestamp) as the epoch, not as no rows.
 const classedSince = (r: Row | undefined) => {
   const day = text(r?.since).slice(0, 10);

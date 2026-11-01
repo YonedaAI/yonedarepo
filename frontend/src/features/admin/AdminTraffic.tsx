@@ -12,6 +12,7 @@ import type {
 } from '../../../../shared/site-traffic';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { useSource } from '../source-platform/useSource';
+import { AdminLandings } from './AdminLandings';
 import { PlatformClients, TrafficCheck, TrafficHeadlineCards } from './AdminTrafficCheck';
 import { countryName, providerLabel } from './adminModel';
 import { TimeChart } from './TimeChart';
@@ -155,6 +156,7 @@ export function AdminTraffic() {
       <>
         {head(note)}
         {!note.warn && <p className="source-empty">No traffic in the last {period}.</p>}
+        {t.repo_analytics && <AdminLandings range={t.range} />}
       </>
     );
   return (
@@ -179,6 +181,7 @@ export function AdminTraffic() {
         ))}
       </div>
       <PlatformClients range={t.range} clients={t.clients} counting={t.counting} />
+      {t.repo_analytics && <AdminLandings range={t.range} />}
       <TrafficCheck
         range={t.range}
         humans={t.headline.humans - t.headline.humans_signed_in}

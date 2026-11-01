@@ -2,7 +2,7 @@
 
 To save as `docs/analytics-plan.md`.
 
-Status: Phase 1 built behind `TRAFFIC_REPORT`, off. The rest is plan. Written 2026-10-31 at dev `4755d9c1`.
+Status: Phase 1 built behind `TRAFFIC_REPORT`, off. Phase 3 steps 1 and 2 and Phase 6 built behind `REPO_ANALYTICS`, off. The rest is plan. Written 2026-10-31 at dev `4755d9c1`.
 
 ## What this answers
 
@@ -76,8 +76,10 @@ Counts start on the day it's bound: there's no backfill.
 
 1. Record each gate refusal with its reason as a point, written after the answer.
 2. Report: success rate, latency P50/P95/P99, queue wait, retries, refusals by reason, checks run and failed, direct pushes counted apart.
-3. **Migration `0046`, two waves:** store the credential kind on `reviews` and `TxEntry`, so a human's approval can be proven.
+3. **Repository migration, two waves (`0046` is taken by repository limits, so the next free number):** store the credential kind on `reviews` and `TxEntry`, so a human's approval can be proven.
 4. Report the autonomous landing rate. This is the headline number.
+
+Steps 1 and 2 as built: `recordClient` (`platform-client-events.ts`) writes the request's one point after the answer, carrying what `repo-usage.ts` noted: a landing's outcome and reason, its queue wait and the rounds the platform repeated it. The Traffic page reads it (`GET admin/traffic/landings`). "Retries" is what the server can see: rounds it repeated, and landings asked for again once they had landed. A client that gives up and pushes a new commit isn't one.
 
 ## Phase 4: Agents
 
@@ -103,6 +105,13 @@ Counts start on the day it's bound: there's no backfill.
 1. Add the repository, bytes and duration to clone and push points.
 2. New repository Insights page beside `ctc`: activity, human versus agent, clones, landings, failed landings, contributors.
 3. Admin Repositories tab: most active, largest, fastest growing.
+
+As built, and what it can't say yet:
+
+- Human versus agent reads "People in the browser" against "Tokens and agents" until Phase 4 can tell a person's token from an agent's.
+- Fastest growing is bytes pushed over the range: nothing keeps a repository's past sizes, and commits made through the API add no bytes. Largest stays the database size the derive job samples.
+- Clones count packs sent to a fetch that had nothing, so a partial clone's later blob fetches count too. A clone served from the import mirror isn't counted.
+- Contributors are commits the repository recorded, from the newest 5,000. A commit still in its shard joins when it lands.
 
 ## Phase 7: Operations and Infrastructure
 

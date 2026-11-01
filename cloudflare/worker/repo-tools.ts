@@ -27,6 +27,7 @@ import { releaseOperations } from './repo-releases';
 import { recordSession } from './repo-session-records';
 import { mergeOutboxes, shardOutboxes } from './repo-shards';
 import { readRefs } from './repo-snapshots';
+import { noteCheck } from './repo-usage';
 import { agentView } from './repo-views';
 
 type Operation = (ctx: RepoContext, args: Json) => Promise<Json>;
@@ -86,6 +87,7 @@ export const operations: Record<string, Operation> = {
       evidence: a.evidence,
     });
     if (posted.hooks) await notifyHooks(ctx.env, ctx.repo);
+    noteCheck(ctx.env, ctx.repo, a.status);
     return posted;
   },
   git_check_run: async (ctx, a) => {

@@ -83,7 +83,7 @@ Agree these before the first run. They are starting targets, not commitments.
 | Subrequests added to a request | 0 |
 | Authority or D1 reads added to a request | 0 |
 | Awaits added before the response | 0 |
-| Switch off | One string compare per request, and the point is byte for byte today's |
+| Switch off | A switch check where a note would go, and the point is byte for byte today's |
 | CPU added per request, on | Under 50 µs |
 | A clone's bytes | From the pack tally already kept. Nothing is added between R2 and the client: a stored pack stays piped with no JavaScript |
 | A clone's point | Written when the last byte has gone, inside `waitUntil`, once. A cancelled clone still writes it |

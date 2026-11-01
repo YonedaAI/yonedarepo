@@ -140,6 +140,7 @@ export async function sendPack(
 ): Promise<Response> {
   // Every built pack is logged; the client gets the timing line only when it asked.
   const tally = stats ?? new PackStats(false);
+  tally.fresh = fresh !== undefined;
   let writer: PackWriter | undefined;
   let store = 'off';
   // A stored pack may carry any blob: never served or stored while any is withheld. Stored
@@ -173,6 +174,7 @@ export async function sendPack(
       await hand().catch((e) => log.warn('git.pack.handoff_failed', { error: e }));
   }
   logPack('git.pack.start', objects.repo, tally, { objects: count, store });
+  tally.begin();
   const storing = new Storing(writer, tally, worth ? hand : undefined);
   const out = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -185,6 +187,7 @@ export async function sendPack(
           await storing.finish();
           logPack('git.pack.end', objects.repo, tally);
           end(controller, band, tally);
+          tally.finish();
         } else {
           const sent = band ? sideBand(1, next.value, band) : next.value;
           storing.add(sent);
@@ -194,11 +197,13 @@ export async function sendPack(
         logPack('git.pack.failed', objects.repo, tally, { code: e?.code, error: e });
         await storing.abort();
         failed(controller, band, e);
+        tally.finish();
       }
     },
     async cancel() {
       // The client went away (or the pack was cut off) before the end.
       logPack('git.pack.cancelled', objects.repo, tally);
+      tally.finish();
       await storing.abort();
       await chunks.return(undefined);
     },

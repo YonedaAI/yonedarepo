@@ -182,6 +182,10 @@ export interface Env {
    * figure (internal-accounts.ts), and opens the Traffic page's other ranges and comparison;
    * set on both Workers. */
   TRAFFIC_REPORT?: string;
+  /** `on` adds the repository, bytes and a landing's outcome to platform points, and opens the
+   * repository Insights page and the admin landing and repository reports (repo-usage.ts). Needs
+   * TRAFFIC_EVENTS and TRAFFIC_REPORT on. */
+  REPO_ANALYTICS?: string;
   /** `on` records a new account's region and samples where writes come from (region.ts). */
   REGION_SIGNALS?: string;
   /** `on`: a create may ask for a location hint (repo-region-hint.ts). Dev only, for the latency

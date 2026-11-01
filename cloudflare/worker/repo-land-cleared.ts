@@ -8,12 +8,14 @@
 // again. Queues deliver at least once: a duplicate finds the Landing landed, or shares its
 // queue ticket.
 import { log, warned } from './log';
+import { recordJob } from './platform-client-events';
 import { landMode } from './repo-changesets';
 import { followForkChange } from './repo-forks';
 import { changeInstruments } from './repo-instruments';
 import { landChecksOn } from './repo-land-check';
 import { landWithMerge } from './repo-landing';
 import { ApiError, caller, type Json, RepoContext } from './repo-ops';
+import { refusalReason } from './repo-usage';
 import type { Env, Envelope } from './types';
 
 /** Tries of one job for an answer that says nothing about the Landing itself. */
@@ -59,10 +61,17 @@ async function attempt(ctx: RepoContext, number: number, tried: { head?: string 
     if (judged.state !== 'cleared') return;
     const guard = { clearance: number, expected_head: head };
     await landWithMerge(ctx, asked.ref, head, false, landMode(ctx.env), true, guard);
+    await recordJob(ctx.env, ctx.repo, { operation: 'land', detail: 'landed' });
   } catch (e) {
     if (!(e instanceof ApiError) || UNSETTLED.has(e.code)) throw e;
     // A new head has its own turn, and this one's reason is no use to it.
-    if (e.code !== 'HEAD_MOVED') await failed(ctx, number, head, e.code, e.message);
+    if (e.code === 'HEAD_MOVED') return;
+    await failed(ctx, number, head, e.code, e.message);
+    await recordJob(ctx.env, ctx.repo, {
+      operation: 'land',
+      detail: 'refused',
+      reason: refusalReason(e),
+    });
   }
 }
 

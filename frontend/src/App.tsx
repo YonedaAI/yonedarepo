@@ -33,7 +33,7 @@ import { siteView } from './features/site/siteRoute';
 import { DevicePage } from './features/source-platform/DevicePage';
 import { OrgPage } from './features/source-platform/OrgPage';
 import type { OrgSummary } from './features/source-platform/orgModel';
-import { RepoPage } from './features/source-platform/RepoPage';
+import { RepoPage, type ShownRepo } from './features/source-platform/RepoPage';
 import { forgetRepoNames, rememberRepoName } from './features/source-platform/repoNames';
 import { managedApi } from './features/source-platform/sourceApi';
 import { isAgentsRoute, routeRepo } from './features/source-platform/sourceRoute';
@@ -100,12 +100,8 @@ export function App() {
   const [tick, setTick] = useState(0);
   // The open repository's name as its status gives it (another account's public repository
   // is in no sidebar row), and whether the viewer may change its settings.
-  const [shown, setShown] = useState<{ repo: string; name: string; settings: boolean }>();
-  const onLoaded = useCallback(
-    (loaded: { repo: string; name: string; settings: boolean }) =>
-      setShown({ repo: loaded.repo, name: loaded.name, settings: loaded.settings }),
-    [],
-  );
+  const [shown, setShown] = useState<ShownRepo>();
+  const onLoaded = useCallback((loaded: ShownRepo) => setShown(loaded), []);
   const [missing, setMissing] = useState<string>();
   const platform = useSource<{ repos: PlatformRepo[] }>(session.authenticated ? '/repos' : null);
   const orgs = useSource<{ orgs: OrgSummary[] }>(session.authenticated ? '/orgs' : null);
@@ -265,6 +261,7 @@ export function App() {
         missing={gone}
         repoName={row?.name ?? loaded?.name}
         settings={loaded?.settings}
+        insights={loaded?.insights}
         navigate={navigate}
         onNew={() => {
           setMenuOpen(false);

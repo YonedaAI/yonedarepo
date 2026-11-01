@@ -361,6 +361,8 @@ What the figures mean:
 
 Our own and test accounts stay out of every figure once `TRAFFIC_REPORT` is on.
 
+`REPO_ANALYTICS=on` on the platform Worker, with `TRAFFIC_EVENTS` and `TRAFFIC_REPORT` on, adds the repository, bytes and a landing's outcome to its points, and opens the repository Insights page and the landing and repository reports. Unset it to roll back: the points go back to what they were and the page leaves the sidebar. Points already written stay until Analytics Engine drops them at three months, and they name a repository only by its id. Budget: [docs/load-testing.md](load-testing.md).
+
 1. Run `cargo xtask admin internal --env <env> <account>...`. Add `--off` to undo it. Each change is audited.
 2. It reaches every isolate within ten minutes. Points already written can't be taken back.
 3. Repository tokens and signed-out readers name no account, so tools using them send the own-traffic mark (`tools/own-traffic.mjs`).

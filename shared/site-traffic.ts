@@ -96,6 +96,8 @@ export interface SiteTraffic {
   /** Whether pings and platform requests are being recorded here. Off, Humans and platform use
    * are unknown, not zero. */
   counting: boolean;
+  /** Whether repositories are counted here (REPO_ANALYTICS): the landing report exists. */
+  repo_analytics: boolean;
   headline: TrafficHeadline;
   /** The same figures over the period just before, as long as this one. Null when that period
    * wasn't all counted, or is past what's kept (three months). */

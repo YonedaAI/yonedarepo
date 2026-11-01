@@ -25,6 +25,7 @@ import { fromBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { ANONYMOUS, admitAnonymous, limitAnonymous } from './repo-public';
 import { timed, withTimings } from './repo-timing';
+import { notePack, noteRepo, repoAnalytics } from './repo-usage';
 import type { Env } from './types';
 
 const PATH = /^\/git\/(r[0-9a-f]{20})(?:\.git)?\/(info\/refs|git-upload-pack|git-receive-pack)$/;
@@ -145,6 +146,7 @@ async function serve(req: Request, env: Env): Promise<Response> {
   const session = async () => {
     const ctx = new RepoContext(env, repo, caller(env, repo, signed));
     const access = await ctx.call({ op: 'repo_git_access', service });
+    noteRepo(env, repo);
     return { ctx, access, objects: ctx.adopt(access.object_store, access.quarantined) };
   };
   try {
@@ -163,7 +165,9 @@ async function serve(req: Request, env: Env): Promise<Response> {
       if (!sent) return v2 ? advertiseV2() : await advertise(ctx, service);
       const body = new Blob([sent]).stream();
       // A client asking for timings gets them after the pack (PackStats).
-      const stats = req.headers.get('x-yoneda-timing') === '1' ? new PackStats() : undefined;
+      const timing = req.headers.get('x-yoneda-timing') === '1';
+      const stats = timing || repoAnalytics(env) ? new PackStats(timing) : undefined;
+      if (stats) notePack(env, stats);
       return v2
         ? await uploadPackV2(ctx, objects, body, stats)
         : await uploadPack(ctx, objects, body, stats);

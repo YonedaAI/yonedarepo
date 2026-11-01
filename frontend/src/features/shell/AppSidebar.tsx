@@ -6,6 +6,7 @@ import {
   BookOpenText,
   Bot,
   Building2,
+  ChartColumn,
   Compass,
   CreditCard,
   FolderGit2,
@@ -58,6 +59,7 @@ export const REPO_PAGES: { id: RepoTab; label: string; Icon: typeof House }[] = 
   { id: 'overview', label: 'Overview', Icon: LayoutDashboard },
   { id: 'changes', label: 'Landings', Icon: GitPullRequest },
   { id: 'ctc', label: 'CTC', Icon: Radar },
+  { id: 'insights', label: 'Insights', Icon: ChartColumn },
   { id: 'commits', label: 'Commits', Icon: GitCommitHorizontal },
   { id: 'sessions', label: 'Sessions', Icon: ScrollText },
   { id: 'memories', label: 'Memories', Icon: NotebookPen },
@@ -111,6 +113,7 @@ export function AppSidebar({
   repoName,
   missing = false,
   settings = false,
+  insights = false,
   navigate = () => {},
   onNew,
   onRetry,
@@ -133,6 +136,8 @@ export function AppSidebar({
   missing?: boolean;
   /** The viewer may change the open repository's settings. */
   settings?: boolean;
+  /** Repositories are counted here (REPO_ANALYTICS). */
+  insights?: boolean;
   navigate?: Navigate;
   onNew?: () => void;
   /** Reads the repositories again after a failed read. */
@@ -143,7 +148,8 @@ export function AppSidebar({
 }) {
   const repo = missing ? undefined : routeRepo(route);
   const page = routeTab(route);
-  const pages = REPO_PAGES.filter((p) => p.id !== 'settings' || settings);
+  const hidden = { settings: !settings, insights: !insights } as Partial<Record<RepoTab, boolean>>;
+  const pages = REPO_PAGES.filter((p) => !hidden[p.id]);
   // The settings pages are about the account: its groups replace the repository ones.
   const onAccount = route.view === 'settings';
   const undoDays = useUndoDays(authenticated && onAccount);
