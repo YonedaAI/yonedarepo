@@ -198,7 +198,7 @@ pub fn render_items(read: &Value, local: &Local, max: usize, now: u64) -> Render
         (around.as_str(), findings(read)),
         (traffic::TITLE, traffic::entries(&read["traffic"])),
         (
-            "Memories (decisions, constraints, gotchas, how-tos) on the files you are changing, then the newest",
+            "Memories (decisions, constraints, gotchas, how-tos, ...) on the files you are changing, then the newest",
             memories(read),
         ),
         ("Recent sessions (newest first)", sessions(read, now)),

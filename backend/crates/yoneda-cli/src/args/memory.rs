@@ -26,8 +26,7 @@ pub fn memory(rest: &[String]) -> Result<Command> {
     )?;
     let command = match sub.as_str() {
         "add" => MemoryCommand::Add {
-            kind: p.exactly(1, "memory add <decision|constraint|gotcha|howto> -m <text>")?[0]
-                .clone(),
+            kind: p.exactly(1, "memory add <kind> -m <text>")?[0].clone(),
             text: p
                 .flag("message")
                 .ok_or_else(|| Error::usage("memory add needs -m <text>"))?,

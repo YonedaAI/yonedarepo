@@ -71,6 +71,10 @@
   font-weight: 500;
   overflow-wrap: anywhere;
 }
+.settings-row-text .source-meta a {
+  color: var(--blue-text);
+  text-decoration: underline;
+}
 .settings-row-mono {
   font-family: var(--mono);
   font-size: var(--text-sm);

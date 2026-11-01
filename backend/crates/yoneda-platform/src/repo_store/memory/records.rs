@@ -1,5 +1,5 @@
 //! Memory records. A memory is at most 2 KiB of text (refused when it holds a credential,
-//! like a session summary), one of four kinds, written by a principal against a recorded
+//! like a session summary), of one kind (`kinds`), written by a principal against a recorded
 //! commit and anchored to up to 20 paths (`dir/` prefixes too) or `path` + `symbol_path`
 //! pairs. The adapter resolves each file anchor's blob and each symbol anchor's node digest
 //! at that commit; callers never supply them. A memory may name the coding session it came
@@ -11,6 +11,7 @@ use super::super::auth::Actor;
 use super::super::quarantine::WithheldMemories;
 use super::super::rows::{self, object_id};
 use super::anchors::{Anchor, anchors};
+use super::kinds;
 use super::stale::Staleness;
 use crate::storage::{SqlStore, bad, number};
 use serde_json::{Value, json};
@@ -19,7 +20,6 @@ use yoneda_core::{Error, Result};
 pub const MAX_TEXT: usize = 2 * 1024;
 const MAX_REASON: usize = 500;
 const MAX_SESSION_ID: usize = 128;
-pub const KINDS: [&str; 4] = ["decision", "constraint", "gotcha", "howto"];
 
 /// A memory as of a log version: the record, whether it was retired or superseded by then,
 /// and the newest version that superseded it.
@@ -41,15 +41,6 @@ pub fn version_at<S: SqlStore>(db: &S, c: &Value) -> Result<u64> {
             )
         }),
     }
-}
-
-pub(super) fn kind(c: &Value) -> Result<&'static str> {
-    let text = c["kind"].as_str().unwrap_or_default();
-    KINDS
-        .iter()
-        .find(|k| **k == text)
-        .copied()
-        .ok_or_else(|| bad("kind must be decision, constraint, gotcha or howto"))
 }
 
 pub(in crate::repo_store) fn session_id(c: &Value) -> Result<Option<String>> {
@@ -177,7 +168,7 @@ fn current<S: SqlStore>(db: &S, id: i64) -> Result<Value> {
 /// `repo_memory_add {kind, text, commit, anchors?, session_id?, supersedes?, draft?,
 /// dry_run?}`. The same memory posted again by the same principal answers the first one.
 pub fn add<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
-    let kind = kind(c)?;
+    let kind = kinds::normalize(c["kind"].as_str().unwrap_or_default())?;
     let text = c["text"]
         .as_str()
         .map(str::trim)
@@ -221,12 +212,13 @@ pub fn add<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
         ],
     )?;
     if let Some(row) = same.first() {
-        return Ok(json!({ "memory": row["id"], "already": true }));
+        return Ok(json!({ "memory": row["id"], "kind": kind, "already": true }));
     }
+    let version = rows::current_version(db)?;
+    kinds::allow(db, &kind, version)?;
     if c["dry_run"] == true {
         return Ok(json!({ "dry_run": true, "anchors": anchors.len() }));
     }
-    let version = rows::current_version(db)?;
     let id = db.query(
         "INSERT INTO memories(kind,body,commit_id,author,session_id,supersedes,draft,recorded_at,recorded_version) \
          VALUES(?,?,?,?,?,?,?,?,?) RETURNING id",
@@ -245,7 +237,7 @@ pub fn add<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
         "INSERT INTO memory_text(rowid,body) VALUES(?,?)",
         &[json!(id), json!(text)],
     )?;
-    Ok(json!({ "memory": id, "version": version, "already": false }))
+    Ok(json!({ "memory": id, "kind": kind, "version": version, "already": false }))
 }
 
 /// `repo_memory_retire {id, reason?}`: the memory stays, marked retired from now on.

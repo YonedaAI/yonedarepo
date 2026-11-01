@@ -1,4 +1,4 @@
-// The handle an email-named account picks once (`PUT /api/auth/handle`): its address on the
+// The handle an email-named account picks (`PUT /api/auth/handle`): its address on the
 // site (`/<handle>`, `/<handle>/<repository>`). Accounts named by a username already have one.
 import type { AccountIdentity } from '../../lib/types';
 import { HANDLE } from '../source-platform/repoNames';

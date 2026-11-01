@@ -68,9 +68,11 @@ repository (default: this clone's yoneda remote; or --repo <id> [--origin <url>]
   change delete <n>                   delete a closed change and its comments (author or owner)
   release create <tag> [--title <t>] [-m <notes>] [--asset <file>]   publish a tag's release
   release list | release show <tag>   releases; a release's notes and assets (with sha256)
-  memory add <decision|constraint|gotcha|howto> -m <text> [--anchors <path|path#symbol|dir/>,…]
+  memory add <kind> -m <text> [--anchors <path|path#symbol|dir/>,…]
              [--supersedes <id>] [--commit <sha>]   leave a memory for later sessions, shown
-                                      when they read the anchored files (session: $YONEDA_SESSION_ID)
+                                      when they read the anchored files (session: $YONEDA_SESSION_ID);
+                                      kind: decision, constraint, gotcha, howto, convention, risk,
+                                      fact, preference, or a short word of your own, which adds it
   memory list [--path <p>] [--kind <k>] [--status current|stale|draft|retired|…]
   memory show <id> | memory retire <id> [-m <reason>]
   flight-plan -m <goal> [--scope <text>] [--branch <b>] [--change <n>] [--session-id <id>]

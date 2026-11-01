@@ -1,5 +1,6 @@
 // Agents → Memories: what agents and people left for later coding sessions (decisions,
-// constraints, gotchas, how-tos), newest first, filtered by anchored path, kind and status.
+// constraints, gotchas, how-tos and any kind a repository added), newest first, filtered by
+// anchored path, kind and status.
 // Each names its anchors (linked to the file on main, marked when that code changed since),
 // the commit it was written against and the session it came from. Writers add, supersede,
 // publish a session's draft, and retire; every change appends, nothing is edited away.
@@ -9,7 +10,7 @@ import type { Navigate } from '../shell/useRoute';
 import { type ComposerStart, EMPTY_COMPOSER, MemoryComposer } from './MemoryComposer';
 import { MemoryRow } from './MemoryRow';
 import {
-  MEMORY_KINDS,
+  kindOptions,
   MEMORY_STATUSES,
   type MemoryFilters,
   type MemoryKind,
@@ -104,7 +105,7 @@ export function AgentMemories({ repo, navigate }: { repo: string; navigate: Navi
               onChange={(e) => filter({ kind: e.target.value as '' | MemoryKind })}
             >
               <option value="">Any</option>
-              {MEMORY_KINDS.map((k) => (
+              {kindOptions(first.data?.kinds, filters.kind).map((k) => (
                 <option key={k} value={k}>
                   {k}
                 </option>
@@ -135,6 +136,7 @@ export function AgentMemories({ repo, navigate }: { repo: string; navigate: Navi
         <MemoryComposer
           key={composer.supersedes ?? 'new'}
           repo={repo}
+          kinds={first.data?.kinds}
           start={composer}
           onSaved={() => {
             setComposer(null);

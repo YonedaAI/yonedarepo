@@ -76,7 +76,7 @@ Counts start on the day it's bound: there's no backfill.
 
 1. Record each gate refusal with its reason as a point, written after the answer.
 2. Report: success rate, latency P50/P95/P99, queue wait, retries, refusals by reason, checks run and failed, direct pushes counted apart.
-3. **Repository migration, two waves (`0046` is taken by repository limits, so the next free number):** store the credential kind on `reviews` and `TxEntry`, so a human's approval can be proven.
+3. **Repository migration, two waves (`0046` is repository limits and `0047` memory kinds, so the next free number):** store the credential kind on `reviews` and `TxEntry`, so a human's approval can be proven.
 4. Report the autonomous landing rate. This is the headline number.
 
 Steps 1 and 2 as built: `recordClient` (`platform-client-events.ts`) writes the request's one point after the answer, carrying what `repo-usage.ts` noted: a landing's outcome and reason, its queue wait and the rounds the platform repeated it. The Traffic page reads it (`GET admin/traffic/landings`). "Retries" is what the server can see: rounds it repeated, and landings asked for again once they had landed. A client that gives up and pushes a new commit isn't one.

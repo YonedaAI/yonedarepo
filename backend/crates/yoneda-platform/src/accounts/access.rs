@@ -53,7 +53,7 @@ fn summary<S: SqlStore>(db: &S) -> Result<Value> {
     let mut summary = json!({
         "username": a["username"],
         "created_at": a["created_at"],
-        "email": a.get("email").cloned().unwrap_or(Value::Null),
+        "email": super::email::contact(&a),
         "handle": super::handles::own(db)?,
         "providers": providers,
         "password": a["verifier"].is_object(),

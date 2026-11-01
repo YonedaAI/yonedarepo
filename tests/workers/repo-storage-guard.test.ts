@@ -2,8 +2,8 @@
 // REPO_STORAGE_GUARD, a repository at its limit answers 507 REPO_FULL to new work, on REST, Git
 // and batched landing (one refusal per landing), and everything already accepted keeps going.
 // No test fills it: the variable takes a byte count here, and only here.
-import { runInDurableObject } from 'cloudflare:test';
-import { expect, it } from 'vitest';
+import { createExecutionContext, runInDurableObject, waitOnExecutionContext } from 'cloudflare:test';
+import { expect, it, vi } from 'vitest';
 import { REPO_FULL_MESSAGE } from '../../cloudflare/worker/durable';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { projectChangesets } from '../../cloudflare/worker/repo-changesets';
@@ -132,6 +132,42 @@ it('refuses a Git push at the limit by ref, naming REPO_FULL', async () => {
   const report = new TextDecoder().decode(await response.arrayBuffer());
   expect(report).toContain('ng refs/heads/topic');
   expect(report).toContain('REPO_FULL');
+});
+
+it('counts what a push sends, and at the size limit refuses pushes and commits with 507 before storing anything', async () => {
+  const { owner, id, repo, root, agent } = await repository('guard-size');
+  const push = async (refname: string, target: Env) =>
+    platformFetch(new Request(`https://yoneda/git/${id}.git/git-receive-pack`, { method: 'POST', headers: { authorization: `Basic ${btoa(`git:${agent.token}`)}` }, body: await branchPush(refname, root) }), target);
+  const size = async () => (await caller(scoped, id, { _system: 'derive' })({ op: 'repo_storage' })).git_bytes as number;
+  expect(await size()).toBe(0);
+  const first = await push('refs/heads/one', scoped);
+  expect(new TextDecoder().decode(await first.arrayBuffer())).toContain('ok refs/heads/one');
+  const counted = await size();
+  expect(counted).toBeGreaterThan(100);
+  const sized = { ...scoped, LAND_COMBINERS: undefined, REPO_SIZE_GUARD: String(counted) } as unknown as Env;
+  const refused = await push('refs/heads/two', sized);
+  expect(refused.status).toBe(507);
+  expect(await refused.text()).toContain('REPO_SIZE_LIMIT');
+  expect(await size()).toBe(counted);
+  const commit = await commitOn(repo, owner, 'b.txt', sized);
+  expect(commit.status).toBe(507);
+  expect(commit.body.error.code).toBe('REPO_SIZE_LIMIT');
+  expect(commit.body.error.message).toContain('10 GB');
+  expect((await api(`${repo}/blob?path=a.txt`, owner, {}, sized)).body.content).toBe('0\n');
+  const under = { ...scoped, REPO_SIZE_GUARD: String(counted + 1) } as unknown as Env;
+  expect(new TextDecoder().decode(await (await push('refs/heads/three', under)).arrayBuffer())).toContain('ok refs/heads/three');
+});
+
+it('adds what API commits store to the size once it amounts to a megabyte, not on every commit', async () => {
+  const { owner, id, repo } = await repository('guard-api-size');
+  const size = async () => (await caller(scoped, id, { _system: 'derive' })({ op: 'repo_storage' })).git_bytes as number;
+  const commit = (path: string, bytes: number) =>
+    api(`${repo}/commits`, owner, { body: { ref: 'main', changes: [file(path, 'x'.repeat(bytes))], message: path, author } });
+  expect((await commit('small.txt', 1_000)).status).toBe(200);
+  expect(await size()).toBe(0);
+  expect((await commit('large.txt', 1_100_000)).status).toBe(200);
+  await waitOnExecutionContext(createExecutionContext());
+  await vi.waitFor(async () => expect(await size()).toBeGreaterThanOrEqual(1_101_000));
 });
 
 /** Combiners running in this test against `env`, drained by `settled`. */

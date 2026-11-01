@@ -4,9 +4,11 @@
 // none (and its search answers without the memories group), the anchored code changing on
 // main makes a memory stale, ranking leaves out what a session was already shown, and MCP
 // carries the same operations.
+import { runInDurableObject } from 'cloudflare:test';
 import { expect, it } from 'vitest';
+import rebuild from '../../backend/crates/yoneda-platform/src/migrations/repo_store/0047_memory_kinds.sql?raw';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
-import { api, author, file, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, bindings, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -152,4 +154,76 @@ it('carries the memory operations over MCP', async () => {
   const refused = await mcp(id, reader.token, 'git_memory_retire', { id: memory });
   expect(refused.isError).toBe(true);
   expect(JSON.parse((await mcp(id, bot.token, 'git_memory_retire', { id: memory })).content[0].text).already).toBe(false);
+});
+
+it('takes a kind off the list and offers it from then on', async () => {
+  const { id, repo, bot, reader } = await setup('memory-kinds');
+  const added = await api(`${repo}/memories`, bot, {
+    body: { kind: 'Field Note', text: 'The queue replays.', anchors: [{ path: 'src/retry.rs' }] },
+  });
+  expect(added.status).toBe(200);
+  expect(added.body.kind).toBe('field-note');
+  const shown = await api(`${repo}/memories/${added.body.memory}`, reader);
+  expect(shown.body.memory.kind).toBe('field-note');
+  expect(shown.body.memory.anchors.map((a: any) => a.path)).toEqual(['src/retry.rs']);
+  const builtIn = await api(`${repo}/memories`, bot, { body: { kind: 'convention', text: 'Tabs.' } });
+  expect(builtIn.status).toBe(200);
+  const listed = await api(`${repo}/memories?kind=field%20note`, reader);
+  expect(listed.body.memories.map((m: any) => m.id)).toEqual([added.body.memory]);
+  expect(listed.body.kinds).toEqual([
+    'decision',
+    'constraint',
+    'gotcha',
+    'howto',
+    'convention',
+    'risk',
+    'fact',
+    'preference',
+    'field-note',
+  ]);
+  const refused = await api(`${repo}/memories`, bot, { body: { kind: 'not a <word>', text: 'x' } });
+  expect(refused.status).toBe(400);
+  expect(refused.body.error.code).toBe('INVALID_INPUT');
+  // An agent adds one over MCP the same way, and is told the repository's list.
+  const viaMcp = await mcp(id, bot.token, 'git_memory_add', { kind: 'Runbook', text: 'Restart in order.' });
+  expect(viaMcp.isError ?? false).toBe(false);
+  const tools = await mcp(id, bot.token, 'git_memory_list', { kind: 'runbook' });
+  const answer = tools.structuredContent ?? JSON.parse(tools.content[0].text);
+  expect(answer.memories).toHaveLength(1);
+  expect(answer.kinds).toContain('runbook');
+});
+
+it('rebuilds a stored memories table in Durable Object SQLite, rows and all', async () => {
+  const { id } = await setup('memory-rebuild');
+  await runInDurableObject(bindings.SOURCE_REPOS.get(bindings.SOURCE_REPOS.idFromName(id)), async (_instance, state) => {
+    const { sql } = state.storage;
+    const rows = () => sql.exec('SELECT id,kind,body,supersedes FROM memories ORDER BY id').toArray();
+    state.storage.transactionSync(() => {
+      sql.exec('DROP TABLE memories');
+      sql.exec(`CREATE TABLE memories(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        kind TEXT NOT NULL CHECK (kind IN ('decision','constraint','gotcha','howto')),
+        body TEXT NOT NULL, commit_id TEXT NOT NULL, author TEXT NOT NULL, session_id TEXT,
+        supersedes INTEGER, draft INTEGER NOT NULL DEFAULT 0, recorded_at INTEGER NOT NULL,
+        recorded_version INTEGER NOT NULL)`);
+      sql.exec('CREATE INDEX memories_by_supersedes ON memories(supersedes) WHERE supersedes IS NOT NULL');
+      sql.exec('CREATE INDEX memories_by_session ON memories(session_id, id) WHERE session_id IS NOT NULL');
+      const add = `INSERT INTO memories(id,kind,body,commit_id,author,supersedes,recorded_at,recorded_version)
+        VALUES(?,?,?,'c','token:a',?,5,2)`;
+      sql.exec(add, 4, 'gotcha', 'first', null);
+      sql.exec(add, 9, 'howto', 'second', 4);
+    });
+    expect(() => sql.exec(`UPDATE memories SET kind='runbook' WHERE id=4`)).toThrow(/CHECK/);
+    const before = rows();
+    state.storage.transactionSync(() => {
+      for (const statement of rebuild.split(';')) sql.exec(statement);
+    });
+    expect(rows()).toEqual(before);
+    sql.exec(`UPDATE memories SET kind='runbook' WHERE id=4`);
+    const next = sql.exec(`INSERT INTO memories(kind,body,commit_id,author,recorded_at,recorded_version)
+      VALUES('risk','third','c','token:a',6,3) RETURNING id`);
+    expect(next.one().id).toBe(10);
+    const indexes = sql.exec(`SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='memories' ORDER BY name`);
+    expect(indexes.toArray().map((row) => row.name)).toEqual(['memories_by_session', 'memories_by_supersedes']);
+  });
 });

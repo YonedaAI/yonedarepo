@@ -50,7 +50,9 @@ describe('Settings email section', () => {
     );
     expect(html).toContain('ada@example.com');
     expect(html).toContain('Not confirmed');
-    expect(html).toContain('Resend confirmation');
+    expect(html).toContain('Send confirmation link');
+    // An address taken from the account's name was never sent a link.
+    expect(html).not.toMatch(/we sent/i);
     // The field waits behind Change.
     expect(html).toContain('>Change</button>');
     expect(html).not.toContain('<input');
@@ -65,7 +67,7 @@ describe('Settings email section', () => {
     );
     expect(html).toContain('Confirmed');
     expect(html).not.toContain('Not confirmed');
-    expect(html).not.toContain('Resend confirmation');
+    expect(html).not.toContain('Send confirmation link');
   });
 
   it('offers to add one when the account has none', () => {
@@ -74,7 +76,7 @@ describe('Settings email section', () => {
     );
     expect(html).toContain('No email address');
     expect(html).toContain('>Add</button>');
-    expect(html).not.toContain('Resend confirmation');
+    expect(html).not.toContain('Send confirmation link');
   });
 
   it('asks for the address in a dialog', () => {

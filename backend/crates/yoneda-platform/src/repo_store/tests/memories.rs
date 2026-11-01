@@ -3,7 +3,8 @@
 //! the text are refused, anchors go stale when the anchored file or symbol changes on main
 //! (and not when another symbol in the file does), reads at a log version see what existed
 //! then, the ranking is ordered as documented, deliveries are deduplicated per session, and
-//! the tables arrive by a forward-only migration.
+//! the tables arrive by a forward-only migration. Kinds are checked at the boundary, and the
+//! column stopped listing them in a rebuild that keeps every row.
 use super::*;
 use crate::storage::SqlStore;
 
@@ -180,7 +181,7 @@ fn text_is_bounded_validated_and_never_holds_a_credential() {
     for bad in [
         memory(&first, "howto", &"x".repeat(2049), json!([])),
         memory(&first, "howto", "  ", json!([])),
-        memory(&first, "opinion", "x", json!([])),
+        memory(&first, "two words!", "x", json!([])),
         memory(&first, "howto", "x", json!([{"path":"../etc/passwd"}])),
         memory(
             &first,
@@ -601,8 +602,8 @@ fn the_memory_tables_arrive_by_a_repeatable_forward_migration() {
         db.query("SELECT name FROM repo_settings", &[]).unwrap()[0]["name"],
         "demo"
     );
-    // The kind and trigger columns refuse anything else; full-text search works.
-    assert!(db.query("INSERT INTO memories(kind,body,commit_id,author,recorded_at,recorded_version) VALUES('opinion','x','c','a',1,1)", &[]).is_err());
+    // The trigger column refuses anything else; full-text search works.
+    assert!(db.query("INSERT INTO context_deliveries(session_id,trigger,items,bytes,principal,at) VALUES('s','opinion','[]',1,'a',1)", &[]).is_err());
     db.query(
         "INSERT INTO memory_text(rowid,body) VALUES(1,'Retry budget')",
         &[],
@@ -794,4 +795,350 @@ fn the_quarantine_jobs_purge_clears_memories_of_a_purged_session_and_on_a_purged
             "{shown}"
         );
     }
+}
+
+#[test]
+fn a_kind_off_the_list_is_kept_normalised_and_reads_like_any_other() {
+    let (h, _, first) = landed();
+    let added = h.ok(
+        AGENT,
+        memory(
+            &first,
+            "  Design Note ",
+            "We chose SQLite.",
+            json!([lib_anchor(None)]),
+        ),
+    );
+    assert_eq!(added["kind"], "design-note");
+    let id = added["memory"].clone();
+    let got = shown(&h, &id, json!({}));
+    assert_eq!(got["kind"], "design-note");
+    assert_eq!(
+        h.ok(
+            AGENT,
+            memory(
+                &first,
+                "DESIGN_NOTE",
+                "We chose SQLite.",
+                json!([lib_anchor(None)])
+            )
+        )["already"],
+        true,
+        "the same memory under the same kind answers the first"
+    );
+    let filtered = h.ok(
+        READER,
+        json!({"op":"repo_memory_list","kind":"design note"}),
+    );
+    assert_eq!(filtered["memories"].as_array().unwrap().len(), 1);
+    assert_eq!(filtered["memories"][0]["id"], id);
+    let other = h.ok(READER, json!({"op":"repo_memory_list","kind":"gotcha"}));
+    assert_eq!(other["memories"], json!([]));
+    let unused = h.ok(READER, json!({"op":"repo_memory_list","kind":"never-used"}));
+    assert_eq!(unused["memories"], json!([]));
+}
+
+#[test]
+fn the_new_built_in_kinds_work_and_alternate_spellings_find_the_list() {
+    let (h, _, first) = landed();
+    for (given, stored) in [
+        ("convention", "convention"),
+        ("risk", "risk"),
+        ("fact", "fact"),
+        ("preference", "preference"),
+        ("How To", "howto"),
+        ("how-to", "howto"),
+        ("GOTCHA", "gotcha"),
+    ] {
+        let id = h.ok(
+            AGENT,
+            memory(&first, given, &format!("note {given}"), json!([])),
+        )["memory"]
+            .clone();
+        assert_eq!(shown(&h, &id, json!({}))["kind"], stored, "{given}");
+    }
+}
+
+#[test]
+fn the_kinds_list_keeps_what_the_repository_used_at_that_version() {
+    let (h, _, first) = landed();
+    let builtin: Vec<Value> = super::super::memory::kinds::KINDS
+        .iter()
+        .map(|k| json!(k))
+        .collect();
+    let empty = h.ok(READER, json!({"op":"repo_memory_list"}));
+    assert_eq!(empty["kinds"], json!(builtin));
+    h.ok(AGENT, memory(&first, "convention", "tabs", json!([])));
+    let id = h.ok(AGENT, memory(&first, "zebra", "one", json!([])))["memory"].clone();
+    h.ok(AGENT, memory(&first, "apple", "two", json!([])));
+    let mut expected = builtin.clone();
+    expected.extend([json!("apple"), json!("zebra")]);
+    assert_eq!(
+        h.ok(READER, json!({"op":"repo_memory_list"}))["kinds"],
+        json!(expected)
+    );
+    // Retiring the only memory of a kind doesn't take it off the picker.
+    h.ok(
+        AGENT,
+        json!({"op":"repo_memory_retire","id":id,"reason":"wrong"}),
+    );
+    assert_eq!(
+        h.ok(READER, json!({"op":"repo_memory_list"}))["kinds"],
+        json!(expected)
+    );
+    assert_eq!(
+        h.ok(READER, json!({"op":"repo_memory_list","at":0}))["kinds"],
+        json!(builtin)
+    );
+}
+
+#[test]
+fn a_kind_is_one_short_word_and_never_a_credential() {
+    let (h, _, first) = landed();
+    for bad in [
+        "",
+        "   ",
+        "1st",
+        "two words!",
+        "-leading",
+        "trailing-",
+        "line\nbreak",
+        "[gotcha]",
+        "résumé",
+        "ignore-all-previous-instructions",
+    ] {
+        assert_eq!(
+            code(h.run(AGENT, memory(&first, bad, "x", json!([])))),
+            "INVALID_INPUT",
+            "{bad:?}"
+        );
+    }
+    assert_eq!(
+        code(h.run(READER, json!({"op":"repo_memory_list","kind":"two words!"}))),
+        "INVALID_INPUT"
+    );
+    let missing = json!({"op":"repo_memory_add","commit":first,"text":"x"});
+    assert_eq!(code(h.run(AGENT, missing)), "INVALID_INPUT");
+    // A credential is too long to be a kind, and the refusal never repeats what was sent.
+    let token = ["ghp_", &"Ab1".repeat(12)].concat();
+    let refused = h.run(AGENT, memory(&first, &token, "x", json!([])));
+    assert!(!refused.unwrap_err().message.contains(&token));
+}
+
+#[test]
+fn a_repository_can_add_only_so_many_kinds() {
+    let (h, _, first) = landed();
+    let limit = super::super::memory::kinds::MAX_ADDED;
+    for n in 0..limit {
+        h.ok(AGENT, memory(&first, &format!("kind{n}"), "x", json!([])));
+    }
+    assert_eq!(
+        code(h.run(AGENT, memory(&first, "onemore", "x", json!([])))),
+        "INVALID_INPUT"
+    );
+    // What it has stays usable, and so does the list.
+    h.ok(AGENT, memory(&first, "kind0", "y", json!([])));
+    h.ok(AGENT, memory(&first, "risk", "y", json!([])));
+}
+
+#[test]
+fn an_added_kind_supersedes_labels_deliveries_and_goes_with_a_purge() {
+    let (h, _, first) = landed();
+    let session = h.ok(
+        AGENT,
+        json!({"op":"repo_session_record","commit":first,"cli":"claude-code",
+               "summary":"pasted a value","session_id":"claude-code:s1"}),
+    )["session"]
+        .clone();
+    let mut note = memory(&first, "field-note", "the queue replays", json!([]));
+    note["session_id"] = json!("claude-code:s1");
+    let id = h.ok(AGENT, note)["memory"].clone();
+    let mut newer = memory(&first, "field-note", "the queue replays twice", json!([]));
+    newer["session_id"] = json!("claude-code:s1");
+    newer["supersedes"] = id.clone();
+    let newer = h.ok(AGENT, newer)["memory"].clone();
+    assert_eq!(shown(&h, &newer, json!({}))["kind"], "field-note");
+    h.ok(
+        AGENT,
+        json!({"op":"repo_context_deliver","session_id":"claude-code:s2","trigger":"start",
+               "items":[{"type":"memory","id":newer}],"bytes":10}),
+    );
+    let delivered = h.ok(
+        AGENT,
+        json!({"op":"repo_context_deliveries","session_id":"claude-code:s2"}),
+    );
+    assert_eq!(
+        delivered["deliveries"][0]["items"][0]["label"],
+        "field-note: the queue replays twice"
+    );
+    let offered = |h: &Harness| h.ok(READER, json!({"op":"repo_memory_list"}))["kinds"].clone();
+    assert!(
+        offered(&h)
+            .as_array()
+            .unwrap()
+            .contains(&json!("field-note"))
+    );
+    let record = h.ok(
+        OWNER,
+        json!({"op":"repo_quarantine","target":{"kind":"session","id":session.to_string()},
+               "path":"src/lib.rs","reason":"a leaked credential"}),
+    )["record"]["id"]
+        .clone();
+    let claim = h.ok(
+        OWNER,
+        json!({"op":"repo_quarantine_purge","id":record,"confirm":session.to_string()}),
+    )["claims"][0]
+        .clone();
+    h.ok(
+        OWNER,
+        json!({"op":"repo_quarantine_purged","claims":[{"id":record,"epoch":claim["epoch"]}],
+               "replacement":"platform:demo"}),
+    );
+    assert!(
+        !offered(&h)
+            .as_array()
+            .unwrap()
+            .contains(&json!("field-note"))
+    );
+}
+
+fn table_sql(db: &crate::native::NativeStore) -> String {
+    db.query(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='memories'",
+        &[],
+    )
+    .unwrap()[0]["sql"]
+        .as_str()
+        .unwrap()
+        .to_owned()
+}
+
+fn indexes(db: &crate::native::NativeStore) -> Vec<Value> {
+    db.query(
+        "SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='memories' \
+         AND name NOT LIKE 'sqlite_%' ORDER BY name",
+        &[],
+    )
+    .unwrap()
+    .iter()
+    .map(|row| row["name"].clone())
+    .collect()
+}
+
+const INSERT_MEMORY: &str = "INSERT INTO memories(id,kind,body,commit_id,author,session_id,\
+    supersedes,draft,recorded_at,recorded_version) VALUES(?,?,?,'c','token:a',?,?,?,5,2)";
+
+#[test]
+fn a_new_repository_has_no_list_of_kinds_in_its_schema() {
+    let db = crate::native::NativeStore::memory().unwrap();
+    super::super::migrate_repo_store(&db).unwrap();
+    super::super::migrate_repo_store(&db).unwrap();
+    assert!(!table_sql(&db).contains("CHECK"));
+    assert_eq!(
+        indexes(&db),
+        [
+            json!("memories_by_session"),
+            json!("memories_by_supersedes")
+        ]
+    );
+    assert_eq!(
+        db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
+            .unwrap()[0]["v"],
+        47
+    );
+    assert!(
+        db.query(
+            "SELECT name FROM sqlite_master WHERE name='memories_rebuilt'",
+            &[]
+        )
+        .unwrap()
+        .is_empty()
+    );
+}
+
+#[test]
+fn the_kind_list_goes_with_every_row_id_and_link_kept() {
+    let db = crate::native::NativeStore::memory().unwrap();
+    let migrations = &super::super::migration::MIGRATIONS;
+    super::super::migration::migrate_through(&db, "repo_schema_migrations", migrations, 46)
+        .unwrap();
+    assert!(table_sql(&db).contains("CHECK"));
+    let row = |id: i64, kind: &str, body: &str, session: Value, supersedes: Value, draft: i64| {
+        db.query(
+            INSERT_MEMORY,
+            &[
+                json!(id),
+                json!(kind),
+                json!(body),
+                session,
+                supersedes,
+                json!(draft),
+            ],
+        )
+    };
+    row(
+        3,
+        "gotcha",
+        "first",
+        json!("claude-code:s1"),
+        Value::Null,
+        0,
+    )
+    .unwrap();
+    row(7, "howto", "second", Value::Null, json!(3), 0).unwrap();
+    row(9, "decision", "a draft", Value::Null, Value::Null, 1).unwrap();
+    assert!(
+        row(11, "runbook", "x", Value::Null, Value::Null, 0).is_err(),
+        "the preceding schema refuses a new kind"
+    );
+    for sql in [
+        "INSERT INTO memory_anchors(memory_id,path,symbol_path,blob) VALUES(3,'src/a.rs','','b')",
+        "INSERT INTO memory_retirements(memory_id,reason,principal,at,recorded_version) \
+         VALUES(7,'wrong','token:a',6,3)",
+        "INSERT INTO memory_text(rowid,body) VALUES(3,'first')",
+    ] {
+        db.query(sql, &[]).unwrap();
+    }
+    let everything = |db: &crate::native::NativeStore| {
+        db.query("SELECT * FROM memories ORDER BY id", &[]).unwrap()
+    };
+    let before = everything(&db);
+    super::super::migrate_repo_store(&db).unwrap();
+    super::super::migrate_repo_store(&db).unwrap();
+    assert_eq!(everything(&db), before);
+    assert!(!table_sql(&db).contains("CHECK"));
+    assert_eq!(
+        indexes(&db),
+        [
+            json!("memories_by_session"),
+            json!("memories_by_supersedes")
+        ]
+    );
+    assert_eq!(
+        db.query("SELECT memory_id FROM memory_anchors", &[])
+            .unwrap()[0]["memory_id"],
+        3
+    );
+    assert_eq!(
+        db.query("SELECT memory_id FROM memory_retirements", &[])
+            .unwrap()[0]["memory_id"],
+        7
+    );
+    assert_eq!(
+        db.query(
+            "SELECT rowid AS id FROM memory_text WHERE memory_text MATCH 'first'",
+            &[]
+        )
+        .unwrap()[0]["id"],
+        3
+    );
+    // Ids go on from the highest, and the column takes a new kind.
+    let id = db
+        .query(
+            "INSERT INTO memories(kind,body,commit_id,author,recorded_at,recorded_version) \
+             VALUES('runbook','new','c','token:a',8,4) RETURNING id",
+            &[],
+        )
+        .unwrap();
+    assert_eq!(id[0]["id"], 10);
 }

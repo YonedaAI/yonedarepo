@@ -2,6 +2,7 @@
 // profile and repositories are addressed by. Prefilled with the suggestion the session offers
 // (from a linked GitHub login), checked as it is typed (`/profiles/<handle>`: nobody there
 // means free), and set with `PUT /api/auth/handle`, which has the last word (reserved, taken).
+// Settings opens the same picker on the handle the account has (`current`).
 import { type FormEvent, useEffect, useId, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import { ApiError, api } from '../../lib/api';
@@ -37,22 +38,28 @@ export function HandlePrompt({
 
 export function HandlePicker({
   suggestion,
+  current,
+  cancel = 'Not now',
   onDone,
   onLater,
 }: {
   suggestion?: string | null;
+  /** The handle being changed, when there is one. */
+  current?: string | null;
+  cancel?: string;
   /** The handle is set: the caller reads the session again. */
   onDone: (handle: string) => void;
   onLater: () => void;
 }) {
-  const [value, setValue] = useState(suggestion ?? '');
+  const [value, setValue] = useState(suggestion ?? current ?? '');
   const [availability, setAvailability] = useState<Availability>('unknown');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const help = useId();
   const problem = handleProblem(value);
+  const unchanged = Boolean(current) && value === current;
   useEffect(() => {
-    if (!value || problem) {
+    if (!value || problem || unchanged) {
       setAvailability('unknown');
       return;
     }
@@ -68,10 +75,10 @@ export function HandlePicker({
       current = false;
       clearTimeout(timer);
     };
-  }, [value, problem]);
+  }, [value, problem, unchanged]);
   async function save(event: FormEvent) {
     event.preventDefault();
-    if (busy || problem || !value) return;
+    if (busy || problem || !value || unchanged) return;
     setBusy(true);
     setError('');
     try {
@@ -90,20 +97,33 @@ export function HandlePicker({
   }
   const status =
     problem ||
-    (availability === 'checking'
-      ? 'Checking…'
-      : availability === 'available'
-        ? `${value} is available.`
-        : availability === 'taken'
-          ? `${value} is taken.`
-          : HANDLE_HELP);
+    (unchanged
+      ? 'This is your handle.'
+      : availability === 'checking'
+        ? 'Checking…'
+        : availability === 'available'
+          ? `${value} is available.`
+          : availability === 'taken'
+            ? `${value} is taken.`
+            : HANDLE_HELP);
   return (
-    <Dialog title="Choose your handle" onClose={onLater} locked={busy} initialFocus="input">
+    <Dialog
+      title={current ? 'Change your handle' : 'Choose your handle'}
+      onClose={onLater}
+      locked={busy}
+      initialFocus="input"
+    >
       <form className="handle-picker" onSubmit={save}>
-        <p className="source-meta">
-          Your profile and repositories get readable addresses, like{' '}
-          <code>/{value || 'handle'}/my-repo</code>. Your email address is never shown.
-        </p>
+        {current ? (
+          <p className="source-meta">
+            <code>/{current}</code> stops working, and someone else can take it.
+          </p>
+        ) : (
+          <p className="source-meta">
+            Your profile and repositories get readable addresses, like{' '}
+            <code>/{value || 'handle'}/my-repo</code>. Your email address is never shown.
+          </p>
+        )}
         <label>
           Handle
           <span className="handle-input">
@@ -140,11 +160,11 @@ export function HandlePicker({
         )}
         <div className="handle-actions">
           <button type="button" className="quiet" onClick={onLater} disabled={busy}>
-            Not now
+            {cancel}
           </button>
           <button
             type="submit"
-            disabled={busy || !value || Boolean(problem) || availability === 'taken'}
+            disabled={busy || !value || unchanged || Boolean(problem) || availability === 'taken'}
           >
             {busy ? 'Saving…' : 'Use this handle'}
           </button>

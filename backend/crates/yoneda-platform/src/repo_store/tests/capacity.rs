@@ -149,7 +149,7 @@ fn a_refusal_says_what_to_do_in_plain_words() {
     // The history database's limit is internal: no number reaches anybody.
     assert!(full.contains("activity limit"), "{full}");
     assert!(!full.contains("GB"), "{full}");
-    assert!(large.contains("size limit"), "{large}");
+    assert!(large.contains("10 GB"), "{large}");
     assert_eq!(full, yoneda_store::REPO_FULL_MESSAGE);
 }
 

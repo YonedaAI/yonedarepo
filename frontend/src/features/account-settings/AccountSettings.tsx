@@ -17,6 +17,7 @@ import type { Loaded } from '../source-platform/useSource';
 import { AvatarSettings } from './AvatarSettings';
 import { BillingSettings } from './BillingSettings';
 import { EmailSettings } from './EmailSettings';
+import { HandleRow } from './HandleSettings';
 import { SignInMethods } from './SignInMethods';
 import { ACCOUNT_SECTION_TITLES, type AccountSection, formatSettingsRoute } from './settingsRoute';
 import { TokenSettings } from './TokenSettings';
@@ -31,6 +32,8 @@ interface Props {
   /** The account's organizations (the shell's copy, so the sidebar follows a new one). */
   orgs?: Loaded<{ orgs: OrgSummary[] }>;
   navigate?: Navigate;
+  /** A new handle for the signed-in account: the shell reads the session again. */
+  onHandle?: (handle: string) => void;
   /** A new picture for the signed-in account (the shell's copy, so the menu follows it). */
   onAvatar?: (picture: Pick<AccountIdentity, 'avatar_url' | 'avatar_source'>) => void;
   /** A repository came back: the shell's lists follow. */
@@ -43,12 +46,15 @@ const BILLING = { view: 'settings', section: 'billing' } as const;
 const NoAccount = ({ loading }: { loading?: boolean }) =>
   loading ? <Loading what="your account" /> : <p className="source-meta">Sign in to see it.</p>;
 
-function General({ identity, loading, onAvatar, navigate }: Props) {
+function General({ identity, loading, onAvatar, onHandle, navigate }: Props) {
   return (
     <>
       <SettingsSection id="profile" title="Profile">
         {identity ? (
-          <AvatarSettings identity={identity} onChange={onAvatar} />
+          <>
+            <AvatarSettings identity={identity} onChange={onAvatar} />
+            <HandleRow identity={identity} navigate={navigate} onChange={onHandle ?? (() => {})} />
+          </>
         ) : (
           <div className="settings-block">
             <NoAccount loading={loading} />

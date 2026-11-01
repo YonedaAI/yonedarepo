@@ -9,7 +9,7 @@ This repository's Git remote is YonedaRepo (`yoneda::https://…` or the platfor
 - Never force-push `main`. Use a feature branch and `yoneda change create` when the change needs review or checks.
 - Prefer `yoneda grep <query>`, `yoneda symbols <path>`, `yoneda blame <path>` and `yoneda log [path]` over reading many files; `yoneda context` shows the session-start context again.
 - Push your commits before you finish: the session's summary is recorded on each commit it pushed.
-- Leave what the code does not say (a decision, a constraint, a non-obvious fix) for later sessions: `yoneda memory add <decision|constraint|gotcha|howto> -m <text> --anchors <files>`, or the MCP tool `git_memory_add`.
+- Leave what the code does not say (a decision, a constraint, a non-obvious fix) for later sessions: `yoneda memory add <kind> -m <text> --anchors <files>`, or the MCP tool `git_memory_add`. Kinds: decision, constraint, gotcha, howto, convention, risk, fact, preference, or a short word of your own, which adds it.
 - Tokens come from `YONEDA_TOKEN` or `yoneda login`. Never put them in commands or files.
 
 ## Install (opencode 2)

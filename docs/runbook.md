@@ -227,9 +227,9 @@ A fill never leaves a repository refusing work. A commit of more than 10,000 cha
 
 ## Repository size
 
-A repository has two limits. **Size** is its Git objects, which live in object storage; the cap is 10 GB, published with wave 2 of migration 0046, once something enforces it. **The history database** is the next section: it grows with activity, not code, and its limit is internal.
+A repository has two limits. **Size** is its Git objects, which live in object storage; the published cap is 10 GB (`frontend/src/content/docs/reference/limits.md`, held to the code by `tests/runtime/limits-page.test.mjs`). **The history database** is the next section: it grows with activity, not code, and its limit is internal.
 
-`REPO_SIZE_GUARD=on` (unset or `off`: nothing is refused; a byte count sets another limit, for tests only) makes a repository at 10,000,000,000 bytes answer 507 `REPO_SIZE_LIMIT` to pushes (at `repo_git_access`, before a push stores anything) and new commits. Reads, landings of recorded commits, branch moves and deletes go on. A push that starts under the cap finishes, so a repository can pass it by one push, at most 2 GiB. On for dev; off on prod until a ship turns it on.
+`REPO_SIZE_GUARD=on` (unset or `off`: nothing is refused; a byte count sets another limit, for tests only) makes a repository at 10,000,000,000 bytes answer 507 `REPO_SIZE_LIMIT` to pushes (at `repo_git_access`, before a push stores anything) and new commits. Reads, landings of recorded commits, branch moves and deletes go on. A push that starts under the cap finishes, so a repository can pass it by one push, at most 2 GiB. On for dev and prod.
 
 The size is `repo_settings.git_bytes` (migration 0046), read with the row every command reads, so a refusal adds no read. It is a running total, and `repo_storage` answers it:
 

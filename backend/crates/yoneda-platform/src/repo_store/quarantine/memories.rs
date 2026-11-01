@@ -3,8 +3,9 @@
 //! `quarantined` set), and rankings, the start packet, search and delivery labels leave it
 //! out. Purging a session record clears the text of its session's memories, and purging a
 //! blob clears the text of the memories anchored to it (a note may quote the content), with
-//! their full-text rows, in the same transaction. A purged target stays withheld, so its
-//! memories stay masked.
+//! their full-text rows and any added kind (it is free text too), in the same transaction. A
+//! purged target stays withheld, so its memories stay masked.
+use super::super::memory::kinds;
 use crate::storage::SqlStore;
 use serde_json::{Value, json};
 use std::collections::HashSet;
@@ -78,10 +79,13 @@ pub(super) fn clear_on_blob<S: SqlStore>(db: &S, id: &str) -> Result<()> {
          (SELECT memory_id FROM memory_anchors WHERE blob=?)",
         &[json!(id)],
     )?;
+    let (clear, [known, purged]) = kinds::purged();
     db.query(
-        "UPDATE memories SET body='' WHERE id IN \
-         (SELECT memory_id FROM memory_anchors WHERE blob=?)",
-        &[json!(id)],
+        &format!(
+            "UPDATE memories SET {clear} WHERE id IN \
+             (SELECT memory_id FROM memory_anchors WHERE blob=?)"
+        ),
+        &[known, purged, json!(id)],
     )?;
     Ok(())
 }
@@ -95,10 +99,13 @@ pub(super) fn clear<S: SqlStore>(db: &S, id: &str) -> Result<()> {
          ON s.session_id=m.session_id WHERE s.id=?)",
         &[json!(record)],
     )?;
+    let (clear, [known, purged]) = kinds::purged();
     db.query(
-        "UPDATE memories SET body='' WHERE session_id IN \
-         (SELECT session_id FROM sessions WHERE id=? AND session_id IS NOT NULL)",
-        &[json!(record)],
+        &format!(
+            "UPDATE memories SET {clear} WHERE session_id IN \
+             (SELECT session_id FROM sessions WHERE id=? AND session_id IS NOT NULL)"
+        ),
+        &[known, purged, json!(record)],
     )?;
     Ok(())
 }

@@ -36,6 +36,7 @@ export const DOCS_TABS: DocsTab[] = [
           { slug: 'guides/repositories', children: ['guides/forks', 'guides/import'] },
           { slug: 'guides/organizations' },
           { slug: 'guides/tokens' },
+          { slug: 'reference/limits' },
         ],
       },
       {
