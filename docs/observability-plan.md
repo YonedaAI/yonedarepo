@@ -71,7 +71,7 @@ Written before the code, 2026-11-01. Not yet measured on dev.
 |---|---|
 | Prod | 5 requests a pass: 1,440 a day, about 43,000 a month |
 | Dev | The same, plus 192 writes a day: 96 commits and 96 landings |
-| A failing check | 1 more try, 2 seconds later. At most 5 more requests a pass |
+| A failing check | 1 more try, 2 seconds later. At most 5 more requests a pass on prod, 7 on dev |
 | Superfan's own ledger | 3 calls on a healthy pass: record, resolve, urgent mail claim |
 | Time | Each try times out at 15 seconds; checks run in parallel, so a pass ends within about 32 seconds |
 
@@ -199,7 +199,10 @@ O1 and O5 can start now. The analytics plan's Phase 7 reads from O1 to O4.
 | O1 | A forced frontend error and a forced panic each appear; no secret appears in any log, checked by test |
 | O2 | A forced failure reaches a person within 5 minutes; stopping Superfan also alerts |
 | O3 | The ship pipeline runs end to end on dev; a broken deploy on dev is caught and rolled back, with the time recorded |
-| O4 | A slow operation is found from its id alone |
+| O3 | A deploy appears in `GET /deploys`, and its Cloudflare version shows the tag and message |
+| O3 | With `RELEASE_COMPARE=on`, a healthy deploy files nothing and a forced regression files a finding naming the release |
+| O3 | With `PROBES=on`, all checks pass from Superfan on dev, the Traffic page doesn't count them, and a broken check mails within 15 minutes |
+| O4 | With `SPAN_SAMPLE` on, a slow operation is found from its id alone, and a burst's latency doesn't move |
 | O5 | A new 301-line file, a planted fake secret and a Wasm jump each fail the check |
 
 ## Critical files
