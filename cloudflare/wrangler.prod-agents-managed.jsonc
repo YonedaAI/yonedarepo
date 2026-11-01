@@ -55,7 +55,7 @@
   "d1_databases": [
     {
       "binding": "REVENUE",
-      "database_id": "pending",
+      "database_id": "bcf48664-2c29-44b3-9588-35e6e896cd9a",
       "database_name": "yonedarepo-prod-managed-revenue",
       "migrations_dir": "managed/migrations"
     }
