@@ -120,6 +120,7 @@ export class FakePlatform {
         owner: this.account,
         viewer: { owner, principal: owner ? 'user:owner' : 'user:reader' },
         automation: { paused: this.paused ? { by: 'user:owner' } : null },
+        policy: { required_checks: this.required },
         ...(this.autoAgents === undefined ? {} : { landings: { create: true, agents: this.autoAgents } }),
       });
     const del = /^\/repos\/(r[0-9a-f]{20})\/(tokens|hooks)\/([^/]+)$/.exec(path);

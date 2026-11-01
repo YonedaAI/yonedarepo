@@ -64,6 +64,8 @@ Nothing is scripted past the clicks: `web-agents-flow.mjs` creates a repository 
 | Drift | Plan says fix a typo, diff adds payments | Off course, check fails, goes around |
 | Never | The same drift, with Never chosen on both agents | Off course, check passes, lands: an explicit setting wins |
 
+**A run with no reading:** a run that fails or times out fails a required check, with a comment saying to push again. Nothing else would answer that check, so the Landing used to wait for good. A check nobody requires stays silent. Automation paused or credit run out are not failures: nothing is posted and the Landing waits.
+
 **Bad verdicts block by default** (owner, 2026-10-31): `block_at` is `high` for Slop and Intent drift. `partial` and a medium Slop reading pass. With Land when cleared any failed check goes around, required or not.
 
 **Settings saved earlier:** a saved level or a saved Never wins; unset gets `high`. Never wasn't stored while it was the default, so a workspace that picked it then can't be told from one that never chose, and blocks at `high` now.

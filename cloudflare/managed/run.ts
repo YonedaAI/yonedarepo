@@ -21,7 +21,7 @@ import { repoStub } from './repo-agents';
 import { postReport } from './report';
 import { type Prepared, prepare, spec } from './run-prepare';
 import { redact } from './sanitize';
-import { postNoPlan, postVerdict, verdictOf } from './verdict';
+import { postNoPlan, postNoReading, postVerdict, verdictOf } from './verdict';
 
 /** The durable step runner (a Workflow's `step`, or an inline runner in tests). */
 export interface Steps {
@@ -91,6 +91,7 @@ export async function runAgent(env: ManagedEnv, p: RunParams, step: Steps): Prom
     }
     if (!collected.result) {
       await repo.finish(p.run, p.attempt, 'failed', { error: collected.error });
+      await tellLanding(p, agent, env, step);
       return { status: 'failed', error: collected.error ?? 'failed' };
     }
     const result = collected.result;
@@ -121,6 +122,7 @@ export async function runAgent(env: ManagedEnv, p: RunParams, step: Steps): Prom
         ? 'The repository token was refused; disable and enable the agent to reconnect'
         : `${e?.code ?? 'ERROR'}: ${String(e?.message ?? e)}`;
     await repo.finish(p.run, p.attempt, 'failed', { error });
+    await tellLanding(p, agent, env, step);
     return { status: 'failed', error };
   } finally {
     await step
@@ -220,6 +222,12 @@ async function attempt(
     return { result, error, stop } satisfies Collected;
   });
 }
+
+/** A failed run is already recorded: a Landing that couldn't be told is no second failure. */
+const tellLanding = (p: RunParams, agent: ManagedAgentDefinition, env: ManagedEnv, step: Steps) =>
+  step
+    .do('no-reading', () => postNoReading(env, p, agent))
+    .catch((e) => log.warn('managed.no_reading_not_posted', { run: p.run, error: e }));
 
 async function pause(env: ManagedEnv, p: RunParams): Promise<Outcome> {
   await repoStub(env, p.repo).pause(p.run, p.attempt);
