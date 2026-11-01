@@ -2,7 +2,7 @@
 //! with their own rules (`maintenance`, `lfs`, `forks`) decide for their ops.
 use super::auth::Actor;
 use super::op::{RepoOp as R, StoreOp};
-use super::{forks, land_gates, lfs, maintenance, quarantine, rows, tags};
+use super::{forks, land_gates, lfs, maintenance, quarantine, rows, tags, undo};
 use serde_json::Value;
 use yoneda_core::{Error, Result};
 
@@ -35,7 +35,11 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         R::Delete => actor.require_repo_owner(),
         // The platform reads what it lists a tombstone by, and restores nothing.
         R::Restore if actor.can("system") && c["check"] == true => Ok(()),
-        R::Restore | R::PurgeNow => actor.require_repo_owner(),
+        R::Restore => actor.require_repo_owner(),
+        // A person, never a token: the undo window is what survives a stolen one.
+        R::PurgeNow => actor
+            .require_human_owner()
+            .map_err(|_| undo::needs_a_person()),
         R::Purged if !actor.can("system") => {
             Err(Error::new("FORBIDDEN", "Only the platform reports a purge"))
         }

@@ -27,7 +27,7 @@ fn destructive() -> Vec<(&'static str, Value)> {
     vec![
         (OWNER, delete()),
         ("platform:purge", json!({"op":"repo_purge_target"})),
-        (OWNER, json!({"op":"repo_purge_now"})),
+        ("member:ws-1", json!({"op":"repo_purge_now"})),
         (
             "platform:audit",
             json!({"op":"repo_audit_set_aside","seq":1,"check":true,"_audit":"on"}),
@@ -184,11 +184,12 @@ fn a_hold_keeps_an_owner_from_purging_a_tombstone_and_it_still_restores() {
     let h = Harness::new();
     h.ok(OWNER, delete());
     let purge = json!({"op":"repo_purge_now"});
+    let person = "member:ws-1";
     assert_eq!(
-        code(h.run(OWNER, answered(purge.clone(), true))),
+        code(h.run(person, answered(purge.clone(), true))),
         "LEGAL_HOLD"
     );
-    assert_eq!(code(h.run(OWNER, unchecked(purge))), "HOLD_UNCHECKED");
+    assert_eq!(code(h.run(person, unchecked(purge))), "HOLD_UNCHECKED");
     assert_eq!(
         h.ok(OWNER, json!({"op":"repo_restore"}))["name"],
         json!("demo")

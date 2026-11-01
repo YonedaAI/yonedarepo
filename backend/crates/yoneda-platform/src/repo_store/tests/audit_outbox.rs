@@ -67,15 +67,15 @@ fn an_owners_purge_is_recorded_once_with_who_asked() {
     let h = Harness::new();
     let unseen = pending(&h).len();
     h.ok(OWNER, on(json!({"op":"repo_delete","confirm":"demo"})));
-    h.ok(OWNER, on(json!({"op":"repo_purge_now"})));
-    h.ok(OWNER, on(json!({"op":"repo_purge_now"})));
+    h.ok("member:ws-1", on(json!({"op":"repo_purge_now"})));
+    h.ok("member:ws-1", on(json!({"op":"repo_purge_now"})));
     let events = pending(&h);
     assert_eq!(
         kinds(&events[unseen..]),
         ["repo.deleted", "repo.purge_requested"]
     );
     let requested = &events.last().unwrap()["data"];
-    assert_eq!(requested["actor"], OWNER);
+    assert_eq!(requested["actor"], "user:ws-1");
     assert_eq!(requested["name"], "demo");
 }
 

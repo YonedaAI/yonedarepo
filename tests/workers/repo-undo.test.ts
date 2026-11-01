@@ -438,7 +438,6 @@ it('only its owner purges it', async () => {
     ({ token: (await api('/tokens', who, { body: { name, ...grant } }, on)).body.token as string });
   const reader = await issue('reader', { scopes: ['repo:read'] });
   const elsewhere = await issue('elsewhere', { scopes: ['repo:admin'], repos: [other.id] });
-  const adminToken = await issue('admin', { scopes: ['repo:admin'] });
 
   const live = await purge(who, id);
   expect([live.status, live.body.error.code]).toEqual([409, 'CONFLICT']);
@@ -448,10 +447,29 @@ it('only its owner purges it', async () => {
     expect((await purge(caller_, id)).status, JSON.stringify(caller_)).toBe(status);
   expect(purges(id)).toEqual([]);
   expect((await api('/repos/deleted', who, {}, on)).body.repos).toHaveLength(1);
-  // Nothing they sent got in the way of a restore, or of a token that may.
+  // Nothing they sent got in the way of a restore.
   expect((await restore(who, id)).status).toBe(200);
-  await remove(who, id, 'mine');
-  expect((await purge(adminToken, id)).status).toBe(200);
+});
+
+it('a token never purges, the owner\'s own included, and is told why', async () => {
+  const who = { cookie: await signup('undo_token_purge') };
+  const { id } = await made(who, 'kept');
+  const created = await api('/tokens', who, { body: { name: 'admin', scopes: ['repo:admin'] } }, on);
+  const token = { token: created.body.token as string };
+  // A stolen token can delete, and the window is what saves the repository from it.
+  expect((await remove(token, id, 'kept')).status).toBe(200);
+  queued.length = 0;
+  const refused = await purge(token, id);
+  expect([refused.status, refused.body.error.code]).toEqual([403, 'FORBIDDEN']);
+  expect(refused.body.error.message).toMatch(/signed in/);
+  expect(refused.body.error.message).not.toMatch(/break-glass/i);
+  const reader = (await api('/tokens', who, { body: { name: 'reader', scopes: ['repo:read'] } }, on)).body.token as string;
+  const narrow = await purge({ token: reader }, id);
+  expect([narrow.status, narrow.body.error.message]).toEqual([403, refused.body.error.message]);
+  expect(purges(id)).toEqual([]);
+  expect((await api('/repos/deleted', who, {}, on)).body.repos).toHaveLength(1);
+  expect((await bindings.INDEX.prepare("SELECT COUNT(*) AS n FROM admin_audit WHERE action='repo.purge_owner'").first<any>()).n).toBe(0);
+  expect((await restore(token, id)).status).toBe(200);
 });
 
 it('a repository under a legal hold is refused with the reason, and still restores', async () => {

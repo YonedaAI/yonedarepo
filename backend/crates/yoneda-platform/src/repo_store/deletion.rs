@@ -61,7 +61,8 @@ pub fn allowed_when_deleted(op: StoreOp, c: &Value, settings: &Settings) -> bool
 /// On a tombstone, hook delivery, audit events and the erase belong to their platform jobs
 /// alone, and who owns it to the platform: anyone else is answered GONE, as for every other
 /// operation. So is a restore, but for the owner's account and the platform reading what it
-/// lists, and a purge asked for now, but for the owner's account.
+/// lists, and a purge asked for now, but for the owner's account: its token goes on to
+/// `authorize`, which tells it a person must ask.
 pub fn tombstone_caller(op: StoreOp, c: &Value, actor: &Actor, settings: &Settings) -> Result<()> {
     if settings.deleted_at.is_none() {
         return Ok(());

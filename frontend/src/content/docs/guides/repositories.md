@@ -86,4 +86,4 @@ Or **Settings → Delete repository**. The name must be typed to confirm. A repo
 
 Where deleted repositories are kept for a time, their owner can restore one from **Account → Recently deleted**. An organization's are on its page, for its owners.
 
-To delete one for good before its time is up, use **Delete** on its row, or **Delete all** when several are listed. This can't be undone: nothing restores it afterwards. A repository under a [legal hold](/docs/guides/organizations) is refused until the hold is released. Over the API: `POST /api/v1/repos/<id>/purge`, with the same permission as a restore.
+To delete one for good before its time is up, use **Delete** on its row, or **Delete all** when several are listed. This can't be undone: nothing restores it afterwards. A repository under a [legal hold](/docs/guides/organizations) is refused until the hold is released. This takes the owner, signed in: a token can delete a repository and restore it, but never delete it for good, so the time to restore survives a stolen token.

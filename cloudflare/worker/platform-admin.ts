@@ -7,7 +7,7 @@
 // platform-admin-billing.ts. Marking an account as ours only changes what's counted. Three actions
 // are not reversible: a refund, purging a deleted repository now, for the live tests' teardown
 // and dev storage, and purging an orphan (platform-orphan-purge.ts). A purge is refused under a
-// legal hold; a repository's owner has a route of their own (repo-purge.ts).
+// legal hold; a repository's owner, signed in, has a route of their own (repo-purge.ts).
 // Every action writes admin_audit.
 // Contact emails appear in these answers only.
 
