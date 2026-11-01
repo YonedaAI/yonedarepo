@@ -69,7 +69,7 @@ pub(super) fn move_ref<S: SqlStore>(
         "INSERT INTO refs(name,commit_id,version) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET commit_id=excluded.commit_id,version=excluded.version",
         &[json!(refname), json!(commit.id.hex()), json!(version)],
     )?;
-    super::ref_chain::advance(db, refname, &commit.id)?;
+    super::ref_chain::advance(db, refname, &commit.id, c)?;
     super::projection::target(db, refname, &commit.id, version, number(c, "now")?)?;
     rows::maybe_checkpoint(db, version, &chain)?;
     Ok(version)
@@ -211,6 +211,7 @@ pub fn batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
     for update in updates {
         let mut command = update.clone();
         command["now"] = c["now"].clone();
+        command["_ref_chain"] = c["_ref_chain"].clone();
         refs.push(if let Some(tag) = super::tags::in_update(update)? {
             super::tags::create_at(db, &command, &tag, principal)?
         } else if update.get("commit").is_none_or(Value::is_null) {

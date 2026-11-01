@@ -7,6 +7,7 @@ import { type HoldAnswer, holdSwitch, verifiedHold } from './platform-legal-hold
 import type { OrgAccess } from './platform-org-access';
 import { noteWriter } from './platform-write-origin';
 import { archivedObjects } from './repo-archive';
+import { ARCHIVE_SWITCH_KEYS, archiveSwitches } from './repo-archive-switches';
 import { noteBundles } from './repo-bundles';
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
@@ -61,6 +62,7 @@ const CREDENTIAL_KEYS = [
   '_hold',
   '_undo_ms',
   '_audit',
+  ...ARCHIVE_SWITCH_KEYS,
 ];
 export class ApiError extends Error {
   constructor(
@@ -151,6 +153,7 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
       ...storageGuard(env),
       ...holdSwitch(env),
       ...(auditOn(env) && { _audit: 'on' }),
+      ...archiveSwitches(env),
     };
   };
   const once = async (command: Json, hold?: HoldAnswer) => {

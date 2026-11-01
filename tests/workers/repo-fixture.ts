@@ -129,6 +129,10 @@ export const fakePushQueues = {
 // Each keeps its due timers and its running step, so a test's teardown can stop them.
 type InProcess = { batcher: LandBatcher; timers: Set<ReturnType<typeof setTimeout>>; running: Promise<void> | null };
 const combiners = new Map<string, InProcess>();
+let combinerEnv: Env | null = null;
+/** The environment in-process combiners run under, for a switch their work reads (until the
+ * test ends). */
+export const runCombinersUnder = (env: Env) => void (combinerEnv = env);
 function inProcess(name: string): InProcess {
   let combiner = combiners.get(name);
   if (!combiner) {
@@ -140,7 +144,7 @@ function inProcess(name: string): InProcess {
         await self.batcher.step();
       } while (again);
     };
-    self.batcher = new LandBatcher(scoped, async (ms) => {
+    self.batcher = new LandBatcher(combinerEnv ?? scoped, async (ms) => {
       const timer = setTimeout(() => {
         self.timers.delete(timer);
         if (self.running) return void (again = true);
@@ -182,6 +186,7 @@ async function quiesceCombiners() {
   await Promise.all([...combiners.values()].map((c) => c.running));
   await Promise.all([...combiners.values()].map((c) => c.batcher.idle()));
   combiners.clear();
+  combinerEnv = null;
   await Promise.all([...holders.values()].map((h) => h.idle()));
   holders.clear();
 }

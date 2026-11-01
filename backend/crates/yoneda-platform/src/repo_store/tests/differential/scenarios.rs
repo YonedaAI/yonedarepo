@@ -39,7 +39,7 @@ fn run(name: &str, script: &[Op], reaches: &str) {
 }
 
 fn run_reaching(name: &str, script: &[Op], reaches: &[&str]) {
-    let mut driver = Driver::new();
+    let mut driver = Driver::new(&serde_json::json!({}));
     for (step, op) in script.iter().enumerate() {
         if let Err(e) = driver.step(op) {
             panic!("{name}, step {step}, {op:?}: {e}");

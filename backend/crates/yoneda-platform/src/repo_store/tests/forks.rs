@@ -22,6 +22,7 @@ fn fork_of(parent: &Harness, version: u64) -> Harness {
         cached: RefCell::new(parent.cached.borrow().clone()),
         shard: RefCell::default(),
         now: RefCell::new(*parent.now.borrow()),
+        switches: RefCell::new(parent.switches.borrow().clone()),
     };
     h.ok(OWNER, json!({"op":"repo_init","name":"demo-fork","object_store":"r2:yr-fork",
         "parent":{"repo":PARENT_ID,"version":version},

@@ -215,7 +215,7 @@ pub fn commit<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Val
         "checks": db.query("SELECT name,status,evidence,principal,recorded_at FROM checks WHERE commit_id=? ORDER BY name", &key)?,
         "reviews": db.query("SELECT principal,decision,reason,recorded_at FROM reviews WHERE commit_id=? ORDER BY recorded_at", &key)?,
         "landings": db.query("SELECT refname,version,landed_at FROM landings WHERE commit_id=? ORDER BY version", &key)?,
-        "check_runs": super::checks::runs_for(db, &id)?,
+        "check_runs": super::check_run_reads::runs_for(db, &id)?,
         "repairs": super::checks::repairs_for(db, &id)?,
         "review_classes": super::classes::for_commit(db, &id)?,
         "symbol_touches": super::symbols::as_json(&super::symbols::for_commit(db, &id)?),

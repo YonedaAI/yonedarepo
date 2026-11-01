@@ -34,6 +34,18 @@ export interface Env {
   LAND_MODE_OVERRIDE?: string;
   /** `on`: a repository's database refuses new work from 9 GB (unset or `off`: never). */
   REPO_STORAGE_GUARD?: string;
+  /** `on`: a check verdict's evidence is stored once, in `checks` (unset or anything else:
+   * the run keeps a copy too; repo-archive-switches.ts). */
+  CHECK_EVIDENCE_ONCE?: string;
+  /** `on`: a new branch's `ref_chain` stores only what lies above main's (unset or anything
+   * else: its whole first-parent history, up to 5,000 rows; repo-archive-switches.ts). */
+  REF_CHAIN_SHARED?: string;
+  /** `on`: commit shards forget a batch-landed commit once the authority holds it (unset or
+   * anything else: they keep their copy until vacuum; repo-changesets.ts). */
+  SHARD_FORGET_RECORDED?: string;
+  /** `on`: every repository gets a compaction job once a day, landing or not (unset or
+   * anything else: only a landing starts one; repo-compaction.ts). */
+  COMPACTION_SWEEP?: string;
   /** `on`: destructive ops wait for the owner's legal hold answer, and the hold routes
    * exist (unset or anything else: neither; platform-legal-hold.ts). */
   LEGAL_HOLD?: string;

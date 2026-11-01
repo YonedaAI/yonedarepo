@@ -1,5 +1,6 @@
 //! Log compaction: whole segments of old versions move to the object store (played here by
 //! a map), the SQL tail stays bounded, and reads at old versions answer from the segments.
+use super::batches::open as open_for_changesets;
 use super::*;
 use crate::storage::SqlStore;
 use std::collections::BTreeMap;
@@ -461,5 +462,116 @@ fn compaction_status_reads_progress_and_changes_nothing() {
     assert_eq!(
         [&after["floor"], &after["tail_rows"]],
         [&json!(1_024), &json!(2_200 - 1_024)]
+    );
+}
+
+const DAY_MS: i64 = 24 * 60 * 60 * 1000;
+
+/// A log past `head` whose webhook fan-out has not moved since version 2, with the bound
+/// set at 100 versions: only the hook keeps segments in SQL.
+fn held_by_a_hook(head: u64) -> Harness {
+    let (h, root) = seeded();
+    h.ok(
+        OWNER,
+        json!({"op":"repo_hook_create","url":"https://ci.example.com/hook",
+               "_secret":"whsec_0123456789abcdef0123456789abcdef",
+               "_repo":"r0123456789abcdef0123","_workers_subdomain":"mlong-f01"}),
+    );
+    let child = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("n.txt", "1\n")]),
+            json!([]),
+        )
+        .unwrap();
+    grow(&h, &root, &child, head);
+    h.ok(
+        OWNER,
+        json!({"op":"repo_set_retention","keep_versions":100,"keep_days":30}),
+    );
+    h
+}
+
+#[test]
+fn a_plan_names_what_holds_a_segment_that_is_due() {
+    let h = held_by_a_hook(1_200);
+    let plan = h.ok(OWNER, json!({"op":"repo_compact_plan"}));
+    assert_eq!(plan["due"], false);
+    assert_eq!(plan["held"]["by"], "hooks");
+    assert_eq!(plan["held"]["stalled"], false, "{plan}");
+    // The read the owner and the load tests use says the same, and seals nothing.
+    let status = h.ok(OWNER, json!({"op":"repo_compact_status"}));
+    assert_eq!(status["held"], plan["held"]);
+
+    // Nothing waits below the retention bound: a young log is not held by anything.
+    let (young, _, _) = grown(1_200);
+    let idle = young.ok(OWNER, json!({"op":"repo_compact_plan"}));
+    assert_eq!((&idle["due"], &idle["held"]), (&json!(false), &Value::Null));
+
+    // A reader's cursor is named too, and a due segment says nothing.
+    let (read, _, _) = grown(1_200);
+    read.ok(
+        OWNER,
+        json!({"op":"repo_set_retention","keep_versions":100}),
+    );
+    let cursor = read.ok(OWNER, json!({"op":"repo_compact_plan","hold":500}));
+    assert_eq!(cursor["held"]["by"], "changelog");
+    let free = read.ok(OWNER, json!({"op":"repo_compact_plan"}));
+    assert_eq!((&free["due"], &free["held"]), (&json!(true), &Value::Null));
+}
+
+#[test]
+fn a_changeset_that_never_projects_holds_the_log_and_is_named() {
+    let (h, root) = open_for_changesets();
+    let made = |path: &str| {
+        h.commit(AGENT, Some(&root), 1, json!([file(path, "1\n")]), json!([]))
+            .unwrap()
+    };
+    // Behind main's head and on other files: it lands as a changeset, with no Git commit.
+    let first = made("first.txt");
+    h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":first}));
+    let beside = made("beside.txt");
+    h.ok(
+        OWNER,
+        json!({"op":"repo_land_enqueue","ref":"main","commit":beside}),
+    );
+    h.ok(
+        "platform:merge",
+        json!({"op":"repo_land_changesets","ref":"main"}),
+    );
+    grow(&h, &root, &first, 1_200);
+    h.ok(
+        OWNER,
+        json!({"op":"repo_set_retention","keep_versions":100}),
+    );
+    assert_eq!(
+        h.ok(OWNER, json!({"op":"repo_compact_plan"}))["held"]["by"],
+        "unprojected"
+    );
+}
+
+#[test]
+fn a_hold_is_a_stall_once_the_segment_is_a_day_overdue_or_far_behind() {
+    // By age: the segment's newest entry is past the 30-day bound by a day.
+    let h = held_by_a_hook(1_200);
+    let plan = |h: &Harness| h.ok(OWNER, json!({"op":"repo_compact_plan"}));
+    *h.now.borrow_mut() += 30 * DAY_MS;
+    assert_eq!(plan(&h)["held"]["stalled"], false);
+    *h.now.borrow_mut() += DAY_MS + 60_000;
+    let late = plan(&h);
+    assert_eq!(late["held"]["stalled"], true, "{late}");
+    assert!(late["held"]["overdue_ms"].as_i64().unwrap() > DAY_MS);
+
+    // By count: 8 segments past the bound, however young the log.
+    let far = held_by_a_hook(1_024 + 100 + 8_192);
+    let plan = plan(&far);
+    assert_eq!(plan["held"]["overdue_versions"], 8_192);
+    assert_eq!(plan["held"]["stalled"], true);
+    let near = held_by_a_hook(1_024 + 100 + 8_191);
+    assert_eq!(
+        near.ok(OWNER, json!({"op":"repo_compact_plan"}))["held"]["stalled"],
+        false
     );
 }

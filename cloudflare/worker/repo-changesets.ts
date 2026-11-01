@@ -11,7 +11,7 @@ import { refreshHead } from './repo-head';
 import type { CachedObject } from './repo-objects';
 import { caller, type Json, RepoContext, withTrees } from './repo-ops';
 import { dispatchObjects, dispatchProjection } from './repo-projection';
-import { shardLanded } from './repo-shards';
+import { forgetChain, shardLanded } from './repo-shards';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
@@ -47,7 +47,7 @@ const PROJECTION_ROUNDS = 64;
  * those the authority does not hold yet (batch landing never adopts). Main's history names
  * each pushed commit, so the record call adopts them first (in landing order, parents
  * first); each one found is marked recorded for compute. A record already gone leaves its
- * commit out of main's history (its files still land).
+ * commit out of main's history (its files still land), and `gone` says so.
  */
 async function fromShards(env: Env, repo: string, items: Json[]) {
   const landed = new Map<string, Json[]>();
@@ -58,14 +58,15 @@ async function fromShards(env: Env, repo: string, items: Json[]) {
     [...landed].map(async ([id, entries]) => {
       const wanted = entries.some((commit) => !commit.recorded);
       const { objects, record } = await shardLanded(env, repo, id, wanted);
-      if (!wanted || !record) return { objects, record: null };
+      if (!wanted || !record) return { objects, record: null, gone: wanted };
       for (const commit of entries) commit.recorded = true;
-      return { objects, record };
+      return { objects, record, gone: false };
     }),
   );
   return {
     staged: found.flatMap((f) => f.objects),
     records: found.flatMap((f) => (f.record ? [f.record] : [])),
+    gone: found.some((f) => f.gone),
   };
 }
 
@@ -85,7 +86,7 @@ export async function projectChangesets(env: Env, repo: string): Promise<number>
     const plan = await projector.call({ op: 'repo_changeset_plan' });
     if (!plan.items?.length) break;
     const objects = await projector.objects();
-    const { staged, records } = await timed('project.staged', () =>
+    const { staged, records, gone } = await timed('project.staged', () =>
       fromShards(env, repo, plan.items),
     );
     const known = new Map([...previous, ...staged].map((o) => [o.id, o]));
@@ -104,12 +105,20 @@ export async function projectChangesets(env: Env, repo: string): Promise<number>
       });
     } catch (e: any) {
       // Another projector recorded these versions first, or a landed commit was adopted
-      // after this plan: plan again.
-      if (e?.code !== 'STALE_HEAD') throw e;
+      // after this plan: plan again. One that also forgot the records leaves this plan
+      // without them, so what it built differs from what is recorded.
+      if (e?.code !== 'STALE_HEAD' && !(gone && e?.code === 'PROJECTION_MISMATCH')) throw e;
       continue;
     }
     // Another projector recorded these exact versions first: nothing new to announce.
     if (recorded.already) continue;
+    // The authority holds these now; a copy left by a failure only costs its rows.
+    if (env.SHARD_FORGET_RECORDED === 'on' && records.length)
+      caching.push(
+        forgetChain(env, repo, records).catch((e) =>
+          console.warn(`shard forget failed: ${e?.message ?? e}`),
+        ),
+      );
     projected += built.projected.length;
     refs.add(String(plan.ref));
     if (recorded.dispatch_objects)

@@ -4,7 +4,7 @@
 // when analytics is unavailable. Latency rules compare against a stored baseline: an EWMA
 // fed only by quiet runs, so an incident cannot become the new normal.
 import type { Analytics, Health } from './analytics';
-import type { TailComponent, TailSample, TailStats } from './tail';
+import { STALL_SAMPLE, type TailComponent, type TailSample, type TailStats } from './tail';
 
 export type Component = TailComponent | 'land_queue';
 
@@ -189,6 +189,12 @@ export function evaluate(s: Snapshot, baselines: Baselines): ComponentReport[] {
     ]),
     report('derived_jobs', s, [
       ...invocationSignals('derived_jobs', s, baselines),
+      threshold(
+        'compaction_stalls',
+        s.tail.derived_jobs?.samples.filter((x) => x.name === STALL_SAMPLE).length ?? 0,
+        'count',
+        0,
+      ),
       ...(a ? queueSignals(a) : []),
     ]),
   ];

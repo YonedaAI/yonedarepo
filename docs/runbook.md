@@ -216,6 +216,21 @@ Rollout: D1 migration 0010 before the Worker, as the deploy does. Deleting data 
 - **Rolling back.** Set it `off` first. A job that reaches a binary without the handler is dropped, and its Landing waits for its next trigger: nothing is lost, and nothing lands late by itself.
 - **A Landing that didn't land.** Its page gives the reason, and `changes.clearance` keeps each decision with the head it judged. The next check, review, resolved comment or push tries again.
 
+## Trimming commit data
+
+Stage A of `docs/global-scale-plan.md`, item 3. All four switches are off until set to `on` in `infra/envs/<env>.json`, on the platform Worker. They affect new writes only: nothing already stored is rewritten, so existing duplicates, full chains and shard copies stay. Savings are unmeasured until the load tests run.
+
+| Switch | With it on | Off again |
+|---|---|---|
+| `CHECK_EVIDENCE_ONCE` | A pass or fail keeps its evidence only in `checks`; the run reads it from there. An errored run keeps its own | Safe: readers take either form |
+| `REF_CHAIN_SHARED` | A new branch's `ref_chain` stores only the commits above main's chain, not up to 5,000 rows. Its path history reads on into main's chain, so it can reach further back than the 5,000 commits a branch read before | Safe: readers take either form, and a branch rebuilds in full when it next leaves its rows |
+| `SHARD_FORGET_RECORDED` | A projector drops a shard's copy of a batch-landed commit once the authority holds it | Safe: copies just stop being dropped |
+| `COMPACTION_SWEEP` | The every-minute cron sends a `platform_compact` job for each repository in that minute's id range, so every repository's object is woken once a day | Safe: only a landing starts compaction again |
+
+**Turn on `CHECK_EVIDENCE_ONCE` and `REF_CHAIN_SHARED` only once a build with their readers is the oldest you would roll back to.** An older build reads a stored-once run's result as null, so `/check-runs/:id/log` answers 404, and reads a shared branch's path history short, with no error. Going forward again restores both, as nothing was lost. The other two switches have no such limit.
+
+**A stalled log raises an alarm.** Unprojected changesets and undelivered webhook events hold compaction with no limit. `repo_compact_plan` and `GET /repos/:id/compaction` answer `held` with what holds a due segment, and `stalled` once it is 8 segments or a day overdue. `compaction.stalled` is logged when a job finds that, and Superfan opens a `compaction_stalls` finding on `derived_jobs` from one such line. A job has to run to see it: after a landing, or daily with `COMPACTION_SWEEP` on. `compaction.sweep_full` means a minute's range passed 1,000 repositories and some went unvisited.
+
 ## Creating a repository's store
 
 Artifacts is the projected mirror: a new repository's commits, pushes, reads and clones go through its authority, R2 and the outboxes. With `ASYNC_STORE=on` on the platform Worker (`infra/envs/<env>.json`; unset or `off`: the create waits for Artifacts, up to 28 s over three attempts), a create answers without Artifacts, and a `platform_store` queue job creates the store.

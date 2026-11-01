@@ -2,7 +2,7 @@
 // Pipeline binding (faked here). Events match the stream schema, carry no contents, are
 // resumable and keyed for dedupe, and a failing pipeline never fails a landing or the job.
 // A stream starts at the head, and one that stops never stops the repository's compaction.
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import schema from '../../cloudflare/basin/change-log.schema.json';
 import { type ChangeEvent, changeLogHold, emitChangeLog, sendBatches, skipChangeLog } from '../../cloudflare/worker/repo-changelog';
 import { compactLog } from '../../cloudflare/worker/repo-compaction';
@@ -255,6 +255,28 @@ it('compacts with the stream stopped once it has failed too long, then skips pas
   expect(fake.sent.flat().map((e) => e.event_key)).toEqual([`${id}:v${head + 1}`]);
   expect(await changeLogHold(env, id)).toBe(head + 1);
 });
+
+it('raises the alarm only once a hold has stalled compaction', async () => {
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const stalls = () => logged.mock.calls.map(([line]) => JSON.parse(String(line))).filter((e) => e.event === 'compaction.stalled');
+  const held = async (name: string, head: number) => {
+    const { env, fake } = pipeline();
+    const { owner, id } = await setup(name, env);
+    fake.failing = true;
+    await grow(owner, id, head);
+    await emitChangeLog(env, id);
+    return { id, answer: await compact(env, id) };
+  };
+  // Held, and not for long: reported to the caller, and no one is woken.
+  const brief = await held('held_briefly', 1_100);
+  expect(brief.answer).toMatchObject({ segments: 0, held: { by: 'changelog', stalled: false } });
+  expect(stalls()).toEqual([]);
+  // Eight segments past due: a hold no passing backlog explains.
+  const stuck = await held('held_for_long', 9_300);
+  expect(stuck.answer).toMatchObject({ segments: 0, floor: 0, held: { by: 'changelog', stalled: true } });
+  expect(stalls()).toMatchObject([{ repo: stuck.id, by: 'changelog', floor: 0, stalled: true }]);
+  logged.mockRestore();
+}, 60_000);
 
 it('compacts past a stopped stream too far behind the head and jumps its cursor', async () => {
   const { env, fake } = pipeline();

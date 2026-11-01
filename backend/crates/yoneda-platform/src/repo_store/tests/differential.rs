@@ -55,8 +55,9 @@ struct Driver {
 }
 
 impl Driver {
-    fn new() -> Self {
+    fn new(switches: &Value) -> Self {
         let (h, root) = open();
+        *h.switches.borrow_mut() = switches.clone();
         let tree = Tree::from([
             ("README.md".to_owned(), "# demo\n".to_owned()),
             ("src/lib.rs".to_owned(), "pub fn a() {}\n".to_owned()),
@@ -570,9 +571,13 @@ fn leak(kind: &str) -> &'static str {
 }
 
 /// Runs `steps` generated operations from `seed`, then the Git checks; answers the tally.
-fn case(seed: u64, steps: usize) -> std::result::Result<BTreeMap<String, usize>, String> {
+fn case(
+    seed: u64,
+    steps: usize,
+    switches: &Value,
+) -> std::result::Result<BTreeMap<String, usize>, String> {
     let mut rng = Rng::new(seed);
-    let mut driver = Driver::new();
+    let mut driver = Driver::new(switches);
     let mut ops = Vec::new();
     for step in 0..steps {
         let op = generate(&mut rng, &driver.model, step);
@@ -594,13 +599,18 @@ fn case(seed: u64, steps: usize) -> std::result::Result<BTreeMap<String, usize>,
 
 /// Runs `count` cases (or only `YONEDA_DIFF_SEED`) and answers their outcomes, summed.
 fn cases(count: u64, steps: usize) -> BTreeMap<String, usize> {
+    cases_with(count, steps, &json!({}))
+}
+
+fn cases_with(count: u64, steps: usize, switches: &Value) -> BTreeMap<String, usize> {
     let seeds: Vec<u64> = match std::env::var("YONEDA_DIFF_SEED") {
         Ok(seed) => vec![seed.parse().expect("YONEDA_DIFF_SEED is a number")],
         Err(_) => (0..count).collect(),
     };
     let mut tally = BTreeMap::new();
     for seed in seeds {
-        for (label, n) in case(seed, steps).unwrap_or_else(|failure| panic!("{failure}")) {
+        for (label, n) in case(seed, steps, switches).unwrap_or_else(|failure| panic!("{failure}"))
+        {
             *tally.entry(label).or_default() += n;
         }
     }
@@ -641,6 +651,15 @@ fn the_platform_matches_the_reference_model() {
             assert!(tally.contains_key(label), "no {label} in {tally:?}");
         }
     }
+}
+
+#[test]
+fn the_platform_matches_the_reference_model_with_the_archive_switches() {
+    cases_with(
+        16,
+        80,
+        &json!({"_ref_chain":"shared","_check_evidence":"once"}),
+    );
 }
 
 #[test]

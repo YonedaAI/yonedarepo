@@ -18,6 +18,7 @@ import { ERASE, purgeJob } from './repo-admin';
 import { STORE_JOB } from './repo-artifacts-store';
 import { executeCheckRun } from './repo-checks';
 import { CLASSIFY, classifyJob } from './repo-classify';
+import { COMPACT_JOB, compactionJob, sweepCompaction } from './repo-compaction';
 import { sweepDeleted } from './repo-deleted';
 import { deriveAfterLanding } from './repo-derived';
 import { eraseJob } from './repo-erase';
@@ -70,6 +71,9 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
     message.ack();
   } else if (envelope.kind === PACK_BUILD) {
     await oneAtATime(() => packBuildJob(env, envelope));
+    message.ack();
+  } else if (envelope.kind === COMPACT_JOB) {
+    await oneAtATime(() => compactionJob(env, envelope));
     message.ack();
   } else if (envelope.kind === 'platform_hooks') {
     const outcome = await hookJob(env, envelope);
@@ -124,8 +128,9 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
   verifyEmail(account: string, change?: string) {
     return verifyEmail(this.env, account, change);
   }
-  /** Every minute: keeps the SSH gateway (and its tunnel) running and sends the purges that
-   * came due; once a night, starts the billing reconcile. None stops the others. */
+  /** Every minute: keeps the SSH gateway (and its tunnel) running, sends the purges that
+   * came due and this minute's compaction jobs; once a night, starts the billing reconcile.
+   * None stops the others. */
   async scheduled(controller: ScheduledController) {
     const logged = (event: string) => (e: unknown) => {
       const error = String((e as Error)?.message ?? e).slice(0, 200);
@@ -134,6 +139,7 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
     await Promise.all([
       sshKeepAlive(this.env, 'cron'),
       sweepDeleted(this.env).catch(logged('undo.sweep_failed')),
+      sweepCompaction(this.env).catch(logged('compaction.sweep_failed')),
       nightlyReconcile(this.env, controller.scheduledTime).catch(
         logged('billing.reconcile_failed'),
       ),
