@@ -210,8 +210,8 @@ export async function facts(s, number, head) {
 }
 
 export async function ctcPage(s, label) {
-  await s.page.goto(`${s.origin}${s.base}/ctc`);
-  await s.page.getByRole('heading', { name: /Code Traffic Control|CTC/ }).first().waitFor();
+  await s.page.goto(`${s.origin}${s.base}/tower`);
+  await s.page.getByRole('heading', { name: 'Tower', exact: true }).first().waitFor();
   await sleep(1000);
   await s.shot(`${label}-ctc`);
   return (await s.page.locator('main').innerText()).replace(/\s+/g, ' ').slice(0, 400);

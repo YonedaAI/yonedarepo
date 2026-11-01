@@ -212,7 +212,7 @@ export function RepoPage({
                   navigate={navigate}
                 />
               )}
-              {route.view === 'ctc' && (
+              {route.view === 'tower' && (
                 <RepoCtc
                   repo={repo}
                   hrefOf={(number) => formatSourceRoute({ view: 'change', repo, number })}

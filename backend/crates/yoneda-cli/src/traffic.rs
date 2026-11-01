@@ -5,7 +5,7 @@
 use serde_json::{Value, json};
 
 pub const TITLE: &str = "Traffic: open Landings on what you are working on";
-const READ_HEADING: &str = "CTC traffic on the files you read:";
+const READ_HEADING: &str = "Tower traffic on the files you read:";
 const TITLE_BYTES: usize = 80;
 
 fn line(warning: &Value) -> String {

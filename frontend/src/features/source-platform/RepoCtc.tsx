@@ -108,7 +108,7 @@ export function RepoCtc({ repo, ...links }: Links & { repo: string }) {
   const data = radar.data ?? kept.current;
   const head = (
     <div className="source-changes-head">
-      <h2 id="ctc-heading">CTC</h2>
+      <h2 id="ctc-heading">Tower</h2>
       <button type="button" className="quiet" onClick={reload}>
         Refresh
       </button>
@@ -118,12 +118,10 @@ export function RepoCtc({ repo, ...links }: Links & { repo: string }) {
     <section aria-labelledby="ctc-heading" className="ctc" aria-busy={radar.loading}>
       {head}
       {data?.landings.length !== 0 && (
-        <p className="source-meta">
-          Code Traffic Control: what is cleared, what it waits for and where Landings meet.
-        </p>
+        <p className="source-meta">What is cleared, what is waiting and where Landings meet.</p>
       )}
       {!data && radar.error && <Failure error={radar.error} onRetry={reload} />}
-      {!data && !radar.error && <Loading what="CTC radar" />}
+      {!data && !radar.error && <Loading what="Tower radar" />}
       {data && radar.error && (
         <p role="status" className="source-error">
           Could not refresh: this is the last answer.
@@ -131,7 +129,7 @@ export function RepoCtc({ repo, ...links }: Links & { repo: string }) {
       )}
       {data && !data.land_when_cleared && data.landings.length > 0 && (
         <p className="source-meta">
-          Land when cleared is off, so nothing lands on its own: this is what CTC would say.
+          Land when cleared is off, so nothing lands on its own: this is what Tower would say.
         </p>
       )}
       {data?.landings.length === 0 && (

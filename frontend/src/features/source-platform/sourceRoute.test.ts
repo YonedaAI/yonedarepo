@@ -37,7 +37,7 @@ describe('source routes', () => {
       { view: 'history', repo, ref: 'dev' },
       { view: 'commit', repo, commit: sha },
       { view: 'transactions', repo },
-      { view: 'ctc', repo },
+      { view: 'tower', repo },
       { view: 'search', repo, query: 'retry with' },
       { view: 'search', repo, query: 'test', word: true },
       { view: 'overview', repo, path: '', ref: 'main' },
@@ -281,6 +281,15 @@ describe('readable addresses', () => {
     );
     expect(parse(`/source/${repo}/files/src/a.ts`)).toEqual(files);
     forgetRepoNames();
+  });
+
+  it('keeps the old /ctc links on the Tower page, which /tower now addresses', () => {
+    const tower: SourceRoute = { view: 'tower', repo };
+    expect(formatSourceRoute(tower)).toBe(`/source/${repo}/tower`);
+    expect(parseSourceRoute(`/source/${repo}/ctc`, '')).toEqual(tower);
+    expect(parseSourceRoute(`/source/${repo}/tower`, '')).toEqual(tower);
+    expect(routeTab(parseSourceRoute(`/source/${repo}/ctc`, ''))).toBe('tower');
+    expect(tabRoute('tower', repo)).toEqual(tower);
   });
 
   it('reads /landings as an alias of /changes, which stays the address', () => {

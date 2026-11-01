@@ -48,8 +48,8 @@ export async function traffic(f, web, m) {
     assert.ok(held?.reason.includes(`Landing ${b.number}`) && held.reason.includes(file), `what it waits for: ${JSON.stringify(behind.reasons)}`);
     assert.equal(behind.place.position, 2, `its place: ${JSON.stringify(behind.place)}`);
     await withChrome({ ...web.chrome, name: 'flight-ctc' }, m, async ({ page, shot }) => {
-      await openPage(page, { origin: web.chrome.origin, account: web.account }, repo, '/ctc');
-      const table = page.getByRole('region', { name: 'CTC', exact: true }).getByRole('table');
+      await openPage(page, { origin: web.chrome.origin, account: web.account }, repo, '/tower');
+      const table = page.getByRole('region', { name: 'Tower', exact: true }).getByRole('table');
       await see(table.getByText(`1 · queued, ticket ${ticket}`), 'the ticket on the radar');
       await see(rowWith(table, 'row', title).getByText(held.reason), 'separation on the radar');
       await shot('ctc-held');
