@@ -27,11 +27,17 @@
         "SUPERFAN_READ_TOKEN bearer for GET /findings, GET /status, POST /run",
         "New findings mail ADMIN_NOTIFY_EMAIL through Resend (superfan/notify.ts, the Secrets Store secret Resend-Yoneda), at most",
         "8 digests a UTC day. The same address as the platform's sign-up notice (its EMAIL_CONTACT).",
+        "POST /deploys is the deploy ledger (xtask/src/deploy_ledger.rs), same bearer. RELEASE_COMPARE=on compares each release with the one before after a deploy (superfan/release.ts).",
+        "PROBES=on runs synthetic checks on the */5 cron: /health, a page, an API read and, with the optional secret PROBE_CLONE_REPO (a small public repository's id, under 1 MiB), a clone. Never a landing on prod.",
+        "Off, the */5 cron returns at once. Budget: docs/observability-plan.md.",
         "Deployed first: the production platform names this Worker in tail_consumers."
       ],
       "secrets": [
         "CF_ANALYTICS_TOKEN",
         "SUPERFAN_READ_TOKEN"
+      ],
+      "optional_secrets": [
+        "PROBE_CLONE_REPO"
       ],
       "ephemeral": false,
       "config": {
@@ -45,7 +51,8 @@
         },
         "triggers": {
           "crons": [
-            "7 * * * *"
+            "7 * * * *",
+            "*/5 * * * *"
           ]
         },
         "vars": {
@@ -54,6 +61,9 @@
           "EMAIL_FROM": "YonedaRepo <hello@yonedarepo.com>",
           "WATCH_SCRIPT": "{prefix}-platform",
           "WATCH_URL": "https://api.yonedarepo.com",
+          "WATCH_FRONT_URL": "https://yonedarepo.com",
+          "RELEASE_COMPARE": "off",
+          "PROBES": "off",
           "TELEMETRY_SOURCE": "cloudflare",
           "SUPERFAN_MODEL": "mimo-v2.6-flash",
           "MIMO_TOKEN_PLAN_REGION": "sgp",

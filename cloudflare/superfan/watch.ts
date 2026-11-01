@@ -4,7 +4,7 @@
 // as "all quiet", and findings are resolved only by rules that were actually evaluated. New
 // findings then go out privately by email: urgent ones before any model call can hold them up.
 import { type AnalyticsSource, CloudflareAnalytics, TelemetryError, WINDOW_MS } from './analytics';
-import { dailyCap, type SuperfanEnv, type WatchSite, watchSite, wideOn } from './config';
+import { dailyCap, probesOn, type SuperfanEnv, type WatchSite, watchSite, wideOn } from './config';
 import type { Observed, SuperfanLedger } from './ledger';
 import { FlashModel, type ModelClient, ModelError } from './model';
 import { notifyFindings, notifyUrgent } from './notify';
@@ -18,6 +18,7 @@ import {
   problems,
   type Snapshot,
 } from './signals';
+import { PROBE_KEYS } from './synthetic-checks';
 import { MARK_WINDOW_MS } from './tail';
 
 /** Model calls per run; the daily cap is the real limit, this bounds one bad hour. */
@@ -204,6 +205,7 @@ async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<Wat
   };
   // Off, nothing evaluates these: an open one must still be able to end.
   if (!releaseOn(env)) evaluated.push(...RELEASE_KEYS);
+  if (!probesOn(env)) evaluated.push(...PROBE_KEYS);
   const reports = evaluate(snapshot, await ledger.baselines(), wideOn(env));
   let anomalies = 0;
   const seenProblems: { seen: Observed; report: ComponentReport }[] = [];

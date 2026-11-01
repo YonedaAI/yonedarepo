@@ -146,6 +146,7 @@ describe('ledger schema', () => {
     const stub = env.LEDGER.get(env.LEDGER.idFromName('schema-upgrade-5')) as DurableObjectStub<SuperfanLedger>;
     await runInDurableObject(stub, (_instance, state) => {
       const sql = state.storage.sql;
+      sql.exec('DROP TABLE probe_results');
       sql.exec('DROP TABLE deploys');
       sql.exec('ALTER TABLE findings DROP COLUMN revision');
       sql.exec('ALTER TABLE findings DROP COLUMN last_revision');

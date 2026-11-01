@@ -5,7 +5,7 @@ import type { Health } from './probes';
 import type { ReleaseComparison } from './release';
 import type { TailComponent, TailSample, TailStats } from './tail';
 
-export type Component = TailComponent | 'billing' | 'storage' | 'deadman';
+export type Component = TailComponent | 'billing' | 'storage' | 'deadman' | 'synthetic';
 
 export interface Signal {
   name: string;

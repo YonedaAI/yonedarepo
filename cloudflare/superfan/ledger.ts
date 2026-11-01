@@ -20,11 +20,13 @@ import {
   releaseNotice,
   releaseUrgent,
 } from './ledger-notice';
+import { recentProbes, recordProbes } from './ledger-probes';
 import { migrate } from './ledger-schema';
 import { reserveSpend, settleSpend, spendToday } from './ledger-spend';
 import { ingestRows, markWindow, tailWindow } from './ledger-tail';
 import { compareReleases } from './release';
 import type { Baselines } from './signals';
+import type { ProbeResult } from './synthetic-checks';
 import type { TailRow } from './tail';
 
 const LEASE_MS = 15 * 60_000;
@@ -103,6 +105,15 @@ export class SuperfanLedger extends DurableObject<SuperfanEnv> {
 
   latestRevision() {
     return latestRevision(this.ctx.storage.sql);
+  }
+
+  /** One pass of synthetic checks; answers each check's latest results. */
+  recordProbes(results: ProbeResult[], now: number) {
+    return this.#tx((sql) => recordProbes(sql, results, now));
+  }
+
+  probes(limit: number) {
+    return recentProbes(this.ctx.storage.sql, limit);
   }
 
   /** This release against the one before, from the minutes the tail kept. */

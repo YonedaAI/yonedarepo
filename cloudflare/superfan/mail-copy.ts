@@ -46,6 +46,7 @@ export const WORD: Record<string, string> = {
   ssh_gateway: 'SSH',
   workspace_authority: 'account',
   cron: 'scheduled task',
+  synthetic: 'site check',
 };
 const NOUN: Record<string, string> = {
   derived_jobs: 'background job',
@@ -79,6 +80,15 @@ function errorCounts(f: Facts) {
   return parts.length ? `${parts.join(' and ')} this hour.` : 'More calls than usual are failing.';
 }
 
+/** What a synthetic check saw; two tries in each of two passes stand behind it. */
+const probeFailed = (name: string) => (f: Facts) => {
+  const status = f.values[name];
+  return typeof status === 'number'
+    ? `It failed two passes in a row, last with HTTP ${status}.`
+    : 'It failed two passes in a row with no answer.';
+};
+const PROBE_FIRST = 'Read GET /probes for the request id. If a deploy is new, roll back.';
+
 const healthLink = (component: string): Link => ({
   label: 'Check it yourself',
   path: '/health',
@@ -97,6 +107,37 @@ export const COPY: Copy[] = [
     },
     first: 'Open it yourself. If it is down and a deploy is new, roll back.',
     link: healthLink,
+  },
+  {
+    signals: ['probe_health'],
+    title: () => 'Website health check failing from outside',
+    means: probeFailed('probe_health'),
+    first: PROBE_FIRST,
+    link: (component) => ({ ...healthLink(component), api: false }),
+  },
+  {
+    signals: ['probe_page'],
+    title: () => 'Home page failing from outside',
+    means: probeFailed('probe_page'),
+    first: PROBE_FIRST,
+  },
+  {
+    signals: ['probe_api'],
+    title: () => 'API reads failing from outside',
+    means: probeFailed('probe_api'),
+    first: PROBE_FIRST,
+  },
+  {
+    signals: ['probe_clone'],
+    title: () => 'Public clone failing from outside',
+    means: probeFailed('probe_clone'),
+    first: PROBE_FIRST,
+  },
+  {
+    signals: ['probe_land'],
+    title: () => 'Test landing failing on dev',
+    means: probeFailed('probe_land'),
+    first: PROBE_FIRST,
   },
   {
     signals: ['reconcile_mismatches'],

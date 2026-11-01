@@ -1,12 +1,14 @@
 // Superfan Worker: the tail consumer of an environment's Workers, an hourly cron pass over
-// their telemetry, a five-minute quick pass for urgent signals on the wide watch, and an
-// authenticated read endpoint for findings. Findings reach the owner by private email (notify.ts)
+// their telemetry, a five-minute quick pass for urgent signals on the wide watch, synthetic checks
+// on the same cron, the deploy ledger, and an authenticated read endpoint for findings. Findings reach the owner by private email (notify.ts)
 // and nowhere public. /heartbeat is public: the dead-man (deadman.ts) reads it, and it says only
 // when passes last ran.
-import { isWatchable, type SuperfanEnv, wideOn } from './config';
+import { isWatchable, probesOn, type SuperfanEnv, wideOn } from './config';
 import { parseDeploy } from './ledger-deploys';
 import { noticesOn } from './notify';
 import { QUICK_CRON, runQuick } from './quick';
+import { releaseOn } from './release';
+import { runProbes } from './synthetic';
 import { aggregate } from './tail';
 import { ledgerStub, runWatch } from './watch';
 
@@ -35,7 +37,7 @@ export async function superfanFetch(req: Request, env: SuperfanEnv): Promise<Res
   const url = new URL(req.url);
   if (url.pathname === '/heartbeat')
     return json({ ...(await ledgerStub(env).beats()), notices: noticesOn(env) });
-  if (!['/findings', '/status', '/run', '/deploys'].includes(url.pathname))
+  if (!['/findings', '/status', '/run', '/deploys', '/probes'].includes(url.pathname))
     return refuse('NOT_FOUND', 404);
   if (!(await authorized(req, env))) return refuse('UNAUTHORIZED', 401);
   const ledger = ledgerStub(env);
@@ -52,6 +54,7 @@ export async function superfanFetch(req: Request, env: SuperfanEnv): Promise<Res
   if (req.method !== 'GET') return refuse('METHOD_NOT_ALLOWED', 405);
   const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 200);
   if (url.pathname === '/deploys') return json({ deploys: await ledger.deploys(limit) });
+  if (url.pathname === '/probes') return json({ probes: await ledger.probes(limit) });
   if (url.pathname === '/status') {
     const now = Date.now();
     return json({
@@ -66,6 +69,8 @@ export async function superfanFetch(req: Request, env: SuperfanEnv): Promise<Res
       model: env.SUPERFAN_MODEL,
       notices: noticesOn(env) ? 'email' : 'off',
       wide: wideOn(env),
+      probes: probesOn(env),
+      release_compare: releaseOn(env),
       last_deploy: (await ledger.deploys(1))[0] ?? null,
       ...(await ledger.status(now)),
     });
@@ -89,6 +94,11 @@ export default {
     await superfanTail(events, env);
   },
   async scheduled(controller, env, ctx) {
-    ctx.waitUntil(controller.cron === QUICK_CRON ? runQuick(env) : runWatch(env));
+    if (controller.cron !== QUICK_CRON) {
+      ctx.waitUntil(runWatch(env));
+      return;
+    }
+    ctx.waitUntil(runQuick(env));
+    ctx.waitUntil(runProbes(env));
   },
 } satisfies ExportedHandler<SuperfanEnv>;

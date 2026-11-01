@@ -113,6 +113,18 @@ export const MIGRATIONS: string[] = [
      UNIQUE (revision, started_at)
    );
    CREATE INDEX deploys_recent ON deploys(finished_at DESC);`,
+  // Synthetic checks, kept two days (ledger-probes.ts).
+  `CREATE TABLE probe_results (
+     id INTEGER PRIMARY KEY,
+     at INTEGER NOT NULL,
+     check_name TEXT NOT NULL,
+     ok INTEGER NOT NULL,
+     status INTEGER,
+     ms INTEGER NOT NULL,
+     detail TEXT,
+     revision TEXT
+   );
+   CREATE INDEX probe_results_recent ON probe_results(check_name, at DESC);`,
 ];
 
 /** Applies pending migrations; safe to call on every Durable Object start. */
