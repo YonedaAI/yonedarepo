@@ -117,6 +117,12 @@ Superfan's checks (`PROBES`, [observability-plan.md](observability-plan.md)) nee
 
 Without them those checks don't run and the others do. Then set `PROBES` or `PROBE_LANDING` to `on` in `infra/envs/<env>.json`, run `cargo xtask infra gen --env <env>`, and deploy.
 
+### Service levels
+
+`SERVICE_LEVELS=on` starts the 30 days of measuring ([observability-plan.md](observability-plan.md)). Set it on the platform and Superfan together in `infra/envs/<env>.json`, run `cargo xtask infra gen --env <env>`, and deploy. It needs nothing new: the platform reads back with `ANALYTICS_READ_TOKEN`, as the Traffic page does. Don't set a target before the tab says 30 days.
+
+To settle whether tracing follows a repository command, set `observability.traces.enabled` to `true` on dev's platform and front Workers, deploy, make one request, and read the trace in the dashboard. Set it back: stored traces bill from 1 December 2026.
+
 ## Public downloads: the CLI and the Claude Code marketplace
 
 The front Worker serves `/install.sh` and `/install.ps1` (`frontend/public/`, with the site's origin filled in) and `/downloads/*` from the `<prefix>-downloads` R2 bucket (`DOWNLOADS`; layout in `cloudflare/worker/downloads.ts`). `cargo xtask infra up --env <env>` creates the bucket.

@@ -5,6 +5,7 @@
 // findings then go out privately by email: urgent ones before any model call can hold them up.
 import { type AnalyticsSource, CloudflareAnalytics, TelemetryError, WINDOW_MS } from './analytics';
 import { dailyCap, probesOn, type SuperfanEnv, type WatchSite, watchSite, wideOn } from './config';
+import { readDelivery } from './delivery';
 import type { Observed, SuperfanLedger } from './ledger';
 import { FlashModel, type ModelClient, ModelError } from './model';
 import { notifyFindings, notifyUrgent } from './notify';
@@ -154,7 +155,7 @@ async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<Wat
     faults.push(
       new TelemetryError('tail_silent', 'No tail events from the platform Worker this hour'),
     );
-  const [site, deadman, analytics] = await Promise.all([
+  const [site, deadman, analytics, delivery] = await Promise.all([
     deps.target instanceof Error ? null : siteHealth(deps, deps.target),
     deps.target instanceof Error || !deps.target.deadmanHealthUrl
       ? undefined
@@ -166,6 +167,10 @@ async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<Wat
           : new TelemetryError('fetch_failed', 'Analytics read failed'),
       );
       return null;
+    }),
+    readDelivery(deps.analytics, ledger, now).catch(() => {
+      faults.push(new TelemetryError('fetch_failed', 'Queue delivery read failed'));
+      return undefined;
     }),
   ]);
   const revision = site?.health.revision ?? (await ledger.latestRevision());
@@ -202,6 +207,7 @@ async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<Wat
     analytics,
     ...(deadman === undefined ? {} : { deadmanAge: deadman }),
     ...(releaseOn(env) ? { release: await ledger.compareReleases(now) } : {}),
+    ...(delivery === undefined ? {} : { delivery }),
   };
   // Off, nothing evaluates these: an open one must still be able to end.
   if (!releaseOn(env)) evaluated.push(...RELEASE_KEYS);

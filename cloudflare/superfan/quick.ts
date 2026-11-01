@@ -5,6 +5,7 @@
 // ledger transaction, so overlapping a full pass only counts a finding twice.
 import { WINDOW_MS } from './analytics';
 import { type SuperfanEnv, wideOn } from './config';
+import { readDelivery } from './delivery';
 import { notifyUrgent } from './notify';
 import { evaluate, observation, problems, type Snapshot } from './signals';
 import { MARK_WINDOW_MS } from './tail';
@@ -24,12 +25,13 @@ export async function runQuick(env: SuperfanEnv, deps = productionDeps(env)): Pr
   if (!wideOn(env) || target instanceof Error) return { outcome: 'off', urgent: 0 };
   const now = deps.now();
   const start = Math.floor((now - WINDOW_MS) / 60_000) * 60_000;
-  const [tail, marks, site, analytics] = await Promise.all([
+  const [tail, marks, site, analytics, delivery] = await Promise.all([
     ledger.tailStats(start, now),
     ledger.marks(now - MARK_WINDOW_MS),
     siteHealth(deps, target),
     // The hourly pass reports a telemetry failure; here its signals just stay unevaluated.
     deps.analytics.collect(now).catch(() => null),
+    readDelivery(deps.analytics, ledger, now).catch(() => undefined),
   ]);
   const snapshot: Snapshot = {
     window: { start: new Date(start).toISOString(), end: new Date(now).toISOString() },
@@ -37,6 +39,7 @@ export async function runQuick(env: SuperfanEnv, deps = productionDeps(env)): Pr
     tail: tail.components,
     marks,
     analytics,
+    ...(delivery === undefined ? {} : { delivery }),
   };
   const revision = site.health.revision ?? (await ledger.latestRevision());
   const evaluated: string[] = [];

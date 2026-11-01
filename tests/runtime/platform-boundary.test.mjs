@@ -43,6 +43,8 @@ const neutral = new Set([
   // A digest of an account or token; imports nothing.
   './storage',
   '../../shared/site-traffic',
+  // What's measured for service targets, and its point; imports nothing.
+  '../../shared/service-levels',
   // The Insights page's and admin reports' wire shapes; types only.
   '../../shared/repo-insights',
   // The admin Operations, Infrastructure and Visitors tabs' wire shapes; types only.

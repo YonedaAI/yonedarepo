@@ -61,6 +61,8 @@ describe('superfan read endpoint', () => {
 
 /** Takes away what came after version 4, for a test that rebuilds an older shape. */
 function backToVersion4(sql: SqlStorage) {
+  sql.exec('DROP TABLE queue_gaps');
+  sql.exec('DROP TABLE queue_consumers');
   sql.exec('DROP TABLE probe_results');
   sql.exec('DROP TABLE deploys');
   sql.exec('ALTER TABLE findings DROP COLUMN revision');

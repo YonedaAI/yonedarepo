@@ -1,6 +1,7 @@
 // The rule primitives: what one signal or one component's report is, and the rules every
 // component shares. signals.ts and signals-wide.ts build the reports from them.
 import type { Analytics, QueueStats } from './analytics';
+import type { Stall } from './delivery';
 import type { Health } from './probes';
 import type { ReleaseComparison } from './release';
 import { NAMED_SEPARATOR, type TailComponent, type TailSample, type TailStats } from './tail';
@@ -42,6 +43,8 @@ export interface Snapshot {
   deadmanAge?: number | null;
   /** This release against the one before; absent: RELEASE_COMPARE is off. */
   release?: ReleaseComparison;
+  /** The worst queue stall in the window; null: none; absent: unread. */
+  delivery?: Stall | null;
 }
 export type Baselines = Record<string, { value: number; samples: number }>;
 

@@ -9,6 +9,8 @@ export interface Facts {
   noun: string;
   /** The usual p95, for a latency signal. */
   baseline?: number;
+  /** What the number leaves out, in words. */
+  detail?: string;
 }
 export interface Link {
   label: string;

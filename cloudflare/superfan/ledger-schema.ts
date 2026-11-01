@@ -125,6 +125,18 @@ export const MIGRATIONS: string[] = [
      revision TEXT
    );
    CREATE INDEX probe_results_recent ON probe_results(check_name, at DESC);`,
+  // Gaps between a queue's consumer invocations (delivery.ts).
+  `CREATE TABLE queue_consumers (
+     queue TEXT PRIMARY KEY,
+     last_end INTEGER NOT NULL
+   );
+   CREATE TABLE queue_gaps (
+     id INTEGER PRIMARY KEY,
+     queue TEXT NOT NULL,
+     from_at INTEGER NOT NULL,
+     to_at INTEGER NOT NULL
+   );
+   CREATE INDEX queue_gaps_recent ON queue_gaps(to_at);`,
 ];
 
 /** Applies pending migrations; safe to call on every Durable Object start. */

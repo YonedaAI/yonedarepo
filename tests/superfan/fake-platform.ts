@@ -6,6 +6,7 @@ import { env } from 'cloudflare:test';
 import { vi } from 'vitest';
 import { API_URL, GRAPHQL_URL } from '../../cloudflare/superfan/analytics';
 import type { SuperfanEnv } from '../../cloudflare/superfan/config';
+import { deliveries } from '../../cloudflare/superfan/delivery';
 import type { SuperfanLedger } from '../../cloudflare/superfan/ledger';
 import { aggregate, type TailComponent } from '../../cloudflare/superfan/tail';
 import { productionDeps, type WatchDeps } from '../../cloudflare/superfan/watch';
@@ -205,7 +206,7 @@ export const feed = (
   events: TraceItem[],
   now: number,
   wide = false,
-) => ledger.ingest(aggregate(events, SCRIPT, wide), now);
+) => ledger.ingest(aggregate(events, SCRIPT, wide), now, deliveries(events, SCRIPT));
 
 /** One log line of a named event, as `traces` carries it. */
 export const logLine = (event: string, level = 'log', fields: Record<string, unknown> = {}) => ({
@@ -226,7 +227,7 @@ export interface FakeCalls {
 
 /** Routes fetch to the fakes; `graphql` decides the analytics reply per call. */
 export function fakeUpstreams(
-  graphql: () => Response | Promise<Response>,
+  graphql: (init?: RequestInit) => Response | Promise<Response>,
   rest: (path: string) => Response | null = lookup,
 ): FakeCalls {
   const calls: FakeCalls = {
@@ -243,7 +244,7 @@ export function fakeUpstreams(
     const url = String(input instanceof Request ? input.url : input);
     if (url === GRAPHQL_URL) {
       calls.graphql.push(init ?? {});
-      return graphql();
+      return graphql(init);
     }
     const route = calls.routes[url];
     if (route) return route();

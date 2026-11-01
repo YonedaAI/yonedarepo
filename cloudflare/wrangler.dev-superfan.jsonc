@@ -18,10 +18,17 @@
 // POST /deploys is the deploy ledger (xtask/src/deploy_ledger.rs), same bearer. RELEASE_COMPARE=on compares each release with the one before after a deploy (superfan/release.ts).
 // PROBES=on runs synthetic checks on the */5 cron: /health, a page, an API read and, with the optional secret PROBE_CLONE_REPO (a small public repository's id, under 1 MiB), a clone.
 // PROBE_LANDING=on, dev only, also lands every third pass on PROBE_LAND_REPO with PROBE_LAND_TOKEN (optional secrets; a repository token limited to it). Budget: docs/observability-plan.md.
+// SERVICE_LEVELS=on writes requests that died and each synthetic result to SITE_EVENTS, the dataset the platform reads back (superfan/service-points.ts).
 // Deployed first: the dev platform names this Worker in tail_consumers.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
+  "analytics_engine_datasets": [
+    {
+      "binding": "SITE_EVENTS",
+      "dataset": "yonedarepo_dev_site_events"
+    }
+  ],
   "compatibility_date": "2026-10-07",
   "durable_objects": {
     "bindings": [
@@ -78,6 +85,7 @@
     "PROBES": "off",
     "PROBE_LANDING": "off",
     "RELEASE_COMPARE": "off",
+    "SERVICE_LEVELS": "off",
     "SUPERFAN_MODEL": "mimo-v2.6-flash",
     "TELEMETRY_SOURCE": "cloudflare",
     "WATCH_FRONT_URL": "https://dev.yonedarepo.com",

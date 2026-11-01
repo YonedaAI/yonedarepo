@@ -4,6 +4,7 @@
 // when analytics is unavailable. Latency rules compare against a stored baseline: an EWMA
 // fed only by quiet runs, so an incident cannot become the new normal. Marks are log events
 // counted by name, read over a longer window: they are logged once, and must not be missed.
+import { deliveryReports } from './delivery';
 import type { Level, Observation } from './ledger';
 import { releaseReports } from './release';
 import {
@@ -41,11 +42,16 @@ const URGENT = new Set([
   'audit_erase_blocked',
   'dead_letter_backlog',
   'dead_lettered',
+  'delivery_gap',
 ]);
 
 /** Evaluates every component's rules against one snapshot. */
 export function evaluate(s: Snapshot, baselines: Baselines, wide = false): ComponentReport[] {
-  const reports = [...platformReports(s, baselines, wide), ...releaseReports(s)];
+  const reports = [
+    ...platformReports(s, baselines, wide),
+    ...releaseReports(s),
+    ...deliveryReports(s),
+  ];
   if (!wide) return reports;
   return [...reports, ...wideReports(s, baselines)].map((r) => ({
     ...r,

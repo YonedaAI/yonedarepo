@@ -4,10 +4,12 @@
 // and nowhere public. /heartbeat is public: the dead-man (deadman.ts) reads it, and it says only
 // when passes last ran.
 import { isWatchable, probesOn, type SuperfanEnv, wideOn } from './config';
+import { deliveries } from './delivery';
 import { parseDeploy } from './ledger-deploys';
 import { noticesOn } from './notify';
 import { QUICK_CRON, runQuick } from './quick';
 import { releaseOn } from './release';
+import { recordDeaths } from './service-points';
 import { runProbes } from './synthetic';
 import { aggregate } from './tail';
 import { ledgerStub, runWatch } from './watch';
@@ -85,7 +87,9 @@ export async function superfanFetch(req: Request, env: SuperfanEnv): Promise<Res
 export async function superfanTail(events: TraceItem[], env: SuperfanEnv) {
   if (!isWatchable(env.WATCH_SCRIPT)) return;
   const rows = aggregate(events, env.WATCH_SCRIPT, wideOn(env));
-  if (rows.length) await ledgerStub(env).ingest(rows, Date.now());
+  recordDeaths(env, events);
+  const delivered = deliveries(events, env.WATCH_SCRIPT);
+  if (rows.length) await ledgerStub(env).ingest(rows, Date.now(), delivered);
 }
 
 export default {

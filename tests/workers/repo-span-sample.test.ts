@@ -94,8 +94,8 @@ it('names the spans, slowest first, under the operation, with its id in the log 
   const [point] = s.points;
   const operation = 'GET /api/v1/repos/:repo/files';
   expect(point.indexes).toEqual([operation]);
-  expect(point.blobs).toEqual(['spans', operation, 'a'.repeat(12), '', 'hop.r2', 'auth']);
-  expect(point.doubles).toEqual([40.3, 200, 30, 3]);
+  expect(point.blobs).toEqual(['spans', operation, 'a'.repeat(12), '', '', 'ok', 'hop.r2', 'auth']);
+  expect(point.doubles).toEqual([40.3, 200, 0, 30, 3]);
   const text = JSON.stringify(point);
   expect(text).not.toContain('r0123456789abcdef0123');
   expect(text).not.toContain('8f1c2d3e4a5b6c7d');
@@ -142,7 +142,7 @@ it('stays inside what a point and a line may hold', async () => {
   expect(point.blobs.length).toBeLessThanOrEqual(20);
   expect(point.doubles.length).toBeLessThanOrEqual(20);
   expect(new TextEncoder().encode(point.indexes[0]).length).toBeLessThanOrEqual(96);
-  expect(point.blobs.slice(4, 6)).toEqual(['span.39', 'span.38']);
+  expect(point.blobs.slice(6, 8)).toEqual(['span.39', 'span.38']);
   const [line] = read();
   expect(line.spans).toHaveLength(20);
 });
