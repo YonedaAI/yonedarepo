@@ -42,8 +42,7 @@ export interface AgentSettings {
   timeout_minutes: number;
   instructions: string;
   trigger: Trigger;
-  /** For level agents: the value at or above which the check fails. Bad verdicts block unless
-   * the owner chooses otherwise, so the default is `high`; null is that choice, never blocking. */
+  /** For level agents: the value at or above which the check fails (null: the owner's Never). */
   block_at: RunValue | null;
 }
 

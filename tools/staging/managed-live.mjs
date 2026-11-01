@@ -164,8 +164,7 @@ async function main() {
         `no live yoneda-managed-agents token: ${tokens.map((t) => t.name).join(', ')}`,
       );
       const scopes = typeof token.scopes === 'string' ? JSON.parse(token.scopes) : token.scopes;
-      for (const scope of ['check', 'read', 'review', ...ctx.agents.map((a) => `check:${a.check}`)])
-        assert.ok(scopes.includes(scope), `the agents token lacks ${scope}: ${scopes.join(', ')}`);
+      assert.ok(['check', 'read', 'review', ...ctx.agents.map((a) => `check:${a.check}`)].every((s) => scopes.includes(s)), `the agents token scopes: ${scopes.join(', ')}`);
       const hooks = (await platform.get(`/repos/${ctx.repo.id}/hooks`)).hooks;
       const hook = hooks.find((h) => String(h.url).endsWith(`/hooks/${ctx.repo.id}`));
       assert.ok(hook?.active, `no active managed webhook: ${hooks.map((h) => h.url).join(', ')}`);
