@@ -5,10 +5,12 @@
 // authority committed are best effort, and the durable state they would nudge (queued
 // check runs, pending ref projections) is picked up again by the next dispatch.
 
+import { warned } from './log';
 import { audited } from './repo-audit';
 import { replay } from './repo-commit';
 import { dispatchDerive } from './repo-derived';
 import { refreshHead } from './repo-head';
+import { notifyHooks } from './repo-hooks';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
 
@@ -18,6 +20,9 @@ const AUTHOR = { name: 'YonedaRepo break-glass', email: 'break-glass@yonedarepo.
 async function nudge(ctx: RepoContext, ref: string, result: Json) {
   // Every action changes what main's published head carries (its head, or the pause).
   await refreshHead(ctx.env, ctx.repo, true);
+  // A resume is told to hooks; a lost nudge waits for the repository's next event.
+  if (result.paused === false && !result.already)
+    await notifyHooks(ctx.env, ctx.repo).catch(warned('break_glass.hooks_not_nudged'));
   if (!result.landed || result.already) return result;
   const sent = await Promise.all([
     dispatchProjection(ctx.env, ctx.repo).then(

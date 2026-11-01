@@ -127,5 +127,10 @@ pub(super) fn pause<S: SqlStore>(a: &Audit<S>, on: bool) -> Result<Value> {
         "resume_automation"
     };
     let seq = a.record(action, BTreeMap::new(), json!({}))?;
+    // What the pause stopped starts nothing by itself: whoever runs it has to hear this.
+    if !on {
+        let told = "repo.resumed";
+        super::super::deletion::notify(a.db, told, "resumed", a.principal, a.now, None)?;
+    }
     Ok(json!({ "paused": on, "break_glass": seq }))
 }

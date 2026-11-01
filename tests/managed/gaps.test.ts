@@ -124,4 +124,103 @@ describe('automation pause', () => {
     expect(await runAgent(h.env, h.created[0], inline)).toEqual({ status: 'stopped', reason: 'automation_paused' });
     expect(h.harness.started).toHaveLength(0);
   });
+
+  describe('when it resumes', () => {
+    const reviewed = { result: { summary: 'Reviewed.', findings: [] } };
+    const resumed = (h: Harness): QueueMessage => ({ kind: 'resumed', repo: h.platform.repo });
+    async function connected(required: string[]) {
+      const h = harness();
+      h.platform.change();
+      h.platform.required = required;
+      await put(h, 'code-review', { repos: [h.platform.repo] });
+      fakeGateway();
+      h.harness.scripts = [reviewed];
+      return h;
+    }
+
+    it('runs a required agent the pause stopped at its start, on the same head', async () => {
+      const h = await connected(['code-review']);
+      await deliver(h, opened(h));
+      h.platform.paused = true;
+      await runAgent(h.env, h.created[0], inline);
+      expect(h.platform.checks).toEqual([]);
+      h.platform.paused = false;
+      await deliver(h, resumed(h));
+      expect(h.created).toHaveLength(2);
+      expect(h.created[1]).toMatchObject({ run: h.created[0].run, attempt: 2, head: HEAD_A });
+      expect(await runAgent(h.env, h.created[1], inline)).toMatchObject({ status: 'passed' });
+      expect(h.platform.checks).toHaveLength(1);
+      expect(h.platform.checks[0]).toMatchObject({ name: 'code-review', status: 'pass' });
+    });
+
+    it('runs one for a push the pause kept from ever starting', async () => {
+      const h = await connected(['code-review']);
+      h.platform.paused = true;
+      await deliver(h, opened(h));
+      expect(h.created).toHaveLength(0);
+      h.platform.paused = false;
+      await deliver(h, resumed(h));
+      expect(h.created).toHaveLength(1);
+    });
+
+    it('runs one the pause caught as it reported, and says nothing on the change', async () => {
+      const h = await connected(['code-review']);
+      await deliver(h, opened(h));
+      h.harness.onPoll = () => {
+        h.platform.paused = true;
+      };
+      expect(await runAgent(h.env, h.created[0], inline)).toMatchObject({ status: 'failed' });
+      expect(h.platform.checks).toEqual([]);
+      expect(h.platform.comments.filter((c) => /could not finish/.test(c.body))).toEqual([]);
+      h.harness.onPoll = undefined;
+      h.platform.paused = false;
+      await deliver(h, resumed(h));
+      expect(h.created).toHaveLength(2);
+    });
+
+    it('fails no check while paused', async () => {
+      const h = await connected(['code-review']);
+      await deliver(h, opened(h));
+      h.platform.paused = true;
+      await runAgent(h.env, h.created[0], inline);
+      await deliver(h, resumed(h));
+      expect(h.created).toHaveLength(1);
+      expect(h.platform.checks).toEqual([]);
+    });
+
+    it('leaves alone a check no landing waits for, and what already has its answer', async () => {
+      const optional = await connected([]);
+      await deliver(optional, opened(optional));
+      optional.platform.paused = true;
+      await runAgent(optional.env, optional.created[0], inline);
+      optional.platform.paused = false;
+      await deliver(optional, resumed(optional));
+      expect(optional.created).toHaveLength(1);
+
+      const done = await connected(['code-review']);
+      await deliver(done, opened(done));
+      await runAgent(done.env, done.created[0], inline);
+      await deliver(done, resumed(done));
+      expect(done.created).toHaveLength(1);
+    });
+
+    it('hears it from the signed hook', async () => {
+      const h = await connected(['code-review']);
+      h.platform.paused = true;
+      await deliver(h, opened(h));
+      h.platform.paused = false;
+      const body = JSON.stringify({ event: 'repo.resumed', action: 'resumed', repo: h.platform.repo });
+      const res = await managedFetch(
+        new Request(`https://managed.example.com/hooks/${h.platform.repo}`, {
+          method: 'POST',
+          headers: { 'x-yoneda-event': 'repo.resumed', 'x-yoneda-signature': await signature(HOOK_SECRET, body) },
+          body,
+        }),
+        h.env,
+      );
+      expect(res.status).toBe(202);
+      expect(await res.json()).toEqual({ queued: true });
+      expect(h.sent.at(-1)).toEqual({ kind: 'resumed', repo: h.platform.repo });
+    });
+  });
 });

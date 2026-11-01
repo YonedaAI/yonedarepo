@@ -8,6 +8,14 @@ use crate::storage::SqlStore;
 const HOOKS: &str = "platform:hooks";
 const REPO: &str = "r0123456789abcdef0123";
 
+/// `c` from the signed-in person the break-glass path asks for.
+fn as_human(h: &Harness, mut c: Value) -> Value {
+    *h.now.borrow_mut() += 1_000;
+    c["now"] = json!(*h.now.borrow());
+    c["_session"] = json!({"workspace": "ws-1", "principal": OWNER, "human": true});
+    execute_repo_store(&h.db, c).unwrap()
+}
+
 fn create(h: &Harness, who: &str, extra: Value) -> yoneda_core::Result<Value> {
     let mut c = json!({"op":"repo_hook_create","url":"https://ci.example.com/hook",
         "_secret":"whsec_0123456789abcdef0123456789abcdef","_repo":REPO,
@@ -337,6 +345,34 @@ fn upgrades_from_the_checkpoint_digest_schema_and_stamps_rfc3339_times() {
 /// The schema as it stood before hooks (migrations 1-24).
 static PRE_HOOKS: std::sync::LazyLock<Vec<(i64, &'static str)>> =
     std::sync::LazyLock::new(|| super::super::migration::MIGRATIONS[..24].to_vec());
+
+/// Work a pause stopped starts nothing by itself, so whoever runs it has to hear the resume.
+#[test]
+fn resuming_automation_tells_hooks_that_want_it_once() {
+    let (h, _root) = seeded();
+    let wants = create(&h, OWNER, json!({"events":["repo"]})).unwrap()["id"].clone();
+    let other = create(&h, OWNER, json!({"events":["change"]})).unwrap()["id"].clone();
+    let glass = |action: &str| {
+        let c = json!({"op":"repo_break_glass","action":action,"reason":"agents misbehaving"});
+        as_human(&h, c)
+    };
+    glass("pause_automation");
+    assert_eq!(
+        drain(&h, &wants),
+        Vec::<Value>::new(),
+        "a pause tells nobody"
+    );
+    glass("resume_automation");
+    let bodies = drain(&h, &wants);
+    assert_eq!(bodies.len(), 1, "{bodies:?}");
+    assert_eq!(bodies[0]["event"], "repo.resumed");
+    assert_eq!(bodies[0]["action"], "resumed");
+    assert_eq!(bodies[0]["repo"], REPO);
+    assert!(bodies[0].get("message").is_none(), "no repository text");
+    assert_eq!(drain(&h, &other), Vec::<Value>::new());
+    assert_eq!(glass("resume_automation")["already"], true);
+    assert_eq!(drain(&h, &wants), Vec::<Value>::new(), "already resumed");
+}
 
 #[test]
 fn deleting_the_repository_delivers_repo_deleted_to_hooks_that_want_it() {

@@ -48,6 +48,10 @@ export async function receiveHook(req: Request, env: ManagedEnv, repo: string): 
     await env.RUNS.send({ kind: 'deleted', repo });
     return json({ queued: true }, 202);
   }
+  if (name === 'repo.resumed') {
+    await env.RUNS.send({ kind: 'resumed', repo });
+    return json({ queued: true }, 202);
+  }
   const family = name.split('.')[0];
   const action = name.includes('.') ? name.split('.')[1] : String(event.action ?? '');
   const commit = COMMIT_ID.test(String(event.commit)) ? String(event.commit) : null;
@@ -164,6 +168,24 @@ async function onEvent(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'event'
 }
 
 /**
+ * Automation came back. A pause drops pushes before they claim a run and stops runs that had, and
+ * nothing asks again, so each agent a landing waits for looks at the open Landings: `claim` starts
+ * a run the pause stopped, and a head with its answer is left alone. Agents nobody requires wait
+ * for the next push, as they would have.
+ */
+async function onResumed(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'resumed' }>) {
+  const repo = repoStub(env, m.repo);
+  const [connection, enabled] = await Promise.all([repo.connection(), repo.enabled()]);
+  if (!connection || connection.revoked || enabled.length === 0) return;
+  const platform = new Platform(env, { token: connection.token });
+  const { required } = await platform.landingChecks(m.repo);
+  const agents = enabled.filter((id) => required.includes(String(managedAgent(id)?.check)));
+  if (agents.length === 0) return;
+  const open = await reviewable(platform, m.repo);
+  await reviewChanges(env, m.repo, { account: connection.account, platform }, agents, open, true);
+}
+
+/**
  * Claims one run per agent for each change at its current head (idempotent: a head already
  * claimed is counted as `already`) and starts its Workflow instance, as each agent's trigger
  * allows: "when marked ready" only when the change opened (`opened`), "ready for review" never
@@ -244,6 +266,7 @@ export async function consume(batch: MessageBatch<QueueMessage>, env: ManagedEnv
       const m = message.body;
       if (m.kind === 'event') await onEvent(env, m);
       else if (m.kind === 'resume') await onResume(env, m);
+      else if (m.kind === 'resumed') await onResumed(env, m);
       else if (m.kind === 'deleted') await onDeleted(env, m);
       else if (m.kind === 'topup') await runTopUp(env, m);
       else if (m.kind === 'refund') await runRefund(env, m.account, m.id);

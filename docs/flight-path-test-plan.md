@@ -64,19 +64,40 @@ Nothing is scripted past the clicks: `web-agents-flow.mjs` creates a repository 
 | Drift | Plan says fix a typo, diff adds payments | Off course, check fails, goes around |
 | Never | The same drift, with Never chosen on both agents | Off course, check passes, lands: an explicit setting wins |
 
-**A run with no reading:** a run that fails or times out fails a required check, with a comment saying to push again. Nothing else would answer that check, so the Landing used to wait for good. A check nobody requires stays silent. Automation paused or credit run out are not failures: nothing is posted and the Landing waits.
+**A run with no reading:** a run that fails or times out fails a required check, with a comment saying to push again. Nothing else would answer that check, so the Landing used to wait for good. A check nobody requires stays silent. Out of credit is no failure: the run waits and resumes with the credit.
+
+**A pause fails nothing.** Pushes during it start no run, and a run it stops posts nothing. `resume_automation` sends `repo.resumed`, and each agent a landing requires then looks at the open Landings, up to 200: `claim` restarts a run the pause stopped, and a head with its answer is left alone. An agent nobody requires waits for the next push. A lost hook waits for the next event, as any trigger does.
 
 **Bad verdicts block by default** (owner, 2026-10-31): `block_at` is `high` for Slop and Intent drift. `partial` and a medium Slop reading pass. With Land when cleared any failed check goes around, required or not.
 
 **Settings saved earlier:** a saved level or a saved Never wins; unset gets `high`. Never wasn't stored while it was the default, so a workspace that picked it then can't be told from one that never chose, and blocks at `high` now.
 
+**Result, 2026-11-01 on dev:** all 6 cases as expected, with `mimo/mimo-v2.6-flash` through opencode, no fallback: Clean and Never on `700b1d47`, the others on `e8649297`. Evidence: `.local/agents-live/1793541518384/`, `.local/agents-live/1793508847041/`. $0.20 of real credit, $0 to $0.021 a run. Values reached the open page 75 to 211 s after the commit, with no reload.
+
+| Case | Slop | Intent drift | Outcome |
+|---|---|---|---|
+| Clean | low | on course | Landed |
+| No plan | low | `no_plan` | Landed |
+| Sloppy | high, 9 findings | partly on course | Go-around; an Edit on the branch landed it, low and on course |
+| Drift | medium | off course | Go-around |
+| Never | medium | off course | Landed |
+
+This test led to 7 fixes a script had hidden: the web app couldn't commit; the page showed no result until reloaded; it said Go-around on a landed Landing; comments showed raw Markdown and a run id; a go-around chip read as healthy; one low nit held a passing Landing for nobody; a failed run left a required check waiting for good.
+
+## Timing
+
+**F1 repeated, on `700b1d47`, a fresh repository each:** 10 of 10 in 18.4 to 20.5 s, median 19.4 s (`F1_RUNS=10`). 8.2 s of that is the test's own wait. Approval to cleared, by the platform's stamps: 3.2 to 4.6 s.
+
+**The one 65 s F1 was a queue stall.** Workers logs for 2026-11-01 03:08 to 03:10 UTC show the last approval at 08:59.8 and no consumer invocation from 08:43 to 09:42: a 70.7 s gap, against 14.6 s at most across F1 ×10, then one full batch of 10. Every outcome was `ok`, with no warning, error or platform deploy near it, and logs are not sampled. So our consumer wasn't called. Why delivery paused can't be seen from here. Seen once; anything on that queue waits when it happens, and nothing was lost.
+
+**The 100-writer burst (item 8) did not slow down.** 3 runs on `700b1d47`: burst 0.7 / 1.0 / 1.5 s min, median, max, 100 of 100 landed and read back. The 6.7 s and 11.1 s were step times, about 9 s of setup around a burst that took 1.4 s and 1.2 s. Read `elapsed_s`, not the step's time.
+
 ## Unverified
 
 | Gap | Why it matters |
 |---|---|
-| Slop and Intent drift are scripted in 43, 44 and 45 | They prove the read and the card, not the agents. `tools/staging/web-agents-flow.mjs` is the real run of those, from a commit made in the browser |
+| Slop and Intent drift are scripted in 43, 44 and 45 | They prove the read and the card, not the agents. `tools/staging/web-agents-flow.mjs` is the real run of those; its results are above |
 | Legal hold or `REPO_FULL` lifted | Nothing asks again; the Landing waits for its next event. Read from the code, not tested |
 | The switch turned on over a Landing that already cleared | The same: nothing asks. Read from the code, not tested |
-| One slow run of F1 | 65 s against 17 and 18 s, with no land timing recorded that run. Land waits have measured 2.9 to 8.9 s since; not reproduced, not explained |
 | Risk bands | Not calibrated (landings plan, stage 4). High holds a Landing on an uncalibrated score |
 | Rate at volume | One Landing at a time, plus one race of two |

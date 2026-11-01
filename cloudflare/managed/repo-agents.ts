@@ -10,7 +10,7 @@ import type {
   RunFinding,
   RunStatus,
 } from '../../shared/managed-agents';
-import type { ManagedEnv } from './config';
+import { AUTOMATION_PAUSED, type ManagedEnv, notReviewed } from './config';
 import {
   type Connection,
   readConnection,
@@ -140,13 +140,23 @@ export class RepoAgents extends DurableObject<ManagedEnv> {
         .toArray().length;
       if (!on) return null;
       const existing = sql
-        .exec<{ id: string; attempt: number; status: RunStatus }>(
-          'SELECT id, attempt, status FROM runs WHERE agent = ? AND change = ? AND head = ?',
+        .exec<{ id: string; attempt: number; status: RunStatus; error: string | null }>(
+          'SELECT id, attempt, status, error FROM runs WHERE agent = ? AND change = ? AND head = ?',
           agent,
           change,
           head,
         )
         .toArray()[0];
+      // A pause stopped this head before it had an answer: it gets another try.
+      if (existing?.error === notReviewed(AUTOMATION_PAUSED)) {
+        sql.exec(
+          `UPDATE runs SET status = 'queued', attempt = attempt + 1, error = NULL, finished_at = NULL
+           WHERE id = ?`,
+          existing.id,
+        );
+        const attempt = existing.attempt + 1;
+        return { run: existing.id, attempt, created: false, queued: true, superseded: [] };
+      }
       if (existing)
         return {
           run: existing.id,

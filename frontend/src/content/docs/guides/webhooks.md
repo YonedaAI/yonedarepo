@@ -27,7 +27,7 @@ The answer holds the signing secret (`whsec_…`). It is shown once. The URL mus
 | `check` | A check concluded: pass, fail or error |
 | `change` | A Landing (a change request) was opened, commented, landed, closed or deleted (`change.opened`, `change.commented`, `change.landed`, `change.closed`, `change.deleted`) |
 | `release` | A release was published or deleted (`release.published`, `release.deleted`) |
-| `repo` | The repository was deleted (`repo.deleted`, sent once). Where deleted repositories can be restored for a time, its `purge_at` says when that ends, and `repo.purged` is sent once when it is gone for good; a restored repository gets neither. Nothing is delivered after the last of them |
+| `repo` | The repository was deleted (`repo.deleted`, sent once). Where deleted repositories can be restored for a time, its `purge_at` says when that ends, and `repo.purged` is sent once when it is gone for good; a restored repository gets neither. Nothing is delivered after the last of them. The owner resuming automation sends `repo.resumed`. |
 
 Leave out `events` to get them all. One more name, `change.auto`, is never included by default: with `change`, it also delivers `change.opened` for a Landing a push opened ([automatic Landings](/docs/guides/changes#a-landing-for-every-push)). Those arrive per branch, and a hook 1,000 payloads behind is switched off. Claiming one with `yoneda change create` tells every `change` hook, as opening a Landing does. `paths` limits the commit messages a hook sees to commits inside those paths; change titles and comment text go only to hooks without `paths`.
 

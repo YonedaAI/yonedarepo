@@ -4,7 +4,7 @@
 import { runInDurableObject } from 'cloudflare:test';
 import { expect, it } from 'vitest';
 import { platformJob } from '../../cloudflare/worker/platform-entrypoint';
-import { deliverHook } from '../../cloudflare/worker/repo-hooks';
+import { deliverHook, fanoutHooks } from '../../cloudflare/worker/repo-hooks';
 import { deriveAfterLanding } from '../../cloudflare/worker/repo-derived';
 import { api, author, bindings, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
@@ -80,6 +80,27 @@ it('delivers one signed land event whose signature verifies, without contents', 
   // Nothing is sent twice.
   expect(await deliverHook(scoped, id, made.id, send)).toEqual({});
   expect(got).toHaveLength(1);
+});
+
+it('tells a repo hook when automation resumes, from the break-glass route', async () => {
+  const { id, owner, hook, jobs } = await setup('hooks_resume');
+  const made = await hook({ events: ['repo'] });
+  const glass = (action: string) => api(`/repos/${id}/break-glass`, owner, { body: { action, reason: 'agents misbehaving' } });
+  expect((await glass('pause_automation')).status).toBe(200);
+  expect(jobs()).toHaveLength(0);
+  expect((await glass('resume_automation')).status).toBe(200);
+  expect(jobs().map((job) => job.job_id)).toEqual(['fanout']);
+  await fanoutHooks(scoped, id);
+  expect(jobs().map((job) => job.job_id)).toContain(`hook:${made.id}`);
+  const { got, send } = receiver();
+  await deliverHook(scoped, id, made.id, send);
+  expect(got).toHaveLength(1);
+  expect(got[0].json).toMatchObject({ event: 'repo.resumed', action: 'resumed', repo: id });
+  expect(await verifies(made.secret, got[0])).toBe(true);
+  // Only a real resume says anything.
+  const before = jobs().length;
+  expect((await glass('resume_automation')).body.already).toBe(true);
+  expect(jobs()).toHaveLength(before);
 });
 
 it('retries a failing receiver through the queue job and logs every attempt', async () => {
