@@ -129,7 +129,7 @@
   pointer-events: none;
 }
 .site-menu-small {
-  min-width: 240px;
+  min-width: 160px;
 }
 .site-menu-small .site-menu-item {
   color: var(--site-muted);
@@ -191,6 +191,7 @@
   .site-menu-panel-company {
     top: calc(100% + 11px);
     left: 0;
+    padding: var(--sp-2);
   }
   .site-menu-features {
     display: grid;
