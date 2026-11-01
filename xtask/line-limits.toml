@@ -15,7 +15,7 @@
 "backend/crates/yoneda-platform/src/repo_store/staging.rs" = 325
 "backend/crates/yoneda-platform/src/secret_scan.rs" = 334
 "backend/crates/yoneda-ssh-gateway/src/bridge.rs" = 349
-"cloudflare/worker/repo-api.ts" = 448
+"cloudflare/worker/repo-api.ts" = 447
 "cloudflare/worker/repo-bundles.ts" = 364
 "cloudflare/worker/repo-git-objects.ts" = 353
 "cloudflare/worker/repo-objects.ts" = 418
@@ -27,6 +27,5 @@
 "tools/staging/browser-flow.mjs" = 325
 "tools/staging/managed-live.mjs" = 427
 "tools/staging/size-ladder.mjs" = 311
-"xtask/src/deploy_live.rs" = 312
 "xtask/src/downloads.rs" = 306
 "xtask/src/infra/spec.rs" = 322

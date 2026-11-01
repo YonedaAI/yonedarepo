@@ -82,6 +82,14 @@ The `monitor` job polls every 5 minutes for 30 minutes (`tools/ship/monitor.mjs`
 - **Two bad polls in a row** (health not at the revision, or Superfan unreadable) fail the job. So does a watch with no telemetry on any poll.
 - **Details:** `POST /run` and the hourly cron both mail open findings not yet mailed to `ADMIN_NOTIFY_EMAIL` (`cloudflare/superfan/notify.ts`). One digest per pass, at most 8 digests per UTC day; the rest wait for the next pass. A reopened finding mails again only if its last mail is over 6 hours old. Dev mails too, so a burst there, which fires rules on purpose, sends digests. Model spend keeps its own daily cap, and a finding without a narrative is mailed with its summary. With `WATCH_WIDE=on` (dev, not yet prod) urgent findings mail at once, outside that cap: [incidents.md](incidents.md).
 
+## Deploy ledger
+
+Each `cargo xtask deploy` and `rollback` ends by writing one row to the environment's Superfan: commit, start and end, environment, who, `deploy` or `rollback`, `ok` or `failed`. `GET /deploys` on Superfan reads it, with `SUPERFAN_READ_TOKEN`; `GET /status` shows the last one. A failure to write says `WARNING: deploy ledger not written` and the deploy carries on. On a runner that line stays off the log, and so does `who`: it goes only to the private ledger, never to wrangler's arguments.
+
+Each Worker's Cloudflare version carries `--tag <short commit>` and `--message "<env> <commit>"`.
+
+A rollback's row names what `/health` reports afterwards. Superfan rolls back with the rest, so the row reaches the previous release's Superfan: one from before the ledger answers 404 and the row is lost, with a warning.
+
 ## Rollback
 
 **Nothing rolls back on its own.** A repository that ran a migration refuses older binaries with `SCHEMA_TOO_NEW` (`backend/crates/yoneda-platform/src/repo_store/migration.rs`), so an automatic rollback could take those repositories down.
@@ -101,3 +109,4 @@ None of this has run on GitHub. `actionlint` and local tests pass; no workflow, 
 - `downloads stage` on `macos-latest` (Xcode's x86_64 target, zig 0.17.0, cargo-zigbuild 0.24.0) has only run on the owner's Mac.
 - GitHub's reply shapes for statuses and workflow runs are from its docs; the tests use fakes. `live-tests` has never been set for real.
 - Resend from Superfan and the dead-man has only run against a fake.
+- The deploy ledger, `--tag` and `--message` have only run in tests. Both values fit the API's limits (100 bytes for a tag, 1,000 for a message, checked 2026-11-01).

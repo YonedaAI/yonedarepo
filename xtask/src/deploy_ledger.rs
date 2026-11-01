@@ -63,13 +63,13 @@ pub(crate) fn now_ms() -> u64 {
         .map_or(0, |elapsed| elapsed.as_millis() as u64)
 }
 
-/// A deploy's Cloudflare version tag: the short commit (Cloudflare keeps 25 characters).
+/// A deploy's Cloudflare version tag: the short commit (the API takes 100 bytes).
 pub(crate) fn tag(head: &str) -> &str {
     crate::deploy_guard::short(head)
 }
 
-/// A deploy's Cloudflare version message (Cloudflare keeps 100 bytes): the environment and the
-/// whole commit, and nothing a public log should not show.
+/// A deploy's Cloudflare version message (the API truncates past 1,000 bytes): the environment
+/// and the whole commit, and nothing a public log should not show.
 pub(crate) fn message(env: &Env, head: &str) -> String {
     format!("{} {head}", env.name())
 }
@@ -185,7 +185,7 @@ mod tests {
     #[test]
     fn a_version_names_its_commit_within_cloudflares_limits() {
         assert_eq!(tag(HEAD), "0123456789ab");
-        assert!(tag(HEAD).len() <= 25);
+        assert!(tag(HEAD).len() <= 100);
         assert_eq!(message(&Env::Prod, HEAD), format!("prod {HEAD}"));
         assert!(message(&Env::Prod, HEAD).len() <= 100);
     }

@@ -3,33 +3,20 @@
 // one block (mail-render.ts). In order, worst first: the first item names the mail. Every signal
 // the watcher can raise needs a line here; a test holds that, and these lines to the UI rules.
 
-export interface Facts {
-  /** Fired signals of this cause, by name. */
-  values: Record<string, number | null>;
-  /** The component's word (`repository`). */
-  word: string;
-  /** What its queue holds (`background job`). */
-  noun: string;
-  /** The usual p95, for a latency signal. */
-  baseline?: number;
-}
-export interface Link {
-  label: string;
-  /** Under the site, or the API when `api` is set. */
-  path: string;
-  api?: boolean;
-}
-export interface Copy {
-  signals: string[];
-  title(f: Facts): string;
-  means: string | ((f: Facts) => string);
-  first: string;
-  /** A different first step on these components. */
-  firstOn?: Record<string, string>;
-  /** The finding's own reason says more than these words: show it. */
-  reason?: boolean;
-  link?: (component: string) => Link;
-}
+import { PROBE_COPY, RELEASE_COPY } from './mail-copy-release';
+import {
+  type Copy,
+  capital,
+  count,
+  duration,
+  type Facts,
+  type Link,
+  number,
+  plural,
+} from './mail-words';
+
+export type { Copy, Facts, Link } from './mail-words';
+export { capital, number } from './mail-words';
 
 /** Component keys in the reader's words. They also rewrite the model's guess. */
 export const WORD: Record<string, string> = {
@@ -55,21 +42,6 @@ const NOUN: Record<string, string> = {
 };
 export const nounOf = (component: string) => NOUN[component] ?? WORD[component] ?? 'item';
 
-export const number = (n: number) => n.toLocaleString('en-US');
-const plural = (n: number, one: string, many = `${one}s`) => `${number(n)} ${n === 1 ? one : many}`;
-const count = (f: Facts, ...names: string[]) => {
-  for (const name of names) if (typeof f.values[name] === 'number') return f.values[name];
-  return 0;
-};
-export const capital = (s: string) => s[0].toUpperCase() + s.slice(1);
-const percent = (ratio: number) => `${Number((ratio * 100).toFixed(1))}%`;
-const duration = (ms: number) =>
-  ms < 1_000
-    ? `${number(ms)} ms`
-    : ms < 90_000
-      ? `${(ms / 1_000).toFixed(1)} s`
-      : `${number(Math.round(ms / 60_000))} minutes`;
-
 /** The counts behind a failure rate; with no rate, they already are the title. */
 function errorCounts(f: Facts) {
   if (typeof f.values.error_rate !== 'number') return 'Unhandled errors in the last hour.';
@@ -79,15 +51,6 @@ function errorCounts(f: Facts) {
   ].filter(Boolean);
   return parts.length ? `${parts.join(' and ')} this hour.` : 'More calls than usual are failing.';
 }
-
-/** What a synthetic check saw; two tries in each of two passes stand behind it. */
-const probeFailed = (name: string) => (f: Facts) => {
-  const status = f.values[name];
-  return typeof status === 'number'
-    ? `It failed two passes in a row, last with HTTP ${status}.`
-    : 'It failed two passes in a row with no answer.';
-};
-const PROBE_FIRST = 'Read GET /probes for the request id. If a deploy is new, roll back.';
 
 const healthLink = (component: string): Link => ({
   label: 'Check it yourself',
@@ -108,37 +71,7 @@ export const COPY: Copy[] = [
     first: 'Open it yourself. If it is down and a deploy is new, roll back.',
     link: healthLink,
   },
-  {
-    signals: ['probe_health'],
-    title: () => 'Website health check failing from outside',
-    means: probeFailed('probe_health'),
-    first: PROBE_FIRST,
-    link: (component) => ({ ...healthLink(component), api: false }),
-  },
-  {
-    signals: ['probe_page'],
-    title: () => 'Home page failing from outside',
-    means: probeFailed('probe_page'),
-    first: PROBE_FIRST,
-  },
-  {
-    signals: ['probe_api'],
-    title: () => 'API reads failing from outside',
-    means: probeFailed('probe_api'),
-    first: PROBE_FIRST,
-  },
-  {
-    signals: ['probe_clone'],
-    title: () => 'Public clone failing from outside',
-    means: probeFailed('probe_clone'),
-    first: PROBE_FIRST,
-  },
-  {
-    signals: ['probe_land'],
-    title: () => 'Test landing failing on dev',
-    means: probeFailed('probe_land'),
-    first: PROBE_FIRST,
-  },
+  ...PROBE_COPY,
   {
     signals: ['reconcile_mismatches'],
     title: (f) =>
@@ -195,28 +128,7 @@ export const COPY: Copy[] = [
     means: errorCounts,
     first: "Open this Worker's logs. If a deploy started it, roll back.",
   },
-  {
-    signals: ['release_error_rate'],
-    title: (f) => `${capital(f.word)} calls fail more since the deploy`,
-    means: (f) => {
-      const now = percent(count(f, 'release_error_rate'));
-      return f.baseline === undefined
-        ? `${now} of calls fail.`
-        : `${now} of calls fail, against ${percent(f.baseline)} before it.`;
-    },
-    first: 'Read the new release in GET /deploys. Roll back if it is the cause.',
-  },
-  {
-    signals: ['release_p95_ms'],
-    title: (f) => `${capital(f.word)} calls are slower since the deploy`,
-    means: (f) => {
-      const now = duration(count(f, 'release_p95_ms'));
-      return f.baseline === undefined
-        ? `The slowest calls take ${now}.`
-        : `The slowest calls take ${now}, against ${duration(f.baseline)} before it.`;
-    },
-    first: 'Compare the two releases in GET /deploys. Check for a burst first.',
-  },
+  ...RELEASE_COPY,
   {
     signals: ['resource_kills'],
     title: (f) =>

@@ -23,7 +23,11 @@ type Switches = { REQUEST_IDS?: string; BUILD_REVISION?: string };
 type Job = Pick<Partial<Envelope>, 'repo_id' | 'job_id' | 'kind' | 'request_id'>;
 
 export type Seed = { env?: Switches; req?: Request; waitUntil?: Waiter; job?: Job };
-type Scope = Seed & { id?: string };
+type Scope = Seed & {
+  id?: string;
+  /** This request's phases are kept already: one sample a request (span-sample.ts). */
+  spansTaken?: boolean;
+};
 
 const scopes = new AsyncLocalStorage<Scope>();
 

@@ -77,6 +77,7 @@ const FIELDS = [
   'sent_mib',
   'served',
   'service',
+  'spans',
   'start_ms',
   'stalled',
   'started',

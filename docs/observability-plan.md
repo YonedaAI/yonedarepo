@@ -1,6 +1,6 @@
 # Observability plan
 
-Status: plan, not built. Written 2026-10-31 at dev `688d46df`. Companion to `docs/analytics-plan.md`.
+Status: O1, O2, O3 steps 2 to 4 and O4 step 1 are built; each switch below is off until a dev test proves it. Written 2026-10-31 at dev `688d46df`. Companion to `docs/analytics-plan.md`.
 
 Analytics asks whether people are using this. Observability asks whether it's working, and if not, why.
 
@@ -133,14 +133,27 @@ Failure paths are not on that budget: a line is written only when something alre
 ## Phase O3: Ship with a net
 
 1. Register `ship.yml` and run the whole ship pipeline once against dev, so its first real run isn't on prod.
-2. A deploy ledger: commit, time, environment, who. `--tag` and `--message` on each deploy, so Cloudflare's versions name their commit.
-3. Findings carry the revision. After a deploy, compare error rate and latency with the release before.
-4. Synthetic checks every few minutes, on dev and prod: `/health`, a page, a public clone, an API read. A landing on a probe repository on dev only at first. Probe traffic is marked as our own.
+2. **Built.** A deploy ledger: commit, time, environment, who. `--tag` and `--message` on each deploy, so Cloudflare's versions name their commit.
+3. **Built.** Findings carry the revision. After a deploy, compare error rate and latency with the release before.
+4. **Built.** Synthetic checks every few minutes, on dev and prod: `/health`, a page, a public clone, an API read. A landing on a probe repository on dev only at first. Probe traffic is marked as our own.
 5. Rollback drill on dev: time it, and write down the result.
+
+| Switch | Worker | Off | On |
+|---|---|---|---|
+| `RELEASE_COMPARE` | Superfan | No comparison | Each full pass compares the release with the one before. A release that fails or slows is a digest finding |
+| `PROBES` | Superfan | No request | Checks every 5 minutes. Two bad passes in a row is an urgent finding per check. `clone` also needs `PROBE_CLONE_REPO` |
+| `PROBE_LANDING` | Superfan, dev | No write | Lands every third pass, with `PROBE_LAND_REPO` and `PROBE_LAND_TOKEN`. Prod refuses it whatever the value |
+| `SPAN_SAMPLE` | Platform | No sample | A number N: 1 request in N, and every request over 5 seconds |
+
+The ledger, `--tag`, `--message` and revisions on findings have no switch: none touches a request.
+
+Comparison rules: the windows are equal and either side of the deploy. The rollout and the first 5 minutes after it count in neither, because Durable Objects wake cold. Both sides need 20 invocations. Worse means the error rate over 2% and over twice the one before, or a p95 over twice the one before and at least 100 ms higher. After 6 hours the window closes. Only `ok` rows of the ledger count, a rollback included.
+
+**Not measured:** every number in this phase comes from tests. Nothing here has run on dev.
 
 ## Phase O4: Find what's slow
 
-1. Sample `Server-Timing` spans into logs and Analytics Engine, per operation.
+1. **Built, `SPAN_SAMPLE` off.** Sample `Server-Timing` spans into logs and Analytics Engine, per operation.
 2. Spike Cloudflare's Workers tracing: does it follow bindings and Durable Objects? Use it if so.
 3. Service targets for API reads, landings, Git clone and push, and repository create. **Measure for 30 days first**, then set them: no invented numbers.
 4. Show targets, current values and error budget on the Infrastructure tab.
@@ -195,6 +208,8 @@ O1 and O5 can start now. The analytics plan's Phase 7 reads from O1 to O4.
 |---|---|
 | Errors and logs | `cloudflare/worker/repo-api.ts`, `background.ts`, `platform-entrypoint.ts`, `repo-compute.ts`, `frontend/src/components/AppErrorBoundary.tsx` |
 | Superfan | `cloudflare/superfan/tail.ts`, `signals.ts`, `watch.ts`, `notify.ts` |
-| Deploys | `xtask/src/deploy_exec.rs`, `deploy_live.rs`, `.github/workflows/`, `docs/ship-pipeline.md` |
+| Deploys | `xtask/src/deploy_exec.rs`, `deploy_ledger.rs`, `deploy_live.rs`, `.github/workflows/`, `docs/ship-pipeline.md` |
+| After a deploy | `cloudflare/superfan/ledger-deploys.ts`, `release.ts`, `synthetic.ts`, `synthetic-checks.ts` |
+| Spans | `cloudflare/worker/span-sample.ts`, `repo-timing.ts` |
 | Code health | `xtask/src/`, `.github/workflows/ci.yml`, `full.yml` |
 | Evidence | `tools/fanout-bench/results.mjs`, `tools/staging-realworld.mjs` |

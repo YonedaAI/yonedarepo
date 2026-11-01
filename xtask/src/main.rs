@@ -14,6 +14,7 @@ mod deploy_ledger;
 mod deploy_live;
 mod deploy_prebuilt;
 mod deploy_registry;
+mod deploy_rollback;
 mod deploy_secrets;
 mod deploy_ship;
 mod dev;

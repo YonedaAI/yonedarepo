@@ -59,11 +59,12 @@ import { regionHintTest, whereRepository } from './repo-region-hint';
 import { releaseDownload, releasesRoute } from './repo-releases';
 import { restoreRepository } from './repo-restore';
 import { SESSION_BODY_LIMIT } from './repo-session-records';
-import { timed, withTimings } from './repo-timing';
+import { timed } from './repo-timing';
 import { batchRefs, branchesRoute, operations } from './repo-tools';
 import { vacuum } from './repo-vacuum';
 import { humanView } from './repo-views';
 import { ensureScope } from './request-scope';
+import { timedAnswer } from './span-sample';
 import type { Env } from './types';
 
 const COMMIT_BODY_LIMIT = 64 * 1024 * 1024;
@@ -342,12 +343,10 @@ async function withHeadRefresh(env: Env, repo: string, change: Promise<Json>) {
 }
 
 export function repoApi(req: Request, env: Env): Promise<Response> {
-  return ensureScope({ env, req }, async () => {
-    // Failures outside a route (authentication, MCP framing) are mapped like a route's.
-    const { value, header } = await withTimings(() => handle(req, env).catch(failure));
-    if (header) value.headers.set('server-timing', header);
-    return value;
-  });
+  // Failures outside a route (authentication, MCP framing) are mapped like a route's.
+  return ensureScope({ env, req }, () =>
+    timedAnswer(env, req, () => handle(req, env).catch(failure)),
+  );
 }
 
 async function handle(req: Request, env: Env): Promise<Response> {

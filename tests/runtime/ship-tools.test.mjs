@@ -12,6 +12,13 @@ import { treeOf } from '../../tools/staging/client.mjs';
 const SHA = 'a'.repeat(40);
 const PRIVATE = ['kitabc123', 'delivered+kitabc123@resend.dev', 'owner@example.com', 'r0123456789abcdef', 'tok_secret'];
 
+test('the deploy ledger stays off a public log, and a failed deploy names only env and commit', () => {
+  assert.equal(publicLine('deploy', 'Deploy ledger: written.'), null);
+  assert.equal(publicLine('deploy', 'WARNING: deploy ledger not written (HTTP 401).'), null);
+  const line = `wrangler deploy --config cloudflare/x.jsonc --var BUILD_REVISION:${SHA} --tag ${SHA.slice(0, 12)} --message prod ${SHA} failed (exit status: 1)`;
+  assert.equal(publicLine('deploy', line), `::error::${line}`);
+});
+
 test('deploy output: guards and timing rows pass, anything that can name an account does not', () => {
   for (const line of [
     'Refusing prod: dev yonedarepo-dev-platform runs abc, not HEAD def.',
