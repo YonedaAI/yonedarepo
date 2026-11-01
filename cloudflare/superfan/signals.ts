@@ -15,6 +15,7 @@ import {
   invocationSignals,
   kills,
   marked,
+  named,
   queueSignals,
   report,
   type Signal,
@@ -35,6 +36,8 @@ const URGENT = new Set([
   'reconcile_mismatches',
   'storage_9gb',
   'storage_full',
+  'audit_event_corrupt',
+  'audit_erase_blocked',
   'dead_letter_backlog',
   'dead_lettered',
 ]);
@@ -91,6 +94,8 @@ function platformReports(s: Snapshot, baselines: Baselines, wide: boolean): Comp
     report('derived_jobs', s, [
       ...invocationSignals('derived_jobs', s, baselines),
       marked(s, 'compaction_stalls'),
+      named(s, 'audit_event_corrupt'),
+      named(s, 'audit_erase_blocked'),
       ...(a ? queueSignals(a) : []),
     ]),
   ];
@@ -151,7 +156,7 @@ function summary(fired: Signal[]) {
   return fired
     .map(
       (s) =>
-        `${s.name}=${s.value}${s.unit === 'ms' ? 'ms' : ''} (${s.rule}${s.baseline !== undefined ? `; baseline ${s.baseline}ms` : ''})`,
+        `${s.name}=${s.value}${s.unit === 'ms' ? 'ms' : ''} (${s.rule}${s.baseline !== undefined ? `; baseline ${s.baseline}ms` : ''}${s.detail ? `; ${s.detail}` : ''})`,
     )
     .join('; ');
 }

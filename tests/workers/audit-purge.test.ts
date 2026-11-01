@@ -347,3 +347,141 @@ it('an export is in the log before a byte leaves, with who took it and what it a
   expect((await api('/orgs/acme/audit?kind=audit.exported', who, {}, on)).body.items).toHaveLength(2);
   expect((await api('/orgs/acme/audit/verify', who, {}, on)).body.ok).toBe(true);
 });
+
+const HOUR = 60 * 60_000;
+/** The job waiting for a look, its wait backdated as if it began `ago` milliseconds back. */
+function backdated(repo: string, ago: number) {
+  const [job] = delayed.filter((m) => m.kind === 'platform_erase' && m.repo_id === repo);
+  job.blocked_since = Date.now() - ago;
+  return job.blocked_since as number;
+}
+/** Every `event` line the platform logged, as written. */
+function alerts() {
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+  return (event: string) =>
+    error.mock.calls.map(([line]) => JSON.parse(String(line))).filter((line) => line.event === event);
+}
+const oldest = (repo: string) =>
+  runInDurableObject(authority(repo), (_, state) =>
+    state.storage.sql.exec<{ seq: number }>('SELECT seq FROM hook_outbox ORDER BY seq LIMIT 1').one().seq,
+  );
+
+it('an erase held up past an hour raises an alert, once past it, and still loses nothing', async () => {
+  const who = await org('acme', 'audit_held');
+  const id = await made(who, 'acme');
+  quiet();
+  const logged = alerts();
+  const down = logDown();
+  await api(`/repos/${id}?confirm=app`, who, { method: 'DELETE' }, down);
+  const seq = await oldest(id);
+  await deliver(id, down);
+  expect(delayed.filter((m) => m.repo_id === id)).toHaveLength(1);
+  expect(logged('audit.erase_blocked')).toEqual([]);
+
+  // Under the limit: nothing yet, and the wait keeps its start.
+  const since = backdated(id, HOUR - 60_000);
+  due(id);
+  await deliver(id, down);
+  expect(logged('audit.erase_blocked')).toEqual([]);
+  expect(delayed.find((m) => m.repo_id === id)?.blocked_since).toBe(since);
+
+  backdated(id, HOUR + 60_000);
+  due(id);
+  await deliver(id, down);
+  const [alert, ...more] = logged('audit.erase_blocked');
+  expect(more).toEqual([]);
+  expect(alert).toMatchObject({ repo: id, seq });
+  expect(alert.elapsed_ms).toBeGreaterThanOrEqual(HOUR);
+  expect(await erased(id)).toBe(false);
+  expect(await waiting(id)).toBe(1);
+
+  // Every later look repeats it, so the finding stays open while this lasts.
+  due(id);
+  await deliver(id, down);
+  expect(logged('audit.erase_blocked')).toHaveLength(2);
+
+  due(id);
+  await deliver(id, on);
+  expect(kinds(await trail('acme'))).toEqual(['repo.created', 'repo.deleted']);
+  expect(await erased(id)).toBe(true);
+  expect(delayed.filter((m) => m.repo_id === id)).toEqual([]);
+  expect(logged('audit.erase_blocked')).toHaveLength(2);
+});
+
+it('an erase with the erase switched off is held to the same limit', async () => {
+  const who = await org('acme', 'audit_held_off');
+  const id = await made(who, 'acme', 'app', noErase);
+  quiet();
+  const logged = alerts();
+  const down = logDown(noErase);
+  await api(`/repos/${id}?confirm=app`, who, { method: 'DELETE' }, down);
+  await deliver(id, down);
+  backdated(id, HOUR + 60_000);
+  due(id);
+  await deliver(id, down);
+  expect(logged('audit.erase_blocked')).toHaveLength(1);
+});
+
+/** Puts `payload` in the outbox as a repository's next event, between good ones. */
+const planted = (repo: string, payload: string) =>
+  runInDurableObject(authority(repo), (_, state) => {
+    const add = (body: string) =>
+      state.storage.sql.exec<{ seq: number }>(
+        "INSERT INTO hook_outbox(hook_id,event,payload) VALUES(0,'repo.visibility_changed',?) RETURNING seq",
+        body,
+      ).one().seq;
+    const good = JSON.stringify({ visibility: 'public', name: 'app', actor: 'user:x', at: 5 });
+    add(good);
+    const seq = add(payload);
+    add(good);
+    return seq;
+  });
+
+it('a corrupt event is named at once, stays put, and holds the erase until it is mended', async () => {
+  const who = await org('acme', 'audit_corrupt');
+  const id = await made(who, 'acme');
+  quiet();
+  const logged = alerts();
+  const secret = 'hunter2-not-for-any-log';
+  const seq = await planted(id, `{"token":"${secret}"`);
+  // A change on a live repository is what meets it first, and it isn't left waiting an hour.
+  // Nor does a log that is down hide it.
+  await api(`/repos/${id}/visibility`, who, { method: 'PUT', body: { visibility: 'public' } }, logDown());
+  expect(logged('audit.event_corrupt').at(-1)).toMatchObject({ repo: id, seq });
+  await api(`/repos/${id}/visibility`, who, { method: 'PUT', body: { visibility: 'private' } }, on);
+  // What came before it reached the log; it and what follows it are all still here.
+  expect(kinds(await trail('acme'))).toEqual(['repo.created', 'repo.visibility_changed']);
+  expect(await waiting(id)).toBe(4);
+
+  await api(`/repos/${id}?confirm=app`, who, { method: 'DELETE' }, on);
+  await deliver(id, on);
+  expect(await erased(id)).toBe(false);
+  expect(await waiting(id)).toBe(5);
+  expect(logged('audit.event_corrupt').at(-1)).toMatchObject({ repo: id, seq });
+  const step = caller(on, id, { _system: 'erase' })({ op: 'repo_erase_step' });
+  await expect(step).rejects.toMatchObject({ code: 'CONFLICT' });
+  expect(JSON.stringify(logged('audit.event_corrupt'))).not.toContain('hunter2');
+
+  // Mended, it goes through in order, and the erase with it.
+  await runInDurableObject(authority(id), (_, state) => {
+    const mended = JSON.stringify({ visibility: 'private', name: 'app', actor: 'user:x', at: 6 });
+    state.storage.sql.exec('UPDATE hook_outbox SET payload=? WHERE seq=?', mended, seq);
+  });
+  expect(due(id)).toHaveLength(1);
+  await deliver(id, on);
+  expect(await trail('acme')).toHaveLength(7);
+  expect(await erased(id)).toBe(true);
+});
+
+it('off, a corrupt row raises nothing and goes with the rest', async () => {
+  const who = await org('acme', 'audit_corrupt_off');
+  const id = await made(who, 'acme', 'app', logOff);
+  const logged = alerts();
+  await planted(id, 'not json');
+  await api(`/repos/${id}?confirm=app`, who, { method: 'DELETE' }, logOff);
+  await deliver(id, logOff);
+  expect(await erased(id)).toBe(true);
+  expect(logged('audit.event_corrupt')).toEqual([]);
+  expect(logged('audit.erase_blocked')).toEqual([]);
+});
+

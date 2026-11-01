@@ -2,7 +2,7 @@
 // component shares. signals.ts and signals-wide.ts build the reports from them.
 import type { Analytics, QueueStats } from './analytics';
 import type { Health } from './probes';
-import type { TailComponent, TailSample, TailStats } from './tail';
+import { NAMED_SEPARATOR, type TailComponent, type TailSample, type TailStats } from './tail';
 
 export type Component = TailComponent | 'billing' | 'storage' | 'deadman';
 
@@ -17,6 +17,8 @@ export interface Signal {
   baseline?: number;
   /** Set on latency signals with enough traffic to feed the baseline. */
   sample?: number;
+  /** Which rows it is about, for a reader: ids only (`NAMING`, tail.ts). */
+  detail?: string;
 }
 export interface ComponentReport {
   component: Component;
@@ -158,6 +160,24 @@ export function queueSignals(a: Analytics): Signal[] {
 /** A log event's count as a signal; one is enough. */
 export const marked = (s: Snapshot, name: string) =>
   threshold(name, s.marks[name] ?? 0, 'count', 0);
+
+/** Rows a finding spells out; the rest are counted, and every one is in the logs. */
+const NAMED_MAX = 3;
+
+/** A log event's count as a signal, saying which rows its lines named. */
+export function named(s: Snapshot, name: string): Signal {
+  const prefix = `${name}${NAMED_SEPARATOR}`;
+  const rows = Object.keys(s.marks).filter((mark) => mark.startsWith(prefix));
+  const count = rows.reduce((sum, mark) => sum + (s.marks[mark] ?? 0), s.marks[name] ?? 0);
+  const words = rows.sort().map((mark) => {
+    const [, repo, seq] = mark.split(NAMED_SEPARATOR);
+    return seq ? `${repo} event ${seq}` : repo;
+  });
+  const more = words.length - NAMED_MAX;
+  const shown = words.slice(0, NAMED_MAX).join(', ');
+  const detail = more > 0 ? `${shown} and ${more} more` : shown;
+  return { ...threshold(name, count, 'count', 0), ...(detail && { detail }) };
+}
 
 export function healthSignal(health: Health, rule: string): Signal {
   return {

@@ -113,6 +113,18 @@ export const COPY: Copy[] = [
     link: admin('/admin/repos', 'Open repositories'),
   },
   {
+    signals: ['audit_event_corrupt'],
+    title: () => 'An audit event cannot be read',
+    means: 'Nothing is lost. Later audit events and its erase wait behind it.',
+    first: 'See Audit events in the incident guide for the row named here.',
+  },
+  {
+    signals: ['audit_erase_blocked'],
+    title: () => 'A repository erase is held up',
+    means: 'The audit log has not taken its events for over an hour. Nothing is lost.',
+    first: 'Find audit.repo_copy_failed in the platform logs.',
+  },
+  {
     signals: ['storage_9gb'],
     title: (f) => {
       const n = count(f, 'storage_9gb');

@@ -75,6 +75,7 @@ const FIELDS = [
   'rollup_usd',
   'run',
   'sent_mib',
+  'seq',
   'served',
   'service',
   'start_ms',

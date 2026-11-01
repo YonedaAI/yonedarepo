@@ -8,7 +8,7 @@ Every env's Worker configs set `observability.enabled`, so each Worker's logs, e
 
 The platform Worker names its env's superfan Worker (`yonedarepo-<env>-superfan`, `cloudflare/superfan/`) in `tail_consumers`: superfan receives the platform's tail events (outcomes, logs, exceptions, CPU and wall time) with no API token, reads the GraphQL Analytics API hourly, and keeps its findings in its own ledger behind `GET /findings` and `GET /status` (bearer `SUPERFAN_READ_TOKEN`). On the wide watch (`WATCH_WIDE=on`, dev only for now) the front and managed Workers name it too. It mails the owner and posts nowhere else: [incidents.md](incidents.md) has every alert.
 
-Superfan counts a few log lines by their JSON `event` field (`MARKS` and `PUSH_RETRY` in `cloudflare/superfan/tail.ts`), so renaming one of those events silently stops its alert.
+Superfan counts a few log lines by their JSON `event` field (`MARKS`, `NAMING` and `PUSH_RETRY` in `cloudflare/superfan/tail.ts`), so renaming one of those events silently stops its alert. A `NAMING` event's `repo` and `seq` reach the finding, and only if they are shaped as a repository id and a number.
 
 To watch live output:
 

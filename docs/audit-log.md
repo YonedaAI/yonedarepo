@@ -60,7 +60,9 @@ A deletion can't wait for a next change, and the erase wipes `hook_outbox`.
 2. The `platform_erase` job copies again before anything goes. Until nothing is left it comes back every 5 minutes, with `REPO_ERASE` on or off, so it never runs out of queue retries.
 3. `repo_erase_step` refuses while events wait and `AUDIT_LOG` is on. The authority decides, so a stale job can't get past it.
 
-So a log that is down delays an erase and loses nothing. That wait has no clock: `audit.repo_copy_failed` and the `repo.erase` phase `audit` are what show it.
+So a log that is down delays an erase and loses nothing. The wait never gives up. Past an hour, every look logs `audit.erase_blocked` with the repository and its oldest event, and Superfan raises it ([incidents.md](incidents.md#audit-events)). The hour is counted from the job's first look, carried in the job itself (`blocked_since`).
+
+A row that can't be read is never skipped. A copy moves what came before it, stops there, and logs `audit.event_corrupt` with the repository and `seq`, at once: on a live repository too, and without waiting the hour, since time won't mend it. It and everything after it stay in the repository.
 
 A create taken back settles its events unread: nobody saw that repository. If that call fails, the purge copies them, so the log shows a create and a delete.
 

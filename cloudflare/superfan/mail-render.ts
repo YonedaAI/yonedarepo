@@ -45,6 +45,8 @@ interface Group {
   rows: FindingRow[];
   values: Facts['values'];
   baseline?: number;
+  /** Which rows the signal named. */
+  detail?: string;
 }
 
 const GUIDE = 'https://github.com/YonedaAI/yonedarepo/blob/dev/docs/incidents.md';
@@ -76,7 +78,9 @@ const seen = (times: number) =>
       ? 'Seen twice.'
       : `Seen ${times.toLocaleString('en-US')} times.`;
 
-type Stored = { signals?: { name: string; value: number | null; baseline?: number }[] };
+type Stored = {
+  signals?: { name: string; value: number | null; baseline?: number; detail?: string }[];
+};
 type Samples = { exception_samples?: unknown[] };
 const rulesOf = (f: FindingRow) => (f.dedup_key.split(':')[1] ?? '').split('+');
 const copyOf = (component: string, rule: string) =>
@@ -115,12 +119,13 @@ function groups(findings: FindingRow[]) {
       const signal = (f.signals as Stored | null)?.signals?.find((s) => s.name === rule);
       group.values[rule] = signal?.value ?? null;
       if (signal?.baseline !== undefined) group.baseline = signal.baseline;
+      if (signal?.detail) group.detail = signal.detail;
     }
   return [...found.values()];
 }
 
 function item(group: Group, site: MailSite): Item {
-  const { copy, component, rows, values, baseline } = group;
+  const { copy, component, rows, values, baseline, detail } = group;
   const facts: Facts = {
     values,
     word: WORD[component] ?? 'service',
@@ -133,7 +138,7 @@ function item(group: Group, site: MailSite): Item {
   return {
     title: copy.title(facts),
     means: typeof copy.means === 'string' ? copy.means : copy.means(facts),
-    detail: copy.reason ? only.summary.slice(0, DETAIL_MAX) : null,
+    detail: detail ?? (copy.reason ? only.summary.slice(0, DETAIL_MAX) : null),
     since: readable(earliest),
     seen: seen(Math.max(...rows.map((f) => f.occurrences))),
     first: copy.firstOn?.[component] ?? copy.first,

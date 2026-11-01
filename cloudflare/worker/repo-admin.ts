@@ -140,9 +140,16 @@ export async function dispatchErase(
   repo: string,
   job: 'start' | 'records' = 'start',
   delaySeconds?: number,
+  blockedSince?: number,
 ) {
   await carriedQueue(env.PLATFORM_QUEUE).send(
-    { v: 1, kind: ERASE, repo_id: repo, job_id: job },
+    {
+      v: 1,
+      kind: ERASE,
+      repo_id: repo,
+      job_id: job,
+      ...(blockedSince !== undefined && { blocked_since: blockedSince }),
+    },
     delaySeconds ? { delaySeconds } : undefined,
   );
 }
@@ -189,7 +196,7 @@ export async function purgeRepository(
   repo: string,
   { scheduled = false, skipWindow = false } = {},
 ) {
-  const copied = await auditRepoLeaving(env, repo);
+  const { clear } = await auditRepoLeaving(env, repo);
   await purgeObjects(env, repo, skipWindow);
   await dropSummary(env, repo);
   const done = scheduled
@@ -197,7 +204,7 @@ export async function purgeRepository(
     : null;
   if (done)
     await Promise.all((done.hooks as number[]).map((id) => dispatchHooks(env, repo, `hook:${id}`)));
-  if (eraseOn(env) || !copied) await dispatchErase(env, repo);
+  if (eraseOn(env) || !clear) await dispatchErase(env, repo);
   if (done) await forgetDeleted(env, repo, done.workspace);
 }
 

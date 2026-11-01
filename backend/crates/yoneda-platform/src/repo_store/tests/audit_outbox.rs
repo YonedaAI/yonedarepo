@@ -435,3 +435,62 @@ fn a_hook_switched_off_for_its_failures_is_an_event() {
     assert_eq!(events[0]["data"]["actor"], HOOKS);
     assert_eq!(events[0]["data"]["id"], made["id"].to_string());
 }
+
+#[test]
+fn a_corrupt_event_is_handed_over_as_its_seq_with_what_came_before_it() {
+    let h = Harness::new();
+    let add = |payload: &str| {
+        h.db.query(
+            "INSERT INTO hook_outbox(hook_id,event,payload) VALUES(0,'repo.renamed',?)",
+            &[json!(payload)],
+        )
+        .unwrap();
+    };
+    add(r#"{"name":"good","actor":"user:x","at":1}"#);
+    add("not json");
+    add(r#"{"name":"later","actor":"user:x","at":2}"#);
+    let read = || h.ok(AUDIT, json!({"op":"repo_audit_pending"}));
+    let first = read();
+    assert_eq!(first["events"].as_array().unwrap().len(), 1);
+    assert_eq!(first["corrupt"], 2);
+    // Settling what came before it leaves it first in line, naming the same row.
+    h.ok(
+        AUDIT,
+        json!({"op":"repo_audit_done","through":first["events"][0]["seq"]}),
+    );
+    let next = read();
+    assert_eq!(next["events"], json!([]));
+    assert_eq!(next["corrupt"], 2);
+    assert_eq!(rows(&h), 2);
+    assert!(!next.to_string().contains("not json"));
+}
+
+#[test]
+fn an_event_the_log_would_refuse_is_corrupt_too() {
+    for (n, payload) in ["[1,2]", "{\"name\":\"x\"}", "{\"at\":\"soon\"}"]
+        .iter()
+        .enumerate()
+    {
+        let h = Harness::new();
+        h.db.query(
+            "INSERT INTO hook_outbox(hook_id,event,payload) VALUES(0,'repo.renamed',?)",
+            &[json!(payload)],
+        )
+        .unwrap();
+        let answer = h.ok(AUDIT, json!({"op":"repo_audit_pending"}));
+        assert_eq!(answer["corrupt"], 1, "{n}");
+        assert_eq!(answer["events"], json!([]), "{n}");
+    }
+}
+
+#[test]
+fn nothing_corrupt_answers_null() {
+    let h = Harness::new();
+    h.ok(
+        OWNER,
+        on(json!({"op":"repo_set_visibility","visibility":"public"})),
+    );
+    let answer = h.ok(AUDIT, json!({"op":"repo_audit_pending"}));
+    assert!(answer["corrupt"].is_null());
+    assert_eq!(answer["events"].as_array().unwrap().len(), 1);
+}

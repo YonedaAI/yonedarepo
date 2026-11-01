@@ -38,6 +38,8 @@ Counted log events stay open for 20 hours after the last one, because some are l
 | Website health check failing (`front_worker health`) | The site isn't answering 200 as `yonedarepo` | `curl -i` the site's `/health`; check the route and the front Worker's errors | New since the last deploy: roll back |
 | Billing mismatch with Stripe (`billing reconcile_mismatches`) | Stripe, a ledger and the rollup disagree | Managed Worker logs, `event = billing.reconcile.mismatch`: account and `problem`. Nothing has changed money: the reconcile only reads | Don't refund or rerun until explained. Stop charges if money is moving wrongly |
 | Repository history reached its limit (`storage storage_full`) | A repository's database reached 9.4 GB: new commits and Landings are refused, reads and deletes go on | Platform logs, `event = repo.full` or `repo.storage`, for the repository; admin Repositories page | `docs/runbook.md`, "Repository database size". Vacuum or split; accepted work is still finishing |
+| An audit event cannot be read (`derived_jobs audit_event_corrupt`) | A repository's event row can't reach its org's log. Nothing is lost: it and later events stay in the repository, and its erase waits. The finding names the repository and event | The mail, or `GET /findings`: `<repo> event <seq>`. Platform logs, `event = audit.event_corrupt` | [Audit events](#audit-events) |
+| A repository erase is held up (`derived_jobs audit_erase_blocked`) | The audit log hasn't taken a deleted repository's events for over an hour. Nothing is lost, and its objects are already gone. The finding names the repository and oldest event | Platform logs, `event = audit.repo_copy_failed`: why the copy failed | [Audit events](#audit-events) |
 | Repository past 9 GB (`storage storage_9gb`) | A repository's database is past 9 GB. New work stops at 9.4 GB | Platform logs, `event = repo.storage`, for the repository; admin Repositories page | `docs/runbook.md`, "Alerts" and compaction. Vacuum or split before it fills |
 | Background jobs failed (`derived_jobs dead_lettered`, `dead_letter_backlog`) | A platform job gave up after its retries. The queue is shared with checks | Platform logs, `event = job.failed`. Dead letters have no consumer and expire with the queue's retention | Fix the cause, then requeue by hand before they expire |
 | Check runs failed (`check_runs dead_lettered`) | A check run gave up | Platform logs, `event = job.failed` | As above |
@@ -64,6 +66,17 @@ Counted log events stay open for 20 hours after the last one, because some are l
 | Dead-man check has stopped (`deadman deadman_stale`) | The dead-man hasn't checked in 20 minutes, or can't be read. If Superfan stops now, nobody is told | `GET /health` on the dead-man; its Cron Triggers | Redeploy the dead-man |
 | Monitoring has stopped receiving events (`telemetry tail_silent`) | No tail events this hour. Every tail signal is blind | `GET /status`; is `tail_consumers` still on the Worker? | Redeploy the platform, then Superfan |
 | Monitoring can't read analytics, or is misconfigured (`telemetry fetch_failed`, `config`, `token_missing`, `disabled`) | Analytics can't be read: queues and dead letters are blind | The finding's summary names the cause | Fix `CF_ANALYTICS_TOKEN` or the config |
+
+## Audit events
+
+Both alerts are `AUDIT_LOG` on. The rule behind them: the erase stays blocked, whatever it takes, because erasing would lose the events. The mail changes who knows, not what happens.
+
+- **Held up.** Fix what `audit.repo_copy_failed` says, usually the `audit:<org>` instance. The job looks again every 5 minutes, carries on by itself, and the finding closes 20 hours after the last line.
+- **Can't be read.** Waiting won't help, and there's no operator tool yet. The row must be mended in that repository's database, keeping its `seq`, and then the next look moves it and what follows. Don't turn `AUDIT_LOG` off to get past it: with the switch off, the erase takes every waiting event with it.
+
+A finding spells out 3 rows and counts the rest. `GET /findings` shows the same; the rest are in the logs, one line per row per look. Only a repository id and an event number can reach a finding: nothing else on the line does.
+
+Prod has no wide watch, so there these arrive in the hourly digest, not at once.
 
 ## Blind spots that remain
 

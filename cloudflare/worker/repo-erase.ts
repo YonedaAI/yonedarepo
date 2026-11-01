@@ -32,6 +32,10 @@ const STEPS_PER_JOB = 100;
 const HOOK_WAIT_SECONDS = 300;
 /** Seconds between looks while the audit log can't be reached, or has more to take. */
 const AUDIT_WAIT_SECONDS = 300;
+/** How long the audit log may hold an erase before someone is told: past one outage of the kind
+ * that heals alone, well inside any promise about deleted data. Every later look says so
+ * again, and the erase keeps waiting: the alert changes who knows, not what happens. */
+const AUDIT_ALERT_MS = 60 * 60_000;
 /** Objects cleared at once (an invocation keeps six connections open). */
 const WIDTH = 6;
 
@@ -65,10 +69,14 @@ async function clearObjects(env: Env, repo: string, refs: string[]) {
 /** The `platform_erase` queue job (see the module comment). */
 export async function eraseJob(env: Env, envelope: Envelope) {
   const repo = envelope.repo_id;
-  if (!(await auditRepoLeaving(env, repo))) {
+  const { clear, seq } = await auditRepoLeaving(env, repo);
+  if (!clear) {
     const job = envelope.job_id === 'records' ? 'records' : 'start';
-    await dispatchErase(env, repo, job, AUDIT_WAIT_SECONDS);
-    return progress(repo, 'audit');
+    const since = envelope.blocked_since ?? Date.now();
+    const elapsed_ms = Date.now() - since;
+    if (elapsed_ms >= AUDIT_ALERT_MS) log.error('audit.erase_blocked', { repo, seq, elapsed_ms });
+    await dispatchErase(env, repo, job, AUDIT_WAIT_SECONDS, since);
+    return progress(repo, 'audit', { seq, elapsed_ms });
   }
   if (!eraseOn(env)) return;
   const call = caller(env, repo, { _system: 'erase' });

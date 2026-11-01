@@ -65,7 +65,8 @@ export const STALL_SAMPLE = 'compaction.stalled';
 /**
  * Log events that mean something alone, by what they count as. Some are logged once and never
  * again (a level crossed, a night's reconcile), so they are kept apart from the samples, which a
- * burst of exceptions pushes out. Numbers only: an account or repository stays in Workers Logs.
+ * burst of exceptions pushes out. Numbers only: an account or repository stays in Workers Logs,
+ * but for `NAMING`.
  */
 const MARKS = new Map([
   ['billing.reconcile.mismatch', 'reconcile_mismatches'],
@@ -83,6 +84,24 @@ const MARKS = new Map([
   // A full repository stops landing, so its size may never be sampled at the limit.
   ['repo.full', 'storage_full'],
 ]);
+/**
+ * Marks whose finding has to say which row, as nobody can search a repository's own tables from
+ * the logs: their key carries the repository and event (`<mark>|<repo>|<seq>`). Only ids of that
+ * exact shape get in, so nothing else a line holds can reach a finding, a mail or the model.
+ */
+const NAMING = new Map([
+  ['audit.event_corrupt', 'audit_event_corrupt'],
+  ['audit.erase_blocked', 'audit_erase_blocked'],
+]);
+const REPO_ID = /^r[0-9a-f]{20}$/;
+export const NAMED_SEPARATOR = '|';
+
+function namedMark(mark: string, repo: unknown, seq: unknown) {
+  if (typeof repo !== 'string' || !REPO_ID.test(repo)) return mark;
+  const event = Number.isSafeInteger(seq) && (seq as number) > 0 ? seq : '';
+  return [mark, repo, event].join(NAMED_SEPARATOR);
+}
+
 /** Sizes `repo.storage` reports (STORAGE_LEVELS, repo-storage.ts) that tell someone: not 5 GB. */
 const STORAGE_8GB = 8e9;
 const STORAGE_9GB = 9e9;
@@ -145,7 +164,12 @@ function markOf(message: unknown): string | null {
       return null;
     }
   }
-  const { event, db_bytes: bytes } = (line ?? {}) as { event?: unknown; db_bytes?: unknown };
+  const {
+    event,
+    db_bytes: bytes,
+    repo,
+    seq,
+  } = (line ?? {}) as { event?: unknown; db_bytes?: unknown; repo?: unknown; seq?: unknown };
   if (event === 'repo.storage' && typeof bytes === 'number')
     return bytes >= STORAGE_FULL
       ? 'storage_full'
@@ -154,7 +178,9 @@ function markOf(message: unknown): string | null {
         : bytes >= STORAGE_8GB
           ? 'storage_8gb'
           : null;
-  return typeof event === 'string' ? (MARKS.get(event) ?? null) : null;
+  if (typeof event !== 'string') return null;
+  const naming = NAMING.get(event);
+  return naming ? namedMark(naming, repo, seq) : (MARKS.get(event) ?? null);
 }
 
 function classify(item: TraceItem): TailComponent | null {
