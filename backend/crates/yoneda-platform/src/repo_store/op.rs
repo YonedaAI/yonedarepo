@@ -123,6 +123,7 @@ op_names! {
         Sessions = "repo_sessions",
         SetPolicy = "repo_set_policy",
         SetVisibility = "repo_set_visibility",
+        SizeAdd = "repo_size_add",
         Rename = "repo_rename",
         Restore = "repo_restore",
         Snapshot = "repo_snapshot",

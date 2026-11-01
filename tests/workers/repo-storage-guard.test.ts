@@ -1,9 +1,10 @@
 // The storage guard through the real authority, shards, combiner logic and D1: behind
 // REPO_STORAGE_GUARD, a repository at its limit answers 507 REPO_FULL to new work, on REST, Git
 // and batched landing (one refusal per landing), and everything already accepted keeps going.
-// No test fills 9 GB: the variable takes a byte count here, and only here.
+// No test fills it: the variable takes a byte count here, and only here.
 import { runInDurableObject } from 'cloudflare:test';
 import { expect, it } from 'vitest';
+import { REPO_FULL_MESSAGE } from '../../cloudflare/worker/durable';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { projectChangesets } from '../../cloudflare/worker/repo-changesets';
 import { compute } from '../../cloudflare/worker/repo-compute';
@@ -37,6 +38,7 @@ const landOn = (repo: string, who: { cookie?: string }, commit: string, target: 
 const refusedFull = (answer: { status: number; body: any }) => {
   expect(answer.status).toBe(507);
   expect(answer.body.error.code).toBe('REPO_FULL');
+  expect(answer.body.error.message).toBe(REPO_FULL_MESSAGE);
 };
 
 /** A receive-pack body creating `refname` with one new commit on `parent`. */
@@ -64,7 +66,7 @@ async function branchPush(refname: string, parent: string) {
   return Uint8Array.from(atob(push_b64), (c) => c.charCodeAt(0));
 }
 
-it('is off unless the variable turns it on: unset, off, and on below 9 GB change nothing', async () => {
+it('is off unless the variable turns it on: unset, off, and on below the limit change nothing', async () => {
   const { owner, repo } = await repository('guard-off');
   for (const value of [undefined, '', 'off', 'on']) {
     const target = { ...scoped, REPO_STORAGE_GUARD: value } as unknown as Env;
@@ -113,8 +115,11 @@ it('compares the real database size: a repository that grows past the limit is r
 it('never takes the limit from a client: the adapter drops the field from a command', () => {
   const sign = (target: Env) => caller(target, 'r0', { _system: 'derive' }).sign({ op: 'repo_status', _storage_guard: 5 });
   expect(sign(scoped)).not.toHaveProperty('_storage_guard');
-  expect(sign({ ...scoped, REPO_STORAGE_GUARD: 'on' } as unknown as Env)._storage_guard).toBe(9e9);
+  expect(sign({ ...scoped, REPO_STORAGE_GUARD: 'on' } as unknown as Env)._storage_guard).toBe(9_400_000_000);
   expect(sign(atLimit())._storage_guard).toBe(1);
+  const sized = caller({ ...scoped, REPO_SIZE_GUARD: 'on' } as unknown as Env, 'r0', { _system: 'derive' }).sign({ op: 'repo_status', _size_guard: 5 });
+  expect(sized._size_guard).toBe(10_000_000_000);
+  expect(caller(scoped, 'r0', { _system: 'derive' }).sign({ op: 'repo_status', _size_guard: 5 })).not.toHaveProperty('_size_guard');
 });
 
 it('refuses a Git push at the limit by ref, naming REPO_FULL', async () => {
@@ -144,6 +149,17 @@ function combinersOf(env: () => Env) {
     },
   };
 }
+
+it('refuses a new branch at the limit, and deletes the branches that exist', async () => {
+  const { owner, repo, root } = await repository('guard-branch');
+  const refsOf = async () => Object.keys((await api(`${repo}/refs`, owner)).body.refs);
+  await api(`${repo}/refs/batch`, owner, { body: { updates: [{ ref: 'old', commit: root, expected: null }] } });
+  refusedFull(await api(`${repo}/refs/batch`, owner, { body: { updates: [{ ref: 'new', commit: root, expected: null }] } }, atLimit()));
+  expect(await refsOf()).toEqual(['refs/heads/main', 'refs/heads/old']);
+  const gone = await api(`${repo}/refs/batch`, owner, { body: { updates: [{ ref: 'old', commit: null, expected: root }] } }, atLimit());
+  expect(gone.status).toBe(200);
+  expect(await refsOf()).toEqual(['refs/heads/main']);
+});
 
 it('in batch mode refuses each new landing alone, in one pass, and answers a landed one', async () => {
   const { owner, repo } = await repository('guard-batch', batched);

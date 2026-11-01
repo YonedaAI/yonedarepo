@@ -76,6 +76,9 @@ pub fn record<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings
     // Classes only serve semantic approval, so a push queues the classifier only where the
     // policy can use them.
     let classify = !settings.policy.auto_approve.is_empty();
+    if recorded > 0 {
+        super::capacity::add_pack(db, settings, c)?;
+    }
     Ok(
         json!({ "recorded": recorded, "check_runs": runs, "dispatch_objects": dispatch, "classify": classify }),
     )

@@ -34,6 +34,7 @@ const URGENT = new Set([
   'health',
   'reconcile_mismatches',
   'storage_9gb',
+  'storage_full',
   'dead_letter_backlog',
   'dead_lettered',
 ]);

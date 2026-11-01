@@ -17,6 +17,7 @@ import {
 } from './repo-objects';
 import { ApiError, batch, caller, type Json, type RepoContext, withTrees } from './repo-ops';
 import { dispatchObjects } from './repo-projection';
+import { addCommitted } from './repo-size';
 import { putRaw } from './repo-stores';
 import { timed } from './repo-timing';
 
@@ -147,6 +148,7 @@ export async function commit(
       edge,
     ]);
     if (recorded.error) throw new ApiError(recorded.error.code, recorded.error.message);
+    addCommitted(ctx.env, ctx.repo, all);
     let undispatched = false;
     try {
       await timed('dispatch', () => dispatchRuns(ctx.env, ctx.repo, recorded.check_runs));

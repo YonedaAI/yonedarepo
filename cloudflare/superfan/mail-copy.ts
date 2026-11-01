@@ -106,12 +106,19 @@ export const COPY: Copy[] = [
     link: admin('/admin', 'Open admin'),
   },
   {
+    signals: ['storage_full'],
+    title: () => 'Repository history reached its limit',
+    means: 'New commits and Landings stop at 9.4 GB. Reads and deletes still work.',
+    first: 'Find the repository on the admin page, then vacuum or split it.',
+    link: admin('/admin/repos', 'Open repositories'),
+  },
+  {
     signals: ['storage_9gb'],
     title: (f) => {
       const n = count(f, 'storage_9gb');
       return n === 1 ? 'Repository past 9 GB' : `${number(n)} repositories past 9 GB`;
     },
-    means: 'Writes stop at about 10.7 GB.',
+    means: 'New commits and Landings stop at 9.4 GB.',
     first: 'Find the repository on the admin page, then vacuum or split it.',
     link: admin('/admin/repos', 'Open repositories'),
   },
@@ -159,7 +166,7 @@ export const COPY: Copy[] = [
       const n = count(f, 'storage_8gb');
       return n === 1 ? 'Repository past 8 GB' : `${number(n)} repositories past 8 GB`;
     },
-    means: 'Writes stop at about 10.7 GB, so there is time to plan.',
+    means: 'New commits and Landings stop at 9.4 GB, so there is time to plan.',
     first: 'Find the repository on the admin page and plan compaction or a split.',
     link: admin('/admin/repos', 'Open repositories'),
   },

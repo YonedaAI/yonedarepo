@@ -60,5 +60,6 @@ pub fn head<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value
         "access_version": access_version,
         "quarantined": quarantined, "quarantine_epoch": quarantine_epoch,
         "full": super::capacity::full(db, c)?,
+        "over_size": super::capacity::over_size(settings, c),
     }))
 }

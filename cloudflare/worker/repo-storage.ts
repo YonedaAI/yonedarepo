@@ -1,5 +1,5 @@
-// A repository's database size. Durable Object SQLite refuses writes at about 10.7 GB, so the
-// derive job reads the size now and then and the activity row keeps it for the admin pages;
+// A repository's history database size. New work is refused at 9.4 GB (`storageGuard`,
+// durable.ts) and Durable Object SQLite refuses writes at about 10.7 GB, so the derive job reads the size now and then and the activity row keeps it for the admin pages;
 // a repository crossing an alert level is logged once (repo-activity.ts).
 import { log } from './log';
 import { caller } from './repo-ops';
@@ -10,7 +10,7 @@ const SAMPLE_MS = 10 * 60 * 1000;
 /** Repositories this isolate remembers sampling; past this it starts over. */
 const SAMPLES_KEPT = 4096;
 /** Database sizes an operator hears about, in bytes. */
-export const STORAGE_LEVELS = [5e9, 8e9, 9e9];
+export const STORAGE_LEVELS = [5e9, 8e9, 9e9, 9.4e9];
 
 const sampled = new Map<string, number>();
 

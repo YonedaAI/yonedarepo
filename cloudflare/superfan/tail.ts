@@ -80,10 +80,14 @@ const MARKS = new Map([
   ['land.submitted_batch_failed', 'land_failures'],
   ['land.step_failed', 'land_failures'],
   ['land.timed_out', 'land_timeouts'],
+  // A full repository stops landing, so its size may never be sampled at the limit.
+  ['repo.full', 'storage_full'],
 ]);
 /** Sizes `repo.storage` reports (STORAGE_LEVELS, repo-storage.ts) that tell someone: not 5 GB. */
 const STORAGE_8GB = 8e9;
 const STORAGE_9GB = 9e9;
+/** Where new work stops (`STORAGE_GUARD_BYTES`, durable.ts). */
+const STORAGE_FULL = 9.4e9;
 /** Longer than any line can leave after redaction; what bounds the patterns' work. */
 const REDACT_INPUT = 2_000;
 /** How long a mark holds its signal: under a day, so a night's mismatch closes before the next
@@ -143,7 +147,13 @@ function markOf(message: unknown): string | null {
   }
   const { event, db_bytes: bytes } = (line ?? {}) as { event?: unknown; db_bytes?: unknown };
   if (event === 'repo.storage' && typeof bytes === 'number')
-    return bytes >= STORAGE_9GB ? 'storage_9gb' : bytes >= STORAGE_8GB ? 'storage_8gb' : null;
+    return bytes >= STORAGE_FULL
+      ? 'storage_full'
+      : bytes >= STORAGE_9GB
+        ? 'storage_9gb'
+        : bytes >= STORAGE_8GB
+          ? 'storage_8gb'
+          : null;
   return typeof event === 'string' ? (MARKS.get(event) ?? null) : null;
 }
 

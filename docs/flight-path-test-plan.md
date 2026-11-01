@@ -42,7 +42,7 @@ Needs `LAND_WHEN_CLEARED=on` and `LANDING_INSTRUMENTS=on` on the platform Worker
 | F5 | Two Landings racing | Different files: both land. Same line: one lands, one goes around | Live | Pass, 48 s |
 | F6 | Automation pause | Approved head holds on `AUTOMATION_PAUSED`; the resume alone lands it | Live | Pass, 20 s |
 | F7 | Nothing required | A push holds on `NOTHING_REQUIRED` and does not land | Live | Pass, 22 s |
-| F8 | `REPO_FULL` | Held with the reason, nothing moves, lands with room | `tests/workers`: nothing fills 9 GB live | Passing |
+| F8 | `REPO_FULL` | Held with the reason, nothing moves, lands with room | `tests/workers`: nothing fills the database live | Passing |
 | F9 | A job retried twice lands once | 4 deliveries, on the head and through the queue: one landing on record | `tests/workers`, since a live queue redelivers when it chooses. Leg 11 races duplicates live | Passing |
 | F10 | A rollback mid-queue | A break-glass revert with a ticket in line: the ticket lands on the revert, the bad line stays out | Live | Pass, 44 s |
 

@@ -36,6 +36,9 @@ pub fn set<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
             ),
         ));
     }
+    if current.is_none() {
+        super::capacity::refuse_if_full(db, c)?;
+    }
     let version = move_ref(db, c, &refname, current, &commit, principal)?;
     // A working branch moved to the head of an open change based on it lands that change.
     let now = number(c, "now")?;
@@ -175,12 +178,14 @@ pub fn batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
         .ok_or_else(|| bad("updates must be 1-100 {ref, commit|null, expected}"))?;
     let mut seen = std::collections::BTreeSet::new();
     let mut stale = Vec::new();
+    let mut creates = false;
     for update in updates {
         if let Some(tag) = super::tags::in_update(update)? {
             if !seen.insert(tag.clone()) {
                 return Err(bad(&format!("{tag} appears twice in the batch")));
             }
             super::tags::check(db, update, &tag)?;
+            creates = true;
             continue;
         }
         let refname = branch_ref(update)?;
@@ -203,9 +208,13 @@ pub fn batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
         if current != target && current != expected {
             stale.push(refname);
         }
+        creates |= current.is_none() && target.is_some();
     }
     if !stale.is_empty() {
         return Ok(json!({ "stale": stale }));
+    }
+    if creates {
+        super::capacity::refuse_if_full(db, c)?;
     }
     let mut refs = Vec::with_capacity(updates.len());
     for update in updates {

@@ -42,6 +42,9 @@ pub(super) fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     if capacity::refuses(op) {
         capacity::refuse_if_full(db, c)?;
     }
+    if capacity::adds_objects(op) {
+        capacity::refuse_if_over_size(&settings, c)?;
+    }
     if history_fill::refuses(op) {
         history_fill::refuse_if_filling(db)?;
     }
@@ -74,7 +77,8 @@ fn run<S: SqlStore>(
     match op {
         R::Status => serde_json::to_value(super::status::status(db, settings, actor)?)
             .map_err(|e| yoneda_core::Error::new("ENCODING", e.to_string())),
-        R::Storage => capacity::usage(db, capacity::REPO_TABLES),
+        R::Storage => capacity::repo_usage(db, settings),
+        R::SizeAdd => capacity::add_pack(db, settings, c).map(|()| json!({})),
         R::CloneAccess => quarantine::refuse_direct_clone(db)
             .map(|()| json!({ "object_store": settings.object_store })),
         R::Refs => reads::refs(db, c),
@@ -228,7 +232,9 @@ fn run<S: SqlStore>(
             if !actor.can("import") {
                 actor.require_owner()?;
             }
-            land::import(db, c, principal)
+            let landed = land::import(db, c, principal)?;
+            capacity::add_pack(db, settings, c)?;
+            Ok(landed)
         }
         R::HookCreate => hooks::create(db, c, actor),
         R::Hooks => hooks::list(db),

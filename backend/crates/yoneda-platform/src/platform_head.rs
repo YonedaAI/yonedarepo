@@ -53,6 +53,9 @@ pub fn head_begin(c: &Value) -> Result<Value> {
     if head["full"] == true {
         return Err(capacity::refusal());
     }
+    if head["over_size"] == true {
+        return Err(capacity::size_refusal());
+    }
     Ok(json!({
         "principal": actor.principal, "parent": head["head"], "parent_id": head["head"]["id"],
         "parent_elsewhere": false, "base_version": head["base_version"],

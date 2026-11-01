@@ -316,8 +316,9 @@ function decide(head: Json, command: Json): Json | null {
     return compute({ ...command, head: access });
   } catch (e: any) {
     // NOT_FOUND: a stranger to a private repository, or a member the snapshot predates.
-    // REPO_FULL: a head from when the database was over the limit; space may be free now.
-    if (['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND', 'REPO_FULL'].includes(e.code)) return null;
+    // A limit: a head from when the repository was over it; there may be room now.
+    if (['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND', 'REPO_FULL', 'REPO_SIZE_LIMIT'].includes(e.code))
+      return null;
     throw new ApiError(e.code ?? 'INVALID_INPUT', e.message);
   }
 }

@@ -41,6 +41,7 @@ const STATUS: Record<string, number> = {
   RATE_LIMITED: 429,
   OVERLOADED: 503,
   REPO_FULL: 507,
+  REPO_SIZE_LIMIT: 507,
 };
 
 /** A plain-text refusal Git shows as `remote: <message>` for `info/refs` (it drops the body

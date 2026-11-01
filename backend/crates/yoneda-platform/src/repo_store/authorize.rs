@@ -45,6 +45,10 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         R::AdoptCommit if !actor.can("system") => {
             Err(Error::new("FORBIDDEN", "Only the platform adopts commits"))
         }
+        R::SizeAdd if !actor.can("system") => Err(Error::new(
+            "FORBIDDEN",
+            "Only the platform reports what commits stored",
+        )),
         R::Check => actor.require("check"),
         R::SessionRecord | R::FlightPlan => actor.require("write"),
         // A change from a fork proposes the parent's mirror of a fork branch (`forks`):
@@ -151,6 +155,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         // Every other op, and a guarded op above whose caller passes its guard, reads.
         R::Activity
         | R::AdoptCommit
+        | R::SizeAdd
         | R::AgentContext
         | R::AuditDone
         | R::AuditPending

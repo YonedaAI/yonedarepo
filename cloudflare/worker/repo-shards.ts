@@ -2,7 +2,7 @@
 // Durable Objects chosen by commit id, so concurrent writers spread out instead of
 // queueing on the repository authority. A commit id names its shard, so any Worker reads
 // it back at once. The authority adopts a commit (parents first) when it first needs it.
-import { durableJson, storageGuard } from './durable';
+import { durableJson, noteFull, storageGuard } from './durable';
 import { holdSwitch } from './platform-legal-hold';
 import type { CachedObject } from './repo-stores';
 import { record, timed } from './repo-timing';
@@ -35,6 +35,7 @@ export async function shardCall(env: Env, repo: string, shard: number, command: 
     'https://commit-shard/',
     JSON.stringify({ ...holdSwitch(env), ...command, ...SYSTEM, ...storageGuard(env) }),
   );
+  if (value.error?.code === 'REPO_FULL') noteFull(repo, String(command.op));
   if (value.error) throw fail(value.error);
   return value;
 }

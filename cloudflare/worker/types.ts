@@ -36,6 +36,7 @@ export interface Env {
   LAND_MODE_OVERRIDE?: string;
   /** `on`: a repository's database refuses new work from 9 GB (unset or `off`: never). */
   REPO_STORAGE_GUARD?: string;
+  REPO_SIZE_GUARD?: string;
   /** `on`: a check verdict's evidence is stored once, in `checks` (unset or anything else:
    * the run keeps a copy too; repo-archive-switches.ts). */
   CHECK_EVIDENCE_ONCE?: string;

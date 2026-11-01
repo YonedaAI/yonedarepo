@@ -67,7 +67,11 @@ export function wideReports(s: Snapshot, baselines: Baselines): ComponentReport[
         : []),
     ]),
     report('billing', s, [marked(s, 'reconcile_mismatches')]),
-    report('storage', s, [marked(s, 'storage_8gb'), marked(s, 'storage_9gb')]),
+    report('storage', s, [
+      marked(s, 'storage_8gb'),
+      marked(s, 'storage_9gb'),
+      marked(s, 'storage_full'),
+    ]),
     ...(s.deadmanAge === undefined
       ? []
       : [

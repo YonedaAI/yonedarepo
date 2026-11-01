@@ -61,7 +61,8 @@ export async function receivePack(
   const session = ReceiveSession.open();
   const files = new SpilledFiles(ctx.env, ctx.repo, (id) => objects.rawKey(id));
   try {
-    let failure = await timed('git.unpack', () => unpack(session, body, files));
+    const pack = { bytes: 0 };
+    let failure = await timed('git.unpack', () => unpack(session, body, files, pack));
     if (!failure) {
       // A body that ended early (a truncated pack) fails here.
       try {
@@ -90,7 +91,7 @@ export async function receivePack(
     try {
       if (tips.length > 0)
         fresh = await timed('git.store', () =>
-          store(ctx, objects, session, tips, secretAllow, reads ?? [], files, messages),
+          store(ctx, objects, session, tips, secretAllow, reads ?? [], files, messages, pack.bytes),
         );
     } catch (e) {
       // Nothing moved: report why for every ref still going. A credential refuses the whole
@@ -126,12 +127,14 @@ async function unpack(
   session: ReceiveSession,
   body: ReadableStream<Uint8Array>,
   files: SpilledFiles,
+  pack: { bytes: number },
 ) {
   let failure: string | null = null;
   const reader = body.getReader();
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
+    pack.bytes += value.length;
     if (failure) continue;
     try {
       for (let at = 0; at < value.length; at += FEED_BYTES) {
@@ -177,6 +180,7 @@ async function store(
   reads: string[],
   files: SpilledFiles,
   messages: string[],
+  packBytes: number,
 ) {
   let input: Json = { op: 'verify', tips, secret_allow: secretAllow };
   let verified: Json | null = null;
@@ -233,6 +237,7 @@ async function store(
       ctx.call({
         op: 'repo_record_pushed',
         commits,
+        ...(i === 0 ? { pack_bytes: packBytes } : {}),
         ...(staged ? { staged: true } : {}),
       }),
     );

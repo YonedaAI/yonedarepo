@@ -62,6 +62,9 @@ pub fn comment<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     if resolve && anchor.is_none() {
         return Err(bad("resolve needs the anchor's path, line and side"));
     }
+    if body.is_some() {
+        super::capacity::refuse_if_full(db, c)?;
+    }
     let commit = match c.get("commit").filter(|v| !v.is_null()) {
         Some(_) => rows::object_id(c, "commit")?,
         None => ObjectId::parse(change["head"].as_str().ok_or_else(|| {

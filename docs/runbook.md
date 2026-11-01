@@ -209,13 +209,38 @@ While history fills:
 
 A fill never leaves a repository refusing work. A commit of more than 10,000 changed files, or a wave that still fails after 5 retries (about 2.5 minutes), ends the fill where it reached: the repository holds what a capped import holds (`repo_record_imported_end`), takes changes at once, and says for good that only the newest N of M commits came in (`history_stopped` in `repo_status` and every read of history; the note is a row in `repairs`). A Workflow that died without doing that is ended by the next `GET /repos/:id/import`. A head of more than 10,000 changed files lands alone, with no changed paths recorded for it. A Workflow that fails before main lands fails the import, as with the switch off.
 
+## Repository size
+
+A repository has two limits. **Size** is its Git objects, which live in object storage; the cap is 10 GB, published with wave 2 of migration 0046, once something enforces it. **The history database** is the next section: it grows with activity, not code, and its limit is internal.
+
+`REPO_SIZE_GUARD=on` (unset or `off`: nothing is refused; a byte count sets another limit, for tests only) makes a repository at 10,000,000,000 bytes answer 507 `REPO_SIZE_LIMIT` to pushes (at `repo_git_access`, before a push stores anything) and new commits. Reads, landings of recorded commits, branch moves and deletes go on. A push that starts under the cap finishes, so a repository can pass it by one push, at most 2 GiB. On for dev; off on prod until a ship turns it on.
+
+The size is `repo_settings.git_bytes` (migration 0046), read with the row every command reads, so a refusal adds no read. It is a running total, and `repo_storage` answers it:
+
+| Counted | How |
+|---|---|
+| A Git push | Bytes of its request, compressed as Git sent them; added with `repo_record_pushed` when it records a new commit |
+| A direct import | Bytes of the pack it fetched |
+| API commits, so `yoneda::` pushes | Blob bytes, uncompressed, reported from each isolate per MiB (`repo_size_add`); an isolate's unreported bytes are lost with it |
+
+| Not counted | Why, and what would fix it |
+|---|---|
+| Everything from before migration 0046 | It starts at 0. Measure it once by summing `size` over R2 `list` of `platform/v1/<repo>/` (one Class A call per 1,000 keys), and add it through `repo_size_add`. Those are raw bytes, larger than a `.git` folder |
+| History an import took through Artifacts | Nothing reports it: `repo.info()` has no size field. Artifacts' own limit bounds it, published as 1 GB for repositories created since 2026-09-29 and 10 GB before |
+| A fork's inherited objects | A fork counts what it adds. Its parent's size isn't copied |
+| Purges | The total never goes down |
+
+R2 `list` on every push was ruled out as a new read per request. `SUM(size)` over `bundled_objects` was too, and it sees only bundles.
+
 ## Repository database size
 
-A repository's Durable Object refuses writes at about 10.7 GB of `databaseSize` (`docs/global-scale-plan.md`, spike results). A commit shard is its own database with the same limit.
+New work stops at 9,400,000,000 bytes of `databaseSize`. This limit is internal: users see only the refusal, and the limits page says high activity has its own limit. A repository's Durable Object refuses writes at about 10.7 GB (`docs/global-scale-plan.md`, spike results), though Cloudflare publishes 10 GB, decimal. A commit shard is its own database with the same limits.
 
 - **Watching.** `repo_storage` (the owner and the platform) answers `db_bytes` and row estimates per large table; `store_status` answers the same for a shard. The derive job samples it at most every 10 minutes per repository per isolate, in its existing `platform_activity` write (`db_bytes`, D1 migration 0010). Admin shows the largest repositories and one repository's live size under Repositories.
-- **Alerts.** `repo.storage` is logged once each time a sampled size crosses 5, 8 or 9 GB going up (`{event, level, repo, threshold, db_bytes}`; `level` is the line's own).
-- **Refusing new work.** `REPO_STORAGE_GUARD=on` (unset or `off`: nothing changes) makes a repository at 9 GB answer 507 `REPO_FULL` to commits, pushes, imports and new landings, and a shard refuse new records. Reads, projection, changeset records, hooks, adoption, compaction, queued landings, checks, token revocation, quarantine and deletes keep working. A commit on main normally begins from the published head, so until the head next reloads a commit may record in its shard and be refused when it lands. A byte count in the variable sets another limit, for tests only.
+- **Alerts.** `repo.storage` is logged once each time a sampled size crosses 5, 8, 9 or 9.4 GB going up (`{event, level, repo, threshold, db_bytes}`; `level` is the line's own). A refusal for size logs `repo.full` (`{event, level, repo, operation}`), at most every 10 minutes per repository per isolate: a full repository stops landing, so the sampling job may never see it reach the limit. Superfan sends 8 GB in the digest, and 9 GB and the limit (either line) as urgent mail.
+- **Refusing new work.** `REPO_STORAGE_GUARD=on` (unset or `off`: nothing changes) makes a repository at that size answer 507 `REPO_FULL` to commits, pushes, imports, new landings (one by one in `batch` mode), new branches and tags, Landings, comments, sessions, memories, releases and flight plans, and a shard refuse new records. Reads, projection, changeset records, hooks, adoption, compaction, queued landings, checks, reviews, moving and deleting branches, resolving comments, token revocation, quarantine and deletes keep working. A commit on main normally begins from the published head, so until the head next reloads a commit may record in its shard and be refused when it lands. A byte count in the variable sets another limit, for tests only. On for dev; off on prod until a ship turns it on.
+- **What's above the limit.** 600,000,000 bytes up to Cloudflare's published limit, 1,313,108,480 up to the last size the spike accepted. What finishes there, measured on local SQLite with the full schema: one commit of 100,000 changed files, 63 MB, or 274 MB at the 512-byte path limit; about 2.9 KB per landing not yet projected (600 MB is 208,000 of them); at most 82 MB of pending hook events (computed); a schema-only migration, 20 KB.
+- **Migrations on a full repository.** A migration runs in one transaction on the first request after a deploy, and a failure blocks every command, reads included. New tables, columns and small indexes fit. **One that writes rows in proportion to history doesn't:** `0042_search_text`'s index of changed paths added 17.7% to a database of path rows, about 1.7 GB at 9.4 GB, and one 950 MB transaction already resets an object. Do that work in small batches outside the migration.
 - **At the limit itself.** A write past it breaks the Durable Object's instance: the failure is thrown out of the call and the next request gets a new instance. Clients get 507 `REPO_FULL` (Git: in the push report, or as the HTTP status), guard or no guard, and in that moment so does anything else in flight on that instance.
 
 Rollout: D1 migration 0010 before the Worker, as the deploy does. Deleting data lowers the size at once, but delete in small batches: one 950 MB delete reset an object for minutes.

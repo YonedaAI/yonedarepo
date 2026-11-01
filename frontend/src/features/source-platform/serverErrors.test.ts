@@ -64,7 +64,7 @@ describe('reads the server could not answer', () => {
   });
 
   it('shows a full repository in its own words, without retrying', async () => {
-    const said = "This repository's database is full";
+    const said = 'This repository has reached its activity limit.';
     answer(failure(507, 'REPO_FULL', said));
     const { error } = await settle(sourceApi('/repos/r0000000000000000000a'));
     expect(calls).toHaveLength(1);

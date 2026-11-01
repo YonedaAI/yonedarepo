@@ -2,7 +2,7 @@
 // and returns JSON; the SourceRepository Durable Object and Rust compute decide, this
 // module only moves objects between the cache tiers and those deciders.
 import { auditOn } from './account-audit';
-import { durableJson, storageGuard } from './durable';
+import { durableJson, notingFull, storageGuard } from './durable';
 import { type HoldAnswer, holdSwitch, verifiedHold } from './platform-legal-hold';
 import type { OrgAccess } from './platform-org-access';
 import { noteWriter } from './platform-write-origin';
@@ -59,6 +59,7 @@ const CREDENTIAL_KEYS = [
   '_anonymous',
   '_system',
   '_storage_guard',
+  '_size_guard',
   '_hold',
   '_undo_ms',
   '_audit',
@@ -96,6 +97,7 @@ const KEEPS_REFS = new Set([
   'repo_context_deliveries',
   'repo_status',
   'repo_storage',
+  'repo_size_add',
   'repo_hold_owner',
   'repo_audit_pending',
   'repo_audit_done',
@@ -159,7 +161,7 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
   const once = async (command: Json, hold?: HoldAnswer) => {
     const body = JSON.stringify({ ...sign(command), ...(hold && { _hold: hold }) });
     const value = await timed(`do.${command.op}`, () =>
-      durableJson<Json>(stub, 'https://source-repository/', body),
+      notingFull(repo, command.op, durableJson<Json>(stub, 'https://source-repository/', body)),
     ).finally(() => {
       // Counted when it settles (it may have committed even if its answer was lost).
       if (!KEEPS_REFS.has(command.op)) noteWrite(repo);
