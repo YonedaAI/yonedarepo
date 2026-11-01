@@ -45,6 +45,10 @@
   padding: 8px 10px;
   border-radius: 6px;
 }
+.source-error button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .source-error {
   display: flex;
   gap: 12px;
