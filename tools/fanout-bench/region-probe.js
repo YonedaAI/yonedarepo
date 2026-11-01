@@ -10,7 +10,7 @@ const REPO = /^r[0-9a-f]{20}$/;
 const ACCOUNT = /^[a-z0-9._+@-]{1,254}$/;
 const MAX_SAMPLES = 20;
 const NO_TOKEN = '0'.repeat(64);
-const SYSTEM = { _system: 'commits' };
+const SHARD_SYSTEM = { _system: 'commits' };
 const TRACE = 'https://www.cloudflare.com/cdn-cgi/trace';
 const SERVE = new Set(['enam', 'weur', 'apac']);
 /** A size like a source file's. */
@@ -54,15 +54,16 @@ export async function here() {
   return { colo: /^colo=(.+)$/m.exec(trace)?.[1] ?? null, loc: /^loc=(.+)$/m.exec(trace)?.[1] ?? null };
 }
 
+/** What the head holder asks of the authority, as the system that asks it. */
 async function authorityRead(env, repo) {
   const stub = env.SOURCE_REPOS.get(env.SOURCE_REPOS.idFromName(repo));
-  const { text } = await command(stub, 'https://source-repository/', { op: 'repo_storage', ...SYSTEM });
-  if (!text.includes('db_bytes')) throw new Error(`authority read: ${text.slice(0, 120)}`);
+  const { status, text } = await command(stub, 'https://source-repository/', { op: 'repo_head', ref: 'main', _system: 'projection' });
+  if (status !== 200 || text.includes('"error"')) throw new Error(`authority read: ${status} ${text.slice(0, 120)}`);
 }
 
 async function shardRead(env, repo) {
   const stub = env.COMMIT_SHARDS.get(env.COMMIT_SHARDS.idFromName(`${repo}:0`));
-  const { status, text } = await command(stub, 'https://commit-shard/', { op: 'store_status', ...SYSTEM });
+  const { status, text } = await command(stub, 'https://commit-shard/', { op: 'store_status', ...SHARD_SYSTEM });
   if (status !== 200) throw new Error(`shard read: ${status} ${text.slice(0, 120)}`);
 }
 
@@ -84,11 +85,13 @@ export async function probe(env, target, { samples, account, repos, serve }) {
     const { meta } = await env.INDEX.prepare('SELECT workspace FROM platform_tokens WHERE token_hash=?').bind(NO_TOKEN).run();
     Object.assign(d1, { served_by_region: meta?.served_by_region ?? null, served_by_primary: meta?.served_by_primary ?? null });
   });
+  // Each sample on its own: which place answered, and how long that took.
   const replica = {};
-  await measure('d1_session', async () => {
+  await timesOf(samples, async () => {
     const session = env.INDEX.withSession('first-unconstrained');
+    const started = Date.now();
     const { meta } = await session.prepare('SELECT workspace FROM platform_tokens WHERE token_hash=?').bind(NO_TOKEN).run();
-    Object.assign(replica, { served_by_region: meta?.served_by_region ?? null, served_by_primary: meta?.served_by_primary ?? null });
+    (replica[meta?.served_by_region ?? 'unknown'] ??= []).push(Date.now() - started);
   });
   const authority = env.WORKSPACES.get(env.WORKSPACES.idFromName(`account:${account}`));
   await measure('account_authority', () => command(authority, 'http://workspace/command', { op: 'pat_check', token_hash: NO_TOKEN }));

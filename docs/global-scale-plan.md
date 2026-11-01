@@ -323,11 +323,50 @@ So the region is read where the request arrives and passed on as a value. Git ov
 
 **The owner's rule, 2026-10-31: data doesn't go across continents.** A request from Europe is served by Europe's Workers, Durable Objects and storage, and likewise Asia, on Cloudflare only. This replaces stage R2's client × data matrix as the main output. No cells or routing are built here: this says what the design must be.
 
-**Status:** hop map read from code and config; "measured" cells wait for the same-region test below, which has not run on dev.
+**Result, 3 runs on dev, 2026-11-01, 0 failures:**
+
+| | Europe today → in region | Asia today → in region | Why |
+|---|---|---|---|
+| Read, repository token | 162 → **22 ms** | 275 → **15 ms** | Nothing leaves before the answer |
+| List | 144 → **11 ms** | 256 → **4 ms** | Nothing leaves before the answer |
+| Commit | 224 → **51 ms** | 342 → **41 ms** | Nothing leaves before the answer |
+| Land | 205 → **53 ms** | 382 → **33 ms** | Nothing leaves before the answer |
+| Sign-in | 244 → **123 ms** | 398 → **76 ms** | Nothing leaves before the answer |
+| Read, personal token | 178 → 123 ms | 295 → 257 ms | D1 is the floor: 96 and 238 ms of those |
+| Push | 444 → 251 ms | 763 → 426 ms | R2 and the rest of the path |
+| Search | 496 → **566 ms** | 670 → **1,142 ms** | **Worse:** D1 and R2 are now further from the code |
+| Repository create | 2,439 → **2,959 ms** | 2,361 → **3,814 ms** | **Worse:** 3 D1 calls and 3 queue sends |
+| Clone | Not comparable | Not comparable | See below |
+
+Medians in ms at the client. A person there adds their own last mile. North America today, for scale: read 41, list 10, commit 90, land 113.
+
+**The answer:**
+
+1. **The US pins are what keep data in the US.** Remove them and hint the objects, and code, repository objects and accounts all ran in the region, 3 runs of 3: **Amsterdam for Europe, Singapore for Asia.**
+2. **Move the Worker, the repository objects and the account together, first.** That one step gives everything in bold above. Neither half alone was measured, and from the hop counts a repository moved without its Worker pays an ocean per call.
+3. **Then R2.** It's the largest piece left: one read is 140 ms from Europe and 277 ms from Asia, against 33 and 102 ms from a bucket made in that region. It's what's holding search and push.
+4. **Then D1.** Every `ypat_` request and every create pays it: 99 ms from Europe, 234 ms from Asia. **The plan's suspicion was half right:** D1 is the floor, but the account authority isn't once it's local (11 and 8 ms). Read replicas haven't helped yet (below).
+5. **Queues and background work have no in-region answer.** Asia needs another way to run them.
+6. **What doesn't move:** Asia can't get a guarantee, and Artifacts and Queues have no Asian placement at all. See below.
+
+**Also seen:** static assets come through the pin too. `cf-placement: remote-IAD` on a 982 KB bundle cost Europe 502 ms and Asia 1,233 ms, and that can change on its own, with no region work. In 10 measured operations **no foreground request called the Artifacts binding**, which helps an Artifacts-free Asia.
+
+**What the design must be** (from this result; the cell work itself isn't built or measured):
+
+1. **Requests run where they arrive.** No `placement` on the Workers. Placement is per Worker, so a pin can't differ by region, and with none, one Worker may be enough where the plan drew one per cell. Not tried as such.
+2. **A repository's region is fixed at create,** by location hint on the first `get` of all its objects. An account's is fixed at sign-up.
+3. **One R2 bucket per region,** chosen by the repository's region.
+4. **D1 leaves the hot path.** No `ypat_` request can wait on a primary an ocean away. Replicas, or a token lookup that doesn't need D1, must be proven first.
+5. **Background work runs in the region.** Europe: queues with jurisdiction `eu`. Asia: no queue can promise that, so Durable Object alarms.
+6. **Artifacts:** a new `eu` namespace for Europe. Asia runs on R2 alone, which is untested on dev.
+7. **Containers per region,** one entry each, accepting that a container may not sit beside its object.
+8. **What exists stays in `enam`** until a copy tool exists.
+
+**Status:** hop map read from code and config, then checked against this test.
 
 #### Hop map: where each operation goes today
 
-For a person or agent in Europe or Asia. **Crosses** means the hop leaves their continent. Everything here is read from code and `infra/envs/dev.json`; the two facts already measured are R2 and D1 (`ENAM`, Cloudflare API, 2026-10-31).
+For a person or agent in Europe or Asia. **Crosses** means the hop leaves their continent. Read from code and `infra/envs/dev.json`. Measured on 2026-11-01: requests from Frankfurt and Singapore enter there and answer `cf-placement: remote-IAD`, assets included; every object on this path ran in a US colo (IAD, EWR, ORD, ATL, MIA); R2 and D1 report `ENAM`. Where a queue runs, and where Artifacts does, stays unknown.
 
 | Operation | Hop | Runs in | Crosses? |
 |---|---|---|---|
@@ -356,7 +395,7 @@ New Durable Objects land near whoever first asks for them, so today that's near 
 
 #### For each crossing hop, the Cloudflare way
 
-Read in Cloudflare's docs on 2026-10-31. **Nothing here is measured yet except as marked.**
+Read in Cloudflare's docs on 2026-10-31. Measured figures for what this saves are in the result above and the tables below. **Removing the Worker pin wasn't tried as such:** the test ran platform code in a Durable Object.
 
 | Hop | Cloudflare's way | What it can't do |
 |---|---|---|
@@ -384,7 +423,7 @@ Read in Cloudflare's docs on 2026-10-31. **Nothing here is measured yet except a
 
 #### Same-region test
 
-`tools/platform-region-matrix.mjs`. **Not run: dev is held for the ship.**
+`tools/platform-region-matrix.mjs`. 3 runs on dev, 2026-11-01.
 
 **Why it can run without a cell.** A Durable Object's code runs where the object landed, and it's the platform's code. Behind `REGION_HINT_TEST`, an instance of `LandCombiner` named `region-serve:<hint>` runs the platform's real routes, started in `enam`, `weur` or `apac` by a location hint (`repo-region-serve.ts`). A client Worker in that region reaches it through a binding, and nothing else can. No new class, no routing change, and no existing request goes this way.
 
@@ -402,10 +441,125 @@ Read in Cloudflare's docs on 2026-10-31. **Nothing here is measured yet except a
 2. **Where it ran.** `GET /repos/<id>/where` has the code, each object and the account authority fetch Cloudflare's trace page and answer their colo. That's how [Where Durable Objects Live](https://where.durableobjects.live) works; Cloudflare documents no API for it.
 3. **Each piece from each region,** through a binding: D1 by primary and through a session, R2 in the platform's bucket and in a test bucket made with that region's hint, the account authority, the repository objects.
 
-**Not tested:** the queue consumer stays on the pinned Worker, so background work crosses in both paths, and R2 stays in `ENAM` on the in-region path. A test bucket gives R2's local number, not a whole path on it, because queue jobs read the platform's bucket. Real Git can't reach the in-region path, so clone and push there are Git's request forms.
+**Not tested:** the queue consumer stays on the pinned Worker, so background work crosses in both paths, and R2 stays in `ENAM` on the in-region path. A test bucket gives R2's local number, not a whole path on it, because queue jobs read the platform's bucket. Real Git can't reach the in-region path, so clone and push there are Git's request forms. Only the first of 64 shards reported its colo.
+
+**What still left the region:**
+
+| Hop | Operations | One call, Europe | One call, Asia | With the Cloudflare way |
+|---|---|---|---|---|
+| D1 | `ypat_` requests, search, create | 99 ms | 234 ms | Replica: no gain yet, below |
+| R2, platform bucket | Clone, push, search, a read that misses | 140 ms | 277 ms | Bucket in region: 33 and 102 ms |
+| Queue send | Create; repository writes | About 57 ms | About 178 ms | No location control. Where it goes is unknown |
+| Queue consumer | All background work | Not timed | Not timed | None for Asia |
+| Pinned front Worker | Pages and assets | 203 and 502 ms | 507 and 1,233 ms | Not tested |
+
+**How to read the odd numbers:**
+
+1. **Clone isn't a regional result.** North America moved nothing, yet in-region clone there took 1.0 to 9.3 s against 1.1 s today. `Server-Timing` stops when the answer starts, 617 against 261 ms from Europe, so the rest came after: probably the pack streaming out of a Durable Object (inferred, not traced). A clone reads R2 about 5 times, all crossing. Its real in-region time is unmeasured.
+2. **R2 in Asia is slower than in Europe,** 102 against 33 ms for a read, and 263 against 136 ms for a 4 KB write. Both buckets report their hinted region. Cloudflare doesn't say where `APAC` really is, or why a write takes that long.
+3. **"Before the answer" is exact.** Work a request defers, such as a queue send after a landing, ends after `Server-Timing` is written and isn't listed. It's in the background row above.
+4. **These repositories are new and their objects are near.** A read of an object held only in R2 pays R2's row above. Later objects weren't tested.
+5. **Queue sends** are the phase's total divided by 3: 172 and 533 ms.
+6. **The account stays local only if it started there.** Sign-up through a regional client placed it in AMS and SIN. An existing account stays in the US.
+7. **One serving object answered each region,** one more local hop than a Worker would pay: 10 ms in Europe, 3 ms in Asia.
 
 <!-- region-results:start (tools/platform-region-matrix.mjs --results) -->
-None yet.
+3 runs, last at `18a1b287`, 2026-11-01. Cells: median of run medians in ms (min–max of run medians).
+
+**Clients**
+
+| Client | Placed near | Ran in colo |
+|---|---|---|
+| North America | aws:us-east-1 | IAD |
+| Europe | aws:eu-central-1 | FRA |
+| Asia | aws:ap-southeast-1 | SIN |
+
+**Where it ran**
+
+| Client | Path | Hint | Code ran in | Authority | First shard | Main combiner | Head holder | Projector | Account |
+|---|---|---|---|---|---|---|---|---|---|
+| North America | today | enam | IAD ×3 | ATL ×1, IAD ×2 | MIA ×1, EWR ×2 | ATL ×1, EWR ×1, MIA ×1 | IAD ×3 | EWR ×3 | IAD ×3 |
+| North America | region | enam | EWR ×3 | ORD ×1, EWR ×1, IAD ×1 | EWR ×2, IAD ×1 | EWR ×2, MIA ×1 | ATL ×1, IAD ×2 | EWR ×2, ATL ×1 | IAD ×3 |
+| Europe | today | enam | IAD ×3 | IAD ×3 | IAD ×3 | ATL ×1, IAD ×2 | MIA ×2, ATL ×1 | EWR ×1, ATL ×2 | IAD ×3 |
+| Europe | region | weur | AMS ×3 | AMS ×3 | AMS ×3 | AMS ×3 | AMS ×3 | AMS ×3 | AMS ×3 |
+| Asia | today | enam | IAD ×3 | EWR ×2, MIA ×1 | IAD ×2, EWR ×1 | MIA ×1, IAD ×1, ORD ×1 | IAD ×3 | IAD ×1, MIA ×1, EWR ×1 | EWR ×3 |
+| Asia | region | apac | SIN ×3 | SIN ×3 | SIN ×3 | SIN ×3 | SIN ×3 | SIN ×3 | SIN ×3 |
+
+**What each operation still reached, on the region's path** (calls per answer, median time)
+
+| Operation | North America | Europe | Asia |
+|---|---|---|---|
+| Sign-in | limiter 1× 0 ms, authority 3× 105 ms | limiter 1× 0 ms, authority 3× 100 ms | limiter 1× 0 ms, authority 3× 70 ms |
+| Read, repo token | combiner 0.2× 15 ms | combiner 0.3× 8 ms | combiner 0.5× 5 ms |
+| Read, personal token | d1 1× 14 ms, authority 1× 15 ms, combiner 0× 17 ms | d1 1× 96 ms, authority 1× 11 ms, combiner 0.1× 8 ms | d1 1× 238 ms, authority 1× 8 ms, combiner 0.1× 6 ms |
+| List | none | none | none |
+| Search | d1 2× 29 ms, authority 2× 34 ms, r2 1.6× 95 ms, repository 4× 77 ms | d1 2× 192 ms, authority 2× 32 ms, r2 1.3× 267 ms, repository 4× 40 ms | d1 2× 481 ms, authority 2× 165 ms, r2 1.3× 566 ms, repository 4× 35 ms |
+| Clone | r2 4.7× 305 ms, shard 86.7× 13469 ms, repository 7× 115 ms | r2 4.7× 756 ms, shard 86.7× 5443 ms, repository 7× 60 ms | r2 4.7× 1468 ms, shard 86.7× 4551 ms, repository 7× 48 ms |
+| Commit | combiner 0.6× 59 ms, shard 1× 39 ms | combiner 0.6× 9 ms, shard 1× 27 ms | combiner 0.7× 8 ms, shard 1× 16 ms |
+| Land | shard 1× 10 ms, combiner 1× 75 ms | shard 1× 9 ms, combiner 1× 29 ms | shard 1× 7 ms, combiner 1× 31 ms |
+| Push | combiner 0.3× 571 ms, r2 1× 72 ms, repository 8.3× 158 ms | combiner 0.3× 1824 ms, r2 1× 142 ms, repository 8.3× 81 ms | combiner 0.5× 3490 ms, r2 1× 278 ms, repository 8.5× 53 ms |
+| Create | d1 3× 58 ms, authority 2× 72 ms, queue 3× 213 ms, shard 68× 48216 ms, combiner 4× 796 ms, repository 6× 548 ms | d1 3× 289 ms, authority 2× 42 ms, queue 3× 172 ms, shard 68× 109419 ms, combiner 4× 1220 ms, repository 6× 1068 ms | d1 3× 715 ms, authority 2× 21 ms, queue 3× 533 ms, shard 68× 179154 ms, combiner 4× 1930 ms, repository 6× 826 ms |
+
+**Client time**
+
+| Client | Path | Page | Asset | Sign-in | Read, repo token | Read, personal token | List | Search | Clone | Commit | Land | Push | Create |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| North America | Today | 57 (40–66) | 31 (22–32) | 176 (128–178) | 41 (40–68) | 40 (37–42) | 10 (10–11) | 279 (246–406) | 1095 (913–1388) | 90 (90–103) | 113 (95–168) | 236 (210–368) | 1921 (1696–2691) |
+| North America | In region, enam | not measured | not measured | 109 (106–132) | 18 (17–19) | 46 (45–47) | 10 (9–10) | 280 (229–291) | 8549 (953–9264) | 84 (66–106) | 89 (76–143) | 244 (212–411) | 2365 (1650–2708) |
+| Europe | Today | 203 (165–217) | 502 (472–512) | 244 (236–343) | 162 (134–201) | 178 (159–198) | 144 (132–152) | 496 (379–499) | 1260 (1226–1510) | 224 (203–249) | 205 (171–248) | 444 (432–484) | 2439 (1831–2468) |
+| Europe | In region, weur | not measured | not measured | 123 (120–125) | 22 (19–24) | 123 (122–124) | 11 (10–11) | 566 (552–941) | 5149 (2129–5716) | 51 (49–58) | 53 (47–75) | 251 (242–934) | 2959 (2255–3125) |
+| Asia | Today | 507 (376–522) | 1233 (1201–1237) | 398 (381–399) | 275 (270–310) | 295 (287–296) | 256 (255–265) | 670 (567–811) | 1788 (1780–2045) | 342 (331–351) | 382 (375–400) | 763 (749–929) | 2361 (2253–2848) |
+| Asia | In region, apac | not measured | not measured | 76 (76–79) | 15 (15–15) | 257 (256–257) | 4 (4–5) | 1142 (1119–1210) | 6625 (3247–7091) | 41 (29–63) | 33 (30–62) | 426 (341–692) | 3814 (3608–4488) |
+
+**Server time (`Server-Timing` total)**
+
+| Client | Path | Page | Asset | Sign-in | Read, repo token | Read, personal token | List | Search | Clone | Commit | Land | Push | Create |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| North America | Today | not measured | not measured | not measured | 22 (21–23) | 27 (22–29) | 0 (0–0) | 232 (196–345) | 319 (292–667) | 65 (57–67) | 85 (72–152) | 190 (185–333) | 1885 (1666–2493) |
+| North America | In region, enam | not measured | not measured | 91 (91–118) | 4 (4–5) | 34 (34–37) | 0 (0–0) | 245 (195–261) | 734 (281–864) | 63 (52–92) | 76 (64–132) | 217 (184–381) | 2348 (1633–2692) |
+| Europe | Today | not measured | not measured | not measured | 50 (27–54) | 70 (45–71) | 38 (22–42) | 190 (187–250) | 261 (231–344) | 89 (73–90) | 68 (51–89) | 174 (171–190) | 2170 (1713–2320) |
+| Europe | In region, weur | not measured | not measured | 100 (95–111) | 5 (4–5) | 111 (110–111) | 0 (0–0) | 533 (521–890) | 617 (476–745) | 32 (30–35) | 40 (35–60) | 224 (214–909) | 2930 (2233–3110) |
+| Asia | Today | not measured | not measured | not measured | 18 (18–18) | 39 (37–44) | 10 (9–11) | 245 (174–264) | 297 (284–398) | 82 (75–109) | 122 (112–144) | 234 (229–422) | 2082 (1979–2582) |
+| Asia | In region, apac | not measured | not measured | 65 (64–70) | 4 (4–7) | 251 (250–252) | 0 (0–0) | 1121 (1101–1198) | 1130 (964–1318) | 38 (15–57) | 27 (19–52) | 411 (324–677) | 3805 (3596–4481) |
+
+**Each piece from each region, one call through a binding**
+
+| Piece, one call | North America | Europe | Asia |
+|---|---|---|---|
+| trace | 1 (1–2) | 1 (1–1) | 1 (1–1) |
+| platform_health | 7 (5–20) | 106 (104–107) | 243 (243–249) |
+| d1 | 9 (7–13) | 99 (98–100) | 234 (234–236) |
+| d1_session | 9 (7–11) | 100 (97–102) | 273 (272–276) |
+| account_authority | 5 (4–6) | 16 (12–16) | 5 (4–7) |
+| r2_head | 63 (55–66) | 139 (135–143) | 273 (269–283) |
+| r2_get | 63 (57–72) | 140 (137–142) | 277 (269–295) |
+| serve_object | 10 (9–10) | 10 (9–13) | 3 (2–3) |
+| repo_enam_today | not measured | not measured | not measured |
+| shard_enam_today | 15 (14–40) | 100 (100–104) | 238 (236–242) |
+| repo_enam | not measured | not measured | not measured |
+| shard_enam | 14 (10–15) | not measured | not measured |
+| r2_local_put | not measured | 136 (132–136) | 263 (261–306) |
+| r2_local_get | not measured | 33 (30–35) | 102 (100–112) |
+| r2_local_head | not measured | 31 (29–32) | 98 (98–99) |
+| repo_weur | not measured | not measured | not measured |
+| shard_weur | not measured | 37 (20–37) | not measured |
+| repo_apac | not measured | not measured | not measured |
+| shard_apac | not measured | not measured | 7 (7–9) |
+
+**D1 through a session, with read replication on**
+
+| Client | Answered by |
+|---|---|
+| North America | not measured |
+| Europe | not measured |
+| Asia | not measured |
+
+**Real Git from the Mac**
+
+| Git, from the Mac | ms | Failed |
+|---|---|---|
+| clone | 1658 (1428–2119) | 0 |
+| push | 493 (389–548) | 0 |
 <!-- region-results:end -->
 
 **R3 spikes the docs answer:**
@@ -414,7 +568,7 @@ None yet.
 |---|---|
 | 1. Can an Artifacts namespace be regional? | Only by jurisdiction, `eu` or `us`, when it's created |
 | 2. Placement on RPC | Still contradicts itself: placement "only affects `fetch` handlers", and the page's own example relies on RPC. Not measured |
-| 3. Where do a Durable Object and its container land? | Not guaranteed together, by the docs. Not measured |
+| 3. Where does a Durable Object land? Does a hint work through our bindings? | **Yes, both.** `weur` landed in AMS and `apac` in SIN, 3 of 3, for the authority, first shard, combiner, head holder and projector, through the platform's bindings and a Worker binding by `script_name`. `enam` scatters across IAD, EWR, ORD, ATL and MIA. Containers: not guaranteed beside their object, by the docs; not measured |
 | 4. Is D1 read replication GA? | No GA found; public beta since 2025-04-10 |
 | 5. Where do R2 and D1 live? | `ENAM`, both |
 

@@ -6,7 +6,8 @@
 // of each piece through a binding. Needs REGION_HINT_TEST=on on dev. Dev only; test repositories
 // are deleted by their own path, and `--cleanup` deletes what a stopped run left. Evidence:
 // .local/platform-live/, one file per run.
-// Usage: node tools/platform-region-matrix.mjs --dry-run | --yes | --results | --cleanup
+// `--probe-only` times the pieces again, with no repository and no switch needed.
+// Usage: node tools/platform-region-matrix.mjs --dry-run | --yes | --results | --cleanup | --probe-only
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -33,6 +34,7 @@ const { values } = parseArgs({
     yes: { type: 'boolean', default: false },
     results: { type: 'boolean', default: false },
     cleanup: { type: 'boolean', default: false },
+    'probe-only': { type: 'boolean', default: false },
   },
 });
 const url = values.url.replace(/\/$/, '');
@@ -49,7 +51,7 @@ if (values.results) {
 console.error(describeMatrix(estimateMatrix({ ...options, clients })));
 if (options.runs < MIN_RUNS) console.error(`Fewer than ${MIN_RUNS} runs proves the tool works; it is not a result.`);
 if (values['dry-run']) process.exit(0);
-if (!values.yes && !values.cleanup) {
+if (!values.yes && !values.cleanup && !values['probe-only']) {
   console.error('Nothing ran. Make sure nothing else runs on dev, then pass --yes.');
   process.exit(2);
 }
@@ -106,6 +108,19 @@ if (values.cleanup) {
   for (const repo of [...held]) await remove(repo);
   console.error(`${held.length} test repositories left`);
   process.exit(held.length ? 3 : 0);
+}
+
+if (values['probe-only']) {
+  const placed = await placedClients(regional, clients);
+  const probes = await Promise.all(
+    clients.map(async (client) => {
+      const { session } = await accountOf(client, armsOf(client)[1]);
+      return { client, run: 1, ...(await regional.call(client, { probe: { samples: 20, account: session.name, repos: [] } })) };
+    }),
+  );
+  await evidence('region-probe', url, { runs: 0, clients: placed, arms: [], probes, mac_git: [] }, { client: `regional clients: ${clients.join(', ')}`, quiet: true });
+  console.error(`Results rebuilt from ${await updateRegionResults()} evidence files`);
+  process.exit(0);
 }
 
 const stamp = stampOf(new Date()).slice(5, 19).toLowerCase().replace(/[^0-9t]/g, '');

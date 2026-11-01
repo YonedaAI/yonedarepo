@@ -20,6 +20,11 @@ const b64 = (text) => Buffer.from(text).toString('base64');
 export const PAT_SCOPES = ['repo:read', 'repo:write', 'repo:land', 'repo:review', 'repo:admin'];
 export const REPO_SCOPES = ['read', 'write', 'land', 'check'];
 export const regionOfAccount = (i, regions) => regions[i % regions.length];
+/** The neighbour who reviews account `i`'s work: in its region when there's one, never itself. */
+export function reviewerOf(i, accounts, regions) {
+  const same = (i + regions.length) % accounts;
+  return same === i ? (i + 1) % accounts : same;
+}
 const username = (arm, i) => `realuse_${arm}_${i}`;
 /** The name a hint needs on the `region` arm. */
 export const seedName = (arm, i, r) => (arm === 'region' ? `region-hint-sim-${i}-${r}` : `real-use-${i}-${r}`);
@@ -58,12 +63,17 @@ export async function preparePool({ arm, target, call, kitPassword, accounts, re
     const seed = seedFiles(name, files);
     const body = { name, ...(arm === 'region' && { region_hint: serveOf(i) }), policy: { required_checks: [], approvals: 0 }, files: Object.entries(seed).map(([path, text]) => ({ path, content_b64: b64(text) })), message: 'Seed', author: AUTHOR };
     const { id, commit } = await sessions[i].post('/api/v1/repos', body);
-    // A reviewer who isn't the author: reviews of one's own commits are refused.
-    const reviewer = pool.accounts[(i + regions.length) % accounts].name;
-    await sessions[i].post(`/api/v1/repos/${id}/members`, { account: reviewer, role: 'land' });
     pool.repos.push({ id, name, owner: i, seed_commit: commit, files });
     await save(file, pool);
     log(`repository ${pool.repos.length}`);
+  });
+  // A reviewer who isn't the author: reviews of one's own commits are refused. Adding one twice
+  // changes nothing, so a setup that stopped here picks up again.
+  await waves(pool.repos.filter((repo) => repo.owner < accounts && !repo.reviewer), 4, async (repo) => {
+    const reviewer = pool.accounts[reviewerOf(repo.owner, accounts, regions)].name;
+    await sessions[repo.owner].post(`/api/v1/repos/${repo.id}/members`, { account: reviewer, role: 'land' });
+    repo.reviewer = reviewer;
+    await save(file, pool);
   });
   return { pool, sessions };
 }
@@ -97,7 +107,7 @@ export function populationOf({ arm, pool, sessions, credentials, repos, api, fro
     const repo = own[zipf(random, own.length)];
     const serve = arm === 'region' ? homeOf[region] : undefined;
     const person = ['browse', 'review', 'search'].includes(kind);
-    const reviewer = sessions[(i + regions.length) % sessions.length].cookie;
+    const reviewer = sessions[reviewerOf(i, sessions.length, regions)].cookie;
     if (person) return { person: i, repo, target: front, serve, cookie: sessions[i].cookie, reviewer };
     return { person: i, repo, target: api, serve, credential: kind === 'mcp' ? credentials.pats[i] : credentials.tokens[repo.index] };
   };
