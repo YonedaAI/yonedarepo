@@ -1,11 +1,11 @@
 ---
 title: Memories and context
-summary: Leave decisions, constraints, gotchas and how-tos next to the code, and hand each new coding session what is relevant to its work.
+summary: Leave decisions, constraints, gotchas, how-tos and more next to the code, and hand each new coding session what is relevant to its work.
 ---
 
 ## What a memory is
 
-A memory is something a later session would otherwise have to rediscover, and that the code alone does not say: a **decision**, a **constraint**, a **gotcha** or a **how-to**. It is anchored to the files, directories or symbols it is about, and kept with the repository.
+A memory is something a later session would otherwise have to rediscover, and that the code alone does not say: a **decision**, a **constraint**, a **gotcha**, a **how-to**, a **convention**, a **risk**, a **fact** or a **preference**. It is anchored to the files, directories or symbols it is about, and kept with the repository.
 
 - A session is shown a memory when it starts, when it reads an anchored file, and when its prompt matches, each once per session.
 - When the anchored code changes on `main`, the memory reads as **stale** until someone checks it.
@@ -20,6 +20,7 @@ yoneda memory add gotcha -m "The retry budget is shared across all HTTP clients"
   --anchors src/http.rs#RetryBudget,src/net/
 ```
 
+- The kind is one of those above or a word of your own: `yoneda memory add runbook -m "…"` adds `runbook`, and the repository offers it from then on. A kind is up to 24 letters, digits or hyphens, starting with a letter; `Design Note` is kept as `design-note` and `how-to` as `howto`. A repository can add 32 kinds.
 - Text is at most 2 KiB; a memory holding a credential is refused.
 - Anchors: up to 20 files, directories (ending in `/`) or symbols (`path#Type::method`).
 - `--supersedes <id>` replaces an older memory that is now wrong; `--commit <sha>` writes it against a commit other than `main`'s head.
@@ -36,7 +37,7 @@ yoneda memory show 14
 yoneda memory retire 14 -m "Each client has its own budget now"
 ```
 
-`--status` takes `current` (the default: active memories and drafts), `active`, `stale`, `draft`, `retired`, `superseded` or `all`. A retired memory is kept but no longer shown to sessions.
+`memory list --json` and `git_memory_list` also answer `kinds`: the built-in kinds, then those this repository added. `--status` takes `current` (the default: active memories and drafts), `active`, `stale`, `draft`, `retired`, `superseded` or `all`. A retired memory is kept but no longer shown to sessions.
 
 | CLI | MCP | REST |
 |---|---|---|

@@ -83,14 +83,17 @@ pub async fn run(t: &Resolved, command: MemoryCommand) -> Result<()> {
             }
             let already = added["already"] == true;
             let commit = self::text(&added, "commit");
+            // An older platform doesn't answer the stored kind.
+            let kind = added["kind"].as_str().unwrap_or(&kind).to_owned();
             human!(
-                "Memory #{} at {}{}",
+                "Memory #{} ({kind}) at {}{}",
                 added["memory"],
                 &commit[..commit.len().min(7)],
                 if already { " (already recorded)" } else { "" }
             );
             output::emit(&output::MemoryAdd {
                 memory: added["memory"].clone(),
+                kind,
                 commit,
                 already,
             });
@@ -110,8 +113,15 @@ pub async fn run(t: &Resolved, command: MemoryCommand) -> Result<()> {
             for memory in &memories {
                 human!("{}", line(memory));
             }
+            let kinds = listed["kinds"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|kind| kind.as_str().map(str::to_owned))
+                .collect();
             output::emit(&output::MemoryList {
                 memories,
+                kinds,
                 next: listed["next"].clone(),
             });
         }

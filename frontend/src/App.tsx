@@ -211,6 +211,11 @@ export function App() {
     if (isAdmin) signups.reload();
     void session.discover();
   };
+  const handleChosen = (handle: string) => {
+    setNotice(`Your handle is ${handle}. Your profile is at /${handle}.`);
+    forgetRepoNames();
+    refresh();
+  };
   if (site)
     return (
       <SiteRoot
@@ -381,6 +386,7 @@ export function App() {
                 orgs={orgs}
                 navigate={navigate}
                 onAvatar={session.setAvatar}
+                onHandle={handleChosen}
                 onRestored={() => {
                   platform.reload();
                   activity.reload();
@@ -497,14 +503,7 @@ export function App() {
           onImported={created}
         />
       )}
-      <HandlePrompt
-        identity={creating || adding ? null : session.identity}
-        onSet={(handle) => {
-          setNotice(`Your handle is ${handle}. Your profile is at /${handle}.`);
-          forgetRepoNames();
-          refresh();
-        }}
-      />
+      <HandlePrompt identity={creating || adding ? null : session.identity} onSet={handleChosen} />
     </div>
   );
 }

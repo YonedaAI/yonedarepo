@@ -84,14 +84,14 @@ export function EmailAddress({
           status.email
             ? status.verified
               ? 'Confirmed'
-              : 'Not confirmed. We sent a confirmation link to this address.'
+              : 'Not confirmed.'
             : 'Only used for account email, never shown to others.'
         }
         action={
           <>
             {status.email && !status.verified && (
               <button type="button" className="quiet" disabled={busy} onClick={onResend}>
-                Resend confirmation
+                Send confirmation link
               </button>
             )}
             <button type="button" className="quiet" onClick={() => setChanging(true)}>

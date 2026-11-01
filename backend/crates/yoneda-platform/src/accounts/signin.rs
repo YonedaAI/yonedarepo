@@ -10,7 +10,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
             let username =
                 yoneda_core::account::normalize_account_identifier(&string(c, "username")?)?;
             super::handles::name_free(db, &username)?;
-            let email = contact_email(c)?;
+            // A name that is an address is the contact email, unconfirmed like any other.
+            let email =
+                contact_email(c)?.or_else(|| username.contains('@').then(|| username.clone()));
             let verifier = verifier(c)?;
             let mut a = json!({"username":username,"verifier":verifier,"recovery_hash":hash(c,"recovery_hash",&[64])?,"created_at":now});
             // Forward-only: accounts made before the field have none.
@@ -43,7 +45,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
         // account made without one); the send itself happens outside, from a queue job.
         SigninOp::WelcomeState => Ok(json!({
             "sent": get(db, "welcome_email").is_ok(),
-            "email": account(db).map(|a| a["email"].clone()).unwrap_or(Value::Null),
+            "email": account(db).ok().as_ref().and_then(super::email::contact),
         })),
         SigninOp::WelcomeSent => {
             account(db)?;
@@ -121,7 +123,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
         }
     }
 }
-/// The sign-up's contact email (the welcome email's address), if given: normalized, and
+/// The contact email a sign-up gives (the welcome email's address), if any: normalized, and
 /// refused unless it is an email address. Stored only; never part of the public account.
 pub(super) fn contact_email(c: &Value) -> Result<Option<String>> {
     match &c["email"] {

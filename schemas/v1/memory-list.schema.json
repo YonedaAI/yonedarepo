@@ -4,6 +4,13 @@
       "additionalProperties": false,
       "description": "`memory list`.",
       "properties": {
+        "kinds": {
+          "description": "The kinds to pick from: the built-in ones, then those this repository added.",
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
         "memories": {
           "description": "The memories newest first, as the platform returns them (with anchors and staleness).",
           "items": true,
@@ -15,6 +22,7 @@
       },
       "required": [
         "memories",
+        "kinds",
         "next"
       ],
       "title": "MemoryList",

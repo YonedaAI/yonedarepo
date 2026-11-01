@@ -1,8 +1,13 @@
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { EMPTY_COMPOSER, MemoryComposer } from './MemoryComposer';
 import {
   anchorText,
   byteLength,
   deliveryCause,
+  kindOptions,
+  MEMORY_KINDS,
   memoriesPath,
   memoryBody,
   NO_MEMORY_FILTERS,
@@ -40,6 +45,40 @@ describe('memories page', () => {
       anchors: [{ path: 'a.rs' }],
       supersedes: 4,
     });
+  });
+
+  it('offers the repository’s kinds, and any kind already in hand', () => {
+    expect(kindOptions(undefined)).toEqual([...MEMORY_KINDS]);
+    expect(kindOptions(['decision', 'runbook'])).toEqual(['decision', 'runbook']);
+    expect(kindOptions(['decision'], 'runbook')).toEqual(['decision', 'runbook']);
+    expect(kindOptions(['decision'], 'decision')).toEqual(['decision']);
+    expect(kindOptions(['decision'], '')).toEqual(['decision']);
+  });
+
+  it('picks a kind from the list or names a new one', () => {
+    const html = renderToStaticMarkup(
+      createElement(MemoryComposer, {
+        repo,
+        kinds: [...MEMORY_KINDS, 'runbook'],
+        start: EMPTY_COMPOSER,
+        onSaved: () => {},
+      }),
+    );
+    for (const kind of ['constraint', 'preference', 'runbook'])
+      expect(html).toContain(`<option value="${kind}">${kind}</option>`);
+    expect(html).toContain('New kind…');
+    expect(html).not.toContain('Name the kind');
+  });
+
+  it('keeps an added kind when a memory of it is superseded', () => {
+    const html = renderToStaticMarkup(
+      createElement(MemoryComposer, {
+        repo,
+        start: { ...EMPTY_COMPOSER, kind: 'runbook', text: 'x', supersedes: 4 },
+        onSaved: () => {},
+      }),
+    );
+    expect(html).toContain('<option value="runbook" selected="">runbook</option>');
   });
 
   it('counts the limit in bytes and names what prompted a delivery', () => {

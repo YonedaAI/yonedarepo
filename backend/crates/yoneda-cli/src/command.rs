@@ -130,7 +130,7 @@ pub enum ReleaseCommand {
     },
 }
 
-/// `yoneda memory …`: the repository's memories (decisions, constraints, gotchas, how-tos).
+/// `yoneda memory …`: the repository's memories (decisions, constraints, gotchas, how-tos, …).
 #[derive(Debug, PartialEq, Eq)]
 pub enum MemoryCommand {
     Add {

@@ -2,6 +2,7 @@
 //! changing the address, and the resend limit.
 use super::execute_workspace;
 use crate::native::NativeStore;
+use crate::storage::SqlStore;
 use serde_json::{Value, json};
 
 const DAY: i64 = 24 * 60 * 60 * 1000;
@@ -230,4 +231,103 @@ fn a_release_with_nothing_counted_gives_no_extra_requests() {
     }
     let refused = at(&db, 6, json!({"op":"support_admit"})).unwrap();
     assert_eq!(refused, json!({"admitted":false}));
+}
+
+fn named_by_address(email: Option<&str>) -> NativeStore {
+    let db = NativeStore::memory().unwrap();
+    let mut signup = json!({"op":"signup","username":"ada@example.com","password":"a long test password","salt":"01".repeat(16),"recovery_hash":"b".repeat(64),"session_hash":"a".repeat(64)});
+    if let Some(email) = email {
+        signup["email"] = json!(email);
+    }
+    at(&db, 0, signup).unwrap();
+    db
+}
+/// An account as it was stored before sign-up copied the address: named by it, no `email`.
+fn named_before_the_field() -> NativeStore {
+    let db = named_by_address(None);
+    db.query(
+        "UPDATE workspace_records SET payload=json_remove(payload,'$.email') WHERE id='account'",
+        &[],
+    )
+    .unwrap();
+    db
+}
+
+#[test]
+fn a_new_account_named_by_an_address_has_it_as_its_unconfirmed_email() {
+    let db = named_by_address(None);
+    let stored = db
+        .query(
+            "SELECT json_extract(payload,'$.email') AS email FROM workspace_records WHERE id='account'",
+            &[],
+        )
+        .unwrap();
+    assert_eq!(stored[0]["email"], "ada@example.com");
+    let shown = status(&db, 1, None);
+    assert_eq!(shown["email"], "ada@example.com");
+    assert_eq!(shown["verified"], false);
+    // A name is not proof of an inbox: only the link confirms it.
+    assert_eq!(issue(&db, 1, 'c', "welcome")["issued"], true);
+    assert_eq!(status(&db, 2, Some('c'))["token_valid"], true);
+    assert_eq!(status(&db, 2, None)["verified"], false);
+}
+
+#[test]
+fn a_separate_contact_email_wins_over_the_address_in_the_name() {
+    let db = named_by_address(Some("work@example.com"));
+    assert_eq!(status(&db, 1, None)["email"], "work@example.com");
+}
+
+#[test]
+fn an_older_account_named_by_an_address_reads_it_with_no_step() {
+    let db = named_before_the_field();
+    let shown = status(&db, 1, None);
+    assert_eq!(shown["email"], "ada@example.com");
+    assert_eq!(shown["verified"], false, "nothing proved this address");
+    let welcome = at(&db, 1, json!({"op":"welcome_state"})).unwrap();
+    assert_eq!(welcome["email"], "ada@example.com");
+    let summary = at(&db, 1, json!({"op":"account_summary"})).unwrap();
+    assert_eq!(summary["email"], "ada@example.com");
+    // Asking for the same address again is refused like any other same address.
+    let same = at(
+        &db,
+        1,
+        json!({"op":"email_change","email":"ada@example.com","token_hash":hash('c')}),
+    )
+    .unwrap();
+    assert_eq!(same["reason"], "same");
+}
+
+#[test]
+fn an_older_account_named_by_an_address_confirms_it_by_the_link() {
+    let db = named_before_the_field();
+    assert_eq!(issue(&db, 1, 'c', "resend")["issued"], true);
+    assert_eq!(status(&db, 2, Some('c'))["token_valid"], true);
+    assert_eq!(verify(&db, 2, 'c')["verified"], true);
+    let shown = status(&db, 3, None);
+    assert_eq!(shown["email"], "ada@example.com");
+    assert_eq!(shown["verified"], true);
+    assert_eq!(issue(&db, 3, 'd', "resend")["reason"], "verified");
+}
+
+#[test]
+fn an_older_account_named_by_an_address_can_still_change_it() {
+    let db = named_before_the_field();
+    let changed = at(
+        &db,
+        1,
+        json!({"op":"email_change","email":"new@example.com","token_hash":hash('c')}),
+    )
+    .unwrap();
+    assert_eq!(changed["changed"], true);
+    let shown = status(&db, 2, None);
+    assert_eq!(shown["email"], "new@example.com");
+    assert_eq!(shown["verified"], false);
+}
+
+#[test]
+fn an_account_named_by_a_handle_with_no_email_still_has_none() {
+    let db = account(None);
+    assert_eq!(status(&db, 1, None)["email"], Value::Null);
+    assert_eq!(issue(&db, 1, 'c', "resend")["reason"], "no_email");
 }

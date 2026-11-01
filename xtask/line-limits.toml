@@ -4,7 +4,6 @@
 [files]
 "backend/crates/yoneda-cli/src/agent_hook.rs" = 382
 "backend/crates/yoneda-cli/src/command.rs" = 365
-"backend/crates/yoneda-cli/src/output/repo.rs" = 309
 "backend/crates/yoneda-cli/src/remote/push.rs" = 318
 "backend/crates/yoneda-core/src/git_object/pack_walk.rs" = 304
 "backend/crates/yoneda-pack-builder/src/git.rs" = 360
@@ -20,7 +19,7 @@
 "cloudflare/worker/repo-git-objects.ts" = 353
 "cloudflare/worker/repo-objects.ts" = 418
 "cloudflare/worker/repo-projection.ts" = 355
-"frontend/src/App.tsx" = 507
+"frontend/src/App.tsx" = 506
 "frontend/src/features/source-platform/sourceRoute.ts" = 344
 "shared/managed-agents.ts" = 504
 "tools/staging-realworld.mjs" = 406

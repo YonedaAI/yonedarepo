@@ -2,8 +2,20 @@
 // the context delivered to a coding session (context/deliveries), and the small pure
 // helpers the Memories page and the session page use.
 
-export const MEMORY_KINDS = ['decision', 'constraint', 'gotcha', 'howto'] as const;
-export type MemoryKind = (typeof MEMORY_KINDS)[number];
+/** The platform's built-in kinds (`repo_store/memory/kinds.rs`), offered until a read answers
+ * the repository's own list. */
+export const MEMORY_KINDS = [
+  'decision',
+  'constraint',
+  'gotcha',
+  'howto',
+  'convention',
+  'risk',
+  'fact',
+  'preference',
+] as const;
+/** One short lowercase word: a built-in kind, or one a repository added. */
+export type MemoryKind = string;
 export const MEMORY_STATUSES = [
   'current',
   'active',
@@ -45,7 +57,13 @@ export type Memory = {
   anchors: MemoryAnchor[];
 };
 
-export type MemoryPage = { memories: Memory[]; next: number | null; version: number };
+export type MemoryPage = {
+  memories: Memory[];
+  next: number | null;
+  version: number;
+  /** The kinds to pick from: built-in, then those this repository added. */
+  kinds?: MemoryKind[];
+};
 
 export type MemoryFilters = { path: string; kind: '' | MemoryKind; status: MemoryStatus };
 export const NO_MEMORY_FILTERS: MemoryFilters = { path: '', kind: '', status: 'current' };
@@ -84,6 +102,12 @@ export function memoriesPath(repo: string, filters: MemoryFilters, before?: numb
   if (filters.status !== 'current') query.set('status', filters.status);
   if (before) query.set('before', String(before));
   return query.size ? `/repos/${repo}/memories?${query}` : `/repos/${repo}/memories`;
+}
+
+/** The kinds to offer: the repository's, and `also` (a kind already chosen) if it isn't one. */
+export function kindOptions(kinds: readonly MemoryKind[] | undefined, also: MemoryKind = '') {
+  const known = [...(kinds ?? MEMORY_KINDS)];
+  return also && !known.includes(also) ? [...known, also] : known;
 }
 
 /** `path`, `path#symbol` or `dir/` for an anchor. */

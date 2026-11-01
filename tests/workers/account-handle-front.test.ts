@@ -26,4 +26,20 @@ it('a handle chosen on the front Worker is projected by the platform', async () 
     handle: 'front_handle',
   });
   expect(noted).toEqual([[email, 'front_handle']]);
+  // Settings changes it: the new name is held, the old one is free for anyone, and the
+  // listings follow.
+  await expect(setHandle(front, email, 'next_handle')).resolves.toEqual({ handle: 'next_handle' });
+  expect(noted).toEqual([
+    [email, 'front_handle'],
+    [email, 'next_handle'],
+  ]);
+  await expect(workspace(bindings, email, { op: 'handle_get' })).resolves.toEqual({
+    handle: 'next_handle',
+  });
+  await expect(workspace(bindings, 'front_handle', { op: 'handle_lookup' })).rejects.toMatchObject({
+    code: 'NOT_FOUND',
+  });
+  await expect(workspace(bindings, 'next_handle', { op: 'handle_lookup' })).resolves.toMatchObject({
+    account: email,
+  });
 });
