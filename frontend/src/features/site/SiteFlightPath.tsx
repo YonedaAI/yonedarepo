@@ -11,10 +11,7 @@ function FixList() {
     <ol className="fp-fixes">
       {FIXES.map((fix) => (
         <li key={fix.id} className={fix.id === 'go-around' ? 'fp-go-around' : undefined}>
-          <p className="fp-fix-name">
-            {fix.name}
-            {fix.soon && <span className="site-badge">Soon</span>}
-          </p>
+          <p className="fp-fix-name">{fix.name}</p>
           <p className="fp-fix-detail">{fix.detail}</p>
         </li>
       ))}
