@@ -254,7 +254,16 @@ fn a_workstation_build_is_gated_then_built_pushed_and_recorded_before_migrations
 fn prod_checks_active_runs_right_before_each_container_rollout() {
     let workers = prod_workers();
     let roles: Vec<&str> = workers.iter().map(|w| w.role.as_str()).collect();
-    assert_eq!(roles, ["superfan", "platform", "agents-managed", "agents"]);
+    assert_eq!(
+        roles,
+        [
+            "superfan",
+            "platform",
+            "agents-managed",
+            "agents",
+            "deadman"
+        ]
+    );
     let plan = steps(&Env::Prod, &workers, false, &Source::Dockerfile);
     for (index, worker) in workers.iter().enumerate() {
         let gate = plan
