@@ -50,9 +50,12 @@ For example `curl -fsSL https://yonedarepo.com/install.sh | YONEDA_INSTALL_DIR=/
 yoneda login                  # device login: approve the code in your browser
 yoneda login --no-browser     # print the link and code without opening a browser
 yoneda login --with-token     # read a token from stdin instead
+yoneda login --agent review-bot   # sign an agent up, for you to approve
 ```
 
 `yoneda login` prints a code like `BCDF-GHJK` and opens the approval page (`/device`). Approve it there, choosing the token's scopes (default `repo:read`, `repo:write`, `repo:land` and `account:ssh-keys`, which `yoneda ssh setup` uses), expiry (default 30 days) and repositories. The code expires after 10 minutes and works once. Each approved login appears under **Settings → Signed-in CLIs**, where signing it out revokes its token and removes the SSH keys it added.
+
+`yoneda login --agent <name>` is the same flow for an agent running in its own place: the approval page names it, and the token acts as that agent. See [Agents](/docs/guides/tokens#agents). The name is 1 to 32 lowercase letters, digits, `-` and `_`. The token is stored like any other, so run it as the agent's own user, not your own.
 
 `yoneda logout` removes the stored token.
 

@@ -51,7 +51,7 @@ After sign-up you get an email with a confirmation link. Open it and press the b
 | Account | Your account name |
 | Email | Your address and its confirmation |
 | Connected accounts | Connect or disconnect GitHub and Google |
-| Signed-in CLIs | Each `yoneda login` you approved, labelled with its machine; signing one out revokes its token |
+| Signed-in CLIs | Each `yoneda login` you approved, labelled with its machine, and each [agent](/docs/guides/tokens#agents); signing one out revokes its token |
 | Personal access tokens | Tokens for Git, the API and MCP; see [Tokens and access](/docs/guides/tokens) |
 | SSH keys | Keys for Git over SSH; see [Git over HTTPS and SSH](/docs/guides/git-remotes) |
 | Billing | Credit and usage of the review agents; see [Credit and usage](/docs/agents/review-credit) |
