@@ -175,7 +175,8 @@ async function blackBox(f, web, m) {
   const route = await api.get(repo.path(`/changes/${number}/route`));
   const commits = route.commits.map((c) => c.commit);
   assert.ok(commits.includes(first) && commits.includes(head), `the route's commits: ${commits}`);
-  assert.deepEqual(route.sessions.map((s) => s.summary).sort(), [FIXED, SUMMARY].sort(), 'the route keeps both sessions');
+  // One record per commit a session pushed: the second pushed a merge and its fix.
+  assert.deepEqual([...new Set(route.sessions.map((s) => s.summary))].sort(), [FIXED, SUMMARY].sort(), 'the route keeps both sessions');
   const record = route.sessions.find((s) => s.summary === SUMMARY);
   const { document: stored } = await api.get(repo.path(`/sessions/${record.id}/transcript`));
   assert.ok(stored.context?.includes(MEMORY), 'the transcript keeps the context the session started with');
@@ -190,8 +191,8 @@ async function blackBox(f, web, m) {
   await withChrome({ ...web.chrome, name: 'flight-black-box' }, m, async ({ page, shot }) => {
     await openPage(page, { origin: web.chrome.origin, account: web.account }, repo, `/changes/${number}`);
     const sessions = page.getByRole('region', { name: 'Sessions behind this Landing' });
-    await see(sessions.getByText(SUMMARY), 'the first session on the Landing');
-    await see(sessions.getByText(FIXED), 'the second session on the Landing');
+    await see(sessions.getByText(SUMMARY).first(), 'the first session on the Landing');
+    await see(sessions.getByText(FIXED).first(), 'the second session on the Landing');
     await shot('black-box-landing');
     await sessions.getByRole('link', { name: /claude/i }).last().click();
     const detail = page.locator('article.agent-session');

@@ -30,7 +30,7 @@ export async function flightFork(kit, { reviewer: member }) {
   const repo = await kitRepo(kit, 'kit-fail-fork', { policy: RULES });
   await api.call('PUT', repo.path('/auto-landings'), { land_when_cleared: true });
   await api.post(repo.path('/members'), { account: member.name, role: 'read' });
-  const ci = kit.pat((await api.post(repo.path('/tokens'), { name: 'kit-ci', scopes: ['read', `check:${CI}`] })).token);
+  const ci = kit.pat((await api.post(repo.path('/tokens'), { name: 'kit-ci', scopes: ['read', 'check', `check:${CI}`] })).token);
   const fork = await member.session.post(repo.path('/fork'), { name: `${repo.name}-fork` });
   let pat = null;
   try {

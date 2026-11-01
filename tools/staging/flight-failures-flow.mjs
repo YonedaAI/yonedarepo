@@ -6,7 +6,7 @@
 // second a queue that redelivers on command. Item 43 races duplicate jobs live, too.
 import assert from 'node:assert/strict';
 import { see } from './browser-collab-flow.mjs';
-import { cloneOf, noLeak, openPage, pushWork, refusal, settled } from './feature-kit.mjs';
+import { author, cloneOf, noLeak, openPage, pushWork, refusal, seedFiles, settled } from './feature-kit.mjs';
 import { flightFork } from './flight-fork-flow.mjs';
 import { CI, change, decisionOn, flightRepo, gates, landedOf, legs, nowSaid, onMainTimes, passCheck, pilotEnv, pushedLanding, QUEUE_MS, reasonCodes, review, staysOpen } from './flight-kit.mjs';
 import { withChrome } from './kit-chrome.mjs';
@@ -25,7 +25,8 @@ async function staleHead({ kit, repo, crew, reviewer, dir }) {
   await passCheck(crew.ci, repo, old.head);
   await staysOpen(kit, repo, old.number, 'the old head landed');
   const said = await nowSaid(kit, repo, old.number, (s) => s.decision === 'hold', 'CTC to hold the new head');
-  assert.deepEqual(reasonCodes(said), ['GATES'], JSON.stringify(said));
+  assert.deepEqual([...new Set(reasonCodes(said))], ['GATES'], JSON.stringify(said));
+  assert.ok(said.reasons.some((r) => r.reason.startsWith('Approvals: 0')), `the old head's approval counted: ${JSON.stringify(said)}`);
   await passCheck(crew.ci, repo, next);
   await review(reviewer, repo, next);
   const landed = await landedOf(kit, repo, old.number);
@@ -78,7 +79,11 @@ async function pathLimited({ kit, repo, crew, reviewer, dir }) {
   }
   const filed = await limited.raw('POST', repo.path('/flight-plans'), { goal: 'Not whole', branch: 'fail/grant' });
   assert.equal(filed.status, 403, `a path-limited token filed a plan: ${refusal(filed)}`);
-  const head = await pushWork(kit, dir, { branch: 'fail/grant', from: null, message: 'Docs on top', files: { 'docs/grant.md': 'on top\n' }, env: pilotEnv(kit, token) });
+  // Git refuses such a token outright (docs/runbook.md), so its work comes through the API.
+  const { version } = await api.get(repo.path());
+  const made = await limited.post(repo.path('/commits'), { parent: landing.head, base_version: version, message: 'Docs on top', author, changes: seedFiles({ 'docs/grant.md': 'on top\n' }) });
+  const head = made.commit;
+  await limited.post(repo.path('/refs/batch'), { updates: [{ ref: 'fail/grant', commit: head, expected: landing.head }] });
   await settled(async () => (await change(kit, repo, landing.number)).head === head, 'the Landing at the limited token\'s push');
   await passCheck(crew.ci, repo, head);
   await review(reviewer, repo, head);

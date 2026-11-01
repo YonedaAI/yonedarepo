@@ -45,7 +45,7 @@ export async function flightRepo(kit, prefix, { switches = {}, policy = RULES, f
   assert.ok(on.ok, `the switches: ${refusal(on)}`);
   const mint = async (name, scopes) => (await api.post(repo.path('/tokens'), { name, scopes })).token;
   const crew = {
-    ci: kit.pat(await mint('kit-ci', ['read', `check:${CI}`])),
+    ci: kit.pat(await mint('kit-ci', ['read', 'check', `check:${CI}`])),
     agent: kit.pat(await mint('kit-review-agent', ['read', 'review', 'check'])),
     pilot: await mint('kit-pilot', ['read', 'write']),
   };
