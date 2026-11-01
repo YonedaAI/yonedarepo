@@ -25,7 +25,7 @@ vi.mock('./useSource', () => ({
   },
 }));
 
-const { ChangeTable, StatusFilter } = await import('./RepoChanges');
+const { ChangeStatusChip, ChangeTable, StatusFilter } = await import('./RepoChanges');
 const { changesPath, landedAutomatically, landingState } = await import('./changeModel');
 const { LandedAutomatically, WillLandNote } = await import('./LandWhenCleared');
 const { ChangeView } = await import('./ChangeView');
@@ -643,5 +643,17 @@ describe('a Landing the gates saw land first', () => {
     expect(landingState(open, gates('landed'))).toBe('Landed');
     expect(landingState(open, gates('closed'))).toBe('Closed');
     expect(landingState(open, gates('open'))).toBe('Go-around');
+  });
+});
+
+describe('the state chip', () => {
+  const chip = (status: 'open' | 'landed', state: 'Go-around' | 'In flight' | 'Landed') =>
+    renderToStaticMarkup(createElement(ChangeStatusChip, { status, state }));
+
+  it('never shows a go-around in the colour of a healthy Landing', () => {
+    expect(chip('open', 'Go-around')).toContain('source-change-around');
+    expect(chip('open', 'Go-around')).not.toContain('source-change-open');
+    expect(chip('open', 'In flight')).toContain('source-change-open');
+    expect(chip('landed', 'Landed')).toContain('source-change-landed');
   });
 });

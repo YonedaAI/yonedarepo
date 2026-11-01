@@ -92,7 +92,8 @@ export async function addAgent(s, agent, block) {
   await page.route(`**/api/managed/workspaces/*/agents/${agent.id}`, (route) => {
     const body = route.request().postDataJSON();
     const named = body?.repos ?? [];
-    const safe = !body?.all_repos && named.every((r) => allowed.has(r)) && named.includes(s.repo);
+    // A second save names no repositories at all, and then touches none.
+    const safe = !body?.all_repos && named.every((r) => allowed.has(r)) && (body?.repos === undefined || named.includes(s.repo));
     if (!safe) s.out.problems.push(`refused a save naming ${named.length} repositories, all_repos=${body?.all_repos}`);
     return safe ? route.continue() : route.abort();
   });

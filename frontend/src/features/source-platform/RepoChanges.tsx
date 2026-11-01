@@ -25,7 +25,8 @@ export function ChangeStatusChip({
   status: Change['status'];
   state: LandingState;
 }) {
-  return <span className={`source-change-status source-change-${status}`}>{state}</span>;
+  const tone = state === 'Go-around' ? 'around' : status;
+  return <span className={`source-change-status source-change-${tone}`}>{state}</span>;
 }
 
 const PROPOSE = 'Push a branch and open a Landing to propose it.';
