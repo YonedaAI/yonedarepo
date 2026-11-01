@@ -346,7 +346,7 @@
     "LAND_WHEN_CLEARED": "on",
     "LFS_S3_BUCKET": "yonedarepo-dev-platform-objects",
     "LFS_S3_ENDPOINT": "https://f011d0ee02b23cad26b4b38151b204ad.r2.cloudflarestorage.com",
-    "NEWSLETTER": "off",
+    "NEWSLETTER": "on",
     "PACK_CACHE": "on",
     "PUSH_BUNDLES": "on",
     "REGION_HINT_TEST": "on",
