@@ -45,6 +45,10 @@
   background: var(--success-soft);
   color: var(--success);
 }
+.source-change-around {
+  background: var(--warn-soft);
+  color: var(--warn);
+}
 .source-change-landed {
   background: var(--accent-soft);
   color: var(--blue-text);

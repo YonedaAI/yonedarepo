@@ -41,7 +41,8 @@ export async function spentSoFar(s) {
 export async function createRepository(s) {
   await s.page.goto(`${s.origin}/repositories`);
   await s.page.getByRole('button', { name: 'New repository' }).first().click();
-  const dialog = s.page.getByRole('dialog');
+  await s.page.getByRole('menuitem', { name: 'Create repository' }).click();
+  const dialog = s.page.getByRole('dialog', { name: 'New repository' });
   await dialog.getByLabel('Repository name').fill(s.name);
   await s.shot('new-repository');
   await dialog.getByRole('button', { name: 'Create repository' }).click();
@@ -62,8 +63,8 @@ export async function turnOnRules(s) {
   await page.getByRole('button', { name: /^Save / }).first().click();
   await page.getByText(/^Saved\./).waitFor();
   for (const name of ['Open a Landing for every pushed branch', 'Run agents on automatic Landings', 'Land when cleared']) {
-    const box = page.getByRole('checkbox', { name });
-    await box.check();
+    // Each saves at once, and the box follows the server's answer.
+    await page.getByRole('checkbox', { name }).click();
     await page.waitForFunction((n) => {
       const label = [...document.querySelectorAll('label')].find((l) => l.textContent.includes(n));
       return label?.querySelector('input')?.checked && !label.closest('fieldset').disabled;
@@ -91,7 +92,8 @@ export async function addAgent(s, agent, block) {
   await page.route(`**/api/managed/workspaces/*/agents/${agent.id}`, (route) => {
     const body = route.request().postDataJSON();
     const named = body?.repos ?? [];
-    const safe = !body?.all_repos && named.every((r) => allowed.has(r)) && named.includes(s.repo);
+    // A second save names no repositories at all, and then touches none.
+    const safe = !body?.all_repos && named.every((r) => allowed.has(r)) && (body?.repos === undefined || named.includes(s.repo));
     if (!safe) s.out.problems.push(`refused a save naming ${named.length} repositories, all_repos=${body?.all_repos}`);
     return safe ? route.continue() : route.abort();
   });
@@ -153,11 +155,24 @@ export async function pageShows(s, c, number) {
   await page.waitForFunction(() => !document.querySelector('.source-instruments')?.textContent.includes('Not reviewed yet'), null, { timeout: AGENT_MS });
   const shownS = Math.round((Date.now() - started) / 1000);
   await s.shot(`${c.id}-instruments`);
+  // Every state the chip shows, in order: a flash is a finding, not an outcome. Go-around has to
+  // stand for a full polling beat, Landed ends it.
   const chip = page.locator('.source-change header .source-change-status');
-  await page.waitForFunction(() => /Landed|Go-around/.test(document.querySelector('.source-change header .source-change-status')?.textContent ?? ''), null, { timeout: LAND_MS }).catch(() => {});
-  const state = (await chip.innerText()).trim();
+  const states = [];
+  const until = Date.now() + LAND_MS;
+  let since = Date.now();
+  for (;;) {
+    const now = (await chip.innerText()).trim();
+    if (states.at(-1) !== now) {
+      states.push(now);
+      since = Date.now();
+    }
+    if (now === 'Landed' || (now === 'Go-around' && Date.now() - since > 25_000) || Date.now() > until) break;
+    await sleep(1000);
+  }
+  const state = states.at(-1);
   await s.shot(`${c.id}-landing-final`);
-  return { shownS, state, text: (await cards.innerText()).replace(/\s+/g, ' ').slice(0, 300), number };
+  return { shownS, state, states, text: (await cards.innerText()).replace(/\s+/g, ' ').slice(0, 300), number };
 }
 
 /** The API's word on it, to hold the page to. */
@@ -200,6 +215,41 @@ export async function ctcPage(s, label) {
   await sleep(1000);
   await s.shot(`${label}-ctc`);
   return (await s.page.locator('main').innerText()).replace(/\s+/g, ' ').slice(0, 400);
+}
+
+/** The commit form against the UI rules: wide and 375 px, light and dark, its error, the
+ * keyboard, and no sideways scroll on the page. Nothing here commits. */
+export async function lookAtForm(s) {
+  const { page } = s;
+  const seen = [];
+  const form = page.getByRole('form', { name: 'Add a file' });
+  for (const [label, width] of [['wide', 1440], ['phone', 375]])
+    for (const colorScheme of ['light', 'dark']) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.emulateMedia({ colorScheme });
+      await page.goto(`${s.origin}${s.base}`);
+      await page.getByRole('button', { name: 'Add file' }).click();
+      await form.waitFor();
+      await form.getByLabel('File').fill('src/a.js');
+      await form.getByLabel('Branch').fill('main');
+      await form.getByRole('button', { name: 'Commit' }).click();
+      await form.getByText(/Main moves only by landing/).waitFor();
+      await s.shot(`form-${label}-${colorScheme}`);
+      const sideways = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+      assert.ok(sideways <= 0, `${label} ${colorScheme}: the page scrolls sideways by ${sideways}px`);
+      seen.push(`${label} ${colorScheme}`);
+    }
+  await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.emulateMedia({ colorScheme: 'light' });
+  await page.keyboard.press('Escape');
+  await form.waitFor({ state: 'detached' });
+  await page.getByRole('button', { name: 'Add file' }).focus();
+  await page.keyboard.press('Enter');
+  await form.waitFor();
+  const focused = await page.evaluate(() => document.activeElement?.closest('label')?.textContent?.trim());
+  assert.equal(focused, 'File', 'the keyboard lands on the first field');
+  await page.keyboard.press('Escape');
+  return `${seen.join(', ')}; Escape closes, Enter opens on File`;
 }
 
 export async function restore(s) {
