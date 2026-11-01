@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
-import { resolve } from 'node:path';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BENCH_VERSION, RELAY_MAX } from './relay.js';
 import { OWN_TRAFFIC } from '../own-traffic.mjs';
@@ -16,8 +16,16 @@ const root = fileURLToPath(new URL('../../', import.meta.url));
 export const EVIDENCE_DIR = resolve(root, '.local/platform-live');
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 
-/** `client2` is a second bench client Worker: invocations alternate between the two. */
-export async function connect(url, client, { client2 } = {}) {
+/** A folder under the repository root's `.local/`, shared by every worktree: evidence kept under
+ * a worktree goes when the worktree does, and then its tables can't be rebuilt. */
+export function rootLocal(name) {
+  const common = execFileSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: root, encoding: 'utf8' }).trim();
+  return resolve(dirname(common), '.local', name);
+}
+
+/** `client2` is a second bench client Worker: invocations alternate between the two. `cookie`
+ * is a session already signed in: every sign-in is one more session on the account. */
+export async function connect(url, client, { client2, cookie: signedIn } = {}) {
   const clients = [client, client2].filter(Boolean);
   // How many of them the next invocations use: a run compares 1 against 2 on one session.
   let active = clients.length;
@@ -31,7 +39,7 @@ export async function connect(url, client, { client2 } = {}) {
     assert.equal(login.status, 200, 'Login failed; set YONEDA_USERNAME and YONEDA_PASSWORD');
     return (login.headers.get('set-cookie') ?? '').split(';')[0];
   };
-  let cookie = await signIn();
+  let cookie = signedIn ?? (await signIn());
   // A read is retried when the connection itself fails (a reset or connect timeout on the
   // machine running the bench), never on an HTTP answer; writes are never retried. A session
   // that ended is the one exception: nothing ran, and a multi-hour run outlives one.
@@ -150,9 +158,9 @@ export async function connect(url, client, { client2 } = {}) {
     return { id, name };
   }
 
-  async function createRepo(prefix, files) {
+  async function createRepo(prefix, files, extra = {}) {
     const name = `${prefix}-${Date.now()}`;
-    const { id } = await post('/repos', { name, policy: { required_checks: [], approvals: 0 }, files, author: AUTHOR });
+    const { id } = await post('/repos', { name, policy: { required_checks: [], approvals: 0 }, files, author: AUTHOR, ...extra });
     created.push({ id, name });
     return id;
   }
@@ -244,14 +252,14 @@ export function evidenceRecord(target, result, { recorded_at, revision, client =
   return { record, text };
 }
 
-/** Writes `.local/platform-live/<name>-<stamp>.json`, one file per run (never over another),
- * with the revision, and prints it. */
-export async function evidence(name, target, result, { client, quiet = false } = {}) {
+/** Writes `<dir>/<name>-<stamp>.json`, one file per run (never over another), with the revision,
+ * and prints it. */
+export async function evidence(name, target, result, { client, quiet = false, dir = EVIDENCE_DIR } = {}) {
   const now = new Date();
   const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
   const { record, text } = evidenceRecord(target, result, { recorded_at: now.toISOString(), revision, client });
-  await mkdir(EVIDENCE_DIR, { recursive: true });
-  await writeFile(resolve(EVIDENCE_DIR, `${name}-${stampOf(now)}.json`), text, { flag: 'wx' });
+  await mkdir(dir, { recursive: true });
+  await writeFile(resolve(dir, `${name}-${stampOf(now)}.json`), text, { flag: 'wx' });
   if (!quiet) console.log(text.trimEnd());
   return record;
 }

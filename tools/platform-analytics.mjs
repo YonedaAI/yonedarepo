@@ -19,6 +19,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
+import { LANDING } from './basin-soak/landing.mjs';
 
 const repoFile = (path) => new URL(`../${path}`, import.meta.url);
 const { values, positionals } = parseArgs({
@@ -173,10 +174,7 @@ async function sql(query) {
 // GROUP BY, not DISTINCT ON: Basin SQL rejects DISTINCT ON under a second aggregate once
 // the table spans several files.
 // actor_kind 'test' rows are the labelled probe events sent to verify the pipeline.
-// A landing is a commit a batch landed, or a version that carried one change of its own: not
-// the batch's own version, nor an import, ref move or ref delete, which change nothing a
-// writer made. Rows do not name the repository's base branch, so any branch counts.
-const LANDING = `(event = 'merged' OR (event = 'land' AND merged_landings = 0 AND kind IN ('commit', 'merge', 'revert', 'changeset')))`;
+// Rows do not name the repository's base branch, so a landing (LANDING) on any branch counts.
 const changes = `WITH changes AS (
   SELECT event_key,
     MAX(event) AS event,

@@ -8,6 +8,18 @@ export const ok = (r) => r?.status === 200;
 const failed = (r) => r && (!ok(r) || r.ok === false);
 export const stat = (rows, key) => latency(rows.filter((r) => ok(r) && r[key] !== null).map((r) => r[key]));
 
+/** Delay per answered request: client time less the server's own total, so what is left is the
+ * road both ways plus the edge. Requests with no Server-Timing are left out. */
+export const delay = (rows) => latency(rows.filter((r) => ok(r) && Number.isFinite(r.server)).map((r) => Math.max(0, r.ms - r.server)));
+
+/** Requests per colo they entered Cloudflare at: where the client really ran. Placement holds
+ * one location only until volume spreads it, which a share here shows. */
+export function edges(rows) {
+  const counts = {};
+  for (const r of rows.filter(Boolean)) counts[r.edge ?? 'unknown'] = (counts[r.edge ?? 'unknown'] ?? 0) + 1;
+  return counts;
+}
+
 /** p50/p95/p99/max of `values` (nearest rank). */
 export function percentiles(values) {
   if (!values.length) return { samples: 0, p50_ms: null, p95_ms: null, p99_ms: null, max_ms: null };

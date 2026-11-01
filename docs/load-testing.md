@@ -1,6 +1,6 @@
 # Load testing the platform for agents
 
-Status: stages 2 and 3 have tools, built 2026-10-31 and tried against a stub only. No stage has run on dev. The owner replaced their 5.7-hour plan with the one-hour [real-use simulation](#real-use-simulation). Written 2026-10-30.
+Status: stages 2 and 3 have tools, built 2026-10-31 and tried against a stub only. Stage 6's distance bench, archive stage A's measurement and the Basin soak were built 2026-11-01, against stand-ins only. No stage has run on dev. The owner replaced their 5.7-hour plan with the one-hour [real-use simulation](#real-use-simulation). Written 2026-10-30.
 
 Goal: find where the platform stops scaling for agents. So far 1,000 writers passed and nothing failed, so the ceiling is unknown.
 
@@ -114,6 +114,103 @@ Agree these before the first run. They are starting targets, not commitments.
 
 Sign-up adds one field to two commands and one column to one `INSERT`: no new subrequest.
 
+## Archive stage A budget
+
+Four switches on the platform Worker, all off today (`docs/runbook.md`, "Trimming commit data"). **They change new writes only:** nothing already stored shrinks, so the owner's repositories can't show a saving. So the same work runs on two fresh imports of a real history, one per arm, and each repository is only ever written by its own arm.
+
+| Switch | Saves | Costs on the write path | How it is measured |
+|---|---|---|---|
+| `CHECK_EVIDENCE_ONCE` | One copy of each verdict's evidence, up to 16 KiB | None on the write. One subquery on a read of a run | The exact bytes the API returns. Evidence is smaller than a database page, so a size can't show it |
+| `REF_CHAIN_SHARED` | Up to 5,000 `ref_chain` rows per new branch | Should be faster: the walk stops at main. One more read per path-history read | Database size, before and after 20 branches |
+| `SHARD_FORGET_RECORDED` | A shard's copy of each batch-landed commit | 1 shard call per shard touched, per projection, after the answer | All 64 shards' size before and after 200 landings |
+| `COMPACTION_SWEEP` | Log rows of an idle repository past its retention | 1 D1 read a minute, then per repository per day 1 queue job, 1 authority wake and, with Basin bound, 1 R2 read | Segments due, read from `GET /repos/<id>/compaction`. Nothing is due under 10,000 versions |
+
+Written before the first run:
+
+| Measure | Budget |
+|---|---|
+| Land p95, on against off | At most 5% worse, 3 runs each |
+| Commit p95, on against off | At most 5% worse, 3 runs each |
+| New branch p95 | No worse |
+| A run's check reads | Every log still answers with the switch on |
+| Worker Wasm | No change: the switches are built, and the only code added is TypeScript |
+| Requests, one run | About 1,000: 2 per branch, 3 per landing, 11 per check, 66 per size read |
+| Time | About 6 minutes a run, 21 an arm with its import (estimate) |
+| Both arms | About 6,000 requests, 24 container check runs, under $0.25 at list price. No model |
+
+**Source:** `expressjs/express`, imported at most 5,000 commits. It has 6,183 commits and 3,913 on main's first-parent chain (counted 2026-11-01), so a branch copies thousands of rows and doesn't stop at the 5,000-row bound. Not the owner's repositories: `--baseline` only reads those, and the tool refuses to write to anything not named `archive-measure-*`.
+
+**The change for the on arm,** in the platform Worker's `vars` in `infra/envs/dev.json`, then `cargo xtask infra gen --env dev` and a deploy:
+
+```json
+"CHECK_EVIDENCE_ONCE": "on",
+"REF_CHAIN_SHARED": "on",
+"SHARD_FORGET_RECORDED": "on",
+"COMPACTION_SWEEP": "on"
+```
+
+| Command | Does |
+|---|---|
+| `node tools/platform-archive-measure.mjs --dry-run` | Prints the plan and the change above; sends nothing |
+| `node tools/platform-archive-measure.mjs --baseline` | Reads the owner's five repositories, writes nothing, about a minute |
+| `node tools/platform-archive-measure.mjs --arm off --yes` | Imports once, then 3 runs. Refuses if this checkout's `dev.json` has a switch on |
+| `node tools/platform-archive-measure.mjs --arm on --yes` | The same, after the deploy. Refuses unless `dev.json` has all four on. It can't see what is deployed |
+| `node tools/platform-archive-measure.mjs --results` | Rebuilds the table below from the evidence |
+| `node tools/platform-archive-measure.mjs --cleanup --yes` | Deletes this tool's two imports, nothing else |
+
+## Basin soak budget
+
+Do landings counted by Basin match the repository's log, and what does the stream cost? `tools/platform-basin-soak.mjs` reads only: Basin SQL, each repository's log and cursor, and Cloudflare's metrics. Run it once a day. Written before the first check.
+
+| One check | Budget |
+|---|---|
+| Basin SQL | 1 query, then 1 or more per repository: 5,000 rows a page. 10 MB minimum each, so $0.000025 |
+| Platform | 2 reads per repository, 1 more per 500 versions. Waits for no queue |
+| Sign-ins | 2, both signed out at the end: a daily sign-in would otherwise evict the owner's browser |
+| Cloudflare metrics | 5 GraphQL queries |
+| Time | About 3 minutes for 20 repositories (estimate) |
+
+**How a repository is compared.** The log is the authority, so every version it holds in a window must have one `land` row in the table, of the same kind and commit.
+
+| Rule | Why |
+|---|---|
+| A window starts at the first version the stream sent, and after its last gap | Everything before a cursor started was given up on purpose, and a gap is logged and counted |
+| A window ends at the cursor, and 15 minutes before now | Sends flush in 3 to 7 minutes |
+| A version missing from the table, a row the log never held, or a wrong kind or commit fails the check | The check names the versions |
+| A duplicate is counted, not failed | Sends are at least once |
+| A batch's `merged` rows are held to the count on its `land` row | The log doesn't list merged commits, so this checks the stream against itself, not the log |
+| A deleted repository can't be compared | It is listed under `not_compared`, with its rows, never counted as matching |
+| Fewer than 100 landings compared answers `too_few`, not a pass | A quiet dev proves nothing |
+
+**What must hold before prod binds it.** `node tools/platform-basin-soak.mjs --gates` judges the first group from the evidence.
+
+| Gate | Bound |
+|---|---|
+| Days | 7 days with a passing check |
+| Failed checks | None. Any drift outside a logged gap stops the soak |
+| Size | 1,000 landings and 3 repositories compared in one check |
+| Dropped events | 0 in `pipelinesUserErrorsAdaptiveGroups`, and 0 `decodeErrors`. A schema mismatch drops events in silence |
+| Metrics | Every source read, every check |
+| Cost | Under $5 a month at dev's busiest day, after what's included |
+| Privacy (owner) | `privacy.md` doesn't list the stream. It holds the actor, branch name and commit id of every landing |
+| Erase (owner) | **Basin SQL is read-only.** An erased repository's rows stay in the table. Either a way to remove them or the owner's word |
+| Unbind on dev | Landings, compaction and reads carry on, and no hold is left |
+| Stopped stream on dev | Compaction crosses a segment, the hold releases, and the gap is logged |
+
+**Cost basis,** read 2026-11-01. Billed since 2026-08-03 and generally available since 2026-10-01 ([changelog](https://developers.cloudflare.com/changelog/product/basin/)).
+
+| Item | Price | Included each month |
+|---|---|---|
+| [Stream ingress](https://developers.cloudflare.com/basin-pipelines/platform/pricing/) | Free | |
+| SQL transform | $0.04/GB | 50 GB |
+| Sink to Parquet or Iceberg, uncompressed | $0.06/GB | 50 GB |
+| [Basin SQL](https://developers.cloudflare.com/basin-sql/platform/pricing/), compressed bytes scanned | $0.0025/GB, 10 MB minimum per query | 10 GB |
+| [Catalog operations](https://developers.cloudflare.com/basin-catalog/platform/pricing/) | $9 per million | 1 million |
+| Catalog compaction, only if turned on | $0.005/GB and $2 per million objects | 10 GB and 1 million |
+| [R2](https://developers.cloudflare.com/r2/pricing/) | $0.015/GB-month, $4.50 per million Class A, $0.36 per million Class B | Shared with the account, so not taken off here |
+
+Catalog operations have no metric this tool reads, so they're named as not counted. A sink rolls a file a minute on dev, so a day of steady landings writes about 1,440 files, and Basin SQL slows as files add up.
+
 ### GitHub import (`FAST_IMPORT`)
 
 Written before the code, from the hosted numbers we hold (a Worker to Durable Object call 10-50 ms, an R2 write 200-1000 ms). **Not measured on dev yet.**
@@ -175,6 +272,41 @@ Answers: what cap each pool needs, and whether its queue stays fair between acco
 
 - Check that `AUTH_LIMITER` (30 a minute) and `PUBLIC_LIMITER` (300 a minute) refuse what they should, and that a large fleet behind one address is not caught by mistake.
 - Run the bench from Europe and Asia. The platform is placed in `aws:us-east-1`.
+
+#### Distance
+
+Global regions stage R2. The [same-region test](global-scale-plan.md#same-region-test) timed one client at a time, so it can't say what a fleet far away sees. This runs bursts from each region on today's path, with North America as the control: the clients are far away and the data stays in `enam`.
+
+**No new Worker.** `yonedarepo-dev-region-na`, `-eu` and `-ap` already exist, and now answer the bench client's protocol too (`bench-client.js`). Nothing is created, so nothing needs removing.
+
+Written before the first run:
+
+| Measure | Budget |
+|---|---|
+| Runs | 3 of each size from each region, 18 bursts: 100 and 1,000 writers |
+| Land p95 | Under 10 s at 1,000 writers, from any region. Stop at 30 s |
+| Read p95 during a burst | Under 1 s. Stop at 3 s |
+| Errors | 0 outside expected conflicts. Stop above 1%, or at a Cloudflare limit error |
+| Requests per burst | 4 per writer plus about 30: commit, landing, read and a token each |
+| Requests, whole plan | About 45,000, about 53 minutes (estimate), under $0.10 at list price |
+| Repositories | 19 made and deleted. No owner's repository is touched |
+| Limiter round | 360 anonymous reads and 40 refused sign-ins, from one address, 65 s apart |
+| Two regions at once | 240 reads each from Europe and Asia: 480 together against a limit of 300 |
+
+**What it reports:**
+
+1. **Real delay:** per request, client time less the server's own total. That leaves the road both ways and the edge, under load, as p50 and p95.
+2. **Where the client ran:** each answer's `cf-ray` names the colo it entered at. Placement holds a Worker near one region until volume spreads it ("Cloudflare may run instances across a more distributed area"), so a burst that spread shows here instead of reading as distance.
+3. **The limiters:** what passed and what was refused. Counts are approximate by Cloudflare's docs, so a round holds if it refused and passed between half and twice the limit.
+4. **One counter or many:** a limiter counts per Cloudflare location, in the location where the Worker runs. Today every region reaches the pinned Worker, so two regions should share one counter. Regional cells lose that: see the [plan](global-scale-plan.md#r3-spikes-rechecked-2026-11-01).
+
+**What it can't say:** the in-region path under load. One serving object answers each region there, so its concurrency says nothing about a real one.
+
+| Command | Does |
+|---|---|
+| `node tools/platform-distance-bench.mjs --dry-run` | Prints the plan; sends nothing |
+| `node tools/platform-distance-bench.mjs --yes` | Runs it. Nothing else may run on dev: a limiter round spends all the bench clients' one address |
+| `node tools/platform-distance-bench.mjs --results` | Rebuilds the table below from the evidence |
 
 ## Real-use simulation
 
@@ -266,7 +398,7 @@ Full plan, as printed by `--dry-run`: 33 runs, about 5.7 hours, about 3.6M platf
 - **Arms.** `tokens` (`yrp_`) skip D1 and the account authorities. `pat` (`ypat_`) read both on every request, so only this arm says anything about them. An account holds at most 50 live PATs, so writers share 10, all in one account: it measures one account's authority, not many.
 - **Repositories** are saved in `.local/platform-live/pool-*.json` and reused. Nothing deletes them. Stage 3 repositories keep growing: 3 runs add about 3 GB each (estimate from 5–6 KB per landing).
 - **Credentials** are fresh each run and revoked after it. PATs also expire after a day. Paths are unique to the run.
-- **Evidence** is one timestamped file per run in `.local/platform-live/`. It refuses to write if it holds a token.
+- **Evidence** is one timestamped file per run in `.local/platform-live/`; stage 6, archive stage A and the Basin soak use `.local/scale-next/` at the repository root, so it outlives a worktree. It refuses to write if it holds a token.
 - **The sustained stop** is judged per 60-second segment, so a broken run ends within about 2 minutes. Sustained load has no target of its own in the budget, so it uses the 3 s of busy repositories: stop at 9 s. `--target-p95-ms` changes it.
 - **Hosts.** Every bench refuses anything but dev, from `infra/envs/dev.json`, and the bench client refuses it too.
 
@@ -297,3 +429,15 @@ So the "real bytes per landing by table" archive needs comes only as those two f
 <!-- results:start (tools/platform-load-stages.mjs --results) -->
 None yet.
 <!-- results:end -->
+
+### Archive stage A
+
+<!-- archive-results:start (tools/platform-archive-measure.mjs --results) -->
+None yet.
+<!-- archive-results:end -->
+
+### Distance
+
+<!-- distance-results:start (tools/platform-distance-bench.mjs --results) -->
+None yet.
+<!-- distance-results:end -->

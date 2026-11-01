@@ -4,7 +4,7 @@
 // projection lagged each landing.
 import { b64 } from './driver.mjs';
 import { latency } from '../load-metrics.mjs';
-import { errors, failures, landPeak, landRate, ok, phases, shardLoad, slowest, stat } from './stats.mjs';
+import { delay, edges, errors, failures, landPeak, landRate, ok, phases, shardLoad, slowest, stat } from './stats.mjs';
 
 /** Waits (up to 5 min) until every changeset is projected; lag = projected - landed. */
 async function projectionLag(session, repo) {
@@ -60,6 +60,7 @@ export async function burst(session, { writers: count, principals, mode }) {
 
   const commits = writes.map((w) => w.commit);
   const lands = writes.map((w) => w.land).filter(Boolean);
+  const readRows = reads.map((r) => r.read);
   return {
     repo,
     writers: count,
@@ -73,6 +74,10 @@ export async function burst(session, { writers: count, principals, mode }) {
     land: { client: stat(lands, 'ms'), server: stat(lands, 'server'), ok: lands.filter(ok).length, errors: errors(lands), failures: failures(lands), phases: phases(lands), per_second: landRate(lands), peak_per_second: landPeak(lands) },
     projection,
     overloaded: [...commits, ...lands].filter((r) => r && !ok(r) && /overloaded/i.test(r.message ?? '')).length,
-    read: readSummary(reads.map((r) => r.read)),
+    read: readSummary(readRows),
+    // The road from wherever this bench client ran, and where it did run.
+    delay: { commit: delay(commits), land: delay(lands), read: delay(readRows) },
+    edges: edges([...commits, ...lands, ...readRows]),
+    rate_limited: [...commits, ...lands, ...readRows].filter((r) => r?.status === 429).length,
   };
 }

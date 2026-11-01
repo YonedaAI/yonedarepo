@@ -6,7 +6,7 @@
 // Worker. Each answer is reported, never thrown.
 import { OWN_TRAFFIC } from '../own-traffic.mjs';
 
-export const REGION_VERSION = 3;
+export const REGION_VERSION = 4;
 const MAX_STEPS = 12;
 const STEP_MS = 60_000;
 /** A kept JSON answer past this is cut: the driver needs ids from it, never a whole page. */

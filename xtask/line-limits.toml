@@ -15,12 +15,12 @@
 "backend/crates/yoneda-platform/src/repo_store/staging.rs" = 325
 "backend/crates/yoneda-platform/src/secret_scan.rs" = 334
 "backend/crates/yoneda-ssh-gateway/src/bridge.rs" = 349
-"cloudflare/worker/repo-api.ts" = 447
+"cloudflare/worker/repo-api.ts" = 441
 "cloudflare/worker/repo-bundles.ts" = 364
 "cloudflare/worker/repo-git-objects.ts" = 353
 "cloudflare/worker/repo-objects.ts" = 418
 "cloudflare/worker/repo-projection.ts" = 355
-"frontend/src/App.tsx" = 510
+"frontend/src/App.tsx" = 507
 "frontend/src/features/source-platform/sourceRoute.ts" = 344
 "shared/managed-agents.ts" = 504
 "tools/staging-realworld.mjs" = 406

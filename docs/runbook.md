@@ -264,7 +264,7 @@ Rollout: D1 migration 0010 before the Worker, as the deploy does. Deleting data 
 
 ## Trimming commit data
 
-Stage A of `docs/global-scale-plan.md`, item 3. All four switches are off until set to `on` in `infra/envs/<env>.json`, on the platform Worker. They affect new writes only: nothing already stored is rewritten, so existing duplicates, full chains and shard copies stay. Savings are unmeasured until the load tests run.
+Stage A of `docs/global-scale-plan.md`, item 3. All four switches are off until set to `on` in `infra/envs/<env>.json`, on the platform Worker. They affect new writes only: nothing already stored is rewritten, so existing duplicates, full chains and shard copies stay. Savings are unmeasured until `tools/platform-archive-measure.mjs` has run: `docs/load-testing.md`, "Archive stage A budget", has the steps and the exact change.
 
 | Switch | With it on | Off again |
 |---|---|---|
@@ -401,7 +401,7 @@ Setup, once per environment. xtask does not know this resource kind, so `tools/p
 | Pipeline | `yonedarepo_dev_changes_pipeline_v1` | `yonedarepo_prod_changes_pipeline_v1` |
 | Table | `platform.changes_v1` | `platform.changes_v1` |
 
-Limits: 20 each of streams, sinks and pipelines per account, 1 GB/s per stream, 5 MB per request (the job splits its sends at 4 MB). Streams, sinks and pipelines cannot be changed once created. Pricing was not found.
+Limits: 20 each of streams, sinks and pipelines per account, 1 GB/s per stream, 5 MB per request (the job splits its sends at 4 MB). Streams, sinks and pipelines cannot be changed once created. Prices, and what must hold before prod binds it: `docs/load-testing.md`, "Basin soak budget". `node tools/platform-basin-soak.mjs --yes` checks the table against the logs, once a day; `--gates` judges the soak.
 
 The stream's `credential_id` and `credential_kind` columns are reserved and empty. A record is built from the log entry and the repository's rows, and neither holds the credential, so filling them is a repository change in two waves (`docs/analytics-plan.md`, Phase 3). They exist now because the stream cannot take a column later.
 

@@ -48,7 +48,12 @@ it('moves old versions to R2 segments and still answers reads at them', async ()
 
   // The owner's read changes nothing, and only the owner may read it.
   expect((await api(`${repo}/compaction`, agent)).status).toBe(403);
+  expect((await api(`${repo}/compaction?shards=1`, agent)).status).toBe(403);
   const unmoved = (await api(`${repo}/compaction`, owner)).body;
+  expect(unmoved.shards).toBeUndefined();
+  const withShards = (await api(`${repo}/compaction?shards=1`, owner)).body;
+  expect(withShards.shards.db_bytes).toBeGreaterThan(0);
+  expect(Object.keys(withShards.shards.table_rows)).toContain('commits');
   expect(unmoved).toMatchObject({ floor: 0, head: version, tail_rows: version, retention: { keep_versions: 64 } });
   expect(unmoved.storage.db_bytes).toBeGreaterThan(4096);
   expect((await api(`${repo}/compaction`, owner)).body.floor).toBe(0);
