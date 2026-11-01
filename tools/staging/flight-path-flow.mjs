@@ -16,7 +16,7 @@ import { BRANCH, FILE, FIRST_MESSAGE, FIX_LINE, GOAL, injected, MEMORY, MOVED, n
 import { withChrome } from './kit-chrome.mjs';
 
 const SCOPE = 'src/net.ts only';
-const ON_READ = 'CTC traffic on the files you read:';
+const ON_READ = 'Tower traffic on the files you read:';
 const SESSION = 'kit-flight';
 
 /** The repository before the flight: a memory on the file, a Landing that lands to move main, and

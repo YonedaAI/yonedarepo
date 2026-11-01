@@ -21,7 +21,7 @@ import { LINE_FILES, lineBase, lineUp, READ, readerOf } from './ticket-line.mjs'
 
 const SESSION = 'kit-ctc';
 const START = 'Traffic: open Landings on what you are working on';
-const ON_READ = 'CTC traffic on the files you read:';
+const ON_READ = 'Tower traffic on the files you read:';
 const FILES = { 'src/net.ts': 'export function retry() {}\n', 'src/auth.ts': 'export function login() {}\n', 'README.md': '# CTC kit\n' };
 const warned = (number, title, branch, path) => new RegExp(`Landing ${number} \\("${title}", branch ${branch}\\) is changing .*${path.replace('.', '\\.')}`);
 const account = (kit) => new McpClient(`${kit.api}/api/v1/mcp`, kit.token);
@@ -128,12 +128,12 @@ async function radarAnswers(kit, repo, mcp, { first, second, third }, m) {
 /** The radar page: the table, the note, a Landing's link, its poll, and Refresh. */
 async function radarPage(kit, repo, dir, { chrome, account: web }, radar, { first, second, third }, m) {
   await withChrome({ ...chrome, name: 'ctc' }, m, async ({ page, shot }) => {
-    await openPage(page, { origin: chrome.origin, account: web }, repo, '/ctc');
-    const board = page.getByRole('region', { name: 'CTC', exact: true });
-    await see(board.getByRole('heading', { level: 2, name: 'CTC', exact: true }), 'the CTC heading');
+    await openPage(page, { origin: chrome.origin, account: web }, repo, '/tower');
+    const board = page.getByRole('region', { name: 'Tower', exact: true });
+    await see(board.getByRole('heading', { level: 2, name: 'Tower', exact: true }), 'the Tower heading');
     const table = board.getByRole('table');
     await see(table.getByRole('rowheader', { name: /Retry budget/ }), 'the Landing on the radar');
-    assert.deepEqual((await highlighted(page)).map((t) => t.trim()), ['CTC'], 'the sidebar highlights CTC only');
+    assert.deepEqual((await highlighted(page)).map((t) => t.trim()), ['Tower'], 'the sidebar highlights Tower only');
     if (!radar.land_when_cleared) await see(board.getByText('Land when cleared is off, so nothing lands on its own'), 'the note that nothing lands');
     const row = rowWith(table, 'row', 'Retry budget');
     await see(row.getByRole('cell', { name: /Hold/ }).first(), 'the Hold state');
@@ -178,8 +178,8 @@ async function separation(kit, { chrome, account: web, credentials }, m) {
     assert.ok(held?.reason.includes(`Landing ${first.number}`) && held.reason.includes(READ), `what it waits for: ${JSON.stringify(second.reasons)}`);
     if (chrome) {
       await withChrome({ ...chrome, name: 'ctc-line' }, m, async ({ page, shot }) => {
-        await openPage(page, { origin: chrome.origin, account: web }, repo, '/ctc');
-        const table = page.getByRole('region', { name: 'CTC', exact: true }).getByRole('table');
+        await openPage(page, { origin: chrome.origin, account: web }, repo, '/tower');
+        const table = page.getByRole('region', { name: 'Tower', exact: true }).getByRole('table');
         await see(table.getByText(`1 · queued, ticket ${line.ticket}`), 'its place in line and ticket');
         await see(rowWith(table, 'row', 'Behind the line').getByText(held.reason), 'separation on the radar');
         await shot('ctc-separation');

@@ -126,9 +126,9 @@ Landing on a protected branch needs the land scope and the required approvals an
 
 ## Land when cleared
 
-**Settings → Landing rules → Land when cleared**, off by default, has CTC, Code Traffic Control, land an open Landing once it clears, so nobody has to press Land. It looks again whenever something could clear it: a check passing, an approval, a comment resolved, a new head, or a Landing opened. Nothing polls, and it starts no agent.
+**Settings → Landing rules → Land when cleared**, off by default, has Tower land an open Landing once it clears, so nobody has to press Land. It looks again whenever something could clear it: a check passing, an approval, a comment resolved, a new head, or a Landing opened. Nothing polls, and it starts no agent.
 
-CTC decides by rules alone, and asks no model. The Landing page shows that same decision: **will land when cleared** and what it's waiting for, or a **go-around** when the work has to change. It lands the exact head it evaluated, against the Landing's base, only when all of these hold:
+Tower decides by rules alone, and asks no model. The Landing page shows that same decision: **will land when cleared** and what it's waiting for, or a **go-around** when the work has to change. It lands the exact head it evaluated, against the Landing's base, only when all of these hold:
 
 | Rule | Otherwise |
 |---|---|
@@ -141,7 +141,7 @@ CTC decides by rules alone, and asks no model. The Landing page shows that same 
 | Every path-limited token that worked on it covers all it would land | It stays open |
 | Risk isn't High, and the repository isn't full | It stays open with the reason |
 | It merges cleanly | Go-around, with the reason |
-| No Landing ahead in the queue wrote what it read, or read what it writes | It waits, naming that Landing, and CTC looks again once the way clears |
+| No Landing ahead in the queue wrote what it read, or read what it writes | It waits, naming that Landing, and Tower looks again once the way clears |
 
 - A newer push or a rejection that arrives first stops it, even once the landing has joined the queue.
 - A refused landing stays open with its reason. Only the next event tries again, and a Landing already cleared when you turn this on lands on its next event.
@@ -161,7 +161,7 @@ When a coding session starts, or reads a file, the platform tells it which open 
 
 The closest come first: the same symbol, then the same file, then a Landing that read the file, since changing it would send that Landing around. A session hears each Landing and file once. It comes with `yoneda context`, the session hooks, `git_context` and `git_context_relevant`. A session's own branch counts as what it is changing, and its own Landing is left out. Nothing is held or refused by a warning. A token limited to some paths can't use these reads at all, and a file quarantine withholds is left out.
 
-**CTC** in a repository's sidebar shows every open Landing: its state, what it's waiting for, its place in line, where it overlaps another Landing and the last decision on it. The line runs queued landings first, then cleared ones, oldest cleared first, then those waiting. A Landing that's only waiting holds nobody up, so one left open can't stop the rest. With Land when cleared off, the page shows what CTC would say and nothing lands on its own. The same answer is `GET /ctc` and `git_ctc_radar`.
+**Tower** in a repository's sidebar shows every open Landing: its state, what it's waiting for, its place in line, where it overlaps another Landing and the last decision on it. The line runs queued landings first, then cleared ones, oldest cleared first, then those waiting. A Landing that's only waiting holds nobody up, so one left open can't stop the rest. With Land when cleared off, the page shows what Tower would say and nothing lands on its own. The same answer is `GET /ctc` and `git_ctc_radar`.
 
 ## Close, reopen, delete
 

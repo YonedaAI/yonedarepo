@@ -14,7 +14,7 @@ const PAGES = [
   { rest: '/changes', filter: 'Landed', title: 'Nothing has landed yet' },
   { rest: '/changes', filter: 'Closed', title: 'No closed Landings' },
   { rest: '/changes', filter: 'All', title: 'No Landings yet' },
-  { rest: '/ctc', title: 'Nothing on the radar' },
+  { rest: '/tower', title: 'Nothing on the radar' },
 ];
 
 /** The rules, read from what the browser laid out. */
@@ -64,10 +64,10 @@ export async function emptyStates(kit, { chrome, account }, m) {
         await shot(`empty-${entry.rest.slice(1)}-${entry.filter ?? 'open'}-${size.width}`);
       }
     }
-    await openPage(page, ctx, repo, '/ctc');
-    await see(page.locator('.empty-state').getByRole('heading', { name: 'Nothing on the radar' }), 'the CTC empty state');
-    assert.equal(await page.getByText('Code Traffic Control: what is cleared').count(), 0, 'CTC keeps its intro line over nothing');
-    assert.equal(await page.getByText('Land when cleared is off').count(), 0, 'CTC explains a switch with nothing to show');
+    await openPage(page, ctx, repo, '/tower');
+    await see(page.locator('.empty-state').getByRole('heading', { name: 'Nothing on the radar' }), 'the Tower empty state');
+    assert.equal(await page.getByText('What is cleared, what is waiting').count(), 0, 'Tower keeps its intro line over nothing');
+    assert.equal(await page.getByText('Land when cleared is off').count(), 0, 'Tower explains a switch with nothing to show');
   });
   m.empty_pages = PAGES.length * 2;
 }

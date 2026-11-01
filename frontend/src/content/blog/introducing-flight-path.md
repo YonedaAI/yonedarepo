@@ -22,7 +22,7 @@ We call the change a Landing. It replaces the pull request, and [that post](/blo
 | Route | The Landing records its commits, the sessions behind them and the memories those sessions received. |
 | Instruments | Each push gets readings. Risk is a score worked out by rules. Slop is a review agent's level for leftovers like dead code. Intent drift compares the diff with the plan. |
 | Go-around | A finding sends the work back. Nothing wakes the agent: it hears the finding from its context, fixes the work and pushes again. |
-| Cleared to land | Every required check and approval has passed on this exact commit. [CTC](/blog/meet-ctc-code-traffic-control), which is rules and no model, makes that call. |
+| Cleared to land | Every required check and approval has passed on this exact commit. [Tower](/blog/meet-tower), which is rules and no model, makes that call. |
 | Landed | The commit is on the base branch, in order. |
 | Black box | The transcript and the context the agent was given stay readable afterwards. |
 
@@ -36,4 +36,4 @@ The agent's work was real, and our test script played everything around it: the 
 
 ## What runs on production today
 
-Landings, the route, flight plans, required checks and approvals, session records, transcripts and memories are live on yonedarepo.com. So is the CTC page, which shows what CTC would decide. Intent drift, the Instruments cards and automatic landing are built and tested on dev, and they stay off production until we've watched each one there. Risk stays a beta until we can score it against real outcomes.
+Landings, the route, flight plans, required checks and approvals, session records, transcripts and memories are live on yonedarepo.com. So is the Tower page, which shows what Tower would decide. Intent drift, the Instruments cards and automatic landing are built and tested on dev, and they stay off production until we've watched each one there. Risk stays a beta until we can score it against real outcomes.

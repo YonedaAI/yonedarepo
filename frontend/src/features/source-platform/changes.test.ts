@@ -260,7 +260,7 @@ describe('changes list', () => {
     expect(only).not.toContain('No landed Landings');
   });
 
-  it("with Land when cleared on, the state is CTC's decision, not the gates alone", () => {
+  it("with Land when cleared on, the state is Tower's decision, not the gates alone", () => {
     const open = { status: 'open', title: 'Retry' } as const;
     const gates = (decision: string, ready: boolean) =>
       ({
@@ -329,7 +329,7 @@ describe('changes list', () => {
   });
 });
 
-describe('CTC on a Landing', () => {
+describe('Tower on a Landing', () => {
   const clearance = (over: object) => ({ decision: 'hold', reasons: [], refused: null, ...over });
 
   it('says what an open Landing waits for', () => {
@@ -338,7 +338,7 @@ describe('CTC on a Landing', () => {
         reasons: [{ code: 'GATES', reason: 'Approvals: 0 of 1 approvals' }],
       }),
     });
-    expect(note).toContain('CTC: will land when cleared.');
+    expect(note).toContain('Tower: will land when cleared.');
     expect(note).toContain('Waiting for:');
     expect(note).toContain('Approvals: 0 of 1 approvals');
     expect(note).not.toContain('did not land');
@@ -351,7 +351,7 @@ describe('CTC on a Landing', () => {
         reasons: [{ code: 'CHECK_FAILED', reason: 'slop-review failed on this head' }],
       }),
     });
-    expect(note).toContain('CTC: go-around.');
+    expect(note).toContain('Tower: go-around.');
     expect(note).toContain('slop-review failed on this head');
     expect(note).not.toContain('will land');
   });
@@ -388,7 +388,7 @@ describe('CTC on a Landing', () => {
     };
     const trail = html(LandedAutomatically, { change });
     expect(trail).toContain('Landed automatically');
-    expect(trail).toContain('by CTC');
+    expect(trail).toContain('by Tower');
     expect(trail).toContain('Approved by ada');
     expect(trail).toContain('Passed (token:ci)');
     expect(html(LandedAutomatically, { change: { status: 'landed' } })).toBe('');

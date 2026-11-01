@@ -2387,7 +2387,7 @@
   },
   {
     "name": "git_ctc_radar",
-    "description": "What CTC, Code Traffic Control, sees: every open Landing (the newest limit, default 25, at most 50, and always those in line) with the decision the job would make as things stand (cleared, hold or go_around, with its reasons; with land_when_cleared off, nothing lands on it), its place in line (queued tickets, then cleared, oldest first, then waiting), the other Landings on the same work (same symbol, same file, or one that read what another wrote) and the last decision recorded on it. truncated says there are more. Reading it records nothing. Needs a whole-repository credential. REST: GET /ctc.",
+    "description": "What Tower sees: every open Landing (the newest limit, default 25, at most 50, and always those in line) with the decision the job would make as things stand (cleared, hold or go_around, with its reasons; with land_when_cleared off, nothing lands on it), its place in line (queued tickets, then cleared, oldest first, then waiting), the other Landings on the same work (same symbol, same file, or one that read what another wrote) and the last decision recorded on it. truncated says there are more. Reading it records nothing. Needs a whole-repository credential. REST: GET /ctc.",
     "inputSchema": {
       "type": "object",
       "properties": {

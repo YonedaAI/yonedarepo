@@ -19,11 +19,11 @@ export function WillLandNote({ clearance }: { clearance: LandingClearance }) {
       <p>
         {decision === 'go_around' ? (
           <>
-            <strong>CTC: go-around.</strong> The work goes back:
+            <strong>Tower: go-around.</strong> The work goes back:
           </>
         ) : (
           <>
-            <strong>CTC: will land when cleared.</strong>{' '}
+            <strong>Tower: will land when cleared.</strong>{' '}
             {reasons.length ? 'Waiting for:' : clearLine(refused !== null)}
           </>
         )}
@@ -52,7 +52,7 @@ export function LandedAutomatically({ change }: { change: ChangeDetail }) {
   return (
     <div className="source-will-land">
       <p>
-        <strong>Landed automatically</strong> by CTC once it cleared · {when(landed.at)}
+        <strong>Landed automatically</strong> by Tower once it cleared · {when(landed.at)}
       </p>
       <ul aria-label="Why it landed">
         {landed.state?.approved_by.map((principal) => (

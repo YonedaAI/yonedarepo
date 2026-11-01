@@ -26,7 +26,7 @@ async function lands(kit, repo, dir, reviewer, web, m) {
   if (web) {
     await withChrome({ ...web.chrome, name: 'land-cleared' }, m, async ({ page, shot }) => {
       await openPage(page, { origin: web.chrome.origin, account: web.account }, repo, `/changes/${landing.number}`);
-      await see(page.getByText('CTC: will land when cleared.'), 'the note that CTC will land it');
+      await see(page.getByText('Tower: will land when cleared.'), 'the note that Tower will land it');
       await shot('will-land');
     });
   }
