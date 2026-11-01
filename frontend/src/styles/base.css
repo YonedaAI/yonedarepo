@@ -206,6 +206,10 @@ pre {
 .app-crash button {
   margin-top: 16px;
 }
+/* Under the button: it arrives after the report, and must not move what a person may be clicking. */
+.app-crash .failure-reference {
+  margin-top: 12px;
+}
 
 pre {
   font-size: var(--text-mono-dense);

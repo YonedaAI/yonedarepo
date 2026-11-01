@@ -58,6 +58,8 @@ Written before the code. What a healthy request may spend on O1, with `REQUEST_I
 | Added bytes per queue message | one `request_id` field, at most 64 bytes |
 | Added Wasm calls per Durable Object request | one header read |
 
+Measured in local workerd over 5 rounds of 20,000: a request costs about 1 µs bare, 3 µs with `REQUEST_IDS` off, 5 µs on with three hops, and forwarding a `Request` over a binding about 3 µs more. Not yet measured on dev.
+
 Failure paths are not on that budget: a line is written only when something already went wrong, at most 4,000 characters, and never awaited. `POST /api/client-error` is rate limited per address and takes at most 2 KB.
 
 ## Phase O1: See failures

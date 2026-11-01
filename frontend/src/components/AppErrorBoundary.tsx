@@ -25,8 +25,8 @@ type State = { failed: boolean; reference: string | null };
 
 export class AppErrorBoundary extends Component<{ children: ReactNode }, State> {
   state: State = { failed: false, reference: null };
-  static getDerivedStateFromError() {
-    return { failed: true };
+  static getDerivedStateFromError(): State {
+    return { failed: true, reference: null };
   }
   componentDidCatch(error: unknown) {
     void reportClientError(error).then((reference) => this.setState({ reference }));
@@ -37,12 +37,12 @@ export class AppErrorBoundary extends Component<{ children: ReactNode }, State> 
       <main className="app-crash" role="alert">
         <h1>Something went wrong</h1>
         <p>The page hit an unexpected error. Your work and runs are safe on the server.</p>
-        {this.state.reference && (
-          <small className="failure-reference">Reference {this.state.reference}</small>
-        )}
         <button type="button" onClick={() => window.location.reload()}>
           Reload
         </button>
+        {this.state.reference && (
+          <small className="failure-reference">Reference {this.state.reference}</small>
+        )}
       </main>
     );
   }
