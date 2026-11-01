@@ -1,7 +1,7 @@
 // A job for a repository deleted while it waited has nothing left to do: retrying it only
 // fills the dead letter queue. Work that belongs to the deletion itself must still retry.
 import { describe, expect, it, vi } from 'vitest';
-import { settleFailedJob } from '../../cloudflare/worker/job-settle';
+import { settleFailedJob } from '../../cloudflare/worker/platform-job-settle';
 
 const message = (kind: string) =>
   ({ body: { kind, repo_id: 'r0123456789abcdef0123' }, ack: vi.fn(), retry: vi.fn() }) as never as {

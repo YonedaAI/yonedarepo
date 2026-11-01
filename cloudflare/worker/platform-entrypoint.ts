@@ -6,11 +6,11 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { AccountCreated } from './account-index';
 import { internalAccounts } from './internal-accounts';
-import { settleFailedJob } from './job-settle';
 import { log, served } from './log';
 import { accountCreated, SIGNUP_NOTICE } from './platform-accounts';
 import { nightlyReconcile } from './platform-admin-billing';
 import { verifyEmail } from './platform-email-verify';
+import { settleFailedJob } from './platform-job-settle';
 import { laterIfHeld } from './platform-legal-hold';
 import { platformFetch } from './platform-routes';
 import { signupNoticeJob } from './platform-signup-notice';
