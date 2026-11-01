@@ -7,9 +7,17 @@ use yoneda_core::{Error, Result};
 mod access;
 #[cfg(test)]
 mod access_tests;
+mod audit_details;
+mod audit_log;
+#[cfg(test)]
+mod audit_log_tests;
+mod auth_events;
 mod avatars;
 #[cfg(test)]
 mod avatars_tests;
+mod deleted_repos;
+#[cfg(test)]
+mod deleted_repos_tests;
 mod device;
 mod email;
 #[cfg(test)]
@@ -20,6 +28,9 @@ mod favorites_tests;
 mod handles;
 #[cfg(test)]
 mod handles_tests;
+mod holds;
+#[cfg(test)]
+mod holds_tests;
 mod identities;
 #[cfg(test)]
 mod identities_tests;
@@ -29,6 +40,9 @@ mod orgs;
 #[cfg(test)]
 mod orgs_tests;
 mod repo_names;
+mod search_directory;
+#[cfg(test)]
+mod search_directory_tests;
 mod signin;
 #[cfg(test)]
 mod ssh_key_token_tests;
@@ -69,6 +83,10 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             op::AccountOp::OAuth(op) => oauth_flows::handle(&db, &command, op, now),
             op::AccountOp::Org(op) => orgs::handle(&db, &command, op, now),
             op::AccountOp::OrgMember(op) => orgs::member(&db, &command, op, now),
+            op::AccountOp::Hold(op) => holds::handle(&db, &command, op, now),
+            op::AccountOp::DeletedRepo(op) => deleted_repos::handle(&db, &command, op),
+            op::AccountOp::Audit(op) => audit_log::handle(&db, &command, op),
+            op::AccountOp::Search(op) => search_directory::handle(&db, &command, op, now),
             op::AccountOp::Handle(op) => handles::handle(&db, &command, op, now),
         }
     }))
@@ -195,6 +213,17 @@ fn account<S: SqlStore>(db: &S) -> Result<Value> {
         }
     })
 }
+/// Puts a sign-up's region on the new account. A code this binary does not know stores
+/// nothing: a region never fails a sign-up, and an account without one reads as `enam`.
+fn set_region(account: &mut Value, c: &Value) {
+    if let Some(region) = c["region"]
+        .as_str()
+        .filter(|r| yoneda_core::account::ACCOUNT_REGIONS.contains(r))
+    {
+        account["region"] = json!(region);
+    }
+}
+
 fn public_account(account: &Value) -> Value {
     json!({"authenticated":true,"username":account["username"],"created_at":account["created_at"]})
 }

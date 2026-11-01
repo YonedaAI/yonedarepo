@@ -8,6 +8,8 @@
 // OWNER_TOKEN  production owner credential (~/.config/yonedarepo/prod.env)
 // Placed next to the data (aws:us-east-1, R2 and CheckContainer in ENAM), batched landing.
 // PUSH_BUNDLES=on writes a large push's objects as bundles (one R2 object per batch, indexed by the repository authority); dev measured a 12,000-file push at 4.9 s (489 s without). Turn it off before rolling back below the bundle reader.
+// ACCOUNT_SEARCH=on keeps a search summary per repository in its owner's directory (search:<owner> instances of WorkspaceAuthority) and serves GET /api/v1/search, the search_repos MCP tool and the CLI's search --all; off writes none and the route answers 404, so the website asks each repository itself as before.
+// AUDIT_LOG=on keeps organizations' audit logs (audit:<org> instances of WorkspaceAuthority) and people's sign-in events; off writes neither and /orgs/:org/audit answers 404. Set it on this Worker and the front Worker together: sign-ins go through both.
 // BLOB_WRITE_THROUGH=on writes each API commit's blobs to R2 after the commit's own I/O, so burst read-backs skip the commit shards; off leaves them to the shard drain. Off since 2026-10-28: 6 interleaved dev bursts gave land p95 1.7-2.1 s off vs 2.7-3.2 s on, with read p95 0.18-0.32 s off (target < 2 s).
 // Check runs: one per invocation, up to check_instances (4) at once.
 // Model checks call the review model with REVIEW_MODEL_KEY, the managed Z.ai key (Secrets Store
@@ -35,11 +37,24 @@
 // Contact support (platform-support.ts) emails SUPPORT_EMAIL through Resend from EMAIL_FROM; without it the form answers 503.
 // Site traffic (worker/platform-site-traffic.ts) reads the front Worker's yonedarepo_prod_site_events dataset (SITE_EVENTS_DATASET)
 // through the Analytics Engine SQL API: CF_ACCOUNT_ID plus the optional secret ANALYTICS_READ_TOKEN (Account Analytics Read).
+// The same dataset's SITE_EVENTS binding takes platform requests by client kind (worker/platform-client-events.ts) while TRAFFIC_EVENTS is on.
+// It also takes sampled write origins (worker/platform-write-origin.ts) while REGION_SIGNALS is on; that switch stays off until the owner clears the privacy text.
 // Without the token, traffic reports are unavailable and nothing else changes.
+// ADMIN_BILLING=on adds the operators' billing routes (platform-admin-billing.ts) and starts the managed Worker's nightly reconcile from this Worker's cron; set it on the managed Worker too.
+// LANDING_INSTRUMENTS=on: a change's page shows its Slop and Risk cards (repo-instruments.ts).
+// LAND_WHEN_CLEARED=on: what can clear a Landing queues a platform_land_check job, and a repository can turn on Land when cleared (repo-land-check.ts). Set it only once every Worker on the queue knows the job: deploy with it off first (docs/runbook.md).
+// ASYNC_STORE=on: a create answers without Artifacts and a platform_store queue job creates the store (repo-store-create.ts). Set it only once every Worker on the queue knows the job: deploy with it off first (docs/runbook.md).
+// DIRECT_IMPORT=on (with FAST_IMPORT, PACK_CACHE and PUSH_BUNDLES) also fetches a public GitHub repository from the Worker when it is imported, and lands main from that pack beside Artifacts' own fetch (docs/direct-import.md).
 // Admin pages (/api/v1/admin, platform-admin.ts): ADMIN_ACCOUNTS lists the operator accounts (comma separated; empty: only OWNER_TOKEN/Access). The sign-up notice goes to ADMIN_NOTIFY_EMAIL (empty: EMAIL_CONTACT). Credit grants and balances call the managed Worker's /admin/accounts/<account>/credit over MANAGED with MANAGED_ADMIN_TOKEN (optional secret, the managed Worker's own value; unset: grants are refused). MANAGED binds the managed Worker, which binds this one as PLATFORM: a fresh environment deploys this Worker once without MANAGED first.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
+  "analytics_engine_datasets": [
+    {
+      "binding": "SITE_EVENTS",
+      "dataset": "yonedarepo_prod_site_events"
+    }
+  ],
   "artifacts": [
     {
       "binding": "ARTIFACTS",
@@ -298,21 +313,30 @@
     ]
   },
   "vars": {
+    "ACCOUNT_SEARCH": "off",
     "ADMIN_ACCOUNTS": "magnetonio",
+    "ADMIN_BILLING": "off",
     "ADMIN_NOTIFY_EMAIL": "",
     "ARTIFACTS_NAMESPACE": "yonedarepo-prod",
+    "ASYNC_STORE": "off",
+    "AUDIT_LOG": "off",
     "BLOB_WRITE_THROUGH": "off",
     "CF_ACCOUNT_ID": "f011d0ee02b23cad26b4b38151b204ad",
     "EMAIL_CONTACT": "hello@yonedarepo.com",
     "EMAIL_FROM": "YonedaRepo <hello@yonedarepo.com>",
+    "LANDING_INSTRUMENTS": "off",
     "LAND_MODE": "batch",
+    "LAND_WHEN_CLEARED": "off",
     "LFS_S3_BUCKET": "yonedarepo-prod-platform-objects",
     "LFS_S3_ENDPOINT": "https://f011d0ee02b23cad26b4b38151b204ad.r2.cloudflarestorage.com",
     "PUSH_BUNDLES": "on",
+    "REGION_SIGNALS": "off",
     "SITE_EVENTS_DATASET": "yonedarepo_prod_site_events",
     "SSH_FRONT_DOOR": "tunnel",
     "SSH_HOST": "ssh.yonedarepo.com",
     "SUPPORT_EMAIL": "support@yonedalabs.ai",
+    "TRAFFIC_EVENTS": "off",
+    "TRAFFIC_REPORT": "off",
     "WEB_ORIGIN": "https://yonedarepo.com",
     "WORKERS_SUBDOMAIN": "mlong-f01"
   },

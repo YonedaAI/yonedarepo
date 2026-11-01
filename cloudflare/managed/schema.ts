@@ -96,6 +96,86 @@ export const LEDGER_SCHEMA: string[] = [
   // v3 (2026-10-30): automatic top-up can be switched off without removing the card; on for
   // every card saved before the switch existed.
   `ALTER TABLE billing ADD COLUMN auto_top_up INTEGER NOT NULL DEFAULT 1;`,
+  // v4 (2026-10-31): operators' billing. An operator's pause on charging the card; refunds (an
+  // operator's, recorded before Stripe is asked, and those Stripe reported), with what Stripe
+  // says is refunded per top-up; disputes; and each day's refunds on the instance that counts
+  // them (admin-refund.ts). entries.kind cannot change without rebuilding the table, so what
+  // takes credit back is a negative 'grant' keyed refund:, freeze: and so on (ledger-refunds.ts).
+  `ALTER TABLE billing ADD COLUMN paused_at INTEGER;
+   ALTER TABLE billing ADD COLUMN paused_reason TEXT;
+   ALTER TABLE billing ADD COLUMN paused_by TEXT;
+   ALTER TABLE top_ups ADD COLUMN stripe_refunded INTEGER NOT NULL DEFAULT 0;
+   CREATE TABLE refunds (
+     id TEXT PRIMARY KEY,
+     account TEXT NOT NULL,
+     top_up TEXT NOT NULL,
+     amount INTEGER NOT NULL CHECK (amount > 0),
+     status TEXT NOT NULL CHECK (status IN ('open','succeeded','failed')),
+     origin TEXT NOT NULL CHECK (origin IN ('operator','stripe')),
+     actor TEXT NOT NULL,
+     reason TEXT NOT NULL,
+     spent_override INTEGER NOT NULL DEFAULT 0,
+     stripe_refund TEXT,
+     error TEXT,
+     created_at INTEGER NOT NULL,
+     settled_at INTEGER
+   );
+   CREATE INDEX refunds_by_top_up ON refunds(top_up);
+   CREATE TABLE disputes (
+     id TEXT PRIMARY KEY,
+     top_up TEXT,
+     charge TEXT NOT NULL,
+     amount INTEGER NOT NULL,
+     frozen INTEGER NOT NULL DEFAULT 0,
+     status TEXT NOT NULL,
+     reason TEXT,
+     opened_at INTEGER NOT NULL,
+     closed_at INTEGER
+   );
+   CREATE TABLE refund_days (
+     id TEXT PRIMARY KEY,
+     day TEXT NOT NULL,
+     amount INTEGER NOT NULL
+   );
+   CREATE INDEX refund_days_by_day ON refund_days(day);`,
+  // v5 (2026-10-31): the revenue rollup's outbox. Triggers mark a day in the transaction that
+  // changes it, so no write path can skip the rollup; `mark` tells a change made during a push
+  // from the one it carried. The alarm pushes marked days to D1 (ledger-rollup.ts). What a day
+  // holds is read back by `at`, so a whole day stays cheap on a long ledger.
+  `CREATE INDEX entries_by_at ON entries(at);
+   CREATE TABLE rollup_dirty (day TEXT PRIMARY KEY, mark INTEGER NOT NULL);
+   CREATE TABLE rollup_state (
+     id INTEGER PRIMARY KEY CHECK (id = 1),
+     account TEXT NOT NULL,
+     version INTEGER NOT NULL DEFAULT 0
+   );
+   CREATE TRIGGER rollup_entry AFTER INSERT ON entries BEGIN
+     INSERT INTO rollup_dirty (day, mark)
+     VALUES (strftime('%Y-%m-%d', NEW.at / 1000, 'unixepoch'), 1)
+     ON CONFLICT(day) DO UPDATE SET mark = mark + 1;
+   END;
+   CREATE TRIGGER rollup_refund AFTER INSERT ON refunds WHEN NEW.settled_at IS NOT NULL BEGIN
+     INSERT INTO rollup_dirty (day, mark)
+     VALUES (strftime('%Y-%m-%d', NEW.settled_at / 1000, 'unixepoch'), 1)
+     ON CONFLICT(day) DO UPDATE SET mark = mark + 1;
+   END;
+   CREATE TRIGGER rollup_refund_settled AFTER UPDATE OF status ON refunds
+   WHEN NEW.settled_at IS NOT NULL BEGIN
+     INSERT INTO rollup_dirty (day, mark)
+     VALUES (strftime('%Y-%m-%d', NEW.settled_at / 1000, 'unixepoch'), 1)
+     ON CONFLICT(day) DO UPDATE SET mark = mark + 1;
+   END;
+   CREATE TRIGGER rollup_dispute AFTER INSERT ON disputes WHEN NEW.closed_at IS NOT NULL BEGIN
+     INSERT INTO rollup_dirty (day, mark)
+     VALUES (strftime('%Y-%m-%d', NEW.closed_at / 1000, 'unixepoch'), 1)
+     ON CONFLICT(day) DO UPDATE SET mark = mark + 1;
+   END;
+   CREATE TRIGGER rollup_dispute_closed AFTER UPDATE OF status ON disputes
+   WHEN NEW.closed_at IS NOT NULL BEGIN
+     INSERT INTO rollup_dirty (day, mark)
+     VALUES (strftime('%Y-%m-%d', NEW.closed_at / 1000, 'unixepoch'), 1)
+     ON CONFLICT(day) DO UPDATE SET mark = mark + 1;
+   END;`,
 ];
 
 /** WorkspaceAgents: per-agent overrides (workspace-wide or per repository) and where it runs. */

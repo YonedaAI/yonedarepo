@@ -276,6 +276,17 @@ export class LandCombiner extends DurableObject<Env> {
     return this.#head.refresh(repo, access);
   }
 
+  /** The repository was erased: forgets its names (`target`, `projector`), its alarm and
+   * what this instance holds in memory. Nothing writes here again: every path that would
+   * first needs the repository's authority or a commit shard, which answer GONE. */
+  async erase() {
+    this.#batcher.target = undefined;
+    this.#head = new HeadHolder(this.env);
+    this.#refs = new RefsHolder(this.env);
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+  }
+
   /** Projector role: waits until this repository's changesets are projected. */
   async catchUp(repo: string) {
     await this.ctx.storage.put('projector', repo);

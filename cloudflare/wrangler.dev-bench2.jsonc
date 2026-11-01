@@ -1,0 +1,20 @@
+// Generated from infra/envs/dev.json by `cargo xtask infra up`; edit the spec, not this file.
+// Second dev bench client: the same code as bench, with no hook boxes and no domain, so a load
+// test can compare 1 client against 2 (tools/fanout-bench/driver.mjs, --client2). BENCH_KEY is
+// set once from stdin and has the same value as bench's.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "account_id": "f011d0ee02b23cad26b4b38151b204ad",
+  "compatibility_date": "2026-10-07",
+  "compatibility_flags": [
+    "global_fetch_strictly_public"
+  ],
+  "main": "../tools/fanout-bench/worker.js",
+  "name": "yonedarepo-dev-bench2",
+  "placement": {
+    "mode": "targeted",
+    "region": "aws:us-east-1"
+  },
+  "preview_urls": false,
+  "workers_dev": true
+}

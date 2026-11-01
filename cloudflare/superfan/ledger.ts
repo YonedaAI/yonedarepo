@@ -3,7 +3,9 @@
 // method is one synchronous transaction, so overlapping runs cannot double-spend.
 import { DurableObject } from 'cloudflare:workers';
 import type { SuperfanEnv } from './config';
+import { claimNotice, markNotified, releaseNotice } from './ledger-notice';
 import { migrate } from './ledger-schema';
+import { reserveSpend, settleSpend, spendToday } from './ledger-spend';
 import { ingestRows, tailWindow } from './ledger-tail';
 import type { Baselines } from './signals';
 import type { TailRow } from './tail';
@@ -47,10 +49,21 @@ export interface FindingRow {
   first_seen: string;
   last_seen: string;
   resolved_at: string | null;
+  notified_at: string | null;
 }
 
 export const utcDay = (now: number) => new Date(now).toISOString().slice(0, 10);
 const iso = (ms: unknown) => (typeof ms === 'number' ? new Date(ms).toISOString() : null);
+const finding = (r: Record<string, any>) =>
+  ({
+    ...r,
+    signals: JSON.parse(r.signals),
+    narrative: r.narrative ? JSON.parse(r.narrative) : null,
+    first_seen: iso(r.first_seen),
+    last_seen: iso(r.last_seen),
+    resolved_at: iso(r.resolved_at),
+    notified_at: iso(r.notified_at),
+  }) as FindingRow;
 
 export class SuperfanLedger extends DurableObject<SuperfanEnv> {
   constructor(ctx: DurableObjectState, env: SuperfanEnv) {
@@ -153,8 +166,11 @@ export class SuperfanLedger extends DurableObject<SuperfanEnv> {
           )
           .toArray()[0];
       if (recent) {
+        // A reopened finding mails again, unless it was mailed within the same window.
         sql.exec(
-          "UPDATE findings SET status = 'open', resolved_at = NULL, occurrences = occurrences + 1, last_seen = ?, signals = ?, summary = ? WHERE id = ?",
+          `UPDATE findings SET notified_at = CASE WHEN status = 'resolved' AND notified_at < ? THEN NULL ELSE notified_at END,
+             status = 'open', resolved_at = NULL, occurrences = occurrences + 1, last_seen = ?, signals = ?, summary = ? WHERE id = ?`,
+          now - REOPEN_MS,
           now,
           signals,
           o.summary,
@@ -229,48 +245,12 @@ export class SuperfanLedger extends DurableObject<SuperfanEnv> {
 
   /** Reserves a worst-case call cost against today's cap; null when it would exceed it. */
   reserve(now: number, amount: number, cap: number): string | null {
-    return this.#tx((sql) => {
-      const day = utcDay(now);
-      sql.exec('INSERT OR IGNORE INTO spend_days (day) VALUES (?)', day);
-      const spent = sql
-        .exec<{ total: number }>(
-          'SELECT reserved + settled AS total FROM spend_days WHERE day = ?',
-          day,
-        )
-        .one().total;
-      if (amount <= 0 || spent + amount > cap) {
-        sql.exec('UPDATE spend_days SET refused = refused + 1 WHERE day = ?', day);
-        return null;
-      }
-      const id = crypto.randomUUID();
-      sql.exec('INSERT INTO reservations (id, day, amount) VALUES (?, ?, ?)', id, day, amount);
-      sql.exec(
-        'UPDATE spend_days SET reserved = reserved + ?, calls = calls + 1 WHERE day = ?',
-        amount,
-        day,
-      );
-      return id;
-    });
+    return this.#tx((sql) => reserveSpend(sql, utcDay(now), amount, cap));
   }
 
   /** Replaces a reservation with the actual cost (0 releases it). Settles only once. */
   settle(id: string, actual: number) {
-    this.#tx((sql) => {
-      const row = sql
-        .exec<{ day: string; amount: number }>(
-          'SELECT day, amount FROM reservations WHERE id = ? AND settled IS NULL',
-          id,
-        )
-        .toArray()[0];
-      if (!row) return;
-      sql.exec('UPDATE reservations SET settled = ? WHERE id = ?', actual, id);
-      sql.exec(
-        'UPDATE spend_days SET reserved = reserved - ?, settled = settled + ? WHERE day = ?',
-        row.amount,
-        actual,
-        row.day,
-      );
-    });
+    this.#tx((sql) => settleSpend(sql, id, actual));
   }
 
   findings(status: 'open' | 'resolved' | 'all', limit: number): FindingRow[] {
@@ -280,30 +260,30 @@ export class SuperfanLedger extends DurableObject<SuperfanEnv> {
         ...(status === 'all' ? [limit] : [status, limit]),
       )
       .toArray();
-    return rows.map((r) => ({
-      ...r,
-      signals: JSON.parse(r.signals),
-      narrative: r.narrative ? JSON.parse(r.narrative) : null,
-      first_seen: iso(r.first_seen),
-      last_seen: iso(r.last_seen),
-      resolved_at: iso(r.resolved_at),
-    })) as FindingRow[];
+    return rows.map(finding);
+  }
+
+  /** The next digest's findings, counted against today's email cap; none at the cap. */
+  claimNotice(now: number, cap: number, limit: number): FindingRow[] {
+    return this.#tx((sql) => claimNotice(sql, utcDay(now), cap, limit)).map(finding);
+  }
+
+  releaseNotice(now: number) {
+    this.#tx((sql) => releaseNotice(sql, utcDay(now)));
+  }
+
+  markNotified(ids: number[], now: number) {
+    this.#tx((sql) => markNotified(sql, ids, now));
   }
 
   status(now: number) {
     const sql = this.ctx.storage.sql;
-    const spend = sql
-      .exec(
-        'SELECT day, reserved, settled, calls, refused FROM spend_days WHERE day = ?',
-        utcDay(now),
-      )
-      .toArray()[0] ?? { day: utcDay(now), reserved: 0, settled: 0, calls: 0, refused: 0 };
     const runs = sql.exec('SELECT * FROM runs ORDER BY id DESC LIMIT 5').toArray();
     const open = sql
       .exec<{ n: number }>("SELECT COUNT(*) AS n FROM findings WHERE status = 'open'")
       .one().n;
     return {
-      spend,
+      spend: spendToday(sql, utcDay(now)),
       open_findings: open,
       runs: runs.map((r) => ({
         ...r,

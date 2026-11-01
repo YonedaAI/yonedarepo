@@ -1,0 +1,76 @@
+/* CTC's radar: a table on a wide screen, a card per Landing on a phone. */
+.ctc-table th,
+.ctc-table td {
+  white-space: normal;
+  vertical-align: top;
+}
+.ctc-table tbody th {
+  font-weight: inherit;
+  min-width: 200px;
+}
+.ctc-branch {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.ctc-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-wrap: anywhere;
+}
+.ctc-list li + li {
+  margin-top: 4px;
+}
+.ctc-state {
+  white-space: nowrap;
+}
+.ctc-cleared {
+  background: var(--success-soft);
+  color: var(--success);
+}
+.ctc-hold {
+  background: var(--accent-soft);
+  color: var(--blue-text);
+}
+.ctc-go_around {
+  background: var(--danger-soft);
+  color: var(--danger);
+}
+.ctc-none {
+  color: var(--muted);
+}
+@media (max-width: 700px) {
+  .ctc .source-table-wrap {
+    overflow-x: visible;
+  }
+  .ctc-table,
+  .ctc-table tbody,
+  .ctc-table tr,
+  .ctc-table th,
+  .ctc-table td {
+    display: block;
+    width: 100%;
+    min-width: 0;
+  }
+  .ctc-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .ctc-table tr {
+    padding: 8px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .ctc-table tbody :is(th, td) {
+    padding: 4px 0;
+    border-bottom: none;
+  }
+  .ctc-table tbody :is(th, td)::before {
+    content: attr(data-label);
+    display: block;
+    color: var(--muted);
+    font-size: var(--text-sm);
+  }
+}

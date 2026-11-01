@@ -25,6 +25,8 @@
         "Containers Read (all read-only). Secrets, set from stdin (~/.config/yonedarepo/staging.env):",
         "CF_ANALYTICS_TOKEN  API token with the read permissions above",
         "SUPERFAN_READ_TOKEN bearer for GET /findings, GET /status, POST /run",
+        "New findings mail ADMIN_NOTIFY_EMAIL through Resend (superfan/notify.ts, the Secrets Store secret Resend-Yoneda), at most",
+        "8 digests a UTC day. Empty here: dev's bursts fire rules on purpose, so dev mails nobody.",
         "Deployed first: the dev platform names this Worker in tail_consumers."
       ],
       "secrets": [
@@ -48,6 +50,8 @@
         },
         "vars": {
           "CF_ACCOUNT_ID": "{account_id}",
+          "ADMIN_NOTIFY_EMAIL": "",
+          "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>",
           "WATCH_SCRIPT": "{prefix}-platform",
           "WATCH_URL": "https://{prefix}-platform.{subdomain}.workers.dev",
           "TELEMETRY_SOURCE": "cloudflare",
@@ -65,6 +69,11 @@
             "binding": "ZAI_KEY",
             "store_id": "3d9115d4fe864c54a792bcb790a763e3",
             "secret_name": "ZAI"
+          },
+          {
+            "binding": "RESEND_API_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "Resend-Yoneda"
           }
         ],
         "durable_objects": {
@@ -104,6 +113,8 @@
         "head. No LAND_MODE_OVERRIDE: per-request mode headers are for benches only.",
         "PUSH_BUNDLES=on writes a large push's objects as bundles (one R2 object per batch, indexed by the repository authority). Turn it off before rolling back below the bundle reader.",
         "PACK_CACHE=on serves a clone's pack (full, partial, shallow, or a partial clone's checkout) from a stored copy (derived/v1/<repo>/packs/), stored by the first such clone or by a pack-build job it hands off to, and built for main's tip by a job a minute after a push (repositories of 5,000+ objects; PACK_BUILD_MIN_OBJECTS); off builds every pack from the bundles.",
+        "ACCOUNT_SEARCH=on keeps a search summary per repository in its owner's directory (search:<owner> instances of WorkspaceAuthority) and serves GET /api/v1/search, the search_repos MCP tool and the CLI's search --all; off writes none and the route answers 404, so the website asks each repository itself as before.",
+        "AUDIT_LOG=on keeps organizations' audit logs (audit:<org> instances of WorkspaceAuthority) and people's sign-in events; off writes neither and /orgs/:org/audit answers 404. Set it on this Worker and the front Worker together: sign-ins go through both.",
         "BLOB_WRITE_THROUGH=on writes each API commit's blobs to R2 after the commit's own I/O, so burst read-backs skip the commit shards; off leaves them to the shard drain. Off since 2026-10-28: 6 interleaved dev bursts gave land p95 1.7-2.1 s off vs 2.7-3.2 s on, with read p95 0.18-0.32 s off (target < 2 s).",
         "Check runs take minutes (container start, the check): one per invocation, up to",
         "the container limit (4) at once, apart from the derive and projection jobs above.",
@@ -131,7 +142,14 @@
         "Contact support (platform-support.ts) emails SUPPORT_EMAIL through Resend from EMAIL_FROM; without it the form answers 503.",
         "Site traffic (worker/platform-site-traffic.ts) reads the front Worker's yonedarepo_dev_site_events dataset (SITE_EVENTS_DATASET)",
         "through the Analytics Engine SQL API: CF_ACCOUNT_ID plus the optional secret ANALYTICS_READ_TOKEN (Account Analytics Read).",
+        "The same dataset's SITE_EVENTS binding takes platform requests by client kind (worker/platform-client-events.ts) while TRAFFIC_EVENTS is on.",
+        "It also takes sampled write origins (worker/platform-write-origin.ts) while REGION_SIGNALS is on; that switch stays off until the owner clears the privacy text.",
         "Without the token, traffic reports are unavailable and nothing else changes.",
+        "ADMIN_BILLING=on adds the operators' billing routes (platform-admin-billing.ts) and starts the managed Worker's nightly reconcile from this Worker's cron; set it on the managed Worker too.",
+        "LANDING_INSTRUMENTS=on: a change's page shows its Slop and Risk cards (repo-instruments.ts).",
+        "LAND_WHEN_CLEARED=on: what can clear a Landing queues a platform_land_check job, and a repository can turn on Land when cleared (repo-land-check.ts). Set it only once every Worker on the queue knows the job: deploy with it off first (docs/runbook.md).",
+        "ASYNC_STORE=on: a create answers without Artifacts and a platform_store queue job creates the store (repo-store-create.ts). Set it only once every Worker on the queue knows the job: deploy with it off first (docs/runbook.md).",
+        "DIRECT_IMPORT=on (with FAST_IMPORT, PACK_CACHE and PUSH_BUNDLES) also fetches a public GitHub repository from the Worker when it is imported, and lands main from that pack beside Artifacts' own fetch (docs/direct-import.md).",
         "Admin pages (/api/v1/admin, platform-admin.ts): ADMIN_ACCOUNTS lists the operator accounts (comma separated; empty: only OWNER_TOKEN/Access). The sign-up notice goes to ADMIN_NOTIFY_EMAIL (empty: EMAIL_CONTACT). Credit grants and balances call the managed Worker's /admin/accounts/<account>/credit over MANAGED with MANAGED_ADMIN_TOKEN (optional secret, the managed Worker's own value; unset: grants are refused). MANAGED binds the managed Worker, which binds this one as PLATFORM: a fresh environment deploys this Worker once without MANAGED first."
       ],
       "secrets": [
@@ -185,7 +203,15 @@
         "vars": {
           "ARTIFACTS_NAMESPACE": "{prefix}",
           "LAND_MODE": "batch",
+          "REPO_ERASE": "on",
+          "FAST_IMPORT": "on",
+          "DIRECT_IMPORT": "on",
           "BLOB_WRITE_THROUGH": "off",
+          "ACCOUNT_SEARCH": "on",
+          "AUDIT_LOG": "off",
+          "TRAFFIC_EVENTS": "on",
+          "TRAFFIC_REPORT": "on",
+          "REGION_SIGNALS": "off",
           "PUSH_BUNDLES": "on",
           "PACK_CACHE": "on",
           "WEB_ORIGIN": "{origin}",
@@ -199,6 +225,10 @@
           "CF_ACCOUNT_ID": "{account_id}",
           "SITE_EVENTS_DATASET": "yonedarepo_dev_site_events",
           "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
+          "ADMIN_BILLING": "on",
+          "ASYNC_STORE": "on",
+          "LANDING_INSTRUMENTS": "on",
+          "LAND_WHEN_CLEARED": "off",
           "ADMIN_NOTIFY_EMAIL": "",
           "SUPPORT_EMAIL": "support@yonedalabs.ai"
         },
@@ -391,6 +421,18 @@
             "class_name": "PlatformImportWorkflow"
           }
         ],
+        "pipelines": [
+          {
+            "binding": "CHANGELOG",
+            "stream": "4ff4b2c0c4ec4234934fa94498ab73c5"
+          }
+        ],
+        "analytics_engine_datasets": [
+          {
+            "binding": "SITE_EVENTS",
+            "dataset": "yonedarepo_dev_site_events"
+          }
+        ],
         "ratelimits": [
           {
             "name": "AUTH_LIMITER",
@@ -464,6 +506,13 @@
         "\"coming\"). Stripe's webhook endpoint is https://managed.dev.yonedarepo.com/stripe/webhook, events",
         "setup_intent.succeeded, payment_intent.succeeded, payment_intent.payment_failed. A saved card",
         "unlocks PROMO_CREDIT_USD once; a balance under $5 is topped up by $20 off-session.",
+        "ADMIN_BILLING=on (with the platform Worker's) adds the operators' billing routes, the nightly",
+        "reconcile and three webhook events: charge.refunded, charge.dispute.created, charge.dispute.closed.",
+        "Refunds use STRIPE_REFUND_KEY (optional secret: a restricted key, Refunds write) or else STRIPE_SECRET_KEY,",
+        "bounded by the vars REFUND_MAX_USD and REFUND_DAILY_USD (per refund,",
+        "and per UTC day across all accounts; unset: every refund is refused).",
+        "REVENUE is this Worker's own D1, never the platform's: each ledger pushes its changed days to it",
+        "with ADMIN_BILLING on (managed/ledger-rollup.ts); the platform reads /admin/billing/revenue.",
         "Deployed before the front Worker, which binds it as MANAGED."
       ],
       "secrets": [
@@ -472,6 +521,7 @@
       "optional_secrets": [
         "AI_GATEWAY_TOKEN",
         "MANAGED_ADMIN_TOKEN",
+        "STRIPE_REFUND_KEY",
         "STRIPE_SECRET_KEY",
         "STRIPE_WEBHOOK_SECRET"
       ],
@@ -481,6 +531,13 @@
         "name": "{prefix}-agents-managed",
         "main": "managed/index.ts",
         "compatibility_date": "2026-10-07",
+        "d1_databases": [
+          {
+            "binding": "REVENUE",
+            "database_name": "{prefix}-managed-revenue",
+            "migrations_dir": "managed/migrations"
+          }
+        ],
         "workers_dev": false,
         "preview_urls": false,
         "observability": {
@@ -496,7 +553,10 @@
           "PUBLIC_URL": "https://managed.dev.yonedarepo.com",
           "AI_GATEWAY_URL": "https://gateway.ai.cloudflare.com/v1/{account_id}/{prefix}-managed-agents",
           "AI_GATEWAY_PROVIDERS": "claude=anthropic,codex=openai,zai=custom-zai,mimo=custom-mimo",
-          "PROMO_CREDIT_USD": "100"
+          "ADMIN_BILLING": "on",
+          "PROMO_CREDIT_USD": "100",
+          "REFUND_MAX_USD": "500",
+          "REFUND_DAILY_USD": "1000"
         },
         "secrets_store_secrets": [
           {
@@ -627,7 +687,7 @@
         "and https://dev.yonedarepo.com/auth/google/callback. Deploy uploads them when the secrets file has them.",
         "/api/managed is proxied to the managed agents Worker (MANAGED service binding, deployed first).",
         "/install.sh, /install.ps1 and /downloads/* (worker/downloads.ts): the CLI installers and releases and the public Claude Code marketplace, from the DOWNLOADS bucket that cargo xtask downloads stages and uploads.",
-        "Site analytics (worker/site-events.ts): one cookieless SITE_EVENTS data point per public HTML page view and per sign-up,",
+        "Site analytics (worker/site-events.ts): one cookieless SITE_EVENTS data point per signed-out HTML request, browser ping (TRAFFIC_EVENTS) and sign-up,",
         "into the Analytics Engine dataset yonedarepo_dev_site_events (created on first write; infra plan/prune do not track it;",
         "underscores, not hyphens: the dataset is a table name in Analytics Engine SQL).",
         "No IP, cookie or visitor id; signed-in requests (session cookie), /api, /auth and assets are skipped.",
@@ -680,6 +740,10 @@
           "run_worker_first": true
         },
         "vars": {
+          "AUDIT_LOG": "off",
+          "TRAFFIC_EVENTS": "on",
+          "TRAFFIC_REPORT": "on",
+          "REGION_SIGNALS": "off",
           "PUBLIC_APP_ORIGIN": "{origin}",
           "WEB_ANALYTICS_TOKEN": "70b90cc7e849429fa25cc64897ebfd2b",
           "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com"
@@ -811,6 +875,33 @@
             ]
           }
         ]
+      }
+    },
+    {
+      "role": "bench2",
+      "file": "wrangler.dev-bench2.jsonc",
+      "notes": [
+        "Second dev bench client: the same code as bench, with no hook boxes and no domain, so a load",
+        "test can compare 1 client against 2 (tools/fanout-bench/driver.mjs, --client2). BENCH_KEY is",
+        "set once from stdin and has the same value as bench's."
+      ],
+      "secrets": [
+        "BENCH_KEY"
+      ],
+      "ephemeral": false,
+      "config": {
+        "name": "{prefix}-bench2",
+        "main": "../tools/fanout-bench/worker.js",
+        "compatibility_date": "2026-10-07",
+        "compatibility_flags": [
+          "global_fetch_strictly_public"
+        ],
+        "workers_dev": true,
+        "preview_urls": false,
+        "placement": {
+          "mode": "targeted",
+          "region": "aws:us-east-1"
+        }
       }
     }
   ],

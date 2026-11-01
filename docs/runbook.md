@@ -96,15 +96,15 @@ Wait until the application runs the newly uploaded digest, no rollout is active 
 
 Each environment is one spec in `infra/envs/` (`dev.json` = dev.yonedarepo.com, `prod.json` = yonedarepo.com, Workers `yonedarepo-<env>-<role>`) plus a lock of resource identities; each Worker's role and purpose are in its `notes`. The wrangler configs in `cloudflare/` are generated from the spec: change the spec, then `cargo xtask infra gen --env dev` (`--check` compares only; the golden tests in `cargo test -p xtask` fail on drift).
 
-- `cargo xtask deploy --env dev|prod [--dry-run] [--confirm] [--allow-active]` builds Wasm and the frontend, applies D1 migrations, deploys each Worker in cutover order with `BUILD_REVISION` = HEAD, uploads only missing secrets from the spec's secrets file and stops on the first `/health` mismatch. dev deploys only the tip of `dev`; prod only the tip of `main`, with `--confirm`, every dev Worker already at that commit, passing real-world kit evidence for it (below) and no busy container instance. `deploy` without `--env` refuses. The kit's `browser` item must pass whenever the evidence lists it (`BROWSER_REQUIRED` in `xtask/src/deploy_guard.rs` makes it mandatory once every kit run records it). A lock entry `pending` is a D1 database the spec declares but `infra up` has not created; configs generate with it and every deploy refuses it. The frontend is built with `VITE_YONEDA_API_ORIGIN` set to the env's platform API origin (its Custom Domain, else its workers.dev URL; `xtask/src/infra/api_origin.rs`), because Git, the CLI and MCP are served there and not by the front Worker; `--prebuilt` refuses a frontend built for another origin.
+- `cargo xtask deploy --env dev|prod [--dry-run] [--confirm] [--allow-active] [--ship-head <sha>]` builds Wasm and the frontend, applies D1 migrations, deploys each Worker in cutover order with `BUILD_REVISION` = HEAD, uploads only missing secrets from the spec's secrets file and stops on the first `/health` mismatch. dev deploys only the tip of `dev`; prod only the tip of `main`, with `--confirm`, every dev Worker already at that commit or one of the same tree, passing real-world kit evidence for that tree (below) and no busy container instance. On a runner, `--ship-head` replaces the dev Worker and evidence checks with the merged PR head's statuses ([docs/ship-pipeline.md](ship-pipeline.md)). `deploy` without `--env` refuses. The kit's `browser` item must pass whenever the evidence lists it (`BROWSER_REQUIRED` in `xtask/src/deploy_evidence.rs` makes it mandatory once every kit run records it). A lock entry `pending` is a D1 database the spec declares but `infra up` has not created; configs generate with it and every deploy refuses it. The frontend is built with `VITE_YONEDA_API_ORIGIN` set to the env's platform API origin (its Custom Domain, else its workers.dev URL; `xtask/src/infra/api_origin.rs`), because Git, the CLI and MCP are served there and not by the front Worker; `--prebuilt` refuses a frontend built for another origin.
 - `cargo xtask status|rollback --env X` shows live revisions and routes, or rolls every Worker back one deployment.
 - `cargo xtask infra plan --env X` compares live Cloudflare state with the spec (create / unchanged / drift / extra / unverified) using a read-only API token (`CLOUDFLARE_API_TOKEN` or `--token-file`). `infra up` creates missing D1/R2/queues, records their ids and regenerates the configs (when that changes tracked files it stops: commit them, then rerun), then deploys; right before each Worker's deploy it detaches that Worker's hosts (Custom Domains and zone routes) from any other Worker holding them, printing each move. `infra down --confirm [--purge]` tears down dev or an `ephemeral-<id>` stack and is refused for prod; `infra smoke` checks the frontend, revisions and owner APIs.
 - A spec's `retired` block names what the env used to run (exact names per kind, or one old `prefix`). `infra plan` lists live resources with those names as `orphan` rows; `infra prune --env X --confirm [--allow-active]` (`--dry-run` prints only) deletes exactly those rows: queue consumers, Workers (with their Durable Objects), container apps, workflows, the repositories of retired Artifacts namespaces (a namespace cannot be deleted), queues, D1 and R2 (a bucket must be empty). It refuses while any section is unreadable, while a retired name is bound by the dev or prod spec, and while a retired container app has busy instances. A prod deploy also checks the retired container apps for busy instances before its first Worker.
-- GitHub runs two test workflows and never deploys on its own. **Check** (`.github/workflows/ci.yml`) runs on every pull request and push to `main` (and by hand): one job with warm cargo (`Swatinem/rust-cache`) and pnpm caches, about ten minutes: `cargo xtask layers`, fmt, clippy, the unit tests of core, store, platform, CLI, refmodel and xtask (no ignored or integration tests), the SSH gateway's fmt, clippy and tests, `worker-build --release`, `pnpm check` (Workers tsc and biome), the frontend tsc, `pnpm test:frontend` and `pnpm test:runtime`. **Full suite** (`full.yml`) is run by hand before shipping to prod: the workerd suite in four shards plus their total, `pnpm test:platform`, `pnpm test:superfan`, the frontend build, and the runtime image when `cloudflare/containers` or `backend/crates/yoneda-runtime` changed since `main` (or when its `image` input is set). Together they are `cargo xtask check`. Changes only under `docs/`, to Markdown files or to `frontend/src/content/` start no Check run, and a newer push of the same branch or PR cancels the older run. Workflow-dispatch buttons appear once a workflow is on `main`, the default branch.
-- Deploys are local: dev and prod deploy from the owner's checkout (`cargo xtask deploy --env dev|prod`), and the real-world kit runs locally. `deploy-dev.yml` (from source at the tip of `dev`, then the smoke) and `deploy-prod.yml` (owner only, from `main`; it needs the kit evidence for main's tip as a `realworld-<sha>` artifact of the run named by its `evidence_run` input) are kept, manual and disabled on GitHub, for when development slows; the owner turns them on with `gh workflow enable deploy-dev.yml` / `deploy-prod.yml`. `cargo xtask deploy --prebuilt <dir>` and `cargo xtask live-check` remain, but no workflow uses them.
+- GitHub runs two test workflows, and the ship ([docs/ship-pipeline.md](ship-pipeline.md)). **Check** (`.github/workflows/ci.yml`) runs on every pull request and push to `main` (and by hand): one job with warm cargo (`Swatinem/rust-cache`) and pnpm caches, about ten minutes: `cargo xtask layers`, fmt, clippy, the unit tests of core, store, platform, CLI, refmodel and xtask (no ignored or integration tests), the SSH gateway's fmt, clippy and tests, `worker-build --release`, `pnpm check` (Workers tsc and biome), the frontend tsc, `pnpm test:frontend` and `pnpm test:runtime`. **Full suite** (`full.yml`) runs in the ship, or by hand: the workerd suite in four shards plus their total, `pnpm test:platform`, `pnpm test:superfan`, the frontend build, and the runtime image when `cloudflare/containers` or `backend/crates/yoneda-runtime` changed since `main` (or when its `image` input is set). Together they are `cargo xtask check`. Changes only under `docs/`, to Markdown files or to `frontend/src/content/` start no Check run, and a newer push of the same branch or PR cancels the older run. A ship PR runs both through `ship.yml` instead. Workflow-dispatch buttons appear once a workflow is on `main`, the default branch.
+- Dev deploys from the owner's checkout (`cargo xtask deploy --env dev`), and the real-world kit runs there. Prod deploys from GitHub: the owner says "ship", the kit passes locally, `cargo xtask live-tests` marks the commit, the PR from `dev` to `main` is opened, `ship.yml` runs on it and merging it runs `deploy-prod.yml` ([docs/ship-pipeline.md](ship-pipeline.md)). `cargo xtask deploy --env prod --confirm` from the owner's checkout still works as before. `deploy-dev.yml` (from source at the tip of `dev`, then the smoke) stays manual and disabled on GitHub for when development slows (`gh workflow enable deploy-dev.yml`). `cargo xtask deploy --prebuilt <dir>` and `cargo xtask live-check` remain, but no workflow uses them.
 - Dev fixes deploy from the owner's Mac: `cargo xtask deploy --env dev [--dry-run] [--allow-active]` (no `--prebuilt`). It reads `CLOUDFLARE_API_TOKEN`, or else `~/.config/yonedarepo/deploy-dev.env` (mode 0600; never printed), builds Wasm and the frontend locally, and reuses the image the container apps run when its `--inputs-` record matches HEAD's inputs (no image build, no rollout). Otherwise it builds the image with `docker buildx --platform linux/amd64` (slow on arm64: the Rust build is emulated), pushes and records it, and stops before the rollout while any container instance is busy unless `--allow-active`. Then migrations, deploys, `/health` checks and the smoke, with a timing table. `cargo xtask runtime-image record --env dev --built-from <commit>` records the inputs of an image pushed before records existed (take the commit from the CI run that pushed it).
 
-Workflow deploy tokens live in the GitHub Environments `dev` (deploy-dev) and `production` (deploy-prod), one token each, never shared: account Workers Scripts Write, D1 Write, Workers R2 Storage Write, Queues Write, **Secrets Store Write** (deploying a Worker with `secrets_store_secrets` bindings fails with code 10021 on Read alone), Artifacts Write, Workers Containers Write, Account Settings Read; zone Workers Routes Write, Zone Read, DNS Write. `infra plan` needs only the Read variants plus Workers Containers Read.
+Workflow deploy tokens live in the `YONEDA_ENV_FILE` secret of the GitHub Environments `dev` (deploy-dev) and `production` (deploy-prod), one token each, never shared: account Workers Scripts Write, D1 Write, Workers R2 Storage Write, Queues Write, **Secrets Store Write** (deploying a Worker with `secrets_store_secrets` bindings fails with code 10021 on Read alone), Artifacts Write, Workers Containers Write, Account Settings Read; zone Workers Routes Write, Zone Read, DNS Write. `infra plan` needs only the Read variants plus Workers Containers Read.
 
 Each env's secrets file (`~/.config/yonedarepo/staging.env` for dev, the name kept from before the rename; `prod.env` for prod; mode 0600) holds the Worker secrets its spec lists, such as `OWNER_TOKEN`, `VAULT_KEY` (64 hex), and superfan's `CF_ANALYTICS_TOKEN` (read-only: Account Analytics, Workers Scripts, Queues, Containers; superfan looks up the platform's queue, Durable Object and container ids by name with it) and `SUPERFAN_READ_TOKEN`. `deploy` uploads only the secrets a Worker does not have yet.
 
@@ -134,7 +134,7 @@ The CLI items need `cargo build -p yoneda-cli --release` (`--cli-bin <dir>` name
 | Item | What must hold |
 |---|---|
 | `0` | `/health` revisions of the front and platform Workers (recorded with the evidence) |
-| `browser` | Headless system Chrome signs the kit account in through the login form, creates a repository with "New repository", opens Code, History (creates a branch under "Branches and tags" and deletes it), Changes (the empty list), Settings (Landing rules, Connect) and account Settings; then the second account commits on a branch, the kit account opens a change for it by API, approves and lands it on the Change page, and the page and the API both read it back `landed`. Needs Google Chrome; screenshots in `.local/staging/browser-<ts>/` |
+| `browser` | Headless system Chrome signs the kit account in through the login form, creates a repository with "New repository", opens Code, History (creates a branch under "Branches and tags" and deletes it), Landings (the empty list), Settings (Landing rules, Connect) and account Settings; then the second account commits on a branch, the kit account opens a change for it by API, approves and lands it on the Landing page, and the page and the API both read it back `landed`. Needs Google Chrome; screenshots in `.local/staging/browser-<ts>/` |
 | `6` | `git clone` of protected `main` matches the API tree byte for byte |
 | `7` | A check run in a container passes, and no container is left afterwards |
 | `8`, `9` | 100- and 1000-writer bursts through the bench Worker: every land succeeds and reads back |
@@ -162,18 +162,40 @@ A full run (`node tools/staging-realworld.mjs`) runs every item except `model`, 
 - `--browser [--headed]`, `--model-check`, `--webhooks --receiver <origin>`, `--members`, `--forks` (item 22), `--reads-sessions`, `--visibility` (item 31), `--ssh [--ssh-host <host>] [--ssh-port 22]` (item 26, skipped while the SSH front door is off): one gate with item 0.
 - `--git-semantics [--ssh]` (items 0, 12, 13, 18, 21, 23, 27, 17, and 26 with `--ssh`), `--agent-hooks` (0, 12, 28, 17) and `--agents N [--agents-wave2 2] [--agent-model <provider/model>] [--agent-timeout 600] [--agent-budget 2]` (0, 12, 29, 17; needs Docker and the host opencode's stored credential for the model's provider) are the agent e2e gates; evidence `git-semantics-gate-*`, `agent-hooks-gate-*`, `agents-gate-*`. Locally, without a model: `cargo build -p yoneda-cli && node tests/agents/e2e.mjs [--only 27,28] [--fake-agents 4]` runs 27 and 28 (and 29 with scripted agents standing in for opencode, in the same sandbox containers) against `wrangler dev`.
 - `--agent-tools [--agent-tools-repo oss-commander] [--headed]` (item 30.6, dev only, the owner's account from `dev-owner.env` as for `--realuser`, which also runs it after 30.4): on an open-source test repository with Rust, TypeScript or JavaScript functions, through the repository MCP and REST, an authored contract read back (list, show, `yoneda context` in a clone changing the file) and stale after `symbol_edit` on a scratch branch; a pin kept through its branch's deletion and a vacuum, then released; a bisect over six scratch commits naming the one that breaks a tiny command check added to the policy for the run (restored after; check minutes recorded); then Agent tools → Contracts, Kept commits and Find a breaking commit in Chrome show those rows, with Agent tools the one highlighted sidebar entry. Scratch branches, the pin, the runner and the tokens are removed; the contract record stays.
+- `--memory-test [--memory-runs 6] [--memory-parallel 1] [--yes]` (dev only, refuses `--prod`; the owner's account from `dev-owner.env`; needs Docker, the host opencode's credential and `cargo build -p yoneda-cli --release`): stage 2 of [landings-plan.md](landings-plan.md), real agents in the sandbox, plain clone against memory and context, one fresh fork per run. It prints the estimate and starts only with `--yes`. Run it from a checkout nobody is working in: a new worktree or commit in it reads as host drift. Forks and tokens are removed on any failure and on Ctrl-C; a fork left by a killed process goes when the next run starts. Evidence `memory-test-<ts>.json` and `memory-test-<ts>/`; the run fills the plan's results section, to commit. Dry run without a model: `node tests/agents/e2e.mjs --only none --memory-stub 6`.
+- `--memory-page [--headed]` (0, 12, 32, 17, dev only, no model): a session record, its transcript and context delivery behind a change, through the API and in Chrome; evidence `memory-page-gate-*`.
 - `--api <origin>` is the platform API host for the CLI items (default `https://api.dev.yonedarepo.com`); `--origin`, `--platform` and `--client` name the front, platform and bench Workers.
 - `--cleanup-repos <prefix>` deletes the kit account's leftover repositories with that name prefix and exits. Every item deletes the repositories it creates, pass or fail (the fanout bench too), so leftovers come only from runs killed mid-item or from runs before this change (2026-10-27): `kit-clone`, `kit-check`, `kit-burst`, `fanout`; and `kit-ssh` (item 26, before 2026-10-28).
 
-Evidence is `realworld-<ms>.json`; a single gate writes its own name (`browser-gate-*`, `model-check-*`, `webhook-gate-*`, `members-gate-*`, `reads-gate-*`). A prod deploy reads the newest `realworld*.json` and refuses unless its item 0 recorded both Workers at the commit being deployed and every item passed.
+Evidence is `realworld-<ms>.json`; a single gate writes its own name (`browser-gate-*`, `model-check-*`, `webhook-gate-*`, `members-gate-*`, `reads-gate-*`). Evidence records the tree of the commit item 0 saw live. After a full pass, `cargo xtask live-tests` sets the `live-tests` commit status a ship needs. A local prod deploy reads the newest `realworld*.json` and refuses unless its item 0 recorded both Workers at the commit being deployed or one of the same tree, its tree (when recorded) is that tree, and every item passed.
 
-**Prod smoke.** After a prod deploy, run the live revisions, the browser gate and the CLI items against production (they create and then delete their own repositories):
+**Prod smoke.** After a prod deploy (`deploy-prod.yml` has run `cargo xtask infra smoke --env prod` on a merged ship PR; this one stays on the Mac), run the live revisions, the browser gate and the CLI items against production (they create and then delete their own repositories):
 
 ```sh
 node tools/staging-realworld.mjs --prod --only 0,browser,12,13,14,15,16,17
 ```
 
 `--prod` switches the front, API and platform hosts to `yonedarepo.com`, `api.yonedarepo.com` and `yonedarepo-prod-platform`, and writes `prod-smoke-<ms>.json`, never `realworld*` (which the prod guard reads as dev evidence). The kit account and its second account are created on production on first use. Always pass `--only`: the bursts and gates are for dev.
+
+## Importing history behind the head
+
+`FAST_IMPORT=on` (unset or anything else: an import records all of its history, then lands main) lands main at the remote's head from the import's own request, in its 30 s after the answer: it asks the remote for its default branch beside the request's writes, asks Artifacts for the remote, looks every 0.25 s until Artifacts has it, reads the log (1 call per 1,000 commits) and lands (`startImport`). The Workflow repeats all of that harmlessly, so what the request does not reach, it does; then it records the first-parent history newest first, a Workflow step per 250 commits (`cloudflare/worker/repo-import-fill.ts`, `repo_store/history_fill.rs`). Budget and bench: `docs/load-testing.md`, `tools/import-bench.mjs`. No schema change: the state is main's imported head and where its `ref_chain` stops, so turning the switch off mid-import leaves the running fill safe.
+
+`DIRECT_IMPORT=on` (with `FAST_IMPORT`, `PACK_CACHE` and `PUSH_BUNDLES` on; unset or anything else: Artifacts' fetch alone) also fetches a public `https://github.com/<owner>/<repo>` from the Worker, beside Artifacts' own fetch: main lands from that pack, usually first, and the same pack answers `git clone` and fills history (`cloudflare/worker/repo-import-direct.ts`). Any other remote, a pack over 24 MiB or 40,000 objects, and any failure leave the import to Artifacts as before, and Artifacts still ends up holding the whole history. No schema change: turning it off affects only new imports, and a repository imported either way reads the same. Numbers and limits: `docs/direct-import.md`.
+
+While history fills:
+
+| What | Answer |
+|---|---|
+| Files, tree, blob, search of code, status | Work, at the head |
+| `repo_status`, log, path history, blame, record search, agent context | Carry `history_import {recorded, total}`: what they list is the newest part of the history. `yoneda log` says so on stderr |
+| A commit not recorded yet | 404 saying history is still importing |
+| Clone through `git-remote-yoneda` | Works: the object store holds all of it, and main is projected right after landing |
+| `git clone` and `git fetch` over HTTPS or SSH, `--depth` too | Work, during the fill and after it. With `DIRECT_IMPORT` a clone of the head, at any depth or filter, is served from the pack the import stored, before Artifacts has finished; otherwise the pack streams from the object store (`cloudflare/worker/repo-git-mirror.ts`) when every want is a branch or tag it holds and nothing is withheld. A `--filter` clone receives every file. If the object store cannot answer within 20 s: 409 or an `ERR` line, `IMPORT_IN_PROGRESS`, saying how long it waited and to try again, while filling; after that as before, `held only as imported history`. No fetch is ever built from the recorded part: `repo_git_walk` refuses while filling, whatever the switch says |
+| A `yoneda::` clone | Whole: it reads commits it has no record of from the object store, and fails rather than cut history short |
+| Landings, pushes, branches, tags, releases, forks, bisects, break-glass, purges | Refused, 409 `IMPORT_IN_PROGRESS`, naming how far it has come. A commit may still record from the published head; its landing is refused |
+
+A fill never leaves a repository refusing work. A commit of more than 10,000 changed files, or a wave that still fails after 5 retries (about 2.5 minutes), ends the fill where it reached: the repository holds what a capped import holds (`repo_record_imported_end`), takes changes at once, and says for good that only the newest N of M commits came in (`history_stopped` in `repo_status` and every read of history; the note is a row in `repairs`). A Workflow that died without doing that is ended by the next `GET /repos/:id/import`. A head of more than 10,000 changed files lands alone, with no changed paths recorded for it. A Workflow that fails before main lands fails the import, as with the switch off.
 
 ## Repository database size
 
@@ -186,6 +208,168 @@ A repository's Durable Object refuses writes at about 10.7 GB of `databaseSize` 
 
 Rollout: D1 migration 0010 before the Worker, as the deploy does. Deleting data lowers the size at once, but delete in small batches: one 950 MB delete reset an object for minutes.
 
+## Land when cleared
+
+`LAND_WHEN_CLEARED=on` on the platform Worker (`infra/envs/<env>.json`; unset or `off`: no job is queued, and a repository can't turn the switch on) has what can clear a Landing queue a `platform_land_check` job for CTC (docs/landings-plan.md).
+
+- **Rollout.** A queue job of a kind a Worker doesn't know is acked and dropped (`platformJob`), so deploy this code with the variable `off`, let the rollout finish, then deploy again with it `on`.
+- **Rolling back.** Set it `off` first. A job that reaches a binary without the handler is dropped, and its Landing waits for its next trigger: nothing is lost, and nothing lands late by itself.
+- **A Landing that didn't land.** Its page gives the reason, and `changes.clearance` keeps each decision with the head it judged. The next check, review, resolved comment or push tries again.
+
+## Trimming commit data
+
+Stage A of `docs/global-scale-plan.md`, item 3. All four switches are off until set to `on` in `infra/envs/<env>.json`, on the platform Worker. They affect new writes only: nothing already stored is rewritten, so existing duplicates, full chains and shard copies stay. Savings are unmeasured until the load tests run.
+
+| Switch | With it on | Off again |
+|---|---|---|
+| `CHECK_EVIDENCE_ONCE` | A pass or fail keeps its evidence only in `checks`; the run reads it from there. An errored run keeps its own | Safe: readers take either form |
+| `REF_CHAIN_SHARED` | A new branch's `ref_chain` stores only the commits above main's chain, not up to 5,000 rows. Its path history reads on into main's chain, so it can reach further back than the 5,000 commits a branch read before | Safe: readers take either form, and a branch rebuilds in full when it next leaves its rows |
+| `SHARD_FORGET_RECORDED` | A projector drops a shard's copy of a batch-landed commit once the authority holds it | Safe: copies just stop being dropped |
+| `COMPACTION_SWEEP` | The every-minute cron sends a `platform_compact` job for each repository in that minute's id range, so every repository's object is woken once a day | Safe: only a landing starts compaction again |
+
+**Turn on `CHECK_EVIDENCE_ONCE` and `REF_CHAIN_SHARED` only once a build with their readers is the oldest you would roll back to.** An older build reads a stored-once run's result as null, so `/check-runs/:id/log` answers 404, and reads a shared branch's path history short, with no error. Going forward again restores both, as nothing was lost. The other two switches have no such limit.
+
+**A stalled log raises an alarm.** Unprojected changesets and undelivered webhook events hold compaction with no limit. `repo_compact_plan` and `GET /repos/:id/compaction` answer `held` with what holds a due segment, and `stalled` once it is 8 segments or a day overdue. `compaction.stalled` is logged when a job finds that, and Superfan opens a `compaction_stalls` finding on `derived_jobs` from one such line. A job has to run to see it: after a landing, or daily with `COMPACTION_SWEEP` on. `compaction.sweep_full` means a minute's range passed 1,000 repositories and some went unvisited.
+
+## Creating a repository's store
+
+Artifacts is the projected mirror: a new repository's commits, pushes, reads and clones go through its authority, R2 and the outboxes. With `ASYNC_STORE=on` on the platform Worker (`infra/envs/<env>.json`; unset or `off`: the create waits for Artifacts, up to 28 s over three attempts), a create answers without Artifacts, and a `platform_store` queue job creates the store.
+
+- **Rollout.** A queue job of a kind a Worker doesn't know is acked and dropped (`platformJob`), so the order is: deploy this code with the variable `off` (nothing sends the job), let the rollout finish, then deploy again with it `on`. To roll back, set it `off` first and let the queue drain.
+- **Clones.** `git clone` over HTTPS, SSH and `yoneda clone` never need the store: a store that isn't there reads as empty, and the store of record has the objects. `yoneda clone --offline` asks `POST /repos/:id/clone`, which waits up to 20 s for the store and then answers a retryable 503; a commit too large to stage waits the same. A fork of a repository without a store gets an empty store of its own, by its own job.
+- **Failures.** The job comes back as a fresh delayed message (5 s doubling to 15 minutes), so it never reaches the dead letters. After 200 attempts, about two days, it logs `store.create_failed` at error level and stops. The repository keeps working without a mirror; `repo_status` shows its projection waiting. A projection that finds no store ends, and the job asks for it again.
+- **Measuring.** `node tools/staging/create-bench.mjs --runs 3 --creates 20` (the kit account on dev) prints min, median and max of the create and of each server-side phase. Budget of a seeded create with the job: median under 2 s, slowest under 4 s, and no `create.store` phase (before it: median 3.5 s, with stalls the bound turned into 503s).
+
+## Erasing deleted repositories
+
+Deleting a repository leaves a tombstone and purges its objects. With `REPO_ERASE=on` on the platform Worker (unset: nothing changes), the purge also deletes `derived/v1/<repo>/` (search indexes, packs, symbols and facts hold file content), and its last act queues `platform_erase`, which empties the rest; `infra/envs/<env>.json` carries the variable. Nothing assumes the purge follows the deletion closely.
+
+- **Order.** It waits while `hook_outbox` holds payloads for an active hook, sending their jobs again every 5 minutes, with no time limit: a hook that keeps failing is switched off after 50 failures (about 11 hours), and is then given up on. Then it clears all 64 commit shards (`deleteAll`, then a seal: a shard woken later answers GONE and recreates nothing) and the combiners, purges again, and deletes the authority's rows in transactions of at most 2,000 rows or 8 MB. It never starts while a fork is listed.
+- **What stays.** The repository object, with its empty tables, its migration record and a `repo_settings` row holding only `deleted_at`, so it keeps answering GONE. `object_store='erased'` marks it. `repo.erase` log lines carry ids and counts.
+- **Recovery.** Every part repeats safely. A job lost to the dead-letter queue leaves a tombstone partly erased and still answering GONE; run the backfill.
+- **Backfill.** `cargo xtask admin erase-backfill --env dev --dry-run` lists tombstones and their sizes without changing anything; `--confirm` erases them, one at a time, and needs `REPO_ERASE=on`. It walks Cloudflare's object list (ids only), so it wakes every repository object, and needs `OWNER_TOKEN` in the secrets file and a token that can read Durable Object namespaces in `CLOUDFLARE_API_TOKEN` or `--token-file`. `--delay-ms` (default 1000) spaces objects, `--limit` stops early and `--after <cursor>`, printed per page, resumes. A tombstone whose store does not lead back to its object id is reported as `unnamed` and left alone.
+
+
+## Search across repositories
+
+`ACCOUNT_SEARCH=on` on the platform Worker serves `GET /api/v1/search`, the `search_repos` MCP tool and `yoneda search --all`, and keeps a summary per repository in its owner's directory (`search:<owner>` instances of `WorkspaceAuthority`, one `workspace_records` row per repository). Off, nothing is written and the route answers 404; the website then asks each repository itself, as it always has. `infra/envs/<env>.json` carries the variable. Budget and known costs: `docs/global-scale-plan.md`, item 5.
+
+- **Rows are rebuildable.** A missing row only means the repository is always asked. Nothing is read from a row but a yes or no.
+- **Backfill.** Derive writes a summary after a landing, so older repositories have none until their next one. `cargo xtask admin search-backfill --env dev --owner <account> --dry-run` counts an owner's repositories; `--confirm` queues a summary job for each, a page of 100 at a time. It needs `OWNER_TOKEN` in the secrets file and takes one owner, so a large account can be done on its own. `--delay-ms` (default 5000) spaces pages. Repeating it is safe.
+- **Turning it off and on.** With the switch off, deletes, quarantines and visibility changes don't reach the directory. After turning it back on, run the backfill for any owner who had rows.
+
+## Undo window
+
+`REPO_UNDO_DAYS` on the platform Worker sets how long a deleted repository can be restored (30 is the plan; dev can set a fraction of a day). Unset, empty or 0 means an immediate purge, as before. A value that is not a number means 30, never zero. It is off by default in `infra/envs/<env>.json`; a non-zero value there is the whole switch.
+
+- **What changes.** The tombstone, revoked tokens, freed name, unlisting and `repo.deleted` happen at delete. The purge, the erase, managed review cleanup and a new `repo.purged` webhook happen at `deleted_at` plus the window. `repo.deleted` then carries `purge_at`.
+- **How it runs.** The delete writes `deleted_repo:<id>` in the owner's authority and a row in D1's `platform_deleted_repos`. The every-minute cron sends a normal `platform_purge` (`due-<repo>`) for up to 50 due rows, and sends again after 6 hours while a row remains: a job lost, or a legal hold. No future purge ever sits in a queue, and `SourceRepository` has no alarm. `repo_purge_target` refuses with `NOT_DUE` until the window has passed, so a stray job acknowledges and lists the repository instead.
+- **Restore.** `POST /repos/<id>/restore {name?}`, by whoever may delete it. A purge that started wins, for good; `policy_digest` marks that tombstone. Past its due time a repository nothing purged yet (a legal hold, a sweep not there yet) still restores. Tokens stay revoked. A managed agents connection needs its owner to save the agent once, which replaces the token.
+- **Deploy order.** D1 migration `0011`, applied by the deploy. Then the managed Worker (it reads `purge_at` and `repo.purged`), then the platform with the variable still unset, then set the variable. A managed Worker older than the platform clears reviews at delete, so a restored repository would lose them. Setting the variable to unset is the rollback: new deletions purge at once, and repositories already listed keep their due time and can still be restored, because the sweep always runs.
+- **Older code.** A build without the window leaves listed repositories alone: nothing sends their purge. A job already sent to the queue is the one exception, and the sweep sends only what is due.
+- **An org deleted during the window.** Nobody can restore its repositories any more, as only its owners could, and its name is retired for good. They purge on schedule. The org's delete page warns; a hold refuses the delete.
+- **Operator.** `POST /admin/repos/<id>/purge-now` purges one deleted repository at once. It is audited and refused under a hold, and there is no public way to skip the window: the window exists to survive a stolen token. The kit calls it after every deletion when the window is on and `OWNER_TOKEN` is in `staging.env`. `POST /admin/repos/<id>/purge-orphan {confirm: <name>}` deletes and purges a live repository whose org is gone, which nobody else can reach. It is audited as `repo.purge_orphan`, refused under a hold even with `LEGAL_HOLD` off, and refused for any owner that is not a deleted org, a provisioned workspace with no record included. `POST /admin/deleted-repos/rebuild {owner}` rebuilds one owner's D1 rows from its records; `cargo xtask admin erase-backfill --confirm` finds tombstones with no row, and each goes back on the schedule.
+## Operators' billing
+
+The Billing section of an admin user page, and refunds, disputes and the nightly reconcile behind it. Off by default: without `ADMIN_BILLING=on` the routes answer 404 and the new Stripe events are ignored.
+
+To turn it on:
+
+1. Create a Stripe restricted key with **Refunds: Write**, and put it in the env's secrets file as `STRIPE_REFUND_KEY`. Without it the refund route answers `NOT_CONFIGURED`. `STRIPE_SECRET_KEY` never refunds.
+2. Add `charge.refunded`, `charge.dispute.created` and `charge.dispute.closed` to the Stripe webhook endpoint (`https://managed.<env host>/stripe/webhook`).
+3. In `infra/envs/<env>.json`, set `REFUND_MAX_USD` (per refund) and `REFUND_DAILY_USD` (per UTC day, across all accounts) on the managed Worker. Unset, every refund is refused.
+4. Set `ADMIN_BILLING` to `on` for the managed and platform Workers, run `cargo xtask infra gen --env <env>`, and deploy.
+
+How it behaves:
+
+- **Credit is spent oldest first**, so promotional credit goes before a later top-up. A top-up's unspent credit is what the balance still holds of it. Refunding more needs the spent-credit override; leaving the balance negative needs its own flag.
+- **A refund cannot be split by a crash.** The ledger records it and takes the credit first, then Stripe is asked under the idempotency key `refund:<id>`. An open refund is retried every 5 minutes by the ledger's alarm and on `charge.refunded`. Each attempt looks the refund up at Stripe first, because Stripe replays a saved 500 for a key and may prune a key after 24 hours. If Stripe refuses or fails it, the credit comes back.
+- **A refund made in Stripe's dashboard** is what Stripe's running total shows beyond the refunds here. Its credit is taken even past zero, since the money has left.
+- **A dispute** freezes what is left of its top-up's credit and stops the card being charged until it closes. If it is lost the frozen credit stays gone. The customer's own auto top-up switch is not touched.
+- **Pausing billing** stops the card being charged. Credit already held stays usable, and agent runs go on.
+- **Nightly reconcile**: the platform cron starts it at 03:17 UTC. Stripe names the accounts with a charge or refund in the last two days, and each is compared with its ledger. Read-only: differences are logged as `billing.reconcile.mismatch`, with a `problem` of `amount`, `refund_total`, `dispute_missing`, `charge_without_top_up` or `top_up_without_charge`. An account with no activity in those two days is not checked.
+- **Audit**: each action writes `admin_audit` as `billing.<action>` before the money moves and updates it after. A row still reading `pending` is an action cut off midway; `unknown` means the managed Worker never answered, so check the account's refunds.
+
+A refund Stripe reports as succeeded and later fails is not reversed automatically: nothing here listens for it. The reconcile logs it as `refund_total`.
+
+### Revenue
+
+The Overview shows platform-wide money with `ADMIN_BILLING` on. The platform asks the managed Worker (`/admin/billing/revenue`, with `MANAGED_ADMIN_TOKEN`), which reads its own D1, `<prefix>-managed-revenue`, and wakes no ledger. Every figure is the ledger's, in micro-USD, by UTC day.
+
+To turn it on, after the steps above:
+
+1. Run `cargo xtask infra up --env <env>`. It creates `<prefix>-managed-revenue`, whose lock entry says `pending` until then, and **every deploy of that env refuses while it does**. Commit the lock.
+2. Deploy. The database's migrations (`cloudflare/managed/migrations`) run first, then the managed Worker, which binds it as `REVENUE`.
+3. Run `cargo xtask admin revenue-rebuild --env <env> --confirm` once. Ledgers from before the rollup hold days it has never seen, and only a rebuild sends them. It wakes every account in `platform_accounts` and every repository owner, so it isn't for routine use.
+
+How it stays right:
+
+- **Outbox.** Triggers mark a day in the transaction that changes it, so no write path can skip the rollup. The ledger's alarm pushes marked days to D1 about 5 seconds later, outside any transaction, as whole rows. A D1 outage delays the figures, keeps the marks, retries each minute, and never touches a charge.
+- **Retries.** `version` rises with each push, so a late retry can't overwrite newer numbers.
+- **Checks.** The nightly reconcile holds the ledger to Stripe and the rollup to the ledger (`rollup_total`), for accounts with Stripe activity in the last two days.
+
+What the figures mean:
+
+- **Net revenue** is gross top-ups less refunds and disputes lost: money kept, on a cash basis. It includes credit sold and not yet used, and it is before Stripe's fees, which aren't in the ledger. A lost dispute counts the disputed money, not Stripe's dispute fee.
+- **Refunds** count on the day Stripe confirmed them. A refund still open is under **Refunds awaiting Stripe**.
+- **Credit outstanding** is each account's position now, not the range's. Sold credit is what the balance holds of top-ups under the oldest-first rule; the rest of a positive balance was given away.
+- **Model cost** is the provider's reported usage at list rates, recorded per call. It isn't an invoice, so a discount or a provider's rounding isn't in it. **Margin** exists only for those calls.
+- **Not recorded**: container cost, the cost of calls with an unknown outcome, and Stripe fees. Container time is charged at a flat rate with no cost beside it.
+- **Usage includes free credit.** Model margin counts calls paid with promotional credit, which brought in no money. The free credit granted in the range is shown beside it.
+
+
+## Internal accounts
+
+Our own and test accounts stay out of every figure once `TRAFFIC_REPORT` is on.
+
+1. Run `cargo xtask admin internal --env <env> <account>...`. Add `--off` to undo it. Each change is audited.
+2. It reaches every isolate within ten minutes. Points already written can't be taken back.
+3. Repository tokens and signed-out readers name no account, so tools using them send the own-traffic mark (`tools/own-traffic.mjs`).
+
+## Basin analytics
+
+After a landing, the derive job streams one change record per landed version, merged commit and refused ticket to a Basin Pipeline (`CHANGELOG`, `cloudflare/worker/repo-changelog.ts`). The records land in an Iceberg table that Basin SQL queries. No binding means no stream, no cursor and no hold on compaction. **Analytics never stops a repository:** it is off the commit path, and it gives up history before it keeps a repository waiting.
+
+Setup, once per environment. xtask does not know this resource kind, so `tools/platform-analytics.mjs` makes it. Dev first; bind prod after a soak.
+
+1. Check the names and credentials, with no network: `node tools/platform-analytics.mjs setup --env dev --dry-run`. This proves names only, not access.
+2. Create what is missing: `node tools/platform-analytics.mjs setup --env dev`. It reads `BASIN_TOKEN` (an R2 "Admin Read & Write" account API token) from `~/.config/yonedarepo/basin.env`, uses `CLOUDFLARE_API_TOKEN` or the wrangler login for the Cloudflare API, prints no credential, and is safe to run again. That token needs **Pipelines Write**, **Workers R2 Data Catalog Write** and **Workers R2 Storage Write**; it reads first, so a token without the first two stops before anything exists, and names what is missing. It answers the `binding` to add.
+3. Add that binding to the platform Worker's `config` in `infra/envs/<env>.json`, then run `cargo xtask infra gen` and deploy. Dev has it; prod does not yet.
+
+   ```jsonc
+   // The stream's id, not the pipeline's.
+   "pipelines": [{ "binding": "CHANGELOG", "stream": "<stream id from setup>" }]
+   ```
+
+4. Land something twice, wait out the first flush (3 to 7 minutes), then run `node tools/platform-analytics.mjs status --env dev`.
+
+| Resource | dev | prod |
+|---|---|---|
+| Bucket (with Basin Catalog) | `yonedarepo-dev-change-log` | `yonedarepo-prod-change-log` |
+| Stream | `yonedarepo_dev_changes_v1` | `yonedarepo_prod_changes_v1` |
+| Sink | `yonedarepo_dev_changes_sink_v1` | `yonedarepo_prod_changes_sink_v1` |
+| Pipeline | `yonedarepo_dev_changes_pipeline_v1` | `yonedarepo_prod_changes_pipeline_v1` |
+| Table | `platform.changes_v1` | `platform.changes_v1` |
+
+Limits: 20 each of streams, sinks and pipelines per account, 1 GB/s per stream, 5 MB per request (the job splits its sends at 4 MB). Streams, sinks and pipelines cannot be changed once created. Pricing was not found.
+
+The stream's `credential_id` and `credential_kind` columns are reserved and empty. A record is built from the log entry and the repository's rows, and neither holds the credential, so filling them is a repository change in two waves (`docs/analytics-plan.md`, Phase 3). They exist now because the stream cannot take a column later.
+
+**Gaps are expected and counted.** Queries on this table give a floor, not a total. `GET /repos/:id/changelog` shows the cursor: `version`, `sent`, `failures`, `last_error`, `stalled_since`, `gaps` and `last_gap`. Each gap also logs `changelog.gap` with its range and reason.
+
+| When | What happens | Gap |
+|---|---|---|
+| A repository has no cursor (first job after binding, new repository, lost cursor) | That job records the head and sends nothing; nothing is held before it | Everything up to that head, including a new repository's first versions |
+| Sends fail | The range goes back and later jobs re-send it, as long as the limits below allow | None |
+| A segment is due and the stream is over 16,384 versions behind (`MAX_HOLD_VERSIONS`, `compaction.rs`) | The authority moves it anyway and answers `hold_released`; the cursor jumps to the head (`size`) | Cursor to head |
+| Sends have failed for 7 days (`MAX_STALL_MS`, `repo-changelog.ts`) | The hold stops at once; the next job jumps to the head (`age`) | Cursor to head |
+
+Refused landings are not skipped by a jump: they stay in the queue table, and compaction does not touch it. A cursor left below the floor still reads, through the archive, one 100-version page at a time.
+
+**A record shows its rows as they were when it was read, not when it landed.** The log entry never changes, and compaction moves only log rows, so a version read from a segment gives the same record. A check, repair or review class recorded after the first read is missing from what was sent. A later read (a failed send given back, a rewound cursor) shows it under the same `event_key`. The queries group by key and take `MAX` per column, so a count that fell afterwards, such as a re-run clearing a failure, keeps its old value. Only an erase deletes these rows, and what the stream already sent stays in the table: identifiers, counts and times, never contents.
+
+**Schema changes need a new stream.** Basin accepts an event that does not match the stream and drops it later without an error, so `records_and_the_stream_schema_agree` fails when `change_records.rs` and `cloudflare/basin/change-log.schema.json` disagree. To change a field, add a `_v2` stream, sink and pipeline, and bind the new stream. The `user error` metrics in GraphQL show dropped events.
+
 ## Recovery
 
 Queues are at least once: redelivery is expected, so consumers must be idempotent (leases, epochs, idempotency keys). The dead-letter queue is diagnostic transport evidence; the repository Durable Object's records remain authoritative. Check the repository's current state before retrying anything by hand.
@@ -194,7 +378,7 @@ Each `CheckContainer` runs one check and is destroyed afterwards. `yoneda-runtim
 
 A landing whose branch moved meanwhile is merged on the server or refused with `CONFLICT` and the paths; nothing rebases or overwrites automatically. Resolve in a new commit and land again.
 
-Migration changes must be additive and appended. Check fresh, repeat and preceding-version upgrades locally, then apply D1 migrations before deploying code that needs them. Do not modify an already-applied SQL file or remove Durable Object class migration history. Roll back code only to versions compatible with the deployed schema.
+Migration changes must be additive and appended. Check fresh, repeat and preceding-version upgrades locally, then apply D1 migrations before deploying code that needs them. Do not modify an already-applied SQL file or remove Durable Object class migration history. Roll back code only to versions compatible with the deployed schema; [docs/ship-pipeline.md](ship-pipeline.md#rollback) has the steps.
 
 Object bundles: with `PUSH_BUNDLES=on` (dev) a large push stores its objects as a few R2 bundles under `platform/v1/<repo>/bundles/`, indexed by the repository authority (`bundled_objects`, migration 0030); code from before the bundle reader cannot read those objects. Before rolling back below it, set `PUSH_BUNDLES` to `off` in the env spec, regenerate and deploy, then roll back. Even then, objects already pushed into bundles stay unreadable to the older code until it is deployed again.
 

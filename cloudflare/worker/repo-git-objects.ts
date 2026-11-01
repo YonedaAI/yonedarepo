@@ -3,10 +3,8 @@
 // bundles in a few ranged reads, then one R2 object per key), and what a push's
 // verification asks of the repository (`supply`).
 import {
-  fromBundles,
   HEADER,
   type Location,
-  locate,
   RANGE,
   type ReadStats,
   readLocated,
@@ -14,6 +12,7 @@ import {
   WIDE_GAP,
 } from './repo-bundles';
 import type { UploadSession } from './repo-git-sessions';
+import { locateHeld } from './repo-inherit';
 import { type LargeBody, largeBody } from './repo-large-files';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
@@ -92,7 +91,7 @@ export async function* rawObjects(
   stats?: ReadStats,
   budget?: ReadBudget,
 ) {
-  const where = await locate(objects.env, objects.repo, wanted);
+  const where = await locateHeld(objects, wanted);
   const order = [...wanted].sort((a, b) => byPlace(where.get(a.id), where.get(b.id)));
   const groups: Wanted[][] = [];
   for (let start = 0; start < order.length; ) {
@@ -225,10 +224,16 @@ export async function gather(
     if (data) raw.set(id, data);
     else asked.push(id);
   }
-  const bundled = await fromBundles(
+  const held = asked.length
+    ? await locateHeld(
+        objects,
+        asked.map((id) => ({ id, kind: 'tree' })),
+      )
+    : new Map<string, Location>();
+  const bundled = await readLocated(
     objects.env,
     objects.repo,
-    asked.map((id) => ({ id, kind: 'tree' })),
+    [...held.values()],
     RANGE,
     seen ? { gap: WIDE_GAP, copy: true, frame: seen.keep, whole: seen.whole, stats } : { stats },
   );
@@ -316,9 +321,8 @@ export async function supply(ctx: RepoContext, objects: RepoObjects, need: Json)
   }
   // Files a bundle holds are present without reading them.
   const asked = need.objects as string[];
-  const held = await locate(
-    ctx.env,
-    ctx.repo,
+  const held = await locateHeld(
+    objects,
     asked.map((id) => ({ id, kind: 'blob' })),
   );
   const present = [...held.keys()];

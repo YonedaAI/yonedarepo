@@ -26,8 +26,7 @@ export function SecretExceptions({
   return (
     <>
       <p className="source-meta">
-        A commit carrying a credential is refused before it is stored. List a finding here only when
-        it is not a real secret (a test fixture, an example key in docs).
+        Commits with a credential are refused. List only what isn&apos;t a real secret.
       </p>
       {allow.length === 0 ? (
         <p className="source-empty">No exceptions: every rule applies to every path.</p>

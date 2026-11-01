@@ -10,6 +10,7 @@ import { codemod, editSymbol, getSymbol, listSymbols } from './repo-code';
 import { commit, replay } from './repo-commit';
 import { recordContract, symbolContract } from './repo-contracts';
 import { blame, pathHistory, search } from './repo-derived';
+import { diff } from './repo-diff';
 import { listTree, readFile } from './repo-files';
 import { forkRepository } from './repo-forks';
 import { hookOperations, notifyHooks } from './repo-hooks';
@@ -18,7 +19,7 @@ import { memberOperations } from './repo-members';
 import { memoryOperations } from './repo-memories';
 import { explicitMerge } from './repo-merge';
 import { getObjects } from './repo-object-fetch';
-import { ApiError, diff, type Json, type RepoContext } from './repo-ops';
+import { ApiError, type Json, type RepoContext } from './repo-ops';
 import { plan } from './repo-plan';
 import { dispatchProjection } from './repo-projection';
 import { rebase } from './repo-rebase';
@@ -111,17 +112,29 @@ export const operations: Record<string, Operation> = {
       ref: a.ref || null,
     }),
   // What a new coding session should know: heads, landing rules, recent sessions, open
-  // changes, contracts and memories on the paths it works on (a list, or comma-separated
-  // over REST).
+  // changes, traffic, contracts and memories on the paths it works on (a list, or
+  // comma-separated over REST).
   git_context: (ctx, a) =>
     ctx.call({
       op: 'repo_agent_context',
       branch: a.branch || null,
       paths: typeof a.paths === 'string' ? a.paths.split(',').filter(Boolean) : (a.paths ?? null),
+      symbols:
+        typeof a.symbols === 'string' ? a.symbols.split(',').filter(Boolean) : (a.symbols ?? null),
       sessions: optionalNumber(a.sessions),
       changes: optionalNumber(a.changes),
       contracts: optionalNumber(a.contracts),
       memories: optionalNumber(a.memories),
+    }),
+  // A plan the client files on purpose; never taken from a prompt.
+  git_flight_plan: (ctx, a) =>
+    ctx.call({
+      op: 'repo_flight_plan',
+      goal: a.goal,
+      scope: a.scope ?? null,
+      branch: a.branch ?? null,
+      change: a.change ?? null,
+      session_id: a.session_id ?? null,
     }),
   git_bisect: async (ctx, a) => {
     const step = a.id

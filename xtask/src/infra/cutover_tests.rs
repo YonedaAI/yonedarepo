@@ -79,6 +79,13 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     assert_eq!(platform["vars"]["WEB_ORIGIN"], "https://yonedarepo.com");
     assert_eq!(platform["ratelimits"][0]["namespace_id"], "1001");
     assert_eq!(platform["placement"]["region"], "aws:us-east-1");
+    assert_eq!(platform["vars"]["TRAFFIC_EVENTS"], "off");
+    assert_eq!(platform["vars"]["TRAFFIC_REPORT"], "off");
+    assert_eq!(platform["vars"]["REGION_SIGNALS"], "off");
+    assert_eq!(
+        platform["analytics_engine_datasets"],
+        json!([{"binding": "SITE_EVENTS", "dataset": "yonedarepo_prod_site_events"}])
+    );
     assert_eq!(
         platform["secrets_store_secrets"],
         json!([
@@ -100,7 +107,15 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     assert_eq!(vars["SEO_INDEXING"], "on");
     // The operator list (the session's is_admin hint); filled per env by the lead.
     assert!(vars["ADMIN_ACCOUNTS"].is_string());
-    assert_eq!(vars.as_object().map(|v| v.len()), Some(4));
+    // Sign-ins run here too, so the switch is set with the platform Worker's.
+    assert_eq!(vars["AUDIT_LOG"], "off");
+    // The ping and platform client counts: dev measures them first (docs/load-testing.md).
+    assert_eq!(vars["TRAFFIC_EVENTS"], "off");
+    // Internal accounts leave the ping too, so it is set with the platform Worker's.
+    assert_eq!(vars["TRAFFIC_REPORT"], "off");
+    // Sign-ups run here too; off until the owner clears the privacy text.
+    assert_eq!(vars["REGION_SIGNALS"], "off");
+    assert_eq!(vars.as_object().map(|v| v.len()), Some(8));
     assert_eq!(
         agents["analytics_engine_datasets"],
         json!([{"binding": "SITE_EVENTS", "dataset": "yonedarepo_prod_site_events"}])
@@ -273,7 +288,8 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
             "yonedarepo-dev-platform",
             "yonedarepo-dev-agents-managed",
             "yonedarepo-dev-agents",
-            "yonedarepo-dev-bench"
+            "yonedarepo-dev-bench",
+            "yonedarepo-dev-bench2"
         ]
     );
     let hosts: Vec<Vec<(String, bool)>> = workers.iter().map(hosts_of).collect();
@@ -292,6 +308,7 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
                 host("https://dev.yonedarepo.com/*", false)
             ],
             vec![host("hook-receiver.yonedaai.org", true)],
+            vec![],
         ]
     );
     let agents = &role(&workers, "agents").config;

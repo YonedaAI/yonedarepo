@@ -219,6 +219,11 @@ fn cases() -> Vec<Case> {
                 "Forked {REPO} at version 7 as mine ({FORK}): 2 ref(s), 5 commit(s)\n  git clone yoneda::{{ORIGIN}}/{FORK}\nnext: push a branch, then yoneda change create <branch> --to-parent\n"
             ),
         ),
+        case(
+            "search main --all --origin {ORIGIN}",
+            "search-all",
+            "/alice/demo\ncode\nsrc/a.rs:3: fn main\ncouldn't search mine: overloaded\nfound in 1 of 2 repositories searched\nmore: --after 1.r1\n",
+        ),
         case("org list --origin {ORIGIN}", "org-list", "acme  owner\n"),
         case(
             "org create acme --origin {ORIGIN}",
@@ -395,8 +400,21 @@ fn cases() -> Vec<Case> {
             "change show 3 --repo {REPO} --origin {ORIGIN}",
             "change-show",
             format!(
-                "{change_line}\n\n  why\n\nhead {COMMIT}\nnot ready: approvals 0/1; waiting for ci\n  approve by bob\n1 file(s) changed\n  modify src/a.rs\n- bob on src/a.rs:7 (new)\n  nit\n"
+                "{change_line}\n\n  why\n\nflight plan: Retry twice\n  scope: src/ only\nhead {COMMIT}\nnot ready: approvals 0/1; waiting for ci\n  approve by bob\nGo-around: 1 open finding on change #3 (fix, then push; a re-review runs on the push)\n- src/a.rs:7: nit\n1 file(s) changed\n  modify src/a.rs\n- bob on src/a.rs:7 (new)\n  nit\n"
             ),
+        ),
+        case(
+            "change route 3 --repo {REPO} --origin {ORIGIN}",
+            "change-route",
+            format!(
+                "#3 [open] topic -> main: 1 commit, 1 session, 300 bytes read, 900 bytes fetched, 1 memory delivered\n{} Retry twice by alice\n  check pass ci\n  session claude-code opus: Added the retry (300 bytes read)\ndelivered:\n  claude-code:s1 read src/a.rs: 1 item, 40 bytes\n",
+                &COMMIT[..12]
+            ),
+        ),
+        case(
+            "flight-plan -m goal --branch topic --repo {REPO} --origin {ORIGIN}",
+            "flight-plan",
+            "Flight plan #4 filed for topic\n",
         ),
         case(
             "change comment 3 -m hi --repo {REPO} --origin {ORIGIN}",

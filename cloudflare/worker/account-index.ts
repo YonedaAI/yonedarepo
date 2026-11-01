@@ -8,24 +8,30 @@ import { workspace } from './workspace';
 
 /** How an account signed up: a password (an email address) or a sign-in provider. */
 export type SignupProvider = 'email' | 'github' | 'google';
-export type AccountCreated = { provider?: SignupProvider; welcome?: boolean };
+export type AccountCreated = { provider?: SignupProvider; welcome?: boolean; region?: string };
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** The handle an account's name is (an email-named account picks one later). */
 const ownHandle = (account: string) => (account.includes('@') ? null : account);
 
-/** Writes `account`'s row once (a repeat keeps the first). */
+/** Writes `account`'s row once (a repeat keeps the first). Without a region the row reads as
+ * `enam`, the column's default, and the statement names no column of migration 0012. */
 export async function recordAccount(
   env: Env,
   account: string,
   provider: string,
   createdAt: number,
+  region?: string,
 ) {
-  await env.INDEX.prepare(
-    'INSERT OR IGNORE INTO platform_accounts(account,created_at,provider,handle,email_named) VALUES(?,?,?,?,?)',
-  )
-    .bind(account, createdAt, provider, ownHandle(account), account.includes('@') ? 1 : 0)
-    .run();
+  const row = [account, createdAt, provider, ownHandle(account), account.includes('@') ? 1 : 0];
+  await (region
+    ? env.INDEX.prepare(
+        'INSERT OR IGNORE INTO platform_accounts(account,created_at,provider,handle,email_named,region) VALUES(?,?,?,?,?,?)',
+      ).bind(...row, region)
+    : env.INDEX.prepare(
+        'INSERT OR IGNORE INTO platform_accounts(account,created_at,provider,handle,email_named) VALUES(?,?,?,?,?)',
+      ).bind(...row)
+  ).run();
 }
 
 /** The day each account was last noted as seen by this isolate (one write per day each). */
@@ -56,6 +62,7 @@ export function noteSeen(env: Env, account: string, now = Date.now()) {
         account,
         summary.providers?.[0] ?? 'email',
         Number(summary.created_at ?? 0),
+        summary.region,
       );
       await env.INDEX.prepare('UPDATE platform_accounts SET last_seen_at=? WHERE account=?')
         .bind(now, account)

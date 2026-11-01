@@ -1,9 +1,8 @@
-//! Subcommand families: repo, token, reads, check, sync, declared reads, sessions, context,
-//! hooks.
+//! Subcommand families: repo, token, check, sync, declared reads, sessions, context, hooks.
 use super::parser::{Parsed, list, split_sub, with};
 use crate::command::{
-    CheckCommand, Command, HookEvent, OpencodeEvent, ReadCommand, ReadsCommand, RepoCommand,
-    SessionCommand, SyncMode, TokenCommand,
+    CheckCommand, Command, HookEvent, OpencodeEvent, ReadsCommand, RepoCommand, SessionCommand,
+    SyncMode, TokenCommand,
 };
 use crate::error::{Error, Result};
 
@@ -91,64 +90,6 @@ pub fn token(rest: &[String]) -> Result<Command> {
         other => return Err(Error::usage(format!("unknown token command {other:?}"))),
     };
     Ok(Command::Token {
-        target: p.target(),
-        command,
-    })
-}
-
-pub fn read(command: &str, rest: &[String]) -> Result<Command> {
-    let p = Parsed::new(
-        rest,
-        &with(&["ref", "limit", "at", "path", "in"]),
-        &["ignore-case", "word"],
-    )?;
-    let at = p.number("at")?;
-    let command = match command {
-        "log" => {
-            p.at_most(1)?;
-            ReadCommand::Log {
-                path: p.positional.first().cloned(),
-                branch: p.flag("ref"),
-                limit: p.number("limit")?,
-                at,
-            }
-        }
-        "grep" => ReadCommand::Grep {
-            query: p.exactly(1, "grep <query>")?[0].clone(),
-            path: p.flag("path"),
-            ignore_case: p.on("ignore-case"),
-            word: p.on("word"),
-            at,
-        },
-        "search" => ReadCommand::Search {
-            query: p.exactly(1, "search <query>")?[0].clone(),
-            groups: list(p.flag("in")),
-            path: p.flag("path"),
-            branch: p.flag("ref"),
-            limit: p.number("limit")?,
-            word: p.on("word"),
-            at,
-        },
-        "blame" => ReadCommand::Blame {
-            path: p.exactly(1, "blame <path>")?[0].clone(),
-            branch: p.flag("ref"),
-            at,
-        },
-        "diff" => {
-            p.at_most(2)?;
-            ReadCommand::Diff {
-                base: p.positional.first().cloned(),
-                head: p.positional.get(1).cloned(),
-                path: p.flag("path"),
-                at,
-            }
-        }
-        _ => ReadCommand::Symbols {
-            path: p.exactly(1, "symbols <path>")?[0].clone(),
-            at,
-        },
-    };
-    Ok(Command::Read {
         target: p.target(),
         command,
     })
@@ -248,6 +189,25 @@ pub fn session(rest: &[String]) -> Result<Command> {
     Ok(Command::Session {
         target: p.target(),
         command,
+    })
+}
+
+pub fn flight_plan(rest: &[String]) -> Result<Command> {
+    let p = Parsed::new(
+        rest,
+        &with(&["message", "scope", "branch", "change", "session-id"]),
+        &[],
+    )?;
+    p.at_most(0)?;
+    Ok(Command::FlightPlan {
+        target: p.target(),
+        goal: p
+            .flag("message")
+            .ok_or_else(|| Error::usage("flight-plan needs -m <goal>"))?,
+        scope: p.flag("scope"),
+        branch: p.flag("branch"),
+        change: p.number("change")?,
+        session_id: p.flag("session-id"),
     })
 }
 

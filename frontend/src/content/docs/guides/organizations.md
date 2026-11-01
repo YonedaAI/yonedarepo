@@ -55,6 +55,19 @@ yoneda org delete acme --confirm acme
 
 Only owners can, and only once it owns no repositories. Its members and teams go, and **its name is retired for good**: no new account or organization can take it.
 
+## Legal hold
+
+A legal hold keeps what an organization owns from being deleted, for as long as it stands. An owner places one on the organization (it covers repositories made later) or on one repository, from the organization's page or the API:
+
+```sh
+curl -X POST   https://yonedarepo.com/api/v1/orgs/acme/hold -H "Authorization: Bearer $TOKEN"
+curl -X DELETE https://yonedarepo.com/api/v1/orgs/acme/hold -H "Authorization: Bearer $TOKEN"
+```
+
+While it stands, these answer `423 LEGAL_HOLD`: deleting the repository or the organization, purging it, purging quarantined content, retiring a mirror, deleting a release or a change, and vacuum. Everything else goes on: landing, reads, compaction, deleting a branch (its history stays), removing a member, and quarantine still withholds content from being served. A hold also stops the erasure of a repository already deleted, until it is released.
+
+Any member can see a hold; only owners change it, and a token needs `repo:admin`. Operators can place a hold too, on an organization or on any repository, and only an operator can release theirs. Every change is recorded with who made it.
+
 ## Over MCP
 
 The account MCP endpoint has the same operations as tools: `org_list`, `org_create`, `org_show`, `org_repos`, `org_delete`, `org_member_add`, `org_member_remove`, `org_team_create`, `org_team_delete`, `org_team_member_add` and `org_team_member_remove`.

@@ -15,19 +15,17 @@
 // itself, and its stored transcript document is deleted here. A purge runs once the
 // record's retention passes (the quarantine job, leased and fenced like the LFS sweep), or
 // at once when the owner repeats the target id as `confirm`.
-import { purgePrefix } from './repo-admin';
+import { derivedPrefix, purgePrefix } from './repo-admin';
 import { bundleKey, type Location, locate } from './repo-bundles';
 import { edgeDelete } from './repo-cache-tiers';
 import { accessEverywhere } from './repo-head';
 import { retireMirror } from './repo-mirror-retire';
 import { RepoObjects } from './repo-objects';
 import { ApiError, caller, type Json, type RepoContext, target, walk } from './repo-ops';
+import { voidSummary } from './repo-search-directory';
 import { seedPrefix } from './repo-seed';
 import { transcriptKey } from './repo-session-records';
 import { ownSpec, parseStore } from './repo-stores';
-
-/** Every cache derived from the repository's content (search, packs, symbols, facts, views). */
-const derivedPrefix = (repo: string) => `derived/v1/${repo}/`;
 
 import type { Env, Envelope } from './types';
 
@@ -80,6 +78,7 @@ async function quarantine(ctx: RepoContext, args: Json) {
     retain_days: args.retain_days,
   });
   await accessEverywhere(ctx.env, ctx.repo);
+  await voidSummary(ctx.env, ctx.repo);
   await schedulePurge(ctx.env, ctx.repo, made.purge_at);
   return made;
 }
@@ -137,6 +136,7 @@ export async function purgeContent(env: Env, repo: string, spec: string, claims:
   await zeroBundled(env, repo, blobs);
   await purgePrefix(env, derivedPrefix(repo));
   await purgePrefix(env, seedPrefix(repo));
+  await voidSummary(env, repo);
 }
 
 /** Overwrites the frames of `blobs` in the push bundles holding them with zeros, a bundle
@@ -218,8 +218,9 @@ async function purgeRecords(env: Env, repo: string): Promise<number | null> {
   return Date.now();
 }
 
-/** The queue job: one purge run, then the next one scheduled. A deleted repository's own
- * purge removes everything, so its quarantine job ends quietly. */
+/** The queue job: one purge run, then the next one scheduled. On a tombstone it goes on, as
+ * the undo window must not push a leaked secret's purge back, until the repository's own
+ * purge starts, which removes everything: the job then ends quietly. */
 export async function quarantineJob(env: Env, envelope: Envelope) {
   try {
     await schedulePurge(env, envelope.repo_id, await purgeDue(env, envelope.repo_id));

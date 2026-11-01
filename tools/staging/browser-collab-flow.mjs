@@ -43,7 +43,8 @@ export async function releasePages(page, { account, repo: { id, name }, shot }, 
   await atRepo(page, account, id);
   await tabs.getByRole('link', { name: 'Releases' }).click();
   await atRepo(page, account, id, `/releases`);
-  await see(page.getByText(/^No releases yet\. Push a tag/), 'the Releases empty state with its next action');
+  await see(page.getByText(/^No releases yet$/), 'the Releases empty state');
+  await see(page.getByText('Push a tag, then publish a release for it.'), 'the Releases next action');
   await shot('releases-empty');
 
   // The tag is setup (git push or POST /tags); the tab's tag picker loads refs on open.
@@ -99,7 +100,7 @@ export async function releasePages(page, { account, repo: { id, name }, shot }, 
   await view.getByRole('button', { name: 'Delete release…' }).click();
   await view.getByRole('button', { name: 'Delete release', exact: true }).click();
   await atRepo(page, account, id, `/releases`);
-  await see(page.getByText(/^No releases yet\./), 'the Releases empty state after deleting the release');
+  await see(page.getByText(/^No releases yet$/), 'the Releases empty state after deleting the release');
   await shot('release-deleted');
   assert.equal((await account.raw('GET', api(`/releases/${tag}`))).status, 404, 'the deleted release is still served');
   assert.equal((await account.get(api('/refs'))).refs[`refs/tags/${tag}`], main, 'deleting the release moved its tag');
@@ -211,7 +212,8 @@ export async function orgPages(page, { account, member, shot, cleanup }, m) {
     throw new Error(`the Owner picker does not offer ${org}: ${e.message.split('\n')[0]}`);
   });
   await dialog.getByLabel('Repository name').fill(name);
-  const created = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/v1/repos' && r.request().method() === 'POST');
+  // Past the dialog's own bound (45 s): giving up sooner runs cleanup under a create in flight.
+  const created = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/v1/repos' && r.request().method() === 'POST', { timeout: 50_000 });
   await dialog.getByRole('button', { name: 'Create repository' }).click();
   const response = await created;
   assert.ok(response.ok(), `Create org repository: HTTP ${response.status()}`);

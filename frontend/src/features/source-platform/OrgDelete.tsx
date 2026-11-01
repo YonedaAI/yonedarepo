@@ -2,6 +2,7 @@
 // confirm. The server refuses (409) while the org still owns repositories; that answer is
 // shown here with the next step.
 import { type FormEvent, useState } from 'react';
+import { HELD_NOTE } from './LegalHold';
 import { Failure } from './SourceStatus';
 import { sourceApi } from './sourceApi';
 
@@ -11,11 +12,17 @@ export const orgDeletePath = (org: string, typed: string) =>
 export function DeleteOrganization({
   org,
   repoCount,
+  inWindow = 0,
+  held = false,
   onDeleted,
 }: {
   org: string;
+  /** Under a legal hold: the server would refuse. */
+  held?: boolean;
   /** Repositories it owns as far as the caller sees (undefined: not read yet). */
   repoCount?: number;
+  /** Its repositories that can still be restored: nobody can, once it is gone. */
+  inWindow?: number;
   onDeleted: () => void;
 }) {
   const [typed, setTyped] = useState('');
@@ -38,27 +45,34 @@ export function DeleteOrganization({
     <section aria-labelledby="org-delete-heading" className="source-danger">
       <h2 id="org-delete-heading">Delete organization</h2>
       <p>
-        Deleting removes its members and teams, and its name is retired. It cannot be undone. An
-        organization that still owns repositories cannot be deleted: delete them first. Type{' '}
-        <strong>{org}</strong> to confirm.
+        This can&apos;t be undone. Delete its repositories first. Type <strong>{org}</strong> to
+        confirm.
       </p>
       {repoCount !== undefined && repoCount > 0 && (
         <p className="source-meta">
           It owns {repoCount} {repoCount === 1 ? 'repository' : 'repositories'} you can see.
         </p>
       )}
+      {inWindow > 0 && (
+        <p className="source-meta">
+          {inWindow} deleted {inWindow === 1 ? 'repository' : 'repositories'} can still be restored.
+          After this, only their owners can restore them.
+        </p>
+      )}
+      {held && <p className="source-meta">{HELD_NOTE}</p>}
       <form onSubmit={remove} className="source-create" aria-label="Delete organization">
         <label htmlFor="org-delete-confirm" className="sr-only">
           Organization name
         </label>
         <input
           id="org-delete-confirm"
+          disabled={held}
           value={typed}
           onChange={(e) => setTyped(e.target.value)}
           autoComplete="off"
           spellCheck={false}
         />
-        <button type="submit" className="danger" disabled={busy || typed !== org}>
+        <button type="submit" className="danger" disabled={busy || held || typed !== org}>
           {busy ? 'Deleting…' : 'Delete this organization'}
         </button>
       </form>

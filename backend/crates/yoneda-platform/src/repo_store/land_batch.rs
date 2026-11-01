@@ -4,8 +4,9 @@
 use super::changes;
 use super::land::append;
 use super::land_tickets::{finish, landed_version, settle_already};
+use super::land_when_cleared;
 use super::merging::{self, MERGE_PRINCIPAL};
-use super::rows::{self, CommitRow, branch_ref, current_version, object_id};
+use super::rows::{self, CommitRow, Settings, branch_ref, current_version, object_id};
 use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
 use std::collections::BTreeSet;
@@ -19,7 +20,12 @@ use yoneda_core::{
 /// entry: either one fast-forward commit, or one platform merge commit whose parents are
 /// the head followed by every landed commit. Failed tickets record why; deferred tickets
 /// stay queued for the next batch. Releases the builder's lease.
-pub fn land_batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
+pub fn land_batch<S: SqlStore>(
+    db: &S,
+    c: &Value,
+    principal: &str,
+    settings: &Settings,
+) -> Result<Value> {
     let refname = branch_ref(c)?;
     let now = number(c, "now")?;
     let epoch = c["epoch"].as_i64().ok_or_else(|| bad("Missing epoch"))?;
@@ -44,16 +50,25 @@ pub fn land_batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Val
     }
     let tickets: Vec<Value> = c["landed"].as_array().cloned().unwrap_or_default();
     let mut landed_commits = Vec::new();
+    let mut cleared = Vec::new();
     for ticket in &tickets {
         let row = db
-            .query("SELECT commit_id FROM land_queue WHERE ticket=? AND refname=? AND status='pending'", &[ticket.clone(), json!(refname)])?
+            .query("SELECT commit_id,principal FROM land_queue WHERE ticket=? AND refname=? AND status='pending'", &[ticket.clone(), json!(refname)])?
             .into_iter()
             .next()
             .ok_or_else(|| bad("Ticket is not pending on this branch"))?;
-        landed_commits.push(rows::recorded(
+        let commit = rows::recorded(
             db,
             &ObjectId::parse(row["commit_id"].as_str().unwrap_or_default())?,
-        )?);
+        )?;
+        // The merge can't lose a member here, so the builder rebuilds and the claim fails it.
+        if land_when_cleared::by_job(&row) {
+            cleared.push(
+                land_when_cleared::still_cleared(db, &commit, &refname, settings, now)
+                    .map_err(|e| Error::new("STALE_HEAD", format!("{}; rebuild", e.message)))?,
+            );
+        }
+        landed_commits.push(commit);
     }
     let mut result = json!({ "landed": [] });
     if !landed_commits.is_empty() {
@@ -123,6 +138,9 @@ pub fn land_batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Val
                 json!({ "version": result["version"], "commit": result["commit"] }),
                 now,
             )?;
+        }
+        for landing in &cleared {
+            land_when_cleared::landed(db, landing, result["version"].as_u64(), now)?;
         }
     }
     db.query(

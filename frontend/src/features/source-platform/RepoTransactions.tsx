@@ -39,7 +39,9 @@ export function RepoTransactions({
             <th scope="col">Kind</th>
             <th scope="col">Ref</th>
             <th scope="col">Commit</th>
-            <th scope="col">Paths</th>
+            <th scope="col" className="num">
+              Paths
+            </th>
             <th scope="col">Actor</th>
             <th scope="col">When</th>
             <th scope="col">Chain</th>
@@ -86,7 +88,9 @@ export function RepoTransactions({
                   </a>
                 )}
               </td>
-              <td title={e.paths.map((p) => `${p.op} ${p.path}`).join('\n')}>{e.paths.length}</td>
+              <td className="num" title={e.paths.map((p) => `${p.op} ${p.path}`).join('\n')}>
+                {e.paths.length}
+              </td>
               <td>
                 {e.actor.startsWith('break-glass:') && (
                   <span className="source-badge-danger">Break-glass</span>

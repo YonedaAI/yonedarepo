@@ -3,6 +3,7 @@
 // parent's refs reach and the refs, never objects. A change from a fork carries the fork
 // branch's new commits into the parent (objects into its store of record first, then
 // recorded as pushed) and opens an ordinary change on the parent's mirror branch.
+import { auditRepo } from './repo-audit';
 import { dispatchRuns } from './repo-checks';
 import { listRepository, newRepoId, owning } from './repo-create';
 import { enumerate, rawObjects, waves } from './repo-git-objects';
@@ -14,6 +15,7 @@ import { ApiError, type Credentials, caller, type Json, type RepoContext } from 
 import { holdName } from './repo-paths';
 import { dispatchProjection } from './repo-projection';
 import { visibilityOf } from './repo-public';
+import { markFork } from './repo-search-directory';
 import { shardOutboxes } from './repo-shards';
 import {
   FORK_DEPTH,
@@ -85,7 +87,9 @@ export async function forkRepository(ctx: RepoContext, args: Json) {
   await caller(env, ctx.repo, { _system: 'fork' })({ op: 'repo_fork_register', fork: id });
   await shardOutboxes(env, id);
   await listRepository(env, id, auth._session.workspace, name, visibility);
+  await markFork(env, auth._session.workspace, id);
   await Promise.all([dispatchProjection(env, id), refreshHead(env, id)]);
+  await auditRepo(env, id);
   return {
     id,
     name,

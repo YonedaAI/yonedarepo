@@ -19,11 +19,12 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { fakeOpencode, modelCall } from './opencode-fake.mjs';
+import { gitConfigEnv } from '../own-traffic.mjs';
 
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const author = { name: 'Staging kit', email: 'kit@yonedarepo.invalid' };
 const b64 = (text) => Buffer.from(text).toString('base64');
-const MODEL = 'zai-coding-plan/glm-5.3';
+export const MODEL = 'zai-coding-plan/glm-5.3';
 const SEED = 'Seed session: added retry() with three attempts to src/net.ts.';
 const CLAUDE = 'Claude session: retry() now backs off exponentially.';
 const OPENCODE = 'opencode session: added jitter to the backoff in retry().';
@@ -31,7 +32,7 @@ const MEMORY_START = 'Kit memory: the land queue replays retry(), so it must sta
 const MEMORY_READ = 'Kit memory: src/net.ts is the only module allowed to open sockets.';
 const MEMORY_PROMPT = 'Kit memory: the backoff ceiling is thirty seconds, set by the gateway.';
 /** The kit may itself run inside an agent session: its ids must not leak into the clones. */
-const NO_SESSION = { YONEDA_SESSION_ID: '', OPENCODE_SESSION_ID: '' };
+export const NO_SESSION = { YONEDA_SESSION_ID: '', OPENCODE_SESSION_ID: '' };
 
 function write(dir, path, text) {
   mkdirSync(dirname(join(dir, path)), { recursive: true });
@@ -54,7 +55,7 @@ function hook(kit, event, payload, env = kit.env()) {
 
 /** Runs `body` with the kit's CLI environment as this process's (the plugin spawns
  * `yoneda` with it), restoring every variable after. */
-async function withEnv(env, body) {
+export async function withEnv(env, body) {
   const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
   Object.assign(process.env, env);
   try {
@@ -67,7 +68,7 @@ async function withEnv(env, body) {
   }
 }
 
-async function poll(probe, what, ms = 30_000) {
+export async function poll(probe, what, ms = 30_000) {
   const deadline = Date.now() + ms;
   for (;;) {
     const value = await probe();
@@ -89,9 +90,7 @@ export async function agentHooks(kit, metrics) {
   const sessionsOf = async (sha) => (await api.get(`/repos/${repo}/commits/${sha}/sessions`)).sessions;
   const [a, h] = [kit.path('hooks-a'), kit.path('hooks-http')];
   const http = kit.env({
-    GIT_CONFIG_COUNT: '1',
-    GIT_CONFIG_KEY_0: `http.${kit.api}/.extraHeader`,
-    GIT_CONFIG_VALUE_0: `Authorization: Bearer ${kit.token}`,
+    ...gitConfigEnv({ token: kit.token, origin: kit.api }),
   });
   await kit.ok('git', ['clone', '-q', kit.remote(repo), a]);
   await kit.ok('git', ['clone', '-q', `${kit.api}/git/${repo}.git`, h], { env: http });

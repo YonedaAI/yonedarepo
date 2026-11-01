@@ -3,6 +3,7 @@
 // the first owner. An org name is taken from the account namespace.
 import { type FormEvent, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
+import { EmptyState } from '../../components/EmptyState';
 import { Avatar } from '../shell/Avatar';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { type OrgSummary, orgNameProblem } from './orgModel';
@@ -81,10 +82,9 @@ export function AccountOrgs({ orgs, navigate }: Props) {
   const list = [...(orgs.data?.orgs ?? [])].sort((a, b) => a.org.localeCompare(b.org));
   if (list.length === 0)
     return (
-      <div className="settings-card settings-empty">
-        <h2>No organizations yet</h2>
-        <p className="source-meta">Create one to share repositories with a team.</p>
-      </div>
+      <EmptyState title="No organizations yet">
+        Create one to share repositories with a team.
+      </EmptyState>
     );
   return (
     <ul className="org-rows">

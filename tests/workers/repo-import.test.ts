@@ -1,15 +1,19 @@
 // Importing an external Git repository: Artifacts (faked over a real platform-built
 // source repository's objects) fetches it; first-parent history is recorded with file
 // changes from verified trees and the branch lands. Steps retry like a Workflow.
-import { expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type ImportStep, runImport } from '../../cloudflare/worker/repo-import';
 import type { Env } from '../../cloudflare/worker/types';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { projectRefs } from '../../cloudflare/worker/repo-projection';
 import { asGit } from './git-answer';
-import { api, author, bindings, drainObjects, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, bindings, drainObjects, fakeArtifacts, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
+// The published head's holder reads through `scoped`.
+afterEach(() => {
+  (scoped as any).ARTIFACTS = fakeArtifacts;
+});
 
 /** Runs steps directly, retrying failures a few times like Workflows would (never a
  * NonRetryableError); `attempts` counts every run of a step. */
@@ -26,6 +30,8 @@ const step: ImportStep = {
     }
   },
 };
+
+const isCommit = (ref: unknown) => /^[0-9a-f]{40}$/.test(String(ref));
 
 function fakeRemote(sourceStore: string, head: string, busyReads = 1) {
   const imported = new Set<string>();
@@ -67,9 +73,10 @@ function fakeRemote(sourceStore: string, head: string, busyReads = 1) {
           const found = await object(id);
           return found ? new Blob([await found.arrayBuffer()]) : null;
         },
-        log: async ({ limit = 50, offset = 0 }: any) => {
+        // Artifacts' log starts at a branch or at a commit id.
+        log: async ({ ref, limit = 50, offset = 0 }: any) => {
           const chain = [];
-          for (let id: string | undefined = head; id; id = (await commit(id))?.parents[0]) chain.push(await commit(id));
+          for (let id: string | undefined = isCommit(ref) ? ref : head; id; id = (await commit(id))?.parents[0]) chain.push(await commit(id));
           return chain.slice(offset, offset + limit);
         },
       };
@@ -77,6 +84,8 @@ function fakeRemote(sourceStore: string, head: string, busyReads = 1) {
   };
 }
 
+// `FAST_IMPORT` changes when history arrives, never what an import ends up holding.
+describe.each(['off', 'on'])('with FAST_IMPORT %s', (FAST_IMPORT) => {
 it('imports first-parent history from a remote and lands it', async () => {
   const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2' } as unknown as Env;
   const owner = { cookie: await signup('importer') };
@@ -95,7 +104,8 @@ it('imports first-parent history from a remote and lands it', async () => {
   const remote = fakeRemote(`yr-${source.body.id}`, head);
   let started: any;
   const workflows = { create: async (options: any) => ((started = options), { id: options.id }), get: async () => ({ status: async () => ({ status: 'running' }) }) };
-  const env = { ...scoped, ARTIFACTS: remote, PLATFORM_IMPORT: workflows } as unknown as Env;
+  (scoped as any).ARTIFACTS = remote;
+  const env = { ...scoped, ARTIFACTS: remote, PLATFORM_IMPORT: workflows, FAST_IMPORT } as unknown as Env;
 
   const created = await api('/repos/import', owner, { body: { name: 'imported', url: 'https://git.example/src.git', max_commits: 2 } }, env);
   expect(created.status).toBe(200);
@@ -153,7 +163,8 @@ it('refuses a clone of history only the mirror holds at once, reading none of it
   };
   let started: any;
   const workflows = { create: async (options: any) => ((started = options), { id: options.id }), get: async () => ({ status: async () => ({ status: 'running' }) }) };
-  const env = { ...scoped, ARTIFACTS: counted, PLATFORM_IMPORT: workflows } as unknown as Env;
+  (scoped as any).ARTIFACTS = remote;
+  const env = { ...scoped, ARTIFACTS: counted, PLATFORM_IMPORT: workflows, FAST_IMPORT } as unknown as Env;
   const created = await api('/repos/import', owner, { body: { name: 'imported', url: 'https://git.example/src.git' } }, env);
   await runImport(env, started.params, step);
   const token = await api(`/repos/${created.body.id}/tokens`, owner, { body: { name: 'reader', scopes: ['read'] } }, env);
@@ -199,11 +210,31 @@ function masterRemote(sourceStore: string, head: string) {
         ...repo,
         info: async () => ({ remote: `https://artifacts.test/${name}`, defaultBranch: 'main' }),
         // Only a branch named at import has a log; HEAD resolves to nothing.
-        log: async (options: any) => (options?.ref === 'master' ? repo.log(options) : []),
+        log: async (options: any) => (options?.ref === 'master' || isCommit(options?.ref) ? repo.log(options) : []),
       };
     },
   };
 }
+
+it('a remote on main leaves nothing to project: the store already holds that branch', async () => {
+  const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2' } as unknown as Env;
+  const owner = { cookie: await signup('import_main') };
+  const source = await api('/repos', owner, { body: { name: 'src', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', 'main\n')], author } }, local);
+  const head = source.body.commit as string;
+  await drainObjects(local);
+  for (const message of queued.splice(0).filter((m) => m.kind === 'platform_project')) await projectRefs(local, message);
+  let started: any;
+  const workflows = { create: async (options: any) => ((started = options), { id: options.id }), get: async () => ({ status: async () => ({ status: 'running' }) }) };
+  const env = { ...scoped, ARTIFACTS: fakeRemote(`yr-${source.body.id}`, head), PLATFORM_IMPORT: workflows } as unknown as Env;
+  const created = await api('/repos/import', owner, { body: { name: 'on-main', url: 'https://git.example/main.git' } }, env);
+  const advertised = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+    new Response(`001e# service=git-upload-pack\n0000${'0'.repeat(4)}${head} HEAD\0multi_ack symref=HEAD:refs/heads/main agent=git/2\n0000`),
+  );
+  await runImport(env, started.params, step);
+  advertised.mockRestore();
+  const projection = (await api(`/repos/${created.body.id}`, owner, {}, env)).body.projections[0];
+  expect(projection).toMatchObject({ refname: 'refs/heads/main', status: 'ok', projected_commit: head, detail: null });
+});
 
 it("imports the remote's default branch as main when none is named, and fails a missing branch at once", async () => {
   const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2' } as unknown as Env;
@@ -215,7 +246,8 @@ it("imports the remote's default branch as main when none is named, and fails a 
   const remote = masterRemote(`yr-${source.body.id}`, head);
   let started: any;
   const workflows = { create: async (options: any) => ((started = options), { id: options.id }), get: async () => ({ status: async () => ({ status: 'running' }) }) };
-  const env = { ...scoped, ARTIFACTS: remote, PLATFORM_IMPORT: workflows } as unknown as Env;
+  (scoped as any).ARTIFACTS = remote;
+  const env = { ...scoped, ARTIFACTS: remote, PLATFORM_IMPORT: workflows, FAST_IMPORT } as unknown as Env;
 
   const created = await api('/repos/import', owner, { body: { name: 'hello', url: 'https://git.example/hello.git' } }, env);
   expect([created.status, created.body.branch]).toEqual([200, null]);
@@ -238,4 +270,5 @@ it("imports the remote's default branch as main when none is named, and fails a 
   attempts.length = 0;
   await expect(runImport(env, started.params, step)).rejects.toThrow(/Branch not found: "main"/);
   expect(attempts).toEqual(['import into the object store']);
+});
 });

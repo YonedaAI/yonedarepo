@@ -6,19 +6,28 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Loaded } from './useSource';
 
-const state: { value: Loaded<any>; gates: Loaded<any>; paths: (string | null)[] } = {
+const state: {
+  value: Loaded<any>;
+  gates: Loaded<any>;
+  route: Loaded<any>;
+  paths: (string | null)[];
+} = {
   value: { loading: true, reload: () => {} },
   gates: { loading: true, reload: () => {} },
+  route: { loading: true, reload: () => {} },
   paths: [],
 };
 vi.mock('./useSource', () => ({
   useSource: (path: string | null) => {
     state.paths.push(path);
+    if (path?.endsWith('/route')) return state.route;
     return path?.endsWith('/gates') ? state.gates : state.value;
   },
 }));
 
 const { ChangeTable, StatusFilter } = await import('./RepoChanges');
+const { changesPath, landedAutomatically, landingState } = await import('./changeModel');
+const { LandedAutomatically, WillLandNote } = await import('./LandWhenCleared');
 const { ChangeView } = await import('./ChangeView');
 const { ChangeSessions } = await import('./ChangeSessions');
 const { MergeGates } = await import('./MergeGates');
@@ -200,13 +209,13 @@ describe('changes list', () => {
   const props = { filter: 'open', hrefOf: (n: number) => `/c/${n}`, onOpen: () => {} };
   it('shows loading, failure, empty and populated states', () => {
     expect(html(ChangeTable, { ...props, changes: loaded({ loading: true }) })).toContain(
-      'Loading changes',
+      'Loading Landings',
     );
     expect(html(ChangeTable, { ...props, changes: loaded({ error: 'boom' }) })).toContain('Retry');
     const empty = loaded({ data: { changes: [] } });
-    expect(html(ChangeTable, { ...props, changes: empty })).toContain('No open changes');
+    expect(html(ChangeTable, { ...props, changes: empty })).toContain('No open Landings');
     expect(html(ChangeTable, { ...props, filter: 'closed', changes: empty })).toContain(
-      'No closed changes',
+      'No closed Landings',
     );
     const landed = { ...change, number: 6, status: 'landed', landed_version: 41, comment_count: 2 };
     const list = html(ChangeTable, {
@@ -223,6 +232,75 @@ describe('changes list', () => {
     expect(list).not.toContain('user:ada');
   });
 
+  it('shows landings no change names as landed directly, newest first with the rest', () => {
+    const landed = { ...change, number: 6, status: 'landed', updated_at: 100, landed_version: 41 };
+    const direct = {
+      commit: 'a'.repeat(40),
+      version: 50,
+      landed_at: 200,
+      title: 'Fix the build',
+      author: 'token:agent',
+    };
+    const list = html(ChangeTable, {
+      ...props,
+      filter: 'landed',
+      commitHrefOf: (id: string) => `/commit/${id}`,
+      changes: loaded({ data: { changes: [landed], direct: [direct] } }),
+    });
+    expect(list).toContain('Landed directly');
+    expect(list).toContain('Fix the build');
+    expect(list).toContain(`href="/commit/${direct.commit}"`);
+    expect(list.indexOf('Fix the build')).toBeLessThan(list.indexOf('Retry flaky fetch'));
+    const only = html(ChangeTable, {
+      ...props,
+      filter: 'landed',
+      changes: loaded({ data: { changes: [], direct: [direct] } }),
+    });
+    expect(only).toContain('Landed directly');
+    expect(only).not.toContain('No landed Landings');
+  });
+
+  it('asks for direct landings only with landed rows', () => {
+    expect(changesPath(repo, 'open')).not.toContain('direct');
+    expect(changesPath(repo, 'closed')).not.toContain('direct');
+    expect(changesPath(repo, 'landed')).toContain('direct=1');
+    expect(changesPath(repo, 'all')).toContain('direct=1');
+  });
+
+  it('labels a Landing from its data, never from a new status', () => {
+    const open = { status: 'open', title: 'Retry' } as const;
+    const gates = (ready: boolean, state: string, enforced = true) =>
+      ({ ready, requirements: [{ kind: 'check', name: 'ci', state, why: '', enforced }] }) as never;
+    expect(landingState({ status: 'landed', title: 'x' })).toBe('Landed');
+    expect(landingState({ status: 'closed', title: 'x' })).toBe('Closed');
+    expect(landingState(open)).toBe('In flight');
+    expect(landingState({ ...open, title: 'Draft: retry' })).toBe('Planned');
+    expect(landingState({ ...open, title: 'WIP: retry' }, gates(true, 'ready'))).toBe('Planned');
+    expect(landingState(open, gates(true, 'ready'))).toBe('Cleared to land');
+    expect(landingState(open, gates(false, 'blocked'))).toBe('Go-around');
+    expect(landingState(open, gates(false, 'waiting'))).toBe('In flight');
+    expect(landingState(open, gates(false, 'blocked', false))).toBe('In flight');
+  });
+
+  it('calls a Landing landed automatically only from the decision that landed it', () => {
+    const row = {
+      head: 'a'.repeat(40),
+      decision: 'cleared' as const,
+      reasons: [],
+      state: { approved_by: ['user:ada'], requirements: [{ name: 'ci', why: 'Passed' }] },
+      landed_version: 2,
+      actor: 'platform:land-when-cleared',
+      at: 1,
+    };
+    const held = { ...row, decision: 'hold' as const, landed_version: null };
+    expect(landedAutomatically({ status: 'landed', clearances: [row, held] })).toBe(row);
+    expect(landedAutomatically({ status: 'landed' })).toBeNull();
+    expect(landedAutomatically({ status: 'landed', clearances: [held] })).toBeNull();
+    expect(landedAutomatically({ status: 'open', clearances: [row] })).toBeNull();
+    // Computed, so its state is what it was.
+    expect(landingState({ status: 'open', title: 'Retry' })).toBe('In flight');
+  });
+
   it('marks the selected status filter as pressed', () => {
     const filter = html(StatusFilter, { value: 'landed', onChange: () => {} });
     expect(filter).toContain('<legend class="sr-only">Status</legend>');
@@ -231,11 +309,104 @@ describe('changes list', () => {
   });
 });
 
+describe('CTC on a Landing', () => {
+  const clearance = (over: object) => ({ decision: 'hold', reasons: [], refused: null, ...over });
+
+  it('says what an open Landing waits for', () => {
+    const note = html(WillLandNote, {
+      clearance: clearance({
+        reasons: [{ code: 'GATES', reason: 'Approvals: 0 of 1 approvals' }],
+      }),
+    });
+    expect(note).toContain('CTC: will land when cleared.');
+    expect(note).toContain('Waiting for:');
+    expect(note).toContain('Approvals: 0 of 1 approvals');
+    expect(note).not.toContain('did not land');
+  });
+
+  it('says when the work goes back', () => {
+    const note = html(WillLandNote, {
+      clearance: clearance({
+        decision: 'go_around',
+        reasons: [{ code: 'CHECK_FAILED', reason: 'slop-review failed on this head' }],
+      }),
+    });
+    expect(note).toContain('CTC: go-around.');
+    expect(note).toContain('slop-review failed on this head');
+    expect(note).not.toContain('will land');
+  });
+
+  it('says when nothing is in the way, and why the last attempt failed', () => {
+    const clear = html(WillLandNote, { clearance: clearance({ decision: 'cleared' }) });
+    expect(clear).toContain('Nothing is in the way');
+    const refused = html(WillLandNote, {
+      clearance: clearance({
+        decision: 'cleared',
+        refused: { code: 'CONFLICT', reason: 'Merge conflicts on a.md', at: 1 },
+      }),
+    });
+    expect(refused).toContain('The last attempt did not land.');
+    expect(refused).toContain('Merge conflicts on a.md');
+    expect(refused).toContain('It tries again');
+    expect(refused).not.toContain('Nothing is in the way');
+  });
+
+  it("shows a landed Landing its reason trail, and a person's landing none", () => {
+    const change = {
+      status: 'landed',
+      clearances: [
+        {
+          decision: 'cleared',
+          landed_version: 2,
+          at: 1,
+          state: {
+            approved_by: ['user:ada'],
+            requirements: [{ name: 'ci', why: 'Passed (token:ci)' }],
+          },
+        },
+      ],
+    };
+    const trail = html(LandedAutomatically, { change });
+    expect(trail).toContain('Landed automatically');
+    expect(trail).toContain('by CTC');
+    expect(trail).toContain('Approved by ada');
+    expect(trail).toContain('Passed (token:ci)');
+    expect(html(LandedAutomatically, { change: { status: 'landed' } })).toBe('');
+  });
+});
+
 describe('change page', () => {
   it('shows loading and failure', () => {
-    expect(view()).toContain('Loading change #7');
+    expect(view()).toContain('Loading Landing #7');
     state.value = loaded({ error: 'Change 7 not found' });
     expect(view()).toContain('Change 7 not found');
+  });
+
+  it('shows the goal on the header, or that no plan was filed', () => {
+    const page = (over: object) => {
+      state.value = loaded({ data: detail(over) });
+      state.gates = loaded({ data: changeGates });
+      return html(ChangeView, { repo: 'r1', number: 3 });
+    };
+    // Today's platform leaves the field out, a platform with no plan answers null.
+    for (const none of [{}, { flight_plan: null }]) {
+      expect(page(none)).toContain('No flight plan');
+    }
+    const plan = {
+      id: 4,
+      session_id: 'claude-code:s1',
+      branch: 'fix',
+      change_number: null,
+      goal: 'Retry twice before giving up',
+      scope: 'src/net only',
+      principal: 'token:agent',
+      at: 5,
+    };
+    const planned = page({ flight_plan: plan });
+    expect(planned).toContain('Retry twice before giving up');
+    expect(planned).toContain('src/net only');
+    expect(planned).not.toContain('No flight plan');
+    expect(page({ flight_plan: { ...plan, scope: null } })).not.toContain('Scope');
   });
 
   it('offers review and land on an open change, land only once the gates pass', () => {
@@ -243,16 +414,27 @@ describe('change page', () => {
     state.gates = loaded({ data: changeGates });
     const blocked = view();
     // The gates panel, from its own read, at the top of an open change.
-    expect(blocked).toContain('Not ready to land: 1 blocked, 1 waiting');
+    expect(blocked).toContain('Not cleared to land: 1 blocked, 1 waiting');
     expect(blocked.indexOf('id="gates-heading"')).toBeLessThan(blocked.indexOf('>Approve<'));
     expect(blocked).toContain('>Approve<');
     expect(blocked).toMatch(/<button type="button" disabled="">Land on main/);
-    expect(blocked).toContain('Close change');
+    expect(blocked).toContain('Close Landing');
     expect(blocked).toContain('ada pushed');
     expect(blocked).toContain('Files changed (1)');
     expect(blocked).toContain('aria-label="Comment on src/a.ts line 2 (base)"');
     state.value = loaded({ data: detail({}, true) });
     expect(view()).toMatch(/<button type="button">Land on main/);
+  });
+
+  it('keeps the page and the pushes when the route cannot be read', () => {
+    state.value = loaded({ data: detail() });
+    state.route = loaded({ error: 'The server failed: try again' });
+    const page = html(ChangeView, { repo, number: 7, navigate: () => {} });
+    expect(page).toContain('id="change-route-heading"');
+    expect(page).toContain('The server failed: try again');
+    expect(page).toContain('ada pushed');
+    expect(page).toContain('Files changed (1)');
+    state.route = { loading: true, reload: () => {} };
   });
 
   it('lands on its own base, ungated when the base is not protected', () => {
@@ -290,7 +472,7 @@ describe('change page', () => {
     expect(page).not.toContain('>Approve<');
     expect(page).not.toContain('Land on main<');
     expect(page).not.toContain('source-line-comment');
-    expect(page).toContain('Comment on this change');
+    expect(page).toContain('Comment on this Landing');
   });
 
   it('offers delete on a closed change only: an open one is closed first, a landed one stays', () => {
@@ -300,19 +482,19 @@ describe('change page', () => {
       ['landed', false],
     ] as const) {
       state.value = loaded({ data: detail({ status }) });
-      expect(view().includes('Delete change'), status).toBe(offered);
+      expect(view().includes('Delete Landing'), status).toBe(offered);
     }
   });
 
   it('offers reopen on a closed change and explains a deleted branch', () => {
     state.value = loaded({ data: detail({ status: 'closed' }) });
-    expect(view()).toContain('Reopen change');
+    expect(view()).toContain('Reopen Landing');
     state.value = loaded({
       data: detail({ status: 'closed', head: null, head_commit: null, diff: null }),
     });
     const gone = view();
     expect(gone).toContain('no longer exists');
-    expect(gone).toContain('No diff: the change has no head commit');
+    expect(gone).toContain('No diff: the Landing has no head commit');
   });
 });
 
@@ -391,7 +573,7 @@ describe('sessions behind a change', () => {
     state.value = loaded({ error: 'boom' });
     expect(sessions()).toContain('Sessions unavailable: boom');
     state.value = loaded({ data: list([]) });
-    expect(sessions()).toContain('No session recorded for this change');
+    expect(sessions()).toContain('No session recorded for this Landing');
     state.value = loaded({ data: list([session(1, head, 'x')], { next: 1 }) });
     expect(sessions()).toContain('newest sessions only');
     state.value = loaded({ data: list([]) });
@@ -402,7 +584,7 @@ describe('sessions behind a change', () => {
   it('is on the change page for every commit, not just the head', () => {
     state.value = loaded({ data: detail() });
     const page = html(ChangeView, { repo, number: 7, navigate: () => {} });
-    expect(page).toContain('Sessions behind this change');
+    expect(page).toContain('Sessions behind this Landing');
     expect(state.paths).toContain(`/repos/${repo}/sessions?head=${head}&limit=200&base=${older}`);
   });
 });
@@ -410,8 +592,8 @@ describe('sessions behind a change', () => {
 describe('merge gates', () => {
   it('lists each requirement with its state and why, enforced ones first', () => {
     const out = html(MergeGates, { gates: loaded({ data: changeGates }) });
-    expect(out).toContain('Gates');
-    expect(out).toContain('Not ready to land: 1 blocked, 1 waiting');
+    expect(out).toContain('Clearance');
+    expect(out).toContain('Not cleared to land: 1 blocked, 1 waiting');
     expect(out).toContain('Failed (token:ci)');
     expect(out).toContain('data-state="blocked"');
     expect(out).toContain('not enforced');
@@ -420,8 +602,8 @@ describe('merge gates', () => {
 
   it('says when the change can land, and shows loading and failure', () => {
     const ready = { ...changeGates, ready: true, requirements: changeGates.requirements.slice(3) };
-    expect(html(MergeGates, { gates: loaded({ data: ready }) })).toContain('Ready to land');
-    expect(html(MergeGates, { gates: loaded({ loading: true }) })).toContain('gates');
+    expect(html(MergeGates, { gates: loaded({ data: ready }) })).toContain('Cleared to land');
+    expect(html(MergeGates, { gates: loaded({ loading: true }) })).toContain('clearance');
     expect(html(MergeGates, { gates: loaded({ error: 'boom' }) })).toContain('boom');
   });
 

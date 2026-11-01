@@ -44,6 +44,7 @@ import { dirname, join, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { Session } from './client.mjs';
 import * as lib from './size-ladder-lib.mjs';
+import { gitConfigEnv } from '../own-traffic.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -172,7 +173,7 @@ function gitEnv(secret, dir) {
   const config = join(dir, 'gitconfig');
   writeFileSync(config, '[maintenance]\n\tauto = false\n[gc]\n\tauto = 0\n');
   return { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: config, GIT_TRACE_CURL: join(dir, 'trace'), GIT_TRACE_CURL_NO_DATA: '1',
-    ...(secret ? { GIT_CONFIG_COUNT: '2', GIT_CONFIG_KEY_0: 'http.extraHeader', GIT_CONFIG_VALUE_0: `Authorization: Bearer ${secret}`, GIT_CONFIG_KEY_1: 'http.extraHeader', GIT_CONFIG_VALUE_1: 'x-yoneda-timing: 1' } : {}) };
+    ...(secret ? gitConfigEnv({ token: secret, headers: ['x-yoneda-timing: 1'] }) : {}) };
 }
 
 /** Git against the platform (or a reference remote with no secret) in a scratch directory:

@@ -2,7 +2,11 @@
 // queue shapes. Which harness and model each agent uses is the agent's settings
 // (shared/managed-agents.ts defaults, overridden per workspace or repository), validated
 // against the billing rate table; a fallback model is only ever one the agent lists.
-import type { ManagedAgentId, ModelProvider } from '../../shared/managed-agents';
+import {
+  MANAGED_AGENTS,
+  type ManagedAgentId,
+  type ModelProvider,
+} from '../../shared/managed-agents';
 import type { HarnessContainer } from './harness';
 import type { CreditLedger } from './ledger';
 import type { RepoAgents } from './repo-agents';
@@ -37,6 +41,17 @@ export interface ManagedEnv {
   STRIPE_WEBHOOK_SECRET?: string;
   /** Stripe's API origin (tests point it at a fake). */
   STRIPE_API_BASE?: string;
+  /** Operators' billing (admin routes, the new Stripe events, the nightly reconcile, the revenue
+   * rollup): `on`, or none of it exists. Set with the platform Worker's. */
+  ADMIN_BILLING?: string;
+  /** This Worker's own D1 (`<prefix>-managed-revenue`): the revenue rollup. */
+  REVENUE?: D1Database;
+  /** Worker secret, optional: a restricted key for refunds and nothing else; unset, the refund
+   * route answers NOT_CONFIGURED. STRIPE_SECRET_KEY never refunds. */
+  STRIPE_REFUND_KEY?: string;
+  /** USD, per refund and per UTC day across all accounts; unset means every refund is refused. */
+  REFUND_MAX_USD?: string;
+  REFUND_DAILY_USD?: string;
   /** The promotional credit a card on file unlocks, in USD (default 100). */
   PROMO_CREDIT_USD?: string;
   /** Worker secret, optional: bearer for granting credit; unset means nobody may. */
@@ -67,14 +82,29 @@ export type QueueMessage =
       commit: string | null;
       change: number | null;
       action: string | null;
+      /** When it happened, in ms: a push and the Landing it opened share this time. */
+      at?: number;
     }
   | { kind: 'resume'; repo: string; run: string }
-  /** The platform's repo.deleted: clear the repository's reviews. */
+  /** The platform's repo.purged, or a repo.deleted with no purge to come: clear its reviews. */
   | { kind: 'deleted'; repo: string }
   /** Charge the workspace's card for the pending top-up `key`. */
-  | { kind: 'topup'; account: string; key: string };
+  | { kind: 'topup'; account: string; key: string }
+  /** Take an open refund to Stripe, or settle it from what Stripe says. */
+  | { kind: 'refund'; account: string; id: string }
+  /** The nightly reconcile: find the accounts Stripe saw activity for, then each one. */
+  | { kind: 'reconcile-all' }
+  | { kind: 'reconcile'; account: string }
+  /** Push every day of an account's ledger to the revenue rollup again. */
+  | { kind: 'rollup'; account: string };
 
 export class ConfigError extends Error {}
+
+/** A configured USD limit in micro-USD; null (refuse) when unset or not a positive amount. */
+export function limitMicrousd(value: string | undefined): number | null {
+  const micro = Math.round(Number(value) * 1_000_000);
+  return value && Number.isSafeInteger(micro) && micro > 0 ? micro : null;
+}
 
 /** The gateway slug for a provider, from AI_GATEWAY_PROVIDERS. */
 export function gatewaySlug(env: ManagedEnv, provider: ModelProvider): string {
@@ -95,9 +125,16 @@ export function gatewaySlugs(env: ManagedEnv): Record<ModelProvider, string> {
 
 export const REPO_ID = /^r[0-9a-f]{20}$/;
 export const COMMIT_ID = /^[0-9a-f]{40}$/;
-/** The repository token the agents use; a landing policy names it as check poster. */
+/** The repository token the agents use. */
 export const TOKEN_NAME = 'yoneda-managed-agents';
-export const TOKEN_SCOPES = ['read', 'review', 'check'];
+/** A `check:<name>` scope lets the token post that check where a landing policy requires it. A
+ * scope and not a named poster: a reconnect gives the token another name (connect.ts). */
+export const TOKEN_SCOPES = [
+  'read',
+  'review',
+  'check',
+  ...MANAGED_AGENTS.map((a) => `check:${a.check}`),
+];
 export const HOOK_EVENTS = ['change', 'branch', 'repo'];
 /** What stays subscribed once no agent runs on a repository: its deletion. */
 export const NOTICE_EVENTS = ['repo'];

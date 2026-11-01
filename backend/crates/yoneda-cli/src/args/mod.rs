@@ -6,6 +6,7 @@ mod docs;
 mod memory;
 mod org;
 mod parser;
+mod read;
 mod release;
 mod ssh_key;
 mod sub;
@@ -132,7 +133,7 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "ssh" => ssh_key::ssh(rest)?,
         "token" => sub::token(rest)?,
         "check" => sub::check(rest)?,
-        "log" | "grep" | "search" | "blame" | "diff" | "symbols" => sub::read(command, rest)?,
+        "log" | "grep" | "search" | "blame" | "diff" | "symbols" => read::read(command, rest)?,
         "setup" => setup(rest)?,
         "land" => {
             let p = Parsed::new(rest, &with(&["branch"]), &[])?;
@@ -186,6 +187,7 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "change" => change::change(rest)?,
         "release" => release::release(rest)?,
         "memory" => memory::memory(rest)?,
+        "flight-plan" => sub::flight_plan(rest)?,
         "hook" => sub::hook(rest)?,
         "context" => sub::context(rest)?,
         "help" | "--help" | "-h" => Command::Help,
@@ -431,6 +433,20 @@ mod tests {
             })
         );
         assert_eq!(
+            parsed("search retry --all --in code --after 5.r1 --word").ok(),
+            Some(Command::SearchAll {
+                origin: None,
+                query: "retry".into(),
+                groups: Some(vec!["code".into()]),
+                limit: None,
+                word: true,
+                after: Some("5.r1".into()),
+            })
+        );
+        assert!(parsed("search retry --all --ref main").is_err());
+        assert!(parsed("search retry --all --repo r1").is_err());
+        assert!(parsed("grep retry --all").is_err());
+        assert_eq!(
             parsed("search retry --in commits,changes --limit 5 --word").ok(),
             Some(Command::Read {
                 target: Target::default(),
@@ -548,6 +564,7 @@ mod tests {
         for (line, command) in [
             ("change close #4", ChangeCommand::Close { number: 4 }),
             ("change reopen 4", ChangeCommand::Reopen { number: 4 }),
+            ("change route #4", ChangeCommand::Route { number: 4 }),
         ] {
             assert_eq!(
                 parsed(line).ok(),
@@ -620,6 +637,28 @@ mod tests {
             })
         );
         assert!(parsed("memory add gotcha").is_err());
+        assert_eq!(
+            parse(&[
+                "flight-plan".into(),
+                "-m".into(),
+                "Retry twice".into(),
+                "--scope".into(),
+                "src/net only".into(),
+                "--change".into(),
+                "3".into(),
+            ])
+            .ok(),
+            Some(Command::FlightPlan {
+                target: Target::default(),
+                goal: "Retry twice".into(),
+                scope: Some("src/net only".into()),
+                branch: None,
+                change: Some(3),
+                session_id: None,
+            })
+        );
+        assert!(parsed("flight-plan").is_err());
+        assert!(parsed("flight-plan -m g extra").is_err());
         assert!(parsed("memory show x").is_err());
         assert_eq!(
             parsed("hook claude-prompt").ok(),
@@ -749,6 +788,8 @@ mod tests {
             "repo fork",
             "change show",
             "change show 0",
+            "change route",
+            "change route 0",
             "change land x",
             "change delete",
             "change delete 0",

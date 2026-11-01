@@ -32,13 +32,12 @@ fn wasm_bytes() -> Option<usize> {
 /// Stack below the caller (wasm32's stack grows down to address 0; null natively).
 #[inline(never)]
 pub fn stack_left() -> Option<usize> {
-    #[cfg(target_arch = "wasm32")]
-    {
+    if cfg!(target_arch = "wasm32") {
         let marker = 0u8;
-        return Some(core::hint::black_box(&marker) as *const u8 as usize);
+        Some(core::hint::black_box(&marker) as *const u8 as usize)
+    } else {
+        None
     }
-    #[cfg(not(target_arch = "wasm32"))]
-    None
 }
 
 pub fn compute(c: Value) -> Result<Value> {
@@ -51,15 +50,12 @@ pub fn compute(c: Value) -> Result<Value> {
         "grant_check" => grant_check(&c),
         "model_check_request" => crate::platform_model_check::request(&c),
         "model_check_verdict" => crate::platform_model_verdict::verdict(&c),
-        "search_plan" => crate::platform_derived::plan(&c),
-        "partition_files" => crate::platform_derived::partition_files(&c),
-        "index_files" => crate::platform_derived::index_files(&c),
-        "search_segment" => crate::platform_derived::search_segment(&c),
-        "grep" => crate::platform_derived::grep_blob(&c),
-        "blame" => crate::platform_derived::blame_versions(&c),
+        op @ ("search_plan" | "partition_files" | "index_files" | "search_segment"
+        | "search_summary" | "grep" | "blame") => crate::platform_derived::compute(op, &c),
         "symbols" => crate::platform_code::symbols(&c),
         "symbol_edit" => crate::platform_code::symbol_edit(&c),
         "review_classes" => crate::platform_code::review_classes(&c),
+        "change_instruments" => crate::platform_instruments::instruments(&c),
         "symbol_touches" => crate::platform_access::symbol_touches(&c),
         "work_plan" => crate::platform_access::work_plan(&c),
         "replace_literal" => crate::platform_code::replace_literal(&c),
@@ -69,6 +65,7 @@ pub fn compute(c: Value) -> Result<Value> {
         "agent_view" => crate::platform_symbol_graph::agent_view(&c),
         "human_view" => crate::platform_views::human_view(&c),
         "session_transcript" => crate::platform_transcript::session_transcript(&c),
+        "secret_scan" => secret_scan(&c),
         "ref_update" => ref_update(&c),
         "ref_delete" => ref_delete(&c),
         "push_report" => push_report(&c),
@@ -95,6 +92,13 @@ pub fn compute(c: Value) -> Result<Value> {
         "git_v2_fetch_head" => crate::platform_git_v2::fetch_head(&c),
         op => Err(Error::new("UNKNOWN_OP", format!("Unknown compute op {op}"))),
     }
+}
+
+/// `secret_scan {text}` → `{clean}`: free text the adapter keeps rather than commits (an
+/// operator's reason) against the rules a commit is held to.
+fn secret_scan(c: &Value) -> Result<Value> {
+    let clean = crate::secret_scan::scan("text", string(c, "text")?.as_bytes(), &[]).is_ok();
+    Ok(json!({ "clean": clean }))
 }
 
 fn optional_id(c: &Value, key: &str) -> Result<Option<ObjectId>> {

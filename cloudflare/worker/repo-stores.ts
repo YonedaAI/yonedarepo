@@ -2,11 +2,11 @@
 // development and the fallback the plan keeps open), or none beside the store of record
 // once a purge retired the Artifacts mirror (repo-platform-store). Each repository records
 // which one holds its objects; the tiered reads in front of them live in repo-objects.
+
 import { rpcValue } from './durable';
-import { largeReceivePack } from './repo-large-files';
+import { ArtifactsStore, absent, asyncStore, dispatchStore } from './repo-artifacts-store';
 import { PLATFORM_SPEC, PlatformStore } from './repo-platform-store';
 import { R2Store } from './repo-r2-store';
-import { record, timed } from './repo-timing';
 import type { Env } from './types';
 
 export type TreeEntry = {
@@ -54,136 +54,14 @@ export interface ObjectStore {
     size: number,
     open: () => Promise<ReadableStream<Uint8Array>>,
   ): Promise<string | null>;
+  /** Sends a whole receive-pack request, streamed, where the store is a Git remote. */
+  pushStream?(open: () => Promise<ReadableStream<Uint8Array>>): Promise<Uint8Array>;
   /** A read-only `git clone` remote and short-lived token, where the store supports it. */
   cloneAccess?(): Promise<{ remote: string; token: string; expires_in_seconds: number }>;
+  /** Waits for a store a create left to the queue, where a store can be late (`STORE_JOB`). */
+  ready?(): Promise<void>;
   /** A fork's store: the parent repository and store its objects fall back to. */
   readonly inherits?: { repo: string; spec: string };
-}
-
-/** Per-isolate: a repository's remote never changes. */
-const remotes = new Map<string, string>();
-/** Per-isolate write tokens, reused until shortly before they expire (never logged). */
-const tokens = new Map<string, { plaintext: string; expires: number }>();
-const TOKEN_SECONDS = 60;
-const TOKEN_REUSE_MS = 40_000;
-const CLONE_TOKEN_SECONDS = 600;
-/** Busy answers a large file's push waits out (Artifacts takes one receive-pack at once). */
-const PUSH_FILE_RETRIES = 6;
-
-class ArtifactsStore implements ObjectStore {
-  constructor(
-    private readonly env: Env,
-    private readonly name: string,
-  ) {}
-  get spec() {
-    return `artifacts:${this.env.ARTIFACTS_NAMESPACE}/${this.name}`;
-  }
-  async create() {
-    await rpcValue(this.env.ARTIFACTS.create(this.name, { setDefaultBranch: 'main' }));
-  }
-  /**
-   * Pushes through the repository's queue: Artifacts takes one receive-pack at a time. The
-   * remote and a short-lived write token are reused within this isolate; minting and
-   * revoking a token per push cost more than the push itself. A rejected token is replaced.
-   */
-  async push(body: Uint8Array) {
-    const queue = this.env.OBJECT_PUSHES.get(this.env.OBJECT_PUSHES.idFromName(this.spec));
-    for (let attempt = 0; ; attempt++) {
-      const { remote, token } = await timed('push.token', () => this.credentials(attempt > 0));
-      try {
-        const pushed = await rpcValue(queue.push(remote, token, body));
-        record('push.wait', pushed.waited_ms);
-        record('push.send', pushed.sent_ms);
-        record('push.batch', pushed.batch);
-        return pushed.report;
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (attempt === 0 && /returned 40[13]/.test(message)) continue;
-        throw Object.assign(new Error(message), { code: 'PUSH_FAILED' });
-      }
-    }
-  }
-  /**
-   * Streams a large file's receive-pack straight to Artifacts (never through the push
-   * queue: its body cannot be held or combined), retrying while Artifacts is busy with
-   * another receive-pack and once with a fresh token.
-   */
-  async pushFile(id: string, size: number, open: () => Promise<ReadableStream<Uint8Array>>) {
-    for (let attempt = 0; ; attempt++) {
-      const { remote, token } = await this.credentials(attempt > 0);
-      const { body, carrier } = largeReceivePack(id, size, await open());
-      const result = await fetch(`${remote}/git-receive-pack`, {
-        method: 'POST',
-        headers: {
-          authorization: `Bearer ${token}`,
-          'content-type': 'application/x-git-receive-pack-request',
-          accept: 'application/x-git-receive-pack-result',
-        },
-        body,
-        redirect: 'manual',
-      });
-      const report = new Uint8Array(await result.arrayBuffer());
-      if ([401, 403].includes(result.status) && attempt === 0) continue;
-      const busy = new TextDecoder().decode(report.subarray(0, 200)).includes('busy');
-      if (busy && attempt < PUSH_FILE_RETRIES) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, 100 * 2 ** attempt + Math.random() * 100),
-        );
-        continue;
-      }
-      if (result.status !== 200)
-        throw Object.assign(new Error(`Object store push returned ${result.status}`), {
-          code: 'PUSH_FAILED',
-        });
-      return carrier;
-    }
-  }
-  private async credentials(fresh: boolean) {
-    const cached = tokens.get(this.spec);
-    const remote = remotes.get(this.spec);
-    if (!fresh && remote && cached && cached.expires > Date.now())
-      return { remote, token: cached.plaintext };
-    using repo = await this.env.ARTIFACTS.get(this.name);
-    const url = remote ?? (await rpcValue(repo.info())).remote;
-    remotes.set(this.spec, url);
-    const token = await rpcValue(repo.createToken('write', TOKEN_SECONDS));
-    tokens.set(this.spec, { plaintext: token.plaintext, expires: Date.now() + TOKEN_REUSE_MS });
-    return { remote: url, token: token.plaintext };
-  }
-  async cloneAccess() {
-    using repo = await this.env.ARTIFACTS.get(this.name);
-    const info = await rpcValue(repo.info());
-    const token = await rpcValue(repo.createToken('read', CLONE_TOKEN_SECONDS));
-    return { remote: info.remote, token: token.plaintext, expires_in_seconds: CLONE_TOKEN_SECONDS };
-  }
-  async readCommit(id: string) {
-    using repo = await this.held();
-    const commit = repo && (await rpcValue(repo.readCommit(id)));
-    return commit ? { tree: commit.treeHash, parents: commit.parents } : null;
-  }
-  async readTree(id: string) {
-    using repo = await this.held();
-    const entries = repo && (await rpcValue(repo.readTree(id)));
-    return entries ? entries.map((e) => ({ name: e.name, type: e.type, id: e.hash })) : null;
-  }
-  async readBlob(id: string) {
-    using repo = await this.held();
-    if (!repo) return null;
-    return rpcValue(repo.readBlob(id), async (blob) =>
-      blob ? new Uint8Array(await blob.arrayBuffer()) : null,
-    );
-  }
-  /** The repository to read, or null once it is deleted (a mirror retired after a purge,
-   * still named by a fork's record of its parent or a head copy older than the switch:
-   * the store of record holds everything it did). */
-  private async held() {
-    try {
-      return await this.env.ARTIFACTS.get(this.name);
-    } catch (e: any) {
-      if (e?.code === 'NOT_FOUND' || /not.?found/i.test(String(e?.message ?? e))) return null;
-      throw e;
-    }
-  }
 }
 
 /** A new repository's store, chosen by deployment (`PLATFORM_OBJECT_STORE=r2` locally). */
@@ -205,16 +83,23 @@ export function forkOwnStore(env: Env, parentSpec: string, fork: string): Object
 /**
  * Fork `fork`'s own store: an Artifacts fork of the parent's own store when that is
  * Artifacts (it then holds the parent's projected branches: `inherited`), else a new,
- * empty store (`forkOwnStore`).
+ * empty store (`forkOwnStore`). A parent whose store a job has yet to create holds nothing
+ * projected, so a fork of it would be empty too: the fork gets its own job.
  */
 export async function forkStore(env: Env, parentSpec: string, fork: string) {
   const name = `yr-${fork}`;
   const parent = /^artifacts:([^/]+)\/([A-Za-z0-9._-]+)$/.exec(ownSpec(parentSpec));
   if (parent && parent[1] === env.ARTIFACTS_NAMESPACE && env.PLATFORM_OBJECT_STORE !== 'r2') {
-    using repo = await env.ARTIFACTS.get(parent[2]);
-    // The fork's initial write token stays here and is dropped, as for create().
-    await rpcValue(repo.fork(name, { defaultBranchOnly: false }));
-    return { spec: new ArtifactsStore(env, name).spec, inherited: true };
+    try {
+      using repo = await env.ARTIFACTS.get(parent[2]);
+      // The fork's initial write token stays here and is dropped, as for create().
+      await rpcValue(repo.fork(name, { defaultBranchOnly: false }));
+      return { spec: new ArtifactsStore(env, name).spec, inherited: true };
+    } catch (e) {
+      if (!asyncStore(env) || !absent(e)) throw e;
+      await dispatchStore(env, fork);
+      return { spec: new ArtifactsStore(env, name).spec, inherited: false };
+    }
   }
   const store = forkOwnStore(env, parentSpec, fork);
   await store.create();

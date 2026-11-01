@@ -1,7 +1,6 @@
 // The admin pages' model (operators only; every answer comes from `/api/v1/admin`, which
 // checks for itself): the sections, the API's shapes and paths, the sign-ups unread marker
-// this browser keeps, and the labels and bar heights the pages show.
-
+// this browser keeps, and the labels the pages show.
 export const ADMIN_SECTIONS = [
   'overview',
   'users',
@@ -27,6 +26,8 @@ export type Overview = {
   suspended: number;
   repos: { public: number; private: number };
   signups_per_day: { day: string; count: number }[];
+  /** Whether the revenue view exists here (ADMIN_BILLING). */
+  billing?: boolean;
 };
 export type AdminAccount = {
   account: string;
@@ -37,6 +38,8 @@ export type AdminAccount = {
   repos: number;
   suspended: boolean;
   suspended_at: number | null;
+  /** Ours: left out of every figure. */
+  internal: boolean;
 };
 export type AdminRepo = {
   id: string;
@@ -60,6 +63,7 @@ export type Credit = {
 export type AccountDetail = {
   account: string;
   indexed: boolean;
+  internal: boolean;
   handle: string | null;
   email: string | null;
   providers: string[];
@@ -71,6 +75,8 @@ export type AccountDetail = {
   repos: AdminRepo[];
   tokens: number | null;
   credit: Credit | null;
+  /** Whether the Billing section exists here (ADMIN_BILLING). */
+  billing?: boolean;
 };
 export type Signups = { items: AdminAccount[]; unread: number };
 export type AuditEntry = {
@@ -82,7 +88,7 @@ export type AuditEntry = {
   detail: Record<string, unknown> | null;
 };
 
-function withQuery(path: string, params: Record<string, string | number | undefined>) {
+export function withQuery(path: string, params: Record<string, string | number | undefined>) {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params))
     if (value !== undefined && value !== '') query.set(key, String(value));
@@ -127,12 +133,6 @@ export const usd = (micro: number) => `$${(micro / 1_000_000).toFixed(2)}`;
 export const unreadLabel = (unread: number) =>
   unread <= 0 ? '' : unread > 99 ? '99+' : `${unread}`;
 
-/** Bar heights in percent of the busiest day; a day with any sign-up shows at least 4%. */
-export function barHeights(counts: number[]) {
-  const top = Math.max(0, ...counts);
-  return counts.map((n) => (n > 0 ? Math.max(4, Math.round((n / top) * 100)) : 0));
-}
-
 type Store = Pick<Storage, 'getItem' | 'setItem'>;
 const SEEN_KEY = 'yoneda.admin.signups-seen';
 const browserStore = (): Store | undefined =>
@@ -152,16 +152,6 @@ export function saveSeen(at: number, store: Store | undefined = browserStore()) 
   } catch {
     // Blocked storage only means the badge counts from the start again.
   }
-}
-
-/** The last 30 UTC days ending today (oldest first), each with its count or 0. */
-export function lastThirtyDays(rows: { day: string; views: number }[], now = Date.now()) {
-  const counts = new Map(rows.map((r) => [r.day, r.views]));
-  const today = Math.floor(now / 86_400_000);
-  return Array.from({ length: 30 }, (_, i) => {
-    const day = new Date((today - 29 + i) * 86_400_000).toISOString().slice(0, 10);
-    return { day, count: counts.get(day) ?? 0 };
-  });
 }
 
 /** A country's name from its ISO code, else the code (unknown or unsupported). */

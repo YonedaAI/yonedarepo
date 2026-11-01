@@ -180,16 +180,23 @@ pub fn actor_with(
 ) -> Result<Actor> {
     if let Some(
         system @ ("checks" | "projection" | "import" | "merge" | "repair" | "derive" | "commits"
-        | "purge" | "hooks" | "compact" | "fork" | "lfs" | "quarantine"),
+        | "purge" | "hooks" | "compact" | "fork" | "lfs" | "quarantine" | "erase"
+        | "land-when-cleared" | "audit"),
     ) = c.get("_system").and_then(Value::as_str)
     {
         let roles: &[&str] = match system {
             "import" => &["import"],
             "merge" => &["write", "lander"],
+            // Lands a Landing that cleared, and nothing else (`land_when_cleared`).
+            "land-when-cleared" => &["write", "land", "clearance"],
             "repair" => &["write"],
             "derive" => &["classify"],
             "hooks" => &["hooks"],
             "compact" => &["compact"],
+            // Empties a tombstone (erase).
+            "erase" => &["erase"],
+            // Copies a repository's events to its org's audit log (audit_outbox).
+            "audit" => &["audit"],
             // Sweeps LFS bytes no object references (lfs::sweep).
             "lfs" => &["lfs"],
             // Purges quarantined content once its retention ends (quarantine::purge).

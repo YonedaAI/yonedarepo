@@ -15,6 +15,7 @@ op_names! {
         AccountExists = "account_exists",
         WelcomeState = "welcome_state",
         WelcomeSent = "welcome_sent",
+        DeviceNoted = "device_noted",
     }
 }
 op_names! {
@@ -107,6 +108,7 @@ op_names! {
     pub(crate) enum OrgOp {
         Create = "org_create",
         Access = "org_access",
+        Retired = "org_retired",
         TeamExists = "team_exists",
         HintAdd = "org_hint_add",
         HintRemove = "org_hint_remove",
@@ -116,6 +118,7 @@ op_names! {
     /// Organization commands for its members: showing it, or managing it as an owner.
     pub(crate) enum OrgMemberOp {
         Show = "org_show",
+        Audit = "org_audit",
         Delete = "org_delete",
         MemberPut = "org_member_put",
         MemberRemove = "org_member_remove",
@@ -123,6 +126,53 @@ op_names! {
         TeamDelete = "team_delete",
         TeamMemberPut = "team_member_put",
         TeamMemberRemove = "team_member_remove",
+        HoldShow = "org_hold_show",
+        HoldSet = "org_hold_set",
+        HoldRelease = "org_hold_release",
+    }
+}
+op_names! {
+    /// Legal holds outside an org's own commands: the check a repository's destructive ops
+    /// wait for, and operators' holds (trusted Worker adapters only).
+    pub(crate) enum HoldOp {
+        Check = "hold_check",
+        OperatorSet = "hold_operator_set",
+        OperatorRelease = "hold_operator_release",
+    }
+}
+
+op_names! {
+    /// The repositories an owner can still restore (trusted Worker adapters only).
+    pub(crate) enum DeletedRepoOp {
+        Put = "deleted_repo_put",
+        Remove = "deleted_repo_remove",
+        List = "deleted_repo_list",
+    }
+}
+
+op_names! {
+    /// An organization's audit log: what a source hands over (`Targets`, `Pending`), and the
+    /// log itself, on its own authority instance.
+    pub(crate) enum AuditOp {
+        Targets = "audit_targets",
+        Pending = "audit_pending",
+        Cursor = "audit_cursor",
+        Append = "audit_append",
+        Read = "audit_read",
+        Verify = "audit_verify",
+    }
+}
+
+op_names! {
+    /// An owner's search directory, on its own authority instance (trusted Worker adapters
+    /// only). Everything takes repository ids: there is no way to list what it holds.
+    pub(crate) enum SearchOp {
+        Put = "search_put",
+        Touch = "search_touch",
+        Fork = "search_fork",
+        Void = "search_void",
+        Drop = "search_drop",
+        Match = "search_match",
     }
 }
 
@@ -156,6 +206,10 @@ pub(crate) enum AccountOp {
     OAuth(OAuthOp),
     Org(OrgOp),
     OrgMember(OrgMemberOp),
+    Hold(HoldOp),
+    DeletedRepo(DeletedRepoOp),
+    Audit(AuditOp),
+    Search(SearchOp),
     Handle(HandleOp),
 }
 
@@ -182,6 +236,10 @@ impl AccountOp {
             Self::OAuth(op) => op.name(),
             Self::Org(op) => op.name(),
             Self::OrgMember(op) => op.name(),
+            Self::Hold(op) => op.name(),
+            Self::DeletedRepo(op) => op.name(),
+            Self::Audit(op) => op.name(),
+            Self::Search(op) => op.name(),
             Self::Handle(op) => op.name(),
         }
     }
@@ -200,6 +258,10 @@ impl AccountOp {
         all.extend(OAuthOp::ALL.iter().copied().map(Self::OAuth));
         all.extend(OrgOp::ALL.iter().copied().map(Self::Org));
         all.extend(OrgMemberOp::ALL.iter().copied().map(Self::OrgMember));
+        all.extend(HoldOp::ALL.iter().copied().map(Self::Hold));
+        all.extend(DeletedRepoOp::ALL.iter().copied().map(Self::DeletedRepo));
+        all.extend(AuditOp::ALL.iter().copied().map(Self::Audit));
+        all.extend(SearchOp::ALL.iter().copied().map(Self::Search));
         all.extend(HandleOp::ALL.iter().copied().map(Self::Handle));
         all
     }

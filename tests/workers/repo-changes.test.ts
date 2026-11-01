@@ -118,8 +118,17 @@ it('opens, discusses, approves and lands a change with its branch head', async (
   expect((await api(`/repos/${repo}/commits/${head}/reviews`, { cookie }, { body: { decision: 'approve' } })).status).toBe(200);
   const approved = await gates();
   expect([approved.ready, kinds(approved).approvals]).toEqual([true, ['ready', true]]);
+  // The route in one read: the change's own commits, none of main's.
+  const route = await api(`/repos/${repo}/changes/1/route`, { token: reader });
+  expect(route.status, JSON.stringify(route.body)).toBe(200);
+  expect(route.body).toMatchObject({ number: 1, status: 'open', branch: 'fix', base: 'main', head, merge_base: main });
+  expect(route.body.commits.at(0)).toMatchObject({ commit: head, subject: 'retry' });
+  expect(route.body.truncated).toEqual({ commits: false, sessions: false, deliveries: false, checks: false });
+  expect((await api(`/repos/${repo}/changes/1/route`, { token: docs })).status).toBe(403);
   const landed = await api(`/repos/${repo}/land`, { cookie }, { body: { ref: 'main', commit: head } });
   expect(landed.status, JSON.stringify(landed.body)).toBe(200);
+  const landedRoute = await api(`/repos/${repo}/changes/1/route`, { token: reader });
+  expect(landedRoute.body.commits).toEqual(route.body.commits);
   const after = await api(`/repos/${repo}/changes/1`, { token: reader });
   expect(after.body).toMatchObject({ status: 'landed', landed_version: landed.body.version, landed_commit: head, head, comment_count: 2 });
   // A landed change still shows what it changed: against main just before it landed.
@@ -132,6 +141,8 @@ it('opens, discusses, approves and lands a change with its branch head', async (
     api(`/repos/${repo}/mcp`, { token }, { body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } } });
   const reopened = await mcp('git_change_create', { branch: 'fix', title: 'Follow-up' });
   expect(reopened.body.result.structuredContent).toMatchObject({ number: 2, status: 'open' });
+  const routed = (await mcp('git_change_route', { number: 1 }, reader)).body.result.structuredContent;
+  expect(routed.commits.map((c: any) => c.commit)).toContain(head);
   const viaMcp = (await mcp('git_change_gates', { number: 2 })).body.result.structuredContent;
   expect([viaMcp.number, viaMcp.status, viaMcp.requirements.length > 0]).toEqual([2, 'open', true]);
   expect((await mcp('git_change_close', { number: 2 })).body.result.structuredContent.status).toBe('closed');
@@ -185,4 +196,48 @@ it('lands a change on its own base branch, leaving main alone', async () => {
   expect(landed.status, JSON.stringify(landed.body)).toBe(200);
   expect((await api(`/repos/${repo}/changes/1`, { token: agent })).body).toMatchObject({ status: 'landed', landed_commit: fix[0].id });
   expect((await api(`/repos/${repo}/refs`, { cookie })).body.refs['refs/heads/main']).toBe(main);
+});
+
+it('opens a Landing per push once the owner turns it on, and a push-then-create still answers', async () => {
+  const cookie = await signup('landing_owner');
+  const created = await api('/repos', { cookie }, { body: { name: 'landings', policy: { approvals: 1, required_checks: [] }, files: [file('a.md', 'a\n')], author } });
+  const repo = created.body.id as string;
+  const agent = (await api(`/repos/${repo}/tokens`, { cookie }, { body: { name: 'agent', scopes: ['read', 'write'] } })).body.token as string;
+  const status = await api(`/repos/${repo}`, { cookie });
+  const main = (await api(`/repos/${repo}/refs`, { cookie })).body.refs['refs/heads/main'] as string;
+  expect(status.body.landings).toEqual({ create: false, agents: false, land_when_cleared: false, findings_block: false });
+
+  // Off: exactly as before.
+  const off = await push(repo, agent, 'refs/heads/off', null, await commitOf(main, 'off\n'));
+  expect(off).toContain('open a change: yoneda change create off');
+  expect((await api(`/repos/${repo}/changes?status=all`, { token: agent })).body.changes).toEqual([]);
+
+  // Only the owner turns it on, and the policy digest stays.
+  const denied = await api(`/repos/${repo}/auto-landings`, { token: agent }, { method: 'PUT', body: { create: true } });
+  expect(denied.status).toBe(403);
+  const set = await api(`/repos/${repo}/auto-landings`, { cookie }, { method: 'PUT', body: { create: true } });
+  expect(set.body).toEqual({ create: true, agents: false, land_when_cleared: false, findings_block: false });
+  const after = await api(`/repos/${repo}`, { cookie });
+  expect(after.body.landings).toEqual({ create: true, agents: false, land_when_cleared: false, findings_block: false });
+  expect(after.body.policy_digest).toBe(status.body.policy_digest);
+
+  const on = await push(repo, agent, 'refs/heads/feature', null, await commitOf(main, 'on\n'));
+  expect(on).toMatch(/change #1 now at this push/);
+  const auto = (await api(`/repos/${repo}/changes`, { token: agent })).body.changes;
+  expect(auto).toHaveLength(1);
+  expect(auto[0]).toMatchObject({ number: 1, branch: 'feature', title: 'retry', origin: 'auto', base: 'main' });
+  expect((await api(`/repos/${repo}/changes?origin=explicit`, { token: agent })).body.changes).toEqual([]);
+  expect((await api(`/repos/${repo}/changes?branch=feature`, { token: agent })).body.changes).toHaveLength(1);
+
+  // What an installed CLI does after a push: it creates, and gets a change back.
+  const claimed = await api(`/repos/${repo}/changes`, { token: agent }, { body: { branch: 'feature', title: 'Retry calls' } });
+  expect(claimed.status).toBe(200);
+  expect(claimed.body).toMatchObject({ number: 1, title: 'Retry calls', origin: 'explicit' });
+  const again = await api(`/repos/${repo}/changes`, { token: agent }, { body: { branch: 'feature', title: 'Again' } });
+  expect(again.status).toBe(409);
+
+  // The list's direct rows come only when asked for.
+  const landed = await api(`/repos/${repo}/changes?status=landed&direct=1`, { token: agent });
+  expect(landed.body.direct).toEqual([]);
+  expect((await api(`/repos/${repo}/changes?status=landed`, { token: agent })).body.direct).toBeUndefined();
 });

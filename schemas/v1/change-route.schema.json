@@ -1,0 +1,36 @@
+{
+  "$defs": {
+    "ChangeRoute": {
+      "additionalProperties": false,
+      "description": "`change route`.",
+      "properties": {
+        "route": {
+          "description": "The commits, sessions, delivered context and checks, as the platform returns them."
+        }
+      },
+      "required": [
+        "route"
+      ],
+      "title": "ChangeRoute",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `change-route`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/ChangeRoute"
+    },
+    "schema": {
+      "const": "yoneda.cli.change-route.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.change-route.v1",
+  "type": "object"
+}

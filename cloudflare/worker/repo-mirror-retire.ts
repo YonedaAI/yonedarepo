@@ -85,6 +85,8 @@ export async function retireMirror(env: Env, repo: string): Promise<number | nul
   } catch (e: any) {
     // Claimed again by a run that carries on (this one's lease ran out).
     if (e?.code === 'CONFLICT') return null;
+    // Not a failure: the job comes back after the hold, and its lease runs out meanwhile.
+    if (e?.code === 'LEGAL_HOLD') throw e;
     const detail = `${e?.code ?? 'ERROR'}: ${String(e?.message ?? e).slice(0, 400)}`;
     console.warn(`mirror retirement of ${repo} stopped: ${detail}`);
     await call({ op: 'repo_mirror_failed', epoch, detail }).catch(() => {});

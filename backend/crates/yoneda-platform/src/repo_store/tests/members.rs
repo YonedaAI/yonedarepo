@@ -11,7 +11,7 @@ fn member(h: &Harness, account: &str, mut c: Value) -> yoneda_core::Result<Value
     c["now"] = json!(*h.now.borrow());
     c["_session"] =
         json!({"workspace": account, "principal": format!("user:{account}"), "human": true});
-    execute_repo_store(&h.db, c)
+    execute_repo_store(&h.db, hold_off(c))
 }
 /// `account`'s personal token holding `scopes`.
 fn member_pat(
@@ -24,7 +24,7 @@ fn member_pat(
     c["now"] = json!(*h.now.borrow());
     c["_pat"] = json!({"workspace": account, "principal": format!("user:{account}"),
         "id": "pat_0123456789abcdef", "scopes": scopes, "repos": null});
-    execute_repo_store(&h.db, c)
+    execute_repo_store(&h.db, hold_off(c))
 }
 fn add(h: &Harness, account: &str, role: &str) {
     h.ok(
@@ -434,7 +434,7 @@ fn upgrades_from_the_hooks_schema_with_no_members() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        super::super::migration::MIGRATIONS.last().unwrap().0
+        super::super::migration::APPLY_THROUGH
     );
     assert!(
         db.query("SELECT account FROM members", &[])

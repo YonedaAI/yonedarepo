@@ -1,7 +1,7 @@
 // Building a pack (shared by a fetch's answer, repo-git-upload, and the pack-build job,
 // repo-pack-jobs): the session counts what the walk named, then the pack is written wave by
 // wave as its objects are read from the store of record, in pieces of about `CHUNK` bytes.
-import { holdsBundles, type ReadStats, type Wanted } from './repo-bundles';
+import type { ReadStats, Wanted } from './repo-bundles';
 import {
   enumerate,
   FETCH_READS,
@@ -14,6 +14,7 @@ import {
   waves,
 } from './repo-git-objects';
 import type { UploadSession } from './repo-git-sessions';
+import { inBundles } from './repo-inherit';
 import { deflated, isLarge, type LargeBody } from './repo-large-files';
 import type { RepoObjects } from './repo-objects';
 import { ApiError } from './repo-ops';
@@ -64,12 +65,14 @@ export async function buildPack(
     ({ count } = await enumerate(session, objects, stats.walkReads, seen));
     stats.walk = performance.now() - started;
     // Without bundles every object is a read of its own: refused before the pack starts.
-    if (count > FETCH_READS && !holdsBundles(objects.repo))
+    if (count > FETCH_READS && !inBundles(objects))
       throw overBudget(`${count} objects read one at a time`);
     // So is a pack that would carry a withheld blob (the counting pass saw every id).
     const withheld = await objects.withheldAll();
     const [held] = withheld.size ? session.holds([...withheld.keys()]) : [];
     if (held) throw quarantined(held, withheld.get(held) ?? null);
+    // Failing here, nothing has gone out, so the request can still be tried again.
+    await early;
   } catch (e) {
     session.close();
     throw e;
@@ -92,9 +95,12 @@ async function refuseMirrorOnly(objects: RepoObjects, commits: string[]) {
 }
 
 const importedOnly = (id: string) =>
-  new ApiError(
-    'NOT_FOUND',
-    `Commit ${id} is held only as imported history, which HTTPS does not serve yet; use git-remote-yoneda`,
+  Object.assign(
+    new ApiError(
+      'NOT_FOUND',
+      `Commit ${id} is held only as imported history, which HTTPS does not serve yet; use git-remote-yoneda`,
+    ),
+    { mirrorOnly: true },
   );
 
 /** `wanted` read whole (`rawObjects`). */

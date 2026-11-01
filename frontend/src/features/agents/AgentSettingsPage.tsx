@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import {
   type AgentState,
   HARNESS_LABELS,
+  HIGH_LEVEL_FINDINGS,
   managedAgent,
   modelRate,
   type WorkspaceState,
@@ -16,7 +17,7 @@ import { Failure } from '../source-platform/SourceStatus';
 import { managedApi } from '../source-platform/sourceApi';
 import { useSource } from '../source-platform/useSource';
 import { AgentDetail } from './AgentDetail';
-import { AgentIcon, loadState } from './agentParts';
+import { AgentIcon, loadState, NoSuchAgent } from './agentParts';
 import {
   agentPath,
   CREATE_OWN_GATE,
@@ -24,7 +25,7 @@ import {
   valueTypeLabel,
   workspacePath,
 } from './agentsModel';
-import { RepoPicker, TriggerFields } from './settingsParts';
+import { BlockField, RepoPicker, TriggerFields } from './settingsParts';
 import { type AgentForm, formProblem, initialForm, updateBody } from './setupForm';
 
 type Space = { workspace?: string };
@@ -70,7 +71,7 @@ function AgentFacts({ agent }: { agent: AgentState }) {
           <p className="source-meta">
             {agent.value_type === 'pass_fail'
               ? 'Pass when it finds nothing worth fixing; fail when it finds a high or medium problem. Lower is better.'
-              : `The level of the most serious finding. Lower is better. ${
+              : `The level of the most serious finding, or high with ${HIGH_LEVEL_FINDINGS} medium findings or more. Lower is better. ${
                   s.block_at
                     ? `It blocks landing at ${BLOCK_AT[s.block_at] ?? s.block_at}.`
                     : 'It reports and never blocks landing.'
@@ -78,7 +79,7 @@ function AgentFacts({ agent }: { agent: AgentState }) {
           </p>
         </div>
         <div className="agent-field">
-          <span id="preview-label">How the check shows on a change</span>
+          <span id="preview-label">How the check shows on a Landing</span>
           <ul className="agent-check-preview" aria-labelledby="preview-label">
             {checkPreview(agent).map((line) => (
               <li key={line.text}>
@@ -165,6 +166,14 @@ function SetupForm({
           <TriggerFields trigger={form.trigger} onChange={(trigger) => set({ trigger })} />
         </div>
       </section>
+      {current.value_type === 'level' && (
+        <section className="agent-setup-section" aria-labelledby="landing-heading">
+          <h2 id="landing-heading">Landing</h2>
+          <div className="agent-panel">
+            <BlockField value={form.block_at} onChange={(block_at) => set({ block_at })} />
+          </div>
+        </section>
+      )}
       <section className="agent-setup-section" aria-labelledby="repos-heading">
         <h2 id="repos-heading">Repositories</h2>
         <div className="agent-panel">
@@ -218,7 +227,7 @@ function NewAgent({ navigate, space }: { navigate: Navigate; space: Space }) {
         <AgentIcon icon="custom" />
         <div>
           <h1>New agent</h1>
-          <p>Your own reviewer: your instructions, run on the changes you choose.</p>
+          <p>Your own reviewer: your instructions, run on the Landings you choose.</p>
         </div>
       </header>
       <div className="agents-billing-note" role="note">
@@ -258,15 +267,7 @@ export function AgentSettingsPage({
   useEffect(() => {
     window.scrollTo?.({ top: 0 });
   }, []);
-  if (!known)
-    return (
-      <div className="source-empty-state">
-        <p>
-          <strong>There is no agent called “{agent}”.</strong>{' '}
-          <a {...linkTo({ view: 'agents-home', ...space }, navigate)}>See all agents</a>
-        </p>
-      </div>
-    );
+  if (!known) return <NoSuchAgent agent={agent} space={space} navigate={navigate} />;
   const state = loaded.data;
   const found = state?.agents.find((a) => a.id === agent);
   if (loadState(loaded, 'the agent')) return loadState(loaded, 'the agent');

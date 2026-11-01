@@ -6,6 +6,8 @@ import type {
   ManagedRun,
   RunTile,
 } from '../../../../shared/managed-agents';
+import { EmptyState } from '../../components/EmptyState';
+import { linkTo, type Navigate } from '../shell/useRoute';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { when } from '../source-platform/sourceApi';
 import type { Loaded } from '../source-platform/useSource';
@@ -15,6 +17,7 @@ const PATHS: Record<ManagedAgentDefinition['icon'] | 'custom', string[]> = {
   code: ['M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16'],
   shield: ['M12 3l7 3v5c0 4.5-3 8.3-7 10-4-1.7-7-5.5-7-10V6l7-3z', 'M9 12l2 2 4-4'],
   siren: ['M7 18v-6a5 5 0 0110 0v6M5 18h14v3H5zM12 3v2M4.2 6.2l1.4 1.4M19.8 6.2l-1.4 1.4'],
+  compass: ['M12 21a9 9 0 100-18 9 9 0 000 18z', 'M15.5 8.5l-2 5-5 2 2-5 5-2z'],
   custom: ['M12 5v14M5 12h14'],
 };
 
@@ -57,9 +60,9 @@ export function ResultTile({
   );
 }
 
-/** The last six results, newest first, padded with empty slots. */
-export function HistoryStrip({ history }: { history: RunTile[] }) {
-  const tiles = history.slice(0, 6);
+/** The last results (six by default), newest first, padded with empty slots. */
+export function HistoryStrip({ history, slots = 6 }: { history: RunTile[]; slots?: number }) {
+  const tiles = history.slice(0, slots);
   if (!tiles.length)
     return <p className="source-meta">No runs yet: results show here after the first one.</p>;
   return (
@@ -69,7 +72,7 @@ export function HistoryStrip({ history }: { history: RunTile[] }) {
           <ResultTile tile={t} />
         </li>
       ))}
-      {Array.from({ length: 6 - tiles.length }, (_, i) => (
+      {Array.from({ length: slots - tiles.length }, (_, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: empty placeholder slots have no identity.
         <li key={i} aria-hidden="true">
           <span className="result-tile tone-empty" />
@@ -84,24 +87,35 @@ export function StatusChip({ run }: { run: Pick<ManagedRun, 'status' | 'value'> 
 }
 
 function Unavailable() {
-  return (
-    <div className="source-empty-state">
-      <p>
-        <strong>Managed agents are not available here.</strong> This deployment does not run
-        YonedaRepo&apos;s managed agents.
-      </p>
-    </div>
-  );
+  return <EmptyState title="Managed agents are not available here" />;
 }
 
 function NotOwner() {
   return (
-    <div className="source-empty-state">
-      <p>
-        <strong>Only a workspace owner can see its agents.</strong> Ask an owner of this account or
-        organization, or pick a workspace you own.
-      </p>
-    </div>
+    <EmptyState title="Only a workspace owner can see its agents">
+      Ask an owner, or pick a workspace you own.
+    </EmptyState>
+  );
+}
+
+export function NoSuchAgent({
+  agent,
+  space,
+  navigate,
+}: {
+  agent: string;
+  space: { workspace?: string };
+  navigate: Navigate;
+}) {
+  return (
+    <EmptyState
+      title={`There is no agent called “${agent}”`}
+      action={
+        <a className="button-link" {...linkTo({ view: 'agents-home', ...space }, navigate)}>
+          See all agents
+        </a>
+      }
+    />
   );
 }
 
@@ -117,10 +131,7 @@ export function loadState<T>(loaded: Loaded<T>, what: string) {
 export function BillingComing({ children }: { children?: React.ReactNode }) {
   return (
     <div className="agents-billing-note" role="note">
-      <p>
-        {children ??
-          'Setting up billing is coming. Until then, the agents YonedaRepo maintains run on your starting credit.'}
-      </p>
+      <p>{children ?? 'Billing is coming. Until then, agents run on your starting credit.'}</p>
       <button type="button" disabled title="Billing is not available yet">
         Set up billing
       </button>

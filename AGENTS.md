@@ -49,10 +49,10 @@ YonedaRepo is a Git-compatible source platform for agents and API clients, built
 ## Development process (owner rules)
 
 Branches and worktrees
-- All work happens in a worktree on its own `claude/<slice>` branch, **inside the repo root's `.worktrees/` folder** (`git worktree add .worktrees/<slice> -b claude/<slice> dev`; `.worktrees/` is git-ignored). Never create worktrees beside the repo (no `../yonedarepo-*`). Merge into `dev` with `--no-ff` only after its gates pass, then remove the worktree the same turn (`git worktree remove .worktrees/<slice>`; keep the branch). A finished builder's worktree is removed even before its branch merges.
+- All work happens in a worktree on its own `claude/<slice>` branch, **inside the repo root's `.worktrees/` folder** (`git worktree add .worktrees/<slice> -b claude/<slice> dev`; `.worktrees/` is git-ignored). Never create worktrees beside the repo (no `../yonedarepo-*`). Merge into `dev` with `--no-ff` only after its gates pass, then remove the worktree and the branch the same turn (`git worktree remove .worktrees/<slice>`, `git branch -d claude/<slice>`). A finished builder's worktree is removed even before its branch merges.
 - `dev` stays clean: no untracked or uncommitted files. Uncommitted code found anywhere goes onto its own branch as a WIP commit; never merge it unreviewed.
 - Fast worktree start: APFS-clone `target/` (`cp -cR target/debug target/wasm32-unknown-unknown .worktrees/<slice>/target/`), symlink `node_modules` and `frontend/node_modules`, and run `worker-build --release` in the worktree's own build folder (a shared build folder ships a stale Wasm).
-- GitHub: `origin` is the private YonedaAI/yonedarepo (`dev` deploys dev, `main` is promoted to prod with owner approval). Never push private history to the archived public MagnetonIO/yonedarepo. Run a secret scan (`gitleaks git --redact`) before pushing new history.
+- GitHub: `origin` is the public YonedaAI/yonedarepo (`dev` deploys dev, `main` reaches prod through the ship PR, on the owner's word). Workflow logs, PR comments, issues and artifacts are readable by anyone: no account names, emails, repository ids or monitor details there. Leave the archived MagnetonIO/yonedarepo alone. Run a secret scan (`gitleaks git --redact`) before pushing new history.
 
 Tests
 - Targeted tests only: the test files and crate filters for the code you changed, plus fmt/clippy/tsc/biome for touched languages. Never run full suites (whole `tests/workers`, `cargo test --workspace`) unless the lead or owner asks; never leave a suite running in the background.
@@ -66,12 +66,42 @@ Environments and deploys
 - Exactly two environments: dev (`yonedarepo-dev-*`, dev.yonedarepo.com) and prod (`yonedarepo-prod-*`, yonedarepo.com), defined in `infra/envs/{dev,prod}.json`.
 - Deploy dev from the local checkout with `cargo xtask deploy --env dev`; don't push to GitHub just to deploy.
 - DNS: a "could not resolve host" in an agent's shell is the agent's own resolver (its sandbox caches negative answers for 30+ minutes, even with the sandbox disabled), not the owner's Mac, Tailscale or router. Compare with `dig @1.1.1.1 <host>` and work around it (`curl --resolve`, DNS over HTTPS; the deploy's /health check falls back to 1.1.1.1). Never ask the owner to flush DNS.
-- Never push `dev` to GitHub after each merge: every push runs the full CI (about 9 jobs, 8+ minutes each). Push only when the owner asks, and never with known-red tests. Load credentials with `set -a; . <file>; set +a` and never print them.
-- Heavy tests (bursts, big pushes, compaction, full kit, real agents) run on dev only. Prod gets one deploy per wave, only when dev is fully green and the owner says "ship", followed by the small smoke (frontend, sign-in, CLI items 12–17, browser item, one model check).
+- Push `dev` to GitHub only when the owner asks, and never with known-red tests. A push to `dev` runs no CI: Check and Full suite run on the ship PR and on pushes to `main`, or by hand with `gh workflow run`. `pnpm check` is part of Check, so run it before pushing. Load credentials with `set -a; . <file>; set +a` and never print them.
+- Heavy tests (bursts, big pushes, compaction, full kit, real agents) run on dev only. Live tests stay on the Mac; GitHub does CI and the deploy. Prod gets one deploy per wave, only when dev is fully green and the owner says "ship": run the full kit at the tip of `dev`, push `dev`, `cargo xtask live-tests`, then open the PR from `dev` to `main`. Ship runs Check and Full suite; merging deploys prod, runs the runner's smoke and watches prod for 30 minutes. After it, run the small smoke from the Mac (frontend, sign-in, CLI items 12–17, browser item, SSH; one model check by hand). `docs/ship-pipeline.md` has the steps and the manual rollback; nothing rolls back on its own.
 - Before a container rollout, warn the owner and re-check for active runs. Local Docker builds are fine (native arm64 for local tests); remove superseded and test images afterwards and never touch other projects' volumes.
 - Product scope: agents are stock CLIs used as clients of the git platform; do not build agent orchestration (planners, supervisors, multi-agent teams) into the platform.
 - Exception (owner, 2026-10-29): predefined **managed agents** (code review, security review) run in their own Worker (`<prefix>-agents-managed`) as ordinary API clients of the platform: Cloudflare Workflows + Queues for durable steps, AI Gateway for model calls and per-use cost, billed from the account's credit. The platform never runs, schedules or knows about agents; third-party runtimes (e.g. AgentHero) connect as plugins through webhooks and MCP.
 - Status and task lists contain only what a working dev and prod need; no governance or nice-to-have rows.
+
+## UI and UX rules (owner rules)
+
+Every page, panel and dialog follows these. Check them before reporting UI work done; the owner should never have to ask for one of these twice.
+
+Words
+- One short line. A page explains itself with its layout, not with paragraphs; longer help belongs in docs. No line over 76 characters of reading width.
+- Sentence case, plain verbs, the reader's words. No internal names on screen: ledger, rollup, projection, derive, outbox, Durable Object.
+- Show a requirement only when it applies to this viewer and this repository. A public clone says nothing about tokens.
+- Hints put the link first, then the action: `Settings → SSH keys: run yoneda ssh setup once.`
+- No product internals, setup steps or caveats in the main flow. If a note doesn't change what the reader does next, cut it.
+
+Empty, loading and error states
+- Nothing there: the shared empty state. A centred title (`No sessions yet`), one or two plain sentences on how the first one appears, at most one action. No box, dashed border, command syntax, MCP names or list of tools.
+- A section with nothing in it shows one line, never a table of zeros or headers over no rows.
+- Loading never shifts the layout. An error says what failed and offers the way out; no raw codes or stack text.
+
+Layout
+- Everything on a page shares the same left and right edges: no grids with spare columns, no blocks narrower than their neighbours without a reason.
+- Controls in a row are the same height and line up. A section's filters sit in its header row.
+- Figures are right aligned in tabular numerals; a total row looks like a total.
+- One command, one line: scroll it, never break it, and give it a Copy button.
+- Use the shared components and tokens. Add a new pattern only when none fits, and move the old ones onto it in the same change.
+
+Scope
+- Admin pages show what an operator reads. Repairs and first-use steps are `cargo xtask` commands, not buttons.
+- A feature that isn't part of the product doesn't appear in the product.
+
+Done means
+- Looked at in the served app, not only in tests: wide and 375px, light and dark, with empty, loading, error and full states, by keyboard, with no page-level sideways scroll. Look at the screenshots before reporting.
 
 ## References
 

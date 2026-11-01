@@ -5,8 +5,9 @@
 //! on their own; an org always keeps one owner. `actor` is the calling account, set by the
 //! authenticating adapter. A personal account's authority keeps hints of the orgs it joined
 //! (`org_hint_*`) so the adapter knows whom to ask; hints never grant access. Deleting an
-//! org (its owners, once it owns no repositories: the adapter checks the listing) leaves a
-//! tombstone: the name is retired, so nothing a deleted org held can pass to a new account.
+//! org (its owners, once it owns no repositories: the adapter checks the listing, and this
+//! authority the names claimed for repositories being made) leaves a tombstone: the name is
+//! retired, so nothing a deleted org held can pass to a new account.
 use super::op::{OrgMemberOp, OrgOp};
 use super::*;
 
@@ -16,6 +17,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: OrgOp, now: i64) -> Res
     match op {
         OrgOp::Create => create(db, c, now),
         OrgOp::Access => access(db, c),
+        // No record at all is false: a workspace an operator provisions has none.
+        OrgOp::Retired => Ok(json!({ "retired": retired(db) })),
         // Whether a team exists (a repository grants roles only to existing teams).
         OrgOp::TeamExists => {
             org(db)?;
@@ -52,7 +55,8 @@ pub(super) fn member<S: SqlStore>(db: &S, c: &Value, op: OrgMemberOp, now: i64) 
         )
     })?;
     let leaving = op == OrgMemberOp::MemberRemove && c["account"] == actor.as_str();
-    if op != OrgMemberOp::Show && role != "owner" && !leaving {
+    let reads = matches!(op, OrgMemberOp::Show | OrgMemberOp::HoldShow);
+    if !reads && role != "owner" && !leaving {
         return Err(Error::new(
             "FORBIDDEN",
             format!("Only an owner of {org} can do this"),
@@ -61,13 +65,17 @@ pub(super) fn member<S: SqlStore>(db: &S, c: &Value, op: OrgMemberOp, now: i64) 
     let actor = format!("user:{actor}");
     match op {
         OrgMemberOp::Show => show(db, &org, &role),
-        OrgMemberOp::Delete => delete(db, c, &org, now),
+        OrgMemberOp::Audit => Ok(json!({ "org": org })),
+        OrgMemberOp::Delete => delete(db, c, &org, &actor, now),
         OrgMemberOp::MemberPut => member_put(db, c, &org, &actor, now),
-        OrgMemberOp::MemberRemove => member_remove(db, c, &org, now),
+        OrgMemberOp::MemberRemove => member_remove(db, c, &org, &actor, now),
         OrgMemberOp::TeamCreate => super::teams::create(db, c, &actor, now),
-        OrgMemberOp::TeamDelete => super::teams::delete(db, c, now),
+        OrgMemberOp::TeamDelete => super::teams::delete(db, c, &actor, now),
         OrgMemberOp::TeamMemberPut => super::teams::member_put(db, c, &actor, now),
-        OrgMemberOp::TeamMemberRemove => super::teams::member_remove(db, c, now),
+        OrgMemberOp::TeamMemberRemove => super::teams::member_remove(db, c, &actor, now),
+        OrgMemberOp::HoldShow => super::holds::show(db),
+        OrgMemberOp::HoldSet => super::holds::owner_set(db, c, &actor, now),
+        OrgMemberOp::HoldRelease => super::holds::owner_release(db, c, &actor, now),
     }
 }
 
@@ -92,13 +100,18 @@ pub(super) fn org_name(name: &str) -> Result<String> {
 }
 
 /// The org this authority holds, or NOT_FOUND (a person's account, or nothing).
-fn org<S: SqlStore>(db: &S) -> Result<String> {
+pub(super) fn org<S: SqlStore>(db: &S) -> Result<String> {
     match get(db, "account") {
         Ok(record) if record["kind"] == "org" && record["deleted_at"].is_null() => {
             string(&record, "username")
         }
         _ => Err(Error::new("NOT_FOUND", "No such organization")),
     }
+}
+
+/// Whether this authority is a deleted org's tombstone, which is final: its name is retired.
+fn retired<S: SqlStore>(db: &S) -> bool {
+    get(db, "account").is_ok_and(|a| a["kind"] == "org" && !a["deleted_at"].is_null())
 }
 
 pub(super) fn personal(c: &Value) -> Result<String> {
@@ -137,7 +150,12 @@ fn create<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         "INSERT INTO org_members(account,role,added_by,added_at) VALUES(?,'owner',?,?)",
         &[json!(actor), json!(format!("user:{actor}")), json!(now)],
     )?;
-    audit(db, "org.created", now, json!({ "org": name, "by": actor }))?;
+    audit(
+        db,
+        "org.created",
+        now,
+        json!({ "org": name, "by": actor, "actor": format!("user:{actor}") }),
+    )?;
     Ok(json!({ "org": name, "role": "owner", "created_at": now }))
 }
 
@@ -232,13 +250,19 @@ fn member_put<S: SqlStore>(db: &S, c: &Value, org: &str, actor: &str, now: i64) 
         db,
         "org.member_put",
         now,
-        json!({ "account": account, "role": role }),
+        json!({ "account": account, "role": role, "previous": previous, "actor": actor }),
     )?;
     Ok(json!({ "account": account, "role": role, "previous": previous }))
 }
 
 /// `org_member_remove {account}`: by an owner, or the member leaving. Their teams go with it.
-fn member_remove<S: SqlStore>(db: &S, c: &Value, org: &str, now: i64) -> Result<Value> {
+fn member_remove<S: SqlStore>(
+    db: &S,
+    c: &Value,
+    org: &str,
+    actor: &str,
+    now: i64,
+) -> Result<Value> {
     let account = personal(c)?;
     let Some(role) = role_of(db, &account)? else {
         return Err(Error::new(
@@ -257,17 +281,24 @@ fn member_remove<S: SqlStore>(db: &S, c: &Value, org: &str, now: i64) -> Result<
         "DELETE FROM org_team_members WHERE account=?",
         &[json!(account)],
     )?;
-    audit(db, "org.member_removed", now, json!({ "account": account }))?;
+    audit(
+        db,
+        "org.member_removed",
+        now,
+        json!({ "account": account, "actor": actor }),
+    )?;
     Ok(json!({ "account": account, "removed": true }))
 }
 
 /// `org_delete {confirm}`: an owner retires the org. Its members and teams go; the record
 /// stays as a tombstone that holds the name (no person or org can take it again). Answers
 /// the former members, whose hints the adapter then drops.
-fn delete<S: SqlStore>(db: &S, c: &Value, org: &str, now: i64) -> Result<Value> {
+fn delete<S: SqlStore>(db: &S, c: &Value, org: &str, actor: &str, now: i64) -> Result<Value> {
     if string(c, "confirm")? != org {
         return Err(bad("confirm must be the organization's name"));
     }
+    super::holds::refuse_org_delete(db, c)?;
+    super::repo_names::refuse_creating(db, now)?;
     let members: Vec<Value> = db
         .query("SELECT account FROM org_members ORDER BY account", &[])?
         .into_iter()
@@ -279,6 +310,11 @@ fn delete<S: SqlStore>(db: &S, c: &Value, org: &str, now: i64) -> Result<Value> 
     let mut record = get(db, "account")?;
     record["deleted_at"] = json!(now);
     put(db, "account", &record)?;
-    audit(db, "org.deleted", now, json!({ "org": org }))?;
+    audit(
+        db,
+        "org.deleted",
+        now,
+        json!({ "org": org, "actor": actor }),
+    )?;
     Ok(json!({ "org": org, "deleted": true, "members": members }))
 }

@@ -7,6 +7,7 @@
 import { lstat, readdir, readFile } from 'node:fs/promises';
 import { basename, join, relative, resolve, sep } from 'node:path';
 import { parseArgs } from 'node:util';
+import { OWN_TRAFFIC } from './own-traffic.mjs';
 
 const SKIP = new Set(['.git', 'node_modules', 'target', 'dist', '.wrangler', '.DS_Store']);
 const MAX_FILE = 32 * 1024 * 1024;
@@ -45,7 +46,7 @@ async function session(url, signup) {
   const post = (path, body) =>
     fetch(`${url}/api/auth/${path}`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...OWN_TRAFFIC },
       body: JSON.stringify(body),
     });
   let login = await post('login', { username, password });
@@ -73,7 +74,7 @@ async function main() {
   const cookie = await session(url, values.signup);
   const response = await fetch(`${url}/api/v1/repos`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', cookie },
+    headers: { 'content-type': 'application/json', ...OWN_TRAFFIC, cookie },
     body: JSON.stringify({
       name: values.name ?? basename(root),
       policy: values.policy ? JSON.parse(values.policy) : { required_checks: [], approvals: 1 },

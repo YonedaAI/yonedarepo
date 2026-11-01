@@ -2,15 +2,27 @@
 // Git), /internal/ssh (the SSH gateway), account sign-in, health, and the /source web UI.
 import { accountRoute } from './accounts';
 import { error, response } from './http';
+import { withRequestAccount } from './internal-accounts';
+import { recordClient } from './platform-client-events';
 import { sshInternal } from './platform-ssh';
 import { frontDoor, sshWake } from './platform-ssh-gateway';
+import { watchWrites } from './platform-write-origin';
 import { GIT_PATH, legacyRedirect } from './readable-paths';
 import { repoApi } from './repo-api';
 import { gitHttp } from './repo-git-http';
 import { gitByPath } from './repo-git-paths';
 import type { Env } from './types';
 
-export async function platformFetch(req: Request, env: Env): Promise<Response> {
+export function platformFetch(req: Request, env: Env): Promise<Response> {
+  return withRequestAccount(async () => {
+    const started = Date.now();
+    const res = await watchWrites(req, env, () => platformRoute(req, env));
+    await recordClient(req, res, env, Math.random, started);
+    return res;
+  });
+}
+
+async function platformRoute(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   if (url.pathname === '/health') {
     sshWake(env);

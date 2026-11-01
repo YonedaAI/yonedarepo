@@ -41,6 +41,10 @@ const OBJECT_CLASSES: Record<string, TailComponent> = {
 const RESOURCE_KILLS = new Set(['exceededCpu', 'exceededMemory']);
 /** Logged by pushCommit (repo-object-push.ts) when Artifacts refuses a push and it retries. */
 const PUSH_RETRY = /^object store push attempt \d+/;
+/** Logged by compactLog (repo-compaction.ts) when a hold has stalled a repository's log. */
+const COMPACTION_STALL = /"event":"compaction\.stalled"/;
+/** The sample such a line becomes: no counter, as one stalled repository is an incident. */
+export const STALL_SAMPLE = 'compaction.stalled';
 /** Wall-time histogram: bucket i holds times up to 5 ms x 1.5^i (the last is unbounded). */
 const BUCKETS = 28;
 const MAX_SAMPLES = 3;
@@ -130,6 +134,9 @@ export function aggregate(events: TraceItem[], script: string): TailRow[] {
     for (const e of item.exceptions)
       if (r.samples.length < MAX_SAMPLES)
         r.samples.push({ name: redact(e.name), message: redact(e.message) });
+    for (const l of item.logs)
+      if (r.samples.length < MAX_SAMPLES && COMPACTION_STALL.test(text(l.message)))
+        r.samples.push({ name: STALL_SAMPLE, message: redact(text(l.message)) });
   }
   return [...rows.values()];
 }

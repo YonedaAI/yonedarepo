@@ -8,24 +8,30 @@ import { accountMcp } from './account-mcp';
 import { authenticate } from './auth';
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { error, readJson, response } from './http';
+import { noteAccount } from './internal-accounts';
 import { accountActivity } from './platform-account-activity';
 import { adminRoute } from './platform-admin';
+import { auditExport, auditExportOrg } from './platform-audit-export';
 import { isOwnAvatar, ownAvatar, publicAvatarName, servePublicAvatar } from './platform-avatars';
 import { favoritesRoute } from './platform-favorites';
+import { repoHold } from './platform-holds';
 import { orgAccess } from './platform-org-access';
 import { orgsRoute } from './platform-orgs';
 import { sshKeyRoute } from './platform-ssh-keys';
 import { SUPPORT_BODY_LIMIT, supportRoute } from './platform-support';
 import { deviceApprove, deviceCode, deviceToken, tokenRoute } from './platform-tokens';
-import { deleteRepository, listRepositories } from './repo-admin';
+import { accountSearch } from './repo-account-search';
+import { deleteRepository, listDeleted, listRepositories } from './repo-admin';
 import { agentRecords } from './repo-agent-records';
+import { audited } from './repo-audit';
 import { breakGlass } from './repo-break-glass';
 import { changeLogStatus } from './repo-changelog';
-import { changesRoute } from './repo-changes';
+import { changesRoute, setAutoLandings } from './repo-changes';
 import { compactLog } from './repo-compaction';
 import { createRepository, importRepository, tokenSecret } from './repo-create';
 import { refreshHead } from './repo-head';
 import { hooksRoute, notifyHooks } from './repo-hooks';
+import { importProgress } from './repo-import-start';
 import { lfsRoute } from './repo-lfs';
 import { repoMcp } from './repo-mcp';
 import { membersRoute } from './repo-members';
@@ -50,6 +56,7 @@ import {
 } from './repo-public';
 import { quarantineRoute } from './repo-quarantine';
 import { releaseDownload, releasesRoute } from './repo-releases';
+import { restoreRepository } from './repo-restore';
 import { SESSION_BODY_LIMIT } from './repo-session-records';
 import { timed, withTimings } from './repo-timing';
 import { branchesRoute, operations } from './repo-tools';
@@ -66,9 +73,12 @@ const STATUS: Record<string, number> = {
   STALE_PARENT: 409,
   NOT_READY: 409,
   STALE_HEAD: 409,
+  IMPORT_IN_PROGRESS: 409,
   STALE_EPOCH: 409,
   NOT_LANDED: 409,
   AUTOMATION_PAUSED: 423,
+  // Under a legal hold (repo_store/legal_hold.rs), or one that could not be read.
+  LEGAL_HOLD: 423,
   ALREADY_EXISTS: 409,
   NAME_TAKEN: 409,
   PUSH_FAILED: 502,
@@ -95,6 +105,11 @@ const STATUS: Record<string, number> = {
   QUARANTINED: 451,
   // The repository's database is at its size limit: new work is refused, reads go on.
   REPO_FULL: 507,
+  // Operators' billing: no refund key or no way to the managed Worker, and a refund a
+  // configured limit refuses, or one blocked by an open dispute.
+  NOT_CONFIGURED: 503,
+  REFUND_LIMIT: 403,
+  DISPUTED: 409,
 };
 export const statusOf = (code: string, known: boolean) => STATUS[code] ?? (known ? 400 : 500);
 const COMMIT_BODY_LIMIT = 64 * 1024 * 1024;
@@ -124,6 +139,12 @@ function authenticateOnce(req: Request, env: Env) {
 /** The caller of a platform request: a repository token, a personal access token (checked
  * with its account on every request), or a workspace session; null when none is valid. */
 export async function credentials(req: Request, env: Env): Promise<Credentials | null> {
+  const auth = await checkCredentials(req, env);
+  noteAccount(auth);
+  return auth;
+}
+
+async function checkCredentials(req: Request, env: Env): Promise<Credentials | null> {
   const bearer = req.headers.get('authorization');
   if (bearer?.startsWith('Bearer yrp_')) return { _token: bearer.slice(7) };
   if (bearer?.startsWith('Bearer ypat_')) {
@@ -165,6 +186,8 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return deviceApprove(env, auth, await bodyOf(req));
   if (parts[0] === 'activity' && parts.length === 1 && req.method === 'GET')
     return accountActivity(env, auth);
+  if (parts[0] === 'search' && parts.length === 1 && req.method === 'GET')
+    return accountSearch(env, auth, url, route);
   if (parts[0] === 'support' && parts.length === 1 && req.method === 'POST')
     return supportRoute(env, auth, () => bodyOf(req, SUPPORT_BODY_LIMIT));
   if (parts[0] === 'favorites' && parts.length <= 2)
@@ -179,6 +202,8 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   if (parts.length === 2 && parts[1] === 'import' && req.method === 'POST')
     return importRepository(env, auth, await bodyOf(req));
   if (parts.length === 1 && req.method === 'GET') return listRepositories(env, auth);
+  if (parts.length === 2 && parts[1] === 'deleted' && req.method === 'GET')
+    return listDeleted(env, auth);
   const repo = parts[1];
   if (!/^r[0-9a-f]{20}$/.test(repo ?? '')) throw new ApiError('NOT_FOUND', 'Unknown repository');
   const ctx = new RepoContext(env, repo, caller(env, repo, auth));
@@ -189,11 +214,14 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   const run = (name: string, args: Json) => operations[name](ctx, args);
   if (!resource && req.method === 'DELETE')
     return deleteRepository(env, auth, repo, url.searchParams.get('confirm') ?? '');
+  if (resource === 'restore' && !sha && post)
+    return restoreRepository(env, auth, repo, (await bodyOf(req).catch(() => ({}) as Json)).name);
   if (resource === 'refs' && sha === 'batch' && !sub && post)
     return batchRefs(ctx, await bodyOf(req));
   if (!resource && get) return withPath(env, repo, await run('git_status', {}));
   if (resource === 'name' && !sha && req.method === 'PUT')
     return renameRepository(ctx, (await bodyOf(req)).name);
+  if (resource === 'hold' && !sha && get) return repoHold(ctx);
   if (resource === 'quarantine')
     return quarantineRoute(ctx, req.method, sha, sub, () => bodyOf(req));
   if (get && resource === 'refs') return run('git_refs', query);
@@ -218,6 +246,7 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return run('symbol_edit', await bodyOf(req, COMMIT_BODY_LIMIT));
   if (resource === 'codemods' && post) return run('git_codemod', await bodyOf(req));
   if (resource === 'plans' && post) return run('git_plan', await bodyOf(req));
+  if (resource === 'flight-plans' && post) return run('git_flight_plan', await bodyOf(req));
   if (resource === 'bisect' && post) return run('git_bisect', await bodyOf(req));
   if (resource === 'bisect' && sha && get) return run('git_bisect', { id: sha });
   if (resource === 'commits' && sha && sub === 'pin' && post)
@@ -225,9 +254,18 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   if (resource === 'vacuum' && post) return vacuum(ctx, await bodyOf(req).catch(() => ({})));
   // Owner-run log compaction (the derive job also runs it after landings) and its bound.
   if (resource === 'compact' && post) return compactLog(env, repo, ctx.call);
+  // The owner's read of the floor, tail and database size; changes nothing (the load tests'
+  // sampler, tools/fanout-bench/sampler.mjs).
+  if (resource === 'compaction' && get) {
+    const [compaction, storage] = await Promise.all([
+      ctx.call({ op: 'repo_compact_status' }),
+      ctx.call({ op: 'repo_storage' }),
+    ]);
+    return { ...compaction, storage };
+  }
   if (resource === 'retention' && req.method === 'PUT') {
     const { keep_versions, keep_days } = await bodyOf(req);
-    return ctx.call({ op: 'repo_set_retention', keep_versions, keep_days });
+    return audited(env, repo, ctx.call({ op: 'repo_set_retention', keep_versions, keep_days }));
   }
   if (get && resource === 'diff')
     return run('git_diff', {
@@ -245,6 +283,7 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   if (resource === 'commits' && sha && sub === 'sessions' && get)
     return run('git_sessions', { commit: sha });
   if (resource === 'context' && !sha && get) return run('git_context', query);
+  if (resource === 'ctc' && !sha && get) return run('git_ctc_radar', query);
   if (resource === 'context' && sha && !sub)
     return contextRoute(ctx, req.method, sha, query, () => bodyOf(req));
   if (resource === 'memories')
@@ -268,17 +307,7 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     if (!log) throw new ApiError('NOT_FOUND', 'This run has no log');
     return { run_id: sha, log: await log.text() };
   }
-  if (resource === 'import' && get) {
-    await ctx.call({ op: 'repo_status' }); // read access first
-    const status = await env.PLATFORM_IMPORT.get(`import-${repo}`)
-      .then((i) => i.status())
-      .catch((e) => {
-        if (String(e?.message).includes('instance.not_found'))
-          throw new ApiError('NOT_FOUND', 'This repository has no import');
-        throw e;
-      });
-    return { import: `import-${repo}`, ...status };
-  }
+  if (resource === 'import' && get) return importProgress(ctx);
   // Access changes republish main's head (begins and reads decide access from it).
   if (resource === 'visibility' && req.method === 'PUT')
     return setVisibility(ctx, await bodyOf(req));
@@ -286,8 +315,10 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return withHeadRefresh(
       env,
       repo,
-      ctx.call({ op: 'repo_set_policy', policy: (await bodyOf(req)).policy }),
+      audited(env, repo, ctx.call({ op: 'repo_set_policy', policy: (await bodyOf(req)).policy })),
     );
+  if (resource === 'auto-landings' && req.method === 'PUT')
+    return setAutoLandings(ctx, await bodyOf(req));
   if (resource === 'objects' && post)
     return run('git_get_objects', await bodyOf(req, 2 * 1024 * 1024));
   if (resource === 'merges' && post) return run('git_merge', await bodyOf(req));
@@ -323,18 +354,26 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     const created = await withHeadRefresh(
       env,
       repo,
-      ctx.call({
-        op: 'repo_token_create',
-        name: body.name,
-        scopes: body.scopes,
-        paths: body.paths ?? null,
-        _secret: secret,
-      }),
+      audited(
+        env,
+        repo,
+        ctx.call({
+          op: 'repo_token_create',
+          name: body.name,
+          scopes: body.scopes,
+          paths: body.paths ?? null,
+          _secret: secret,
+        }),
+      ),
     );
     return { ...created, token: secret };
   }
   if (resource === 'tokens' && sha && req.method === 'DELETE')
-    return withHeadRefresh(env, repo, ctx.call({ op: 'repo_token_revoke', name: sha }));
+    return withHeadRefresh(
+      env,
+      repo,
+      audited(env, repo, ctx.call({ op: 'repo_token_revoke', name: sha })),
+    );
   throw new ApiError('NOT_FOUND', 'Unknown API path');
 }
 
@@ -456,6 +495,10 @@ async function handle(req: Request, env: Env): Promise<Response> {
   if (url.pathname === '/api/v1/mcp') return accountMcp(req, env, machine, route);
   // The signed-in person's picture: its bytes, an upload or a removal.
   if (isOwnAvatar(url)) return ownAvatar(req, env, auth).catch(failure);
+  // An audit log's export is a file, not a JSON answer.
+  const audited = auditExportOrg(url);
+  if (audited && req.method === 'GET')
+    return auditExport(env, auth, audited, url.searchParams).catch(failure);
   // An asset download is the asset's bytes, not a JSON answer.
   const download = releaseDownload(req, env, url, auth);
   if (download) return download.catch(failure);

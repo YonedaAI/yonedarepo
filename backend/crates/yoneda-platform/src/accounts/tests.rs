@@ -193,3 +193,23 @@ fn account_ops_round_trip_and_unknown_ops_are_not_found() {
         ("NOT_FOUND", "Unknown workspace operation")
     );
 }
+
+#[test]
+fn a_signup_records_a_known_region_only_on_the_account() {
+    let signup = |region: Value| {
+        let db = NativeStore::memory().unwrap();
+        let answer = call(&db, json!({"op":"signup","username":"alice","password":"a long test password","salt":"01".repeat(16),"recovery_hash":"b".repeat(64),"session_hash":"a".repeat(64),"region":region})).unwrap();
+        assert!(
+            answer.get("region").is_none(),
+            "the public account carries no region"
+        );
+        call(&db, json!({"op":"account_summary"})).unwrap()
+    };
+    for code in yoneda_core::account::ACCOUNT_REGIONS {
+        assert_eq!(signup(json!(code))["region"], *code);
+    }
+    // Sign-up never fails for a region: an unknown one stores nothing, as does none at all.
+    for refused in [json!("mars"), json!(7), Value::Null] {
+        assert!(signup(refused).get("region").is_none());
+    }
+}

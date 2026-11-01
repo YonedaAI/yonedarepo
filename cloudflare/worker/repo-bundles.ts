@@ -10,12 +10,21 @@
 // Readers ask the authority where objects are only for repositories known to hold bundles:
 // a single read that missed R2 asks in the staged-object call it makes anyway, so a
 // repository without bundles (API commits under a burst) costs its authority nothing more.
+import { durableJson } from './durable';
 import { putBytes } from './repo-stores';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
 type Json = Record<string, any>;
-export type Location = { id: string; bundle: string; at: number; size: number; kind: string };
+export type Location = {
+  id: string;
+  bundle: string;
+  at: number;
+  size: number;
+  kind: string;
+  /** The repository whose bundle it is, when not the reader's (what a fork inherits). */
+  repo?: string;
+};
 export type Wanted = { id: string; kind: string };
 
 const KINDS = ['', 'commit', 'tree', 'blob'];
@@ -109,12 +118,11 @@ const hex = (bytes: Uint8Array) => [...bytes].map((b) => b.toString(16).padStart
 /** A command to the repository's authority as the platform's object projector (callers
  * reach it only after the request was authorized for the repository). */
 export async function platformCall(env: Env, repo: string, command: Json): Promise<Json> {
-  const stub = env.SOURCE_REPOS.get(env.SOURCE_REPOS.idFromName(repo));
-  const response = await stub.fetch('https://source-repository/', {
-    method: 'POST',
-    body: JSON.stringify({ ...command, _system: 'projection' }),
-  });
-  const value = await response.json<Json & { error?: { code: string; message: string } }>();
+  const value = await durableJson<Json & { error?: { code: string; message: string } }>(
+    () => env.SOURCE_REPOS.get(env.SOURCE_REPOS.idFromName(repo)),
+    'https://source-repository/',
+    JSON.stringify({ ...command, _system: 'projection' }),
+  );
   if (value.error) throw Object.assign(new Error(value.error.message), { code: value.error.code });
   return value;
 }
@@ -270,6 +278,7 @@ export async function readLocated(
     if (
       last &&
       last.bundle === l.bundle &&
+      last.members[0].repo === l.repo &&
       bridged <= gap &&
       (!bounded || waste <= Math.max(GAP, wanted)) &&
       end - last.start <= range
@@ -294,7 +303,7 @@ export async function readLocated(
     const all = r.end === Number.POSITIVE_INFINITY;
     const object = await timed('bundle.read', () =>
       env.OBJECTS.get(
-        bundleKey(repo, r.bundle),
+        bundleKey(r.members[0].repo ?? repo, r.bundle),
         all ? {} : { range: { offset: r.start, length: r.end - r.start } },
       ),
     );

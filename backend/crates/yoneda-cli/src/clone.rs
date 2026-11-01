@@ -204,9 +204,10 @@ fn git_clone(access: &serde_json::Value, target: &Path) -> Result<()> {
         .ok_or_else(|| Error::new("the platform returned no clone token"))?;
     let (parent, name) = parent_and_name(target)?;
     let key = format!("http.{remote}.extraHeader");
-    let header = format!("Authorization: Bearer {token}");
-    let env = clone_env(&key, &header);
-    let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    let mut headers = vec![format!("Authorization: Bearer {token}")];
+    headers.extend(crate::http::own_traffic_line());
+    let env = clone_env(&key, &headers);
+    let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
     Git::new(parent)
         .output(&["clone", "-q", remote, name], None, &env)
         .map(|_| ())
@@ -226,13 +227,14 @@ fn parent_and_name(target: &Path) -> Result<(&Path, &str)> {
     Ok((parent, name))
 }
 
-/// Git's environment configuration (`GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n`).
-fn clone_env(key: &str, value: &str) -> [(&'static str, String); 3] {
-    [
-        ("GIT_CONFIG_COUNT", "1".to_owned()),
-        ("GIT_CONFIG_KEY_0", key.to_owned()),
-        ("GIT_CONFIG_VALUE_0", value.to_owned()),
-    ]
+/// Git's environment configuration (`GIT_CONFIG_COUNT`/`KEY_n`/`VALUE_n`): one key, many values.
+fn clone_env(key: &str, values: &[String]) -> Vec<(String, String)> {
+    let mut env = vec![("GIT_CONFIG_COUNT".to_owned(), values.len().to_string())];
+    for (i, value) in values.iter().enumerate() {
+        env.push((format!("GIT_CONFIG_KEY_{i}"), key.to_owned()));
+        env.push((format!("GIT_CONFIG_VALUE_{i}"), value.clone()));
+    }
+    env
 }
 
 #[cfg(test)]
@@ -245,9 +247,9 @@ mod tests {
         let repo = Repo::new()?;
         let env = clone_env(
             "http.https://store.example/r.git.extraHeader",
-            "Authorization: Bearer tok",
+            &["Authorization: Bearer tok".to_owned()],
         );
-        let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
         let seen = repo.git.output(
             &[
                 "config",
@@ -263,6 +265,31 @@ mod tests {
         );
         let config = std::fs::read_to_string(repo.root().join(".git/config")).context("read")?;
         assert!(!config.contains("Bearer"));
+        Ok(())
+    }
+
+    #[test]
+    fn a_marked_clone_sends_both_headers_on_the_same_key() -> Result<()> {
+        let repo = Repo::new()?;
+        let lines = [
+            "Authorization: Bearer tok".to_owned(),
+            "x-mark: 1".to_owned(),
+        ];
+        let env = clone_env("http.https://store.example/r.git.extraHeader", &lines);
+        let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+        let seen = repo.git.output(
+            &[
+                "config",
+                "--get-all",
+                "http.https://store.example/r.git.extraheader",
+            ],
+            None,
+            &env,
+        )?;
+        assert_eq!(
+            String::from_utf8_lossy(&seen).trim(),
+            "Authorization: Bearer tok\nx-mark: 1"
+        );
         Ok(())
     }
 }

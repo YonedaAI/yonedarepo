@@ -75,6 +75,7 @@ pub(super) fn refuses(op: StoreOp) -> bool {
                 | R::RecordPushed
                 | R::Import
                 | R::RecordImported
+                | R::RecordImportedBatch
         )
     )
 }

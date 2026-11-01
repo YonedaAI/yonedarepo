@@ -7,6 +7,7 @@
 import { deferred } from './background';
 import { hmacHex, toHex } from './hmac';
 import { touchActivity } from './repo-activity';
+import { audited } from './repo-audit';
 import { ApiError, caller, type Json, type RepoContext } from './repo-ops';
 import type { Env, Envelope } from './types';
 
@@ -32,20 +33,24 @@ export const hookOperations = {
   git_hook_list: (ctx: RepoContext) => ctx.call({ op: 'repo_hooks' }),
   git_hook_create: async (ctx: RepoContext, a: Json) => {
     const secret = hookSecret();
-    const created = await ctx.call({
-      op: 'repo_hook_create',
-      url: a.url,
-      events: a.events ?? null,
-      paths: a.paths ?? null,
-      _secret: secret,
-      _repo: ctx.repo,
-      _workers_subdomain: ctx.env.WORKERS_SUBDOMAIN ?? null,
-    });
+    const created = await audited(
+      ctx.env,
+      ctx.repo,
+      ctx.call({
+        op: 'repo_hook_create',
+        url: a.url,
+        events: a.events ?? null,
+        paths: a.paths ?? null,
+        _secret: secret,
+        _repo: ctx.repo,
+        _workers_subdomain: ctx.env.WORKERS_SUBDOMAIN ?? null,
+      }),
+    );
     // Shown once: listings never include it.
     return { ...created, secret };
   },
   git_hook_delete: (ctx: RepoContext, a: Json) =>
-    ctx.call({ op: 'repo_hook_delete', hook_id: hookId(a.id) }),
+    audited(ctx.env, ctx.repo, ctx.call({ op: 'repo_hook_delete', hook_id: hookId(a.id) })),
   git_hook_deliveries: (ctx: RepoContext, a: Json) =>
     ctx.call({ op: 'repo_hook_deliveries', hook_id: hookId(a.id) }),
 };

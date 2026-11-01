@@ -4,8 +4,11 @@
 // Workflow instance (also idempotent: the instance id is the run and attempt).
 import { type ManagedAgentId, managedAgent, readyForReview } from '../../shared/managed-agents';
 import { resolveSettings, triggerMatches } from '../../shared/managed-settings';
+import { reconcileAccount, reconcileAll } from './admin-reconcile';
+import { runRefund } from './admin-refund';
 import { runTopUp } from './billing';
 import { COMMIT_ID, type ManagedEnv, type QueueMessage, type RunParams } from './config';
+import { ledgerStub } from './ledger';
 import { Platform, PlatformError } from './platform';
 import { repoStub } from './repo-agents';
 import { instanceId } from './workflow';
@@ -14,7 +17,10 @@ import { workspaceStub } from './workspace-agents';
 const json = (value: unknown, status = 200) => Response.json(value, { status });
 
 /** `POST /hooks/<repo>`: a signed platform event. The platform names an event by family and
- * action (`change.opened`, `branch` with `action`, `repo.deleted`). */
+ * action (`change.opened`, `branch` with `action`, `repo.deleted`). A repository's reviews go
+ * when it is gone for good: at `repo.purged`, or at `repo.deleted` when that says no purge is
+ * still to come (`purge_at`: the platform's undo window, during which the owner can restore
+ * it). A platform without the window sends only the second. */
 export async function receiveHook(req: Request, env: ManagedEnv, repo: string): Promise<Response> {
   const body = await req.text();
   if (body.length > 256 * 1024) return json({ error: { code: 'TOO_LARGE' } }, 413);
@@ -22,8 +28,9 @@ export async function receiveHook(req: Request, env: ManagedEnv, repo: string): 
   const stub = repoStub(env, repo);
   if (!(await stub.verify(body, signature))) {
     // A repository with nothing left here (already cleared, or never connected) has nothing to
-    // delete: a repeated repo.deleted is acknowledged so the platform stops resending it.
-    if (!(await stub.hasConnection()) && req.headers.get('x-yoneda-event') === 'repo.deleted')
+    // delete: a repeated event is acknowledged so the platform stops resending it.
+    const event = req.headers.get('x-yoneda-event') ?? '';
+    if (!(await stub.hasConnection()) && ['repo.deleted', 'repo.purged'].includes(event))
       return json({ ignored: true }, 202);
     return json({ error: { code: 'UNAUTHORIZED' } }, 401);
   }
@@ -35,7 +42,7 @@ export async function receiveHook(req: Request, env: ManagedEnv, repo: string): 
   }
   if (event.repo !== repo) return json({ error: { code: 'INVALID_INPUT' } }, 400);
   const name = String(event.event ?? '');
-  if (name === 'repo.deleted') {
+  if (name === 'repo.purged' || (name === 'repo.deleted' && !event.purge_at)) {
     await env.RUNS.send({ kind: 'deleted', repo });
     return json({ queued: true }, 202);
   }
@@ -47,6 +54,7 @@ export async function receiveHook(req: Request, env: ManagedEnv, repo: string): 
     (family === 'branch' && (action === 'moved' || action === 'created'));
   if (!wanted || !commit) return json({ ignored: true }, 202);
   const number = Number(event.change?.number);
+  const at = Date.parse(String(event.at));
   await env.RUNS.send({
     kind: 'event',
     repo,
@@ -55,6 +63,7 @@ export async function receiveHook(req: Request, env: ManagedEnv, repo: string): 
     commit,
     change: Number.isSafeInteger(number) && number > 0 ? number : null,
     action,
+    ...(Number.isFinite(at) ? { at } : {}),
   });
   return json({ queued: true }, 202);
 }
@@ -80,7 +89,7 @@ export async function purgeTranscripts(env: ManagedEnv, repo: string) {
 }
 
 /**
- * repo.deleted: once the platform confirms the repository is GONE (it answers so before it
+ * repo.deleted or repo.purged: once the platform confirms the repository is GONE (it answers so before it
  * checks a credential, so even a revoked token tells), its transcripts, its workspace entries
  * and its RepoAgents state go, in that order: the connection, which names the workspace, goes
  * last, so a retry after a failure finds what is left. Billing entries stay.
@@ -117,15 +126,26 @@ async function startInstance(env: ManagedEnv, params: RunParams) {
   }
 }
 
+/**
+ * The open changes agents may run on. The owner's break-glass pause stops automation, managed
+ * agents included. A push's own row (`origin` = auto) costs nothing: agents run on it only when
+ * the repository turned that on, and the filter here holds on a platform that lists them all.
+ */
+export async function reviewable(platform: Platform, repo: string, branch: string | null = null) {
+  const { paused, onAuto } = await platform.automation(repo);
+  if (paused) return [];
+  const listed = await platform.openChanges(repo, { branch, explicit: !onAuto });
+  const open = (listed.changes ?? []) as Record<string, any>[];
+  return open.filter((c) => onAuto || c.origin !== 'auto');
+}
+
 async function onEvent(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'event' }>) {
   const repo = repoStub(env, m.repo);
   const [connection, enabled] = await Promise.all([repo.connection(), repo.enabled()]);
   if (!connection || connection.revoked || enabled.length === 0 || !m.commit) return;
   const platform = new Platform(env, { token: connection.token });
-  // The owner's break-glass pause stops automation, managed agents included.
-  if (await platform.automationPaused(m.repo)) return;
-  const open = ((await platform.openChanges(m.repo)).changes ?? []) as Record<string, any>[];
   const branch = m.ref?.startsWith('refs/heads/') ? m.ref.slice('refs/heads/'.length) : null;
+  const open = await reviewable(platform, m.repo, branch);
   // Only the change's current head is reviewed; an event for an older head is stale.
   const changes = open.filter(
     (c) => c.head === m.commit && (m.change ? c.number === m.change : c.branch === branch),
@@ -136,7 +156,8 @@ async function onEvent(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'event'
     { account: connection.account, platform },
     enabled,
     changes,
-    m.event === 'change',
+    // No `change.opened` reaches this hook for a push's own row: the push that opened it does.
+    m.event === 'change' || changes.some((c) => c.origin === 'auto' && c.created_at === m.at),
   );
 }
 
@@ -223,6 +244,10 @@ export async function consume(batch: MessageBatch<QueueMessage>, env: ManagedEnv
       else if (m.kind === 'resume') await onResume(env, m);
       else if (m.kind === 'deleted') await onDeleted(env, m);
       else if (m.kind === 'topup') await runTopUp(env, m);
+      else if (m.kind === 'refund') await runRefund(env, m.account, m.id);
+      else if (m.kind === 'reconcile-all') await reconcileAll(env);
+      else if (m.kind === 'reconcile') await reconcileAccount(env, m.account);
+      else if (m.kind === 'rollup') await ledgerStub(env, m.account).rollupRebuild();
       message.ack();
     } catch (e: any) {
       console.error(

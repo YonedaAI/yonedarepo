@@ -92,8 +92,7 @@ export function TokenSettings({
       <PersonalTokens repos={repos} orgs={orgs} tokens={tokens} />
       <SettingsSection id="cli" title="Signed-in CLIs">
         <p className="source-meta settings-block">
-          Each <code>yoneda login</code> you approved holds a personal token, labelled with its
-          machine. Signing one out revokes its token and removes the SSH keys it added.
+          Signing one out revokes its token and removes the SSH keys it added.
         </p>
         <CliTable
           tokens={clis}

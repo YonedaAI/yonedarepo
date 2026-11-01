@@ -12,6 +12,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { b64, Session, sleep } from './client.mjs';
+import { gitConfigEnv, OWN_TRAFFIC } from '../own-traffic.mjs';
 
 const author = { name: 'Staging kit', email: 'kit@yonedarepo.invalid' };
 /** The platform's access bound (repo-head.ts ACCESS_MS), and the slack for the round trips. */
@@ -34,6 +35,7 @@ export async function visibilityFlow({ origin, api, platform }, metrics) {
     SSH_ASKPASS: '',
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_CONFIG_GLOBAL: join(dir, 'gitconfig'),
+    ...gitConfigEnv(),
   };
   writeFileSync(env.GIT_CONFIG_GLOBAL, '');
   const remote = `${api}/git/${repo.id}.git`;
@@ -55,11 +57,11 @@ export async function visibilityFlow({ origin, api, platform }, metrics) {
     assert.deepEqual([status.body.visibility, status.body.viewer?.public], ['public', true]);
     const blob = await anonymousFront.raw('GET', `/api/v1${path}/blob?path=README.md`);
     assert.equal(blob.body.content, text, `anonymous read through the front origin: ${blob.status}`);
-    const page = await fetch(`${origin}/source/${repo.id}`, { redirect: 'manual', signal: AbortSignal.timeout(60_000) });
+    const page = await fetch(`${origin}/source/${repo.id}`, { headers: OWN_TRAFFIC, redirect: 'manual', signal: AbortSignal.timeout(60_000) });
     assert.equal(page.status, 301, 'an old repository address moves to its readable one');
     const readable = page.headers.get('location');
     assert.equal(new URL(readable, origin).pathname, status.body.path, 'the move names the readable path');
-    const opened = await fetch(new URL(readable, origin), { redirect: 'manual', signal: AbortSignal.timeout(60_000) });
+    const opened = await fetch(new URL(readable, origin), { headers: OWN_TRAFFIC, redirect: 'manual', signal: AbortSignal.timeout(60_000) });
     assert.equal(opened.status, 200, 'the repository page loads without a session');
     assert.match(await opened.text(), /<div id="root"|<script/i, 'the page is the web app');
     assert.ok(await listed(), '/explore lists the public repository');

@@ -59,11 +59,14 @@ const status = (viewer: Viewer, policy = noChecks): RepoStatus => ({
   objects: {},
   bundled: false,
   automation: null,
+  landings: { create: false, agents: false, land_when_cleared: false, findings_block: false },
   parent: null,
   forks: 0,
   grant: null,
   quarantined: [],
   quarantine_epoch: 0,
+  history_import: null,
+  history_stopped: null,
   visibility: 'private',
 });
 const page = (d: CommitDetail, s: RepoStatus) =>
@@ -100,7 +103,7 @@ describe('a landed commit', () => {
     expect(html).toContain('Landed on main at v2 · ');
     expect(html).toContain('>Revert<');
     for (const gone of [
-      'Ready to land',
+      'Cleared to land',
       'Review class',
       'Approvals',
       'Approve',
@@ -127,7 +130,7 @@ describe('a commit not yet landed', () => {
       breakGlass: false,
     });
     const html = page(detail(), status(lander));
-    expect(html).toContain('Ready to land');
+    expect(html).toContain('Cleared to land');
     expect(html).toContain('Land on main');
     expect(html).toMatch(/<select[^>]*><option[^>]*>main<\/option><option[^>]*>dev<\/option>/);
     expect(html).not.toContain('Approve');
@@ -147,7 +150,7 @@ describe('a commit not yet landed', () => {
       breakGlass: true,
     });
     const html = page(detail({ gates: blocked }), status(owner, withChecks));
-    expect(html).toContain('Not ready to land');
+    expect(html).toContain('Not cleared to land');
     expect(html).toContain('1 more approval (0 of 1).');
     expect(html).toContain('Approve');
     expect(html).toContain('<summary>More</summary>');
@@ -251,7 +254,7 @@ describe('the gate summary', () => {
     const unknown = renderToStaticMarkup(
       createElement(GateSummary, { gates: gates(), classes: { overall: 'unknown', files: [] } }),
     );
-    expect(unknown).toBe('<h3>Ready to land</h3>');
+    expect(unknown).toBe('<h3>Cleared to land</h3>');
   });
 
   it('shows approvals only when the policy requires them', () => {

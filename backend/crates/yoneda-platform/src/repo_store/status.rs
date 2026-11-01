@@ -2,8 +2,9 @@
 //! readable path the Worker adds. The answer's JSON Schema generates
 //! `shared/contracts/repo-status.ts` (`cargo xtask contracts`).
 use super::auth::Actor;
+use super::history_fill::{HistoryFill, HistoryStopped};
 use super::members::Role;
-use super::rows::{self, Policy, Settings, Visibility};
+use super::rows::{self, AutoLandings, Policy, Settings, Visibility};
 use crate::storage::SqlStore;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -27,6 +28,8 @@ pub struct RepoStatus {
     pub bundled: bool,
     /// Whether automation is paused, and by whom.
     pub automation: Value,
+    /// Whether a push opens a Landing, and whether agents run on those.
+    pub landings: AutoLandings,
     /// Set on a fork: the repository it was forked from and that one's version at the fork.
     pub parent: Option<ForkParent>,
     /// How many forks read this repository's objects (it is deleted only after them).
@@ -40,6 +43,10 @@ pub struct RepoStatus {
     pub quarantined: Vec<Withheld>,
     /// Changes whenever `quarantined` does: caches derived from content are keyed by it.
     pub quarantine_epoch: u64,
+    /// How far an imported history has been recorded, while it is still partial.
+    pub history_import: Option<HistoryFill>,
+    /// Set when an imported history ended early: older commits are not here.
+    pub history_stopped: Option<HistoryStopped>,
 }
 
 /// What `GET /repos/:id` answers: the repository's status with its readable path. The Worker
@@ -133,6 +140,7 @@ pub fn status<S: SqlStore>(db: &S, settings: &Settings, actor: &Actor) -> Result
         objects: super::staging::status(db)?,
         bundled: super::pushed::bundles::any(db)?,
         automation: super::break_glass::state(db)?,
+        landings: settings.auto_landings,
         parent: settings.parent.as_ref().map(|(repo, version)| ForkParent {
             repo: repo.clone(),
             version: *version,
@@ -155,5 +163,7 @@ pub fn status<S: SqlStore>(db: &S, settings: &Settings, actor: &Actor) -> Result
             })
             .collect(),
         quarantine_epoch: super::quarantine::epoch(db)?,
+        history_import: super::history_fill::filling(db)?,
+        history_stopped: super::history_fill::stopped(db)?,
     })
 }

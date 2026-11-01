@@ -40,6 +40,7 @@ const shortAgent: Record<ManagedAgentId, string> = {
   'code-review': 'cr',
   'security-review': 'sr',
   'slop-review': 'sl',
+  'intent-drift': 'id',
 };
 
 export class RepoAgents extends DurableObject<ManagedEnv> {

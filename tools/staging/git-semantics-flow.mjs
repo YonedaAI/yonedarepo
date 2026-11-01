@@ -14,6 +14,7 @@ import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { gitLfsVersion, lfsFlow } from './lfs-flow.mjs';
 import { McpClient } from './mcp-client.mjs';
+import { gitConfigEnv } from '../own-traffic.mjs';
 
 const author = { name: 'Staging kit', email: 'kit@yonedarepo.invalid' };
 const b64 = (text) => Buffer.from(text).toString('base64');
@@ -27,9 +28,7 @@ function write(dir, path, text) {
 /** Git over smart HTTP with the kit's PAT as a header (environment only, never an argument). */
 function smartHttp(kit) {
   return kit.env({
-    GIT_CONFIG_COUNT: '1',
-    GIT_CONFIG_KEY_0: `http.${kit.api}/.extraHeader`,
-    GIT_CONFIG_VALUE_0: `Authorization: Bearer ${kit.token}`,
+    ...gitConfigEnv({ token: kit.token, origin: kit.api }),
   });
 }
 

@@ -89,8 +89,7 @@ export function DevicePage({ code: initial }: { code: string }) {
       {repos.data && !outcome && (
         <form onSubmit={submit} className="source-token-form">
           <p>
-            Approve only a code that <code>yoneda login</code> just showed you in your own terminal.
-            The device receives a personal access token with the access you choose.
+            Approve only a code that <code>yoneda login</code> just showed you.
           </p>
           <label htmlFor="device-code" className="source-field">
             Code

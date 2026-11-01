@@ -2,10 +2,17 @@
 // are append-only, in micro-USD: a grant adds credit; a model call first holds its worst case,
 // then settles with a charge (cost × margin from the provider's reported usage) and a release
 // of the hold. The balance is the sum of every entry, so an outstanding hold already counts.
-// Each method is one synchronous transaction, so concurrent runs cannot overspend.
-import { DurableObject } from 'cloudflare:workers';
+// Each method is one synchronous transaction, so concurrent runs cannot overspend. What
+// operators do to a ledger is in LedgerAdmin, which this class extends.
 import { STARTING_CREDIT_USD } from '../../shared/managed-agents';
-import type { ManagedEnv } from './config';
+import type { ManagedEnv, QueueMessage } from './config';
+import {
+  LedgerAdmin,
+  type Paused,
+  REFUND_RETRY_MS,
+  ROLLUP_DELAY_MS,
+  ROLLUP_RETRY_MS,
+} from './ledger-admin';
 import {
   billingRow,
   cardOf,
@@ -19,8 +26,18 @@ import {
   topUpDue,
   topUps,
 } from './ledger-billing';
-import { closeRunHolds, insertEntry, releaseStaleHolds } from './ledger-holds';
-import { LEDGER_SCHEMA, migrate } from './schema';
+import {
+  type Balance,
+  balanceOf,
+  closeRunHolds,
+  insertEntry,
+  releaseStaleHolds,
+} from './ledger-holds';
+
+import { openRefunds } from './ledger-refunds';
+
+export type { Paused } from './ledger-admin';
+export type { Balance } from './ledger-holds';
 
 export const STARTING_CREDIT_MICROUSD = STARTING_CREDIT_USD * 1_000_000;
 /** Past the longest run (30 minute timeout, polling and posting), a hold nobody settled is stale. */
@@ -40,52 +57,23 @@ export interface Usage {
   /** What the account pays: ceil(cost × margin), micro-USD. */
   chargeMicrousd: number;
 }
-export interface Balance {
-  granted: number;
-  used: number;
-  balance: number;
-}
-
-export class CreditLedger extends DurableObject<ManagedEnv> {
-  constructor(ctx: DurableObjectState, env: ManagedEnv) {
-    super(ctx, env);
-    ctx.blockConcurrencyWhile(async () => {
-      ctx.storage.transactionSync(() => migrate(ctx.storage.sql, LEDGER_SCHEMA));
-    });
-  }
-
-  #tx<T>(fn: (sql: SqlStorage) => T): T {
-    return this.ctx.storage.transactionSync(() => fn(this.ctx.storage.sql));
-  }
-
+export class CreditLedger extends LedgerAdmin {
   #insert(sql: SqlStorage, key: string, kind: string, amount: number, extra: Partial<Row> = {}) {
     insertEntry(sql, key, kind, amount, extra);
   }
 
-  #balance(sql: SqlStorage): Balance {
-    const row = sql
-      .exec<{ total: number; granted: number; used: number }>(
-        `SELECT COALESCE(SUM(amount), 0) AS total,
-                COALESCE(SUM(CASE WHEN kind = 'grant' THEN amount END), 0) AS granted,
-                COALESCE(-SUM(CASE WHEN kind = 'charge' THEN amount END), 0) AS used
-         FROM entries`,
-      )
-      .one();
-    return { granted: row.granted, used: row.used, balance: row.total };
-  }
-
   /** The promotional starting credit, granted once per account. */
   ensureStartingCredit(): Balance {
-    return this.#tx((sql) => {
+    return this.tx((sql) => {
       this.#insert(sql, 'grant:starting-credit', 'grant', STARTING_CREDIT_MICROUSD, {
         note: 'Starting credit',
       });
-      return this.#balance(sql);
+      return balanceOf(sql);
     });
   }
 
   balance(): Balance {
-    return this.#balance(this.ctx.storage.sql);
+    return balanceOf(this.ctx.storage.sql);
   }
 
   /** Holds `amount` for one call unless the balance cannot cover it (then nothing is held). */
@@ -94,10 +82,10 @@ export class CreditLedger extends DurableObject<ManagedEnv> {
     amount: number,
     meta: CallMeta,
   ): Promise<{ held: boolean; balance: number }> {
-    const answer = this.#tx((sql) => {
+    const answer = this.tx((sql) => {
       const existing = sql.exec('SELECT 1 FROM entries WHERE key = ?', `hold:${key}`).toArray();
-      if (existing.length) return { held: true, balance: this.#balance(sql).balance };
-      const { balance } = this.#balance(sql);
+      if (existing.length) return { held: true, balance: balanceOf(sql).balance };
+      const { balance } = balanceOf(sql);
       if (balance <= 0 || balance < amount) return { held: false, balance };
       this.#insert(sql, `hold:${key}`, 'hold', -amount, meta);
       return { held: true, balance: balance - amount };
@@ -110,18 +98,45 @@ export class CreditLedger extends DurableObject<ManagedEnv> {
   /** Holds nobody settled within STALE_HOLD_MS (an isolate lost mid-call, a run that never
    * closed) are released, so a lost request cannot keep credit locked. */
   releaseStale(now = Date.now()): number {
-    return this.#tx((sql) => releaseStaleHolds(sql, now - STALE_HOLD_MS));
+    return this.tx((sql) => releaseStaleHolds(sql, now - STALE_HOLD_MS));
   }
 
+  /** When the refunds were last queued: an alarm that came for the rollup need not resend them. */
+  #refundsSent = 0;
+
+  /** One alarm serves all of it: stale holds, the rollup and open refunds. What comes next is
+   * decided last, with no await after it, so a write made meanwhile is not pushed back. */
   override async alarm() {
+    this.rollupArmed = false;
     this.releaseStale();
+    const failed = await this.pushRollup();
+    const refunds = openRefunds(this.ctx.storage.sql);
+    if (refunds.length && Date.now() - this.#refundsSent >= REFUND_RETRY_MS) {
+      this.#refundsSent = Date.now();
+      await this.env.RUNS.sendBatch(
+        refunds.map((r) => ({
+          body: { kind: 'refund', account: r.account, id: r.id } as QueueMessage,
+        })),
+      );
+    }
     const open = this.ctx.storage.sql
       .exec<{ n: number }>(
         `SELECT COUNT(*) AS n FROM entries h WHERE h.kind = 'hold'
            AND NOT EXISTS (SELECT 1 FROM entries r WHERE r.key = 'release:' || substr(h.key, 6))`,
       )
       .one().n;
-    if (open > 0) await this.ctx.storage.setAlarm(Date.now() + STALE_HOLD_MS);
+    const rollup = this.rollupWaiting();
+    if (rollup) this.rollupArmed = true;
+    const wait = rollup
+      ? failed
+        ? ROLLUP_RETRY_MS
+        : ROLLUP_DELAY_MS
+      : refunds.length
+        ? REFUND_RETRY_MS
+        : open > 0
+          ? STALE_HOLD_MS
+          : null;
+    if (wait !== null) await this.ctx.storage.setAlarm(Date.now() + wait);
   }
 
   /**
@@ -129,7 +144,7 @@ export class CreditLedger extends DurableObject<ManagedEnv> {
    * whole hold (the call may have been billed); null unsent just releases it. Idempotent.
    */
   settle(key: string, usage: Usage | null, sent: boolean, meta: CallMeta): string | null {
-    return this.#tx((sql) => {
+    return this.tx((sql) => {
       const hold = sql
         .exec<{ amount: number }>(
           "SELECT amount FROM entries WHERE key = ? AND kind = 'hold'",
@@ -150,7 +165,7 @@ export class CreditLedger extends DurableObject<ManagedEnv> {
           ...meta,
           note: 'Call outcome unknown: charged its hold',
         });
-      return topUpDue(sql, this.#balance(sql).balance, Date.now());
+      return topUpDue(sql, balanceOf(sql).balance, Date.now());
     });
   }
 
@@ -158,9 +173,9 @@ export class CreditLedger extends DurableObject<ManagedEnv> {
   /** Answers the top-up the charge now calls for (its key), or null. */
   charge(key: string, amount: number, meta: CallMeta, note: string): string | null {
     if (!Number.isSafeInteger(amount) || amount <= 0) return null;
-    return this.#tx((sql) => {
+    return this.tx((sql) => {
       this.#insert(sql, `charge:${key}`, 'charge', -amount, { ...meta, note });
-      return topUpDue(sql, this.#balance(sql).balance, Date.now());
+      return topUpDue(sql, balanceOf(sql).balance, Date.now());
     });
   }
 
@@ -169,7 +184,7 @@ export class CreditLedger extends DurableObject<ManagedEnv> {
    * lost mid-call): each is charged whole, since the provider may have billed it.
    */
   closeRun(run: string, attempt: number): number {
-    return this.#tx((sql) => closeRunHolds(sql, run, attempt));
+    return this.tx((sql) => closeRunHolds(sql, run, attempt));
   }
 
   /** A run's entries, oldest first (its cost breakdown). */
@@ -199,11 +214,11 @@ export class CreditLedger extends DurableObject<ManagedEnv> {
   }
 
   setCustomer(customer: string) {
-    this.#tx((sql) => setCustomer(sql, customer));
+    this.tx((sql) => setCustomer(sql, customer));
   }
 
   setAutoTopUp(enabled: boolean) {
-    this.#tx((sql) => setAutoTopUp(sql, enabled));
+    this.tx((sql) => setAutoTopUp(sql, enabled));
   }
 
   /** A card saved at Stripe for `customer` (refused for another): recorded, the promotional
@@ -213,19 +228,19 @@ export class CreditLedger extends DurableObject<ManagedEnv> {
     card: { payment_method: string; brand: string; last4: string },
     promoMicrousd: number,
   ): { recorded: boolean; resume: Paused[] } {
-    return this.#tx((sql) => {
+    return this.tx((sql) => {
       if (billingRow(sql).customer !== customer) return { recorded: false, resume: [] };
       recordCard(sql, card, Date.now());
       if (promoMicrousd > 0)
         this.#insert(sql, 'grant:card-promo', 'grant', promoMicrousd, {
           note: 'Promotional credit (card on file)',
         });
-      return { recorded: true, resume: this.#takePaused(sql) };
+      return { recorded: true, resume: this.takePaused(sql) };
     });
   }
 
   removeCard(): string | null {
-    return this.#tx((sql) => {
+    return this.tx((sql) => {
       const pm = billingRow(sql).payment_method;
       forgetCard(sql);
       return pm;
@@ -241,27 +256,20 @@ export class CreditLedger extends DurableObject<ManagedEnv> {
     key: string,
     outcome: { ok: true; intent: string } | { ok: false; error: string },
   ): { resume: Paused[] } {
-    return this.#tx((sql) => {
+    return this.tx((sql) => {
       const amount = settleTopUp(sql, key, outcome, Date.now());
       if (amount === null) return { resume: [] };
       this.#insert(sql, `grant:topup:${key}`, 'grant', amount, { note: 'Automatic top-up' });
-      return { resume: this.#takePaused(sql) };
+      return { resume: this.takePaused(sql) };
     });
-  }
-
-  #takePaused(sql: SqlStorage): Paused[] {
-    if (this.#balance(sql).balance <= 0) return [];
-    const resume = sql.exec<Paused>('SELECT repo, run FROM paused ORDER BY at').toArray();
-    sql.exec('DELETE FROM paused');
-    return resume;
   }
 
   /** Adds credit and hands back the runs that were waiting for it (now forgotten here). */
   grant(key: string, amount: number, note: string): { balance: Balance; resume: Paused[] } {
-    return this.#tx((sql) => {
+    return this.tx((sql) => {
       if (!Number.isSafeInteger(amount) || amount <= 0) throw new Error('Invalid grant');
       this.#insert(sql, `grant:${key}`, 'grant', amount, { note });
-      const balance = this.#balance(sql);
+      const balance = balanceOf(sql);
       if (balance.balance <= 0) return { balance, resume: [] };
       const resume = sql.exec<Paused>('SELECT repo, run FROM paused ORDER BY at').toArray();
       sql.exec('DELETE FROM paused');
@@ -296,7 +304,6 @@ type Row = {
   cost_microusd: number;
   note: string;
 };
-export type Paused = { repo: string; run: string };
 
 export const ledgerStub = (env: ManagedEnv, account: string) =>
   env.LEDGER.get(env.LEDGER.idFromName(account));

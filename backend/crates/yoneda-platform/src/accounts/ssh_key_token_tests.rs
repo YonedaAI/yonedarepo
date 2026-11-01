@@ -91,7 +91,7 @@ fn revoking_a_token_removes_the_keys_it_added_and_says_which() {
     assert!(live_keys(&db).is_empty());
     assert_eq!(
         events(&db, "ssh_key.removed"),
-        vec![json!({"id":KEY_A,"reason":"token_revoked","token":TOKEN_A})]
+        vec![json!({"id":KEY_A,"reason":"token_revoked","token":TOKEN_A,"orgs":[]})]
     );
 }
 

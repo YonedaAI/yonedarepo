@@ -1,0 +1,37 @@
+name: Env file
+description: >-
+  Writes an Environment's YONEDA_ENV_FILE secret to ~/.config/yonedarepo (0600, outside the
+  tree) under the names xtask and the kit read, and masks its values.
+inputs:
+  content:
+    description: The secret, KEY=VALUE lines
+    required: true
+  env:
+    description: dev or prod
+    required: true
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        CONTENT: ${{ inputs.content }}
+        ENV_NAME: ${{ inputs.env }}
+      run: |
+        if [ -z "$CONTENT" ]; then
+          echo "::error::YONEDA_ENV_FILE is not set in this GitHub Environment."
+          exit 1
+        fi
+        umask 077
+        dir="$HOME/.config/yonedarepo"
+        mkdir -p "$dir"
+        file="$dir/deploy-$ENV_NAME.env"
+        printf '%s\n' "$CONTENT" > "$file"
+        # GitHub masks a multi-line secret line by line, so a value printed on its own would
+        # show. Mask each value too; ::add-mask:: lines never reach the log.
+        while IFS='=' read -r _ value; do
+          if [ -n "$value" ]; then echo "::add-mask::$value"; fi
+        done < "$file"
+        # The spec's secrets_file, beside deploy_credentials' name: each reads its keys from it.
+        secrets=staging.env
+        if [ "$ENV_NAME" = prod ]; then secrets=prod.env; fi
+        cp "$file" "$dir/$secrets"

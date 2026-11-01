@@ -3,19 +3,24 @@
 //! reported, an approval not yet given) or blocked (it will not pass as things stand: a
 //! failed check, a rejection), with one line of why. `enforced` says whether landing refuses
 //! while it is not ready: required checks and approvals on a protected base (the same
-//! `land_gates::gates` that landing applies), a pause for anyone but the owner. Unresolved review
-//! comments and a base that moved on are shown, never enforced: landing merges on the
-//! server and refuses only a real conflict. Computed from existing rows; nothing is stored.
+//! `land_gates::gates` that landing applies), a pause for anyone but the owner, and with that
+//! switch on, unresolved agent findings. Unresolved review comments and a base that moved on
+//! are shown, never enforced: landing merges on the server and refuses only a real conflict.
+//! Land when cleared is stricter than a person is, so with its switch on the answer adds what
+//! CTC decides (`platform_ctc`). Computed from existing rows, apart from
+//! that attempt's reason.
 use super::auth::Actor;
 use super::changes::{self, number_of, whole_repository};
 use super::{break_glass, rows};
-use crate::storage::SqlStore;
+use crate::platform_ctc::{Decision, Reason};
+use crate::storage::{SqlStore, number};
 use schemars::JsonSchema;
 use serde::Serialize;
 use serde_json::Value;
 use yoneda_core::{Result, git_object::ObjectId};
 mod rules;
-use rules::{comments, freshness, policy};
+pub(in crate::repo_store) use rules::{comments, policy};
+use rules::{findings, freshness};
 
 /// A change's landing requirements (`GET /changes/:n/gates`).
 #[derive(Debug, Serialize, JsonSchema)]
@@ -31,6 +36,27 @@ pub struct ChangeGates {
     /// Every enforced requirement is ready: the head can land now.
     pub ready: bool,
     pub requirements: Vec<GateRequirement>,
+    /// With the repository's switch on: what the platform waits for before it lands this.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub land_when_cleared: Option<LandingClearance>,
+}
+
+/// CTC's decision on an open Landing, as the platform would land it.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct LandingClearance {
+    pub decision: Decision,
+    /// Everything in the way now; empty when it would land on the next trigger.
+    pub reasons: Vec<Reason>,
+    /// Why the last attempt on this head did not land, if it did not.
+    pub refused: Option<ClearanceRefusal>,
+}
+
+/// An attempt that did not land.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ClearanceRefusal {
+    pub code: String,
+    pub reason: String,
+    pub at: i64,
 }
 
 /// One thing landing needs (or that is worth knowing before it).
@@ -60,6 +86,8 @@ pub enum GateKind {
     Freshness,
     /// Automation paused (break glass).
     Automation,
+    /// Unresolved agent findings, with the repository's switch on.
+    Findings,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
@@ -103,6 +131,9 @@ pub fn gates<S: SqlStore>(
         ("open", Some(head)) => {
             let id = ObjectId::parse(head)?;
             requirements.extend(policy(db, &id, &base, settings, base_protected)?);
+            if settings.auto_landings.findings_block {
+                requirements.push(findings(db, &id, &base, base_protected)?);
+            }
             requirements.push(comments(db, &change["number"])?);
             requirements.push(freshness(db, &id, &base)?);
             if let Some(pause) = break_glass::paused(db)? {
@@ -126,12 +157,16 @@ pub fn gates<S: SqlStore>(
             ),
             true,
         )),
-        (other, _) => requirements.push(requirement(
+        (other, head) => requirements.push(requirement(
             GateKind::Status,
             "Status",
             GateState::Blocked,
-            match other {
-                "landed" => format!("Already landed on {base}"),
+            match (other, head) {
+                ("landed", _) => format!("Already landed on {base}"),
+                (_, None) => format!(
+                    "Closed: the branch {} no longer exists",
+                    change["branch"].as_str().unwrap_or("")
+                ),
                 _ => "Closed without landing; reopen it to land".to_owned(),
             },
             true,
@@ -140,6 +175,8 @@ pub fn gates<S: SqlStore>(
     let ready = requirements
         .iter()
         .all(|r| !r.enforced || r.state == GateState::Ready);
+    let land_when_cleared =
+        super::land_when_cleared::shown(db, &change, settings, number(c, "now")?)?;
     let gates = ChangeGates {
         number: change["number"].as_i64().unwrap_or_default(),
         status,
@@ -148,6 +185,7 @@ pub fn gates<S: SqlStore>(
         base_protected,
         ready,
         requirements,
+        land_when_cleared,
     };
     serde_json::to_value(gates).map_err(|e| yoneda_core::Error::new("ENCODING", e.to_string()))
 }

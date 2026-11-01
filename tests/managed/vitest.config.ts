@@ -21,6 +21,9 @@ export default defineConfig({
           REVIEWS: { name: 'yoneda-managed-reviews-test', className: 'ManagedReviewWorkflow' },
         },
         queueProducers: { RUNS: { queueName: 'yoneda-managed-runs-test' } },
+        // The revenue rollup's D1. ADMIN_BILLING stays out of these bindings: a ledger pushes to
+        // it only when a test turns the switch on (rollup-fixture.ts).
+        d1Databases: ['REVENUE'],
         bindings: {
           PUBLIC_URL: 'https://managed.example.com',
           AI_GATEWAY_URL: 'https://gateway.example.com/v1/acct/yonedarepo-test-agents',

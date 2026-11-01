@@ -9,11 +9,14 @@ export function StatusChips({
   repo,
   status,
   owner,
+  readOnly,
   navigate,
 }: {
   repo: string;
   status: RepoStatus;
   owner: boolean;
+  /** Reads only: landing rules don't apply to this viewer. */
+  readOnly: boolean;
   navigate: Navigate;
 }) {
   const needs = landingNeeds(status.policy);
@@ -34,10 +37,12 @@ export function StatusChips({
           {text}
         </a>
       ) : (
-        <span className="chip">
-          <ShieldCheck size={14} aria-hidden="true" />
-          {text}
-        </span>
+        !readOnly && (
+          <span className="chip">
+            <ShieldCheck size={14} aria-hidden="true" />
+            {text}
+          </span>
+        )
       )}
     </div>
   );

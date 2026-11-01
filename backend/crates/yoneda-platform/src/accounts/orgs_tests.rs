@@ -367,6 +367,47 @@ fn team_ids_are_never_reused_and_a_deleted_org_retires_its_name() {
 }
 
 #[test]
+fn a_repository_being_created_holds_the_org_and_a_deleted_org_refuses_new_names() {
+    const REPO: &str = "r0123456789abcdef0123";
+    const HOUR: i64 = 60 * 60 * 1000;
+    let delete = json!({"op":"org_delete","actor":"alice","confirm":"acme","_hold":"off"});
+    let claim = json!({"op":"owned_repo_claim","repo":REPO,"name":"late"});
+    let release = json!({"op":"owned_repo_release","repo":REPO});
+
+    let db = acme();
+    at(&db, 1000, claim.clone()).unwrap();
+    let held = at(&db, 2000, delete.clone()).unwrap_err();
+    assert_eq!(held.code, "CONFLICT");
+    // The repository went, or the create failed: its name no longer holds the org.
+    ok(&db, release);
+    at(&db, 2000, delete.clone()).unwrap();
+    assert_eq!(at(&db, 3000, claim.clone()).unwrap_err().code, "GONE");
+
+    // A hold left behind by a create that failed outright does not last.
+    let db = acme();
+    at(&db, 1000, claim).unwrap();
+    assert_eq!(
+        at(&db, 999 + HOUR, delete.clone()).unwrap_err().code,
+        "CONFLICT"
+    );
+    at(&db, 1000 + HOUR, delete).unwrap();
+}
+
+#[test]
+fn only_a_deleted_org_counts_as_retired() {
+    let retired = |db: &NativeStore| ok(db, json!({"op":"org_retired"}))["retired"].clone();
+    assert_eq!(retired(&person("alice")), false);
+    assert_eq!(retired(&NativeStore::memory().unwrap()), false);
+    let db = acme();
+    assert_eq!(retired(&db), false);
+    ok(
+        &db,
+        json!({"op":"org_delete","actor":"alice","confirm":"acme","_hold":"off"}),
+    );
+    assert_eq!(retired(&db), true);
+}
+
+#[test]
 fn the_team_id_migration_numbers_existing_teams_and_continues_after_them() {
     let old = NativeStore::memory().unwrap();
     old.query(
@@ -428,4 +469,63 @@ fn the_team_id_migration_numbers_existing_teams_and_continues_after_them() {
             .unwrap()
             .is_empty()
     );
+}
+
+/// Every event of the org's authority, newest last, as `(kind, data)`.
+fn events(db: &NativeStore) -> Vec<(String, Value)> {
+    db.query("SELECT kind,data FROM workspace_events ORDER BY seq", &[])
+        .unwrap()
+        .iter()
+        .map(|row| {
+            let data = serde_json::from_str(row["data"].as_str().unwrap()).unwrap();
+            (row["kind"].as_str().unwrap().to_owned(), data)
+        })
+        .collect()
+}
+
+#[test]
+fn every_org_event_names_who_did_it() {
+    let db = acme();
+    let alice = "alice";
+    ok(
+        &db,
+        json!({"op":"org_member_put","actor":alice,"account":"bob","role":"member"}),
+    );
+    ok(
+        &db,
+        json!({"op":"org_member_put","actor":alice,"account":"carol","role":"member"}),
+    );
+    ok(&db, json!({"op":"team_create","actor":alice,"team":"devs"}));
+    ok(
+        &db,
+        json!({"op":"team_member_put","actor":alice,"team":"devs","account":"bob"}),
+    );
+    ok(
+        &db,
+        json!({"op":"team_member_remove","actor":alice,"team":"devs","account":"bob"}),
+    );
+    ok(&db, json!({"op":"team_delete","actor":alice,"team":"devs"}));
+    // Removed by an owner, and leaving on one's own: each names the one who acted.
+    ok(
+        &db,
+        json!({"op":"org_member_remove","actor":alice,"account":"bob"}),
+    );
+    ok(
+        &db,
+        json!({"op":"org_member_remove","actor":"carol","account":"carol"}),
+    );
+    ok(
+        &db,
+        json!({"op":"org_delete","actor":alice,"confirm":"acme"}),
+    );
+    let seen = events(&db);
+    assert_eq!(seen.len(), 10);
+    for (kind, data) in &seen {
+        let expected = if data["account"] == "carol" && kind == "org.member_removed" {
+            "user:carol"
+        } else {
+            "user:alice"
+        };
+        assert_eq!(data["actor"], expected, "{kind}");
+    }
 }

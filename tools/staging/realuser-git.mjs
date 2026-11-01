@@ -11,6 +11,7 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, wr
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { scratch, scratchRefs, timedSteps } from './realuser-plan.mjs';
+import { gitConfigEnv, OWN_TRAFFIC_ENV } from '../own-traffic.mjs';
 
 const b64 = (text) => Buffer.from(text).toString('base64');
 /** GET /refs is a snapshot up to 2 x REFS_MS (2 s) old for a reader in another isolate
@@ -57,9 +58,9 @@ export class Workspace {
       GIT_CONFIG_NOSYSTEM: '1',
       GIT_TERMINAL_PROMPT: '0',
       YONEDA_ORIGIN: this.api,
-      ...(token
-        ? { YONEDA_TOKEN: token, GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: `http.${this.api}/.extraHeader`, GIT_CONFIG_VALUE_0: `Authorization: Bearer ${token}` }
-        : {}),
+      ...OWN_TRAFFIC_ENV,
+      ...(token ? { YONEDA_TOKEN: token } : {}),
+      ...gitConfigEnv({ token, origin: this.api }),
       ...extra,
     };
   }

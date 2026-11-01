@@ -1,4 +1,5 @@
 //! Typed access to platform tables.
+pub use super::auto_landing::AutoLandings;
 pub use super::checkpoints::{checkpoint_at_or_before, maybe_checkpoint, refs_digest_at};
 pub use super::policy::{Policy, Runner, check_name};
 pub use super::visibility::Visibility;
@@ -17,12 +18,28 @@ pub struct Settings {
     pub object_store: String,
     pub policy: Policy,
     pub policy_digest: String,
+    /// When the repository was made.
+    pub created_at: i64,
     /// When the repository was deleted (a tombstone); `None` while it is live.
     pub deleted_at: Option<i64>,
     /// The repository this one was forked from, and the parent's version at the fork.
     pub parent: Option<(String, u64)>,
     /// Who reads it besides its owner and members (`visibility`).
     pub visibility: Visibility,
+    /// The repository's Landing switches.
+    pub auto_landings: AutoLandings,
+}
+
+impl Settings {
+    /// Whether the repository's records are gone (`erase`), its tombstone being all that is
+    /// left.
+    pub fn erased(&self) -> bool {
+        self.object_store == super::erase::ERASED_STORE
+    }
+    /// Whether a purge has reached this tombstone, so it can never come back (`undo`).
+    pub fn purge_started(&self) -> bool {
+        self.erased() || super::undo::started(&self.policy_digest)
+    }
 }
 
 pub struct CommitRow {
@@ -60,6 +77,8 @@ pub fn init<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "INSERT INTO repo_settings(id,name,workspace,owner,object_store,policy,policy_digest,created_at,parent,parent_version,visibility) VALUES('repository',?,?,?,?,?,?,?,?,?,?)",
         &[json!(name), json!(workspace), json!(principal), json!(object_store), json!(policy_json.to_string()), json!(digest), c["now"].clone(), json!(parent), json!(parent_version), json!(visibility.as_str())],
     )?;
+    let event = json!({ "visibility": visibility.as_str(), "parent": parent });
+    super::audit_outbox::record(db, c, "repo.created", &principal, event)?;
     Ok(json!({ "initialized": true, "policy_digest": digest, "visibility": visibility.as_str() }))
 }
 
@@ -82,6 +101,7 @@ pub fn settings<S: SqlStore>(db: &S) -> Result<Settings> {
         object_store: text("object_store")?,
         policy: serde_json::from_str(&text("policy")?).map_err(|_| corrupt("policy"))?,
         policy_digest: text("policy_digest")?,
+        created_at: row["created_at"].as_i64().unwrap_or_default(),
         deleted_at: row["deleted_at"].as_i64(),
         parent: row["parent"].as_str().map(|p| {
             (
@@ -90,6 +110,7 @@ pub fn settings<S: SqlStore>(db: &S) -> Result<Settings> {
             )
         }),
         visibility: Visibility::parse(&text("visibility")?)?,
+        auto_landings: AutoLandings::of(&row),
     })
 }
 
@@ -104,6 +125,13 @@ pub fn object_id(v: &Value, key: &str) -> Result<ObjectId> {
 fn ids(text: &str) -> Result<Vec<ObjectId>> {
     let raw: Vec<String> = serde_json::from_str(text).map_err(|_| corrupt("parents"))?;
     raw.iter().map(|id| ObjectId::parse(id)).collect()
+}
+
+/// The short name of branch `name`, as `branch_ref` validates it.
+pub fn short_branch(name: &str) -> Result<String> {
+    Ok(branch_ref(&json!({ "ref": name }))?
+        .trim_start_matches("refs/heads/")
+        .to_owned())
 }
 
 pub fn commit_row<S: SqlStore>(db: &S, id: &ObjectId) -> Result<Option<CommitRow>> {
@@ -129,8 +157,10 @@ pub fn commit_row<S: SqlStore>(db: &S, id: &ObjectId) -> Result<Option<CommitRow
 }
 
 pub fn recorded<S: SqlStore>(db: &S, id: &ObjectId) -> Result<CommitRow> {
-    commit_row(db, id)?
-        .ok_or_else(|| Error::new("NOT_FOUND", format!("Commit {id} is not recorded")))
+    match commit_row(db, id)? {
+        Some(row) => Ok(row),
+        None => Err(super::history_fill::not_recorded(db, id)?),
+    }
 }
 
 pub fn touches<S: SqlStore>(db: &S, id: &ObjectId) -> Result<Vec<PathTouch>> {

@@ -20,6 +20,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { Session } from './client.mjs';
+import { gitConfigEnv } from '../own-traffic.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -53,11 +54,7 @@ const env = {
   GIT_TERMINAL_PROMPT: '0',
   GIT_CONFIG_NOSYSTEM: '1',
   GIT_CONFIG_GLOBAL: config,
-  GIT_CONFIG_COUNT: '2',
-  GIT_CONFIG_KEY_0: 'http.extraHeader',
-  GIT_CONFIG_VALUE_0: `Authorization: Bearer ${token}`,
-  GIT_CONFIG_KEY_1: 'http.extraHeader',
-  GIT_CONFIG_VALUE_1: 'x-yoneda-timing: 1',
+  ...gitConfigEnv({ token, headers: ['x-yoneda-timing: 1'] }),
 };
 const scrub = (text) => String(text).split(token).join('<token>');
 

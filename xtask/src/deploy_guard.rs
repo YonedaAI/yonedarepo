@@ -4,11 +4,7 @@ use crate::infra::spec::{Env, Lock, PENDING_D1, Spec};
 use crate::process::Result;
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::path::Path;
 use std::process::Command;
-
-/// Real-world kit evidence, newest first: `.local/staging/realworld*.json`.
-pub(crate) const EVIDENCE_DIR: &str = ".local/staging";
 
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Options {
@@ -17,6 +13,8 @@ pub(crate) struct Options {
     pub allow_active: bool,
     /// `--prebuilt <dir>`: deploy CI's tested outputs instead of building (deploy_prebuilt).
     pub prebuilt: Option<std::path::PathBuf>,
+    /// `--ship-head <sha>`: the merged ship PR's head, on a runner (deploy_ship).
+    pub ship_head: Option<String>,
 }
 
 impl Options {
@@ -27,6 +25,7 @@ impl Options {
             confirm: flag("--confirm"),
             allow_active: flag("--allow-active"),
             prebuilt: crate::deploy_prebuilt::dir_arg(args)?,
+            ship_head: crate::deploy_ship::head_arg(args)?,
         })
     }
 }
@@ -34,6 +33,11 @@ impl Options {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Facts {
     pub head: String,
+    /// `HEAD^{tree}`. A commit with this tree is the same code: a PR merge makes a new commit
+    /// from the tree its head was tested at.
+    pub head_tree: String,
+    /// The tree of each commit the dev Workers and the kit evidence name, when this clone has it.
+    pub trees: BTreeMap<String, String>,
     /// `git status --porcelain` lines; empty means a clean tree.
     pub dirty: Vec<String>,
     /// Tips of the spec's branch (local and origin) when the spec names one.
@@ -42,6 +46,16 @@ pub(crate) struct Facts {
     pub dev_revisions: Vec<(String, Option<String>)>,
     /// Prod only: the newest real-world kit evidence.
     pub evidence: Option<Value>,
+    /// With `--ship-head`: the PR head's GitHub statuses, read instead of the two above.
+    pub ship: Option<crate::deploy_ship::ShipFacts>,
+}
+
+impl Facts {
+    /// The commit is HEAD, or another commit of HEAD's tree (an ungathered tree matches nothing).
+    pub(crate) fn same_code(&self, commit: &str) -> bool {
+        commit == self.head
+            || (!self.head_tree.is_empty() && self.trees.get(commit) == Some(&self.head_tree))
+    }
 }
 
 /// Everything checked before the first build step.
@@ -65,72 +79,31 @@ pub(crate) fn preflight(env: &Env, spec: &Spec, facts: &Facts, options: &Options
         .into());
     }
     if !env.is_prod() {
-        return Ok(());
+        return match options.ship_head {
+            Some(_) => Err("--ship-head is for a prod deploy.".into()),
+            None => Ok(()),
+        };
     }
     if !options.confirm {
         return Err("Refusing to deploy prod without --confirm.".into());
+    }
+    if options.ship_head.is_some() {
+        return crate::deploy_ship::passes(facts);
     }
     if facts.dev_revisions.is_empty() {
         return Err("Refusing prod: no dev Worker reports a /health revision.".into());
     }
     for (worker, revision) in &facts.dev_revisions {
-        if revision.as_deref() != Some(facts.head.as_str()) {
+        if !revision.as_deref().is_some_and(|r| facts.same_code(r)) {
             return Err(format!(
-                "Refusing prod: dev {worker} runs {}, not HEAD {}. Run `cargo xtask deploy --env dev` first.",
+                "Refusing prod: dev {worker} runs {}, not HEAD {} or a commit of its tree. Run `cargo xtask deploy --env dev` first.",
                 revision.as_deref().unwrap_or("nothing reachable"),
                 short(&facts.head)
             )
             .into());
         }
     }
-    evidence_passes(facts.evidence.as_ref(), &facts.head)
-}
-
-/// The kit's browser gate (tools/staging/browser-flow.mjs). Like every item in the evidence, it
-/// must pass when present; while the kit can still run without it, its absence is allowed.
-/// Set to true once every kit run records it.
-pub(crate) const BROWSER_ITEM: &str = "browser";
-pub(crate) const BROWSER_REQUIRED: bool = false;
-
-/// The kit must have run against this exact commit and passed every item it lists: item 0
-/// (live revisions) always, the browser item whenever it is present.
-pub(crate) fn evidence_passes(evidence: Option<&Value>, head: &str) -> Result<()> {
-    let evidence = evidence.ok_or(
-        "Refusing prod: no real-world kit evidence in .local/staging/. Run `node tools/staging-realworld.mjs` against dev.",
-    )?;
-    let items = evidence["items"]
-        .as_array()
-        .filter(|items| !items.is_empty())
-        .ok_or("Refusing prod: kit evidence lists no items.")?;
-    let revisions = items.iter().find(|item| item["id"] == "0").map(|item| {
-        (
-            item["metrics"]["front"].as_str(),
-            item["metrics"]["platform"].as_str(),
-        )
-    });
-    if revisions != Some((Some(head), Some(head))) {
-        return Err(format!(
-            "Refusing prod: the newest kit evidence was not recorded against HEAD {} (item 0 revisions: {revisions:?}).",
-            short(head)
-        )
-        .into());
-    }
-    if BROWSER_REQUIRED && !items.iter().any(|item| item["id"] == BROWSER_ITEM) {
-        return Err(format!(
-            "Refusing prod: the newest kit evidence has no {BROWSER_ITEM} item. Run the kit with --browser."
-        )
-        .into());
-    }
-    if let Some(item) = items.iter().find(|item| item["status"] != "pass") {
-        return Err(format!(
-            "Refusing prod: kit item {} ({}) is {}, not pass.",
-            item["id"].as_str().unwrap_or("?"),
-            item["title"].as_str().unwrap_or(""),
-            item["status"].as_str().unwrap_or("missing")
-        )
-        .into());
-    }
-    Ok(())
+    crate::deploy_evidence::evidence_passes(facts.evidence.as_ref(), facts)
 }
 
 /// A D1 database the lock marks `pending` does not exist yet; deploying would bind nothing.
@@ -272,6 +245,13 @@ fn git(args: &[&str]) -> Result<String> {
     Ok(String::from_utf8(out.stdout)?.trim().to_owned())
 }
 
+/// The commit's tree, when this clone has the commit (full object ids only: the argument can
+/// come from a Worker's `/health` or an evidence file).
+pub(crate) fn tree_of(commit: &str) -> Option<String> {
+    let full = commit.len() == 40 && commit.bytes().all(|b| b.is_ascii_hexdigit());
+    full.then(|| git(&["rev-parse", "--verify", "-q", &format!("{commit}^{{tree}}")]).ok())?
+}
+
 pub(crate) fn head() -> Result<String> {
     git(&["rev-parse", "HEAD"])
 }
@@ -291,6 +271,7 @@ pub(crate) fn git_facts(spec: &Spec) -> Result<Facts> {
     }
     Ok(Facts {
         head: head()?,
+        head_tree: git(&["rev-parse", "HEAD^{tree}"])?,
         dirty: git(&["status", "--porcelain"])?
             .lines()
             .map(str::to_owned)
@@ -298,29 +279,4 @@ pub(crate) fn git_facts(spec: &Spec) -> Result<Facts> {
         ref_tips: tips,
         ..Facts::default()
     })
-}
-
-/// The most recently modified `realworld*.json` evidence file, parsed.
-pub(crate) fn newest_evidence(dir: &Path) -> Result<Option<Value>> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Ok(None);
-    };
-    let mut newest: Option<(std::time::SystemTime, std::path::PathBuf)> = None;
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if !(name.starts_with("realworld") && name.ends_with(".json")) {
-            continue;
-        }
-        let modified = entry.metadata()?.modified()?;
-        if newest.as_ref().is_none_or(|(time, _)| modified > *time) {
-            newest = Some((modified, entry.path()));
-        }
-    }
-    match newest {
-        Some((_, path)) => Ok(Some(
-            serde_json::from_slice(&std::fs::read(&path)?)
-                .map_err(|error| format!("Invalid kit evidence {}: {error}", path.display()))?,
-        )),
-        None => Ok(None),
-    }
 }

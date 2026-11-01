@@ -40,6 +40,16 @@ The service limits request rates, sizes and sign-in attempts. Automated use thro
 
 Every platform feature is free today. Managed review agents and metered usage draw on your workspace's credit, which starts with a promotional grant; when it runs out, those runs pause. The [pricing page](/pricing) shows the rates we plan to charge. Billing is not live yet and no account is charged. We will publish final rates and give you notice before charging starts.
 
+## Refunds
+
+All credit purchases are non-refundable, and promotional credit has no cash value.
+
+If you think a charge is wrong, contact support. We fix billing errors, duplicate charges and charges you did not authorize, and we may issue other refunds at our discretion. If we stop offering the paid service, we refund your unused purchased credit.
+
+Refunds go back to the original payment method. If you dispute a charge with your bank, the related credit is frozen until the dispute closes.
+
+Nothing here limits any right to a refund you have under the law where you live.
+
 ## Backups
 
 YonedaRepo stores your repositories durably, but we do not promise that data can never be lost, and we do not guarantee backups. Keep your own copies of anything you cannot afford to lose: every repository can be cloned with stock Git.

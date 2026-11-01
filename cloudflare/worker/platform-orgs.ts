@@ -5,7 +5,12 @@
 // authorities to ask on their requests, org-access.ts) and drops this isolate's org access
 // copies after a change, so removals reach repositories within ACCESS_MS.
 import { ACCOUNT_IDENTIFIER_HELP, normalizeAccountIdentifier } from '../../shared/account';
+import { auditOn, auditOrg } from './account-audit';
+import { auditPage, auditVerify } from './platform-audit-read';
+import { orgHold } from './platform-holds';
+import { holdSwitch } from './platform-legal-hold';
 import { forgetOrgAccess, type OrgAccess, teamKey } from './platform-org-access';
+import { deletedOf } from './repo-deleted';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import { requirePatScope } from './repo-pat';
 import { withPaths } from './repo-paths';
@@ -99,10 +104,17 @@ async function orgRepos(env: Env, org: string, account: string) {
   return { repos: await withPaths(env, listed.results) };
 }
 
-/** `DELETE /orgs/:org?confirm=<org>`: an owner retires an org that owns no repositories
- * (as the listing shows; a repository created meanwhile is the race documented in
- * `orgs.rs`: its name is retired with the org, so it never passes to a new owner). Former
- * members' hints are dropped afterwards. */
+/** `GET /orgs/:org/repos/deleted`: what its owners can still restore. */
+async function orgDeleted(env: Env, org: string, actor: string) {
+  const { role } = await orgCommand(env, org, { op: 'org_show', actor });
+  if (role !== 'owner')
+    throw new ApiError('FORBIDDEN', `Only an owner of ${org} sees its deleted repositories`);
+  return deletedOf(env, org);
+}
+
+/** `DELETE /orgs/:org?confirm=<org>`: an owner retires an org that owns no repositories: none
+ * the listing shows, and none being created, which only its authority can tell (`orgs.rs`).
+ * Former members' hints are dropped afterwards. */
 async function deleteOrg(env: Env, org: string, actor: string, confirm: string) {
   await orgCommand(env, org, { op: 'org_show', actor });
   const owned = await env.INDEX.prepare(
@@ -115,13 +127,34 @@ async function deleteOrg(env: Env, org: string, actor: string, confirm: string) 
       'CONFLICT',
       `${org} owns ${owned?.n} repositories; delete them before the organization`,
     );
-  const deleted = await orgCommand(env, org, { op: 'org_delete', actor, confirm });
+  const deleted = await orgCommand(env, org, {
+    op: 'org_delete',
+    actor,
+    confirm,
+    ...holdSwitch(env),
+  });
   forgetOrgAccess(org);
   await Promise.all((deleted.members as string[]).map((m) => hint(env, m, org, false)));
   return { org, deleted: true };
 }
 
-/** `/api/v1/orgs[/:org[/members[/:account]|/teams[/:team[/members[/:account]]]|/repos]]`. */
+/** `/api/v1/orgs/:org/audit[/verify]`: its owners'. `run` asks the org's authority. */
+async function auditRoute(
+  env: Env,
+  org: string,
+  item: string | undefined,
+  query: URLSearchParams,
+  run: (command: Json) => Promise<Json>,
+) {
+  if (!auditOn(env)) throw new ApiError('NOT_FOUND', 'Unknown API path');
+  await run({ op: 'org_audit' });
+  if (!item) return auditPage(env, org, query);
+  if (item === 'verify') return auditVerify(env, org, query);
+  throw new ApiError('NOT_FOUND', 'Unknown API path');
+}
+
+/** `/api/v1/orgs[/:org[/members[/:account]|/teams[/:team[/members[/:account]]]|/repos|/audit]]`.
+ * A change that went through then copies the org's events to its audit log. */
 export async function orgsRoute(
   env: Env,
   auth: Credentials,
@@ -129,6 +162,19 @@ export async function orgsRoute(
   parts: string[],
   body: () => Promise<Json>,
   query: URLSearchParams = new URLSearchParams(),
+): Promise<Json> {
+  const answer = await orgRoute(env, auth, method, parts, body, query);
+  if (method !== 'GET') await auditOrg(env, parts[0] ? orgArg(parts[0]) : (answer.org as string));
+  return answer;
+}
+
+async function orgRoute(
+  env: Env,
+  auth: Credentials,
+  method: string,
+  parts: string[],
+  body: () => Promise<Json>,
+  query: URLSearchParams,
 ): Promise<Json> {
   const [name, resource, item, sub, target] = parts;
   const get = method === 'GET';
@@ -164,12 +210,21 @@ export async function orgsRoute(
   }
   if (!name) throw new ApiError('NOT_FOUND', 'Unknown API path');
   const org = orgArg(name);
-  const change = !get;
+  // The audit log and what can be restored are reads that take repo:admin.
+  const change = !get || resource === 'audit' || (resource === 'repos' && item === 'deleted');
   const { account: actor } = orgCaller(auth, change, org);
   const run = (command: Json) => orgCommand(env, org, { ...command, actor });
-  if (!resource && get) return run({ op: 'org_show' });
+  if (resource === 'audit' && get && !sub) return auditRoute(env, org, item, query, run);
+  if (!resource && get) {
+    const shown = await run({ op: 'org_show' });
+    return auditOn(env) ? { ...shown, audit_log: true } : shown;
+  }
   if (!resource && del) return deleteOrg(env, org, actor, query.get('confirm') ?? '');
   if (resource === 'repos' && !item && get) return orgRepos(env, org, actor);
+  if (resource === 'repos' && item === 'deleted' && !sub && get) return orgDeleted(env, org, actor);
+  if (resource === 'hold' && !item) return orgHold(env, auth, org, method, run);
+  if (resource === 'repos' && item && sub === 'hold' && !target)
+    return orgHold(env, auth, org, method, run, item);
   if (resource === 'members' && !item && post) {
     const { account, role } = await body();
     const invited = accountArg(account);

@@ -78,10 +78,11 @@ describe('SshSetup', () => {
     clone_url: 'ssh://git@ssh.yonedarepo.com/<repository id>.git',
     ssh_config: 'Host ssh.yonedarepo.com\n  ProxyCommand cloudflared access ssh --hostname %h\n',
   };
-  it('gives two commands, each one Copy: install, then yoneda ssh setup', () => {
+  it('gives three commands, each one Copy: install, sign in, then yoneda ssh setup', () => {
     const html = setup(tunnel);
     expect(html).toContain('aria-label="Copy Install the yoneda CLI"');
     expect(html).toContain('<code>curl -fsSL https://yonedarepo.com/install.sh | sh</code>');
+    expect(html).toContain('aria-label="Copy Sign in"');
     expect(html).toContain('aria-label="Copy Set up SSH on this machine"');
     expect(html).toContain('<code>yoneda ssh setup</code>');
     expect(html).toContain('ssh://git@ssh.yonedarepo.com/&lt;repository id&gt;.git');
@@ -146,6 +147,7 @@ describe('SSH in the Clone menu', () => {
     expect(shown).toContain('aria-label="Copy SSH"');
     expect(shown).toContain('href="/settings/ssh-keys"');
     expect(shown).toContain('yoneda ssh setup');
+    expect(shown).toMatch(/Settings → SSH keys<\/a>: run <code>yoneda ssh setup<\/code> once\./);
     const direct = line({ ...tunnel, front_door: 'connect', ssh_config: null });
     expect(direct).toContain('Copy SSH');
     expect(direct).not.toContain('/settings/ssh-keys');

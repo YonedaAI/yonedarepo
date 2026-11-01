@@ -11,7 +11,7 @@ fn job(h: &Harness, mut c: Value) -> yoneda_core::Result<Value> {
     *h.now.borrow_mut() += 1_000;
     c["now"] = json!(*h.now.borrow());
     c["_system"] = json!("quarantine");
-    execute_repo_store(&h.db, c)
+    execute_repo_store(&h.db, hold_off(c))
 }
 
 fn store(h: &Harness) -> String {

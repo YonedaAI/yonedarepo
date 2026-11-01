@@ -22,7 +22,7 @@ fn as_quarantine_job(h: &Harness, mut c: Value) -> yoneda_core::Result<Value> {
     *h.now.borrow_mut() += 1_000;
     c["now"] = json!(*h.now.borrow());
     c["_system"] = json!("quarantine");
-    execute_repo_store(&h.db, c)
+    execute_repo_store(&h.db, hold_off(c))
 }
 
 fn admin(h: &Harness) {
@@ -356,7 +356,10 @@ fn path_restricted_tokens_cannot_quarantine() {
 fn upgrades_from_the_preceding_schema_with_records_intact() {
     let db = crate::native::NativeStore::memory().unwrap();
     let migrations = &super::super::migration::MIGRATIONS;
-    let preceding = migrations.len() - 1;
+    let preceding = migrations
+        .iter()
+        .position(|(v, _)| *v == super::super::migration::APPLY_THROUGH)
+        .unwrap();
     super::super::migration::migrate_with(&db, "repo_schema_migrations", &migrations[..preceding])
         .unwrap();
     db.query(
@@ -378,7 +381,7 @@ fn upgrades_from_the_preceding_schema_with_records_intact() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        migrations.last().unwrap().0
+        super::super::migration::APPLY_THROUGH
     );
 }
 

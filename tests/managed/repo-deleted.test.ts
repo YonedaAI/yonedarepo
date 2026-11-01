@@ -1,5 +1,6 @@
-// A deleted repository leaves no review behind: the platform sends repo.deleted (signed with
-// the agents' hook secret), and the managed Worker deletes every transcript under
+// A deleted repository leaves no review behind: the platform sends repo.deleted, or with the
+// undo window repo.purged at the end of it (signed with the agents' hook secret), and the
+// managed Worker deletes every transcript under
 // transcripts/<repo>/ in R2 (paged, at most 1,000 keys a delete), forgets the repository in its
 // workspace's settings and enabled lists, and empties its RepoAgents state (runs, findings,
 // connection). Billing entries stay and carry no transcript text. The handler is at least
@@ -174,6 +175,46 @@ describe('repo.deleted', () => {
     expect(h.transcripts.size).toBe(before);
     expect(await repoStub(h.env, repo).connection()).not.toBeNull();
     expect((await repoStub(h.env, repo).runs(null, 5)).length).toBeGreaterThan(0);
+  });
+});
+
+describe('with the undo window', () => {
+  const later = '2026-11-30T00:00:00.000Z';
+
+  it('keeps the reviews through repo.deleted, as the repository can come back', async () => {
+    const h = await reviewed();
+    const repo = h.platform.repo;
+    h.platform.deleted = true;
+    const res = await hook(h, { event: 'repo.deleted', action: 'deleted', repo, purge_at: later });
+    expect([res.status, await res.json()]).toEqual([202, { ignored: true }]);
+    expect(h.sent).toEqual([]);
+    expect(await repoStub(h.env, repo).connection()).not.toBeNull();
+    expect((await repoStub(h.env, repo).runs(null, 5)).length).toBeGreaterThan(0);
+  });
+
+  it('clears them on repo.purged, and a repeat changes nothing', async () => {
+    const h = await reviewed();
+    const repo = h.platform.repo;
+    h.platform.deleted = true;
+    expect((await hook(h, { event: 'repo.purged', action: 'purged', repo })).status).toBe(202);
+    expect(h.sent).toEqual([{ kind: 'deleted', repo }]);
+    await deliver(h, h.sent[0]);
+    expect([...h.transcripts.keys()].filter((k) => k.startsWith(`transcripts/${repo}/`))).toEqual(
+      [],
+    );
+    expect(await repoStub(h.env, repo).connection()).toBeNull();
+    const again = await hook(h, { event: 'repo.purged', action: 'purged', repo }, 'sha256=00');
+    expect([again.status, await again.json()]).toEqual([202, { ignored: true }]);
+  });
+
+  it('saving an agent after a restore replaces the token the deletion revoked', async () => {
+    const h = await reviewed();
+    const repo = h.platform.repo;
+    const stale = (await repoStub(h.env, repo).connection())?.token;
+    h.platform.revokedAt = 1;
+    expect((await put(h, 'security-review', { repos: [repo] })).status).toBe(200);
+    expect((await repoStub(h.env, repo).connection())?.token).not.toBe(stale);
+    expect(h.platform.revoked).toContain('tokens:yoneda-managed-agents');
   });
 });
 

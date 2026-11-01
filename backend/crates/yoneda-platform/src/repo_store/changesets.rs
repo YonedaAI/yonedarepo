@@ -105,7 +105,7 @@ fn meeting(key: &str) -> Vec<(&'static str, Vec<Value>)> {
 
 /// Whether an entry on `refname` after `base` wrote a path that meets `keys`, or moved
 /// the ref opaquely. One indexed query (more only for very large read sets).
-fn touched_since<S: SqlStore>(
+pub(super) fn touched_since<S: SqlStore>(
     db: &S,
     refname: &str,
     base: u64,

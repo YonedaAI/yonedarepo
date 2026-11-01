@@ -12,6 +12,9 @@ type BillingRow = {
   card_added_at: number | null;
   top_up_failed: string | null;
   auto_top_up: number;
+  paused_at: number | null;
+  paused_reason: string | null;
+  paused_by: string | null;
 };
 
 const EMPTY: BillingRow = {
@@ -22,6 +25,9 @@ const EMPTY: BillingRow = {
   card_added_at: null,
   top_up_failed: null,
   auto_top_up: 1,
+  paused_at: null,
+  paused_reason: null,
+  paused_by: null,
 };
 
 export function billingRow(sql: SqlStorage): BillingRow {
@@ -37,12 +43,13 @@ function upsert(sql: SqlStorage, fields: Partial<BillingRow>) {
   const next = { ...billingRow(sql), ...fields };
   sql.exec(
     `INSERT INTO billing (id, customer, payment_method, brand, last4, card_added_at, top_up_failed,
-       auto_top_up)
-     VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+       auto_top_up, paused_at, paused_reason, paused_by)
+     VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
      ON CONFLICT(id) DO UPDATE SET customer = excluded.customer,
        payment_method = excluded.payment_method, brand = excluded.brand, last4 = excluded.last4,
        card_added_at = excluded.card_added_at, top_up_failed = excluded.top_up_failed,
-       auto_top_up = excluded.auto_top_up`,
+       auto_top_up = excluded.auto_top_up, paused_at = excluded.paused_at,
+       paused_reason = excluded.paused_reason, paused_by = excluded.paused_by`,
     next.customer,
     next.payment_method,
     next.brand,
@@ -50,6 +57,9 @@ function upsert(sql: SqlStorage, fields: Partial<BillingRow>) {
     next.card_added_at,
     next.top_up_failed,
     next.auto_top_up,
+    next.paused_at,
+    next.paused_reason,
+    next.paused_by,
   );
 }
 
@@ -68,18 +78,38 @@ export function recordCard(
   upsert(sql, { ...card, card_added_at: now, top_up_failed: null });
 }
 
+/** An operator's pause on charging the card (null lifts it); the credit stays usable. */
+export function setBillingPaused(
+  sql: SqlStorage,
+  pause: { at: number; reason: string; by: string } | null,
+) {
+  upsert(sql, {
+    paused_at: pause?.at ?? null,
+    paused_reason: pause?.reason ?? null,
+    paused_by: pause?.by ?? null,
+  });
+}
+
 export function forgetCard(sql: SqlStorage) {
   upsert(sql, { payment_method: null, brand: null, last4: null, card_added_at: null });
 }
 
+/** An operator's pause or an open dispute stops the card being charged, whatever the
+ * customer's own switch says. */
+const chargingStopped = (sql: SqlStorage, row: BillingRow) =>
+  row.paused_at !== null ||
+  sql.exec("SELECT 1 FROM disputes WHERE status = 'open' LIMIT 1").toArray().length > 0;
+
 /**
  * The top-up the balance now calls for, recorded as pending, or null: only with a card on file,
- * automatic top-up on, no failed top-up waiting on a new card, no other top-up pending, and the
- * balance below the threshold. Its key (`topup-<n>`) is its idempotency key at Stripe.
+ * automatic top-up on, no failed top-up waiting on a new card, no other top-up pending, charging
+ * not stopped, and the balance below the threshold. Its key (`topup-<n>`) is its idempotency key
+ * at Stripe.
  */
 export function topUpDue(sql: SqlStorage, balance: number, now: number): string | null {
   const row = billingRow(sql);
   if (!row.payment_method || !row.auto_top_up || row.top_up_failed) return null;
+  if (chargingStopped(sql, row)) return null;
   if (balance >= AUTO_TOP_UP.below_usd * 1_000_000) return null;
   const pending = sql.exec("SELECT 1 FROM top_ups WHERE status = 'pending'").toArray().length;
   if (pending) return null;
@@ -100,6 +130,8 @@ export interface PendingTopUp {
   status: TopUp['status'];
   customer: string | null;
   payment_method: string | null;
+  /** Charging stopped since it was queued: it must not reach the card. */
+  stopped: boolean;
 }
 
 export function topUp(sql: SqlStorage, key: string): PendingTopUp | null {
@@ -111,7 +143,25 @@ export function topUp(sql: SqlStorage, key: string): PendingTopUp | null {
     .toArray()[0];
   if (!row) return null;
   const billing = billingRow(sql);
-  return { ...row, customer: billing.customer, payment_method: billing.payment_method };
+  return {
+    ...row,
+    customer: billing.customer,
+    payment_method: billing.payment_method,
+    stopped: chargingStopped(sql, billing),
+  };
+}
+
+const STOPPED = 'Billing paused';
+
+/** A pending top-up dropped because charging stopped: nothing failed at the card, so nothing
+ * tells the customer to replace it, and it is left out of what they are shown (`topUps`). */
+export function cancelTopUp(sql: SqlStorage, key: string, now: number) {
+  sql.exec(
+    "UPDATE top_ups SET status = 'failed', error = ?, settled_at = ? WHERE key = ? AND status = 'pending'",
+    STOPPED,
+    now,
+    key,
+  );
 }
 
 /** Records a top-up's outcome once; answers its amount when it newly succeeded. */
@@ -158,7 +208,9 @@ export function topUps(sql: SqlStorage, limit = 50): TopUp[] {
       error: string | null;
       created_at: number;
     }>(
-      'SELECT key, amount, status, error, created_at FROM top_ups ORDER BY created_at DESC, key DESC LIMIT ?',
+      `SELECT key, amount, status, error, created_at FROM top_ups WHERE error IS NOT ?
+       ORDER BY created_at DESC, key DESC LIMIT ?`,
+      STOPPED,
       limit,
     )
     .toArray()

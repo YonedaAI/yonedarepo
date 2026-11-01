@@ -387,6 +387,91 @@ fn change_events_reach_change_hooks_with_text_only_for_whole_repository_hooks() 
 }
 
 #[test]
+fn deleting_a_branch_closes_its_open_change_with_a_reason() {
+    let (h, root) = seeded();
+    let hook = h.ok(
+        OWNER,
+        json!({"op":"repo_hook_create","url":"https://ci.example.com/hook",
+        "_secret":"whsec_0123456789abcdef0123456789abcdef","_repo":"r0123456789abcdef0123",
+        "_workers_subdomain":"mlong-f01","events":["change"]}),
+    )["id"]
+        .clone();
+    let delete = |branch: &str, expected: &str| {
+        h.ok(
+            AGENT,
+            json!({"op":"repo_branch_batch",
+                "updates":[{"ref":branch,"commit":null,"expected":expected}]}),
+        )
+    };
+    let head = push(&h, "fix", &root, "src/retry.rs");
+    open(&h, AGENT, "fix").unwrap();
+    let other = push(&h, "other", &root, "src/other.rs");
+    open(&h, AGENT, "other").unwrap();
+
+    delete("fix", &head);
+
+    let shown = h.ok(CI, json!({"op":"repo_change_show","number":1}));
+    assert_eq!(shown["status"], "closed");
+    assert_eq!(shown["head"], Value::Null);
+    let reason = shown["comments"].as_array().unwrap().last().unwrap();
+    assert_eq!(reason["principal"], AGENT);
+    assert_eq!(reason["commit"], json!(head));
+    assert_eq!(reason["body"], "Closed: the branch fix was deleted.");
+    assert_eq!(shown["comment_count"], 1);
+    let gates = h.ok(CI, json!({"op":"repo_change_gates","number":1}));
+    assert_eq!(gates["status"], "closed");
+    assert_eq!(
+        gates["requirements"][0]["why"],
+        "Closed: the branch fix no longer exists"
+    );
+    assert_eq!(
+        h.ok(CI, json!({"op":"repo_change_show","number":2}))["status"],
+        "open",
+        "another branch's change stays open"
+    );
+
+    // Webhooks see what a close by hand sends, with the commit the branch was at.
+    h.ok(HOOKS, json!({"op":"repo_hooks_fanout"}));
+    let events: Vec<Value> =
+        h.db.query(
+            "SELECT payload FROM hook_outbox WHERE hook_id=? ORDER BY seq",
+            std::slice::from_ref(&hook),
+        )
+        .unwrap()
+        .iter()
+        .map(|r| serde_json::from_str(r["payload"].as_str().unwrap()).unwrap())
+        .collect();
+    let closed: Vec<&Value> = events
+        .iter()
+        .filter(|e| e["event"] == "change.closed")
+        .collect();
+    assert_eq!(closed.len(), 1, "{events:?}");
+    assert_eq!(closed[0]["action"], "closed");
+    assert_eq!(closed[0]["actor"], AGENT);
+    assert_eq!(closed[0]["commit"], json!(head));
+    assert_eq!(closed[0]["change"]["status"], "closed");
+    assert_eq!(closed[0]["ref"], "refs/heads/fix");
+
+    // Reopening waits for the branch; pushing it again does not reopen the change.
+    let reopen = json!({"op":"repo_change_reopen","number":1});
+    assert_eq!(code(h.run(AGENT, reopen.clone())), "NOT_FOUND");
+    push(&h, "fix", &root, "src/retry.rs");
+    assert_eq!(
+        h.ok(CI, json!({"op":"repo_change_show","number":1}))["status"],
+        "closed"
+    );
+    assert_eq!(h.ok(AGENT, reopen)["status"], "open");
+
+    // A change already landed or closed is left as it is.
+    h.approve_and_check(&other);
+    h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":other}));
+    delete("other", &other);
+    let landed = h.ok(CI, json!({"op":"repo_change_show","number":2}));
+    assert_eq!(landed["status"], "landed");
+    assert_eq!(landed["comment_count"], 0);
+}
+
+#[test]
 fn upgrades_from_the_sessions_schema_with_empty_change_tables() {
     let db = crate::native::NativeStore::memory().unwrap();
     let migrations = &super::super::migration::MIGRATIONS;
@@ -408,7 +493,7 @@ fn upgrades_from_the_sessions_schema_with_empty_change_tables() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        migrations.last().unwrap().0
+        super::super::migration::APPLY_THROUGH
     );
     assert_eq!(
         db.query("SELECT owner FROM repo_settings", &[]).unwrap()[0]["owner"],

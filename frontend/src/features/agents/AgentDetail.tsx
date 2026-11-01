@@ -33,11 +33,7 @@ function Runs({
   navigate: Navigate;
 }) {
   if (!runs.length)
-    return (
-      <p className="source-empty">
-        No runs yet. It reviews a change when one opens or is pushed on its repositories.
-      </p>
-    );
+    return <p className="source-empty">No runs yet. It runs when a Landing opens or is pushed.</p>;
   return (
     <div className="source-table-wrap">
       <table className="source-table agent-detail-runs">

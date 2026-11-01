@@ -14,6 +14,7 @@ import { toBase64 } from './repo-objects';
 import { ApiError, caller, type Json, RepoContext, target } from './repo-ops';
 import { schedulePackBuild } from './repo-pack-jobs';
 import { searchSegments, segmentsIn } from './repo-search-index';
+import { refreshSummary } from './repo-search-summary';
 import { writeSeed } from './repo-seed';
 import { sampleStorage } from './repo-storage';
 import { timed } from './repo-timing';
@@ -220,7 +221,14 @@ export async function blame(ctx: RepoContext, args: Json) {
     .map((c) => ({ commit: c.commit, blob: c.new_blob }));
   if (versions.length === 0) throw new ApiError('NOT_FOUND', `${path} has no history on ${ref}`);
   const result = await withObjects(ctx, { op: 'blame', versions });
-  return { ref, path, lines: result.lines, versions: versions.length };
+  const { history_import } = history;
+  return {
+    ref,
+    path,
+    lines: result.lines,
+    versions: versions.length,
+    ...(history_import && { history_import }),
+  };
 }
 
 export function pathHistory(ctx: RepoContext, args: Json) {
@@ -252,6 +260,8 @@ export async function deriveAfterLanding(env: Env, envelope: Envelope) {
     envelope.repo_id,
     caller(env, envelope.repo_id, { _system: 'derive' }),
   );
+  // Before the head is read, and after the touch: what lands from here on shows as activity.
+  const readAt = Date.now();
   const head = await ctx.call({ op: 'repo_snapshot', ref: envelope.job_id }).catch((e) => {
     // The branch went away after this job was queued (a deleted scratch branch): there is
     // nothing to derive, and retrying would not change that.
@@ -270,6 +280,7 @@ export async function deriveAfterLanding(env: Env, envelope: Envelope) {
       );
   }
   const segments = await searchSegments(ctx, head.tree);
+  await refreshSummary(ctx, readAt, head, segments.indexes);
   // The head's overview facts; a failure only costs the first view its speed.
   await viewFacts(ctx, String(head.tree)).catch(() => {});
   // Warm-start seed for check runs on nearby commits; a failure only costs them speed.

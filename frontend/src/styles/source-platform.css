@@ -45,6 +45,10 @@
   padding: 8px 10px;
   border-radius: 6px;
 }
+.source-error button {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 .source-error {
   display: flex;
   gap: 12px;
@@ -112,6 +116,17 @@
   padding: 4px 0;
   border-top: 1px solid var(--line);
 }
+.source-will-land {
+  margin-block: 8px;
+}
+.source-will-land p {
+  margin-block: 4px;
+}
+.source-will-land ul {
+  list-style: none;
+  margin: 4px 0;
+  padding: 0;
+}
 .source-gate-state {
   display: inline-block;
   min-width: 64px;
@@ -136,7 +151,7 @@
 .source-actions input {
   width: 160px;
 }
-button.danger {
+button.danger:not(:disabled) {
   background: var(--danger-fill);
 }
 .source-check-pass {
@@ -185,7 +200,21 @@ button.danger {
   background: var(--surface-2);
   color: var(--muted);
 }
+.source-table th.num,
+.source-table td.num {
+  text-align: right;
+}
+.source-table td.num {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+.source-table tr.total :is(th, td) {
+  border-top: 1px solid var(--line-strong);
+  font-weight: 600;
+}
+/* Relative: a screen-reader label in a cell stays in this scroller, not the page's width. */
 .source-table-wrap {
+  position: relative;
   overflow-x: auto;
 }
 .source-table {
@@ -247,8 +276,10 @@ button.danger {
   min-height: 56px;
   margin-bottom: 8px;
 }
-/* Tokens, device approval and the Connect panel. */
-.source-tokens section,
+/* The organization page, device approval and the Connect panel. */
+.source-tokens section {
+  margin: 0 0 28px;
+}
 .source-connect section,
 .source-device form {
   margin: 0 0 28px;
@@ -259,11 +290,6 @@ button.danger {
   font-size: var(--text-xl);
   margin: 0 0 6px;
 }
-.source-token-form {
-  display: grid;
-  gap: 12px;
-  margin-top: 12px;
-}
 .source-field {
   display: grid;
   gap: 4px;
@@ -271,6 +297,32 @@ button.danger {
 }
 .source-field-wide {
   max-width: 760px;
+}
+/* A short form is one row: its fields share the width, its button stays its own size and
+   lines up with them. What can't sit in a row (a fieldset, a wide field) takes its own. */
+.source-token-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+}
+/* Landings owns this form's layout: it stays a stack. */
+.source-token-form.source-open-change {
+  display: grid;
+  align-items: normal;
+}
+.source-token-form > * {
+  min-width: 0;
+}
+.source-token-form > .source-field {
+  flex: 1 1 200px;
+  max-width: none;
+}
+.source-token-form
+  > :is(fieldset, p, .source-field-wide, .settings-wide, .source-note, .source-error) {
+  flex: 1 1 100%;
+  max-width: none;
 }
 .source-field-wide textarea {
   width: 100%;
@@ -290,6 +342,12 @@ button.danger {
   gap: 8px;
   align-items: baseline;
 }
+.source-checks label input {
+  flex: none;
+}
+.source-checks label small {
+  display: block;
+}
 .source-copy {
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -304,6 +362,13 @@ button.danger {
   border-bottom: 1px solid var(--line);
   color: var(--muted);
   font-size: var(--text-sm);
+}
+/* One command, one line: a broken URL can't be read, and Copy is the way to take it. */
+.source-copy pre,
+.source-copy code {
+  overflow-wrap: normal;
+  white-space: pre;
+  word-break: normal;
 }
 .source-copy pre {
   margin: 0;

@@ -57,10 +57,35 @@ fn serve(mut stream: TcpStream) -> std::io::Result<()> {
     )
 }
 
+pub fn change_route() -> Value {
+    json!({
+        "number": 3, "status": "open", "branch": "topic", "base": "main", "head": COMMIT,
+        "merge_base": null,
+        "commits": [{ "commit": COMMIT, "parents": [], "subject": "Retry twice",
+                      "principal": "alice", "at": 1 }],
+        "sessions": [{ "id": 1, "commit": COMMIT, "cli": "claude-code", "model": "opus",
+                       "summary": "Added the retry", "session_id": "claude-code:s1",
+                       "recorded_by": "alice", "at": 2, "fetched_bytes": 900, "read_bytes": 300,
+                       "quarantined": false }],
+        "deliveries": [{ "seq": 1, "session_id": "claude-code:s1", "trigger": "read",
+                         "subject": "src/a.rs", "bytes": 40, "principal": "alice", "at": 1,
+                         "items": [{ "type": "memory", "id": 4, "label": "gotcha: caps at 30s" }] }],
+        "checks": [{ "commit": COMMIT, "name": "ci", "status": "pass", "principal": "bob",
+                     "at": 3 }],
+        "totals": { "commits": 1, "sessions": 1, "read_bytes": 300, "fetched_bytes": 900,
+                    "delivered_bytes": 40, "memories_delivered": 1 },
+        "truncated": { "commits": false, "sessions": false, "deliveries": false,
+                       "checks": false },
+    })
+}
+
 pub fn change() -> Value {
     json!({
         "number": 3, "status": "open", "title": "Retry twice", "branch": "topic",
         "base": "main", "author": "alice", "head": COMMIT, "body": "why",
+        "flight_plan": { "goal": "Retry twice", "scope": "src/ only" },
+        "go_around": { "change": 3, "open": 1, "findings": [{
+            "path": "src/a.rs", "line": 7, "body": "nit", "commit": COMMIT, "on_head": true }] },
         "head_commit": {
             "gates": { "ready": false, "approvals": 0, "approvals_required": 1,
                        "rejected": false, "missing_checks": ["ci"], "failing_checks": [] },
@@ -144,6 +169,13 @@ fn answer(method: &str, path: &str, body: &str) -> (&'static str, Value) {
             { "cli": "codex", "model": "gpt", "recorded_by": "alice", "summary": "done" }] })),
         ("GET", "/log") => ok(json!({ "commits": [
             { "commit": COMMIT, "message": "first\nbody", "landed": { "version": 3 } }] })),
+        // The account's search; below it, a repository's.
+        ("GET", "/search") if local.is_none() => ok(json!({
+            "query": "main", "groups": ["code"], "searched": 2, "scanned": 30, "next": "1.r1",
+            "failed": [{ "repo": FORK, "name": "mine", "error": "overloaded" }],
+            "results": [{ "repo": REPO, "name": "demo", "owner": "alice", "path": "/alice/demo",
+                "answer": { "groups": ["code"], "results": [
+                    { "path": "src/a.rs", "lines": [{ "line": 3, "text": "fn main" }] }] } }] })),
         ("GET", "/search") => ok(json!({ "results": [
             { "path": "src/a.rs", "lines": [{ "line": 3, "text": "fn main" }] }] })),
         ("GET", "/blame") => ok(blame()),
@@ -164,6 +196,9 @@ fn answer(method: &str, path: &str, body: &str) -> (&'static str, Value) {
         ("POST", "/changes") => ok(change()),
         ("GET", "/changes") => ok(json!({ "changes": [change()] })),
         ("GET", "/changes/3") => ok(change()),
+        ("GET", "/changes/3/route") => ok(change_route()),
+        ("POST", "/flight-plans") if body.contains("\"goal\"") => ok(json!({ "plan": {
+            "id": 4, "branch": "topic", "goal": "Retry twice", "scope": null } })),
         ("POST", "/changes/3/comments") => ok(json!({ "comment": { "id": 1 }, "resolved": 0 })),
         ("GET", "/releases") => ok(json!({ "releases": [release()] })),
         ("GET", "/releases/v1") => ok(release()),

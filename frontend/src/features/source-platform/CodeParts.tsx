@@ -74,8 +74,8 @@ export function SshCloneLine({
       <CopyBlock label="SSH" text={command} />
       {access?.front_door === 'tunnel' && (
         <p className="source-meta clone-hint">
-          Run <code>{SSH_SETUP_COMMAND}</code> once:{' '}
-          <a href="/settings/ssh-keys">Settings → SSH keys</a>.
+          <a href="/settings/ssh-keys">Settings → SSH keys</a>: run <code>{SSH_SETUP_COMMAND}</code>{' '}
+          once.
         </p>
       )}
     </>
@@ -96,10 +96,12 @@ export function CloneButton({
   repo,
   name,
   origin,
+  visibility,
 }: {
   repo: string;
   name?: string;
   origin: string;
+  visibility?: string;
 }) {
   const [open, setOpen] = useState(false);
   const menu = useRef<HTMLDetailsElement>(null);
@@ -123,7 +125,7 @@ export function CloneButton({
       <div className="clone-dropdown">
         {name ? (
           <>
-            <CloneCommands repo={repo} name={name} origin={origin} />
+            <CloneCommands repo={repo} name={name} origin={origin} visibility={visibility} />
             {open && <SshClone repo={repo} name={name} />}
           </>
         ) : (

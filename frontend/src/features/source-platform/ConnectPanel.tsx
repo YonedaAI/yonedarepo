@@ -12,20 +12,25 @@ import {
   mcpUrl,
 } from './connect';
 import { InstallCommand } from './InstallCommand';
+import { HELD_NOTE, useRepoHold } from './LegalHold';
+import { useUndoDays } from './RecentlyDeleted';
 import { Failure } from './SourceStatus';
 import { sourceApi } from './sourceApi';
 import { CopyBlock } from './TokenParts';
 
 /** The two clone commands, the recommended yoneda remote helper first, each with what it
- * needs: the helper a one-time `yoneda login`, stock Git a personal token as the password. */
+ * needs: the helper a one-time `yoneda login`, stock Git a personal token as the password,
+ * except on a public repository, which clones with no credentials. */
 export function CloneCommands({
   repo,
   name,
   origin,
+  visibility,
 }: {
   repo: string;
   name?: string;
   origin: string;
+  visibility?: string;
 }) {
   return (
     <>
@@ -34,15 +39,14 @@ export function CloneCommands({
         text={cloneCommand(origin, repo, name)}
       />
       <p className="source-meta clone-hint">
-        Run once: <code>{loginCommand(origin)}</code> — then pull/push use your login.
+        Run once: <code>{loginCommand(origin)}</code>, then pull/push use your login.
       </p>
-      <CopyBlock
-        label="HTTPS (needs a personal token as the password)"
-        text={httpsCloneCommand(origin, repo, name)}
-      />
-      <p className="source-meta clone-hint">
-        <a href="/settings/tokens">Settings → Personal tokens</a>
-      </p>
+      <CopyBlock label="HTTPS" text={httpsCloneCommand(origin, repo, name)} />
+      {visibility !== 'public' && (
+        <p className="source-meta clone-hint">
+          <a href="/settings/tokens">Settings → Personal tokens</a>: use one as the password.
+        </p>
+      )}
     </>
   );
 }
@@ -112,6 +116,14 @@ export function AgentConnectHelp({ origin }: { origin: string }) {
   );
 }
 
+/** What deleting does, promising an undo only where the platform keeps one. */
+export function deleteNote(undoDays: number) {
+  if (undoDays <= 0)
+    return 'Deleting removes its history, refs and tokens for everyone. It cannot be undone.';
+  const days = `${undoDays} ${undoDays === 1 ? 'day' : 'days'}`;
+  return `Deleting closes it for everyone and revokes its tokens. Its owner can restore it for ${days}, from Recently deleted. After that it is gone for good.`;
+}
+
 export function DeleteRepository({
   repo,
   name,
@@ -125,6 +137,8 @@ export function DeleteRepository({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const expected = name ?? repo;
+  const held = useRepoHold(repo);
+  const undoDays = useUndoDays();
   async function remove(event: FormEvent) {
     event.preventDefault();
     if (typed !== expected) return;
@@ -142,21 +156,22 @@ export function DeleteRepository({
     <section aria-labelledby="delete-heading" className="source-danger">
       <h2 id="delete-heading">Delete repository</h2>
       <p>
-        Deleting removes its history, refs and tokens for everyone. It cannot be undone. Type{' '}
-        <strong>{expected}</strong> to confirm.
+        {deleteNote(undoDays)} Type <strong>{expected}</strong> to confirm.
       </p>
+      {held && <p className="source-meta">{HELD_NOTE}</p>}
       <form onSubmit={remove} className="source-create">
         <label htmlFor="delete-confirm" className="sr-only">
           Repository name
         </label>
         <input
           id="delete-confirm"
+          disabled={held}
           value={typed}
           onChange={(e) => setTyped(e.target.value)}
           autoComplete="off"
           spellCheck={false}
         />
-        <button type="submit" className="danger" disabled={busy || typed !== expected}>
+        <button type="submit" className="danger" disabled={busy || held || typed !== expected}>
           {busy ? 'Deleting…' : 'Delete this repository'}
         </button>
       </form>

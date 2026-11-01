@@ -53,7 +53,7 @@ pub(super) fn remove_added_by<S: SqlStore>(db: &S, token: &str, now: i64) -> Res
             db,
             "ssh_key.removed",
             now,
-            json!({"id":id,"reason":"token_revoked","token":token}),
+            json!({"id":id,"reason":"token_revoked","token":token,"orgs":super::orgs::hints(db)?}),
         )?;
     }
     Ok(keys)

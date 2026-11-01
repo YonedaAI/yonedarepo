@@ -7,30 +7,46 @@ import { execFileSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { BENCH_VERSION, RELAY_MAX } from './relay.js';
+import { OWN_TRAFFIC } from '../own-traffic.mjs';
 
 export const AUTHOR = { name: 'Fanout bench', email: 'bench@yonedarepo.invalid' };
 export const b64 = (text) => Buffer.from(text).toString('base64');
 const root = fileURLToPath(new URL('../../', import.meta.url));
+export const EVIDENCE_DIR = resolve(root, '.local/platform-live');
 const pause = (ms) => new Promise((r) => setTimeout(r, ms));
 
-export async function connect(url, client) {
-  const login = await fetch(`${url}/api/auth/login`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ username: process.env.YONEDA_USERNAME, password: process.env.YONEDA_PASSWORD }),
-  });
-  assert.equal(login.status, 200, 'Login failed; set YONEDA_USERNAME and YONEDA_PASSWORD');
-  const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0];
+/** `client2` is a second bench client Worker: invocations alternate between the two. */
+export async function connect(url, client, { client2 } = {}) {
+  const clients = [client, client2].filter(Boolean);
+  // How many of them the next invocations use: a run compares 1 against 2 on one session.
+  let active = clients.length;
+  let turn = 0;
+  const signIn = async () => {
+    const login = await fetch(`${url}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', ...OWN_TRAFFIC },
+      body: JSON.stringify({ username: process.env.YONEDA_USERNAME, password: process.env.YONEDA_PASSWORD }),
+    });
+    assert.equal(login.status, 200, 'Login failed; set YONEDA_USERNAME and YONEDA_PASSWORD');
+    return (login.headers.get('set-cookie') ?? '').split(';')[0];
+  };
+  let cookie = await signIn();
   // A read is retried when the connection itself fails (a reset or connect timeout on the
-  // machine running the bench), never on an HTTP answer; writes are never retried.
+  // machine running the bench), never on an HTTP answer; writes are never retried. A session
+  // that ended is the one exception: nothing ran, and a multi-hour run outlives one.
   const call = async (method, path, body) => {
     for (let attempt = 1; ; attempt++) {
       try {
         const response = await fetch(`${url}/api/v1${path}`, {
           method,
-          headers: { 'content-type': 'application/json', cookie },
+          headers: { 'content-type': 'application/json', ...OWN_TRAFFIC, cookie },
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         });
+        if (response.status === 401 && attempt === 1) {
+          cookie = await signIn();
+          continue;
+        }
         return { status: response.status, body: await response.json().catch(() => ({})) };
       } catch (e) {
         if (method !== 'GET' || attempt >= 5) throw e;
@@ -51,7 +67,7 @@ export async function connect(url, client) {
     const after = () => `after ${Date.now() - started} ms`;
     let response;
     try {
-      response = await fetch(client, {
+      response = await fetch(clients[turn++ % active], {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-bench-key': process.env.BENCH_KEY ?? '' },
         body: JSON.stringify({ target: url, ...body }),
@@ -84,7 +100,56 @@ export async function connect(url, client) {
     return replies.flat();
   }
 
+  /** Sends many `{repo, writers}` batches through the bench client's relay, so this machine
+   * holds one connection per RELAY_MAX batches: they answer as `{repo, ...result}` rows. */
+  async function relayed(batches) {
+    const roots = [];
+    for (let i = 0; i < batches.length; i += RELAY_MAX) roots.push(batches.slice(i, i + RELAY_MAX));
+    const replies = await Promise.all(
+      roots.map(async (root) => {
+        const reply = await invoke({ relay: root });
+        if (reply.failed) {
+          const failed = { status: 0, error: 'BENCH_CLIENT', message: reply.failed, started_at: Date.now() };
+          return root.flatMap((b) => b.writers.map(() => ({ repo: b.repo, commit: failed, land: null })));
+        }
+        return reply.batches.flatMap((b) => b.results.map((r) => ({ repo: b.repo, ...r })));
+      }),
+    );
+    return replies.flat();
+  }
+
+  /** Stops before any setup if a bench client is older than this bench or cannot reach itself. */
+  async function preflight() {
+    for (const url of clients) {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-bench-key': process.env.BENCH_KEY ?? '' },
+        body: JSON.stringify({ ping: { self: true } }),
+      }).catch((e) => ({ status: `unreachable (${e.message})` }));
+      const body = response.status === 200 ? await response.json().catch(() => ({})) : {};
+      if (body.bench !== BENCH_VERSION || !body.relay)
+        throw new Error(`Bench client ${url} is not ready (status ${response.status}, version ${body.bench ?? 'none'}, relay ${body.relay ?? 'none'}): deploy tools/fanout-bench first`);
+    }
+  }
+
+  /** A setup request, retried as a refused or dropped one can be; the measured load never is. */
+  async function setup(method, path, body) {
+    for (let attempt = 0; ; attempt++) {
+      const answer = await call(method, path, body).catch((e) => ({ status: 0, body: { error: { code: 'CLIENT_FETCH', message: String(e) } } }));
+      if (answer.status === 200) return answer.body;
+      if (attempt >= 4) throw new Error(`${method} ${path}: ${answer.status} ${answer.body.error?.code} ${answer.body.error?.message}`);
+      await pause(500 * (attempt + 1));
+    }
+  }
+
   const created = [];
+  /** A repository a saved pool keeps: no run deletes it. */
+  async function createKept(name) {
+    const files = [{ path: 'README.md', content_b64: b64(`${name}\n`) }];
+    const { id } = await setup('POST', '/repos', { name, policy: { required_checks: [], approvals: 0 }, files, author: AUTHOR });
+    return { id, name };
+  }
+
   async function createRepo(prefix, files) {
     const name = `${prefix}-${Date.now()}`;
     const { id } = await post('/repos', { name, policy: { required_checks: [], approvals: 0 }, files, author: AUTHOR });
@@ -102,12 +167,22 @@ export async function connect(url, client) {
     return left;
   }
 
-  /** `count` repository tokens (read, write, land), minted 50 at a time. */
-  async function mintTokens(repo, count) {
+  /** `count` repository tokens (read, write, land) named `<label><n>`, minted 50 at a time. */
+  async function mintTokens(repo, count, label = 'w') {
     const tokens = [];
     for (let i = 0; i < count; i += 50)
-      tokens.push(...(await Promise.all(Array.from({ length: Math.min(50, count - i) }, async (_, k) => (await post(`/repos/${repo}/tokens`, { name: `w${i + k}`, scopes: ['read', 'write', 'land'] })).token))));
+      tokens.push(...(await Promise.all(Array.from({ length: Math.min(50, count - i) }, async (_, k) => (await setup('POST', `/repos/${repo}/tokens`, { name: `${label}${i + k}`, scopes: ['read', 'write', 'land'] })).token))));
     return tokens;
+  }
+
+  /** Revokes what `mintTokens(repo, count, label)` made; how many could not be revoked. */
+  async function revokeTokens(repo, count, label) {
+    let left = 0;
+    for (let i = 0; i < count; i += 50) {
+      const answers = await Promise.all(Array.from({ length: Math.min(50, count - i) }, (_, k) => call('DELETE', `/repos/${repo}/tokens/${label}${i + k}`).catch(() => ({ status: 0 }))));
+      left += answers.filter((a) => a.status !== 200).length;
+    }
+    return left;
   }
 
   /** Log entries with `after < version <= until`; a busy authority's refusal is retried. */
@@ -128,21 +203,55 @@ export async function connect(url, client) {
     return { entries, refused };
   }
 
-  return { url, cookie, call, post, invoke, fanout, createRepo, cleanup, mintTokens, txlog };
+  return {
+    url,
+    get clients() {
+      return active;
+    },
+    useClients(count) {
+      assert.ok(count >= 1 && count <= clients.length, `${clients.length} bench clients configured, ${count} asked for`);
+      active = count;
+    },
+    get cookie() {
+      return cookie;
+    },
+    call,
+    post,
+    setup,
+    invoke,
+    fanout,
+    relayed,
+    preflight,
+    createRepo,
+    createKept,
+    cleanup,
+    mintTokens,
+    revokeTokens,
+    txlog,
+  };
 }
 
-/** Writes `.local/platform-live/<name>.json` with the revision and prints it. */
+/** A run's stamp in a file name: sorts by time, safe on any filesystem. */
+export const stampOf = (date) => date.toISOString().replace(/[:.]/g, '-');
+/** A credential in evidence is a bug: evidence is kept, and quoted in docs. */
+const SECRET = /\b(yrp|ypat)_[A-Za-z0-9_-]{16,}/;
+
+/** The recorded form of one run; throws rather than record a credential. */
+export function evidenceRecord(target, result, { recorded_at, revision }) {
+  const record = { schema: 2, target, client: 'bench client Worker, aws:us-east-1', recorded_at, revision, result };
+  const text = `${JSON.stringify(record, null, 2)}\n`;
+  if (SECRET.test(text)) throw new Error('Evidence holds a token; not writing it');
+  return { record, text };
+}
+
+/** Writes `.local/platform-live/<name>-<stamp>.json`, one file per run (never over another),
+ * with the revision, and prints it. */
 export async function evidence(name, target, result) {
-  const recorded = {
-    schema: 1,
-    target,
-    client: 'bench client Worker, aws:us-east-1',
-    recorded_at: new Date().toISOString(),
-    revision: execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
-    result,
-  };
-  await mkdir(resolve(root, '.local/platform-live'), { recursive: true });
-  await writeFile(resolve(root, `.local/platform-live/${name}.json`), `${JSON.stringify(recorded, null, 2)}\n`);
-  console.log(JSON.stringify(recorded, null, 2));
-  return recorded;
+  const now = new Date();
+  const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
+  const { record, text } = evidenceRecord(target, result, { recorded_at: now.toISOString(), revision });
+  await mkdir(EVIDENCE_DIR, { recursive: true });
+  await writeFile(resolve(EVIDENCE_DIR, `${name}-${stampOf(now)}.json`), text, { flag: 'wx' });
+  console.log(text.trimEnd());
+  return record;
 }

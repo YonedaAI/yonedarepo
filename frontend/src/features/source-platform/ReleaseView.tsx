@@ -2,6 +2,7 @@
 // each a download with its size and sha256. The owner attaches assets and deletes the
 // release (the tag stays: tags never move or disappear).
 import { type FormEvent, useState } from 'react';
+import { HELD_NOTE, useRepoHold } from './LegalHold';
 import { usePeople } from './people';
 import {
   assetHref,
@@ -96,6 +97,7 @@ function DeleteRelease({
 }) {
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState('');
+  const held = useRepoHold(repo);
   async function remove() {
     setError('');
     try {
@@ -118,7 +120,13 @@ function DeleteRelease({
           </button>
         </>
       ) : (
-        <button type="button" className="quiet" onClick={() => setConfirming(true)}>
+        <button
+          type="button"
+          className="quiet"
+          disabled={held}
+          title={held ? HELD_NOTE : undefined}
+          onClick={() => setConfirming(true)}
+        >
           Delete release…
         </button>
       )}
@@ -151,8 +159,7 @@ export function ReleaseBody({
     <article aria-labelledby="release-heading">
       <h2 id="release-heading">{r.title}</h2>
       <p className="source-meta">
-        <span className="source-change-status">{r.tag}</span> · {people.principal(r.created_by)} ·{' '}
-        {when(r.created_at)}
+        <code>{r.tag}</code> · {people.principal(r.created_by)} · {when(r.created_at)}
         {r.commit_id && (
           <>
             {' '}

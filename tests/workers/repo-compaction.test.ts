@@ -1,14 +1,15 @@
 // Log compaction through the real SourceRepository DO and R2: the owner's trigger moves a
 // segment of old versions to R2, the SQL tail shrinks, reads at old versions still answer
 // (from the segment the adapter fetches), and a corrupted segment is refused.
-import { expect, it } from 'vitest';
-import { compactAfterLanding } from '../../cloudflare/worker/repo-compaction';
+import { expect, it, vi } from 'vitest';
+import { compactAfterLanding, compactionJob, sweepCompaction, sweepRange } from '../../cloudflare/worker/repo-compaction';
+import type { Env, Envelope } from '../../cloudflare/worker/types';
 import { api, author, bindings, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
 /** A repository whose log has passed 1,100 versions: 100 branches moved in batches. */
-async function grown(name: string) {
+async function grown(name: string, head = 1_100) {
   const owner = { cookie: await signup(name) };
   const created = await api('/repos', owner, {
     body: { name: 'long-log', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', 'a\n')], author, tokens: [{ name: 'agent', scopes: ['read', 'write'] }] },
@@ -20,7 +21,7 @@ async function grown(name: string) {
   const child = (await api(`${repo}/commits`, agent, { body: { parent: root, changes: [file('b.txt', 'b\n')], message: 'b', author } })).body.commit;
   const at: (string | null)[] = Array(100).fill(null);
   let version = (await api(repo, owner)).body.version as number;
-  while (version < 1_100) {
+  while (version < head) {
     const updates = at.map((was, i) => {
       at[i] = was === root ? child : root;
       return { ref: `b${i}`, commit: at[i], expected: was };
@@ -45,9 +46,17 @@ it('moves old versions to R2 segments and still answers reads at them', async ()
   const bound = await api(`${repo}/retention`, owner, { method: 'PUT', body: { keep_versions: 64 } });
   expect(bound.body).toEqual({ keep_versions: 64, keep_days: 30 });
 
+  // The owner's read changes nothing, and only the owner may read it.
+  expect((await api(`${repo}/compaction`, agent)).status).toBe(403);
+  const unmoved = (await api(`${repo}/compaction`, owner)).body;
+  expect(unmoved).toMatchObject({ floor: 0, head: version, tail_rows: version, retention: { keep_versions: 64 } });
+  expect(unmoved.storage.db_bytes).toBeGreaterThan(4096);
+  expect((await api(`${repo}/compaction`, owner)).body.floor).toBe(0);
+
   const compacted = await api(`${repo}/compact`, owner, { body: {} });
   expect(compacted.status).toBe(200);
   expect(compacted.body).toMatchObject({ segments: 1, floor: 1_024, head: version, tail_rows: version - 1_024, more: false });
+  expect((await api(`${repo}/compaction`, owner)).body).toMatchObject({ floor: 1_024, tail_rows: version - 1_024 });
   const listed = await bindings.OBJECTS.list({ prefix: `platform/v1/${id}/_log/` });
   expect(listed.objects.map((o) => o.key.split('/_log/')[1]).sort()).toEqual([
     'checkpoint-00000000000000000000.json',
@@ -79,4 +88,73 @@ it('runs after landings as the platform, within the repository bound', async () 
   // Then it waits out its window, and a small log is never checked at all.
   expect(await compactAfterLanding(scoped, id, version)).toBeNull();
   expect(await compactAfterLanding(scoped, 'r00000000000000000000', 10)).toBeNull();
+});
+
+const MINUTE = 60_000;
+const DAY_MINUTES = 24 * 60;
+
+/** A deployment with the sweep on, whose queue only records what it was sent. */
+function sweeping() {
+  const sent: { body: Envelope; delaySeconds?: number }[] = [];
+  const PLATFORM_QUEUE = {
+    send: async (body: Envelope, options?: { delaySeconds?: number }) => void sent.push({ body, ...options }),
+    sendBatch: async (messages: { body: Envelope }[]) => void sent.push(...messages),
+  };
+  return { env: { ...scoped, COMPACTION_SWEEP: 'on', PLATFORM_QUEUE } as unknown as Env, sent };
+}
+
+/** A time in the minute of the day whose range holds `id`. */
+function minuteOf(id: string) {
+  for (let m = 0; m < DAY_MINUTES; m++) {
+    const [from, to] = sweepRange(m * MINUTE);
+    if (from <= id && id < to) return m * MINUTE;
+  }
+  throw new Error(`no minute covers ${id}`);
+}
+
+it('visits the whole id space in a day, each id once', () => {
+  const ranges = Array.from({ length: DAY_MINUTES }, (_, m) => sweepRange(m * MINUTE));
+  for (let m = 1; m < DAY_MINUTES; m++) expect(ranges[m][0]).toBe(ranges[m - 1][1]);
+  expect(ranges[0][0]).toBe('r0000');
+  for (const id of ['r00000000000000000000', 'rffffffffffffffffffff'])
+    expect(ranges.filter(([from, to]) => from <= id && id < to)).toHaveLength(1);
+  expect(sweepRange(DAY_MINUTES * MINUTE)).toEqual(ranges[0]);
+});
+
+it('compacts a repository with no landing to run it, only behind the switch', async () => {
+  const { owner, repo, id, version } = await grown('idle_compactor');
+  await api(`${repo}/retention`, owner, { method: 'PUT', body: { keep_versions: 64 } });
+  const now = minuteOf(id);
+  expect(await sweepCompaction(scoped, now)).toBe(0);
+  const { env, sent } = sweeping();
+  expect((await api(`${repo}/compaction`, owner)).body).toMatchObject({ floor: 0, head: version });
+  expect(await sweepCompaction(env, now)).toBeGreaterThanOrEqual(1);
+  const job = sent.map((s) => s.body).find((b) => b.repo_id === id)!;
+  expect(job).toMatchObject({ kind: 'platform_compact', repo_id: id });
+  expect(await compactionJob(env, job)).toMatchObject({ segments: 1, floor: 1_024 });
+  expect((await api(`${repo}/compaction`, owner)).body.floor).toBe(1_024);
+  expect((await api(`${repo}/log?ref=b3&at=5`, owner)).status).toBe(200);
+});
+
+it('sends itself again while a sweep leaves segments due', async () => {
+  const { owner, repo, id } = await grown('busy_compactor', 6_500);
+  await api(`${repo}/retention`, owner, { method: 'PUT', body: { keep_versions: 64 } });
+  const { env, sent } = sweeping();
+  const job: Envelope = { v: 1, kind: 'platform_compact', repo_id: id, job_id: `compact-${id}` };
+  expect(await compactionJob(env, job)).toMatchObject({ segments: 4, more: true });
+  expect(sent).toMatchObject([{ body: job, delaySeconds: 60 }]);
+  expect(await compactionJob(env, job)).toMatchObject({ segments: 2, more: false });
+  expect(sent).toHaveLength(1);
+}, 60_000);
+
+it('ends quietly for a repository that has gone', async () => {
+  const { owner, repo, id } = await grown('gone_compactor');
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+  expect((await api(`${repo}?confirm=long-log`, owner, { method: 'DELETE' })).status).toBeLessThan(300);
+  const { env, sent } = sweeping();
+  const job: Envelope = { v: 1, kind: 'platform_compact', repo_id: id, job_id: `compact-${id}` };
+  expect(await compactionJob(env, job)).toBeNull();
+  expect(sent).toEqual([]);
+  expect(logged.mock.calls.flat().join(' ')).not.toContain('compaction.failed');
+  logged.mockRestore();
 });

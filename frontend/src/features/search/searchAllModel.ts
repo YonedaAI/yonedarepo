@@ -1,4 +1,5 @@
-// A search of all the account's repositories. There is no index across repositories, so the
+// A search of all the account's repositories. Where the platform has it, `GET /search` chooses
+// the repositories that can match and answers a page at a time (`askAccount`). Elsewhere the
 // browser asks each repository's own search API: at most REPO_CAP of them, the most recently
 // active first, CONCURRENCY at a time, each answer shown as it arrives.
 import type { ActivitySession } from '../shell/homeModel';
@@ -42,6 +43,41 @@ export const capNote = ({ capped }: Pick<SearchPlan, 'capped'>) =>
   capped
     ? `Searched your ${REPO_CAP} most recent repositories. Pick one to search it fully.`
     : undefined;
+
+/** One page of `GET /search`: the repositories that found something, of `searched` asked. */
+export type AccountPage = {
+  results: { repo: string; name: string; path: string | null; answer: SearchAnswer }[];
+  failed: { repo: string; name: string; error: string }[];
+  searched: number;
+  scanned: number;
+  next: string | null;
+};
+
+export const accountSearchPath = (query: string, after?: string | null) =>
+  `/search?query=${encodeURIComponent(query)}&ignore_case=true${
+    after ? `&after=${encodeURIComponent(after)}` : ''
+  }`;
+
+/** A page of the account's search, or null when this platform doesn't have one. */
+export async function askAccount(
+  query: string,
+  after: string | null,
+  signal: AbortSignal,
+  ask: (path: string, init: { signal: AbortSignal }) => Promise<AccountPage> = sourceApi,
+): Promise<AccountPage | null> {
+  try {
+    return await ask(accountSearchPath(query, after), { signal });
+  } catch (e) {
+    if (e instanceof SourceApiError && e.status === 404) return null;
+    throw e;
+  }
+}
+
+/** A page's answers as the fan-out's, for the same results. */
+export const pageOutcomes = (page: AccountPage): Outcome[] => [
+  ...page.results.map(({ repo, answer }): Outcome => ({ repo, kind: 'found', answer })),
+  ...page.failed.map(({ repo, error }): Outcome => ({ repo, kind: 'failed', error })),
+];
 
 /** Runs `run` over `items` in order, `limit` at a time, starting none once `signal` aborts. */
 export async function fanOut<T>(

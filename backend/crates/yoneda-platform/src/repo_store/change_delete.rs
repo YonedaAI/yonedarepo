@@ -40,6 +40,7 @@ pub fn delete<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     }
     let key = [change["number"].clone()];
     db.query("DELETE FROM change_comments WHERE change_number=?", &key)?;
+    super::flight_plans::forget_change(db, &key[0])?;
     db.query("DELETE FROM changes WHERE number=?", &key)?;
     let now = number(c, "now")?;
     change_hooks::notify(

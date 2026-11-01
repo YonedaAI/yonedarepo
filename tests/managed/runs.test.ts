@@ -452,16 +452,95 @@ describe('each agent on its fixtures', () => {
     });
   }
 
-  it('slop-review holds findings at medium and never blocks (its reading is maintained)', async () => {
+  it('slop-review holds findings at medium and, by default, never blocks', async () => {
     const h = await ready('slop-review');
     fakeGateway();
     const high = { summary: 's', findings: [{ ...FIXTURES['slop-review'].trigger.expected[0], severity: 'high' }] };
     h.harness.scripts = [{ result: high }];
-    expect((await put(h, 'slop-review', { settings: { block_at: 'medium' } })).status).toBe(400);
     await deliver(h, opened(h));
     expect(await run(h, h.created[0])).toMatchObject({ value: 'medium' });
     expect(h.platform.comments[0].body).toContain('**Medium:');
     expect(h.platform.checks[0]).toMatchObject({ status: 'pass', evidence: expect.objectContaining({ value: 'medium' }) });
+  });
+
+  for (const [block_at, status] of [['medium', 'fail'], ['high', 'pass']] as const)
+    it(`slop-review set to block at ${block_at}: a medium reading is a ${status}`, async () => {
+      const h = await ready('slop-review');
+      fakeGateway();
+      h.harness.scripts = [{ result: result('slop-review') }];
+      expect((await put(h, 'slop-review', { settings: { block_at } })).status).toBe(200);
+      await deliver(h, opened(h));
+      expect(await run(h, h.created[0])).toMatchObject({ value: 'medium' });
+      expect(h.platform.checks[0]).toMatchObject({ status, evidence: expect.objectContaining({ value: 'medium' }) });
+    });
+
+  describe('a high reading', () => {
+    const lines = Array.from({ length: 6 }, (_, i) => `+  const unused${i} = ${i};`);
+    const diff = `@@ -10,0 +11,6 @@\n${lines.join('\n')}`;
+    const finding = (n: number, severity = 'medium') => ({
+      path: 'src/cart.ts',
+      line: 11 + n,
+      severity,
+      title: `Dead value ${n}`,
+      why: 'Never read.',
+    });
+    /** A slop review of a six-line change that reports `result`, blocking at `block_at`. */
+    async function review(result: Record<string, unknown>, block_at: 'high' | null = 'high') {
+      const h = harness();
+      h.platform.change({ files: [{ path: 'src/cart.ts', patch: diff }] });
+      expect((await put(h, 'slop-review', { repos: [h.platform.repo] })).status).toBe(200);
+      expect((await put(h, 'slop-review', { settings: { block_at } })).status).toBe(200);
+      fakeGateway();
+      h.harness.scripts = [{ result: { summary: 's', ...result } }];
+      await deliver(h, opened(h));
+      return { outcome: await run(h, h.created[0]), check: h.platform.checks[0] };
+    }
+
+    it('comes from five medium findings on lines of the change, and blocks at high', async () => {
+      const { outcome, check } = await review({ findings: [0, 1, 2, 3, 4].map((n) => finding(n)) });
+      expect(outcome).toMatchObject({ value: 'high', findings: 5 });
+      expect(check).toMatchObject({ status: 'fail', evidence: expect.objectContaining({ value: 'high' }) });
+    });
+
+    it('is only a reading until the owner blocks on it', async () => {
+      const { check } = await review({ findings: [0, 1, 2, 3, 4].map((n) => finding(n)) }, null);
+      expect(check).toMatchObject({ status: 'pass', evidence: expect.objectContaining({ value: 'high' }) });
+    });
+
+    it('is never what the model says: four findings stay medium, whatever it claims', async () => {
+      const { outcome, check } = await review({
+        value: 'high',
+        level: 'high',
+        findings: [finding(0, 'high'), finding(1, 'high'), finding(2), finding(3)],
+      });
+      expect(outcome).toMatchObject({ value: 'medium', findings: 4 });
+      expect(check).toMatchObject({ status: 'pass', evidence: expect.objectContaining({ value: 'medium' }) });
+    });
+
+    it('needs findings on lines: one line flagged five times, or off the diff, is not five', async () => {
+      const same = await review({ findings: [0, 0, 0, 0, 0].map((n) => finding(n)) });
+      expect(same.outcome).toMatchObject({ value: 'medium', findings: 1 });
+      const off = await review({
+        findings: [0, 1, 2, 3, 4].map((n) => ({ ...finding(n), line: 90 + n })),
+      });
+      expect(off.outcome).toMatchObject({ value: 'medium', findings: 0, withheld: 5 });
+    });
+
+    it('takes medium findings: low ones never reach it, however many', async () => {
+      const { outcome } = await review({ findings: [0, 1, 2, 3, 4, 5].map((n) => finding(n, 'low')) });
+      expect(outcome).toMatchObject({ value: 'low', findings: 6 });
+    });
+  });
+
+  it('a repository can turn off the block its workspace set', async () => {
+    const h = await ready('slop-review');
+    fakeGateway();
+    h.harness.scripts = [{ result: result('slop-review') }];
+    expect((await put(h, 'slop-review', { settings: { block_at: 'medium' } })).status).toBe(200);
+    expect((await put(h, 'slop-review', { scope: h.platform.repo, settings: { block_at: null } })).status).toBe(200);
+    await deliver(h, opened(h));
+    await run(h, h.created[0]);
+    expect(h.platform.checks[0]).toMatchObject({ status: 'pass' });
   });
 });
 
@@ -479,7 +558,7 @@ describe('settings', () => {
     expect(h.platform.tokens).toHaveLength(2);
     expect(h.platform.hooks.map((x) => x.url).sort()).toEqual(h.platform.repos.map((r) => `https://managed.example.com/hooks/${r}`).sort());
     const overview = await (await site(h, '')).json<any>();
-    expect(overview.agents.map((a: any) => a.id)).toEqual(['code-review', 'security-review', 'slop-review']);
+    expect(overview.agents.map((a: any) => a.id)).toEqual(['code-review', 'security-review', 'slop-review', 'intent-drift']);
     expect(overview.credit).toMatchObject({ granted_usd: 5, used_usd: 0, balance_usd: 5 });
     expect(overview.repos).toHaveLength(2);
   });

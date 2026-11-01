@@ -1,61 +1,140 @@
-// The Changes tab: change requests (branches proposed for landing on a base branch, main by
-// default), filtered by status.
+// The Landings tab: change requests (branches proposed for landing on a base branch, main by
+// default), filtered by status, with the landings no change names.
 import { useState } from 'react';
-import { CHANGE_FILTERS, type Change, type ChangeFilter, changesPath } from './changeModel';
+import { EmptyState } from '../../components/EmptyState';
+import {
+  CHANGE_FILTERS,
+  type Change,
+  type ChangeFilter,
+  type ChangeList,
+  changesPath,
+  type DirectLanding,
+  type LandingState,
+  landingRows,
+  landingState,
+} from './changeModel';
 import { Person } from './Person';
 import { Failure, Loading } from './SourceStatus';
-import { when } from './sourceApi';
+import { shortSha, when } from './sourceApi';
 import { type Loaded, useSource } from './useSource';
 
-export function ChangeStatusChip({ status }: { status: Change['status'] }) {
-  return <span className={`source-change-status source-change-${status}`}>{status}</span>;
+export function ChangeStatusChip({
+  status,
+  state,
+}: {
+  status: Change['status'];
+  state: LandingState;
+}) {
+  return <span className={`source-change-status source-change-${status}`}>{state}</span>;
 }
 
-const EMPTY: Record<ChangeFilter, string> = {
-  open: 'No open changes. Push a branch and open a change to propose landing it.',
-  landed: 'No landed changes yet.',
-  closed: 'No closed changes.',
-  all: 'No changes yet. Push a branch and open a change to propose landing it.',
+const PROPOSE = 'Push a branch and open a Landing to propose it.';
+const EMPTY: Record<ChangeFilter, { title: string; hint?: string }> = {
+  open: { title: 'No open Landings', hint: PROPOSE },
+  landed: { title: 'Nothing has landed yet' },
+  closed: { title: 'No closed Landings' },
+  all: { title: 'No Landings yet', hint: PROPOSE },
 };
+
+function DirectRow({
+  landing,
+  href,
+  onOpen,
+}: {
+  landing: DirectLanding;
+  href: string;
+  onOpen?: (commit: string) => void;
+}) {
+  return (
+    <>
+      <span className="source-change-status source-change-landed">Landed directly</span>
+      <a
+        href={href}
+        onClick={(e) => {
+          if (!onOpen) return;
+          e.preventDefault();
+          onOpen(landing.commit);
+        }}
+      >
+        <strong>{landing.title || shortSha(landing.commit)}</strong>
+      </a>
+      <span className="source-meta">
+        <code>{shortSha(landing.commit)}</code> on main ·{' '}
+        {landing.author && (
+          <>
+            <Person principal={landing.author} /> ·{' '}
+          </>
+        )}
+        landed v{landing.version} · {when(landing.landed_at)}
+      </span>
+    </>
+  );
+}
+
+function ChangeRow({
+  change: c,
+  href,
+  onOpen,
+}: {
+  change: Change;
+  href: string;
+  onOpen: (n: number) => void;
+}) {
+  return (
+    <>
+      <ChangeStatusChip status={c.status} state={landingState(c)} />
+      <a
+        href={href}
+        onClick={(e) => {
+          e.preventDefault();
+          onOpen(c.number);
+        }}
+      >
+        <strong>{c.title}</strong> <span className="source-meta">#{c.number}</span>
+      </a>
+      <span className="source-meta">
+        <code>{c.branch}</code> → {c.base} · <Person principal={c.author} /> ·{' '}
+        {c.status === 'landed' && c.landed_version !== null ? `landed v${c.landed_version} · ` : ''}
+        updated {when(c.updated_at)}
+        {c.comment_count > 0 && ` · ${c.comment_count} comment${c.comment_count === 1 ? '' : 's'}`}
+      </span>
+    </>
+  );
+}
 
 export function ChangeTable({
   changes,
   filter,
   hrefOf,
   onOpen,
+  commitHrefOf = (id) => `#${id}`,
+  onCommit,
 }: {
-  changes: Loaded<{ changes: Change[] }>;
+  changes: Loaded<ChangeList>;
   filter: ChangeFilter;
   hrefOf: (n: number) => string;
   onOpen: (n: number) => void;
+  commitHrefOf?: (id: string) => string;
+  onCommit?: (id: string) => void;
 }) {
-  if (changes.loading && !changes.data) return <Loading what="changes" />;
+  if (changes.loading && !changes.data) return <Loading what="Landings" />;
   if (changes.error) return <Failure error={changes.error} onRetry={changes.reload} />;
-  const rows = changes.data?.changes ?? [];
-  if (rows.length === 0) return <p className="source-empty">{EMPTY[filter]}</p>;
+  const rows = landingRows(changes.data ?? { changes: [] });
+  if (rows.length === 0)
+    return <EmptyState title={EMPTY[filter].title}>{EMPTY[filter].hint}</EmptyState>;
   return (
-    <ul className="source-changes" aria-label={`${filter} changes`} aria-busy={changes.loading}>
-      {rows.map((c) => (
-        <li key={c.number}>
-          <ChangeStatusChip status={c.status} />
-          <a
-            href={hrefOf(c.number)}
-            onClick={(e) => {
-              e.preventDefault();
-              onOpen(c.number);
-            }}
-          >
-            <strong>{c.title}</strong> <span className="source-meta">#{c.number}</span>
-          </a>
-          <span className="source-meta">
-            <code>{c.branch}</code> → {c.base} · <Person principal={c.author} /> ·{' '}
-            {c.status === 'landed' && c.landed_version !== null
-              ? `landed v${c.landed_version} · `
-              : ''}
-            updated {when(c.updated_at)}
-            {c.comment_count > 0 &&
-              ` · ${c.comment_count} comment${c.comment_count === 1 ? '' : 's'}`}
-          </span>
+    <ul className="source-changes" aria-label={`${filter} Landings`} aria-busy={changes.loading}>
+      {rows.map((row) => (
+        <li key={row.key}>
+          {row.kind === 'direct' ? (
+            <DirectRow
+              landing={row.landing}
+              href={commitHrefOf(row.landing.commit)}
+              onOpen={onCommit}
+            />
+          ) : (
+            <ChangeRow change={row.change} href={hrefOf(row.change.number)} onOpen={onOpen} />
+          )}
         </li>
       ))}
     </ul>
@@ -85,22 +164,33 @@ export function RepoChanges({
   repo,
   onOpen,
   hrefOf = () => '#',
+  commitHrefOf,
+  onCommit,
   initialFilter = 'open',
 }: {
   repo: string;
   onOpen: (n: number) => void;
   hrefOf?: (n: number) => string;
+  commitHrefOf?: (id: string) => string;
+  onCommit?: (id: string) => void;
   initialFilter?: ChangeFilter;
 }) {
   const [filter, setFilter] = useState<ChangeFilter>(initialFilter);
-  const changes = useSource<{ changes: Change[] }>(changesPath(repo, filter));
+  const changes = useSource<ChangeList>(changesPath(repo, filter));
   return (
     <section aria-labelledby="changes-heading">
       <div className="source-changes-head">
-        <h2 id="changes-heading">Changes</h2>
+        <h2 id="changes-heading">Landings</h2>
         <StatusFilter value={filter} onChange={setFilter} />
       </div>
-      <ChangeTable changes={changes} filter={filter} hrefOf={hrefOf} onOpen={onOpen} />
+      <ChangeTable
+        changes={changes}
+        filter={filter}
+        hrefOf={hrefOf}
+        onOpen={onOpen}
+        commitHrefOf={commitHrefOf}
+        onCommit={onCommit}
+      />
     </section>
   );
 }

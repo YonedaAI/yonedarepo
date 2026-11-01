@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
+import { OWN_TRAFFIC } from '../own-traffic.mjs';
 
 export async function savePrivate(path, value) {
   await mkdir(dirname(path), { recursive: true, mode: 0o700 });
@@ -13,7 +14,7 @@ export function client(origin) {
   async function api(path, body) {
     const response = await fetch(`${origin}/api/${path}`, {
       method: body === undefined ? 'GET' : 'POST', redirect: 'error',
-      headers: { 'content-type': 'application/json', origin, ...(cookie ? { cookie } : {}) },
+      headers: { 'content-type': 'application/json', origin, ...OWN_TRAFFIC, ...(cookie ? { cookie } : {}) },
       body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(30000),
     });
     const value = await response.json();
@@ -24,7 +25,7 @@ export function client(origin) {
   async function mcp(repo, token, name, args) {
     const response = await fetch(`${origin}/mcp/${repo}`, {
       method: 'POST', redirect: 'error', signal: AbortSignal.timeout(30000),
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}`, ...OWN_TRAFFIC },
       body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method: 'tools/call', params: { name, arguments: args } }),
     });
     const value = await response.json();

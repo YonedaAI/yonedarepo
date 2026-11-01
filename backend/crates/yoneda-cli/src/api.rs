@@ -1,6 +1,7 @@
 //! The platform's public HTTP API (`/api/v1/repos/:id`), as this client uses it.
 use crate::credentials::{Header, Token};
 use crate::error::{Error, Result};
+use crate::http::client;
 use serde_json::Value;
 use std::fmt;
 
@@ -94,13 +95,6 @@ fn unreachable(e: reqwest::Error) -> Failure {
         details: Value::Null,
         retry_after: None,
     }
-}
-
-fn client() -> Result<reqwest::Client> {
-    reqwest::Client::builder()
-        .user_agent(concat!("yoneda-cli/", env!("CARGO_PKG_VERSION")))
-        .build()
-        .map_err(|e| Error::new(format!("building the HTTP client: {e}")))
 }
 
 impl Api {

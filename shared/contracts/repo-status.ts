@@ -10,6 +10,12 @@ export type RepoStatus = {
   forks: number;
   /** The paths a path-scoped token may read (null: the whole repository). */
   grant: string[] | null;
+  /** How far an imported history has been recorded, while it is still partial. */
+  history_import: HistoryFill | null;
+  /** Set when an imported history ended early: older commits are not here. */
+  history_stopped: HistoryStopped | null;
+  /** Whether a push opens a Landing, and whether agents run on those. */
+  landings: AutoLandings;
   name: string;
   object_store: string;
   /** Object projection progress (the adapter merges shard outboxes into it). */
@@ -35,9 +41,34 @@ export type RepoStatus = {
   visibility: Visibility;
 };
 
+/** The repository's switches, all off until the owner turns them on. */
+export type AutoLandings = {
+  /** Managed agents run on those Landings. Off, opening one starts nothing. */
+  agents: boolean;
+  /** A push opens a Landing. */
+  create: boolean;
+  /** Unresolved agent findings refuse every landing, not only show. */
+  findings_block: boolean;
+  /** The platform lands an open Landing once it clears (`land_when_cleared`). */
+  land_when_cleared: boolean;
+};
+
 export type ForkParent = {
   repo: string;
   version: number;
+};
+
+/** How far an imported history has been recorded behind its landed head. */
+export type HistoryFill = {
+  recorded: number;
+  total: number;
+};
+
+/** An imported history that ended early: how much of it is here, and why. */
+export type HistoryStopped = {
+  reason: string;
+  recorded: number;
+  total: number;
 };
 
 /** Landing policy: which checks must pass and how many independent approvals are needed. `runners` are owner-defined checks the platform executes itself (a command, or one model review call); definitions come from policy, never from the commit under test, so a change cannot weaken its own check. */
@@ -45,7 +76,7 @@ export type Policy = {
   approvals: number;
   /** Review classes that satisfy the approval requirement without a human (semantic approval). Only `docs`, `formatting` and `comment_only` may be listed. */
   auto_approve?: ("docs" | "formatting" | "comment_only")[];
-  /** Who may post each required check by hand: `owner` or `token:<name>` (token names are never reused). A required check named by a runner comes only from the platform's run; any other required check defaults to the owner alone. Omitted when empty, so policies that never bind posters keep their digest. */
+  /** Who may post each required check by hand: `owner` or `token:<name>` (token names are never reused). A required check named by a runner comes only from the platform's run; any other required check defaults to the owner and tokens minted with its `check:<name>` scope. Omitted when empty, so policies that never bind posters keep their digest. */
   check_posters?: Record<string, string[]>;
   required_checks: string[];
   runners?: Record<string, Runner>;
@@ -116,6 +147,34 @@ export type Withheld = {
 
 export const repoStatusSchema = {
   "$defs": {
+    "AutoLandings": {
+      "description": "The repository's switches, all off until the owner turns them on.",
+      "properties": {
+        "agents": {
+          "description": "Managed agents run on those Landings. Off, opening one starts nothing.",
+          "type": "boolean"
+        },
+        "create": {
+          "description": "A push opens a Landing.",
+          "type": "boolean"
+        },
+        "findings_block": {
+          "description": "Unresolved agent findings refuse every landing, not only show.",
+          "type": "boolean"
+        },
+        "land_when_cleared": {
+          "description": "The platform lands an open Landing once it clears (`land_when_cleared`).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "create",
+        "agents",
+        "land_when_cleared",
+        "findings_block"
+      ],
+      "type": "object"
+    },
     "ForkParent": {
       "properties": {
         "repo": {
@@ -130,6 +189,50 @@ export const repoStatusSchema = {
       "required": [
         "repo",
         "version"
+      ],
+      "type": "object"
+    },
+    "HistoryFill": {
+      "description": "How far an imported history has been recorded behind its landed head.",
+      "properties": {
+        "recorded": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "recorded",
+        "total"
+      ],
+      "type": "object"
+    },
+    "HistoryStopped": {
+      "description": "An imported history that ended early: how much of it is here, and why.",
+      "properties": {
+        "reason": {
+          "type": "string"
+        },
+        "recorded": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "total": {
+          "format": "uint64",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "recorded",
+        "total",
+        "reason"
       ],
       "type": "object"
     },
@@ -160,7 +263,7 @@ export const repoStatusSchema = {
             },
             "type": "array"
           },
-          "description": "Who may post each required check by hand: `owner` or `token:<name>` (token names are\nnever reused). A required check named by a runner comes only from the platform's run;\nany other required check defaults to the owner alone. Omitted when empty, so policies\nthat never bind posters keep their digest.",
+          "description": "Who may post each required check by hand: `owner` or `token:<name>` (token names are\nnever reused). A required check named by a runner comes only from the platform's run;\nany other required check defaults to the owner and tokens minted with its\n`check:<name>` scope. Omitted when empty, so policies that never bind posters keep\ntheir digest.",
           "propertyNames": {
             "pattern": "^[a-z0-9][a-z0-9._\\-]{0,63}$"
           },
@@ -481,6 +584,32 @@ export const repoStatusSchema = {
         "null"
       ]
     },
+    "history_import": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/HistoryFill"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "How far an imported history has been recorded, while it is still partial."
+    },
+    "history_stopped": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/HistoryStopped"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Set when an imported history ended early: older commits are not here."
+    },
+    "landings": {
+      "$ref": "#/$defs/AutoLandings",
+      "description": "Whether a push opens a Landing, and whether agents run on those."
+    },
     "name": {
       "type": "string"
     },
@@ -574,6 +703,7 @@ export const repoStatusSchema = {
     "objects",
     "bundled",
     "automation",
+    "landings",
     "parent",
     "forks",
     "visibility",
@@ -581,6 +711,8 @@ export const repoStatusSchema = {
     "grant",
     "quarantined",
     "quarantine_epoch",
+    "history_import",
+    "history_stopped",
     "owner_handle",
     "path"
   ],

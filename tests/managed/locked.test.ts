@@ -38,12 +38,11 @@ describe('locked maintained fields', () => {
     ['reasoning', 'high'],
     ['timeout_minutes', 10],
     ['instructions', 'Only check SQL.'],
-    ['block_at', 'medium'],
   ];
   for (const [field, value] of locked)
     it(`refuses a change to ${field}`, async () => {
       const h = harness();
-      const res = await put(h, field === 'block_at' ? 'slop-review' : 'code-review', { settings: { [field]: value } });
+      const res = await put(h, 'code-review', { settings: { [field]: value } });
       expect(res.status).toBe(400);
       expect(await res.json()).toMatchObject({ error: { code: 'INVALID_INPUT', message: expect.stringContaining('maintained by YonedaRepo') } });
     });
@@ -54,6 +53,22 @@ describe('locked maintained fields', () => {
     const res = await put(h, 'code-review', { settings: { trigger } });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ settings: { trigger }, customized: ['trigger'] });
+  });
+
+  it('lets an owner set the level that blocks, on a level agent only', async () => {
+    const h = harness();
+    const res = await put(h, 'slop-review', { settings: { block_at: 'high' } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ settings: { block_at: 'high' }, customized: ['block_at'] });
+    const off = await put(h, 'slop-review', { settings: { block_at: null } });
+    expect(await off.json()).toMatchObject({ settings: { block_at: null }, customized: [] });
+    for (const [agent, value] of [
+      ['slop-review', 'low'],
+      ['slop-review', 'fail'],
+      ['code-review', 'medium'],
+      ['security-review', 'high'],
+    ])
+      expect((await put(h, agent, { settings: { block_at: value } })).status).toBe(400);
   });
 
   it('ignores overrides stored before the lock: every workspace runs the maintained defaults', async () => {

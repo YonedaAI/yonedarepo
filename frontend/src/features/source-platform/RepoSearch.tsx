@@ -30,17 +30,18 @@ export function RepoSearch({
   };
   return (
     <section aria-label="Search">
-      <form onSubmit={submit} className="source-toolbar" aria-label="Search the repository">
-        <label htmlFor="source-search" className="source-version">
-          Search code, commits, sessions and changes
-          <input
-            id="source-search"
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            minLength={2}
-            required
-          />
+      <form onSubmit={submit} className="repo-search-form" aria-label="Search the repository">
+        <label htmlFor="source-search" className="sr-only">
+          Search code, commits, sessions and Landings
         </label>
+        <input
+          id="source-search"
+          value={draft}
+          placeholder="Search code, commits, sessions and Landings"
+          onChange={(e) => setDraft(e.target.value)}
+          minLength={2}
+          required
+        />
         <button type="submit">Search</button>
         <label className="search-word">
           <input

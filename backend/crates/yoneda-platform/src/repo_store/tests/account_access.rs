@@ -8,7 +8,7 @@ fn as_pat(h: &Harness, workspace: &str, scopes: Value, mut c: Value) -> yoneda_c
     *h.now.borrow_mut() += 1_000;
     c["now"] = json!(*h.now.borrow());
     c["_pat"] = json!({"workspace": workspace, "principal": "user:owner", "id": "pat_0123456789abcdef", "scopes": scopes, "repos": null});
-    execute_repo_store(&h.db, c)
+    execute_repo_store(&h.db, hold_off(c))
 }
 fn pat(h: &Harness, scopes: Value, c: Value) -> yoneda_core::Result<Value> {
     as_pat(h, "ws-1", scopes, c)
@@ -209,7 +209,7 @@ fn deleted_repositories_are_tombstones() {
         "GONE"
     );
     let mut purge = json!({"op":"repo_purge_target","_system":"purge","now":1});
-    let target = execute_repo_store(&h.db, purge.take()).unwrap();
+    let target = execute_repo_store(&h.db, hold_off(purge.take())).unwrap();
     assert_eq!(target["object_store"], "artifacts:test/demo");
 }
 
@@ -217,7 +217,10 @@ fn deleted_repositories_are_tombstones() {
 fn purge_targets_only_deleted_repositories() {
     let (h, _root) = seeded();
     let mut purge = json!({"op":"repo_purge_target","_system":"purge","now":1});
-    assert_eq!(code(execute_repo_store(&h.db, purge.take())), "NOT_FOUND");
+    assert_eq!(
+        code(execute_repo_store(&h.db, hold_off(purge.take()))),
+        "NOT_FOUND"
+    );
 }
 
 #[test]

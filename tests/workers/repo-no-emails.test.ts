@@ -66,7 +66,7 @@ async function crawl(id: string, main: string, head: string, auth: { cookie?: st
   const paths = [
     repo, `${repo}/refs`, `${repo}/log?ref=main`, `${repo}/log?ref=fix`, `${repo}/txlog`, `${repo}/changelog`,
     `${repo}/commits/${main}`, `${repo}/commits/${head}`, `${repo}/commits/${main}/sessions`, `${repo}/sessions`,
-    `${repo}/changes`, `${repo}/changes/1`, `${repo}/releases`, `${repo}/releases/v1`, `${repo}/tags/v1`,
+    `${repo}/changes`, `${repo}/changes/1`, `${repo}/changes/1/route`, `${repo}/releases`, `${repo}/releases/v1`, `${repo}/tags/v1`,
     `${repo}/tree`, `${repo}/blob?path=a.txt`, `${repo}/blame?path=a.txt`, `${repo}/diff?head=${head}`,
     `${repo}/history?path=a.txt`, `${repo}/activity`, `/explore`,
   ];
@@ -80,7 +80,7 @@ async function crawl(id: string, main: string, head: string, auth: { cookie?: st
   if (auth.cookie) {
     const tools: [string, object][] = [
       ['git_status', {}], ['git_log', { ref: 'main' }], ['git_show', { commit: head }], ['git_txlog', {}],
-      ['git_change_list', {}], ['git_change_show', { number: 1 }], ['git_sessions', { commit: main }],
+      ['git_change_list', {}], ['git_change_show', { number: 1 }], ['git_change_route', { number: 1 }], ['git_ctc_radar', {}], ['git_sessions', { commit: main }],
       ['git_release_list', {}], ['git_release_show', { tag: 'v1' }],
     ];
     for (const [name, args] of tools) {

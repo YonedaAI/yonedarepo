@@ -7,6 +7,12 @@ export type Envelope = {
   workspace?: string;
   /** An account email job's confirmation token (platform-email-verify.ts); never logged. */
   token?: string;
+  /** A classify job's pushed commits, parents first (repo-classify.ts). */
+  commits?: string[];
+  /** Failed attempts a store job follows (repo-store-create.ts). */
+  attempt?: number;
+  /** The Landing a clearance job looks at (repo-land-cleared.ts). */
+  number?: number;
 };
 export interface Env {
   WORKSPACES: DurableObjectNamespace;
@@ -19,12 +25,47 @@ export interface Env {
   /** "request" makes a create wait for its commit shards to start, for comparing benches
    * (default: they start after the answer, see repo-create.ts). */
   SHARD_START?: string;
+  /** `on`: a create answers without Artifacts and a queue job creates the store (unset or
+   * anything else: the create waits for it; repo-store-create.ts). */
+  ASYNC_STORE?: string;
   /** Landing mode: batch (default) or changeset (see repo-changesets.ts). */
   LAND_MODE?: string;
   /** "true" lets a request choose its landing mode (x-yoneda-land-mode), for benchmarks. */
   LAND_MODE_OVERRIDE?: string;
   /** `on`: a repository's database refuses new work from 9 GB (unset or `off`: never). */
   REPO_STORAGE_GUARD?: string;
+  /** `on`: a check verdict's evidence is stored once, in `checks` (unset or anything else:
+   * the run keeps a copy too; repo-archive-switches.ts). */
+  CHECK_EVIDENCE_ONCE?: string;
+  /** `on`: a new branch's `ref_chain` stores only what lies above main's (unset or anything
+   * else: its whole first-parent history, up to 5,000 rows; repo-archive-switches.ts). */
+  REF_CHAIN_SHARED?: string;
+  /** `on`: commit shards forget a batch-landed commit once the authority holds it (unset or
+   * anything else: they keep their copy until vacuum; repo-changesets.ts). */
+  SHARD_FORGET_RECORDED?: string;
+  /** `on`: every repository gets a compaction job once a day, landing or not (unset or
+   * anything else: only a landing starts one; repo-compaction.ts). */
+  COMPACTION_SWEEP?: string;
+  /** `on`: destructive ops wait for the owner's legal hold answer, and the hold routes
+   * exist (unset or anything else: neither; platform-legal-hold.ts). */
+  LEGAL_HOLD?: string;
+  /** `on`: the operators' billing routes and the nightly reconcile exist (unset or anything
+   * else: neither; platform-admin-billing.ts). Set with the managed Worker's. */
+  ADMIN_BILLING?: string;
+  /** `on`: an import lands main at once and fills its history in behind it
+   * (repo-import-fill.ts; unset or anything else: history first, then main). */
+  FAST_IMPORT?: string;
+  /** `on`: a change's page shows its Slop and Risk cards (repo-instruments.ts; unset or
+   * anything else: no route, and the page asks for nothing). */
+  LANDING_INSTRUMENTS?: string;
+  /** `on`: what can clear a Landing queues a clearance job, and a repository can turn on Land
+   * when cleared (repo-land-check.ts; unset or anything else: no job, and the switch is refused).
+   * Set it only once every Worker on the queue knows the job. */
+  LAND_WHEN_CLEARED?: string;
+  /** `on` (with FAST_IMPORT, PACK_CACHE and PUSH_BUNDLES): a public GitHub repository's import
+   * also fetches it directly, and main lands from that (repo-import-direct.ts; unset or
+   * anything else: Artifacts' fetch alone). */
+  DIRECT_IMPORT?: string;
   /** Platform check executors (one fresh container per run attempt). */
   CHECK_RUNNERS: DurableObjectNamespace<import('./check-container').CheckContainer>;
   OBJECT_PUSHES: DurableObjectNamespace<import('./repo-push-queue').ObjectPushQueue>;
@@ -36,7 +77,8 @@ export interface Env {
   /** This account's workers.dev subdomain: its Workers are never webhook targets (without
    * it, no workers.dev host is). */
   WORKERS_SUBDOMAIN?: string;
-  /** Basin Pipelines stream for change-log analytics (platform-dev only; optional). */
+  /** Basin Pipelines stream for change-log analytics (repo-changelog.ts; unset: no stream
+   * and no hold on compaction). Setup is in docs/runbook.md. */
   CHANGELOG?: { send(records: import('./repo-changelog').ChangeEvent[]): Promise<void> };
   /** Durable imports of external Git repositories into the source platform. */
   PLATFORM_IMPORT: Workflow<import('./repo-import').ImportParams>;
@@ -85,6 +127,12 @@ export interface Env {
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
   ARTIFACTS_NAMESPACE: string;
+  /** `on` erases a deleted repository's records once its purge finishes (repo-erase); any
+   * other value leaves them in its tombstone. */
+  REPO_ERASE?: string;
+  /** Days a deleted repository can be restored before its purge (repo-undo-window.ts). Unset or
+   * 0: it purges at once. */
+  REPO_UNDO_DAYS?: string;
   /** `r2` stores new source-platform repositories' Git objects in R2 (local development). */
   PLATFORM_OBJECT_STORE?: string;
   /** `on` writes a large push's objects as bundles (repo-bundles); reads always use them. */
@@ -101,6 +149,12 @@ export interface Env {
   /** `off` leaves a shard commit's blobs to its shard's drain instead of also writing them
    * to R2's cache key after the commit (repo-commit-shard); anything else writes them. */
   BLOB_WRITE_THROUGH?: string;
+  /** `on` keeps organizations' audit logs and people's sign-in events (account-audit.ts);
+   * anything else writes neither and `/orgs/:org/audit` answers 404. */
+  AUDIT_LOG?: string;
+  /** `on` keeps search summaries and serves `GET /search` (repo-account-search.ts); anything
+   * else writes none, that route answers 404 and clients ask each repository themselves. */
+  ACCOUNT_SEARCH?: string;
   /** The website people sign in at (device approval page `/device`); the platform falls
    * back to the request origin. */
   WEB_ORIGIN?: string;
@@ -110,13 +164,23 @@ export interface Env {
    * platform Worker grants and reads credit through its admin routes (admin pages). */
   MANAGED?: Fetcher;
   PUBLIC_APP_ORIGIN?: string;
-  /** Cookieless site analytics (front Worker, site-events.ts): page views and sign-ups; absent,
-   * nothing is recorded. */
+  /** Cookieless site analytics (site-events.ts): page requests, pings and sign-ups on the front
+   * Worker, client kinds on the platform Worker; absent, nothing is recorded. */
   SITE_EVENTS?: AnalyticsEngineDataset;
+  /** `on` takes the browser ping (site-ping.ts) and counts platform requests by client kind
+   * (platform-client-events.ts); set on both Workers. */
+  TRAFFIC_EVENTS?: string;
+  /** `on` adds outcome and duration to client points, leaves internal accounts out of every
+   * figure (internal-accounts.ts), and opens the Traffic page's other ranges and comparison;
+   * set on both Workers. */
+  TRAFFIC_REPORT?: string;
+  /** `on` records a new account's region and samples where writes come from (region.ts). */
+  REGION_SIGNALS?: string;
   /** Cloudflare Web Analytics site token (front Worker); set, public pages carry its beacon. */
   WEB_ANALYTICS_TOKEN?: string;
   /** Site traffic reports (platform Worker, platform-site-traffic.ts): the account and dataset the
-   * Analytics Engine SQL API reads, with an Account Analytics Read token; any unset, none. */
+   * Analytics Engine SQL API reads, with an Account Analytics Read token; any unset, none. The
+   * same token reads Web Analytics for WEB_ORIGIN's host (platform-web-analytics.ts). */
   CF_ACCOUNT_ID?: string;
   SITE_EVENTS_DATASET?: string;
   ANALYTICS_READ_TOKEN?: string;

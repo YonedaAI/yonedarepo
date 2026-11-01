@@ -16,7 +16,7 @@
 // and https://dev.yonedarepo.com/auth/google/callback. Deploy uploads them when the secrets file has them.
 // /api/managed is proxied to the managed agents Worker (MANAGED service binding, deployed first).
 // /install.sh, /install.ps1 and /downloads/* (worker/downloads.ts): the CLI installers and releases and the public Claude Code marketplace, from the DOWNLOADS bucket that cargo xtask downloads stages and uploads.
-// Site analytics (worker/site-events.ts): one cookieless SITE_EVENTS data point per public HTML page view and per sign-up,
+// Site analytics (worker/site-events.ts): one cookieless SITE_EVENTS data point per signed-out HTML request, browser ping (TRAFFIC_EVENTS) and sign-up,
 // into the Analytics Engine dataset yonedarepo_dev_site_events (created on first write; infra plan/prune do not track it;
 // underscores, not hyphens: the dataset is a table name in Analytics Engine SQL).
 // No IP, cookie or visitor id; signed-in requests (session cookie), /api, /auth and assets are skipped.
@@ -133,7 +133,11 @@
   ],
   "vars": {
     "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
+    "AUDIT_LOG": "off",
     "PUBLIC_APP_ORIGIN": "https://dev.yonedarepo.com",
+    "REGION_SIGNALS": "off",
+    "TRAFFIC_EVENTS": "on",
+    "TRAFFIC_REPORT": "on",
     "WEB_ANALYTICS_TOKEN": "70b90cc7e849429fa25cc64897ebfd2b"
   },
   "workers_dev": true

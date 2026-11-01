@@ -5,7 +5,7 @@
 // these defaults field by field; a field it never changed follows the defaults as they update.
 import { MANAGED_INSTRUCTIONS } from './managed-instructions';
 
-export type ManagedAgentId = 'code-review' | 'security-review' | 'slop-review';
+export type ManagedAgentId = 'code-review' | 'security-review' | 'slop-review' | 'intent-drift';
 /** The stock CLI a run drives inside its container. */
 export type Harness = 'claude-code' | 'codex' | 'opencode';
 export type ModelProvider = 'claude' | 'codex' | 'zai' | 'mimo';
@@ -50,7 +50,9 @@ export interface ManagedAgentDefinition {
   id: ManagedAgentId;
   /** One line for the overview card. */
   pitch: string;
-  icon: 'code' | 'shield' | 'siren';
+  icon: 'code' | 'shield' | 'siren' | 'compass';
+  /** One verdict on the whole change instead of findings on lines (VERDICT_CONTRACT). */
+  verdict?: boolean;
   /** The check recorded on the change's head (a landing policy may require it). */
   check: string;
   value_type: ValueType;
@@ -138,7 +140,34 @@ export const MANAGED_AGENTS: readonly ManagedAgentDefinition[] = [
     fallback: [{ harness: 'opencode', provider: 'zai', model: 'glm-5.3-flash' }],
     cost_cap_usd: 0.5,
   },
+  {
+    id: 'intent-drift',
+    pitch: 'Compares each change with the flight plan filed for it and says if the work drifted.',
+    icon: 'compass',
+    verdict: true,
+    check: 'intent-drift',
+    value_type: 'level',
+    polarity: 'lower_is_better',
+    defaults: {
+      name: 'Intent drift',
+      description:
+        'Reads the goal filed before the work against the diff. A change with no plan costs nothing.',
+      harness: 'opencode',
+      provider: 'mimo',
+      model: 'mimo-v2.6-flash',
+      reasoning: 'low',
+      timeout_minutes: 15,
+      instructions: MANAGED_INSTRUCTIONS['intent-drift'],
+      trigger: TRIGGER,
+      block_at: null,
+    },
+    fallback: [{ harness: 'opencode', provider: 'zai', model: 'glm-5.3-flash' }],
+    cost_cap_usd: 0.5,
+  },
 ];
+
+/** Medium findings on distinct lines of a change that make a level agent's result `high`. */
+export const HIGH_LEVEL_FINDINGS = 5;
 
 export const managedAgent = (id: string) => MANAGED_AGENTS.find((a) => a.id === id);
 

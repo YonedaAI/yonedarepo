@@ -20,6 +20,7 @@ curl -H "Authorization: Bearer $YONEDA_TOKEN" https://api.yonedarepo.com/api/v1/
 | Method and path | What it does |
 |---|---|
 | `GET /repos` | Repositories you can use |
+| `GET /repos/deleted` | Your deleted repositories that can still be restored, where the platform keeps them for a time |
 | `POST /repos` | Create a repository, optionally with files and a policy |
 | `POST /repos/import` | Import a public HTTPS Git remote as a new repository; see [Import](/docs/guides/import) |
 | `GET`, `POST`, `DELETE /tokens[/<id>]` | Personal access tokens (create from a signed-in session) |
@@ -31,6 +32,8 @@ curl -H "Authorization: Bearer $YONEDA_TOKEN" https://api.yonedarepo.com/api/v1/
 | `GET /activity` | Your account's recent activity |
 | `GET`, `POST /orgs`; `GET`, `DELETE /orgs/<org>` | Organizations |
 | `GET /orgs/<org>/repos`; `POST /orgs/<org>/members` | An organization's repositories and members |
+| `GET /orgs/<org>/repos/deleted` | An organization's deleted repositories that can still be restored (owners) |
+| `GET`, `POST`, `DELETE /orgs/<org>/hold`; `POST`, `DELETE /orgs/<org>/repos/<repo>/hold` | [Legal holds](/docs/guides/organizations#legal-hold) on an organization or one of its repositories |
 | `POST /mcp` | The account MCP endpoint |
 
 ## Repository: reading
@@ -74,18 +77,20 @@ All paths start with `/repos/<id>`.
 | `POST /commits/<sha>/pin` | Pin a commit's objects |
 | `POST /fork` | Fork the repository |
 
-## Changes, releases and settings
+## Landings, releases and settings
 
 | Method and path | What it does |
 |---|---|
-| `GET`, `POST /changes` | List or open change requests |
+| `GET`, `POST /changes` | List or open Landings (the API's change requests). `GET` takes `status`, `limit`, `branch` and `origin` (`explicit` or `auto`); `direct=1` adds `direct`, the landings on `main` no change names, to a list that holds landed rows |
 | `GET /changes/<n>` | A change with gates, reviews and comments |
 | `GET /changes/<n>/gates` | What the head still needs to land: each requirement ready, waiting or blocked, with why |
+| `GET /changes/<n>/route` | The change's commits, the sessions behind them, the context those sessions were delivered and their checks, in one bounded read |
 | `POST /changes/<n>/comments`, `/close`, `/reopen` | Comment, close, reopen |
 | `DELETE /changes/<n>` | Delete a closed change and its comments (author or owner) |
 | `GET`, `POST /releases`; `GET`, `DELETE /releases/<tag>` | Releases |
 | `PUT`, `GET /releases/<tag>/assets/<name>` | Upload a release asset (the body is the file), download one |
 | `PUT /policy`, `PUT /visibility` | Landing rules, public or private |
+| `PUT /auto-landings` | Automatic Landings: `{create?, agents?, land_when_cleared?, findings_block?}`, owner or admin. `GET /repos/<id>` answers them as `landings` |
 | `GET`, `PUT /lfs` | The Git LFS quota |
 | `GET`, `POST /members`; `DELETE /members/<account>` | Members |
 | `GET`, `POST /tokens`; `DELETE /tokens/<name>` | Repository tokens |
@@ -93,6 +98,7 @@ All paths start with `/repos/<id>`.
 | `GET`, `POST /quarantine`; `POST /quarantine/<n>/release`, `/purge` | [Quarantine and purge](/docs/guides/quarantine) |
 | `POST /break-glass` | Owner-only [recovery and automation pause](/docs/guides/break-glass) (signed-in session) |
 | `DELETE /?confirm=<name>` | Delete the repository |
+| `POST /restore` | Restore a deleted repository, optionally under a new `name` (needs `repo:admin`; its tokens stay revoked) |
 | `POST /mcp` | The repository MCP endpoint |
 
 ## Error codes
@@ -104,9 +110,11 @@ All paths start with `/repos/<id>`.
 | `STALE_HEAD` | 409 | A branch moved since the value you expected; read it again |
 | `CONFLICT` | 409 | A merge, rebase, revert or landing conflicts; details name the paths |
 | `NOT_READY` | 409 | A commit cannot land yet: its gates are not met |
+| `IMPORT_IN_PROGRESS` | 409 | An imported repository's history is still arriving: its files can be read, and it takes no changes until it ends |
 | `ALREADY_EXISTS` | 409 | A tag, release, asset or open change of that name exists |
 | `SECRET_DETECTED` | 422 | The content holds a credential |
 | `AUTOMATION_PAUSED` | 423 | The owner paused automation |
+| `LEGAL_HOLD` | 423 | A legal hold stands, or could not be read; nothing was deleted |
 | `RATE_LIMITED` | 429 | Too many requests; slow down |
 | `QUARANTINED` | 451 | The owner withheld this content |
 | `OVERLOADED` | 503 | Retry after the `Retry-After` seconds |
@@ -143,12 +151,13 @@ Each tool takes the repository from its endpoint, or a required `repo` (id or ex
 | `git_session_record` | Record which coding session produced a commit you pushed (needs write; only the commit's pusher or the repository owner): the CLI (e.g. claude-code, codex, opencode), the model, a summary of at most 4 KiB (refused if it holds a credential), optional SHA-256 hex digests of the prompts and of the declared read set, an optional transcript_ref (a URL or opaque id of a transcript kept elsewhere), an optional transcript the platform stores and shows to the repository's readers (credentials in it are redacted, never refused), and an optional session_id naming the coding session (e.g. opencode:ses_…) so its records across commits tie together. Posting the same record again answers the first. |
 | `git_sessions` | The session records of a commit, oldest first: cli, model, summary, prompt and read-set digests, transcript_ref, the stored transcript's metadata (null when none was stored), session_id, who recorded each and when. |
 | `git_sessions_recent` | The repository's session records newest first (default 50, at most 200): commit, its message's first line, cli, model, summary, session_id, how many reads the commit declared, who recorded each and when. Filter by session_id (one coding session), cli, model or ref (the sessions behind a branch's commits); pass next as before for the following page. |
-| `git_context` | What a coding session starting work should know, in one read: main's head (and branch's, when named), the landing rules, the newest session records (what earlier sessions did), open change requests, and the newest authored symbol contracts, those on paths first, and the repository's current memories ranked for those paths. |
+| `git_flight_plan` | File a flight plan before you start work (needs write and a whole-repository credential): the goal of this work and, optionally, its scope, each at most 2,000 bytes (refused if it holds a credential). The landing shows the newest plan for its branch or change, and the Intent drift agent, where it is on, compares the goal with the diff. Encouraged, never required. Pass branch (it need not be pushed yet), change when one is open, and session_id (your $YONEDA_SESSION_ID); at least one of the three. REST: POST /flight-plans. |
+| `git_context` | What a coding session starting work should know, in one read: main's head (and branch's, when named), the landing rules, the newest session records (what earlier sessions did), open change requests, and the newest authored symbol contracts, those on paths first, and the repository's current memories ranked for those paths. With branch, go_around holds the open findings on that branch's open change, each with its file and line (at most 10 of open, those on the head first; on_head false means an older commit): read them, fix, push, and a re-review runs on the push. traffic warns of open Landings on the same work: warnings (at most 8, ranked same symbol, same file, then a Landing that read the file) name the landing, overlap, path and symbols, more counts the rest. It covers paths, symbols (path#symbol_path) and, with branch, what that branch changed; the branch's own Landing is left out. |
 | `git_memory_add` | Leave a memory for later coding sessions (needs write): a decision, a constraint, a gotcha or a how-to that the code alone does not say, at most 2 KiB of text (refused if it holds a credential). Anchor it to the files, directories (ending in /) or symbols it is about: it is shown to later sessions when they read those files, and reads as stale once the anchored code changes on main. It is written against commit (default: the head of ref, default main). Pass session_id (your $YONEDA_SESSION_ID) to link it to your session, and supersedes to replace an older memory that is now wrong. The same memory posted again answers the first. |
 | `git_memory_list` | The repository's memories newest first (default 50, at most 200), each with its anchors and whether the anchored code has changed since (stale). Filter by path (memories on that file, a directory holding it, or under a directory/), kind, status (current: the default, active and drafts; active; stale; draft; retired; superseded; all) or session_id; at reads as of a log version; pass next as before for the following page. |
 | `git_memory_show` | One memory: its text, kind, author, commit, source session, what superseded it or it supersedes, whether it was retired (by whom and why), and each anchor with its blob or node digest and whether that code has changed on ref (default main) since. |
 | `git_memory_retire` | Retire a memory that is no longer true (needs write). It is kept, marked retired with your reason, and no longer shown to coding sessions. To replace it with a corrected one, use git_memory_add with supersedes instead. |
-| `git_context_relevant` | What is relevant to the files, symbols (path#symbol_path) and/or text (e.g. the task) you are working on, ranked in one read: current memories, authored contracts, recent session records and open change requests. Ranked by where each is anchored (a named symbol, then the file, then its directory), plus matching words of query, then fresh before stale, then newest. types narrows it (memory, contract, session, change); limit is at most 50. |
+| `git_context_relevant` | What is relevant to the files, symbols (path#symbol_path) and/or text (e.g. the task) you are working on, ranked in one read: current memories, authored contracts, recent session records and open change requests. Ranked by where each is anchored (a named symbol, then the file, then its directory), plus matching words of query, then fresh before stale, then newest. types narrows it (memory, contract, session, change); limit is at most 50. traffic warns of open Landings on the files and symbols named (as in git_context); branch leaves out your own Landing and counts what it changed as yours. A read at an older version has none. |
 | `git_bisect` | Find the first commit on a branch that breaks a policy check: start with good, bad and check (a policy runner name); the platform runs the check on midpoints and narrows the range as results arrive. Pass id to read progress. |
 | `git_pin` | Pin (or unpin) a commit so vacuum never releases its objects, for example while a long job reads it. |
 | `git_review` | Approve or reject a commit (requires the review scope; authors cannot review their own commits; rejection needs a reason). |
@@ -162,8 +171,10 @@ Each tool takes the repository from its endpoint, or a required `repo` (id or ex
 | `git_fork` | Fork this repository: a new repository owned by your account, its branches and tags this one's at the current version, its history shared (nothing is copied; objects are read from this repository). Needs read on the whole repository (directly, as a member, through a team, or because it is public) and an account credential (a session or a personal access token with repo:admin), never a repository token. Open a change back with git_change_create {fork, branch, title} on this repository. A repository with forks cannot be deleted until they are. REST: POST /fork. |
 | `git_change_create` | Open a change request: propose landing a branch on a base branch (`base`, default main; another existing branch). The branch must exist and not be main or a release branch; a branch has at most one open change (ALREADY_EXISTS otherwise). Approve or reject with git_review on the head commit and land with git_land {ref: <base>, commit: head} (approvals and required checks gate a protected base such as main; another base takes the write scope); a new push moves the head, so earlier approvals stop counting. Needs the write scope and a whole-repository credential. From a fork: pass `fork` (the fork's id) and a branch of the fork; this needs only read here and write on the fork, the branch's new commits are carried into this repository and the change proposes their mirror forks/<fork>/<branch> (it follows later pushes when shown). REST: POST /changes. |
 | `git_change_list` | Change requests, newest first, filtered by status (default open). REST: GET /changes?status=&limit=. |
-| `git_change_show` | One change request: the change, its head commit's record (git_show's shape: checks, check_runs, reviews and landing gates), its comments (oldest first), its branch's pushes from the transaction log (newest first) and the diff from the merge base with main to the head (git_diff's shape; for a landed change, against main just before it landed). patch adds unified patches. REST: GET /changes/:number?patch=1. |
+| `git_change_show` | One change request: the change, its head commit's record (git_show's shape: checks, check_runs, reviews and landing gates), its comments (oldest first), its branch's pushes from the transaction log (newest first) and the diff from the merge base with main to the head (git_diff's shape; for a landed change, against main just before it landed). patch adds unified patches. REST: GET /changes/:number?patch=1. flight_plan is the newest plan filed for its branch or number (null when none; git_flight_plan), and go_around its open findings (as in git_context; null unless the change is open). |
 | `git_change_gates` | What a change request's head still needs before it can land on its base, in one list: each required check, approvals, unresolved review comments, freshness against the base and a pause, each with state ready, waiting or blocked, one line of why, and whether landing enforces it (checks and approvals only on a protected base). ready is true when every enforced requirement is ready. REST: GET /changes/:number/gates. |
+| `git_change_route` | A change request's route in one read: the commits it introduces (newest first), the session records on them, the context those coding sessions were delivered (memories and other items, with labels), the latest check verdict per commit and name, and totals. Landed changes read against the base just before they landed. Tokens per session are not recorded; read_bytes and fetched_bytes are the measure. Each list keeps its newest rows (500 commits, 200 session records, 500 deliveries, 500 checks) and truncated says which were cut. Quarantined text reads null. Needs a whole-repository credential. REST: GET /changes/:number/route. |
+| `git_ctc_radar` | What CTC, Code Traffic Control, sees: every open Landing (the newest limit, default 25, at most 50, and always those in line) with the decision the job would make as things stand (cleared, hold or go_around, with its reasons; with land_when_cleared off, nothing lands on it), its place in line (queued tickets, then cleared, oldest first, then waiting), the other Landings on the same work (same symbol, same file, or one that read what another wrote) and the last decision recorded on it. truncated says there are more. Reading it records nothing. Needs a whole-repository credential. REST: GET /ctc. |
 | `git_change_comment` | Comment on a change request (body at most 8000 bytes; credentials are refused). path, line and side anchor it to a diff line at commit (default: the change's head). resolve marks every unresolved comment on that anchor resolved, with or without a new body. Needs the write or review scope and a whole-repository credential. REST: POST /changes/:number/comments. |
 | `git_change_close` | Close an open change request without landing it (the branch stays). Its author, the owner or a holder of the land scope may close it. REST: POST /changes/:number/close. |
 | `git_change_reopen` | Reopen a closed change request. Its branch must still exist with no other open change. Its author, the owner or a holder of the land scope may reopen it. REST: POST /changes/:number/reopen. |
@@ -175,7 +186,7 @@ Each tool takes the repository from its endpoint, or a required `repo` (id or ex
 | `git_release_asset_upload` | Attach a file to a release (at most 4 MiB here as base64; up to 25 MiB with REST PUT /releases/:tag/assets/:name and the raw bytes as the body). Assets are immutable: a name is used once per release (ALREADY_EXISTS), at most 20 per release. Answers the recorded size and sha256. Needs the write and land scopes. |
 | `git_release_asset_download` | Read a release asset (at most 4 MiB here; larger ones with REST GET /releases/:tag/assets/:name, which answers the recorded sha256 in x-yoneda-sha256). Answers the bytes in base64 with the recorded size and sha256. |
 | `git_hook_list` | Webhooks of this repository: id, url, events, paths, active, consecutive failures and undelivered count. Secrets are never listed. Needs the owner or repo:admin. |
-| `git_hook_create` | Add a webhook: signed POSTs (X-Yoneda-Signature: sha256=<hex HMAC-SHA256 of the body with the secret>, X-Yoneda-Event, X-Yoneda-Delivery) to a public https url for each event, in log order, at least once. Events: land, merged, refused, branch (created/moved/deleted), tag, check (conclusion pass/fail/error), change (change requests: X-Yoneda-Event change.opened, change.commented, change.landed, change.closed or change.deleted; titles and comment text only for hooks without paths), release (release.published or release.deleted), repo (repo.deleted, once, when the repository is deleted); all when omitted. paths limits commit messages to commits inside those paths. Returns the secret once. Needs the owner or repo:admin. |
+| `git_hook_create` | Add a webhook: signed POSTs (X-Yoneda-Signature: sha256=<hex HMAC-SHA256 of the body with the secret>, X-Yoneda-Event, X-Yoneda-Delivery) to a public https url for each event, in log order, at least once. Events: land, merged, refused, branch (created/moved/deleted), tag, check (conclusion pass/fail/error), change (change requests: X-Yoneda-Event change.opened, change.commented, change.landed, change.closed or change.deleted; titles and comment text only for hooks without paths), release (release.published or release.deleted), repo (repo.deleted, once, when the repository is deleted; repo.purged, once, when an undo window ends in its purge); all when omitted. paths limits commit messages to commits inside those paths. Returns the secret once. Needs the owner or repo:admin. |
 | `git_hook_delete` | Delete a webhook; undelivered events are dropped. Needs the owner or repo:admin. |
 | `git_hook_deliveries` | A webhook's last 50 delivery attempts, newest first: delivery_id, event, attempt, ok, HTTP status, ms, error. Needs the owner or repo:admin. |
 | `git_member_list` | Members of this repository: account, role (read, write, land or admin), added_by and added_at. The owner is not listed. Needs the owner or an admin. |

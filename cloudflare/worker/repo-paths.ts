@@ -8,6 +8,7 @@
 // not read answers exactly as one that names nothing.
 import { normalizeHandle } from '../../shared/account';
 import { profileAvatarUrl } from './avatars';
+import { audited } from './repo-audit';
 import { refreshHead } from './repo-head';
 import { ApiError, type Credentials, caller, type Json, type RepoContext } from './repo-ops';
 import { admitAnonymous } from './repo-public';
@@ -98,7 +99,8 @@ const claim = (env: Env, owner: string, repo: string, name: string) =>
  * Holds `name` among `owner`'s repositories for `repo` (a new one, or a rename):
  * NAME_TAKEN while another repository has it, also one made before owners held names. An
  * owner without an authority (a workspace an operator provisions) holds no names: its
- * repositories are reached by id. Answers the name it replaces (`renamed_from`).
+ * repositories are reached by id; a deleted org refuses (GONE), which is what stops a create
+ * already past its owner check. Answers the name it replaces (`renamed_from`).
  */
 export async function holdName(env: Env, owner: string, repo: string, name: string) {
   const listed = await listedNamed(env, owner, name);
@@ -204,7 +206,7 @@ export async function renameRepository(ctx: RepoContext, name: unknown): Promise
   const owner = String(checked.workspace);
   await holdName(ctx.env, owner, ctx.repo, checked.name);
   try {
-    await ctx.call({ op: 'repo_rename', name: checked.name });
+    await audited(ctx.env, ctx.repo, ctx.call({ op: 'repo_rename', name: checked.name }));
   } catch (e) {
     await holdName(ctx.env, owner, ctx.repo, checked.previous).catch(() => {});
     throw e;

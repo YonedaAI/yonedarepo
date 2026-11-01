@@ -1,9 +1,11 @@
-// A change's reviews and actions (its gates are MergeGates, above it): approve or reject the head, land it on its base
+// A Landing's reviews and actions (its clearance is MergeGates, above it): approve or reject the head, land it on its base
 // (gated when the base is protected), close, reopen or delete (a closed change, by its
 // author or the owner). The server decides each one; the panel only offers what the status allows.
 import { useState } from 'react';
 import { type Conflict, ConflictList, ReviewButtons } from './CommitGates';
 import type { ChangeDetail } from './changeModel';
+import { LandedAutomatically } from './LandWhenCleared';
+import { HELD_NOTE, useRepoHold } from './LegalHold';
 import { usePeople } from './people';
 import { useReadOnly } from './repoAccess';
 import { Failure } from './SourceStatus';
@@ -28,6 +30,7 @@ export function ChangeGates({
   const [conflicts, setConflicts] = useState<Conflict[]>([]);
   // A public reader sees the gates and reviews, never the actions.
   const readOnly = useReadOnly();
+  const held = useRepoHold(change.status === 'closed' ? repo : null);
   async function act(label: string, path: string, body: unknown, done: string, method?: 'DELETE') {
     setBusy(label);
     setNotice('');
@@ -48,7 +51,7 @@ export function ChangeGates({
   const { head, head_commit: commit, status } = change;
   const base = `/changes/${change.number}`;
   return (
-    <section className="source-gates" aria-label="Landing gates">
+    <section className="source-gates" aria-label="Clearance actions">
       {status === 'landed' && (
         <p className="source-change-banner">
           Landed on {change.base}
@@ -62,6 +65,7 @@ export function ChangeGates({
           .
         </p>
       )}
+      <LandedAutomatically change={change} />
       {status === 'closed' && <p className="source-change-banner">Closed without landing.</p>}
       {!head && status !== 'landed' && (
         <p className="source-change-banner">
@@ -116,7 +120,7 @@ export function ChangeGates({
               disabled={!!busy}
               onClick={() => act('close', `${base}/close`, {}, 'Closed.')}
             >
-              Close change
+              Close Landing
             </button>
           )}
           {status === 'closed' && (
@@ -126,20 +130,21 @@ export function ChangeGates({
               disabled={!!busy}
               onClick={() => act('reopen', `${base}/reopen`, {}, 'Reopened.')}
             >
-              Reopen change
+              Reopen Landing
             </button>
           )}
           {status === 'closed' && (
             <button
               type="button"
               className="danger"
-              disabled={!!busy}
+              disabled={!!busy || held}
+              title={held ? HELD_NOTE : undefined}
               onClick={() => {
-                const what = `Delete change #${change.number} and its comments? The branch stays.`;
+                const what = `Delete Landing #${change.number} and its comments? The branch stays.`;
                 if (window.confirm(what)) act('delete', base, undefined, 'Deleted.', 'DELETE');
               }}
             >
-              {busy === 'delete' ? 'Deleting…' : 'Delete change'}
+              {busy === 'delete' ? 'Deleting…' : 'Delete Landing'}
             </button>
           )}
         </div>

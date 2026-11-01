@@ -71,11 +71,7 @@ export function SessionTranscript({ repo, session }: { repo: string; session: Se
     <section className="agent-transcript" aria-labelledby="session-transcript-heading">
       <h3 id="session-transcript-heading">Transcript</h3>
       {!meta ? (
-        <p className="source-empty">
-          No transcript was recorded for this session. The Yoneda plugins for Claude Code and
-          opencode upload one with each record; from any other agent,{' '}
-          <code>yoneda session record --transcript &lt;file&gt;</code>.
-        </p>
+        <p className="source-empty">No transcript was recorded for this session.</p>
       ) : loaded.loading && !loaded.data ? (
         <Loading what="the transcript" />
       ) : loaded.error ? (
@@ -98,13 +94,11 @@ function Document({ stored }: { stored: StoredTranscript }) {
           {note}
         </p>
       ))}
-      {context ? (
+      {context && (
         <details className="agent-transcript-context">
           <summary>Context given at session start</summary>
           <pre>{context}</pre>
         </details>
-      ) : (
-        <p className="source-meta">No context packet was recorded at session start.</p>
       )}
       <ol className="agent-turns">
         {turns.map((turn, n) => (

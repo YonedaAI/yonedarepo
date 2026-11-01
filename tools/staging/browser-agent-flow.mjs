@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import { chromium } from 'playwright-core';
 import { missingText } from './agent-tools-plan.mjs';
 import { see } from './browser-collab-flow.mjs';
-import { sleep } from './client.mjs';
+import { OWN_TRAFFIC, sleep } from './client.mjs';
 import { atRepo, openRepo } from './repo-urls.mjs';
 
 /** The Repository navigation's highlighted entries (exactly one on every repository page). */
@@ -68,14 +68,14 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
   await shot('agents-commit-sessions');
 
   // main's head has landed: the panel says where, when and by whom, and offers Revert only.
-  const gates = page.getByRole('region', { name: 'Landing gates' });
+  const gates = page.getByRole('region', { name: 'Clearance', exact: true });
   await see(gates.getByText(/^Landed on main at v\d+ · .+ · by \S+/), 'the landed line on a landed commit');
   await see(gates.getByRole('button', { name: 'Revert' }), 'Revert on a landed commit');
   for (const name of ['Approve', 'Reject', /^Land/, 'Break glass…'])
     assert.equal(await gates.getByRole('button', { name }).count(), 0, `a landed commit offers ${name}`);
   assert.equal(await gates.locator('summary', { hasText: 'More' }).count(), 0, 'a landed commit has a More menu');
   assert.equal(await gates.getByRole('combobox').count(), 0, 'a landed commit offers a branch to land on');
-  assert.equal(await gates.getByText(/Ready to land|Review class|Approvals \d+\/\d+/).count(), 0, 'a landed commit shows landing gates');
+  assert.equal(await gates.getByText(/Cleared to land|Review class|Approvals \d+\/\d+/).count(), 0, 'a landed commit shows landing gates');
   m.landed_commit_panel = 'landed line, Revert only';
 
   await tabs.getByRole('link', { name: 'Memories', exact: true }).click();
@@ -93,9 +93,9 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
     'the Agent tools tabs',
   );
   for (const [tab, section, empty] of [
-    ['Contracts', 'contracts', /^No contracts yet\./],
-    ['Kept commits', 'pins', /^No kept commits\./],
-    ['Find a breaking commit', 'bisects', /^No searches yet\./],
+    ['Contracts', 'contracts', /^No contracts yet$/],
+    ['Kept commits', 'pins', /^No kept commits$/],
+    ['Find a breaking commit', 'bisects', /^No searches yet$/],
   ]) {
     await tools.getByRole('link', { name: tab, exact: true }).click();
     await atRepo(page, account, id, `/agents/${section}`);
@@ -116,7 +116,7 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
 export async function agentToolPages({ origin, cookie, repo, expect, dir, headed = false }, m) {
   const browser = await chromium.launch({ channel: 'chrome', headless: !headed });
   try {
-    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: OWN_TRAFFIC });
     const [name, ...value] = cookie.split('=');
     await context.addCookies([{ name, value: value.join('='), url: origin }]);
     const page = await context.newPage();

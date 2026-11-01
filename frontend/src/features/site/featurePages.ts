@@ -9,6 +9,9 @@ import type { SitePage } from './siteRoute';
 
 export type FeatureBlock = { title: string; text: string };
 
+/** The agents the review page describes: those reporting on lines of a change. */
+const LINE_REVIEWERS = MANAGED_AGENTS.filter((a) => !a.verdict);
+
 export type FeaturePage = {
   /** The BUILD_ON item this page is for. */
   id: string;
@@ -138,8 +141,8 @@ export const FEATURE_PAGES: FeaturePage[] = [
     docs: 'guides/changes',
     blocks: [
       {
-        title: 'A change from a push',
-        text: 'Push a branch and open a change with `yoneda change create`, from the web app, the API or MCP. A branch has at most one open change.',
+        title: 'A Landing from a push',
+        text: 'Push a branch and open a Landing with `yoneda change create`, from the web app, the API or MCP, or let every push open one. A branch has at most one open Landing.',
       },
       {
         title: 'Reviews of the head commit',
@@ -187,10 +190,10 @@ export const FEATURE_PAGES: FeaturePage[] = [
     headline: 'Reviewers that read every change.',
     docs: 'agents/review-agents',
     blocks: [
-      ...MANAGED_AGENTS.map((a) => ({ title: a.defaults.name, text: a.defaults.description })),
+      ...LINE_REVIEWERS.map((a) => ({ title: a.defaults.name, text: a.defaults.description })),
       {
         title: 'A check you can require',
-        text: `Each agent runs on every push to an open change and records its check (${MANAGED_AGENTS.map((a) => `\`${a.check}\``).join(', ')}) on the head. Runs are billed per use from your credit; setting up a workspace’s first agent adds $${STARTING_CREDIT_USD} of credit, and adding a card unlocks more.`,
+        text: `Each agent runs on every push to an open change and records its check (${LINE_REVIEWERS.map((a) => `\`${a.check}\``).join(', ')}) on the head. Runs are billed per use from your credit; setting up a workspace’s first agent adds $${STARTING_CREDIT_USD} of credit, and adding a card unlocks more.`,
       },
     ],
     related: ['changes', 'ci', 'memory'],
@@ -211,7 +214,7 @@ export const FEATURE_PAGES: FeaturePage[] = [
       },
       {
         title: 'Context at the start',
-        text: '`yoneda context` prints `main`’s head, the landing rules, recent sessions, open changes and symbol contracts, within a byte budget.',
+        text: '`yoneda context` prints `main`’s head, the landing rules, recent sessions, open Landings and symbol contracts, within a byte budget.',
       },
       {
         title: 'Set up once',

@@ -1,4 +1,5 @@
 use super::{Source, Step, steps, with_consumer_detach, with_host_moves};
+use crate::deploy_evidence::{BROWSER_ITEM, evidence_passes};
 use crate::deploy_guard::{self as guard, Facts, Options};
 use crate::deploy_image::ImagePlan;
 use crate::deploy_live::rollouts;
@@ -41,6 +42,7 @@ fn good_prod() -> Facts {
         ref_tips: vec![HEAD.into()],
         dev_revisions: vec![("yonedarepo-dev-platform".into(), Some(HEAD.into()))],
         evidence: Some(evidence(HEAD, "pass")),
+        ..Facts::default()
     }
 }
 fn confirmed() -> Options {
@@ -140,7 +142,13 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
             _ => None,
         })
         .collect();
-    assert_eq!(migrations, ["yonedarepo-dev-platform-index"]);
+    assert_eq!(
+        migrations,
+        [
+            "yonedarepo-dev-platform-index",
+            "yonedarepo-dev-managed-revenue"
+        ]
+    );
     let first_deploy = plan
         .iter()
         .position(|s| matches!(s, Step::Deploy { .. }))
@@ -171,8 +179,10 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
             Step::Health { worker: 3 },
             d(4),
             Step::Secrets { worker: 4 },
+            d(5),
+            Step::Secrets { worker: 5 },
         ],
-        "superfan (no /health), platform, agents-managed (optional secrets), agents, bench (BENCH_KEY, no /health)"
+        "superfan (no /health), platform, agents-managed (optional secrets), agents, bench and bench2 (BENCH_KEY, no /health)"
     );
     assert!(
         !plan.iter().any(|s| matches!(s, Step::ActiveGate { .. })),
@@ -645,22 +655,143 @@ fn deploy_without_an_env_is_refused_and_the_legacy_env_is_gone() {
 fn the_browser_item_must_pass_whenever_the_kit_recorded_it() {
     let with_browser = |status: &str| {
         let mut evidence = evidence(HEAD, "pass");
-        evidence["items"].as_array_mut().unwrap().push(
-            json!({"id": guard::BROWSER_ITEM, "title": "Browser", "status": status, "metrics": {}}),
-        );
+        evidence["items"]
+            .as_array_mut()
+            .unwrap()
+            .push(json!({"id": BROWSER_ITEM, "title": "Browser", "status": status, "metrics": {}}));
         evidence
     };
-    guard::evidence_passes(Some(&with_browser("pass")), HEAD).unwrap();
+    evidence_passes(Some(&with_browser("pass")), &good_prod()).unwrap();
     for status in ["fail", "skip"] {
-        let error = guard::evidence_passes(Some(&with_browser(status)), HEAD)
+        let error = evidence_passes(Some(&with_browser(status)), &good_prod())
             .unwrap_err()
             .to_string();
         assert!(error.contains("kit item browser"), "{error}");
     }
-    // Not yet required (guard::BROWSER_REQUIRED): evidence without the item still passes.
-    guard::evidence_passes(Some(&evidence(HEAD, "pass")), HEAD).unwrap();
+    // Not yet required (deploy_evidence::BROWSER_REQUIRED): evidence without the item still passes.
+    evidence_passes(Some(&evidence(HEAD, "pass")), &good_prod()).unwrap();
     let no_item_zero = json!({"items": [{"id": "browser", "status": "pass"}]});
-    assert!(guard::evidence_passes(Some(&no_item_zero), HEAD).is_err());
+    assert!(evidence_passes(Some(&no_item_zero), &good_prod()).is_err());
+}
+
+/// A merged ship PR: HEAD is the merge commit, the dev Workers and the kit ran its PR head.
+const TREE: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const OTHER_TREE: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+fn merged_ship() -> Facts {
+    let mut kit = evidence(OTHER, "pass");
+    kit["tree"] = json!(TREE);
+    Facts {
+        head_tree: TREE.into(),
+        trees: BTreeMap::from([(OTHER.to_owned(), TREE.to_owned())]),
+        dev_revisions: vec![("yonedarepo-dev-platform".into(), Some(OTHER.into()))],
+        evidence: Some(kit),
+        ..good_prod()
+    }
+}
+
+#[test]
+fn a_merge_commit_counts_the_dev_workers_and_kit_of_its_identical_tree() {
+    guard::preflight(&Env::Prod, &prod(), &merged_ship(), &confirmed()).unwrap();
+}
+
+#[test]
+fn a_different_tree_or_an_unknown_commit_is_not_the_same_code() {
+    let prod = prod();
+    let other_tree = Facts {
+        trees: BTreeMap::from([(OTHER.to_owned(), OTHER_TREE.to_owned())]),
+        ..merged_ship()
+    };
+    refused(
+        &Env::Prod,
+        &prod,
+        &other_tree,
+        &confirmed(),
+        "deploy --env dev",
+    );
+    let unknown = Facts {
+        trees: BTreeMap::new(),
+        ..merged_ship()
+    };
+    refused(
+        &Env::Prod,
+        &prod,
+        &unknown,
+        &confirmed(),
+        "deploy --env dev",
+    );
+    // No tree facts at all must never make two different commits equal.
+    let blank = Facts {
+        head_tree: String::new(),
+        trees: BTreeMap::from([(OTHER.to_owned(), String::new())]),
+        ..merged_ship()
+    };
+    refused(&Env::Prod, &prod, &blank, &confirmed(), "deploy --env dev");
+    let dev_only = Facts {
+        dev_revisions: vec![("yonedarepo-dev-platform".into(), Some(HEAD.into()))],
+        trees: BTreeMap::new(),
+        ..merged_ship()
+    };
+    refused(
+        &Env::Prod,
+        &prod,
+        &dev_only,
+        &confirmed(),
+        "not recorded against HEAD",
+    );
+}
+
+#[test]
+fn the_tree_the_kit_recorded_must_be_heads() {
+    let mut kit = evidence(HEAD, "pass");
+    kit["tree"] = json!(OTHER_TREE);
+    let facts = Facts {
+        head_tree: TREE.into(),
+        evidence: Some(kit),
+        ..good_prod()
+    };
+    refused(
+        &Env::Prod,
+        &prod(),
+        &facts,
+        &confirmed(),
+        "not recorded against HEAD",
+    );
+}
+
+#[test]
+fn both_workers_in_the_evidence_must_be_the_same_code() {
+    let mut facts = merged_ship();
+    let evidence = facts.evidence.as_mut().unwrap();
+    evidence["items"][0]["metrics"]["platform"] = json!("1111111111111111111111111111111111111111");
+    refused(
+        &Env::Prod,
+        &prod(),
+        &facts,
+        &confirmed(),
+        "not recorded against HEAD",
+    );
+}
+
+#[test]
+fn local_deploys_at_head_need_no_tree() {
+    // Evidence from before the kit recorded a tree, and a head whose tree was never gathered.
+    guard::preflight(&Env::Prod, &prod(), &good_prod(), &confirmed()).unwrap();
+    let with_tree = Facts {
+        head_tree: TREE.into(),
+        ..good_prod()
+    };
+    guard::preflight(&Env::Prod, &prod(), &with_tree, &confirmed()).unwrap();
+}
+
+#[test]
+fn tree_of_reads_a_commit_and_refuses_anything_else() {
+    let head = guard::head().unwrap();
+    let tree = guard::tree_of(&head).unwrap();
+    assert_eq!(tree.len(), 40);
+    assert_ne!(tree, head);
+    assert_eq!(guard::tree_of("--all"), None);
+    assert_eq!(guard::tree_of("HEAD"), None);
+    assert_eq!(guard::tree_of(&"0".repeat(40)), None);
 }
 
 #[test]
@@ -726,4 +857,31 @@ fn instances_still_starting_are_reported_but_not_busy() {
     let info = json!({"health": {"instances": {"active": 1, "assigned": 2, "starting": 4, "scheduling": 1, "stopped": 9}}});
     assert_eq!(crate::deploy_live::instance_counts(&info), (3, 5));
     assert_eq!(crate::deploy_live::instance_counts(&json!({})), (0, 0));
+}
+
+/// Each database migrates once, under the config of the Worker that declares it: wrangler takes
+/// the migrations directory from that config's entry for the database.
+#[test]
+fn each_d1_database_migrates_under_its_own_workers_config() {
+    let plan = steps(&Env::Dev, &dev_workers(), false, &Source::Dockerfile);
+    let migrations: Vec<_> = plan
+        .iter()
+        .filter_map(|s| match s {
+            Step::Migrate { database, config } => Some((database.as_str(), config.as_str())),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        migrations,
+        [
+            (
+                "yonedarepo-dev-platform-index",
+                "cloudflare/wrangler.dev-platform.jsonc"
+            ),
+            (
+                "yonedarepo-dev-managed-revenue",
+                "cloudflare/wrangler.dev-agents-managed.jsonc"
+            ),
+        ]
+    );
 }

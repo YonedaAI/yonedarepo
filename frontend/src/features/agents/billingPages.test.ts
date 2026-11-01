@@ -61,7 +61,7 @@ describe('Settings → Billing', () => {
     answers.byPath.set('/workspaces/ada/billing', { data: billing() });
     const html = render(BillingSettings, { workspace: 'ada' });
     expect(html).toContain('$4.70');
-    expect(html).toContain('including the starting credit added when you set up your first agent');
+    expect(html).toContain('added so far');
     expect(html).not.toContain('first run');
     expect(html).toContain('Adding a card unlocks $100.00 of promotional credit');
     expect(html).toContain('No card on file');
@@ -78,7 +78,9 @@ describe('Settings → Billing', () => {
     expect(cardOf(html, 'Credit balance')).toContain('>Add a card<');
     expect(cardOf(html, 'Payment method')).not.toContain('>Add a card<');
     expect(html).toContain('No top-ups yet');
-    expect(html).toContain('<td>parser</td><td>Code review</td><td>3</td><td>$0.30</td>');
+    expect(html).toContain(
+      '<td>parser</td><td>Code review</td><td class="num">3</td><td class="num">$0.30</td>',
+    );
     answers.byPath.set('/workspaces/ada/billing', {
       data: billing({ billing: 'coming', usage: [] }),
     });
@@ -143,7 +145,7 @@ describe('Settings → Billing', () => {
     expect(html).toContain('Remove card');
     expect(html).toContain('role="alert"');
     expect(html).toContain('The last automatic top-up failed (card declined)');
-    expect(html).toContain('<td>2026-10-29</td><td>$20.00</td>');
+    expect(html).toContain('<td>2026-10-29</td><td class="num">$20.00</td>');
     expect(html).toContain('>Added<');
     expect(html).toContain('>Failed<');
     expect(html).not.toContain('Adding a card unlocks');

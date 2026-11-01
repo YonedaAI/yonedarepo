@@ -1,22 +1,25 @@
-// One change request: what it proposes, its gates and actions, the conversation (comments and
-// branch pushes) and the diff from the merge base with main, with threads on its lines.
+// One change request: what it proposes, its gates and actions, its route, the conversation
+// (comments and branch pushes) and the diff from the merge base with main, with threads on its lines.
 import { useMemo } from 'react';
 import type { ChangeGates as Gates } from '../../../../shared/contracts/change-gates';
 import type { Navigate } from '../shell/useRoute';
 import { ChangeDiff } from './ChangeDiff';
 import { ChangeGates } from './ChangeGates';
+import { ChangeRoute } from './ChangeRoute';
 import { ChangeSessions } from './ChangeSessions';
 import { CommentItem, Composer, LineThread, postComment } from './ChangeThread';
 import {
   type ChangeDetail,
-  type ConversationItem,
   conversation,
   diffAnchors,
   groupComments,
+  landingState,
 } from './changeModel';
+import { FlightPlanLine } from './FlightPlanLine';
+import { Instruments, instrumentsKey } from './Instruments';
 import { MergeGates } from './MergeGates';
 import { Person } from './Person';
-import { usePeople } from './people';
+import { PushItem } from './PushItem';
 import { RebaseButton } from './RebaseButton';
 import { ChangeStatusChip } from './RepoChanges';
 import { useReadOnly } from './repoAccess';
@@ -24,38 +27,6 @@ import { Failure, Loading } from './SourceStatus';
 import { shortSha, when } from './sourceApi';
 import { formatSourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
-
-const PUSHED = { created: 'pushed the branch', moved: 'pushed', deleted: 'deleted the branch' };
-
-function PushItem({
-  push,
-  onCommit,
-}: {
-  push: Extract<ConversationItem, { kind: 'push' }>['push'];
-  onCommit?: (sha: string) => void;
-}) {
-  const people = usePeople();
-  return (
-    <p className="source-push source-meta">
-      {people.principal(push.actor)} {PUSHED[push.action]}
-      {push.after && (
-        <>
-          {' '}
-          <a
-            href={`#${push.after}`}
-            onClick={(e) => {
-              e.preventDefault();
-              onCommit?.(push.after as string);
-            }}
-          >
-            <code>{shortSha(push.after)}</code>
-          </a>
-        </>
-      )}{' '}
-      · v{push.version} · {when(push.at)}
-    </p>
-  );
-}
 
 export function ChangeView({
   repo,
@@ -82,7 +53,7 @@ export function ChangeView({
     [c],
   );
   if (detail.error) return <Failure error={detail.error} onRetry={detail.reload} />;
-  if (!c || !grouped) return <Loading what={`change #${number}`} />;
+  if (!c || !grouped) return <Loading what={`Landing #${number}`} />;
   const refresh = () => {
     detail.reload();
     gates.reload();
@@ -95,7 +66,7 @@ export function ChangeView({
     <article className="source-change" aria-labelledby="change-title">
       {onBack && (
         <button type="button" className="quiet source-back" onClick={onBack}>
-          ← All changes
+          ← All Landings
         </button>
       )}
       <header>
@@ -103,9 +74,9 @@ export function ChangeView({
           {c.title} <span className="source-meta">#{c.number}</span>
         </h2>
         <p className="source-meta">
-          <ChangeStatusChip status={c.status} /> <Person principal={c.author} />{' '}
-          {c.status === 'open' ? 'proposes' : 'proposed'} landing <code>{c.branch}</code> on{' '}
-          <code>{c.base}</code> · opened {when(c.created_at)}
+          <ChangeStatusChip status={c.status} state={landingState(c, gates.data)} />{' '}
+          <Person principal={c.author} /> {c.status === 'open' ? 'proposes' : 'proposed'} landing{' '}
+          <code>{c.branch}</code> on <code>{c.base}</code> · opened {when(c.created_at)}
           {c.head && (
             <>
               {' · head '}
@@ -143,7 +114,9 @@ export function ChangeView({
           </p>
         )}
         {c.body && <p className="source-change-body">{c.body}</p>}
+        <FlightPlanLine plan={c.flight_plan} />
       </header>
+      {c.instruments && <Instruments key={instrumentsKey(c)} repo={repo} number={number} />}
       {c.status === 'open' && <MergeGates gates={gates} />}
       <ChangeGates
         repo={repo}
@@ -156,6 +129,16 @@ export function ChangeView({
       />
       {!readOnly && c.status === 'open' && c.head && (
         <RebaseButton repo={repo} change={c} onChanged={refresh} />
+      )}
+      {navigate && (
+        <ChangeRoute
+          key={c.head}
+          repo={repo}
+          number={number}
+          pushes={c.timeline}
+          navigate={navigate}
+          onCommit={onCommit}
+        />
       )}
       {c.head && navigate && (
         <ChangeSessions
@@ -182,7 +165,7 @@ export function ChangeView({
             {grouped.outdated.length > 0 && `, ${grouped.outdated.length} outdated (below)`}.
           </p>
         )}
-        <Composer label="Comment on this change" submit={submit} onDone={refresh} />
+        <Composer label="Comment on this Landing" submit={submit} onDone={refresh} />
       </section>
       {grouped.outdated.length > 0 && (
         <section aria-labelledby="outdated-heading">
@@ -212,7 +195,7 @@ export function ChangeView({
             onPosted={refresh}
           />
         ) : (
-          <p className="source-empty">No diff: the change has no head commit.</p>
+          <p className="source-empty">No diff: the Landing has no head commit.</p>
         )}
       </section>
     </article>

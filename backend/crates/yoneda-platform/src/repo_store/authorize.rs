@@ -31,14 +31,22 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::BranchSet
         | R::BranchBatch
         | R::BeginCommit => actor.require("write"),
-        // Owner (or repo:admin) checks and the purger's check happen in `deletion`.
-        R::Delete | R::PurgeTarget => Ok(()),
+        // Told before any legal hold, as `refuses` ops run after this.
+        R::Delete => actor.require_repo_owner(),
+        // The platform reads what it lists a tombstone by, and restores nothing.
+        R::Restore if actor.can("system") && c["check"] == true => Ok(()),
+        R::Restore => actor.require_repo_owner(),
+        R::Purged if !actor.can("system") => {
+            Err(Error::new("FORBIDDEN", "Only the platform reports a purge"))
+        }
+        // The purger's check happens in `deletion`.
+        R::PurgeTarget => Ok(()),
         // Only the platform copies commit shard records in.
         R::AdoptCommit if !actor.can("system") => {
             Err(Error::new("FORBIDDEN", "Only the platform adopts commits"))
         }
         R::Check => actor.require("check"),
-        R::SessionRecord => actor.require("write"),
+        R::SessionRecord | R::FlightPlan => actor.require("write"),
         // A change from a fork proposes the parent's mirror of a fork branch (`forks`):
         // the fork's writer needs only read here.
         R::ChangeCreate if c["source_repo"].is_string() => actor.require("read"),
@@ -52,10 +60,12 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         R::BisectStep => actor.require_any(&["write", "check", "system"]),
         R::RecordContract => actor.require("write"),
         // Only the platform classifier records review classes.
-        R::RecordClasses | R::RecordSymbols if !actor.can("classify") => Err(Error::new(
-            "FORBIDDEN",
-            "Only the platform classifier records derived classes",
-        )),
+        R::RecordClasses | R::RecordSymbols | R::ClassesPending if !actor.can("classify") => {
+            Err(Error::new(
+                "FORBIDDEN",
+                "Only the platform classifier records derived classes",
+            ))
+        }
         // Change records feed analytics; only the platform's derive job streams them.
         R::ChangeRecords if !actor.can("classify") => Err(Error::new(
             "FORBIDDEN",
@@ -93,10 +103,14 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         }
         // Imported history is only recorded by the platform importer, which read it from
         // the object store; nobody else can declare commits into existence.
-        R::RecordImported if !actor.can("import") => Err(Error::new(
-            "FORBIDDEN",
-            "Only the platform importer records imported history",
-        )),
+        R::RecordImported | R::RecordImportedBatch | R::RecordImportedEnd
+            if !actor.can("import") =>
+        {
+            Err(Error::new(
+                "FORBIDDEN",
+                "Only the platform importer records imported history",
+            ))
+        }
         R::Review => actor.require("review"),
         // Protected refs need `land`; any other branch lands with `write` (`land_gates::scope`).
         R::Land | R::LandEnqueue => actor.require(land_gates::scope(&rows::branch_ref(c)?)),
@@ -109,7 +123,11 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
                 "Only the platform merger lands queued work",
             ))
         }
-        R::SetPolicy => actor.require_owner(),
+        R::LandClearance if !actor.can("clearance") => Err(Error::new(
+            "FORBIDDEN",
+            "Only the platform's clearance job asks this",
+        )),
+        R::SetPolicy | R::AutoLandings => actor.require_owner(),
         // Admins manage other members; only the owner manages admins (`members`).
         R::Members | R::MemberPut | R::MemberRemove => actor.require_owner(),
         // Hooks reveal repository events to an outside URL: the owner (or repo:admin) decides.
@@ -118,6 +136,15 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         R::HooksFanout | R::HookClaim | R::HookSettle if !actor.can("hooks") => {
             Err(Error::new("FORBIDDEN", "Only the platform delivers hooks"))
         }
+        // Only the platform copies events to an audit log and settles them.
+        R::AuditPending | R::AuditDone if !actor.can("audit") => Err(Error::new(
+            "FORBIDDEN",
+            "Only the platform copies audit events",
+        )),
+        // Only the platform's erase job plans and runs an erase.
+        R::ErasePlan | R::EraseStep if !actor.can("erase") => {
+            Err(Error::new("FORBIDDEN", "Only the platform erases"))
+        }
         R::BreakGlass => actor.require_human_owner(),
         R::SetVisibility | R::Rename => actor.require_repo_owner(),
         R::CloneAccess => actor.require_human_reader(),
@@ -125,17 +152,26 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         R::Activity
         | R::AdoptCommit
         | R::AgentContext
+        | R::AuditDone
+        | R::AuditPending
         | R::BisectList
         | R::BundleIndex
         | R::BundleLocate
         | R::ChangeRecords
         | R::ChangeGates
+        | R::ChangeRoute
+        | R::ChangeInstruments
         | R::ChangeShow
         | R::Changes
         | R::CheckRun
+        | R::ClassesPending
         | R::Commit
         | R::ContractList
         | R::Contracts
+        | R::CtcRadar
+        | R::ErasePlan
+        | R::EraseStep
+        | R::HoldOwner
         | R::GitAccess
         | R::GitWalk
         | R::HookClaim
@@ -145,6 +181,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::LandBatch
         | R::LandChangesets
         | R::LandClaim
+        | R::LandClearance
         | R::LandRelease
         | R::LandStatus
         | R::LandSubmitted
@@ -157,8 +194,11 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::PathHistory
         | R::PinList
         | R::ProjectionObjects
+        | R::Purged
         | R::RecordClasses
         | R::RecordImported
+        | R::RecordImportedBatch
+        | R::RecordImportedEnd
         | R::RecordPushed
         | R::RecordSymbols
         | R::Refs

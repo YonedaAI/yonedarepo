@@ -5,9 +5,16 @@
 // finding that looks like a credential is withheld. The value is derived from the findings,
 // never taken from the model, and fails closed: a finding withheld from its line (no anchor, a
 // credential-looking text, or a comment the platform's scanner refused) still counts at its
-// severity and is listed in the summary by severity and defused title. The step may be retried, so each comment carries a
-// reference (`run#n`) and one already on the change is not posted again.
-import type { ManagedAgentDefinition, RunValue } from '../../shared/managed-agents';
+// severity and is listed in the summary by severity and defused title. So does a finding the
+// change had no room for: a change holds a capped number of comments, each run adds up to 21,
+// and past the cap the check still reports and the run still finishes. The step may be retried,
+// so each comment carries a reference (`run#n`) and one already on the change is not posted
+// again.
+import {
+  HIGH_LEVEL_FINDINGS,
+  type ManagedAgentDefinition,
+  type RunValue,
+} from '../../shared/managed-agents';
 import type { ManagedEnv, RunParams } from './config';
 import { Platform, PlatformError } from './platform';
 import { type PostedFinding, repoStub } from './repo-agents';
@@ -25,16 +32,28 @@ const LABEL = { high: 'High', medium: 'Medium', low: 'Low' } as const;
 const RANK: Record<string, number> = { low: 1, medium: 2, high: 3 };
 const MAX_COMMENTS = 20;
 
-const reference = (p: RunParams, n: number | 'summary') => `${p.run}#${n}`;
-const footer = (agent: ManagedAgentDefinition, ref: string) =>
+export const reference = (p: RunParams, n: number | 'summary') => `${p.run}#${n}`;
+export const footer = (agent: ManagedAgentDefinition, ref: string) =>
   `\n\n_${agent.defaults.name} by YonedaRepo managed agents · ${ref}_`;
+/** Whether a comment carrying `ref` is among `comments` (a retried step posts none twice). */
+export const hasRef = (comments: { body?: string }[], ref: string) =>
+  comments.some((c) => String(c.body ?? '').endsWith(`· ${ref}_`));
+/** The platform refused this comment for what it is, not because anything broke. */
+export const commentRefused = (e: unknown) =>
+  e instanceof PlatformError && (e.code === 'SECRET_DETECTED' || e.code === 'TOO_LARGE');
 
 /** The run's value from every finding, posted or withheld: pass/fail, or the highest level
- * (lower is better). */
-export function runValue(agent: ManagedAgentDefinition, posted: { severity: string }[]): RunValue {
+ * (lower is better). A level agent's findings stop at medium, so no model's label makes a run
+ * `high`: only that many medium findings `posted` on distinct lines of the change do. */
+export function runValue(
+  agent: ManagedAgentDefinition,
+  findings: { severity: string }[],
+  posted: { severity: string }[],
+): RunValue {
   if (agent.value_type === 'pass_fail')
-    return posted.some((f) => f.severity === 'high' || f.severity === 'medium') ? 'fail' : 'pass';
-  const top = Math.max(1, ...posted.map((f) => RANK[f.severity] ?? 1));
+    return findings.some((f) => f.severity === 'high' || f.severity === 'medium') ? 'fail' : 'pass';
+  if (posted.filter((f) => f.severity === 'medium').length >= HIGH_LEVEL_FINDINGS) return 'high';
+  const top = Math.max(1, ...findings.map((f) => RANK[f.severity] ?? 1));
   return (['low', 'medium', 'high'] as const)[top - 1];
 }
 
@@ -42,6 +61,7 @@ const WHY: Record<Withheld['reason'], string> = {
   anchor: 'no line of this change to anchor to',
   credential: 'it looked like a credential',
   scanner: 'the platform refused the comment as a credential',
+  cap: 'this change holds as many comments as it can',
 };
 
 /** One summary line for a withheld finding: severity and defused title, never risky text. */
@@ -57,6 +77,14 @@ export function checkStatus(value: RunValue, blockAt: string | null): 'pass' | '
   return blockAt && RANK[value] >= RANK[blockAt] ? 'fail' : 'pass';
 }
 
+/** What a run posted, for its record. */
+export interface Report {
+  posted: PostedFinding[];
+  withheld: Withheld[];
+  value: RunValue;
+  summary: string;
+}
+
 export async function postReport(
   env: ManagedEnv,
   p: RunParams,
@@ -64,29 +92,31 @@ export async function postReport(
   token: string,
   result: Record<string, unknown>,
   blockAt: string | null,
-): Promise<{ posted: PostedFinding[]; withheld: Withheld[]; value: RunValue; summary: string }> {
+): Promise<Report> {
   const platform = new Platform(env, { token });
   const change = await platform.change(p.repo, p.change);
   const anchors = anchorsOf((change.diff?.changes ?? []) as { path: string; patch?: string }[]);
   const checked = validFindings(result, anchors);
-  // A level agent reports low or medium only; anything higher is held at medium.
+  // A level agent's finding is low or medium; anything higher is held at medium (runValue).
   const capped = (severity: Severity): Severity =>
     agent.value_type === 'level' && severity === 'high' ? 'medium' : severity;
   const findings = dedupe(checked.kept)
     .map((f) => ({ ...f, severity: capped(f.severity) }))
     .slice(0, MAX_COMMENTS);
-  const existing = ((change.comments ?? []) as { body?: string }[]).map((c) =>
-    String(c.body ?? ''),
-  );
-  const already = (ref: string) => existing.some((body) => body.endsWith(`· ${ref}_`));
+  const already = (ref: string) => hasRef((change.comments ?? []) as { body?: string }[], ref);
 
   const posted: PostedFinding[] = [];
   const withheld: Withheld[] = checked.withheld.map((w) => ({
     ...w,
     severity: capped(w.severity),
   }));
+  let full = false;
   for (const [n, f] of findings.entries()) {
     const ref = reference(p, n + 1);
+    if (full && !already(ref)) {
+      withheld.push({ severity: f.severity, title: f.title, reason: 'cap' });
+      continue;
+    }
     if (!already(ref)) {
       const body = `**${LABEL[f.severity]}: ${f.title}**\n\n${f.why}${footer(agent, ref)}`;
       try {
@@ -101,13 +131,18 @@ export async function postReport(
           withheld.push({ severity: f.severity, title: null, reason: 'scanner' });
           continue;
         }
+        if (e instanceof PlatformError && e.code === 'TOO_LARGE') {
+          full = true;
+          withheld.push({ severity: f.severity, title: f.title, reason: 'cap' });
+          continue;
+        }
         throw e;
       }
     }
     posted.push(f);
   }
 
-  const value = runValue(agent, [...posted, ...withheld]);
+  const value = runValue(agent, [...posted, ...withheld], posted);
   const tally = (list: { severity: string }[]) => {
     const counts = { high: 0, medium: 0, low: 0 };
     for (const f of list) counts[f.severity as keyof typeof counts]++;
@@ -137,7 +172,7 @@ export async function postReport(
     await platform
       .comment(p.repo, p.change, `${lines.join('\n')}${footer(agent, summaryRef)}`)
       .catch((e) => {
-        if (!(e instanceof PlatformError && e.code === 'SECRET_DETECTED')) throw e;
+        if (!commentRefused(e)) throw e;
       });
 
   await platform.check(p.repo, p.head, agent.check, checkStatus(value, blockAt), {

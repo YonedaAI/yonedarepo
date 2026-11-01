@@ -5,6 +5,7 @@
 // fetches must be reachable from its refs, and file reads start at its refs or commits
 // (forks.rs). Where a caller names object ids itself (`POST /objects`) or a push relies on
 // objects it omitted, `guardInherited` requires current read on the parent as well.
+import { holdsBundles, type Location, locate, type Wanted } from './repo-bundles';
 import { cachedCopy } from './repo-cache-tiers';
 import { ACCESS_MS, withheldOf } from './repo-head';
 import type { ObjectKind, RepoObjects } from './repo-objects';
@@ -73,6 +74,30 @@ export class Inherited {
     return got;
   }
 }
+
+/**
+ * Where bundles hold `wanted`: this repository's, then for a fork each parent's, nearest
+ * first. What a fork inherits lies in its parent's bundles (every push writes them), so a
+ * fork's clone reads them as the parent's own clone does; asked object by object, every
+ * tier of both repositories, 39 objects cost 643 authority and shard calls and 258 R2 reads
+ * against the parent's 7 and 8.
+ */
+export async function locateHeld(objects: RepoObjects, wanted: Wanted[]) {
+  const found: Map<string, Location> = await locate(objects.env, objects.repo, wanted);
+  let rest = wanted.filter((w) => !found.has(w.id));
+  for (let up = objects.inherited; up && rest.length > 0; up = up.parent.inherited) {
+    const { repo } = up.parent;
+    const held = await locate(objects.env, repo, rest);
+    if (held.size > 0) await objects.inherited?.check();
+    for (const [id, place] of held) found.set(id, { ...place, repo });
+    rest = rest.filter((w) => !found.has(w.id));
+  }
+  return found;
+}
+
+/** Whether this isolate knows bundles hold `objects`' history, its own or inherited. */
+export const inBundles = (objects: RepoObjects): boolean =>
+  holdsBundles(objects.repo) || (!!objects.inherited && inBundles(objects.inherited.parent));
 
 /** Failures that mean the caller may not read the parent (not an outage). */
 export const REFUSED = ['FORBIDDEN', 'UNAUTHORIZED', 'NOT_FOUND', 'GONE'];

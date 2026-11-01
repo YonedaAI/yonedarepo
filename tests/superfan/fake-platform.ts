@@ -14,6 +14,8 @@ export const ANALYTICS_TOKEN = 'fixture-analytics-token-not-real';
 export const MODEL_KEY = 'tp-fixture-model-key-not-real';
 export const MODEL_URL = 'https://token-plan-sgp.xiaomimimo.com/anthropic/v1/messages';
 export const SCRIPT = 'yonedarepo-dev-platform';
+export const RESEND_URL = 'https://api.resend.com/emails';
+export const RESEND_KEY = 're_fixture_key_not_real';
 const NS = {
   repo: '11111111111111111111111111111111',
   push: '22222222222222222222222222222222',
@@ -162,6 +164,9 @@ export interface FakeCalls {
   graphql: RequestInit[];
   lookups: { path: string; headers: Headers }[];
   model: { url: string; headers: Headers; body: Record<string, any> }[];
+  mail: { headers: Headers; body: Record<string, any> }[];
+  /** Resend's answer; a fixture can make it fail. */
+  mailAnswer: () => Response;
 }
 
 /** Routes fetch to the fakes; `graphql` decides the analytics reply per call. */
@@ -169,7 +174,13 @@ export function fakeUpstreams(
   graphql: () => Response | Promise<Response>,
   rest: (path: string) => Response | null = lookup,
 ): FakeCalls {
-  const calls: FakeCalls = { graphql: [], lookups: [], model: [] };
+  const calls: FakeCalls = {
+    graphql: [],
+    lookups: [],
+    model: [],
+    mail: [],
+    mailAnswer: () => Response.json({ id: 'fixture-email' }),
+  };
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = String(input instanceof Request ? input.url : input);
     if (url === GRAPHQL_URL) {
@@ -178,6 +189,13 @@ export function fakeUpstreams(
     }
     if (url === 'https://yonedarepo-dev-platform.example.workers.dev/health')
       return Response.json({ service: 'yonedarepo-platform', v: 1, revision: 'fixture' });
+    if (url === RESEND_URL) {
+      calls.mail.push({
+        headers: new Headers(init?.headers),
+        body: JSON.parse(String(init?.body)),
+      });
+      return calls.mailAnswer();
+    }
     if (url === MODEL_URL) {
       calls.model.push({
         url,

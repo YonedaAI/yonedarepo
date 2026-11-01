@@ -2,6 +2,26 @@
 // transactions: a finished run attempt's unsettled holds (charged whole, since the provider may
 // have billed them) and holds nobody settled in time (released).
 
+export interface Balance {
+  granted: number;
+  used: number;
+  balance: number;
+}
+
+/** The sum of every entry (an outstanding hold already counts), what was granted net of what
+ * was taken back, and what was charged. */
+export function balanceOf(sql: SqlStorage): Balance {
+  const row = sql
+    .exec<{ total: number; granted: number; used: number }>(
+      `SELECT COALESCE(SUM(amount), 0) AS total,
+              COALESCE(SUM(CASE WHEN kind = 'grant' THEN amount END), 0) AS granted,
+              COALESCE(-SUM(CASE WHEN kind = 'charge' THEN amount END), 0) AS used
+       FROM entries`,
+    )
+    .one();
+  return { granted: row.granted, used: row.used, balance: row.total };
+}
+
 export interface EntryFields {
   repo: string;
   run: string;

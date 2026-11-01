@@ -1,11 +1,40 @@
 // The set-up form's editable parts: when it runs (when, which changes, path and branch
-// filters) and its repositories (all of them including new ones, or a searchable checklist;
-// with none yet, ways to make one).
+// filters), the level that blocks landing, and its repositories (all of them including new
+// ones, or a searchable checklist; with none yet, ways to make one).
 import { useState } from 'react';
-import type { Trigger } from '../../../../shared/managed-agents';
+import type { RunValue, Trigger } from '../../../../shared/managed-agents';
 import { linkTo, type Navigate } from '../shell/useRoute';
-import { ALL_REPOS_LABEL, READY_HELP } from './agentsModel';
+import { ALL_REPOS_LABEL, BLOCK_HELP, READY_HELP } from './agentsModel';
 import { filterRepos, parseFilters } from './setupForm';
+
+/** The level at or above which a level agent's check fails; off unless the owner chooses one. */
+export function BlockField({
+  value,
+  onChange,
+}: {
+  value: RunValue | null;
+  onChange: (level: RunValue | null) => void;
+}) {
+  return (
+    <div className="agent-panel-row agent-cols">
+      <label className="agent-field">
+        Block landing at
+        <select
+          value={value ?? ''}
+          onChange={(e) => onChange((e.target.value || null) as RunValue | null)}
+          aria-describedby="block-hint"
+        >
+          <option value="">Never (report only)</option>
+          <option value="medium">Medium or higher</option>
+          <option value="high">High</option>
+        </select>
+        <span id="block-hint" className="source-meta">
+          {BLOCK_HELP}
+        </span>
+      </label>
+    </div>
+  );
+}
 
 export function TriggerFields({
   trigger,
@@ -31,7 +60,7 @@ export function TriggerFields({
           </select>
         </label>
         <label className="agent-field">
-          Which changes
+          Which Landings
           <select value={trigger.changes} onChange={() => {}} aria-describedby="changes-hint">
             <option value="ready_for_review">Ready for review</option>
           </select>
@@ -137,10 +166,7 @@ export function RepoPicker({
             checked={all}
             onChange={() => onChange({ all_repos: true })}
           />
-          <span>
-            {ALL_REPOS_LABEL}
-            <span className="source-meta"> Repositories created or imported later join too.</span>
-          </span>
+          <span>{ALL_REPOS_LABEL}</span>
         </label>
         <label>
           <input

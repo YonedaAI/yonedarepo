@@ -2,6 +2,16 @@
 //! merge landed along with it, and one per refused queued landing. The derive job reads
 //! them after landing and streams them off the commit path. Records carry identifiers,
 //! counts and times only: never file contents, paths, messages or credentials.
+//!
+//! A record is built when it is read, not when its version landed. The log entry never
+//! changes, and compaction moves only log rows, so a version read from a segment gives the
+//! same record. `commit_facts` reads the commit's other rows as they are at that moment:
+//! a check, repair or class recorded after the first read is missing from what was sent,
+//! and a later read (a give-back or a rewound cursor) shows it under the same `event_key`.
+//! Queries take the highest value per key, so a count that later fell (a re-run clearing
+//! a failure) keeps its old value. Only an erase deletes these rows, and it ends the
+//! repository's stream.
+use super::hook_events::watermark;
 use super::rows::{self, current_version};
 use super::symbols;
 use crate::storage::SqlStore;
@@ -12,8 +22,15 @@ const MAX_RECORDS: u64 = 100;
 
 /// Records for versions after `after_version` (at most `limit` versions) and refusals of
 /// tickets after `after_ticket`. Returns the cursors to resume from: `version` and
-/// `ticket`, the highest ticket below which every queued landing has finished.
+/// `ticket`, the highest ticket below which every queued landing has finished. With
+/// `from_head`, no records: only those cursors at the head, for a reader starting now.
 pub fn records<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+    if c["from_head"].as_bool() == Some(true) {
+        let head = current_version(db)?;
+        return Ok(json!({
+            "records": [], "version": head, "head_version": head, "ticket": watermark(db)?,
+        }));
+    }
     let after = c["after_version"].as_u64().unwrap_or(0);
     let limit = c["limit"]
         .as_u64()
@@ -97,6 +114,10 @@ fn labelled(mut record: Map<String, Value>) -> Value {
         .unwrap_or("other")
         .to_owned();
     record.insert("actor_kind".into(), json!(kind));
+    // Reserved now because a stream's fields can't change once it exists. Empty until the
+    // repository stores which credential acted; the adapter drops nulls.
+    record.insert("credential_id".into(), Value::Null);
+    record.insert("credential_kind".into(), Value::Null);
     Value::Object(record)
 }
 
@@ -180,7 +201,10 @@ fn commit_facts<S: SqlStore>(
     )?[0];
     out.insert("check_runs".into(), runs["n"].clone());
     out.insert("check_run_ms".into(), runs["ms"].clone());
-    let repairs = &db.query("SELECT COUNT(*) AS n FROM repairs WHERE commit_id=?", &key)?[0];
+    let repairs = &db.query(
+        "SELECT COUNT(*) AS n FROM repairs WHERE commit_id=? AND check_name<>'history import'",
+        &key,
+    )?[0];
     out.insert("repairs".into(), repairs["n"].clone());
     if let Some(row) = db
         .query(

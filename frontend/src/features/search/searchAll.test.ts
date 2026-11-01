@@ -3,12 +3,15 @@ import type { PlatformRepo } from '../shell/repoRows';
 import type { SearchAnswer } from '../source-platform/searchModel';
 import { SourceApiError } from '../source-platform/sourceApi';
 import {
+  accountSearchPath,
+  askAccount,
   askRepository,
   CONCURRENCY,
   capNote,
   fanOut,
   isTyping,
   matched,
+  pageOutcomes,
   REPO_CAP,
   searchPlan,
 } from './searchAllModel';
@@ -186,5 +189,36 @@ describe('the / shortcut', () => {
     expect(isTyping({ tagName: 'DIV', isContentEditable: true })).toBe(true);
     expect(isTyping({ tagName: 'BODY' })).toBe(false);
     expect(isTyping(null)).toBe(false);
+  });
+});
+
+describe('the account search', () => {
+  const page = {
+    results: [{ repo: id(1), name: 'one', path: '/a/one', answer: hit }],
+    failed: [{ repo: id(2), name: 'two', error: 'Overloaded' }],
+    searched: 2,
+    scanned: 30,
+    next: '5.r1',
+  };
+  const signal = new AbortController().signal;
+
+  it('asks case-insensitively, and from a cursor when it has one', () => {
+    expect(accountSearchPath('a b')).toBe('/search?query=a%20b&ignore_case=true');
+    expect(accountSearchPath('a', '5.r1')).toBe('/search?query=a&ignore_case=true&after=5.r1');
+  });
+
+  it('answers null when the platform has no such route, and raises anything else', async () => {
+    const refusing = (status: number) => () =>
+      Promise.reject(new SourceApiError('X', 'Refused', status));
+    expect(await askAccount('q', null, signal, refusing(404))).toBeNull();
+    await expect(askAccount('q', null, signal, refusing(500))).rejects.toThrow('Refused');
+    expect(await askAccount('q', null, signal, () => Promise.resolve(page))).toEqual(page);
+  });
+
+  it('reads a page as outcomes', () => {
+    expect(pageOutcomes(page)).toEqual([
+      { repo: id(1), kind: 'found', answer: hit },
+      { repo: id(2), kind: 'failed', error: 'Overloaded' },
+    ]);
   });
 });

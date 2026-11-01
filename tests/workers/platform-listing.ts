@@ -10,10 +10,12 @@ import activity from '../../cloudflare/migrations/0007_platform_activity.sql?raw
 import handles from '../../cloudflare/migrations/0008_platform_handles.sql?raw';
 import accounts from '../../cloudflare/migrations/0009_platform_accounts.sql?raw';
 import activitySize from '../../cloudflare/migrations/0010_platform_activity_db_bytes.sql?raw';
+import deletedRepos from '../../cloudflare/migrations/0011_platform_deleted_repos.sql?raw';
+import accountInternal from '../../cloudflare/migrations/0013_platform_account_internal.sql?raw';
 
 beforeEach(async () => {
   const db = (env as unknown as { INDEX: D1Database }).INDEX;
-  for (const migration of [listing, tokens, members, visibility, activity, handles, accounts, activitySize])
+  for (const migration of [listing, tokens, members, visibility, activity, handles, accounts, activitySize, deletedRepos, accountInternal])
     for (const statement of migration.split(';').filter((s) => s.replace(/--.*$/gm, '').trim()))
       await db
         .exec(statement.replace(/--.*$/gm, '').replace(/\s+/g, ' ').trim())

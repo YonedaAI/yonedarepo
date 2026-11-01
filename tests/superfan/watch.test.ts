@@ -172,6 +172,23 @@ describe('superfan watch pass', () => {
     expect(finding.summary).toContain('push_retries=8');
   });
 
+  it('opens a finding for a single stalled compaction, which no error count would', async () => {
+    fakeUpstreams(analytics());
+    const e = testEnv();
+    const d = deps(e, { now: start });
+    const stall = JSON.stringify({ event: 'compaction.stalled', repo: 'r0123456789abcdef0123', by: 'hooks', stalled: true });
+    await feed(d.ledger, hour(recent(start), { api_worker: { count: 100, logs: [] } }), start);
+    await feed(
+      d.ledger,
+      traces({ component: 'derived_jobs', count: 1, wallMs: 60, logs: [{ level: 'error', message: [stall] }] }, recent(start)),
+      start,
+    );
+    await runWatch(e, d);
+    const [finding] = await d.ledger.findings('open', 1);
+    expect(finding.dedup_key).toBe('derived_jobs:compaction_stalls');
+    expect(finding.summary).toContain('compaction_stalls=1');
+  });
+
   it('reports silent tail events as a finding but still evaluates analytics', async () => {
     const calls = fakeUpstreams(analytics({ backlog: [5, 400] }));
     const e = testEnv();

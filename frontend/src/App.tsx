@@ -354,9 +354,7 @@ export function App() {
                 onNew={() => setCreating(true)}
               />
             )}
-            {route.view === 'explore' && (
-              <ExplorePage authenticated={session.authenticated} navigate={navigate} />
-            )}
+            {route.view === 'explore' && <ExplorePage navigate={navigate} />}
             {route.view === 'global-search' && (
               <SearchPage
                 key={tick}
@@ -386,6 +384,11 @@ export function App() {
                 orgs={orgs}
                 navigate={navigate}
                 onAvatar={session.setAvatar}
+                onRestored={() => {
+                  platform.reload();
+                  activity.reload();
+                  favorites.reload();
+                }}
               />
             )}
             {(route.view === 'profile' || route.view === 'repo-name') && (
@@ -395,7 +398,6 @@ export function App() {
                 navigate={navigate}
                 authenticated={session.authenticated}
                 onSignIn={() => setPanel('account')}
-                onNew={() => setCreating(true)}
               />
             )}
             {route.view === 'admin' &&
@@ -422,6 +424,7 @@ export function App() {
               <OrgPage
                 key={`${route.org}:${tick}`}
                 org={route.org}
+                tab={route.tab}
                 navigate={navigate}
                 onDeleted={() => {
                   orgs.reload();
@@ -464,7 +467,6 @@ export function App() {
                   platform.reload();
                   favorites.reload();
                 }}
-                onNew={() => setCreating(true)}
               />
             )}
           </>

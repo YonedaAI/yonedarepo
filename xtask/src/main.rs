@@ -5,6 +5,7 @@ mod commands;
 mod contracts;
 mod deploy_credentials;
 mod deploy_env;
+mod deploy_evidence;
 mod deploy_exec;
 mod deploy_guard;
 mod deploy_image;
@@ -13,13 +14,18 @@ mod deploy_live;
 mod deploy_prebuilt;
 mod deploy_registry;
 mod deploy_secrets;
+mod deploy_ship;
 mod dev;
 mod downloads;
+mod erase_backfill;
 mod infra;
+mod internal_accounts;
 mod layers;
 mod layout;
 mod local_config;
 mod process;
+mod revenue_rebuild;
+mod search_backfill;
 use std::path::PathBuf;
 
 #[tokio::main]

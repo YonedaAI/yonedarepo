@@ -1,9 +1,11 @@
-// The set-up page's form: only when an agent runs, on which repositories, and whether it is
-// active (YonedaRepo maintains the rest), the body saving it sends, and its early checks.
+// The set-up page's form: only when an agent runs, the level that blocks landing, on which
+// repositories, and whether it is active (YonedaRepo maintains the rest), the body saving it
+// sends, and its early checks.
 import type {
   AgentState,
   AgentUpdate,
   ManagedAgentDefinition,
+  RunValue,
   Trigger,
 } from '../../../../shared/managed-agents';
 import { SettingsError, validateOverrides } from '../../../../shared/managed-settings';
@@ -11,6 +13,8 @@ import { SettingsError, validateOverrides } from '../../../../shared/managed-set
 /** The set-up form's state: only what a workspace decides. YonedaRepo maintains the rest. */
 export interface AgentForm {
   trigger: Trigger;
+  /** For a level agent: the level that fails its check (null: it reports only). */
+  block_at: RunValue | null;
   /** Run on every repository the workspace owns, new ones included (instead of `repos`). */
   all_repos: boolean;
   repos: string[];
@@ -24,6 +28,7 @@ export function initialForm(agent: AgentState, repos: { id: string }[]): AgentFo
   const first = agent.created_at === null;
   return {
     trigger: { ...agent.settings.trigger },
+    block_at: agent.settings.block_at,
     all_repos: first ? repos.length === 0 : agent.all_repos,
     repos: first ? repos.map((r) => r.id) : [...agent.enabled_repos],
     active: first ? true : agent.active,
@@ -34,13 +39,18 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 
 /**
  * What saving the form sends: the trigger when it changed (null when it is back on the default,
- * so it follows later updates), all repositories or the chosen ones when that changed or at the
- * first set-up, and Active. Never a field YonedaRepo maintains.
+ * so it follows later updates), a level agent's blocking level when it changed, all repositories
+ * or the chosen ones when that changed or at the first set-up, and Active. Never a field
+ * YonedaRepo maintains.
  */
 export function updateBody(agent: AgentState, form: AgentForm): AgentUpdate {
   const body: AgentUpdate = {};
+  const settings: NonNullable<AgentUpdate['settings']> = {};
   if (!same(form.trigger, agent.settings.trigger))
-    body.settings = { trigger: same(form.trigger, agent.defaults.trigger) ? null : form.trigger };
+    settings.trigger = same(form.trigger, agent.defaults.trigger) ? null : form.trigger;
+  if (agent.value_type === 'level' && form.block_at !== agent.settings.block_at)
+    settings.block_at = form.block_at;
+  if (Object.keys(settings).length > 0) body.settings = settings;
   const first = agent.created_at === null;
   if (form.all_repos) {
     if (first || !agent.all_repos) body.all_repos = true;
@@ -57,7 +67,7 @@ export function updateBody(agent: AgentState, form: AgentForm): AgentUpdate {
 /** The form's first problem (the server checks again), or '' when it can be saved. */
 export function formProblem(agent: ManagedAgentDefinition, form: AgentForm): string {
   try {
-    validateOverrides(agent, {}, { trigger: form.trigger });
+    validateOverrides(agent, {}, { trigger: form.trigger, block_at: form.block_at });
   } catch (e) {
     if (e instanceof SettingsError) return e.message;
     throw e;

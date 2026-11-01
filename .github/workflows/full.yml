@@ -1,5 +1,5 @@
 name: Full suite
-# The slow half of `cargo xtask check` (xtask/src/commands.rs), by hand before a prod ship:
+# The slow half of `cargo xtask check` (xtask/src/commands.rs), by hand or from ship.yml:
 # the workerd suite in four shards plus their total, the platform-only and superfan Workers'
 # suites, the frontend build, and the runtime (CheckContainer) image when its inputs changed
 # since main or when asked. "Check" (ci.yml) runs the fast half on every PR and push to main;
@@ -11,10 +11,20 @@ on:
         description: Build the runtime image even if cloudflare/containers and yoneda-runtime are unchanged since main
         type: boolean
         default: false
+  workflow_call:
+    inputs:
+      image:
+        description: Build the runtime image even if cloudflare/containers and yoneda-runtime are unchanged since main
+        type: boolean
+        default: false
+      ship:
+        description: Called by ship.yml
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
-  group: full-${{ github.ref }}
+  group: full-${{ inputs.ship && 'ship' || github.ref }}
   cancel-in-progress: true
 # An explicit bash shell runs with -eo pipefail, so `cmd | tee` fails when cmd fails.
 defaults:

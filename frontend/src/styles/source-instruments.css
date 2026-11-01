@@ -1,0 +1,78 @@
+/* A change's instruments: a row of cards above its gates, each with a five-push trend. */
+.source-instruments {
+  margin-bottom: 12px;
+}
+.source-instruments h3 {
+  margin: 0 0 6px;
+}
+.instrument-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.instrument-card {
+  min-width: 0;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.instrument-card h4 {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  font-weight: 600;
+}
+.instrument-value {
+  margin: 2px 0 0;
+  color: var(--text);
+  font-size: var(--text-2xl);
+  font-weight: 600;
+}
+.instrument-card .source-meta {
+  margin: 0;
+  font-size: var(--text-sm);
+}
+.instrument-reasons {
+  margin: 8px 0;
+  padding: 0;
+  font-size: var(--text-sm);
+  list-style: none;
+}
+.instrument-reasons li {
+  padding: 4px 0;
+  border-top: 1px solid var(--line);
+  overflow-wrap: anywhere;
+}
+.instrument-points {
+  color: var(--muted);
+  white-space: nowrap;
+}
+/* The strip's tiles as bars: the taller, the worse. It lists newest first, so it runs right to
+ * left, for a trend that reads with the latest on the right. */
+.instrument-card .history-strip {
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+  align-items: flex-end;
+  gap: 2px;
+  height: 36px;
+  margin: 8px 0 4px;
+}
+.instrument-card .history-strip li {
+  flex: 0 0 22px;
+}
+.instrument-card .result-tile {
+  width: 100%;
+  height: 6px;
+  border-radius: 4px 4px 0 0;
+}
+.instrument-card .result-tile.tone-good {
+  height: 12px;
+}
+.instrument-card .result-tile.tone-warn {
+  height: 24px;
+}
+.instrument-card .result-tile.tone-bad {
+  height: 36px;
+}

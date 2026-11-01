@@ -9,7 +9,7 @@ import {
 } from '../../shared/managed-agents';
 import { resolveSettings } from '../../shared/managed-settings';
 import type { ManagedEnv } from './config';
-import { reviewChanges } from './dispatch';
+import { reviewable, reviewChanges } from './dispatch';
 import { Platform } from './platform';
 import { repoStub } from './repo-agents';
 import { workspaceStub } from './workspace-agents';
@@ -44,8 +44,7 @@ export async function runNow(
       .catch(() => null);
     if (!connection || connection.revoked) continue;
     const platform = new Platform(env, { token: connection.token });
-    if (await platform.automationPaused(repo)) continue;
-    const open = ((await platform.openChanges(repo)).changes ?? []) as Record<string, any>[];
+    const open = await reviewable(platform, repo);
     const counts = await reviewChanges(
       env,
       repo,

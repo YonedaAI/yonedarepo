@@ -11,9 +11,10 @@ import { oauthRoute } from './oauth';
 import { GIT_PATH, legacyRedirect } from './readable-paths';
 import { isSeoFile, seoFile } from './seo-files';
 import { recordPageView } from './site-events';
+import { sitePing } from './site-ping';
 import type { Env } from './types';
 import { withWebAnalytics } from './web-analytics';
-import { publicOrigin, websiteAssets } from './website-metadata';
+import { publicOrigin, websitePage } from './website-metadata';
 
 export async function frontFetch(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
@@ -37,10 +38,11 @@ export async function frontFetch(req: Request, env: Env): Promise<Response> {
       ? await legacyRedirect(req, (ask) => (env.PLATFORM as Fetcher).fetch(ask))
       : null;
     if (moved) return moved;
-    const page = await websiteAssets(req, env);
-    recordPageView(req, page, env);
+    const { response: page, canonical } = await websitePage(req, env);
+    recordPageView(req, page, canonical, env);
     return withWebAnalytics(req, page, env);
   }
+  if (url.pathname === '/api/e') return sitePing(req, env);
   if (url.pathname.startsWith('/api/v1/'))
     return env.PLATFORM
       ? env.PLATFORM.fetch(req)

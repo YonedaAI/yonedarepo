@@ -7,18 +7,19 @@
 //! credentials can neither read nor write one.
 use super::auth::Actor;
 use super::rows::{self, branch_ref};
-use super::{change_hooks, reads};
+use super::{change_adopt, change_hooks, flight_plans, go_around, reads};
 use crate::storage::{SqlStore, bad, number};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result, git_object::ObjectId};
 
 pub const MAX_TITLE: usize = 200;
 pub const MAX_BODY: usize = 8000;
+const ORIGINS: [&str; 2] = ["explicit", "auto"];
 /// Branch moves `show` lists in a change's timeline.
 const TIMELINE: u64 = 100;
 
-const CHANGE: &str = "SELECT c.number,c.title,c.body,c.branch,c.base,c.author,c.status,c.created_at,\
-     c.updated_at,c.landed_version,c.landed_commit,c.source_repo,c.source_branch,\
+/// `c.*`, so `origin` is answered wherever the schema has it (`change_adopt`).
+const CHANGE: &str = "SELECT c.*,\
      (SELECT commit_id FROM refs WHERE name='refs/heads/'||c.branch) AS branch_head,\
      (SELECT COUNT(*) FROM change_comments k WHERE k.change_number=c.number) AS comment_count \
      FROM changes c";
@@ -44,8 +45,23 @@ fn shaped(mut row: Value) -> Value {
     if let Some(fields) = row.as_object_mut() {
         fields.remove("branch_head");
         fields.insert("head".into(), head);
+        // CTC's decisions on it (`land_when_cleared`), when it has any.
+        let decided = fields.remove("clearance");
+        let text = decided.as_ref().and_then(Value::as_str);
+        if let Some(log) = text.and_then(|text| serde_json::from_str(text).ok()) {
+            fields.insert("clearances".into(), log);
+        }
     }
     row
+}
+
+/// A row of a list, which has no use for each Landing's decisions.
+fn listed(row: Value) -> Value {
+    let mut change = shaped(row);
+    if let Some(fields) = change.as_object_mut() {
+        fields.remove("clearances");
+    }
+    change
 }
 
 pub(super) fn get<S: SqlStore>(db: &S, number: i64) -> Result<Value> {
@@ -54,6 +70,15 @@ pub(super) fn get<S: SqlStore>(db: &S, number: i64) -> Result<Value> {
         .next()
         .map(shaped)
         .ok_or_else(|| Error::new("NOT_FOUND", format!("No change #{number}")))
+}
+
+/// The newest open changes, with their decisions.
+pub(super) fn newest_open<S: SqlStore>(db: &S, limit: u64) -> Result<Vec<Value>> {
+    let rows = db.query(
+        &format!("{CHANGE} WHERE c.status='open' ORDER BY c.number DESC LIMIT ?"),
+        &[json!(limit)],
+    )?;
+    Ok(rows.into_iter().map(shaped).collect())
 }
 
 pub(super) fn number_of(c: &Value) -> Result<i64> {
@@ -80,8 +105,20 @@ pub(super) fn text(c: &Value, key: &str, max: usize) -> Result<Option<String>> {
     Ok(Some(text.to_owned()))
 }
 
+/// A change's title: `text` on one line.
+pub(super) fn title_of(c: &Value) -> Result<Option<String>> {
+    let title = text(c, "title", MAX_TITLE)?;
+    if title
+        .as_ref()
+        .is_some_and(|t| t.chars().any(char::is_control))
+    {
+        return Err(bad("title must be one line"));
+    }
+    Ok(title)
+}
+
 /// The open change on `branch` (a short name), if any.
-fn open_on<S: SqlStore>(db: &S, branch: &str) -> Result<Option<i64>> {
+pub(super) fn open_on<S: SqlStore>(db: &S, branch: &str) -> Result<Option<i64>> {
     Ok(db
         .query(
             "SELECT number FROM changes WHERE branch=? AND status='open'",
@@ -92,7 +129,7 @@ fn open_on<S: SqlStore>(db: &S, branch: &str) -> Result<Option<i64>> {
 }
 
 /// The short name of an existing working branch (never a protected one).
-fn working_branch<S: SqlStore>(db: &S, name: &str) -> Result<String> {
+pub(super) fn working_branch<S: SqlStore>(db: &S, name: &str) -> Result<String> {
     let refname = branch_ref(&json!({ "ref": name }))?;
     if rows::protected(&refname) {
         return Err(bad(
@@ -110,7 +147,7 @@ fn working_branch<S: SqlStore>(db: &S, name: &str) -> Result<String> {
 
 /// The short name of the existing branch `name` a change on `branch` lands on (default
 /// `main`); never the change's own branch.
-fn base_branch<S: SqlStore>(db: &S, name: Option<&str>, branch: &str) -> Result<String> {
+pub(super) fn base_branch<S: SqlStore>(db: &S, name: Option<&str>, branch: &str) -> Result<String> {
     let refname = branch_ref(&json!({ "ref": name.unwrap_or("main") }))?;
     let base = refname["refs/heads/".len()..].to_owned();
     if base == branch {
@@ -122,7 +159,7 @@ fn base_branch<S: SqlStore>(db: &S, name: Option<&str>, branch: &str) -> Result<
     Ok(base)
 }
 
-fn already_open(branch: &str, number: i64) -> Error {
+pub(super) fn already_open(branch: &str, number: i64) -> Error {
     Error::new(
         "ALREADY_EXISTS",
         format!("Branch {branch} already has open change #{number}"),
@@ -144,15 +181,20 @@ pub fn create<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
             "A change from a fork proposes the fork branch's mirror",
         ));
     }
-    let title = text(c, "title", MAX_TITLE)?.ok_or_else(|| bad("A change needs a title"))?;
-    if title.chars().any(char::is_control) {
-        return Err(bad("title must be one line"));
-    }
+    let title = title_of(c)?.ok_or_else(|| bad("A change needs a title"))?;
     let body = text(c, "body", MAX_BODY)?.unwrap_or_default();
-    if let Some(number) = open_on(db, &branch)? {
-        return Err(already_open(&branch, number));
-    }
     let now = number(c, "now")?;
+    if let Some(open) = open_on(db, &branch)? {
+        if !change_adopt::unclaimed(db, open)? {
+            return Err(already_open(&branch, open));
+        }
+        let proposal = change_adopt::Proposal {
+            title: &title,
+            body: &body,
+            base: &base,
+        };
+        return change_adopt::adopt(db, open, &proposal, actor, now);
+    }
     db.query(
         "INSERT INTO changes(title,body,branch,base,author,status,created_at,updated_at,source_repo,source_branch) VALUES(?,?,?,?,?,'open',?,?,?,?)",
         &[json!(title), json!(body), json!(branch), json!(base), json!(actor.principal), json!(now), json!(now), json!(source.0), json!(source.1)],
@@ -173,19 +215,36 @@ pub fn create<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     Ok(change)
 }
 
-/// `repo_changes {status?, limit?}`: newest first; `status` defaults to open.
+/// `repo_changes {status?, limit?, branch?, origin?, direct?}`: newest first; `status` defaults
+/// to open. `direct` adds the landings no change names, to a list that holds landed rows.
 pub fn list<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     whole_repository(actor)?;
     let status = c["status"].as_str().unwrap_or("open");
     if !["open", "landed", "closed", "all"].contains(&status) {
         return Err(bad("status must be open, landed, closed or all"));
     }
+    if c["origin"].as_str().is_some_and(|o| !ORIGINS.contains(&o)) {
+        return Err(bad("origin must be explicit or auto"));
+    }
     let limit = c["limit"].as_u64().unwrap_or(50).clamp(1, 200);
+    let mut params = vec![json!(status), json!(limit)];
+    let mut only = String::new();
+    for (key, column) in [("branch", "c.branch"), ("origin", "c.origin")] {
+        if let Some(value) = c[key].as_str() {
+            params.push(json!(value));
+            only.push_str(&format!(" AND {column}=?{}", params.len()));
+        }
+    }
     let rows = db.query(
-        &format!("{CHANGE} WHERE ?1='all' OR c.status=?1 ORDER BY c.number DESC LIMIT ?2"),
-        &[json!(status), json!(limit)],
+        &format!("{CHANGE} WHERE (?1='all' OR c.status=?1){only} ORDER BY c.number DESC LIMIT ?2"),
+        &params,
     )?;
-    Ok(json!({ "changes": rows.into_iter().map(shaped).collect::<Vec<_>>() }))
+    let rows = rows.into_iter().map(listed).collect::<Vec<_>>();
+    let mut answer = json!({ "changes": rows });
+    if c["direct"] == true && ["landed", "all"].contains(&status) {
+        answer["direct"] = json!(super::direct_landings::recent(db, limit)?);
+    }
+    Ok(answer)
 }
 
 /// `repo_change_show {number}`: the change, its head's commit record (checks, reviews and
@@ -211,6 +270,12 @@ pub fn show<S: SqlStore>(
         None => Value::Null,
     };
     change["comments"] = json!(super::change_comments::of(db, &change["number"])?);
+    change["flight_plan"] = flight_plans::newest(db, &change["number"], &change["branch"])?;
+    change["go_around"] = if change["status"] == "open" {
+        go_around::of_change(db, &change["number"], &change["head"])?
+    } else {
+        Value::Null
+    };
     // Landing on a protected base needs the head's gates; any other base moves with `write`.
     change["base_protected"] = json!(rows::protected(&format!(
         "refs/heads/{}",
@@ -221,54 +286,6 @@ pub fn show<S: SqlStore>(
         change["branch"].as_str().unwrap_or_default(),
         TIMELINE
     )?);
-    Ok(change)
-}
-
-/// `repo_change_close` and `repo_change_reopen {number}`: by the change's author, the owner
-/// or a holder of the `land` scope.
-pub fn set_open<S: SqlStore>(db: &S, c: &Value, actor: &Actor, open: bool) -> Result<Value> {
-    whole_repository(actor)?;
-    let change = get(db, number_of(c)?)?;
-    if change["author"] != actor.principal.as_str() && !actor.owner && !actor.can("land") {
-        return Err(Error::new(
-            "FORBIDDEN",
-            "Only the change's author, the owner or a lander can close or reopen it",
-        ));
-    }
-    let (from, to) = if open {
-        ("closed", "open")
-    } else {
-        ("open", "closed")
-    };
-    if change["status"] == to {
-        return Ok(change);
-    }
-    if change["status"] != from {
-        return Err(Error::new(
-            "CONFLICT",
-            format!("Change #{} is {}", change["number"], change["status"]),
-        ));
-    }
-    let branch = change["branch"].as_str().unwrap_or_default();
-    if open {
-        working_branch(db, branch)?;
-        base_branch(db, change["base"].as_str(), branch)?;
-        if let Some(number) = open_on(db, branch)? {
-            return Err(already_open(branch, number));
-        }
-    }
-    let now = number(c, "now")?;
-    db.query(
-        "UPDATE changes SET status=?,updated_at=? WHERE number=?",
-        &[json!(to), json!(now), change["number"].clone()],
-    )?;
-    let change = get(db, change["number"].as_i64().unwrap_or_default())?;
-    let (event, action) = if open {
-        ("change.opened", "reopened")
-    } else {
-        ("change.closed", "closed")
-    };
-    change_hooks::notify(db, event, action, &change, None, &actor.principal, now)?;
     Ok(change)
 }
 

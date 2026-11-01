@@ -2,7 +2,8 @@
 //! the adapter's queue consumer claims it with a fenced epoch and lease, executes the
 //! policy's runner (a command in a Container, or one model review call), and completes
 //! it. Only completions from the current epoch count, so a stale or duplicated executor
-//! can never record a result.
+//! can never record a result. Reads of a run: `check_run_reads`.
+use super::audit_outbox;
 use super::rows::{self, Policy, Runner, Settings, check_name, object_id};
 use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
@@ -14,7 +15,12 @@ const LEASE_SLACK_MS: i64 = 5 * 60 * 1000;
 
 /// Owner-only: replace the landing policy. Results recorded under the old digest stop
 /// counting for gates, as they were produced under different rules.
-pub fn set_policy<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
+pub fn set_policy<S: SqlStore>(
+    db: &S,
+    c: &Value,
+    principal: &str,
+    settings: &Settings,
+) -> Result<Value> {
     let (_, json, digest) = Policy::parse(&c["policy"])?;
     let now = number(c, "now")?;
     db.query(
@@ -30,6 +36,13 @@ pub fn set_policy<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Val
             json!(now),
         ],
     )?;
+    if digest != settings.policy_digest {
+        let event = json!({
+            "digest": digest, "previous": settings.policy_digest,
+            "required_checks": json["required_checks"], "approvals": json["approvals"],
+        });
+        audit_outbox::record(db, c, "repo.policy_changed", principal, event)?;
+    }
     Ok(json!({ "policy": json, "policy_digest": digest }))
 }
 
@@ -95,7 +108,7 @@ pub fn request_op<S: SqlStore>(
     Ok(json!({ "commit": commit, "runs": runs }))
 }
 
-fn run_row<S: SqlStore>(db: &S, id: &str) -> Result<Value> {
+pub(super) fn run_row<S: SqlStore>(db: &S, id: &str) -> Result<Value> {
     db.query("SELECT * FROM check_runs WHERE id=?", &[json!(id)])?
         .into_iter()
         .next()
@@ -205,9 +218,11 @@ pub fn complete<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value
     if evidence.len() > 16 * 1024 {
         return Err(bad("Check evidence exceeds 16 KiB; store logs as objects"));
     }
+    // With the switch, a verdict's evidence lives in `checks` alone (`RESULT` reads it back).
+    let stored = (outcome == "error" || c["_check_evidence"] != "once").then_some(&evidence);
     db.query(
         "UPDATE check_runs SET status=?,finished_at=?,lease_until=NULL,result=? WHERE id=?",
-        &[json!(status), json!(now), json!(evidence), json!(id)],
+        &[json!(status), json!(now), json!(stored), json!(id)],
     )?;
     if outcome != "error" {
         db.query(
@@ -277,23 +292,7 @@ pub fn record_repair<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
 
 pub fn repairs_for<S: SqlStore>(db: &S, commit: &ObjectId) -> Result<Vec<Value>> {
     db.query(
-        "SELECT refname,check_name,repair_commit,error,created_at FROM repairs WHERE commit_id=? ORDER BY created_at",
-        &[json!(commit.hex())],
-    )
-}
-
-pub fn run_op<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
-    let mut row = run_row(db, &string(c, "run_id")?)?;
-    row["runner"] =
-        serde_json::from_str(row["runner"].as_str().unwrap_or("null")).unwrap_or(Value::Null);
-    row["result"] =
-        serde_json::from_str(row["result"].as_str().unwrap_or("null")).unwrap_or(Value::Null);
-    Ok(row)
-}
-
-pub fn runs_for<S: SqlStore>(db: &S, commit: &ObjectId) -> Result<Vec<Value>> {
-    db.query(
-        "SELECT id,name,status,epoch,requested_by,created_at,finished_at,result FROM check_runs WHERE commit_id=? ORDER BY created_at,name",
+        "SELECT refname,check_name,repair_commit,error,created_at FROM repairs WHERE commit_id=? AND check_name<>'history import' ORDER BY created_at",
         &[json!(commit.hex())],
     )
 }

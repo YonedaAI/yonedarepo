@@ -63,17 +63,25 @@ export async function advertised(mirror: Mirror): Promise<MirrorRef[]> {
   return [...refs.values()];
 }
 
+/** A fetch's shallow side: a depth, and the shallow commits the client already has. */
+export type Deepen = { depth?: number | null; deepen_relative?: boolean; shallows?: string[] };
+/** What the mirror answers a depth with, before the pack. */
+export type ShallowLines = { shallow: string[]; unshallow: string[] };
+
 /** Fetches what `wants` reach beyond `haves` (whose history the caller holds): the pack's
- * bytes as they arrive. */
+ * bytes as they arrive, with `lines` filled in by the time the first of them does. */
 export async function* fetchPack(
   mirror: Mirror,
   wants: string[],
   haves: string[],
+  deepen: Deepen = {},
+  lines: ShallowLines = { shallow: [], unshallow: [] },
 ): AsyncGenerator<Uint8Array> {
+  const caps = `side-band-64k ofs-delta no-progress${deepen.deepen_relative ? ' deepen-relative' : ''}`;
   const body =
-    wants
-      .map((w, i) => pkt(`want ${w}${i === 0 ? ' side-band-64k ofs-delta no-progress' : ''}\n`))
-      .join('') +
+    wants.map((w, i) => pkt(`want ${w}${i === 0 ? ` ${caps}` : ''}\n`)).join('') +
+    (deepen.shallows ?? []).map((id) => pkt(`shallow ${id}\n`)).join('') +
+    (deepen.depth == null ? '' : pkt(`deepen ${deepen.depth}\n`)) +
     '0000' +
     haves.map((h) => pkt(`have ${h}\n`)).join('') +
     pkt('done\n');
@@ -88,30 +96,51 @@ export async function* fetchPack(
     redirect: 'manual',
   });
   if (!answer.ok || !answer.body) throw new Error(`The mirror's fetch answered ${answer.status}`);
-  yield* bandOne(answer.body);
+  yield* bandOne(answer.body, lines, deepen.depth != null);
 }
 
-/** Side-band packets' band 1 (the pack), after the acknowledgments; band 3 is an error. */
-async function* bandOne(body: ReadableStream<Uint8Array>): AsyncGenerator<Uint8Array> {
+/** Side-band packets' band 1 (the pack), after the acknowledgments and, with a depth, the
+ * shallow lines and the flush that end them; band 3 is an error. `bare`: the packets alone,
+ * as a stored pack holds them, ending with the body and no flush. */
+export async function* bandOne(
+  body: ReadableStream<Uint8Array>,
+  lines: ShallowLines,
+  shallowFirst: boolean,
+  bare = false,
+): AsyncGenerator<Uint8Array> {
+  let opening = shallowFirst;
   const reader = body.getReader();
   let held: Uint8Array = new Uint8Array();
   const need = async (n: number) => {
     while (held.length < n) {
       const { done, value } = await reader.read();
+      if (done && bare && held.length === 0) return false;
       if (done) throw new Error("The mirror's fetch ended early");
       held = held.length ? concat([held, value]) : value;
     }
+    return true;
   };
   try {
     for (;;) {
-      await need(4);
+      if (!(await need(4))) return;
       const length = Number.parseInt(text(held.subarray(0, 4)), 16);
       if (Number.isNaN(length) || (length > 0 && length < 5))
         throw new Error("The mirror's fetch answer is malformed");
+      if (length === 0 && opening) {
+        opening = false;
+        held = held.subarray(4);
+        continue;
+      }
       if (length === 0) return;
       await need(length);
       const payload = held.subarray(4, length);
       held = held.subarray(length);
+      if (opening) {
+        const [kind, id] = text(payload).trim().split(' ');
+        if (kind === 'shallow') lines.shallow.push(id);
+        else if (kind === 'unshallow') lines.unshallow.push(id);
+        continue;
+      }
       const head = text(payload.subarray(0, 4));
       if (head.startsWith('NAK') || head.startsWith('ACK')) continue;
       if (head.startsWith('ERR')) throw new Error(`The mirror refused the fetch: ${text(payload)}`);

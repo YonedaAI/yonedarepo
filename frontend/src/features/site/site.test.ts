@@ -252,9 +252,9 @@ describe('feature pages', () => {
         versus: `${burst.theirs.name}: ${burst.theirs.label}`,
       }),
     ]);
-    // Review agents' blocks follow the shipped agents and the starting credit.
+    // Review agents' blocks follow the shipped line reviewers and the starting credit.
     const agents = featurePageOf('review-agents');
-    for (const a of MANAGED_AGENTS)
+    for (const a of MANAGED_AGENTS.filter((agent) => !agent.verdict))
       expect(agents?.blocks).toContainEqual({
         title: a.defaults.name,
         text: a.defaults.description,
@@ -279,7 +279,7 @@ describe('home', () => {
       ['Global by default', 'One network, no regions to pick'],
       ['Git hosting', 'Stock Git, nothing new to learn'],
       ['Fetch only what you need', 'Clone in seconds, load files on demand'],
-      ['Changes & gates', 'Ship when every gate is green'],
+      ['Landings & clearance', 'Cleared to land when every gate is green'],
       ['Continuous integration', 'Checks that keep pace with agents'],
       ['Review agents', 'Code, security and slop review on tap'],
       ['Continuous Memory', 'Every agent picks up where the last one left off'],
@@ -599,6 +599,7 @@ describe('content', () => {
       'Your content',
       'Acceptable use and limits',
       'Credit and fees',
+      'Refunds',
       'Backups',
       'Third-party integrations',
       'Copyright complaints',

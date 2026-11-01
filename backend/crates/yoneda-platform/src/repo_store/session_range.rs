@@ -18,10 +18,10 @@ pub(super) struct Range {
     pub truncated: bool,
 }
 
-/// Commits reachable from `start`, not walking into `stop`, at most `SCAN` of them.
+/// Commits reachable from the `start` commits, not walking into `stop`, at most `SCAN` of them.
 fn reachable<S: SqlStore>(
     db: &S,
-    start: Option<ObjectId>,
+    start: impl IntoIterator<Item = ObjectId>,
     stop: &HashSet<String>,
 ) -> Result<(HashSet<String>, bool)> {
     let mut seen = HashSet::new();
@@ -68,5 +68,17 @@ pub(super) fn range<S: SqlStore>(
     };
     let (excluded, _) = reachable(db, base, &HashSet::new())?;
     let (commits, truncated) = reachable(db, start, &excluded)?;
+    Ok(Range { commits, truncated })
+}
+
+/// The range from `head`, less what `bases` reach: with a change's merge bases, the commits
+/// it introduces however far its base has moved on.
+pub(super) fn between<S: SqlStore>(
+    db: &S,
+    head: Option<ObjectId>,
+    bases: &[ObjectId],
+) -> Result<Range> {
+    let (excluded, _) = reachable(db, bases.iter().copied(), &HashSet::new())?;
+    let (commits, truncated) = reachable(db, head, &excluded)?;
     Ok(Range { commits, truncated })
 }

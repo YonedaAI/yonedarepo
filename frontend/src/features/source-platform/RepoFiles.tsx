@@ -1,6 +1,7 @@
 // The Code tab: branch or tag, path, version (time travel) and Clone; the latest commit; the
 // directory as a file table with its README below, or one file with blame.
 import { type ReactNode, useState } from 'react';
+import { EmptyState } from '../../components/EmptyState';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { BranchPicker, CloneButton, LatestCommit } from './CodeParts';
 import { readQuery, useActivity, useCommitMessages, useListing } from './codeData';
@@ -111,31 +112,34 @@ export function RepoFiles({
           <a className="toolbar-link" {...linkTo({ ...place, view: 'overview' }, navigate)}>
             Subsystems
           </a>
-          <CloneButton repo={route.repo} name={status?.name} origin={currentApiOrigin()} />
+          <CloneButton
+            repo={route.repo}
+            name={status?.name}
+            origin={currentApiOrigin()}
+            visibility={status?.visibility}
+          />
         </span>
       </div>
       {route.at !== undefined && (
         <p className="source-note" role="status">
-          Time travel: showing {route.ref} as of log version {route.at}. Reads are pinned and
-          immutable. <a {...linkTo({ ...place, at: undefined }, navigate)}>Back to latest</a>
+          Showing {route.ref} at version {route.at}.{' '}
+          <a {...linkTo({ ...place, at: undefined }, navigate)}>Back to latest</a>
         </p>
       )}
       {listing.error && <Failure error={listing.error} onRetry={listing.reload} />}
       {listing.empty && status && (
-        <div className="source-empty-state">
-          <p>
-            {route.path
-              ? `${route.path} does not exist ${route.at === undefined ? `on ${route.ref}` : 'at this version'}.`
-              : `${route.ref} has no commits${route.at === undefined ? ' yet' : ' at this version'}.`}
-          </p>
-          {route.path ? (
-            pathLink('', 'Go to the repository root')
-          ) : (
-            <p className="source-meta">
-              Push a first commit: <code>git push origin main</code> (see Clone).
-            </p>
-          )}
-        </div>
+        <EmptyState
+          title={
+            route.path
+              ? `${route.path} does not exist ${route.at === undefined ? `on ${route.ref}` : 'at this version'}`
+              : `${route.ref} has no commits${route.at === undefined ? ' yet' : ' at this version'}`
+          }
+          action={
+            route.path && pathLink('', 'Go to the repository root', { className: 'button-link' })
+          }
+        >
+          {!route.path && route.at === undefined && 'Push a first commit to see your code here.'}
+        </EmptyState>
       )}
       {/* No files means little until the status says why: the repository may be importing. */}
       {!listing.value && !listing.error && (!listing.empty || !status) && <Loading what="files" />}

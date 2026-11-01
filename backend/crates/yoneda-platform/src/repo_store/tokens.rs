@@ -1,11 +1,22 @@
 //! Repository tokens (`yrp_…`): the owner (or an admin) creates, revokes and lists them;
 //! only their digest is stored. `auth` resolves them to actors.
+use super::audit_outbox;
 use super::auth::{Actor, token_digest};
 use crate::storage::{SqlStore, bad, number, string};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 
 pub const SCOPES: [&str; 5] = ["read", "write", "check", "review", "land"];
+
+/// One of `SCOPES`, or `check:<name>`: beside `check`, the token may post that required check
+/// where the policy binds no posters (`Policy::may_post`). Only an owner mints one, and an
+/// owner may post the check anyway.
+fn valid_scope(scope: &str) -> bool {
+    SCOPES.contains(&scope)
+        || scope
+            .strip_prefix("check:")
+            .is_some_and(|name| super::rows::check_name(name).is_ok())
+}
 
 pub fn create_token<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     actor.require_owner()?;
@@ -18,9 +29,9 @@ pub fn create_token<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Val
     let scopes: Vec<String> =
         serde_json::from_value(c["scopes"].clone()).map_err(|_| bad("scopes must be a list"))?;
     let grant = super::grants::parse(&c["paths"])?;
-    if scopes.is_empty() || scopes.iter().any(|s| !SCOPES.contains(&s.as_str())) {
+    if scopes.is_empty() || scopes.iter().any(|s| !valid_scope(s)) {
         return Err(bad(
-            "Scopes must be some of read, write, check, review, land",
+            "Scopes must be some of read, write, check, review, land, check:<name>",
         ));
     }
     if !db
@@ -43,6 +54,8 @@ pub fn create_token<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Val
             json!(grant.as_ref().map(|g| json!(g).to_string())),
         ],
     )?;
+    let event = json!({ "token": name, "scopes": scopes });
+    audit_outbox::record(db, c, "repo.token_created", &actor.principal, event)?;
     Ok(
         json!({ "name": name, "principal": format!("token:{name}"), "scopes": scopes, "paths": grant }),
     )
@@ -51,10 +64,14 @@ pub fn create_token<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Val
 pub fn revoke_token<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     actor.require_owner()?;
     let name = string(c, "name")?;
-    db.query(
-        "UPDATE tokens SET revoked_at=? WHERE name=? AND revoked_at IS NULL",
+    let revoked = db.query(
+        "UPDATE tokens SET revoked_at=? WHERE name=? AND revoked_at IS NULL RETURNING name",
         &[json!(number(c, "now")?), json!(name)],
     )?;
+    if !revoked.is_empty() {
+        let event = json!({ "token": name });
+        audit_outbox::record(db, c, "repo.token_revoked", &actor.principal, event)?;
+    }
     Ok(json!({ "name": name, "revoked": true }))
 }
 

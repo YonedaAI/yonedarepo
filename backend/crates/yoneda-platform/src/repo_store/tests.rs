@@ -28,6 +28,8 @@ struct Harness {
     /// Plays the commit shards: records of commits built outside the authority, by id.
     shard: RefCell<HashMap<String, Value>>,
     now: RefCell<i64>,
+    /// What the adapter's switches add to every command (`repo-archive-switches.ts`).
+    switches: RefCell<Value>,
 }
 
 impl Harness {
@@ -39,6 +41,7 @@ impl Harness {
             cached: RefCell::default(),
             shard: RefCell::default(),
             now: RefCell::new(1_700_000_000_000),
+            switches: RefCell::new(json!({})),
         };
         h.run(OWNER, json!({"op":"repo_init","name":"demo","object_store":"artifacts:test/demo","policy":{"required_checks":["unit"],"approvals":1,"check_posters":{"unit":["owner","token:ci"]}}})).unwrap();
         for (name, scopes) in [
@@ -52,17 +55,27 @@ impl Harness {
     fn run(&self, principal: &str, mut c: Value) -> yoneda_core::Result<Value> {
         *self.now.borrow_mut() += 1_000;
         c["now"] = json!(*self.now.borrow());
+        for (key, value) in self.switches.borrow().as_object().into_iter().flatten() {
+            c[key] = value.clone();
+        }
         match principal.strip_prefix("token:") {
             Some(name) => c["_token"] = json!(format!("{name}-secret-0123456789abcdef0123456789")),
             None if principal == SYSTEM => c["_system"] = json!("checks"),
             None if principal == "platform:projection" => c["_system"] = json!("projection"),
             None if principal == "platform:import" => c["_system"] = json!("import"),
             None if principal == "platform:merge" => c["_system"] = json!("merge"),
+            None if principal == "platform:land-when-cleared" => {
+                c["_system"] = json!("land-when-cleared")
+            }
             None if principal == "platform:derive" => c["_system"] = json!("derive"),
             None if principal == "platform:commits" => c["_system"] = json!("commits"),
             None if principal == "platform:hooks" => c["_system"] = json!("hooks"),
+            None if principal == "platform:audit" => c["_system"] = json!("audit"),
+            None if principal == "platform:erase" => c["_system"] = json!("erase"),
             None if principal == "platform:fork" => c["_system"] = json!("fork"),
             None if principal == "platform:lfs" => c["_system"] = json!("lfs"),
+            None if principal == "platform:purge" => c["_system"] = json!("purge"),
+            None if principal == "platform:quarantine" => c["_system"] = json!("quarantine"),
             None if principal.starts_with("member:") => {
                 let account = &principal["member:".len()..];
                 c["_session"] = json!({"workspace": account, "principal": format!("user:{account}"), "human": true})
@@ -71,6 +84,10 @@ impl Harness {
                 c["_token"] = json!("public-secret-0123456789abcdef0123456789")
             }
             None => c["_session"] = json!({"workspace": "ws-1", "principal": principal}),
+        }
+        // The adapter with `LEGAL_HOLD` off; `tests/legal_hold` sends its own answers.
+        if c.get("_hold").is_none() {
+            c = hold_off(c);
         }
         execute_repo_store(&self.db, c)
     }
@@ -195,6 +212,12 @@ fn file(path: &str, text: &str) -> Value {
 /// Evidence naming what a claimed run ran against (`claim`: its `repo_check_claim` answer).
 fn ran_on(claim: &Value) -> Value {
     json!({"commit": claim["commit"], "tree": claim["tree"], "files_sha256": "0".repeat(64)})
+}
+
+/// A command as the adapter sends it with `LEGAL_HOLD` off.
+fn hold_off(mut c: Value) -> Value {
+    c["_hold"] = json!("off");
+    c
 }
 
 fn code(result: yoneda_core::Result<Value>) -> String {
@@ -734,7 +757,7 @@ fn upgrades_from_the_preceding_schema_keeping_data() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        super::migration::MIGRATIONS.last().unwrap().0
+        super::migration::APPLY_THROUGH
     );
     // Upgraded repositories start live (not tombstoned).
     assert!(
@@ -1629,7 +1652,10 @@ mod access_gates;
 mod account_access;
 mod activity;
 mod agent_reads;
+mod audit_outbox;
 mod auto_approval;
+mod auto_landing_pushes;
+mod auto_landings;
 mod batches;
 mod bound_parameters;
 mod branch_policy;
@@ -1640,7 +1666,9 @@ mod capacity;
 mod change_bases;
 mod change_delete;
 mod change_gates;
+mod change_instruments;
 mod change_records;
+mod change_route;
 mod changes;
 mod changesets;
 mod check_evidence;
@@ -1650,13 +1678,20 @@ mod checkpoints;
 mod compaction;
 mod compaction_writes;
 mod contract_paths;
+mod ctc_radar;
 mod differential;
+mod erase;
+mod flight_plans;
 mod forks;
 mod git_shallow;
+mod go_around;
+mod history_fill;
 mod hooks;
 mod land_cas;
 mod land_shapes;
+mod land_when_cleared;
 mod landed_tickets;
+mod legal_hold;
 mod lfs;
 mod lfs_sweep;
 mod members;
@@ -1676,10 +1711,13 @@ mod releases;
 mod search_records;
 mod secrets;
 mod self_review;
+mod separation;
 mod sessions;
 mod shards;
 mod staging;
 mod symlink_refs;
 mod tags;
 mod tool_schemas;
+mod traffic;
+mod undo;
 mod visibility;

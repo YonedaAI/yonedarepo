@@ -3,7 +3,7 @@
 // through the real login form, creates a repository with the shell's "New repository" dialog,
 // opens its Code tab and Clone menu (the SSH line exactly when Git over SSH is open), History
 // (where it creates a branch under "Branches and tags" and deletes it again),
-// Changes (the empty list) and Settings (Landing rules, Connect) tabs
+// Landings (the empty list) and Settings (Landing rules, Connect) tabs
 // and the account Settings page. Then the second kit account (a member at write) commits on a
 // branch by API, the kit account opens a change for it and approves and lands it in the Change
 // page (the platform refuses an author's own approval); the page and the API must both read it
@@ -22,7 +22,7 @@ import { adminPages, deletedRepoPage } from './browser-admin-flow.mjs';
 import { agentPages } from './browser-agent-flow.mjs';
 import { managedAgentPages } from './browser-managed-agents-flow.mjs';
 import { forkPages, orgPages, releasePages } from './browser-collab-flow.mjs';
-import { b64, Session, secondAccount, sleep, until } from './client.mjs';
+import { b64, OWN_TRAFFIC, Session, secondAccount, sleep, until } from './client.mjs';
 import { atRepo, openRepo, repoPath } from './repo-urls.mjs';
 
 const author = { name: 'Browser gate', email: 'kit@yonedarepo.invalid' };
@@ -60,7 +60,7 @@ export async function browserFlow({ origin, api, kit, root, headed = false }, m)
   const problems = [];
   const cleanup = [];
   const browser = await chromium.launch({ channel: 'chrome', headless: !headed });
-  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
+  const context = await browser.newContext({ viewport: { width: 1440, height: 1000 }, extraHTTPHeaders: OWN_TRAFFIC });
   const page = await context.newPage();
   page.setDefaultTimeout(30_000);
   page.on('console', (message) => message.type() === 'error' && problems.push(`console: ${message.text()}`));
@@ -193,9 +193,9 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
   await page.getByRole('list', { name: 'History of main' }).getByRole('listitem').first().waitFor();
   await shot('source-history');
   await branchesPage(page, account, id, shot, m);
-  await tabs.getByRole('link', { name: 'Changes' }).click();
+  await tabs.getByRole('link', { name: 'Landings' }).click();
   await atRepo(page, account, id, `/changes`);
-  await page.getByText('No open changes.').waitFor();
+  await page.getByText('No open Landings').waitFor();
   await shot('source-changes');
   await tabs.getByRole('link', { name: 'Settings' }).click();
   await page.getByRole('heading', { name: 'Landing rules' }).waitFor();
@@ -221,7 +221,7 @@ export async function cloneLines(page, scope, { api, id, name, path }, what) {
   const blocks = scope.locator('.source-copy');
   await blocks.first().waitFor();
   const labels = await blocks.locator('.source-copy-head > span').allInnerTexts();
-  assert.deepEqual(labels.slice(0, 2), ['yoneda remote helper (recommended)', 'HTTPS (needs a personal token as the password)'], `${what}: clone entries out of order`);
+  assert.deepEqual(labels.slice(0, 2), ['yoneda remote helper (recommended)', 'HTTPS'], `${what}: clone entries out of order`);
   assert.equal(await blocks.nth(0).locator('code').innerText(), `git clone yoneda::${api}/${id} ${name}`, `${what}: the yoneda line`);
   const https = await blocks.nth(1).locator('code').innerText();
   assert.equal(https, `git clone ${api}${path}.git ${name}`, `${what}: the HTTPS line`);
@@ -285,22 +285,22 @@ export async function changeLanded(page, { origin, kit, account, repo: { id, nam
   // The source pages end on account settings: back to the repository through the sidebar.
   await openRepo(page, name);
   await atRepo(page, account, id);
-  await page.getByRole('navigation', { name: 'Repository' }).getByRole('link', { name: 'Changes' }).click();
+  await page.getByRole('navigation', { name: 'Repository' }).getByRole('link', { name: 'Landings' }).click();
   await page.getByRole('link', { name: /Browser gate change/ }).click();
   await atRepo(page, account, id, `/changes/${change.number}`);
-  // The Gates panel (MergeGates) summarizes what the head still needs; its actions sit in
-  // the Landing gates region below it, whose approval reloads the panel.
-  const merge = page.getByRole('region', { name: 'Gates', exact: true });
-  await merge.getByText(/^Not ready to land/).waitFor();
-  const gates = page.getByRole('region', { name: 'Landing gates' });
+  // The Clearance panel (MergeGates) summarizes what the head still needs; its actions sit in
+  // the Clearance actions region below it, whose approval reloads the panel.
+  const merge = page.getByRole('region', { name: 'Clearance', exact: true });
+  await merge.getByText(/^Not cleared to land/).waitFor();
+  const gates = page.getByRole('region', { name: 'Clearance actions' });
   await gates.getByRole('button', { name: 'Approve', exact: true }).click();
-  await settle(merge.getByText('Ready to land', { exact: true }), [gates.getByRole('alert'), merge.getByRole('alert')], { timeoutMs: 30_000, what: 'approval' });
+  await settle(merge.getByText('Cleared to land', { exact: true }), [gates.getByRole('alert'), merge.getByRole('alert')], { timeoutMs: 30_000, what: 'approval' });
   await shot('change-approved');
   const started = performance.now();
   await gates.getByRole('button', { name: 'Land on main' }).click();
   await settle(gates.getByText(/^Landed on main at v\d+/), [gates.getByRole('alert')], { timeoutMs: 60_000, what: 'landing' });
   m.land_ui_ms = Math.round(performance.now() - started);
-  assert.equal((await page.locator('.source-change-status').first().textContent())?.trim(), 'landed', 'the Change page does not show the change landed');
+  assert.equal((await page.locator('.source-change-status').first().textContent())?.trim(), 'Landed', 'the Change page does not show the change landed');
   await shot('change-landed');
   const after = await account.get(api(`/changes/${change.number}`));
   Object.assign(m, { change_status: after.status, landed_version: after.landed_version });

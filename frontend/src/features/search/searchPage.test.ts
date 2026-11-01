@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { SearchAnswer } from '../source-platform/searchModel';
 import { SearchPage } from './SearchPage';
-import { SearchResults } from './SearchResults';
+import { AccountResults, SearchResults } from './SearchResults';
 import { type Outcome, REPO_CAP } from './searchAllModel';
 
 const a = `r${'a'.repeat(20)}`;
@@ -59,6 +59,26 @@ const results = (outcomes: Outcome[], props: object = {}) =>
     }),
   );
 
+const search = (props: object) =>
+  renderToStaticMarkup(
+    createElement(AccountResults, {
+      query: 'retry',
+      names: new Map([[a, 'acme']]),
+      navigate: () => {},
+      search: {
+        off: false,
+        outcomes: [],
+        names: new Map(),
+        searched: 0,
+        loading: false,
+        next: null,
+        more: () => {},
+        retry: () => {},
+        ...props,
+      },
+    }),
+  );
+
 describe('the Search page', () => {
   it('opens on the box, the repository picker and the empty state', () => {
     const html = page({});
@@ -99,7 +119,7 @@ describe('the Search page', () => {
 
   it('offers a first repository to an account without one', () => {
     const html = page({ route: { view: 'global-search', q: 'retry' }, repos: [] });
-    expect(html).toContain('You have no repositories to search yet.');
+    expect(html).toContain('No repositories to search yet');
     expect(html).toContain('New repository');
   });
 
@@ -188,5 +208,47 @@ describe('Search page results', () => {
 
   it('shows the same search states while one repository loads', () => {
     expect(results([], { within: a, targets: [a] })).toContain('Loading results');
+  });
+});
+
+describe('account search results', () => {
+  const found: Outcome = { repo: b, kind: 'found', answer };
+
+  it('says it is searching until a page arrives', () => {
+    expect(search({ loading: true })).toContain('Searching your repositories…');
+  });
+
+  it('groups a page by repository, with the names it brought', () => {
+    const html = search({ outcomes: [found], names: new Map([[b, 'beta']]), searched: 3 });
+    expect(html).toContain('Found in 1 repository of 3 searched.');
+    expect(html).toContain('beta');
+    expect(html).toContain(`href="/source/${b}/files/src/a.rs?line=12"`);
+    expect(html).not.toContain('Search more repositories');
+  });
+
+  it('offers the next page, and holds it while it loads', () => {
+    const open = search({ outcomes: [found], searched: 25, next: '5.r1' });
+    expect(open).toContain('More repositories may match.');
+    expect(open).toContain('Search more repositories');
+    expect(search({ outcomes: [found], searched: 25, next: '5.r1', loading: true })).toContain(
+      'disabled',
+    );
+  });
+
+  it('says when nothing matched', () => {
+    expect(search({ searched: 3 })).toContain('No matches for “retry”.');
+  });
+
+  it('keeps what it found beside a failed page, with a retry', () => {
+    const html = search({ outcomes: [found], error: 'Overloaded', next: '5.r1' });
+    expect(html).toContain('role="alert"');
+    expect(html).toContain('Retry');
+    expect(html).toContain(`href="/source/${b}/files/src/a.rs?line=12"`);
+  });
+
+  it('shows a repository that failed beside the others', () => {
+    const html = search({ outcomes: [{ repo: a, kind: 'failed', error: 'Overloaded' }] });
+    expect(html).toContain('Couldn’t search');
+    expect(html).toContain('acme');
   });
 });

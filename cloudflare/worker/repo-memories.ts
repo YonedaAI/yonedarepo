@@ -99,6 +99,7 @@ export function relevantContext(ctx: RepoContext, args: Json) {
     fill: flag(args.fill),
     limit: numberOf(args.limit),
     session_id: args.session_id || null,
+    branch: args.branch || null,
   });
 }
 

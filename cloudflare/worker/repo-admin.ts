@@ -1,11 +1,15 @@
 // Account-level repository administration: listing an account's repositories and deleting
 // one. Deletion makes the authority a tombstone in one transaction (GONE from then on, its
 // repository tokens revoked), removes the D1 listing row, drops main's published head in
-// every isolate before it answers (no read after the answer is served 200) and queues a platform job that purges the object store. Every step is idempotent, so a
-// retried delete repeats whatever a failed attempt left undone.
+// every isolate before it answers (no read after the answer is served 200) and queues a platform job that purges the object store, or with the undo window
+// (repo-undo-window.ts) puts it on the schedule for one (repo-deleted.ts). Every step is
+// idempotent, so a retried delete repeats whatever a failed attempt left undone.
 
+import { laterIfHeld } from './platform-legal-hold';
 import { teamEntries } from './platform-org-access';
+import { audited, auditRepoCatchUp } from './repo-audit';
 import { unlistRepository } from './repo-create';
+import { deletedOf, forgetDeleted, parkDeleted } from './repo-deleted';
 import { forgetFork } from './repo-forks';
 import { dropDeletedHead } from './repo-head';
 import { dispatchHooks } from './repo-hooks';
@@ -13,8 +17,10 @@ import { ApiError, type Credentials, caller, type Json, RepoContext } from './re
 import { requirePatScope } from './repo-pat';
 import { releaseNames, withPaths } from './repo-paths';
 import { dispatchPurge } from './repo-projection';
+import { dropSummary } from './repo-search-directory';
 import { ownSpec } from './repo-stores';
-import type { Env } from './types';
+import { undoOn } from './repo-undo-window';
+import type { Env, Envelope } from './types';
 
 export { requirePatScope };
 
@@ -89,23 +95,56 @@ export async function deleteRepository(env: Env, auth: Credentials, repo: string
   const listed = await env.INDEX.prepare('SELECT workspace FROM platform_repos WHERE id=?')
     .bind(repo)
     .first<{ workspace: string }>();
-  const deleted = await ctx.call({ op: 'repo_delete', confirm });
+  const deleted = await audited(env, repo, ctx.call({ op: 'repo_delete', confirm }));
+  // First: a repository unlisted and not on the schedule would be left for good.
+  if (undoOn(env)) await parkDeleted(env, repo, deleted);
   // Its names are free for the owner's next repositories.
   if (listed) await releaseNames(env, listed.workspace, repo);
   // A fork's parent stops counting it (the parent refuses deletion while forks remain).
   if (deleted.parent) await forgetFork(env, deleted.parent, repo);
   await unlistRepository(env, repo);
   await dropDeletedHead(env, repo);
+  await dropSummary(env, repo, listed?.workspace);
   // Hooks subscribed to `repo` get repo.deleted, delivered from the tombstone (a repeated
   // delete names any still waiting, so a lost job is sent again).
   await Promise.all(
     ((deleted.hooks ?? []) as number[]).map((id) => dispatchHooks(env, repo, `hook:${id}`)),
   );
-  await dispatchPurge(env, repo);
+  if (!undoOn(env)) await dispatchPurge(env, repo);
   return { deleted: true };
 }
 
+/** `GET /repos/deleted`: what the account can still restore, and the window's length in days.
+ * A token limited to an org or to some repositories sees that much of it. */
+export async function listDeleted(env: Env, auth: Credentials) {
+  requirePatScope(auth, 'repo:admin');
+  const { window_days, repos } = await deletedOf(env, accountOf(auth));
+  if (!('_pat' in auth)) return { window_days, repos };
+  const { org, repos: allowed } = auth._pat;
+  const shown = repos.filter((r) => !org && (!allowed || allowed.includes(r.id)));
+  return { window_days, repos: shown };
+}
+
 const R2_PAGE = 1000;
+
+/** Every cache derived from the repository's content (search, packs, symbols, facts, views). */
+export const derivedPrefix = (repo: string) => `derived/v1/${repo}/`;
+
+export const ERASE = 'platform_erase';
+export const eraseOn = (env: Env) => env.REPO_ERASE === 'on';
+
+/** Asks for `repo` to be erased, from the start or continuing its authority's records. */
+export async function dispatchErase(
+  env: Env,
+  repo: string,
+  job: 'start' | 'records' = 'start',
+  delaySeconds?: number,
+) {
+  await env.PLATFORM_QUEUE.send(
+    { v: 1, kind: ERASE, repo_id: repo, job_id: job },
+    delaySeconds ? { delaySeconds } : undefined,
+  );
+}
 
 /** Deletes every R2 object under `prefix`, a page at a time. */
 export async function purgePrefix(env: Env, prefix: string) {
@@ -116,11 +155,15 @@ export async function purgePrefix(env: Env, prefix: string) {
   }
 }
 
-/** The purge job: a deleted repository's object store and platform objects (check logs,
- * cached objects). Idempotent; the authority names the store only once it is a tombstone. */
-export async function purgeRepository(env: Env, repo: string) {
-  const target: Json = await caller(env, repo, { _system: 'purge' })({ op: 'repo_purge_target' });
+/** A deleted repository's object store, platform objects (check logs, cached objects) and
+ * derived caches. Idempotent; the authority names the store only once it is a tombstone, and
+ * an erased one names none. */
+export async function purgeObjects(env: Env, repo: string, skipWindow = false) {
+  const auth = skipWindow ? { _system: 'purge', _undo_ms: 0 } : { _system: 'purge' };
+  const target: Json = await caller(env, repo, auth as Credentials)({ op: 'repo_purge_target' });
   await purgePrefix(env, `platform/v1/${repo}/`);
+  // Search segments, packs, symbols and facts hold file content.
+  await purgePrefix(env, derivedPrefix(repo));
   // A fork purges its own store, never the parent's it inherits from.
   const store = ownSpec(String(target.object_store ?? ''));
   const r2 = /^r2:([A-Za-z0-9._-]+)$/.exec(store);
@@ -133,5 +176,48 @@ export async function purgeRepository(env: Env, repo: string) {
         // Already gone (an earlier attempt, or an import that never created it).
         if (!/not.?found/i.test(String(e?.message ?? e))) throw e;
       });
+  }
+}
+
+/** The purge job: the objects, then what is left in the databases (repo-erase), which never
+ * starts without a purge before it. A purge the undo window put off (`scheduled`) ends with
+ * `repo.purged`, once, and leaves the schedule; the immediate kind was told by `repo.deleted`. */
+export async function purgeRepository(
+  env: Env,
+  repo: string,
+  { scheduled = false, skipWindow = false } = {},
+) {
+  // Not for a failed create taken back: nobody ever saw it. An operator's purge follows a
+  // delete, whose events have already gone.
+  if (!skipWindow) await auditRepoCatchUp(env, repo);
+  await purgeObjects(env, repo, skipWindow);
+  await dropSummary(env, repo);
+  const done = scheduled
+    ? await caller(env, repo, { _system: 'purge' })({ op: 'repo_purged' })
+    : null;
+  if (done)
+    await Promise.all((done.hooks as number[]).map((id) => dispatchHooks(env, repo, `hook:${id}`)));
+  if (eraseOn(env)) await dispatchErase(env, repo);
+  if (done) await forgetDeleted(env, repo, done.workspace);
+}
+
+/** The `platform_purge` queue job. `due-` came from the sweep and `now-` needs no window; a
+ * legal hold settles those quietly, for the sweep to send again, where any other job comes
+ * back by itself. Early, the authority refuses: this job leaves it on the schedule (one sent
+ * before the switch went on, or a backfill). After a restore there is nothing to purge. */
+export async function purgeJob(env: Env, envelope: Envelope) {
+  const repo = envelope.repo_id;
+  const kind = /^(due|now)-/.exec(envelope.job_id)?.[1];
+  const scheduled = kind !== undefined;
+  const run = () => purgeRepository(env, repo, { scheduled, skipWindow: kind === 'now' });
+  try {
+    await (scheduled ? run() : laterIfHeld(env, envelope, run));
+  } catch (e: any) {
+    if (e?.code === 'NOT_FOUND') return forgetDeleted(env, repo);
+    if (e?.code === 'NOT_DUE') {
+      const call = caller(env, repo, { _system: 'purge' });
+      return parkDeleted(env, repo, await call({ op: 'repo_restore', check: true }));
+    }
+    if (e?.code !== 'LEGAL_HOLD') throw e;
   }
 }

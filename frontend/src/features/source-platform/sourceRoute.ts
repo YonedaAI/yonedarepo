@@ -45,7 +45,7 @@ export type SourceRoute =
   | { view: 'device'; code: string }
   /** The contact email's confirmation page (the emailed link; its button confirms). */
   | { view: 'verify-email'; account: string; token: string }
-  | { view: 'org'; org: string }
+  | { view: 'org'; org: string; tab?: 'audit' }
   /** The workspace's managed agents (`/agents`); `workspace` (an org) defaults to the account.
    * `cardAdded`: back from Stripe (`?billing=added`), kept here because the page reads it once
    * the session is known, after the shell has rewritten the address. */
@@ -71,6 +71,7 @@ export type SourceRoute =
   | { view: 'search'; repo: string; query: string; word?: boolean }
   | { view: 'changes'; repo: string }
   | { view: 'change'; repo: string; number: number }
+  | { view: 'ctc'; repo: string }
   | { view: 'releases'; repo: string }
   | { view: 'release'; repo: string; tag: string }
   | { view: 'agents'; repo: string; section: AgentSection }
@@ -79,13 +80,14 @@ export type SourceRoute =
   | { view: 'repo-settings'; repo: string; section: RepoSettingsSection };
 
 /** The repository's sidebar pages. Overview is the code browser (`files`, `overview`);
- * Commits holds `history`, `transactions`, `branches` and `commit`; Changes holds `change`;
+ * Commits holds `history`, `transactions`, `branches` and `commit`; Landings holds `change`;
  * Releases holds `release`; Sessions holds the agent sessions and each `session`; Memories
  * the agent memories; Agent tools (`agents`) the other agent records (contracts, pins,
  * bisects). Each page has one sidebar entry, highlighted on every route it holds. */
 export type RepoTab =
   | 'overview'
   | 'changes'
+  | 'ctc'
   | 'agents'
   | 'commits'
   | 'sessions'
@@ -122,6 +124,8 @@ export function parseSourceRoute(pathname: string, search: string, hash = ''): S
   if (root === 'repositories' && !repo) return { view: 'repositories' };
   if (root === 'search' && !repo) return parseSearchParams(params);
   if (root === 'orgs' && repo && ORG_NAME.test(repo) && !view) return { view: 'org', org: repo };
+  if (root === 'orgs' && repo && ORG_NAME.test(repo) && view === 'audit' && !rest.length)
+    return { view: 'org', org: repo, tab: 'audit' };
   if (root === 'agents') return parseAgentsRoute(parts.slice(1), params);
   if (root === 'admin') {
     if (!isAdminSection(repo)) return { view: 'admin', section: 'overview' };
@@ -153,7 +157,9 @@ export function parseSourceRoute(pathname: string, search: string, hash = ''): S
       : { view: 'search', repo, query };
   }
   if (view === 'context') return { view: 'context', repo };
-  if (view === 'changes') {
+  if (view === 'ctc') return { view: 'ctc', repo };
+  // `/landings` is the same page under its UI name; `/changes` stays the address.
+  if (view === 'changes' || view === 'landings') {
     const number = Number(rest[0]);
     return rest[0] && /^[1-9][0-9]*$/.test(rest[0]) && Number.isSafeInteger(number)
       ? { view: 'change', repo, number }
@@ -247,7 +253,7 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'repositories') return '/repositories';
   if (route.view === 'global-search') return formatSearchRoute(route);
   if (route.view === 'explore') return '/source/explore';
-  if (route.view === 'org') return `/orgs/${route.org}`;
+  if (route.view === 'org') return `/orgs/${route.org}${route.tab ? `/${route.tab}` : ''}`;
   if (route.view === 'site') return formatSitePage(route.site);
   if (route.view === 'admin') {
     if (route.account) return `/admin/users/${encodeURIComponent(route.account)}`;
@@ -273,6 +279,7 @@ export function formatSourceRoute(route: SourceRoute): string {
       : `${base}/search`;
   if (route.view === 'commit') return `${base}/commit/${route.commit}`;
   if (route.view === 'changes') return `${base}/changes`;
+  if (route.view === 'ctc') return `${base}/ctc`;
   if (route.view === 'change') return `${base}/changes/${route.number}`;
   if (route.view === 'releases') return `${base}/releases`;
   if (route.view === 'release') return `${base}/releases/${encodeURIComponent(route.tag)}`;
@@ -309,6 +316,8 @@ export function routeTab(route: SourceRoute): RepoTab | undefined {
     case 'changes':
     case 'change':
       return 'changes';
+    case 'ctc':
+      return 'ctc';
     case 'releases':
     case 'release':
       return 'releases';
@@ -336,6 +345,7 @@ export function tabRoute(tab: RepoTab, repo: string): SourceRoute {
   if (tab === 'overview') return { view: 'files', repo, path: '', ref: 'main' };
   if (tab === 'commits') return { view: 'history', repo, ref: 'main' };
   if (tab === 'changes') return { view: 'changes', repo };
+  if (tab === 'ctc') return { view: 'ctc', repo };
   if (tab === 'releases') return { view: 'releases', repo };
   if (tab === 'sessions') return { view: 'agents', repo, section: 'sessions' };
   if (tab === 'agents') return { view: 'agents', repo, section: 'contracts' };

@@ -37,6 +37,7 @@ describe('source routes', () => {
       { view: 'history', repo, ref: 'dev' },
       { view: 'commit', repo, commit: sha },
       { view: 'transactions', repo },
+      { view: 'ctc', repo },
       { view: 'search', repo, query: 'retry with' },
       { view: 'search', repo, query: 'test', word: true },
       { view: 'overview', repo, path: '', ref: 'main' },
@@ -280,5 +281,20 @@ describe('readable addresses', () => {
     );
     expect(parse(`/source/${repo}/files/src/a.ts`)).toEqual(files);
     forgetRepoNames();
+  });
+
+  it('reads /landings as an alias of /changes, which stays the address', () => {
+    expect(parseSourceRoute(`/source/${repo}/landings`, '')).toEqual({ view: 'changes', repo });
+    expect(parseSourceRoute(`/source/${repo}/landings/12`, '')).toEqual({
+      view: 'change',
+      repo,
+      number: 12,
+    });
+    expect(parseSourceRoute(`/source/${repo}/changes/12`, '')).toEqual({
+      view: 'change',
+      repo,
+      number: 12,
+    });
+    expect(formatSourceRoute({ view: 'changes', repo })).toBe(`/source/${repo}/changes`);
   });
 });

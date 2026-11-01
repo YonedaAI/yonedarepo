@@ -38,7 +38,9 @@ pub fn set<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
     }
     let version = move_ref(db, c, &refname, current, &commit, principal)?;
     // A working branch moved to the head of an open change based on it lands that change.
-    super::changes::landed(db, &commit.id, &refname, version, number(c, "now")?)?;
+    let now = number(c, "now")?;
+    super::changes::landed(db, &commit.id, &refname, version, now)?;
+    super::auto_landing::on_move(db, &refname, &commit, current.is_none(), principal, now);
     // The branch's open change (or null), so a push can name it or suggest opening one.
     let change = super::changes::open_on_ref(db, &refname)?;
     Ok(json!({ "ref": refname, "commit": commit.id, "version": version, "change": change }))
@@ -67,7 +69,7 @@ pub(super) fn move_ref<S: SqlStore>(
         "INSERT INTO refs(name,commit_id,version) VALUES(?,?,?) ON CONFLICT(name) DO UPDATE SET commit_id=excluded.commit_id,version=excluded.version",
         &[json!(refname), json!(commit.id.hex()), json!(version)],
     )?;
-    super::ref_chain::advance(db, refname, &commit.id)?;
+    super::ref_chain::advance(db, refname, &commit.id, c)?;
     super::projection::target(db, refname, &commit.id, version, number(c, "now")?)?;
     rows::maybe_checkpoint(db, version, &chain)?;
     Ok(version)
@@ -93,6 +95,7 @@ pub fn delete<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> 
         ));
     }
     let (version, chain) = log_move(db, c, &refname, current, None, &refname, principal)?;
+    super::change_closing::branch_deleted(db, &refname, &old, principal, number(c, "now")?)?;
     db.query("DELETE FROM refs WHERE name=?", &[json!(refname)])?;
     super::ref_chain::forget(db, &refname)?;
     rows::maybe_checkpoint(db, version, &chain)?;
@@ -208,6 +211,7 @@ pub fn batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
     for update in updates {
         let mut command = update.clone();
         command["now"] = c["now"].clone();
+        command["_ref_chain"] = c["_ref_chain"].clone();
         refs.push(if let Some(tag) = super::tags::in_update(update)? {
             super::tags::create_at(db, &command, &tag, principal)?
         } else if update.get("commit").is_none_or(Value::is_null) {

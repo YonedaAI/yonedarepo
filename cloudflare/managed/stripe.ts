@@ -20,17 +20,18 @@ export class StripeError extends Error {
 export const stripeEnabled = (env: ManagedEnv) =>
   Boolean(env.STRIPE_SECRET_KEY && env.STRIPE_WEBHOOK_SECRET);
 
-async function call(
+/** One request under `key`, named by each caller: a refund must never reach another key. */
+export async function stripeRequest(
   env: ManagedEnv,
+  key: string | undefined,
   method: 'GET' | 'POST',
   path: string,
   form: Record<string, string> = {},
   idempotencyKey?: string,
 ): Promise<Record<string, any>> {
-  if (!env.STRIPE_SECRET_KEY)
-    throw new StripeError('Card billing is not configured', 503, 'config');
+  if (!key) throw new StripeError('Card billing is not configured', 503, 'config');
   const base = (env.STRIPE_API_BASE ?? 'https://api.stripe.com').replace(/\/$/, '');
-  const headers: Record<string, string> = { authorization: `Bearer ${env.STRIPE_SECRET_KEY}` };
+  const headers: Record<string, string> = { authorization: `Bearer ${key}` };
   if (method === 'POST') headers['content-type'] = 'application/x-www-form-urlencoded';
   if (idempotencyKey) headers['idempotency-key'] = idempotencyKey;
   const res = await fetch(`${base}/v1${path}`, {
@@ -49,6 +50,14 @@ async function call(
     );
   return body;
 }
+
+const call = (
+  env: ManagedEnv,
+  method: 'GET' | 'POST',
+  path: string,
+  form?: Record<string, string>,
+  idempotencyKey?: string,
+) => stripeRequest(env, env.STRIPE_SECRET_KEY, method, path, form, idempotencyKey);
 
 export async function createCustomer(env: ManagedEnv, workspace: string): Promise<string> {
   const customer = await call(

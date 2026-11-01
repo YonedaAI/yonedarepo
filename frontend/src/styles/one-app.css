@@ -101,16 +101,6 @@ a.chip:hover {
   font-size: var(--text-sm);
   line-height: inherit;
 }
-.source-empty-state {
-  border: 1px dashed var(--line-strong);
-  border-radius: 8px;
-  padding: 20px;
-  background: var(--surface);
-}
-.source-empty-state p {
-  margin: 0 0 8px;
-}
-.source-empty-state a,
 .source-note a,
 .readme-body a {
   color: var(--blue-text);
@@ -165,16 +155,36 @@ a.chip:hover {
   z-index: 10;
   right: 0;
   top: calc(100% + 6px);
-  width: min(520px, calc(100vw - 32px));
-  padding: 8px 12px;
+  width: min(680px, calc(100vw - 32px));
+  padding: 4px 12px 8px;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: 10px;
   box-shadow: 0 8px 28px var(--shadow);
 }
-.clone-hint {
-  margin: -4px 0 8px;
+.clone-dropdown .source-copy-head button {
+  min-height: 28px;
+  padding: 2px 10px;
   font-size: var(--text-sm);
+}
+.clone-hint {
+  margin: -2px 0 10px;
+  font-size: var(--text-sm);
+}
+@media (max-width: 800px) {
+  /* The button isn't at the toolbar's edge here, so the panel takes the toolbar's width. */
+  .clone-menu {
+    position: static;
+  }
+  .source-toolbar {
+    position: relative;
+  }
+  .clone-dropdown {
+    top: 100%;
+    right: 0;
+    left: 0;
+    width: auto;
+  }
 }
 .clone-hint a {
   color: var(--blue-text);
@@ -454,11 +464,12 @@ a.chip:hover {
 @media (max-width: 800px) {
   .repo-page,
   .home-repos,
+  .org-page,
   .account-settings {
     padding: 16px;
   }
   .repo-settings {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 12px;
   }
   .settings-nav {
@@ -481,10 +492,6 @@ a.chip:hover {
   .file-message {
     display: none;
   }
-  .clone-dropdown {
-    left: 0;
-    right: auto;
-  }
 }
 .page-heading h1 {
   font-size: var(--text-3xl);
@@ -495,23 +502,25 @@ a.chip:hover {
   margin-bottom: 0;
 }
 /* A repository until its import lands. */
-.import-status p {
+.import-history {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.import-history p:first-child {
   display: flex;
   align-items: center;
   gap: 8px;
+  margin: 0;
 }
-.import-status p:last-child {
-  margin-bottom: 0;
-}
-.import-status .source-meta {
-  display: block;
+.import-history .source-meta {
+  margin: 4px 0 0;
   overflow-wrap: anywhere;
 }
-.import-status strong,
-.import-notice strong {
+.import-history strong {
   color: var(--text);
 }
-.import-failed {
-  border: 1px solid var(--danger-line);
-  background: var(--danger-soft);
+.import-notice strong {
+  color: var(--text);
 }

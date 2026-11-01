@@ -5,6 +5,74 @@
 use super::batches::open;
 use super::*;
 use crate::storage::SqlStore;
+use yoneda_core::git_object::ObjectId;
+
+fn shared() -> Value {
+    json!({"_ref_chain":"shared"})
+}
+
+/// Rows `refname`'s own chain stores.
+fn stored(h: &Harness, refname: &str) -> u64 {
+    h.db.query(
+        "SELECT COUNT(*) AS n FROM ref_chain WHERE ref=?",
+        &[json!(refname)],
+    )
+    .unwrap()[0]["n"]
+        .as_u64()
+        .unwrap()
+}
+
+/// Main with `n` commits landed on `root`, one file each: `[root, first, ..]`.
+fn landed(h: &Harness, root: String, n: u64) -> Vec<String> {
+    let paths = ["src/a.rs", "docs/x.md", "n.txt"];
+    let mut main = vec![root];
+    for i in 0..n {
+        let path = paths[i as usize % paths.len()];
+        let id = h
+            .commit(
+                AGENT,
+                main.last().map(String::as_str),
+                i + 1,
+                json!([file(path, &format!("{i}\n"))]),
+                json!([]),
+            )
+            .unwrap();
+        h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":id}));
+        main.push(id);
+    }
+    main
+}
+
+/// `n` commits on top of `parent`, each changing `src/a.rs`, oldest first.
+fn work(h: &Harness, parent: &str, n: u64) -> Vec<String> {
+    let mut made = vec![parent.to_owned()];
+    for i in 0..n {
+        let id = h
+            .commit(
+                AGENT,
+                made.last().map(String::as_str),
+                i + 1,
+                json!([file("src/a.rs", &format!("work {i}\n"))]),
+                json!([]),
+            )
+            .unwrap();
+        made.push(id);
+    }
+    made.remove(0);
+    made
+}
+
+fn set(h: &Harness, refname: &str, commit: &str, expected: Value) {
+    h.ok(
+        AGENT,
+        json!({"op":"repo_branch_set","ref":refname,"commit":commit,"expected":expected}),
+    );
+}
+
+fn depth_on(h: &Harness, refname: &str, id: &str) -> Option<i64> {
+    let id = ObjectId::parse(id).unwrap();
+    super::super::ref_chain::depth(&h.db, refname, &id).unwrap()
+}
 
 fn history(h: &Harness, refname: &str, path: &str, at: Option<u64>) -> Value {
     let mut c = json!({"op":"repo_path_history","ref":refname,"path":path,"limit":50});
@@ -43,7 +111,17 @@ fn same_as_the_walk(h: &Harness, queries: &[(&str, &str, Option<u64>)]) {
 
 #[test]
 fn chains_answer_path_history_as_the_walk_does() {
+    chains_answer_as_the_walk(json!({}));
+}
+
+#[test]
+fn chains_sharing_main_answer_path_history_as_the_walk_does() {
+    chains_answer_as_the_walk(shared());
+}
+
+fn chains_answer_as_the_walk(switches: Value) {
     let (h, root) = open();
+    *h.switches.borrow_mut() = switches;
     let paths = [
         "src/a.rs",
         "src/b.rs",
@@ -193,4 +271,179 @@ fn upgrading_from_0038_answers_from_the_walk_then_from_the_chain_after_a_move() 
     for ((p, at), walked) in queries.iter().zip(&walked) {
         assert_eq!(&history(&h, "main", p, *at), walked, "{p} from the chain");
     }
+}
+
+#[test]
+fn a_branch_stores_only_what_main_does_not_hold() {
+    let (h, root) = open();
+    *h.switches.borrow_mut() = shared();
+    let main = landed(&h, root, 12);
+    assert_eq!(stored(&h, "refs/heads/main"), 13);
+    // A branch at main's head holds a single row, however long main is.
+    set(&h, "refs/heads/at-head", &main[12], Value::Null);
+    assert_eq!(stored(&h, "refs/heads/at-head"), 1);
+    // Three commits off an older commit of main hold three rows.
+    let side = work(&h, &main[5], 3);
+    set(&h, "refs/heads/side", &side[2], Value::Null);
+    assert_eq!(stored(&h, "refs/heads/side"), 3);
+    // Through a batch too, which sends each move as a command of its own.
+    h.ok(
+        AGENT,
+        json!({"op":"repo_branch_batch","updates":[{"ref":"batched","commit":side[2],"expected":null}]}),
+    );
+    assert_eq!(stored(&h, "refs/heads/batched"), 3);
+    // Off, a new branch copies its whole history, as ever.
+    *h.switches.borrow_mut() = json!({});
+    set(&h, "refs/heads/full", &side[2], Value::Null);
+    assert_eq!(stored(&h, "refs/heads/full"), 9);
+}
+
+#[test]
+fn a_chain_on_main_holds_main_below_where_it_left_and_nothing_above() {
+    let (h, root) = open();
+    *h.switches.borrow_mut() = shared();
+    let main = landed(&h, root, 12);
+    let side = work(&h, &main[5], 3);
+    set(&h, "refs/heads/side", &side[2], Value::Null);
+    let w = "refs/heads/side";
+    assert_eq!(depth_on(&h, w, &main[0]), Some(1));
+    assert_eq!(depth_on(&h, w, &main[5]), Some(6));
+    assert_eq!(depth_on(&h, w, &side[0]), Some(7));
+    assert_eq!(depth_on(&h, w, &side[2]), Some(9));
+    // Main moved on past where the branch left: that work is not the branch's.
+    assert_eq!(depth_on(&h, w, &main[6]), None);
+    assert_eq!(depth_on(&h, w, &main[12]), None);
+    // Main itself and a branch with no chain answer as they did.
+    assert_eq!(depth_on(&h, "refs/heads/main", &side[0]), None);
+    assert_eq!(depth_on(&h, "refs/heads/none", &main[1]), None);
+}
+
+#[test]
+fn a_chain_on_main_moves_like_any_chain() {
+    let (h, root) = open();
+    *h.switches.borrow_mut() = shared();
+    let main = landed(&h, root, 12);
+    let side = work(&h, &main[5], 3);
+    let w = "refs/heads/w";
+    let same = |h: &Harness| {
+        let queries: Vec<(&str, &str, Option<u64>)> = ["src", "src/a.rs", "n.txt", "docs/x.md"]
+            .iter()
+            .map(|p| (w, *p, None))
+            .collect();
+        same_as_the_walk(h, &queries);
+    };
+    set(&h, w, &side[2], Value::Null);
+    same(&h);
+    // Forward by one: the chain grows by one.
+    let next = work(&h, &side[2], 1);
+    set(&h, w, &next[0], json!(side[2]));
+    assert_eq!(stored(&h, w), 4);
+    same(&h);
+    // Rewound inside its own rows.
+    set(&h, w, &side[0], json!(next[0]));
+    assert_eq!(stored(&h, w), 1);
+    same(&h);
+    // Rewound below where it left main: only that commit is stored.
+    set(&h, w, &main[3], json!(side[0]));
+    assert_eq!(stored(&h, w), 1);
+    assert_eq!(depth_on(&h, w, &main[3]), Some(4));
+    assert_eq!(depth_on(&h, w, &main[4]), None);
+    same(&h);
+    // Forced onto work that left main higher up than the rows it holds.
+    let later = work(&h, &main[9], 2);
+    set(&h, w, &later[1], json!(main[3]));
+    assert_eq!(stored(&h, w), 2);
+    assert_eq!(depth_on(&h, w, &main[9]), Some(10));
+    same(&h);
+    // Fast-forwarded onto main's head.
+    set(&h, w, &main[12], json!(later[1]));
+    assert_eq!(stored(&h, w), 1);
+    same(&h);
+    // Deleted, it holds nothing and main keeps all of its own.
+    h.ok(
+        AGENT,
+        json!({"op":"repo_branch_batch","updates":[{"ref":w,"commit":null,"expected":main[12]}]}),
+    );
+    assert_eq!(stored(&h, w), 0);
+    assert_eq!(stored(&h, "refs/heads/main"), 13);
+}
+
+#[test]
+fn the_switch_can_go_back_off_and_a_chain_kept_whole_stays_whole() {
+    let (h, root) = open();
+    let main = landed(&h, root, 12);
+    let w = "refs/heads/w";
+    let queries = [(w, "src", None), (w, "n.txt", None)];
+    // Built off, then moved on: it keeps its rows and grows from them.
+    let side = work(&h, &main[5], 2);
+    set(&h, w, &side[0], Value::Null);
+    assert_eq!(stored(&h, w), 7);
+    *h.switches.borrow_mut() = shared();
+    set(&h, w, &side[1], json!(side[0]));
+    assert_eq!(stored(&h, w), 8);
+    same_as_the_walk(&h, &queries);
+    // Built on, then moved with the switch off: still answered, forward and rewound.
+    set(&h, w, &main[12], json!(side[1]));
+    assert_eq!(stored(&h, w), 1);
+    *h.switches.borrow_mut() = json!({});
+    same_as_the_walk(&h, &queries);
+    let next = work(&h, &main[12], 1);
+    set(&h, w, &next[0], json!(main[12]));
+    assert_eq!(stored(&h, w), 2);
+    same_as_the_walk(&h, &queries);
+    set(&h, w, &main[2], json!(next[0]));
+    assert_eq!(stored(&h, w), 3);
+    same_as_the_walk(&h, &queries);
+}
+
+#[test]
+fn a_chain_main_no_longer_continues_is_walked() {
+    let (h, root) = open();
+    *h.switches.borrow_mut() = shared();
+    let main = landed(&h, root, 12);
+    let side = work(&h, &main[5], 3);
+    let w = "refs/heads/w";
+    set(&h, w, &side[2], Value::Null);
+    let answered = history(&h, w, "n.txt", None);
+    assert!(!answered["commits"].as_array().unwrap().is_empty());
+    // Main never rewinds, but the proof is read each time rather than assumed.
+    h.db.query(
+        "UPDATE ref_chain SET commit_id=? WHERE ref='refs/heads/main' AND depth=6",
+        &[json!(main[11])],
+    )
+    .unwrap();
+    assert_eq!(history(&h, w, "n.txt", None), answered);
+    // Below its own rows the branch now proves nothing, so gates refuse rather than assume.
+    assert_eq!(depth_on(&h, w, &main[3]), None);
+}
+
+#[test]
+fn a_landing_on_a_chain_sharing_main_meets_it_below_where_it_left() {
+    // `older_commits_pass` walks down to the ref: an old commit of main is on the branch.
+    let (h, root) = open();
+    h.ok(
+        OWNER,
+        json!({"op":"repo_token_create","name":"docs","scopes":["read","write","land"],
+        "paths":["docs/"],"_secret":"docs-secret-0123456789abcdef0123456789"}),
+    );
+    *h.switches.borrow_mut() = shared();
+    let main = landed(&h, root, 12);
+    let side = work(&h, &main[5], 1);
+    set(&h, "refs/heads/w", &side[0], Value::Null);
+    let docs = h
+        .commit(
+            "token:docs",
+            Some(&main[2]),
+            1,
+            json!([file("docs/new.md", "x\n")]),
+            json!([]),
+        )
+        .unwrap();
+    assert_ne!(
+        code(h.run(
+            "token:docs",
+            json!({"op":"repo_land","ref":"w","commit":docs})
+        )),
+        "FORBIDDEN"
+    );
 }

@@ -9,13 +9,15 @@ import { ChangeView } from './ChangeView';
 import { CommitView } from './CommitView';
 import { ForkButton } from './ForkButton';
 import { HistoryTab } from './HistoryTab';
-import { ImportStatus } from './ImportStatus';
+import { HistoryImportStatus, HistoryStoppedStatus, ImportStatus } from './ImportStatus';
+import { RepoHoldBanner } from './LegalHold';
 import { PublicBadge } from './PublicBadge';
 import { ShowEmailsContext } from './people';
 import { ReleaseView } from './ReleaseView';
 import { RepoAgents } from './RepoAgents';
 import { RepoChanges } from './RepoChanges';
 import { RepoContext } from './RepoContext';
+import { RepoCtc } from './RepoCtc';
 import { RepoFiles } from './RepoFiles';
 import { RepoNotFound, repoMissing, useRepoGone } from './RepoNotFound';
 import { RepoOverview } from './RepoOverview';
@@ -28,7 +30,7 @@ import { SessionView } from './SessionView';
 import { Failure } from './SourceStatus';
 import { StatusChips } from './StatusChips';
 import { formatSourceRoute, type SourceRoute } from './sourceRoute';
-import { useImportProgress } from './useImportProgress';
+import { useHistoryFill, useImportProgress } from './useImportProgress';
 import { useSource } from './useSource';
 
 type RepoRoute = Extract<SourceRoute, { repo: string }>;
@@ -41,7 +43,6 @@ export function RepoPage({
   navigate,
   onDeleted,
   onMissing,
-  onNew,
   onSignIn,
   onLoaded,
 }: {
@@ -56,7 +57,6 @@ export function RepoPage({
   onDeleted: () => void;
   /** The repository is not there for this viewer (deleted, unknown, private or not theirs). */
   onMissing: () => void;
-  onNew: () => void;
   onSignIn?: () => void;
   /** The loaded name and visibility, and whether the viewer may change settings, for the
    * shell's header and sidebar. */
@@ -83,6 +83,7 @@ export function RepoPage({
   const owner = access.settings;
   const drift = data?.projections?.filter((p) => p.status === 'drift') ?? [];
   const progress = useImportProgress(repo, data?.refs, status.reload);
+  const history = useHistoryFill(repo, data?.history_import, status.reload);
   // biome-ignore lint/correctness/useExhaustiveDependencies: once per transition, not per render of the caller.
   useEffect(() => {
     if (missing) onMissing();
@@ -97,14 +98,7 @@ export function RepoPage({
       });
   }, [data, repo, owner, onLoaded]);
   if (missing)
-    return (
-      <RepoNotFound
-        navigate={navigate}
-        onNew={onNew}
-        authenticated={authenticated}
-        onSignIn={onSignIn}
-      />
-    );
+    return <RepoNotFound navigate={navigate} authenticated={authenticated} onSignIn={onSignIn} />;
   return (
     // Members see email-named accounts as they are; anyone reading only because the repository
     // is public sees "member" instead (people.ts).
@@ -141,7 +135,13 @@ export function RepoPage({
               </p>
             )}
             {data && progress.phase === 'none' && (
-              <StatusChips repo={repo} status={data} owner={owner} navigate={navigate} />
+              <StatusChips
+                repo={repo}
+                status={data}
+                owner={owner}
+                readOnly={access.readOnly}
+                navigate={navigate}
+              />
             )}
             {access.fork && data && progress.phase === 'none' && (
               <ForkButton
@@ -153,14 +153,18 @@ export function RepoPage({
               />
             )}
           </div>
+          {data && <RepoHoldBanner repo={repo} />}
           {drift.map((p) => (
             <p key={p.refname} role="alert" className="source-error">
-              {p.refname.replace(/^refs\/heads\//, '')} in the Git object store has drifted from the
-              landed branch and is no longer updated: {p.detail}
+              {p.refname.replace(/^refs\/heads\//, '')} stopped updating for Git clients.
             </p>
           ))}
           {status.error && (
             <Failure error={status.error} what="this repository" onRetry={status.reload} />
+          )}
+          {!status.error && history && <HistoryImportStatus progress={history} />}
+          {!status.error && data?.history_stopped && (
+            <HistoryStoppedStatus stopped={data.history_stopped} />
           )}
           {/* Settings stay open: deleting the repository is how a failed import is tried again. */}
           {!status.error && progress.phase !== 'none' && route.view !== 'repo-settings' && (
@@ -193,6 +197,8 @@ export function RepoPage({
                   repo={repo}
                   hrefOf={(number) => formatSourceRoute({ view: 'change', repo, number })}
                   onOpen={(number) => navigate({ view: 'change', repo, number })}
+                  commitHrefOf={(commit) => formatSourceRoute({ view: 'commit', repo, commit })}
+                  onCommit={(commit) => navigate({ view: 'commit', repo, commit })}
                 />
               )}
               {route.view === 'change' && (
@@ -204,6 +210,13 @@ export function RepoPage({
                   onCommit={(commit) => navigate({ view: 'commit', repo, commit })}
                   onChanged={status.reload}
                   navigate={navigate}
+                />
+              )}
+              {route.view === 'ctc' && (
+                <RepoCtc
+                  repo={repo}
+                  hrefOf={(number) => formatSourceRoute({ view: 'change', repo, number })}
+                  onOpen={(number) => navigate({ view: 'change', repo, number })}
                 />
               )}
               {route.view === 'agents' && (

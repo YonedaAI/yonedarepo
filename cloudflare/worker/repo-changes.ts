@@ -3,9 +3,13 @@
 // adds the diff (object storage) to `show`, and sends the hook fan-out after events.
 // Approval is `git_review` on the head commit and landing is `git_land` of the head on the
 // change's base (main unless the change named another branch).
+
+import { diff } from './repo-diff';
 import { followForkChange, openForkChange } from './repo-forks';
 import { notifyHooks } from './repo-hooks';
-import { ApiError, diff, type Json, type RepoContext } from './repo-ops';
+import { changeInstruments, instrumentsOn } from './repo-instruments';
+import { landChecksOn } from './repo-land-check';
+import { ApiError, type Json, type RepoContext } from './repo-ops';
 
 const changeNumber = (value: unknown) => {
   const n = Number(value);
@@ -49,6 +53,10 @@ export const changeOperations = {
       op: 'repo_changes',
       status: a.status || 'open',
       ...(a.limit === undefined ? {} : { limit: Number(a.limit) }),
+      ...(typeof a.branch === 'string' ? { branch: a.branch } : {}),
+      ...(typeof a.origin === 'string' ? { origin: a.origin } : {}),
+      // The Landings list's rows no change names (repo_store/direct_landings.rs).
+      ...(a.direct === '1' || a.direct === true ? { direct: true } : {}),
     }),
   git_change_show: async (ctx: RepoContext, a: Json) => {
     const show = { op: 'repo_change_show', number: changeNumber(a.number) };
@@ -61,7 +69,13 @@ export const changeOperations = {
       return false;
     });
     if (moved) change = await ctx.call(show);
-    return { ...change, source_error, diff: await changeDiff(ctx, change, a.patch === true) };
+    return {
+      ...change,
+      source_error,
+      diff: await changeDiff(ctx, change, a.patch === true),
+      // Tells the page there is a card row to ask for, so it asks nothing with the switch off.
+      ...(instrumentsOn(ctx.env) ? { instruments: true } : {}),
+    };
   },
   git_change_comment: (ctx: RepoContext, a: Json) =>
     notified(
@@ -85,11 +99,29 @@ export const changeOperations = {
   // What the head still needs before it can land (repo_store/change_gates.rs).
   git_change_gates: (ctx: RepoContext, a: Json) =>
     ctx.call({ op: 'repo_change_gates', number: changeNumber(a.number) }),
+  // Its commits and the evidence on them, in one bounded read (repo_store/change_route.rs).
+  git_change_route: (ctx: RepoContext, a: Json) =>
+    ctx.call({ op: 'repo_change_route', number: changeNumber(a.number) }),
   git_change_delete: (ctx: RepoContext, a: Json) =>
     notified(ctx, ctx.call({ op: 'repo_change_delete', number: changeNumber(a.number) })),
+  // What CTC sees (repo_store/traffic/radar.rs); a read, recording nothing.
+  git_ctc_radar: (ctx: RepoContext, a: Json) =>
+    ctx.call({ op: 'repo_ctc_radar', limit: a.limit ? Number(a.limit) : null }),
 };
 
-/** `GET|POST /changes`, `GET|DELETE /changes/:n`, `POST /changes/:n/comments|close|reopen`. */
+/** `PUT /auto-landings {create?, agents?, land_when_cleared?, findings_block?}`: the repository's
+ * switches, kept out of `policy`, whose digest every recorded check binds to
+ * (repo_store/auto_landing.rs). Land when cleared needs its queue job, so where the platform
+ * doesn't run that, turning it on is refused and doesn't look done. */
+export const setAutoLandings = (ctx: RepoContext, switches: Json) => {
+  const { create, agents, land_when_cleared, findings_block } = switches;
+  if (land_when_cleared === true && !landChecksOn(ctx.env))
+    throw new ApiError('NOT_SUPPORTED', 'Land when cleared is not available here yet');
+  return ctx.call({ op: 'repo_auto_landings', create, agents, land_when_cleared, findings_block });
+};
+
+/** `GET|POST /changes`, `GET|DELETE /changes/:n`, `POST /changes/:n/comments|close|reopen`,
+ * `GET /changes/:n/gates|route|instruments`. */
 export async function changesRoute(
   ctx: RepoContext,
   req: Request,
@@ -109,6 +141,9 @@ export async function changesRoute(
     });
   if (number && !sub && method === 'DELETE') return ops.git_change_delete(ctx, { number });
   if (number && method === 'GET' && sub === 'gates') return ops.git_change_gates(ctx, { number });
+  if (number && method === 'GET' && sub === 'route') return ops.git_change_route(ctx, { number });
+  if (number && method === 'GET' && sub === 'instruments' && instrumentsOn(ctx.env))
+    return changeInstruments(ctx, changeNumber(number));
   if (number && method === 'POST' && sub === 'comments')
     return ops.git_change_comment(ctx, { ...(await body()), number });
   if (number && method === 'POST' && sub === 'close') return ops.git_change_close(ctx, { number });

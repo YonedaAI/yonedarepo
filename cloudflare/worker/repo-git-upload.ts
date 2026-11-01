@@ -9,6 +9,7 @@
 import { deferred } from './background';
 import { transient } from './durable';
 import { compute } from './repo-compute';
+import { fetchWhileFilling, mirrorClone } from './repo-git-mirror';
 import { UploadSession, wasmMemoryBytes } from './repo-git-sessions';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
@@ -66,43 +67,66 @@ export async function uploadPack(
     op: 'git_upload_request',
     body_b64: toBase64(await readAll(body, REQUEST_BYTES)),
   });
-  const walk = await ctx.call({
-    op: 'repo_git_walk',
-    wants: request.wants,
-    haves: request.haves,
-    common_only: !request.done,
-  });
   const caps: string[] = request.capabilities;
-  const ack = fromBase64(
-    compute({
-      op: 'git_acknowledge',
-      common: walk.common,
-      done: request.done,
-      detailed: caps.includes('multi_ack_detailed'),
-    }).body_b64,
-  );
-  if (!request.done) return new Response(ack, { headers: RESULT });
+  const acknowledge = (common: string[]) =>
+    fromBase64(
+      compute({
+        op: 'git_acknowledge',
+        common,
+        done: request.done,
+        detailed: caps.includes('multi_ack_detailed'),
+      }).body_b64,
+    );
   const band = caps.includes('side-band-64k') ? CHUNK : caps.includes('side-band') ? 995 : 0;
+  const mirror = (head: Uint8Array) => mirrorClone(ctx, objects, request, () => head, band);
+  let walk: Json;
+  try {
+    walk = await ctx.call({
+      op: 'repo_git_walk',
+      wants: request.wants,
+      haves: request.haves,
+      common_only: !request.done,
+    });
+  } catch (e: any) {
+    if (e?.code !== 'IMPORT_IN_PROGRESS') throw e;
+    // The mirror already holds all of it. Until `done`, nothing is common: only the mirror
+    // can tell which haves it shares, and it leaves them out of the pack.
+    if (!request.done) return new Response(acknowledge([]), { headers: RESULT });
+    return fetchWhileFilling(ctx, objects, request, () => acknowledge([]), band, e);
+  }
+  const ack = acknowledge(walk.common);
+  if (!request.done) return new Response(ack, { headers: RESULT });
   const commits = (walk.commits ?? []).map((c: Json) => String(c.commit));
   // Version 0 is served without filters or depth: with no haves, a full clone.
   const fresh: Fresh | undefined =
     request.haves.length === 0
       ? { wants: request.wants, omit_blobs: false, depth: null, deepen_relative: false }
       : undefined;
-  return sendPack(ack, () => UploadSession.open(walk), objects, band, stats, commits, fresh);
+  return sendPack(
+    ack,
+    () => UploadSession.open(walk),
+    objects,
+    band,
+    stats,
+    commits,
+    fresh,
+    mirror,
+  );
 }
 
 /** `head`, then the pack the session lists, on side-band `band` (none when 0) and ending
  * with a flush when banded. A failure before the pack starts is an ERR line in place of
  * `head` (Git prints it as `remote error: <message>`; after `head`, which ends where the
  * pack's side-band packets begin, Git would read it as a packet of band 'E' and stop with
- * "bad band #69"); an overloaded authority is rethrown, so Git gets an HTTP 503 it can
- * retry. The pack of a fetch that has nothing (`fresh`: a clone,
- * partial or shallow, or a partial clone's checkout) is streamed from the store when held
- * there, else stored as it streams (PACK_CACHE=on), or by a job the fetch is handed to when
- * this isolate cannot store it. The session is opened only to build.
+ * "bad band #69"); an overloaded authority is rethrown, so the request can be tried again
+ * before any byte went out (`retrier`; Git itself retries nothing). The pack of a fetch that
+ * has nothing (`fresh`: a clone, partial or shallow, or a partial clone's checkout) is
+ * streamed from the store when held there, else stored as it streams (PACK_CACHE=on), or by
+ * a job the fetch is handed to when this isolate cannot store it. The session is opened only
+ * to build.
  * A pack that would carry a quarantined blob is never started: the ERR names the blob
- * (and its path), rather than a pack Git finds incomplete. */
+ * (and its path), rather than a pack Git finds incomplete. History only the mirror holds
+ * comes from `mirror`, when it can serve this fetch. */
 export async function sendPack(
   head: Uint8Array,
   open: () => UploadSession,
@@ -111,6 +135,7 @@ export async function sendPack(
   stats?: PackStats,
   commits: string[] = [],
   fresh?: Fresh,
+  mirror?: (head: Uint8Array) => Promise<Response | null>,
 ): Promise<Response> {
   // Every built pack is logged; the client gets the timing line only when it asked.
   const tally = stats ?? new PackStats(false);
@@ -132,8 +157,10 @@ export async function sendPack(
   try {
     built = await buildPack(open(), objects, commits, tally);
   } catch (e: any) {
+    await writer?.abort().catch(() => {});
     if (transient(e)) throw e;
-    return errLine(new Uint8Array(), e);
+    const served = e?.mirrorOnly && (await mirror?.(head));
+    return served || errLine(new Uint8Array(), e);
   }
   const { count, chunks } = built;
   // A pack this isolate does not store, worth a build of its own, goes to a job.

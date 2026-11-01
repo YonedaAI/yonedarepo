@@ -25,6 +25,9 @@ fn committed(file: &str) -> Value {
         "wrangler.dev-bench.jsonc" => {
             include_str!("../../../cloudflare/wrangler.dev-bench.jsonc")
         }
+        "wrangler.dev-bench2.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-bench2.jsonc")
+        }
         "wrangler.prod-superfan.jsonc" => {
             include_str!("../../../cloudflare/wrangler.prod-superfan.jsonc")
         }
@@ -64,9 +67,10 @@ fn dev_spec_regenerates_the_committed_dev_configs() {
             "wrangler.dev-platform.jsonc",
             "wrangler.dev-agents-managed.jsonc",
             "wrangler.dev-agents.jsonc",
-            "wrangler.dev-bench.jsonc"
+            "wrangler.dev-bench.jsonc",
+            "wrangler.dev-bench2.jsonc"
         ],
-        "the platform's tail consumer first, then cutover order: platform, the managed agents the front binds, agents; the bench client last"
+        "the platform's tail consumer first, then cutover order: platform, the managed agents the front binds, agents; the bench clients last"
     );
     for (worker, config) in spec.configs(&lock(DEV_LOCK)).unwrap() {
         assert_eq!(
@@ -278,6 +282,58 @@ fn inventory_reads_resources_and_health_origins() {
         inventory::containers(&platform.config)
             .contains_key("yonedarepo-dev-platform-checkcontainer")
     );
+}
+
+/// Each database's migrations come from its own binding, so the managed Worker's D1 never takes
+/// the platform's migrations, nor the platform's its. An entry that names no directory has no
+/// migrations to apply.
+#[test]
+fn each_d1_database_keeps_its_own_migrations_directory() {
+    let config = serde_json::json!({ "d1_databases": [
+        { "database_name": "own", "migrations_dir": "managed/migrations" },
+        { "database_name": "platform", "migrations_dir": "migrations" },
+        { "database_name": "none" },
+    ]});
+    assert_eq!(
+        inventory::d1(&config),
+        [
+            (
+                "own".to_string(),
+                Some("cloudflare/managed/migrations".to_string())
+            ),
+            (
+                "platform".to_string(),
+                Some("cloudflare/migrations".to_string())
+            ),
+            ("none".to_string(), None),
+        ]
+    );
+}
+
+#[test]
+fn the_managed_worker_has_its_own_d1_and_not_the_platforms() {
+    for (spec, lock, env) in [(DEV, DEV_LOCK, "dev"), (PROD, PROD_LOCK, "prod")] {
+        let spec = Spec::parse(spec).unwrap();
+        let workers = inventory::deployables(&spec, &self::lock(lock)).unwrap();
+        let databases = |role: &str| {
+            let worker = workers.iter().find(|w| w.role == role).unwrap();
+            inventory::d1(&worker.config)
+        };
+        assert_eq!(
+            databases("agents-managed"),
+            [(
+                format!("yonedarepo-{env}-managed-revenue"),
+                Some("cloudflare/managed/migrations".to_string())
+            )]
+        );
+        assert_eq!(
+            databases("platform"),
+            [(
+                format!("yonedarepo-{env}-platform-index"),
+                Some("cloudflare/migrations".to_string())
+            )]
+        );
+    }
 }
 
 #[test]

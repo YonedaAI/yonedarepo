@@ -47,6 +47,7 @@ Device login follows RFC 8628: `POST /api/v1/device/code`, approval at `/device`
 | Tools | Notes |
 |---|---|
 | `repo_list` | repositories the credential can use |
+| `search_repos` | code and records across those repositories, a page at a time (only while `ACCOUNT_SEARCH` is on) |
 | `repo_create {name, files?, policy?}` | needs `repo:admin`; `policy {approvals:0, required_checks:[]}` lands solo |
 | `repo_delete {repo, confirm}` | needs `repo:admin`; `confirm` must equal the repository name |
 | all 49 platform tools (`git_*`, `symbol_*`, from `platform_tools.json`) | each takes a required `repo` (id or exact name) |

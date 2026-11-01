@@ -12,6 +12,7 @@ import { closeSync, createReadStream, mkdtempSync, openSync, rmSync, statSync, w
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { b64 } from './client.mjs';
+import { gitConfigEnv, OWN_TRAFFIC } from '../own-traffic.mjs';
 
 const author = { name: 'Staging kit', email: 'kit@yonedarepo.invalid' };
 const MB = 1024 * 1024;
@@ -55,10 +56,8 @@ export async function lfsFlow({ api, platform, mb = 200 }, metrics) {
     GIT_TERMINAL_PROMPT: '0',
     GIT_CONFIG_NOSYSTEM: '1',
     GIT_CONFIG_GLOBAL: join(dir, 'gitconfig'),
-    GIT_CONFIG_COUNT: '1',
     // Scoped to the API: presigned R2 URLs must not receive the token.
-    GIT_CONFIG_KEY_0: `http.${api}/.extraHeader`,
-    GIT_CONFIG_VALUE_0: `Authorization: Bearer ${minted.token}`,
+    ...gitConfigEnv({ token: minted.token, origin: api }),
   };
   writeFileSync(env.GIT_CONFIG_GLOBAL, '[user]\n\tname = Staging kit\n\temail = kit@yonedarepo.invalid\n');
   const git = (args, cwd = dir) => {
@@ -108,6 +107,7 @@ export async function lfsFlow({ api, platform, mb = 200 }, metrics) {
         authorization: `Basic ${Buffer.from(`git:${reader.token}`).toString('base64')}`,
         accept: 'application/vnd.git-lfs+json',
         'content-type': 'application/vnd.git-lfs+json',
+        ...OWN_TRAFFIC,
       },
       body: JSON.stringify({ operation: 'upload', transfers: ['basic'], objects: [{ oid: createHash('sha256').update('x').digest('hex'), size: 1 }] }),
     });

@@ -29,8 +29,16 @@ const neutral = new Set([
   './admin-auth',
   // The operators' account index rows and last-seen day; imports background, types, workspace.
   './account-index',
+  // Copies events to an org's audit log, for accounts and tokens; imports background, types, workspace.
+  './account-audit',
   // The site analytics data point layout (blob positions) the traffic queries read; imports only types.
   './site-events',
+  // Which accounts are ours, for both Workers' analytics; imports only types.
+  './internal-accounts',
+  // Continent and region codes from `request.cf`; imports only types.
+  './region',
+  // A digest of an account or token; imports nothing.
+  './storage',
   '../../shared/site-traffic',
   // Token scope names, generated from Rust; types only.
   '../../shared/contracts/pat-scopes',

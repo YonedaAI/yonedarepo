@@ -1,20 +1,23 @@
 name: Deploy prod
-# For later, when development slows: today prod deploys from the owner's checkout
-# (`cargo xtask deploy --env prod --confirm`), and this workflow stays disabled on GitHub until
-# the owner turns it on (`gh workflow enable deploy-prod.yml`). Manual only, for the owner
-# (MagnetonIO) from main, in the "production" Environment; it builds everything from source.
-# xtask refuses unless HEAD is the tip of main, every dev Worker already runs it, the
-# real-world kit passed for it and no container instance is busy (rollouts kill runs). Kits
-# run locally now, so the kit evidence (`realworld-<sha>.json`, in .local/staging/) must
-# reach the runner as an artifact named `realworld-<sha>` of the run given as `evidence_run`
-# (any workflow run that uploaded it); without it the deploy refuses.
+# Prod deploys from a merged ship PR (docs/ship-pipeline.md): on the push to main it finds the
+# PR's head, deploys, publishes the CLI if its version is new, runs the runner's smoke and
+# watches prod for 30 minutes. Any other push to main deploys nothing. By hand
+# (workflow_dispatch, dry run by default) it is a re-run of the same steps for main's tip, for
+# instance after the busy-container check stopped a deploy.
+#
+# `--ship-head` makes xtask require, for the PR head: HEAD's tree, the owner's live-tests status
+# for that tree, and a successful Ship run (Check and Full suite). HEAD must be the tip of main
+# and no container instance busy (a rollout kills runs). `allow_active` exists only on the manual
+# form and is never the default. Nothing here rolls back: a repository that ran a migration
+# refuses older binaries (SCHEMA_TOO_NEW); the docs have the manual steps.
+#
+# This repository is public: deploy output goes through tools/ship/quiet.mjs, and the monitor
+# prints counts only (Superfan mails the details privately).
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
-      evidence_run:
-        description: Run id holding the realworld-<sha> kit evidence artifact for main's tip
-        type: string
-        default: 
       dry_run:
         description: Plan and check the guards only (wrangler --dry-run)
         type: boolean
@@ -25,7 +28,7 @@ on:
         default: false
 permissions:
   contents: read
-  actions: read
+# One at a time, the monitor included; a deploy is never cancelled part-way.
 concurrency:
   group: deploy-prod
   cancel-in-progress: false
@@ -34,45 +37,181 @@ defaults:
   run:
     shell: bash
 jobs:
+  gate:
+    name: Ship gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      ship: ${{ steps.find.outputs.ship }}
+      pr_head: ${{ steps.find.outputs.pr_head }}
+    steps:
+      # Only the owner, only from main: a merge or a re-run by anyone else stops here.
+      - name: Owner-only gate
+        if: github.actor != 'MagnetonIO' || github.triggering_actor != 'MagnetonIO' || github.ref != 'refs/heads/main'
+        env:
+          ACTOR: ${{ github.triggering_actor }}
+          REF: ${{ github.ref }}
+        run: |
+          echo "::error::Refusing: prod deploys run only for MagnetonIO from main (actor $ACTOR, ref $REF)."
+          exit 1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.0'
+      - name: Find the ship
+        id: find
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node tools/ship/find-ship.mjs
+
   deploy:
+    name: Deploy
+    needs: gate
+    if: needs.gate.outputs.ship == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: production
+    permissions:
+      contents: read
+      actions: read
+      statuses: read
+    outputs:
+      started_at: ${{ steps.started.outputs.at }}
+      cli_needed: ${{ steps.cli.outputs.needed }}
+    env:
+      PR_HEAD: ${{ needs.gate.outputs.pr_head }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      # The guard compares the PR head's tree with HEAD's.
+      - name: Fetch the tip of main and the PR head for the deploy guard
+        run: git fetch --no-tags --depth=1 origin +main:refs/remotes/origin/main "$PR_HEAD"
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/env-file
+        with:
+          content: ${{ secrets.YONEDA_ENV_FILE }}
+          env: prod
+      - name: Note the start
+        id: started
+        run: echo "at=$(date +%s)000" >> "$GITHUB_OUTPUT"
+      - name: Deploy prod
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          ALLOW_ACTIVE: ${{ inputs.allow_active }}
+        run: |
+          # A prod deploy reads no token file (the Mac uses wrangler's login): wrangler takes this.
+          CLOUDFLARE_API_TOKEN=$(sed -n 's/^CLOUDFLARE_API_TOKEN=//p' ~/.config/yonedarepo/deploy-prod.env)
+          export CLOUDFLARE_API_TOKEN
+          flags=(--confirm --ship-head "$PR_HEAD")
+          if [ "$DRY_RUN" = "true" ]; then flags+=(--dry-run); fi
+          if [ "$ALLOW_ACTIVE" = "true" ]; then flags+=(--allow-active); fi
+          node tools/ship/quiet.mjs deploy -- cargo xtask deploy --env prod "${flags[@]}"
+      - name: Is this CLI version published?
+        id: cli
+        if: ${{ !inputs.dry_run }}
+        run: |
+          want=$(cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | select(.name == "yoneda-cli") | .version')
+          have=$(curl -fsS --retry 3 https://yonedarepo.com/downloads/cli/LATEST || true)
+          if [ "$want" = "$have" ]; then needed=false; else needed=true; fi
+          echo "CLI $want, published ${have:-nothing}: publish=$needed"
+          echo "needed=$needed" >> "$GITHUB_OUTPUT"
+      - name: Remove the secrets files
+        if: always()
+        run: rm -rf ~/.config/yonedarepo
+
+  # macOS: `downloads stage` builds the darwin targets with plain Cargo, the rest with zig.
+  downloads:
+    name: Publish the CLI
+    needs: deploy
+    if: needs.deploy.outputs.cli_needed == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 60
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/node
+      - uses: ./.github/actions/env-file
+        with:
+          content: ${{ secrets.YONEDA_ENV_FILE }}
+          env: prod
+      - name: Cross-compile tools
+        env:
+          ZIG: zig-aarch64-macos-0.17.0
+          ZIG_URL: https://ziglang.org/download/0.17.0/zig-aarch64-macos-0.17.0.tar.xz
+          ZIG_SHA256: b607e9b9234790a008116ae5bdb71c6243b84b9fb42a53a9e70fde41c06c536a
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/zig.tar.xz" "$ZIG_URL"
+          echo "$ZIG_SHA256  $RUNNER_TEMP/zig.tar.xz" | shasum -a 256 -c -
+          tar -xJf "$RUNNER_TEMP/zig.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/$ZIG" >> "$GITHUB_PATH"
+          cargo install cargo-zigbuild --version 0.24.0 --locked
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin x86_64-unknown-linux-musl aarch64-unknown-linux-musl x86_64-pc-windows-gnu aarch64-pc-windows-gnullvm
+      - name: Stage the downloads
+        run: node tools/ship/quiet.mjs deploy -- cargo xtask downloads stage --env prod
+      - name: Upload the downloads
+        run: |
+          CLOUDFLARE_API_TOKEN=$(sed -n 's/^CLOUDFLARE_API_TOKEN=//p' ~/.config/yonedarepo/deploy-prod.env)
+          export CLOUDFLARE_API_TOKEN
+          node tools/ship/quiet.mjs deploy -- cargo xtask downloads upload --env prod
+      - name: Remove the secrets files
+        if: always()
+        run: rm -rf ~/.config/yonedarepo
+
+  # What a runner can do without a browser or a kit account: the frontend, every /health at the
+  # shipped revision, and the owner's API through the front. The browser, CLI and SSH smoke stay
+  # on the Mac (docs/ship-pipeline.md).
+  smoke:
+    name: Prod smoke
+    needs: deploy
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: ./.github/actions/setup
+      - uses: ./.github/actions/env-file
+        with:
+          content: ${{ secrets.YONEDA_ENV_FILE }}
+          env: prod
+      - name: Smoke
+        run: node tools/ship/quiet.mjs smoke -- cargo xtask infra smoke --env prod
+      - name: Remove the secrets files
+        if: always()
+        run: rm -rf ~/.config/yonedarepo
+
+  monitor:
+    name: Monitor (30 minutes)
+    needs: deploy
+    if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: production
-    env:
-      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      # The org's plan has no required reviewers, so the approval gate is this step: only the
-      # owner, only from main.
-      - name: Owner-only gate
-        if: github.actor != 'MagnetonIO' || github.ref != 'refs/heads/main'
-        run: |
-          echo "Refusing: prod deploys run only for MagnetonIO from main (actor ${{ github.actor }}, ref ${{ github.ref }})."
-          exit 1
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: main
-      - name: Fetch the tip of main for the deploy guard
-        run: git fetch --no-tags --depth=1 origin +main:refs/remotes/origin/main
-      - name: Download kit evidence for this commit
-        if: inputs.evidence_run != ''
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.22.0'
+      - uses: ./.github/actions/env-file
+        with:
+          content: ${{ secrets.YONEDA_ENV_FILE }}
+          env: prod
+      - name: Watch prod
         env:
-          GH_TOKEN: ${{ github.token }}
-          RUN: ${{ inputs.evidence_run }}
-        run: |
-          sha=$(git rev-parse HEAD)
-          mkdir -p .local/staging
-          gh run download "$RUN" -n "realworld-$sha" -D .local/staging
-      - uses: ./.github/actions/setup
-      - name: Deploy prod
-        run: |
-          flags="--confirm"
-          if [ "${{ inputs.dry_run }}" = "true" ]; then flags="$flags --dry-run"; fi
-          if [ "${{ inputs.allow_active }}" = "true" ]; then flags="$flags --allow-active"; fi
-          cargo xtask deploy --env prod $flags | tee "$RUNNER_TEMP/deploy.txt"
-      - name: Status
+          REVISION: ${{ github.sha }}
+          SINCE: ${{ needs.deploy.outputs.started_at }}
+        run: node tools/ship/monitor.mjs --revision "$REVISION" --since "$SINCE"
+      - name: Remove the secrets files
         if: always()
-        run: |
-          set +e  # report whatever exists; a missing file is not a failure
-          cargo xtask status --env prod | tee "$RUNNER_TEMP/status.txt"
-          { echo '### Deploy prod'; echo '```'; tail -n 12 "$RUNNER_TEMP/deploy.txt" 2>/dev/null; cat "$RUNNER_TEMP/status.txt" 2>/dev/null; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+        run: rm -rf ~/.config/yonedarepo

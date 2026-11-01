@@ -12,6 +12,7 @@ import {
   DeliveryTable,
   HOOK_EVENT_HELP,
   HOOK_EVENTS,
+  HOOK_OPT_IN,
   type Hook,
   HookTable,
 } from './HookParts';
@@ -70,8 +71,7 @@ export function RepoWebhooks({ repo }: { repo: string }) {
     <section aria-labelledby="hooks-heading">
       <h2 id="hooks-heading">Webhooks</h2>
       <p className="source-meta">
-        Payloads arrive in order, signed with HMAC-SHA256 of the hook&apos;s secret, and are retried
-        with backoff. A hook that keeps failing is disabled.
+        Signed with HMAC-SHA256 of the hook&apos;s secret. A failing hook is disabled.
       </p>
       <HookTable
         hooks={hooks}
@@ -122,6 +122,24 @@ export function RepoWebhooks({ repo }: { repo: string }) {
                 <span className="source-meta"> ({HOOK_EVENT_HELP[name]})</span>
               </label>
             ))}
+            <label>
+              <input
+                type="checkbox"
+                checked={events.includes(HOOK_OPT_IN)}
+                onChange={(e) =>
+                  setEvents(
+                    e.target.checked
+                      ? [...events, HOOK_OPT_IN]
+                      : events.filter((x) => x !== HOOK_OPT_IN),
+                  )
+                }
+              />
+              {HOOK_OPT_IN}
+              <span className="source-meta">
+                {' '}
+                (with change: also Landings a push opens, one per branch)
+              </span>
+            </label>
           </fieldset>
           <label htmlFor="hook-paths" className="source-field settings-wide">
             Paths (optional)
@@ -134,8 +152,7 @@ export function RepoWebhooks({ repo }: { repo: string }) {
               aria-describedby="hook-paths-help"
             />
             <span id="hook-paths-help" className="source-meta">
-              Files or directories, comma separated. Leave empty for the whole repository; otherwise
-              payloads reveal only what lies under these paths.
+              Comma separated. Leave empty for the whole repository.
             </span>
           </label>
           <button type="submit" disabled={busy || !url.trim() || events.length === 0}>

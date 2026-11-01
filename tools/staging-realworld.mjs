@@ -91,6 +91,15 @@
 //          commits naming the breaking one (one tiny container check per step, check minutes
 //          recorded); Agents -> contracts, pins and bisects in Chrome. Needs the CLI build and Chrome:
 //          tools/staging/realuser-agent-tools.mjs)
+//        node tools/staging-realworld.mjs --memory-test [--memory-runs 6] [--memory-parallel 1] [--yes]
+//          [--agent-model <provider/model>] [--agent-timeout 600]
+//          (dev only, the owner's account as for --realuser: stage 2 of docs/landings-plan.md, does
+//          an agent do better with memory and context than with a plain clone? Real opencode agents
+//          in the Docker sandbox, one fresh fork per run. Prints its estimate and starts only with
+//          --yes: tools/staging/memory-flow.mjs)
+//        node tools/staging-realworld.mjs --memory-page [--headed]
+//          (= --only 0,12,32,17, dev only, no model: a session record, its transcript and context
+//          delivery behind a change, read by API and in Chrome: tools/staging/memory-page-flow.mjs)
 import assert from 'node:assert/strict';
 import { execFile, spawnSync } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -104,12 +113,14 @@ import { cliChangeRequest } from './staging/change-flow.mjs';
 import { accountMcp, cleanupRepos, cliCleanup, revokePat, serverReads } from './staging/cli-account-flow.mjs';
 import { cliConcurrency, cliLoginRepo, cliTransactional } from './staging/cli-flow.mjs';
 import { CliKit } from './staging/cli-tools.mjs';
-import { Recorder, Session, accountSession, kitCredentials, readEnvFile, secondAccount } from './staging/client.mjs';
+import { Recorder, Session, accountSession, kitCredentials, purgeWhatIsDeleted, readEnvFile, secondAccount, treeOf } from './staging/client.mjs';
 import { agentHooks } from './staging/agent-hooks-flow.mjs';
 import { agentRun } from './staging/agent-run-flow.mjs';
 import { forkFlow } from './staging/fork-flow.mjs';
 import { gitSemantics } from './staging/git-semantics-flow.mjs';
 import { lfsFlow } from './staging/lfs-flow.mjs';
+import { memoryTest } from './staging/memory-flow.mjs';
+import { memoryPage } from './staging/memory-page-flow.mjs';
 import { sshFlow } from './staging/ssh-flow.mjs';
 import { membersFlow } from './staging/members-flow.mjs';
 import { modelCheck } from './staging/model-check-flow.mjs';
@@ -191,6 +202,14 @@ const { values } = parseArgs({
     // repository: one with Rust, TypeScript or JavaScript functions for the contracts.
     'agent-tools': { type: 'boolean', default: false },
     'agent-tools-repo': { type: 'string', default: 'oss-commander' },
+    // The memory test (stage 2 of docs/landings-plan.md): runs per arm, blocks at once (each
+    // block is one agent per arm), and the go-ahead for a run that uses the model's quota.
+    'memory-test': { type: 'boolean', default: false },
+    'memory-runs': { type: 'string' },
+    'memory-parallel': { type: 'string' },
+    yes: { type: 'boolean', default: false },
+    // Item 32 alone, with the CLI sign-in and cleanup it needs.
+    'memory-page': { type: 'boolean', default: false },
   },
 });
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -198,6 +217,8 @@ const only = values['git-semantics']
   ? new Set(['0', '12', '13', '18', '21', '23', '27', '17', ...(values.ssh ? ['26'] : [])])
   : values['agent-hooks']
   ? new Set(['0', '12', '28', '17'])
+  : values['memory-page']
+  ? new Set(['0', '12', '32', '17'])
   : values.agents
   ? new Set(['0', '12', '29', '17'])
   : values.ssh
@@ -226,7 +247,7 @@ const only = values['git-semantics']
 // The model check needs the platform's review key, the webhook gate a receiver and the
 // members, forks (22) and orgs (24) gates a second account, and real agents (29) spend on a
 // model, so a full kit run leaves them out unless named.
-const wanted = (id) => (only ? only.has(id) : !['model', 'hooks', 'members', 'reads', '22', '24', '26', '29'].includes(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
+const wanted = (id) => (only ? only.has(id) : !['model', 'hooks', 'members', 'reads', '22', '24', '26', '29', '32'].includes(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
 
 if (values.prod)
   Object.assign(values, {
@@ -241,6 +262,13 @@ if (values.realuser || values.dogfood || values['agent-tools']) {
   await new Promise((done) => process.stdout.write('', done));
   process.exit(code);
 }
+if (values['memory-test']) {
+  assert.ok(!values.prod, '--memory-test runs on dev only');
+  const code = await memoryTest(values, root);
+  await new Promise((done) => process.stdout.write('', done));
+  process.exit(code);
+}
+assert.ok(!values.prod || !values['memory-page'], '--memory-page runs on dev only');
 const kit = kitCredentials();
 const { BENCH_KEY } = readEnvFile('staging-bench.env', { required: false });
 const account = await accountSession(values.origin, kit.KIT_USERNAME, kit.KIT_PASSWORD);
@@ -248,6 +276,10 @@ const account = await accountSession(values.origin, kit.KIT_USERNAME, kit.KIT_PA
 // made after email-only sign-up) its test address, whose handle the platform chose.
 Object.assign(kit, { KIT_ACCOUNT: account.name, KIT_LOGIN: account.identifier });
 const platformAccount = new Session(`${values.origin}/api/v1`, { cookie: account.cookie });
+// The dev owner token is an operator's; prod's repositories wait out their window.
+const { OWNER_TOKEN } = readEnvFile('staging.env', { required: false });
+const { window_days } = await platformAccount.get('/repos/deleted').catch(() => ({}));
+if (window_days && OWNER_TOKEN && !values.prod) purgeWhatIsDeleted(new Session(`${values.origin}/api/v1`, { bearer: OWNER_TOKEN }));
 if (values['cleanup-repos']) {
   const cleaned = await cleanupRepos(platformAccount, values['cleanup-repos']);
   console.log(`Deleted ${cleaned.deleted} repositories named ${cleaned.prefix}*${cleaned.failed.length ? `; ${cleaned.failed.length} failed: ${JSON.stringify(cleaned.failed)}` : ''}`);
@@ -342,7 +374,7 @@ await step('9', '1000-writer burst (platform API)', (m) => fanout(1000, m));
 await step('10', 'Many-repo burst (20 repos x 10 writers)', (m) =>
   BENCH_KEY ? manyRepoBurst(platformAccount, { client: values.client, key: BENCH_KEY, target: values.platform }, m) : { skip: 'BENCH_KEY not in staging-bench.env' },
 );
-if (['12', '13', '14', '15', '16', '17', '18', '21', '27', '28', '29'].some(wanted)) {
+if (['12', '13', '14', '15', '16', '17', '18', '21', '27', '28', '29', '32'].some(wanted)) {
   const cli = new CliKit({ api: values.api, bin: values['cli-bin'] ?? resolve(root, 'target/release'), platformAccount });
   const repo = {};
   try {
@@ -372,6 +404,9 @@ if (['12', '13', '14', '15', '16', '17', '18', '21', '27', '28', '29'].some(want
         m,
       ),
     );
+    await step('32', 'Change evidence (no model): session record, transcript and context delivery, by API and in Chrome', (m) =>
+      memoryPage(cli, { browser: { origin: values.origin, kit, headed: values.headed } }, m),
+    );
     await step('17', 'Delete kit repos via yoneda, 404 after, PAT revoked', (m) => cliCleanup(cli, m));
   } finally {
     // Never leave a live token behind; leftover repos: --cleanup-repos kit-cli / kit-mcp.
@@ -382,11 +417,13 @@ if (['12', '13', '14', '15', '16', '17', '18', '21', '27', '28', '29'].some(want
 }
 
 // Only the model check calls a model (the platform's own AI check, < $0.01).
-const evidence = { schema: 1, origin: values.origin, platform: values.platform, recorded_at: new Date().toISOString(), items: rec.items };
+// The tree of the commit item 0 saw live: the prod guard takes a merge commit of the same tree.
+const tree = treeOf(root, rec.items.find((i) => i.id === '0')?.metrics.front);
+const evidence = { schema: 1, origin: values.origin, platform: values.platform, tree, recorded_at: new Date().toISOString(), items: rec.items };
 await mkdir(resolve(root, '.local/staging'), { recursive: true });
 // Smoke-only evidence keeps its own name: the prod guard reads the newest realworld*.json.
 const smoke = ['model', 'hooks', 'members', 'reads', 'browser', '22', '24', '25', '26', '31'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));
-const gate = values['git-semantics'] ? 'git-semantics-gate' : values['agent-hooks'] ? 'agent-hooks-gate' : values.agents ? 'agents-gate' : null;
+const gate = values['git-semantics'] ? 'git-semantics-gate' : values['agent-hooks'] ? 'agent-hooks-gate' : values.agents ? 'agents-gate' : values['memory-page'] ? 'memory-page-gate' : null;
 const prefix = gate ?? { model: 'model-check', hooks: 'webhook-gate', members: 'members-gate', reads: 'reads-gate', browser: 'browser-gate', 22: 'forks-gate', 24: 'orgs-gate', 25: 'lfs-gate', 31: 'visibility-gate' }[smoke] ?? (values.prod ? 'prod-smoke' : 'realworld');
 const file = resolve(root, `.local/staging/${prefix}-${Date.now()}.json`);
 await writeFile(file, `${JSON.stringify(evidence, null, 2)}\n`);

@@ -1,11 +1,15 @@
 // Creating platform repositories: the owner (or the operator for a named workspace) creates
 // a repository, optionally seeded with files or imported from a Git remote, and may issue its
 // first repository tokens in the same request.
-import { afterAnswer } from './background';
+import { afterAnswer, deferred } from './background';
 import { bounded, boundedRetry, failureCode } from './durable';
 import { orgArg, orgCaller, orgCommand } from './platform-orgs';
+import { asyncStore, dispatchStore } from './repo-artifacts-store';
+import { auditRepo } from './repo-audit';
 import { commit } from './repo-commit';
 import { refreshHead } from './repo-head';
+import { defaultBranchSoon, startImport } from './repo-import';
+import { startWorkflow } from './repo-import-start';
 import { newStore, type ObjectStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { requirePatScope } from './repo-pat';
@@ -13,13 +17,14 @@ import { holdName, releaseNames } from './repo-paths';
 import { dispatchProjection, dispatchPurge } from './repo-projection';
 import { visibilityOf } from './repo-public';
 import { shardOutboxes } from './repo-shards';
+import { createStore } from './repo-store-create';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
 // Bounds on what a create waits for, from dev's 20 creates of 2026-10-30 (slowest: store
-// 3.3 s, repo_init 0.7 s, shards 4.5 s). The dialog's own bound (CREATE_TIMEOUT_MS) sits
-// above their sum, so a stall reaches people as this code's answer, not as its timeout.
-export const STORE_ATTEMPT_MS = 10_000;
+// 3.3 s, repo_init 0.7 s, shards 4.5 s). The dialog's own bound (CREATE_TIMEOUT_MS, 45 s) sits
+// above their sum (the store's 28 s, repo-store-create; 10 s here; 5 s taking back), so a stall
+// reaches people as this code's answer, not as its timeout.
 const INIT_MS = 10_000;
 const SHARD_START_MS = 12_000;
 const TAKE_BACK_MS = 5_000;
@@ -99,19 +104,6 @@ export function newRepoId() {
   return `r${[...random].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
 }
 
-/** The object store of a new repository. A name is `yr-<new id>`, so on the retry
- * ALREADY_EXISTS is this create's first attempt having landed late. Anything else left
- * after the retry is an outage of the store, whatever code it carries. */
-function createStore(store: ObjectStore) {
-  return boundedRetry(STORE_ATTEMPT_MS, (retry) =>
-    store.create().catch((e) => {
-      if (!retry || e?.code !== 'ALREADY_EXISTS') throw e;
-    }),
-  ).catch((e) => {
-    throw unavailable(e);
-  });
-}
-
 function unavailable(cause: any) {
   console.warn(`repository create failed: ${cause?.message ?? cause}`);
   return new ApiError('CREATE_UNAVAILABLE', 'The repository could not be created now; try again');
@@ -154,7 +146,8 @@ async function takeBack(
   if (!accepted) return;
   await afterAnswer(async () => {
     await ctx.call({ op: 'repo_delete', confirm: name });
-    await dispatchPurge(env, repo);
+    // Nobody ever saw it, so there is nothing to undo.
+    await dispatchPurge(env, repo, 'now');
   }).catch(left);
 }
 
@@ -169,7 +162,13 @@ export async function createRepository(env: Env, requester: Credentials, body: J
   let accepted = false;
   try {
     const store = newStore(env, `yr-${id}`);
-    await timed('create.store', () => createStore(store));
+    const later = asyncStore(env);
+    if (!later)
+      await timed('create.store', () =>
+        createStore(store).catch((e) => {
+          throw unavailable(e);
+        }),
+      );
     await bounded(
       INIT_MS,
       ctx.call({
@@ -181,8 +180,12 @@ export async function createRepository(env: Env, requester: Credentials, body: J
       }),
     );
     accepted = true;
+    // Asked for before anyone can see the repository, so none is left without its store.
+    if (later) await timed('create.queue', () => bounded(INIT_MS, dispatchStore(env, id)));
     const created = await populate(env, ctx, store, { name, visibility, owner }, body);
     await startShards(env, id);
+    // Only now: a create that failed is taken back as if it never was.
+    await auditRepo(env, id);
     return created;
   } catch (e) {
     await takeBack(env, ctx, owner, name, accepted);
@@ -222,9 +225,11 @@ async function populate(
 
 /** Starts a durable import of an external Git repository (Artifacts-backed only). */
 export async function importRepository(env: Env, requester: Credentials, body: Json) {
-  const auth = await owning(env, requester, body);
+  const auth = await timed('import.owner', () => owning(env, requester, body));
+  const asked_at = Date.now();
   if (env.PLATFORM_OBJECT_STORE === 'r2')
     throw new ApiError('NOT_SUPPORTED', 'Importing a remote needs the Artifacts object store');
+  const fast = env.FAST_IMPORT === 'on';
   const visibility = visibilityOf(body.visibility);
   const url = String(body.url ?? '');
   if (!/^https:\/\/[^\s]+$/.test(url))
@@ -235,42 +240,51 @@ export async function importRepository(env: Env, requester: Credentials, body: J
   const id = newRepoId();
   const name = typeof body.name === 'string' && body.name ? body.name : id;
   const owner = auth._session.workspace;
-  await holdName(env, owner, id, name);
+  // Beside the writes below, so that Artifacts can be asked as soon as they end.
+  const named = fast && !branch ? defaultBranchSoon(url) : Promise.resolve(null);
+  await timed('import.name', () => holdName(env, owner, id, name));
   const ctx = new RepoContext(env, id, caller(env, id, auth));
-  await ctx
-    .call({
-      op: 'repo_init',
-      name,
-      // Artifacts creates the store itself during import.
-      object_store: `artifacts:${env.ARTIFACTS_NAMESPACE}/yr-${id}`,
-      policy: body.policy ?? { required_checks: [], approvals: 1 },
-      visibility,
-    })
-    .catch(async (e) => {
-      await releaseNames(env, owner, id).catch(() => {});
-      throw e;
-    });
-  await listRepository(env, id, auth._session.workspace, name, visibility);
-  const tokens = await issueTokens(ctx, body.tokens);
-  const instance = await env.PLATFORM_IMPORT.create({
-    id: `import-${id}`,
-    params: { repo: id, url, branch, max },
-  });
-  return { id, import: instance.id, branch: branch ?? null, max_commits: max, ...tokens };
+  await timed('import.init', () =>
+    ctx
+      .call({
+        op: 'repo_init',
+        name,
+        // Artifacts creates the store itself during import.
+        object_store: `artifacts:${env.ARTIFACTS_NAMESPACE}/yr-${id}`,
+        policy: body.policy ?? { required_checks: [], approvals: 1 },
+        visibility,
+      })
+      .catch(async (e) => {
+        await releaseNames(env, owner, id).catch(() => {});
+        throw e;
+      }),
+  );
+  const remote = await timed('import.branch', () => named);
+  const params = { repo: id, url, branch: branch ?? remote ?? undefined, max, asked_at };
+  // Beside the writes below: nothing of it reads them.
+  if (fast) deferred(() => startImport(env, params));
+  await timed('import.list', () => listRepository(env, id, owner, name, visibility));
+  const tokens = await timed('import.tokens', () => issueTokens(ctx, body.tokens));
+  const workflow = await timed('import.workflow', () => startWorkflow(env, params));
+  await auditRepo(env, id);
+  return { id, import: workflow, branch: branch ?? null, max_commits: max, ...tokens };
 }
 
-/** The listing row of a repository the authority accepted (a fork's too). */
+/** The listing row of a repository the authority accepted (a fork's too, or one restored,
+ * which keeps its date and may be listed already by the attempt before). */
 export function listRepository(
   env: Env,
   id: string,
   workspace: string,
   name: string,
   visibility: string,
+  createdAt = Date.now(),
 ) {
   return env.INDEX.prepare(
-    'INSERT INTO platform_repos(id,workspace,name,created_at,visibility) VALUES(?,?,?,?,?)',
+    `INSERT INTO platform_repos(id,workspace,name,created_at,visibility) VALUES(?,?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET name=excluded.name,visibility=excluded.visibility`,
   )
-    .bind(id, workspace, name, Date.now(), visibility)
+    .bind(id, workspace, name, createdAt, visibility)
     .run();
 }
 
