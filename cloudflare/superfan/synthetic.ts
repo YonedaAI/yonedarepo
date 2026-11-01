@@ -6,6 +6,7 @@
 import { probesOn, type SuperfanEnv } from './config';
 import type { LatestProbes, ProbeRow } from './ledger-probes';
 import { notifyUrgent } from './notify';
+import { recordProbes } from './service-points';
 import type { ComponentReport, Signal } from './signal-rules';
 import { observation, problems } from './signals';
 import {
@@ -94,6 +95,7 @@ export async function runProbes(
   const results: ProbeResult[] = await Promise.all(
     due(env, targets, now).map((check) => runCheck(check, targets, deps.pause)),
   );
+  recordProbes(env, results);
   const report = syntheticReport(await ledger.recordProbes(results, now), now);
   const found = problems(report);
   const seen = results.find((r) => r.revision)?.revision;

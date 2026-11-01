@@ -90,7 +90,11 @@
   ],
   "name": "yonedarepo-dev-agents",
   "observability": {
-    "enabled": true
+    "enabled": true,
+    "traces": {
+      "enabled": false,
+      "head_sampling_rate": 0.01
+    }
   },
   "placement": {
     "mode": "targeted",

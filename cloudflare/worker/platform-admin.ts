@@ -35,6 +35,7 @@ import { exportSubscribers, subscriberCount } from './platform-newsletter';
 import { orgArg } from './platform-orgs';
 import { purgeOrphan } from './platform-orphan-purge';
 import { landingReport, repoUsageReport } from './platform-repo-reports';
+import { serviceLevels } from './platform-service-levels';
 import { trafficReport } from './platform-site-traffic';
 import { rebuildDeleted } from './repo-deleted';
 import { backfillObject } from './repo-erase';
@@ -92,6 +93,7 @@ export async function adminRoute(
     await audit(env, actor, 'accounts.backfill', after || '-', done);
     return done;
   }
+  if (section === 'service-levels' && !id && get) return serviceLevels(env);
   if (section === 'erase-backfill' && !id && post) return backfillObject(env, actor, await body());
   if (section === 'search-backfill' && !id && post)
     return backfillSummaries(env, actor, await body());

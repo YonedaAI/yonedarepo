@@ -25,6 +25,9 @@ export interface SuperfanEnv {
   WATCH_FRONT_URL?: string;
   /** `on`: synthetic checks every five minutes. */
   PROBES?: string;
+  /** `on`: dead requests and synthetic results go to SITE_EVENTS (service-points.ts). */
+  SERVICE_LEVELS?: string;
+  SITE_EVENTS?: AnalyticsEngineDataset;
   /** `on`, on dev alone: the checks also land on PROBE_LAND_REPO. */
   PROBE_LANDING?: string;
   /** Worker secret: a small public repository for the clone check; unset: no clone check. */

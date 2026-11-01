@@ -234,6 +234,9 @@ export interface Env {
   /** A number N: 1 request in N, and every slow one, keeps its Server-Timing phases as a log line
    * and one Analytics Engine point (repo-span-sample.ts); unset or `off`: nothing. */
   SPAN_SAMPLE?: string;
+  /** `on`: the operations with service targets write a point each, reads 1 in 10, and the admin
+   * page reads them back (shared/service-levels.ts); unset or anything else: nothing. */
+  SERVICE_LEVELS?: string;
 }
 export type Principal = {
   workspace: string;

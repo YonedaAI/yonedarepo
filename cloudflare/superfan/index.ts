@@ -8,6 +8,7 @@ import { parseDeploy } from './ledger-deploys';
 import { noticesOn } from './notify';
 import { QUICK_CRON, runQuick } from './quick';
 import { releaseOn } from './release';
+import { recordDeaths } from './service-points';
 import { runProbes } from './synthetic';
 import { aggregate } from './tail';
 import { ledgerStub, runWatch } from './watch';
@@ -85,6 +86,7 @@ export async function superfanFetch(req: Request, env: SuperfanEnv): Promise<Res
 export async function superfanTail(events: TraceItem[], env: SuperfanEnv) {
   if (!isWatchable(env.WATCH_SCRIPT)) return;
   const rows = aggregate(events, env.WATCH_SCRIPT, wideOn(env));
+  recordDeaths(env, events);
   if (rows.length) await ledgerStub(env).ingest(rows, Date.now());
 }
 
