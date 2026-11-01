@@ -170,6 +170,10 @@ export interface Env {
   /** `on` takes the browser ping (site-ping.ts) and counts platform requests by client kind
    * (platform-client-events.ts); set on both Workers. */
   TRAFFIC_EVENTS?: string;
+  /** `on` adds outcome and duration to client points, leaves internal accounts out of every
+   * figure (internal-accounts.ts), and opens the Traffic page's other ranges and comparison;
+   * set on both Workers. */
+  TRAFFIC_REPORT?: string;
   /** `on` records a new account's region and samples where writes come from (region.ts). */
   REGION_SIGNALS?: string;
   /** Cloudflare Web Analytics site token (front Worker); set, public pages carry its beacon. */

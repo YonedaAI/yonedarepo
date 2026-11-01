@@ -4,7 +4,8 @@
 // Worker's admin route, its bearer kept here), suspension (the account authority refuses
 // every credential until it is lifted), quarantining or releasing repository content as the
 // repository's owner, and legal holds (platform-holds.ts). Refunds and the rest of billing are
-// platform-admin-billing.ts. Two actions are not reversible: a refund, and purging a deleted
+// platform-admin-billing.ts. Marking an account as ours only changes what's counted. Two actions
+// are not reversible: a refund, and purging a deleted
 // repository now, for the live tests' teardown and dev storage. A purge is refused under a legal
 // hold, and no account can ask for it: the undo window exists to survive a stolen token.
 // Every action writes admin_audit.
@@ -14,6 +15,7 @@ import { accountSummary, recordAccount } from './account-index';
 import { isAdminAccount } from './admin-auth';
 import { backfillAccounts } from './platform-accounts';
 import { adminBilling, adminBillingOn } from './platform-admin-billing';
+import { setInternal } from './platform-admin-internal';
 import {
   accountRowOf,
   audit,
@@ -29,7 +31,7 @@ import { rebuildRollup, revenue } from './platform-admin-revenue';
 import { operatorOrgHold, operatorRepoHold } from './platform-holds';
 import { currentHold } from './platform-legal-hold';
 import { orgArg } from './platform-orgs';
-import { siteTraffic, trafficClass } from './platform-site-traffic';
+import { trafficReport } from './platform-site-traffic';
 import { rebuildDeleted } from './repo-deleted';
 import { backfillObject } from './repo-erase';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
@@ -74,8 +76,7 @@ export async function adminRoute(
     return { ...(await overview(env)), billing: adminBillingOn(env) };
   if (section === 'signups' && !id && get) return signups(env, query.get('since'));
   if (section === 'audit' && !id && get) return auditLog(env, query.get('before'));
-  if (section === 'traffic' && !id && get)
-    return siteTraffic(env, query.get('days') === '7' ? 7 : 30, trafficClass(query.get('class')));
+  if (section === 'traffic' && !id && get) return trafficReport(env, query);
   if (section === 'backfill' && !id && post) {
     const after = (await body().catch(() => ({}) as Json)).after;
     const done = await backfillAccounts(env, typeof after === 'string' ? after : '');
@@ -105,6 +106,8 @@ export async function adminRoute(
     if (action === 'credit' && post) return grantCredit(env, actor, account, await body());
     if ((action === 'suspend' || action === 'unsuspend') && post)
       return setSuspended(env, actor, account, action === 'suspend');
+    if (action === 'internal' && post)
+      return setInternal(env, actor, account, (await body()).internal === true);
   }
   if (section === 'orgs' && id && hold) return operatorOrgHold(env, actor, orgArg(id), method);
   if (section === 'repos' && !id && get) return listRepos(env, query.get('q'), query.get('before'));
@@ -182,6 +185,7 @@ async function accountDetail(env: Env, account: string) {
   return {
     account,
     indexed: Boolean(row),
+    internal: row?.internal ?? false,
     handle: summary.handle ?? null,
     email: summary.email ?? null,
     providers: summary.providers ?? [],

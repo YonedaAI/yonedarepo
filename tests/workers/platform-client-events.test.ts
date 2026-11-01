@@ -1,8 +1,18 @@
 // Platform requests by client kind (admin Traffic page): one sampled data point, written without
 // waiting, holding the client kind, country and operation class and never a repository, account,
 // token or address. It can't change a response. Simulated bindings only.
-import { expect, it, vi } from 'vitest';
-import { clientRequest, recordClient } from '../../cloudflare/worker/platform-client-events';
+import { beforeEach, expect, it, vi } from 'vitest';
+import {
+  forgetInternalAccounts,
+  noteAccount,
+  withRequestAccount,
+} from '../../cloudflare/worker/internal-accounts';
+import {
+  clientRequest,
+  outcomeOf,
+  recordClient,
+} from '../../cloudflare/worker/platform-client-events';
+import type { Credentials } from '../../cloudflare/worker/repo-ops';
 import type { Env } from '../../cloudflare/worker/types';
 
 const REPO = 'r0123456789abcdef0123';
@@ -132,4 +142,93 @@ it('stays inside its CPU budget of 50 microseconds a request', () => {
   const start = performance.now();
   for (let i = 0; i < runs; i++) recordClient(req, ok, env);
   expect(((performance.now() - start) * 1000) / runs).toBeLessThan(50);
+});
+
+const landing = () => ask(`/api/v1/repos/${REPO}/land`, { method: 'POST', headers: token });
+const signedAs = (account: string) => ({ _pat: { workspace: account } }) as unknown as Credentials;
+/** A D1 stand-in that holds the internal list and counts its reads. */
+function internal(accounts: string[] | Error) {
+  const all = vi.fn(async () => {
+    if (accounts instanceof Error) throw accounts;
+    return { results: accounts.map((account) => ({ account })) };
+  });
+  return { all, INDEX: { prepare: () => ({ bind: () => ({ all }) }) } as unknown as D1Database };
+}
+
+beforeEach(forgetInternalAccounts);
+
+it.each([
+  [200, 'success'],
+  [201, 'success'],
+  [304, 'success'],
+  [400, 'failed'],
+  [404, 'failed'],
+  [409, 'failed'],
+  [500, 'failed'],
+  [503, 'failed'],
+  [401, 'unauthorized'],
+  [403, 'unauthorized'],
+  [429, 'rate_limited'],
+])('reads status %i as %s', (status, outcome) => {
+  expect(outcomeOf(status)).toBe(outcome);
+});
+
+it('stores the outcome and how long the answer took, with the switch on', () => {
+  const { env, points } = bound({ TRAFFIC_REPORT: 'on' });
+  recordClient(landing(), new Response('{}', { status: 429 }), env, () => 0, Date.now() - 250);
+  const [point] = points;
+  expect(point.blobs?.[12]).toBe('rate_limited');
+  expect(point.doubles?.[4]).toBe(1);
+  expect(point.doubles?.[5]).toBeGreaterThanOrEqual(250);
+  expect(point.doubles?.[5]).toBeLessThan(5_000);
+});
+
+it('writes the same point as before with the switch off', () => {
+  const { env, points } = bound();
+  recordClient(landing(), ok, env);
+  expect(points[0].blobs).toHaveLength(12);
+  expect(points[0].doubles).toHaveLength(5);
+});
+
+it('leaves no point for an account that is ours, one for anyone else, at one read', async () => {
+  const { INDEX, all } = internal(['team']);
+  const { env, points } = bound({ TRAFFIC_REPORT: 'on', INDEX });
+  const as = (name: string) =>
+    withRequestAccount(() => {
+      noteAccount(signedAs(name));
+      return recordClient(landing(), ok, env);
+    });
+  await as('team');
+  await as('team');
+  expect(points).toEqual([]);
+  await as('stranger');
+  expect(points).toHaveLength(1);
+  expect(JSON.stringify(points)).not.toContain('stranger');
+  expect(all).toHaveBeenCalledTimes(1);
+});
+
+it('reads nothing for a request with no account, and with the switch off', async () => {
+  const { INDEX, all } = internal(['team']);
+  const on = bound({ TRAFFIC_REPORT: 'on', INDEX });
+  await withRequestAccount(() => recordClient(landing(), ok, on.env));
+  expect(on.points).toHaveLength(1);
+  const off = bound({ INDEX });
+  await withRequestAccount(() => {
+    noteAccount(signedAs('team'));
+    return recordClient(landing(), ok, off.env);
+  });
+  expect(off.points).toHaveLength(1);
+  expect(all).not.toHaveBeenCalled();
+});
+
+it('drops the point, not the request, when the list cannot be read', async () => {
+  const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const { INDEX } = internal(new Error('D1 down'));
+  const { env, points } = bound({ TRAFFIC_REPORT: 'on', INDEX });
+  await withRequestAccount(() => {
+    noteAccount(signedAs('someone'));
+    return recordClient(landing(), ok, env);
+  });
+  expect(points).toEqual([]);
+  warn.mockRestore();
 });

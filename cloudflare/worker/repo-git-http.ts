@@ -10,6 +10,7 @@
 // its credentials, and a private repository looks the same as one that does not exist.
 
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
+import { noteAccount } from './internal-accounts';
 import { sshBearer, verifySshToken } from './platform-ssh';
 import { credentials } from './repo-api';
 import { compute } from './repo-compute';
@@ -121,6 +122,7 @@ async function serve(req: Request, env: Env): Promise<Response> {
         ssh ? verifySshToken(env, ssh, repo, service) : gitCredentials(req, env),
       ),
     );
+    noteAccount(auth);
   } catch (e: any) {
     if (failureCode(e) === 'OVERLOADED') return busy();
     return refusal(STATUS[failureCode(e)] ?? 500, String(e?.message ?? e));

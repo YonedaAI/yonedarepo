@@ -15,6 +15,7 @@
 //   the gateway's location, not the client's.
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { afterAnswer } from './background';
+import { isInternal } from './internal-accounts';
 import { clientRequest } from './platform-client-events';
 import { continentOf, regionSignals } from './region';
 import type { Credentials } from './repo-ops';
@@ -56,6 +57,9 @@ function sampled(req: Request, env: Env, random: () => number) {
 
 async function writePoint(req: Request, env: Env, writer: Writer) {
   try {
+    if (env.TRAFFIC_REPORT === 'on' && writer.kind === 'account') {
+      if ((await isInternal(env, writer.id)) !== false) return;
+    }
     const seen = clientRequest(req, new URL(req.url));
     const subject = (await sha(writer.id)).slice(0, SUBJECT_LENGTH);
     const empty = Array(9).fill('');

@@ -50,6 +50,9 @@ function sessionValue(req: Request) {
   const token = parts[1];
   return { name, token };
 }
+/** The account a session cookie names, unchecked: enough to leave a point out of the figures,
+ * which is all a forged name can do. */
+export const sessionAccount = (req: Request) => sessionValue(req)?.name ?? null;
 /** The signed-in account and its session's digest (linking a provider records both). */
 export async function signedInSession(req: Request, env: Env) {
   const session = sessionValue(req);

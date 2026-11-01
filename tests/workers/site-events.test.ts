@@ -282,6 +282,20 @@ it('records an email sign-up with its landing source, never the account or addre
   expect(JSON.stringify(points)).not.toContain('carol');
 });
 
+it('records no sign-up from our own tools', async () => {
+  const { using, points } = site();
+  const response = await frontFetch(
+    new Request('https://yonedarepo.test/api/auth/signup', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-yoneda-own-traffic': '1', ...visitor },
+      body: JSON.stringify({ email: 'tester@example.com', password: 'a long test password' }),
+    } as RequestInit),
+    using,
+  );
+  expect(response.status).toBe(200);
+  expect(points).toEqual([]);
+});
+
 it('validates sign-up sources as untrusted input and carries them through a return path', () => {
   expect(
     readSignupSource(

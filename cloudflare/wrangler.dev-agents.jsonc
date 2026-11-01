@@ -137,6 +137,7 @@
     "PUBLIC_APP_ORIGIN": "https://dev.yonedarepo.com",
     "REGION_SIGNALS": "off",
     "TRAFFIC_EVENTS": "on",
+    "TRAFFIC_REPORT": "off",
     "WEB_ANALYTICS_TOKEN": "70b90cc7e849429fa25cc64897ebfd2b"
   },
   "workers_dev": true

@@ -3,11 +3,11 @@
 import type {
   TrafficClient,
   TrafficHeadline,
-  TrafficWindow,
+  TrafficRange,
   WebAnalyticsCheck,
 } from '../../../../shared/site-traffic';
+import { changeLabel, figure as count, RANGE_LABELS } from './trafficModel';
 
-const count = (n: number) => Math.round(n).toLocaleString('en-US');
 const UNKNOWN = '—';
 const crawlers = (n: number) => `${count(n)} search crawler${n === 1 ? '' : 's'}`;
 const CLIENTS: Record<string, string> = {
@@ -19,30 +19,42 @@ const CLIENTS: Record<string, string> = {
 
 export function TrafficHeadlineCards({
   headline: h,
+  previous: p,
+  range,
   counting,
 }: {
   headline: TrafficHeadline;
+  /** The period before, or null when there's nothing whole to compare with. */
+  previous: TrafficHeadline | null;
+  range: TrafficRange;
   counting: boolean;
 }) {
   const signedOut = h.humans - h.humans_signed_in;
+  const agents = h.agents_site + h.agents_platform;
+  const rough = (who: 'humans' | 'agents' | 'bots') => h.estimated.includes(who);
+  const change = (who: 'humans' | 'agents' | 'bots', now: number, before?: number) =>
+    counting && before !== undefined ? changeLabel(now, before, range, rough(who)) : null;
   const tiles = [
     {
       label: 'Humans',
-      value: counting ? count(h.humans) : UNKNOWN,
+      value: counting ? count(h.humans, rough('humans')) : UNKNOWN,
+      change: change('humans', h.humans, p?.humans),
       caption: counting
         ? `${count(h.humans_signed_in)} signed in, ${count(signedOut)} signed out`
         : 'Not counted here yet',
     },
     {
       label: 'Agents',
-      value: count(h.agents_site + h.agents_platform),
+      value: count(agents, rough('agents')),
+      change: change('agents', agents, p ? p.agents_site + p.agents_platform : undefined),
       caption: counting
         ? `${count(h.agents_site)} on the site, ${count(h.agents_platform)} on the platform`
         : `${count(h.agents_site)} on the site; platform not counted here yet`,
     },
     {
       label: 'Bots',
-      value: count(h.bots),
+      value: count(h.bots, rough('bots')),
+      change: change('bots', h.bots, p?.bots),
       caption: `${crawlers(h.crawlers)}, ${count(h.bots - h.crawlers)} unconfirmed`,
     },
   ];
@@ -53,6 +65,7 @@ export function TrafficHeadlineCards({
           <span className="stat-label">{tile.label}</span>
           <span className="stat-value">{tile.value}</span>
           <span className="stat-caption">{tile.caption}</span>
+          {tile.change && <span className="stat-caption">{tile.change}</span>}
         </li>
       ))}
     </ul>
@@ -60,18 +73,18 @@ export function TrafficHeadlineCards({
 }
 
 export function PlatformClients({
-  days,
+  range,
   clients,
   counting,
 }: {
-  days: TrafficWindow;
+  range: TrafficRange;
   clients: TrafficClient[];
   counting: boolean;
 }) {
   return (
     <section className="home-section" aria-labelledby="admin-platform-clients">
       <h2 id="admin-platform-clients" className="home-label">
-        Platform use, last {days} days
+        Platform use, last {RANGE_LABELS[range]}
       </h2>
       {clients.length ? (
         <div className="source-table-wrap">
@@ -89,8 +102,8 @@ export function PlatformClients({
                 <tr key={`${c.client}/${c.operation}`}>
                   <td>{CLIENTS[c.client] ?? c.client}</td>
                   <td>{c.operation}</td>
-                  <td className="admin-num">{count(c.count)}</td>
-                  <td className="admin-num">{count(c.with_token)}</td>
+                  <td className="admin-num">{count(c.count, c.estimated)}</td>
+                  <td className="admin-num">{count(c.with_token, c.estimated)}</td>
                 </tr>
               ))}
             </tbody>
@@ -98,7 +111,7 @@ export function PlatformClients({
         </div>
       ) : (
         <p className="source-empty">
-          {counting ? 'No platform requests in this window.' : 'Not counted here yet.'}
+          {counting ? 'No platform requests in this range.' : 'Not counted here yet.'}
         </p>
       )}
     </section>
@@ -106,12 +119,12 @@ export function PlatformClients({
 }
 
 export function TrafficCheck({
-  days,
+  range,
   humans,
   counting,
   web_analytics: web,
 }: {
-  days: TrafficWindow;
+  range: TrafficRange;
   humans: number;
   counting: boolean;
   web_analytics: WebAnalyticsCheck;
@@ -119,7 +132,7 @@ export function TrafficCheck({
   return (
     <section className="home-section" aria-labelledby="admin-traffic-check">
       <h2 id="admin-traffic-check" className="home-label">
-        Cross-check, last {days} days
+        Cross-check, last {RANGE_LABELS[range]}
       </h2>
       {!counting ? (
         <p className="source-empty">Not counted here yet.</p>

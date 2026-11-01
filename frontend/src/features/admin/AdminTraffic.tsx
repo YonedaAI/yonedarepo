@@ -1,28 +1,29 @@
 // Admin traffic: the site's cookieless analytics (platform-site-traffic.ts) as humans, agents and
-// bots: one line on whether the numbers can be trusted yet, a headline, each class per day for 30
-// days, platform use by client kind and Cloudflare Web Analytics beside our own count, then the
-// top pages, referrers and countries of the class the filter picks (Humans first), campaigns and
-// sign-ups by source over the chosen window (7 or 30 days).
-import { useState } from 'react';
+// bots, all over the chosen range: one line on whether the numbers can be trusted yet, a headline
+// with the period before, each class over time, platform use by client kind and Cloudflare Web
+// Analytics beside our own count, then the top pages, referrers and countries of the class the
+// filter picks (Humans first), campaigns and sign-ups by source.
+import { useRef, useState } from 'react';
 import type {
   SiteTrafficResult,
   TrafficClass,
   TrafficCount,
-  TrafficWindow,
+  TrafficRange,
 } from '../../../../shared/site-traffic';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { useSource } from '../source-platform/useSource';
-import { DayChart } from './AdminParts';
 import { PlatformClients, TrafficCheck, TrafficHeadlineCards } from './AdminTrafficCheck';
+import { countryName, providerLabel } from './adminModel';
+import { TimeChart } from './TimeChart';
 import {
-  countryName,
-  lastThirtyDays,
-  providerLabel,
+  type ChartBar,
+  figure,
+  RANGE_LABELS,
+  trafficBars,
   trafficEmpty,
   trafficNote,
-} from './adminModel';
+} from './trafficModel';
 
-const count = (n: number) => Math.round(n).toLocaleString('en-US');
 const CLASSES: { id: TrafficClass; label: string }[] = [
   { id: 'humans', label: 'Humans' },
   { id: 'agents', label: 'Agents' },
@@ -61,42 +62,41 @@ function TopList({
               {rows.map((r) => (
                 <tr key={r.key}>
                   <td className="admin-key">{name(r.key)}</td>
-                  <td className="admin-num">{count(r.count)}</td>
+                  <td className="admin-num">{figure(r.count, r.estimated)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       ) : (
-        <p className="source-empty">None in this window.</p>
+        <p className="source-empty">None in this range.</p>
       )}
     </section>
   );
 }
 
-/** A class's 30 days, or one line when there is nothing to draw. */
+/** A class over the range, or one line when there is nothing to draw. */
 function ClassChart({
   id,
   label,
   unit,
-  days,
-  none = 'None in the last 30 days.',
+  bars,
+  none = 'None in this range.',
 }: {
   id: TrafficClass;
   label: string;
   unit: string;
-  days: { day: string; count: number }[];
+  bars: ChartBar[];
   /** The line when there is nothing to draw. */
   none?: string;
 }) {
   const heading = `admin-${id}-chart`;
-  const title = `${label}, 30 days`;
-  if (days.some((d) => d.count > 0))
-    return <DayChart id={heading} title={title} unit={unit} days={days} />;
+  if (bars.some((b) => b.value > 0))
+    return <TimeChart id={heading} title={label} unit={unit} bars={bars} />;
   return (
     <section className="home-section" aria-labelledby={heading}>
       <h2 id={heading} className="home-label">
-        {title}
+        {label}
       </h2>
       <p className="source-empty">{none}</p>
     </section>
@@ -104,21 +104,24 @@ function ClassChart({
 }
 
 export function AdminTraffic() {
-  const [days, setDays] = useState<TrafficWindow>(7);
+  const [range, setRange] = useState<TrafficRange>('7d');
   const [who, setWho] = useState<TrafficClass>('humans');
-  const report = useSource<SiteTrafficResult>(`/admin/traffic?days=${days}&class=${who}`);
+  const report = useSource<SiteTrafficResult>(`/admin/traffic?range=${range}&class=${who}`);
+  // What's offered comes with the first answer, and stays while another range loads.
+  const offered = useRef<TrafficRange[]>([]);
+  if (report.data?.ok) offered.current = report.data.traffic.ranges;
   const windowPicker = (
     <fieldset className="admin-window">
-      <legend className="sr-only">Window</legend>
-      {([7, 30] as const).map((n) => (
+      <legend className="sr-only">Range</legend>
+      {(offered.current.length ? offered.current : [range]).map((id) => (
         <button
-          key={n}
+          key={id}
           type="button"
           className="quiet"
-          aria-pressed={days === n}
-          onClick={() => setDays(n)}
+          aria-pressed={range === id}
+          onClick={() => setRange(id)}
         >
-          {n} days
+          {RANGE_LABELS[id]}
         </button>
       ))}
     </fieldset>
@@ -146,20 +149,23 @@ export function AdminTraffic() {
     );
   const t = report.data.traffic;
   const note = trafficNote(t);
-  const signups = days === 7 ? t.signups.last_7 : t.signups.last_30;
+  const period = RANGE_LABELS[t.range];
   if (trafficEmpty(t))
     return (
       <>
         {head(note)}
-        {!note.warn && <p className="source-empty">No traffic in the last 30 days.</p>}
+        {!note.warn && <p className="source-empty">No traffic in the last {period}.</p>}
       </>
     );
-  const series = (name: TrafficClass) =>
-    lastThirtyDays(t.by_day.map((d) => ({ day: d.day, views: d[name] })));
   return (
     <>
       {head(note)}
-      <TrafficHeadlineCards headline={t.headline} counting={t.counting} />
+      <TrafficHeadlineCards
+        headline={t.headline}
+        previous={t.previous}
+        range={t.range}
+        counting={t.counting}
+      />
       <div className="admin-grid">
         {CLASSES.map(({ id, label }) => (
           <ClassChart
@@ -167,20 +173,20 @@ export function AdminTraffic() {
             id={id}
             label={label}
             unit={id === 'humans' ? 'views' : 'requests'}
-            days={series(id)}
+            bars={trafficBars(t, id)}
             none={id === 'humans' && !t.counting ? 'Not counted here yet.' : undefined}
           />
         ))}
       </div>
-      <PlatformClients days={t.days} clients={t.clients} counting={t.counting} />
+      <PlatformClients range={t.range} clients={t.clients} counting={t.counting} />
       <TrafficCheck
-        days={t.days}
+        range={t.range}
         humans={t.headline.humans - t.headline.humans_signed_in}
         counting={t.counting}
         web_analytics={t.web_analytics}
       />
       <div className="admin-traffic-row">
-        <h2 className="home-label">Breakdown, last {days} days</h2>
+        <h2 className="home-label">Breakdown, last {period}</h2>
         <fieldset className="admin-window">
           <legend className="sr-only">Whose pages, referrers and countries</legend>
           {CLASSES.map(({ id, label }) => (
@@ -238,21 +244,21 @@ export function AdminTraffic() {
                     <td>{c.utm_source || '—'}</td>
                     <td>{c.utm_medium || '—'}</td>
                     <td>{c.utm_campaign || '—'}</td>
-                    <td className="admin-num">{count(c.count)}</td>
+                    <td className="admin-num">{figure(c.count, c.estimated)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <p className="source-empty">No tagged (UTM) visits in this window.</p>
+          <p className="source-empty">No tagged (UTM) visits in this range.</p>
         )}
       </section>
       <section className="home-section" aria-labelledby="admin-signup-sources">
         <h2 id="admin-signup-sources" className="home-label">
-          Sign-ups by source, last {days} days
+          Sign-ups by source, last {period}
         </h2>
-        {signups.length ? (
+        {t.signups.length ? (
           <div className="source-table-wrap">
             <table className="source-table admin-table">
               <thead>
@@ -265,20 +271,20 @@ export function AdminTraffic() {
                 </tr>
               </thead>
               <tbody>
-                {signups.map((s) => (
+                {t.signups.map((s) => (
                   <tr key={`${s.provider}/${s.referrer}/${s.utm_source}/${s.utm_campaign}`}>
                     <td>{providerLabel(s.provider)}</td>
                     <td>{s.referrer || 'direct'}</td>
                     <td>{s.utm_source || '—'}</td>
                     <td>{s.utm_campaign || '—'}</td>
-                    <td className="admin-num">{count(s.count)}</td>
+                    <td className="admin-num">{figure(s.count, s.estimated)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         ) : (
-          <p className="source-empty">No sign-ups in this window.</p>
+          <p className="source-empty">No sign-ups in this range.</p>
         )}
       </section>
     </>

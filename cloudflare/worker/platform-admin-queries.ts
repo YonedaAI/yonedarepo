@@ -26,23 +26,30 @@ const count = async (env: Env, sql: string, ...binds: unknown[]) =>
       .first<{ n: number }>()
   )?.n ?? 0;
 
-/** `GET overview`. */
+const ACCOUNTS = 'SELECT COUNT(*) AS n FROM platform_accounts WHERE';
+
+/** `GET overview`, leaving out accounts that are ours with TRAFFIC_REPORT on. */
 export async function overview(env: Env, now = Date.now()) {
   const since = (days: number) => now - days * DAY_MS;
+  const counted = env.TRAFFIC_REPORT === 'on';
+  const theirs = counted ? 'internal=0' : '1=1';
+  const theirRepos = counted
+    ? 'WHERE workspace NOT IN (SELECT account FROM platform_accounts WHERE internal=1)'
+    : '';
   const [accounts, day, week, month, active, suspended, repos, perDay] = await Promise.all([
-    count(env, 'SELECT COUNT(*) AS n FROM platform_accounts'),
-    count(env, 'SELECT COUNT(*) AS n FROM platform_accounts WHERE created_at>=?', since(1)),
-    count(env, 'SELECT COUNT(*) AS n FROM platform_accounts WHERE created_at>=?', since(7)),
-    count(env, 'SELECT COUNT(*) AS n FROM platform_accounts WHERE created_at>=?', since(30)),
-    count(env, 'SELECT COUNT(*) AS n FROM platform_accounts WHERE last_seen_at>=?', since(7)),
-    count(env, 'SELECT COUNT(*) AS n FROM platform_accounts WHERE suspended_at IS NOT NULL'),
+    count(env, `${ACCOUNTS} ${theirs}`),
+    count(env, `${ACCOUNTS} ${theirs} AND created_at>=?`, since(1)),
+    count(env, `${ACCOUNTS} ${theirs} AND created_at>=?`, since(7)),
+    count(env, `${ACCOUNTS} ${theirs} AND created_at>=?`, since(30)),
+    count(env, `${ACCOUNTS} ${theirs} AND last_seen_at>=?`, since(7)),
+    count(env, `${ACCOUNTS} ${theirs} AND suspended_at IS NOT NULL`),
     env.INDEX.prepare(
-      'SELECT visibility,COUNT(*) AS n FROM platform_repos GROUP BY visibility',
+      `SELECT visibility,COUNT(*) AS n FROM platform_repos ${theirRepos} GROUP BY visibility`,
     ).all<{ visibility: string; n: number }>(),
     // Integer days: a bound divisor would be a REAL in D1, and its quotient fractional.
     env.INDEX.prepare(
       `SELECT CAST(created_at/${DAY_MS} AS INTEGER) AS day,COUNT(*) AS n FROM platform_accounts
-        WHERE created_at>=? GROUP BY day`,
+        WHERE ${theirs} AND created_at>=? GROUP BY day`,
     )
       .bind(since(29) - (since(29) % DAY_MS))
       .all<{ day: number; n: number }>(),
@@ -62,7 +69,7 @@ export async function overview(env: Env, now = Date.now()) {
 }
 
 const ACCOUNT_COLUMNS = `a.account,a.created_at,a.provider,COALESCE(h.handle,a.handle) AS handle,
-  a.email_named,a.suspended_at,a.last_seen_at,
+  a.email_named,a.suspended_at,a.last_seen_at,a.internal,
   (SELECT COUNT(*) FROM platform_repos r WHERE r.workspace=a.account) AS repos`;
 
 /** `GET accounts?q=&before=`: newest first; `q` matches the name or handle. */
@@ -104,6 +111,7 @@ const accountRow = (r: Json) => ({
   repos: r.repos ?? 0,
   suspended: r.suspended_at !== null && r.suspended_at !== undefined,
   suspended_at: r.suspended_at ?? null,
+  internal: r.internal === 1,
 });
 
 /** One page and the `before` cursor of the next (null after the last). */

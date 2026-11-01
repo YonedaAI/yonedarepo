@@ -317,6 +317,15 @@ What the figures mean:
 - **Not recorded**: container cost, the cost of calls with an unknown outcome, and Stripe fees. Container time is charged at a flat rate with no cost beside it.
 - **Usage includes free credit.** Model margin counts calls paid with promotional credit, which brought in no money. The free credit granted in the range is shown beside it.
 
+
+## Internal accounts
+
+Our own and test accounts stay out of every figure once `TRAFFIC_REPORT` is on.
+
+1. Run `cargo xtask admin internal --env <env> <account>...`. Add `--off` to undo it. Each change is audited.
+2. It reaches every isolate within ten minutes. Points already written can't be taken back.
+3. Repository tokens and signed-out readers name no account, so tools using them send the own-traffic mark (`tools/own-traffic.mjs`).
+
 ## Basin analytics
 
 After a landing, the derive job streams one change record per landed version, merged commit and refused ticket to a Basin Pipeline (`CHANGELOG`, `cloudflare/worker/repo-changelog.ts`). The records land in an Iceberg table that Basin SQL queries. No binding means no stream, no cursor and no hold on compaction. **Analytics never stops a repository:** it is off the commit path, and it gives up history before it keeps a repository waiting.

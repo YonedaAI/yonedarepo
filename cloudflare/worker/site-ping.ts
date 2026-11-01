@@ -5,7 +5,10 @@
 // scripted browser still counts: this keeps out scanners, not a determined script. A signed-in
 // reader of a public page counts too: the point says only that a session was there, never whose,
 // and the page is looked up without the cookie, so a private repository and the app never match.
+// With TRAFFIC_REPORT on, a reader whose session names an account that's ours leaves no point.
 import { normalizeHandle } from '../../shared/account';
+import { sessionAccount } from './accounts';
+import { isInternal } from './internal-accounts';
 import { appHead, siteHead } from './seo-head';
 import {
   APP_PAGES,
@@ -46,8 +49,13 @@ async function record(req: Request, env: Env) {
   const body = JSON.parse(text) as { path?: unknown; referrer?: unknown };
   if (typeof body?.path !== 'string' || !PATH.test(body.path)) return;
   const path = await knownPage(body.path, url.origin, address, env);
-  if (!path) return;
+  if (!path || (await isOurs(req, env))) return;
   write(req, env, path, referrerName(body.referrer, url.hostname));
+}
+
+async function isOurs(req: Request, env: Env) {
+  const account = env.TRAFFIC_REPORT === 'on' ? sessionAccount(req) : null;
+  return account !== null && (await isInternal(env, account)) !== false;
 }
 
 function write(req: Request, env: Env, path: string, referrer: string) {

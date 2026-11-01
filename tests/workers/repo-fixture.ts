@@ -14,6 +14,7 @@ import accounts from '../../cloudflare/migrations/0009_platform_accounts.sql?raw
 import activitySize from '../../cloudflare/migrations/0010_platform_activity_db_bytes.sql?raw';
 import deletedRepos from '../../cloudflare/migrations/0011_platform_deleted_repos.sql?raw';
 import accountRegion from '../../cloudflare/migrations/0012_platform_account_region.sql?raw';
+import accountInternal from '../../cloudflare/migrations/0013_platform_account_internal.sql?raw';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { type CheckReport, completeContainerCheck } from '../../cloudflare/worker/repo-checks';
 import { compute } from '../../cloudflare/worker/repo-compute';
@@ -202,7 +203,7 @@ afterEach(async () => {
 });
 beforeEach(async () => {
   // Every config running these tests gets the D1 schema (listing and personal-token lookup).
-  for (const migration of [listing, tokens, members, visibility, activity, handles, accounts, activitySize, deletedRepos, accountRegion])
+  for (const migration of [listing, tokens, members, visibility, activity, handles, accounts, activitySize, deletedRepos, accountRegion, accountInternal])
     for (const statement of migration.split(';').filter((s) => s.replace(/--.*$/gm, '').trim()))
       await bindings.INDEX
         .exec(statement.replace(/--.*$/gm, '').replace(/\s+/g, ' ').trim())

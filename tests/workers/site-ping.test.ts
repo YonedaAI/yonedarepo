@@ -3,7 +3,9 @@
 // requests about pages that exist. Simulated bindings only.
 import { env } from 'cloudflare:workers';
 import { expect, it, vi } from 'vitest';
+import { encodeAccountIdentifier } from '../../shared/account';
 import { frontFetch } from '../../cloudflare/worker/front-routes';
+import { forgetInternalAccounts } from '../../cloudflare/worker/internal-accounts';
 import type { Env } from '../../cloudflare/worker/types';
 
 const bindings = env as unknown as Env;
@@ -211,4 +213,40 @@ it('fails silently: the switch off, no binding, or every dependency throwing', a
     },
   });
   expect((await frontFetch(ping({ path: '/alice/compiler' }), broken.using)).status).toBe(204);
+});
+
+it('leaves out a signed-in reader whose account is ours, asking the platform once', async () => {
+  forgetInternalAccounts();
+  const internalAccounts = vi.fn(async () => ['team']);
+  // As on the front Worker: no D1 of its own.
+  const { using, points } = site({
+    TRAFFIC_REPORT: 'on',
+    INDEX: undefined,
+    PLATFORM: { fetch: platform(), internalAccounts } as unknown as Fetcher,
+  });
+  const reader = (name: string) => ({
+    ...browser,
+    cookie: `yoneda_account=${encodeAccountIdentifier(name)}.${'a'.repeat(64)}`,
+  });
+  await frontFetch(ping({ path: '/pricing' }, reader('team')), using);
+  expect(points).toEqual([]);
+  await frontFetch(ping({ path: '/pricing' }, reader('stranger')), using);
+  expect(points.map((p) => p.blobs?.[9])).toEqual(['signed_in']);
+  expect(internalAccounts).toHaveBeenCalledTimes(1);
+  // A signed-out reader names no account, so nothing is asked for them.
+  await frontFetch(ping({ path: '/pricing' }), using);
+  expect(points).toHaveLength(2);
+  expect(internalAccounts).toHaveBeenCalledTimes(1);
+});
+
+it('asks nothing about a signed-in reader with the switch off', async () => {
+  forgetInternalAccounts();
+  const internalAccounts = vi.fn(async () => ['team']);
+  const { using, points } = site({
+    PLATFORM: { fetch: platform(), internalAccounts } as unknown as Fetcher,
+  });
+  const cookie = `yoneda_account=${encodeAccountIdentifier('team')}.${'a'.repeat(64)}`;
+  await frontFetch(ping({ path: '/pricing' }, { ...browser, cookie }), using);
+  expect(points).toHaveLength(1);
+  expect(internalAccounts).not.toHaveBeenCalled();
 });

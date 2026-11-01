@@ -53,6 +53,24 @@ Agree these before the first run. They are starting targets, not commitments.
 | Data points per request | at most 1: reads 1 in 10, everything else all |
 | Failed or missing binding | no response changes |
 
+## Traffic report budget
+
+`TRAFFIC_REPORT` adds outcome and duration to client points, leaves internal accounts out, and opens every range on the Traffic page. Written before the code. Measure on against off before prod turns it on.
+
+| Measure | Target |
+|---|---|
+| Data points per request | At most 1, as above. With `REGION_SIGNALS` on, 1 write in 10 has a second, its own |
+| Points written in a transaction | 0: all after the answer |
+| Awaits added before the response | 0 |
+| Added to each request | One clock read, one request-scoped store |
+| D1 reads per request | 0 |
+| D1 reads for the internal list | At most 1 per isolate every 5 minutes, after the answer, and only for a counted request with an account |
+| Front Worker calls for the list | At most 1 RPC to the platform per isolate every 5 minutes, only for a signed-in ping |
+| List can't be read | The last list stands. With none yet, the point is dropped: a lost point is acceptable, our own traffic in a figure isn't |
+| Queries per report | 10 on the SQL API, as today, and 1 on GraphQL. 9 at 90 days, which has no previous period |
+| Land p95, 1,000-writer burst, on against off | At most 5% worse, 3 runs each |
+| Failed or missing binding | No response changes |
+
 ## Region signals budget
 
 `platform-write-origin.ts` samples where writes come from, behind `REGION_SIGNALS` (global regions stage R1). Written before the code. Measure on against off before either environment turns it on.

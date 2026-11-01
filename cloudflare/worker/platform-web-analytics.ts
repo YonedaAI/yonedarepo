@@ -4,7 +4,7 @@
 // JavaScript, so it is a separate witness to the Worker's server-side count. Sites are matched by
 // host: the `siteTag` filter takes a tag the beacon's site token is not. A failure here reports
 // itself and leaves the rest of the Traffic page alone.
-import type { TrafficWindow, WebAnalyticsCheck } from '../../shared/site-traffic';
+import type { WebAnalyticsCheck } from '../../shared/site-traffic';
 import type { Env } from './types';
 
 const GRAPHQL = 'https://api.cloudflare.com/client/v4/graphql';
@@ -36,7 +36,7 @@ function siteHost(origin: string | undefined) {
  * no earlier than `since` (epoch milliseconds). */
 export async function webAnalytics(
   env: Env,
-  days: TrafficWindow,
+  days: number,
   fetcher: typeof fetch = fetch,
   now = Date.now(),
   since = 0,
