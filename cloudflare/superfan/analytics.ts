@@ -3,6 +3,7 @@
 // request per run keeps within the API's query budget. Errors carry only status codes and
 // Cloudflare's error messages, never request headers.
 import type { WatchIds, WatchSite, WatchTarget } from './config';
+import { DELIVERY_QUERY, type QueueMinutes, queueMinutes } from './delivery';
 
 export const API_URL = 'https://api.cloudflare.com/client/v4';
 export const GRAPHQL_URL = `${API_URL}/graphql`;
@@ -30,6 +31,8 @@ export interface Analytics {
 }
 export interface AnalyticsSource {
   collect(now: number): Promise<Analytics>;
+  /** The jobs queue by the minute over a window; a source that can't has no such method. */
+  delivery?(start: string, end: string): Promise<QueueMinutes>;
 }
 
 /** A telemetry source could not be read; `reason` is safe to store and show. */
@@ -207,10 +210,21 @@ export class CloudflareAnalytics implements AnalyticsSource {
       queues: Object.values(t.queues),
       app: t.checkApp,
     };
+    return parseAccount(await this.ask(QUERY, variables), t, window);
+  }
+
+  async delivery(start: string, end: string) {
+    const { account, queues } = await this.target();
+    const variables = { account, start, end, queues: [queues.jobs] };
+    return queueMinutes(await this.ask(DELIVERY_QUERY, variables));
+  }
+
+  /** One GraphQL request's account result; a failure is a telemetry error. */
+  private async ask(query: string, variables: object): Promise<Row> {
     const res = await fetch(GRAPHQL_URL, {
       method: 'POST',
       headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ query: QUERY, variables }),
+      body: JSON.stringify({ query, variables }),
       redirect: 'manual',
       signal: AbortSignal.timeout(20_000),
     }).catch(() => null);
@@ -228,7 +242,7 @@ export class CloudflareAnalytics implements AnalyticsSource {
         `${status}${message ? `: ${message}` : ''}${diagnosis}`.slice(0, 300),
       );
     }
-    return parseAccount(account, t, window);
+    return account;
   }
 
   /**

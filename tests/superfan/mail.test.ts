@@ -365,6 +365,7 @@ describe('copy', () => {
       analytics,
       deadmanAge: 90,
       release: { revision: 'a', previous: 'b', after: tail, before: tail },
+      delivery: { queue: 'q', gapMs: 70_700, waiting: 3, waitedMs: 48_000 },
     } as Snapshot;
     return evaluate(snapshot, {}, true).flatMap((r) =>
       r.signals.map((s) => [r.component, s.name] as const),

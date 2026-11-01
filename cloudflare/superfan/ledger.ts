@@ -4,6 +4,7 @@
 // or double-mail.
 import { DurableObject } from 'cloudflare:workers';
 import type { SuperfanEnv } from './config';
+import { type Delivery, gapsSince, recordDeliveries } from './delivery';
 import { type DeployRow, insertDeploy, latestRevision, recentDeploys } from './ledger-deploys';
 import {
   type Level,
@@ -82,8 +83,15 @@ export class SuperfanLedger extends DurableObject<SuperfanEnv> {
   }
 
   /** Merges one tail batch's counters. */
-  ingest(rows: TailRow[], now: number) {
-    this.#tx((sql) => ingestRows(sql, rows, now));
+  ingest(rows: TailRow[], now: number, delivered: Delivery[] = []) {
+    this.#tx((sql) => {
+      ingestRows(sql, rows, now);
+      recordDeliveries(sql, delivered, now);
+    });
+  }
+
+  queueGaps(since: number) {
+    return gapsSince(this.ctx.storage.sql, since);
   }
 
   tailStats(start: number, end: number) {

@@ -187,7 +187,7 @@ A real stall, found by the agents-live test: the jobs queue's consumer got no in
 | Superfan's tail batch | The same one ledger call, with up to 1 more row per consumer invocation |
 | Gap rows kept | About 2 hours, at most 1 per consumer invocation, so at most 120 |
 | A pass with no gap | 1 ledger read, no GraphQL request |
-| A pass with a gap | 1 ledger read and 1 more GraphQL request, of 300 allowed per 5 minutes. At most 25 an hour on the wide watch |
+| A pass with a gap | 1 ledger read and 1 more GraphQL request, of 300 allowed per 5 minutes. At most 13 more an hour on the wide watch |
 
 Seen about 5 to 10 minutes after it ends, as analytics lag. It reads a past stall: nothing here can see one in progress.
 

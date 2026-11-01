@@ -361,6 +361,8 @@ describe('ledger schema', () => {
     const stub = env.LEDGER.get(env.LEDGER.idFromName('schema-upgrade-6')) as DurableObjectStub<SuperfanLedger>;
     await runInDurableObject(stub, (_instance, state) => {
       const sql = state.storage.sql;
+      sql.exec('DROP TABLE queue_gaps');
+      sql.exec('DROP TABLE queue_consumers');
       sql.exec('DROP TABLE probe_results');
       sql.exec('UPDATE schema_version SET version = 5');
       expect(migrate(sql)).toBe(MIGRATIONS.length);

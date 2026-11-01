@@ -131,6 +131,7 @@ function groups(findings: FindingRow[]) {
       group.values[rule] = signal?.value ?? null;
       if (signal?.baseline !== undefined) group.baseline = signal.baseline;
       if (signal?.detail) group.detail = signal.detail;
+      if (signal?.detail) group.detail = signal.detail;
     }
   return [...found.values()];
 }
@@ -142,6 +143,7 @@ function item(group: Group, site: MailSite): Item {
     word: WORD[component] ?? 'service',
     noun: nounOf(component),
     baseline,
+    detail,
   };
   const earliest = rows.map((f) => f.first_seen).sort()[0];
   const link: Link | undefined = copy.link?.(component);

@@ -124,6 +124,12 @@ export const COPY: Copy[] = [
     },
   },
   {
+    signals: ['delivery_gap'],
+    title: (f) => `Jobs queue had no consumer for ${count(f, 'delivery_gap')} s`,
+    means: (f) => f.detail ?? 'Messages waited with nothing taking them.',
+    first: 'Landings and webhooks ran late. Check the queue, then any deploy.',
+  },
+  {
     signals: ['cron_missing'],
     title: () => 'Scheduled tasks have stopped',
     means: 'Purges, compaction, SSH keep-alive and the nightly billing check are off.',
