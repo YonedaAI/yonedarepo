@@ -1,6 +1,8 @@
 // The admin pages' model (operators only; every answer comes from `/api/v1/admin`, which
 // checks for itself): the sections, the API's shapes and paths, the sign-ups unread marker
 // this browser keeps, and the labels the pages show.
+import type { AdminReports } from '../../../../shared/platform-reports';
+
 export const ADMIN_SECTIONS = [
   'overview',
   'users',
@@ -8,6 +10,9 @@ export const ADMIN_SECTIONS = [
   'repos',
   'audit',
   'traffic',
+  'visitors',
+  'operations',
+  'infrastructure',
 ] as const;
 export type AdminSection = (typeof ADMIN_SECTIONS)[number];
 export const isAdminSection = (value: string | undefined): value is AdminSection =>
@@ -19,7 +24,19 @@ export const SECTION_LABEL: Record<AdminSection, string> = {
   repos: 'Repositories',
   audit: 'Audit log',
   traffic: 'Traffic',
+  visitors: 'Visitors',
+  operations: 'Operations',
+  infrastructure: 'Infrastructure',
 };
+/** The tabs only some platforms have, and what the shell's sign-up feed says about them. */
+export const shownSections = (reports?: AdminReports) =>
+  ADMIN_SECTIONS.filter((id) =>
+    id === 'visitors'
+      ? reports?.visitors
+      : id === 'operations' || id === 'infrastructure'
+        ? reports?.operations
+        : true,
+  );
 
 export type Overview = {
   accounts: { total: number; new_24h: number; new_7d: number; new_30d: number; active_7d: number };
@@ -80,7 +97,7 @@ export type AccountDetail = {
   /** Whether the Billing section exists here (ADMIN_BILLING). */
   billing?: boolean;
 };
-export type Signups = { items: AdminAccount[]; unread: number };
+export type Signups = { items: AdminAccount[]; unread: number; reports?: AdminReports };
 export type AuditEntry = {
   id: number;
   at: number;

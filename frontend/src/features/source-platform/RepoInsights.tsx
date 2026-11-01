@@ -9,8 +9,9 @@ import type {
 } from '../../../../shared/repo-insights';
 import type { TrafficRange } from '../../../../shared/site-traffic';
 import { EmptyState } from '../../components/EmptyState';
+import { RangePicker } from '../admin/AdminParts';
 import { TimeChart } from '../admin/TimeChart';
-import { figure, RANGE_LABELS } from '../admin/trafficModel';
+import { figure } from '../admin/trafficModel';
 import {
   activityBars,
   INSIGHT_RANGES,
@@ -170,20 +171,7 @@ export function RepoInsights({ repo }: { repo: string }) {
     <section aria-labelledby="insights-heading" className="insights" aria-busy={insights.loading}>
       <div className="source-changes-head">
         <h2 id="insights-heading">Insights</h2>
-        <fieldset className="admin-window">
-          <legend className="sr-only">Range</legend>
-          {INSIGHT_RANGES.map((id) => (
-            <button
-              key={id}
-              type="button"
-              className="quiet"
-              aria-pressed={range === id}
-              onClick={() => setRange(id)}
-            >
-              {RANGE_LABELS[id]}
-            </button>
-          ))}
-        </fieldset>
+        <RangePicker ranges={INSIGHT_RANGES} range={range} onChange={setRange} />
       </div>
       {!data && !insights.error && <Loading what="insights" />}
       {insights.error && <Failure error={insights.error} what="insights" onRetry={reload} />}

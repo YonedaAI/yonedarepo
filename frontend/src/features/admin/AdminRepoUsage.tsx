@@ -7,6 +7,7 @@ import { linkTo, type Navigate } from '../shell/useRoute';
 import { byteSize } from '../source-platform/insightsModel';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { useSource } from '../source-platform/useSource';
+import { RangePicker } from './AdminParts';
 import { figure, RANGE_LABELS } from './trafficModel';
 
 const RANGES: TrafficRange[] = ['7d', '30d', '90d'];
@@ -102,20 +103,7 @@ export function RepoUsage({ navigate }: { navigate: Navigate }) {
     <>
       <div className="admin-traffic-row">
         <h2 className="home-label">Use, last {RANGE_LABELS[range]}</h2>
-        <fieldset className="admin-window">
-          <legend className="sr-only">Range</legend>
-          {RANGES.map((id) => (
-            <button
-              key={id}
-              type="button"
-              className="quiet"
-              aria-pressed={range === id}
-              onClick={() => setRange(id)}
-            >
-              {RANGE_LABELS[id]}
-            </button>
-          ))}
-        </fieldset>
+        <RangePicker ranges={RANGES} range={range} onChange={setRange} />
       </div>
       {body()}
     </>

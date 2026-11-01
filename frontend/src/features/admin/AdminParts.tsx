@@ -2,10 +2,12 @@
 // ones appended by "Load more"), its search box and its button.
 import { Search } from 'lucide-react';
 import { type FormEvent, useState } from 'react';
+import type { TrafficRange } from '../../../../shared/site-traffic';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { sourceApi } from '../source-platform/sourceApi';
 import { useSource } from '../source-platform/useSource';
 import type { Page } from './adminModel';
+import { RANGE_LABELS } from './trafficModel';
 
 /** The listing `pathOf(before)` pages through, newest first. */
 export function usePaged<T>(pathOf: (before?: number) => string) {
@@ -105,5 +107,33 @@ export function SearchBox({
         Search
       </button>
     </form>
+  );
+}
+
+/** The range buttons of a report's header row. */
+export function RangePicker({
+  ranges,
+  range,
+  onChange,
+}: {
+  ranges: TrafficRange[];
+  range: TrafficRange;
+  onChange: (range: TrafficRange) => void;
+}) {
+  return (
+    <fieldset className="admin-window">
+      <legend className="sr-only">Range</legend>
+      {ranges.map((id) => (
+        <button
+          key={id}
+          type="button"
+          className="quiet"
+          aria-pressed={range === id}
+          onClick={() => onChange(id)}
+        >
+          {RANGE_LABELS[id]}
+        </button>
+      ))}
+    </fieldset>
   );
 }

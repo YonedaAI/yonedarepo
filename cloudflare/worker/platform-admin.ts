@@ -30,8 +30,10 @@ import {
 } from './platform-admin-queries';
 import { rebuildRollup, revenue } from './platform-admin-revenue';
 import { operatorOrgHold, operatorRepoHold } from './platform-holds';
+import { infraReport } from './platform-infra-report';
 import { currentHold } from './platform-legal-hold';
 import { exportSubscribers, subscriberCount } from './platform-newsletter';
+import { adminReports, operationsReport } from './platform-operations-report';
 import { orgArg } from './platform-orgs';
 import { purgeOrphan } from './platform-orphan-purge';
 import { landingReport, repoUsageReport } from './platform-repo-reports';
@@ -82,10 +84,13 @@ export async function adminRoute(
   }
   if (section === 'newsletter' && !id && get)
     return exportSubscribers(env, actor, query.get('after'));
-  if (section === 'signups' && !id && get) return signups(env, query.get('since'));
+  if (section === 'signups' && !id && get)
+    return { ...(await signups(env, query.get('since'))), reports: adminReports(env) };
   if (section === 'audit' && !id && get) return auditLog(env, query.get('before'));
   if (section === 'traffic' && !id && get) return trafficReport(env, query);
   if (section === 'traffic' && id === 'landings' && get) return landingReport(env, query);
+  if (section === 'operations' && !id && get) return operationsReport(env, query);
+  if (section === 'infrastructure' && !id && get) return infraReport(env);
   if (section === 'backfill' && !id && post) {
     const after = (await body().catch(() => ({}) as Json)).after;
     const done = await backfillAccounts(env, typeof after === 'string' ? after : '');
