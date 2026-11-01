@@ -4,6 +4,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import type { SiteTraffic } from '../../../../shared/site-traffic';
 import { AppSidebar } from '../shell/AppSidebar';
 import {
   formatSourceRoute,
@@ -11,12 +12,7 @@ import {
   type SourceRoute,
 } from '../source-platform/sourceRoute';
 import { AdminRoot } from './AdminRoot';
-import {
-  PlatformClients,
-  TrafficCheck,
-  TrafficClassNote,
-  TrafficHeadlineCards,
-} from './AdminTrafficCheck';
+import { PlatformClients, TrafficCheck, TrafficHeadlineCards } from './AdminTrafficCheck';
 import {
   accountsPath,
   barHeights,
@@ -29,6 +25,8 @@ import {
   saveSeen,
   signupsPath,
   storageAlert,
+  trafficEmpty,
+  trafficNote,
   unreadLabel,
 } from './adminModel';
 
@@ -210,59 +208,151 @@ describe('admin pages', () => {
 });
 
 describe('admin traffic labels', () => {
-  const note = (since: string | null) =>
-    renderToStaticMarkup(createElement(TrafficClassNote, { since }));
   const check = (web_analytics: object) =>
     renderToStaticMarkup(
-      createElement(TrafficCheck, { days: 7, humans: 1234, web_analytics } as never),
+      createElement(TrafficCheck, {
+        days: 7,
+        humans: 1234,
+        counting: true,
+        web_analytics,
+      } as never),
     );
-
-  it('says when classes began, and that older rows stay as they were', () => {
-    const html = note('2026-11-02');
-    expect(html).toContain('Classes began on 2026-11-02');
-    expect(html).toContain('cannot be cleaned');
-    expect(note(null)).toContain('No request has been classed yet');
-  });
-
-  it('heads the page with three classes, each saying what it can and cannot prove', () => {
-    const html = renderToStaticMarkup(
+  const cards = (counting: boolean) =>
+    renderToStaticMarkup(
       createElement(TrafficHeadlineCards, {
-        headline: { humans: 40, agents_site: 9, agents_platform: 1200, bots: 52, crawlers: 7 },
+        counting,
+        headline: {
+          humans: 40,
+          humans_signed_in: 6,
+          agents_site: 9,
+          agents_platform: 1200,
+          bots: 52,
+          crawlers: 7,
+        },
       }),
     );
+  const now = Date.UTC(2026, 10, 2, 12);
+
+  it('says when a window is only partly counted, and never reads off as zero', () => {
+    const report = { counting: true, classed_since: '2026-10-31', days: 7 } as const;
+    expect(trafficNote(report, now)).toEqual({
+      warn: true,
+      text: 'Counted since 2026-10-31: 3 of these 7 days.',
+    });
+    expect(trafficNote({ ...report, classed_since: '2026-10-01' }, now)).toEqual({
+      warn: false,
+      text: 'Page views, not unique visitors.',
+    });
+    expect(trafficNote({ ...report, classed_since: null }, now).text).toBe('Nothing counted yet.');
+    const off = trafficNote({ ...report, counting: false }, now);
+    expect(off.warn).toBe(true);
+    expect(off.text).toContain('unknown, not zero');
+  });
+
+  it('keeps every line of the page within the reading width', () => {
+    const long = '2026-10-31';
+    for (const [counting, classed_since] of [
+      [false, long],
+      [true, null],
+      [true, long],
+    ] as const)
+      expect(
+        trafficNote({ counting, classed_since, days: 30 }, now).text.length,
+      ).toBeLessThanOrEqual(76);
+  });
+
+  it('heads the page with three short classes, signed-in humans shown apart', () => {
+    const html = cards(true);
     expect(html).toContain('Humans');
+    expect(html).toContain('6 signed in, 34 signed out');
     expect(html).toContain('1,209');
-    expect(html).toContain('9 self-identified on the site, 1,200 platform requests');
-    expect(html).toContain('Bots and unconfirmed');
-    expect(html).toContain('7 from search crawlers');
-    expect(html).toContain('A scripted browser can pass');
-    expect(html).toContain('the one solid signal');
+    expect(html).toContain('9 on the site, 1,200 on the platform');
+    expect(html).toContain('>Bots<');
+    expect(
+      renderToStaticMarkup(
+        createElement(TrafficHeadlineCards, {
+          counting: true,
+          headline: {
+            humans: 0,
+            humans_signed_in: 0,
+            agents_site: 0,
+            agents_platform: 0,
+            bots: 1,
+            crawlers: 1,
+          },
+        }),
+      ),
+    ).toContain('1 search crawler, 0 unconfirmed');
+    expect(html).toContain('7 search crawlers, 45 unconfirmed');
+    expect(html).toContain('admin-tiles-three');
+  });
+
+  it('shows Humans as unknown where nothing is counting', () => {
+    const html = cards(false);
+    expect(html).toContain('—');
+    expect(html).toContain('Not counted here yet');
+    expect(html).not.toContain('>40<');
+  });
+
+  it('has nothing to show only when every part of the report is empty', () => {
+    const empty = {
+      headline: {
+        humans: 0,
+        humans_signed_in: 0,
+        agents_site: 0,
+        agents_platform: 0,
+        bots: 0,
+        crawlers: 0,
+      },
+      by_day: [],
+      campaigns: [],
+      signups: { last_7: [], last_30: [] },
+    } as never as SiteTraffic;
+    expect(trafficEmpty(empty)).toBe(true);
+    expect(trafficEmpty({ ...empty, headline: { ...empty.headline, bots: 1 } })).toBe(false);
+    expect(
+      trafficEmpty({ ...empty, by_day: [{ day: '2026-10-31', humans: 1, agents: 0, bots: 0 }] }),
+    ).toBe(false);
   });
 
   it('names each client kind and shows what a token proved', () => {
     const rows = [{ client: 'cli', operation: 'land', count: 1500, with_token: 1400 }];
-    const html = renderToStaticMarkup(createElement(PlatformClients, { days: 7, clients: rows }));
+    const html = renderToStaticMarkup(
+      createElement(PlatformClients, { days: 7, clients: rows, counting: true }),
+    );
     expect(html).toContain('yoneda CLI');
     expect(html).toContain('land');
     expect(html).toContain('1,500');
     expect(html).toContain('1,400');
-    const empty = renderToStaticMarkup(createElement(PlatformClients, { days: 7, clients: [] }));
-    expect(empty).toContain('TRAFFIC_EVENTS');
+    const empty = (counting: boolean) =>
+      renderToStaticMarkup(createElement(PlatformClients, { days: 7, clients: [], counting }));
+    expect(empty(true)).toContain('No platform requests in this window.');
+    expect(empty(false)).toContain('Not counted here yet.');
+    expect(empty(true)).not.toContain('<table');
   });
 
-  it('names what each count measures, side by side', () => {
+  it('sets the signed-out count beside what Web Analytics saw', () => {
     const html = check({ ok: true, host: 'yonedarepo.com', page_loads: 56, visits: 7 });
-    expect(html).toContain('Humans');
+    expect(html).toContain('Humans, signed out');
     expect(html).toContain('Web Analytics page loads');
     expect(html).toContain('Web Analytics visits');
     expect(html).toContain('1,234');
-    expect(html).toContain('yonedarepo.com');
   });
 
-  it('keeps our count and says why when Web Analytics is missing', () => {
+  it('shows one line, no table, when Web Analytics has nothing to compare', () => {
     const failed = check({ ok: false, reason: 'query_failed' });
-    expect(failed).toContain('1,234');
     expect(failed).toContain('Web Analytics could not be read');
-    expect(check({ ok: false, reason: 'not_configured' })).toContain('WEB_ORIGIN');
+    expect(failed).not.toContain('<table');
+    expect(check({ ok: false, reason: 'not_configured' })).toContain('not set up here');
+    const off = renderToStaticMarkup(
+      createElement(TrafficCheck, {
+        days: 7,
+        humans: 0,
+        counting: false,
+        web_analytics: { ok: true, host: 'x', page_loads: 12, visits: 3 },
+      }),
+    );
+    expect(off).toContain('Not counted here yet.');
+    expect(off).not.toContain('<table');
   });
 });

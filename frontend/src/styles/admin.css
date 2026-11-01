@@ -52,6 +52,23 @@
 .admin-tiles {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
+.admin-tiles-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.admin-traffic-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+.admin-traffic-row .source-meta {
+  margin: 0;
+}
+.admin-traffic-row .source-meta strong {
+  color: var(--text);
+  font-weight: 600;
+}
 .admin-bars {
   display: grid;
   grid-template-columns: repeat(30, minmax(0, 1fr));
@@ -297,6 +314,9 @@
   }
   .admin-tiles {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .admin-tiles-three {
+    grid-template-columns: minmax(0, 1fr);
   }
   .admin-bars {
     gap: 1px;
