@@ -20,6 +20,10 @@ impl DurableObject for SourceRepository {
     }
 
     async fn fetch(&self, mut request: Request) -> Result<Response> {
+        // The adapter's path, never client input, asked only with REGION_HINT_TEST on.
+        if request.path() == "/where" {
+            return yoneda_cloudflare::colo_trace().await;
+        }
         let body: Value = request.json().await?;
         let store = CloudStore::new(self.state.storage());
         // Schema digests are verified once per instance, not on every request.

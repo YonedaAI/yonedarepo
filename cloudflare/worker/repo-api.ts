@@ -55,6 +55,7 @@ import {
   setVisibility,
 } from './repo-public';
 import { quarantineRoute } from './repo-quarantine';
+import { regionHintTest, whereRepository } from './repo-region-hint';
 import { releaseDownload, releasesRoute } from './repo-releases';
 import { restoreRepository } from './repo-restore';
 import { SESSION_BODY_LIMIT } from './repo-session-records';
@@ -263,6 +264,8 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     ]);
     return { ...compaction, storage };
   }
+  // Where this repository's objects run (repo-region-hint.ts); off, an unknown path.
+  if (resource === 'where' && get && regionHintTest(env)) return whereRepository(ctx);
   if (resource === 'retention' && req.method === 'PUT') {
     const { keep_versions, keep_days } = await bodyOf(req);
     return audited(env, repo, ctx.call({ op: 'repo_set_retention', keep_versions, keep_days }));

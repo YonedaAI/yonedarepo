@@ -15,6 +15,7 @@ import { HeadHolder } from './repo-head-holder';
 import { claimCommand } from './repo-land-poll';
 import { landBatch, type Settled } from './repo-merge';
 import { caller, type Json, RepoContext } from './repo-ops';
+import { whereHere } from './repo-region-hint';
 import { RefsHolder } from './repo-snapshots';
 import type { Env } from './types';
 
@@ -284,6 +285,14 @@ export class LandCombiner extends DurableObject<Env> {
   refresh(repo: string, access = false) {
     this.#refs.forget();
     return this.#head.refresh(repo, access);
+  }
+
+  /** The data center this instance runs in (REGION_HINT_TEST only). `keep` stores a key, so a
+   * combiner made here is a stored object: one that held nothing could start elsewhere later.
+   * `erase` removes it. */
+  async where(keep = false) {
+    if (keep) await this.ctx.storage.put('placed', true);
+    return whereHere();
   }
 
   /** The repository was erased: forgets its names (`target`, `projector`), its alarm and

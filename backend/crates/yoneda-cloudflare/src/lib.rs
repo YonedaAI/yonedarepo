@@ -2,7 +2,7 @@ use serde_json::{Value, json};
 use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::{JsCast, prelude::*};
-use worker::{SqlStorageValue, Storage};
+use worker::{Fetch, Response, SqlStorageValue, Storage, Url};
 use yoneda_core::Result;
 use yoneda_store::{SqlStore, sql_error};
 
@@ -72,4 +72,13 @@ impl SqlStore for CloudStore {
     fn database_size(&self) -> Result<u64> {
         Ok(self.0.sql().database_size() as u64)
     }
+}
+
+/// Cloudflare's trace page as seen from this Durable Object: its `colo=` line names the data
+/// center the object's own request left from, which no binding reports. No transaction is open
+/// here, and the store is not touched.
+pub async fn colo_trace() -> worker::Result<Response> {
+    let url: Url = "https://www.cloudflare.com/cdn-cgi/trace".parse()?;
+    let text = Fetch::Url(url).send().await?.text().await?;
+    Response::ok(text)
 }

@@ -16,6 +16,7 @@ import { requirePatScope } from './repo-pat';
 import { holdName, releaseNames } from './repo-paths';
 import { dispatchProjection, dispatchPurge } from './repo-projection';
 import { visibilityOf } from './repo-public';
+import { hintedEnv, placeCombiners, regionHint } from './repo-region-hint';
 import { shardOutboxes } from './repo-shards';
 import { createStore } from './repo-store-create';
 import { timed } from './repo-timing';
@@ -152,6 +153,15 @@ async function takeBack(
 }
 
 export async function createRepository(env: Env, requester: Credentials, body: Json) {
+  const hint = regionHint(env, body);
+  if (!hint) return create(env, requester, body);
+  const near = hintedEnv(env, hint);
+  const created = await create(near, requester, body);
+  await timed('create.place', () => placeCombiners(near, created.id));
+  return { ...created, region_hint: hint };
+}
+
+async function create(env: Env, requester: Credentials, body: Json) {
   const auth = await timed('create.owner', () => owning(env, requester, body));
   const visibility = visibilityOf(body.visibility);
   const id = newRepoId();
