@@ -1,6 +1,6 @@
 // The Flight log (`/updates`): email only, plus an unticked consent box, over the three kinds of
 // email the list sends. Whether it takes sign-ups
-// is the platform's answer (NEWSLETTER): until it says yes the page reads Coming soon, with no
+// is the platform's answer (NEWSLETTER): until it says yes the page points to X, with no
 // form, and the space is held so nothing moves when it does. After a sign-up every address reads
 // the same, because the platform never says who is already on the list.
 // `SiteUpdatesLink` is the page an emailed link opens. Opening it changes nothing, so a mail
@@ -135,7 +135,11 @@ export function SiteUpdates() {
       ) : (
         <Frame title="Flight log" line="Updates on what we ship, by email, when there’s news.">
           {state === 'open' && <SignUpForm onSent={() => setState('sent')} />}
-          {state === 'closed' && <p className="site-updates-soon">Coming soon</p>}
+          {state === 'closed' && (
+            <p className="site-updates-soon">
+              Follow along on <a href="https://x.com/YonedaRepo">X</a>.
+            </p>
+          )}
         </Frame>
       )}
       <ul className="site-cells site-tiles site-updates-sent">
