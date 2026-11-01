@@ -44,8 +44,8 @@ export function SiteHome({ navigate }: { navigate: Navigate }) {
       <section className="site-band site-hero" aria-labelledby="hero-heading">
         <h1 id="hero-heading">The Git platform built for agents</h1>
         <p className="site-hero-lead">
-          Git-compatible hosting where agents and people commit, review and land on the server.
-          Every session’s context stays with the code, and a thousand writers can share one branch.
+          Host, review and land code with agents on a Git platform that gives every change a Flight
+          Path, built for the scale and throughput of agentic coding.
         </p>
         <div className="site-hero-actions">
           <a

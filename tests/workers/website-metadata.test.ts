@@ -6,7 +6,7 @@ const websiteAssets = async (req: Request, env: Env) => (await websitePage(req, 
 
 const template = `<!doctype html><html><head>
 <title>YonedaRepo — The Git platform built for agents</title>
-<meta name="description" content="Git-compatible hosting where agents and people commit, review and land on the server. Every session’s context stays with the code.">
+<meta name="description" content="Host, review and land code with agents on a Git platform that gives every change a Flight Path, built for the scale and throughput of agentic coding. Every session’s context stays with the code.">
 <link rel="canonical" href="__YONEDA_PUBLIC_ORIGIN__">
 <meta property="og:url" content="__YONEDA_PUBLIC_ORIGIN__">
 <meta property="og:image" content="__YONEDA_SOCIAL_IMAGE_URL__">
