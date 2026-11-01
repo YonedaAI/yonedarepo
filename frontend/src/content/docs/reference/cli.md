@@ -22,6 +22,7 @@ first needs it)
 ```text
 account
   login [--origin <url>] [--with-token] [--no-browser]   device login (or a token on stdin)
+        [--agent <name>]                                 sign an agent up, for you to approve
   logout [--origin <url>]
   auth token [--show]                                    the token this CLI sends, on stdout for a pipe
                                                          (export YONEDA_TOKEN=$(yoneda auth token))
