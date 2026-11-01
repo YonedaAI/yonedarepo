@@ -9,7 +9,7 @@ import type {
 } from '../../../../shared/repo-insights';
 import type { TrafficRange } from '../../../../shared/site-traffic';
 import { EmptyState } from '../../components/EmptyState';
-import { RangePicker } from '../admin/AdminParts';
+import { CountTable, RangePicker } from '../admin/AdminParts';
 import { TimeChart } from '../admin/TimeChart';
 import { figure } from '../admin/trafficModel';
 import {
@@ -23,52 +23,6 @@ import {
 import { Person } from './Person';
 import { Failure, Loading } from './SourceStatus';
 import { useSource } from './useSource';
-
-function Counts({
-  id,
-  title,
-  label,
-  rows,
-  name,
-  none,
-}: {
-  id: string;
-  title: string;
-  label: string;
-  rows: InsightsCount[];
-  name: (key: string) => string;
-  none: string;
-}) {
-  return (
-    <section className="home-section" aria-labelledby={id}>
-      <h3 id={id} className="home-label">
-        {title}
-      </h3>
-      {rows.length ? (
-        <div className="source-table-wrap">
-          <table className="source-table admin-table">
-            <thead>
-              <tr>
-                <th>{label}</th>
-                <th className="admin-num">Count</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <tr key={r.key}>
-                  <td>{name(r.key)}</td>
-                  <td className="admin-num">{figure(r.count, r.estimated)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <p className="source-empty">{none}</p>
-      )}
-    </section>
-  );
-}
 
 function Contributors({ rows, more }: { rows: RepoContributor[]; more: boolean }) {
   return (
@@ -140,7 +94,7 @@ function Report({ data, reload }: { data: Insights; reload: () => void }) {
         bars={activityBars(usage.series, usage.bucket)}
       />
       <div className="admin-grid admin-grid-two">
-        <Counts
+        <CountTable
           id="insights-who"
           title="Who"
           label="Used by"
@@ -148,7 +102,7 @@ function Report({ data, reload }: { data: Insights; reload: () => void }) {
           name={whoLabel}
           none="Nobody in this range."
         />
-        <Counts
+        <CountTable
           id="insights-reasons"
           title="Why landings failed"
           label="Reason"

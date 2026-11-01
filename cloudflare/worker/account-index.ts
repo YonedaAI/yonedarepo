@@ -8,7 +8,13 @@ import { workspace } from './workspace';
 
 /** How an account signed up: a password (an email address) or a sign-in provider. */
 export type SignupProvider = 'email' | 'github' | 'google';
-export type AccountCreated = { provider?: SignupProvider; welcome?: boolean; region?: string };
+export type AccountCreated = {
+  provider?: SignupProvider;
+  welcome?: boolean;
+  region?: string;
+  /** Where its visitor first landed from, sent with VISITORS on. Untrusted. */
+  source?: unknown;
+};
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 /** The handle an account's name is (an email-named account picks one later). */

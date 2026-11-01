@@ -9,6 +9,7 @@ import { AdminInfrastructure, AdminOperations } from './AdminOperations';
 import { AdminOverview } from './AdminOverview';
 import { AdminTraffic } from './AdminTraffic';
 import { AdminUser } from './AdminUser';
+import { AdminVisitors } from './AdminVisitors';
 import {
   type AdminSection,
   SECTION_LABEL,
@@ -75,6 +76,7 @@ export function AdminRoot({
       {section === 'repos' && <AdminRepos navigate={navigate} />}
       {section === 'audit' && <AdminAudit />}
       {section === 'traffic' && <AdminTraffic />}
+      {section === 'visitors' && <AdminVisitors />}
       {section === 'operations' && <AdminOperations />}
       {section === 'infrastructure' && <AdminInfrastructure />}
     </section>

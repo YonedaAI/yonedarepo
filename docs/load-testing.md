@@ -134,10 +134,10 @@ Agree these before the first run. They are starting targets, not commitments.
 | Points per ping | 1, as today. No new write |
 | Added to a page request | 0: only pings carry the hash |
 | Cookies, IP addresses or user agents stored | 0 |
-| Salt reads | At most 1 RPC to the platform per front isolate and UTC day; 1 D1 write and 1 D1 read per platform answer |
+| Salt reads | At most 1 RPC to the platform per front isolate and UTC day, or 1 a minute while it fails; 1 D1 batch per answer |
 | Salt kept | Today's and yesterday's; older ones are deleted, so a past hash can't be rebuilt |
 | Hash | One SHA-256 per ping, after its rate limit |
-| Sign-up | One more field on one RPC, and 4 columns on one `INSERT` |
+| Sign-up | One more field on one RPC, and 1 D1 update, only when it has a source |
 | Visitors view | 1 SQL API statement, at most 20,000 rows, and 3 D1 statements |
 | No salt to be had | The ping is written as today, with no hash: a view is never lost |
 | Failed or missing binding | No response changes |

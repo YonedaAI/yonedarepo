@@ -7,7 +7,7 @@ import { Failure, Loading } from '../source-platform/SourceStatus';
 import { sourceApi } from '../source-platform/sourceApi';
 import { useSource } from '../source-platform/useSource';
 import type { Page } from './adminModel';
-import { RANGE_LABELS } from './trafficModel';
+import { figure, RANGE_LABELS } from './trafficModel';
 
 /** The listing `pathOf(before)` pages through, newest first. */
 export function usePaged<T>(pathOf: (before?: number) => string) {
@@ -135,5 +135,53 @@ export function RangePicker({
         </button>
       ))}
     </fieldset>
+  );
+}
+
+/** A titled list of counts, or one line when it has none. */
+export function CountTable({
+  id,
+  title,
+  label,
+  rows,
+  name = (key) => key,
+  none = 'None in this range.',
+}: {
+  id: string;
+  title: string;
+  /** The key column's heading. */
+  label: string;
+  rows: { key: string; count: number; estimated: boolean }[];
+  name?: (key: string) => string;
+  none?: string;
+}) {
+  return (
+    <section className="home-section" aria-labelledby={id}>
+      <h3 id={id} className="home-label">
+        {title}
+      </h3>
+      {rows.length ? (
+        <div className="source-table-wrap">
+          <table className="source-table admin-table">
+            <thead>
+              <tr>
+                <th>{label}</th>
+                <th className="admin-num">Count</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.key}>
+                  <td className="admin-key">{name(r.key)}</td>
+                  <td className="admin-num">{figure(r.count, r.estimated)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="source-empty">{none}</p>
+      )}
+    </section>
   );
 }

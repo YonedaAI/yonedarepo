@@ -51,6 +51,7 @@ import { orgArg } from './platform-orgs';
 import { purgeOrphan } from './platform-orphan-purge';
 import { landingReport, repoUsageReport } from './platform-repo-reports';
 import { trafficReport } from './platform-site-traffic';
+import { visitorReport } from './platform-visitor-report';
 import { rebuildDeleted } from './repo-deleted';
 import { backfillObject } from './repo-erase';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
@@ -114,6 +115,7 @@ async function operatorRoute(
   if (section === 'traffic' && !id && get) return trafficReport(env, query);
   if (section === 'traffic' && id === 'landings' && get) return landingReport(env, query);
   if (section === 'operations' && !id && get) return operationsReport(env, query);
+  if (section === 'visitors' && !id && get) return visitorReport(env, query);
   if (section === 'infrastructure' && !id && get) return infraReport(env);
   if (section === 'backfill' && !id && post) {
     const after = (await body().catch(() => ({}) as Json)).after;

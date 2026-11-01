@@ -30,6 +30,8 @@ export const SITE_EVENT_BLOBS = {
   class: 'blob10',
   /** Platform points only (platform-client-events.ts). */
   client: 'blob11',
+  /** Pings with VISITORS on, whose index is the visitor hash (site-visitors.ts). */
+  browser: 'blob11',
   operation: 'blob12',
   /** `write_origin` points only (platform-write-origin.ts); `index1` is the writer's digest. */
   continent: 'blob13',
@@ -203,11 +205,13 @@ export function writeSitePoint(
     provider?: SignupProvider;
     class: SiteClass | '';
     automated: boolean;
+    /** A ping's visitor hash and browser family (site-visitors.ts). */
+    visitor?: { hash: string; browser: string };
   },
 ) {
   try {
     env.SITE_EVENTS?.writeDataPoint({
-      indexes: [event],
+      indexes: [point.visitor?.hash ?? event],
       blobs: [
         event,
         point.path,
@@ -219,6 +223,7 @@ export function writeSitePoint(
         point.source.utm_campaign,
         point.provider ?? '',
         point.class,
+        ...(point.visitor ? [point.visitor.browser] : []),
       ],
       doubles: [point.automated ? 1 : 0, 1],
     });

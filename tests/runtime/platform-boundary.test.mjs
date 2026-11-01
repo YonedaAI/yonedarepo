@@ -45,6 +45,8 @@ const neutral = new Set([
   '../../shared/site-traffic',
   // The Insights page's and admin reports' wire shapes; types only.
   '../../shared/repo-insights',
+  // The admin Operations, Infrastructure and Visitors tabs' wire shapes; types only.
+  '../../shared/platform-reports',
   // Token scope names, generated from Rust; types only.
   '../../shared/contracts/pat-scopes',
   // Account identifier rules (yoneda-core::account's transport counterpart); imports nothing.

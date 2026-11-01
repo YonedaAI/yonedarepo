@@ -15,6 +15,7 @@ import { afterAnswer } from './background';
 import { error, readJson, response } from './http';
 import { log } from './log';
 import type { SignupRegion } from './region';
+import type { SignupSource } from './site-events';
 import { sha } from './storage';
 import type { Env, Principal } from './types';
 import { workspace } from './workspace';
@@ -47,7 +48,7 @@ export function accountCreated(
   account: string,
   email: string | null,
   provider: SignupProvider,
-  region: SignupRegion = {},
+  region: SignupRegion & { source?: SignupSource } = {},
 ) {
   return afterAnswer(async () => {
     const platform = platformOf(env);

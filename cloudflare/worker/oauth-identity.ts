@@ -8,6 +8,8 @@ import { isReservedHandle, normalizeAccountIdentifier } from '../../shared/accou
 import { accountCreated } from './account-email';
 import type { ProviderIdentity } from './oauth-providers';
 import type { SignupRegion } from './region';
+import type { SignupSource } from './site-events';
+import { withSource } from './site-visitors';
 import { sha } from './storage';
 import type { Env, Json } from './types';
 import { workspace } from './workspace';
@@ -75,6 +77,7 @@ export async function signInWith(
   identity: ProviderIdentity,
   sessionHash: string,
   region: SignupRegion = {},
+  source: SignupSource | null = null,
 ): Promise<Outcome> {
   const key = identityKey(identity);
   const held = await holder(env, key);
@@ -119,7 +122,8 @@ export async function signInWith(
     if (identity.email)
       await claims(env, await emailKey(identity.email), { op: 'identity_claim', account: name });
     // A new account only: later sign-ins and links never welcome again.
-    await accountCreated(env, name, identity.email, identity.provider, region);
+    const told = withSource(env, region, source);
+    await accountCreated(env, name, identity.email, identity.provider, told);
     return { kind: 'signed_in', username: name, created: true };
   }
   return { kind: 'error', code: 'unavailable' };

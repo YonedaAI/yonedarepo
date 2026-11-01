@@ -370,6 +370,12 @@ What the figures mean:
 
 Our own and test accounts stay out of every figure once `TRAFFIC_REPORT` is on.
 
+`OPS_REPORT=on` on the platform Worker opens the admin Operations and Infrastructure tabs. Infrastructure also needs `OPS_RESOURCES`, ids and names as JSON: `{"scripts":["yonedarepo-dev-platform"],"queues":{"jobs":"<queue id>","checks":"<queue id>","dead-letter":"<queue id>"},"d1":"<database id>","r2":"<bucket>"}`. `wrangler queues info <name>` gives a queue's id; the database id is in `infra/envs/<env>.lock.json`. A queue whose label holds `dead` reads as dead letters. It uses `ANALYTICS_READ_TOKEN`.
+
+`OPERATOR_AUDIT=on` on the platform Worker needs D1 migration `0015`, which a deploy applies first. Unset it to roll back: the log reads as it did, and the new columns stay, unused.
+
+`VISITORS=on` goes on both Workers, and needs D1 migration `0016`. Keep it off until the owner has reviewed `privacy.md` (the lines are in [docs/analytics-plan.md](analytics-plan.md#phase-5-visitors-and-the-funnel)). Unset it to roll back: pings go back to what they were. Stored hashes stay until Analytics Engine drops them at three months, and the salts that made them are gone within two days.
+
 `REPO_ANALYTICS=on` on the platform Worker, with `TRAFFIC_EVENTS` and `TRAFFIC_REPORT` on, adds the repository, bytes and a landing's outcome to its points, and opens the repository Insights page and the landing and repository reports. Unset it to roll back: the points go back to what they were and the page leaves the sidebar. Points already written stay until Analytics Engine drops them at three months, and they name a repository only by its id. Budget: [docs/load-testing.md](load-testing.md).
 
 1. Run `cargo xtask admin internal --env <env> <account>...`. Add `--off` to undo it. Each change is audited.

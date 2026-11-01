@@ -17,6 +17,7 @@ import { newsletterJob } from './platform-newsletter-email';
 import { platformFetch } from './platform-routes';
 import { signupNoticeJob } from './platform-signup-notice';
 import { sshFrontDoor, sshKeepAlive } from './platform-ssh-gateway';
+import { visitorSalt } from './platform-visitor-salt';
 import { welcomeJob } from './platform-welcome-email';
 import { ERASE, purgeJob } from './repo-admin';
 import { STORE_JOB } from './repo-artifacts-store';
@@ -134,6 +135,10 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
    * out of the site's figures. */
   async internalAccounts() {
     return (await internalAccounts(this.env)) ?? [];
+  }
+  /** The day's salt for the visitor hash (RPC, as above). */
+  visitorSalt(day: string) {
+    return visitorSalt(this.env, day);
   }
   /** Settings' resend (no `change`) or address change for a signed-in account (RPC, as
    * above): a new confirmation token and email, or why not. */

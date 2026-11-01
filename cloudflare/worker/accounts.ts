@@ -16,6 +16,7 @@ import { unlink } from './oauth-identity';
 import { configuredProviders } from './oauth-providers';
 import { signupRegion } from './region';
 import { readSignupSource, recordSignup } from './site-events';
+import { withSource } from './site-visitors';
 import { sha } from './storage';
 import type { Env, Json, Principal } from './types';
 import { workspace } from './workspace';
@@ -197,8 +198,10 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
         );
       if (action === 'recover') await auditMember(env, name);
       if (action === 'signup') {
-        await accountCreated(env, name, email, 'email', signupRegion(req, env));
-        recordSignup(env, req, 'email', readSignupSource(body.source));
+        const source = readSignupSource(body.source);
+        const region = signupRegion(req, env);
+        await accountCreated(env, name, email, 'email', withSource(env, region, source));
+        recordSignup(env, req, 'email', source);
       }
       result = response({ ...account, ...(action !== 'login' ? { recovery_code: recovery } : {}) });
       if (action !== 'recover')

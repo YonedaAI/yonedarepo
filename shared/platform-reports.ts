@@ -1,7 +1,7 @@
 // The admin Operations and Infrastructure tabs' wire shapes. Operations comes from our own points
 // (Analytics Engine); Infrastructure from Cloudflare's GraphQL Analytics API, which runs a few
 // minutes behind, so each answer says what time it covers.
-import type { TrafficRange } from './site-traffic';
+import type { TrafficBucket, TrafficRange } from './site-traffic';
 
 /** Which optional admin tabs this platform has. */
 export interface AdminReports {
@@ -62,6 +62,46 @@ export interface Infrastructure {
   database: Section<{ latency_p50: number; latency_p90: number; bytes: number }>;
   storage: Section<{ bytes: number; change_7d: number; objects: number }>;
 }
+
+/** One step of the way from a visit to a landing. */
+export interface FunnelStep {
+  step: 'visitors' | 'docs' | 'signups' | 'repositories' | 'pushed' | 'landed';
+  count: number;
+  estimated: boolean;
+}
+
+export interface VisitorCount {
+  key: string;
+  count: number;
+  estimated: boolean;
+}
+
+export interface VisitorReport {
+  range: TrafficRange;
+  /** Unique browsers a day, added up: a hash lasts a day, so a return the next day counts again. */
+  visitors: number;
+  /** Approximate: one for each half hour on the clock a browser was seen in. */
+  sessions: number;
+  views: number;
+  estimated: boolean;
+  bucket: TrafficBucket;
+  series: { start: string; end: string; visitors: number; estimated: boolean }[];
+  entries: VisitorCount[];
+  exits: VisitorCount[];
+  referrers: VisitorCount[];
+  countries: VisitorCount[];
+  devices: VisitorCount[];
+  browsers: VisitorCount[];
+  funnel: FunnelStep[];
+  /** Of accounts at least a week old, those seen again a week or more after they signed up. */
+  retention: { cohort: number; returned: number };
+  /** New accounts by where they came from, and those that made a repository. */
+  campaigns: { key: string; signups: number; repositories: number }[];
+}
+
+export type VisitorResult =
+  | { ok: true; report: VisitorReport }
+  | { ok: false; reason: 'off' | 'not_configured' | 'query_failed' };
 
 export type InfrastructureResult =
   | { ok: true; report: Infrastructure }
