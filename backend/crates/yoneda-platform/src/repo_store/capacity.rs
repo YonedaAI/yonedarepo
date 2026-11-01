@@ -124,7 +124,7 @@ pub(super) fn over_size(settings: &Settings, c: &Value) -> bool {
 pub(crate) fn size_refusal() -> Error {
     Error::new(
         "REPO_SIZE_LIMIT",
-        "This repository has reached its size limit. Pushes and new commits are refused; \
+        "This repository has reached its 10 GB size limit. Pushes and new commits are refused; \
          reading, cloning and deleting still work. To keep going, start a new repository or \
          contact support.",
     )

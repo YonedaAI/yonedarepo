@@ -117,7 +117,8 @@ All paths start with `/repos/<id>`.
 | `LEGAL_HOLD` | 423 | A legal hold stands, or could not be read; nothing was deleted |
 | `RATE_LIMITED` | 429 | Too many requests; slow down |
 | `QUARANTINED` | 451 | The owner withheld this content |
-| `REPO_FULL` | 507 | The repository reached its activity limit: new work is refused, reads and deletes go on |
+| `REPO_SIZE_LIMIT` | 507 | The repository reached its [10 GB size limit](/docs/reference/limits#when-a-repository-reaches-10-gb): pushes and new commits are refused, reads and deletes go on |
+| `REPO_FULL` | 507 | The repository reached its [activity limit](/docs/reference/limits#high-activity): new work is refused, reads and deletes go on |
 | `OVERLOADED` | 503 | Retry after the `Retry-After` seconds |
 
 ## MCP tools
