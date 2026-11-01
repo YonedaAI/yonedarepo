@@ -58,7 +58,7 @@ Counted log events stay open for 20 hours after the last one, because some are l
 | `land_queue land_timeouts` | Over 10 landers waited 20 seconds with no answer in 20 hours | Platform logs, `event = land.timed_out`. Expected in a 1,000-writer burst on dev | Landers retry until 2 minutes; a repository with many needs a look |
 | `derived_jobs`, `check_runs`, `managed_worker` `backlog`, `backlog_growth` | Over 50 messages waiting, or more than doubled | Is the consumer running? Observability on that Worker | Usually a stuck or slow job |
 | `derived_jobs lag_ms`, `retries_per_message` | Jobs waited over 2 minutes, or retry more than once on average | `event = job.failed` | As above |
-| `object_push_queue push_retries` | Artifacts refused over 5 pushes | Platform logs, `object store push attempt` | Usually busy and clears itself |
+| `object_push_queue push_retries` | Artifacts refused over 5 pushes | Platform logs, `object store push attempt` or `event = object.push_retry` | Usually busy and clears itself |
 | `check_runs container_disk_percent` | A check container passed 85% disk | Check container metrics | Check image and workspace size |
 | `deadman deadman_stale` | The dead-man hasn't checked in 20 minutes, or can't be read. If Superfan stops now, nobody is told | `GET /health` on the dead-man; its Cron Triggers | Redeploy the dead-man |
 | `telemetry tail_silent` | No tail events this hour. Every tail signal is blind | `GET /status`; is `tail_consumers` still on the Worker? | Redeploy the platform, then Superfan |

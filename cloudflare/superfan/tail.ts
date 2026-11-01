@@ -55,8 +55,9 @@ const OBJECT_CLASSES: Record<string, TailComponent> = {
   WorkspaceAuthority: 'workspace_authority',
 };
 const RESOURCE_KILLS = new Set(['exceededCpu', 'exceededMemory']);
-/** Logged by pushCommit (repo-object-push.ts) when Artifacts refuses a push and it retries. */
-const PUSH_RETRY = /^object store push attempt \d+/;
+/** Logged by pushCommit (repo-object-push.ts) when Artifacts refuses a push and it retries: as
+ * text, or as JSON from the shared logger. Superfan deploys first, so it reads both. */
+const PUSH_RETRY = /^object store push attempt \d+|"event":"object\.push_retry"/;
 /** Logged by compactLog (repo-compaction.ts) when a hold has stalled a repository's log. */
 export const STALL_SAMPLE = 'compaction.stalled';
 /**

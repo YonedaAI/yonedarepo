@@ -262,6 +262,60 @@ describe('blind spots', () => {
   });
 });
 
+describe('log lines before and after the shared logger', () => {
+  /** A line as cloudflare/worker/log.ts writes it: one JSON string, `event` first, its own
+   * `level` a word, then the request's fields. */
+  const logger = (event: string, level: string, fields: Record<string, unknown> = {}) => ({
+    level: level === 'info' ? 'log' : level,
+    message: [JSON.stringify({ event, level, request_id: 'req-1', repo: 'r0', ...fields })],
+  });
+  const counted = (line: ReturnType<typeof logLine>) =>
+    aggregate(
+      traces({ component: 'derived_jobs', count: 1, wallMs: 40, logs: [line] }, start),
+      SCRIPT,
+      true,
+    )[0].marks;
+
+  it.each([
+    ['the old text', { level: 'warn', message: ['object store push attempt 2 refused: busy'] }],
+    ['the logger JSON', logger('object.push_retry', 'warn', { attempt: 2, reason: 'busy' })],
+  ])('counts a push retry from %s', (_form, line) => {
+    const rows = aggregate(
+      traces({ component: 'api_worker', count: 3, wallMs: 40, logs: [line] }, start),
+      SCRIPT,
+    );
+    expect(rows.find((r) => r.component === 'object_push_queue')?.pushRetries).toBe(3);
+  });
+
+  it.each([
+    ['billing.reconcile.mismatch', 'error', 'reconcile_mismatches'],
+    ['compaction.stalled', 'error', 'compaction_stalls'],
+    ['undo.sweep_failed', 'error', 'cron_failures'],
+    ['compaction.sweep_failed', 'error', 'cron_failures'],
+    ['billing.reconcile_failed', 'error', 'cron_failures'],
+    ['billing.reconcile', 'error', 'cron_failures'],
+    ['ssh.keepalive_failed', 'error', 'cron_failures'],
+    ['land.batch_failed', 'warn', 'land_failures'],
+    ['land.submitted_batch_failed', 'warn', 'land_failures'],
+    ['land.step_failed', 'warn', 'land_failures'],
+    ['land.timed_out', 'warn', 'land_timeouts'],
+  ])('counts %s from the logger JSON', (event, level, mark) => {
+    expect(counted(logger(event, level))).toEqual({ [mark]: 1 });
+  });
+
+  it('reads storage from db_bytes, as the logger has a level of its own', () => {
+    const line = logger('repo.storage', 'info', { threshold: 9e9, db_bytes: 9.1e9 });
+    expect(counted(line)).toEqual({ storage_9gb: 1 });
+  });
+
+  it('counts a line logged as an object, and ignores one that only mentions an event', () => {
+    const object = { level: 'error', message: [{ event: 'billing.reconcile.mismatch' }] };
+    expect(counted(object as never)).toEqual({ reconcile_mismatches: 1 });
+    const prose = { level: 'error', message: ['saw billing.reconcile.mismatch in a report'] };
+    expect(counted(prose)).toEqual({});
+  });
+});
+
 describe('new signals', () => {
   it('a reconcile mismatch is urgent, mailed at once, and names no account', async () => {
     const calls = fakeUpstreams(analytics());
