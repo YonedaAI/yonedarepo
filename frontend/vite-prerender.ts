@@ -19,6 +19,9 @@ const ROOT = '<div id="root"></div>';
 const SIGNED_IN_GUARD =
   "<script>try{if(localStorage.getItem('yoneda.signedIn')==='1')document.getElementById('root').textContent=''}catch(e){}</script>";
 
+/** A page's markup, less what every icon repeats: an inline `<svg>` needs no namespace in HTML. */
+const trimmed = (markup: string) => markup.replaceAll(' xmlns="http://www.w3.org/2000/svg"', '');
+
 /** The asset a site page's copy is served from (front Worker: `/_site/<path>`). */
 export const prerenderedFile = (path: string) => `_site${path === '/' ? '/home' : path}.html`;
 
@@ -47,7 +50,7 @@ export function prerenderSite(): Plugin {
         const site = (await server.ssrLoadModule('/src/prerender.tsx')) as Prerender;
         const manifest = site.seoManifest();
         for (const route of manifest.routes.filter((r) => r.sitemap)) {
-          const markup = await site.renderSitePage(route.path);
+          const markup = trimmed(await site.renderSitePage(route.path));
           const guard = route.path === '/' ? SIGNED_IN_GUARD : '';
           this.emitFile({
             type: 'asset',
