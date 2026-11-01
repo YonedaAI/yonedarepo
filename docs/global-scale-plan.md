@@ -1,6 +1,6 @@
 # Scale and global plan
 
-Status: plan, not built. Written 2026-10-30 at dev `169fb5b0`.
+Status: frozen on 2026-11-01. Built: item 1, erase, item 5 (`ACCOUNT_SEARCH`, on in dev, off in prod) and archive stage A (four switches, off). Regions stopped at R1's sampling and a same-region test. The rest is plan. Written 2026-10-30 at dev `169fb5b0`.
 
 ## Context
 
@@ -27,7 +27,7 @@ Corrected size estimate: about 5–6 KB per landing, so about **2M landings to 1
 2. **Every new path sits behind a switch, off by default.** Off means today's behaviour.
 3. **Migrations are additive and ship in two waves.** A repo that has run a migration refuses any older binary with `SCHEMA_TOO_NEW` (`migration.rs:222`), switch or no switch. So wave 1 ships a binary that accepts the new version but doesn't apply it. Wave 2 applies it. Rollback then goes to wave 1, never earlier.
 4. **A new Durable Object class ships alone, in its own wave.** Cloudflare blocks rollback across a class change.
-5. **Dev first.** Full kit at HEAD, 22 of 22, before any prod wave. Prod only on owner "ship".
+5. **Dev first.** Full kit at HEAD, every item passing, before any prod wave. Prod only on owner "ship".
 6. **Reproduce with a failing test first.** Run archive changes against `yoneda-refmodel` differential tests.
 7. **Three steps are one-way:** schema migrations, class changes and deleting SQL rows. Before any delete: write segments, read them in shadow mode, compare, and soak on dev.
 8. **Routing never adds a new dependency to a path that has none.** `yrp_` traffic reads no D1 today, and it must keep working if the directory is down.
@@ -338,7 +338,7 @@ A summary is 2^17 bits (16 KiB, 32 KB as hex), a repo's folded content and path 
 | R5 | Add `cells` to `infra/envs`, based on `Spec::ephemeral`, keeping LFS and SSH secrets with each cell's own bucket keys, and `WorkspaceAuthority` by `script_name`. `enam` keeps today's names | **Existing generated wrangler files byte-identical** |
 | R6 | Edge Worker on a parallel dev hostname, passing everything through. Rebind the three direct paths: front `PLATFORM` (`front-routes.ts:33,46`), managed `PLATFORM` (`managed/platform.ts:44`), SSH `SELF` (`platform-ssh-gateway.ts:43`). Resolve readable Git names at the edge | Full kit passes through it |
 | R7 | API `region` field, behind `CELLS` | Kit item for it |
-| R8 | Build `weur` on dev; full kit from Europe | 22 of 22; latency beats R2 |
+| R8 | Build `weur` on dev; full kit from Europe | Every item passes; latency beats R2 |
 | R9 | Create dialog region choice | Browser kit item for both cells |
 | R10 | Swap `api.` to the edge Worker on dev, then prod. Update `api_origin.rs`, which looks for the domain on the platform role | Owner "ship" |
 | R11 | `weur` on prod | **Real users there,** from R1 |
@@ -677,7 +677,7 @@ Two smaller notes: `cf-placement`, which the region tools read, "may be removed 
 
 | Item | Proof |
 |---|---|
-| Every item | Targeted tests, fmt, clippy, tsc, biome; full kit 22 of 22 at HEAD on dev; prod smoke after each ship |
+| Every item | Targeted tests, fmt, clippy, tsc, biome; full kit passing at HEAD on dev; prod smoke after each ship |
 | Size | Worker test with real DO: size reads back; guard refuses new work, per item in batch mode; projection, compaction, adoption and reads still work. Spike evidence kept |
 | Rollback | For each migration wave, roll back on dev and confirm repos still answer |
 | Load | Evidence files, min/median/max over 3 runs, results table filled |

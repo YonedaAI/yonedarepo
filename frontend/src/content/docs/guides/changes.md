@@ -126,7 +126,7 @@ Landing on a protected branch needs the land scope and the required approvals an
 
 ## Land when cleared
 
-**Settings → Landing rules → Land when cleared**, off by default, has Tower land an open Landing once it clears, so nobody has to press Land. It looks again whenever something could clear it: a check passing, an approval, a comment resolved, a new head, or a Landing opened. Nothing polls, and it starts no agent.
+**Settings → Landing rules → Land when cleared**, off by default, has Tower land an open Landing once it clears, so nobody has to press Land. It looks again whenever something could clear it: a check passing, an approval, a comment resolved, a new head, a Landing opened, or a legal hold or storage limit lifting. Nothing polls, and it starts no agent.
 
 Tower decides by rules alone, and asks no model. The Landing page shows that same decision: **will land when cleared** and what it's waiting for, or a **go-around** when the work has to change. It lands the exact head it evaluated, against the Landing's base, only when all of these hold:
 
@@ -145,7 +145,7 @@ Tower decides by rules alone, and asks no model. The Landing page shows that sam
 
 - Risk is a beta reading on the Landing page. It doesn't hold a Landing.
 - A newer push or a rejection that arrives first stops it, even once the landing has joined the queue.
-- A refused landing stays open with its reason. Only the next event tries again, and a Landing already cleared when you turn this on lands on its next event.
+- A refused landing stays open with its reason, and the next event tries again. A Landing already cleared when you turn this on lands right away.
 - After it lands the page says **Landed automatically**, with who approved and the gates that decided it. The log's actor is `platform:land-when-cleared`, and webhooks fire as for any landing.
 - Each decision is kept on the Landing with its reasons and the head it judged: `clearances` in `GET /changes/<n>`, the newest 32.
 - `yoneda change` and the **Land** button work as before, and don't apply these rules.

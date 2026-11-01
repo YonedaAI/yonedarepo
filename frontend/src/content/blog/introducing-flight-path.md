@@ -36,4 +36,4 @@ The agent's work was real, and our test script played everything around it: the 
 
 ## What runs on production today
 
-Landings, the route, flight plans, required checks and approvals, session records, transcripts and memories are live on yonedarepo.com. So is the Tower page, which shows what Tower would decide. Intent drift, the Instruments cards and automatic landing are built and tested on dev, and they stay off production until we've watched each one there. Risk stays a beta until we can score it against real outcomes.
+Landings, the route, flight plans, required checks and approvals, session records, transcripts and memories are live on yonedarepo.com. So is the Tower page, which shows what Tower would decide, and automatic landing, a per-repository switch that's off by default. Intent drift is live as a review agent you add to a repository and pay for from your credit. The Instruments cards are built and tested on dev, and they stay off production until we've watched them there. Risk stays a beta until we can score it against real outcomes.

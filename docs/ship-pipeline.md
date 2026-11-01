@@ -80,7 +80,7 @@ The `monitor` job polls every 5 minutes for 30 minutes (`tools/ship/monitor.mjs`
 
 - **New finding:** an open finding that wasn't open when the job started, or first seen since the deploy began. The job fails at once with a line like `1 new finding`.
 - **Two bad polls in a row** (health not at the revision, or Superfan unreadable) fail the job. So does a watch with no telemetry on any poll.
-- **Details:** `POST /run` and the hourly cron both mail open findings not yet mailed to `ADMIN_NOTIFY_EMAIL` (`cloudflare/superfan/notify.ts`). One digest per pass, at most 8 digests per UTC day; the rest wait for the next pass. A reopened finding mails again only if its last mail is over 6 hours old. Dev mails too, so a burst there, which fires rules on purpose, sends digests. Model spend keeps its own daily cap, and a finding without a narrative is mailed with its summary. With `WATCH_WIDE=on` (dev, not yet prod) urgent findings mail at once, outside that cap: [incidents.md](incidents.md).
+- **Details:** `POST /run` and the hourly cron both mail open findings not yet mailed to `ADMIN_NOTIFY_EMAIL` (`cloudflare/superfan/notify.ts`). One digest per pass, at most 8 digests per UTC day; the rest wait for the next pass. A reopened finding mails again only if its last mail is over 6 hours old. Dev mails nobody: its Superfan and dead-man have no address, so read its findings with `GET /findings`. Model spend keeps its own daily cap, and a finding without a narrative is mailed with its summary. With `WATCH_WIDE=on` (prod from its next ship, and dev, where nothing mails) urgent findings mail at once, outside that cap: [incidents.md](incidents.md).
 
 ## Deploy ledger
 
@@ -96,7 +96,7 @@ A rollback's row names what `/health` reports afterwards. Superfan rolls back wi
 
 1. Read the mail, or `GET /findings` on Superfan with `SUPERFAN_READ_TOKEN`.
 2. Check the ship for migrations and Durable Object class changes: the diff from the last prod revision for `MIGRATIONS` in `backend/crates/yoneda-platform/src` (repository, account and commit-store schemas), `cloudflare/migrations`, and `migrations` in `infra/envs/prod.json`.
-3. **None:** from the owner's checkout, `cargo xtask rollback --env prod --confirm`. It rolls every Worker back one deployment and refuses while containers are busy. Check `/health`.
+3. **None:** from the owner's checkout, `cargo xtask rollback --env prod --confirm`. It rolls every Worker back one deployment, skips with a line any Worker with no earlier version, such as one on its first deployment, and refuses while containers are busy. Check `/health`.
 4. **A repository schema migration:** fix forward with a new ship, or roll back only to the wave-1 binary that accepts the new version (`docs/global-scale-plan.md`, rule 3). Cloudflare blocks rollback across a Durable Object class change.
 5. **Bundled pushes:** see Object bundles in the [runbook](runbook.md#recovery).
 6. After a rollback `main` is ahead of prod. The fix ships as the next PR.

@@ -1,6 +1,6 @@
 # Landings plan
 
-Status: plan, not built. Written 2026-10-31 at dev `89340925`.
+Status: built on dev; the record of what was decided and why. Written 2026-10-31 at dev `89340925`.
 
 Landings is our replacement for the pull request. A pilot files a plan, takes off, flies a route and lands. Work here does the same, and the reviewer reads the evidence, not every line.
 
@@ -245,14 +245,14 @@ Ships **before** stage 6.
 
 `git_land` needs a caller, so with this off a Landing is a better PR. With it on, CTC (Code Traffic Control) lands an open Landing when its gates go green. It evaluates rules and moves a ref; it starts no agent. Traffic, separation, sequencing and the radar are in 6b.
 
-**Built:** `platform_ctc.rs`, `repo_store/land_when_cleared.rs`, `cloudflare/worker/repo-land-cleared.ts`, `repo-land-check.ts`. Behind `LAND_WHEN_CLEARED` (off everywhere) and a per-repo switch (off).
+**Built:** `platform_ctc.rs`, `repo_store/land_when_cleared.rs`, `cloudflare/worker/repo-land-cleared.ts`, `repo-land-check.ts`. Behind `LAND_WHEN_CLEARED` (on in dev; on in prod from the next ship) and a per-repo switch (off by default).
 
 **One decision.** `platform_ctc::clearance(&LandingState) -> Cleared | Hold { reasons } | GoAround { reasons }` is pure: it reads nothing and calls nothing. The page, the job, the land call and a ticket's claim and batch all ask it, so "what is this waiting for" and "may this land" can't disagree. No model is asked anything: an agent's verdict reaches it only as a check result or a comment already recorded.
 
 | Part | Choice |
 |---|---|
 | Switches | `repo_settings.land_when_cleared`, `findings_block`, in `0044`; `PUT /auto-landings`. Not in `policy` |
-| Trigger | An op that can clear a Landing names it in `land_checks` (`triggers.rs`): check passed, approval, comment resolved, new head, review class, Landing opened or reopened. The adapter strips the field and queues `platform_land_check`. A lost message costs that trigger, not the next |
+| Trigger | An op that can clear a Landing names it in `land_checks` (`triggers.rs`): check passed, approval, comment resolved, new head, review class, Landing opened or reopened. From outside the Landing: the way ahead clearing, a resume, a legal hold lifting, room coming back (compaction, or a size reading under the limit), and the switch going on, which asks for every open Landing. The adapter strips the field and queues `platform_land_check`. A lost message costs that trigger, not the next |
 | Job kind known first | `LAND_WHEN_CLEARED` stays off through the deploy that ships the handler, and goes on in a later one. A rollback past the handler drops messages, which waits for the next trigger |
 | Exact head | The job asks `repo_land_clearance`; a head that would land answers `confirm`, and it asks again with the adapter's answers; then `repo_land` with `expected_head`. That call decides again in its own transaction. A landing that needs a merge queues as `slow`, and claim and batch decide again, so a newer push or a rejection stops a ticket too |
 | Identity | `_system: land-when-cleared`, actor `platform:land-when-cleared`. The role lands only a Landing it names |
@@ -328,13 +328,13 @@ We don't build orchestration, so this is **pull, not push**: the platform never 
 
 | Job | What it does | State |
 |---|---|---|
-| Clearance | `platform_ctc::clearance` returns Cleared, Hold or GoAround with reasons, for one exact head | Built on `claude/tower-clearance` |
-| Land when cleared | Per-repo switch: a cleared Landing lands with no one calling `git_land` | Built on `claude/tower-clearance`, off |
-| Record | Each decision, with its reasons, head and inputs, in `changes.clearance`; newest 32 per Landing | Built on `claude/tower-clearance` |
-| Traffic warnings | A session is told when an open Landing touches its files or symbols | Building, `claude/ctc-traffic` |
-| Separation and hold | A Landing waits when one ahead touches the same files, and says why | Building |
-| Sequencing | The order of Landings, from the queue | Building |
-| Radar | One board of every open Landing | Building |
+| Clearance | `platform_ctc::clearance` returns Cleared, Hold or GoAround with reasons, for one exact head | Built, on dev and prod |
+| Land when cleared | Per-repo switch: a cleared Landing lands with no one calling `git_land` | Built. On in dev; on in prod from the next ship |
+| Record | Each decision, with its reasons, head and inputs, in `changes.clearance`; newest 32 per Landing | Built, on dev and prod |
+| Traffic warnings | A session is told when an open Landing touches its files or symbols | Built on dev |
+| Separation and hold | A Landing waits when one ahead touches the same files, and says why | Built on dev |
+| Sequencing | The order of Landings, from the queue | Built on dev |
+| Radar | One board of every open Landing | Built on dev |
 
 Conservative rules: a fork needs an approval of its head, a repo with no rules never auto-lands, and drafts and any failed check hold.
 
@@ -342,13 +342,9 @@ Conservative rules: a fork needs an approval of its head, a repo with no rules n
 
 **2026-10-31:** with no users on prod, the owner chose to ship wave 1 and CTC together, which applies `0044` in one deploy. The two-wave rollback didn't apply to that ship; `0045` still ships later on its own.
 
-Two schema changes, `0044` and `0045`, ship in two waves, so a rollback stays safe.
+`main` applies through `0044`. Dev applies through `0045`, and every branch this plan names is merged into dev, so the next ship takes `0045`, the traffic work and the newest harness to prod.
 
-1. **Wave 1, on dev:** binaries accept both versions without applying them.
-2. **Wave 2, after wave 1 is on prod:** merge `claude/tower-clearance`, which holds auto Landings, the rename, land when cleared and CTC; then `claude/landing-flight` from `5642f0b0`; then `claude/ctc-traffic`. Apply both migrations.
-3. **Harness commit `2efe2984`** with wave 2: a container rollout for Intent drift.
-
-Switches stay off on prod until each is watched on dev: `LAND_WHEN_CLEARED`, then per-repo settings.
+`LAND_WHEN_CLEARED` goes on in `infra/envs/prod.json` with that ship: `main` already holds the job's handler, and kit items 34, 43 and 44 must pass on dev first. A repository's own switch stays off until its owner sets it. `LANDING_INSTRUMENTS` stays off on prod.
 
 ## Verification
 
@@ -359,7 +355,7 @@ Switches stay off on prod until each is watched on dev: `LAND_WHEN_CLEARED`, the
 | 3 | Rust read tests, including a path-restricted token; browser check |
 | 4 | Collaborator and public reader see the cards; Risk gives the same score twice |
 | 5 | Installed CLI 0.2.0: push then `change create` still answers success |
-| 6 | Switches off: behaviour identical, kit 22 of 22. On: push creates one Landing, costs no agent run, fork proposals still work |
+| 6 | Switches off: behaviour identical, full kit passes. On: push creates one Landing, costs no agent run, fork proposals still work |
 | 7 | Rollback across both waves; old CLI unaffected |
 | 8 | A finding reaches a new session through `git_context` |
 
