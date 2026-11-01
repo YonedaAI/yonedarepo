@@ -1,13 +1,76 @@
-// The admin Operations and Infrastructure tabs' wire shapes. Operations comes from our own points
-// (Analytics Engine); Infrastructure from Cloudflare's GraphQL Analytics API, which runs a few
-// minutes behind, so each answer says what time it covers.
+// The admin Operations, Agents and Infrastructure tabs' wire shapes. Operations and Agents come
+// from our own points (Analytics Engine); Infrastructure from Cloudflare's GraphQL Analytics API,
+// which runs a few minutes behind, so each answer says what time it covers.
 import type { TrafficBucket, TrafficRange } from './site-traffic';
 
 /** Which optional admin tabs this platform has. */
 export interface AdminReports {
   operations: boolean;
   visitors: boolean;
+  agents: boolean;
 }
+
+/** The clients an agent can name: what a token's name or a user agent has to hold, and how it
+ * reads. Self-reported, so a point keeps one of these and never the words it came from. */
+export const AGENT_CLIENTS: Record<string, string> = {
+  claude: 'Claude Code',
+  codex: 'Codex',
+  opencode: 'opencode',
+  cursor: 'Cursor',
+  copilot: 'GitHub Copilot',
+  gemini: 'Gemini CLI',
+  aider: 'Aider',
+  cline: 'Cline',
+  goose: 'Goose',
+  windsurf: 'Windsurf',
+  devin: 'Devin',
+};
+
+/** One self-reported client's use. `client` is an AGENT_CLIENTS key, or empty: none named. */
+export interface AgentClientRow {
+  client: string;
+  credentials: number;
+  requests: number;
+  landings: number;
+  estimated: boolean;
+}
+
+/** What agent credentials did over a range. Credentials are the measure: one can run many
+ * processes. */
+export interface AgentReport {
+  range: TrafficRange;
+  credentials: number;
+  /** Approximate: one for each half hour on the clock a credential was seen in. */
+  sessions: number;
+  repositories: number;
+  /** Organizations that own the repositories reached. */
+  organizations: number;
+  /** The most credentials seen in one minute. */
+  concurrency: number;
+  reads: number;
+  writes: number;
+  /** MCP calls can be reads or writes, so they count apart. */
+  mcp_calls: number;
+  landings: number;
+  landings_refused: number;
+  landings_failed: number;
+  /** Requests that didn't succeed; `unauthorized` and `rate_limited` are among them. */
+  failures: number;
+  unauthorized: number;
+  rate_limited: number;
+  /** Landed over landings asked for; null with none asked for. */
+  success_rate: number | null;
+  /** Rounds repeated and landings asked for again, over landings asked for. Can pass 1. */
+  retry_rate: number | null;
+  estimated: boolean;
+  bucket: TrafficBucket;
+  series: { start: string; end: string; credentials: number; estimated: boolean }[];
+  clients: AgentClientRow[];
+}
+
+export type AgentResult =
+  | { ok: true; report: AgentReport }
+  | { ok: false; reason: 'off' | 'not_configured' | 'query_failed' };
 
 /** Outcomes and time to answer for one operation from one kind of client. */
 export interface OperationRow {

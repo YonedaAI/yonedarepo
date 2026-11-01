@@ -32,8 +32,9 @@ export interface RepoUsage {
   bucket: TrafficBucket;
   /** Oldest first, with no gaps. */
   series: InsightsBar[];
-  /** Actions by who made them: `person` is a signed-in browser, `token` a token, which may be an
-   * agent, a script or someone at a terminal; `anonymous` a signed-out clone. */
+  /** Actions by who made them: `person` is a signed-in browser, `agent` an agent credential (with
+   * AGENT_REPORT on), `token` any other token, which may be a script or someone at a terminal, or
+   * an agent from before that switch; `anonymous` a signed-out clone. */
   who: InsightsCount[];
   /** Why landings failed, busiest first. Keys are `refusalReason`'s. */
   reasons: InsightsCount[];

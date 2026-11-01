@@ -190,6 +190,10 @@ export interface Env {
    * repository Insights page and the admin landing and repository reports (repo-usage.ts). Needs
    * TRAFFIC_EVENTS and TRAFFIC_REPORT on. */
   REPO_ANALYTICS?: string;
+  /** `on` counts an agent credential as an agent, adds a digest of its token's id and the client
+   * it names to its points, and opens the admin Agents tab (platform-agent-report.ts). Needs
+   * REPO_ANALYTICS on. */
+  AGENT_REPORT?: string;
   /** `on` splits the operator log, adds its filters and detail panel, and records failed admin
    * attempts, purges' ends and staff reads (platform-operator-audit.ts). Needs D1 migration 0015. */
   OPERATOR_AUDIT?: string;

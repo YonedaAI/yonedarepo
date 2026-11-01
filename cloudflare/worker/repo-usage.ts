@@ -6,6 +6,7 @@
 //
 // Repositories are noted only once they admitted the request, and a point drops the note when the
 // answer was a refusal of the caller, so nobody can put figures on a repository by asking for it.
+// With AGENT_REPORT on as well, an agent's every request notes the repository that answered it.
 import { type CredentialKind, requestNote } from './internal-accounts';
 import type { Command, Outcome } from './repo-git-moves';
 import type { PackStats } from './repo-pack-stream';
@@ -33,6 +34,13 @@ export const repoAnalytics = (env: Env) =>
   env.TRAFFIC_REPORT === 'on' &&
   Boolean(env.SITE_EVENTS);
 
+/** Needs REPO_ANALYTICS: a report on agents is made of what these notes hold. */
+export const agentReport = (env: Env) => env.AGENT_REPORT === 'on' && repoAnalytics(env);
+
+/** The agent credential behind the running request, or null with AGENT_REPORT off. */
+export const requestAgent = (env: Env) =>
+  agentReport(env) ? (requestNote()?.agent ?? null) : null;
+
 /** The running request's usage, or null with the switch off or outside a request (a job). */
 function noting(env: Env): Usage | null {
   if (!repoAnalytics(env)) return null;
@@ -52,6 +60,14 @@ export const requestActor = (): CredentialKind | '' => requestNote()?.actor ?? '
 export function noteRepo(env: Env, repo: string) {
   const usage = noting(env);
   if (usage) usage.repo = repo;
+}
+
+/** The repository let this request in: an agent has reached it, whatever the request was. Never
+ * for the platform's own reads, which say nothing of the caller. */
+export function noteReached(env: Env, repo: string) {
+  if (!requestAgent(env)) return;
+  const usage = noting(env);
+  if (usage) usage.repo ??= repo;
 }
 
 /** The pack this request is about to send, if it sends one. */

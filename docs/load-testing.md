@@ -142,6 +142,28 @@ Agree these before the first run. They are starting targets, not commitments.
 | No salt to be had | The ping is written as today, with no hash: a view is never lost |
 | Failed or missing binding | No response changes |
 
+## Agent report budget
+
+`AGENT_REPORT` counts an agent credential as an agent, adds a digest of its token id and a self-reported client name to its points, and opens the admin Agents tab. Off by default, and it needs `REPO_ANALYTICS` on, so `TRAFFIC_EVENTS` and `TRAFFIC_REPORT` too. No repository migration. Written before the code. Measure on against off before either environment turns it on.
+
+| Measure | Target |
+|---|---|
+| Points per request | At most 1: the request's own client point carries the new fields. With `REGION_SIGNALS` on, 1 write in 10 has a second, its own, as today |
+| An agent's reads | All of them, not 1 in 10, or a credential that only reads could go unseen. Reads by anyone else stay 1 in 10 |
+| Points written in a transaction | 0: all after the answer |
+| Subrequests added to a request | 0 |
+| Authority or D1 reads added to a request | 0 |
+| Awaits added before the response | 0 |
+| Added to an authority call | A switch check, then a request-scoped note for an agent only |
+| Added after the answer | One SHA-256 of the token id, for an agent only |
+| What a point can hold | 16 hex of that digest and a name from a fixed list. No token, token id, agent name or user agent |
+| Switch off | A switch check where a note would go, and the point is byte for byte today's |
+| CPU added per request, on | Under 50 µs, plus the SHA-256 |
+| Agents view | 3 SQL API statements (at most 20,000, 1,000 and 1 rows) and 1 D1 read, only while the tab is open |
+| Land p95, 1,000-writer burst, on against off | At most 5% worse, 3 runs each |
+| Worker Wasm | No change: TypeScript only. No new dependency |
+| Failed or missing binding | No response changes |
+
 ## Region signals budget
 
 `platform-write-origin.ts` samples where writes come from, behind `REGION_SIGNALS` (global regions stage R1). Written before the code. Measure on against off before either environment turns it on.

@@ -409,6 +409,8 @@ Our own and test accounts stay out of every figure once `TRAFFIC_REPORT` is on.
 
 `VISITORS=on` goes on both Workers, and needs D1 migration `0016`. Unset it to roll back: pings go back to what they were. Stored hashes stay until Analytics Engine drops them at three months, and the salts that made them are gone within two days.
 
+`AGENT_REPORT=on` on the platform Worker, with `REPO_ANALYTICS` on, counts an agent credential as an agent in its points and in a repository's Insights, adds 16 hex of a digest of its token's id and a client name from a fixed list, writes all its reads, and opens the admin Agents tab. Unset it to roll back: the points go back to what they were and the tab leaves. Points already written stay until Analytics Engine drops them at three months. Budget: [docs/load-testing.md](load-testing.md).
+
 `REPO_ANALYTICS=on` on the platform Worker, with `TRAFFIC_EVENTS` and `TRAFFIC_REPORT` on, adds the repository, bytes and a landing's outcome to its points, and opens the repository Insights page and the landing and repository reports. Unset it to roll back: the points go back to what they were and the page leaves the sidebar. Points already written stay until Analytics Engine drops them at three months, and they name a repository only by its id. Budget: [docs/load-testing.md](load-testing.md).
 
 1. Run `cargo xtask admin internal --env <env> <account>...`. Add `--off` to undo it. Each change is audited.

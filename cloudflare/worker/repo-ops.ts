@@ -17,6 +17,7 @@ import type { PatGrant } from './repo-pat';
 import { adoptCommit, unrecorded } from './repo-shards';
 import { timed } from './repo-timing';
 import { undoSwitch } from './repo-undo-window';
+import { noteReached } from './repo-usage';
 import type { Env } from './types';
 
 export type { PatGrant, PatScope } from './repo-pat';
@@ -168,6 +169,7 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
       if (!KEEPS_REFS.has(command.op)) noteWrite(repo);
     });
     if (value.error) throw new ApiError(value.error.code, value.error.message);
+    if (!('_system' in auth)) noteReached(env, repo);
     await sendLandChecks(env, repo, value);
     return value;
   };

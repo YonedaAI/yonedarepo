@@ -16,6 +16,8 @@ const neutral = new Set([
   // The logger and the request's scope; they import only each other and types.
   './log',
   './request-scope',
+  // Work in flight in one isolate; imports nothing.
+  './flights',
   // Durable Object call with one retry on a reset instance; imports nothing.
   './durable',
   // Container SDK errors proving no instance was allocated (capacity); imports nothing.
@@ -47,7 +49,8 @@ const neutral = new Set([
   '../../shared/service-levels',
   // The Insights page's and admin reports' wire shapes; types only.
   '../../shared/repo-insights',
-  // The admin Operations, Infrastructure and Visitors tabs' wire shapes; types only.
+  // The admin Operations, Infrastructure, Visitors and Agents tabs' wire shapes and the clients
+  // an agent can name; imports only types.
   '../../shared/platform-reports',
   // Token scope names, generated from Rust; types only.
   '../../shared/contracts/pat-scopes',

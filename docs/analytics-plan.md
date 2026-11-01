@@ -2,7 +2,7 @@
 
 To save as `docs/analytics-plan.md`.
 
-Status: Phase 1 built behind `TRAFFIC_REPORT`, off. Phase 3 steps 1 and 2 and Phase 6 built behind `REPO_ANALYTICS`, Phase 7 behind `OPS_REPORT`, Phase 8 behind `OPERATOR_AUDIT` and Phase 5 behind `VISITORS`, all off. The rest is plan. Written 2026-10-31 at dev `4755d9c1`.
+Status: Phase 1 built behind `TRAFFIC_REPORT`, off. Phase 3 steps 1 and 2 and Phase 6 built behind `REPO_ANALYTICS`, Phase 7 behind `OPS_REPORT`, Phase 8 behind `OPERATOR_AUDIT`, Phase 5 behind `VISITORS` and Phase 4 behind `AGENT_REPORT`, all off. The rest is plan. Written 2026-10-31 at dev `4755d9c1`.
 
 ## What this answers
 
@@ -87,6 +87,17 @@ Steps 1 and 2 as built: `recordClient` (`platform-client-events.ts`) writes the 
 2. Build the Agents tab: active credentials, sessions, repositories reached, organizations, reads, writes, landings, failures, success rate, retry rate, concurrency.
 3. Client names (Claude Code, Codex, opencode and so on) stay labelled self-reported.
 
+As built, behind `AGENT_REPORT` (needs `REPO_ANALYTICS`), with no migration:
+
+- An agent is a `ypat_` from `yoneda login --agent`, so step 1 is agent sign-up. Each point of an agent holds 16 hex of a digest of the token's id. A managed agent isn't counted yet, and neither is a person's plain token, however automated.
+- All of an agent's reads are written, not 1 in 10, or a credential that only reads could go unseen.
+- Sessions are half hours on the clock in which a credential was seen, like Visitors. Peak concurrency is the most credentials seen in one minute.
+- Repositories reached are the ones whose authority or published head let the agent in, on any request. An organization is a repository's owner with no account row, and at most 1,000 repositories are looked at.
+- A client's name comes from a fixed list, found in the token's name or else the user agent. Neither is checked, and neither is stored.
+- An MCP call can be a read or a write, so it counts apart. A landing inside one still counts as a landing.
+- Success rate is the Definitions' landing success rate. Retry rate is the rounds repeated and landings asked for again, over landings asked for, so it can pass 100%.
+- Counts sum `_sample_interval`. Credentials, sessions and the rest count stored rows, on an index that isn't the credential's, so a sampled answer is marked as an estimate.
+
 ## Phase 5: Visitors and the funnel
 
 **Decision: a daily rotating, salted hash, no cookie.** It gives unique daily visitors and approximate sessions without tracking anyone across days.
@@ -116,7 +127,7 @@ As built:
 
 As built, and what it can't say yet:
 
-- Human versus agent reads "People in the browser" against "Tokens and agents" until Phase 4 can tell a person's token from an agent's.
+- Human versus agent reads "People in the browser" against "Tokens and agents". With `AGENT_REPORT` on, an agent's actions read "Agents" and the rest of the tokens "Other tokens". Points from before the switch stay with the tokens.
 - Fastest growing is bytes pushed over the range: nothing keeps a repository's past sizes, and commits made through the API add no bytes. Largest stays the database size the derive job samples.
 - Clones count packs sent to a fetch that had nothing, so a partial clone's later blob fetches count too. A clone served from the import mirror isn't counted.
 - Contributors are commits the repository recorded, from the newest 5,000. A commit still in its shard joins when it lands.
@@ -197,7 +208,7 @@ What this changes:
 | 1 | Our own traffic reads 0 after a live test run; every chart follows the range |
 | 2 | Landings counted by Basin match the repository's log, on dev (`tools/platform-basin-soak.mjs`) |
 | 3 | A refused landing appears with its reason; a human approval and an agent approval read differently; rollback tested on dev |
-| 4 | Two tokens read as two credentials; a person's session is never an agent |
+| 4 | Two tokens read as two credentials; a person's session is never an agent; the three statements run on the SQL API |
 | 5 | No cookie set, no IP stored; hash changes daily |
 | 6 | A clone appears on that repository only; a private repository's data reaches nobody without access |
 | 8 | Test cleanup never appears under People |
