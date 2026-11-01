@@ -32,13 +32,12 @@ fn wasm_bytes() -> Option<usize> {
 /// Stack below the caller (wasm32's stack grows down to address 0; null natively).
 #[inline(never)]
 pub fn stack_left() -> Option<usize> {
-    #[cfg(target_arch = "wasm32")]
-    {
+    if cfg!(target_arch = "wasm32") {
         let marker = 0u8;
-        return Some(core::hint::black_box(&marker) as *const u8 as usize);
+        Some(core::hint::black_box(&marker) as *const u8 as usize)
+    } else {
+        None
     }
-    #[cfg(not(target_arch = "wasm32"))]
-    None
 }
 
 pub fn compute(c: Value) -> Result<Value> {

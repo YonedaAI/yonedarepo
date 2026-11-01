@@ -31,9 +31,7 @@ pub(crate) async fn execute(args: &[String]) -> Result<()> {
     }
     let internal = !args.iter().any(|a| a == "--off");
     let (_, _, origin, owner) = crate::admin::platform(&env)?;
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30))
-        .build()?;
+    let client = crate::admin::platform_client(Duration::from_secs(30))?;
     for name in names {
         let response = client
             .post(format!("{origin}/api/v1/admin/accounts/{name}/internal"))
