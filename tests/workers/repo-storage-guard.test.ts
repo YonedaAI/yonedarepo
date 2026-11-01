@@ -170,6 +170,26 @@ it('adds what API commits store to the size once it amounts to a megabyte, not o
   await vi.waitFor(async () => expect(await size()).toBeGreaterThanOrEqual(1_101_000));
 });
 
+it('takes a purged file off the size, so a repository at its limit can push again', async () => {
+  const { owner, id, repo, root, agent } = await repository('guard-purge');
+  const push = async (refname: string, target: Env) =>
+    platformFetch(new Request(`https://yoneda/git/${id}.git/git-receive-pack`, { method: 'POST', headers: { authorization: `Basic ${btoa(`git:${agent.token}`)}` }, body: await branchPush(refname, root) }), target);
+  const size = async () => (await caller(scoped, id, { _system: 'derive' })({ op: 'repo_storage' })).git_bytes as number;
+  const content = 'x'.repeat(1_100_000);
+  const committed = await api(`${repo}/commits`, owner, { body: { ref: 'main', changes: [file('large.bin', content)], message: 'large', author } });
+  expect((await landOn(repo, owner, committed.body.commit, scoped)).status).toBe(200);
+  await vi.waitFor(async () => expect(await size()).toBeGreaterThanOrEqual(1_100_000));
+  const counted = await size();
+  const sized = { ...scoped, REPO_SIZE_GUARD: String(counted) } as unknown as Env;
+  expect((await push('refs/heads/refused', sized)).status).toBe(507);
+  const made = await api(`${repo}/quarantine`, owner, { body: { path: 'large.bin', reason: 'too large' } });
+  expect(made.status).toBe(200);
+  const purged = await api(`${repo}/quarantine/${made.body.record.id}/purge`, owner, { body: { confirm: made.body.record.target.id } });
+  expect([purged.status, purged.body.purged]).toEqual([200, 1]);
+  expect(await size()).toBe(counted - 1_100_000);
+  expect(new TextDecoder().decode(await (await push('refs/heads/after', sized)).arrayBuffer())).toContain('ok refs/heads/after');
+});
+
 /** Combiners running in this test against `env`, drained by `settled`. */
 function combinersOf(env: () => Env) {
   let running: Promise<unknown> = Promise.resolve();
@@ -225,7 +245,10 @@ it('keeps accepted work going at the limit: projection, adoption, hooks, checks,
   // Projection of the landed changeset, then branch reads that need it.
   expect(await projectChangesets(guarded, id)).toBe(1);
   expect((await api(`${repo}/refs`, owner, {}, guarded)).status).toBe(200);
-  expect((await api(`${repo}/blob?path=b.txt`, owner, {}, guarded)).body.content).toBe('b.txt\n');
+  // This landing came straight from the authority's side, as for a reader in another isolate:
+  // the published head may not show it yet, so the reader names the version it needs.
+  const reached = `min_version=${landed.items[0].version}`;
+  expect((await api(`${repo}/blob?path=b.txt&${reached}`, owner, {}, guarded)).body.content).toBe('b.txt\n');
   // A read of a commit still in its shard adopts it; checks and reviews go on it.
   expect((await api(`${repo}/commits/${commit}`, owner, {}, guarded)).status).toBe(200);
   expect((await api(`${repo}/commits/${commit}/checks`, agent, { body: { name: 'unit', status: 'pass' } }, guarded)).status).toBe(200);

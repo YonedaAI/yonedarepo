@@ -244,9 +244,9 @@ The size is `repo_settings.git_bytes` (migration 0046), read with the row every 
 | Everything from before migration 0046 | It starts at 0. Measure it once by summing `size` over R2 `list` of `platform/v1/<repo>/` (one Class A call per 1,000 keys), and add it through `repo_size_add`. Those are raw bytes, larger than a `.git` folder |
 | History an import took through Artifacts | Nothing reports it: `repo.info()` has no size field. Artifacts' own limit bounds it, published as 1 GB for repositories created since 2026-09-29 and 10 GB before |
 | A fork's inherited objects | A fork counts what it adds. Its parent's size isn't copied |
-| Purges | The total never goes down |
+| A purge of text | A purge takes the file's stored bytes off the total, down to 0 at the lowest. Those are raw and the total is mostly packs, so it can take off more than the file added |
 
-R2 `list` on every push was ruled out as a new read per request. `SUM(size)` over `bundled_objects` was too, and it sees only bundles.
+R2 `list` on every push was ruled out as a new read per request. `SUM(size)` over `bundled_objects` was too, and it sees only bundles. A whole-prefix R2 recount after a purge was ruled out as well: a purge zeroes a bundled file in place, so its bundle keeps its size, and R2 holds raw bytes, which would raise the total of any compressible repository, possibly past the cap. `repo_quarantine_purged` carries each file's size instead.
 
 ## Repository database size
 
