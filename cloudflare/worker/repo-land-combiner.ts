@@ -24,6 +24,14 @@ const SUBMIT_BATCH = 256;
 type Target = { repo: string; ref: string };
 type Submission = { item: Json; at: number; resolve: (outcome: Json | null) => void };
 
+/** Events Superfan counts on the land queue. */
+function failed(event: string, repo: string | undefined, e: any) {
+  const error = `${e?.code ?? ''} ${e?.message ?? e}`.trim().slice(0, 200);
+  console.warn(JSON.stringify({ event, repo, error }));
+}
+const timedOut = (repo: string, phase: 'wait' | 'submit') =>
+  console.warn(JSON.stringify({ event: 'land.timed_out', repo, phase }));
+
 /**
  * The combiner's logic, apart from the Durable Object so tests can run it in-process with
  * their own bindings. `schedule(ms)` asks for one `step()` after `ms`.
@@ -54,7 +62,9 @@ export class LandBatcher {
       list.push(resolve);
       this.#waiters.set(ticket, list);
       setTimeout(() => {
-        const left = (this.#waiters.get(ticket) ?? []).filter((r) => r !== resolve);
+        const waiting = this.#waiters.get(ticket) ?? [];
+        if (waiting.includes(resolve)) timedOut(target.repo, 'wait');
+        const left = waiting.filter((r) => r !== resolve);
         if (left.length) this.#waiters.set(ticket, left);
         else this.#waiters.delete(ticket);
         resolve(null);
@@ -74,6 +84,7 @@ export class LandBatcher {
       const submission = { item, at: Date.now(), resolve };
       this.#submissions.push(submission);
       setTimeout(() => {
+        if (this.#submissions.includes(submission)) timedOut(target.repo, 'submit');
         this.#submissions = this.#submissions.filter((s) => s !== submission);
         resolve(null);
       }, timeoutMs);
@@ -137,7 +148,7 @@ export class LandBatcher {
       try {
         await this.#landSubmitted(merger, target.ref);
       } catch (e: any) {
-        console.warn(`submitted batch failed: ${e?.code ?? ''} ${e?.message ?? e}`);
+        failed('land.submitted_batch_failed', target.repo, e);
         await this.schedule(1000);
         return;
       }
@@ -173,8 +184,7 @@ export class LandBatcher {
         .call({ op: 'repo_land_release', ref: target.ref, epoch: claim.epoch })
         .catch(() => {});
       // A lost compare-and-swap rebuilds at once; anything else waits a moment.
-      if (e?.code !== 'STALE_HEAD')
-        console.warn(`land batch failed: ${e?.code ?? ''} ${e?.message ?? e}`);
+      if (e?.code !== 'STALE_HEAD') failed('land.batch_failed', target.repo, e);
       await this.schedule(e?.code === 'STALE_HEAD' ? 0 : 1000);
       return;
     }
@@ -228,7 +238,7 @@ export class LandCombiner extends DurableObject<Env> {
         await this.#batcher.step();
       } while (this.#again);
     })()
-      .catch((e) => console.warn(`land step failed: ${e?.message ?? e}`))
+      .catch((e) => failed('land.step_failed', this.#batcher.target?.repo, e))
       .finally(() => {
         this.#running = null;
       });

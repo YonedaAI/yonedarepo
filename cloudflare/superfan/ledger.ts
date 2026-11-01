@@ -1,43 +1,40 @@
 // The superfan's durable state in one SQLite Durable Object: findings (deduplicated by the
-// rules that fired), latency baselines, the daily spend counter and the run lease. Every
-// method is one synchronous transaction, so overlapping runs cannot double-spend.
+// rules that fired), latency baselines, the daily spend counter, the run lease and the
+// heartbeat. Every method is one synchronous transaction, so overlapping runs cannot double-spend
+// or double-mail.
 import { DurableObject } from 'cloudflare:workers';
 import type { SuperfanEnv } from './config';
-import { claimNotice, markNotified, releaseNotice } from './ledger-notice';
+import {
+  type Level,
+  type NarrativeStatus,
+  type Observation,
+  type Observed,
+  observeProblem,
+  resolveAbsent,
+} from './ledger-findings';
+import {
+  claimNotice,
+  claimUrgent,
+  markNotified,
+  releaseNotice,
+  releaseUrgent,
+} from './ledger-notice';
 import { migrate } from './ledger-schema';
 import { reserveSpend, settleSpend, spendToday } from './ledger-spend';
-import { ingestRows, tailWindow } from './ledger-tail';
+import { ingestRows, markWindow, tailWindow } from './ledger-tail';
 import type { Baselines } from './signals';
 import type { TailRow } from './tail';
 
 const LEASE_MS = 15 * 60_000;
-/** A problem that returns this soon after resolving reopens its finding instead of a new one. */
-const REOPEN_MS = 6 * 60 * 60_000;
 const EWMA_WEIGHT = 0.2;
 
-export type NarrativeStatus =
-  | 'pending'
-  | 'written'
-  | 'deterministic'
-  | 'budget_exhausted'
-  | 'model_failed';
-export interface Observation {
-  key: string;
-  component: string;
-  kind: 'anomaly' | 'telemetry';
-  signals: unknown;
-  summary: string;
-}
-export interface Observed {
-  id: number;
-  action: 'new' | 'repeat' | 'reopened';
-  needsNarrative: boolean;
-}
+export type { Level, NarrativeStatus, Observation, Observed } from './ledger-findings';
 export interface FindingRow {
   id: number;
   dedup_key: string;
   component: string;
   kind: string;
+  level: Level;
   status: string;
   signals: unknown;
   summary: string;
@@ -84,6 +81,35 @@ export class SuperfanLedger extends DurableObject<SuperfanEnv> {
 
   tailStats(start: number, end: number) {
     return tailWindow(this.ctx.storage.sql, start, end);
+  }
+
+  marks(start: number) {
+    return markWindow(this.ctx.storage.sql, start);
+  }
+
+  /** A quick pass finished; a full pass's beat is its finished run. */
+  beat(now: number) {
+    this.#tx((sql) => {
+      sql.exec(
+        "INSERT INTO beats (name, at) VALUES ('quick', ?) ON CONFLICT(name) DO UPDATE SET at = excluded.at",
+        now,
+      );
+    });
+  }
+
+  /** When a pass last ran to its end: what the dead-man reads. */
+  beats() {
+    const sql = this.ctx.storage.sql;
+    return {
+      full_at: sql
+        .exec<{ at: number | null }>(
+          "SELECT MAX(finished_at) AS at FROM runs WHERE outcome IN ('ok', 'telemetry_failed')",
+        )
+        .one().at,
+      quick_at:
+        sql.exec<{ at: number }>("SELECT at FROM beats WHERE name = 'quick'").toArray()[0]?.at ??
+        null,
+    };
   }
 
   /** Starts a run unless another one holds an unexpired lease. */
@@ -148,57 +174,7 @@ export class SuperfanLedger extends DurableObject<SuperfanEnv> {
 
   /** Records that a problem is present now; a known open problem is counted, not duplicated. */
   observe(o: Observation, now: number): Observed {
-    return this.#tx((sql) => {
-      const signals = JSON.stringify(o.signals);
-      const open = sql
-        .exec<{ id: number; narrative_status: NarrativeStatus }>(
-          "SELECT id, narrative_status FROM findings WHERE dedup_key = ? AND status = 'open'",
-          o.key,
-        )
-        .toArray()[0];
-      const recent =
-        open ??
-        sql
-          .exec<{ id: number; narrative_status: NarrativeStatus }>(
-            "SELECT id, narrative_status FROM findings WHERE dedup_key = ? AND status = 'resolved' AND resolved_at >= ? ORDER BY resolved_at DESC LIMIT 1",
-            o.key,
-            now - REOPEN_MS,
-          )
-          .toArray()[0];
-      if (recent) {
-        // A reopened finding mails again, unless it was mailed within the same window.
-        sql.exec(
-          `UPDATE findings SET notified_at = CASE WHEN status = 'resolved' AND notified_at < ? THEN NULL ELSE notified_at END,
-             status = 'open', resolved_at = NULL, occurrences = occurrences + 1, last_seen = ?, signals = ?, summary = ? WHERE id = ?`,
-          now - REOPEN_MS,
-          now,
-          signals,
-          o.summary,
-          recent.id,
-        );
-        return {
-          id: recent.id,
-          action: open ? 'repeat' : 'reopened',
-          needsNarrative: !['written', 'deterministic'].includes(recent.narrative_status),
-        };
-      }
-      const status: NarrativeStatus = o.kind === 'anomaly' ? 'pending' : 'deterministic';
-      const id = sql
-        .exec<{ id: number }>(
-          `INSERT INTO findings (dedup_key, component, kind, status, signals, summary, narrative_status, first_seen, last_seen)
-           VALUES (?, ?, ?, 'open', ?, ?, ?, ?, ?) RETURNING id`,
-          o.key,
-          o.component,
-          o.kind,
-          signals,
-          o.summary,
-          status,
-          now,
-          now,
-        )
-        .one().id;
-      return { id, action: 'new', needsNarrative: status === 'pending' };
-    });
+    return this.#tx((sql) => observeProblem(sql, o, now));
   }
 
   annotate(id: number, status: NarrativeStatus, narrative: unknown, model: string, cost: number) {
@@ -214,33 +190,9 @@ export class SuperfanLedger extends DurableObject<SuperfanEnv> {
     });
   }
 
-  /**
-   * Resolves open findings that were not seen this run, but only when every rule in their
-   * key (`component:ruleA+ruleB`) was evaluated; a rule whose source was down proves nothing.
-   */
+  /** Resolves open findings not seen this run, of rules that were evaluated. */
   resolveAbsent(evaluated: string[], present: string[], now: number) {
-    return this.#tx((sql) => {
-      let resolved = 0;
-      for (const row of sql
-        .exec<{ id: number; dedup_key: string }>(
-          "SELECT id, dedup_key FROM findings WHERE status = 'open'",
-        )
-        .toArray()) {
-        const [component, rules = ''] = row.dedup_key.split(':', 2);
-        const checked = rules
-          .split('+')
-          .every((rule) => evaluated.includes(`${component}:${rule}`));
-        if (checked && !present.includes(row.dedup_key)) {
-          sql.exec(
-            "UPDATE findings SET status = 'resolved', resolved_at = ? WHERE id = ?",
-            now,
-            row.id,
-          );
-          resolved++;
-        }
-      }
-      return resolved;
-    });
+    return this.#tx((sql) => resolveAbsent(sql, evaluated, present, now));
   }
 
   /** Reserves a worst-case call cost against today's cap; null when it would exceed it. */
@@ -270,6 +222,17 @@ export class SuperfanLedger extends DurableObject<SuperfanEnv> {
 
   releaseNotice(now: number) {
     this.#tx((sql) => releaseNotice(sql, utcDay(now)));
+  }
+
+  /** Urgent findings this pass may mail, within each signal's limit. */
+  claimUrgent(now: number, limit: number): (FindingRow & { seq: number })[] {
+    return this.#tx((sql) => claimUrgent(sql, utcDay(now), now, limit)).map(
+      (row) => ({ ...finding(row), seq: row.seq }) as FindingRow & { seq: number },
+    );
+  }
+
+  releaseUrgent(keys: string[]) {
+    this.#tx((sql) => releaseUrgent(sql, keys));
   }
 
   markNotified(ids: number[], now: number) {

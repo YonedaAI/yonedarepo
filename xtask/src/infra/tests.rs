@@ -25,6 +25,9 @@ fn committed(file: &str) -> Value {
         "wrangler.dev-bench.jsonc" => {
             include_str!("../../../cloudflare/wrangler.dev-bench.jsonc")
         }
+        "wrangler.dev-deadman.jsonc" => {
+            include_str!("../../../cloudflare/wrangler.dev-deadman.jsonc")
+        }
         "wrangler.dev-bench2.jsonc" => {
             include_str!("../../../cloudflare/wrangler.dev-bench2.jsonc")
         }
@@ -68,9 +71,10 @@ fn dev_spec_regenerates_the_committed_dev_configs() {
             "wrangler.dev-agents-managed.jsonc",
             "wrangler.dev-agents.jsonc",
             "wrangler.dev-bench.jsonc",
-            "wrangler.dev-bench2.jsonc"
+            "wrangler.dev-bench2.jsonc",
+            "wrangler.dev-deadman.jsonc"
         ],
-        "the platform's tail consumer first, then cutover order: platform, the managed agents the front binds, agents; the bench clients last"
+        "the platform's tail consumer first, then cutover order: platform, the managed agents the front binds, agents; the bench clients, then the dead-man, last"
     );
     for (worker, config) in spec.configs(&lock(DEV_LOCK)).unwrap() {
         assert_eq!(

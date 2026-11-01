@@ -77,6 +77,27 @@ export const MIGRATIONS: string[] = [
   `ALTER TABLE findings ADD COLUMN notified_at INTEGER;
    UPDATE findings SET notified_at = last_seen;
    ALTER TABLE spend_days ADD COLUMN emails INTEGER NOT NULL DEFAULT 0;`,
+  // Alert levels (urgent mails at once, within a limit per signal), log events counted by name,
+  // and the quick pass's heartbeat. Findings from before levels wait for the digest.
+  `ALTER TABLE findings ADD COLUMN level TEXT NOT NULL DEFAULT 'digest'
+     CHECK (level IN ('digest','urgent'));
+   CREATE TABLE tail_marks (
+     minute INTEGER NOT NULL,
+     mark TEXT NOT NULL,
+     count INTEGER NOT NULL,
+     PRIMARY KEY (minute, mark)
+   );
+   CREATE TABLE urgent_notices (
+     dedup_key TEXT PRIMARY KEY,
+     day TEXT NOT NULL,
+     sent INTEGER NOT NULL,
+     last_sent INTEGER NOT NULL,
+     previous_sent INTEGER NOT NULL
+   );
+   CREATE TABLE beats (
+     name TEXT PRIMARY KEY,
+     at INTEGER NOT NULL
+   );`,
 ];
 
 /** Applies pending migrations; safe to call on every Durable Object start. */

@@ -229,7 +229,7 @@ Stage A of `docs/global-scale-plan.md`, item 3. All four switches are off until 
 
 **Turn on `CHECK_EVIDENCE_ONCE` and `REF_CHAIN_SHARED` only once a build with their readers is the oldest you would roll back to.** An older build reads a stored-once run's result as null, so `/check-runs/:id/log` answers 404, and reads a shared branch's path history short, with no error. Going forward again restores both, as nothing was lost. The other two switches have no such limit.
 
-**A stalled log raises an alarm.** Unprojected changesets and undelivered webhook events hold compaction with no limit. `repo_compact_plan` and `GET /repos/:id/compaction` answer `held` with what holds a due segment, and `stalled` once it is 8 segments or a day overdue. `compaction.stalled` is logged when a job finds that, and Superfan opens a `compaction_stalls` finding on `derived_jobs` from one such line. A job has to run to see it: after a landing, or daily with `COMPACTION_SWEEP` on. `compaction.sweep_full` means a minute's range passed 1,000 repositories and some went unvisited.
+**A stalled log raises an alarm.** Unprojected changesets and undelivered webhook events hold compaction with no limit. `repo_compact_plan` and `GET /repos/:id/compaction` answer `held` with what holds a due segment, and `stalled` once it is 8 segments or a day overdue. `compaction.stalled` is logged when a job finds that, and Superfan opens a `compaction_stalls` finding on `derived_jobs` from one such line, open for 20 hours after the last. A job has to run to see it: after a landing, or daily with `COMPACTION_SWEEP` on. `compaction.sweep_full` means a minute's range passed 1,000 repositories and some went unvisited.
 
 ## Creating a repository's store
 

@@ -154,6 +154,11 @@
       "service": "yonedarepo-dev-platform"
     }
   ],
+  "tail_consumers": [
+    {
+      "service": "yonedarepo-dev-superfan"
+    }
+  ],
   "vars": {
     "ADMIN_BILLING": "on",
     "AI_GATEWAY_PROVIDERS": "claude=anthropic,codex=openai,zai=custom-zai,mimo=custom-mimo",
