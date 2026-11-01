@@ -71,6 +71,7 @@ op_names! {
         Hooks = "repo_hooks",
         HooksFanout = "repo_hooks_fanout",
         Import = "repo_import",
+        Insights = "repo_insights",
         Land = "repo_land",
         LandClearance = "repo_land_clearance",
         LandBatch = "repo_land_batch",

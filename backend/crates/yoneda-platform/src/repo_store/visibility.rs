@@ -75,6 +75,7 @@ fn public_read(op: StoreOp) -> bool {
                 | R::ChangeShow
                 | R::ChangeGates
                 | R::CtcRadar
+                | R::Insights
                 | R::ChangeRoute
                 | R::ChangeInstruments
                 | R::CheckRun

@@ -87,6 +87,7 @@ fn run<S: SqlStore>(
         R::Txlog => reads::txlog(db, c),
         R::ChangeRecords => change_records::records(db, c),
         R::Activity => activity::activity(db, c),
+        R::Insights => super::insights::insights(db, c, actor),
         R::Commit => reads::commit(db, c, settings),
         R::MergeBase => reads::merge_base(db, c),
         R::MergePlan => merging::plan(db, c),
