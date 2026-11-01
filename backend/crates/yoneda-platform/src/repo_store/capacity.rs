@@ -3,7 +3,8 @@
 //! total in `repo_settings.git_bytes` (read with every command) refuses pushes and new commits
 //! at it. Nothing here needs room above that cap, and no read is added to find the total. It
 //! holds what was counted, not what the object store holds: nothing before migration 0046
-//! and no history an import took through Artifacts, whose size nothing reports.
+//! and no history an import took through Artifacts, whose size nothing reports. A purge
+//! takes the file it deleted off the total, so a repository at the cap can push again.
 //!
 //! Its history database grows with commits, landings, checks and sessions, however little
 //! code they carry. Durable Object SQLite refuses writes at its limit, so the platform reads
@@ -24,7 +25,7 @@
 //! spend the room left above the limit. Moving or deleting a branch and resolving a comment
 //! stay open: they are refused inside their ops, only when they would add (`refuse_if_full`).
 use super::op::{MemoryOp as M, RepoOp as R, StoreOp};
-use super::rows::Settings;
+use super::rows::{self, Settings};
 use crate::storage::SqlStore;
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result, git_object::ObjectId};
@@ -146,6 +147,20 @@ pub(super) fn add_pack<S: SqlStore>(db: &S, settings: &Settings, c: &Value) -> R
     if bytes > 0 && settings.git_bytes.is_some() {
         db.query(
             "UPDATE repo_settings SET git_bytes=git_bytes+? WHERE id='repository'",
+            &[json!(bytes)],
+        )?;
+    }
+    Ok(())
+}
+
+/// Takes `bytes` a purge deleted off the size. Stored files are raw and the total is mostly
+/// compressed packs, so a large purge of text can take off more than the file added; the
+/// total stops at nothing. A count of the whole object store can't do this: a purge zeroes a
+/// bundled file in place, so its bundle keeps its size, and raw bytes would raise most totals.
+pub(super) fn remove_purged<S: SqlStore>(db: &S, bytes: u64) -> Result<()> {
+    if bytes > 0 && rows::settings(db)?.git_bytes.is_some() {
+        db.query(
+            "UPDATE repo_settings SET git_bytes=MAX(git_bytes-?,0) WHERE id='repository'",
             &[json!(bytes)],
         )?;
     }

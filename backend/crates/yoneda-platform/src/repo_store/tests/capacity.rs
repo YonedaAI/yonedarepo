@@ -267,6 +267,43 @@ fn at_the_size_limit_pushes_and_new_commits_stop_and_nothing_else_does() {
     assert_eq!(h.ok(OWNER, over(land(&id), 5_000))["landed"], true);
 }
 
+/// A purge of the seeded file reporting `bytes` on a repository of 5,000: what it leaves.
+fn after_purge(bytes: u64) -> Value {
+    let (h, root) = sized();
+    let (_, pushed) = super::pushed::pushed(&root, &tree_of(&h, &root), "big");
+    record(&h, &pushed, 5_000).unwrap();
+    let blob = yoneda_core::git_object::hash_object(ObjectKind::Blob, b"pub fn a() {}\n").hex();
+    let record = h.ok(
+        OWNER,
+        json!({"op":"repo_quarantine","target":{"kind":"blob","id":blob},"path":"src/lib.rs",
+            "reason":"too large"}),
+    )["record"]["id"]
+        .clone();
+    let claimed = h.ok(
+        OWNER,
+        json!({"op":"repo_quarantine_purge","id":record,"confirm":blob}),
+    );
+    let epoch = claimed["claims"][0]["epoch"].as_i64().unwrap();
+    let report = |epoch: i64| {
+        json!({"op":"repo_quarantine_purged","replacement":"platform:demo",
+            "claims":[{"id":record,"epoch":epoch,"bytes":bytes}]})
+    };
+    // A report its lease has outlived changes nothing, and neither does a repeat.
+    h.ok(OWNER, report(epoch - 1));
+    assert_eq!(size_of(&h), json!(5_000));
+    h.ok(OWNER, report(epoch));
+    let left = size_of(&h);
+    h.ok(OWNER, report(epoch));
+    assert_eq!(size_of(&h), left);
+    left
+}
+
+#[test]
+fn a_purge_takes_its_file_off_the_size_once_and_never_below_nothing() {
+    assert_eq!(after_purge(2_000), json!(3_000));
+    assert_eq!(after_purge(9_000), json!(0));
+}
+
 #[test]
 fn a_full_published_head_says_which_limit_it_reached() {
     let (h, root) = sized();

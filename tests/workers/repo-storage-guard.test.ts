@@ -170,6 +170,26 @@ it('adds what API commits store to the size once it amounts to a megabyte, not o
   await vi.waitFor(async () => expect(await size()).toBeGreaterThanOrEqual(1_101_000));
 });
 
+it('takes a purged file off the size, so a repository at its limit can push again', async () => {
+  const { owner, id, repo, root, agent } = await repository('guard-purge');
+  const push = async (refname: string, target: Env) =>
+    platformFetch(new Request(`https://yoneda/git/${id}.git/git-receive-pack`, { method: 'POST', headers: { authorization: `Basic ${btoa(`git:${agent.token}`)}` }, body: await branchPush(refname, root) }), target);
+  const size = async () => (await caller(scoped, id, { _system: 'derive' })({ op: 'repo_storage' })).git_bytes as number;
+  const content = 'x'.repeat(1_100_000);
+  const committed = await api(`${repo}/commits`, owner, { body: { ref: 'main', changes: [file('large.bin', content)], message: 'large', author } });
+  expect((await landOn(repo, owner, committed.body.commit, scoped)).status).toBe(200);
+  await vi.waitFor(async () => expect(await size()).toBeGreaterThanOrEqual(1_100_000));
+  const counted = await size();
+  const sized = { ...scoped, REPO_SIZE_GUARD: String(counted) } as unknown as Env;
+  expect((await push('refs/heads/refused', sized)).status).toBe(507);
+  const made = await api(`${repo}/quarantine`, owner, { body: { path: 'large.bin', reason: 'too large' } });
+  expect(made.status).toBe(200);
+  const purged = await api(`${repo}/quarantine/${made.body.record.id}/purge`, owner, { body: { confirm: made.body.record.target.id } });
+  expect([purged.status, purged.body.purged]).toEqual([200, 1]);
+  expect(await size()).toBe(counted - 1_100_000);
+  expect(new TextDecoder().decode(await (await push('refs/heads/after', sized)).arrayBuffer())).toContain('ok refs/heads/after');
+});
+
 /** Combiners running in this test against `env`, drained by `settled`. */
 function combinersOf(env: () => Env) {
   let running: Promise<unknown> = Promise.resolve();

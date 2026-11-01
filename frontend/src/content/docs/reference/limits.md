@@ -25,7 +25,7 @@ A push through the [`yoneda::` helper](/docs/guides/yoneda-remotes) goes commit 
 
 Repository size is your Git data: the same thing as the size of a `.git` folder, not of the files you check out. It adds up as you push, compressed the way Git sends it.
 
-Git LFS objects and release assets are stored apart and don't count.
+Git LFS objects and release assets are stored apart and don't count. [Purging a file](/docs/guides/quarantine) takes it off the total.
 
 The owner can read the current size in bytes: `GET /api/v1/repos/<id>/compaction` answers `storage.git_bytes`.
 
