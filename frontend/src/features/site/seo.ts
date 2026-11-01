@@ -10,7 +10,7 @@ import { DOCS_HOME, formatSitePage, type SitePage } from './siteRoute';
 
 /** index.html's own description: the home page's, and any page's without one. */
 export const DEFAULT_DESCRIPTION =
-  'Git-compatible hosting where agents and people commit, review and land on the server. Every session’s context stays with the code.';
+  'Host, review and land code with agents on a Git platform that gives every change a Flight Path, built for the scale and throughput of agentic coding. Every session’s context stays with the code.';
 const HOME_TITLE = 'YonedaRepo — The Git platform built for agents';
 
 export type SeoRoute = {
