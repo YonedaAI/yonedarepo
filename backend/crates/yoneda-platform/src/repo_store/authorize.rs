@@ -141,10 +141,9 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
             Err(Error::new("FORBIDDEN", "Only the platform delivers hooks"))
         }
         // Only the platform copies events to an audit log and settles them.
-        R::AuditPending | R::AuditDone if !actor.can("audit") => Err(Error::new(
-            "FORBIDDEN",
-            "Only the platform copies audit events",
-        )),
+        R::AuditPending | R::AuditDone | R::AuditSetAside if !actor.can("audit") => Err(
+            Error::new("FORBIDDEN", "Only the platform copies audit events"),
+        ),
         // Only the platform's erase job plans and runs an erase.
         R::ErasePlan | R::EraseStep if !actor.can("erase") => {
             Err(Error::new("FORBIDDEN", "Only the platform erases"))
@@ -159,6 +158,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::AgentContext
         | R::AuditDone
         | R::AuditPending
+        | R::AuditSetAside
         | R::BisectList
         | R::BundleIndex
         | R::BundleLocate

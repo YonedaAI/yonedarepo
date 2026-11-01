@@ -30,6 +30,7 @@ export const AUDIT_KINDS: Record<string, string> = {
   'ssh_key.removed': 'SSH key removed',
   'account.recovered': 'Account recovered',
   'audit.exported': 'Audit log exported',
+  'audit.row_set_aside': 'Unreadable audit event set aside',
   'repo.created': 'Repository created',
   'repo.deleted': 'Repository deleted',
   'repo.restored': 'Repository restored',

@@ -18,6 +18,8 @@
 //! and a backfill sends it knowing no repository to ask about; the erase's first destructive
 //! step is the shards' `store_erase`, which waits for an answer of its own (`commit_store`).
 //!
+//! `repo_audit_set_aside` is on it: a corrupt row's bytes go for good, and they may be evidence.
+//!
 //! The undo window's purge goes through `repo_purge_target` and needs nothing new. Landing stays
 //! off the list, but the platform's own landing asks anyway (`land_when_cleared/state.rs`): with a person
 //! landing, a person answers for it.
@@ -31,7 +33,12 @@ pub(crate) fn refuses(op: StoreOp) -> bool {
     matches!(
         op,
         StoreOp::Repo(
-            R::Delete | R::PurgeTarget | R::EraseStep | R::ReleaseDelete | R::ChangeDelete
+            R::Delete
+                | R::PurgeTarget
+                | R::EraseStep
+                | R::ReleaseDelete
+                | R::ChangeDelete
+                | R::AuditSetAside
         ) | StoreOp::Maintenance(M::VacuumPlan)
             | StoreOp::Quarantine(Q::Purge | Q::Claim | Q::MirrorClaim | Q::MirrorSwitch)
     )

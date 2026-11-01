@@ -29,6 +29,7 @@ import {
   signups,
 } from './platform-admin-queries';
 import { rebuildRollup, revenue } from './platform-admin-revenue';
+import { setAsideAuditRow } from './platform-audit-set-aside';
 import { operatorOrgHold, operatorRepoHold } from './platform-holds';
 import { currentHold } from './platform-legal-hold';
 import { exportSubscribers, subscriberCount } from './platform-newsletter';
@@ -128,6 +129,8 @@ export async function adminRoute(
     if (action === 'quarantine' && post)
       return quarantineAsOwner(env, actor, id, record, sub, body);
     if (hold) return operatorRepoHold(env, actor, id, method);
+    if (action === 'audit-set-aside' && !record && post)
+      return setAsideAuditRow(env, actor, id, await body());
     if (action === 'purge-now' && !record && post) return purgeNow(env, actor, id);
     if (action === 'purge-orphan' && !record && post)
       return purgeOrphan(env, actor, id, await body());

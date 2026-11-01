@@ -20,6 +20,7 @@ op_names! {
         AgentContext = "repo_agent_context",
         AuditDone = "repo_audit_done",
         AuditPending = "repo_audit_pending",
+        AuditSetAside = "repo_audit_set_aside",
         AutoLandings = "repo_auto_landings",
         BeginCommit = "repo_begin_commit",
         BisectList = "repo_bisect_list",

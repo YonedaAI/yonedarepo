@@ -35,6 +35,7 @@ Who did what in an organization, for its owners. It's behind `AUDIT_LOG`, off by
 | `webhook.created`, `webhook.deleted` | The repository, with the URL's host only |
 | `webhook.disabled` | The repository, when failures switched a hook off. The actor is `platform:hooks` |
 | `audit.exported` | The log itself: who took a copy, its format and filters |
+| `audit.row_set_aside` | The repository: an operator set an unreadable event aside. It keeps that event's place and `seq`, its kind and size |
 
 Repository events are for repositories an org owns. A person's repository has no log, so its events are dropped when they're copied. A deleted org keeps its log, and its repositories' last events still reach it, though no owner is left to read the page. A change that changes nothing, such as setting the same visibility, leaves no row, and neither does a failed action or a create that failed part way.
 
@@ -62,7 +63,7 @@ A deletion can't wait for a next change, and the erase wipes `hook_outbox`.
 
 So a log that is down delays an erase and loses nothing. The wait never gives up. Past an hour, every look logs `audit.erase_blocked` with the repository and its oldest event, and Superfan raises it ([incidents.md](incidents.md#audit-events)). The hour is counted from the job's first look, carried in the job itself (`blocked_since`).
 
-A row that can't be read is never skipped. A copy moves what came before it, stops there, and logs `audit.event_corrupt` with the repository and `seq`, at once: on a live repository too, and without waiting the hour, since time won't mend it. It and everything after it stay in the repository.
+A row that can't be read is never skipped. A copy moves what came before it, stops there, and logs `audit.event_corrupt` with the repository and `seq`, at once: on a live repository too, and without waiting the hour, since time won't mend it. It and everything after it stay in the repository until an operator sets it aside with `cargo xtask admin audit-set-aside` ([incidents.md](incidents.md#audit-events)). That replaces the row in one transaction with an `audit.row_set_aside` event, so the repair travels the same way as anything else in the log. The authority applies the rule `pending` uses, so no argument can reach a healthy event.
 
 A create taken back settles its events unread: nobody saw that repository. If that call fails, the purge copies them, so the log shows a create and a delete.
 

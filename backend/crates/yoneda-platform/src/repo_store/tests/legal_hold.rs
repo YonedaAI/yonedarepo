@@ -27,6 +27,10 @@ fn destructive() -> Vec<(&'static str, Value)> {
     vec![
         (OWNER, delete()),
         ("platform:purge", json!({"op":"repo_purge_target"})),
+        (
+            "platform:audit",
+            json!({"op":"repo_audit_set_aside","seq":1,"check":true,"_audit":"on"}),
+        ),
         ("platform:erase", json!({"op":"repo_erase_step"})),
         (OWNER, json!({"op":"repo_release_delete","tag":"v1"})),
         (OWNER, json!({"op":"repo_change_delete","number":1})),
@@ -57,6 +61,7 @@ fn the_list_is_exactly_the_destructive_ops() {
     assert_eq!(
         refused,
         [
+            "repo_audit_set_aside",
             "repo_change_delete",
             "repo_delete",
             "repo_erase_step",
