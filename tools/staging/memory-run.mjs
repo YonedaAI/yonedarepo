@@ -1,8 +1,8 @@
-// One run of the memory test (memory-flow.mjs): a fresh fork, its memories (memory arm only, so
-// nothing can leak into the plain arm), a clone and a repository token, the sandboxed agent's
-// container, and afterwards what it did: read through the API, never from its clone (the clone
-// was the agent's, so host Git must not touch it), and its branch landed through a change on
-// the fork. Deletion is guarded to this test's own fork names.
+// One run of the memory test (memory-flow.mjs): a fresh fork, its arm's memories (none on the
+// plain arm, all but the trap on the context arm, so nothing can leak), a clone and a repository
+// token, the sandboxed agent's container, and afterwards what it did: read through the API,
+// never from its clone (the clone was the agent's, so host Git must not touch it), and its
+// branch landed through a change on the fork. Deletion is guarded to this test's own fork names.
 //
 // The agent's token is the owner's, limited to the fork and its parent and revoked after the run:
 // the platform refuses a token of the fork alone both a lazy clone and any push ("Objects this
@@ -14,8 +14,8 @@ import { appendFileSync, existsSync, readFileSync, realpathSync, rmSync, writeFi
 import { join } from 'node:path';
 import { opencodeArgs, printable } from './agent-run-plan.mjs';
 import { clientEnv, FAKE_MEMORY_AGENT, HOOK_LOG, sandboxArgs, sandboxEnv, WORKDIR } from './agent-sandbox.mjs';
-import { branchName, deliveryOf, forkName, isTestFork, judgeTrap, opencodeUsage, retryableClone, runProblems } from './memory-plan.mjs';
-import { armPrompt, seedOrder } from './memory-traps.mjs';
+import { branchName, deliveryOf, forkName, hookReport, isTestFork, judgeTrap, opencodeUsage, retryableClone, runProblems, shownIn } from './memory-plan.mjs';
+import { armMemories, armPrompt } from './memory-traps.mjs';
 
 const q = (params) => new URLSearchParams(params).toString();
 /** Open so the operator's landing needs nothing: this is the fork's policy, not the parent's. */
@@ -54,10 +54,10 @@ export function scanHidden({ ws, scanned }, trap, dir) {
   return scan;
 }
 
-/** Adds the trap's memories oldest first; returns the trap memory's id. */
-async function seed(owner, repo, trap) {
+/** Adds `memories` oldest first; returns the trap memory's id, null when it isn't among them. */
+async function seed(owner, repo, memories) {
   let id = null;
-  for (const memory of seedOrder(trap)) {
+  for (const memory of memories) {
     const added = await owner.post(`/repos/${repo}/memories`, { kind: memory.kind, text: memory.text, anchors: memory.anchors, ref: 'main' });
     if (memory.trap) id = added.memory;
   }
@@ -75,13 +75,15 @@ function evidenceClone(evidence, agent, attempt) {
 /** Everything one agent needs: its fork, memories, token, clone and `runAgent` job. */
 export async function prepareRun(ctx, { trap, arm, round, parent }) {
   const { owner, ws, ts, origin, evidence, credential, model, image, egress, budget, timeoutS, fake } = ctx;
+  const started = Date.now();
   const agent = `${trap.id}-${round}-${arm}`;
   const name = forkName(ts, trap.id, arm, round);
   const fork = await owner.post(`/repos/${parent}/fork`, { name, policy: OPEN });
   // Registered before anything else can fail, so the run's end always deletes it.
   ctx.forks.set(fork.id, fork.name);
   assert.equal((await owner.get(`/repos/${fork.id}/memories?limit=1`)).memories.length, 0, `${name}: a new fork holds memories`);
-  const trapMemory = arm === 'memory' ? await seed(owner, fork.id, trap) : null;
+  const seeded = armMemories(trap, arm);
+  const trapMemory = await seed(owner, fork.id, seeded);
   const main = (await freshRefs(owner, fork.id))['refs/heads/main'];
   assert.ok(main, `${name} has no main`);
   const minted = await owner.post('/tokens', { name, scopes: ['repo:read', 'repo:write'], repos: [parent, fork.id], expires_days: 1 });
@@ -124,6 +126,8 @@ export async function prepareRun(ctx, { trap, arm, round, parent }) {
     branch,
     dir,
     trapMemory,
+    memoriesSeeded: seeded.length,
+    setupMs: Date.now() - started,
     job: { task: { agent }, name: container, cwd: ws.dir, env: clientEnv(process.env, env), credential, scrub: ws.scrub, args, evidence, timeoutMs: timeoutS * 1000, budget },
   };
 }
@@ -146,17 +150,20 @@ export async function judgeRun(ctx, run, outcome) {
   const events = join(evidence, `${run.agent}.events.jsonl`);
   const usage = opencodeUsage(existsSync(events) ? readFileSync(events, 'utf8').split('\n') : []);
   const log = join(run.dir, HOOK_LOG.slice(WORKDIR.length + 1));
-  if (existsSync(log)) writeFileSync(join(evidence, `${run.agent}.hooks.jsonl`), ws.scrub(readFileSync(log, 'utf8')));
+  const hookLog = existsSync(log) ? ws.scrub(readFileSync(log, 'utf8')) : null;
+  if (hookLog != null) writeFileSync(join(evidence, `${run.agent}.hooks.jsonl`), hookLog);
+  const hook = hookLog == null ? null : hookReport(hookLog.split('\n'), run.trap.memory.text);
   const session = usage.session ? `opencode:${usage.session}` : null;
   const deliveries = session ? (await owner.get(`${path}/context/deliveries?${q({ session_id: session })}`)).deliveries : [];
-  const memories = (await owner.get(`${path}/memories?limit=${PAGE}`)).memories.length;
+  const onFork = (await owner.get(`${path}/memories?limit=${PAGE}`)).memories;
   const delivery = run.trapMemory ? deliveryOf(deliveries, run.trapMemory) : null;
   const head = (await freshRefs(owner, run.fork.id))[`refs/heads/${run.branch}`] ?? null;
   const changes = head && head !== run.main ? ((await owner.get(`${path}/diff?${q({ base: run.main, head, patch: '1' })}`)).changes ?? []) : [];
   const oracle = judgeTrap(run.trap, { head, base: run.main, changes });
   const landing = oracle.outcome === 'no_push' ? { landed: false, why: 'nothing pushed' } : await land(owner, path, run, head);
   const sessions = head && head !== run.main ? ((await owner.get(`${path}/commits/${head}/sessions`)).sessions ?? []).length : 0;
-  const problems = runProblems({ arm: run.arm, code: outcome.code, killed: outcome.killed, session, delivery, deliveries, memories, yonedaCalls: usage.yoneda_calls });
+  const trapOnFork = onFork.some((m) => m.text === run.trap.memory.text);
+  const problems = runProblems({ arm: run.arm, code: outcome.code, killed: outcome.killed, session, delivery, deliveries, memories: onFork.length, yonedaCalls: usage.yoneda_calls, hook, trapOnFork });
   const record = {
     recorded_at: new Date().toISOString(),
     trap: run.trap.id,
@@ -170,15 +177,26 @@ export async function judgeRun(ctx, run, outcome) {
     problems,
     oracle,
     delivery,
-    deliveries: deliveries.map((d) => ({ trigger: d.trigger, bytes: d.bytes, items: d.items.map((i) => `${i.type}:${i.id}`) })),
-    memories_on_fork: memories,
+    deliveries: deliveries.map((d) => ({ trigger: d.trigger, bytes: d.bytes, items: d.items.map((i) => `${i.type}:${i.id}`), labels: d.items.map((i) => String(i.label ?? '').slice(0, 80)) })),
+    shown: { ...shownIn(deliveries), trap: Boolean(delivery?.delivered) },
+    hook,
+    memories_seeded: run.memoriesSeeded,
+    memories_on_fork: onFork.length,
+    trap_on_fork: trapOnFork,
     landed: landing.landed,
     landing,
     sessions_on_head: sessions,
     session,
     tokens: usage.tokens.total,
+    fresh_tokens: usage.fresh_tokens,
     ms: outcome.ms,
+    setup_ms: run.setupMs,
+    files_read: usage.files_read,
     whole_file_reads: usage.whole_file_reads,
+    read_bytes: usage.read_bytes,
+    tool_calls: usage.tool_calls,
+    failed_calls: usage.failed_calls,
+    yoneda_calls: usage.yoneda_calls,
     usage,
     exit: outcome.killed ?? outcome.code,
     cost_usd: outcome.cost,

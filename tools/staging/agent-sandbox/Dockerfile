@@ -20,8 +20,9 @@ ADD --checksum=sha256:1f1ce0fc07b9245a815ffa9d652dbb80e6b0f07e5bf74ea87d2b1c0339
 RUN mkdir /opencode && tar -xzf /opencode.tar.gz -C /opencode && find /opencode -type f -name opencode -exec install -m 755 {} /usr/local/bin/opencode \;
 
 FROM node
-# The base image's uid 1000 user (`node`) becomes `agent`.
-RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates iptables \
+# The base image's uid 1000 user (`node`) becomes `agent`. ripgrep is what opencode's grep and
+# glob tools run; without it they try to download it, the sandbox refuses, and every call fails.
+RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates iptables ripgrep \
     && rm -rf /var/lib/apt/lists/* \
     && usermod --login agent --home /home/agent --move-home node && groupmod --new-name agent node
 COPY --from=build /usr/local/bin/yoneda /usr/local/bin/git-remote-yoneda /usr/local/bin/opencode /usr/local/bin/

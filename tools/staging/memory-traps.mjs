@@ -14,7 +14,8 @@
 // context_cmd.rs), so the trap goes in first: it is the oldest, 12 newer ones keep it out of
 // the start packet, and it can only reach the agent the way a real one would, by the file it
 // is anchored to being read or by the prompt's words. The two `near` memories sit on the same
-// file and are newer, so even there it ranks behind them.
+// file and are newer, so even there it ranks behind them. The context arm gets all of them but
+// the trap (`armMemories`), so it measures what context gives with no rule to find.
 
 const COLOUR = new Set(['NO_COLOR', 'FORCE_COLOR', 'CLICOLOR_FORCE']);
 const isLib = (path) => /^(lib\/.+|index)\.m?js$/.test(path);
@@ -134,17 +135,23 @@ export function seedOrder(trap) {
   return [{ ...trap.memory, trap: true }, ...near, ...rest];
 }
 
+/** What one arm's fork is given: nothing on plain, and the same memories on the other two but
+ * for the trap, so the trap memory is the one thing that separates them. */
+export function armMemories(trap, arm) {
+  if (arm === 'plain') return [];
+  return seedOrder(trap).filter((m) => arm === 'memory' || !m.trap);
+}
+
 /** Every file a trap's memories anchor to (a fork must hold them, and the dry run's fixture). */
 export const anchoredFiles = (trap) => [...new Set(seedOrder(trap).flatMap((m) => m.anchors.map((a) => a.path)))];
 
-const paragraph = {
-  plain: 'Tools: this is a plain Git clone (remote origin). Use git and the files in the clone.',
-  memory:
-    "Tools: this clone's remote is YonedaRepo. The yoneda plugin gives your session the repository's context when it starts: memories other sessions left, what recent sessions did, open changes and the landing rules. When you read a file it adds the memories on that file you have not seen, and each prompt brings what is relevant to it. Read it before you start. Prefer `yoneda grep <query>`, `yoneda symbols <path>`, `yoneda blame <path>` and `yoneda log [path]` over reading many files; `yoneda memory list` shows the memories.",
-};
+const plugin =
+  "Tools: this clone's remote is YonedaRepo. The yoneda plugin gives your session the repository's context when it starts: memories other sessions left, what recent sessions did, open changes and the landing rules. When you read a file it adds the memories on that file you have not seen, and each prompt brings what is relevant to it. Read it before you start. Prefer `yoneda grep <query>`, `yoneda symbols <path>`, `yoneda blame <path>` and `yoneda log [path]` over reading many files; `yoneda memory list` shows the memories.";
+const paragraph = { plain: 'Tools: this is a plain Git clone (remote origin). Use git and the files in the clone.', context: plugin, memory: plugin };
 
-/** What the agent is told, the task first as a person would write it: the same text in both
- * arms but for the tool paragraph, on the same branch name of its own fork. */
+/** What the agent is told, the task first as a person would write it: the same text in every
+ * arm but for the tool paragraph, which the two plugin arms share, on the same branch name of
+ * its own fork. */
 export function armPrompt(trap, branch, arm) {
   if (!paragraph[arm]) throw new Error(`unknown arm ${arm}`);
   return [
