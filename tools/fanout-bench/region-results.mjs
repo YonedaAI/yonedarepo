@@ -184,10 +184,15 @@ export function renderRegionResults(records) {
   ].join('\n');
 }
 
+/** Runs the doc's tables stand on: a rebuild from fewer would lose results. */
+const runsIn = (block) => Number(/(\d+) runs, last at/.exec(block)?.[1] ?? 0);
+
 export function replaceRegionResults(doc, table) {
   const start = doc.indexOf(START);
   const end = doc.indexOf(END);
   if (start < 0 || end < start) throw new Error('The region results markers are missing from docs/global-scale-plan.md');
+  const held = runsIn(doc.slice(start, end));
+  if (runsIn(table) < held) throw new Error(`The doc stands on ${held} runs and the evidence here on ${runsIn(table)}: not replacing it`);
   return `${doc.slice(0, start + START.length)}\n${table}\n${doc.slice(end)}`;
 }
 

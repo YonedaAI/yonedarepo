@@ -209,6 +209,9 @@ test('results come from evidence: failures are counted, not averaged, and gaps s
   assert.match(placementTable([record([arm(1)])]), /\| Europe \| region \| weur \| FRA ×1 \| FRA ×1 \| AMS ×1 \| unread ×1/);
   assert.equal(renderRegionResults([]), 'None yet.');
   assert.throws(() => replaceRegionResults('no markers', 'x'), /markers are missing/);
+  const doc = '<!-- region-results:start (tools/platform-region-matrix.mjs --results) -->\n3 runs, last at `a`\n<!-- region-results:end -->';
+  assert.throws(() => replaceRegionResults(doc, 'None yet.'), /stands on 3 runs/);
+  assert.match(replaceRegionResults(doc, '4 runs, last at `b`'), /4 runs/);
 });
 
 test('what an operation reached comes from its phases, and a reach-nothing answer says none', () => {
