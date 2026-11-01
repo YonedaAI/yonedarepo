@@ -25,5 +25,7 @@ yoneda-cli = { path = "backend/crates/yoneda-cli" }
 [profile.release]
 lto = true
 opt-level = "s"
+# 250 KB off the Worker's Wasm (4%) for about 10 s of build; fat LTO alone leaves that behind.
+codegen-units = 1
 # wasm-bindgen requires target_features metadata. Strip debug sections only.
 strip = "debuginfo"
