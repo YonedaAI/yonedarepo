@@ -23,14 +23,14 @@ export interface AgentForm {
 }
 
 /** The form for an agent: when it runs and where. At its first set-up nothing is chosen, since
- * an agent spends credit wherever it runs; with no repositories to choose from, it joins those
- * to come, which the page says. */
-export function initialForm(agent: AgentState, repos: { id: string }[]): AgentForm {
+ * an agent spends credit wherever it runs: all repositories is every one made later too, so it
+ * is always a choice, also with none yet. */
+export function initialForm(agent: AgentState): AgentForm {
   const first = agent.created_at === null;
   return {
     trigger: { ...agent.settings.trigger },
     block_at: agent.settings.block_at,
-    all_repos: first ? repos.length === 0 : agent.all_repos,
+    all_repos: !first && agent.all_repos,
     repos: first ? [] : [...agent.enabled_repos],
     active: first ? true : agent.active,
   };

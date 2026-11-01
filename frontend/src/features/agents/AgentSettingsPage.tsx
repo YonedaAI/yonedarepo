@@ -110,7 +110,7 @@ function SetupForm({
   navigate: Navigate;
   onNewRepository?: () => void;
 }) {
-  const [form, setForm] = useState(() => initialForm(agent, state.repos));
+  const [form, setForm] = useState(() => initialForm(agent));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState('');
@@ -134,7 +134,7 @@ function SetupForm({
       });
       if (first) return navigate({ view: 'agent-settings', agent: agent.id, ...space });
       setCurrent(next);
-      setForm(initialForm(next, state.repos));
+      setForm(initialForm(next));
       setSaved('Saved.');
     } catch (e) {
       setError((e as Error).message);

@@ -164,4 +164,23 @@ describe('all repositories, including new ones', () => {
     h.platform.repos.push(newRepo());
     expect(await (await api(h, '/sync', { method: 'POST', body: '{}' })).json<any>()).toEqual({ connected: 0 });
   });
+
+  it('an empty list means none, never all: an account with no repositories gets no agent', async () => {
+    const h = harness();
+    h.platform.repos.length = 0;
+    const state = await (await put(h, 'code-review', { repos: [], active: true })).json<any>();
+    expect(state).toMatchObject({ all_repos: false, enabled_repos: [], created_at: null });
+    h.platform.repos.push(newRepo());
+    expect(await (await api(h, '/sync', { method: 'POST', body: '{}' })).json<any>()).toEqual({ connected: 0 });
+    expect(h.platform.tokens).toEqual([]);
+  });
+
+  it('an empty list takes an agent off all repositories', async () => {
+    const h = harness();
+    await put(h, 'code-review', { all_repos: true });
+    const state = await (await put(h, 'code-review', { repos: [] })).json<any>();
+    expect(state).toMatchObject({ all_repos: false, enabled_repos: [] });
+    h.platform.repos.push(newRepo());
+    expect(await (await api(h, '/sync', { method: 'POST', body: '{}' })).json<any>()).toEqual({ connected: 0 });
+  });
 });
