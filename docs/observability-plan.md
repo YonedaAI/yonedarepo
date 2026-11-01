@@ -164,6 +164,33 @@ Our own tools are kept apart, by the `x-yoneda-own-traffic` mark. On dev that's 
 
 As with spans, a request can also carry its `TRAFFIC_EVENTS` client point, so 2 at worst. Analytics Engine includes 10M points a month.
 
+## Queue delivery alert: the budget
+
+Written before the code, 2026-11-01. Not yet measured on dev.
+
+A real stall, found by the agents-live test: the jobs queue's consumer got no invocation for 70.7 s, against 14.6 s at most normally, with jobs waiting, and a Landing arrived about a minute late.
+
+**The rule:** no consumer ran or started for over 60 s, a backlog was there during that gap, and messages delivered when it ended had waited over 15 s. Urgent on the wide watch, digest off it.
+
+| Question | Answer |
+|---|---|
+| Which queue | `<prefix>-platform-jobs`. **There's no separate hook queue:** webhook deliveries are `platform_hooks` jobs on it, so this one rule covers both |
+| Why not the gap alone | An idle queue has long gaps. They mean nothing |
+| Why not the gap and the backlog | Backlog is per minute. A burst after an idle minute has a backlog and no stall |
+| Why 15 s | The longest normal gap measured was 14.6 s, so a message rarely waits longer |
+| Where the gap comes from | Tail events: their timestamps are exact, and analytics stops at the minute |
+| A long job | Not a stall: the gap runs from the end of one invocation to the start of the next |
+
+| Item | Budget |
+|---|---|
+| Added to a request, a job or a queue consumer | **0**: no platform code changes |
+| Superfan's tail batch | The same one ledger call, with up to 1 more row per consumer invocation |
+| Gap rows kept | About 2 hours, at most 1 per consumer invocation, so at most 120 |
+| A pass with no gap | 1 ledger read, no GraphQL request |
+| A pass with a gap | 1 ledger read and 1 more GraphQL request, of 300 allowed per 5 minutes. At most 25 an hour on the wide watch |
+
+Seen about 5 to 10 minutes after it ends, as analytics lag. It reads a past stall: nothing here can see one in progress.
+
 ## O1 request budget
 
 Written before the code. What a healthy request may spend on O1, with `REQUEST_IDS` and `CLIENT_ERRORS` on. With them off (the default) it spends one object per request, in the `AsyncLocalStorage` store the request already has for `waitUntil`.
