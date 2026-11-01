@@ -195,7 +195,7 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
   await branchesPage(page, account, id, shot, m);
   await tabs.getByRole('link', { name: 'Landings' }).click();
   await atRepo(page, account, id, `/changes`);
-  await page.getByText('No open Landings.').waitFor();
+  await page.getByText('No open Landings').waitFor();
   await shot('source-changes');
   await tabs.getByRole('link', { name: 'Settings' }).click();
   await page.getByRole('heading', { name: 'Landing rules' }).waitFor();
