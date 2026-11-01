@@ -36,4 +36,4 @@ The agent's work was real, and our test script played everything around it: the 
 
 ## What runs on production today
 
-Landings, the route, required checks and approvals, session records, transcripts and memories are live on yonedarepo.com. So is the CTC page, which shows what CTC would decide. Flight plans, Intent drift, the Instruments cards and automatic landing are built and tested on dev, and they stay off production until we've watched each one there. Risk stays a beta until we can score it against real outcomes.
+Landings, the route, flight plans, required checks and approvals, session records, transcripts and memories are live on yonedarepo.com. So is the CTC page, which shows what CTC would decide. Intent drift, the Instruments cards and automatic landing are built and tested on dev, and they stay off production until we've watched each one there. Risk stays a beta until we can score it against real outcomes.
