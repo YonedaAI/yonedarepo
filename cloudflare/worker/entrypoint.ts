@@ -6,7 +6,7 @@ import { frontFetch } from './front-routes';
 import { log, served } from './log';
 import { accountCreated } from './platform-accounts';
 import { verifyEmail } from './platform-email-verify';
-import { platformJob } from './platform-entrypoint';
+import { oneAtATimeInBatch, platformJob } from './platform-entrypoint';
 import { repoApi } from './repo-api';
 import { inScope } from './request-scope';
 import type { Env, Envelope } from './types';
@@ -28,10 +28,11 @@ export class YonedaEntrypoint extends WorkerEntrypoint<Env> {
     return verifyEmail(this.env, account, change);
   }
   async queue(batch: MessageBatch<Envelope>) {
+    const oneAtATime = oneAtATimeInBatch();
     await Promise.all(
       batch.messages.map((message) =>
         inScope({ env: this.env, job: message.body }, () =>
-          platformJob(this.env, message).catch((e) => {
+          platformJob(this.env, message, oneAtATime).catch((e) => {
             log.error('job.failed', { error: e });
             message.retry();
           }),
