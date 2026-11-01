@@ -177,6 +177,22 @@ It is the largest grower (about 2.7 KB per landing with its text index), and it 
 3. Dev kit plus `tools/staging/compaction-flow.mjs`, then a soak.
 4. Delete on dev. Then prod, one wave, owner "ship".
 
+### History shards: the design that replaces stages B and C
+
+Owner, 2026-10-31: a repository must not have a size wall. Status: design, not built. Not started until the owner says so.
+
+The authority keeps what must have one writer: branch tips, the landing order and recent commits. It stays small. Old commit records, paths, checks and sessions never change once written, so they don't need that writer.
+
+1. Near a threshold, seal the oldest history into a new read-only Durable Object, `history:<repo>:<n>`. A repository has as many as it needs, so it has no wall.
+2. The authority keeps a small map of which versions live in which shard.
+3. A read of old history asks the shard. Reads stay SQL, so blame, history and search keep working. R2 segments would mean fetching and scanning files for about 30 readers.
+4. Sealing follows the plan's rollout: write, read both and compare, then delete on dev, then prod. Deleting rows is one-way.
+5. `known_blob` and the path-grant checks must never treat a sealed commit as missing: they ask the shard, or refuse.
+
+No new class is needed if `history` instances use an existing namespace; decide that first, because a new class ships alone.
+
+Open: what bytes per landing really is (the hour-long test reports it), and what threshold starts sealing.
+
 ## 4. Basin analytics
 
 Code and 7 tests exist. It ran on platform-dev and was lost when that stack was retired on 2026-10-27.
