@@ -9,6 +9,7 @@ import type { Observed, SuperfanLedger } from './ledger';
 import { FlashModel, type ModelClient, ModelError } from './model';
 import { notifyFindings, notifyUrgent } from './notify';
 import { confirmed, deadmanAge, FRONT_SERVICE, PLATFORM_SERVICE, probe } from './probes';
+import { RELEASE_KEYS, releaseOn } from './release';
 import {
   baselineSamples,
   type ComponentReport,
@@ -199,7 +200,10 @@ async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<Wat
     marks: await ledger.marks(now - MARK_WINDOW_MS),
     analytics,
     ...(deadman === undefined ? {} : { deadmanAge: deadman }),
+    ...(releaseOn(env) ? { release: await ledger.compareReleases(now) } : {}),
   };
+  // Off, nothing evaluates these: an open one must still be able to end.
+  if (!releaseOn(env)) evaluated.push(...RELEASE_KEYS);
   const reports = evaluate(snapshot, await ledger.baselines(), wideOn(env));
   let anomalies = 0;
   const seenProblems: { seen: Observed; report: ComponentReport }[] = [];

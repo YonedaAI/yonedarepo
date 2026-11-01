@@ -61,6 +61,7 @@ const count = (f: Facts, ...names: string[]) => {
   return 0;
 };
 export const capital = (s: string) => s[0].toUpperCase() + s.slice(1);
+const percent = (ratio: number) => `${Number((ratio * 100).toFixed(1))}%`;
 const duration = (ms: number) =>
   ms < 1_000
     ? `${number(ms)} ms`
@@ -152,6 +153,28 @@ export const COPY: Copy[] = [
     },
     means: errorCounts,
     first: "Open this Worker's logs. If a deploy started it, roll back.",
+  },
+  {
+    signals: ['release_error_rate'],
+    title: (f) => `${capital(f.word)} calls fail more since the deploy`,
+    means: (f) => {
+      const now = percent(count(f, 'release_error_rate'));
+      return f.baseline === undefined
+        ? `${now} of calls fail.`
+        : `${now} of calls fail, against ${percent(f.baseline)} before it.`;
+    },
+    first: 'Read the new release in GET /deploys. Roll back if it is the cause.',
+  },
+  {
+    signals: ['release_p95_ms'],
+    title: (f) => `${capital(f.word)} calls are slower since the deploy`,
+    means: (f) => {
+      const now = duration(count(f, 'release_p95_ms'));
+      return f.baseline === undefined
+        ? `The slowest calls take ${now}.`
+        : `The slowest calls take ${now}, against ${duration(f.baseline)} before it.`;
+    },
+    first: 'Compare the two releases in GET /deploys. Check for a burst first.',
   },
   {
     signals: ['resource_kills'],

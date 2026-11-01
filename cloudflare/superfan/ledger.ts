@@ -23,6 +23,7 @@ import {
 import { migrate } from './ledger-schema';
 import { reserveSpend, settleSpend, spendToday } from './ledger-spend';
 import { ingestRows, markWindow, tailWindow } from './ledger-tail';
+import { compareReleases } from './release';
 import type { Baselines } from './signals';
 import type { TailRow } from './tail';
 
@@ -102,6 +103,11 @@ export class SuperfanLedger extends DurableObject<SuperfanEnv> {
 
   latestRevision() {
     return latestRevision(this.ctx.storage.sql);
+  }
+
+  /** This release against the one before, from the minutes the tail kept. */
+  compareReleases(now: number) {
+    return compareReleases(this.ctx.storage.sql, now);
   }
 
   /** A quick pass finished; a full pass's beat is its finished run. */

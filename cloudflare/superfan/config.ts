@@ -21,6 +21,8 @@ export interface SuperfanEnv {
   WATCH_WIDE?: string;
   /** The site as people reach it, whose /health the wide watch probes. */
   WATCH_FRONT_URL?: string;
+  /** `on`: each full pass compares this release with the one before (release.ts). */
+  RELEASE_COMPARE?: string;
   /** The dead-man Worker (deadman.ts), watched back; unset: not watched. */
   DEADMAN_URL?: string;
   /** The watched resources' ids. All unset: looked up by name at run time (resolveIds). */

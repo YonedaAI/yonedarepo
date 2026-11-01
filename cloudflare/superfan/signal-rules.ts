@@ -2,6 +2,7 @@
 // component shares. signals.ts and signals-wide.ts build the reports from them.
 import type { Analytics, QueueStats } from './analytics';
 import type { Health } from './probes';
+import type { ReleaseComparison } from './release';
 import type { TailComponent, TailSample, TailStats } from './tail';
 
 export type Component = TailComponent | 'billing' | 'storage' | 'deadman';
@@ -37,14 +38,16 @@ export interface Snapshot {
   frontHealth?: Health;
   /** Minutes since the dead-man checked; null: unreadable; absent: not watched. */
   deadmanAge?: number | null;
+  /** This release against the one before; absent: RELEASE_COMPARE is off. */
+  release?: ReleaseComparison;
 }
 export type Baselines = Record<string, { value: number; samples: number }>;
 
-const MIN_INVOCATIONS = 20;
-const MAX_ERROR_RATE = 0.02;
-const DRIFT_FACTOR = 2;
+export const MIN_INVOCATIONS = 20;
+export const MAX_ERROR_RATE = 0.02;
+export const DRIFT_FACTOR = 2;
 /** A p95 rise smaller than this is noise even when it doubles. */
-const DRIFT_FLOOR_MS = 100;
+export const DRIFT_FLOOR_MS = 100;
 const MIN_BASELINE_SAMPLES = 3;
 const MAX_EXCEPTIONS = 3;
 const MAX_ERROR_LOGS = 5;

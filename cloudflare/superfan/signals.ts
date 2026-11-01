@@ -5,6 +5,7 @@
 // fed only by quiet runs, so an incident cannot become the new normal. Marks are log events
 // counted by name, read over a longer window: they are logged once, and must not be missed.
 import type { Level, Observation } from './ledger';
+import { releaseReports } from './release';
 import {
   type Baselines,
   backlogSignals,
@@ -41,7 +42,7 @@ const URGENT = new Set([
 
 /** Evaluates every component's rules against one snapshot. */
 export function evaluate(s: Snapshot, baselines: Baselines, wide = false): ComponentReport[] {
-  const reports = platformReports(s, baselines, wide);
+  const reports = [...platformReports(s, baselines, wide), ...releaseReports(s)];
   if (!wide) return reports;
   return [...reports, ...wideReports(s, baselines)].map((r) => ({
     ...r,
@@ -153,7 +154,7 @@ function summary(fired: Signal[]) {
   return fired
     .map(
       (s) =>
-        `${s.name}=${s.value}${s.unit === 'ms' ? 'ms' : ''} (${s.rule}${s.baseline !== undefined ? `; baseline ${s.baseline}ms` : ''})`,
+        `${s.name}=${s.value}${s.unit === 'ms' ? 'ms' : ''} (${s.rule}${s.baseline !== undefined ? `; baseline ${s.baseline}${s.unit === 'ms' ? 'ms' : ''}` : ''})`,
     )
     .join('; ');
 }

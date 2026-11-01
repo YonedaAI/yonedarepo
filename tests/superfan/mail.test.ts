@@ -364,6 +364,7 @@ describe('copy', () => {
       marks: {},
       analytics,
       deadmanAge: 90,
+      release: { revision: 'a', previous: 'b', after: tail, before: tail },
     } as Snapshot;
     return evaluate(snapshot, {}, true).flatMap((r) =>
       r.signals.map((s) => [r.component, s.name] as const),
