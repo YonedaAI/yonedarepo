@@ -83,6 +83,7 @@ pub(in crate::repo_store) fn policy<S: SqlStore>(
             .map(|s| format!(": {s}"))
             .unwrap_or_default();
         let who = r["principal"].as_str().unwrap_or("a reviewer");
+        let who = who.strip_prefix("user:").unwrap_or(who);
         (GateState::Blocked, format!("Rejected by {who}{reason}"))
     } else if gate["auto_approved"] == true {
         (

@@ -179,6 +179,24 @@ fn the_gates_list_what_a_change_needs_and_agree_with_landing() {
 }
 
 #[test]
+fn a_rejection_names_its_reviewer_as_people_read_it() {
+    let (h, root) = seeded();
+    let head = push(&h, "fix", &root, "src/fix.rs");
+    h.ok(
+        AGENT,
+        json!({"op":"repo_change_create","branch":"fix","title":"Fix it"}),
+    );
+    h.ok(
+        OWNER,
+        json!({"op":"repo_review","commit":head,"decision":"reject","reason":"not this way"}),
+    );
+    assert_eq!(
+        requirement(&gates(&h, OWNER), "approvals", None)["why"],
+        "Rejected by owner: not this way"
+    );
+}
+
+#[test]
 fn an_unprotected_base_shows_its_gates_without_enforcing_them() {
     let (h, root) = seeded();
     let dev = push(&h, "dev", &root, "src/dev.rs");

@@ -40,7 +40,7 @@ function write(dir, path, text) {
 }
 
 /** `yoneda hook <event>` with `payload` on stdin; `{ code, stdout, stderr }`. */
-function hook(kit, event, payload, env = kit.env()) {
+export function hook(kit, event, payload, env = kit.env()) {
   return new Promise((done, fail) => {
     const child = spawn(join(kit.bin, 'yoneda'), ['hook', event], { cwd: payload.cwd, env, stdio: ['pipe', 'pipe', 'pipe'] });
     let stdout = '';

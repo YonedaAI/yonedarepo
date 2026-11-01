@@ -919,6 +919,17 @@ fn rules_that_ask_for_nothing_clear_nothing() {
 }
 
 #[test]
+fn a_rule_asking_for_an_approval_is_not_a_rule_asking_for_nothing() {
+    let (h, root) = seeded();
+    let policy = json!({"required_checks":[],"approvals":1});
+    h.ok(OWNER, json!({"op":"repo_set_policy","policy":policy}));
+    switch_on(&h);
+    branch(&h, AGENT, &root, "fix", "src/a.rs");
+    let number = landing(&h, "fix");
+    assert_eq!(waiting(&assess(&h, number)), ["GATES"]);
+}
+
+#[test]
 fn the_job_alone_uses_the_job_s_ways_in() {
     let (h, _root, id, number) = cleared();
     let assess_op = json!({"op":"repo_land_clearance","number":number});
