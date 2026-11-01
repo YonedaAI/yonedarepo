@@ -500,3 +500,32 @@ it('records a provider sign-up once, with the landing source carried through the
   expect(again.headers.get('location')).toBe('https://yoneda.test/docs');
   expect(points).toHaveLength(1);
 });
+
+it("records a first sign-in's region from its callback, and a later sign-in changes nothing", async () => {
+  const created: unknown[] = [];
+  const using = {
+    ...configured,
+    REGION_SIGNALS: 'on',
+    PLATFORM: { accountCreated: async (_: string, details: unknown) => created.push(details) },
+  } as unknown as Env;
+  const finish = async (profile: Profile, continent: string, target: Env) => {
+    const attempt = await start('github');
+    const params = new URLSearchParams({ state: attempt.state, code: consent(attempt, profile) });
+    const init = { headers: { cookie: attempt.binding }, cf: { continent } } as RequestInit;
+    await call(`/auth/github/callback?${params}`, init, target);
+  };
+  const summary = (name: string) => workspace(bindings, name, { op: 'account_summary' });
+
+  await finish(octo, 'EU', using);
+  expect((await summary('octo_cat')).region).toBe('weur');
+  expect(created).toEqual([{ provider: 'github', welcome: true, region: 'weur' }]);
+  await finish(octo, 'AS', using);
+  expect((await summary('octo_cat')).region).toBe('weur');
+  expect(created).toHaveLength(1);
+
+  // The switch off sends exactly what it sent before.
+  const off = { ...using, REGION_SIGNALS: 'off' } as Env;
+  await finish({ id: '77', login: 'plain', email: 'plain@example.com' }, 'EU', off);
+  expect((await summary('plain')).region).toBeUndefined();
+  expect(created[1]).toEqual({ provider: 'github', welcome: true });
+});

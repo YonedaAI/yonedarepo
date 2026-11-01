@@ -55,6 +55,7 @@ fn signup<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         a["email"] = json!(email);
         a["email_verified_at"] = json!(now);
     }
+    set_region(&mut a, c);
     put(db, "account", &a)?;
     insert(db, &identity, now)?;
     super::signin::session(db, c, now)?;

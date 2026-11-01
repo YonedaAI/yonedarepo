@@ -255,6 +255,7 @@ async function setSuspended(env: Env, actor: string, account: string, suspend: b
         account,
         summary.providers?.[0] ?? 'email',
         Number(summary.created_at ?? 0),
+        summary.region,
       );
   }
   await env.INDEX.prepare('UPDATE platform_accounts SET suspended_at=? WHERE account=?')

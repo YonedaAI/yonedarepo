@@ -50,7 +50,7 @@ fn summary<S: SqlStore>(db: &S) -> Result<Value> {
         .into_iter()
         .map(|row| row["provider"].clone())
         .collect();
-    Ok(json!({
+    let mut summary = json!({
         "username": a["username"],
         "created_at": a["created_at"],
         "email": a.get("email").cloned().unwrap_or(Value::Null),
@@ -59,7 +59,12 @@ fn summary<S: SqlStore>(db: &S) -> Result<Value> {
         "password": a["verifier"].is_object(),
         "orgs": super::orgs::hints(db)?,
         "suspended_at": suspended_at(db)?,
-    }))
+    });
+    // Forward-only: only an account signed up with the region switch on has one.
+    if let Some(region) = a.get("region") {
+        summary["region"] = region.clone();
+    }
+    Ok(summary)
 }
 
 /// When an operator suspended the account; `None` while it is not suspended.

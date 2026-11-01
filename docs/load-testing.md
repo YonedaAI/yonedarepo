@@ -53,6 +53,23 @@ Agree these before the first run. They are starting targets, not commitments.
 | Data points per request | at most 1: reads 1 in 10, everything else all |
 | Failed or missing binding | no response changes |
 
+## Region signals budget
+
+`platform-write-origin.ts` samples where writes come from, behind `REGION_SIGNALS` (global regions stage R1). Written before the code. Measure on against off before either environment turns it on.
+
+| Measure | Target |
+|---|---|
+| Subrequests added | 0 |
+| Reads of D1 or an authority added | 0 |
+| Work on a GET or HEAD | a switch and method check; no random draw, no watch. A command that may move refs also makes one async-context lookup, which finds nothing |
+| I/O awaited before the response | None: the digest and the point run after it |
+| CPU added per sampled write | under 50 µs, plus one SHA-256 after the answer |
+| Land p95, 1,000-writer burst, on against off | at most 5% worse, 3 runs each |
+| Data points per write | at most 1, one write in 10 |
+| Failed or missing binding | no response changes |
+
+Sign-up adds one field to two commands and one column to one `INSERT`: no new subrequest.
+
 ### GitHub import (`FAST_IMPORT`)
 
 Written before the code, from the hosted numbers we hold (a Worker to Durable Object call 10-50 ms, an R2 write 200-1000 ms). **Not measured on dev yet.**

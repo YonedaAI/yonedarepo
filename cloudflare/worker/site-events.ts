@@ -1,7 +1,9 @@
 // Cookieless site analytics (front Worker): one Workers Analytics Engine data point per signed-out
 // HTML request and per sign-up, into SITE_EVENTS. A point holds only what the privacy policy lists
 // (page path, referring site's host, country, device class, campaign tags, sign-up provider, the
-// request's class) and never an IP address, cookie, user agent or account. Analytics never decide
+// request's class) and never an IP address, cookie, user agent or account (the platform's
+// `write_origin` points, platform-write-origin.ts, are the one kind that names a digest of an
+// account, and are off until the owner clears them). Analytics never decide
 // a response: a missing binding or a failed write records nothing. The app answers 200 at any
 // path, so a request records the page the head found, or, for anything else, its first segment
 // only: scanners' `/wp` stays visible, and nothing inside a repository is ever recorded. The check
@@ -26,6 +28,9 @@ export const SITE_EVENT_BLOBS = {
   /** Platform points only (platform-client-events.ts). */
   client: 'blob11',
   operation: 'blob12',
+  /** `write_origin` points only (platform-write-origin.ts); `index1` is the writer's digest. */
+  continent: 'blob13',
+  writerKind: 'blob14',
 } as const;
 /** `double1`: 1 when the request looked automated, else 0. */
 export const SITE_EVENT_BOT = 'double1';

@@ -17,6 +17,7 @@ import {
   ProviderError,
   type ProviderName,
 } from './oauth-providers';
+import { signupRegion } from './region';
 import { readSignupSource, recordSignup, takeSignupSource, withSignupSource } from './site-events';
 import { sha } from './storage';
 import type { Env, Json } from './types';
@@ -116,7 +117,7 @@ export async function oauthRoute(req: Request, env: Env): Promise<Response | nul
       outcome = await linkTo(env, identity, flow.account, flow.session_hash);
     else {
       token = randomToken();
-      outcome = await signInWith(env, identity, await sha(token));
+      outcome = await signInWith(env, identity, await sha(token), signupRegion(req, env));
     }
   } catch (e) {
     if (e instanceof ProviderError) return clearBinding(req, fail(e.reason, to));

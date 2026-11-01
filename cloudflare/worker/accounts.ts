@@ -14,6 +14,7 @@ import { accountFor, signUpWithEmail, signupEmail } from './email-accounts';
 import { error, readJson, response } from './http';
 import { unlink } from './oauth-identity';
 import { configuredProviders } from './oauth-providers';
+import { signupRegion } from './region';
 import { readSignupSource, recordSignup } from './site-events';
 import { sha } from './storage';
 import type { Env, Json, Principal } from './types';
@@ -164,6 +165,7 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
           salt: randomToken(16),
           session_hash: await sha(token),
           recovery_hash: await sha(recovery),
+          ...signupRegion(req, env),
         });
         name = String(account.username);
       } else {
@@ -191,7 +193,7 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
         );
       if (action === 'recover') await auditMember(env, name);
       if (action === 'signup') {
-        await accountCreated(env, name, email, 'email');
+        await accountCreated(env, name, email, 'email', signupRegion(req, env));
         recordSignup(env, req, 'email', readSignupSource(body.source));
       }
       result = response({ ...account, ...(action !== 'login' ? { recovery_code: recovery } : {}) });

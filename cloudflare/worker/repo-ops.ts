@@ -5,6 +5,7 @@ import { auditOn } from './account-audit';
 import { durableJson, storageGuard } from './durable';
 import { type HoldAnswer, holdSwitch, verifiedHold } from './platform-legal-hold';
 import type { OrgAccess } from './platform-org-access';
+import { noteWriter } from './platform-write-origin';
 import { archivedObjects } from './repo-archive';
 import { noteBundles } from './repo-bundles';
 import { awaitProjection } from './repo-changesets';
@@ -142,6 +143,7 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
     // REST, MCP, batches and decisions from the published head.
     if ('_pat' in auth && auth._pat.repos !== null && !auth._pat.repos.includes(repo))
       throw new ApiError('FORBIDDEN', 'This token is not allowed on this repository');
+    if (!KEEPS_REFS.has(command.op)) noteWriter(auth, repo);
     return {
       ...Object.fromEntries(Object.entries(command).filter(([k]) => !CREDENTIAL_KEYS.includes(k))),
       ...undoSwitch(env),

@@ -17,6 +17,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
             if let Some(email) = email {
                 a["email"] = json!(email);
             }
+            set_region(&mut a, c);
             put(db, "account", &a)?;
             session(db, c, now)?;
             audit(db, "account.created", now, json!({"username":username}))?;

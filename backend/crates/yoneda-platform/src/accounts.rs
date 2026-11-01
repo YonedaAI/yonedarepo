@@ -213,6 +213,17 @@ fn account<S: SqlStore>(db: &S) -> Result<Value> {
         }
     })
 }
+/// Puts a sign-up's region on the new account. A code this binary does not know stores
+/// nothing: a region never fails a sign-up, and an account without one reads as `enam`.
+fn set_region(account: &mut Value, c: &Value) {
+    if let Some(region) = c["region"]
+        .as_str()
+        .filter(|r| yoneda_core::account::ACCOUNT_REGIONS.contains(r))
+    {
+        account["region"] = json!(region);
+    }
+}
+
 fn public_account(account: &Value) -> Value {
     json!({"authenticated":true,"username":account["username"],"created_at":account["created_at"]})
 }

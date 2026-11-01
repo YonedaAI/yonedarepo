@@ -12,6 +12,7 @@ import { normalizeAccountIdentifier } from '../../shared/account';
 import type { AccountCreated, SignupProvider } from './account-index';
 import { afterAnswer } from './background';
 import { error, readJson, response } from './http';
+import type { SignupRegion } from './region';
 import { sha } from './storage';
 import type { Env, Principal } from './types';
 import { workspace } from './workspace';
@@ -36,13 +37,15 @@ export function contactEmail(value: unknown) {
 /**
  * Tells the platform `account` is new, after the response where the request lends its
  * waitUntil. `email` is the address the account stored (password sign-up's contact email, or
- * the provider's verified address); without one, no welcome email. Never throws.
+ * the provider's verified address); without one, no welcome email. `region` is read where the
+ * request arrived: this call is RPC and carries no `request.cf`. Never throws.
  */
 export function accountCreated(
   env: Env,
   account: string,
   email: string | null,
   provider: SignupProvider,
+  region: SignupRegion = {},
 ) {
   return afterAnswer(async () => {
     const platform = platformOf(env);
@@ -53,7 +56,7 @@ export function accountCreated(
       return;
     }
     try {
-      await platform.accountCreated(account, { provider, welcome: Boolean(email) });
+      await platform.accountCreated(account, { provider, welcome: Boolean(email), ...region });
     } catch (e: any) {
       const error = String(e?.message ?? e).slice(0, 200);
       console.error(JSON.stringify({ event: 'account.created.enqueue_failed', error }));
