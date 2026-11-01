@@ -10,11 +10,12 @@
 // legal hold, and no account can ask for it: the undo window exists to survive a stolen token.
 // Every action writes admin_audit.
 // Contact emails appear in these answers only.
+
 import { normalizeAccountIdentifier } from '../../shared/account';
 import { accountSummary, recordAccount } from './account-index';
 import { isAdminAccount } from './admin-auth';
 import { backfillAccounts } from './platform-accounts';
-import { adminBilling, adminBillingOn } from './platform-admin-billing';
+import { adminBilling, adminBillingOn, managedCredit } from './platform-admin-billing';
 import { setInternal } from './platform-admin-internal';
 import {
   accountRowOf,
@@ -182,8 +183,9 @@ async function accountDetail(env: Env, account: string) {
     listRepos(env, null, null, account),
     workspace(env, account, { op: 'pat_list' })
       .then((r) => (Array.isArray(r.tokens) ? r.tokens.length : 0))
+      // A read that fails leaves a blank on the operator's page, not an error over the rest.
       .catch(() => null),
-    managed(env, 'GET', account).catch(() => null),
+    managedCredit(env, 'GET', account).catch(() => null),
   ]);
   return {
     account,
@@ -204,30 +206,6 @@ async function accountDetail(env: Env, account: string) {
   };
 }
 
-/** The managed agents Worker's admin credit route for `account`; null when it is not bound
- * or has no bearer here. */
-async function managed(env: Env, method: 'GET' | 'POST', account: string, body?: Json) {
-  if (!env.MANAGED || !env.MANAGED_ADMIN_TOKEN) return null;
-  const answer = await env.MANAGED.fetch(
-    `https://managed/admin/accounts/${encodeURIComponent(account)}/credit`,
-    {
-      method,
-      headers: {
-        authorization: `Bearer ${env.MANAGED_ADMIN_TOKEN}`,
-        'content-type': 'application/json',
-      },
-      ...(body ? { body: JSON.stringify(body) } : {}),
-    },
-  );
-  const value = await answer.json<Json>().catch(() => ({}) as Json);
-  if (!answer.ok)
-    throw new ApiError(
-      answer.status === 400 ? 'INVALID_INPUT' : 'PUSH_FAILED',
-      value.error?.message ?? `The managed agents Worker answered ${answer.status}`,
-    );
-  return value;
-}
-
 /** `POST accounts/<a>/credit {usd, note}`. */
 async function grantCredit(env: Env, actor: string, account: string, body: Json) {
   const usd = Number(body.usd);
@@ -239,7 +217,7 @@ async function grantCredit(env: Env, actor: string, account: string, body: Json)
       .slice(0, 200) || `Granted by ${actor}`;
   if (!(await accountSummary(env, account).catch(asApi)))
     throw new ApiError('NOT_FOUND', 'Unknown account');
-  const granted = await managed(env, 'POST', account, { usd, note });
+  const granted = await managedCredit(env, 'POST', account, { usd, note });
   if (!granted)
     throw new ApiError('NOT_SUPPORTED', 'Credit grants are not configured on this platform');
   await audit(env, actor, 'account.credit', account, { usd, note, balance: granted.balance });

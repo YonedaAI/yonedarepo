@@ -5,8 +5,8 @@
 // or budgets.
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { AccountCreated } from './account-index';
-import { withWaitUntil } from './background';
 import { internalAccounts } from './internal-accounts';
+import { log, served } from './log';
 import { accountCreated, SIGNUP_NOTICE } from './platform-accounts';
 import { nightlyReconcile } from './platform-admin-billing';
 import { verifyEmail } from './platform-email-verify';
@@ -32,6 +32,7 @@ import { projectObjects, projectRefs } from './repo-projection';
 import { quarantineJob } from './repo-quarantine';
 import { SUMMARY_JOB, summaryJob } from './repo-search-summary';
 import { storeAwaited, storeJob } from './repo-store-create';
+import { inScope } from './request-scope';
 import type { Env, Envelope } from './types';
 
 /** Jobs that hold a large push's objects (projection to the object stores, derived data,
@@ -40,7 +41,7 @@ import type { Env, Envelope } from './types';
 let heavy: Promise<unknown> = Promise.resolve();
 function oneAtATime<T>(work: () => Promise<T>): Promise<T> {
   const run = heavy.then(work, work);
-  heavy = run.catch(() => {});
+  heavy = run.catch(() => {}); // The queue's next job runs anyway; `run`'s caller has the failure.
   return run;
 }
 
@@ -109,10 +110,8 @@ export async function platformJob(env: Env, message: Message<Envelope>) {
 
 export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
   fetch(req: Request) {
-    return withWaitUntil(
-      (work) => this.ctx.waitUntil(work),
-      () => platformFetch(req, this.env),
-    );
+    const waitUntil = (work: Promise<unknown>) => this.ctx.waitUntil(work);
+    return served({ env: this.env, req, waitUntil }, () => platformFetch(req, this.env));
   }
   /** Inbound TCP: Git over SSH, through the SSH gateway container. */
   connect(socket: Socket) {
@@ -138,31 +137,30 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
    * came due and this minute's compaction jobs; once a night, starts the billing reconcile.
    * None stops the others. */
   async scheduled(controller: ScheduledController) {
-    const logged = (event: string) => (e: unknown) => {
-      const error = String((e as Error)?.message ?? e).slice(0, 200);
-      console.error(JSON.stringify({ event, error }));
-    };
-    await Promise.all([
-      sshKeepAlive(this.env, 'cron'),
-      sweepDeleted(this.env).catch(logged('undo.sweep_failed')),
-      sweepCompaction(this.env).catch(logged('compaction.sweep_failed')),
-      nightlyReconcile(this.env, controller.scheduledTime).catch(
-        logged('billing.reconcile_failed'),
-      ),
-    ]);
+    const logged = (event: string) => (e: unknown) => log.error(event, { error: e });
+    await inScope({ env: this.env }, () =>
+      Promise.all([
+        sshKeepAlive(this.env, 'cron'),
+        sweepDeleted(this.env).catch(logged('undo.sweep_failed')),
+        sweepCompaction(this.env).catch(logged('compaction.sweep_failed')),
+        nightlyReconcile(this.env, controller.scheduledTime).catch(
+          logged('billing.reconcile_failed'),
+        ),
+      ]),
+    );
   }
   /** Jobs of a batch run side by side (they wait on I/O, not CPU; heavy ones one at a
    * time: `oneAtATime`); each settles alone. */
   async queue(batch: MessageBatch<Envelope>) {
     await Promise.all(
       batch.messages.map((message) =>
-        platformJob(this.env, message).catch((e) => {
-          // Which job failed and why, for `wrangler tail`; the queue retries it.
-          const { kind, repo_id, job_id } = message.body;
-          const error = String(e?.message ?? e).slice(0, 200);
-          console.error(JSON.stringify({ event: 'job.failed', kind, repo_id, job_id, error }));
-          message.retry();
-        }),
+        inScope({ env: this.env, job: message.body }, () =>
+          platformJob(this.env, message).catch((e) => {
+            // Which job failed and why, for `wrangler tail`; the queue retries it.
+            log.error('job.failed', { error: e });
+            message.retry();
+          }),
+        ),
       ),
     );
   }

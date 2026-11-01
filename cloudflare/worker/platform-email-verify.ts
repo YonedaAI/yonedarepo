@@ -3,6 +3,7 @@
 // here, stored by the account authority only as its digest (single use, 24 hours), and rides
 // in its queue message to the email; it is never logged. The platform entrypoint's
 // `accountCreated` and `verifyEmail` methods (RPC, no HTTP route) call these.
+import { carriedQueue } from './request-scope';
 import type { Env, Envelope } from './types';
 import { workspace } from './workspace';
 
@@ -27,7 +28,7 @@ function newToken() {
 
 async function enqueue(env: Env, job: Envelope) {
   if (!env.PLATFORM_QUEUE) throw new Error('PLATFORM_QUEUE is not bound');
-  await env.PLATFORM_QUEUE.send(job);
+  await carriedQueue(env.PLATFORM_QUEUE).send(job);
 }
 const job = (kind: string, account: string, token?: string): Envelope => ({
   v: 1,

@@ -2,6 +2,7 @@
 // serves with `large` (repo-object-fetch.ts) are fetched here, whole or from a byte range.
 // A file too large to hold (repo-large-files) streams from the store of record.
 
+import { log } from './log';
 import { decide } from './repo-grants';
 import { guardInherited } from './repo-inherit';
 import { SPILL_BYTES } from './repo-large-files';
@@ -52,14 +53,7 @@ export async function downloadBlob(
   const read = Promise.race([objects.blob(id), late]).finally(() => clearTimeout(timer));
   const bytes = await read.catch((e) => {
     if (e?.code === 'NOT_FOUND') throw new ApiError('NOT_FOUND', `No blob ${id}`);
-    console.log(
-      JSON.stringify({
-        event: 'objects.download_failed',
-        repo: ctx.repo,
-        id,
-        error: `${e?.code ?? 'ERROR'}: ${String(e?.message ?? e).slice(0, 300)}`,
-      }),
-    );
+    log.info('objects.download_failed', { repo: ctx.repo, id, error: e });
     throw e;
   });
   const headers = {

@@ -1,8 +1,10 @@
 // The base of the ledger Durable Object: its schema and transaction, and what operators read
 // and do to a ledger (admin-billing.ts and admin-refund.ts call these). Thin methods over the
 // SQL in ledger-refunds.ts, ledger-disputes.ts and ledger-pages.ts; CreditLedger adds credit.
+
 import { DurableObject } from 'cloudflare:workers';
 import { isCanonicalAccountIdentifier } from '../../shared/account';
+import { log } from '../worker/log';
 import type { ManagedEnv } from './config';
 import { billingRow, cancelTopUp, cardOf, setBillingPaused } from './ledger-billing';
 import { closeDispute, type DisputeEvent, disputeRows, openDispute } from './ledger-disputes';
@@ -90,7 +92,7 @@ export class LedgerAdmin extends DurableObject<ManagedEnv> {
       await db.batch(rollupStatements(db, batch));
     } catch (e: any) {
       const message = String(e?.message ?? e).slice(0, 200);
-      console.error(JSON.stringify({ event: 'billing.rollup', message }));
+      log.error('billing.rollup', { message });
       return true;
     }
     this.ctx.storage.transactionSync(() => rollupDone(sql, batch.marks));

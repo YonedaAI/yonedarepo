@@ -5,9 +5,11 @@
 // exchanges the code and signs in, links or creates the account. A provider whose secrets
 // are unset is off: its routes answer 404 and the sign-in page hides it. Failures return to
 // the page with `auth_error=<code>`; logs carry only the provider and that code.
+
 import { encodeAccountIdentifier } from '../../shared/account';
 import { randomToken, sessionCookie, signedInSession } from './accounts';
 import { error } from './http';
+import { log } from './log';
 import { linkTo, type Outcome, signInWith } from './oauth-identity';
 import {
   authorizeUrl,
@@ -39,7 +41,7 @@ export async function oauthRoute(req: Request, env: Env): Promise<Response | nul
   const redirect = `${origin}/auth/${provider}/callback`;
   // Without an attempt to name a return path, a failure goes to the sign-in page.
   const fail = (code: string, to = '/signin') => {
-    console.warn(JSON.stringify({ event: 'oauth.failed', provider, step: match[2], code }));
+    log.warn('oauth.failed', { provider, step: match[2], code });
     return back(origin, to, { auth_error: code, auth_provider: provider });
   };
   if (
@@ -121,13 +123,7 @@ export async function oauthRoute(req: Request, env: Env): Promise<Response | nul
     }
   } catch (e) {
     if (e instanceof ProviderError) return clearBinding(req, fail(e.reason, to));
-    console.error(
-      JSON.stringify({
-        event: 'oauth.error',
-        provider,
-        error: String((e as Error)?.message ?? e).slice(0, 120),
-      }),
-    );
+    log.error('oauth.error', { provider, error: e });
     return clearBinding(req, fail('unavailable', to));
   }
   if (outcome.kind === 'error') return clearBinding(req, fail(outcome.code, to));

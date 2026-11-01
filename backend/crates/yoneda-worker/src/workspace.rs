@@ -17,10 +17,12 @@ impl DurableObject for WorkspaceAuthority {
             return yoneda_cloudflare::colo_trace().await;
         }
         let mut command: Value = req.json().await?;
+        crate::telemetry::serving(&req);
         command["now"] = json!(Date::now().as_millis() as i64);
         match yoneda_platform::execute_workspace(&CloudStore::new(self.state.storage()), command) {
             Ok(value) => Response::from_json(&value),
             Err(error) => {
+                crate::telemetry::command_failed(&error);
                 Response::from_json(&json!({"error":{"code":error.code,"message":error.message}}))
                     .map(|r| r.with_status(409))
             }

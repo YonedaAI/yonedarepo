@@ -2,6 +2,8 @@
 // reset (a deploy, an eviction) is retried once on a fresh stub, as Cloudflare advises; the
 // platform's commands are idempotent (records, adoptions, landings and enqueues answer
 // "already" on a repeat), so a call that did run before the reset is safe to repeat.
+import { carriedHeaders } from './request-scope';
+
 const RESET = /no longer active|Network connection lost|reset because its code was updated/i;
 const OVERLOAD = /overloaded|queued for too long|too many requests queued/i;
 /** How a Durable Object's database refuses a write at its size limit (production, workerd). */
@@ -92,7 +94,7 @@ export async function durableJson<T = Record<string, any>>(
 ): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     try {
-      const response = await stub().fetch(url, { method: 'POST', body });
+      const response = await stub().fetch(url, { method: 'POST', body, headers: carriedHeaders() });
       return await response.json<T>();
     } catch (e: any) {
       // Thrown out of the call with the instance reset, not answered: the object cannot catch

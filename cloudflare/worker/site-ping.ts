@@ -9,6 +9,7 @@
 import { normalizeHandle } from '../../shared/account';
 import { sessionAccount } from './accounts';
 import { isInternal } from './internal-accounts';
+import { carriedHeaders } from './request-scope';
 import { appHead, siteHead } from './seo-head';
 import {
   APP_PAGES,
@@ -74,7 +75,7 @@ function write(req: Request, env: Env, path: string, referrer: string) {
 async function knownPage(path: string, origin: string, address: string, env: Env) {
   const app = APP_PAGES.get(path);
   if (app) return app;
-  const headers = { 'cf-connecting-ip': address };
+  const headers = { 'cf-connecting-ip': address, ...carriedHeaders() };
   const site = await siteHead(new Request(`${origin}${path}`), env);
   if (site) return site.canonical ?? null;
   const parts = path.split('/').filter(Boolean);

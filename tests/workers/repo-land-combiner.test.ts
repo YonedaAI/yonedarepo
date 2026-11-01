@@ -80,8 +80,8 @@ it('logs a lander left waiting, which Superfan counts', async () => {
   expect(await batcher.wait(target, 7, 1)).toBeNull();
   const lines = log.mock.calls.map(([line]) => JSON.parse(String(line)));
   expect(lines).toEqual([
-    { event: 'land.timed_out', repo: 'r-waiting', phase: 'submit' },
-    { event: 'land.timed_out', repo: 'r-waiting', phase: 'wait' },
+    { event: 'land.timed_out', level: 'warn', repo: 'r-waiting', phase: 'submit' },
+    { event: 'land.timed_out', level: 'warn', repo: 'r-waiting', phase: 'wait' },
   ]);
   log.mockRestore();
 });

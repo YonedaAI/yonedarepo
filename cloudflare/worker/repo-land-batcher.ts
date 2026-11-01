@@ -1,5 +1,6 @@
 // The land combiner's logic (repo-land-combiner.ts), apart from the Durable Object so tests can run
 // it in-process with their own bindings: submissions and tickets, each step landing what waits.
+import { log, warned } from './log';
 import { kickProjection, landChangesets } from './repo-changesets';
 import { refreshHead } from './repo-head';
 import { claimCommand } from './repo-land-poll';
@@ -13,13 +14,7 @@ const SUBMIT_BATCH = 256;
 export type Target = { repo: string; ref: string };
 type Submission = { item: Json; at: number; resolve: (outcome: Json | null) => void };
 
-/** Events Superfan counts on the land queue. */
-export function failed(event: string, repo: string | undefined, e: any) {
-  const error = `${e?.code ?? ''} ${e?.message ?? e}`.trim().slice(0, 200);
-  console.warn(JSON.stringify({ event, repo, error }));
-}
-const timedOut = (repo: string, phase: 'wait' | 'submit') =>
-  console.warn(JSON.stringify({ event: 'land.timed_out', repo, phase }));
+// Superfan counts land.timed_out and the land.*_failed events below by name.
 
 /**
  * The combiner's logic, apart from the Durable Object so tests can run it in-process with
@@ -52,7 +47,8 @@ export class LandBatcher {
       this.#waiters.set(ticket, list);
       setTimeout(() => {
         const waiting = this.#waiters.get(ticket) ?? [];
-        if (waiting.includes(resolve)) timedOut(target.repo, 'wait');
+        if (waiting.includes(resolve))
+          log.warn('land.timed_out', { repo: target.repo, phase: 'wait' });
         const left = waiting.filter((r) => r !== resolve);
         if (left.length) this.#waiters.set(ticket, left);
         else this.#waiters.delete(ticket);
@@ -73,7 +69,8 @@ export class LandBatcher {
       const submission = { item, at: Date.now(), resolve };
       this.#submissions.push(submission);
       setTimeout(() => {
-        if (this.#submissions.includes(submission)) timedOut(target.repo, 'submit');
+        if (this.#submissions.includes(submission))
+          log.warn('land.timed_out', { repo: target.repo, phase: 'submit' });
         this.#submissions = this.#submissions.filter((s) => s !== submission);
         resolve(null);
       }, timeoutMs);
@@ -116,7 +113,7 @@ export class LandBatcher {
     if (out.items.some((r: Json) => r.status === 'landed')) {
       const notified = Promise.all([
         kickProjection(merger.env, merger.repo).catch((e) =>
-          console.warn(`projection kick failed: ${e?.message ?? e}`),
+          log.warn('projection.kick_failed', { error: e }),
         ),
         refreshHead(merger.env, merger.repo),
       ]).finally(() => this.#background.delete(notified));
@@ -137,7 +134,7 @@ export class LandBatcher {
       try {
         await this.#landSubmitted(merger, target.ref);
       } catch (e: any) {
-        failed('land.submitted_batch_failed', target.repo, e);
+        log.warn('land.submitted_batch_failed', { repo: target.repo, error: e });
         await this.schedule(1000);
         return;
       }
@@ -171,9 +168,9 @@ export class LandBatcher {
     } catch (e: any) {
       await merger
         .call({ op: 'repo_land_release', ref: target.ref, epoch: claim.epoch })
-        .catch(() => {});
+        .catch(warned('land.release_failed', { repo: target.repo }));
       // A lost compare-and-swap rebuilds at once; anything else waits a moment.
-      if (e?.code !== 'STALE_HEAD') failed('land.batch_failed', target.repo, e);
+      if (e?.code !== 'STALE_HEAD') log.warn('land.batch_failed', { repo: target.repo, error: e });
       await this.schedule(e?.code === 'STALE_HEAD' ? 0 : 1000);
       return;
     }
@@ -183,6 +180,7 @@ export class LandBatcher {
   /** The queue is empty: tickets still awaited were settled elsewhere (a polling lander). */
   async #reconcile(merger: RepoContext) {
     for (const ticket of [...this.#waiters.keys()]) {
+      // A status that cannot be read stays awaited: the next empty queue asks again.
       const status: Json | null = await merger
         .call({ op: 'repo_land_status', ticket })
         .catch(() => null);

@@ -3,7 +3,9 @@
 // staged objects in its commit shard. Nothing is written to the authority, which adopts
 // the commit when it first needs it. Merges, replays of known blobs and commits too large
 // to stage keep the authority's prepare path.
+
 import { afterAnswer, deferred } from './background';
+import { log } from './log';
 import { dispatchRuns } from './repo-checks';
 import { reviewClasses, symbolWrites } from './repo-code';
 import { compute } from './repo-compute';
@@ -224,7 +226,7 @@ function writeBlobsThrough(ctx: RepoContext, store: RepoObjects, all: CachedObje
   return afterAnswer(() =>
     timed('cache.through', () =>
       inBatches(blobs, R2_WRITES, (o) => store.cache([o], 'r2')).catch((e) =>
-        console.warn(`blob write-through failed: ${e?.message ?? e}`),
+        log.warn('shard.blob_write_through_failed', { error: e }),
       ),
     ),
   );

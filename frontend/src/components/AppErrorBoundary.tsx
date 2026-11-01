@@ -1,4 +1,5 @@
 import { Component, type ReactNode } from 'react';
+import { reportClientError } from '../features/site/clientErrors';
 
 const RELOAD_KEY = 'yoneda:reloaded-after-deploy';
 /** A failure this soon after the last reload means the reload did not help; stop looping. */
@@ -20,10 +21,15 @@ export function reloadAfterStaleChunk(
   return true;
 }
 
-export class AppErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
-  state = { failed: false };
-  static getDerivedStateFromError() {
-    return { failed: true };
+type State = { failed: boolean; reference: string | null };
+
+export class AppErrorBoundary extends Component<{ children: ReactNode }, State> {
+  state: State = { failed: false, reference: null };
+  static getDerivedStateFromError(): State {
+    return { failed: true, reference: null };
+  }
+  componentDidCatch(error: unknown) {
+    void reportClientError(error).then((reference) => this.setState({ reference }));
   }
   render() {
     if (!this.state.failed) return this.props.children;
@@ -34,6 +40,9 @@ export class AppErrorBoundary extends Component<{ children: ReactNode }, { faile
         <button type="button" onClick={() => window.location.reload()}>
           Reload
         </button>
+        {this.state.reference && (
+          <small className="failure-reference">Reference {this.state.reference}</small>
+        )}
       </main>
     );
   }

@@ -81,6 +81,7 @@ async function named(env: Env, owner: string, name: string): Promise<Named | nul
   // Made before owners held names: the listing knows it, and its owner holds it from now.
   const listed = await listedNamed(env, owner, name);
   if (!listed) return null;
+  // Held from the next look-up if not from this one: the listing answers meanwhile.
   await claim(env, owner, listed.id, listed.name).catch(() => {});
   return { repo: listed.id, name: listed.name, renamed_from: null };
 }
@@ -105,6 +106,7 @@ const claim = (env: Env, owner: string, repo: string, name: string) =>
 export async function holdName(env: Env, owner: string, repo: string, name: string) {
   const listed = await listedNamed(env, owner, name);
   if (listed && listed.id !== repo) {
+    // Held from the next look-up if not from this one: the refusal below stands either way.
     await claim(env, owner, listed.id, listed.name).catch(() => {});
     throw new ApiError('NAME_TAKEN', `This owner already has a repository named ${listed.name}`);
   }

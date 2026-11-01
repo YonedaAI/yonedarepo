@@ -1,6 +1,7 @@
 // Draining a branch's landing queue when its combiner cannot be reached: the waiting
 // landers themselves land changesets and build merge batches for same-file work when the
 // lease is free, backing off while another lander holds it.
+import { warned } from './log';
 import { landChangesets } from './repo-changesets';
 import { landBatch, type Settled } from './repo-merge';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
@@ -56,7 +57,9 @@ export async function pollLanding(
       const merged = mine(await landBatch(merger, claim));
       if (merged) return merged;
     } catch (e: any) {
-      await merger.call({ op: 'repo_land_release', ref, epoch: claim.epoch }).catch(() => {});
+      await merger
+        .call({ op: 'repo_land_release', ref, epoch: claim.epoch })
+        .catch(warned('land.release_failed', { repo: merger.repo }));
       // Lost the compare-and-swap (the branch moved while the batch was built): rebuild.
       if (e?.code !== 'STALE_HEAD') throw e;
     }

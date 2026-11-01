@@ -8,8 +8,10 @@
 // minutes) is the gateway's bearer on this Worker's smart-HTTP endpoints for exactly one
 // repository and service; every request re-checks the key with its account, so a removed
 // key stops the next request of an open session. The token is signed, not stored.
+
 import { jwtVerify } from 'jose';
 import { error, response } from './http';
+import { log } from './log';
 import { orgAccess } from './platform-org-access';
 import { checkKey, lookupKey } from './platform-ssh-keys';
 import type { PatGrant, PatScope } from './repo-pat';
@@ -147,7 +149,7 @@ export async function sshInternal(req: Request, env: Env): Promise<Response> {
     if (!/^(gateway|tunnel)\.[a-z_]{1,32}$/.test(event))
       return error('INVALID_INPUT', 'Unknown gateway event', 400);
     const detail = typeof body.detail === 'object' && body.detail ? body.detail : {};
-    console.log(JSON.stringify({ event: `ssh.${event}`, ...detail }).slice(0, 4000));
+    log.info(`ssh.${event}`, detail);
     return response({ recorded: true });
   }
   const fingerprint = String(body.fingerprint ?? '');

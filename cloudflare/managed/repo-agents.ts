@@ -90,7 +90,7 @@ export class RepoAgents extends DurableObject<ManagedEnv> {
 
   /** Whether `signature` (`sha256=<hex>`) is this repository's webhook signature of `body`. */
   async verify(body: string, signature: string): Promise<boolean> {
-    const secret = (await this.connection().catch(() => null))?.hook_secret;
+    const secret = (await this.connection().catch(() => null))?.hook_secret; // Fails closed.
     return Boolean(secret) && signatureMatches(secret as string, body, signature);
   }
 

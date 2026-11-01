@@ -16,11 +16,14 @@
 // - a fork of a repository without one gets an empty store too (forkStore).
 // - a mirror retirement fails its run and is tried again later, as for any Artifacts outage.
 // - an import makes its own, and never meets this job: a repository nobody asked a job for.
+
 import { bounded } from './durable';
+import { log } from './log';
 import { STORE_PENDING } from './repo-artifacts-store';
 import { caller, type Json } from './repo-ops';
 import { dispatchProjection } from './repo-projection';
 import { type ObjectStore, ownSpec, parseStore } from './repo-stores';
+import { carriedQueue } from './request-scope';
 import type { Env, Envelope } from './types';
 
 /** Each attempt of a create in the request, from the same evidence as the other bounds
@@ -65,15 +68,14 @@ export async function createStore(store: ObjectStore) {
  * max_retries, so a long outage leaves no store to the dead letters. */
 async function again(env: Env, envelope: Envelope, cause: any) {
   const attempt = (envelope.attempt ?? 0) + 1;
-  const error = String(cause?.message ?? cause).slice(0, 200);
-  const failed = { event: 'store.create_failed', repo_id: envelope.repo_id, attempt, error };
-  if (attempt >= JOB_ATTEMPTS) return console.error(JSON.stringify(failed));
-  console.warn(JSON.stringify(failed));
+  const failed = { repo: envelope.repo_id, attempt, error: cause };
+  if (attempt >= JOB_ATTEMPTS) return log.error('store.create_failed', failed);
+  log.warn('store.create_failed', failed);
   const delaySeconds = Math.min(
     JOB_FIRST_DELAY_SECONDS * 2 ** (attempt - 1),
     JOB_MAX_DELAY_SECONDS,
   );
-  await env.PLATFORM_QUEUE.send({ ...envelope, attempt }, { delaySeconds });
+  await carriedQueue(env.PLATFORM_QUEUE).send({ ...envelope, attempt }, { delaySeconds });
 }
 
 /**

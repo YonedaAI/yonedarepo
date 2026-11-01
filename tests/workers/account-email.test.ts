@@ -8,7 +8,6 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { accountRoute } from '../../cloudflare/worker/accounts';
 import { PlatformEntrypoint, platformJob } from '../../cloudflare/worker/platform-entrypoint';
 import {
-  maskAddress,
   RESEND_EMAILS,
   welcomeJob,
 } from '../../cloudflare/worker/platform-welcome-email';
@@ -275,7 +274,8 @@ it('retries a 5xx with backoff through the queue job, and stops on a 4xx', async
   // The last attempt gives up: logged once, without the address in full.
   expect(error).toHaveBeenCalledTimes(1);
   const logged = String(error.mock.calls[0][0]);
-  expect(JSON.parse(logged)).toMatchObject({ event: 'email.welcome.failed', to: maskAddress('retry@example.com'), status: 500 });
+  expect(JSON.parse(logged)).toMatchObject({ event: 'email.welcome.failed', status: 500 });
+  expect(logged).not.toContain('example.com');
   expect(logged).not.toContain('retry@example.com');
 
   // A permanent 4xx stops at once.

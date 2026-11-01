@@ -152,7 +152,7 @@ export async function* deflated(
     }
     await writer.close();
   })();
-  feeding.catch(() => {});
+  feeding.catch(() => {}); // Awaited below; failing first must not go unhandled meanwhile.
   for await (const packed of zlib.readable as unknown as AsyncIterable<Uint8Array>) {
     session.largeData(none, packed);
     yield packed;

@@ -274,6 +274,5 @@ it('answers a retryable error when Resend fails, gives the slot back, and repeat
   // Failures are logged without the address.
   const lines = logged.mock.calls.flat().join('\n');
   expect(lines).toContain('email.support.failed');
-  expect(lines).not.toContain('ada@example.com');
-  expect(lines).toContain('a…@example.com');
+  expect(lines).not.toContain('example.com');
 });

@@ -13,6 +13,8 @@ export type Envelope = {
   attempt?: number;
   /** The Landing a clearance job looks at (repo-land-cleared.ts). */
   number?: number;
+  /** The request this job descends from (request-scope.ts). Absent on older messages. */
+  request_id?: string;
 };
 export interface Env {
   WORKSPACES: DurableObjectNamespace;
@@ -211,6 +213,12 @@ export interface Env {
   /** The hostname clients use for Git over SSH (`ssh.yonedarepo.com`). */
   SSH_HOST?: string;
   BUILD_REVISION?: string;
+  /** `on`: the request id goes on every response and travels with each hop (request-scope.ts;
+   * unset or anything else: failure lines still carry it, nothing else changes). */
+  REQUEST_IDS?: string;
+  /** `on`: `POST /api/client-error` logs what browsers report (client-errors.ts; unset or
+   * anything else: it answers 204 and does nothing). */
+  CLIENT_ERRORS?: string;
 }
 export type Principal = {
   workspace: string;

@@ -128,7 +128,7 @@ it('projects a long backlog in one receive-pack per chunk, never a refused push'
   const packs = receivePacks.requests;
   await drain(scoped);
   expect(receivePacks.requests - packs).toBe(2); // the older chunk under hidden refs, then main
-  expect(warn.mock.calls.filter((c) => String(c[0]).startsWith('object store push attempt'))).toEqual([]);
+  expect(warn.mock.calls.filter((c) => String(c[0]).includes('"object.push_retry"'))).toEqual([]);
   for (const commit of landedCommits) expect(artifacts.get(`yr-${created.body.id}`)?.get(commit)?.kind).toBe('commit');
   expect((await api(repo, owner)).body.projections[0]).toMatchObject({ status: 'ok', projected_commit: landedCommits.at(-1) });
 });

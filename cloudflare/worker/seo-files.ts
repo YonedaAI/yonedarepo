@@ -3,6 +3,7 @@
 // every other environment disallows everything. The sitemap lists the build's site pages and
 // the platform's public listing (`GET /api/v1/explore`, the same answer anyone gets), capped,
 // and is cached at the edge for an hour.
+import { carriedHeaders } from './request-scope';
 import { indexable, siteRoutes } from './seo-head';
 import type { Env } from './types';
 import { publicOrigin } from './website-metadata';
@@ -99,7 +100,11 @@ async function publicRepositories(req: Request, env: Env): Promise<string[] | nu
     page.searchParams.set('limit', '100');
     if (before) page.searchParams.set('before', before);
     const answer = await platform
-      .fetch(new Request(page, { headers: ip ? { 'cf-connecting-ip': ip } : {} }))
+      .fetch(
+        new Request(page, {
+          headers: { ...(ip ? { 'cf-connecting-ip': ip } : {}), ...carriedHeaders() },
+        }),
+      )
       .catch(() => null);
     if (!answer?.ok) return null;
     const { repos } = await answer.json<{ repos: { path: string | null; created_at: number }[] }>();

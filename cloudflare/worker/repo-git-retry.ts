@@ -18,7 +18,9 @@
 //   load          at most 4x one read's calls under overload, spread by the waits.
 // Only `OVERLOADED` failures count (`failureCode`), and only reads: a push's body is not held,
 // and its write may have applied, so a push is retried only at its access check.
+
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
+import { log } from './log';
 import { errLine } from './repo-git-upload';
 import { record } from './repo-timing';
 
@@ -43,17 +45,7 @@ export function retrier(repo: string, service: string) {
         const wait = READ_RETRY.waits[tries];
         const elapsed_ms = Date.now() - started;
         const retrying = wait !== undefined && elapsed_ms < READ_RETRY.window;
-        console.warn(
-          JSON.stringify({
-            event: 'git.overloaded',
-            repo,
-            service,
-            tries,
-            elapsed_ms,
-            retrying,
-            error: String(e?.message ?? e).slice(0, 300),
-          }),
-        );
+        log.warn('git.overloaded', { repo, service, tries, elapsed_ms, retrying, error: e });
         if (!retrying) throw e;
         tries++;
         const ms = wait * (0.75 + Math.random() / 4);

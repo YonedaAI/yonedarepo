@@ -8,8 +8,10 @@
 // Every step can repeat: a head already landed stays, and the authority skips commits it
 // already holds and refuses any that would leave a gap. With a pack a direct import stored
 // (repo-import-direct), one step reads every tree from it and no waves run.
+
 import { NonRetryableError } from 'cloudflare:workflows';
 import { rpcValue } from './durable';
+import { log } from './log';
 import { inBatches } from './repo-git-objects';
 import { directOn, fetchedPack, wholeClone } from './repo-import-direct';
 import {
@@ -175,7 +177,7 @@ export async function landThenFill(
         .do('record history from the pack', WAVE_RETRY, () => fillFromPack(env, params, head))
         .catch((e) => {
           if (tooLarge(e)) throw e;
-          console.warn(`history not recorded from the pack: ${params.repo}: ${e}`);
+          log.warn('import.history_not_recorded', { repo: params.repo, error: e });
           return null;
         });
       if (packed) {
@@ -199,7 +201,7 @@ export async function landThenFill(
     }
   } catch (e) {
     // Retries are spent, or none can help: the repository must not wait on history.
-    console.warn(`history import ended early: ${params.repo}: ${e}`);
+    log.warn('import.history_ended_early', { repo: params.repo, error: e });
     const reason = stopReason(e);
     stopped = await step.do('end history here', RETRY, () => endHistory(env, params, { reason }));
   }

@@ -2,6 +2,7 @@
 // session is recorded, so the next account view re-reads that repository's authority
 // (platform-account-activity.ts). The same write carries the database size when the derive
 // job has a fresh sample, so sampling adds no D1 write (repo-storage.ts).
+import { log } from './log';
 import { logCrossings } from './repo-storage';
 import type { Env } from './types';
 
@@ -30,6 +31,6 @@ export async function touchActivity(env: Env, repo: string, now = Date.now(), db
       .bind(repo, now)
       .run();
   } catch (e: any) {
-    console.warn(`activity touch failed: ${e?.message ?? e}`);
+    log.warn('activity.touch_failed', { error: e });
   }
 }

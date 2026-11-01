@@ -2,6 +2,8 @@
 // an ordinary API client of the platform. Its public hostname takes only signed webhooks and
 // /health and Stripe's signed billing webhook (/stripe/webhook); the browser API is served to the front Worker's service binding on the site's own
 // origin. The platform itself never runs, schedules or knows about agents.
+import { log, served } from '../worker/log';
+import { inScope } from '../worker/request-scope';
 import { adminBilling, adminPlatform } from './admin-billing';
 import { ApiRefusal, managedApi, workspaceName } from './api';
 import { BillingRefusal, stripeWebhook } from './billing';
@@ -122,9 +124,7 @@ export async function managedFetch(req: Request, env: ManagedEnv): Promise<Respo
     } catch (e: any) {
       if (e instanceof ApiRefusal || e instanceof PlatformError || e instanceof BillingRefusal)
         return refuse(e.code, e.message, e.status);
-      console.error(
-        JSON.stringify({ event: 'managed.api', message: String(e?.message ?? e).slice(0, 200) }),
-      );
+      log.error('managed.api', { error: e });
       return refuse('INTERNAL', 'The managed agents service failed', 500);
     }
   }
@@ -132,8 +132,9 @@ export async function managedFetch(req: Request, env: ManagedEnv): Promise<Respo
 }
 
 export default {
-  fetch: managedFetch,
+  fetch: (req, env, ctx) =>
+    served({ env, req, waitUntil: (work) => ctx.waitUntil(work) }, () => managedFetch(req, env)),
   async queue(batch, env) {
-    await consume(batch, env);
+    await inScope({ env }, () => consume(batch, env));
   },
 } satisfies ExportedHandler<ManagedEnv, QueueMessage>;

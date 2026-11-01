@@ -4,9 +4,12 @@
 // needs a reason, scanned with the platform's own secret rules, and writes admin_audit before
 // the money moves and again after, so a row reading `pending` is an action cut off midway. The
 // actor is always the operator's session, never the body.
+
+import { log } from './log';
 import { auditBegin, auditEnd } from './platform-admin-queries';
 import { compute } from './repo-compute';
 import { ApiError, type Json } from './repo-ops';
+import { carriedHeaders } from './request-scope';
 import type { Env } from './types';
 
 const REASON_MAX = 500;
@@ -14,6 +17,36 @@ const REASON_MAX = 500;
 const RECONCILE_AT = { hour: 3, minute: 17 };
 
 export const adminBillingOn = (env: Env) => env.ADMIN_BILLING === 'on';
+
+/** The managed agents Worker's admin credit route for `account`; null when it is not bound
+ * or has no bearer here. */
+export async function managedCredit(
+  env: Env,
+  method: 'GET' | 'POST',
+  account: string,
+  body?: Json,
+) {
+  if (!env.MANAGED || !env.MANAGED_ADMIN_TOKEN) return null;
+  const answer = await env.MANAGED.fetch(
+    `https://managed/admin/accounts/${encodeURIComponent(account)}/credit`,
+    {
+      method,
+      headers: {
+        authorization: `Bearer ${env.MANAGED_ADMIN_TOKEN}`,
+        'content-type': 'application/json',
+        ...carriedHeaders(),
+      },
+      ...(body ? { body: JSON.stringify(body) } : {}),
+    },
+  );
+  const value = await answer.json<Json>().catch(() => ({}) as Json);
+  if (!answer.ok)
+    throw new ApiError(
+      answer.status === 400 ? 'INVALID_INPUT' : 'PUSH_FAILED',
+      value.error?.message ?? `The managed agents Worker answered ${answer.status}`,
+    );
+  return value;
+}
 
 /** The managed Worker's answer, or its refusal as this API's own. */
 export async function managed(
@@ -29,6 +62,7 @@ export async function managed(
     headers: {
       authorization: `Bearer ${env.MANAGED_ADMIN_TOKEN}`,
       'content-type': 'application/json',
+      ...carriedHeaders(),
     },
     ...(body ? { body: JSON.stringify(body) } : {}),
   });
@@ -96,9 +130,7 @@ async function act(env: Env, actor: string, account: string, action: string, arg
     auditEnd(env, row, { ...detail, ...outcome }).catch((e) =>
       // The money has moved or been refused: the answer still goes back, and the row reads
       // `pending`, which is what a cut-off action reads.
-      console.error(
-        JSON.stringify({ event: 'billing.audit', message: String(e?.message ?? e).slice(0, 200) }),
-      ),
+      log.error('billing.audit', { error: e }),
     );
   try {
     const done = await managed(env, 'POST', billingPath(account, `/${action}`), {
@@ -144,11 +176,6 @@ export async function nightlyReconcile(env: Env, at: number) {
     return;
   if (!adminBillingOn(env) || !env.MANAGED || !env.MANAGED_ADMIN_TOKEN) return;
   await managed(env, 'POST', '/admin/billing/reconcile').catch((e) =>
-    console.error(
-      JSON.stringify({
-        event: 'billing.reconcile',
-        message: String(e?.message ?? e).slice(0, 200),
-      }),
-    ),
+    log.error('billing.reconcile', { error: e }),
   );
 }

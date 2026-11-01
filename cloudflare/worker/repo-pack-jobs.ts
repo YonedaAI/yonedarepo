@@ -18,11 +18,14 @@
 // build and before each pack is kept). Every build logs `git.pack.build`: the container's
 // start, fetch and per-pack wall and CPU ms, peak memory, objects and bytes (a Worker
 // build: its wall and read-wait ms and Wasm MiB).
+
 import { failureCode } from './durable';
+import { log } from './log';
 import { type BuildPlan, canBuild, type PackOrder, packBuilder } from './platform-pack-builder';
 import { caller, type Json, RepoContext } from './repo-ops';
 import { type Fresh, packCacheOn, packKey, packsPrefix } from './repo-pack-cache';
 import { buildInWorker } from './repo-pack-worker-build';
+import { carriedQueue } from './request-scope';
 import type { Env, Envelope } from './types';
 
 export const PACK_BUILD = 'platform_pack_build';
@@ -67,7 +70,9 @@ const leaseKey = (repo: string) => `${packsPrefix(repo)}building`;
 /** After main moved to `tip`: its packs are built DEBOUNCE_S later. */
 export async function schedulePackBuild(env: Env, repo: string, tip: string) {
   if (!packCacheOn(env)) return;
-  await env.PLATFORM_QUEUE.send(job(repo, `push-${tip}`), { delaySeconds: DEBOUNCE_S });
+  await carriedQueue(env.PLATFORM_QUEUE).send(job(repo, `push-${tip}`), {
+    delaySeconds: DEBOUNCE_S,
+  });
 }
 
 /** A clone hands `fresh` to a job; false when one is on its way already. */
@@ -83,7 +88,7 @@ export async function handOff(env: Env, repo: string, fresh: Fresh) {
     if (!made) return false;
   }
   const name = key.slice(packsPrefix(repo).length, -'.pack'.length);
-  await env.PLATFORM_QUEUE.send(job(repo, `asked-${name}`));
+  await carriedQueue(env.PLATFORM_QUEUE).send(job(repo, `asked-${name}`));
   return true;
 }
 
@@ -93,7 +98,7 @@ export async function packBuildJob(env: Env, envelope: Envelope) {
     await runJob(env, envelope);
   } catch (e) {
     if (!['GONE', 'NOT_FOUND'].includes(failureCode(e))) throw e;
-    console.warn(`pack build settled: ${String((e as Error)?.message ?? e).slice(0, 200)}`);
+    log.warn('git.pack.build_settled', { error: e });
   }
 }
 
@@ -115,7 +120,7 @@ async function runJob(env: Env, envelope: Envelope) {
   if (way !== 'push') return;
   const tip = rest[0];
   const listed = await ctx.call({ op: 'repo_refs' });
-  if (listed.refs[MAIN] !== tip) return void log({ repo, outcome: 'superseded', tip });
+  if (listed.refs[MAIN] !== tip) return void logBuild({ repo, outcome: 'superseded', tip });
   await leased(env, envelope, () => build(ctx, tipPacks(cloneWants(listed), tip), envelope.job_id));
 }
 
@@ -132,7 +137,7 @@ function cloneWants({ refs, annotated }: Json): string[] {
 async function leased(env: Env, envelope: Envelope, work: () => Promise<unknown>) {
   const etag = await lease(env, envelope.repo_id);
   if (!etag) {
-    await env.PLATFORM_QUEUE.send(envelope, { delaySeconds: BUSY_S });
+    await carriedQueue(env.PLATFORM_QUEUE).send(envelope, { delaySeconds: BUSY_S });
     return 'busy';
   }
   try {
@@ -159,7 +164,8 @@ async function lease(env: Env, repo: string) {
  * unavailable, unless a blob is withheld. */
 async function build(ctx: RepoContext, packs: PackOrder[], job: string) {
   const { env, repo } = ctx;
-  if (await (await ctx.objects()).withholdsAny()) return log({ repo, job, outcome: 'withheld' });
+  if (await (await ctx.objects()).withholdsAny())
+    return logBuild({ repo, job, outcome: 'withheld' });
   const plan: BuildPlan = { repo, packs, minObjects: minObjects(env) };
   const builder = packBuilder(env, repo);
   let why = 'no builder';
@@ -167,16 +173,16 @@ async function build(ctx: RepoContext, packs: PackOrder[], job: string) {
     const started = Date.now();
     try {
       const report = await builder.build(plan);
-      return log({ repo, job, builder: 'container', ms: Date.now() - started, ...report });
+      return logBuild({ repo, job, builder: 'container', ms: Date.now() - started, ...report });
     } catch (e) {
       why = String((e as Error)?.message ?? e).slice(0, 300);
     }
   } else if (builder) why = 'a depth the container does not build';
-  log({ repo, job, outcome: 'container unavailable', why });
+  logBuild({ repo, job, outcome: 'container unavailable', why });
   for (const { fresh, tip, label } of packs)
     if ((await buildInWorker(ctx, fresh, tip, label, plan.minObjects)) === 'small') break;
 }
 
-function log(fields: Json) {
-  console.log(JSON.stringify({ event: 'git.pack.build', ...fields }));
+function logBuild(fields: Json) {
+  log.info('git.pack.build', fields);
 }

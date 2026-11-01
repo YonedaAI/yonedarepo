@@ -4,6 +4,7 @@
 // holds now. One welcome per account: the authority's sent marker, plus Resend's
 // Idempotency-Key (24 hours) for a redelivery that races it. A confirmation email goes out
 // only while its token is live and the address unconfirmed.
+import { log } from './log';
 import { digest, verifyUrl } from './platform-email-verify';
 import { renderVerify, renderWelcome } from './platform-welcome-template';
 import type { Env, Envelope } from './types';
@@ -18,13 +19,7 @@ let warnedOff = false;
 function off(reason: string) {
   if (warnedOff) return;
   warnedOff = true;
-  console.warn(JSON.stringify({ event: 'email.off', reason }));
-}
-
-/** `a…@example.com`: enough to recognise a failure, never the whole address. */
-export function maskAddress(address: string) {
-  const at = address.lastIndexOf('@');
-  return at > 0 ? `${address[0]}…${address.slice(at)}` : '…';
+  log.warn('email.off', { reason });
 }
 
 function config(env: Env) {
@@ -103,14 +98,11 @@ export async function welcomeJob(
     : `welcome/${await digest(`${settings.origin}\n${account}`)}`;
   const failed = (detail: Record<string, unknown>) => {
     if (attempts < MAX_ATTEMPTS && detail.transient) return { retry: backoff(attempts) };
-    console.error(
-      JSON.stringify({
-        event: confirm ? 'email.verify.failed' : 'email.welcome.failed',
-        to: maskAddress(to),
-        attempts,
-        ...detail,
-      }),
-    );
+    log.error(confirm ? 'email.verify.failed' : 'email.welcome.failed', {
+      account,
+      attempts,
+      ...detail,
+    });
     return {};
   };
   let answer: Response;
@@ -132,7 +124,7 @@ export async function welcomeJob(
       }),
     });
   } catch (e: any) {
-    return failed({ transient: true, error: String(e?.message ?? e).slice(0, 200) });
+    return failed({ transient: true, error: e });
   }
   if (answer.ok) {
     if (!confirm) await workspace(env, account, { op: 'welcome_sent' });

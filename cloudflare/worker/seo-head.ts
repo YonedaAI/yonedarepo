@@ -3,7 +3,9 @@
 // and are served from their prerendered copies (`/_site/<path>`, frontend/vite-prerender.ts).
 // A repository page is named only when the platform answers it to anyone (public); private and
 // unknown ones get noindex and the default head, so their names never enter the page.
+
 import { normalizeHandle } from '../../shared/account';
+import { carriedHeaders } from './request-scope';
 import type { Env } from './types';
 
 type SeoRoute = {
@@ -113,7 +115,7 @@ async function repositoryHead(req: Request, env: Env, handle: string, name: stri
   const ip = req.headers.get('cf-connecting-ip');
   const asked = new Request(
     `${new URL(req.url).origin}/api/v1/resolve/${encodeURIComponent(handle)}/${encodeURIComponent(name)}`,
-    { headers: ip ? { 'cf-connecting-ip': ip } : {} },
+    { headers: { ...(ip ? { 'cf-connecting-ip': ip } : {}), ...carriedHeaders() } },
   );
   const answer = await env.PLATFORM.fetch(asked).catch(() => null);
   if (answer?.status === 404) return { noindex: true };

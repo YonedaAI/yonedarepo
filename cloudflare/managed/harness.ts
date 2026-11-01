@@ -6,6 +6,7 @@
 //   added on the way out. Each request first holds its worst case against the workspace's
 //   credit (and the run's cost cap), then settles at the usage the response reports.
 // The container therefore holds no credential at all: the CLIs get placeholders.
+
 import { Container, type OutboundHandlerContext } from '@cloudflare/containers';
 import {
   chargeMicrousd,
@@ -15,6 +16,7 @@ import {
   usageCostMicrousd,
 } from '../../shared/managed-agents';
 import harnessVersion from '../containers/harness/version.json';
+import { log, warned } from '../worker/log';
 import { requestTopUp } from './billing';
 import { gatewaySlug, type ManagedEnv } from './config';
 import { type CallMeta, ledgerStub, type Usage } from './ledger';
@@ -55,17 +57,14 @@ const deny = (status: number, code: string, message: string) =>
 /** A refused egress attempt, logged (Workers Logs: `managed.egress_refused`) and answered 403. */
 function refuse(req: Request, p: HarnessParams | undefined, code: string, message: string) {
   const url = new URL(req.url);
-  console.warn(
-    JSON.stringify({
-      event: 'managed.egress_refused',
-      run: p?.run ?? null,
-      repo: p?.repo ?? null,
-      code,
-      method: req.method,
-      host: url.host,
-      path: url.pathname.slice(0, 200),
-    }),
-  );
+  log.warn('managed.egress_refused', {
+    run: p?.run ?? null,
+    repo: p?.repo,
+    code,
+    method: req.method,
+    host: url.host,
+    path: url.pathname.slice(0, 200),
+  });
   return deny(403, code, message);
 }
 
@@ -179,7 +178,11 @@ async function gatewayOutbound(
   }
   const key_ = await keyBinding(env, p.provider)
     ?.get()
-    .catch(() => '');
+    .catch(() => {
+      // The store's error stays out: only that the key could not be read.
+      log.warn('managed.key_unreadable', { provider: p.provider });
+      return '';
+    });
   if (!key_) {
     await ledger.settle(key, null, false, meta);
     return deny(503, 'NOT_CONFIGURED', `${p.provider} key is not bound`);
@@ -210,7 +213,7 @@ async function gatewayOutbound(
     headers,
     body: text,
     redirect: 'manual',
-  }).catch(() => null);
+  }).catch(warned('managed.gateway_unreachable', { run: p.run }));
   if (!res) {
     await settle(null, true);
     return deny(502, 'GATEWAY_UNREACHABLE', 'The model gateway did not answer');

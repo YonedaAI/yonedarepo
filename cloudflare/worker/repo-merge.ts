@@ -3,6 +3,7 @@
 // it with the authority's verification. Conflicts come back with diff3-marked text.
 
 import { deferred } from './background';
+import { log } from './log';
 import { commit } from './repo-commit';
 import { compute } from './repo-compute';
 import { dispatchDerive } from './repo-derived';
@@ -205,6 +206,7 @@ export async function landBatch(merger: RepoContext, claim: Json): Promise<Settl
 async function stagedOf(merger: RepoContext, commit: string): Promise<CachedObject[]> {
   const fromShard = await shardStagedOf(merger.env, merger.repo, commit);
   if (fromShard.length) return fromShard;
+  // An authority that cannot answer leaves the commit to the slower tiers.
   const here = await caller(merger.env, merger.repo, { _system: 'projection' })({
     op: 'repo_staged_objects',
     commit,
@@ -226,7 +228,7 @@ export async function moved(ctx: RepoContext, ref: string) {
       dispatchProjection(ctx.env, ctx.repo),
       dispatchDerive(ctx.env, ctx.repo, ref),
       refreshHead(ctx.env, ctx.repo),
-    ]).catch((e) => console.warn(`dispatch after landing failed: ${e?.message ?? e}`));
+    ]).catch((e) => log.warn('dispatch.after_landing_failed', { error: e }));
   if (!deferred(send)) await send();
 }
 

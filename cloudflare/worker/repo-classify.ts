@@ -2,8 +2,11 @@
 // is not, so Git never waits on it: the push queues its new commits and this job classifies them
 // from the touches the authority recorded. Until it has, and for anything it skips, the commit
 // is unclassified and needs a human, so losing a job or reading past a budget is safe.
+
+import { log } from './log';
 import { reviewClasses } from './repo-code';
 import { caller, type Json, RepoContext } from './repo-ops';
+import { carriedQueue } from './request-scope';
 import type { Env, Envelope } from './types';
 
 export const CLASSIFY = 'platform_classify';
@@ -16,7 +19,13 @@ const CLASSIFY_BYTES = 8 * 1024 * 1024;
 
 export async function queueClassify(env: Env, repo: string, commits: string[]) {
   if (commits.length === 0 || commits.length > CLASSIFY_COMMITS) return;
-  await env.PLATFORM_QUEUE.send({ v: 1, kind: CLASSIFY, repo_id: repo, job_id: 'push', commits });
+  await carriedQueue(env.PLATFORM_QUEUE).send({
+    v: 1,
+    kind: CLASSIFY,
+    repo_id: repo,
+    job_id: 'push',
+    commits,
+  });
 }
 
 /** The queue job, parents first: an ancestor left out would keep its descendants unproved, so
@@ -37,6 +46,6 @@ export async function classifyJob(env: Env, envelope: Envelope) {
       if (classes) await call(classes);
     }
   } catch (e) {
-    console.warn(`classify job settled: ${String((e as Error)?.message ?? e).slice(0, 200)}`);
+    log.warn('classify.settled', { error: e });
   }
 }

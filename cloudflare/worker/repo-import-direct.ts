@@ -13,6 +13,7 @@
 // when it can (`fillFromPack` in repo-import-fill.ts). Nothing here can fail an import: any
 // failure leaves that Workflow to do what it always did, and only a landed main stays.
 
+import { log } from './log';
 import { bundlesOn } from './repo-bundles';
 import { githubRemote, remoteHead, remotePack } from './repo-git-remote';
 import type { ImportParams, Timing } from './repo-import-head';
@@ -97,7 +98,7 @@ export async function directImport(env: Env, params: ImportParams): Promise<Timi
       const landed_at = Date.now();
       // Two R2 calls no reader waits for, so not before main; an unlisted pack is only kept
       // longer than it would have been.
-      await writer.keep().catch((e) => console.warn(`stored pack not listed: ${e?.message ?? e}`));
+      await writer.keep().catch((e) => log.warn('import.pack_not_listed', { error: e }));
       const asked = params.asked_at ?? started;
       return {
         landed_by: 'direct',
@@ -120,7 +121,7 @@ export async function directImport(env: Env, params: ImportParams): Promise<Timi
     }
   } catch (e: any) {
     const reason = String(e?.message ?? e).slice(0, 300);
-    console.warn(JSON.stringify({ event: 'import.direct_declined', repo: params.repo, reason }));
+    log.warn('import.direct_declined', { repo: params.repo, reason });
     return null;
   }
 }

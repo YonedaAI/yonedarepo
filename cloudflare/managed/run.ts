@@ -4,12 +4,14 @@
 // finally post. The configured model comes first; the agent's listed fallbacks follow only
 // when it fails, and each switch is recorded on the run. Model calls are metered by the
 // container's outbound handler (harness.ts), container time here.
+
 import {
   CONTAINER_USD_PER_MINUTE,
   type ManagedAgentDefinition,
   type ModelChoice,
   managedAgent,
 } from '../../shared/managed-agents';
+import { log, warned } from '../worker/log';
 import { requestTopUp } from './billing';
 import type { ManagedEnv, RunParams } from './config';
 import { type HarnessParams, harnessStub } from './harness';
@@ -121,7 +123,9 @@ export async function runAgent(env: ManagedEnv, p: RunParams, step: Steps): Prom
     await repo.finish(p.run, p.attempt, 'failed', { error });
     return { status: 'failed', error };
   } finally {
-    await step.do('close', () => ledger.closeRun(p.run, p.attempt)).catch(() => {});
+    await step
+      .do('close', () => ledger.closeRun(p.run, p.attempt))
+      .catch((e) => log.error('managed.close_run_failed', { run: p.run, error: e }));
   }
 }
 
@@ -170,7 +174,12 @@ async function attempt(
   }
   return step.do(`collect-${i}`, async () => {
     const box = harnessStub(env, name);
-    const status = stop ? {} : await box.status().catch(() => ({}) as Record<string, any>);
+    const status = stop
+      ? {}
+      : await box.status().catch((e) => {
+          log.warn('managed.harness_status_failed', { run: p.run, error: e });
+          return {} as Record<string, any>;
+        });
     await box.end();
     const seconds = Math.max(1, Math.ceil((Date.now() - started.at) / 1000));
     const charged = Math.ceil((seconds / 60) * CONTAINER_USD_PER_MINUTE * 1_000_000);
@@ -189,7 +198,7 @@ async function attempt(
       await env.TRANSCRIPTS.put(
         `transcripts/${p.repo}/${p.run}/${p.attempt}-${i}.txt`,
         redact(transcript).slice(-TRANSCRIPT_MAX),
-      ).catch(() => {});
+      ).catch(warned('managed.transcript_not_kept', { run: p.run }));
     const reported =
       status.phase === 'done' && status.result && typeof status.result === 'object'
         ? (status.result as Record<string, unknown>)

@@ -57,7 +57,7 @@ export async function buildPack(
           budget,
         )
       : Promise.resolve([]);
-  early.catch(() => {});
+  early.catch(() => {}); // Awaited below; failing first must not go unhandled meanwhile.
   let count = 0;
   try {
     await refuseMirrorOnly(objects, commits);

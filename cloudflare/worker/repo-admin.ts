@@ -20,6 +20,7 @@ import { dispatchPurge } from './repo-projection';
 import { dropSummary } from './repo-search-directory';
 import { ownSpec } from './repo-stores';
 import { undoOn } from './repo-undo-window';
+import { carriedQueue } from './request-scope';
 import type { Env, Envelope } from './types';
 
 export { requirePatScope };
@@ -140,7 +141,7 @@ export async function dispatchErase(
   job: 'start' | 'records' = 'start',
   delaySeconds?: number,
 ) {
-  await env.PLATFORM_QUEUE.send(
+  await carriedQueue(env.PLATFORM_QUEUE).send(
     { v: 1, kind: ERASE, repo_id: repo, job_id: job },
     delaySeconds ? { delaySeconds } : undefined,
   );

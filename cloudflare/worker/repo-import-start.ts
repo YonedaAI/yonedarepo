@@ -5,7 +5,9 @@
 // and a look at the import starts it again if that failed. A second create finds the first.
 // Until it exists the import reads as `queued`, never as no import at all, which a repository's
 // page would take for an empty repository.
+
 import { deferred } from './background';
+import { log } from './log';
 import { directOn } from './repo-import-direct';
 import { askedKey, type ImportParams } from './repo-import-head';
 import { ApiError, caller, type Json, type RepoContext } from './repo-ops';
@@ -31,13 +33,13 @@ export async function startWorkflow(env: Env, params: ImportParams) {
   const kept =
     directOn(env, params.url) &&
     (await env.OBJECTS.put(askedKey(params.repo), JSON.stringify(params)).catch((e) => {
-      console.warn(`import not kept: ${params.repo}: ${e?.message ?? e}`);
+      log.warn('import.not_kept', { repo: params.repo, error: e });
       return null;
     }));
   const create = async () => {
     const asked = Date.now();
     await created(env, params);
-    console.log(JSON.stringify({ event: 'import.workflow_created', ms: Date.now() - asked }));
+    log.info('import.workflow_created', { ms: Date.now() - asked });
   };
   if (!kept || !deferred(create)) await create();
   return workflowId(params.repo);
@@ -60,7 +62,7 @@ async function workflowStatus(env: Env, repo: string): Promise<Json> {
     if (!params) throw new ApiError('NOT_FOUND', 'This repository has no import');
     if (Date.now() - (params.asked_at ?? 0) > CREATE_WAIT_MS)
       await created(env, params).catch((e) => {
-        console.warn(`import not started: ${repo}: ${e?.message ?? e}`);
+        log.warn('import.not_started', { repo, error: e });
       });
     return { status: 'queued' };
   }
@@ -71,7 +73,7 @@ export async function importProgress(ctx: RepoContext) {
   const { env, repo } = ctx;
   const { history_import } = await ctx.call({ op: 'repo_status' }); // read access first
   const asked = workflowStatus(env, repo);
-  asked.catch(() => {});
+  asked.catch(() => {}); // Raced below; losing that race must not leave it unhandled.
   const late = new Promise<null>((done) => setTimeout(() => done(null), STATUS_WAIT_MS));
   const status =
     (await Promise.race([asked, late])) ??

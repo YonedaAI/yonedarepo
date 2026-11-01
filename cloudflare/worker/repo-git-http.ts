@@ -11,6 +11,7 @@
 
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { noteAccount } from './internal-accounts';
+import { logFailure } from './log';
 import { sshBearer, verifySshToken } from './platform-ssh';
 import { credentials } from './repo-api';
 import { compute } from './repo-compute';
@@ -74,6 +75,14 @@ export async function gitCredentials(req: Request, env: Env): Promise<Credential
   );
 }
 
+/** Credentials that could not be checked: a platform failure (logged) or a refusal. */
+function authFailed(e: any) {
+  const code = failureCode(e);
+  const status = STATUS[code] ?? 500;
+  if (status >= 500 && code !== 'OVERLOADED') logFailure(e, code, status);
+  return refusal(status, String(e?.message ?? e));
+}
+
 /** The answer to a request for a repository that is not there, or that the caller may not
  * read (Git by readable path, repo-git-paths): credentials refused as `serve` refuses them,
  * then 401 without any, else 404. */
@@ -82,7 +91,7 @@ export async function unknownRepository(req: Request, env: Env): Promise<Respons
   try {
     auth = await gitCredentials(req, env);
   } catch (e: any) {
-    return refusal(STATUS[failureCode(e)] ?? 500, String(e?.message ?? e));
+    return authFailed(e);
   }
   if (!auth || '_anonymous' in auth)
     return refusal(401, 'Use a repository or personal access token as the password');
@@ -125,7 +134,7 @@ async function serve(req: Request, env: Env): Promise<Response> {
     noteAccount(auth);
   } catch (e: any) {
     if (failureCode(e) === 'OVERLOADED') return busy();
-    return refusal(STATUS[failureCode(e)] ?? 500, String(e?.message ?? e));
+    return authFailed(e);
   }
   if (!auth) return refusal(401, 'Use a repository or personal access token as the password');
   const signed = auth;
@@ -165,7 +174,7 @@ async function serve(req: Request, env: Env): Promise<Response> {
     if (anonymous && ['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND', 'GONE'].includes(code))
       return refusal(401, 'Use a repository or personal access token as the password');
     const status = STATUS[code] ?? (e instanceof ApiError ? 400 : 500);
-    if (status >= 500) console.error(`git ${service} failed: ${code}`);
+    if (status >= 500) logFailure(e, code, status, { service });
     if (code === 'OVERLOADED') return busy();
     return refusal(status, `${code}: ${String(e?.message ?? e).slice(0, 500)}`);
   }

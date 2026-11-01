@@ -24,6 +24,7 @@ export async function principalName(caller: Platform, owned: { id: string }[], w
     }[];
     return orgs.some((o) => o.org === workspace) ? `an owner of ${workspace}` : workspace;
   }
+  // Only a name for the audit trail: without it, the row says who in general terms.
   const status = await caller.status(owned[0].id).catch(() => null);
   const principal = String(status?.viewer?.principal ?? 'workspace owner');
   return principal.startsWith('user:') ? principal.slice('user:'.length) : principal;

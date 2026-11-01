@@ -1,6 +1,7 @@
 // A repository's database size. Durable Object SQLite refuses writes at about 10.7 GB, so the
 // derive job reads the size now and then and the activity row keeps it for the admin pages;
 // a repository crossing an alert level is logged once (repo-activity.ts).
+import { log } from './log';
 import { caller } from './repo-ops';
 import type { Env } from './types';
 
@@ -23,7 +24,7 @@ export async function sampleStorage(env: Env, repo: string, now = Date.now()) {
   return caller(env, repo, { _system: 'derive' })({ op: 'repo_storage' }).then(
     (storage) => Number(storage.db_bytes),
     (e) => {
-      console.warn(`storage sample failed: ${e?.message ?? e}`);
+      log.warn('repo.storage_sample_failed', { error: e });
       return undefined;
     },
   );
@@ -33,7 +34,7 @@ export async function sampleStorage(env: Env, repo: string, now = Date.now()) {
 export function logCrossings(repo: string, before: number, bytes: number) {
   for (const level of STORAGE_LEVELS)
     if (before < level && bytes >= level)
-      console.log(JSON.stringify({ event: 'repo.storage', repo, level, db_bytes: bytes }));
+      log.info('repo.storage', { repo, threshold: level, db_bytes: bytes });
 }
 
 /** The highest alert level `bytes` has reached, or null. */

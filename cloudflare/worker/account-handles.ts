@@ -3,7 +3,9 @@
 // authority instance first (one namespace with usernames and org names), then recorded by
 // the account, the one it replaces released, and projected for listings. Other accounts'
 // handle is their name.
+
 import { isReservedHandle, normalizeAccountIdentifier } from '../../shared/account';
+import { warned } from './log';
 import { candidates } from './oauth-identity';
 import type { ProviderIdentity } from './oauth-providers';
 import type { Env, Json } from './types';
@@ -20,6 +22,7 @@ export async function handleState(env: Env, account: string): Promise<Json> {
 }
 
 async function suggestion(env: Env, account: string): Promise<string | null> {
+  // Only a suggestion: with no identities, the form starts empty.
   const { identities } = await workspace(env, account, { op: 'identity_list' }).catch(() => ({
     identities: [],
   }));
@@ -59,7 +62,9 @@ export async function setHandle(env: Env, account: string, requested: unknown): 
     throw e;
   }
   if (set.previous && set.previous !== name)
-    await workspace(env, String(set.previous), { op: 'handle_release', account }).catch(() => {});
+    await workspace(env, String(set.previous), { op: 'handle_release', account }).catch(
+      warned('handle.release_failed', { account }),
+    );
   await env.INDEX.prepare(
     'INSERT INTO platform_handles(workspace,handle) VALUES(?,?) ON CONFLICT(workspace) DO UPDATE SET handle=excluded.handle',
   )
