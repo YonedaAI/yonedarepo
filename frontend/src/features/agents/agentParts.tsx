@@ -7,6 +7,7 @@ import type {
   RunTile,
 } from '../../../../shared/managed-agents';
 import { EmptyState } from '../../components/EmptyState';
+import { linkTo, type Navigate } from '../shell/useRoute';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { when } from '../source-platform/sourceApi';
 import type { Loaded } from '../source-platform/useSource';
@@ -94,6 +95,27 @@ function NotOwner() {
     <EmptyState title="Only a workspace owner can see its agents">
       Ask an owner, or pick a workspace you own.
     </EmptyState>
+  );
+}
+
+export function NoSuchAgent({
+  agent,
+  space,
+  navigate,
+}: {
+  agent: string;
+  space: { workspace?: string };
+  navigate: Navigate;
+}) {
+  return (
+    <EmptyState
+      title={`There is no agent called “${agent}”`}
+      action={
+        <a className="button-link" {...linkTo({ view: 'agents-home', ...space }, navigate)}>
+          See all agents
+        </a>
+      }
+    />
   );
 }
 

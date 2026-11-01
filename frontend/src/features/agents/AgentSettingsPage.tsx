@@ -12,13 +12,12 @@ import {
   modelRate,
   type WorkspaceState,
 } from '../../../../shared/managed-agents';
-import { EmptyState } from '../../components/EmptyState';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { Failure } from '../source-platform/SourceStatus';
 import { managedApi } from '../source-platform/sourceApi';
 import { useSource } from '../source-platform/useSource';
 import { AgentDetail } from './AgentDetail';
-import { AgentIcon, loadState } from './agentParts';
+import { AgentIcon, loadState, NoSuchAgent } from './agentParts';
 import {
   agentPath,
   CREATE_OWN_GATE,
@@ -268,17 +267,7 @@ export function AgentSettingsPage({
   useEffect(() => {
     window.scrollTo?.({ top: 0 });
   }, []);
-  if (!known)
-    return (
-      <EmptyState
-        title={`There is no agent called “${agent}”`}
-        action={
-          <a className="button-link" {...linkTo({ view: 'agents-home', ...space }, navigate)}>
-            See all agents
-          </a>
-        }
-      />
-    );
+  if (!known) return <NoSuchAgent agent={agent} space={space} navigate={navigate} />;
   const state = loaded.data;
   const found = state?.agents.find((a) => a.id === agent);
   if (loadState(loaded, 'the agent')) return loadState(loaded, 'the agent');

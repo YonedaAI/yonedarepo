@@ -290,6 +290,14 @@ button.danger:not(:disabled) {
   font-size: var(--text-xl);
   margin: 0 0 6px;
 }
+.source-field {
+  display: grid;
+  gap: 4px;
+  max-width: 320px;
+}
+.source-field-wide {
+  max-width: 760px;
+}
 /* A short form is one row: its fields share the width, its button stays its own size and
    lines up with them. What can't sit in a row (a fieldset, a wide field) takes its own. */
 .source-token-form {
@@ -310,14 +318,6 @@ button.danger:not(:disabled) {
   > :is(fieldset, p, .source-field-wide, .settings-wide, .source-note, .source-error) {
   flex: 1 1 100%;
   max-width: none;
-}
-.source-field {
-  display: grid;
-  gap: 4px;
-  max-width: 320px;
-}
-.source-field-wide {
-  max-width: 760px;
 }
 .source-field-wide textarea {
   width: 100%;
