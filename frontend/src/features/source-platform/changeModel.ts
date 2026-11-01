@@ -77,6 +77,8 @@ export function landingRows({ changes, direct = [] }: ChangeList): LandingRow[] 
   return [...rows, ...landed].sort((a, b) => b.at - a.at).map((r) => r.row);
 }
 
+type LandingClearanceDecision = ClearanceDecision['decision'];
+
 /** What the UI calls a Landing's state. Worked out from its data, never stored or sent. */
 export type LandingState =
   | 'Planned'
@@ -86,6 +88,12 @@ export type LandingState =
   | 'Landed'
   | 'Closed';
 
+const DECIDED: Record<LandingClearanceDecision, LandingState> = {
+  cleared: 'Cleared to land',
+  hold: 'In flight',
+  go_around: 'Go-around',
+};
+
 /** `gates`, where the page has them: the list reads none, so it says only In flight. */
 export function landingState(
   change: Pick<Change, 'status' | 'title'>,
@@ -94,6 +102,9 @@ export function landingState(
   if (change.status === 'landed') return 'Landed';
   if (change.status === 'closed') return 'Closed';
   if (!readyForReview(change)) return 'Planned';
+  // With Land when cleared on, CTC's decision is the state: it weighs more than the gates do.
+  const decision = gates?.land_when_cleared?.decision;
+  if (decision) return DECIDED[decision];
   if (gates?.ready) return 'Cleared to land';
   const blocked = gates?.requirements.some((r) => r.enforced && r.state === 'blocked');
   return blocked ? 'Go-around' : 'In flight';

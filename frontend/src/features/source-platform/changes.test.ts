@@ -260,6 +260,26 @@ describe('changes list', () => {
     expect(only).not.toContain('No landed Landings');
   });
 
+  it("with Land when cleared on, the state is CTC's decision, not the gates alone", () => {
+    const open = { status: 'open', title: 'Retry' } as const;
+    const gates = (decision: string, ready: boolean) =>
+      ({
+        ready,
+        requirements: [],
+        land_when_cleared: { decision, reasons: [], refused: null },
+      }) as never;
+    expect(landingState(open, gates('hold', true)), 'High Risk, a pause or a queue ahead').toBe(
+      'In flight',
+    );
+    expect(
+      landingState(open, gates('go_around', true)),
+      'a failed check that is not required',
+    ).toBe('Go-around');
+    expect(landingState(open, gates('go_around', false))).toBe('Go-around');
+    expect(landingState(open, gates('cleared', true))).toBe('Cleared to land');
+    expect(landingState({ ...open, title: 'Draft: retry' }, gates('hold', true))).toBe('Planned');
+  });
+
   it('asks for direct landings only with landed rows', () => {
     expect(changesPath(repo, 'open')).not.toContain('direct');
     expect(changesPath(repo, 'closed')).not.toContain('direct');
