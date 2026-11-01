@@ -3,8 +3,7 @@
 //! what cannot be read never lowers it: a commit with no class, or one the walk could not
 //! reach, scores above any class, and a file with no line counts adds points of its own.
 //! A person's landing never reads it; CTC won't land a High (`platform_ctc`), as a conservative
-//! rule the owner can see. The weights are uncalibrated; see
-//! `docs/landings-plan.md`.
+//! rule the owner can see. Neither the weights nor the bands are calibrated: see below.
 use crate::platform_instruments::{
     CommitFacts, FileFacts, RiskInput, RiskLevel, RiskReading, RiskReason,
 };
@@ -13,7 +12,11 @@ use sensitive::{Sensitive, kind};
 #[cfg(test)]
 mod tests;
 
-/// The score at which a level starts.
+/// The score at which a level starts. Kept, not derived: over 42,494 open-source landings of 11
+/// repositories no cut separated risky from safe, so moving them would pick noise. From 55 holds
+/// 3.3% and finds 8 of 122 later reverted, 1,204 of its 1,212 being landings that weren't; within
+/// a repository the score ranks reverts at 0.508, where chance is 0.5, and only size carries
+/// signal. Basis and limits: `docs/landings-plan.md`, stage 4; rerun with `tools/risk-calibrate`.
 const MEDIUM: u32 = 25;
 const HIGH: u32 = 55;
 

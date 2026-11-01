@@ -151,7 +151,32 @@ Built, behind `LANDING_INSTRUMENTS` (off): `GET /changes/:n/instruments`, `repo_
 
 Low below 25, High from 55, score capped at 100. The page shows the level and every reason, not a percentage.
 
-**Not calibrated.** Dry run over 3,262 first-parent landings of cobra, commander.js and click, with classes assumed (docs-only or logic) and no findings: Low 73.9%, Medium 25.2%, High 0.9%. Only 6 of them were reverted: 4 Low, 2 Medium. That sets the bands' spread and says nothing about whether Risk predicts trouble. It stays "Risk (beta)" until real platform landings can be scored against outcomes.
+**Not calibrated: measured, and the signals don't separate risky from safe.** The bands stay at 25 and 55 because no cut has evidence behind it; moving them would pick noise. A High holds about 3 Landings in 100 on what is, in effect, a size rule. It stays "Risk (beta)" until real platform landings can be scored against outcomes.
+
+Dry run (2026-11-01) over 42,494 first-parent landings of 11 repositories: cobra, commander.js, click, vite, react, vue core, tokio, ruff, prometheus, pytest and scikit-learn, newest 5,000 of each. It runs the platform's own classifier and score (`tools/risk-calibrate`). Reverted: a later landing undoes it within 90 days. Fixed: a fix within 30 days deleted its lines (SZZ). Landings too new for the window are left out.
+
+| Band | Landings | Reverted | Fixed |
+|---|---|---|---|
+| Low, below 25 | 51.1% | 64 of 20,591 (0.3%) | 519 of 21,345 (2.4%) |
+| Medium | 45.6% | 50 of 17,694 (0.3%) | 861 of 18,822 (4.6%) |
+| High, from 55 | 3.3% | 8 of 1,212 (0.7%) | 171 of 1,343 (12.7%) |
+
+| Does it rank the labelled landing higher? 0.5 is chance | Reverted | Fixed |
+|---|---|---|
+| Score, same repository | 0.508 (90% 0.443-0.613) | 0.639 (0.567-0.721) |
+| Lines touched alone, same repository | 0.549 (0.508-0.625) | 0.730 (0.698-0.779) |
+| Class and sensitive paths, same repository | 0.489 (0.428-0.569) | 0.518 (0.446-0.593) |
+| Class and sensitive paths, same repository and size | 0.471 (0.419-0.564) | 0.469 (0.395-0.592) |
+
+1. **High catches 8 of 122 reverted landings (6.6%) and fires on 1,204 that weren't (99.3% of its 1,212).** Lift 2.14, 90% interval 0.68-3.14, which includes no effect.
+2. **It catches 171 of 1,551 fixed landings (11.0%) and fires on 1,172 that weren't (87.3% of its 1,343).** Lift 3.41 (2.79-4.50), but SZZ favours big landings by construction, and lines alone beat the score.
+3. **Review class and sensitive paths add nothing measurable.** 68.1% of High landings carry sensitive points, and 197 of 1,404 touch under 200 lines, such as a docs tool bump.
+4. **No cut does better.** Reverted lift goes 1.60, 2.14, 2.57, 1.40, 2.06 from 50 to 70, on 10 down to 2 landings. Fixed lift is flat, 3.04 to 3.68. Holding at most 3% of the other repositories picks 60 for 10 of 11 and 55 for ruff, so 60 is a cheaper hold, not a better one: that choice is the owner's.
+5. **The real classifier moved the bands.** The earlier run assumed classes and put 0.9% in High and 25.2% in Medium; 30.5% of landings touch a file the classifier reads as `unknown`, such as JSON.
+
+Limits: these landings had human review and aren't agent work, so only platform outcomes can settle it. No open findings are counted and a push is assumed classified, so real scores can only be higher. 134 revert pairs were read by hand and nearly all hold up, though some undo a rollout rather than a defect; 52 of 186 reverts found no target. Eight High hits is little evidence, so a small effect isn't ruled out.
+
+To rerun: `cargo build --release -p yoneda-platform --example compute_lines`, then `tools/risk-calibrate/walk.mjs` per bare clone and `report.mjs` over the results.
 
 ## 5. Adoption of auto rows
 
