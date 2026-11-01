@@ -1,11 +1,12 @@
 // Which items a run of the kit (tools/staging-realworld.mjs) runs, by its flags.
 
 /** This week's features, run with `--feature-tests` and in a full run (feature-items.mjs). */
-export const FEATURE_ITEMS = ['33', '34', '35', '36', '37', '38', '39', '40', '41', '42'];
+export const FEATURE_ITEMS = ['33', '34', '35', '36', '37', '38', '39', '40', '41', '42', '43', '44'];
 
 /** A flag that runs a gate, and its items; the first flag given wins, then `--only`. */
 const GATES = [
   ['feature-tests', () => ['0', '12', ...FEATURE_ITEMS, '17']],
+  ['flight-path', () => ['0', '12', '43', '44', '17']],
   ['git-semantics', ({ ssh }) => ['0', '12', '13', '18', '21', '23', '27', '17', ...(ssh ? ['26'] : [])]],
   ['agent-hooks', () => ['0', '12', '28', '17']],
   ['memory-page', () => ['0', '12', '32', '17']],
@@ -38,7 +39,7 @@ export const featureRun = (only) => Boolean(only) && [...only].every((id) => ['0
  * a full run keeps the items behind an off switch out of it and lists them with the reason. Named
  * with --only or --feature-tests, they record their skip.
  */
-const SWITCHED = ['34', '41'];
+const SWITCHED = ['34', '41', '43', '44'];
 export function offSwitches(items, only) {
   const notRun = only ? [] : items.filter((i) => SWITCHED.includes(i.id) && i.status === 'skip').map(({ id, title, reason }) => ({ id, title, reason }));
   return { ran: items.filter((i) => !notRun.some((n) => n.id === i.id)), notRun };

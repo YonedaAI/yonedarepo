@@ -90,7 +90,7 @@ async function pagesInChrome({ origin, kit: login, headed }, repo, number, metri
     await signIn(page, origin, login);
     const account = new Session(origin, { cookie: cookieHeader(await context.cookies(origin)) });
     await page.goto(`${origin}${await repoPath(account, repo)}/changes/${number}`);
-    const sessions = page.getByRole('region', { name: 'Sessions behind this change' });
+    const sessions = page.getByRole('region', { name: 'Sessions behind this Landing' });
     await see(sessions.getByText(SUMMARY), 'the session on the Change page');
     await page.screenshot({ path: join(dir, 'change.png'), fullPage: true });
     await sessions.getByRole('link', { name: /opencode/ }).first().click();

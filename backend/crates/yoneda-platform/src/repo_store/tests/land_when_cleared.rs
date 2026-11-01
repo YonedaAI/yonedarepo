@@ -516,11 +516,11 @@ fn a_path_limited_authors_grant_must_cover_all_it_would_land() {
 }
 
 /// The owner, signed in, sets the automation pause.
-fn pause(h: &Harness, action: &str) {
+fn pause(h: &Harness, action: &str) -> Value {
     let person = json!({"workspace":"ws-1","principal":OWNER,"human":true});
     let command = json!({"op":"repo_break_glass","action":action,"reason":"Stop","now":1,
         "_session":person});
-    execute_repo_store(&h.db, command).unwrap();
+    execute_repo_store(&h.db, command).unwrap()
 }
 
 #[test]
@@ -532,6 +532,28 @@ fn a_pause_refuses_and_a_resume_lets_the_next_trigger_land() {
     assert_eq!(code(land(&h, number, &id)), "AUTOMATION_PAUSED");
     pause(&h, "resume_automation");
     assert_eq!(assess(&h, number)["state"], "cleared");
+}
+
+/// Nothing about a held Landing changes when the owner resumes, so resuming has to ask: with no
+/// later event a cleared head would sit open for good.
+#[test]
+fn a_resume_asks_again_for_what_the_pause_held() {
+    let (h, _root, id, number) = cleared();
+    pause(&h, "pause_automation");
+    assert_eq!(waiting(&assess(&h, number)), ["AUTOMATION_PAUSED"]);
+    let resumed = pause(&h, "resume_automation");
+    assert_eq!(resumed["land_checks"], json!([number]), "{resumed}");
+    assert_eq!(assess(&h, number)["state"], "cleared");
+    land(&h, number, &id).unwrap();
+    assert_eq!(main_head(&h), json!(id));
+}
+
+#[test]
+fn a_resume_with_nothing_held_asks_for_nothing() {
+    let (h, _root, _id, _number) = cleared();
+    pause(&h, "pause_automation");
+    let resumed = pause(&h, "resume_automation");
+    assert!(resumed.get("land_checks").is_none(), "{resumed}");
 }
 
 #[test]
@@ -741,6 +763,94 @@ fn findings_hold_the_platform_too_with_the_option_on() {
     let answer = assess(&h, number);
     assert!(waiting(&answer).contains(&"FINDINGS"), "{answer}");
     assert_eq!(code(land(&h, number, &id)), waiting(&answer)[0]);
+}
+
+/// A go-around's whole loop: the fix is pushed, the agent that raised the finding looks again and
+/// says nothing more. Nobody resolves what it left on the older commit, so that must not hold
+/// the Landing, or a review that passes could never let it land by itself.
+#[test]
+fn a_finding_the_agent_dropped_on_a_later_look_holds_nothing() {
+    let (h, _root, id, number) = cleared();
+    finding(&h, number, &id);
+    h.ok(
+        OWNER,
+        json!({"op":"repo_auto_landings","findings_block":true}),
+    );
+    assert_eq!(assess(&h, number)["state"], "go_around");
+    let fix = h
+        .commit(
+            AGENT,
+            Some(&id),
+            1,
+            json!([file("src/a.rs", "y\n")]),
+            json!([]),
+        )
+        .unwrap();
+    h.ok(
+        AGENT,
+        json!({"op":"repo_branch_set","ref":"fix","commit":fix,"expected":id}),
+    );
+    h.approve_and_check(&fix);
+    let summary = json!({"op":"repo_change_comment","number":number,"body":"No findings"});
+    h.ok(AGENT, summary);
+    let answer = assess(&h, number);
+    assert_eq!(answer["state"], "cleared", "{answer}");
+    land(&h, number, &fix).unwrap();
+    assert_eq!(change(&h, number)["status"], "landed");
+}
+
+/// The same with a person's comment: it stays until someone resolves it.
+#[test]
+fn a_persons_comment_on_an_older_head_still_holds() {
+    let (h, _root, id, number) = cleared();
+    let comment = json!({"op":"repo_change_comment","number":number,"commit":id,
+        "path":"src/a.rs","line":1,"side":"new","body":"Not this"});
+    h.ok(OWNER, comment);
+    let fix = h
+        .commit(
+            AGENT,
+            Some(&id),
+            1,
+            json!([file("src/a.rs", "y\n")]),
+            json!([]),
+        )
+        .unwrap();
+    h.ok(
+        AGENT,
+        json!({"op":"repo_branch_set","ref":"fix","commit":fix,"expected":id}),
+    );
+    h.approve_and_check(&fix);
+    assert_eq!(waiting(&assess(&h, number)), ["COMMENTS"]);
+}
+
+/// `yoneda change comment --resolve` names no commit, and a fix has moved the head past the
+/// finding, so naming none has to reach the anchor where the finding sits.
+#[test]
+fn resolving_with_no_commit_reaches_an_older_head() {
+    let (h, _root, id, number) = cleared();
+    let comment = json!({"op":"repo_change_comment","number":number,"commit":id,
+        "path":"src/a.rs","line":1,"side":"new","body":"Not this"});
+    h.ok(OWNER, comment);
+    let fix = h
+        .commit(
+            AGENT,
+            Some(&id),
+            1,
+            json!([file("src/a.rs", "y\n")]),
+            json!([]),
+        )
+        .unwrap();
+    h.ok(
+        AGENT,
+        json!({"op":"repo_branch_set","ref":"fix","commit":fix,"expected":id}),
+    );
+    let resolve = json!({"op":"repo_change_comment","number":number,
+        "path":"src/a.rs","line":1,"side":"new","resolve":true});
+    let answer = h.ok(OWNER, resolve);
+    assert_eq!(answer["resolved"], 1, "{answer}");
+    assert_eq!(answer["land_checks"], json!([number]), "{answer}");
+    h.approve_and_check(&fix);
+    assert_eq!(assess(&h, number)["state"], "cleared");
 }
 
 #[test]

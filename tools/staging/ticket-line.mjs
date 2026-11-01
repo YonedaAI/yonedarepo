@@ -36,7 +36,7 @@ export async function lineBase(kit, dir) {
   await kit.ok('git', ['push', '-q', 'origin', `HEAD:refs/heads/${LINE_BASE}`], { cwd: dir, env });
 }
 
-const glass = async (kit, repo, body) => {
+export const glass = async (kit, repo, body) => {
   const done = await kit.platformAccount.raw('POST', repo.path('/break-glass'), { reason: 'Kit: a ticket held in line', ...body });
   assert.ok(done.ok, `break-glass ${body.action}: ${refusal(done)}`);
 };

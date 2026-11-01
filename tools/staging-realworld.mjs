@@ -98,7 +98,7 @@
 //          in the Docker sandbox, one fresh fork per run. Prints its estimate and starts only with
 //          --yes: tools/staging/memory-flow.mjs)
 //        node tools/staging-realworld.mjs --feature-tests [--headed]
-//          (= --only 0,12,33-42,17, no model: tools/staging/feature-items.mjs)
+//          (= --only 0,12,33-44,17, no model: tools/staging/feature-items.mjs; --flight-path: 43, 44)
 //        node tools/staging-realworld.mjs --memory-page [--headed]
 //          (= --only 0,12,32,17, dev only, no model: a session record, its transcript and context
 //          delivery behind a change, read by API and in Chrome: tools/staging/memory-page-flow.mjs)
@@ -212,10 +212,10 @@ const { values } = parseArgs({
     'memory-runs': { type: 'string' },
     'memory-parallel': { type: 'string' },
     yes: { type: 'boolean', default: false },
-    // Item 32 alone, with the CLI sign-in and cleanup it needs.
+    // Item 32, the week's features (33-44) or the Flight Path (43, 44), with their sign-in and cleanup.
     'memory-page': { type: 'boolean', default: false },
-    // This week's features end to end (33-42), with the CLI sign-in and cleanup they need.
     'feature-tests': { type: 'boolean', default: false },
+    'flight-path': { type: 'boolean', default: false },
   },
 });
 const root = fileURLToPath(new URL('../', import.meta.url));

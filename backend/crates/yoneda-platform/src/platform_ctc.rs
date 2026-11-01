@@ -139,6 +139,8 @@ impl Clearance {
 }
 
 const RISK_NOT_SCORED: &str = "RISK_NOT_SCORED";
+/// Held while the owner has automation paused; their resume asks again.
+pub(crate) const AUTOMATION_PAUSED: &str = "AUTOMATION_PAUSED";
 /// Held behind a Landing ahead in the queue (`repo_store::land_when_cleared::separation`).
 pub(crate) const SEPARATION: &str = "SEPARATION";
 /// A refused attempt the work has to answer; any other is a hold.
@@ -230,7 +232,7 @@ fn holds(state: &LandingState, back: &[Reason]) -> Vec<Reason> {
     }
     if let Some(by) = &state.paused_by {
         wait.push(reason(
-            "AUTOMATION_PAUSED",
+            AUTOMATION_PAUSED,
             format!("Automation is paused by {by}"),
         ));
     }

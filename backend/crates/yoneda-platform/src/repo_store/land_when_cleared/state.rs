@@ -3,9 +3,11 @@
 //! can't, so it gathers more than `land_gates::gates`, which judges checks, approvals and
 //! rejections as it does for anyone.
 use crate::platform_ctc::{LandingState, Requirement, RequirementState, RiskScore};
-use crate::repo_store::change_gates::{GateState, comments, policy};
+use crate::repo_store::change_gates::{GateState, policy};
 use crate::repo_store::rows::{self, CommitRow, Settings};
-use crate::repo_store::{break_glass, capacity, grants, land_gates, legal_hold, merging};
+use crate::repo_store::{
+    break_glass, capacity, go_around, grants, land_gates, legal_hold, merging,
+};
 use crate::storage::SqlStore;
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result, git_object::ObjectId, txlog::OccOutcome};
@@ -167,7 +169,7 @@ pub(super) fn landing_state<S: SqlStore>(
         rules_ask: !settings.policy.required_checks.is_empty() || settings.policy.approvals > 0,
         from_fork: change["source_repo"].is_string(),
         failed_checks: failed_checks(db, commit, settings)?,
-        unresolved_comments: comments(db, &change["number"])?.state != GateState::Ready,
+        unresolved_comments: go_around::open_count(db, &change["number"])? > 0,
         base_exists: base_head.is_some(),
         conflict,
         paused_by: break_glass::paused(db)?
