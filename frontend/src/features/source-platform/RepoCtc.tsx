@@ -3,6 +3,7 @@
 // the server decided and asks again while it is on screen; a poll that fails keeps the last
 // answer up and says so.
 import { useEffect, useRef } from 'react';
+import { EmptyState } from '../../components/EmptyState';
 import type { CtcRadar, RadarLanding } from '../../../../shared/contracts/ctc-radar';
 import {
   CTC_POLL_MS,
@@ -116,9 +117,11 @@ export function RepoCtc({ repo, ...links }: Links & { repo: string }) {
   return (
     <section aria-labelledby="ctc-heading" className="ctc" aria-busy={radar.loading}>
       {head}
-      <p className="source-meta">
-        Code Traffic Control: what is cleared, what it waits for and where Landings meet.
-      </p>
+      {data?.landings.length !== 0 && (
+        <p className="source-meta">
+          Code Traffic Control: what is cleared, what it waits for and where Landings meet.
+        </p>
+      )}
       {!data && radar.error && <Failure error={radar.error} onRetry={reload} />}
       {!data && !radar.error && <Loading what="CTC radar" />}
       {data && radar.error && (
@@ -132,7 +135,9 @@ export function RepoCtc({ repo, ...links }: Links & { repo: string }) {
         </p>
       )}
       {data?.landings.length === 0 && (
-        <p className="source-empty">No open Landings, so CTC has nothing on its radar.</p>
+        <EmptyState title="No open Landings">
+          Each one shows here with what it's waiting for and where it meets another.
+        </EmptyState>
       )}
       {data && data.landings.length > 0 && (
         <div className="source-table-wrap">

@@ -1,6 +1,7 @@
 // The Landings tab: change requests (branches proposed for landing on a base branch, main by
 // default), filtered by status, with the landings no change names.
 import { useState } from 'react';
+import { EmptyState } from '../../components/EmptyState';
 import {
   CHANGE_FILTERS,
   type Change,
@@ -27,11 +28,12 @@ export function ChangeStatusChip({
   return <span className={`source-change-status source-change-${status}`}>{state}</span>;
 }
 
-const EMPTY: Record<ChangeFilter, string> = {
-  open: 'No open Landings. Push a branch and open a change to propose landing it.',
-  landed: 'No landed Landings yet.',
-  closed: 'No closed Landings.',
-  all: 'No Landings yet. Push a branch and open a change to propose landing it.',
+const PROPOSE = 'Push a branch and open a Landing to propose it.';
+const EMPTY: Record<ChangeFilter, { title: string; hint?: string }> = {
+  open: { title: 'No open Landings', hint: PROPOSE },
+  landed: { title: 'Nothing has landed yet' },
+  closed: { title: 'No closed Landings' },
+  all: { title: 'No Landings yet', hint: PROPOSE },
 };
 
 function DirectRow({
@@ -118,7 +120,8 @@ export function ChangeTable({
   if (changes.loading && !changes.data) return <Loading what="Landings" />;
   if (changes.error) return <Failure error={changes.error} onRetry={changes.reload} />;
   const rows = landingRows(changes.data ?? { changes: [] });
-  if (rows.length === 0) return <p className="source-empty">{EMPTY[filter]}</p>;
+  if (rows.length === 0)
+    return <EmptyState title={EMPTY[filter].title}>{EMPTY[filter].hint}</EmptyState>;
   return (
     <ul className="source-changes" aria-label={`${filter} Landings`} aria-busy={changes.loading}>
       {rows.map((row) => (
