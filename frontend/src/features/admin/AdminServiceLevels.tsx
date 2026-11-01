@@ -52,36 +52,53 @@ export const measuredLine = (days: number) =>
     ? `${MEASURING_DAYS} days of data. No targets are set yet.`
     : `Day ${days} of ${MEASURING_DAYS}. Targets follow ${MEASURING_DAYS} days of data.`;
 
-function Operations({ rows }: { rows: ServiceRow[] }) {
-  if (!rows.some((r) => r.requests))
-    return <p className="source-empty">No requests in the last 30 days.</p>;
+/** A table whose first column names a row and the rest are figures. */
+function Figures({ head, rows }: { head: string[]; rows: string[][] }) {
   return (
     <div className="source-table-wrap">
       <table className="source-table admin-table">
         <thead>
           <tr>
-            <th>Operation</th>
-            <th className="admin-num">Requests</th>
-            <th className="admin-num">Failed</th>
-            <th className="admin-num">P50</th>
-            <th className="admin-num">P95</th>
-            <th className="admin-num">P99</th>
+            {head.map((name, i) => (
+              <th key={name} className={i ? 'admin-num' : undefined}>
+                {name}
+              </th>
+            ))}
           </tr>
         </thead>
         <tbody>
-          {rows.map((r) => (
-            <tr key={r.operation}>
-              <td>{OPERATION[r.operation]}</td>
-              <td className="admin-num">{figure(r.requests, r.estimated)}</td>
-              <td className="admin-num">{failureShare(r.failure_rate)}</td>
-              <td className="admin-num">{time(r.latency?.p50)}</td>
-              <td className="admin-num">{time(r.latency?.p95)}</td>
-              <td className="admin-num">{time(r.latency?.p99)}</td>
+          {rows.map(([name, ...figures]) => (
+            <tr key={name}>
+              <td>{name}</td>
+              {figures.map((value, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: columns never reorder.
+                <td key={i} className="admin-num">
+                  {value}
+                </td>
+              ))}
             </tr>
           ))}
         </tbody>
       </table>
     </div>
+  );
+}
+
+function Operations({ rows }: { rows: ServiceRow[] }) {
+  if (!rows.some((r) => r.requests))
+    return <p className="source-empty">No requests in the last 30 days.</p>;
+  return (
+    <Figures
+      head={['Operation', 'Requests', 'Failed', 'P50', 'P95', 'P99']}
+      rows={rows.map((r) => [
+        OPERATION[r.operation],
+        figure(r.requests, r.estimated),
+        failureShare(r.failure_rate),
+        time(r.latency?.p50),
+        time(r.latency?.p95),
+        time(r.latency?.p99),
+      ])}
+    />
   );
 }
 
@@ -92,30 +109,16 @@ function Outside({ rows }: { rows: ProbeRow[] }) {
       <h2 id="admin-outside" className="home-label">
         From outside, last 30 days
       </h2>
-      <div className="source-table-wrap">
-        <table className="source-table admin-table">
-          <thead>
-            <tr>
-              <th>Check</th>
-              <th className="admin-num">Runs</th>
-              <th className="admin-num">Failed</th>
-              <th className="admin-num">P50</th>
-              <th className="admin-num">P95</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <tr key={r.check}>
-                <td>{CHECK[r.check] ?? 'Other check'}</td>
-                <td className="admin-num">{figure(r.runs)}</td>
-                <td className="admin-num">{figure(r.failed)}</td>
-                <td className="admin-num">{time(r.latency?.p50)}</td>
-                <td className="admin-num">{time(r.latency?.p95)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <Figures
+        head={['Check', 'Runs', 'Failed', 'P50', 'P95']}
+        rows={rows.map((r) => [
+          CHECK[r.check] ?? 'Other check',
+          figure(r.runs),
+          figure(r.failed),
+          time(r.latency?.p50),
+          time(r.latency?.p95),
+        ])}
+      />
     </section>
   );
 }

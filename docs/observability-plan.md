@@ -1,6 +1,6 @@
 # Observability plan
 
-Status: O1, O2, O3 steps 2 to 4 and O4 step 1 are built; each switch below is off until a dev test proves it. Written 2026-10-31 at dev `688d46df`. Companion to `docs/analytics-plan.md`.
+Status: O1, O2, O3 steps 2 to 4 and O4 steps 1, 3 and 4 are built; each switch below is off until a dev test proves it. O4 step 2 is answered: see below. Written 2026-10-31 at dev `688d46df`. Companion to `docs/analytics-plan.md`.
 
 Analytics asks whether people are using this. Observability asks whether it's working, and if not, why.
 
@@ -160,7 +160,7 @@ Our own tools are kept apart, by the `x-yoneda-own-traffic` mark. On dev that's 
 | Superfan tail | 1 point per dead request. 0 on a healthy one, and no request |
 | Superfan synthetic pass | 1 point per result: at most 5 a pass, 1,440 a day |
 | Infrastructure tab | 3 SQL statements a view, operators only |
-| Frontend | Under 3 KB of JavaScript, no new dependency |
+| Frontend | Under 3 KB of JavaScript, no new dependency. Measured mounted: 2,840 bytes before compression |
 
 As with spans, a request can also carry its `TRAFFIC_EVENTS` client point, so 2 at worst. Analytics Engine includes 10M points a month.
 
@@ -226,9 +226,9 @@ Comparison rules: the windows are equal and either side of the deploy. The rollo
 ## Phase O4: Find what's slow
 
 1. **Built, `SPAN_SAMPLE` off.** Sample `Server-Timing` spans into logs and Analytics Engine, per operation.
-2. Spike Cloudflare's Workers tracing: does it follow bindings and Durable Objects? Use it if so.
-3. Service targets for API reads, landings, Git clone and push, and repository create. **Measure for 30 days first**, then set them: no invented numbers.
-4. Show targets, current values and error budget on the Infrastructure tab.
+2. **Answered.** Spike Cloudflare's Workers tracing: does it follow bindings and Durable Objects? Not as we call them. A dev switch is ready to settle the one open row: [the answer above](#does-workers-tracing-follow-our-requests).
+3. **Measuring built, `SERVICE_LEVELS` off.** Service targets for API reads, landings, Git clone and push, and repository create. **Measure for 30 days first**, then set them: no invented numbers. The 30 days start when the switch goes on.
+4. **Built, not yet on the tab.** Show current values on the Infrastructure tab. Targets and error budget join it once targets exist. `AdminServiceLevels` waits for the tab: add `<AdminServiceLevels />` to `AdminInfrastructure` when that merges. It reads its own route, so its failure stays in its section.
 
 ## Phase O5: Code health over time
 
@@ -275,6 +275,8 @@ O1 and O5 can start now. The analytics plan's Phase 7 reads from O1 to O4.
 | O3 | With `RELEASE_COMPARE=on`, a healthy deploy files nothing and a forced regression files a finding naming the release |
 | O3 | With `PROBES=on`, all checks pass from Superfan on dev, the Traffic page doesn't count them, and a broken check mails within 15 minutes |
 | O4 | With `SPAN_SAMPLE` on, a slow operation is found from its id alone, and a burst's latency doesn't move |
+| O4 | One traced request on dev shows whether a repository command's own spans join the trace |
+| O4 | With `SERVICE_LEVELS` on, each of the five operations appears on the tab with the right count, a forced 500 and a killed request raise the failure rate, and the three statements run |
 | O5 | A new 301-line file, a planted fake secret and a Wasm jump each fail the check |
 
 ## Critical files
@@ -286,5 +288,6 @@ O1 and O5 can start now. The analytics plan's Phase 7 reads from O1 to O4.
 | Deploys | `xtask/src/deploy_exec.rs`, `deploy_ledger.rs`, `deploy_live.rs`, `.github/workflows/`, `docs/ship-pipeline.md` |
 | After a deploy | `cloudflare/superfan/ledger-deploys.ts`, `release.ts`, `synthetic.ts`, `synthetic-checks.ts` |
 | Spans | `cloudflare/worker/repo-span-sample.ts`, `repo-timing.ts` |
+| Service levels | `shared/service-levels.ts`, `cloudflare/worker/platform-service-levels.ts`, `cloudflare/superfan/service-points.ts`, `frontend/src/features/admin/AdminServiceLevels.tsx` |
 | Code health | `xtask/src/`, `.github/workflows/ci.yml`, `full.yml` |
 | Evidence | `tools/fanout-bench/results.mjs`, `tools/staging-realworld.mjs` |
