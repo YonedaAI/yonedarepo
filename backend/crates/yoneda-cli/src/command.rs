@@ -258,9 +258,9 @@ pub enum Command {
     },
     Logout {
         origin: Option<String>,
+        agent: Option<String>,
     },
-    /// Prints the credential the CLI sends (`YONEDA_TOKEN`, else the stored login) for a
-    /// script; to a terminal only with `show`.
+    /// Prints the credential the CLI sends, on stdout for a script; to a terminal with `show`.
     AuthToken {
         origin: Option<String>,
         show: bool,

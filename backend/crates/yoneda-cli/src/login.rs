@@ -1,7 +1,8 @@
 //! `yoneda login`: the device flow (RFC 8628 shape). The CLI asks for a code, the person
 //! approves it in the browser (signed in on the website), and the CLI polls until the
 //! platform hands over a personal access token, stored 0600. `--with-token` reads a
-//! token from stdin instead (CI); `YONEDA_TOKEN` overrides whatever is stored.
+//! token from stdin instead (CI); `YONEDA_TOKEN` overrides whatever is stored. `--agent
+//! <name>` or `YONEDA_AGENT` signs an agent up, into its own slot beside the person's login.
 use crate::api::Api;
 use crate::credentials::{self, Token};
 use crate::error::{Error, Result};
@@ -192,8 +193,14 @@ pub async fn login(
     browser: bool,
     agent: Option<String>,
 ) -> Result<()> {
-    let path = credentials::default_path()?;
+    let agent = agent.or_else(credentials::env_agent);
+    let path = credentials::path_for(agent.as_deref())?;
     if with_token {
+        if agent.is_some() {
+            return Err(Error::usage(
+                "an agent signs up through the browser, not with a token",
+            ));
+        }
         let mut line = String::new();
         std::io::stdin()
             .read_line(&mut line)
@@ -241,8 +248,12 @@ pub async fn login(
             .unwrap_or_default(),
         path.display()
     );
-    if grant.agent.is_none() {
-        human!("Next, for Git over SSH: yoneda ssh setup");
+    match &grant.agent {
+        Some(agent) => human!(
+            "Next, to act as it: export {}={agent}",
+            credentials::AGENT_ENV
+        ),
+        None => human!("Next, for Git over SSH: yoneda ssh setup"),
     }
     output::emit(&output::Login {
         origin: origin.to_owned(),
@@ -254,9 +265,9 @@ pub async fn login(
     Ok(())
 }
 
-/// `yoneda logout`.
-pub fn logout(origin: Option<&str>) -> Result<()> {
-    let path = credentials::default_path()?;
+/// `yoneda logout`, or `--agent`: removes that one store and leaves any other.
+pub fn logout(origin: Option<&str>, agent: Option<String>) -> Result<()> {
+    let path = credentials::path_for(agent.or_else(credentials::env_agent).as_deref())?;
     let removed = credentials::remove(&path, origin)?;
     if removed {
         human!("Removed the stored token ({})", path.display());

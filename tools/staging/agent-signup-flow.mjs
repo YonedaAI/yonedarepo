@@ -1,10 +1,11 @@
 // Item 46 of the staging kit (no model): agent sign-up, needing AGENT_SIGNUP=on on the platform
 // Worker; while it is off the item stops at once with a note. The real `yoneda login --agent`
 // waits on the real approval page; then the agent, as itself: what it may reach, what it can't
-// mint, how it reviews, its limits, and signing it out. It holds the run's one session: no sign-in.
+// mint, how it reviews, its limits, and signing it out. It signs in beside a person's stored login
+// on one machine, and neither replaces the other. It holds the run's one session: no sign-in.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { NO_SESSION } from './agent-hooks-flow.mjs';
 import { see } from './browser-collab-flow.mjs';
@@ -22,10 +23,19 @@ const SCOPES = ['repo:read', 'repo:write', 'repo:review'];
 const changes = (path, text, message) => ({ ref: 'main', changes: [{ path, content_b64: b64(text) }], message, author });
 const review = (who, repo, commit, decision = 'approve') => who.raw('POST', repo.path(`/commits/${commit}/reviews`), { decision });
 
-/** `yoneda login --agent <name>` in a config of its own, so the kit's login stays. */
-function loginAs(kit, name) {
-  const config = kit.path('agent-config', name);
-  const env = kit.env({ YONEDA_TOKEN: '', XDG_CONFIG_HOME: config });
+/** One machine's CLI store, holding the kit account's login as `yoneda login` leaves it. */
+function machine(kit) {
+  const config = kit.path('agent-machine');
+  const person = join(config, 'yoneda', 'credentials');
+  mkdirSync(join(config, 'yoneda'), { recursive: true, mode: 0o700 });
+  writeFileSync(person, JSON.stringify({ origin: kit.api, token: kit.token }), { mode: 0o600 });
+  return { config, person, env: (agent) => kit.env({ YONEDA_TOKEN: '', XDG_CONFIG_HOME: config, ...(agent ? { YONEDA_AGENT: agent } : {}) }) };
+}
+
+/** `yoneda login --agent <name>` on `store`, whose person is logged in. */
+function loginAs(kit, name, store) {
+  const { config } = store;
+  const env = store.env();
   const child = spawn(join(kit.bin, 'yoneda'), ['login', '--agent', name, '--no-browser', '--origin', kit.api], { cwd: kit.dir, env, stdio: ['ignore', 'pipe', 'pipe'] });
   let said = '';
   child.stdout.on('data', (d) => (said += d));
@@ -45,7 +55,9 @@ function loginAs(kit, name) {
       const status = await Promise.race([exited, new Promise((r) => setTimeout(() => r('TIMEOUT'), 90_000))]);
       assert.equal(status, 0, `yoneda login --agent did not finish: ${status} ${said.slice(-300)}`);
       assert.match(said, new RegExp(`as agent ${name} of `), 'the CLI does not say which agent it signed in');
-      return JSON.parse(readFileSync(join(config, 'yoneda', 'credentials'), 'utf8')).token;
+      const slot = join(config, 'yoneda', 'agents', name, 'credentials');
+      assert.equal((statSync(slot).mode & 0o777).toString(8), '600', "the agent's token is not mode 0600");
+      return JSON.parse(readFileSync(slot, 'utf8')).token;
     },
   };
 }
@@ -85,11 +97,25 @@ async function approveOnPage(web, code, name, repo, m) {
   });
 }
 
-/** An actor of its own, in the API, a Git push, and on the page. */
-async function asItself(kit, web, repo, token, actor, m) {
+/** The two logins side by side: each run reads its own, and one that names an agent with no
+ * login fails rather than borrow the person's. The tokens are compared, never shown. */
+async function sideBySide(kit, store, name, token) {
+  const sends = async (agent) => (await kit.yonedaOk(['auth', 'token', '--origin', kit.api], { env: store.env(agent) })).stdout;
+  assert.equal(JSON.parse(readFileSync(store.person, 'utf8')).token, kit.token, "the agent's login replaced the person's");
+  // A run's output is scrubbed of the kit's token, so its value is compared the same way.
+  assert.ok((await sends()) === kit.scrub(kit.token), 'a plain run does not read the person');
+  assert.ok((await sends(name)) === kit.scrub(token), 'YONEDA_AGENT does not read the agent');
+  const stranger = await kit.yoneda(['auth', 'token', '--origin', kit.api], { env: store.env(`${PREFIX}-nobody`) });
+  assert.notEqual(stranger.code, 0, 'an agent with no login borrowed the person\'s');
+  const invalid = await kit.yoneda(['auth', 'token', '--origin', kit.api], { env: store.env('../yoneda') });
+  assert.notEqual(invalid.code, 0, 'a name outside the store was read');
+}
+
+/** An actor of its own, in the API, a Git push through the slot, and on the page. */
+async function asItself(kit, web, repo, token, actor, store, name, m) {
   const agent = kit.pat(token);
   assert.equal((await agent.get(repo.path())).viewer.principal, actor, 'the agent reads as another actor');
-  const env = kit.env({ ...NO_SESSION, YONEDA_TOKEN: token });
+  const env = { ...store.env(name), ...NO_SESSION };
   const dir = kit.path('agent-work');
   await kit.ok('git', ['clone', '-q', kit.remote(repo.id), dir], { env });
   const branch = 'kit/agent-work';
@@ -214,7 +240,8 @@ export async function agentSignup(kit, web, m) {
   const stamp = Date.now() % 1_000_000;
   const name = `${PREFIX}-${stamp}`;
   const work = await kitRepo(kit, 'kit-agent', { approvals: 1 });
-  const login = loginAs(kit, name);
+  const store = machine(kit);
+  const login = loginAs(kit, name, store);
   try {
     const code = await login.code();
     if (!code) return { skip: SIGNUP_OFF };
@@ -225,7 +252,8 @@ export async function agentSignup(kit, web, m) {
     assert.deepEqual([listed?.name, listed?.repos], [name, [work.id]], 'the agent under the account');
     m.expires_in_days = Math.round((listed.expires_at - Date.now()) / 86_400_000);
     assert.equal(m.expires_in_days, 30, 'the default expiry');
-    const pushed = await asItself(kit, web, work, token, actor, m);
+    await sideBySide(kit, store, name, token);
+    const pushed = await asItself(kit, web, work, token, actor, store, name, m);
     const outside = await kitRepo(kit, 'kit-agent-outside');
     await keepsToItsRepositories(kit, token, outside, pushed.env, m);
     await mintsNothing(kit, work, token);
@@ -234,6 +262,8 @@ export async function agentSignup(kit, web, m) {
     await reviews(kit, work, pushed, token, sibling, `agent:${web.account.name}/${siblingName}`);
     await landsWhenCleared(kit, work, pushed, token, m);
     await limits(kit, web, work, name, token, m);
+    await kit.yonedaOk(['logout', '--agent', name], { env: store.env() });
+    assert.equal(JSON.parse(readFileSync(store.person, 'utf8')).token, kit.token, "logging the agent out touched the person's login");
   } finally {
     login.kill();
     await clearAgents(platform);

@@ -121,9 +121,14 @@ pub fn parse(args: &[String]) -> Result<Command> {
                 agent: p.flag("agent"),
             }
         }
-        "logout" => Command::Logout {
-            origin: simple(rest, &[])?.flag("origin"),
-        },
+        "logout" => {
+            let p = Parsed::new(rest, &["origin", "agent"], &[])?;
+            p.at_most(0)?;
+            Command::Logout {
+                origin: p.flag("origin"),
+                agent: p.flag("agent"),
+            }
+        }
         "auth" => {
             let p = Parsed::new(rest, &["origin"], &["show"])?;
             if p.exactly(1, "auth token [--show]")?[0] != "token" {
@@ -358,6 +363,13 @@ mod tests {
             })
         );
         assert!(parsed("login --agent bot --with-token").is_err());
+        assert_eq!(
+            parsed("logout --agent bot").ok(),
+            Some(Command::Logout {
+                origin: None,
+                agent: Some("bot".into())
+            })
+        );
         assert_eq!(
             parsed("repo create web --owner acme").ok(),
             Some(Command::Repo {
