@@ -14,7 +14,7 @@ const PAGES = [
   { rest: '/changes', filter: 'Landed', title: 'Nothing has landed yet' },
   { rest: '/changes', filter: 'Closed', title: 'No closed Landings' },
   { rest: '/changes', filter: 'All', title: 'No Landings yet' },
-  { rest: '/ctc', title: 'No open Landings' },
+  { rest: '/ctc', title: 'Nothing on the radar' },
 ];
 
 /** The rules, read from what the browser laid out. */
@@ -65,7 +65,7 @@ export async function emptyStates(kit, { chrome, account }, m) {
       }
     }
     await openPage(page, ctx, repo, '/ctc');
-    await see(page.locator('.empty-state').getByRole('heading', { name: 'No open Landings' }), 'the CTC empty state');
+    await see(page.locator('.empty-state').getByRole('heading', { name: 'Nothing on the radar' }), 'the CTC empty state');
     assert.equal(await page.getByText('Code Traffic Control: what is cleared').count(), 0, 'CTC keeps its intro line over nothing');
     assert.equal(await page.getByText('Land when cleared is off').count(), 0, 'CTC explains a switch with nothing to show');
   });

@@ -6,6 +6,7 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { AccountCreated } from './account-index';
 import { internalAccounts } from './internal-accounts';
+import { settleFailedJob } from './job-settle';
 import { log, served } from './log';
 import { accountCreated, SIGNUP_NOTICE } from './platform-accounts';
 import { nightlyReconcile } from './platform-admin-billing';
@@ -155,11 +156,7 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
     await Promise.all(
       batch.messages.map((message) =>
         inScope({ env: this.env, job: message.body }, () =>
-          platformJob(this.env, message).catch((e) => {
-            // Which job failed and why, for `wrangler tail`; the queue retries it.
-            log.error('job.failed', { error: e });
-            message.retry();
-          }),
+          platformJob(this.env, message).catch((e) => settleFailedJob(message, e)),
         ),
       ),
     );
