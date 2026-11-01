@@ -9,6 +9,7 @@ import { toolsOf } from '../../cloudflare/worker/account-mcp';
 import { platformJob } from '../../cloudflare/worker/platform-entrypoint';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { sweepDeleted } from '../../cloudflare/worker/repo-deleted';
+import { purgeRepository } from '../../cloudflare/worker/repo-admin';
 import { eraseJob } from '../../cloudflare/worker/repo-erase';
 import { deliverHook } from '../../cloudflare/worker/repo-hooks';
 import { caller } from '../../cloudflare/worker/repo-ops';
@@ -474,4 +475,108 @@ it('tokens need repo:admin to list or restore', async () => {
   expect((await restore(reader, id)).status).toBe(403);
   expect((await api('/repos/deleted', admin, {}, on)).body.repos).toHaveLength(1);
   expect((await restore(admin, id)).status).toBe(200);
+});
+
+// What a build older than the purge mark left: objects gone, the digest as it always was.
+async function purgedByAnOlderBuild(id: string, target: Env) {
+  await purgeRepository(target, id, { skipWindow: true });
+  const stub = bindings.SOURCE_REPOS.get(bindings.SOURCE_REPOS.idFromName(id));
+  await runInDurableObject(stub, (_: unknown, state: DurableObjectState) =>
+    state.storage.sql.exec("UPDATE repo_settings SET policy_digest='digest-of-an-older-build'"));
+}
+const tombstone = (id: string) =>
+  runInDurableObject(bindings.SOURCE_REPOS.get(bindings.SOURCE_REPOS.idFromName(id)), (_: unknown, state: DurableObjectState) =>
+    state.storage.sql.exec('SELECT name,deleted_at,policy_digest,object_store FROM repo_settings').toArray());
+const edgeCopy = (repo: string, id: string) => caches.default.match(new Request(`https://objects.yoneda.internal/${repo}/${id}`));
+
+it('refuses a tombstone an older build purged, serves nothing from the edge, and leaves it as it was', async () => {
+  const who = { cookie: await signup('undo_hollow') };
+  const { id } = await made(who, 'hollow', off);
+  const read = await api(`/repos/${id}/blob?path=a.txt`, who, {}, off);
+  expect(read.status).toBe(200);
+  await remove(who, id, 'hollow', off);
+  await purgedByAnOlderBuild(id, off);
+  expect(await stored(`platform/v1/${id}/`)).toEqual([]);
+  expect(await edgeCopy(id, read.body.id)).toBeTruthy();
+  const before = await tombstone(id);
+
+  const refused = await restore(who, id);
+  expect([refused.status, refused.body.error.code]).toEqual([404, 'GONE']);
+  expect(refused.body.error.message).toMatch(/can.t be restored|too long ago/);
+  expect(await tombstone(id)).toEqual(before);
+  expect(await row(id)).toBeNull();
+  // The edge still holds a copy, and nothing leads to it.
+  expect((await api(`/repos/${id}/blob?path=a.txt`, who, {}, on)).body.error.code).toBe('GONE');
+  expect((await api(`/repos/${id}/refs`, who, {}, on)).body.error.code).toBe('GONE');
+  expect((await api('/repos', who, {}, on)).body.repos.map((r: any) => r.id)).not.toContain(id);
+  // Its name stays free.
+  expect((await made(who, 'hollow')).id).not.toBe(id);
+});
+
+it('refuses a listed tombstone whose objects another build purged, and keeps it listed', async () => {
+  const who = { cookie: await signup('undo_rollback') };
+  const { id } = await made(who, 'rolled');
+  const read = await api(`/repos/${id}/blob?path=a.txt`, who, {}, on);
+  await remove(who, id, 'rolled');
+  await purgedByAnOlderBuild(id, on);
+  expect(await edgeCopy(id, read.body.id)).toBeTruthy();
+  const before = await tombstone(id);
+
+  const refused = await restore(who, id);
+  expect([refused.status, refused.body.error.code]).toEqual([404, 'GONE']);
+  expect(refused.body.error.message).toMatch(/can.t be restored/);
+  expect(await tombstone(id)).toEqual(before);
+  expect(await row(id)).not.toBeNull();
+  expect((await api(`/repos/${id}/blob?path=a.txt`, who, {}, on)).body.error.code).toBe('GONE');
+});
+
+it('a tombstone the window never scheduled is not restored, even with its objects in place', async () => {
+  const who = { cookie: await signup('undo_unlisted') };
+  const { id } = await made(who, 'unlisted', off);
+  await remove(who, id, 'unlisted', off);
+  expect((await stored(`platform/v1/${id}/`)).length).toBeGreaterThan(0);
+  const refused = await restore(who, id);
+  expect([refused.status, refused.body.error.code]).toEqual([404, 'GONE']);
+  expect(refused.body.error.message).toMatch(/too long ago/);
+  expect((await api(`/repos/${id}/refs`, who, {}, on)).body.error.code).toBe('GONE');
+});
+
+it('D1 losing the row costs nothing: the owner\'s record says it is on the schedule', async () => {
+  const who = { cookie: await signup('undo_lost_row') };
+  const { id } = await made(who, 'lostrow');
+  await remove(who, id, 'lostrow');
+  await bindings.INDEX.prepare('DELETE FROM platform_deleted_repos WHERE id=?').bind(id).run();
+  expect((await restore(who, id)).status).toBe(200);
+  expect((await api(`/repos/${id}/blob?path=a.txt`, who, {}, on)).status).toBe(200);
+});
+
+it('restores what has no objects to lose, and what is still only staged', async () => {
+  const who = { cookie: await signup('undo_early') };
+  const empty = await api('/repos', who, { body: { name: 'empty', policy: OPEN } }, on);
+  expect(empty.status, JSON.stringify(empty.body)).toBe(200);
+  await remove(who, empty.body.id, 'empty');
+  const back = await restore(who, empty.body.id);
+  expect(back.status, JSON.stringify(back.body)).toBe(200);
+
+  const fresh = await api('/repos', who, { body: { name: 'fresh', policy: OPEN, files: [file('a.txt', 'a\n')], author } }, on);
+  expect(fresh.status, JSON.stringify(fresh.body)).toBe(200);
+  await remove(who, fresh.body.id, 'fresh');
+  expect((await restore(who, fresh.body.id)).status).toBe(200);
+  await drainObjects(on);
+  expect((await api(`/repos/${fresh.body.id}/blob?path=a.txt`, who, {}, on)).status).toBe(200);
+});
+
+it('a look at the objects that fails restores nothing and says to try again', async () => {
+  const who = { cookie: await signup('undo_look') };
+  const { id } = await made(who, 'look');
+  await remove(who, id, 'look');
+  const before = await tombstone(id);
+  const OBJECTS = new Proxy(bindings.OBJECTS, {
+    get: (real, key) => (key === 'head' ? () => Promise.reject(new Error('R2 is down')) : Reflect.get(real, key)),
+  });
+  const failing = await restore(who, id, {}, { ...on, OBJECTS } as unknown as Env);
+  expect([failing.status, failing.body.error.code]).toEqual([503, 'OVERLOADED']);
+  expect(failing.body.error.message).toMatch(/try again/i);
+  expect(await tombstone(id)).toEqual(before);
+  expect((await restore(who, id)).status).toBe(200);
 });

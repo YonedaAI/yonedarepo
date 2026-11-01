@@ -4,7 +4,8 @@
 // at deletion, and NAME_TAKEN asks for another), a fork's parent takes it back, and only then
 // does the repository commit. What follows repeats safely, so a retried restore finishes what
 // an attempt left: the listing, its members, access everywhere, and every chain a deletion
-// stopped. The schedule's entry goes last: while it is there, the owner can retry.
+// stopped. The schedule's entry goes last: while it is there, the owner can retry. A repository
+// whose objects are gone stays a tombstone, whichever build purged it (repo-restore-held.ts).
 //
 // Repository tokens stay revoked: whoever took the repository over may hold them. A managed
 // agents connection has one: its owner saves the agent once, which mints a new token.
@@ -22,6 +23,7 @@ import { requirePatScope } from './repo-pat';
 import { handleOf, holdName, releaseNames } from './repo-paths';
 import { dispatchObjects, dispatchProjection } from './repo-projection';
 import { schedulePurge } from './repo-quarantine';
+import { requireHeld } from './repo-restore-held';
 import { undoOn } from './repo-undo-window';
 import type { Env } from './types';
 
@@ -86,6 +88,7 @@ export async function restoreRepository(env: Env, auth: Credentials, repo: strin
   };
   // Live, and nothing was left to finish.
   if (facts.already && !scheduled) return answer();
+  if (!facts.already) await requireHeld(env, repo, facts, scheduled);
   const release = async () => {
     if (facts.already) return;
     await Promise.allSettled([
@@ -104,7 +107,10 @@ export async function restoreRepository(env: Env, auth: Credentials, repo: strin
     throw e;
   }
   await relist(ctx, facts, chosen);
-  await accessEverywhere(env, repo);
+  // A repository with no main has no published head to refresh.
+  await accessEverywhere(env, repo).catch((e) => {
+    if (e?.code !== 'NOT_FOUND') throw e;
+  });
   await rearm(env, repo);
   await forgetDeleted(env, repo, owner);
   return answer();

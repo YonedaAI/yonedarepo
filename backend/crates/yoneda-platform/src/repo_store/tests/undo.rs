@@ -216,6 +216,48 @@ fn past_its_due_time_a_repository_no_purge_reached_still_restores() {
 }
 
 #[test]
+fn a_restore_check_names_the_store_and_the_head_to_look_for() {
+    use crate::storage::SqlStore;
+    let h = Harness::new();
+    delete(&h);
+    let check = h.ok(OWNER, json!({"op":"repo_restore","check":true}));
+    let settings = rows::settings(&h.db).unwrap();
+    assert_eq!(check["object_store"], settings.object_store.as_str());
+    assert_eq!(
+        check["head"],
+        Value::Null,
+        "a repository with no refs loses nothing"
+    );
+
+    h.db.query(
+        "INSERT INTO refs(name,commit_id,version) VALUES('refs/heads/side','aaa',1),('refs/heads/main','bbb',2)",
+        &[],
+    )
+    .unwrap();
+    let check = h.ok(OWNER, json!({"op":"repo_restore","check":true}));
+    assert_eq!(
+        check["head"],
+        json!({"commit":"bbb","bundle":null,"staged":false})
+    );
+
+    h.db.query(
+        "INSERT INTO bundled_objects(id,bundle,at,size,kind) VALUES('bbb','b1',0,1,'commit')",
+        &[],
+    )
+    .unwrap();
+    h.db.query(
+        "INSERT INTO staged_objects(commit_id,id,kind,data_b64) VALUES('bbb','bbb','commit','')",
+        &[],
+    )
+    .unwrap();
+    let check = h.ok(OWNER, json!({"op":"repo_restore","check":true}));
+    assert_eq!(
+        check["head"],
+        json!({"commit":"bbb","bundle":"b1","staged":true})
+    );
+}
+
+#[test]
 fn a_restored_repository_deleted_again_waits_a_new_window() {
     let h = Harness::new();
     let first = delete(&h);
