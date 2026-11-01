@@ -2,7 +2,7 @@ use serde_json::{Value, json};
 use std::cell::RefCell;
 use std::rc::Rc;
 use wasm_bindgen::{JsCast, prelude::*};
-use worker::{Fetch, Response, SqlStorageValue, Storage, Url};
+use worker::{Fetch, Method, Request, Response, SqlStorageValue, Storage};
 use yoneda_core::Result;
 use yoneda_store::{SqlStore, sql_error};
 
@@ -76,9 +76,10 @@ impl SqlStore for CloudStore {
 
 /// Cloudflare's trace page as seen from this Durable Object: its `colo=` line names the data
 /// center the object's own request left from, which no binding reports. No transaction is open
-/// here, and the store is not touched.
+/// here, and the store is not touched. A `Request`, not a parsed `Url`: this was the only
+/// `Url::parse` in the Worker, and it linked 210 KB of IDNA tables into the Wasm.
 pub async fn colo_trace() -> worker::Result<Response> {
-    let url: Url = "https://www.cloudflare.com/cdn-cgi/trace".parse()?;
-    let text = Fetch::Url(url).send().await?.text().await?;
+    let trace = Request::new("https://www.cloudflare.com/cdn-cgi/trace", Method::Get)?;
+    let text = Fetch::Request(trace).send().await?.text().await?;
     Response::ok(text)
 }
