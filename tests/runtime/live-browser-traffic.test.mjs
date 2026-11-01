@@ -36,6 +36,7 @@ const CHECKED_ELSEWHERE = new Map([
   ['tools/staging/client.mjs', 'Session.headers'],
   ['tools/staging/mcp-client.mjs', 'McpClient.headers'],
   ['tools/fanout-bench/requests.js', 'headers'],
+  ['tools/fanout-bench/region-steps.js', 'the init runStep builds, tested in region-tools.test.mjs'],
   ['tools/staging/cli-tools.mjs', "the proxy forwards the CLI's own headers"],
 ]);
 /** Stock Git over SSH: the protocol has no header to carry, so these runs stay counted. */
@@ -139,7 +140,8 @@ test('every tool that runs Git against a remote takes its environment from the h
     if (OVER_SSH.has(file) || LOCAL_GIT.has(file) || file === HELPER) continue;
     const source = await readFile(file, 'utf8');
     const talks = /\[\s*(?:'-c', [^\]]*?)?'(?:clone|fetch|push|pull|ls-remote)'|git\([^)]*'(?:clone|fetch|push|pull|ls-remote)'/.test(source);
-    if (talks && !/gitConfigEnv|\b(?:kit|ws)\.(?:ok|run|git|env)\(/.test(source)) unmarked.push(file);
+    // `gitSession` (tools/fanout-bench/mac-git.mjs) takes its environment from the helper too.
+    if (talks && !/gitConfigEnv|gitSession\(|\b(?:kit|ws)\.(?:ok|run|git|env)\(/.test(source)) unmarked.push(file);
   }
   assert.deepEqual(unmarked, []);
 });

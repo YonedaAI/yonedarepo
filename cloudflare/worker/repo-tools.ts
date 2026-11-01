@@ -210,3 +210,26 @@ export async function branchesRoute(ctx: RepoContext, path: string[], body: () =
   }
   return operations.git_branch(ctx, await body());
 }
+
+/** `POST refs/batch`: every branch moves or none; stale expectations answer 409 naming
+ * the stale refs (`details.stale`). */
+export async function batchRefs(ctx: RepoContext, body: Json) {
+  if (!Array.isArray(body.updates))
+    throw new ApiError('INVALID_INPUT', 'updates must be a list of {ref, commit, expected}');
+  const result = await ctx.call({
+    op: 'repo_branch_batch',
+    updates: body.updates.map((u: Json) => ({
+      ref: u?.ref,
+      commit: u?.commit,
+      expected: u?.expected ?? null,
+      // An annotated tag's object (`{data_b64}`), kept beside the tag's ref.
+      ...(u?.tag ? { tag: u.tag } : {}),
+    })),
+  });
+  if (result.stale)
+    throw new ApiError('STALE_HEAD', `Stale expected heads: ${result.stale.join(', ')}`, {
+      stale: result.stale,
+    });
+  await notifyHooks(ctx.env, ctx.repo);
+  return { version: result.version, refs: result.refs };
+}

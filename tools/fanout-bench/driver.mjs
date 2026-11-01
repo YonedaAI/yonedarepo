@@ -237,8 +237,8 @@ export const stampOf = (date) => date.toISOString().replace(/[:.]/g, '-');
 const SECRET = /\b(yrp|ypat)_[A-Za-z0-9_-]{16,}/;
 
 /** The recorded form of one run; throws rather than record a credential. */
-export function evidenceRecord(target, result, { recorded_at, revision }) {
-  const record = { schema: 2, target, client: 'bench client Worker, aws:us-east-1', recorded_at, revision, result };
+export function evidenceRecord(target, result, { recorded_at, revision, client = 'bench client Worker, aws:us-east-1' }) {
+  const record = { schema: 2, target, client, recorded_at, revision, result };
   const text = `${JSON.stringify(record, null, 2)}\n`;
   if (SECRET.test(text)) throw new Error('Evidence holds a token; not writing it');
   return { record, text };
@@ -246,12 +246,12 @@ export function evidenceRecord(target, result, { recorded_at, revision }) {
 
 /** Writes `.local/platform-live/<name>-<stamp>.json`, one file per run (never over another),
  * with the revision, and prints it. */
-export async function evidence(name, target, result) {
+export async function evidence(name, target, result, { client, quiet = false } = {}) {
   const now = new Date();
   const revision = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim();
-  const { record, text } = evidenceRecord(target, result, { recorded_at: now.toISOString(), revision });
+  const { record, text } = evidenceRecord(target, result, { recorded_at: now.toISOString(), revision, client });
   await mkdir(EVIDENCE_DIR, { recursive: true });
   await writeFile(resolve(EVIDENCE_DIR, `${name}-${stampOf(now)}.json`), text, { flag: 'wx' });
-  console.log(text.trimEnd());
+  if (!quiet) console.log(text.trimEnd());
   return record;
 }

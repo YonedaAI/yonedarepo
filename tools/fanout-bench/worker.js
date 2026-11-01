@@ -7,16 +7,12 @@
 // next to the platform, so it is also the near-region client.
 import { openLoop, parseOpen } from './open-loop.js';
 import { BENCH_VERSION, fanOut, validRelay } from './relay.js';
-import { commitAndLand, read } from './requests.js';
+import { commitAndLand, read, TARGET } from './requests.js';
 
 const json = (value, status = 200) => Response.json(value, { status });
 // A read slower than this fails alone: one stuck read held its invocation's other four past
 // the driver's 300 s header timeout (item 9, 2026-10-28), losing all five results.
 const READ_TIMEOUT_MS = 60_000;
-// The deployed client reaches only public addresses (global_fetch_strictly_public), and of
-// those only dev's: load tests never touch prod. A local run of it may target a local platform.
-const TARGET = /^(https:\/\/(yonedarepo-dev-[a-z0-9-]+\.mlong-f01\.workers\.dev|(api\.)?dev\.yonedarepo\.com)|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/;
-
 // Webhook receiver for the live gate (tools/staging/webhook-flow.mjs): `POST /hooks/<box>`
 // is a hook target (no bench key: the platform sends only its signature). With the bench
 // key, `PUT` sets the box's secret and how many next deliveries fail with 500, and `GET`

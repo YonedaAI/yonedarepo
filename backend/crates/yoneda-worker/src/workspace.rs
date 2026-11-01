@@ -12,6 +12,10 @@ impl DurableObject for WorkspaceAuthority {
         Self { state }
     }
     async fn fetch(&self, mut req: Request) -> Result<Response> {
+        // The adapter's path, never client input, asked only with REGION_HINT_TEST on.
+        if req.path() == "/where" {
+            return yoneda_cloudflare::colo_trace().await;
+        }
         let mut command: Value = req.json().await?;
         command["now"] = json!(Date::now().as_millis() as i64);
         match yoneda_platform::execute_workspace(&CloudStore::new(self.state.storage()), command) {

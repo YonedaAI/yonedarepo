@@ -176,6 +176,9 @@ export interface Env {
   TRAFFIC_REPORT?: string;
   /** `on` records a new account's region and samples where writes come from (region.ts). */
   REGION_SIGNALS?: string;
+  /** `on`: a create may ask for a location hint (repo-region-hint.ts). Dev only, for the latency
+   * matrix; off or unset, a create ignores it. */
+  REGION_HINT_TEST?: string;
   /** Cloudflare Web Analytics site token (front Worker); set, public pages carry its beacon. */
   WEB_ANALYTICS_TOKEN?: string;
   /** Site traffic reports (platform Worker, platform-site-traffic.ts): the account and dataset the

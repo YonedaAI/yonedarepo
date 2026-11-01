@@ -33,6 +33,10 @@ impl DurableObject for CommitShard {
     }
 
     async fn fetch(&self, request: Request) -> Result<Response> {
+        // The adapter's path, never client input, asked only with REGION_HINT_TEST on.
+        if request.path() == "/where" {
+            return yoneda_cloudflare::colo_trace().await;
+        }
         let others = self.serving.get();
         self.serving.set(others + 1);
         let response = self.serve(request, others).await;

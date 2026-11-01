@@ -30,7 +30,7 @@ import { changesRoute, setAutoLandings } from './repo-changes';
 import { compactLog } from './repo-compaction';
 import { createRepository, importRepository, tokenSecret } from './repo-create';
 import { refreshHead } from './repo-head';
-import { hooksRoute, notifyHooks } from './repo-hooks';
+import { hooksRoute } from './repo-hooks';
 import { importProgress } from './repo-import-start';
 import { lfsRoute } from './repo-lfs';
 import { repoMcp } from './repo-mcp';
@@ -55,11 +55,12 @@ import {
   setVisibility,
 } from './repo-public';
 import { quarantineRoute } from './repo-quarantine';
+import { regionHintTest, whereRepository } from './repo-region-hint';
 import { releaseDownload, releasesRoute } from './repo-releases';
 import { restoreRepository } from './repo-restore';
 import { SESSION_BODY_LIMIT } from './repo-session-records';
 import { timed, withTimings } from './repo-timing';
-import { branchesRoute, operations } from './repo-tools';
+import { batchRefs, branchesRoute, operations } from './repo-tools';
 import { vacuum } from './repo-vacuum';
 import { humanView } from './repo-views';
 import type { Env } from './types';
@@ -263,6 +264,8 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     ]);
     return { ...compaction, storage };
   }
+  // Where this repository's objects run (repo-region-hint.ts); off, an unknown path.
+  if (resource === 'where' && get && regionHintTest(env)) return whereRepository(ctx, auth);
   if (resource === 'retention' && req.method === 'PUT') {
     const { keep_versions, keep_days } = await bodyOf(req);
     return audited(env, repo, ctx.call({ op: 'repo_set_retention', keep_versions, keep_days }));
@@ -375,29 +378,6 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
       audited(env, repo, ctx.call({ op: 'repo_token_revoke', name: sha })),
     );
   throw new ApiError('NOT_FOUND', 'Unknown API path');
-}
-
-/** `POST refs/batch`: every branch moves or none; stale expectations answer 409 naming
- * the stale refs (`details.stale`). */
-async function batchRefs(ctx: RepoContext, body: Json) {
-  if (!Array.isArray(body.updates))
-    throw new ApiError('INVALID_INPUT', 'updates must be a list of {ref, commit, expected}');
-  const result = await ctx.call({
-    op: 'repo_branch_batch',
-    updates: body.updates.map((u: Json) => ({
-      ref: u?.ref,
-      commit: u?.commit,
-      expected: u?.expected ?? null,
-      // An annotated tag's object (`{data_b64}`), kept beside the tag's ref.
-      ...(u?.tag ? { tag: u.tag } : {}),
-    })),
-  });
-  if (result.stale)
-    throw new ApiError('STALE_HEAD', `Stale expected heads: ${result.stale.join(', ')}`, {
-      stale: result.stale,
-    });
-  await notifyHooks(ctx.env, ctx.repo);
-  return { version: result.version, refs: result.refs };
 }
 
 /** Runs an access or policy change, then republishes main's head before answering (see
