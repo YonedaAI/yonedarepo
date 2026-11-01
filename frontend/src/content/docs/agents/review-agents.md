@@ -53,7 +53,7 @@ Findings that cannot be placed on a line of the diff, or that look like a creden
 
 A failed check blocks landing when the repository's [landing rules](/docs/guides/repositories#landing-rules) list it in `required_checks`. With **Land when cleared** on, any failed check sends the Landing around, required or not. Otherwise it is advice. Line comments don't hold a Landing unless **Block landing on unresolved agent findings** is on.
 
-A run that can't finish leaves no reading. If the check is required it fails, and a comment says so: push again to run the agent. If it isn't, nothing is posted. A pause fails nothing: when the owner resumes automation, agents whose checks are required run on the open Landings still waiting for them.
+A run that can't finish leaves no reading. If the check is required it fails, and a comment says so: push again to run the agent. If it isn't, nothing is posted. A pause fails nothing: when the owner resumes automation, agents whose checks are required run on the open Landings still waiting for them, up to 20 runs in a repository. The rest run on their next push.
 
 ## Go-around
 

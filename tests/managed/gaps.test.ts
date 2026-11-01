@@ -4,7 +4,7 @@
 import { runInDurableObject } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { QueueMessage } from '../../cloudflare/managed/config';
-import { consume } from '../../cloudflare/managed/dispatch';
+import { consume, MAX_RUNS_PER_RESUME } from '../../cloudflare/managed/dispatch';
 import { managedFetch } from '../../cloudflare/managed/index';
 import { ledgerStub, STALE_HOLD_MS } from '../../cloudflare/managed/ledger';
 import { repoStub } from '../../cloudflare/managed/repo-agents';
@@ -202,6 +202,56 @@ describe('automation pause', () => {
       await runAgent(done.env, done.created[0], inline);
       await deliver(done, resumed(done));
       expect(done.created).toHaveLength(1);
+    });
+
+    describe('on a repository with many Landings waiting', () => {
+      const head = (n: number) => n.toString(16).padStart(40, '0');
+      const event = (h: Harness, n: number): QueueMessage => ({
+        ...opened(h),
+        ref: `refs/heads/b${n}`,
+        commit: head(n),
+        change: n,
+      });
+      async function waiting(count: number) {
+        const h = await connected(['code-review']);
+        h.platform.changes = [];
+        for (let n = 1; n <= count; n++)
+          h.platform.change({ number: n, head: head(n), branch: `b${n}` });
+        return h;
+      }
+
+      it(`starts at most ${MAX_RUNS_PER_RESUME} paid runs on one resume`, async () => {
+        const h = await waiting(MAX_RUNS_PER_RESUME + 5);
+        await deliver(h, resumed(h));
+        expect(h.created).toHaveLength(MAX_RUNS_PER_RESUME);
+      });
+
+      it('counts runs, not Landings, across every agent a landing requires', async () => {
+        const h = await waiting(MAX_RUNS_PER_RESUME);
+        h.platform.required = ['code-review', 'security-review'];
+        await put(h, 'security-review', { repos: [h.platform.repo] });
+        await deliver(h, resumed(h));
+        expect(h.created).toHaveLength(MAX_RUNS_PER_RESUME);
+      });
+
+      it('spends none of it on a head that has its answer', async () => {
+        const h = await waiting(MAX_RUNS_PER_RESUME + 5);
+        await deliver(h, event(h, 1), event(h, 2));
+        const answered = h.created.length;
+        await deliver(h, resumed(h));
+        expect(answered).toBe(2);
+        expect(h.created).toHaveLength(answered + MAX_RUNS_PER_RESUME);
+      });
+
+      it('leaves the rest for their next event, which the limit does not touch', async () => {
+        const h = await waiting(MAX_RUNS_PER_RESUME + 5);
+        await deliver(h, resumed(h));
+        const started = new Set(h.created.map((c) => c.change));
+        const left = h.platform.changes.map((c) => c.number).find((n) => !started.has(n)) as number;
+        await deliver(h, event(h, left));
+        expect(h.created.map((c) => c.change)).toContain(left);
+        expect(h.created).toHaveLength(MAX_RUNS_PER_RESUME + 1);
+      });
     });
 
     it('hears it from the signed hook', async () => {

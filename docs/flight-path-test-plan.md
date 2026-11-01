@@ -66,7 +66,7 @@ Nothing is scripted past the clicks: `web-agents-flow.mjs` creates a repository 
 
 **A run with no reading:** a run that fails or times out fails a required check, with a comment saying to push again. Nothing else would answer that check, so the Landing used to wait for good. A check nobody requires stays silent. Out of credit is no failure: the run waits and resumes with the credit.
 
-**A pause fails nothing.** Pushes during it start no run, and a run it stops posts nothing. `resume_automation` sends `repo.resumed`, and each agent a landing requires then looks at the open Landings, up to 200: `claim` restarts a run the pause stopped, and a head with its answer is left alone. An agent nobody requires waits for the next push. A lost hook waits for the next event, as any trigger does.
+**A pause fails nothing.** Pushes during it start no run, and a run it stops posts nothing. `resume_automation` sends `repo.resumed`, and each agent a landing requires then looks at the open Landings: `claim` restarts a run the pause stopped, and a head with its answer is left alone. One resume starts at most 20 paid runs in a repository (`MAX_RUNS_PER_RESUME`); the rest wait for their next event, and the log says `managed.resume_limited`. An agent nobody requires waits for the next push. A lost hook waits for the next event, as any trigger does.
 
 **Bad verdicts block by default** (owner, 2026-10-31): `block_at` is `high` for Slop and Intent drift. `partial` and a medium Slop reading pass. With Land when cleared any failed check goes around, required or not.
 

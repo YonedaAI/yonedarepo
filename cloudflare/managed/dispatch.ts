@@ -167,11 +167,14 @@ async function onEvent(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'event'
   );
 }
 
+/** Paid runs one resume may start in a repository: one click must not start hundreds. */
+export const MAX_RUNS_PER_RESUME = 20;
+
 /**
  * Automation came back. A pause drops pushes before they claim a run and stops runs that had, and
  * nothing asks again, so each agent a landing waits for looks at the open Landings: `claim` starts
  * a run the pause stopped, and a head with its answer is left alone. Agents nobody requires wait
- * for the next push, as they would have.
+ * for the next push, as they would have, and so do Landings past the limit.
  */
 async function onResumed(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'resumed' }>) {
   const repo = repoStub(env, m.repo);
@@ -182,7 +185,9 @@ async function onResumed(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'resu
   const agents = enabled.filter((id) => required.includes(String(managedAgent(id)?.check)));
   if (agents.length === 0) return;
   const open = await reviewable(platform, m.repo);
-  await reviewChanges(env, m.repo, { account: connection.account, platform }, agents, open, true);
+  const ctx = { account: connection.account, platform };
+  const counts = await reviewChanges(env, m.repo, ctx, agents, open, true, MAX_RUNS_PER_RESUME);
+  if (counts.limited) log.warn('managed.resume_limited', { repo: m.repo, runs: counts.begun });
 }
 
 /**
@@ -198,15 +203,21 @@ export async function reviewChanges(
   agents: ManagedAgentId[],
   changes: Record<string, any>[],
   opened: boolean,
+  limit = Number.POSITIVE_INFINITY,
 ) {
   const repo = repoStub(env, repoId);
   const workspace = workspaceStub(env, ctx.account);
-  const counts = { started: 0, already: 0 };
+  // `begun` counts every run sent off, so a restarted one too; `started` only new heads.
+  const counts = { started: 0, already: 0, begun: 0, limited: false };
   for (const change of changes) {
     let paths: string[] | null = null;
     for (const id of agents) {
       const agent = managedAgent(id);
       if (!agent) continue;
+      if (counts.begun >= limit) {
+        counts.limited = true;
+        return counts;
+      }
       const stored = await workspace.settings(id);
       const s = resolveSettings(agent, stored.workspace, stored.repos[repoId]);
       if (s.trigger.when === 'ready' && !opened) continue;
@@ -237,6 +248,7 @@ export async function reviewChanges(
         change: change.number,
         head: String(change.head),
       });
+      counts.begun++;
       if (claim.created) counts.started++;
     }
   }
