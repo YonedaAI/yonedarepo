@@ -892,3 +892,18 @@ fn each_d1_database_migrates_under_its_own_workers_config() {
         ]
     );
 }
+
+#[test]
+fn every_worker_deploy_names_its_commit_on_the_cloudflare_version() {
+    let message = crate::deploy_ledger::message(&Env::Prod, HEAD);
+    let revision = format!("BUILD_REVISION:{HEAD}");
+    let args = crate::deploy_exec::deploy_args("c.jsonc", &revision, HEAD, &message, false);
+    let after = |flag: &str| args[args.iter().position(|a| *a == flag).unwrap() + 1];
+    assert_eq!(after("--tag"), &HEAD[..12]);
+    assert_eq!(after("--message"), format!("prod {HEAD}"));
+    assert_eq!(after("--var"), revision);
+    assert!(!args.contains(&"--dry-run"));
+    let dry = crate::deploy_exec::deploy_args("c.jsonc", &revision, HEAD, &message, true);
+    assert_eq!(dry.last(), Some(&"--dry-run"));
+    assert!(dry.contains(&"--tag"));
+}

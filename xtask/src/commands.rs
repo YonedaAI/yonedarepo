@@ -118,7 +118,7 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
             .await
         }
         "deploy" => crate::deploy_env::deploy(&args).await,
-        "rollback" => crate::deploy_live::rollback(&args).await,
+        "rollback" => crate::deploy_rollback::rollback(&args).await,
         "status" => crate::deploy_live::status(&args).await,
         "live-check" => crate::deploy_live::live_check(&args).await,
         "live-tests" => crate::deploy_ship::mark(&args),

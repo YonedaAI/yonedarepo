@@ -225,6 +225,9 @@ export interface Env {
   /** `on`: `POST /api/client-error` logs what browsers report (client-errors.ts; unset or
    * anything else: it answers 204 and does nothing). */
   CLIENT_ERRORS?: string;
+  /** A number N: 1 request in N, and every slow one, keeps its Server-Timing phases as a log line
+   * and one Analytics Engine point (repo-span-sample.ts); unset or `off`: nothing. */
+  SPAN_SAMPLE?: string;
 }
 export type Principal = {
   workspace: string;

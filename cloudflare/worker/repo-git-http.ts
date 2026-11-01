@@ -24,7 +24,8 @@ import { isLfsPath, lfsHttp } from './repo-lfs';
 import { fromBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { ANONYMOUS, admitAnonymous, limitAnonymous } from './repo-public';
-import { timed, withTimings } from './repo-timing';
+import { timedAnswer } from './repo-span-sample';
+import { timed } from './repo-timing';
 import type { Env } from './types';
 
 const PATH = /^\/git\/(r[0-9a-f]{20})(?:\.git)?\/(info\/refs|git-upload-pack|git-receive-pack)$/;
@@ -101,10 +102,8 @@ export async function unknownRepository(req: Request, env: Env): Promise<Respons
 
 /** Serves a `/git/` request, or answers why it cannot, with its phases in Server-Timing
  * (Git shows response headers under `GIT_TRACE_CURL=1`). */
-export async function gitHttp(req: Request, env: Env): Promise<Response> {
-  const { value, header } = await withTimings(() => serve(req, env));
-  if (header) value.headers.set('server-timing', header);
-  return value;
+export function gitHttp(req: Request, env: Env): Promise<Response> {
+  return timedAnswer(env, req, () => serve(req, env));
 }
 
 async function serve(req: Request, env: Env): Promise<Response> {

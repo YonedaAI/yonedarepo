@@ -1,6 +1,6 @@
 //! Live state of a deployed environment: `/health` revisions, busy containers, and the
-//! `rollback` / `status` commands.
-use crate::deploy_guard::{self as guard, Options, short};
+//! `status` command.
+use crate::deploy_guard::{self as guard, short};
 use crate::infra::inventory::{self, Deployable};
 use crate::infra::spec::{Env, Lock, Spec};
 use crate::infra::wrangler::{self, table};
@@ -42,13 +42,13 @@ async fn health_body(origin: &str, address: Option<std::net::SocketAddr>) -> Opt
         .ok()
 }
 
-fn host_of(origin: &str) -> Option<&str> {
+pub(crate) fn host_of(origin: &str) -> Option<&str> {
     let host = origin.strip_prefix("https://")?;
     Some(host.split(['/', ':']).next().unwrap_or(host))
 }
 
 /// The origin host's first A record from 1.1.1.1 (DNS over HTTPS, no local resolver).
-async fn public_address(origin: &str) -> Option<std::net::SocketAddr> {
+pub(crate) async fn public_address(origin: &str) -> Option<std::net::SocketAddr> {
     let answer: Value = reqwest::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
@@ -212,42 +212,6 @@ fn append_env_file(var: &str, text: &str) -> Result<()> {
     Ok(())
 }
 
-pub(crate) async fn rollback(args: &[String]) -> Result<()> {
-    let env = Env::from_args(args)?;
-    let options = Options::from_args(args)?;
-    if env.is_prod() && !options.confirm {
-        return Err("Refusing to roll back prod without --confirm.".into());
-    }
-    let spec = Spec::load(&env)?;
-    let workers = inventory::deployables(&spec, &Lock::load(&env)?)?;
-    let message = format!("cargo xtask rollback --env {}", env.name());
-    for worker in workers.iter().rev() {
-        if env.is_prod() && worker.has_containers {
-            let active = active_instances(&spec.account_id, worker)?;
-            guard::active_gate(&env, &worker.name, active, &options)?;
-        }
-        if options.dry_run {
-            println!(
-                "Dry run: would roll back {} to its previous deployment.",
-                worker.name
-            );
-            continue;
-        }
-        wrangler::run(
-            &spec.account_id,
-            &[
-                "rollback",
-                "--name",
-                &worker.name,
-                "--message",
-                &message,
-                "--yes",
-            ],
-        )?;
-    }
-    status_table(&env, &workers).await
-}
-
 pub(crate) async fn status(args: &[String]) -> Result<()> {
     let env = Env::from_args(args)?;
     let spec = Spec::load(&env)?;
@@ -255,7 +219,7 @@ pub(crate) async fn status(args: &[String]) -> Result<()> {
     status_table(&env, &workers).await
 }
 
-async fn status_table(env: &Env, workers: &[Deployable]) -> Result<()> {
+pub(crate) async fn status_table(env: &Env, workers: &[Deployable]) -> Result<()> {
     let head = guard::head()?;
     let mut rows = Vec::new();
     for worker in workers {

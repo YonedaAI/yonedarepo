@@ -9,6 +9,8 @@ export const isWatchable = (script: string) => WATCHABLE.has(script);
 /** The wide watch: every Worker, cron and queue of the environment, urgent alerts and quick
  * passes. Off, the watcher behaves as before these existed (prod, until the owner turns it on). */
 export const wideOn = (env: SuperfanEnv) => env.WATCH_WIDE === 'on';
+/** The synthetic checks (synthetic.ts). Off, they spend nothing. */
+export const probesOn = (env: SuperfanEnv) => env.PROBES === 'on';
 /** The hard ceiling on model spend per UTC day, whatever the configuration says ($1.00). */
 export const HARD_DAILY_CAP_MICROUSD = 1_000_000;
 
@@ -19,8 +21,19 @@ export interface SuperfanEnv {
   WATCH_URL: string;
   /** `on`: the wide watch (`wideOn`). */
   WATCH_WIDE?: string;
-  /** The site as people reach it, whose /health the wide watch probes. */
+  /** The site as people reach it: what the wide watch and the synthetic checks probe. */
   WATCH_FRONT_URL?: string;
+  /** `on`: synthetic checks every five minutes. */
+  PROBES?: string;
+  /** `on`, on dev alone: the checks also land on PROBE_LAND_REPO. */
+  PROBE_LANDING?: string;
+  /** Worker secret: a small public repository for the clone check; unset: no clone check. */
+  PROBE_CLONE_REPO?: string;
+  /** Worker secrets: the repository the landing check writes to, and a token limited to it. */
+  PROBE_LAND_REPO?: string;
+  PROBE_LAND_TOKEN?: string;
+  /** `on`: each full pass compares this release with the one before (release.ts). */
+  RELEASE_COMPARE?: string;
   /** The dead-man Worker (deadman.ts), watched back; unset: not watched. */
   DEADMAN_URL?: string;
   /** The watched resources' ids. All unset: looked up by name at run time (resolveIds). */
@@ -68,7 +81,7 @@ export interface WatchSite {
   account: string;
   script: string;
   healthUrl: string;
-  /** The front Worker's health URL; null off the wide watch. */
+  /** The front Worker's health URL; null unless the wide watch or the checks need it. */
   frontHealthUrl: string | null;
   deadmanHealthUrl: string | null;
   wide: boolean;
@@ -109,7 +122,7 @@ export function watchSite(env: SuperfanEnv): WatchSite {
   if (url.protocol !== 'https:' || !url.hostname.startsWith(`${env.WATCH_SCRIPT}.`))
     throw new Error('WATCH_URL must be the watched Worker over HTTPS');
   const wide = wideOn(env);
-  const front = wide ? httpsUrl('WATCH_FRONT_URL', env.WATCH_FRONT_URL) : null;
+  const front = wide || probesOn(env) ? httpsUrl('WATCH_FRONT_URL', env.WATCH_FRONT_URL) : null;
   const deadman = wide && env.DEADMAN_URL ? httpsUrl('DEADMAN_URL', env.DEADMAN_URL) : null;
   const site = {
     account: id('CF_ACCOUNT_ID', env.CF_ACCOUNT_ID, hex32),

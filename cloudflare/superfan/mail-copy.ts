@@ -3,33 +3,20 @@
 // one block (mail-render.ts). In order, worst first: the first item names the mail. Every signal
 // the watcher can raise needs a line here; a test holds that, and these lines to the UI rules.
 
-export interface Facts {
-  /** Fired signals of this cause, by name. */
-  values: Record<string, number | null>;
-  /** The component's word (`repository`). */
-  word: string;
-  /** What its queue holds (`background job`). */
-  noun: string;
-  /** The usual p95, for a latency signal. */
-  baseline?: number;
-}
-export interface Link {
-  label: string;
-  /** Under the site, or the API when `api` is set. */
-  path: string;
-  api?: boolean;
-}
-export interface Copy {
-  signals: string[];
-  title(f: Facts): string;
-  means: string | ((f: Facts) => string);
-  first: string;
-  /** A different first step on these components. */
-  firstOn?: Record<string, string>;
-  /** The finding's own reason says more than these words: show it. */
-  reason?: boolean;
-  link?: (component: string) => Link;
-}
+import { PROBE_COPY, RELEASE_COPY } from './mail-copy-release';
+import {
+  type Copy,
+  capital,
+  count,
+  duration,
+  type Facts,
+  type Link,
+  number,
+  plural,
+} from './mail-words';
+
+export type { Copy, Facts, Link } from './mail-words';
+export { capital, number } from './mail-words';
 
 /** Component keys in the reader's words. They also rewrite the model's guess. */
 export const WORD: Record<string, string> = {
@@ -46,6 +33,7 @@ export const WORD: Record<string, string> = {
   ssh_gateway: 'SSH',
   workspace_authority: 'account',
   cron: 'scheduled task',
+  synthetic: 'site check',
 };
 const NOUN: Record<string, string> = {
   derived_jobs: 'background job',
@@ -53,20 +41,6 @@ const NOUN: Record<string, string> = {
   managed_worker: 'managed agent run',
 };
 export const nounOf = (component: string) => NOUN[component] ?? WORD[component] ?? 'item';
-
-export const number = (n: number) => n.toLocaleString('en-US');
-const plural = (n: number, one: string, many = `${one}s`) => `${number(n)} ${n === 1 ? one : many}`;
-const count = (f: Facts, ...names: string[]) => {
-  for (const name of names) if (typeof f.values[name] === 'number') return f.values[name];
-  return 0;
-};
-export const capital = (s: string) => s[0].toUpperCase() + s.slice(1);
-const duration = (ms: number) =>
-  ms < 1_000
-    ? `${number(ms)} ms`
-    : ms < 90_000
-      ? `${(ms / 1_000).toFixed(1)} s`
-      : `${number(Math.round(ms / 60_000))} minutes`;
 
 /** The counts behind a failure rate; with no rate, they already are the title. */
 function errorCounts(f: Facts) {
@@ -97,6 +71,7 @@ export const COPY: Copy[] = [
     first: 'Open it yourself. If it is down and a deploy is new, roll back.',
     link: healthLink,
   },
+  ...PROBE_COPY,
   {
     signals: ['reconcile_mismatches'],
     title: (f) =>
@@ -153,6 +128,7 @@ export const COPY: Copy[] = [
     means: errorCounts,
     first: "Open this Worker's logs. If a deploy started it, roll back.",
   },
+  ...RELEASE_COPY,
   {
     signals: ['resource_kills'],
     title: (f) =>

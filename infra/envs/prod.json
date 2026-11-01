@@ -27,11 +27,17 @@
         "SUPERFAN_READ_TOKEN bearer for GET /findings, GET /status, POST /run",
         "New findings mail ADMIN_NOTIFY_EMAIL through Resend (superfan/notify.ts, the Secrets Store secret Resend-Yoneda), at most",
         "8 digests a UTC day. The same address as the platform's sign-up notice (its EMAIL_CONTACT).",
+        "POST /deploys is the deploy ledger (xtask/src/deploy_ledger.rs), same bearer. RELEASE_COMPARE=on compares each release with the one before after a deploy (superfan/release.ts).",
+        "PROBES=on runs synthetic checks on the */5 cron: /health, a page, an API read and, with the optional secret PROBE_CLONE_REPO (a small public repository's id, under 1 MiB), a clone. Never a landing on prod.",
+        "Off, the */5 cron returns at once. Budget: docs/observability-plan.md.",
         "Deployed first: the production platform names this Worker in tail_consumers."
       ],
       "secrets": [
         "CF_ANALYTICS_TOKEN",
         "SUPERFAN_READ_TOKEN"
+      ],
+      "optional_secrets": [
+        "PROBE_CLONE_REPO"
       ],
       "ephemeral": false,
       "config": {
@@ -45,7 +51,8 @@
         },
         "triggers": {
           "crons": [
-            "7 * * * *"
+            "7 * * * *",
+            "*/5 * * * *"
           ]
         },
         "vars": {
@@ -54,6 +61,9 @@
           "EMAIL_FROM": "YonedaRepo <hello@yonedarepo.com>",
           "WATCH_SCRIPT": "{prefix}-platform",
           "WATCH_URL": "https://api.yonedarepo.com",
+          "WATCH_FRONT_URL": "https://yonedarepo.com",
+          "RELEASE_COMPARE": "off",
+          "PROBES": "off",
           "TELEMETRY_SOURCE": "cloudflare",
           "SUPERFAN_MODEL": "mimo-v2.6-flash",
           "MIMO_TOKEN_PLAN_REGION": "sgp",
@@ -146,7 +156,8 @@
         "ASYNC_STORE=on: a create answers without Artifacts and a platform_store queue job creates the store (repo-store-create.ts). Set it only once every Worker on the queue knows the job: deploy with it off first (docs/runbook.md).",
         "DIRECT_IMPORT=on (with FAST_IMPORT, PACK_CACHE and PUSH_BUNDLES) also fetches a public GitHub repository from the Worker when it is imported, and lands main from that pack beside Artifacts' own fetch (docs/direct-import.md).",
         "Admin pages (/api/v1/admin, platform-admin.ts): ADMIN_ACCOUNTS lists the operator accounts (comma separated; empty: only OWNER_TOKEN/Access). The sign-up notice goes to ADMIN_NOTIFY_EMAIL (empty: EMAIL_CONTACT). Credit grants and balances call the managed Worker's /admin/accounts/<account>/credit over MANAGED with MANAGED_ADMIN_TOKEN (optional secret, the managed Worker's own value; unset: grants are refused). MANAGED binds the managed Worker, which binds this one as PLATFORM: a fresh environment deploys this Worker once without MANAGED first.",
-        "REQUEST_IDS=on puts the request id on every response and carries it to Durable Objects, queue jobs and containers (worker/request-scope.ts). Off, failure lines still carry it and nothing else changes. No order to deploy in: a message or request without it mints one."
+        "REQUEST_IDS=on puts the request id on every response and carries it to Durable Objects, queue jobs and containers (worker/request-scope.ts). Off, failure lines still carry it and nothing else changes. No order to deploy in: a message or request without it mints one.",
+        "SPAN_SAMPLE=<N> keeps the Server-Timing phases of 1 request in N, and of every request over 5 seconds, as a request.spans log line and one SITE_EVENTS point, after the answer (worker/repo-span-sample.ts). off keeps none."
       ],
       "secrets": [
         "OWNER_TOKEN",
@@ -225,6 +236,7 @@
           "NEWSLETTER": "on",
           "ADMIN_NOTIFY_EMAIL": "",
           "SUPPORT_EMAIL": "support@yonedalabs.ai",
+          "SPAN_SAMPLE": "off",
           "REQUEST_IDS": "off"
         },
         "secrets_store_secrets": [

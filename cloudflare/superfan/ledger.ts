@@ -4,6 +4,7 @@
 // or double-mail.
 import { DurableObject } from 'cloudflare:workers';
 import type { SuperfanEnv } from './config';
+import { type DeployRow, insertDeploy, latestRevision, recentDeploys } from './ledger-deploys';
 import {
   type Level,
   type NarrativeStatus,
@@ -19,10 +20,13 @@ import {
   releaseNotice,
   releaseUrgent,
 } from './ledger-notice';
+import { recentProbes, recordProbes } from './ledger-probes';
 import { migrate } from './ledger-schema';
 import { reserveSpend, settleSpend, spendToday } from './ledger-spend';
 import { ingestRows, markWindow, tailWindow } from './ledger-tail';
+import { compareReleases } from './release';
 import type { Baselines } from './signals';
+import type { ProbeResult } from './synthetic-checks';
 import type { TailRow } from './tail';
 
 const LEASE_MS = 15 * 60_000;
@@ -47,6 +51,9 @@ export interface FindingRow {
   last_seen: string;
   resolved_at: string | null;
   notified_at: string | null;
+  /** The release it was first seen on, and the latest; null when neither was known. */
+  revision: string | null;
+  last_revision: string | null;
 }
 
 export const utcDay = (now: number) => new Date(now).toISOString().slice(0, 10);
@@ -85,6 +92,33 @@ export class SuperfanLedger extends DurableObject<SuperfanEnv> {
 
   marks(start: number) {
     return markWindow(this.ctx.storage.sql, start);
+  }
+
+  /** One row of the deploy ledger; a repeat changes nothing. */
+  recordDeploy(row: DeployRow) {
+    this.#tx((sql) => insertDeploy(sql, row));
+  }
+
+  deploys(limit: number) {
+    return recentDeploys(this.ctx.storage.sql, limit);
+  }
+
+  latestRevision() {
+    return latestRevision(this.ctx.storage.sql);
+  }
+
+  /** One pass of synthetic checks; answers each check's latest results. */
+  recordProbes(results: ProbeResult[], now: number) {
+    return this.#tx((sql) => recordProbes(sql, results, now));
+  }
+
+  probes(limit: number) {
+    return recentProbes(this.ctx.storage.sql, limit);
+  }
+
+  /** This release against the one before, from the minutes the tail kept. */
+  compareReleases(now: number) {
+    return compareReleases(this.ctx.storage.sql, now);
   }
 
   /** A quick pass finished; a full pass's beat is its finished run. */

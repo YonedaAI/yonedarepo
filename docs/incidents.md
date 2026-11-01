@@ -16,7 +16,9 @@ cargo xtask rollback --env prod --confirm
 
 | Need | Where |
 |---|---|
-| All open findings | `GET /findings` on Superfan, bearer `SUPERFAN_READ_TOKEN` |
+| All open findings | `GET /findings` on Superfan, bearer `SUPERFAN_READ_TOKEN`. Each names `revision`, the release it began on, and `last_revision` |
+| What changed | `GET /deploys`, same bearer: commit, times, environment, who, outcome |
+| What the synthetic checks saw | `GET /probes`, same bearer: each result, with the request id of a failure |
 | Is Superfan itself healthy | `GET /status` on Superfan, same bearer; `GET /heartbeat`, no bearer |
 | The log lines behind a count | Workers & Pages → the Worker → Observability, filter on `event` |
 | Live | `pnpm exec wrangler tail yonedarepo-<env>-platform --format json` |
@@ -42,6 +44,8 @@ Counted log events stay open for 20 hours after the last one, because some are l
 | Background jobs failed (`derived_jobs dead_lettered`, `dead_letter_backlog`) | A platform job gave up after its retries. The queue is shared with checks | Platform logs, `event = job.failed`. Dead letters have no consumer and expire with the queue's retention | Fix the cause, then requeue by hand before they expire |
 | Check runs failed (`check_runs dead_lettered`) | A check run gave up | Platform logs, `event = job.failed` | As above |
 | Managed agent runs failed (`managed_worker dead_lettered`, `dead_letter_backlog`) | A managed agent run or reconcile job gave up | Managed logs, `event = managed.queue` | As above |
+| Website, home page, API reads or public clone failing from outside (`synthetic probe_health`, `probe_page`, `probe_api`, `probe_clone`) | With `PROBES=on`: a synthetic check failed two passes in a row, each tried twice. A check runs as a stranger would | `GET /probes` for the status and request id, then that id in Workers Logs | New since the last deploy: roll back |
+| Test landing failing on dev (`synthetic probe_land`) | Dev only, `PROBE_LANDING=on`: a commit or landing on the probe repository failed. A 409 is the repository's policy: it must need no approval | `GET /probes`; the repository's policy and token | Fix the setup, or treat as a landing failure |
 | Mail from the dead-man: `Superfan has stopped` | Superfan has gone quiet for about 25 minutes, can't be reached, or can't mail. **Nothing is watching this env** | `GET /heartbeat`. Then Superfan's Observability, and its Cron Triggers in the dashboard | Redeploy Superfan, or fix its recipient, sender or Resend key. The mail repeats every 6 hours until it recovers |
 
 ## Digest alerts
@@ -50,6 +54,7 @@ Counted log events stay open for 20 hours after the last one, because some are l
 |---|---|---|---|
 | Calls failing, or errors (`<component> error_rate`, `exceptions`, `error_logs`) | More than 2% of 20+ invocations failed, or errors are piling up | The finding's narrative, then that Worker's Observability | New since the last deploy: roll back |
 | Calls slowed (`<component> p95_wall_ms`) | p95 doubled from its baseline, by 100 ms or more | Observability, the slowest operations | A burst on dev explains most of these |
+| Calls fail more, or are slower, since the deploy (`<component> release_error_rate`, `release_p95_ms`) | With `RELEASE_COMPARE=on`: this release is worse than the one before, in equal windows either side of the deploy. API, website, repository, landing and commit calls only | `GET /deploys` for the two releases, then the finding's `revision`. A burst on dev explains most slowdowns | The release: roll back, or fix forward if it migrated |
 | Calls killed for CPU or memory (`<component> resource_kills`) | Killed for CPU or memory | Observability, `exceededCpu` or `exceededMemory` | Find the repository or job; a large one needs a bound |
 | Repository past 8 GB (`storage storage_8gb`) | A repository's database is past 8 GB | As `storage_9gb` | Plan compaction or a split now |
 | Repository log compaction stalled (`derived_jobs compaction_stalls`) | A hold has stalled a repository's log | `GET /repos/:id/compaction`: `held` says why | `docs/runbook.md`, "A stalled log raises an alarm" |

@@ -59,6 +59,14 @@ describe('superfan read endpoint', () => {
   });
 });
 
+/** Takes away what came after version 4, for a test that rebuilds an older shape. */
+function backToVersion4(sql: SqlStorage) {
+  sql.exec('DROP TABLE probe_results');
+  sql.exec('DROP TABLE deploys');
+  sql.exec('ALTER TABLE findings DROP COLUMN revision');
+  sql.exec('ALTER TABLE findings DROP COLUMN last_revision');
+}
+
 describe('superfan ledger schema', () => {
   it('upgrades a ledger created at the preceding schema', async () => {
     const stub = env.LEDGER.get(
@@ -67,6 +75,7 @@ describe('superfan ledger schema', () => {
     await runInDurableObject(stub, (_instance, state) => {
       const sql = state.storage.sql;
       // Rebuild the version-1 shape inside a fresh object, with a finding in it.
+      backToVersion4(sql);
       for (const t of ['tail_samples', 'tail_minutes', 'tail_marks', 'urgent_notices', 'beats'])
         sql.exec(`DROP TABLE IF EXISTS ${t}`);
       sql.exec('ALTER TABLE findings DROP COLUMN level');
@@ -91,6 +100,7 @@ describe('superfan ledger schema', () => {
     ) as DurableObjectStub<SuperfanLedger>;
     await runInDurableObject(stub, (_instance, state) => {
       const sql = state.storage.sql;
+      backToVersion4(sql);
       for (const t of ['tail_marks', 'urgent_notices', 'beats'])
         sql.exec(`DROP TABLE IF EXISTS ${t}`);
       sql.exec('ALTER TABLE findings DROP COLUMN level');

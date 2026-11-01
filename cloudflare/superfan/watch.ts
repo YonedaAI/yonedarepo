@@ -4,11 +4,12 @@
 // as "all quiet", and findings are resolved only by rules that were actually evaluated. New
 // findings then go out privately by email: urgent ones before any model call can hold them up.
 import { type AnalyticsSource, CloudflareAnalytics, TelemetryError, WINDOW_MS } from './analytics';
-import { dailyCap, type SuperfanEnv, type WatchSite, watchSite, wideOn } from './config';
+import { dailyCap, probesOn, type SuperfanEnv, type WatchSite, watchSite, wideOn } from './config';
 import type { Observed, SuperfanLedger } from './ledger';
 import { FlashModel, type ModelClient, ModelError } from './model';
 import { notifyFindings, notifyUrgent } from './notify';
 import { confirmed, deadmanAge, FRONT_SERVICE, PLATFORM_SERVICE, probe } from './probes';
+import { RELEASE_KEYS, releaseOn } from './release';
 import {
   baselineSamples,
   type ComponentReport,
@@ -17,6 +18,7 @@ import {
   problems,
   type Snapshot,
 } from './signals';
+import { PROBE_KEYS } from './synthetic-checks';
 import { MARK_WINDOW_MS } from './tail';
 
 /** Model calls per run; the daily cap is the real limit, this bounds one bad hour. */
@@ -166,6 +168,7 @@ async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<Wat
       return null;
     }),
   ]);
+  const revision = site?.health.revision ?? (await ledger.latestRevision());
   const findings: number[] = [];
   const present: string[] = [];
   for (const p of faults.filter((x, i) => faults.findIndex((y) => y.reason === x.reason) === i)) {
@@ -178,6 +181,7 @@ async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<Wat
         kind: 'telemetry',
         signals: [{ name: p.reason, detail: p.message }],
         summary: p.message,
+        revision,
       },
       now,
     );
@@ -197,7 +201,11 @@ async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<Wat
     marks: await ledger.marks(now - MARK_WINDOW_MS),
     analytics,
     ...(deadman === undefined ? {} : { deadmanAge: deadman }),
+    ...(releaseOn(env) ? { release: await ledger.compareReleases(now) } : {}),
   };
+  // Off, nothing evaluates these: an open one must still be able to end.
+  if (!releaseOn(env)) evaluated.push(...RELEASE_KEYS);
+  if (!probesOn(env)) evaluated.push(...PROBE_KEYS);
   const reports = evaluate(snapshot, await ledger.baselines(), wideOn(env));
   let anomalies = 0;
   const seenProblems: { seen: Observed; report: ComponentReport }[] = [];
@@ -206,7 +214,7 @@ async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<Wat
     for (const problem of problems(report)) {
       present.push(problem.key);
       anomalies++;
-      const seen = await ledger.observe(observation(report, problem), now);
+      const seen = await ledger.observe(observation(report, problem, revision), now);
       findings.push(seen.id);
       seenProblems.push({ seen, report });
     }

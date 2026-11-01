@@ -108,6 +108,15 @@ Workflow deploy tokens live in the `YONEDA_ENV_FILE` secret of the GitHub Enviro
 
 Each env's secrets file (`~/.config/yonedarepo/staging.env` for dev, the name kept from before the rename; `prod.env` for prod; mode 0600) holds the Worker secrets its spec lists, such as `OWNER_TOKEN`, `VAULT_KEY` (64 hex), and superfan's `CF_ANALYTICS_TOKEN` (read-only: Account Analytics, Workers Scripts, Queues, Containers; superfan looks up the platform's queue, Durable Object and container ids by name with it) and `SUPERFAN_READ_TOKEN`. `deploy` uploads only the secrets a Worker does not have yet.
 
+### Synthetic checks
+
+Superfan's checks (`PROBES`, [observability-plan.md](observability-plan.md)) need two things `/health` doesn't:
+
+- **Clone:** a small public repository, under 1 MiB, in each environment. Put its id in the secrets file as `PROBE_CLONE_REPO`; `deploy` uploads it. It's a secret so that the id stays out of the public repository, not because it's private.
+- **Landing, dev only:** a repository of its own, with policy `{ "required_checks": [], "approvals": 0 }`, and a repository token with `read`, `write` and `land`: `PROBE_LAND_REPO` and `PROBE_LAND_TOKEN`. It takes 96 landings a day on one file, so never point it at a test repository you keep.
+
+Without them those checks don't run and the others do. Then set `PROBES` or `PROBE_LANDING` to `on` in `infra/envs/<env>.json`, run `cargo xtask infra gen --env <env>`, and deploy.
+
 ## Public downloads: the CLI and the Claude Code marketplace
 
 The front Worker serves `/install.sh` and `/install.ps1` (`frontend/public/`, with the site's origin filled in) and `/downloads/*` from the `<prefix>-downloads` R2 bucket (`DOWNLOADS`; layout in `cloudflare/worker/downloads.ts`). `cargo xtask infra up --env <env>` creates the bucket.

@@ -38,13 +38,14 @@ export async function runQuick(env: SuperfanEnv, deps = productionDeps(env)): Pr
     marks,
     analytics,
   };
+  const revision = site.health.revision ?? (await ledger.latestRevision());
   const evaluated: string[] = [];
   const present: string[] = [];
   for (const report of evaluate(snapshot, {}, true)) {
     for (const s of report.signals) if (s.urgent) evaluated.push(`${report.component}:${s.name}`);
     for (const problem of problems(report).filter((p) => p.level === 'urgent')) {
       present.push(problem.key);
-      await ledger.observe(observation(report, problem), now);
+      await ledger.observe(observation(report, problem, revision), now);
     }
   }
   await ledger.resolveAbsent(evaluated, present, now);

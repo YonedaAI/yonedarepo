@@ -17,6 +17,8 @@ export interface Observation {
   level?: Level;
   signals: unknown;
   summary: string;
+  /** The release running when this was seen, if known. */
+  revision?: string | null;
 }
 export interface Observed {
   id: number;
@@ -28,6 +30,7 @@ export interface Observed {
 export function observeProblem(sql: SqlStorage, o: Observation, now: number): Observed {
   const signals = JSON.stringify(o.signals);
   const level = o.level ?? 'digest';
+  const revision = o.revision ?? null;
   const open = sql
     .exec<{ id: number; narrative_status: NarrativeStatus }>(
       "SELECT id, narrative_status FROM findings WHERE dedup_key = ? AND status = 'open'",
@@ -48,13 +51,16 @@ export function observeProblem(sql: SqlStorage, o: Observation, now: number): Ob
     // one always, within its own limit (ledger-notice.ts).
     sql.exec(
       `UPDATE findings SET notified_at = CASE WHEN status = 'resolved' AND (? = 'urgent' OR notified_at < ?) THEN NULL ELSE notified_at END,
-           status = 'open', resolved_at = NULL, occurrences = occurrences + 1, last_seen = ?, signals = ?, summary = ?, level = ? WHERE id = ?`,
+           status = 'open', resolved_at = NULL, occurrences = occurrences + 1, last_seen = ?, signals = ?, summary = ?, level = ?,
+           revision = COALESCE(revision, ?), last_revision = COALESCE(?, last_revision) WHERE id = ?`,
       level,
       now - REOPEN_MS,
       now,
       signals,
       o.summary,
       level,
+      revision,
+      revision,
       recent.id,
     );
     return {
@@ -66,8 +72,8 @@ export function observeProblem(sql: SqlStorage, o: Observation, now: number): Ob
   const status: NarrativeStatus = o.kind === 'anomaly' ? 'pending' : 'deterministic';
   const id = sql
     .exec<{ id: number }>(
-      `INSERT INTO findings (dedup_key, component, kind, level, status, signals, summary, narrative_status, first_seen, last_seen)
-         VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?) RETURNING id`,
+      `INSERT INTO findings (dedup_key, component, kind, level, status, signals, summary, narrative_status, first_seen, last_seen, revision, last_revision)
+         VALUES (?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?) RETURNING id`,
       o.key,
       o.component,
       o.kind,
@@ -77,6 +83,8 @@ export function observeProblem(sql: SqlStorage, o: Observation, now: number): Ob
       status,
       now,
       now,
+      revision,
+      revision,
     )
     .one().id;
   return { id, action: 'new', needsNarrative: status === 'pending' };

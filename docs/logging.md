@@ -34,6 +34,8 @@ Worker code writes through `cloudflare/worker/log.ts` and nothing else; `tests/r
 | Repository content stays out | Routes are reduced to their shape, and JSON parse errors lose the text V8 quotes. An error message is otherwise kept, up to 500 characters, so a message that quotes a file path shows it |
 | A line has a size | 4,000 characters at most; over that, only its identifying fields are written |
 
+With `SPAN_SAMPLE=<N>` on the platform Worker, 1 request in N and every request over 5 seconds also write `request.spans`, after the answer: `operation`, `status`, `total_ms`, and `spans`, the request's `Server-Timing` phases, slowest first, each with `name`, `ms` and `count`. The same request writes one `SITE_EVENTS` point with `blob1 = 'spans'`: index the operation, blobs operation, short revision and `own` for our own traffic, then up to 16 span names; doubles total, status, then each span's milliseconds. Phases stop when the answer's headers go out, so a streamed clone or push shows the walk and not the pack.
+
 Unexpected failures write `request.failed`: every 5xx except those the platform means to give (`OVERLOADED`, `REPO_FULL` and the like, `PLANNED` in `repo-api.ts`), plus `DATABASE`, a failed statement in the authority. That code still answers 400 today.
 
 ## The request id
