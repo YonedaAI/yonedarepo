@@ -35,6 +35,7 @@ pub struct LandingState {
     pub from_fork: bool,
     /// Failed on this head and not required: how an agent's `block_at` reads.
     pub failed_checks: Vec<String>,
+    /// A person's comment on a line waits for an answer.
     pub unresolved_comments: bool,
     pub base_exists: bool,
     /// The base changed what this head read.

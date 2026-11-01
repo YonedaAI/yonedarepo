@@ -20,7 +20,7 @@ import { parseArgs } from 'node:util';
 import { chromium } from 'playwright-core';
 import { OWN_TRAFFIC } from './client.mjs';
 import { CASES, FIX, SLOPPY_FILE } from './web-agents-cases.mjs';
-import { AGENTS, addAgent, commitFromPage, createRepository, ctcPage, facts, lookAtForm, pageShows, restore, spentSoFar, turnOnRules } from './web-agents-pages.mjs';
+import { AGENTS, addAgent, commitFromPage, createRepository, ctcPage, facts, keepRuns, lookAtForm, pageShows, restore, spentSoFar, turnOnRules } from './web-agents-pages.mjs';
 
 const { values } = parseArgs({
   options: {
@@ -187,6 +187,7 @@ async function main() {
     console.log(`FAILED: ${e.message.slice(0, 500)}`);
   } finally {
     if (s.repo) {
+      await keepRuns(s).then((runs) => writeFileSync(join(dir, 'runs.json'), JSON.stringify(runs, null, 2))).catch((e) => out.problems.push(`runs not kept: ${e.message}`));
       await step('Put the agents back as they were', () => restore(s)).catch(() => {
         failed = true;
       });

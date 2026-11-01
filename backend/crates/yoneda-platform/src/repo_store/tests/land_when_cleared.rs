@@ -861,6 +861,29 @@ fn findings_only_show_with_the_option_off() {
     assert_eq!(change(&h, number)["status"], "landed");
 }
 
+/// Live, a passing Slop review left one low nit on a line and the Landing waited for nobody. An
+/// agent's say on a landing is its check; its findings stop one only when the owner asks.
+#[test]
+fn an_agents_finding_holds_nothing_with_the_option_off() {
+    let (h, _root, id, number) = cleared();
+    finding(&h, number, &id);
+    let answer = assess(&h, number);
+    assert_eq!(answer["state"], "cleared", "{answer}");
+    land(&h, number, &id).unwrap();
+    assert_eq!(change(&h, number)["status"], "landed");
+}
+
+/// With an agent's finding on the same line, a person's comment still needs an answer.
+#[test]
+fn a_persons_comment_holds_beside_an_agents_finding() {
+    let (h, _root, id, number) = cleared();
+    finding(&h, number, &id);
+    let comment = json!({"op":"repo_change_comment","number":number,"commit":id,
+        "path":"src/a.rs","line":1,"side":"new","body":"Not this"});
+    h.ok(OWNER, comment);
+    assert_eq!(waiting(&assess(&h, number)), ["COMMENTS"]);
+}
+
 #[test]
 fn a_failed_check_that_is_not_required_still_holds_it() {
     let (h, _root, id, number) = cleared();
