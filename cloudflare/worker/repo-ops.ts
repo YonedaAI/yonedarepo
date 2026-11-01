@@ -101,6 +101,7 @@ const KEEPS_REFS = new Set([
   'repo_hold_owner',
   'repo_audit_pending',
   'repo_audit_done',
+  'repo_audit_set_aside',
   'repo_refs',
   'repo_snapshot',
   'repo_log',

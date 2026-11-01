@@ -2,7 +2,8 @@
 //! `platform_accounts`) with accounts made before it, through the deployed platform's
 //! `POST /api/v1/admin/backfill` as the owner (OWNER_TOKEN from the env's secrets file), one
 //! page at a time until the last. Repeating it adds nothing. `admin erase-backfill` is in
-//! `erase_backfill`, `admin search-backfill` in `search_backfill`,
+//! `erase_backfill`, `admin audit-set-aside` in `audit_set_aside`,
+//! `admin search-backfill` in `search_backfill`,
 //! `admin revenue-rebuild` in `revenue_rebuild`, `admin internal` in `internal_accounts`,
 //! `admin newsletter-export` in `newsletter_export`.
 use crate::infra::inventory::{self, Deployable};
@@ -14,13 +15,14 @@ use std::time::Duration;
 pub(crate) async fn execute(args: &[String]) -> Result<()> {
     match args.get(1).map(String::as_str) {
         Some("backfill-accounts") => backfill(args).await,
+        Some("audit-set-aside") => crate::audit_set_aside::execute(args).await,
         Some("erase-backfill") => crate::erase_backfill::execute(args).await,
         Some("search-backfill") => crate::search_backfill::execute(args).await,
         Some("revenue-rebuild") => crate::revenue_rebuild::execute(args).await,
         Some("internal") => crate::internal_accounts::execute(args).await,
         Some("newsletter-export") => crate::newsletter_export::execute(args).await,
         _ => Err(
-            "cargo xtask admin backfill-accounts|erase-backfill|search-backfill|revenue-rebuild|internal|newsletter-export --env dev|prod"
+            "cargo xtask admin backfill-accounts|audit-set-aside|erase-backfill|search-backfill|revenue-rebuild|internal|newsletter-export --env dev|prod"
                 .into(),
         ),
     }

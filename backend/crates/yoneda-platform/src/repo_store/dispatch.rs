@@ -198,6 +198,7 @@ fn run<S: SqlStore>(
         R::HoldOwner => Ok(json!({ "owner": settings.workspace })),
         R::AuditPending => audit_outbox::pending(db, c, settings),
         R::AuditDone => audit_outbox::done(db, c),
+        R::AuditSetAside => audit_outbox::set_aside(db, c),
         R::ErasePlan => erase::plan(db, c, settings),
         R::EraseStep => erase::step(db, c, settings),
         // `enqueue`: a landing that needs a merge joins the branch's queue in this call.

@@ -77,7 +77,17 @@ Counted log events stay open for 20 hours after the last one, because some are l
 Both alerts are `AUDIT_LOG` on. The rule behind them: the erase stays blocked, whatever it takes, because erasing would lose the events. The mail changes who knows, not what happens.
 
 - **Held up.** Fix what `audit.repo_copy_failed` says, usually the `audit:<org>` instance. The job looks again every 5 minutes, carries on by itself, and the finding closes 20 hours after the last line.
-- **Can't be read.** Waiting won't help, and there's no operator tool yet. The row must be mended in that repository's database, keeping its `seq`, and then the next look moves it and what follows. Don't turn `AUDIT_LOG` off to get past it: with the switch off, the erase takes every waiting event with it.
+- **Can't be read.** Waiting won't help. Set the row aside:
+
+  1. `cargo xtask admin audit-set-aside --env <env> --repo <id> --seq <n> --dry-run`, with the repository and event from the mail. It changes nothing, and prints the row's kind and size and the exact command for step 2.
+  2. Run that command: `--confirm --bytes <n>`, the size from step 1. It needs `OWNER_TOKEN` in the env's secrets file.
+  3. Check `/orgs/<org>/audit` shows `Unreadable audit event set aside` in the row's place, with the events that were stuck behind it. A blocked erase carries on at its next look, within 5 minutes.
+
+  The row's bytes are gone for good, and nothing prints them, so what it recorded can't be recovered from here. Its kind and size stay in the org's log, and the operators' audit (`repo.audit_row_set_aside`) keeps every attempt, a refused one included. A person's repository has no org log, so that audit is its only record.
+
+  A healthy event is refused (409), so a wrong `--seq` does no harm. A repeat is safe, and says `already`, `absent` or `erased`. A second bad row names itself in the next alert and needs its own run. A legal hold refuses this (423): those bytes may be evidence, so release the hold first or leave it waiting. With `AUDIT_LOG` off it's refused too, as nothing would show the repair.
+
+  Don't turn `AUDIT_LOG` off to get past a bad row: with the switch off, the erase takes every waiting event with it.
 
 A finding spells out 3 rows and counts the rest. `GET /findings` shows the same; the rest are in the logs, one line per row per look. Only a repository id and an event number can reach a finding: nothing else on the line does.
 

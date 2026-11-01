@@ -34,6 +34,16 @@ const KINDS: &[(&str, &[(&str, Field)])] = &[
             ("before", Count),
         ],
     ),
+    (
+        "audit.row_set_aside",
+        &[
+            ("repo", Word),
+            ("name", Word),
+            ("row", Count),
+            ("of_kind", Word),
+            ("bytes", Count),
+        ],
+    ),
     ("org.created", &[("org", Word)]),
     ("org.deleted", &[("org", Word)]),
     (

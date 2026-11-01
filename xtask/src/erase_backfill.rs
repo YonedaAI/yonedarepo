@@ -19,7 +19,7 @@ const POLL: Duration = Duration::from_secs(5);
 /// Past this one erase stops the walk: its job keeps running, and a repeat finds it erased.
 const ERASE_POLLS: u32 = 360;
 
-fn option<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
+pub(crate) fn option<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
     args.windows(2)
         .find(|pair| pair[0] == name)
         .map(|pair| pair[1].as_str())

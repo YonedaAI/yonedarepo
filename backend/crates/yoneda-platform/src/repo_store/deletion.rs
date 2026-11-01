@@ -38,7 +38,8 @@ pub fn allowed_when_deleted(op: StoreOp, c: &Value, settings: &Settings) -> bool
             | RepoOp::HookClaim
             | RepoOp::HookSettle
             | RepoOp::AuditPending
-            | RepoOp::AuditDone,
+            | RepoOp::AuditDone
+            | RepoOp::AuditSetAside,
         ) => !settings.erased(),
         StoreOp::Repo(RepoOp::Restore) => !settings.purge_started(),
         StoreOp::Repo(RepoOp::Status)
@@ -65,7 +66,9 @@ pub fn tombstone_caller(op: StoreOp, c: &Value, actor: &Actor, settings: &Settin
     }
     let job = match op {
         StoreOp::Repo(RepoOp::HookClaim | RepoOp::HookSettle) => Some("hooks"),
-        StoreOp::Repo(RepoOp::AuditPending | RepoOp::AuditDone) => Some("audit"),
+        StoreOp::Repo(RepoOp::AuditPending | RepoOp::AuditDone | RepoOp::AuditSetAside) => {
+            Some("audit")
+        }
         StoreOp::Repo(RepoOp::ErasePlan | RepoOp::EraseStep) => Some("erase"),
         StoreOp::Repo(RepoOp::HoldOwner | RepoOp::Purged) => Some("system"),
         StoreOp::Repo(RepoOp::Restore) if !(actor.can("system") && c["check"] == true) => {
