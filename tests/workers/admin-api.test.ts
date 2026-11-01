@@ -6,6 +6,7 @@
 import { createExecutionContext } from 'cloudflare:test';
 import { expect, it, vi } from 'vitest';
 import { accountRoute } from '../../cloudflare/worker/accounts';
+import { forgetInternalAccounts } from '../../cloudflare/worker/internal-accounts';
 import { PlatformEntrypoint } from '../../cloudflare/worker/platform-entrypoint';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { touchActivity } from '../../cloudflare/worker/repo-activity';
@@ -283,9 +284,9 @@ it('reports site traffic to operators only, and says when it is not configured',
   const boss = await signup('boss');
   const user = await signup('plain_user');
   const target = operators();
-  expect((await api('/admin/traffic?days=7', { cookie: user }, {}, target)).status).toBe(403);
+  expect((await api('/admin/traffic?range=7d', { cookie: user }, {}, target)).status).toBe(403);
   // No account id, dataset or read token here.
-  const off = await api('/admin/traffic?days=30', { cookie: boss }, {}, target);
+  const off = await api('/admin/traffic?range=30d', { cookie: boss }, {}, target);
   expect([off.status, off.body]).toEqual([200, { ok: false, reason: 'not_configured' }]);
   const configured = operators({
     CF_ACCOUNT_ID: '0123456789abcdef0123456789abcdef',
@@ -297,15 +298,120 @@ it('reports site traffic to operators only, and says when it is not configured',
     sql.push(String(init?.body));
     return Response.json({ data: [] });
   });
-  const on = await api('/admin/traffic?days=7', { cookie: boss }, {}, configured);
+  const on = await api('/admin/traffic?range=7d', { cookie: boss }, {}, configured);
   expect(on.status).toBe(200);
   expect(on.body).toMatchObject({ ok: true, traffic: { days: 7, class: 'humans' } });
-  expect(sql.some((q) => q.includes("INTERVAL '7' DAY"))).toBe(true);
-  // Any other window answers 30 days.
-  expect((await api('/admin/traffic?days=9', { cookie: boss }, {}, configured)).body.traffic.days).toBe(30);
+  expect(sql.some((q) => q.includes('timestamp >= toDateTime('))).toBe(true);
+  // Any other range answers 30 days.
+  expect((await api('/admin/traffic?range=9d', { cookie: boss }, {}, configured)).body.traffic.days).toBe(30);
   // The tables follow the filter; anything else answers Humans.
-  const bots = await api('/admin/traffic?days=7&class=bots', { cookie: boss }, {}, configured);
+  const bots = await api('/admin/traffic?range=7d&class=bots', { cookie: boss }, {}, configured);
   expect(bots.body.traffic.class).toBe('bots');
-  const other = await api('/admin/traffic?days=7&class=x', { cookie: boss }, {}, configured);
+  const other = await api('/admin/traffic?range=7d&class=x', { cookie: boss }, {}, configured);
   expect(other.body.traffic.class).toBe('humans');
+});
+
+/** Operators' internal flag on `account`. */
+const markInternal = (account: string, internal: boolean, cookie: string, target: Env) =>
+  api(`/admin/accounts/${account}/internal`, { cookie }, { body: { internal } }, target);
+const counting = (extra: Partial<Env> = {}) => {
+  const points: AnalyticsEngineDataPoint[] = [];
+  const target = operators({
+    TRAFFIC_EVENTS: 'on',
+    TRAFFIC_REPORT: 'on',
+    SITE_EVENTS: { writeDataPoint: (p: AnalyticsEngineDataPoint) => points.push(p) },
+    ...extra,
+  } as unknown as Partial<Env>);
+  return { target, points };
+};
+
+it('flags an account as ours for operators only, with an audit row, and lists the flag', async () => {
+  forgetInternalAccounts();
+  const boss = await signup('boss');
+  const user = await signup('plain_user');
+  const target = operators();
+  expect((await markInternal('plain_user', true, user, target)).status).toBe(403);
+  const set = await markInternal('plain_user', true, boss, target);
+  expect([set.status, set.body]).toEqual([200, { account: 'plain_user', internal: true }]);
+  expect((await markInternal('nobody_here', true, boss, target)).status).toBe(404);
+  const detail = (await api('/admin/accounts/plain_user', { cookie: boss }, {}, target)).body;
+  expect(detail.internal).toBe(true);
+  const listed = (await api('/admin/accounts', { cookie: boss }, {}, target)).body.items;
+  expect(listed.map((a: any) => [a.account, a.internal])).toEqual(
+    expect.arrayContaining([
+      ['plain_user', true],
+      ['boss', false],
+    ]),
+  );
+  await markInternal('plain_user', false, boss, target);
+  expect((await audits()).filter((a) => a.target === 'plain_user')).toEqual([
+    { actor: 'boss', action: 'account.internal', target: 'plain_user' },
+    { actor: 'boss', action: 'account.not_internal', target: 'plain_user' },
+  ]);
+});
+
+it('leaves accounts that are ours out of the overview, with the switch on', async () => {
+  forgetInternalAccounts();
+  const boss = await signup('boss');
+  const team = await signup('team_member');
+  const created = await api('/repos', { cookie: team }, { body: { name: 'ours' } });
+  expect(created.status).toBeLessThan(300);
+  const on = operators({ TRAFFIC_REPORT: 'on' });
+  const off = operators();
+  await markInternal('team_member', true, boss, on);
+  const seen = async (target: Env) =>
+    (await api('/admin/overview', { cookie: boss }, {}, target)).body;
+  const out = await seen(on);
+  expect(out.accounts.total).toBe(1);
+  expect(out.accounts.new_7d).toBe(1);
+  expect(out.accounts.active_7d).toBeLessThanOrEqual(1);
+  expect(out.repos).toEqual({ public: 0, private: 0 });
+  expect(out.signups_per_day.at(-1).count).toBe(1);
+  // Off, the figures stay as they were: the flag only waits for the switch.
+  const same = await seen(off);
+  expect(same.accounts.total).toBe(2);
+  expect(same.repos.public + same.repos.private).toBe(1);
+});
+
+it('leaves no point for a request by an account that is ours, by token or by Git', async () => {
+  forgetInternalAccounts();
+  const boss = await signup('boss');
+  const team = await signup('team_member');
+  const theirs = await signup('customer');
+  const { target, points } = counting();
+  await markInternal('team_member', true, boss, target);
+  const teamToken = await token(team);
+  const theirToken = await token(theirs);
+  const asks = (bearer: string) => [
+    new Request('https://yoneda/api/v1/tokens/pat_missing', {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${bearer}` },
+    }),
+    new Request(`https://yoneda/git/r0123456789abcdef0123.git/git-upload-pack`, {
+      method: 'POST',
+      headers: { authorization: `Basic ${btoa(`x:${bearer}`)}` },
+    }),
+  ];
+  for (const req of asks(teamToken)) await platformFetch(req, target);
+  expect(points).toEqual([]);
+  for (const req of asks(theirToken)) await platformFetch(req, target);
+  expect(points.map((p) => [p.blobs?.[10], p.blobs?.[11]])).toEqual([
+    ['token', 'write'],
+    ['git', 'clone'],
+  ]);
+  for (const p of points) {
+    expect(['failed', 'unauthorized', 'success']).toContain(p.blobs?.[12]);
+    expect(p.doubles?.[5]).toEqual(expect.any(Number));
+  }
+  expect(JSON.stringify(points)).not.toContain('customer');
+});
+
+it('gives the front Worker the list on the entrypoint, on no HTTP route', async () => {
+  forgetInternalAccounts();
+  const boss = await signup('boss');
+  await signup('team_member');
+  const target = operators();
+  await markInternal('team_member', true, boss, target);
+  const entry = new PlatformEntrypoint(createExecutionContext(), target);
+  expect(await entry.internalAccounts()).toEqual(['team_member']);
 });

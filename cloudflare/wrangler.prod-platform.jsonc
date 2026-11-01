@@ -336,6 +336,7 @@
     "SSH_HOST": "ssh.yonedarepo.com",
     "SUPPORT_EMAIL": "support@yonedalabs.ai",
     "TRAFFIC_EVENTS": "off",
+    "TRAFFIC_REPORT": "off",
     "WEB_ORIGIN": "https://yonedarepo.com",
     "WORKERS_SUBDOMAIN": "mlong-f01"
   },

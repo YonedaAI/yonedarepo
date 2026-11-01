@@ -46,6 +46,9 @@ export const SITE_EVENT_CLASSED = 'double2';
 export const SITE_EVENT_WEIGHT = 'double3';
 export const SITE_EVENT_TOKEN = 'double4';
 export const SITE_EVENT_MARKED = 'double5';
+/** Platform points with TRAFFIC_REPORT on: milliseconds until the answer's headers. A streamed
+ * clone or push goes on after that. */
+export const SITE_EVENT_DURATION = 'double6';
 /** Our own tools send this, set to `1` (tools/own-traffic.mjs): they are not counted. It unlocks
  * nothing: anyone sending it only leaves the analytics. */
 export const OWN_TRAFFIC_HEADER = 'x-yoneda-own-traffic';
@@ -104,7 +107,7 @@ export function recordSignup(
   provider: SignupProvider,
   source: SignupSource | null,
 ) {
-  if (!env.SITE_EVENTS) return;
+  if (!env.SITE_EVENTS || isOwnTraffic(req)) return;
   const from = source ?? readSignupSource(null);
   writeSitePoint(env, 'signup', req, {
     path: '',

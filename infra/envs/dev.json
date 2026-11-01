@@ -210,6 +210,7 @@
           "ACCOUNT_SEARCH": "on",
           "AUDIT_LOG": "off",
           "TRAFFIC_EVENTS": "on",
+          "TRAFFIC_REPORT": "off",
           "REGION_SIGNALS": "off",
           "PUSH_BUNDLES": "on",
           "PACK_CACHE": "on",
@@ -741,6 +742,7 @@
         "vars": {
           "AUDIT_LOG": "off",
           "TRAFFIC_EVENTS": "on",
+          "TRAFFIC_REPORT": "off",
           "REGION_SIGNALS": "off",
           "PUBLIC_APP_ORIGIN": "{origin}",
           "WEB_ANALYTICS_TOKEN": "70b90cc7e849429fa25cc64897ebfd2b",

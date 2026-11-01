@@ -8,6 +8,7 @@ import { accountMcp } from './account-mcp';
 import { authenticate } from './auth';
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { error, readJson, response } from './http';
+import { noteAccount } from './internal-accounts';
 import { accountActivity } from './platform-account-activity';
 import { adminRoute } from './platform-admin';
 import { auditExport, auditExportOrg } from './platform-audit-export';
@@ -138,6 +139,12 @@ function authenticateOnce(req: Request, env: Env) {
 /** The caller of a platform request: a repository token, a personal access token (checked
  * with its account on every request), or a workspace session; null when none is valid. */
 export async function credentials(req: Request, env: Env): Promise<Credentials | null> {
+  const auth = await checkCredentials(req, env);
+  noteAccount(auth);
+  return auth;
+}
+
+async function checkCredentials(req: Request, env: Env): Promise<Credentials | null> {
   const bearer = req.headers.get('authorization');
   if (bearer?.startsWith('Bearer yrp_')) return { _token: bearer.slice(7) };
   if (bearer?.startsWith('Bearer ypat_')) {

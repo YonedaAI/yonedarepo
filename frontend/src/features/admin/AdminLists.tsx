@@ -21,10 +21,15 @@ import {
 } from './adminModel';
 
 function Status({ account }: { account: AdminAccount }) {
-  return account.suspended ? (
-    <span className="admin-status admin-status-suspended">Suspended</span>
-  ) : (
-    <span className="admin-status">Active</span>
+  return (
+    <>
+      {account.suspended ? (
+        <span className="admin-status admin-status-suspended">Suspended</span>
+      ) : (
+        <span className="admin-status">Active</span>
+      )}
+      {account.internal && <span className="admin-status">Internal</span>}
+    </>
   );
 }
 

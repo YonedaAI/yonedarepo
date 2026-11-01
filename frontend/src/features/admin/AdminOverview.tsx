@@ -3,9 +3,10 @@
 import type { Navigate } from '../shell/useRoute';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { useSource } from '../source-platform/useSource';
-import { DayChart } from './AdminParts';
 import { AdminRevenueSection } from './AdminRevenue';
 import type { Overview } from './adminModel';
+import { TimeChart } from './TimeChart';
+import { dayBars } from './trafficModel';
 
 export function AdminOverview({ navigate }: { navigate: Navigate }) {
   const overview = useSource<Overview>('/admin/overview');
@@ -35,11 +36,11 @@ export function AdminOverview({ navigate }: { navigate: Navigate }) {
           </li>
         ))}
       </ul>
-      <DayChart
+      <TimeChart
         id="admin-signups-chart"
         title="Sign-ups, last 30 days"
         unit="sign-ups"
-        days={days}
+        bars={dayBars(days)}
       />
       {overview.data.billing && <AdminRevenueSection navigate={navigate} />}
     </>

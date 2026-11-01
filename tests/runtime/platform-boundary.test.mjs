@@ -33,6 +33,8 @@ const neutral = new Set([
   './account-audit',
   // The site analytics data point layout (blob positions) the traffic queries read; imports only types.
   './site-events',
+  // Which accounts are ours, for both Workers' analytics; imports only types.
+  './internal-accounts',
   // Continent and region codes from `request.cf`; imports only types.
   './region',
   // A digest of an account or token; imports nothing.

@@ -3,7 +3,12 @@
 // visitors: nothing identifies a visitor, so none can be counted. Web Analytics' figures are
 // Cloudflare's own, from the beacon, shown beside them as a cross-check.
 
-export type TrafficWindow = 7 | 30;
+/** What the report covers, each ending now: 24 hours by the hour, 7 and 30 days by the day, 90
+ * days by the week. */
+export type TrafficRange = '24h' | '7d' | '30d' | '90d';
+export const TRAFFIC_RANGES: TrafficRange[] = ['24h', '7d', '30d', '90d'];
+export const RANGE_DAYS: Record<TrafficRange, number> = { '24h': 1, '7d': 7, '30d': 30, '90d': 90 };
+export type TrafficBucket = 'hour' | 'day' | 'week';
 
 /** Humans: browsers that ran a page's ping, signed in or not. Agents: self-identified AI user
  * agents on the site, and platform clients. Bots: everything else, with page requests no ping
@@ -13,6 +18,9 @@ export type TrafficClass = 'humans' | 'agents' | 'bots';
 export interface TrafficCount {
   key: string;
   count: number;
+  /** Some of this count stands for points never kept: ours (reads are 1 in 10) or Analytics
+   * Engine's own, when one index is busy. Shown with `≈`. */
+  estimated: boolean;
 }
 
 export interface TrafficCampaign {
@@ -20,6 +28,7 @@ export interface TrafficCampaign {
   utm_medium: string;
   utm_campaign: string;
   count: number;
+  estimated: boolean;
 }
 
 export interface TrafficSignupSource {
@@ -28,9 +37,10 @@ export interface TrafficSignupSource {
   utm_source: string;
   utm_campaign: string;
   count: number;
+  estimated: boolean;
 }
 
-/** Cloudflare Web Analytics over the report's window: bots left out by Cloudflare, and sampled. */
+/** Cloudflare Web Analytics over the report's range: bots left out by Cloudflare, and sampled. */
 export type WebAnalyticsCheck =
   | { ok: true; host: string; page_loads: number; visits: number }
   /** `not_configured`: the account id, site origin or read token is unset. `query_failed`: the
@@ -44,6 +54,7 @@ export interface TrafficClient {
   count: number;
   /** Those made with a token the platform accepted: the one solid signal here. */
   with_token: number;
+  estimated: boolean;
 }
 
 export interface TrafficHeadline {
@@ -56,11 +67,27 @@ export interface TrafficHeadline {
   /** Bot-flagged requests and page requests no ping confirmed, crawlers included. */
   bots: number;
   crawlers: number;
+  /** The classes whose figure is an estimate. */
+  estimated: TrafficClass[];
+}
+
+/** One bar of the chart. `start` and `end` are ISO times; the first week of 90 days is short. */
+export interface TrafficBucketCounts {
+  start: string;
+  end: string;
+  humans: number;
+  agents: number;
+  bots: number;
+  estimated: TrafficClass[];
 }
 
 export interface SiteTraffic {
-  /** The window of the headline, top lists and campaigns, in days. */
-  days: TrafficWindow;
+  /** The range every section covers. */
+  range: TrafficRange;
+  /** The ranges this platform offers. */
+  ranges: TrafficRange[];
+  /** The range in days. */
+  days: number;
   /** Whose top lists these are. */
   class: TrafficClass;
   /** The UTC day (`YYYY-MM-DD`) of the earliest classed point, null when there is none yet.
@@ -70,20 +97,25 @@ export interface SiteTraffic {
    * are unknown, not zero. */
   counting: boolean;
   headline: TrafficHeadline;
+  /** The same figures over the period just before, as long as this one. Null when that period
+   * wasn't all counted, or is past what's kept (three months). */
+  previous: TrafficHeadline | null;
   web_analytics: WebAnalyticsCheck;
-  /** Per UTC day over the last 30 days (`YYYY-MM-DD`), oldest first. */
-  by_day: { day: string; humans: number; agents: number; bots: number }[];
+  /** The size of `series`' bars. */
+  bucket: TrafficBucket;
+  /** Oldest first, with no gaps. */
+  series: TrafficBucketCounts[];
   top_pages: TrafficCount[];
   /** Referring sites by host; direct visits (no referrer) are left out. */
   top_referrers: TrafficCount[];
   /** ISO 3166 country codes as Cloudflare reports them. */
   countries: TrafficCount[];
-  /** Platform requests over the window. */
+  /** Platform requests over the range. */
   clients: TrafficClient[];
   /** From page requests that looked like browsers: a ping carries no campaign tags. */
   campaigns: TrafficCampaign[];
-  /** New accounts by provider and landing source over the last 7 and 30 days. */
-  signups: { last_7: TrafficSignupSource[]; last_30: TrafficSignupSource[] };
+  /** New accounts by provider and landing source. */
+  signups: TrafficSignupSource[];
 }
 
 export type SiteTrafficResult =

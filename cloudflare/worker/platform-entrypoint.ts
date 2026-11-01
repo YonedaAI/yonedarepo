@@ -6,6 +6,7 @@
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { AccountCreated } from './account-index';
 import { withWaitUntil } from './background';
+import { internalAccounts } from './internal-accounts';
 import { accountCreated, SIGNUP_NOTICE } from './platform-accounts';
 import { nightlyReconcile } from './platform-admin-billing';
 import { verifyEmail } from './platform-email-verify';
@@ -122,6 +123,11 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
    * this one can ask. */
   accountCreated(account: string, details?: AccountCreated) {
     return accountCreated(this.env, account, details);
+  }
+  /** The accounts that are ours (RPC from the front Worker, which has no D1), for leaving them
+   * out of the site's figures. */
+  async internalAccounts() {
+    return (await internalAccounts(this.env)) ?? [];
   }
   /** Settings' resend (no `change`) or address change for a signed-in account (RPC, as
    * above): a new confirmation token and email, or why not. */

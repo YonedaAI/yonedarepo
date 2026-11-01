@@ -3,18 +3,26 @@
 // Account Analytics Read token, as humans, agents and bots (platform-traffic-queries.ts). A page
 // request and its ping can't be joined, nothing identifies a visitor, so bots are page requests
 // less pings. Web Analytics' own numbers (platform-web-analytics.ts) come along as a cross-check.
-import type {
-  SiteTraffic,
-  SiteTrafficResult,
-  TrafficCampaign,
-  TrafficClass,
-  TrafficClient,
-  TrafficCount,
-  TrafficHeadline,
-  TrafficSignupSource,
-  TrafficWindow,
+import {
+  RANGE_DAYS,
+  type SiteTraffic,
+  type SiteTrafficResult,
+  TRAFFIC_RANGES,
+  type TrafficBucketCounts,
+  type TrafficCampaign,
+  type TrafficClass,
+  type TrafficClient,
+  type TrafficCount,
+  type TrafficHeadline,
+  type TrafficRange,
+  type TrafficSignupSource,
 } from '../../shared/site-traffic';
-import { type QueryName, trafficQueries } from './platform-traffic-queries';
+import {
+  type QueryName,
+  type TrafficSpan,
+  trafficQueries,
+  trafficSpan,
+} from './platform-traffic-queries';
 import { webAnalytics } from './platform-web-analytics';
 import type { Env } from './types';
 
@@ -28,19 +36,36 @@ type Row = Record<string, unknown>;
 export const trafficClass = (value: string | null): TrafficClass =>
   value === 'agents' || value === 'bots' ? value : 'humans';
 
-/** The Traffic page's report for the last `days` days (views by day always covers 30). */
+/** The ranges this platform offers. Without TRAFFIC_REPORT: today's two, with no comparison and
+ * a chart of 30 days. */
+const rangesOf = (env: Env): TrafficRange[] =>
+  env.TRAFFIC_REPORT === 'on' ? TRAFFIC_RANGES : ['7d', '30d'];
+
+/** The range from a query parameter; 30 days unless it names one offered here. */
+export const trafficRange = (env: Env, value: string | null): TrafficRange =>
+  rangesOf(env).find((range) => range === value) ?? '30d';
+
+/** The report a `GET traffic` asks for. */
+export const trafficReport = (env: Env, query: URLSearchParams) =>
+  siteTraffic(env, trafficRange(env, query.get('range')), trafficClass(query.get('class')));
+
+/** The Traffic page's report over `range`, ending `now`. */
 export async function siteTraffic(
   env: Env,
-  days: TrafficWindow,
+  range: TrafficRange,
   who: TrafficClass,
   fetcher: typeof fetch = fetch,
+  now = Date.now(),
 ): Promise<SiteTrafficResult> {
   const account = env.CF_ACCOUNT_ID ?? '';
   const dataset = env.SITE_EVENTS_DATASET ?? '';
   const token = env.ANALYTICS_READ_TOKEN ?? '';
   if (!ACCOUNT.test(account) || !DATASET.test(dataset) || !token)
     return { ok: false, reason: 'not_configured' };
-  const queries = trafficQueries(dataset, days, who);
+  const full = env.TRAFFIC_REPORT === 'on';
+  const span = trafficSpan(range, now);
+  const chart = full ? span : trafficSpan('30d', now);
+  const queries = trafficQueries(dataset, span, who, { chart, compare: full });
   const run = async (sql: string): Promise<Row[]> => {
     const response = await fetcher(
       `https://api.cloudflare.com/client/v4/accounts/${account}/analytics_engine/sql`,
@@ -53,33 +78,40 @@ export async function siteTraffic(
   };
   try {
     const names = Object.keys(queries) as QueryName[];
-    const answers = await Promise.all(names.map((name) => run(queries[name])));
+    const answers = await Promise.all(names.map((name) => run(queries[name] ?? '')));
     const rows = Object.fromEntries(names.map((name, i) => [name, answers[i]])) as Record<
-      QueryName,
+      Exclude<QueryName, 'previous'>,
       Row[]
-    >;
+    > & { previous?: Row[] };
+    const counted = classedAt(rows.classed_since[0]);
+    const days = RANGE_DAYS[range];
     // Web Analytics is the witness for Humans, so it only speaks for the time they were counted.
     const web_analytics = await webAnalytics(
       env,
       days,
       fetcher,
-      Date.now(),
-      classedAt(rows.classed_since[0]),
+      now,
+      Math.max(counted, span.start),
     );
+    const whole = span.previous_start !== null && counted > 0 && counted <= span.previous_start;
     const traffic: SiteTraffic = {
+      range,
+      ranges: rangesOf(env),
       days,
       class: who,
       classed_since: classedSince(rows.classed_since[0]),
       counting: env.TRAFFIC_EVENTS === 'on',
       headline: headline(rows.totals),
+      previous: rows.previous && whole ? headline(rows.previous) : null,
       web_analytics,
-      by_day: byDay(rows.by_day),
+      bucket: chart.bucket,
+      series: series(rows.series, chart),
       top_pages: rows.top_pages.map(count),
       top_referrers: rows.top_referrers.map(count),
       countries: rows.countries.map(count),
       clients: rows.clients.map(client),
       campaigns: rows.campaigns.map(campaign),
-      signups: { last_7: rows.signups_7.map(signup), last_30: rows.signups_30.map(signup) },
+      signups: rows.signups.map(signup),
     };
     return { ok: true, traffic };
   } catch (e) {
@@ -106,12 +138,18 @@ const classedAt = (r: Row | undefined) => {
   const at = Date.parse(`${text(r?.since).replace(' ', 'T')}Z`);
   return classedSince(r) && Number.isFinite(at) ? at : 0;
 };
-const count = (r: Row): TrafficCount => ({ key: text(r.key), count: num(r.count) });
+const estimated = (r: Row) => num(r.sampling) > 1;
+const count = (r: Row): TrafficCount => ({
+  key: text(r.key),
+  count: num(r.count),
+  estimated: estimated(r),
+});
 const client = (r: Row): TrafficClient => ({
   client: text(r.client),
   operation: text(r.operation),
   count: num(r.count),
   with_token: num(r.with_token),
+  estimated: estimated(r),
 });
 
 /** Folds rows of event, class and count. Signed-out pings confirm page requests, so they leave
@@ -120,8 +158,16 @@ function headline(rows: Row[]): TrafficHeadline {
   const sum = (test: (r: Row) => boolean) =>
     rows.filter(test).reduce((total, r) => total + num(r.count), 0);
   const page = (r: Row) => r.event === 'pageview';
-  const humans = sum((r) => r.event === 'ping');
-  const humans_signed_in = sum((r) => r.event === 'ping' && r.class === 'signed_in');
+  const pings = (r: Row) => r.event === 'ping';
+  const agents = (r: Row) => r.event === 'client' || (page(r) && r.class === 'agent');
+  const others = (r: Row) => (page(r) && r.class !== 'agent') || (pings(r) && r.class === 'human');
+  const humans = sum(pings);
+  const humans_signed_in = sum((r) => pings(r) && r.class === 'signed_in');
+  const classes: [TrafficClass, (r: Row) => boolean][] = [
+    ['humans', pings],
+    ['agents', agents],
+    ['bots', others],
+  ];
   return {
     humans,
     humans_signed_in,
@@ -129,14 +175,31 @@ function headline(rows: Row[]): TrafficHeadline {
     agents_platform: sum((r) => r.event === 'client'),
     bots: Math.max(sum((r) => page(r) && r.class !== 'agent') - (humans - humans_signed_in), 0),
     crawlers: sum((r) => page(r) && r.class === 'crawler'),
+    estimated: classes
+      .filter(([, test]) => rows.some((r) => test(r) && estimated(r)))
+      .map(([name]) => name),
   };
 }
 
-function byDay(rows: Row[]) {
-  const days = [...new Set(rows.map((r) => text(r.day)))].sort();
-  return days.map((day) => {
-    const h = headline(rows.filter((r) => r.day === day));
-    return { day, humans: h.humans, agents: h.agents_site + h.agents_platform, bots: h.bots };
+/** Rows by hour or day, folded into `span`'s bars, counted back from its end. */
+function series(rows: Row[], span: TrafficSpan): TrafficBucketCounts[] {
+  const bars = Array.from({ length: span.buckets }, () => [] as Row[]);
+  const last = span.buckets - 1;
+  for (const r of rows) {
+    const at = Date.parse(`${text(r.bucket)}:00:00Z`);
+    bars[last - Math.floor((span.close - 1 - at) / span.bucket_ms)]?.push(r);
+  }
+  return bars.map((bar, i) => {
+    const end = span.close - (last - i) * span.bucket_ms;
+    const h = headline(bar);
+    return {
+      start: new Date(Math.max(end - span.bucket_ms, span.start)).toISOString(),
+      end: new Date(end).toISOString(),
+      humans: h.humans,
+      agents: h.agents_site + h.agents_platform,
+      bots: h.bots,
+      estimated: h.estimated,
+    };
   });
 }
 
@@ -145,6 +208,7 @@ const campaign = (r: Row): TrafficCampaign => ({
   utm_medium: text(r.utm_medium),
   utm_campaign: text(r.utm_campaign),
   count: num(r.count),
+  estimated: estimated(r),
 });
 const signup = (r: Row): TrafficSignupSource => ({
   provider: text(r.provider),
@@ -152,4 +216,5 @@ const signup = (r: Row): TrafficSignupSource => ({
   utm_source: text(r.utm_source),
   utm_campaign: text(r.utm_campaign),
   count: num(r.count),
+  estimated: estimated(r),
 });

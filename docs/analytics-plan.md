@@ -2,7 +2,7 @@
 
 To save as `docs/analytics-plan.md`.
 
-Status: plan, not built. Written 2026-10-31 at dev `4755d9c1`.
+Status: Phase 1 built behind `TRAFFIC_REPORT`, off. The rest is plan. Written 2026-10-31 at dev `4755d9c1`.
 
 ## What this answers
 

@@ -108,6 +108,7 @@ export function AdminUser({
         ) : (
           <span className="admin-status">Active</span>
         )}
+        {a.internal && <span className="admin-status">Internal</span>}
       </div>
       {done && (
         <p role="status" className="admin-done">
