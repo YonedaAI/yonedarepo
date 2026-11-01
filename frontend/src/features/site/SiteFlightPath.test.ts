@@ -43,11 +43,10 @@ describe('the Flight Path picture', () => {
     }
   });
 
-  it('marks what is not on prod yet, and the whole picture as an example', () => {
+  it('calls the whole picture an example, in plain words', () => {
     expect(text).toContain('Example');
-    const soon = FIXES.filter((fix) => fix.soon).map((fix) => fix.name);
-    expect(soon).toEqual(['Flight plan']);
-    expect(text.match(/Soon/g)).toHaveLength(2);
+    expect(text).not.toMatch(/\bsoon\b/i);
+    expect(text).not.toMatch(/src\/|\bdiff\b|\bcommits?\b/i);
   });
 
   it('hides every drawing from screen readers and says no measurement', () => {

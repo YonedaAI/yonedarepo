@@ -151,10 +151,7 @@ export function FlightInstruments() {
             {FACES[dial.id]}
           </svg>
           <div>
-            <p className="fp-dial-name">
-              {dial.name}
-              {dial.id === 'drift' && <span className="site-badge">Soon</span>}
-            </p>
+            <p className="fp-dial-name">{dial.name}</p>
             <p className="fp-dial-value">{dial.value}</p>
             <p className="fp-dial-detail">{dial.detail}</p>
           </div>

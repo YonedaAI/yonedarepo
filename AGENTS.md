@@ -83,6 +83,7 @@ Words
 - Show a requirement only when it applies to this viewer and this repository. A public clone says nothing about tokens.
 - Hints put the link first, then the action: `Settings → SSH keys: run yoneda ssh setup once.`
 - No product internals, setup steps or caveats in the main flow. If a note doesn't change what the reader does next, cut it.
+- Public pages have no "Soon" or "Coming" tags, file paths, code terms or made-up metrics. An example reads in plain words.
 
 Empty, loading and error states
 - Nothing there: the shared empty state. A centred title (`No sessions yet`), one or two plain sentences on how the first one appears, at most one action. No box, dashed border, command syntax, MCP names or list of tools.

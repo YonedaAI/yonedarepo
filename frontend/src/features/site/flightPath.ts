@@ -1,22 +1,21 @@
 // The home page's Flight Path picture: one example Landing's words and the route's geometry.
 // Everything here is a made-up example of the idea, not a real repository or a measurement.
 
-/** A fix on the route, in flying order. `soon` marks what isn't on prod yet. */
+/** A fix on the route, in flying order. */
 export type Fix = {
   id: 'plan' | 'takeoff' | 'route' | 'instruments' | 'go-around' | 'cleared' | 'landed';
   name: string;
   detail: string;
-  soon?: boolean;
 };
 
-export const LANDING = 'Landing 42: rate limit the API';
+export const LANDING = 'Landing 42: search by date';
 
 export const FIXES: Fix[] = [
-  { id: 'plan', name: 'Flight plan', detail: 'Rate limit the API in src/api', soon: true },
-  { id: 'takeoff', name: 'Takeoff', detail: 'Session starts with context' },
-  { id: 'route', name: 'Route', detail: '4 commits, 3 memories used' },
-  { id: 'instruments', name: 'Instruments', detail: 'Read on every push' },
-  { id: 'go-around', name: 'Go-around', detail: 'Findings went back, the agent pushed again' },
+  { id: 'plan', name: 'Flight plan', detail: 'What the agent set out to do' },
+  { id: 'takeoff', name: 'Takeoff', detail: 'Starts with what it needs to know' },
+  { id: 'route', name: 'Route', detail: 'What it read and changed' },
+  { id: 'instruments', name: 'Instruments', detail: 'Checked on every push' },
+  { id: 'go-around', name: 'Go-around', detail: 'Sent back, fixed, tried again' },
   { id: 'cleared', name: 'Cleared to land', detail: 'Checks passed, approved' },
   { id: 'landed', name: 'Landed', detail: 'On main, in order' },
 ];
@@ -24,9 +23,9 @@ export const FIXES: Fix[] = [
 export type Dial = { id: 'risk' | 'slop' | 'drift'; name: string; value: string; detail: string };
 
 export const DIALS: Dial[] = [
-  { id: 'risk', name: 'Risk', value: 'Low', detail: 'Small logic change' },
-  { id: 'slop', name: 'Slop', value: 'Low', detail: 'Down over 5 pushes' },
-  { id: 'drift', name: 'Intent drift', value: 'On course', detail: 'Diff matches the plan' },
+  { id: 'risk', name: 'Risk', value: 'Low', detail: 'A small change' },
+  { id: 'slop', name: 'Slop', value: 'Low', detail: 'Getting cleaner' },
+  { id: 'drift', name: 'Intent drift', value: 'On course', detail: 'Matches the plan' },
 ];
 
 export const CHECKS = ['Tests', 'Code review', 'Security review'];
@@ -35,7 +34,7 @@ export const APPROVAL = '1 of 1';
 
 export const AHEAD = 'Landing 41 went first';
 
-export const BLACK_BOX = 'Black box: the session transcript and context are kept.';
+export const BLACK_BOX = 'Black box: the full session is kept.';
 
 /** One drawing of the route: the wide profile or the phone's rail. */
 export type RouteShape = {
