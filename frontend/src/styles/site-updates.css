@@ -72,7 +72,8 @@
 }
 .site-updates-body {
   position: relative;
-  width: min(100%, 460px);
+  /* Wide enough for the longest heading on one line; the form keeps its own measure. */
+  width: min(100%, 560px);
   text-align: center;
 }
 .site-updates h1 {
@@ -100,6 +101,8 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--sp-3) var(--sp-2);
+  max-width: 460px;
+  margin: 0 auto;
   text-align: left;
 }
 .site-updates-form > input {
