@@ -8,7 +8,7 @@ One Landing through every step, on dev, with the real API, CLI, Git and browser.
 | Real agent | `node tools/staging-realworld.mjs --only 0,12,45,17 --yes` (item 45) | A model's quota |
 | What the kit can't force | `pnpm exec vitest run --config tests/workers/vitest.config.ts tests/workers/repo-flight-failures.test.ts` | Free |
 
-**Result, 2026-10-31 on dev `56338b40`: all 12 legs and all 10 failure cases pass, scripted and with a real agent.** The live run found no new product bug; 5 were found by reading the code first and fixed before it. Evidence: `.local/staging/feature-gate-1793502289532.json` (43), `feature-gate-1793502983913.json` and `flight-agent-1793502872961/` (45).
+**Result, 2026-10-31 on dev `56338b40`: all 12 legs pass, scripted and with a real agent, and all 10 failure cases pass, 8 live and 2 in `tests/workers`.** The live run found no new product bug; 5 were found by reading the code first and fixed before it. Evidence: `.local/staging/feature-gate-1793502289532.json` (43), `feature-gate-1793503271690.json` (44), `feature-gate-1793502983913.json` and `flight-agent-1793502872961/` (45).
 
 Needs `LAND_WHEN_CLEARED=on` and `LANDING_INSTRUMENTS=on` on the platform Worker, `0045` applied, and the harness image rolled for Intent drift. A second live run evicts this one's session, so run it alone. Each test repository sets its own `auto_landings` switches and is deleted by item 17.
 
