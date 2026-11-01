@@ -1,5 +1,7 @@
 // Browser client for the public platform API (`/api/v1`), authenticated by the
 // workspace session cookie. The UI holds no authority: every decision is the server's.
+import { atLatestLanding, noteLanding } from './landedReads';
+
 export class SourceApiError extends Error {
   constructor(
     readonly code: string,
@@ -66,10 +68,11 @@ export async function sourceApi<T = any>(path: string, init: ApiInit = {}): Prom
   const base = init.base ?? '/api/v1';
   const method = init.method ?? (init.body === undefined ? 'GET' : 'POST');
   const retries = method === 'GET' && !init.once ? RETRY_DELAYS_MS.length : 0;
+  const url = method === 'GET' ? atLatestLanding(path) : path;
   for (let attempt = 0; ; attempt++) {
     let response: Response;
     try {
-      response = await fetch(`${base}${path}`, {
+      response = await fetch(`${base}${url}`, {
         method,
         headers: { 'content-type': 'application/json' },
         body: init.body === undefined ? undefined : JSON.stringify(init.body),
@@ -85,10 +88,15 @@ export async function sourceApi<T = any>(path: string, init: ApiInit = {}): Prom
       continue;
     }
     const value = await response.json().catch(() => ({}));
-    if (response.ok) return value as T;
+    if (response.ok) {
+      noteLanding(path, method, value);
+      return value as T;
+    }
     // 507 is the platform's own refusal (a repository at its limit), not a fault.
     const fault = response.status >= 500 && response.status !== 507;
-    if (fault && attempt < retries) {
+    // Main has not reached a named landing yet: it will.
+    const early = value.error?.code === 'STALE_READ';
+    if ((fault || early) && attempt < retries) {
       await wait(RETRY_DELAYS_MS[attempt] ?? 0, init.signal);
       continue;
     }
