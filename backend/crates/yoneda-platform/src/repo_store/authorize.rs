@@ -179,6 +179,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::HoldOwner
         | R::GitAccess
         | R::GitWalk
+        | R::Insights
         | R::HookClaim
         | R::HookSettle
         | R::HooksFanout

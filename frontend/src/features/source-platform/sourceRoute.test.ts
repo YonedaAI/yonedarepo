@@ -38,6 +38,7 @@ describe('source routes', () => {
       { view: 'commit', repo, commit: sha },
       { view: 'transactions', repo },
       { view: 'tower', repo },
+      { view: 'insights', repo },
       { view: 'search', repo, query: 'retry with' },
       { view: 'search', repo, query: 'test', word: true },
       { view: 'overview', repo, path: '', ref: 'main' },

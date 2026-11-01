@@ -420,4 +420,10 @@ describe('icon rail', () => {
     expect(active({ view: 'search', repo: a, query: '' })).toEqual([]);
     expect(active(home)).toEqual(['Browse']);
   });
+
+  it('lists Insights only where repositories are counted', () => {
+    const route: SourceRoute = { view: 'changes', repo: a };
+    expect(sidebar({ route, repoName: 'mine' })).not.toContain('Insights');
+    expect(sidebar({ route, repoName: 'mine', insights: true })).toContain('Insights');
+  });
 });

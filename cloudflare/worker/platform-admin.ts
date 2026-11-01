@@ -34,6 +34,7 @@ import { currentHold } from './platform-legal-hold';
 import { exportSubscribers, subscriberCount } from './platform-newsletter';
 import { orgArg } from './platform-orgs';
 import { purgeOrphan } from './platform-orphan-purge';
+import { landingReport, repoUsageReport } from './platform-repo-reports';
 import { trafficReport } from './platform-site-traffic';
 import { rebuildDeleted } from './repo-deleted';
 import { backfillObject } from './repo-erase';
@@ -84,6 +85,7 @@ export async function adminRoute(
   if (section === 'signups' && !id && get) return signups(env, query.get('since'));
   if (section === 'audit' && !id && get) return auditLog(env, query.get('before'));
   if (section === 'traffic' && !id && get) return trafficReport(env, query);
+  if (section === 'traffic' && id === 'landings' && get) return landingReport(env, query);
   if (section === 'backfill' && !id && post) {
     const after = (await body().catch(() => ({}) as Json)).after;
     const done = await backfillAccounts(env, typeof after === 'string' ? after : '');
@@ -119,6 +121,7 @@ export async function adminRoute(
   if (section === 'orgs' && id && hold) return operatorOrgHold(env, actor, orgArg(id), method);
   if (section === 'repos' && !id && get) return listRepos(env, query.get('q'), query.get('before'));
   if (section === 'repos' && id === 'largest' && !action && get) return largestRepos(env);
+  if (section === 'repos' && id === 'usage' && !action && get) return repoUsageReport(env, query);
   if (section === 'repos' && id) {
     if (!/^r[0-9a-f]{20}$/.test(id)) throw new ApiError('NOT_FOUND', 'Unknown repository');
     if (!action && get) return repoDetail(env, id);

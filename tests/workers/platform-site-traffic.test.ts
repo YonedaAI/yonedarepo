@@ -192,6 +192,7 @@ it('runs every query with the read token and folds humans, agents and bots', asy
     class: 'humans',
     classed_since: '2026-11-02',
     counting: true,
+      repo_analytics: false,
     // 55 unconfirmed + 30 bot + 7 crawler, less the 40 signed-out pings that confirmed some.
     headline: {
       humans: 46,

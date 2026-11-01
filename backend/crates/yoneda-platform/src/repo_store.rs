@@ -66,6 +66,7 @@ mod hook_delivery;
 mod hook_events;
 mod hook_url;
 mod hooks;
+mod insights;
 mod land;
 mod land_batch;
 mod land_gates;

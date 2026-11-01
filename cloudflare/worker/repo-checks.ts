@@ -8,6 +8,7 @@ import type { CheckJob } from './check-container';
 import { capacityUnavailable } from './container-capacity';
 import { transient } from './durable';
 import { log, warned } from './log';
+import { recordJob } from './platform-client-events';
 import { replay } from './repo-commit';
 import { dispatchHooks } from './repo-hooks';
 import { modelCheck } from './repo-model-check';
@@ -173,6 +174,11 @@ async function settle(env: Env, report: CheckReport, outcome: string, evidence: 
   const { repo, run } = report;
   try {
     const completed = await complete(env, report, outcome, evidence);
+    await recordJob(env, repo, {
+      operation: 'write',
+      detail: `check:${outcome}`,
+      ms: Number(evidence.duration_ms ?? 0) || 0,
+    });
     if (completed.hooks)
       await dispatchHooks(env, repo).catch(warned('hooks.dispatch_failed', { repo }));
     await proposeRepairs(env, repo, run, completed.repair ?? []);

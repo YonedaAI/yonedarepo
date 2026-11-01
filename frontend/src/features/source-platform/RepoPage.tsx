@@ -19,6 +19,7 @@ import { RepoChanges } from './RepoChanges';
 import { RepoContext } from './RepoContext';
 import { RepoCtc } from './RepoCtc';
 import { RepoFiles } from './RepoFiles';
+import { RepoInsights } from './RepoInsights';
 import { RepoNotFound, repoMissing, useRepoGone } from './RepoNotFound';
 import { RepoOverview } from './RepoOverview';
 import { RepoReleases } from './RepoReleases';
@@ -34,6 +35,9 @@ import { useHistoryFill, useImportProgress } from './useImportProgress';
 import { useSource } from './useSource';
 
 type RepoRoute = Extract<SourceRoute, { repo: string }>;
+
+/** What the shell keeps of the open repository. */
+export type ShownRepo = { repo: string; name: string; settings: boolean; insights: boolean };
 
 export function RepoPage({
   route,
@@ -60,15 +64,12 @@ export function RepoPage({
   onSignIn?: () => void;
   /** The loaded name and visibility, and whether the viewer may change settings, for the
    * shell's header and sidebar. */
-  onLoaded?: (repo: {
-    repo: string;
-    name: string;
-    visibility: Visibility;
-    settings: boolean;
-  }) => void;
+  onLoaded?: (repo: ShownRepo & { visibility: Visibility }) => void;
 }) {
   const repo = route.repo;
-  const status = useSource<RepoStatus & { owner_handle?: string | null }>(`/repos/${repo}`);
+  const status = useSource<RepoStatus & { owner_handle?: string | null; insights?: boolean }>(
+    `/repos/${repo}`,
+  );
   // Its readable address (`/<handle>/<name>`): the status names the owner's handle (null
   // while an email-named owner has none: the id address keeps working).
   if (status.data) rememberRepoName(repo, status.data.owner_handle, status.data.name);
@@ -95,6 +96,7 @@ export function RepoPage({
         name: data.name,
         visibility: data.visibility ?? 'private',
         settings: owner,
+        insights: data.insights === true,
       });
   }, [data, repo, owner, onLoaded]);
   if (missing)
@@ -219,6 +221,7 @@ export function RepoPage({
                   onOpen={(number) => navigate({ view: 'change', repo, number })}
                 />
               )}
+              {route.view === 'insights' && <RepoInsights repo={repo} />}
               {route.view === 'agents' && (
                 <RepoAgents
                   repo={repo}

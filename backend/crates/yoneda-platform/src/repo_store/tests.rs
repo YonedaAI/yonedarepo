@@ -1687,6 +1687,7 @@ mod git_shallow;
 mod go_around;
 mod history_fill;
 mod hooks;
+mod insights;
 mod land_cas;
 mod land_shapes;
 mod land_when_cleared;

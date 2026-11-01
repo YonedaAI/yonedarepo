@@ -71,6 +71,32 @@ Agree these before the first run. They are starting targets, not commitments.
 | Land p95, 1,000-writer burst, on against off | At most 5% worse, 3 runs each |
 | Failed or missing binding | No response changes |
 
+## Repository analytics budget
+
+`REPO_ANALYTICS` adds the repository, bytes, duration and a landing's outcome to the points we already write, and opens the repository Insights page and the admin landings and repository reports. Off by default, and it needs `TRAFFIC_EVENTS` and `TRAFFIC_REPORT` on. Written before the code. Measure on against off before either environment turns it on.
+
+| Measure | Target |
+|---|---|
+| Points per request | At most 1: the request's own client point carries the new fields. A landing from a browser session has no client point, so it writes its one. With `REGION_SIGNALS` on, 1 write in 10 has a second, its own, as today |
+| Points per job | 1 when a check run finishes, and 1 when the clearance job lands or fails to |
+| Points written in a transaction | 0: all after the answer |
+| Subrequests added to a request | 0 |
+| Authority or D1 reads added to a request | 0 |
+| Awaits added before the response | 0 |
+| Switch off | A switch check where a note would go, and the point is byte for byte today's |
+| CPU added per request, on | Under 50 µs |
+| A clone's bytes | From the pack tally already kept. Nothing is added between R2 and the client: a stored pack stays piped with no JavaScript |
+| A clone's point | Written when the last byte has gone, inside `waitUntil`, once. A cancelled clone still writes it |
+| D1 reads per check run | 1 after it finished: an account that's ours leaves no point |
+| Insights view | 1 authority read, every view, which decides access; then at most 1 SQL API statement per isolate, repository and range every 5 minutes |
+| Contributors | At most the newest 5,000 commits and 5,000 changesets read |
+| Admin landing report | 2 SQL API statements, read only while the Traffic page is open |
+| Admin repository report | 2 SQL API statements and 1 D1 read |
+| Land p95, 1,000-writer burst, on against off | At most 5% worse, 3 runs each |
+| Clone time, largest stored pack, on against off | At most 1% worse, 3 runs each |
+| Worker Wasm | Under 10 KB more. No new dependency |
+| Failed or missing binding | No response changes |
+
 ## Region signals budget
 
 `platform-write-origin.ts` samples where writes come from, behind `REGION_SIGNALS` (global regions stage R1). Written before the code. Measure on against off before either environment turns it on.
