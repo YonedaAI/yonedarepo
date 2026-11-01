@@ -47,7 +47,8 @@ const neutral = new Set([
   '../../shared/service-levels',
   // The Insights page's and admin reports' wire shapes; types only.
   '../../shared/repo-insights',
-  // The admin Operations, Infrastructure and Visitors tabs' wire shapes; types only.
+  // The admin Operations, Infrastructure, Visitors and Agents tabs' wire shapes and the clients
+  // an agent can name; imports only types.
   '../../shared/platform-reports',
   // Token scope names, generated from Rust; types only.
   '../../shared/contracts/pat-scopes',

@@ -1,4 +1,4 @@
-// The Operations, Infrastructure and Visitors tabs as the server would render them: full, each
+// The Operations, Infrastructure, Visitors and Agents tabs as the server would render them: full, each
 // empty, loading and failed state, and that a section that failed leaves the others.
 import { createElement, type FunctionComponent } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -14,6 +14,7 @@ vi.mock('../source-platform/useSource', () => ({
 
 const { AdminInfrastructure, AdminOperations } = await import('./AdminOperations');
 const { AdminVisitors } = await import('./AdminVisitors');
+const { AdminAgents } = await import('./AdminAgents');
 
 const loaded = (data: unknown) => ({ data, loading: false, reload: () => {} });
 const render = (page: FunctionComponent) => renderToStaticMarkup(createElement(page));
@@ -27,9 +28,10 @@ it.each([
   [AdminOperations, 'Loading operations'],
   [AdminInfrastructure, 'Loading infrastructure'],
   [AdminVisitors, 'Loading visitors'],
+  [AdminAgents, 'Loading agents'],
 ])('says it is loading', (page, words) => expect(render(page)).toContain(words));
 
-it.each([[AdminOperations], [AdminInfrastructure], [AdminVisitors]])(
+it.each([[AdminOperations], [AdminInfrastructure], [AdminVisitors], [AdminAgents]])(
   'offers a way out of a failed read',
   (page) => {
     state.value = { error: 'Nope', loading: false, reload: () => {} };
@@ -37,7 +39,7 @@ it.each([[AdminOperations], [AdminInfrastructure], [AdminVisitors]])(
   },
 );
 
-it.each([[AdminOperations], [AdminInfrastructure], [AdminVisitors]])(
+it.each([[AdminOperations], [AdminInfrastructure], [AdminVisitors], [AdminAgents]])(
   'says so where it is not set up',
   (page) => {
     state.value = loaded({ ok: false, reason: 'not_configured' });
@@ -151,5 +153,96 @@ it('shows the way from a visit to a landing, and what sources became', () => {
   });
   const html = render(AdminVisitors);
   for (const words of ['Signed up', '20%', '1 of 4 accounts', 'launch, 1 made a repository'])
+    expect(html).toContain(words);
+});
+
+const agents = {
+  range: '7d',
+  credentials: 0,
+  sessions: 0,
+  repositories: 0,
+  organizations: 0,
+  concurrency: 0,
+  reads: 0,
+  writes: 0,
+  mcp_calls: 0,
+  landings: 0,
+  landings_refused: 0,
+  landings_failed: 0,
+  failures: 0,
+  unauthorized: 0,
+  rate_limited: 0,
+  success_rate: null,
+  retry_rate: null,
+  estimated: false,
+  bucket: 'day',
+  series: [],
+  clients: [],
+};
+
+it('shows the shared empty state with no agents, and no table of zeros', () => {
+  state.value = loaded({ ok: true, report: agents });
+  const html = render(AdminAgents);
+  expect(html).toContain('No agents in this range');
+  expect(html).not.toContain('stat-card');
+  expect(html).not.toContain('<table');
+  expect(state.paths).toEqual(['/admin/agents?range=7d']);
+});
+
+it('leads with credentials, labels client names as self-reported, and marks an estimate', () => {
+  state.value = loaded({
+    ok: true,
+    report: {
+      ...agents,
+      credentials: 12,
+      sessions: 40,
+      repositories: 7,
+      organizations: 2,
+      concurrency: 5,
+      reads: 900,
+      writes: 80,
+      mcp_calls: 60,
+      landings: 30,
+      landings_refused: 8,
+      landings_failed: 2,
+      failures: 15,
+      unauthorized: 3,
+      rate_limited: 1,
+      success_rate: 0.75,
+      retry_rate: 1.25,
+      estimated: true,
+      series: [
+        { start: '2026-11-01T00:00:00.000Z', end: '2026-11-02T00:00:00.000Z', credentials: 3 },
+      ],
+      clients: [
+        { client: 'claude', credentials: 8, requests: 700, landings: 20, estimated: true },
+        { client: '', credentials: 4, requests: 40, landings: 0, estimated: true },
+      ],
+    },
+  });
+  const html = render(AdminAgents);
+  // A credential active on two days is one credential: its bars don't add up to a total.
+  expect(html).not.toContain('home-total');
+  for (const words of [
+    'Active credentials',
+    '≈12',
+    'Sessions',
+    'Repositories reached',
+    'Organizations',
+    'Reads',
+    'Writes',
+    'MCP calls',
+    'Landings',
+    '≈8 refused, ≈2 failed',
+    'Failures',
+    'Success rate',
+    '75%',
+    'Retry rate',
+    '125%',
+    'Peak concurrency',
+    'Clients, self-reported',
+    'Claude Code',
+    'Not named',
+  ])
     expect(html).toContain(words);
 });

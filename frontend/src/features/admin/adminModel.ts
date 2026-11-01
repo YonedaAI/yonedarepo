@@ -11,6 +11,7 @@ export const ADMIN_SECTIONS = [
   'audit',
   'traffic',
   'visitors',
+  'agents',
   'operations',
   'infrastructure',
 ] as const;
@@ -25,6 +26,7 @@ export const SECTION_LABEL: Record<AdminSection, string> = {
   audit: 'Audit log',
   traffic: 'Traffic',
   visitors: 'Visitors',
+  agents: 'Agents',
   operations: 'Operations',
   infrastructure: 'Infrastructure',
 };
@@ -33,9 +35,11 @@ export const shownSections = (reports?: AdminReports) =>
   ADMIN_SECTIONS.filter((id) =>
     id === 'visitors'
       ? reports?.visitors
-      : id === 'operations' || id === 'infrastructure'
-        ? reports?.operations
-        : true,
+      : id === 'agents'
+        ? reports?.agents
+        : id === 'operations' || id === 'infrastructure'
+          ? reports?.operations
+          : true,
   );
 
 export type Overview = {

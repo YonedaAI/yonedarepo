@@ -73,6 +73,9 @@ it('puts the filters and the view on the address', () => {
 
 it('offers a tab only where it exists', () => {
   expect(shownSections()).not.toContain('operations');
-  expect(shownSections({ operations: true, visitors: false })).toContain('infrastructure');
-  expect(shownSections({ operations: false, visitors: true })).toContain('visitors');
+  const none = { operations: false, visitors: false, agents: false };
+  expect(shownSections({ ...none, operations: true })).toContain('infrastructure');
+  expect(shownSections({ ...none, visitors: true })).toContain('visitors');
+  expect(shownSections(none)).not.toContain('agents');
+  expect(shownSections({ ...none, agents: true })).toContain('agents');
 });

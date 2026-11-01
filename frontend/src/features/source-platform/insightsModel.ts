@@ -12,11 +12,13 @@ export const insightsPath = (repo: string, range: string) =>
 
 const WHO: Record<string, string> = {
   person: 'People in the browser',
-  token: 'Tokens and agents',
+  agent: 'Agents',
   anonymous: 'Signed out',
   platform: 'The platform',
 };
-export const whoLabel = (key: string) => WHO[key] ?? 'Tokens and agents';
+/** With agents counted apart (`separated`), a token is no longer possibly one of them. */
+export const whoLabel = (key: string, separated = false) =>
+  WHO[key] ?? (separated ? 'Other tokens' : 'Tokens and agents');
 
 const REASONS: Record<string, string> = {
   rejected: 'Rejected in review',

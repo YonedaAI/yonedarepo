@@ -95,7 +95,12 @@ function Report({ data, reload }: { data: Insights; reload: () => void }) {
           title="Who"
           label="Used by"
           rows={usage.who}
-          name={whoLabel}
+          name={(key) =>
+            whoLabel(
+              key,
+              usage.who.some((w) => w.key === 'agent'),
+            )
+          }
           none="Nobody in this range."
         />
         <CountTable

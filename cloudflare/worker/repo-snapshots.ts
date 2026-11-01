@@ -13,6 +13,7 @@ import { rpcValue } from './durable';
 import { Flights } from './flights';
 import { readFromHead } from './repo-head';
 import { ApiError, caller, type Json, type RepoContext, target, writesTo } from './repo-ops';
+import { noteReached } from './repo-usage';
 import type { Env } from './types';
 
 export const REFS_MS = 1000;
@@ -28,10 +29,12 @@ const once = (key: string, load: () => Promise<Json>) => loading.join(key, load)
 /** The caller's read access and main's published head, as `readFromHead`; null also when
  * main does not exist yet (an empty repository has no published head). */
 export async function headAccess(ctx: RepoContext, minVersion = 0) {
-  return readFromHead(ctx, minVersion).catch((e) => {
+  const fromHead = await readFromHead(ctx, minVersion).catch((e) => {
     if (e?.code === 'NOT_FOUND') return null;
     throw e;
   });
+  if (fromHead) noteReached(ctx.env, ctx.repo);
+  return fromHead;
 }
 
 /** Authorizes this request's reads from the published head's access snapshot and returns
