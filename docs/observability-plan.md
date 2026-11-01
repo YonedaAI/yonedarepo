@@ -45,6 +45,53 @@ Rules:
 - New paths sit behind a switch where they touch the request path.
 - Prices and limits for Workers Logs and Notifications aren't in our docs: check before relying on them.
 
+## O3 and O4 request budgets
+
+Written before the code, 2026-11-01. Not yet measured on dev.
+
+**O3 adds nothing to a user's request.** The ledger, the comparison and the synthetic checks live in `cargo xtask` and Superfan. No header, subrequest, log line or Durable Object call joins a request people make.
+
+| O3 item | Switch | Budget |
+|---|---|---|
+| `--tag`, `--message` | none | 2 wrangler arguments per Worker deploy; no request |
+| Deploy ledger | none | 1 `POST /deploys` to Superfan when a deploy or rollback ends, repeated once over 1.1.1.1 if it can't connect. A failure warns; it never fails the deploy |
+| Revision on findings | none | 0 requests: read from the `/health` answer a pass already has. 1 ledger read only when that answer has none |
+| Release comparison | `RELEASE_COMPARE` | 0 requests; 1 ledger read per full pass (hourly, plus each poll of the ship's monitor) |
+| Synthetic checks | `PROBES`, `PROBE_LANDING` | The table below, every 5 minutes (288 passes a day). Off: 0 requests and 0 ledger calls |
+
+| Check | Requests a pass | Reaches |
+|---|---|---|
+| `health` | 1 | Front Worker's `/health`; no storage |
+| `page` | 1 | Front Worker's `/`, static assets |
+| `api` | 1 | Front to platform, `GET /api/v1/explore?limit=1`: D1 only, no repository object |
+| `clone` | 2 | `info/refs` and `git-upload-pack` on a small public probe repository: its Durable Object and about 5 R2 reads, fewer from a stored pack. Refuses to read past 1 MiB |
+| `land` | 2, every third pass | Dev only. One commit and one landing on the probe repository, one file rewritten |
+
+| Total | Budget |
+|---|---|
+| Prod | 5 requests a pass: 1,440 a day, about 43,000 a month |
+| Dev | The same, plus 192 writes a day: 96 commits and 96 landings |
+| A failing check | 1 more try, 2 seconds later. At most 5 more requests a pass |
+| Superfan's own ledger | 3 calls on a healthy pass: record, resolve, urgent mail claim |
+| Time | Each try times out at 15 seconds; checks run in parallel, so a pass ends within about 32 seconds |
+
+With every switch off, prod gains one `*/5` cron invocation that returns before any call.
+
+Probes send `x-yoneda-own-traffic: 1`, so they leave the Traffic page, and `user-agent: yonedarepo-probe/1`.
+
+**O4 step 1 (`SPAN_SAMPLE`):**
+
+| Case | Budget |
+|---|---|
+| Off, the default | One string read per request that keeps timings: 0 lines, 0 points |
+| On, not picked | One `Math.random()` per timed request |
+| On, picked | 1 log line of at most 4,000 characters and 1 Analytics Engine point of at most 20 blobs, once per request, inside `waitUntil` after the answer |
+| Any case | 0 subrequests, 0 Durable Object round trips, 0 bytes on the response, nothing awaited |
+
+`SPAN_SAMPLE=<N>` picks 1 request in N, plus every request over 5 seconds, so a slow one can be found from its id. 5 seconds is a sampling rule, not a target. Points go to the dataset already bound, as `blob1 = 'spans'`, with the operation as index. A point holds no repository, account or request id; those stay in the log line.
+
+**Known limit:** that's one point from spans. A request can also carry the client point of `TRAFFIC_EVENTS`, so the worst case with both is 2, as `docs/analytics-plan.md` already allows for `REGION_SIGNALS`.
+
 ## O1 request budget
 
 Written before the code. What a healthy request may spend on O1, with `REQUEST_IDS` and `CLIENT_ERRORS` on. With them off (the default) it spends one object per request, in the `AsyncLocalStorage` store the request already has for `waitUntil`.
