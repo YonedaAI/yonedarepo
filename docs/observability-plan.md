@@ -210,6 +210,6 @@ O1 and O5 can start now. The analytics plan's Phase 7 reads from O1 to O4.
 | Superfan | `cloudflare/superfan/tail.ts`, `signals.ts`, `watch.ts`, `notify.ts` |
 | Deploys | `xtask/src/deploy_exec.rs`, `deploy_ledger.rs`, `deploy_live.rs`, `.github/workflows/`, `docs/ship-pipeline.md` |
 | After a deploy | `cloudflare/superfan/ledger-deploys.ts`, `release.ts`, `synthetic.ts`, `synthetic-checks.ts` |
-| Spans | `cloudflare/worker/span-sample.ts`, `repo-timing.ts` |
+| Spans | `cloudflare/worker/repo-span-sample.ts`, `repo-timing.ts` |
 | Code health | `xtask/src/`, `.github/workflows/ci.yml`, `full.yml` |
 | Evidence | `tools/fanout-bench/results.mjs`, `tools/staging-realworld.mjs` |

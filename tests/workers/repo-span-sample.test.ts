@@ -6,7 +6,7 @@ import { trafficQueries, trafficSpan } from '../../cloudflare/worker/platform-tr
 import { inScope } from '../../cloudflare/worker/request-scope';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { record, withTimings } from '../../cloudflare/worker/repo-timing';
-import { sampleSpans } from '../../cloudflare/worker/span-sample';
+import { sampleSpans } from '../../cloudflare/worker/repo-span-sample';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 

@@ -24,8 +24,8 @@ import { isLfsPath, lfsHttp } from './repo-lfs';
 import { fromBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { ANONYMOUS, admitAnonymous, limitAnonymous } from './repo-public';
+import { timedAnswer } from './repo-span-sample';
 import { timed } from './repo-timing';
-import { timedAnswer } from './span-sample';
 import type { Env } from './types';
 
 const PATH = /^\/git\/(r[0-9a-f]{20})(?:\.git)?\/(info\/refs|git-upload-pack|git-receive-pack)$/;

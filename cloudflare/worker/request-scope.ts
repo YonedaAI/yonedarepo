@@ -25,7 +25,7 @@ type Job = Pick<Partial<Envelope>, 'repo_id' | 'job_id' | 'kind' | 'request_id'>
 export type Seed = { env?: Switches; req?: Request; waitUntil?: Waiter; job?: Job };
 type Scope = Seed & {
   id?: string;
-  /** This request's phases are kept already: one sample a request (span-sample.ts). */
+  /** This request's phases are kept already: one sample a request (repo-span-sample.ts). */
   spansTaken?: boolean;
 };
 

@@ -59,12 +59,12 @@ import { regionHintTest, whereRepository } from './repo-region-hint';
 import { releaseDownload, releasesRoute } from './repo-releases';
 import { restoreRepository } from './repo-restore';
 import { SESSION_BODY_LIMIT } from './repo-session-records';
+import { timedAnswer } from './repo-span-sample';
 import { timed } from './repo-timing';
 import { batchRefs, branchesRoute, operations } from './repo-tools';
 import { vacuum } from './repo-vacuum';
 import { humanView } from './repo-views';
 import { ensureScope } from './request-scope';
-import { timedAnswer } from './span-sample';
 import type { Env } from './types';
 
 const COMMIT_BODY_LIMIT = 64 * 1024 * 1024;

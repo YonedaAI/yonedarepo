@@ -28,7 +28,7 @@ export async function timed<T>(phase: string, run: () => Promise<T>): Promise<T>
 }
 
 /** Runs `handle` with a fresh timing scope and renders what it recorded; `phases` is what a
- * caller may keep (span-sample.ts). */
+ * caller may keep (repo-span-sample.ts). */
 export async function withTimings<T>(handle: () => Promise<T>) {
   const phases: Phases = new Map();
   const value = await current.run(phases, () => timed('total', handle));
