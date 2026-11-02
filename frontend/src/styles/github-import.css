@@ -1,5 +1,7 @@
 .github-repo-list {
   display: grid;
+  /* One long name must not widen every row past the dialog. */
+  grid-template-columns: minmax(0, 1fr);
   max-height: 220px;
   margin: 0;
   padding: 4px;
