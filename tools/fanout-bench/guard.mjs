@@ -23,7 +23,7 @@ export function isDevUrl(url, spec = devSpec()) {
   if (parsed.protocol !== 'https:' || spec.env !== 'dev') return false;
   const origin = new URL(spec.origin).hostname;
   const { hostname } = parsed;
-  if (hostname === origin || hostname === `api.${origin}`) return true;
+  if (hostname === origin || hostname === `api.${origin}` || hostname === `edge.${origin}`) return true;
   const suffix = `.${spec.subdomain}.workers.dev`;
   return hostname.endsWith(suffix) && hostname.startsWith(`${spec.prefix}-`) && !hostname.slice(0, -suffix.length).includes('.');
 }

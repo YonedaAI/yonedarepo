@@ -208,7 +208,8 @@ const system = (env: Env, repo: string) =>
 
 /** http://mirror.internal: the repository's stored seed as a Git remote of version 2, which
  * lists its tips and sends it whole. */
-export async function seedSource(req: Request, env: Env, ctx: { containerId: string }) {
+export async function seedSource(req: Request, bound: Env, ctx: { containerId: string }) {
+  const env = cellEnv(bound);
   const own = ownRepo(req, env, ctx.containerId);
   if (!own) return refused();
   if (own.path === 'info/refs') return advertiseV2();
@@ -225,7 +226,8 @@ export async function seedSource(req: Request, env: Env, ctx: { containerId: str
 
 /** http://platform.internal: the platform's smart HTTP (version 2) for the repository. The
  * fetch is served as built (never from or into the pack store: that is what is building). */
-export async function platformSource(req: Request, env: Env, ctx: { containerId: string }) {
+export async function platformSource(req: Request, bound: Env, ctx: { containerId: string }) {
+  const env = cellEnv(bound);
   const own = ownRepo(req, env, ctx.containerId);
   if (!own) return refused();
   if (!(req.headers.get('git-protocol') ?? '').includes('version=2'))
