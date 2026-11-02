@@ -1,6 +1,6 @@
 # Scale and global plan
 
-Status: frozen on 2026-11-01. Built: item 1, erase, item 5 (`ACCOUNT_SEARCH`, on in dev, and in prod from the next ship) and archive stage A (four switches, off). Regions stopped at R1's sampling and a same-region test. The rest is plan. Written 2026-10-30 at dev `169fb5b0`.
+Status: regions are the priority work again, on the owner's word of 2026-11-01; the freeze of that morning no longer applies. Built: item 1, erase, item 5 (`ACCOUNT_SEARCH`, on in dev, and in prod from the next ship) and archive stage A (four switches, off). Regions: R1's sampling and a same-region test, then [cells as built](#cells-as-built). Written 2026-10-30 at dev `169fb5b0`.
 
 ## Context
 
@@ -634,6 +634,83 @@ Every page was reread on this date; the date in each row is the page's own. **Th
 | Where do Workflows run? | [Not stated](https://developers.cloudflare.com/workflows/reference/limits/), 2026-09-21 | A trace from a step. Managed agents stay single, so this can wait |
 
 Two smaller notes: `cf-placement`, which the region tools read, "may be removed before Smart Placement exits beta", and [Regional Services](https://developers.cloudflare.com/data-localization/how-to/workers/) (2026-07-23) applies only to a custom domain and names no Asian region.
+
+### Cells as built
+
+Written before the code, on 2026-11-01. Three things here change the plan above, and each is marked.
+
+**A cell is a whole copy of the platform in its own Worker:** the same code, its own repository, shard and combiner classes, its own bucket, D1, queues, workflow and containers. Only `WORKSPACES`, the accounts, is shared, by `script_name` on today's Worker. `enam` is today's stack under today's names. Inside a cell no code asks where it is: `env.OBJECTS` is already the right bucket.
+
+| Part | `enam` | `weur` |
+|---|---|---|
+| Worker | `{prefix}-platform`, as today | `{prefix}-platform-weur`, pinned to `aws:eu-central-1` |
+| Repository, shard, combiner objects | As today | Own classes, in jurisdiction `eu` |
+| R2, D1, both queues | As today | `*-weur`, jurisdiction `eu` |
+| Containers | `ENAM` | `WEUR`; no SSH gateway |
+| Accounts | Shared namespace | Shared namespace, hint `weur` on first `get` |
+
+**Why `eu`, not the hint the test measured.** Both are fixed at creation, and only the jurisdiction is a guarantee. A cell's objects have no earlier names, so the id change costs nothing. Unmeasured: R8 measures it. If it's too slow, dev's cell is remade with hints before anything real is in it.
+
+**Change 1: a repository's cell is in its id, and there is no directory.** A cell's new ids end in that cell's six-digit tag: `r` plus 14 random hex digits plus `eea001`. The format stays `r` and 20 hex digits, so all 35 checks and installed CLIs still pass. `enam` ids carry no tag, and its generator rerolls the one id in 16 million that would. The plan rejected a tag as ambiguous: it is ambiguous only against old ids, and that can be counted once, with one query on each environment, before the switch goes on. Why this beats the directory: routing reads nothing, so `yrp_` keeps no D1 dependency (safety rule 8), D1 leaves the routing path altogether, a directory that's down can't exist, replica lag can't hide a new repository, and create doesn't pay a write to a primary an ocean away. Region is fixed, so the id can hold it. A later copy tool gets a new id. This replaces R4's repo → cell table and rules 1 to 5 of "How routing works".
+
+**Change 2: D1 is per cell too.** Keeping one D1 would keep every European address and repository name in the US, and it's the reason create and search got worse. `env.INDEX` is the cell's. The readers that span cells are few and named below.
+
+**Change 3: nothing can be answered wrongly, only slowly.** Every platform Worker forwards a request for another cell's repository to that cell, whoever sent it. Routing at the edge saves the ocean; it isn't what makes the answer right. So `NOT_FOUND` from the wrong cell can't happen, and `api.` keeps working unmoved.
+
+**Which cell serves which code** (R7's question): `enam` and `sam` go to `enam`; Cloudflare starts `sam` objects in eastern North America. `weur` and `afr` go to `weur`. `apac` and `oc` go to `enam` until they have a cell, as every account there does today. An account keeps the code it signed up with, so it reads right when that cell opens.
+
+**How a request finds its cell**, first match, no reads except the third:
+
+| Request | Cell |
+|---|---|
+| A path with a repository id | The id |
+| A body that names a region, on create | The receiving cell forwards it |
+| A readable Git or resolve path | Ask the owner's authority at the edge, kept for the isolate; on failure `enam`, which forwards |
+| A `ypat_` from a cell | The token's tag, the first 3 characters; it only orders the look-ups |
+| A browser | The `yoneda_home` cookie, a routing hint that grants nothing |
+| Sign-up and sign-in with no cookie | The request's continent |
+| Anything else | `enam` |
+
+**Account-wide reads.** The authority's `session`, `pat_check` and `org_access` answers add the account's `region` and `cells`, the other cells it has repositories or memberships in. They come back with the check every request already makes. An account-wide request that lands outside its home cell is forwarded there; it then reads its own D1 plus the D1 of each cell in `cells`. Today's accounts have an empty list, so they read what they read today. `cells` is kept in `workspace_records`, with no migration, and a new op notes a cell when a repository or membership lands in one.
+
+**Agents.** `yoneda login --agent` runs under a person's account, so an agent has no sign-up of its own. The token is issued to the poll, which comes from where the agent runs: its continent becomes the token's region, the token's tag and the default for repositories it creates.
+
+**Switches**
+
+| Switch | Off | On |
+|---|---|---|
+| `CELLS` (`on`), on every Worker | Today, on every path | Routing, forwarding, `region` in the API |
+| `CELL` (`weur`), on a cell's Worker | Unset: `enam` | Ids, tokens and sign-ups in this cell |
+| `REGION_SIGNALS` | No region recorded | As R1 |
+
+**Request budget.** One operation in `weur`, from Europe, by an account homed there. Each row is the most it may do; **ocean** counts calls that leave the continent.
+
+| Operation | D1 | Account authority | R2 | Queue | Ocean |
+|---|---|---|---|---|---|
+| Read, `yrp_` | 0 | 0 | 0 on a hit | 0 | **0** |
+| Read, `ypat_` | 1 | 1 + orgs | 0 on a hit | 0 | **0** |
+| Commit, land | 0 | 0 | 0 | After the answer | **0** |
+| Push | 0 | 0 | As today | As today | **0** |
+| Clone | 0 | 0 | About 5 | 0 | **0** |
+| Search, 1 page | At most 5 | Directory, at most 16 | Segments | 0 | **0** |
+| Create | 3 | 2 | 0 | 3 | **0** |
+| Sign-in | 0 | 3 | 0 | 0 | **0** |
+| Sign-up | 1 | As today | 0 | 2 | **0** |
+| `GET /repos` | 1 | 1 + orgs | 0 | 0 | **0**, plus 1 per cell in `cells` |
+
+What it costs elsewhere, all of it new and all of it bounded:
+
+| Case | Added |
+|---|---|
+| Any request on `enam`, switch on | One path test; no I/O |
+| A readable Git path, first in an isolate | 2 authority calls at the edge, as the Worker makes today, then cached |
+| A person on a repository in another cell | One forward, and their own account's check crosses: their choice of region |
+| A `ypat_` from `enam` on a `weur` repository | 1 D1 read and 1 authority call across |
+| A sign-in by an `enam` account arriving in Europe with no cookie | 3 authority calls across, once; the cookie then sends it home |
+
+Off, every row is today's.
+
+**What the routing tests must show:** a wrong-cell request is forwarded, for each kind of path; `enam` ids can't take a tag; a `yrp_` request needs no D1 or authority at the edge; with `CELLS` off, no path changes.
 
 ### Known hard parts
 

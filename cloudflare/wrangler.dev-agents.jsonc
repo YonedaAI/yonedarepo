@@ -147,7 +147,7 @@
     "AUDIT_LOG": "off",
     "CLIENT_ERRORS": "off",
     "PUBLIC_APP_ORIGIN": "https://dev.yonedarepo.com",
-    "REGION_SIGNALS": "off",
+    "REGION_SIGNALS": "on",
     "REQUEST_IDS": "off",
     "TRAFFIC_EVENTS": "on",
     "TRAFFIC_REPORT": "on",

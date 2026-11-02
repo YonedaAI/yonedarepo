@@ -690,7 +690,7 @@ fn job_summary_tables_are_markdown_with_escaped_cells() {
 /// Prod runs what dev runs. A variable may differ only for the reason given here.
 #[test]
 fn prod_has_every_switch_dev_has() {
-    const OWN: [(&str, &str); 13] = [
+    const OWN: [(&str, &str); 14] = [
         ("EMAIL_FROM", "its own sender"),
         ("ADMIN_NOTIFY_EMAIL", "dev mails nobody"),
         ("ADMIN_ACCOUNTS", "its own operators"),
@@ -702,6 +702,7 @@ fn prod_has_every_switch_dev_has() {
         ("WEB_ANALYTICS_TOKEN", "its own site"),
         ("SEO_INDEXING", "only prod is indexed"),
         ("REGION_HINT_TEST", "a dev test"),
+        ("REGION_SIGNALS", "dev first: prod with its first cell"),
         ("GITHUB_APP_ID", "a dev App: none on prod yet"),
         ("GITHUB_APP_SLUG", "a dev App: none on prod yet"),
     ];
