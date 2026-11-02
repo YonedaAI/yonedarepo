@@ -43,13 +43,13 @@ const MIMO_ID = 'mimo-v2.6-flash';
 /** The command, extra environment and stdin of one run of `kind`. */
 function launch(ctx, kind, title, text) {
   const { harness, model } = AGENTS_BY_KIND[kind];
-  const shim = { SANDBOX_GATEWAY_URL: ctx.gateway.url, SANDBOX_GATEWAY_TOKEN: ctx.gateway.token, SANDBOX_GATEWAY_MODEL: model };
+  const shim = () => ({ SANDBOX_GATEWAY_URL: ctx.gateway.url, SANDBOX_GATEWAY_TOKEN: ctx.gateway.token, SANDBOX_GATEWAY_MODEL: model });
   if (harness === 'claude')
     return {
       command: ['claude', '-p', text, '--model', model, '--output-format', 'stream-json', '--verbose', '--dangerously-skip-permissions', '--plugin-dir', '/opt/yoneda/claude-plugin', '--max-budget-usd', String(ctx.claudeBudget())],
-      env: { ...shim, ...QUIET, ANTHROPIC_BASE_URL: `${SHIM}/anthropic`, ANTHROPIC_API_KEY: 'sandbox-shim', ANTHROPIC_SMALL_FAST_MODEL: model, ANTHROPIC_DEFAULT_HAIKU_MODEL: model, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', YONEDA_MCP_URL: `${ctx.sandboxOrigin}/api/v1/mcp` },
+      env: { ...shim(), ...QUIET, ANTHROPIC_BASE_URL: `${SHIM}/anthropic`, ANTHROPIC_API_KEY: 'sandbox-shim', ANTHROPIC_SMALL_FAST_MODEL: model, ANTHROPIC_DEFAULT_HAIKU_MODEL: model, CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1', YONEDA_MCP_URL: `${ctx.sandboxOrigin}/api/v1/mcp` },
     };
-  if (harness === 'codex') return { command: ['node', '/opt/yoneda/codex-run.mjs', model, text], env: { ...shim, ...QUIET, SANDBOX_SHIM_KEY: 'sandbox-shim', NODE_USE_ENV_PROXY: '1' } };
+  if (harness === 'codex') return { command: ['node', '/opt/yoneda/codex-run.mjs', model, text], env: { ...shim(), ...QUIET, SANDBOX_SHIM_KEY: 'sandbox-shim', NODE_USE_ENV_PROXY: '1' } };
   const command = ['opencode', ...opencodeArgs({ model, title, text })];
   if (kind === 'glm') return { command, env: {}, credential: ctx.glmCredential };
   const provider = { npm: '@ai-sdk/anthropic', name: 'MiMo through the dev proxy', options: { baseURL: `${ctx.mimo.url}/anthropic/v1`, apiKey: '{env:MIMO_PROXY_TOKEN}' }, models: { [MIMO_ID]: {} } };

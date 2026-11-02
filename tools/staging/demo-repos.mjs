@@ -321,7 +321,15 @@ async function release(r) {
   const tags = (await ws.git(r.base, null, 'tag')).split('\n');
   if (!tags.includes('flight-1')) await ws.git(r.base, null, 'tag', '-a', 'flight-1', flights.clean.landed_commit, '-m', `First flight: ${REPOS[r.key].flights.clean.message}`);
   if (!tags.includes('flight-2')) await ws.git(r.base, null, 'tag', '-a', 'flight-2', flights.fix.landed_commit, '-m', 'Second flight: the go-around, answered');
-  await ws.git(r.base, r.token, 'push', '-q', 'origin', 'refs/tags/flight-1', 'refs/tags/flight-2');
+  // Tags need land, which no agent's token holds: a token for this push alone.
+  const name = `demo-tags-${ts}`;
+  const tagger = await owner.post(`/repos/${r.id}/tokens`, { name, scopes: ['read', 'write', 'land'] });
+  secrets.add(tagger.token);
+  try {
+    await ws.git(r.base, tagger.token, 'push', '-q', 'origin', 'refs/tags/flight-1', 'refs/tags/flight-2');
+  } finally {
+    await owner.raw('DELETE', `/repos/${r.id}/tokens/${name}`);
+  }
   const { releases } = await owner.get(`/repos/${r.id}/releases`);
   if (releases.some((x) => x.tag === 'flight-2')) return;
   const archive = ws.path(`flight-${r.key}-2.tar.gz`);
@@ -411,8 +419,9 @@ async function main() {
           }
         }
         else if (agentPhases.includes(phase)) {
-          await eachRepo(rows.filter((r) => REPOS[r.key].order.includes(phase)), phase, (r) => flight(r, phase));
+          const flown = await eachRepo(rows.filter((r) => REPOS[r.key].order.includes(phase)), phase, (r) => flight(r, phase));
           await spendCheck();
+          if (!flown) break;
         } else if (phase === 'release') await eachRepo(rows, phase, release);
         else if (phase === 'report') {
           state.report = { ...state.report };
