@@ -11,6 +11,7 @@
 //! default (`lazy`): history arrives as commits and trees, blobs when Git needs them.
 pub mod convert;
 mod declared;
+mod delete;
 mod fetch;
 pub mod heads;
 mod land;
@@ -75,10 +76,13 @@ impl Session {
             .get(1)
             .or_else(|| argv.first())
             .ok_or_else(|| Error::usage("usage: git-remote-yoneda <remote> <url>"))?;
-        let url = match url::parse(raw) {
-            Ok(url) => url,
+        let (url, named) = match url::parse(raw) {
+            Ok(url) => (url, None),
             Err(refused) => match url::parse_path(raw) {
-                Some((origin, handle, name)) => resolve(&origin, &handle, &name)?,
+                Some((origin, handle, name)) => {
+                    let key = url::id_key(&origin, &handle, &name);
+                    (resolve(&origin, &handle, &name)?, Some(key))
+                }
                 None => return Err(refused),
             },
         };
@@ -98,6 +102,9 @@ impl Session {
             _ => None,
         };
         let git = Git::with_git_dir(&cwd, &git_dir).in_helper(depth);
+        if let Some(key) = named {
+            remember_id(&git, &key, &url.repo);
+        }
         let config = lazy::Config::read(&git, remote.as_deref())?;
         Ok(Self {
             api,
@@ -134,15 +141,32 @@ impl Session {
 /// credential the helper uses there (a private one needs it; the answer is the same for one
 /// that is not there and one the credential may not read).
 fn resolve(origin: &str, handle: &str, name: &str) -> Result<RemoteUrl> {
+    tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| Error::new(format!("starting the runtime: {e}")))?
+        .block_on(resolved(origin, handle, name))
+}
+
+/// `resolve`, for a command already on the runtime.
+pub async fn resolved(origin: &str, handle: &str, name: &str) -> Result<RemoteUrl> {
     let token = credentials::load_optional(
         &credentials::default_path()?,
         origin,
         std::env::var("YONEDA_TOKEN").ok(),
     )?;
-    resolve_with(origin, handle, name, token.as_ref())
+    resolve_with(origin, handle, name, token.as_ref()).await
 }
 
-fn resolve_with(
+/// Notes the id a name stands for in this clone (`url::id_key`). The clone works without it,
+/// so a config file that can't be written is no reason to stop.
+pub fn remember_id(git: &Git, key: &str, repo: &str) {
+    if git.run(&["config", "--get", key]).ok().as_deref() != Some(repo) {
+        let _ = git.run(&["config", key, repo]);
+    }
+}
+
+async fn resolve_with(
     origin: &str,
     handle: &str,
     name: &str,
@@ -154,11 +178,9 @@ fn resolve_with(
         crate::api::encode(handle),
         crate::api::encode(name)
     );
-    let found = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|e| Error::new(format!("starting the runtime: {e}")))?
-        .block_on(api.get(&path))
+    let found = api
+        .get(&path)
+        .await
         .map_err(|failure| match failure.status {
             404 => Error::usage(format!(
                 "{origin}/{handle}/{name} is not a repository you can read"
@@ -256,10 +278,10 @@ mod resolve_tests {
         origin
     }
 
-    #[test]
-    fn a_readable_path_resolves_to_the_repository_it_names() {
+    #[tokio::test]
+    async fn a_readable_path_resolves_to_the_repository_it_names() {
         let origin = platform();
-        let url = resolve_with(&origin, "ada", "testing", None).unwrap();
+        let url = resolve_with(&origin, "ada", "testing", None).await.unwrap();
         assert_eq!(
             url,
             RemoteUrl {
@@ -267,7 +289,9 @@ mod resolve_tests {
                 repo: "r0123456789abcdef0123".into()
             }
         );
-        let missing = resolve_with(&origin, "ada", "other", None).unwrap_err();
+        let missing = resolve_with(&origin, "ada", "other", None)
+            .await
+            .unwrap_err();
         assert!(
             missing.message.contains("not a repository you can read"),
             "{}",

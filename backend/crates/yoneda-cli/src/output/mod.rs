@@ -12,15 +12,19 @@
 mod account;
 mod error;
 mod local;
+mod memory;
 mod reads;
 mod repo;
 pub mod schema;
+mod ssh;
 
 pub use account::*;
 pub use error::{ErrorCode, ErrorReport, platform as error_code};
 pub use local::*;
+pub use memory::*;
 pub use reads::*;
 pub use repo::*;
+pub use ssh::*;
 
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};

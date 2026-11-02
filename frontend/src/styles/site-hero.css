@@ -1,22 +1,25 @@
-/* The home hero: a short bold headline and a muted paragraph side by side, then the button
+/* The home hero: a short open headline and a muted paragraph side by side, then the button
    with the "works with any agent" strip. On a phone: headline, paragraph, then the row. */
 .site-hero.site-band {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  /* The headline sets its own column, so the lead sits beside it, not half a page away. */
+  grid-template-columns: max-content minmax(0, 1fr);
   grid-template-areas:
     "title lead"
     "actions actions";
-  gap: var(--sp-6) 56px;
+  gap: var(--sp-6) clamp(56px, 8vw, 112px);
   align-items: start;
-  padding-block: 88px;
+  padding-block: 72px;
 }
 .site-hero h1 {
   grid-area: title;
-  margin: 0;
-  max-width: 13ch;
+  /* Pulls the letters' built-in side space back, so the T lines up with the button below. */
+  margin: 0 0 0 -0.05em;
+  /* Wide enough for "The Git platform built", too narrow to take "for" as well. */
+  max-width: 9.75em;
   font-size: var(--fs-hero);
-  line-height: 1.08;
-  letter-spacing: -0.03em;
+  line-height: 1.14;
+  letter-spacing: -0.018em;
 }
 .site-hero-lead {
   grid-area: lead;

@@ -3,6 +3,7 @@
 // add checks them against the listing, so a favorite shows nothing the account cannot read:
 // a private repository is refused exactly as a missing one, and a favorite that went out of
 // reach (deleted, private again, access removed) drops from the list, and returns with access.
+import { acrossCells } from './cell-route';
 import { reachOf } from './repo-admin';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import { withPaths } from './repo-paths';
@@ -81,6 +82,13 @@ async function add(env: Env, auth: Credentials, account: string, repo: string) {
   }
 }
 
+/** The favorites each cell can read: a repository is listed by the cell it is in. */
+const mergeFavorites = (parts: Json[]): Json => ({
+  favorites: parts
+    .flatMap((part) => part.favorites as { added_at: number }[])
+    .sort((a, b) => a.added_at - b.added_at),
+});
+
 /** `GET /favorites`, `PUT` and `DELETE /favorites/<repo>` for a signed-in person. */
 export async function favoritesRoute(
   env: Env,
@@ -89,7 +97,13 @@ export async function favoritesRoute(
   repo: string | undefined,
 ): Promise<Json> {
   const account = person(auth);
-  if (!repo && method === 'GET') return { favorites: await list(env, auth, account) };
+  if (!repo && method === 'GET')
+    return acrossCells(
+      env,
+      '/api/v1/favorites',
+      async () => ({ favorites: await list(env, auth, account) }),
+      mergeFavorites,
+    );
   if (repo && /^r[0-9a-f]{20}$/.test(repo)) {
     if (method === 'PUT') return add(env, auth, account, repo);
     if (method === 'DELETE')

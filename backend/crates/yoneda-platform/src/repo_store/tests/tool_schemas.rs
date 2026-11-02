@@ -45,9 +45,17 @@ fn member_roles_match_the_authority() {
 
 #[test]
 fn memory_kinds_and_statuses_match_the_authority() {
-    let kinds = super::super::memory::records::KINDS.to_vec();
-    assert_eq!(tool_enum("git_memory_add", "/properties/kind/enum"), kinds);
-    assert_eq!(tool_enum("git_memory_list", "/properties/kind/enum"), kinds);
+    // A kind off the list is a new kind, so the tools name the list without an enum.
+    let tools: Vec<Value> = serde_json::from_str(yoneda_core::PLATFORM_MCP_TOOLS).unwrap();
+    for tool in ["git_memory_add", "git_memory_list"] {
+        let schema = tools.iter().find(|t| t["name"] == tool).unwrap();
+        let kind = &schema["inputSchema"]["properties"]["kind"];
+        assert!(kind["enum"].is_null(), "{tool} must take a new kind");
+        let described = kind["description"].as_str().unwrap();
+        for known in super::super::memory::kinds::KINDS {
+            assert!(described.contains(known), "{tool} doesn't name {known}");
+        }
+    }
     assert_eq!(
         tool_enum("git_context_relevant", "/properties/types/items/enum"),
         super::super::memory::relevance::TYPES.to_vec()

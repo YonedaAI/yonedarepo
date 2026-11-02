@@ -36,6 +36,9 @@ pub fn set<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
             ),
         ));
     }
+    if current.is_none() {
+        super::capacity::refuse_if_full(db, c)?;
+    }
     let version = move_ref(db, c, &refname, current, &commit, principal)?;
     // A working branch moved to the head of an open change based on it lands that change.
     let now = number(c, "now")?;
@@ -70,7 +73,6 @@ pub(super) fn move_ref<S: SqlStore>(
         &[json!(refname), json!(commit.id.hex()), json!(version)],
     )?;
     super::ref_chain::advance(db, refname, &commit.id, c)?;
-    super::projection::target(db, refname, &commit.id, version, number(c, "now")?)?;
     rows::maybe_checkpoint(db, version, &chain)?;
     Ok(version)
 }
@@ -175,12 +177,14 @@ pub fn batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
         .ok_or_else(|| bad("updates must be 1-100 {ref, commit|null, expected}"))?;
     let mut seen = std::collections::BTreeSet::new();
     let mut stale = Vec::new();
+    let mut creates = false;
     for update in updates {
         if let Some(tag) = super::tags::in_update(update)? {
             if !seen.insert(tag.clone()) {
                 return Err(bad(&format!("{tag} appears twice in the batch")));
             }
             super::tags::check(db, update, &tag)?;
+            creates = true;
             continue;
         }
         let refname = branch_ref(update)?;
@@ -203,9 +207,13 @@ pub fn batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
         if current != target && current != expected {
             stale.push(refname);
         }
+        creates |= current.is_none() && target.is_some();
     }
     if !stale.is_empty() {
         return Ok(json!({ "stale": stale }));
+    }
+    if creates {
+        super::capacity::refuse_if_full(db, c)?;
     }
     let mut refs = Vec::with_capacity(updates.len());
     for update in updates {
@@ -221,6 +229,41 @@ pub fn batch<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
         });
     }
     Ok(json!({ "version": current_version(db)?, "refs": refs }))
+}
+
+/// `repo_import_refs {updates: [{ref, commit, tag?}]}`: a clone's branches and tags, into a
+/// repository nobody has worked in, as they stood on the remote. No ref moves here: each is
+/// created, protected or not, and one already at its commit stays. Tags keep their objects.
+pub fn import_refs<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
+    let updates = c["updates"]
+        .as_array()
+        .filter(|u| !u.is_empty() && u.len() <= BATCH_LIMIT)
+        .ok_or_else(|| bad("updates must be 1-100 {ref, commit, tag?}"))?;
+    for update in updates {
+        let mut command = update.clone();
+        command["now"] = c["now"].clone();
+        command["_ref_chain"] = c["_ref_chain"].clone();
+        if let Some(tag) = super::tags::in_update(update)? {
+            super::tags::check(db, &command, &tag)?;
+            super::tags::create_at(db, &command, &tag, principal)?;
+            continue;
+        }
+        let refname = branch_ref(update)?;
+        let commit = rows::recorded(db, &object_id(update, "commit")?)?;
+        match rows::ref_value(db, &refname)? {
+            None => {
+                move_ref(db, &command, &refname, None, &commit, principal)?;
+            }
+            Some(held) if held == commit.id => {}
+            Some(held) => {
+                return Err(Error::new(
+                    "ALREADY_EXISTS",
+                    format!("{refname} is at {held}"),
+                ));
+            }
+        }
+    }
+    Ok(json!({ "version": current_version(db)?, "imported": updates.len() }))
 }
 
 fn expected_of(c: &Value) -> Result<Option<ObjectId>> {

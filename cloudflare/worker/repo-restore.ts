@@ -4,12 +4,12 @@
 // at deletion, and NAME_TAKEN asks for another), a fork's parent takes it back, and only then
 // does the repository commit. What follows repeats safely, so a retried restore finishes what
 // an attempt left: the listing, its members, access everywhere, and every chain a deletion
-// stopped. The schedule's entry goes last: while it is there, the owner can retry.
+// stopped. The schedule's entry goes last: while it is there, the owner can retry. A repository
+// whose objects are gone stays a tombstone, whichever build purged it (repo-restore-held.ts).
 //
 // Repository tokens stay revoked: whoever took the repository over may hold them. A managed
 // agents connection has one: its owner saves the agent once, which mints a new token.
 
-import { asyncStore, dispatchStore } from './repo-artifacts-store';
 import { audited } from './repo-audit';
 import { listRepository } from './repo-create';
 import { forgetDeleted, isDeletedListed } from './repo-deleted';
@@ -20,8 +20,9 @@ import { scheduleSweep } from './repo-lfs-sweep';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { requirePatScope } from './repo-pat';
 import { handleOf, holdName, releaseNames } from './repo-paths';
-import { dispatchObjects, dispatchProjection } from './repo-projection';
+import { dispatchObjects } from './repo-projection';
 import { schedulePurge } from './repo-quarantine';
+import { requireHeld } from './repo-restore-held';
 import { undoOn } from './repo-undo-window';
 import type { Env } from './types';
 
@@ -55,18 +56,15 @@ async function relist(ctx: RepoContext, facts: Json, name: string) {
   if (rows.length) await env.INDEX.batch(rows);
 }
 
-/** Everything a deletion stopped: its projections, hooks and the two sweeps' chains, which
+/** Everything a deletion stopped: its object drain, hooks and the two sweeps' chains, which
  * end at a tombstone. Each finds nothing to do if nothing waits. */
 async function rearm(env: Env, repo: string) {
   const now = Date.now();
   await Promise.all([
-    dispatchProjection(env, repo),
     dispatchObjects(env, repo),
     dispatchHooks(env, repo),
     schedulePurge(env, repo, now),
     scheduleSweep(env, repo, now),
-    // A store job that found the tombstone left the store to this restore.
-    ...(asyncStore(env) ? [dispatchStore(env, repo)] : []),
   ]);
 }
 
@@ -86,6 +84,7 @@ export async function restoreRepository(env: Env, auth: Credentials, repo: strin
   };
   // Live, and nothing was left to finish.
   if (facts.already && !scheduled) return answer();
+  if (!facts.already) await requireHeld(env, repo, facts, scheduled);
   const release = async () => {
     if (facts.already) return;
     await Promise.allSettled([
@@ -104,7 +103,10 @@ export async function restoreRepository(env: Env, auth: Credentials, repo: strin
     throw e;
   }
   await relist(ctx, facts, chosen);
-  await accessEverywhere(env, repo);
+  // A repository with no main has no published head to refresh.
+  await accessEverywhere(env, repo).catch((e) => {
+    if (e?.code !== 'NOT_FOUND') throw e;
+  });
   await rearm(env, repo);
   await forgetDeleted(env, repo, owner);
   return answer();

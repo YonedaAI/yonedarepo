@@ -1,22 +1,19 @@
 // Preview pricing: every rate, allowance and credit the pricing page shows, in one place.
-// Billing is not built yet; the page says so. Every platform feature is free; only what we
-// run for an account is metered, at Cloudflare's list cost × MARGIN, rounded up.
+// Billing is not built yet; the page says so. Metered account usage is priced at
+// Cloudflare's list cost × MARGIN, rounded up.
 //
 // Cloudflare list prices, Workers Paid plan, read 2026-10-28:
 // - Containers (https://developers.cloudflare.com/containers/pricing/): memory
 //   $0.0000025 per GiB-second, CPU $0.000020 per vCPU-second (active use only), disk
 //   $0.00000007 per GB-second; egress $0.025/GB in North America and Europe ($0.04–0.05
 //   elsewhere). Checks run on `standard-1`: 1/2 vCPU, 4 GiB, 8 GB (cloudflare/wrangler.*-platform.jsonc).
-// - Artifacts (https://developers.cloudflare.com/artifacts/platform/pricing/): storage
-//   $0.50 per GB-month (billing begins 2026-11-12).
 // - R2 (https://developers.cloudflare.com/r2/pricing/): Standard storage $0.015 per GB-month;
 //   egress free.
 // - Durable Objects (https://developers.cloudflare.com/durable-objects/platform/pricing/):
 //   SQLite stored data $0.20 per GB-month.
 // - Workers (https://developers.cloudflare.com/workers/platform/pricing/): no egress charge.
 //
-// Requests, CPU, Durable Object calls and R2 operations are not metered: they are part of
-// the free platform.
+// Requests, CPU, Durable Object calls and R2 operations are not separately metered.
 
 import {
   AGENT_MARGIN,

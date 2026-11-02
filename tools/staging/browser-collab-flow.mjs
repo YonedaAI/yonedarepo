@@ -6,7 +6,7 @@
 // Releases: the Releases tab's empty state, then "New release" for an annotated tag with
 // notes, an asset attached through the file input and downloaded through its link (bytes and
 // sha256 match the upload), and the release deleted. Forks: "Fork" under a new name shows
-// "forked from <parent>"; a branch on the fork opens a change on the parent through
+// "Forked from <parent>"; a branch on the fork opens a change on the parent through
 // "Open change" → "Parent <id>". Orgs: Settings → Organizations creates one, its page creates
 // team "devs" and adds the second kit account to the org and the team; "New repository" with
 // the org as owner, then repository Members grants team:<org>/devs; the org page lists it.
@@ -110,7 +110,7 @@ export async function releasePages(page, { account, repo: { id, name }, shot }, 
 export async function forkPages(page, { account, repo: { id, name }, shot, cleanup }, m) {
   await openRepo(page, name);
   await atRepo(page, account, id);
-  await page.locator('.repo-head').getByRole('button', { name: 'Fork', exact: true }).click();
+  await page.locator('.repo-facts').getByRole('button', { name: 'Fork', exact: true }).click();
   const form = page.getByRole('form', { name: 'Fork this repository' });
   const forkName = `${name}-fork`;
   await form.getByLabel('Fork name').fill(forkName);
@@ -127,9 +127,9 @@ export async function forkPages(page, { account, repo: { id, name }, shot, clean
     assert.ok(done.ok, `Delete fork: ${done.status} ${done.body?.error?.code ?? ''}`);
   });
   await atRepo(page, account, fork);
-  const head = page.locator('.repo-head');
-  await see(head.getByText(`forked from ${id}`), `"forked from ${id}" on the fork`);
-  await see(head.getByRole('link', { name: id, exact: true }), 'the link to the parent');
+  const facts = page.locator('.repo-facts');
+  await see(facts.getByText(`Forked from ${id}`), `"Forked from ${id}" on the fork`);
+  await see(facts.getByRole('link', { name: id, exact: true }), 'the link to the parent');
   await shot('fork-created');
 
   // A branch on the fork (setup); the page reloads to list it.
@@ -144,6 +144,7 @@ export async function forkPages(page, { account, repo: { id, name }, shot, clean
   await page.reload();
   await page.getByRole('navigation', { name: 'Repository' }).getByRole('link', { name: 'Commits' }).click();
   const history = page.getByRole('region', { name: 'History', exact: true });
+  await history.getByLabel('Filter').click();
   await history.getByLabel('Branch').selectOption('kit-fork').catch((e) => {
     throw new Error(`the History Branch picker does not offer kit-fork: ${e.message.split('\n')[0]}`);
   });
@@ -223,7 +224,7 @@ export async function orgPages(page, { account, member, shot, cleanup }, m) {
     const done = await account.raw('DELETE', `/api/v1/repos/${id}?confirm=${encodeURIComponent(name)}`);
     assert.ok(done.ok, `Delete org repository: ${done.status} ${done.body?.error?.code ?? ''}`);
   });
-  await atRepo(page, account, id);
+  await atRepo(page, account, id, '/files');
 
   // Repository Members: grant the team.
   await page.getByRole('navigation', { name: 'Repository' }).getByRole('link', { name: 'Settings' }).click();

@@ -2,7 +2,7 @@
 //! with their own rules (`maintenance`, `lfs`, `forks`) decide for their ops.
 use super::auth::Actor;
 use super::op::{RepoOp as R, StoreOp};
-use super::{forks, land_gates, lfs, maintenance, quarantine, rows, tags};
+use super::{forks, land_gates, lfs, maintenance, quarantine, rows, tags, undo};
 use serde_json::Value;
 use yoneda_core::{Error, Result};
 
@@ -36,6 +36,10 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         // The platform reads what it lists a tombstone by, and restores nothing.
         R::Restore if actor.can("system") && c["check"] == true => Ok(()),
         R::Restore => actor.require_repo_owner(),
+        // A person, never a token: the undo window is what survives a stolen one.
+        R::PurgeNow => actor
+            .require_human_owner()
+            .map_err(|_| undo::needs_a_person()),
         R::Purged if !actor.can("system") => {
             Err(Error::new("FORBIDDEN", "Only the platform reports a purge"))
         }
@@ -45,6 +49,10 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         R::AdoptCommit if !actor.can("system") => {
             Err(Error::new("FORBIDDEN", "Only the platform adopts commits"))
         }
+        R::SizeAdd if !actor.can("system") => Err(Error::new(
+            "FORBIDDEN",
+            "Only the platform reports what commits stored",
+        )),
         R::Check => actor.require("check"),
         R::SessionRecord | R::FlightPlan => actor.require("write"),
         // A change from a fork proposes the parent's mirror of a fork branch (`forks`):
@@ -81,34 +89,23 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         R::CheckClaim
         | R::CheckRelease
         | R::CheckComplete
-        | R::ProjectionPending
-        | R::ProjectionResult
         | R::ChangesetPlan
         | R::Head
         | R::ChangesetRecord
         | R::RecordRepair => actor.require("system"),
         // Only the platform's object projector reads or settles the object outbox: a false
         // "projected" would drop the only copy of accepted objects.
-        R::ObjectsPending
-        | R::ObjectsProjected
-        | R::StagedObjects
-        | R::ProjectionObjects
-        | R::ObjectsStored
-            if !actor.can("system") =>
-        {
-            Err(Error::new(
-                "FORBIDDEN",
-                "Only the platform projects staged objects",
-            ))
-        }
-        // Imported history is only recorded by the platform importer, which read it from
-        // the object store; nobody else can declare commits into existence.
-        R::RecordImported | R::RecordImportedBatch | R::RecordImportedEnd
+        R::ObjectsPending | R::ObjectsProjected | R::StagedObjects if !actor.can("system") => Err(
+            Error::new("FORBIDDEN", "Only the platform projects staged objects"),
+        ),
+        // A clone's refs are set by the platform importer alone: they arrive whole, with no
+        // landing and no gate, into a repository nobody has worked in yet.
+        R::ImportRefs | R::ImportReset | R::StoreAudit | R::AuthorsMissing | R::AuthorsSet
             if !actor.can("import") =>
         {
             Err(Error::new(
                 "FORBIDDEN",
-                "Only the platform importer records imported history",
+                "Only the platform importer sets imported refs",
             ))
         }
         R::Review => actor.require("review"),
@@ -130,6 +127,10 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         R::SetPolicy | R::AutoLandings => actor.require_owner(),
         // Admins manage other members; only the owner manages admins (`members`).
         R::Members | R::MemberPut | R::MemberRemove => actor.require_owner(),
+        R::AccountClosed if !actor.can("close") => Err(Error::new(
+            "FORBIDDEN",
+            "Only the platform closes an account",
+        )),
         // Hooks reveal repository events to an outside URL: the owner (or repo:admin) decides.
         R::HookCreate | R::Hooks | R::HookDelete | R::HookDeliveries => actor.require_owner(),
         // Only the platform's hook job fans out, reads secrets and settles deliveries.
@@ -137,23 +138,23 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
             Err(Error::new("FORBIDDEN", "Only the platform delivers hooks"))
         }
         // Only the platform copies events to an audit log and settles them.
-        R::AuditPending | R::AuditDone if !actor.can("audit") => Err(Error::new(
-            "FORBIDDEN",
-            "Only the platform copies audit events",
-        )),
+        R::AuditPending | R::AuditDone | R::AuditSetAside if !actor.can("audit") => Err(
+            Error::new("FORBIDDEN", "Only the platform copies audit events"),
+        ),
         // Only the platform's erase job plans and runs an erase.
         R::ErasePlan | R::EraseStep if !actor.can("erase") => {
             Err(Error::new("FORBIDDEN", "Only the platform erases"))
         }
         R::BreakGlass => actor.require_human_owner(),
         R::SetVisibility | R::Rename => actor.require_repo_owner(),
-        R::CloneAccess => actor.require_human_reader(),
         // Every other op, and a guarded op above whose caller passes its guard, reads.
         R::Activity
         | R::AdoptCommit
+        | R::SizeAdd
         | R::AgentContext
         | R::AuditDone
         | R::AuditPending
+        | R::AuditSetAside
         | R::BisectList
         | R::BundleIndex
         | R::BundleLocate
@@ -174,10 +175,17 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::HoldOwner
         | R::GitAccess
         | R::GitWalk
+        | R::Insights
         | R::HookClaim
         | R::HookSettle
         | R::HooksFanout
         | R::Import
+        | R::ImportRefs
+        | R::ImportReset
+        | R::StoreAudit
+        | R::AccountClosed
+        | R::AuthorsMissing
+        | R::AuthorsSet
         | R::LandBatch
         | R::LandChangesets
         | R::LandClaim
@@ -190,15 +198,11 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::MergePlan
         | R::ObjectsPending
         | R::ObjectsProjected
-        | R::ObjectsStored
         | R::PathHistory
+        | R::DirActivity
         | R::PinList
-        | R::ProjectionObjects
         | R::Purged
         | R::RecordClasses
-        | R::RecordImported
-        | R::RecordImportedBatch
-        | R::RecordImportedEnd
         | R::RecordPushed
         | R::RecordSymbols
         | R::Refs

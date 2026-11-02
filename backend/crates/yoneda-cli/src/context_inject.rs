@@ -285,7 +285,7 @@ mod tests {
                           "traffic": {"more": 0, "warnings": [warned(5)]}});
         let (text, shown) = compose("Memory:", &read, PER_INJECTION).unwrap();
         assert!(text.starts_with(
-            "CTC traffic on the files you read:\n- Landing 5 (\"Retry budget\", branch fix) is changing src/net.rs\nMemory:\n"
+            "Tower traffic on the files you read:\n- Landing 5 (\"Retry budget\", branch fix) is changing src/net.rs\nMemory:\n"
         ));
         assert_eq!(
             shown,

@@ -1,0 +1,51 @@
+// Generated from infra/envs/dev.json by `cargo xtask infra up`; edit the spec, not this file.
+// Dev dead-man (cloudflare/superfan/deadman.ts): says so when Superfan stops. Every five minutes it reads
+// Superfan's public /heartbeat over the network and mails ADMIN_NOTIFY_EMAIL through Resend after 3 bad checks
+// in a row, then at most every 6 hours. Its own script, cron and state, and it imports nothing from Superfan;
+// Superfan reads its /health in turn. A cron Worker because Cloudflare's Health Checks need a Pro zone, and
+// yonedarepo.com is Free; docs/incidents.md says why. No secrets of its own. Last in deploy order: Superfan
+// must be up before the first check.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "account_id": "f011d0ee02b23cad26b4b38151b204ad",
+  "compatibility_date": "2026-10-07",
+  "durable_objects": {
+    "bindings": [
+      {
+        "class_name": "DeadmanState",
+        "name": "STATE"
+      }
+    ]
+  },
+  "main": "superfan/deadman.ts",
+  "migrations": [
+    {
+      "new_sqlite_classes": [
+        "DeadmanState"
+      ],
+      "tag": "v1"
+    }
+  ],
+  "name": "yonedarepo-dev-deadman",
+  "observability": {
+    "enabled": true
+  },
+  "preview_urls": false,
+  "secrets_store_secrets": [
+    {
+      "binding": "RESEND_API_KEY",
+      "secret_name": "Resend-Yoneda",
+      "store_id": "3d9115d4fe864c54a792bcb790a763e3"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "*/5 * * * *"
+    ]
+  },
+  "vars": {
+    "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>",
+    "SUPERFAN_URL": "https://yonedarepo-dev-superfan.mlong-f01.workers.dev"
+  },
+  "workers_dev": true
+}

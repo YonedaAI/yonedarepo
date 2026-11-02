@@ -4,8 +4,9 @@
 // holds now. One welcome per account: the authority's sent marker, plus Resend's
 // Idempotency-Key (24 hours) for a redelivery that races it. A confirmation email goes out
 // only while its token is live and the address unconfirmed.
+import { log } from './log';
 import { digest, verifyUrl } from './platform-email-verify';
-import { renderVerify, renderWelcome } from './platform-welcome-template';
+import { renderVerify, renderWelcome, type WelcomeEmail } from './platform-welcome-template';
 import type { Env, Envelope } from './types';
 import { workspace } from './workspace';
 
@@ -18,16 +19,11 @@ let warnedOff = false;
 function off(reason: string) {
   if (warnedOff) return;
   warnedOff = true;
-  console.warn(JSON.stringify({ event: 'email.off', reason }));
+  log.warn('email.off', { reason });
 }
 
-/** `a…@example.com`: enough to recognise a failure, never the whole address. */
-export function maskAddress(address: string) {
-  const at = address.lastIndexOf('@');
-  return at > 0 ? `${address[0]}…${address.slice(at)}` : '…';
-}
-
-function config(env: Env) {
+/** What every email needs, or undefined while email is off here. */
+export function config(env: Env) {
   const missing: string[] = (['EMAIL_FROM', 'EMAIL_CONTACT', 'WEB_ORIGIN'] as const).filter(
     (name) => !env[name]?.trim(),
   );
@@ -59,6 +55,47 @@ export function transient(status: number, name: unknown) {
   return (
     status >= 500 || status === 429 || (status === 409 && name === 'concurrent_idempotent_requests')
   );
+}
+
+type Failure = { transient: boolean; [detail: string]: unknown };
+
+/** One account email through Resend: what went wrong, or null once it was taken. */
+export async function postEmail(
+  send: typeof fetch,
+  key: string,
+  { from, contact }: { from: string; contact: string },
+  to: string,
+  email: WelcomeEmail,
+  idempotency: string,
+): Promise<Failure | null> {
+  let answer: Response;
+  try {
+    answer = await send(RESEND_EMAILS, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${key}`,
+        'content-type': 'application/json',
+        'idempotency-key': idempotency,
+      },
+      body: JSON.stringify({
+        from,
+        to: [to],
+        reply_to: contact,
+        subject: email.subject,
+        text: email.text,
+        html: email.html,
+      }),
+    });
+  } catch (e: any) {
+    return { transient: true, error: e };
+  }
+  if (answer.ok) return null;
+  const body = await answer.json<{ name?: string }>().catch(() => ({}) as { name?: string });
+  return {
+    transient: transient(answer.status, body.name),
+    status: answer.status,
+    name: body.name,
+  };
 }
 
 /**
@@ -101,47 +138,16 @@ export async function welcomeJob(
   const idempotency = confirm
     ? `verify/${await digest(token ?? '')}`
     : `welcome/${await digest(`${settings.origin}\n${account}`)}`;
-  const failed = (detail: Record<string, unknown>) => {
-    if (attempts < MAX_ATTEMPTS && detail.transient) return { retry: backoff(attempts) };
-    console.error(
-      JSON.stringify({
-        event: confirm ? 'email.verify.failed' : 'email.welcome.failed',
-        to: maskAddress(to),
-        attempts,
-        ...detail,
-      }),
-    );
-    return {};
-  };
-  let answer: Response;
-  try {
-    answer = await send(RESEND_EMAILS, {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${key}`,
-        'content-type': 'application/json',
-        'idempotency-key': idempotency,
-      },
-      body: JSON.stringify({
-        from: settings.from,
-        to: [to],
-        reply_to: settings.contact,
-        subject: email.subject,
-        text: email.text,
-        html: email.html,
-      }),
-    });
-  } catch (e: any) {
-    return failed({ transient: true, error: String(e?.message ?? e).slice(0, 200) });
-  }
-  if (answer.ok) {
+  const failure = await postEmail(send, key, settings, to, email, idempotency);
+  if (!failure) {
     if (!confirm) await workspace(env, account, { op: 'welcome_sent' });
     return {};
   }
-  const body = await answer.json<{ name?: string }>().catch(() => ({}) as { name?: string });
-  return failed({
-    transient: transient(answer.status, body.name),
-    status: answer.status,
-    name: body.name,
+  if (attempts < MAX_ATTEMPTS && failure.transient) return { retry: backoff(attempts) };
+  log.error(confirm ? 'email.verify.failed' : 'email.welcome.failed', {
+    account,
+    attempts,
+    ...failure,
   });
+  return {};
 }

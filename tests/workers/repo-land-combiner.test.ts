@@ -1,8 +1,8 @@
 // The land combiner: landers that need a merge wait on their branch's combiner instead of
 // polling the authority; it builds the batches and answers each settled ticket. If the
 // combiner is unreachable, landers fall back to polling and still land.
-import { expect, it } from 'vitest';
-import { LandBatcher } from '../../cloudflare/worker/repo-land-combiner';
+import { expect, it, vi } from 'vitest';
+import { LandBatcher } from '../../cloudflare/worker/repo-land-batcher';
 import { caller } from '../../cloudflare/worker/repo-ops';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, bindings, file, scoped, signup, usePlatformFixture } from './repo-fixture';
@@ -70,4 +70,32 @@ it('never lands write skew in one batch: of a (reads x, writes y) and b (reads y
   await batcher.step();
   const later = await lander({ op: 'repo_land_status', ticket: tickets[1] });
   expect([later.status, later.result.code]).toEqual(['failed', 'CONFLICT']);
+});
+
+it('logs a lander left waiting, which Superfan counts', async () => {
+  const log = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const batcher = new LandBatcher(scoped, async () => {});
+  const target = { repo: 'r-waiting', ref: 'refs/heads/main' };
+  expect(await batcher.submit(target, {}, 1)).toBeNull();
+  expect(await batcher.wait(target, 7, 1)).toBeNull();
+  const lines = log.mock.calls.map(([line]) => JSON.parse(String(line)));
+  expect(lines).toEqual([
+    { event: 'land.timed_out', level: 'warn', repo: 'r-waiting', phase: 'submit' },
+    { event: 'land.timed_out', level: 'warn', repo: 'r-waiting', phase: 'wait' },
+  ]);
+  log.mockRestore();
+});
+
+it('logs a failed batch as a named event', async () => {
+  const log = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const failing = { ...scoped, SOURCE_REPOS: undefined } as unknown as Env;
+  const batcher = new LandBatcher(failing, async () => {});
+  const landing = batcher.submit({ repo: 'r-failing', ref: 'refs/heads/main' }, {}, 1);
+  await batcher.step();
+  await landing;
+  const [failed] = log.mock.calls
+    .map(([line]) => JSON.parse(String(line)))
+    .filter((line) => line.event === 'land.submitted_batch_failed');
+  expect(failed).toMatchObject({ repo: 'r-failing', error: expect.any(String) });
+  log.mockRestore();
 });

@@ -1,5 +1,5 @@
 //! One command's flags and positionals, parsed from a table of flag names.
-use crate::command::{Target, USAGE};
+use crate::command::Target;
 use crate::error::{Error, Result};
 use std::collections::HashMap;
 
@@ -38,7 +38,7 @@ impl Parsed {
                     .ok_or_else(|| Error::usage(format!("--{name} needs a value")))?;
                 flags.insert(name.to_owned(), value.clone());
             } else {
-                return Err(Error::usage(format!("unknown option {arg}\n\n{USAGE}")));
+                return Err(Error::usage(format!("unknown option {arg}")));
             }
         }
         Ok(Self { flags, positional })
@@ -107,5 +107,5 @@ pub fn with<'a>(extra: &[&'a str]) -> Vec<&'a str> {
 pub fn split_sub(rest: &[String], what: &str) -> Result<(String, Vec<String>)> {
     rest.split_first()
         .map(|(s, r)| (s.clone(), r.to_vec()))
-        .ok_or_else(|| Error::usage(format!("{what} needs a subcommand\n\n{USAGE}")))
+        .ok_or_else(|| Error::usage(format!("{what} needs a subcommand")))
 }

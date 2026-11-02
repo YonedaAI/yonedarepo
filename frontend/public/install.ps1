@@ -7,13 +7,15 @@
 # /downloads, checks the archive against the release's SHA256SUMS, and only then installs both
 # programs into %LOCALAPPDATA%\Programs\yoneda, which it adds to the user PATH. cloudflared is
 # Cloudflare's own release at the version pinned below, unless a working one is already on
-# PATH. Without it HTTPS Git still works, so a failed download only warns. No admin rights.
+# PATH. Without it HTTPS Git still works, so a failed download only warns. Your PowerShell
+# profile gets one line for completion, once. No admin rights.
 #
 # Environment:
 #   YONEDA_INSTALL_DIR     where to install (default %LOCALAPPDATA%\Programs\yoneda)
 #   YONEDA_VERSION         a release to install (default the latest)
 #   YONEDA_TARGET          windows-x64 or windows-arm64 (default: detected)
 #   YONEDA_DOWNLOAD_BASE   the site to download from (default the one serving this script)
+#   YONEDA_NO_SHELL_SETUP  set to leave your PATH and profile alone
 
 # `iex` runs this in the person's own session: the script block keeps its names out of that
 # session, and a failure throws, because `exit` would close their window.
@@ -57,9 +59,13 @@
     Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue
   }
 
-  function Test-Working([string] $Program) {
+  function Test-Working([string] $Program, [string[]] $Arguments = @('--version')) {
+    # An .exe can't run outside Windows, and starting one there opens it in another app.
+    if (($null -ne $IsWindows) -and (-not $IsWindows) -and ($Program -like '*.exe')) {
+      return $false
+    }
     try {
-      & $Program --version *> $null
+      & $Program @Arguments *> $null
       return $LASTEXITCODE -eq 0
     } catch {
       return $false
@@ -117,6 +123,34 @@
     if (($env:Path -split ';') -notcontains $dir) { $env:Path = "$env:Path;$dir" }
   }
 
+  # The command to run next: plain `yoneda login` goes to production, any other site names itself.
+  function Get-LoginCommand {
+    if ($site -eq 'https://yonedarepo.com') { return 'yoneda login' }
+    if ($site -like 'https://*.yonedarepo.com') {
+      return "yoneda login --origin $($site -replace '^https://', 'https://api.')"
+    }
+    return "yoneda login --origin $site"
+  }
+
+  # A line in the person's profile, once. A policy that refuses profiles would print an error in
+  # every new window, and a release too old to print a script would too: no line for either.
+  function Add-ProfileCompletion {
+    if ($env:YONEDA_NO_SHELL_SETUP) { return }
+    if (-not (Test-Working (Join-Path $dir 'yoneda.exe') @('completion', 'powershell'))) { return }
+    if ((Get-ExecutionPolicy) -in @('Restricted', 'AllSigned')) { return }
+    $line = 'if (Get-Command yoneda -ErrorAction SilentlyContinue) { yoneda completion powershell | Out-String | Invoke-Expression }'
+    try {
+      $text = if (Test-Path -LiteralPath $PROFILE) { Get-Content -Raw -LiteralPath $PROFILE } else { '' }
+      if ($text -notlike "*$line*") {
+        New-Item -ItemType Directory -Path (Split-Path $PROFILE) -Force | Out-Null
+        Add-Content -LiteralPath $PROFILE -Value "`n# Added by the YonedaRepo installer`n$line"
+      }
+      Write-Host "Shell completion set in $PROFILE"
+    } catch {
+      Write-Warning "could not write $PROFILE; add this line yourself: $line"
+    }
+  }
+
   $target = $env:YONEDA_TARGET
   if (-not $target) {
     # A 32-bit PowerShell on 64-bit Windows reports the real machine in the second name.
@@ -134,6 +168,7 @@
   if ($target -notin @('windows-x64', 'windows-arm64')) {
     throw "yoneda install: no prebuilt yoneda for $target; build it from source with cargo"
   }
+  Write-Host "Platform: $target"
 
   $tmp = Join-Path ([IO.Path]::GetTempPath()) "yoneda-install-$([guid]::NewGuid())"
   New-Item -ItemType Directory -Path $tmp | Out-Null
@@ -151,10 +186,13 @@
       throw "yoneda install: unexpected version '$version'"
     }
 
+    Write-Host "Version: $version"
+
     $archive = "yoneda-$version-$target.zip"
     $release = "$site/downloads/cli/$version"
     $archivePath = Join-Path $tmp $archive
     $sumsPath = Join-Path $tmp 'SHA256SUMS'
+    Write-Host "Downloading $archive"
     foreach ($file in @(@($archive, $archivePath), @('SHA256SUMS', $sumsPath))) {
       try {
         Get-Download "$release/$($file[0])" $file[1]
@@ -171,6 +209,7 @@
     if ($expected -ne $actual) {
       throw "yoneda install: checksum mismatch for ${archive}: expected $expected, got $actual"
     }
+    Write-Host 'Checksum verified'
 
     $unpacked = Join-Path $tmp 'unpacked'
     Expand-Archive -LiteralPath $archivePath -DestinationPath $unpacked
@@ -179,6 +218,7 @@
         throw "yoneda install: $archive has no $program"
       }
     }
+    Write-Host "Installing to $dir"
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     foreach ($program in @('yoneda.exe', 'git-remote-yoneda.exe')) {
       Install-Program (Join-Path $unpacked $program) $program
@@ -187,8 +227,12 @@
     Write-Host "Installed yoneda $version ($target) in $dir"
     Install-Cloudflared $tmp
     # Windows PowerShell has no $IsWindows; PowerShell elsewhere has it false, and no registry.
-    if (($null -eq $IsWindows) -or $IsWindows) { Add-UserPath }
-    Write-Host 'Next: yoneda login, then yoneda ssh setup for Git over SSH'
+    if (($null -eq $IsWindows) -or $IsWindows) {
+      if (-not $env:YONEDA_NO_SHELL_SETUP) { Add-UserPath }
+    }
+    Add-ProfileCompletion
+    Write-Host 'Done'
+    Write-Host "Next: $(Get-LoginCommand)"
   } finally {
     Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
   }

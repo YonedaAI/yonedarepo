@@ -1,6 +1,7 @@
 //! Log compaction: whole segments of old versions move to the object store (played here by
 //! a map), the SQL tail stays bounded, and reads at old versions answer from the segments.
 use super::batches::open as open_for_changesets;
+use super::land_when_cleared::{branch, held_full, landing, switch_on};
 use super::*;
 use crate::storage::SqlStore;
 use std::collections::BTreeMap;
@@ -116,6 +117,25 @@ pub(super) fn run_archived(
 
 fn refs_at(h: &Harness, r2: &Store, version: u64) -> Value {
     read(h, r2, json!({"op":"repo_refs","at":version})).unwrap()["refs"].clone()
+}
+
+/// Moving the log out is what makes room in a full repository, so its job asks.
+#[test]
+fn compaction_asks_again_for_what_the_storage_limit_held() {
+    let (h, root, _) = grown(1_100);
+    let r2 = Store::default();
+    switch_on(&h);
+    let id = branch(&h, AGENT, &root, "fix", "src/a.rs");
+    let number = landing(&h, "fix");
+    h.approve_and_check(&id);
+    held_full(&h, number);
+    h.ok(
+        OWNER,
+        json!({"op":"repo_set_retention","keep_versions":64,"keep_days":30}),
+    );
+    let done = compact_once(&h, &r2, json!({}));
+    assert_eq!(done["floor"], 1_024, "{done}");
+    assert_eq!(done["land_checks"], json!([number]), "{done}");
 }
 
 #[test]

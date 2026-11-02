@@ -32,6 +32,7 @@ fn prod_workers() -> Vec<Deployable> {
 fn evidence(revision: &str, status: &str) -> serde_json::Value {
     json!({"items": [
         {"id": "0", "title": "Live revisions", "status": "pass", "metrics": {"front": revision, "platform": revision}},
+        {"id": BROWSER_ITEM, "title": "Browser", "status": "pass", "metrics": {}},
         {"id": "1", "title": "Create project", "status": status, "metrics": {}}
     ]})
 }
@@ -145,6 +146,7 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
     assert_eq!(
         migrations,
         [
+            "yonedarepo-dev-platform-index-weur",
             "yonedarepo-dev-platform-index",
             "yonedarepo-dev-managed-revenue"
         ]
@@ -175,14 +177,28 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
             Step::Secrets { worker: 2 },
             Step::Health { worker: 2 },
             d(3),
-            Step::Secrets { worker: 3 },
             Step::Health { worker: 3 },
             d(4),
             Step::Secrets { worker: 4 },
+            Step::Health { worker: 4 },
             d(5),
             Step::Secrets { worker: 5 },
+            Step::Health { worker: 5 },
+            d(6),
+            Step::Secrets { worker: 6 },
+            d(7),
+            Step::Secrets { worker: 7 },
+            d(8),
+            Step::Secrets { worker: 8 },
+            d(9),
+            Step::Secrets { worker: 9 },
+            d(10),
+            Step::Secrets { worker: 10 },
+            d(11),
+            Step::Secrets { worker: 11 },
+            d(12),
         ],
-        "superfan (no /health), platform, agents-managed (optional secrets), agents, bench and bench2 (BENCH_KEY, no /health)"
+        "superfan (no /health), the cell, platform, edge (no secrets), agents-managed (optional secrets), agents, bench, bench2 and the regional clients (BENCH_KEY, no /health), deadman (no secrets, no /health)"
     );
     assert!(
         !plan.iter().any(|s| matches!(s, Step::ActiveGate { .. })),
@@ -247,7 +263,16 @@ fn a_workstation_build_is_gated_then_built_pushed_and_recorded_before_migrations
 fn prod_checks_active_runs_right_before_each_container_rollout() {
     let workers = prod_workers();
     let roles: Vec<&str> = workers.iter().map(|w| w.role.as_str()).collect();
-    assert_eq!(roles, ["superfan", "platform", "agents-managed", "agents"]);
+    assert_eq!(
+        roles,
+        [
+            "superfan",
+            "platform",
+            "agents-managed",
+            "agents",
+            "deadman"
+        ]
+    );
     let plan = steps(&Env::Prod, &workers, false, &Source::Dockerfile);
     for (index, worker) in workers.iter().enumerate() {
         let gate = plan
@@ -652,13 +677,10 @@ fn deploy_without_an_env_is_refused_and_the_legacy_env_is_gone() {
 }
 
 #[test]
-fn the_browser_item_must_pass_whenever_the_kit_recorded_it() {
+fn the_browser_item_must_be_in_the_evidence_and_pass() {
     let with_browser = |status: &str| {
         let mut evidence = evidence(HEAD, "pass");
-        evidence["items"]
-            .as_array_mut()
-            .unwrap()
-            .push(json!({"id": BROWSER_ITEM, "title": "Browser", "status": status, "metrics": {}}));
+        evidence["items"][1]["status"] = json!(status);
         evidence
     };
     evidence_passes(Some(&with_browser("pass")), &good_prod()).unwrap();
@@ -668,8 +690,15 @@ fn the_browser_item_must_pass_whenever_the_kit_recorded_it() {
             .to_string();
         assert!(error.contains("kit item browser"), "{error}");
     }
-    // Not yet required (deploy_evidence::BROWSER_REQUIRED): evidence without the item still passes.
-    evidence_passes(Some(&evidence(HEAD, "pass")), &good_prod()).unwrap();
+    let mut no_browser = evidence(HEAD, "pass");
+    no_browser["items"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|item| item["id"] != BROWSER_ITEM);
+    let error = evidence_passes(Some(&no_browser), &good_prod())
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("no browser item"), "{error}");
     let no_item_zero = json!({"items": [{"id": "browser", "status": "pass"}]});
     assert!(evidence_passes(Some(&no_item_zero), &good_prod()).is_err());
 }
@@ -800,21 +829,38 @@ fn the_summary_shows_which_container_apps_rolled_out() {
     let platform = workers.iter().find(|w| w.role == "platform").unwrap();
     let app = "yonedarepo-dev-platform-checkcontainer".to_string();
     // Every declared app is listed, those with their own images too (often no rollout).
+    let imports = "yonedarepo-dev-platform-importcontainer".to_string();
     let packs = "yonedarepo-dev-platform-packbuilder".to_string();
     let gateway = "yonedarepo-dev-platform-sshgateway".to_string();
-    let before = BTreeMap::from([(app.clone(), 1), (packs.clone(), 3), (gateway.clone(), 7)]);
-    let after = BTreeMap::from([(app.clone(), 2), (packs.clone(), 3), (gateway.clone(), 7)]);
+    let before = BTreeMap::from([
+        (app.clone(), 1),
+        (imports.clone(), 1),
+        (packs.clone(), 3),
+        (gateway.clone(), 7),
+    ]);
+    let after = BTreeMap::from([
+        (app.clone(), 2),
+        (imports.clone(), 1),
+        (packs.clone(), 3),
+        (gateway.clone(), 7),
+    ]);
     assert_eq!(
         rollouts(platform, Some(&before), Some(&after)),
-        format!("{app} v1 -> v2 (rolled out); {packs} v3 (no rollout); {gateway} v7 (no rollout)")
+        format!(
+            "{app} v1 -> v2 (rolled out); {imports} v1 (no rollout); {packs} v3 (no rollout); {gateway} v7 (no rollout)"
+        )
     );
     assert_eq!(
         rollouts(platform, Some(&before), Some(&before)),
-        format!("{app} v1 (no rollout); {packs} v3 (no rollout); {gateway} v7 (no rollout)")
+        format!(
+            "{app} v1 (no rollout); {imports} v1 (no rollout); {packs} v3 (no rollout); {gateway} v7 (no rollout)"
+        )
     );
     assert_eq!(
         rollouts(platform, None, None),
-        format!("{app} ? (no rollout); {packs} ? (no rollout); {gateway} ? (no rollout)")
+        format!(
+            "{app} ? (no rollout); {imports} ? (no rollout); {packs} ? (no rollout); {gateway} ? (no rollout)"
+        )
     );
     let front = workers.iter().find(|w| w.role == "agents").unwrap();
     assert_eq!(rollouts(front, Some(&before), Some(&after)), "-");
@@ -875,6 +921,10 @@ fn each_d1_database_migrates_under_its_own_workers_config() {
         migrations,
         [
             (
+                "yonedarepo-dev-platform-index-weur",
+                "cloudflare/wrangler.dev-platform-weur.jsonc"
+            ),
+            (
                 "yonedarepo-dev-platform-index",
                 "cloudflare/wrangler.dev-platform.jsonc"
             ),
@@ -884,4 +934,19 @@ fn each_d1_database_migrates_under_its_own_workers_config() {
             ),
         ]
     );
+}
+
+#[test]
+fn every_worker_deploy_names_its_commit_on_the_cloudflare_version() {
+    let message = crate::deploy_ledger::message(&Env::Prod, HEAD);
+    let revision = format!("BUILD_REVISION:{HEAD}");
+    let args = crate::deploy_exec::deploy_args("c.jsonc", &revision, HEAD, &message, false);
+    let after = |flag: &str| args[args.iter().position(|a| *a == flag).unwrap() + 1];
+    assert_eq!(after("--tag"), &HEAD[..12]);
+    assert_eq!(after("--message"), format!("prod {HEAD}"));
+    assert_eq!(after("--var"), revision);
+    assert!(!args.contains(&"--dry-run"));
+    let dry = crate::deploy_exec::deploy_args("c.jsonc", &revision, HEAD, &message, true);
+    assert_eq!(dry.last(), Some(&"--dry-run"));
+    assert!(dry.contains(&"--tag"));
 }

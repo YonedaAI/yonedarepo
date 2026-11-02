@@ -60,7 +60,7 @@ const assets = {
     return new Response(template(page[pathname]), { headers: { 'content-type': 'text/html; charset=utf-8' } });
   },
 };
-const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2', PUBLIC_APP_ORIGIN: ORIGIN, ASSETS: assets } as unknown as Env;
+const local = { ...scoped, PUBLIC_APP_ORIGIN: ORIGIN, ASSETS: assets } as unknown as Env;
 const dev = { ...local, PLATFORM: { fetch: (req: Request) => platformFetch(req, local) } } as unknown as Env;
 const prod = { ...dev, SEO_INDEXING: 'on' } as unknown as Env;
 
@@ -163,7 +163,7 @@ it('describes a blog post from its front matter, and the home and docs with stru
 });
 
 it('marks signed-in app pages noindex and names a public repository, never a private one', async () => {
-  for (const path of ['/settings', '/settings/billing', '/agents', '/admin', '/search', '/source/explore']) {
+  for (const path of ['/settings', '/settings/billing', '/agents', '/admin', '/search', '/source/explore', '/updates/confirm']) {
     const app = await page(path);
     expect(app.head.robots, path).toBe('noindex');
     expect(app.head.canonical, path).toBeUndefined();

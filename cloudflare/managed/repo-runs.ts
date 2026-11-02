@@ -1,6 +1,12 @@
-// Reads of a repository's runs as RepoAgents stores them: one run, a page of runs, a run's
-// posted findings and each agent's switch with its newest run.
-import type { ManagedRun, RunFinding } from '../../shared/managed-agents';
+// A repository's runs as RepoAgents stores them. Reads: one run, a page of runs, a run's posted
+// findings and each agent's switch with its newest run. Writes: claiming a head.
+import type {
+  ManagedAgentId,
+  ManagedRun,
+  RunFinding,
+  RunStatus,
+} from '../../shared/managed-agents';
+import { AUTOMATION_PAUSED, notReviewed } from './config';
 
 type RunRow = Omit<ManagedRun, 'cost_usd'> & {
   charged_microusd: number;
@@ -55,4 +61,100 @@ export function agentSummary(
 /** A deleted repository's state: its runs (with their findings), switches and connection. */
 export function clearRepository(sql: SqlStorage) {
   for (const table of ['runs', 'agents', 'connection']) sql.exec(`DELETE FROM ${table}`);
+}
+
+const OPEN: RunStatus[] = ['queued', 'running', 'paused'];
+export const OPEN_SQL = `('${OPEN.join("','")}')`;
+
+export interface Claim {
+  run: string;
+  attempt: number;
+  created: boolean;
+  /** Still waiting for its Workflow instance (a lost start is retried). */
+  queued: boolean;
+  /** A new attempt of a run a pause stopped: paid for again, unlike a start sent twice. */
+  restarted?: boolean;
+  superseded: string[];
+}
+
+const shortAgent: Record<ManagedAgentId, string> = {
+  'code-review': 'cr',
+  'security-review': 'sr',
+  'slop-review': 'sl',
+  'intent-drift': 'id',
+};
+
+/** The run for (agent, change, head), made once; older open heads of the change are superseded. */
+export function claimRun(
+  sql: SqlStorage,
+  repo: string,
+  agent: ManagedAgentId,
+  change: number,
+  head: string,
+  choice: { harness: string; provider: string; model: string },
+): Claim | null {
+  const on = sql
+    .exec('SELECT 1 FROM agents WHERE agent = ? AND enabled = 1', agent)
+    .toArray().length;
+  if (!on) return null;
+  const existing = sql
+    .exec<{ id: string; attempt: number; status: RunStatus; error: string | null }>(
+      'SELECT id, attempt, status, error FROM runs WHERE agent = ? AND change = ? AND head = ?',
+      agent,
+      change,
+      head,
+    )
+    .toArray()[0];
+  // A pause stopped this head before it had an answer: it gets another try.
+  if (existing?.error === notReviewed(AUTOMATION_PAUSED)) {
+    sql.exec(
+      `UPDATE runs SET status = 'queued', attempt = attempt + 1, error = NULL, finished_at = NULL
+       WHERE id = ?`,
+      existing.id,
+    );
+    const attempt = existing.attempt + 1;
+    return {
+      run: existing.id,
+      attempt,
+      created: false,
+      queued: true,
+      restarted: true,
+      superseded: [],
+    };
+  }
+  if (existing)
+    return {
+      run: existing.id,
+      attempt: existing.attempt,
+      created: false,
+      queued: existing.status === 'queued',
+      superseded: [],
+    };
+  const now = Date.now();
+  const superseded = sql
+    .exec<{ id: string }>(
+      `UPDATE runs SET status = 'superseded', finished_at = ?, error = 'A newer push replaced this head'
+       WHERE agent = ? AND change = ? AND head <> ? AND status IN ${OPEN_SQL} RETURNING id`,
+      now,
+      agent,
+      change,
+      head,
+    )
+    .toArray()
+    .map((r) => r.id);
+  const run = `${repo}-${shortAgent[agent]}-${change}-${head.slice(0, 12)}`;
+  sql.exec(
+    `INSERT INTO runs (id, repo, agent, change, head, status, harness, provider, model, created_at)
+     VALUES (?, ?, ?, ?, ?, 'queued', ?, ?, ?, ?)`,
+    run,
+    repo,
+    agent,
+    change,
+    head,
+    choice.harness,
+    choice.provider,
+    choice.model,
+    now,
+  );
+  return { run, attempt: 1, created: true, queued: true, superseded };
 }

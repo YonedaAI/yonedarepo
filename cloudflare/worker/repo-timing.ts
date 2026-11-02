@@ -5,7 +5,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 type Phase = { ms: number; n: number };
-const current = new AsyncLocalStorage<Map<string, Phase>>();
+export type Phases = Map<string, Phase>;
+const current = new AsyncLocalStorage<Phases>();
 
 /** Adds `ms` (over `n` items) to `phase` in the current request, if one is being timed. */
 export function record(phase: string, ms: number, n = 1) {
@@ -26,12 +27,13 @@ export async function timed<T>(phase: string, run: () => Promise<T>): Promise<T>
   }
 }
 
-/** Runs `handle` with a fresh timing scope and renders what it recorded. */
+/** Runs `handle` with a fresh timing scope and renders what it recorded; `phases` is what a
+ * caller may keep (repo-span-sample.ts). */
 export async function withTimings<T>(handle: () => Promise<T>) {
-  const phases = new Map<string, Phase>();
+  const phases: Phases = new Map();
   const value = await current.run(phases, () => timed('total', handle));
   const header = [...phases]
     .map(([name, p]) => `${name};dur=${p.ms.toFixed(1)};desc="${p.n}"`)
     .join(', ');
-  return { value, header };
+  return { value, header, phases };
 }

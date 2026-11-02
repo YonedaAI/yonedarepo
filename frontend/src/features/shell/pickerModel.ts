@@ -109,3 +109,9 @@ export function popupPlace(
     maxHeight: height - top - GUTTER,
   };
 }
+
+/** Every group's rows as one unheaded list, each repository once. */
+export function plainGroup(groups: PickerGroup[]): PickerGroup[] {
+  const rows = [...new Map(groups.flatMap((g) => g.rows).map((r) => [r.repo, r])).values()];
+  return rows.length ? [{ label: 'Repositories', rows }] : [];
+}

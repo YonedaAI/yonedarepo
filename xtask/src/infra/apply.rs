@@ -80,11 +80,16 @@ pub(crate) async fn up(args: &[String]) -> Result<()> {
     let workers = inventory::deployables(&spec, &plan::effective_lock(&spec, &recorded, &live)?)?;
     let todo = creations(&plan::diff(&spec, &recorded, &workers, &live));
     for item in &todo {
-        let args: Vec<&str> = match item {
-            Create::D1(name) => vec!["d1", "create", name],
-            Create::R2(name) => vec!["r2", "bucket", "create", name],
-            Create::Queue(name) => vec!["queues", "create", name],
+        let (mut args, name): (Vec<&str>, &String) = match item {
+            Create::D1(name) => (vec!["d1", "create", name], name),
+            Create::R2(name) => (vec!["r2", "bucket", "create", name], name),
+            Create::Queue(name) => (vec!["queues", "create", name], name),
         };
+        // Fixed for life: a cell's resources are made in its jurisdiction, or not at all.
+        let place = spec.jurisdiction_of(name);
+        if let Some(place) = &place {
+            args.extend(["--jurisdiction", place]);
+        }
         if dry_run {
             println!("Dry run: would run wrangler {}", args.join(" "));
         } else {

@@ -1,7 +1,7 @@
 // URL state for the one app shell: every view is addressable and survives reload. Public
 // repositories are listed at `/source/explore` (the platform host redirects `/explore` there;
 // the bare path parses too, for a host that does not). Older
-// addresses (`/source`, `/source/tokens`, a repository's `/connect`, `/members` and
+// addresses (`/source`, `/source/tokens`, a repository's `/connect`, `/members`, `/ctc` and
 // `/settings/branches`) still parse, into the view that replaced them. The public site's
 // pages (`site/siteRoute.ts`) parse here too, as one `site` view. A repository's readable
 // address (`/<handle>/<name>`) and a profile (`/<handle>`) parse and format in repoNames.ts.
@@ -9,6 +9,12 @@
 // are `/settings[/<section>]` (`account-settings/settingsRoute.ts`, old anchors included). The
 // Search page across repositories is `/search` (`search/searchRoute.ts`).
 import { isCanonicalAccountIdentifier } from '../../../../shared/account';
+import {
+  type EmailLinkRoute,
+  formatEmailLink,
+  isEmailLink,
+  parseEmailLink,
+} from '../account-settings/emailLinkRoute';
 import {
   formatSettingsRoute,
   parseSettingsPath,
@@ -20,6 +26,8 @@ import { formatSitePage, parseSitePath, type SitePage } from '../site/siteRoute'
 import { AGENT_SECTIONS, type AgentSection } from './agentModel';
 import { normalizeUserCode } from './connect';
 import { formatNamedRoute, type NamedRoute, parseNamedPath, REPO_ID, repoBase } from './repoNames';
+
+export { type RepoTab, routeTab, tabRoute } from './repoTabs';
 
 export const REPO_SETTINGS_SECTIONS = [
   'rules',
@@ -43,8 +51,7 @@ export type SourceRoute =
   | SettingsRoute
   | SearchRoute
   | { view: 'device'; code: string }
-  /** The contact email's confirmation page (the emailed link; its button confirms). */
-  | { view: 'verify-email'; account: string; token: string }
+  | EmailLinkRoute
   | { view: 'org'; org: string; tab?: 'audit' }
   /** The workspace's managed agents (`/agents`); `workspace` (an org) defaults to the account.
    * `cardAdded`: back from Stripe (`?billing=added`), kept here because the page reads it once
@@ -61,9 +68,10 @@ export type SourceRoute =
   | { view: 'admin'; section: AdminSection; account?: string }
   | { view: 'site'; site: SitePage }
   | NamedRoute
+  /** The repository's front page. */
+  | { view: 'overview'; repo: string; ref?: string }
   /** `line`: that line of the file is marked and scrolled to. */
   | { view: 'files'; repo: string; path: string; ref: string; at?: number; line?: number }
-  | { view: 'overview'; repo: string; path: string; ref: string; at?: number }
   | { view: 'history'; repo: string; ref: string }
   | { view: 'commit'; repo: string; commit: string }
   | { view: 'transactions'; repo: string }
@@ -71,31 +79,14 @@ export type SourceRoute =
   | { view: 'search'; repo: string; query: string; word?: boolean }
   | { view: 'changes'; repo: string }
   | { view: 'change'; repo: string; number: number }
-  | { view: 'ctc'; repo: string }
+  | { view: 'tower'; repo: string }
   | { view: 'releases'; repo: string }
   | { view: 'release'; repo: string; tag: string }
   | { view: 'agents'; repo: string; section: AgentSection }
   | { view: 'session'; repo: string; id: number }
   | { view: 'context'; repo: string }
+  | { view: 'insights'; repo: string }
   | { view: 'repo-settings'; repo: string; section: RepoSettingsSection };
-
-/** The repository's sidebar pages. Overview is the code browser (`files`, `overview`);
- * Commits holds `history`, `transactions`, `branches` and `commit`; Landings holds `change`;
- * Releases holds `release`; Sessions holds the agent sessions and each `session`; Memories
- * the agent memories; Agent tools (`agents`) the other agent records (contracts, pins,
- * bisects). Each page has one sidebar entry, highlighted on every route it holds. */
-export type RepoTab =
-  | 'overview'
-  | 'changes'
-  | 'ctc'
-  | 'agents'
-  | 'commits'
-  | 'sessions'
-  | 'context'
-  | 'memories'
-  | 'releases'
-  | 'search'
-  | 'settings';
 
 /** An organization's name: an account name without email (the two share one namespace). */
 export const ORG_NAME = /^[a-z][a-z0-9_]{2,31}$/;
@@ -107,19 +98,15 @@ const isSection = (value: string | undefined): value is RepoSettingsSection =>
 const isAgentSection = (value: string | undefined): value is AgentSection =>
   (AGENT_SECTIONS as readonly string[]).includes(value ?? '');
 
-/** `hash` matters only to the old single settings page's anchors. */
+/** `hash` matters only to the old single settings page's anchors and the reset link. */
 export function parseSourceRoute(pathname: string, search: string, hash = ''): SourceRoute {
   const params = new URLSearchParams(search);
   const parts = pathname.split('/').filter(Boolean).map(decodeURIComponent);
   const [root, repo, view, ...rest] = parts;
   if (root === 'device')
     return { view: 'device', code: normalizeUserCode(params.get('code') ?? '') };
-  if (root === 'verify-email' && !repo)
-    return {
-      view: 'verify-email',
-      account: params.get('account') ?? '',
-      token: params.get('token') ?? '',
-    };
+  const emailLink = repo ? null : parseEmailLink(root, params, hash);
+  if (emailLink) return emailLink;
   if (root === 'settings') return parseSettingsPath(parts.slice(1), params, hash);
   if (root === 'repositories' && !repo) return { view: 'repositories' };
   if (root === 'search' && !repo) return parseSearchParams(params);
@@ -137,7 +124,7 @@ export function parseSourceRoute(pathname: string, search: string, hash = ''): S
     return { view: 'settings', section: 'tokens' };
   if ((root === 'source' && repo === 'explore' && !view) || (root === 'explore' && !repo))
     return { view: 'explore' };
-  const site = parseSitePath(parts);
+  const site = parseSitePath(parts, params);
   if (site) return { view: 'site', site };
   if (root !== 'source') return parseNamedPath(parts, search) ?? { view: 'home' };
   if (!repo || !REPO_ID.test(repo)) return { view: 'home' };
@@ -156,8 +143,8 @@ export function parseSourceRoute(pathname: string, search: string, hash = ''): S
       ? { view: 'search', repo, query, word: true }
       : { view: 'search', repo, query };
   }
-  if (view === 'context') return { view: 'context', repo };
-  if (view === 'ctc') return { view: 'ctc', repo };
+  if (view === 'context' || view === 'insights') return { view, repo };
+  if (view === 'tower' || view === 'ctc') return { view: 'tower', repo }; // Old links use /ctc.
   // `/landings` is the same page under its UI name; `/changes` stays the address.
   if (view === 'changes' || view === 'landings') {
     const number = Number(rest[0]);
@@ -180,9 +167,15 @@ export function parseSourceRoute(pathname: string, search: string, hash = ''): S
     return { view: 'commit', repo, commit: rest[0] };
   const at = Number(params.get('at'));
   const line = params.get('line') ?? '';
+  // An old `/overview/<path>` link opens that path's files; an old root with a ref or a version
+  // opens that place in the files, not the front page.
   const path = view === 'files' || view === 'overview' ? rest.join('/') : '';
+  if (view === 'overview' && !path && params.has('ref') && !params.has('at'))
+    return { view: 'overview', repo, ref };
+  if (view !== 'files' && !path && !params.has('ref') && !params.has('at'))
+    return { view: 'overview', repo };
   return {
-    view: view === 'overview' ? 'overview' : 'files',
+    view: 'files',
     repo,
     path,
     ref,
@@ -262,8 +255,7 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'profile' || route.view === 'repo-name') return formatNamedRoute(route);
   if (route.view === 'device')
     return route.code ? `/device?code=${encodeURIComponent(route.code)}` : '/device';
-  if (route.view === 'verify-email')
-    return `/verify-email?account=${encodeURIComponent(route.account)}&token=${encodeURIComponent(route.token)}`;
+  if (isEmailLink(route)) return formatEmailLink(route);
   const base = repoBase(route.repo);
   if (route.view === 'history')
     return route.ref === 'main'
@@ -279,78 +271,27 @@ export function formatSourceRoute(route: SourceRoute): string {
       : `${base}/search`;
   if (route.view === 'commit') return `${base}/commit/${route.commit}`;
   if (route.view === 'changes') return `${base}/changes`;
-  if (route.view === 'ctc') return `${base}/ctc`;
+  if (route.view === 'tower') return `${base}/tower`;
   if (route.view === 'change') return `${base}/changes/${route.number}`;
   if (route.view === 'releases') return `${base}/releases`;
   if (route.view === 'release') return `${base}/releases/${encodeURIComponent(route.tag)}`;
   if (route.view === 'agents')
     return route.section === 'sessions' ? `${base}/agents` : `${base}/agents/${route.section}`;
   if (route.view === 'session') return `${base}/agents/sessions/${route.id}`;
-  if (route.view === 'context') return `${base}/context`;
+  if (route.view === 'context' || route.view === 'insights') return `${base}/${route.view}`;
+  if (route.view === 'overview')
+    return route.ref && route.ref !== 'main'
+      ? `${base}/overview?${new URLSearchParams({ ref: route.ref })}`
+      : base;
   const query = new URLSearchParams();
   const path = route.path.split('/').filter(Boolean).map(encodeURIComponent).join('/');
   if (route.ref !== 'main') query.set('ref', route.ref);
   if (route.at !== undefined) query.set('at', String(route.at));
   if (route.view === 'files' && route.line && path) query.set('line', String(route.line));
   const suffix = query.size ? `?${query}` : '';
-  if (route.view === 'overview')
-    return path ? `${base}/overview/${path}${suffix}` : `${base}/overview${suffix}`;
-  return path ? `${base}/files/${path}${suffix}` : `${base}${suffix}`;
+  return path ? `${base}/files/${path}${suffix}` : `${base}/files${suffix}`;
 }
 
 /** The repository a route shows, if any. */
 export const routeRepo = (route: SourceRoute): string | undefined =>
   'repo' in route ? route.repo : undefined;
-
-/** The sidebar page a repository route belongs to. */
-export function routeTab(route: SourceRoute): RepoTab | undefined {
-  switch (route.view) {
-    case 'files':
-    case 'overview':
-      return 'overview';
-    case 'history':
-    case 'transactions':
-    case 'branches':
-    case 'commit':
-      return 'commits';
-    case 'changes':
-    case 'change':
-      return 'changes';
-    case 'ctc':
-      return 'ctc';
-    case 'releases':
-    case 'release':
-      return 'releases';
-    case 'agents':
-      return route.section === 'sessions'
-        ? 'sessions'
-        : route.section === 'memories'
-          ? 'memories'
-          : 'agents';
-    case 'session':
-      return 'sessions';
-    case 'context':
-      return 'context';
-    case 'search':
-      return 'search';
-    case 'repo-settings':
-      return 'settings';
-    default:
-      return undefined;
-  }
-}
-
-/** Where a page starts. */
-export function tabRoute(tab: RepoTab, repo: string): SourceRoute {
-  if (tab === 'overview') return { view: 'files', repo, path: '', ref: 'main' };
-  if (tab === 'commits') return { view: 'history', repo, ref: 'main' };
-  if (tab === 'changes') return { view: 'changes', repo };
-  if (tab === 'ctc') return { view: 'ctc', repo };
-  if (tab === 'releases') return { view: 'releases', repo };
-  if (tab === 'sessions') return { view: 'agents', repo, section: 'sessions' };
-  if (tab === 'agents') return { view: 'agents', repo, section: 'contracts' };
-  if (tab === 'context') return { view: 'context', repo };
-  if (tab === 'memories') return { view: 'agents', repo, section: 'memories' };
-  if (tab === 'search') return { view: 'search', repo, query: '' };
-  return { view: 'repo-settings', repo, section: 'rules' };
-}

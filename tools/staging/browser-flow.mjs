@@ -1,13 +1,11 @@
-// Browser gate (kit item `browser`): headless system Chrome (playwright-core, channel `chrome`)
-// drives the served app as a person does, with zero model spend. It signs the kit account in
+// Browser gate: Chrome drives the served app with zero model spend. It signs the kit account in
 // through the real login form, creates a repository with the shell's "New repository" dialog,
 // opens its Code tab and Clone menu (the SSH line exactly when Git over SSH is open), History
 // (where it creates a branch under "Branches and tags" and deletes it again),
 // Landings (the empty list) and Settings (Landing rules, Connect) tabs
 // and the account Settings page. Then the second kit account (a member at write) commits on a
-// branch by API, the kit account opens a change for it and approves and lands it in the Change
-// page (the platform refuses an author's own approval); the page and the API must both read it
-// back landed. A second branch, cut from main before that landing, is then behind main: its
+// branch by API. The kit account approves and lands it; API and page must read back landed.
+// A second branch, cut from main before that landing, is then behind main: its
 // Change page's "Rebase on main" replays it onto main. The Agents tab then shows a session
 // recorded by API (browser-agent-flow.mjs). Releases, forks and organizations follow
 // (browser-collab-flow.mjs), then tokens, deleting an org and a repository deleted while its
@@ -24,6 +22,7 @@ import { managedAgentPages } from './browser-managed-agents-flow.mjs';
 import { forkPages, orgPages, releasePages } from './browser-collab-flow.mjs';
 import { b64, OWN_TRAFFIC, Session, secondAccount, sleep, until } from './client.mjs';
 import { atRepo, openRepo, repoPath } from './repo-urls.mjs';
+import { overviewStates } from './overview-layout.mjs';
 
 const author = { name: 'Browser gate', email: 'kit@yonedarepo.invalid' };
 
@@ -166,15 +165,15 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
     assert.equal((await account.raw('GET', `/api/v1/repos/${id}`)).status, 404, 'Deleted repository is still served');
     m.repo_deleted = true;
   });
-  await page.getByRole('button', { name: `Switch repository (current: ${name})` }).waitFor();
-  await atRepo(page, account, id);
-  await page.getByRole('region', { name: 'Files' }).getByText('README.md').first().waitFor();
+  await page.getByRole('complementary', { name: 'Sidebar' }).getByRole('button', { name: `Switch repository (current: ${name})` }).waitFor();
+  await atRepo(page, account, id, '/files');
+  await overviewStates(page, { repo: id, shot });
   await shot('source-code');
   // The Clone menu: the SSH line exactly when the platform says Git over SSH is open.
   const ssh = (await account.raw('GET', '/api/v1/ssh-keys')).body?.ssh;
   await page.locator('.clone-menu > summary').click();
   const cloneMenu = page.locator('.clone-dropdown');
-  await cloneLines(page, cloneMenu, { api, id, name, path: await repoPath(account, id) }, 'the Clone menu');
+  await cloneLines(page, cloneMenu, { api, name, path: await repoPath(account, id) }, 'the Clone menu');
   const sshBlock = cloneMenu.locator('.source-copy', { has: page.getByText('SSH', { exact: true }) });
   if (ssh?.front_door && ssh.host) {
     m.ssh_clone = await sshBlock.locator('code').innerText();
@@ -190,7 +189,7 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
   await page.keyboard.press('Escape');
   const tabs = page.getByRole('navigation', { name: 'Repository' });
   await tabs.getByRole('link', { name: 'Commits' }).click();
-  await page.getByRole('list', { name: 'History of main' }).getByRole('listitem').first().waitFor();
+  await page.getByRole('region', { name: /^Commits on / }).getByRole('listitem').first().waitFor();
   await shot('source-history');
   await branchesPage(page, account, id, shot, m);
   await tabs.getByRole('link', { name: 'Landings' }).click();
@@ -203,7 +202,7 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
   await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'Connect' }).click();
   await page.getByRole('heading', { name: 'Clone with git' }).waitFor();
   // Git, the CLI and MCP live on the platform API host, never the app's own origin.
-  m.clone_url = await cloneLines(page, page.locator('.source-connect'), { api, id, name, path: await repoPath(account, id) }, 'Connect');
+  m.clone_url = await cloneLines(page, page.locator('.source-connect'), { api, name, path: await repoPath(account, id) }, 'Connect');
   await shot('source-connect');
   await accountSettings(page, 'Tokens');
   await page.getByRole('heading', { name: 'Personal access tokens' }).waitFor();
@@ -213,19 +212,18 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
 }
 
 /**
- * The clone commands in `scope` (Clone menu or Connect): the recommended yoneda remote helper
- * first with its one-time `yoneda login` on the API origin, then HTTPS pointing at Settings →
- * Personal tokens; each a whole command into a directory named after the repository.
+ * The clone commands in `scope` (Clone menu or Connect): the yoneda remote helper with its one
+ * `yoneda login`, then HTTPS with its token; each a whole command into the repository's name.
  */
-export async function cloneLines(page, scope, { api, id, name, path }, what) {
+export async function cloneLines(page, scope, { api, name, path }, what) {
   const blocks = scope.locator('.source-copy');
   await blocks.first().waitFor();
   const labels = await blocks.locator('.source-copy-head > span').allInnerTexts();
   assert.deepEqual(labels.slice(0, 2), ['yoneda remote helper (recommended)', 'HTTPS'], `${what}: clone entries out of order`);
-  assert.equal(await blocks.nth(0).locator('code').innerText(), `git clone yoneda::${api}/${id} ${name}`, `${what}: the yoneda line`);
+  assert.equal(await blocks.nth(0).locator('code').innerText(), `git clone yoneda::${api}${path} ${name}`, `${what}: the yoneda line`);
   const https = await blocks.nth(1).locator('code').innerText();
   assert.equal(https, `git clone ${api}${path}.git ${name}`, `${what}: the HTTPS line`);
-  await scope.getByText(`yoneda login --origin ${api}`, { exact: true }).first().waitFor();
+  await scope.getByText(api === 'https://api.yonedarepo.com' ? 'yoneda login' : `yoneda login --origin ${api}`, { exact: true }).first().waitFor();
   assert.equal(await scope.getByRole('link', { name: 'Settings → Personal tokens' }).getAttribute('href'), '/settings/tokens', `${what}: the personal token link`);
   return https;
 }
@@ -270,6 +268,7 @@ export async function changeLanded(page, { origin, kit, account, repo: { id, nam
   const api = (path) => `/api/v1/repos/${id}${path}`;
   const member = await secondAccount(origin, kit);
   await account.post(api('/members'), { account: member.name, role: 'write' });
+  await account.call('PUT', api('/policy'), { policy: { required_checks: [], approvals: 1 } });
   const base = (await account.get(api('/refs'))).refs['refs/heads/main'];
   await member.session.post(`/repos/${id}/branches`, { ref: 'kit-rebase', commit: base, expected: null });
   const made = await member.session.post(`/repos/${id}/commits`, {

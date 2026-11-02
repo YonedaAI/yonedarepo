@@ -8,7 +8,6 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { accountRoute } from '../../cloudflare/worker/accounts';
 import { PlatformEntrypoint, platformJob } from '../../cloudflare/worker/platform-entrypoint';
 import {
-  maskAddress,
   RESEND_EMAILS,
   welcomeJob,
 } from '../../cloudflare/worker/platform-welcome-email';
@@ -101,7 +100,7 @@ function resend(answers: { status: number; name?: string }[] = []) {
 
 it('renders the confirmation link in the welcome email and its own email (snapshots)', async () => {
   const config = { origin: 'https://yonedarepo.com', contact: 'hello@yonedarepo.com' };
-  const verifyUrl = `https://yonedarepo.com/verify-email?account=ada&token=${'ab'.repeat(32)}`;
+  const verifyUrl = `https://yonedarepo.com/verify-email#account=ada&token=${'ab'.repeat(32)}`;
   const welcome = renderWelcome({ ...config, verifyUrl });
   await expect(welcome.text).toMatchFileSnapshot('./__snapshots__/welcome-email-confirm.txt');
   const confirm = renderVerify({ ...config, verifyUrl });
@@ -191,7 +190,7 @@ it('posts the welcome email to Resend with its key and a per-account idempotency
   const email = renderWelcome({
     origin: 'https://yonedarepo.test',
     contact: 'hello@yonedarepo.test',
-    verifyUrl: `https://yonedarepo.test/verify-email?account=grace&token=${queued[0].token}`,
+    verifyUrl: `https://yonedarepo.test/verify-email#account=grace&token=${queued[0].token}`,
   });
   expect(request.json).toEqual({
     from: 'YonedaRepo <hello@yonedarepo.test>',
@@ -275,7 +274,8 @@ it('retries a 5xx with backoff through the queue job, and stops on a 4xx', async
   // The last attempt gives up: logged once, without the address in full.
   expect(error).toHaveBeenCalledTimes(1);
   const logged = String(error.mock.calls[0][0]);
-  expect(JSON.parse(logged)).toMatchObject({ event: 'email.welcome.failed', to: maskAddress('retry@example.com'), status: 500 });
+  expect(JSON.parse(logged)).toMatchObject({ event: 'email.welcome.failed', status: 500 });
+  expect(logged).not.toContain('example.com');
   expect(logged).not.toContain('retry@example.com');
 
   // A permanent 4xx stops at once.

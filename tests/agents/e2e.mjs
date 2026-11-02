@@ -5,7 +5,7 @@
 // parallel-agent run with tests/agents/fake-opencode.mjs as `opencode` (scripted agents, the
 // real yoneda plugin, no model), each in the agent sandbox container like a real agent (needs
 // Docker; the image is built from this checkout); with --memory-stub N, the memory test's dry
-// run: N blocks of tests/agents/fake-memory-agent.mjs in both arms on fixture repositories
+// run: N blocks of tests/agents/fake-memory-agent.mjs in all three arms on fixture repositories
 // named as the real ones. 32 is the change page's session evidence (API half; the browser half
 // needs the front Worker, so the live kit runs it). No provider keys; LFS is left to the live
 // kit (its uploads go to presigned R2 URLs).
@@ -49,7 +49,8 @@ async function memoryStubRun(account, origin) {
     const summary = await memoryRun({ owner: account, ws, root, ts: String(Date.now()), secrets }, { runs: memoryStub, parallel: 2, model: 'fake/scripted', timeoutS: 120, fake: true });
     const code = report(summary, { root, fill: false });
     const { answer, avoided, delivered, invalid } = summary.verdict;
-    if (code || answer !== 'memory helped' || delivered.yes !== delivered.n || invalid.plain + invalid.memory) throw new Error(`dry run: ${answer}, ${JSON.stringify({ avoided, delivered, invalid })}`);
+    const reached = delivered.memory.trap.yes === delivered.memory.trap.n && delivered.context.context.yes === delivered.context.context.n && delivered.context.trap.yes + delivered.plain.context.yes + delivered.plain.trap.yes === 0;
+    if (code || answer !== 'memory helped' || !reached || invalid.plain + invalid.context + invalid.memory) throw new Error(`dry run: ${answer}, ${JSON.stringify({ avoided, delivered, invalid })}`);
   } finally {
     ws.dispose();
   }

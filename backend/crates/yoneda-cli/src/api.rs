@@ -13,6 +13,7 @@ mod timeouts;
 
 pub(crate) use coalesce::Coalesce;
 pub use resume::Received;
+pub(crate) use resume::ended_early;
 use retry::RETRIES;
 pub(crate) use retry::{pause, transient};
 pub use timeouts::Timeouts;
@@ -28,9 +29,29 @@ pub struct Failure {
     pub retry_after: Option<u64>,
 }
 
+impl Failure {
+    /// What to do about a refused credential: `yoneda login` mends both.
+    fn next_step(&self) -> &'static str {
+        match self.status {
+            401 => ". Run `yoneda login` to sign in again",
+            403 if self.message.starts_with("Token lacks") => {
+                ". Run `yoneda login` again and tick it under Options"
+            }
+            _ => "",
+        }
+    }
+}
+
 impl fmt::Display for Failure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} ({}): {}", self.code, self.status, self.message)
+        write!(
+            f,
+            "{} ({}): {}{}",
+            self.code,
+            self.status,
+            self.message,
+            self.next_step()
+        )
     }
 }
 
@@ -191,7 +212,12 @@ impl Api {
         request: reqwest::RequestBuilder,
     ) -> std::result::Result<Value, Failure> {
         let bytes = self.answer_bytes(request).await?;
-        Ok(serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+        if bytes.is_empty() {
+            return Ok(Value::Null);
+        }
+        // Short of its JSON the answer was cut in good order: a body a stream failed part way
+        // through reaches here with no transport error.
+        serde_json::from_slice(&bytes).map_err(|_| ended_early("the answer", bytes.len()))
     }
 
     /// Sends `request` with this client's credentials; the answer's bytes or the API error.
@@ -319,6 +345,49 @@ mod tests {
 
     /// A read whose body is cut off mid-stream (seen live: "error decoding response body"
     /// during a clone) succeeds on the next attempt; a write is never repeated.
+    /// An answer that ends in good order short of its JSON is a retryable failure, never a
+    /// silent null; an answer with no body at all is still fine.
+    #[tokio::test]
+    async fn an_answer_that_ends_early_is_retried_as_a_read_and_refused_as_a_write() -> Result<()> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .map_err(|e| Error::new(e.to_string()))?;
+        let origin = format!(
+            "http://{}",
+            listener
+                .local_addr()
+                .map_err(|e| Error::new(e.to_string()))?
+        );
+        let server = tokio::spawn(async move {
+            let mut served = 0;
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let mut request = [0u8; 4096];
+                let _ = socket.read(&mut request).await;
+                served += 1;
+                let reply: &[u8] = match served % 3 {
+                    1 => b"HTTP/1.1 200 OK\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n5\r\n{\"ok\"\r\n0\r\n\r\n",
+                    2 => b"HTTP/1.1 200 OK\r\ncontent-length: 11\r\nconnection: close\r\n\r\n{\"ok\":true}",
+                    _ => b"HTTP/1.1 200 OK\r\ncontent-length: 0\r\nconnection: close\r\n\r\n",
+                };
+                let _ = socket.write_all(reply).await;
+                drop(socket);
+            }
+        });
+        let api = Api::account(&origin, None)?;
+        let read = api.get("/repos").await.map_err(Error::from)?;
+        assert_eq!(read, json!({ "ok": true }));
+        assert_eq!(api.delete("/x").await.map_err(Error::from)?, Value::Null);
+        let write = api.post("/repos", &json!({})).await;
+        let refused = write
+            .err()
+            .ok_or_else(|| Error::new("the short answer passed"))?;
+        assert_eq!(refused.status, 0);
+        assert!(refused.to_string().contains("ended early"), "{refused}");
+        server.abort();
+        Ok(())
+    }
+
     #[tokio::test]
     async fn retries_a_read_cut_off_mid_body_and_never_a_write() -> Result<()> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -402,6 +471,30 @@ mod tests {
         );
         server.abort();
         Ok(())
+    }
+
+    #[test]
+    fn a_refused_credential_says_what_mends_it() {
+        let failure = |status, code: &str, message: &str| Failure {
+            status,
+            code: code.to_owned(),
+            message: message.to_owned(),
+            details: Value::Null,
+            retry_after: None,
+        };
+        assert_eq!(
+            failure(401, "UNAUTHORIZED", "Unknown or revoked token").to_string(),
+            "UNAUTHORIZED (401): Unknown or revoked token. Run `yoneda login` to sign in again"
+        );
+        assert!(
+            failure(403, "FORBIDDEN", "Token lacks the repo:admin scope")
+                .to_string()
+                .ends_with("tick it under Options")
+        );
+        assert_eq!(
+            failure(403, "FORBIDDEN", "Authors cannot review").to_string(),
+            "FORBIDDEN (403): Authors cannot review"
+        );
     }
 
     #[test]

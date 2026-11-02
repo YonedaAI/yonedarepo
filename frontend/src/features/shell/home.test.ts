@@ -41,18 +41,15 @@ describe('home greeting and stat cards', () => {
     ]);
   });
 
-  it('reads the four cards from the activity, with the public share', () => {
+  it('gives each card one number and one short line', () => {
     const cards = statCards({ ...empty, repositories: 8, public: 2, capturing: 1, landed: 5 });
     expect(cards.map((c) => [c.label, c.value])).toEqual([
       ['Repositories', 8],
       ['Public', 2],
-      ['Capturing', 1],
-      ['Landed', 5],
+      ['With sessions, 30 days', 1],
+      ['Landed, 30 days', 5],
     ]);
-    expect(cards[1].caption).toBe('25% of your repositories');
-    expect(cards[2].caption).toBe('repository with agent sessions, last 30 days');
-    expect(cards[3].caption).toBe('changes landed, last 30 days');
-    expect(statCards(empty)[1].caption).toBe('none yet');
+    expect(cards.every((c) => !('caption' in c))).toBe(true);
   });
 });
 

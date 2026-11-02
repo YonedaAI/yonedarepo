@@ -45,6 +45,17 @@ describe('setting an agent up', () => {
     expect(other).toMatchObject({ created_by: null, created_at: null, active: true });
   });
 
+  it('A deleted repository leaves the agent: the page saves what it reads', async () => {
+    const { h } = await setUp();
+    const deleted = `r${'a'.repeat(20)}`;
+    h.platform.repos.push(deleted);
+    await put(h, 'code-review', { repos: [h.platform.repo, deleted] });
+    h.platform.repos.pop();
+    const read = await (await api(h, '/agents/code-review')).json<any>();
+    expect(read.enabled_repos).toEqual([h.platform.repo]);
+    expect((await put(h, 'code-review', { repos: read.enabled_repos })).status).toBe(200);
+  });
+
   it('Pause keeps repositories and token but starts nothing; Resume runs again', async () => {
     const { h } = await setUp();
     fakeGateway();

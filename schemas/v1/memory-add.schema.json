@@ -12,12 +12,17 @@
           "description": "The commit it was written against.",
           "type": "string"
         },
+        "kind": {
+          "description": "Its kind as stored: one short lowercase word.",
+          "type": "string"
+        },
         "memory": {
           "description": "The memory's id."
         }
       },
       "required": [
         "memory",
+        "kind",
         "commit",
         "already"
       ],

@@ -5,8 +5,10 @@
 // older code purges any tombstone a queue hands it, and SourceRepository has no alarm. Each
 // row carries the due time it was promised, so a rollback of the switch keeps that promise: the
 // sweep runs either way, and the authority refuses a purge that comes early (repo_store/undo.rs).
+
 import { ApiError, type Json } from './repo-ops';
 import { DAY_MS, undoMs } from './repo-undo-window';
+import { carriedQueue } from './request-scope';
 import type { Env, Envelope } from './types';
 import { workspace } from './workspace';
 
@@ -60,6 +62,15 @@ export async function forgetDeleted(env: Env, repo: string, owner = '') {
   await env.INDEX.prepare('DELETE FROM platform_deleted_repos WHERE id=?').bind(repo).run();
 }
 
+/** Off its owner's list, a purge asked for. The row stays, purge_at 0 marking it, as it's what
+ * brings a lost job back: the sweep sends it again SEND_AGAIN_MS from now. No update once the
+ * job has taken the row, so that end of the race leaves nothing behind. */
+export async function leaveDeletedList(env: Env, repo: string, now = Date.now()) {
+  await env.INDEX.prepare('UPDATE platform_deleted_repos SET purge_at=0,sent_at=? WHERE id=?')
+    .bind(now, repo)
+    .run();
+}
+
 /** Sends the purges that came due, each once until SEND_AGAIN_MS has passed (the claim is one
  * statement, so overlapping runs send none twice). Answers how many. */
 export async function sweepDeleted(env: Env, now = Date.now()) {
@@ -77,15 +88,17 @@ export async function sweepDeleted(env: Env, now = Date.now()) {
     repo_id: repo,
     job_id: `due-${repo}`,
   });
-  await env.PLATFORM_QUEUE.sendBatch(results.map(({ id }) => ({ body: job(id) })));
+  await carriedQueue(env.PLATFORM_QUEUE).sendBatch(results.map(({ id }) => ({ body: job(id) })));
   return results.length;
 }
 
-/** `owner`'s repositories in their window, newest first, and the window's length in days. */
+/** `owner`'s repositories in their window, newest first, and the window's length in days. A
+ * purge it asked for has taken one off (`leaveDeletedList`). */
 export async function deletedOf(env: Env, owner: string) {
   const { results } = await env.INDEX.prepare(
     `SELECT id,name,workspace AS owner,visibility,created_at,deleted_at,purge_at
-       FROM platform_deleted_repos WHERE workspace=? ORDER BY deleted_at DESC LIMIT 200`,
+       FROM platform_deleted_repos WHERE workspace=? AND purge_at>0
+       ORDER BY deleted_at DESC LIMIT 200`,
   )
     .bind(owner)
     .all<{ id: string; owner: string }>();

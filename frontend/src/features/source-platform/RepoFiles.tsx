@@ -1,23 +1,22 @@
-// The Code tab: branch or tag, path, version (time travel) and Clone; the latest commit; the
+// The Files page: branch or tag, path, version (time travel) and Clone; the latest commit; the
 // directory as a file table with its README below, or one file with blame.
 import { type ReactNode, useState } from 'react';
 import { EmptyState } from '../../components/EmptyState';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { BranchPicker, CloneButton, LatestCommit } from './CodeParts';
-import { readQuery, useActivity, useCommitMessages, useListing } from './codeData';
+import { CommitFile } from './CommitFile';
+import { useActivity, useListing } from './codeData';
 import { currentApiOrigin } from './connect';
-import { FileBlame } from './FileBlame';
 import { FileTable } from './FileTable';
-import { FileText } from './FileText';
-import { Markdown } from './markdown';
-import type { RepoStatus } from './repoStatus';
+import { FileView } from './FileView';
+import { findReadme, Readme } from './Readme';
+import { RepoFirstSteps } from './RepoFirstSteps';
+import { canMoveBranches, type RepoStatus } from './repoStatus';
 import { Failure, Loading } from './SourceStatus';
 import type { SourceRoute } from './sourceRoute';
-import { useSource } from './useSource';
 import { VersionPicker } from './VersionPicker';
 
 type Route = Extract<SourceRoute, { view: 'files' }>;
-const README = /^readme(\.(md|markdown))?$/i;
 
 /** The ref the API reads: a branch name, or a tag's commit (tags never move). */
 export function apiRef(ref: string, refs: RepoStatus['refs'] | undefined): string | undefined {
@@ -25,52 +24,32 @@ export function apiRef(ref: string, refs: RepoStatus['refs'] | undefined): strin
   return refs?.find((r) => r.name === ref)?.commit_id;
 }
 
-function Readme({ repo, ref, path, at }: { repo: string; ref: string; path: string; at?: number }) {
-  const file = useSource<{ encoding: string; content: string }>(
-    `/repos/${repo}/blob?${readQuery(ref, path, at)}`,
-  );
-  if (file.error) return <Failure error={file.error} onRetry={file.reload} />;
-  if (!file.data) return <Loading what="README" />;
-  if (file.data.encoding !== 'utf-8') return null;
-  return (
-    <article className="source-file readme" aria-label={path}>
-      <header>
-        <code>{path.split('/').pop()}</code>
-      </header>
-      <div className="readme-body">
-        <Markdown source={file.data.content} />
-      </div>
-    </article>
-  );
-}
-
 export function RepoFiles({
   route,
   status,
   navigate,
+  account,
 }: {
   route: Route;
   status?: RepoStatus;
   navigate: Navigate;
+  /** The signed-in account, named on a commit made here. */
+  account?: string;
 }) {
   const ref = apiRef(route.ref, status?.refs);
   // A line belongs to the file on screen: every link away leaves it behind.
   const { line, ...place } = route;
   const listing = useListing(route.repo, ref, route.path, route.at);
-  const [blaming, setBlaming] = useState(false);
+  // The place the form was opened on: moving to another closes it.
+  const here = `${route.ref}:${route.path}`;
+  const [writingAt, setWritingAt] = useState<string | null>(null);
+  const writing = writingAt === here;
+  const canCommit =
+    canMoveBranches(status?.viewer) &&
+    route.at === undefined &&
+    !route.ref.startsWith('refs/tags/');
   const tree = listing.value?.kind === 'tree' ? listing.value : undefined;
-  const activity = useActivity(
-    route.repo,
-    status?.version,
-    route.ref,
-    route.path,
-    tree?.entries.map((e) => e.name),
-    route.at,
-  );
-  const messages = useCommitMessages(
-    route.repo,
-    [...activity.values()].map((a) => a.commit),
-  );
+  const activity = useActivity(route.repo, route.ref, route.path, Boolean(tree), route.at);
   const go = (path: string): SourceRoute => ({ ...place, path });
   const pathLink = (path: string, children: ReactNode, attrs = {}) => (
     <a {...attrs} {...linkTo(go(path), navigate)}>
@@ -81,7 +60,7 @@ export function RepoFiles({
     <a {...linkTo({ view: 'commit', repo: route.repo, commit }, navigate)}>{children}</a>
   );
   const crumbs = route.path.split('/').filter(Boolean);
-  const readme = tree?.entries.find((e) => e.type !== 'tree' && README.test(e.name));
+  const readme = tree && findReadme(tree.entries);
   return (
     <section className="source-files" aria-label="Files">
       <div className="source-toolbar">
@@ -104,14 +83,16 @@ export function RepoFiles({
           ))}
         </nav>
         <span className="source-toolbar-end">
+          {canCommit && tree && !writing && (
+            <button type="button" className="quiet" onClick={() => setWritingAt(here)}>
+              Add file
+            </button>
+          )}
           <VersionPicker
             repo={route.repo}
             at={route.at}
             onChange={(at) => navigate({ ...place, at })}
           />
-          <a className="toolbar-link" {...linkTo({ ...place, view: 'overview' }, navigate)}>
-            Subsystems
-          </a>
           <CloneButton
             repo={route.repo}
             name={status?.name}
@@ -141,10 +122,38 @@ export function RepoFiles({
           {!route.path && route.at === undefined && 'Push a first commit to see your code here.'}
         </EmptyState>
       )}
+      {listing.empty &&
+        status &&
+        !route.path &&
+        route.at === undefined &&
+        canMoveBranches(status.viewer) && (
+          <RepoFirstSteps repo={route.repo} origin={currentApiOrigin()} />
+        )}
       {/* No files means little until the status says why: the repository may be importing. */}
       {!listing.value && !listing.error && (!listing.empty || !status) && <Loading what="files" />}
       {listing.value && route.at === undefined && (
         <LatestCommit repo={route.repo} commit={listing.value.commit} commitLink={commitLink} />
+      )}
+      {writing && listing.value && (
+        <CommitFile
+          repo={route.repo}
+          place={{ from: route.ref, head: listing.value.commit, account }}
+          dir={route.path}
+          editing={
+            listing.value.kind === 'file'
+              ? { path: route.path, content: listing.value.content }
+              : undefined
+          }
+          onCancel={() => setWritingAt(null)}
+          onCommitted={(done, path) => {
+            setWritingAt(null);
+            navigate(
+              done.change
+                ? { view: 'change', repo: route.repo, number: done.change }
+                : { ...place, ref: done.branch, path },
+            );
+          }}
+        />
       )}
       {tree && (
         <>
@@ -155,7 +164,6 @@ export function RepoFiles({
               dir={route.path}
               entries={tree.entries}
               activity={activity}
-              messages={messages}
               link={pathLink}
               commitLink={commitLink}
             />
@@ -170,32 +178,16 @@ export function RepoFiles({
           )}
         </>
       )}
-      {listing.value?.kind === 'file' && (
-        <article className="source-file">
-          <header>
-            <code>{route.path}</code>
-            <span>
-              {listing.value.size} bytes{listing.value.executable ? ' · executable' : ''}
-            </span>
-            {route.at === undefined && listing.value.encoding === 'utf-8' && ref && (
-              <button
-                type="button"
-                className="quiet"
-                aria-pressed={blaming}
-                onClick={() => setBlaming((b) => !b)}
-              >
-                {blaming ? 'Hide blame' : 'Blame'}
-              </button>
-            )}
-          </header>
-          {blaming && route.at === undefined && ref ? (
-            <FileBlame repo={route.repo} path={route.path} refName={ref} onNavigate={navigate} />
-          ) : listing.value.encoding === 'utf-8' ? (
-            <FileText content={listing.value.content} line={line} />
-          ) : (
-            <p className="source-empty">Binary file not shown.</p>
-          )}
-        </article>
+      {listing.value?.kind === 'file' && !writing && ref && (
+        <FileView
+          file={listing.value}
+          path={route.path}
+          line={line}
+          place={{ repo: route.repo, ref, path: route.path, at: route.at }}
+          onLine={(at) => navigate({ ...route, line: at })}
+          onEdit={canCommit ? () => setWritingAt(here) : undefined}
+          onNavigate={navigate}
+        />
       )}
     </section>
   );

@@ -8,14 +8,19 @@ import { auditMember } from './account-audit';
 import { accountCreated, emailRoute } from './account-email';
 import { handleState, setHandle } from './account-handles';
 import { noteSeen } from './account-index';
+import { passwordRoute } from './account-password';
+import { noteHome } from './account-place';
 import { isAdminAccount } from './admin-auth';
 import { avatarInfo, ownAvatarUrl } from './avatars';
+import { HOME_COOKIE } from './cell-names';
+import { cellOfRegion, cellsOn, thisCell } from './cells';
 import { accountFor, signUpWithEmail, signupEmail } from './email-accounts';
 import { error, readJson, response } from './http';
 import { unlink } from './oauth-identity';
 import { configuredProviders } from './oauth-providers';
 import { signupRegion } from './region';
 import { readSignupSource, recordSignup } from './site-events';
+import { withSource } from './site-visitors';
 import { sha } from './storage';
 import type { Env, Json, Principal } from './types';
 import { workspace } from './workspace';
@@ -34,6 +39,11 @@ export function username(value: unknown) {
 }
 export function sessionCookie(req: Request, value = '') {
   return `${cookieName}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${value ? 604800 : 0}${new URL(req.url).protocol === 'https:' ? '; Secure' : ''}`;
+}
+/** Which cell this browser's account-wide requests start at (cell-edge.ts). Routing only: it
+ * grants nothing, and a forged one reaches a cell that answers the same. */
+export function homeCookie(req: Request, cell: string) {
+  return `${HOME_COOKIE}=${cell}; Path=/; HttpOnly; SameSite=Strict; Max-Age=604800${new URL(req.url).protocol === 'https:' ? '; Secure' : ''}`;
 }
 function sessionValue(req: Request) {
   const raw = req.headers
@@ -71,7 +81,9 @@ async function sessionCheck(req: Request, env: Env) {
     session_hash: await sha(session.token),
   });
   if (!result.authenticated) return { principal: null, suspended: result.suspended === true };
-  noteSeen(env, session.name);
+  noteHome(env, result);
+  // Its row is in its home cell; another cell has no row to touch and must not make one.
+  if (cellOfRegion(env, result.region) === thisCell(env)) noteSeen(env, session.name);
   const principal: Principal = { workspace: session.name, role: 'user', orgs: result.orgs ?? [] };
   return { principal, suspended: false };
 }
@@ -90,7 +102,8 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
       const { principal, suspended } = await sessionCheck(req, env);
       // The account menu's picture; a failed lookup only means initials.
       const avatar = principal
-        ? await avatarInfo(env, principal.workspace).catch(() => null)
+        ? // No picture is the page's plain fallback: a person's initials.
+          await avatarInfo(env, principal.workspace).catch(() => null)
         : null;
       result = response(
         principal
@@ -114,6 +127,11 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
         const status = ['HANDLE_TAKEN', 'HANDLE_FIXED'].includes(e?.code) ? 409 : 400;
         return error(e?.code ?? 'INVALID_INPUT', e?.message ?? 'Handle refused', status);
       }
+    } else if (action === 'name' && req.method === 'PUT') {
+      const principal = await accountPrincipal(req, env);
+      if (!principal) return error('UNAUTHORIZED', 'Sign in to set your name', 401);
+      const { name } = await readJson(req);
+      result = response(await workspace(env, principal.workspace, { op: 'name_set', name }));
     } else if (action === 'providers' && req.method === 'GET') {
       // Sign-in providers whose secrets are set (the sign-in page shows only these).
       result = response({ providers: configuredProviders(env) });
@@ -132,6 +150,8 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
       else return error('NOT_FOUND', 'Unknown authentication route', 404);
     } else if (action === 'email' || action.startsWith('email/')) {
       result = await emailRoute(req, env, action, () => accountPrincipal(req, env));
+    } else if (action.startsWith('password/') || action === 'recovery-code') {
+      result = await passwordRoute(req, env, action, () => signedInSession(req, env));
     } else if (action === 'logout' && req.method === 'POST') {
       const session = sessionValue(req);
       if (session)
@@ -177,7 +197,12 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
           env,
           name,
           action === 'login'
-            ? { op: action, password: body.password, session_hash: await sha(token) }
+            ? {
+                op: action,
+                password: body.password,
+                session_hash: await sha(token),
+                ...(cellsOn(env) && { place: true }),
+              }
             : {
                 op: action,
                 password: body.password,
@@ -196,16 +221,27 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
         );
       if (action === 'recover') await auditMember(env, name);
       if (action === 'signup') {
-        await accountCreated(env, name, email, 'email', signupRegion(req, env));
-        recordSignup(env, req, 'email', readSignupSource(body.source));
+        const source = readSignupSource(body.source);
+        const region = signupRegion(req, env);
+        await accountCreated(env, name, email, 'email', withSource(env, region, source));
+        recordSignup(env, req, 'email', source);
       }
-      result = response({ ...account, ...(action !== 'login' ? { recovery_code: recovery } : {}) });
-      if (action !== 'recover')
+      // The region reaches the routing cookie, not the answer, which is what it always was.
+      const { region: home, cells: _cells, ...publicAccount } = account;
+      result = response({
+        ...publicAccount,
+        ...(action !== 'login' ? { recovery_code: recovery } : {}),
+      });
+      if (action !== 'recover') {
         result.headers.set(
           'set-cookie',
           sessionCookie(req, `${encodeAccountIdentifier(name)}.${token}`),
         );
-      else result.headers.set('set-cookie', sessionCookie(req));
+        if (cellsOn(env)) {
+          const region = action === 'signup' ? signupRegion(req, env).region : home;
+          result.headers.append('set-cookie', homeCookie(req, cellOfRegion(env, region)));
+        }
+      } else result.headers.set('set-cookie', sessionCookie(req));
     } else return error('NOT_FOUND', 'Unknown authentication route', 404);
     result.headers.set('cache-control', 'no-store');
     return result;

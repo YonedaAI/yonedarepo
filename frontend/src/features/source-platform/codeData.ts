@@ -1,7 +1,6 @@
-// The Code tab's reads: a path as directory or file, the log window that dates each entry,
-// and the commit messages those entries name.
+// The Code tab's reads: a path as directory or file, and what last changed each of its entries.
 import { useEffect, useMemo, useState } from 'react';
-import { type Activity, directoryActivity, type LogEntry } from './fileActivity';
+import type { Activity } from './fileActivity';
 import { SourceApiError, sourceApi } from './sourceApi';
 import { useSource } from './useSource';
 
@@ -15,11 +14,6 @@ export type FileBody = {
 export type Listing =
   | { kind: 'tree'; commit: string; entries: { name: string; type: string; id: string }[] }
   | ({ kind: 'file' } & FileBody);
-
-/** Log entries read per directory view: enough to date a typical repository's files. */
-export const ACTIVITY_WINDOW = 500;
-/** Commit messages fetched per directory view. */
-const MESSAGE_READS = 12;
 
 export function readQuery(ref: string, path: string, at?: number) {
   const params = new URLSearchParams({ path, ref });
@@ -55,57 +49,20 @@ export function useListing(repo: string, ref: string | undefined, path: string, 
   return { ...state, reload: () => setTick((t) => t + 1) };
 }
 
-/** What last changed each of `names` under `dir` on branch `ref`, from the latest log window. */
+/** What last changed each entry of `dir` on branch `ref`, once its listing is there. A tag has
+ * no branch to walk, so its rows stay blank. */
 export function useActivity(
   repo: string,
-  version: number | undefined,
   ref: string,
   dir: string,
-  names: string[] | undefined,
+  ready: boolean,
   at?: number,
 ): Map<string, Activity> {
-  const until = at ?? version;
-  const branch = !ref.startsWith('refs/tags/');
-  const log = useSource<{ entries: LogEntry[] }>(
-    until !== undefined && names && branch
-      ? `/repos/${repo}/txlog?after=${Math.max(0, until - ACTIVITY_WINDOW)}&limit=${ACTIVITY_WINDOW}`
+  const query = `ref=${encodeURIComponent(ref)}&dir=${encodeURIComponent(dir)}`;
+  const log = useSource<{ activity: Record<string, Activity> }>(
+    ready && !ref.startsWith('refs/tags/')
+      ? `/repos/${repo}/log?${query}${at === undefined ? '' : `&at=${at}`}`
       : null,
   );
-  const key = names?.join('\0');
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `key` stands for `names`.
-  return useMemo(
-    () =>
-      log.data && names ? directoryActivity(log.data.entries, ref, dir, names, at) : new Map(),
-    [log.data, ref, dir, key, at],
-  );
-}
-
-// Commit messages never change: one read per commit for the page's lifetime.
-const messageCache = new Map<string, string>();
-
-export function useCommitMessages(repo: string, commits: string[]): Map<string, string> {
-  const [, setLoaded] = useState(0);
-  const wanted = [...new Set(commits)].filter((c) => !messageCache.has(`${repo}:${c}`));
-  const key = wanted.slice(0, MESSAGE_READS).join(',');
-  useEffect(() => {
-    if (!key) return;
-    const controller = new AbortController();
-    for (const commit of key.split(',')) {
-      sourceApi<{ message: string }>(`/repos/${repo}/commits/${commit}`, {
-        signal: controller.signal,
-      })
-        .then((d) => {
-          messageCache.set(`${repo}:${commit}`, d.message.split('\n')[0]);
-          setLoaded((n) => n + 1);
-        })
-        .catch(() => {});
-    }
-    return () => controller.abort();
-  }, [repo, key]);
-  return new Map(
-    commits.flatMap((c) => {
-      const message = messageCache.get(`${repo}:${c}`);
-      return message === undefined ? [] : [[c, message] as const];
-    }),
-  );
+  return useMemo(() => new Map(Object.entries(log.data?.activity ?? {})), [log.data]);
 }

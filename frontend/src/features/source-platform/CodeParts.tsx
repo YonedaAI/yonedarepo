@@ -140,6 +140,8 @@ type Detail = {
   commit: string;
   message: string;
   principal: string;
+  author_name?: string | null;
+  authored_at?: number | null;
   landings: { refname: string; landed_at: number }[];
   checks: { name: string; status: string }[];
   gates?: { missing_checks: string[]; failing_checks: string[] };
@@ -185,12 +187,12 @@ export function LatestCommit({
   const detail = useSource<Detail>(`/repos/${repo}/commits/${commit}`);
   if (detail.error) return <Failure error={detail.error} onRetry={detail.reload} />;
   const d = detail.data;
-  const landed = d?.landings[0]?.landed_at;
+  const written = d?.authored_at ?? d?.landings[0]?.landed_at;
   return (
     <div className="latest-commit" aria-busy={!d || undefined}>
       {d ? (
         <>
-          <strong>{people.principal(d.principal)}</strong>
+          <strong>{d.author_name ?? people.principal(d.principal)}</strong>
           <span className="latest-message">{commitLink(commit, d.message.split('\n')[0])}</span>
           <ChecksState detail={d} />
         </>
@@ -199,7 +201,7 @@ export function LatestCommit({
       )}
       <span className="latest-meta">
         {commitLink(commit, <code>{shortSha(commit)}</code>)}
-        {landed && <time dateTime={new Date(landed).toISOString()}>{ago(landed, now)}</time>}
+        {written && <time dateTime={new Date(written).toISOString()}>{ago(written, now)}</time>}
       </span>
     </div>
   );

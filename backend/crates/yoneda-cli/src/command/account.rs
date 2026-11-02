@@ -1,5 +1,14 @@
 //! Account-level commands: repositories, organizations, SSH keys and tokens.
 
+/// The shells `yoneda completion` writes a script for.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Shell {
+    Bash,
+    Zsh,
+    Fish,
+    Powershell,
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum RepoCommand {
     Create {
@@ -30,6 +39,13 @@ pub enum RepoCommand {
         name: Option<String>,
         /// An organization to own it (the caller must be one of its owners).
         owner: Option<String>,
+    },
+    /// Points this project's Git remote `remote` at a repository (`<owner>/<name>` or an id).
+    RemoteAdd {
+        remote: String,
+        repo: String,
+        /// Replace a remote that points elsewhere.
+        replace: bool,
     },
 }
 

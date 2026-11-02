@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AccountSection } from '../account-settings/settingsRoute';
 import { agentsReturnPath, RETURN_PATH } from '../agents/billingModel';
 import { patchRows } from './patchRows';
+import { noteBranch } from './repoBranch';
 import { forgetRepoNames, rememberRepoName, repoBase } from './repoNames';
 import {
   formatSourceRoute,
@@ -37,11 +38,10 @@ describe('source routes', () => {
       { view: 'history', repo, ref: 'dev' },
       { view: 'commit', repo, commit: sha },
       { view: 'transactions', repo },
-      { view: 'ctc', repo },
+      { view: 'tower', repo },
+      { view: 'insights', repo },
       { view: 'search', repo, query: 'retry with' },
       { view: 'search', repo, query: 'test', word: true },
-      { view: 'overview', repo, path: '', ref: 'main' },
-      { view: 'overview', repo, path: 'src/net', ref: 'dev', at: 4 },
       { view: 'changes', repo },
       { view: 'change', repo, number: 12 },
       { view: 'releases', repo },
@@ -164,7 +164,7 @@ describe('source routes', () => {
       repo,
       section: 'rules',
     });
-    expect(parseSourceRoute(`/source/${repo}/commit/xyz`, '')).toMatchObject({ view: 'files' });
+    expect(parseSourceRoute(`/source/${repo}/commit/xyz`, '')).toMatchObject({ view: 'overview' });
     for (const bad of ['0', '-1', '1.5', '07', 'x', '99999999999999999999'])
       expect(parseSourceRoute(`/source/${repo}/changes/${bad}`, '')).toEqual({
         view: 'changes',
@@ -180,9 +180,42 @@ describe('source routes', () => {
 });
 
 describe('repository pages', () => {
+  it('keeps the chosen branch across Overview, Files and Commits', () => {
+    noteBranch({ view: 'files', repo, path: '', ref: 'dev' });
+    expect(tabRoute('overview', repo)).toEqual({ view: 'overview', repo, ref: 'dev' });
+    expect(tabRoute('files', repo)).toMatchObject({ view: 'files', ref: 'dev' });
+    expect(tabRoute('commits', repo)).toMatchObject({ view: 'history', ref: 'dev' });
+    expect(formatSourceRoute(tabRoute('overview', repo))).toContain('/overview?ref=dev');
+    expect(parseSourceRoute(`/source/${repo}/overview`, '?ref=dev')).toEqual({
+      view: 'overview',
+      repo,
+      ref: 'dev',
+    });
+    noteBranch({ view: 'files', repo, path: '', ref: 'main' });
+    expect(tabRoute('overview', repo)).toEqual({ view: 'overview', repo });
+  });
+
+  it('opens an old overview link at its files', () => {
+    expect(parseSourceRoute(`/source/${repo}/overview/src`, '?ref=dev')).toMatchObject({
+      view: 'files',
+      path: 'src',
+      ref: 'dev',
+    });
+  });
+
+  it('opens Overview at the root and keeps every old way into the files', () => {
+    expect(parseSourceRoute(`/source/${repo}`, '')).toEqual({ view: 'overview', repo });
+    const root = { view: 'files', repo, path: '', ref: 'main' };
+    expect(parseSourceRoute(`/source/${repo}/files`, '')).toEqual(root);
+    expect(parseSourceRoute(`/source/${repo}`, '?ref=dev')).toEqual({ ...root, ref: 'dev' });
+    expect(parseSourceRoute(`/source/${repo}`, '?at=3')).toEqual({ ...root, at: 3 });
+    expect(parseSourceRoute(`/source/${repo}/overview/src`, '')).toEqual({ ...root, path: 'src' });
+    expect(formatSourceRoute({ view: 'overview', repo })).toBe(`/source/${repo}`);
+  });
+
   it('groups views under their sidebar page and starts each page at its first view', () => {
-    expect(routeTab({ view: 'files', repo, path: 'src', ref: 'main' })).toBe('overview');
-    expect(routeTab({ view: 'overview', repo, path: '', ref: 'main' })).toBe('overview');
+    expect(routeTab({ view: 'overview', repo })).toBe('overview');
+    expect(routeTab({ view: 'files', repo, path: 'src', ref: 'main' })).toBe('files');
     expect(routeTab({ view: 'transactions', repo })).toBe('commits');
     expect(routeTab({ view: 'commit', repo, commit: sha })).toBe('commits');
     expect(routeTab({ view: 'repo-settings', repo, section: 'tokens' })).toBe('settings');
@@ -204,6 +237,7 @@ describe('repository pages', () => {
       expect(routeTab(tabRoute(tab, repo))).toBe(tab);
     // The old deep links keep their addresses.
     expect(formatSourceRoute(tabRoute('overview', repo))).toBe(`/source/${repo}`);
+    expect(formatSourceRoute(tabRoute('files', repo))).toBe(`/source/${repo}/files`);
     expect(formatSourceRoute(tabRoute('commits', repo))).toBe(`/source/${repo}/history`);
     expect(formatSourceRoute(tabRoute('sessions', repo))).toBe(`/source/${repo}/agents`);
     expect(formatSourceRoute(tabRoute('agents', repo))).toBe(`/source/${repo}/agents/contracts`);
@@ -281,6 +315,15 @@ describe('readable addresses', () => {
     );
     expect(parse(`/source/${repo}/files/src/a.ts`)).toEqual(files);
     forgetRepoNames();
+  });
+
+  it('keeps the old /ctc links on the Tower page, which /tower now addresses', () => {
+    const tower: SourceRoute = { view: 'tower', repo };
+    expect(formatSourceRoute(tower)).toBe(`/source/${repo}/tower`);
+    expect(parseSourceRoute(`/source/${repo}/ctc`, '')).toEqual(tower);
+    expect(parseSourceRoute(`/source/${repo}/tower`, '')).toEqual(tower);
+    expect(routeTab(parseSourceRoute(`/source/${repo}/ctc`, ''))).toBe('tower');
+    expect(tabRoute('tower', repo)).toEqual(tower);
   });
 
   it('reads /landings as an alias of /changes, which stays the address', () => {

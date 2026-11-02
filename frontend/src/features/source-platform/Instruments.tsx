@@ -3,6 +3,7 @@
 // (`GET /changes/:n/instruments`, from check evidence, so anyone who can read the change sees
 // them). The server decides every value. A card with nothing real behind it isn't shown, and
 // while there is nothing to show (loading, a failed read, no heads) neither is the block.
+import { useEffect } from 'react';
 import type {
   ChangeInstruments,
   HeadReading,
@@ -15,7 +16,10 @@ import { valueLabel } from '../agents/agentsModel';
 import type { ChangeDetail } from './changeModel';
 import { useSource } from './useSource';
 
-const SLOP_CHECK = 'slop-review';
+const AGENT_CARDS = [
+  { name: 'Slop', check: 'slop-review' },
+  { name: 'Intent drift', check: 'intent-drift' },
+];
 const TREND = 5;
 
 const INPUTS: Record<RiskInput, string> = {
@@ -31,8 +35,10 @@ export function instrumentsKey(change: Pick<ChangeDetail, 'head' | 'comments'>) 
   return `${change.head}:${open.length}`;
 }
 
-const slopOf = (head: HeadReading): RunValue | null =>
-  head.checks.find((c) => c.name === SLOP_CHECK)?.value ?? null;
+const readingOf =
+  (check: string) =>
+  (head: HeadReading): RunValue | null =>
+    head.checks.find((c) => c.name === check)?.value ?? null;
 
 /** One head as a trend tile. */
 const tile =
@@ -80,31 +86,48 @@ function RiskReasons({ risk }: { risk: RiskReading }) {
         ))}
       </ul>
       <p className="source-meta">
-        Beta: worked out from these four inputs, with no model. Not calibrated yet. Does not affect
-        landing.
+        Beta: four inputs, no model, not calibrated yet. It doesn't hold a Landing.
       </p>
     </>
   );
 }
 
-export function Instruments({ repo, number }: { repo: string; number: number }) {
-  const { data } = useSource<ChangeInstruments>(`/repos/${repo}/changes/${number}/instruments`);
+export function Instruments({
+  repo,
+  number,
+  reading = 0,
+}: {
+  repo: string;
+  number: number;
+  /** Goes up when a check may have reported: read again, keeping the cards on screen. */
+  reading?: number;
+}) {
+  const { data, reload } = useSource<ChangeInstruments>(
+    `/repos/${repo}/changes/${number}/instruments`,
+  );
+  useEffect(() => {
+    if (reading) reload();
+  }, [reading, reload]);
   const heads = data?.heads ?? [];
   const [head] = heads;
-  const slop = heads.some((h) => slopOf(h) !== null);
-  if (!head || (!slop && !head.risk)) return null;
+  const agents = AGENT_CARDS.filter(({ check }) => heads.some((h) => readingOf(check)(h) !== null));
+  if (!head || (agents.length === 0 && !head.risk)) return null;
   const risk = head.risk;
   return (
     <section className="source-instruments" aria-labelledby="instruments-heading">
       <h3 id="instruments-heading">Instruments</h3>
       <div className="instrument-cards">
-        {slop && (
-          <Card
-            name="Slop"
-            value={slopOf(head) ? valueLabel(slopOf(head)) : 'Not reviewed yet'}
-            history={heads.map(tile(repo, number, slopOf))}
-          />
-        )}
+        {agents.map(({ name, check }) => {
+          const value = readingOf(check);
+          return (
+            <Card
+              key={check}
+              name={name}
+              value={value(head) ? valueLabel(value(head)) : 'Not reviewed yet'}
+              history={heads.map(tile(repo, number, value))}
+            />
+          );
+        })}
         {risk && (
           <Card
             name="Risk (beta)"

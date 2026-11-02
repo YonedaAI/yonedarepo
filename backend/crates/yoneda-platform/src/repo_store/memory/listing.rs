@@ -1,9 +1,11 @@
 //! `repo_memory_list`: memories newest first, filtered by anchored path, kind, status and
-//! source session, each with its staleness; paged by id.
+//! source session, each with its staleness; paged by id. Every page also names the kinds a
+//! writer can pick from.
 use super::super::quarantine::WithheldMemories;
 use super::super::rows;
 use super::anchors::anchor_path;
-use super::records::{MEMORY, judged_ref, kind, memory_json, session_id, version_at, with_anchors};
+use super::kinds;
+use super::records::{MEMORY, judged_ref, memory_json, session_id, version_at, with_anchors};
 use super::stale::Staleness;
 use crate::storage::{SqlStore, bad};
 use serde_json::{Value, json};
@@ -45,7 +47,7 @@ fn filter(c: &Value, key: &str, max: usize) -> Result<Option<String>> {
 }
 
 /// `repo_memory_list {path?, kind?, status?, session_id?, ref?, at?, before?, limit?}`:
-/// memories newest first. `path` keeps those anchored to it, to a directory holding it, or
+/// memories newest first, and the `kinds` to pick from. `path` keeps those anchored to it, to a directory holding it, or
 /// (for a `dir/`) under it; `status` is current (the default: active and drafts), active,
 /// stale, draft, retired, superseded or all.
 pub fn list<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
@@ -55,10 +57,9 @@ pub fn list<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     if let Some(path) = &path {
         anchor_path(path)?;
     }
-    let kind = match filter(c, "kind", 32)? {
-        Some(_) => Some(kind(c)?),
-        None => None,
-    };
+    let kind = filter(c, "kind", 32)?
+        .map(|text| kinds::normalize(&text))
+        .transpose()?;
     let session = session_id(c)?;
     let status = filter(c, "status", 16)?.unwrap_or_else(|| "current".into());
     if !STATUSES.contains(&status.as_str()) {
@@ -139,5 +140,8 @@ pub fn list<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             break;
         }
     }
-    Ok(json!({ "version": at, "ref": refname, "memories": memories, "next": next }))
+    Ok(
+        json!({ "version": at, "ref": refname, "memories": memories, "next": next,
+               "kinds": kinds::offered(db, at)? }),
+    )
 }

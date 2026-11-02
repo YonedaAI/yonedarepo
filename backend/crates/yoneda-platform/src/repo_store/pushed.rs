@@ -7,7 +7,8 @@
 //! what it can itself: each commit's bytes hash to its id, and its parents are recorded
 //! (earlier in the same call counts). The base version is derived here, never taken from
 //! the client. Recording moves no ref and writes no log entry. A pushed tip carries the
-//! read set the push declared (`-o yoneda.reads=…`), which landing validates.
+//! read set the push declared (`-o yoneda.reads=…`), which landing validates. A clone is
+//! recorded here too (`repo-clone.ts`), by the platform importer.
 pub(super) mod bundles;
 
 use super::auth::Actor;
@@ -33,7 +34,9 @@ const BASE_WALK: usize = 10_000;
 /// `dispatch_objects` then says whether the adapter must ask for the drain to R2, and
 /// `classify` whether to queue the push's commits for the classifier (`classes::pending`).
 pub fn record<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings) -> Result<Value> {
-    actor.require("write")?;
+    if !actor.can("import") {
+        actor.require("write")?;
+    }
     super::git_http::whole_repository(actor)?;
     let now = number(c, "now")?;
     let commits = c["commits"]
@@ -76,6 +79,9 @@ pub fn record<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings
     // Classes only serve semantic approval, so a push queues the classifier only where the
     // policy can use them.
     let classify = !settings.policy.auto_approve.is_empty();
+    if recorded > 0 {
+        super::capacity::add_pack(db, settings, c)?;
+    }
     Ok(
         json!({ "recorded": recorded, "check_runs": runs, "dispatch_objects": dispatch, "classify": classify }),
     )
@@ -180,12 +186,13 @@ fn record_one<S: SqlStore>(
         .chars()
         .take(16_384)
         .collect();
+    let (author_name, authored_at) = commit.authorship();
     db.query(
-        // The objects are in R2 (or staged here, below); Artifacts gets them with the first
-        // protected ref that includes this commit (commit_objects lists them until then).
-        "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,origin,hidden_ref,artifacts_at) VALUES(?,?,?,?,?,?,?,?,?,'push',0,NULL)",
+        // The objects are in R2, or staged here, below.
+        "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,origin,hidden_ref,artifacts_at,author_name,authored_at) VALUES(?,?,?,?,?,?,?,?,?,'push',0,NULL,?,?)",
         &[json!(id.hex()), json!(commit.tree()?.hex()), json!(json!(parents).to_string()), json!(generation),
-          json!(base_version), json!(principal), json!(message), json!(json!(reads).to_string()), json!(now)],
+          json!(base_version), json!(principal), json!(message), json!(json!(reads).to_string()), json!(now),
+          json!(author_name), json!(authored_at)],
     )?;
     for chunk in touches.chunks(16) {
         let mut params = Vec::with_capacity(chunk.len() * 6);

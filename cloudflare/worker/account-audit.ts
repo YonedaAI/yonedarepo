@@ -5,7 +5,9 @@
 // per source, so the next copy (or, for the org's own events, the next read) catches up.
 // The part both Workers load, since an account recovery runs on the front Worker; reading
 // the log is platform-audit-read.ts. No repository adapters here, nor `platform-` modules.
+
 import { afterAnswer } from './background';
+import { log } from './log';
 import type { Env, Json } from './types';
 import { auditLog, workspace } from './workspace';
 
@@ -15,7 +17,7 @@ const ROUNDS = 5;
 
 export const auditOn = (env: Env) => env.AUDIT_LOG === 'on';
 
-const warned = (e: any) => console.warn(`audit copy failed: ${e?.message ?? e}`);
+const warned = (e: any) => log.warn('audit.copy_failed', { error: e });
 
 /** Copies what `account`'s authority holds for `org` past the log's cursor for it. */
 async function copy(env: Env, org: string, account: string) {

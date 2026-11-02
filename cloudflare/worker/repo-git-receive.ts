@@ -32,9 +32,10 @@ import { largeWarnings, SpilledFiles } from './repo-large-files';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 import { framed } from './repo-pack-copy';
-import { dispatchObjects, dispatchProjection } from './repo-projection';
+import { dispatchObjects } from './repo-projection';
 import { putRawBytes } from './repo-stores';
 import { record, timed } from './repo-timing';
+import { notePush } from './repo-usage';
 
 const RESULT = {
   'content-type': 'application/x-git-receive-pack-result',
@@ -60,8 +61,19 @@ export async function receivePack(
 ): Promise<Response> {
   const session = ReceiveSession.open();
   const files = new SpilledFiles(ctx.env, ctx.repo, (id) => objects.rawKey(id));
+  const pack = { bytes: 0 };
+  const answer = (
+    commands: Command[],
+    outcomes: Outcome,
+    unpack: string | null,
+    sideBand: boolean,
+    messages: string[],
+  ) => {
+    notePush(ctx.env, commands, outcomes, pack.bytes);
+    return report(commands, outcomes, unpack, sideBand, messages);
+  };
   try {
-    let failure = await timed('git.unpack', () => unpack(session, body, files));
+    let failure = await timed('git.unpack', () => unpack(session, body, files, pack));
     if (!failure) {
       // A body that ended early (a truncated pack) fails here.
       try {
@@ -76,7 +88,7 @@ export async function receivePack(
     const sideBand = capabilities.includes('side-band-64k') || capabilities.includes('side-band');
     const outcomes: Outcome = new Map(commands.map((c: Command) => [c.ref, null]));
     const messages: string[] = [];
-    if (failure) return report(commands, refuseAll(outcomes, failure), failure, sideBand, messages);
+    if (failure) return answer(commands, refuseAll(outcomes, failure), failure, sideBand, messages);
     const atomic = capabilities.includes('atomic') && commands.length > 1;
     for (const command of commands as Command[])
       outcomes.set(command.ref, refusal(command, atomic));
@@ -90,7 +102,7 @@ export async function receivePack(
     try {
       if (tips.length > 0)
         fresh = await timed('git.store', () =>
-          store(ctx, objects, session, tips, secretAllow, reads ?? [], files, messages),
+          store(ctx, objects, session, tips, secretAllow, reads ?? [], files, messages, pack.bytes),
         );
     } catch (e) {
       // Nothing moved: report why for every ref still going. A credential refuses the whole
@@ -100,19 +112,15 @@ export async function receivePack(
       const secret = (e as any)?.code === 'SECRET_DETECTED';
       const why = secret ? String((e as any).message) : reason(e);
       for (const c of going) outcomes.set(c.ref, why);
-      return report(commands, outcomes, secret || transient(e) ? null : why, sideBand, messages);
+      return answer(commands, outcomes, secret || transient(e) ? null : why, sideBand, messages);
     }
     await timed('git.move', async () => {
       if (atomic) await moveAll(ctx, going, outcomes, messages);
       else for (const c of going) outcomes.set(c.ref, await moveOne(ctx, c, fresh, messages));
     });
-    // New tags are mirrored to the object store like protected branches (a lost message
-    // only delays that).
-    if (going.some((c) => c.ref.startsWith('refs/tags/') && !outcomes.get(c.ref)))
-      await timed('git.projection', () => dispatchProjection(ctx.env, ctx.repo).catch(() => {}));
     // Webhooks for every ref the push moved (branch moves never reach the derive job).
     if (going.some((c) => !outcomes.get(c.ref))) await notifyHooks(ctx.env, ctx.repo);
-    return report(commands, outcomes, null, sideBand, messages);
+    return answer(commands, outcomes, null, sideBand, messages);
   } finally {
     session.close();
     await files.abort();
@@ -126,12 +134,14 @@ async function unpack(
   session: ReceiveSession,
   body: ReadableStream<Uint8Array>,
   files: SpilledFiles,
+  pack: { bytes: number },
 ) {
   let failure: string | null = null;
   const reader = body.getReader();
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
+    pack.bytes += value.length;
     if (failure) continue;
     try {
       for (let at = 0; at < value.length; at += FEED_BYTES) {
@@ -177,6 +187,7 @@ async function store(
   reads: string[],
   files: SpilledFiles,
   messages: string[],
+  packBytes: number,
 ) {
   let input: Json = { op: 'verify', tips, secret_allow: secretAllow };
   let verified: Json | null = null;
@@ -233,6 +244,7 @@ async function store(
       ctx.call({
         op: 'repo_record_pushed',
         commits,
+        ...(i === 0 ? { pack_bytes: packBytes } : {}),
         ...(staged ? { staged: true } : {}),
       }),
     );

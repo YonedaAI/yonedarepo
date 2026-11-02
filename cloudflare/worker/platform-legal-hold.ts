@@ -5,6 +5,7 @@
 // and sends the op again with the answer, so only destructive paths pay. A hold set while a
 // destructive job runs reaches it at its next listed op, not sooner: the two authorities
 // share no transaction.
+import { carriedQueue } from './request-scope';
 import type { Env, Envelope, Json } from './types';
 import { workspace } from './workspace';
 
@@ -53,6 +54,6 @@ export async function laterIfHeld(env: Env, envelope: Envelope, job: () => Promi
     await job();
   } catch (e: any) {
     if (e?.code !== 'LEGAL_HOLD') throw e;
-    await env.PLATFORM_QUEUE.send(envelope, { delaySeconds: LATER_SECONDS });
+    await carriedQueue(env.PLATFORM_QUEUE).send(envelope, { delaySeconds: LATER_SECONDS });
   }
 }

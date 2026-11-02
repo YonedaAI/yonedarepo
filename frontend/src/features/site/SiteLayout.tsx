@@ -1,11 +1,7 @@
 // The public site's frame: the header (logo; the sections centred, with Features and Company
 // menus; then Sign in / Get started, or Open app when signed in), the page, and a footer. At
 // phone width the sections fold into a menu button.
-// The site's faces, self-hosted from their npm packages (latin only): Inter for text,
-// Inter Tight for headings.
-import '@fontsource/inter/latin-400.css';
-import '@fontsource/inter/latin-500.css';
-import '@fontsource/inter-tight/latin-600.css';
+import '../../styles/site-fonts.css';
 import { GitBranch, Menu, Monitor, Moon, Sun, X } from 'lucide-react';
 import { type ReactNode, useState } from 'react';
 import { nextTheme, type Theme, useTheme } from '../shell/theme';
@@ -17,6 +13,7 @@ import { navSection, type SitePage } from './siteRoute';
 
 const THEME_LABEL: Record<Theme, string> = { system: 'System', light: 'Light', dark: 'Dark' };
 const THEME_ICON = { system: Monitor, light: Sun, dark: Moon };
+const FLUSH = new Set<SitePage['page']>(['home', 'feature', 'updates', 'updates-link']);
 
 // The link helpers live in siteLinks.ts; pages import them from here as before.
 export { sectionLink, siteLink };
@@ -97,14 +94,10 @@ export function SiteLayout({
           </div>
         </nav>
       </header>
-      {/* The home and feature pages' bands run flush to the frame; other pages keep the gutter. */}
+      {/* The home, feature and Flight log pages run flush to the frame; others keep the gutter. */}
       <main
         id="site-main"
-        className={
-          page.page === 'home' || page.page === 'feature'
-            ? 'site-main site-main-flush'
-            : 'site-main'
-        }
+        className={FLUSH.has(page.page) ? 'site-main site-main-flush' : 'site-main'}
       >
         {children}
       </main>

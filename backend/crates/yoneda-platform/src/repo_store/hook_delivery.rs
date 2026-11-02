@@ -2,6 +2,7 @@
 //! under a lease (one in flight per hook, so a hook sees events in order), sends it signed
 //! and settles the attempt here. A failure backs off exponentially and keeps the payload
 //! first in line (at least once); 50 consecutive failures switch the hook off.
+use super::audit_outbox;
 use super::hooks::LOG_SIZE;
 use crate::storage::{SqlStore, bad, number};
 use serde_json::{Value, json};
@@ -125,10 +126,17 @@ pub fn settle<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         "UPDATE hooks SET failures=failures+1 WHERE id=?",
         &[json!(id)],
     )?;
+    let hook = |db: &S| db.query("SELECT active,url FROM hooks WHERE id=?", &[json!(id)]);
+    let was_active = hook(db)?[0]["active"] == 1;
     db.query(
         "UPDATE hooks SET active=0,disabled_at=? WHERE id=? AND failures>=? AND active=1",
         &[json!(now), json!(id), json!(MAX_FAILURES)],
     )?;
-    let active = db.query("SELECT active FROM hooks WHERE id=?", &[json!(id)])?[0]["active"] == 1;
+    let after = hook(db)?;
+    let active = after[0]["active"] == 1;
+    if was_active && !active {
+        let event = json!({ "id": id.to_string(), "url": after[0]["url"] });
+        audit_outbox::record(db, c, "webhook.disabled", "platform:hooks", event)?;
+    }
     Ok(json!({ "delivered": false, "active": active, "retry_after_ms": backoff }))
 }

@@ -13,8 +13,10 @@
 //! until it answers `done`. Each step is one transaction and nothing records progress
 //! beyond the rows left, so a crash loses one step and the next job carries on. The last
 //! step scrubs `repo_settings`, leaving a row an older binary still reads as a tombstone.
+//! While `_audit` is on, a step also refuses until the org's log has every event waiting
+//! here; the job copies them first, for as long as that takes (`audit_outbox`).
 use super::rows::Settings;
-use super::{forks, undo};
+use super::{audit_outbox, forks, undo};
 use crate::storage::SqlStore;
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
@@ -47,7 +49,7 @@ fn undelivered<S: SqlStore>(db: &S) -> Result<Vec<Value>> {
 }
 
 /// The refs that may have a combiner: branches, and every ref ever queued for landing.
-fn combiner_refs<S: SqlStore>(db: &S) -> Result<Vec<Value>> {
+pub(super) fn combiner_refs<S: SqlStore>(db: &S) -> Result<Vec<Value>> {
     Ok(db
         .query(
             &format!(
@@ -107,6 +109,9 @@ pub(super) fn step<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Resul
     }
     if !undelivered(db)?.is_empty() {
         return Err(Error::new("CONFLICT", "Hooks are still being delivered"));
+    }
+    if c["_audit"] == "on" && audit_outbox::waiting(db)? {
+        return Err(Error::new("CONFLICT", "Audit events have yet to be copied"));
     }
     let spent = wipe::batch(db)?;
     if spent.finished {

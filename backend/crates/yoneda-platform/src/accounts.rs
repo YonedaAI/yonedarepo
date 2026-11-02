@@ -7,14 +7,21 @@ use yoneda_core::{Error, Result};
 mod access;
 #[cfg(test)]
 mod access_tests;
+#[cfg(test)]
+mod agent_tokens_tests;
+mod agents;
 mod audit_details;
 mod audit_log;
 #[cfg(test)]
 mod audit_log_tests;
+mod audit_seal;
 mod auth_events;
 mod avatars;
 #[cfg(test)]
 mod avatars_tests;
+mod closure;
+#[cfg(test)]
+mod closure_tests;
 mod deleted_repos;
 #[cfg(test)]
 mod deleted_repos_tests;
@@ -25,6 +32,9 @@ mod email_tests;
 mod favorites;
 #[cfg(test)]
 mod favorites_tests;
+mod github_installation;
+#[cfg(test)]
+mod github_installation_tests;
 mod handles;
 #[cfg(test)]
 mod handles_tests;
@@ -34,11 +44,21 @@ mod holds_tests;
 mod identities;
 #[cfg(test)]
 mod identities_tests;
+mod names;
+#[cfg(test)]
+mod names_tests;
 mod oauth_flows;
 mod op;
+mod op_profile;
 mod orgs;
 #[cfg(test)]
 mod orgs_tests;
+mod password_reset;
+#[cfg(test)]
+mod password_reset_tests;
+mod place;
+#[cfg(test)]
+mod place_tests;
 mod repo_names;
 mod search_directory;
 #[cfg(test)]
@@ -72,14 +92,18 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             .ok_or_else(|| bad("Trusted clock required"))?;
         match op::AccountOp::parse(&command)? {
             op::AccountOp::Signin(op) => signin::handle(&db, &command, op, now),
-            op::AccountOp::Access(op) => access::handle(&db, op, now),
+            op::AccountOp::Access(op) => access::handle(&db, &command, op, now),
             op::AccountOp::Email(op) => email::handle(&db, &command, op, now),
+            op::AccountOp::Password(op) => password_reset::handle(&db, &command, op, now),
             op::AccountOp::Token(op) => tokens::handle(&db, &command, op, now),
             op::AccountOp::Ssh(op) => ssh_keys::handle(&db, &command, op, now),
             op::AccountOp::Device(op) => device::handle(&db, &command, op, now),
             op::AccountOp::Identity(op) => identities::handle(&db, &command, op, now),
             op::AccountOp::Avatar(op) => avatars::handle(&db, &command, op, now),
+            op::AccountOp::Name(op) => names::handle(&db, &command, op, now),
             op::AccountOp::Favorite(op) => favorites::handle(&db, &command, op, now),
+            op::AccountOp::GitHub(op) => github_installation::handle(&db, &command, op, now),
+            op::AccountOp::Closure(op) => closure::handle(&db, &command, op, now),
             op::AccountOp::OAuth(op) => oauth_flows::handle(&db, &command, op, now),
             op::AccountOp::Org(op) => orgs::handle(&db, &command, op, now),
             op::AccountOp::OrgMember(op) => orgs::member(&db, &command, op, now),
@@ -92,7 +116,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
     }))
 }
 /// Digest-pinned, forward-only account migrations (version, SQL), applied in order.
-const MIGRATIONS: [(i64, &str); 10] = [
+pub(crate) const MIGRATIONS: [(i64, &str); 13] = [
     (1, include_str!("accounts/migrations/0001_accounts.sql")),
     (
         2,
@@ -109,6 +133,18 @@ const MIGRATIONS: [(i64, &str); 10] = [
     ),
     (9, include_str!("accounts/migrations/0009_avatars.sql")),
     (10, include_str!("accounts/migrations/0010_favorites.sql")),
+    (
+        11,
+        include_str!("accounts/migrations/0011_github_installation.sql"),
+    ),
+    (
+        12,
+        include_str!("accounts/migrations/0012_display_name.sql"),
+    ),
+    (
+        13,
+        include_str!("accounts/migrations/0013_github_org_installations.sql"),
+    ),
 ];
 fn migrate<S: SqlStore>(store: &S) -> Result<()> {
     store.query("CREATE TABLE IF NOT EXISTS workspace_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)", &[])?;

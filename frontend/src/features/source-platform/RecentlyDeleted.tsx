@@ -1,9 +1,10 @@
 // Repositories deleted and not yet purged (`GET /repos/deleted`, an org's at
-// `/orgs/:org/repos/deleted`): days left and Restore, for those who may delete them. The server
-// decides all of it. A repository whose name was taken meanwhile asks for a new one here. Where
-// the window is off the list is empty and nothing offers an undo; what it promised while it was
-// on still shows.
-import { type FormEvent, useState } from 'react';
+// `/orgs/:org/repos/deleted`): days left, Restore and Delete, and Delete all when there are
+// several (RecentlyDeletedPurge.tsx), for those who may delete them. The server decides all of it.
+// A repository whose name was taken meanwhile asks for a new one here. Where the window is off the
+// list is empty and nothing offers an undo; what it promised while it was on still shows.
+import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { PurgeDialog } from './RecentlyDeletedPurge';
 import { Failure, Loading } from './SourceStatus';
 import { SourceApiError, sourceApi, when } from './sourceApi';
 import { type Loaded, useSource } from './useSource';
@@ -39,10 +40,12 @@ function DeletedRow({
   repo,
   now,
   onChanged,
+  onDelete,
 }: {
   repo: DeletedRepo;
   now: number;
   onChanged: () => void;
+  onDelete: () => void;
 }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -99,6 +102,15 @@ function DeletedRow({
           </button>
         </form>
       )}
+      <button
+        type="button"
+        className="quiet"
+        aria-label={`Delete ${repo.name} permanently`}
+        disabled={busy}
+        onClick={onDelete}
+      >
+        Delete
+      </button>
       {error && <Failure error={error} />}
     </li>
   );
@@ -114,20 +126,55 @@ export function DeletedList({
   onChanged: () => void;
 }) {
   const { window_days: days, repos } = deleted;
-  if (repos.length === 0)
-    return (
-      <p className="source-empty">
-        {days > 0
-          ? `Nothing deleted in the last ${Math.ceil(days)} ${days > 1 ? 'days' : 'day'}.`
-          : 'Nothing here.'}
-      </p>
-    );
+  const [purging, setPurging] = useState<DeletedRepo[] | null>(null);
+  const list = useRef<HTMLDivElement>(null);
+  const purged = useRef(false);
+  // The dialog gives focus back to a button that a moment later leaves with its row.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the count is what says a row left.
+  useEffect(() => {
+    if (purged.current && document.activeElement === document.body) list.current?.focus();
+    purged.current = false;
+  }, [repos.length]);
   return (
-    <ul className="org-repos">
-      {repos.map((repo) => (
-        <DeletedRow key={repo.id} repo={repo} now={now} onChanged={onChanged} />
-      ))}
-    </ul>
+    <div ref={list} tabIndex={-1} className="deleted-list">
+      {repos.length === 0 && (
+        <p className="source-empty">
+          {days > 0
+            ? `Nothing deleted in the last ${Math.ceil(days)} ${days > 1 ? 'days' : 'day'}.`
+            : 'Nothing here.'}
+        </p>
+      )}
+      {repos.length > 1 && (
+        <div className="deleted-all">
+          <button type="button" className="quiet" onClick={() => setPurging(repos)}>
+            Delete all
+          </button>
+        </div>
+      )}
+      {repos.length > 0 && (
+        <ul className="org-repos deleted-repos">
+          {repos.map((repo) => (
+            <DeletedRow
+              key={repo.id}
+              repo={repo}
+              now={now}
+              onChanged={onChanged}
+              onDelete={() => setPurging([repo])}
+            />
+          ))}
+        </ul>
+      )}
+      {purging && (
+        <PurgeDialog
+          repos={purging}
+          onPurged={() => {
+            purged.current = true;
+            onChanged();
+          }}
+          onClose={() => setPurging(null)}
+        />
+      )}
+    </div>
   );
 }
 

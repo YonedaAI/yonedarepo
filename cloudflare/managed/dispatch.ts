@@ -2,8 +2,10 @@
 // queues the event; the queue consumer (at least once) finds the open change the event is
 // about, claims one run per enabled agent for its head (idempotent), and starts that run's
 // Workflow instance (also idempotent: the instance id is the run and attempt).
+
 import { type ManagedAgentId, managedAgent, readyForReview } from '../../shared/managed-agents';
 import { resolveSettings, triggerMatches } from '../../shared/managed-settings';
+import { log, warned } from '../worker/log';
 import { reconcileAccount, reconcileAll } from './admin-reconcile';
 import { runRefund } from './admin-refund';
 import { runTopUp } from './billing';
@@ -44,6 +46,10 @@ export async function receiveHook(req: Request, env: ManagedEnv, repo: string): 
   const name = String(event.event ?? '');
   if (name === 'repo.purged' || (name === 'repo.deleted' && !event.purge_at)) {
     await env.RUNS.send({ kind: 'deleted', repo });
+    return json({ queued: true }, 202);
+  }
+  if (name === 'repo.resumed') {
+    await env.RUNS.send({ kind: 'resumed', repo });
     return json({ queued: true }, 202);
   }
   const family = name.split('.')[0];
@@ -96,7 +102,7 @@ export async function purgeTranscripts(env: ManagedEnv, repo: string) {
  */
 async function onDeleted(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'deleted' }>) {
   const stub = repoStub(env, m.repo);
-  const connection = await stub.connection().catch(() => null);
+  const connection = await stub.connection().catch(warned('managed.connection_read_failed'));
   if (!connection) return;
   const gone = await new Platform(env, { token: connection.token }).status(m.repo).then(
     () => false,
@@ -108,13 +114,13 @@ async function onDeleted(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'dele
     },
   );
   if (!gone) {
-    console.warn(JSON.stringify({ event: 'managed.delete_refused', repo: m.repo }));
+    log.warn('managed.delete_refused', { repo: m.repo });
     return;
   }
   const transcripts = await purgeTranscripts(env, m.repo);
   await workspaceStub(env, connection.account).forget(m.repo);
   await stub.purge();
-  console.log(JSON.stringify({ event: 'managed.repo_purged', repo: m.repo, transcripts }));
+  log.info('managed.repo_purged', { repo: m.repo, transcripts });
 }
 
 /** Starts a run's Workflow instance; an instance that already exists is left alone. */
@@ -161,6 +167,29 @@ async function onEvent(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'event'
   );
 }
 
+/** Paid runs one resume may start in a repository: one click must not start hundreds. */
+export const MAX_RUNS_PER_RESUME = 20;
+
+/**
+ * Automation came back. A pause drops pushes before they claim a run and stops runs that had, and
+ * nothing asks again, so each agent a landing waits for looks at the open Landings: `claim` starts
+ * a run the pause stopped, and a head with its answer is left alone. Agents nobody requires wait
+ * for the next push, as they would have, and so do Landings past the limit.
+ */
+async function onResumed(env: ManagedEnv, m: Extract<QueueMessage, { kind: 'resumed' }>) {
+  const repo = repoStub(env, m.repo);
+  const [connection, enabled] = await Promise.all([repo.connection(), repo.enabled()]);
+  if (!connection || connection.revoked || enabled.length === 0) return;
+  const platform = new Platform(env, { token: connection.token });
+  const { required } = await platform.landingChecks(m.repo);
+  const agents = enabled.filter((id) => required.includes(String(managedAgent(id)?.check)));
+  if (agents.length === 0) return;
+  const open = await reviewable(platform, m.repo);
+  const ctx = { account: connection.account, platform };
+  const counts = await reviewChanges(env, m.repo, ctx, agents, open, true, MAX_RUNS_PER_RESUME);
+  if (counts.limited) log.warn('managed.resume_limited', { repo: m.repo });
+}
+
 /**
  * Claims one run per agent for each change at its current head (idempotent: a head already
  * claimed is counted as `already`) and starts its Workflow instance, as each agent's trigger
@@ -174,15 +203,21 @@ export async function reviewChanges(
   agents: ManagedAgentId[],
   changes: Record<string, any>[],
   opened: boolean,
+  limit = Number.POSITIVE_INFINITY,
 ) {
   const repo = repoStub(env, repoId);
   const workspace = workspaceStub(env, ctx.account);
-  const counts = { started: 0, already: 0 };
+  // `begun` counts what will be paid for, a restarted run too; `started` only new heads.
+  const counts = { started: 0, already: 0, begun: 0, limited: false };
   for (const change of changes) {
     let paths: string[] | null = null;
     for (const id of agents) {
       const agent = managedAgent(id);
       if (!agent) continue;
+      if (counts.begun >= limit) {
+        counts.limited = true;
+        return counts;
+      }
       const stored = await workspace.settings(id);
       const s = resolveSettings(agent, stored.workspace, stored.repos[repoId]);
       if (s.trigger.when === 'ready' && !opened) continue;
@@ -213,6 +248,7 @@ export async function reviewChanges(
         change: change.number,
         head: String(change.head),
       });
+      if (claim.created || claim.restarted) counts.begun++;
       if (claim.created) counts.started++;
     }
   }
@@ -242,6 +278,7 @@ export async function consume(batch: MessageBatch<QueueMessage>, env: ManagedEnv
       const m = message.body;
       if (m.kind === 'event') await onEvent(env, m);
       else if (m.kind === 'resume') await onResume(env, m);
+      else if (m.kind === 'resumed') await onResumed(env, m);
       else if (m.kind === 'deleted') await onDeleted(env, m);
       else if (m.kind === 'topup') await runTopUp(env, m);
       else if (m.kind === 'refund') await runRefund(env, m.account, m.id);
@@ -250,13 +287,7 @@ export async function consume(batch: MessageBatch<QueueMessage>, env: ManagedEnv
       else if (m.kind === 'rollup') await ledgerStub(env, m.account).rollupRebuild();
       message.ack();
     } catch (e: any) {
-      console.error(
-        JSON.stringify({
-          event: 'managed.queue',
-          code: e?.code ?? 'ERROR',
-          message: String(e?.message ?? e).slice(0, 200),
-        }),
-      );
+      log.error('managed.queue', { code: e?.code ?? 'ERROR', error: e });
       message.retry({ delaySeconds: 30 });
     }
   }

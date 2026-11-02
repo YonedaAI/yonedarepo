@@ -1,6 +1,7 @@
 // The admin pages' reads of the D1 projections (operators only; platform-admin.ts checks): the
 // overview's totals, the account and repository listings, the sign-up feed and the audit
 // log. Listings page backwards by creation time (`before`, a millisecond time).
+import { auditRow, operatorAudit, outcomeOf } from './platform-operator-audit';
 import { ApiError } from './repo-ops';
 import { storageLevel } from './repo-storage';
 import type { Env, Json } from './types';
@@ -214,6 +215,10 @@ export async function audit(
   target: string,
   detail: Json | null = null,
 ) {
+  if (operatorAudit(env)) {
+    await auditRow(env, actor, action, target, detail, 'success');
+    return;
+  }
   await env.INDEX.prepare(
     'INSERT INTO admin_audit(at,actor,action,target,detail) VALUES(?,?,?,?,?)',
   )
@@ -229,6 +234,7 @@ export async function auditBegin(
   target: string,
   detail: Json,
 ): Promise<number> {
+  if (operatorAudit(env)) return auditRow(env, actor, action, target, detail, 'requested');
   const row = await env.INDEX.prepare(
     'INSERT INTO admin_audit(at,actor,action,target,detail) VALUES(?,?,?,?,?) RETURNING id',
   )
@@ -239,7 +245,15 @@ export async function auditBegin(
 }
 
 export async function auditEnd(env: Env, id: number, detail: Json) {
-  await env.INDEX.prepare('UPDATE admin_audit SET detail=? WHERE id=?')
-    .bind(JSON.stringify(detail), id)
-    .run();
+  const run = operatorAudit(env)
+    ? env.INDEX.prepare('UPDATE admin_audit SET detail=?,outcome=? WHERE id=?').bind(
+        JSON.stringify(detail),
+        outcomeOf(detail),
+        id,
+      )
+    : env.INDEX.prepare('UPDATE admin_audit SET detail=? WHERE id=?').bind(
+        JSON.stringify(detail),
+        id,
+      );
+  await run.run();
 }

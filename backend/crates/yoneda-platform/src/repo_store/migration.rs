@@ -6,10 +6,11 @@ use yoneda_core::{Error, Result};
 /// known and left unapplied here, and a store that already ran it is accepted, its digest
 /// checked as any other's. A repository that ran a migration refuses every binary that
 /// doesn't know it (`SCHEMA_TOO_NEW`), so a migration ships in two waves: wave 1 adds its
-/// entry, wave 2 raises this line. Rollback from wave 2 goes to wave 1, never earlier.
-pub(crate) const APPLY_THROUGH: i64 = 44;
+/// entry, wave 2 raises this line. Rollback from wave 2 goes to wave 1, never earlier. While
+/// prod has no users, the owner ships both waves in one deploy.
+pub(crate) const APPLY_THROUGH: i64 = 48;
 
-pub(crate) const MIGRATIONS: [(i64, &str); 45] = [
+pub(crate) const MIGRATIONS: [(i64, &str); 48] = [
     (1, include_str!("../migrations/repo_store/0001_source.sql")),
     (
         2,
@@ -175,6 +176,18 @@ pub(crate) const MIGRATIONS: [(i64, &str); 45] = [
     (
         45,
         include_str!("../migrations/repo_store/0045_flight_plans.sql"),
+    ),
+    (
+        46,
+        include_str!("../migrations/repo_store/0046_git_bytes.sql"),
+    ),
+    (
+        47,
+        include_str!("../migrations/repo_store/0047_memory_kinds.sql"),
+    ),
+    (
+        48,
+        include_str!("../migrations/repo_store/0048_commit_authors.sql"),
     ),
 ];
 

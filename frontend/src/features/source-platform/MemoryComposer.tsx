@@ -1,11 +1,13 @@
 // Writing a memory from the web: a new one, or one that supersedes (or, for a draft an
-// agent's session offered, publishes) an existing memory. The platform resolves the anchors
-// at main's head, refuses a credential in the text, and decides who may write.
+// agent's session offered, publishes) an existing memory. The kind comes from the repository's
+// list or is named here, which adds it. The platform normalizes and validates a new kind,
+// resolves the anchors at main's head, refuses a credential in the text, and decides who may
+// write.
 import { type FormEvent, useState } from 'react';
 import {
   byteLength,
+  kindOptions,
   MAX_MEMORY_BYTES,
-  MEMORY_KINDS,
   type MemoryKind,
   memoryBody,
 } from './memoryModel';
@@ -27,18 +29,25 @@ export const EMPTY_COMPOSER: ComposerStart = {
   supersedes: null,
 };
 
+/** The select's value for "New kind…": a kind is a word, so never a kind. */
+const NEW_KIND = ' new';
+
 export function MemoryComposer({
   repo,
+  kinds,
   start,
   onSaved,
   onCancel,
 }: {
   repo: string;
+  /** The repository's kinds, once a read has answered them. */
+  kinds?: readonly MemoryKind[];
   start: ComposerStart;
   onSaved: () => void;
   onCancel?: () => void;
 }) {
   const [draft, setDraft] = useState(start);
+  const [naming, setNaming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const bytes = byteLength(draft.text.trim());
@@ -50,6 +59,7 @@ export function MemoryComposer({
     try {
       await sourceApi(`/repos/${repo}/memories`, { body: memoryBody(draft) });
       setDraft(EMPTY_COMPOSER);
+      setNaming(false);
       onSaved();
     } catch (e) {
       setError((e as Error).message);
@@ -69,16 +79,36 @@ export function MemoryComposer({
         <label className="agent-filter">
           Kind
           <select
-            value={draft.kind}
-            onChange={(e) => setDraft({ ...draft, kind: e.target.value as MemoryKind })}
+            value={naming ? NEW_KIND : draft.kind}
+            onChange={(e) => {
+              const named = e.target.value === NEW_KIND;
+              setNaming(named);
+              setDraft({ ...draft, kind: named ? '' : e.target.value });
+            }}
           >
-            {MEMORY_KINDS.map((k) => (
+            {kindOptions(kinds, naming ? '' : start.kind).map((k) => (
               <option key={k} value={k}>
                 {k}
               </option>
             ))}
+            <option value={NEW_KIND}>New kind…</option>
           </select>
         </label>
+        {naming && (
+          <label className="agent-filter">
+            Name the kind
+            <input
+              value={draft.kind}
+              required
+              maxLength={32}
+              size={16}
+              autoCapitalize="none"
+              spellCheck={false}
+              placeholder="runbook"
+              onChange={(e) => setDraft({ ...draft, kind: e.target.value })}
+            />
+          </label>
+        )}
         <label className="memory-anchors-input">
           Anchors
           <input
@@ -108,7 +138,10 @@ export function MemoryComposer({
         </p>
       )}
       <div className="memory-actions">
-        <button type="submit" disabled={busy || tooLong || !draft.text.trim()}>
+        <button
+          type="submit"
+          disabled={busy || tooLong || !draft.text.trim() || !draft.kind.trim()}
+        >
           {busy ? 'Saving…' : start.publish ? 'Publish' : 'Save memory'}
         </button>
         {onCancel && (

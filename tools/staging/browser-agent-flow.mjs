@@ -49,6 +49,7 @@ export async function agentPages(page, { account, repo: { id, name }, shot }, m)
   await see(row, 'the recorded session in the Sessions list');
   await see(row.getByText(main.slice(0, 10)), "the session's commit");
   await shot('agents-sessions');
+  await page.getByRole('region', { name: 'Sessions', exact: true }).getByLabel('Filter').click();
   await page.getByLabel('CLI', { exact: true }).selectOption('opencode');
   await see(list.getByRole('listitem').filter({ hasText: summary }), 'the session under the opencode filter');
 

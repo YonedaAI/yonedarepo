@@ -57,7 +57,7 @@ Before starting, say what the work sets out to do. It is written on purpose, and
 yoneda flight-plan -m "Retry failed fetches twice" --scope "src/net only"
 ```
 
-The plan is for this clone's branch, pushed or not (`--branch` and `--change` name another; over MCP, `git_flight_plan`). The change page shows the goal of the newest plan for its branch, and a change with none says **No flight plan**. Plans are encouraged, never required: nothing refuses a push without one. The [Intent drift agent](/docs/agents/review-agents), when you turn it on, compares the goal with the diff. A goal and a scope each hold up to 2,000 bytes, and a plan holding a credential is refused.
+The plan is for this clone's branch, pushed or not (`--branch` and `--change` name another; over MCP, `git_flight_plan`; in the web app, **Flight plan** on the Add file and Edit forms). The change page shows the goal of the newest plan for its branch, and a change with none says **No flight plan**. Plans are encouraged, never required: nothing refuses a push without one. The [Intent drift agent](/docs/agents/review-agents), when you turn it on, compares the goal with the diff. A goal and a scope each hold up to 2,000 bytes, and a plan holding a credential is refused.
 
 ## Review
 
@@ -126,9 +126,9 @@ Landing on a protected branch needs the land scope and the required approvals an
 
 ## Land when cleared
 
-**Settings → Landing rules → Land when cleared**, off by default, has CTC, Code Traffic Control, land an open Landing once it clears, so nobody has to press Land. It looks again whenever something could clear it: a check passing, an approval, a comment resolved, a new head, or a Landing opened. Nothing polls, and it starts no agent.
+**Settings → Landing rules → Land when cleared**, off by default, has Tower land an open Landing once it clears, so nobody has to press Land. It looks again whenever something could clear it: a check passing, an approval, a comment resolved, a new head, a Landing opened, or a legal hold or storage limit lifting. Nothing polls, and it starts no agent.
 
-CTC decides by rules alone, and asks no model. The Landing page shows that same decision: **will land when cleared** and what it's waiting for, or a **go-around** when the work has to change. It lands the exact head it evaluated, against the Landing's base, only when all of these hold:
+Tower decides by rules alone, and asks no model. The Landing page shows that same decision: **will land when cleared** and what it's waiting for, or a **go-around** when the work has to change. It lands the exact head it evaluated, against the Landing's base, only when all of these hold:
 
 | Rule | Otherwise |
 |---|---|
@@ -139,12 +139,13 @@ CTC decides by rules alone, and asks no model. The Landing page shows that same 
 | No unresolved review comment, and it isn't a draft | It waits |
 | Automation isn't paused, and no legal hold applies | It stays open |
 | Every path-limited token that worked on it covers all it would land | It stays open |
-| Risk isn't High, and the repository isn't full | It stays open with the reason |
+| The repository isn't full | It stays open with the reason |
 | It merges cleanly | Go-around, with the reason |
-| No Landing ahead in the queue wrote what it read, or read what it writes | It waits, naming that Landing, and CTC looks again once the way clears |
+| No Landing ahead in the queue wrote what it read, or read what it writes | It waits, naming that Landing, and Tower looks again once the way clears |
 
+- Risk is a beta reading on the Landing page. It doesn't hold a Landing.
 - A newer push or a rejection that arrives first stops it, even once the landing has joined the queue.
-- A refused landing stays open with its reason. Only the next event tries again, and a Landing already cleared when you turn this on lands on its next event.
+- A refused landing stays open with its reason, and the next event tries again. A Landing already cleared when you turn this on lands right away.
 - After it lands the page says **Landed automatically**, with who approved and the gates that decided it. The log's actor is `platform:land-when-cleared`, and webhooks fire as for any landing.
 - Each decision is kept on the Landing with its reasons and the head it judged: `clearances` in `GET /changes/<n>`, the newest 32.
 - `yoneda change` and the **Land** button work as before, and don't apply these rules.
@@ -161,7 +162,7 @@ When a coding session starts, or reads a file, the platform tells it which open 
 
 The closest come first: the same symbol, then the same file, then a Landing that read the file, since changing it would send that Landing around. A session hears each Landing and file once. It comes with `yoneda context`, the session hooks, `git_context` and `git_context_relevant`. A session's own branch counts as what it is changing, and its own Landing is left out. Nothing is held or refused by a warning. A token limited to some paths can't use these reads at all, and a file quarantine withholds is left out.
 
-**CTC** in a repository's sidebar shows every open Landing: its state, what it's waiting for, its place in line, where it overlaps another Landing and the last decision on it. The line runs queued landings first, then cleared ones, oldest cleared first, then those waiting. A Landing that's only waiting holds nobody up, so one left open can't stop the rest. With Land when cleared off, the page shows what CTC would say and nothing lands on its own. The same answer is `GET /ctc` and `git_ctc_radar`.
+**Tower** in a repository's sidebar shows every open Landing: its state, what it's waiting for, its place in line, where it overlaps another Landing and the last decision on it. The line runs queued landings first, then cleared ones, oldest cleared first, then those waiting. A Landing that's only waiting holds nobody up, so one left open can't stop the rest. With Land when cleared off, the page shows what Tower would say and nothing lands on its own. The same answer is `GET /ctc` and `git_ctc_radar`.
 
 ## Close, reopen, delete
 

@@ -5,9 +5,13 @@
 // provider's picture on its own image host; the platform never fetches one.
 // `PUT /api/v1/account/avatar` uploads (PNG, JPEG or WebP, at most 1 MiB: the authority
 // types it by its leading bytes) and `DELETE` removes it, falling back to the provider's.
+
 import { normalizeHandle } from '../../shared/account';
 import { type AvatarInfo, ownAvatarUrl } from './avatars';
+import { askedHere, forwardTo } from './cell-route';
+import { cellOfRegion, cellsOn, thisCell } from './cells';
 import { error, response } from './http';
+import { warned } from './log';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import { ownerOf } from './repo-paths';
 import type { Env } from './types';
@@ -37,9 +41,19 @@ export const isOwnAvatar = (url: URL) => url.pathname === OWN;
 
 /** `GET /api/v1/avatars/<handle>`: a person's picture by handle; no handle, an organization
  * and a person without a picture all answer 404 alike. */
-export async function servePublicAvatar(env: Env, handle: string | null): Promise<Response> {
+export async function servePublicAvatar(
+  env: Env,
+  handle: string | null,
+  req: Request,
+): Promise<Response> {
   const owner = handle ? await ownerOf(env, handle) : null;
   if (!owner || owner.kind === 'org') return none();
+  // The bytes are in the bucket of the account's home cell.
+  if (cellsOn(env) && !askedHere(req)) {
+    const place = await workspace(env, owner.account, { op: 'account_place' });
+    const home = cellOfRegion(env, place.region);
+    if (home !== thisCell(env)) return forwardTo(env, home, req);
+  }
   return serve(env, owner.account, 'public');
 }
 
@@ -113,10 +127,15 @@ async function upload(req: Request, env: Env, account: string) {
     });
   } catch (e) {
     // The record names bytes that never arrived: take it back (only if still this upload).
-    await workspace(env, account, { op: 'avatar_remove', digest }).catch(() => {});
+    await workspace(env, account, { op: 'avatar_remove', digest }).catch(
+      warned('avatar.record_kept', { account }),
+    );
     throw e;
   }
-  if (stored.previous_key) await env.OBJECTS.delete(String(stored.previous_key)).catch(() => {});
+  if (stored.previous_key)
+    await env.OBJECTS.delete(String(stored.previous_key)).catch(
+      warned('avatar.old_bytes_kept', { account }),
+    );
   return pictureNow(env, account);
 }
 

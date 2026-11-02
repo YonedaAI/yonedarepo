@@ -112,8 +112,9 @@ describe('sidebar', () => {
       'Explore',
       'Agents',
       'Overview',
+      'Files',
       'Landings',
-      'CTC',
+      'Tower',
       'Commits',
       'Sessions',
       'Memories',
@@ -209,10 +210,11 @@ describe('the highlighted page', () => {
     ].map((m) => m[1]);
   };
   for (const [route, page] of [
-    [{ view: 'files', repo: a, path: '', ref: 'main' }, 'Overview'],
+    [{ view: 'overview', repo: a }, 'Overview'],
+    [{ view: 'files', repo: a, path: 'src/a.rs', ref: 'main' }, 'Files'],
     [{ view: 'changes', repo: a }, 'Landings'],
     [{ view: 'change', repo: a, number: 2 }, 'Landings'],
-    [{ view: 'ctc', repo: a }, 'CTC'],
+    [{ view: 'tower', repo: a }, 'Tower'],
     [{ view: 'history', repo: a, ref: 'main' }, 'Commits'],
     [{ view: 'agents', repo: a, section: 'sessions' }, 'Sessions'],
     [{ view: 'session', repo: a, id: 3 }, 'Sessions'],
@@ -419,5 +421,11 @@ describe('icon rail', () => {
     expect(active({ view: 'global-search', q: 'retry' })).toEqual(['Search']);
     expect(active({ view: 'search', repo: a, query: '' })).toEqual([]);
     expect(active(home)).toEqual(['Browse']);
+  });
+
+  it('lists Insights only where repositories are counted', () => {
+    const route: SourceRoute = { view: 'changes', repo: a };
+    expect(sidebar({ route, repoName: 'mine' })).not.toContain('Insights');
+    expect(sidebar({ route, repoName: 'mine', insights: true })).toContain('Insights');
   });
 });

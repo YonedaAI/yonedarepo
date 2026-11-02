@@ -1,6 +1,6 @@
 //! Land when cleared: with the repository's switch on, a queue job lands an open Landing once
-//! its exact head clears. Each test plays the job: `repo_land_clearance`, again with the head's
-//! Risk once nothing else stands in the way, then `repo_land` with the head it evaluated. Every
+//! its exact head clears. Each test plays the job: `repo_land_clearance`, again with `confirm`
+//! once nothing else stands in the way, then `repo_land` with the head it evaluated. Every
 //! decision is recorded with its reasons and that head. Off, nothing changes.
 use super::forks::{FORK_ID, FORKER, fork};
 use super::*;
@@ -38,20 +38,15 @@ pub(super) fn landing(h: &Harness, name: &str) -> i64 {
         .unwrap()
 }
 
-/// The job's decision: it scores Risk only when asked to.
+/// The job's decision: it confirms only what would land.
 pub(super) fn assess(h: &Harness, number: i64) -> Value {
     let first = h.ok(LANDER, json!({"op":"repo_land_clearance","number":number}));
-    if first["needs_risk"] != true {
+    if first["confirm"] != true {
         return first;
     }
-    scored(h, number, "low")
-}
-
-pub(super) fn scored(h: &Harness, number: i64, level: &str) -> Value {
-    let risk = json!({"level":level,"score":10,"why":["Small"]});
     h.ok(
         LANDER,
-        json!({"op":"repo_land_clearance","number":number,"risk":risk}),
+        json!({"op":"repo_land_clearance","number":number,"confirm":true}),
     )
 }
 
@@ -210,7 +205,7 @@ fn a_cleared_landing_lands_as_the_platform_with_its_reasons() {
     assert_eq!(record["head"], id);
     assert_eq!(record["landed_version"], landed["version"]);
     assert_eq!(record["state"]["approved_by"], json!([OWNER]));
-    assert_eq!(record["state"]["risk"]["level"], "low", "{record}");
+    assert!(record["state"].get("risk").is_none(), "{record}");
     let gates = record["state"]["requirements"].as_array().unwrap();
     assert!(gates.iter().any(|g| g["name"] == "unit"), "{record}");
     assert!(gates.iter().any(|g| g["name"] == "Approvals"), "{record}");
@@ -516,11 +511,11 @@ fn a_path_limited_authors_grant_must_cover_all_it_would_land() {
 }
 
 /// The owner, signed in, sets the automation pause.
-fn pause(h: &Harness, action: &str) {
+fn pause(h: &Harness, action: &str) -> Value {
     let person = json!({"workspace":"ws-1","principal":OWNER,"human":true});
     let command = json!({"op":"repo_break_glass","action":action,"reason":"Stop","now":1,
         "_session":person});
-    execute_repo_store(&h.db, command).unwrap();
+    execute_repo_store(&h.db, command).unwrap()
 }
 
 #[test]
@@ -534,11 +529,103 @@ fn a_pause_refuses_and_a_resume_lets_the_next_trigger_land() {
     assert_eq!(assess(&h, number)["state"], "cleared");
 }
 
+/// Nothing about a held Landing changes when the owner resumes, so resuming has to ask: with no
+/// later event a cleared head would sit open for good.
+#[test]
+fn a_resume_asks_again_for_what_the_pause_held() {
+    let (h, _root, id, number) = cleared();
+    pause(&h, "pause_automation");
+    assert_eq!(waiting(&assess(&h, number)), ["AUTOMATION_PAUSED"]);
+    let resumed = pause(&h, "resume_automation");
+    assert_eq!(resumed["land_checks"], json!([number]), "{resumed}");
+    assert_eq!(assess(&h, number)["state"], "cleared");
+    land(&h, number, &id).unwrap();
+    assert_eq!(main_head(&h), json!(id));
+}
+
+#[test]
+fn a_resume_with_nothing_held_asks_for_nothing() {
+    let (h, _root, _id, _number) = cleared();
+    pause(&h, "pause_automation");
+    let resumed = pause(&h, "resume_automation");
+    assert!(resumed.get("land_checks").is_none(), "{resumed}");
+}
+
+/// Turning the switch on changes nothing about a Landing, so it has to ask: a head that cleared
+/// beforehand would otherwise wait for an event that may never come.
+#[test]
+fn turning_the_switch_on_asks_for_the_open_landings() {
+    let (h, root) = seeded();
+    let id = branch(&h, AGENT, &root, "fix", "src/a.rs");
+    let number = landing(&h, "fix");
+    h.approve_and_check(&id);
+    branch(&h, AGENT, &root, "gone", "src/b.rs");
+    let closed = landing(&h, "gone");
+    h.ok(OWNER, json!({"op":"repo_change_close","number":closed}));
+    let others = json!({"op":"repo_auto_landings","create":true});
+    assert!(h.ok(OWNER, others).get("land_checks").is_none());
+    let off = json!({"op":"repo_auto_landings","land_when_cleared":false});
+    assert!(h.ok(OWNER, off).get("land_checks").is_none());
+    let on = json!({"op":"repo_auto_landings","land_when_cleared":true});
+    let answer = h.ok(OWNER, on.clone());
+    assert_eq!(answer["land_checks"], json!([number]), "{answer}");
+    let again = h.ok(OWNER, on);
+    assert!(again.get("land_checks").is_none(), "{again}");
+}
+
+/// A hold lifts in the owner's authority, which the repository never hears from: the adapter's
+/// job asks, and only what the hold held comes back.
+#[test]
+fn a_lifted_hold_asks_again_for_what_it_held() {
+    let (h, root, id, number) = cleared();
+    branch(&h, AGENT, &root, "other", "src/b.rs");
+    let unrelated = landing(&h, "other");
+    assert_eq!(assess(&h, unrelated)["state"], "hold");
+    let lifted = json!({"op":"repo_land_clearance","hold_lifted":true});
+    let nothing = h.ok(LANDER, lifted.clone());
+    assert!(nothing.get("land_checks").is_none(), "{nothing}");
+    h.ok(
+        LANDER,
+        json!({"op":"repo_land_clearance","number":number,"confirm":true,
+            "_hold":{"held":true}}),
+    );
+    let asked = h.ok(LANDER, lifted.clone());
+    assert_eq!(asked["land_checks"], json!([number]), "{asked}");
+    assert_eq!(code(h.run(AGENT, lifted)), "FORBIDDEN");
+    assert_eq!(assess(&h, number)["state"], "cleared");
+    land(&h, number, &id).unwrap();
+    assert_eq!(main_head(&h), json!(id));
+}
+
+pub(super) fn held_full(h: &Harness, number: i64) {
+    let full = json!({"op":"repo_land_clearance","number":number,"confirm":true,
+        "_storage_guard":1});
+    assert_eq!(waiting(&h.ok(LANDER, full)), ["REPO_FULL"]);
+}
+
+/// Room comes back with no event on the Landing, so the job that reads the size asks.
+#[test]
+fn reading_the_size_with_room_again_asks_for_what_the_limit_held() {
+    let (h, _root, _id, number) = cleared();
+    let read = |extra: Value| {
+        let mut read = json!({"op":"repo_storage"});
+        read.as_object_mut()
+            .unwrap()
+            .extend(extra.as_object().unwrap().clone());
+        h.ok(OWNER, read)
+    };
+    assert!(read(json!({})).get("land_checks").is_none(), "nothing held");
+    held_full(&h, number);
+    let full = read(json!({"_storage_guard":1}));
+    assert!(full.get("land_checks").is_none(), "{full}");
+    let room = read(json!({}));
+    assert_eq!(room["land_checks"], json!([number]), "{room}");
+}
+
 #[test]
 fn a_legal_hold_refuses_and_says_so() {
     let (h, _root, id, number) = cleared();
-    let risk = json!({"level":"low","score":10,"why":[]});
-    let held = json!({"op":"repo_land_clearance","number":number,"risk":risk.clone(),
+    let held = json!({"op":"repo_land_clearance","number":number,"confirm":true,
         "_hold":{"held":true}});
     let answer = h.ok(LANDER, held);
     assert_eq!(waiting(&answer), ["LEGAL_HOLD"], "{answer}");
@@ -549,7 +636,7 @@ fn a_legal_hold_refuses_and_says_so() {
     // Not answered yet: the adapter asks the owner and sends it again.
     let unasked = h.run(
         LANDER,
-        json!({"op":"repo_land_clearance","number":number,"risk":risk,"_hold":null}),
+        json!({"op":"repo_land_clearance","number":number,"confirm":true,"_hold":null}),
     );
     assert_eq!(code(unasked), "HOLD_UNCHECKED");
     let land_held = h.run(
@@ -563,8 +650,7 @@ fn a_legal_hold_refuses_and_says_so() {
 #[test]
 fn a_full_repository_refuses_and_says_so() {
     let (h, _root, id, number) = cleared();
-    let risk = json!({"level":"low","score":10,"why":[]});
-    let full = json!({"op":"repo_land_clearance","number":number,"risk":risk,
+    let full = json!({"op":"repo_land_clearance","number":number,"confirm":true,
         "_storage_guard":1});
     let answer = h.ok(LANDER, full);
     assert_eq!(waiting(&answer), ["REPO_FULL"], "{answer}");
@@ -743,12 +829,123 @@ fn findings_hold_the_platform_too_with_the_option_on() {
     assert_eq!(code(land(&h, number, &id)), waiting(&answer)[0]);
 }
 
+/// A go-around's whole loop: the fix is pushed, the agent that raised the finding looks again and
+/// says nothing more. Nobody resolves what it left on the older commit, so that must not hold
+/// the Landing, or a review that passes could never let it land by itself.
+#[test]
+fn a_finding_the_agent_dropped_on_a_later_look_holds_nothing() {
+    let (h, _root, id, number) = cleared();
+    finding(&h, number, &id);
+    h.ok(
+        OWNER,
+        json!({"op":"repo_auto_landings","findings_block":true}),
+    );
+    assert_eq!(assess(&h, number)["state"], "go_around");
+    let fix = h
+        .commit(
+            AGENT,
+            Some(&id),
+            1,
+            json!([file("src/a.rs", "y\n")]),
+            json!([]),
+        )
+        .unwrap();
+    h.ok(
+        AGENT,
+        json!({"op":"repo_branch_set","ref":"fix","commit":fix,"expected":id}),
+    );
+    h.approve_and_check(&fix);
+    let summary = json!({"op":"repo_change_comment","number":number,"body":"No findings"});
+    h.ok(AGENT, summary);
+    let answer = assess(&h, number);
+    assert_eq!(answer["state"], "cleared", "{answer}");
+    land(&h, number, &fix).unwrap();
+    assert_eq!(change(&h, number)["status"], "landed");
+}
+
+/// The same with a person's comment: it stays until someone resolves it.
+#[test]
+fn a_persons_comment_on_an_older_head_still_holds() {
+    let (h, _root, id, number) = cleared();
+    let comment = json!({"op":"repo_change_comment","number":number,"commit":id,
+        "path":"src/a.rs","line":1,"side":"new","body":"Not this"});
+    h.ok(OWNER, comment);
+    let fix = h
+        .commit(
+            AGENT,
+            Some(&id),
+            1,
+            json!([file("src/a.rs", "y\n")]),
+            json!([]),
+        )
+        .unwrap();
+    h.ok(
+        AGENT,
+        json!({"op":"repo_branch_set","ref":"fix","commit":fix,"expected":id}),
+    );
+    h.approve_and_check(&fix);
+    assert_eq!(waiting(&assess(&h, number)), ["COMMENTS"]);
+}
+
+/// `yoneda change comment --resolve` names no commit, and a fix has moved the head past the
+/// finding, so naming none has to reach the anchor where the finding sits.
+#[test]
+fn resolving_with_no_commit_reaches_an_older_head() {
+    let (h, _root, id, number) = cleared();
+    let comment = json!({"op":"repo_change_comment","number":number,"commit":id,
+        "path":"src/a.rs","line":1,"side":"new","body":"Not this"});
+    h.ok(OWNER, comment);
+    let fix = h
+        .commit(
+            AGENT,
+            Some(&id),
+            1,
+            json!([file("src/a.rs", "y\n")]),
+            json!([]),
+        )
+        .unwrap();
+    h.ok(
+        AGENT,
+        json!({"op":"repo_branch_set","ref":"fix","commit":fix,"expected":id}),
+    );
+    let resolve = json!({"op":"repo_change_comment","number":number,
+        "path":"src/a.rs","line":1,"side":"new","resolve":true});
+    let answer = h.ok(OWNER, resolve);
+    assert_eq!(answer["resolved"], 1, "{answer}");
+    assert_eq!(answer["land_checks"], json!([number]), "{answer}");
+    h.approve_and_check(&fix);
+    assert_eq!(assess(&h, number)["state"], "cleared");
+}
+
 #[test]
 fn findings_only_show_with_the_option_off() {
     let (h, _root, id, number) = cleared();
     finding(&h, number, &id);
     h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":id}));
     assert_eq!(change(&h, number)["status"], "landed");
+}
+
+/// Live, a passing Slop review left one low nit on a line and the Landing waited for nobody. An
+/// agent's say on a landing is its check; its findings stop one only when the owner asks.
+#[test]
+fn an_agents_finding_holds_nothing_with_the_option_off() {
+    let (h, _root, id, number) = cleared();
+    finding(&h, number, &id);
+    let answer = assess(&h, number);
+    assert_eq!(answer["state"], "cleared", "{answer}");
+    land(&h, number, &id).unwrap();
+    assert_eq!(change(&h, number)["status"], "landed");
+}
+
+/// With an agent's finding on the same line, a person's comment still needs an answer.
+#[test]
+fn a_persons_comment_holds_beside_an_agents_finding() {
+    let (h, _root, id, number) = cleared();
+    finding(&h, number, &id);
+    let comment = json!({"op":"repo_change_comment","number":number,"commit":id,
+        "path":"src/a.rs","line":1,"side":"new","body":"Not this"});
+    h.ok(OWNER, comment);
+    assert_eq!(waiting(&assess(&h, number)), ["COMMENTS"]);
 }
 
 #[test]
@@ -787,44 +984,51 @@ fn a_failed_gate_is_a_go_around_and_a_missing_one_is_a_hold() {
 }
 
 #[test]
-fn risk_is_scored_last_and_a_high_head_is_held_for_a_person() {
+fn risk_holds_nothing_and_no_score_is_asked_for() {
     let (h, root) = seeded();
     switch_on(&h);
     let id = branch(&h, AGENT, &root, "fix", "src/a.rs");
     let number = landing(&h, "fix");
-    let ask = json!({"op":"repo_land_clearance","number":number});
-    // Something else stands in the way: the diff isn't read.
-    assert!(h.ok(LANDER, ask.clone()).get("needs_risk").is_none());
     h.approve_and_check(&id);
-    let first = h.ok(LANDER, ask);
-    assert_eq!(first["needs_risk"], true, "{first}");
-    assert_eq!(first["commit"], id);
-    assert_eq!(
-        decisions(&h, number).len(),
-        1,
-        "asking for a score decides nothing"
+    let first = h.ok(LANDER, json!({"op":"repo_land_clearance","number":number}));
+    assert_eq!(first["state"], "cleared", "{first}");
+    assert_eq!(first["reasons"], json!([]), "{first}");
+    assert_eq!(first["confirm"], true, "{first}");
+    assert!(
+        decisions(&h, number)
+            .iter()
+            .all(|d| d["decision"] != "cleared")
     );
-    let answer = scored(&h, number, "high");
-    assert_eq!(answer["state"], "hold");
-    assert_eq!(waiting(&answer), ["RISK_HIGH"], "{answer}");
-    assert_eq!(code(land(&h, number, &id)), "RISK_HIGH");
     let gates = h.ok(OWNER, json!({"op":"repo_change_gates","number":number}));
-    assert_eq!(gates["land_when_cleared"]["reasons"], answer["reasons"]);
-    // Scored again, it clears: review classes can arrive after a score.
-    assert_eq!(scored(&h, number, "medium")["state"], "cleared");
-    land(&h, number, &id).unwrap();
-    assert_eq!(change(&h, number)["status"], "landed");
+    assert_eq!(gates["land_when_cleared"]["decision"], "cleared", "{gates}");
 }
 
 #[test]
-fn a_head_the_job_could_not_score_is_held() {
+fn a_recorded_risk_replays_as_nothing_in_the_way() {
     let (h, _root, _id, number) = cleared();
-    let unknown = json!({"level":null,"score":0,"why":[]});
-    let answer = h.ok(
-        LANDER,
-        json!({"op":"repo_land_clearance","number":number,"risk":unknown}),
+    let answer = assess(&h, number);
+    let mut state = decisions(&h, number)[0]["state"].clone();
+    assert_eq!(answer["state"], "cleared", "{answer}");
+    state["risk"] = json!({"level":"high","score":90,"why":["Touches workflows"]});
+    let replayed = serde_json::from_value(state).unwrap();
+    assert_eq!(
+        crate::platform_ctc::clearance(&replayed).decision(),
+        crate::platform_ctc::Decision::Cleared
     );
-    assert_eq!(waiting(&answer), ["RISK_UNKNOWN"], "{answer}");
+}
+
+#[test]
+fn a_failed_slop_or_intent_check_still_goes_around() {
+    for name in ["slop-review", "intent-drift"] {
+        let (h, _root, id, number) = cleared();
+        let check = json!({"op":"repo_check","commit":id,"name":name,"status":"fail"});
+        h.ok(CI, check);
+        let answer = assess(&h, number);
+        assert_eq!(answer["state"], "go_around", "{name}: {answer}");
+        assert_eq!(answer["reasons"][0]["code"], "CHECK_FAILED", "{answer}");
+        assert_eq!(code(land(&h, number, &id)), "CHECK_FAILED");
+        assert_eq!(change(&h, number)["status"], "open");
+    }
 }
 
 #[test]
@@ -916,6 +1120,17 @@ fn rules_that_ask_for_nothing_clear_nothing() {
         json!({"op":"repo_review","commit":id,"decision":"approve"}),
     );
     assert_eq!(assess(&h, number)["state"], "cleared");
+}
+
+#[test]
+fn a_rule_asking_for_an_approval_is_not_a_rule_asking_for_nothing() {
+    let (h, root) = seeded();
+    let policy = json!({"required_checks":[],"approvals":1});
+    h.ok(OWNER, json!({"op":"repo_set_policy","policy":policy}));
+    switch_on(&h);
+    branch(&h, AGENT, &root, "fix", "src/a.rs");
+    let number = landing(&h, "fix");
+    assert_eq!(waiting(&assess(&h, number)), ["GATES"]);
 }
 
 #[test]

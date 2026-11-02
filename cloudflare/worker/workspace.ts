@@ -1,9 +1,10 @@
+import { carriedHeaders } from './request-scope';
 import type { Env, Json } from './types';
 
 async function authority(env: Env, name: string, command: Json): Promise<Json> {
   const result = await env.WORKSPACES.get(env.WORKSPACES.idFromName(name)).fetch(
     'http://workspace/command',
-    { method: 'POST', body: JSON.stringify(command) },
+    { method: 'POST', body: JSON.stringify(command), headers: carriedHeaders() },
   );
   const value = await result.json<Json>();
   if (!result.ok)

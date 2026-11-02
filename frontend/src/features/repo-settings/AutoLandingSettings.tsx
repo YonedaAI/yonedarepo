@@ -79,10 +79,9 @@ export function AutoLandingSettings({
           <span>
             Land when cleared
             <small className="subtle">
-              CTC, Code Traffic Control, lands an open Landing once its head clears: every gate
-              ready, no unresolved comment or failed check, Risk not High. A rule must ask for an
-              approval or a check, and a fork needs an approval. A Landing already cleared lands on
-              its next event.
+              Tower lands an open Landing once its head clears: every gate ready, no failed check or
+              comment from a person left open. A rule must ask for an approval or a check, and a
+              fork needs an approval. A Landing already cleared lands right away.
             </small>
           </span>
         </label>

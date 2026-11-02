@@ -23,31 +23,6 @@
       ],
       "type": "object"
     },
-    "Projection": {
-      "additionalProperties": false,
-      "description": "The branch's object store projection.",
-      "properties": {
-        "projected_version": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "status": {
-          "type": "string"
-        },
-        "target_version": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "projected_version",
-        "target_version",
-        "status"
-      ],
-      "type": "object"
-    },
     "RemoteStatus": {
       "additionalProperties": false,
       "description": "What the platform says about an offline checkout's branch.",
@@ -86,16 +61,6 @@
             "null"
           ]
         },
-        "store": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Projection"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
         "version": {
           "description": "The repository's log version.",
           "format": "uint64",
@@ -111,8 +76,7 @@
         "version",
         "behind",
         "projected_version",
-        "awaiting_git_commit",
-        "store"
+        "awaiting_git_commit"
       ],
       "type": "object"
     },

@@ -1,40 +1,4 @@
 /* Agents tab: sessions, contracts, pins and bisects */
-.agent-sections {
-  margin-bottom: 16px;
-}
-.agent-sections a {
-  display: inline-flex;
-  align-items: center;
-  min-height: 30px;
-  padding: 4px 12px;
-  font-size: var(--text-md);
-  color: var(--text);
-  background: var(--surface);
-}
-.agent-sections a[aria-current="page"] {
-  background: var(--accent-soft);
-  color: var(--blue-text);
-  font-weight: 500;
-}
-.agent-sections a:focus-visible {
-  outline-offset: -3px;
-}
-.agent-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-  margin-bottom: 12px;
-}
-.agent-head h2 {
-  margin: 0;
-}
-.agent-filters {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-}
 .agent-filter {
   display: inline-flex;
   align-items: center;
@@ -44,17 +8,12 @@
 }
 .agent-filter :is(select, input) {
   padding: 3px 8px;
-  min-height: 30px;
+  min-height: var(--control-h);
   font-size: var(--text-md);
 }
 .agent-filter select {
   field-sizing: content;
   width: auto;
-}
-.agent-filters button {
-  min-height: 30px;
-  padding: 3px 12px;
-  font-size: var(--text-md);
 }
 .agent-sessions,
 .agent-contracts,
@@ -70,8 +29,8 @@
 .agent-list > li {
   display: grid;
   gap: 4px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--line);
+  padding: var(--row-y) 0;
+  border-bottom: 1px solid var(--row-line);
   min-width: 0;
 }
 .agent-session-link {
@@ -182,9 +141,6 @@
   color: var(--blue-text);
   text-decoration: underline;
 }
-.agent-sections a + a {
-  border-left: 1px solid var(--line-strong);
-}
 /* A session's transcript: the context packet, then its turns in order */
 .agent-transcript pre {
   background: var(--surface);
@@ -262,9 +218,6 @@
   color: var(--muted);
   font-size: var(--text-md);
 }
-.agent-head .agent-subtitle {
-  margin: 4px 0 0;
-}
 /* Agents → Memories, and the context a session was given */
 .memory-chips,
 .memory-actions {
@@ -274,6 +227,7 @@
   gap: 6px;
 }
 .memory-text {
+  max-width: 60ch;
   margin: 0;
   color: var(--text);
   white-space: pre-wrap;

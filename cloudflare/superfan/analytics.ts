@@ -1,8 +1,9 @@
 // What tail events cannot show, read from Cloudflare's GraphQL Analytics API: queue backlog,
-// lag and dead-lettering, Durable Object resource kills, and check container disk. One
+// lag and dead-lettering per queue, Durable Object resource kills, and check container disk. One
 // request per run keeps within the API's query budget. Errors carry only status codes and
 // Cloudflare's error messages, never request headers.
 import type { WatchIds, WatchSite, WatchTarget } from './config';
+import { DELIVERY_QUERY, type QueueMinutes, queueMinutes } from './delivery';
 
 export const API_URL = 'https://api.cloudflare.com/client/v4';
 export const GRAPHQL_URL = `${API_URL}/graphql`;
@@ -10,22 +11,28 @@ export const GRAPHQL_URL = `${API_URL}/graphql`;
 const INGEST_DELAY_MS = 5 * 60_000;
 export const WINDOW_MS = 60 * 60_000;
 
+export interface QueueStats {
+  backlogLatest: number;
+  backlogEarliest: number;
+  lagMs: number | null;
+  retries: number | null;
+  deadLettered: number;
+}
 export interface Analytics {
   window: { start: string; end: string };
   /** Platform-side CPU, memory and fatal kills per Durable Object class. */
   objectKills: Record<keyof WatchTarget['namespaces'], number>;
-  queue: {
-    backlogLatest: number;
-    backlogEarliest: number;
-    deadLetterBacklog: number;
-    lagMs: number | null;
-    retries: number | null;
-    deadLettered: number;
-  };
+  /** The platform's jobs queue, and the dead letter queue it shares with checks. */
+  queue: QueueStats & { deadLetterBacklog: number };
+  /** On the wide watch. */
+  checks: QueueStats | null;
+  managed: (QueueStats & { deadLetterBacklog: number }) | null;
   containers: { maxDiskPercent: number | null };
 }
 export interface AnalyticsSource {
   collect(now: number): Promise<Analytics>;
+  /** The jobs queue by the minute over a window; a source that can't has no such method. */
+  delivery?(start: string, end: string): Promise<QueueMinutes>;
 }
 
 /** A telemetry source could not be read; `reason` is safe to store and show. */
@@ -39,14 +46,14 @@ export class TelemetryError extends Error {
 }
 
 const QUERY = `query Superfan($account: string!, $start: Time!, $end: Time!,
-  $namespaces: [string!], $queues: [string!], $jobs: string!, $app: string!) {
+  $namespaces: [string!], $queues: [string!], $app: string!) {
   viewer { accounts(filter: { accountTag: $account }) {
     objectPeriodic: durableObjectsPeriodicGroups(limit: 50, filter: { namespaceId_in: $namespaces, datetime_geq: $start, datetime_leq: $end }) {
       sum { exceededCpuErrors exceededMemoryErrors fatalInternalErrors } dimensions { namespaceId } }
     backlog: queueBacklogAdaptiveGroups(limit: 200, orderBy: [datetimeFiveMinutes_ASC], filter: { queueId_in: $queues, datetime_geq: $start, datetime_leq: $end }) {
       avg { messages } dimensions { queueId datetimeFiveMinutes } }
-    queueOps: queueMessageOperationsAdaptiveGroups(limit: 50, filter: { queueId: $jobs, datetime_geq: $start, datetime_leq: $end }) {
-      sum { billableOperations } avg { lagTime retryCount } dimensions { actionType outcome } }
+    queueOps: queueMessageOperationsAdaptiveGroups(limit: 200, filter: { queueId_in: $queues, datetime_geq: $start, datetime_leq: $end }) {
+      sum { billableOperations } avg { lagTime retryCount } dimensions { queueId actionType outcome } }
     containers: containersMetricsAdaptiveGroups(limit: 1, filter: { applicationId: $app, datetime_geq: $start, datetime_leq: $end }) {
       max { diskUsagePercentage } }
   } }
@@ -69,29 +76,36 @@ export function parseAccount(
   };
   const backlog = (queue: string) =>
     (account.backlog as Row[]).filter((r) => r.dimensions?.queueId === queue);
-  const jobs = backlog(target.queues.jobs);
-  const ops = account.queueOps as Row[];
-  const reads = ops.filter((r) => r.dimensions?.actionType !== 'WriteMessage');
-  const maxOf = (key: string) =>
-    reads.length ? Math.max(...reads.map((r) => num(r.avg?.[key]))) : null;
-  const disk = account.containers?.[0]?.max?.diskUsagePercentage;
-  return {
-    window,
-    objectKills: {
-      source_repository: kills(target.namespaces.source_repository),
-      object_push_queue: kills(target.namespaces.object_push_queue),
-      check_runs: kills(target.namespaces.check_runs),
-    },
-    queue: {
-      backlogLatest: num(jobs.at(-1)?.avg?.messages),
-      backlogEarliest: num(jobs[0]?.avg?.messages),
-      deadLetterBacklog: num(backlog(target.queues.deadLetter).at(-1)?.avg?.messages),
+  const waiting = (queue: string) => num(backlog(queue).at(-1)?.avg?.messages);
+  const stats = (queue: string): QueueStats => {
+    const ops = (account.queueOps as Row[]).filter((r) => r.dimensions?.queueId === queue);
+    const reads = ops.filter((r) => r.dimensions?.actionType !== 'WriteMessage');
+    const maxOf = (key: string) =>
+      reads.length ? Math.max(...reads.map((r) => num(r.avg?.[key]))) : null;
+    return {
+      backlogLatest: waiting(queue),
+      backlogEarliest: num(backlog(queue)[0]?.avg?.messages),
       lagMs: maxOf('lagTime'),
       retries: maxOf('retryCount'),
       deadLettered: ops
         .filter((r) => r.dimensions?.outcome === 'dlq')
         .reduce((total, r) => total + num(r.sum?.billableOperations), 0),
+    };
+  };
+  const { queues } = target;
+  const disk = account.containers?.[0]?.max?.diskUsagePercentage;
+  return {
+    window,
+    objectKills: {
+      source_repository: kills(target.namespaces.source_repository),
+      check_runs: kills(target.namespaces.check_runs),
     },
+    queue: { ...stats(queues.jobs), deadLetterBacklog: waiting(queues.deadLetter) },
+    checks: queues.checks ? stats(queues.checks) : null,
+    managed:
+      queues.managedRuns && queues.managedDeadLetter
+        ? { ...stats(queues.managedRuns), deadLetterBacklog: waiting(queues.managedDeadLetter) }
+        : null,
     containers: { maxDiskPercent: typeof disk === 'number' ? disk : null },
   };
 }
@@ -127,15 +141,24 @@ export async function resolveIds(site: WatchSite, token: string): Promise<WatchI
       (b) => b.type === 'durable_object_namespace' && b.class_name === cls && !b.script_name,
     )?.namespace_id;
   const queue = (name: string) => queues?.find?.((q) => q.queue_name === name)?.queue_id;
+  const prefix = site.script.replace(/-platform$/, '');
+  const named = (name: string) => [name, queue(name)];
+  const wideQueues = site.wide
+    ? [
+        named(`${site.script}-checks`),
+        named(`${prefix}-managed-runs`),
+        named(`${prefix}-managed-dead-letter`),
+      ]
+    : [];
   const found = {
     SourceRepository: namespace('SourceRepository'),
-    ObjectPushQueue: namespace('ObjectPushQueue'),
     CheckContainer: namespace('CheckContainer'),
     [`${site.script}-jobs`]: queue(`${site.script}-jobs`),
     [`${site.script}-dead-letter`]: queue(`${site.script}-dead-letter`),
     [`${site.script}-checkcontainer`]: apps?.find?.(
       (a) => a.name === `${site.script}-checkcontainer`,
     )?.id,
+    ...Object.fromEntries(wideQueues),
   };
   const missing = Object.entries(found).filter(([, value]) => typeof value !== 'string');
   if (missing.length)
@@ -145,9 +168,13 @@ export async function resolveIds(site: WatchSite, token: string): Promise<WatchI
     );
   const v = Object.values(found) as string[];
   return {
-    namespaces: { source_repository: v[0], object_push_queue: v[1], check_runs: v[2] },
-    queues: { jobs: v[3], deadLetter: v[4] },
-    checkApp: v[5],
+    namespaces: { source_repository: v[0], check_runs: v[1] },
+    queues: {
+      jobs: v[2],
+      deadLetter: v[3],
+      ...(site.wide ? { checks: v[5], managedRuns: v[6], managedDeadLetter: v[7] } : {}),
+    },
+    checkApp: v[4],
   };
 }
 
@@ -178,14 +205,24 @@ export class CloudflareAnalytics implements AnalyticsSource {
       account: t.account,
       ...window,
       namespaces: Object.values(t.namespaces),
-      queues: [t.queues.jobs, t.queues.deadLetter],
-      jobs: t.queues.jobs,
+      queues: Object.values(t.queues),
       app: t.checkApp,
     };
+    return parseAccount(await this.ask(QUERY, variables), t, window);
+  }
+
+  async delivery(start: string, end: string) {
+    const { account, queues } = await this.target();
+    const variables = { account, start, end, queues: [queues.jobs] };
+    return queueMinutes(await this.ask(DELIVERY_QUERY, variables));
+  }
+
+  /** One GraphQL request's account result; a failure is a telemetry error. */
+  private async ask(query: string, variables: object): Promise<Row> {
     const res = await fetch(GRAPHQL_URL, {
       method: 'POST',
       headers: { authorization: `Bearer ${this.token}`, 'content-type': 'application/json' },
-      body: JSON.stringify({ query: QUERY, variables }),
+      body: JSON.stringify({ query, variables }),
       redirect: 'manual',
       signal: AbortSignal.timeout(20_000),
     }).catch(() => null);
@@ -203,7 +240,7 @@ export class CloudflareAnalytics implements AnalyticsSource {
         `${status}${message ? `: ${message}` : ''}${diagnosis}`.slice(0, 300),
       );
     }
-    return parseAccount(account, t, window);
+    return account;
   }
 
   /**
@@ -239,27 +276,5 @@ export class CloudflareAnalytics implements AnalyticsSource {
       ? `contains ${markers.join(', ')}; piece lengths ${pieces.join('/')}`
       : 'plain';
     return `user token: ${user}; account token: ${account}; length ${this.token.length}, ${shape}`;
-  }
-}
-
-export interface Health {
-  ok: boolean;
-  status: number | null;
-  latencyMs: number;
-}
-
-/** The platform's public health endpoint; also keeps one tail event flowing per run. */
-export async function probe(url: string): Promise<Health> {
-  const started = Date.now();
-  try {
-    const res = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(10_000) });
-    const body = res.ok ? ((await res.json().catch(() => null)) as Row | null) : null;
-    return {
-      ok: res.ok && body?.service === 'yonedarepo-platform',
-      status: res.status,
-      latencyMs: Date.now() - started,
-    };
-  } catch {
-    return { ok: false, status: null, latencyMs: Date.now() - started };
   }
 }

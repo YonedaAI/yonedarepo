@@ -434,11 +434,12 @@ fn repository_events_keep_only_their_listed_fields() {
             "webhook.deleted",
             json!({"id":"3","url":"https://ci.example.com/tok3n?key=abc"})
         ),
+        event(14, "repo.purge_requested", json!({})),
     ]);
     append(&db, source, events);
     let repo = "r0123456789abcdef0123";
     let items = rows(&db);
-    assert_eq!(items.len(), 13);
+    assert_eq!(items.len(), 14);
     let details = |kind: &str| {
         items
             .iter()
@@ -451,6 +452,10 @@ fn repository_events_keep_only_their_listed_fields() {
         json!({"repo":repo,"name":"demo","visibility":"private","parent":"r00000000000000000009"})
     );
     assert_eq!(details("repo.deleted"), json!({"repo":repo,"name":"demo"}));
+    assert_eq!(
+        details("repo.purge_requested"),
+        json!({"repo":repo,"name":"demo"})
+    );
     assert_eq!(
         details("repo.member_put"),
         json!({"repo":repo,"name":"demo","account":"team:acme/devs","role":"read","previous":"write"})
@@ -618,6 +623,43 @@ fn an_account_recovery_tells_its_orgs_what_it_revoked() {
     assert_eq!(items[0]["details"], json!({"tokens":1,"ssh_keys":1}));
 }
 
+#[test]
+fn a_password_reset_and_a_new_recovery_code_reach_the_orgs() {
+    let alice = person();
+    joined(&alice);
+    ok(&alice, token(json!("acme")));
+    ok(
+        &alice,
+        json!({"op":"recovery_regenerate","session_hash":"a".repeat(64),"recovery_hash":"d".repeat(64)}),
+    );
+    ok(
+        &alice,
+        json!({"op":"email_change","email":"alice@example.com","token_hash":"e".repeat(64)}),
+    );
+    ok(
+        &alice,
+        json!({"op":"email_verify","token_hash":"e".repeat(64)}),
+    );
+    ok(
+        &alice,
+        json!({"op":"password_reset_request","token_hash":"f".repeat(64)}),
+    );
+    ok(
+        &alice,
+        json!({"op":"password_reset","token_hash":"f".repeat(64),"password":"another long password","salt":"02".repeat(16),"new_recovery_hash":"0".repeat(64)}),
+    );
+    let db = log();
+    copy(&alice, BOB, &db);
+    let items = rows(&db);
+    let items: Vec<_> = items
+        .iter()
+        .filter(|i| i["kind"] != "pat.created")
+        .collect();
+    assert_eq!(items[0]["kind"], "account.password_reset");
+    assert_eq!(items[0]["details"], json!({"tokens":1,"ssh_keys":0}));
+    assert_eq!(items[1]["kind"], "account.recovery_regenerated");
+}
+
 /// Sign-in rows of the person's own log, oldest first: `(kind, data)`.
 fn own(db: &NativeStore) -> Vec<(String, Value)> {
     db.query(
@@ -771,4 +813,121 @@ fn device_text_is_scanned_before_it_is_kept() {
         json!({"op":"device_noted","approved":true,"client":token,"host":null,"audit_log":true}),
     );
     assert!(!raw(&db).contains("ghp_"));
+}
+
+#[test]
+fn an_export_is_a_row_of_the_log_itself_and_chains_with_the_rest() {
+    let db = log();
+    append(&db, ORG, events(2));
+    ok(
+        &db,
+        json!({"op":"audit_exported","actor":"user:alice","format":"csv","kind":"org.created",
+            "of_actor":"user:bob","before":9,"secret":"nope"}),
+    );
+    append(
+        &db,
+        ORG,
+        json!([{"seq":3,"kind":"org.created","at":3,"data":{}}]),
+    );
+    let items = rows(&db);
+    assert_eq!(items.len(), 4);
+    let row = &items[1];
+    assert_eq!(row["kind"], "audit.exported");
+    assert_eq!(row["actor"], "user:alice");
+    assert_eq!(row["source"], "log");
+    assert_eq!(
+        row["details"],
+        json!({"format":"csv","kind":"org.created","of_actor":"user:bob","before":9})
+    );
+    assert_eq!(verified(&db)["ok"], true);
+    // It moves no source's cursor, and a person's authority has no log to write to.
+    let cursor = ok(&db, json!({"op":"audit_cursor","source":ORG}));
+    assert_eq!(cursor["cursor"], 3);
+    let e = at(
+        &person(),
+        1,
+        json!({"op":"audit_exported","actor":"user:alice","format":"csv"}),
+    );
+    assert_eq!(e.unwrap_err().code, "INVALID_INPUT");
+}
+
+/// `audit_seal_next` at `now`.
+fn seal_next(db: &NativeStore, now: i64, all: bool) -> Value {
+    at(db, now, json!({"op":"audit_seal_next","all":all})).unwrap()
+}
+fn seal_done(db: &NativeStore, seal: &Value) -> Value {
+    ok(
+        db,
+        json!({"op":"audit_seal_done","to":seal["to"],"hash":seal["hash"]}),
+    )
+}
+
+#[test]
+fn a_segment_falls_due_when_it_is_old_when_it_is_full_or_when_asked() {
+    const DAY: i64 = 24 * 60 * 60 * 1000;
+    let db = log();
+    assert_eq!(seal_next(&db, 1, true)["due"], false);
+    append(&db, ORG, events(3));
+    // The first row is from 1001.
+    assert_eq!(seal_next(&db, 1001 + DAY - 1, false)["due"], false);
+    assert_eq!(seal_next(&db, 1001 + DAY, false)["due"], true);
+    let asked = seal_next(&db, 2000, true);
+    assert_eq!(asked["to"], 3);
+    seal_done(&db, &asked);
+
+    let full: Vec<Value> = (4..=1003)
+        .map(|n| json!({"seq":n,"kind":"org.created","at":DAY * 2,"data":{}}))
+        .collect();
+    for page in full.chunks(100) {
+        append(&db, ORG, json!(page));
+    }
+    let next = seal_next(&db, DAY * 2, false);
+    assert_eq!(next["due"], true);
+    assert_eq!(next["from"], 4);
+    assert_eq!(next["to"], 1003);
+}
+
+#[test]
+fn a_segment_holds_the_rows_as_they_read_and_follows_the_last() {
+    let db = log();
+    append(&db, ORG, events(3));
+    let first = seal_next(&db, 4, true);
+    assert_eq!(first["from"], 1);
+    assert_eq!(first["to"], 3);
+    assert_eq!(first["previous"], "");
+    let mut read = rows(&db);
+    read.reverse();
+    assert_eq!(first["rows"], json!(read));
+    assert_eq!(first["hash"], read[2]["hash"]);
+    // Nothing moves until the object is said to be written.
+    assert_eq!(seal_next(&db, 4, true)["from"], 1);
+    assert_eq!(seal_done(&db, &first)["through"], 3);
+    assert_eq!(seal_next(&db, 4, true)["due"], false);
+    // A repeat, or a slower copy of an older range, leaves the seal where it is.
+    assert_eq!(seal_done(&db, &first)["through"], 3);
+    append(
+        &db,
+        ORG,
+        json!([{"seq":4,"kind":"org.created","at":4,"data":{}}]),
+    );
+    let second = seal_next(&db, 5, true);
+    assert_eq!(second["from"], 4);
+    assert_eq!(second["previous"], first["hash"]);
+}
+
+#[test]
+fn only_the_logs_own_row_moves_a_seal() {
+    let db = log();
+    append(&db, ORG, events(2));
+    for (to, hash) in [(2, "f".repeat(64)), (9, "f".repeat(64))] {
+        let e = at(&db, 5, json!({"op":"audit_seal_done","to":to,"hash":hash}));
+        assert_eq!(e.unwrap_err().code, "INVALID_INPUT");
+    }
+    assert_eq!(seal_next(&db, 5, true)["from"], 1);
+    for command in [
+        json!({"op":"audit_seal_next"}),
+        json!({"op":"audit_seal_done","to":1,"hash":"h"}),
+    ] {
+        assert_eq!(at(&person(), 1, command).unwrap_err().code, "INVALID_INPUT");
+    }
 }

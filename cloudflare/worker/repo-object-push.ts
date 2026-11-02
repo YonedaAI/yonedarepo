@@ -1,5 +1,6 @@
 // Verified pushes to a repository's object store: a commit's pack goes to its hidden ref
 // and the commit is read back from the store itself before it counts as pushed.
+import { log } from './log';
 import { compute } from './repo-compute';
 import type { RepoObjects } from './repo-objects';
 import { fromBase64, toBase64 } from './repo-stores';
@@ -22,8 +23,7 @@ function pushOutcome(report: Uint8Array, refname: string): { accepted: boolean; 
 }
 /**
  * Pushes a commit's pack to its hidden ref and reads the commit back from the object store
- * itself, never the cache. Artifacts can refuse or lag pushes when several land on one
- * repository at once, so a refusal is retried with jittered backoff and a missing readback
+ * itself, never the cache. A refusal is retried with jittered backoff and a missing readback
  * is re-read before the push counts as failed. Pushes are idempotent: same objects, same
  * hidden ref. `ready` (the cache write running alongside) settles before the readback.
  */
@@ -42,7 +42,7 @@ export async function pushCommit(
     const outcome = pushOutcome(report, refname);
     if (!outcome.accepted) {
       reason = `refused: ${outcome.refused}`;
-      console.warn(`object store push attempt ${attempt + 1} ${reason}`);
+      log.warn('object.push_retry', { attempt: attempt + 1, reason });
     }
     await ready;
     for (let read = 0; read < 3; read++) {

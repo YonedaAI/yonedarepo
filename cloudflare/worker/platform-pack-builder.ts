@@ -6,30 +6,36 @@
 // holding a slot).
 //
 // The container has no internet and no credentials. Its two Git remotes are answered here:
-// - http://mirror.internal/<repo>.git: the repository's Artifacts mirror (kept current by
-//   projection), proxied with a short-lived read token this Worker mints per request;
+// - http://mirror.internal/<repo>.git: the pack an import stored (`keepSeed`), answered here as
+//   a remote of its tips, so that a large history does not go through this Worker object by
+//   object. A repository with no such pack answers no refs;
 // - http://platform.internal/<repo>.git: the platform's own smart HTTP (protocol v2,
-//   served in-process as the `derive` system principal), for what the mirror lacks: with the
-//   mirror's refs as haves, only the lag travels.
+//   served in-process as the `derive` system principal), for what that lacks: with its tips
+//   as haves, only what came after the import travels.
 // Each answers only for the instance's own repository (the id of `packs:<repo>` must be
 // the calling container's) and only upload-pack's two requests.
 //
 // The packs stream back to this Worker, which frames them as side-band packets (what a
 // clone is served), checks each one's SHA-1 trailer and stores it (PackWriter) unless a
 // blob was withheld meanwhile.
+
 import { Container } from '@cloudflare/containers';
+import { cellEnv } from './cell-env';
+import { warned } from './log';
 import { requestBody } from './repo-git-http';
 import { advertiseV2, uploadPackV2 } from './repo-git-v2';
 import { caller, type Json, RepoContext } from './repo-ops';
-import { type Fresh, PART, PackWriter, packKey } from './repo-pack-cache';
-import { CHUNK, concat, sideBand } from './repo-pack-stream';
-import { parseStore } from './repo-stores';
+import { type Fresh, PART, PackWriter, packKey, seedOf, storedPack } from './repo-pack-cache';
+import { CHUNK, concat, sendStored, sideBand } from './repo-pack-stream';
+import { carriedHeaders } from './request-scope';
 import type { Env } from './types';
 
 export const PACK_PORT = 8080;
 const MIRROR_HOST = 'mirror.internal';
 const PLATFORM_HOST = 'platform.internal';
 const SOURCE_PATH = /^\/(r[0-9a-f]{20})\.git\/(info\/refs|git-upload-pack)$/;
+const RESULT_TYPE = 'application/x-git-upload-pack-result';
+const pkt = (line: string) => `${(line.length + 4).toString(16).padStart(4, '0')}${line}`;
 
 /** One pack a build stores: what it is for (`tip`: main's commit, after a push). */
 export type PackOrder = { label: string; fresh: Fresh; tip?: string };
@@ -83,7 +89,7 @@ export async function buildPacks(
       const answer = await instance.containerFetch(
         new Request(`http://packs${path}`, {
           method: body === undefined ? 'GET' : 'POST',
-          headers: { authorization: `Bearer ${secret}` },
+          headers: { authorization: `Bearer ${secret}`, ...carriedHeaders() },
           body,
         }),
       );
@@ -110,7 +116,7 @@ export async function buildPacks(
     }
     return report;
   } finally {
-    await instance.destroy().catch(() => {});
+    await instance.destroy().catch(warned('container.destroy_failed'));
   }
 }
 
@@ -126,7 +132,7 @@ export const canBuild = (fresh: Fresh) =>
 
 /** Stores the pack `answer` streams, as side-band packets of CHUNK, once its trailer
  * checks out and no blob is withheld. */
-async function storePack(
+export async function storePack(
   env: Env,
   repo: string,
   key: string,
@@ -200,28 +206,28 @@ const refused = () => new Response('Not reachable from the pack builder\n', { st
 const system = (env: Env, repo: string) =>
   new RepoContext(env, repo, caller(env, repo, { _system: 'derive' }));
 
-/** http://mirror.internal: the repository's Artifacts remote, with a read token added. */
-export async function mirrorSource(req: Request, env: Env, ctx: { containerId: string }) {
+/** http://mirror.internal: the repository's stored seed as a Git remote of version 2, which
+ * lists its tips and sends it whole. */
+export async function seedSource(req: Request, bound: Env, ctx: { containerId: string }) {
+  const env = cellEnv(bound);
   const own = ownRepo(req, env, ctx.containerId);
   if (!own) return refused();
-  const { object_store } = await system(env, own.repo).status();
-  const store = parseStore(env, String(object_store ?? ''));
-  if (!store.cloneAccess) return new Response('This repository has no mirror\n', { status: 404 });
-  const { remote, token } = await store.cloneAccess();
-  const headers = new Headers({ authorization: `Bearer ${token}` });
-  for (const name of ['content-type', 'accept', 'git-protocol'])
-    if (req.headers.has(name)) headers.set(name, req.headers.get(name) ?? '');
-  return fetch(`${remote}/${own.path}${own.search}`, {
-    method: req.method,
-    headers,
-    body: req.method === 'POST' ? req.body : undefined,
-    redirect: 'manual',
-  });
+  if (own.path === 'info/refs') return advertiseV2();
+  const seed = await seedOf(env, own.repo);
+  const asked = await req.text();
+  if (asked.includes('command=ls-refs')) {
+    const lines = (seed?.tips ?? []).map((tip, i) => pkt(`${tip} refs/heads/seed-${i}\n`));
+    return new Response(`${lines.join('')}0000`, { headers: { 'content-type': RESULT_TYPE } });
+  }
+  const stored = seed ? await storedPack(env, seed.key) : null;
+  if (!stored) return new Response('This repository has no stored pack\n', { status: 404 });
+  return sendStored(new TextEncoder().encode(pkt('packfile\n')), stored, CHUNK);
 }
 
 /** http://platform.internal: the platform's smart HTTP (version 2) for the repository. The
  * fetch is served as built (never from or into the pack store: that is what is building). */
-export async function platformSource(req: Request, env: Env, ctx: { containerId: string }) {
+export async function platformSource(req: Request, bound: Env, ctx: { containerId: string }) {
+  const env = cellEnv(bound);
   const own = ownRepo(req, env, ctx.containerId);
   if (!own) return refused();
   if (!(req.headers.get('git-protocol') ?? '').includes('version=2'))
@@ -238,8 +244,9 @@ export class PackBuilder extends Container<Env> {
 
   /** Builds `plan`'s packs (pack-build jobs call this; repo-pack-jobs). */
   build(plan: BuildPlan) {
-    const withheld = async () => (await system(this.env, plan.repo).objects()).withholdsAny();
-    return buildPacks(this, this.env, plan, withheld);
+    const env = cellEnv(this.env);
+    const withheld = async () => (await system(env, plan.repo).objects()).withholdsAny();
+    return buildPacks(this, env, plan, withheld);
   }
 
   /** An instance left running (its build's caller vanished) is killed, not asked to stop. */
@@ -250,4 +257,4 @@ export class PackBuilder extends Container<Env> {
 
 // Assigned, not declared as `static` fields (see SshGateway: a class field would hide
 // @cloudflare/containers' setter and leave its registry empty).
-PackBuilder.outboundByHost = { [MIRROR_HOST]: mirrorSource, [PLATFORM_HOST]: platformSource };
+PackBuilder.outboundByHost = { [MIRROR_HOST]: seedSource, [PLATFORM_HOST]: platformSource };

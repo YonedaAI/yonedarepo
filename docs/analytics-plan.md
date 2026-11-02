@@ -2,7 +2,7 @@
 
 To save as `docs/analytics-plan.md`.
 
-Status: Phase 1 built behind `TRAFFIC_REPORT`, off. The rest is plan. Written 2026-10-31 at dev `4755d9c1`.
+Status: frozen on 2026-11-01. Phase 1 built behind `TRAFFIC_REPORT`, on in dev and prod. Phase 3 steps 1 and 2 and Phase 6 built behind `REPO_ANALYTICS`, Phase 7 behind `OPS_REPORT`, Phase 8 behind `OPERATOR_AUDIT`, Phase 5 behind `VISITORS` and Phase 4 behind `AGENT_REPORT`, all off. The rest is plan. Written 2026-10-31 at dev `4755d9c1`.
 
 ## What this answers
 
@@ -76,8 +76,10 @@ Counts start on the day it's bound: there's no backfill.
 
 1. Record each gate refusal with its reason as a point, written after the answer.
 2. Report: success rate, latency P50/P95/P99, queue wait, retries, refusals by reason, checks run and failed, direct pushes counted apart.
-3. **Migration `0046`, two waves:** store the credential kind on `reviews` and `TxEntry`, so a human's approval can be proven.
+3. **Repository migration, two waves (`0046` is repository limits and `0047` memory kinds, so the next free number):** store the credential kind on `reviews` and `TxEntry`, so a human's approval can be proven.
 4. Report the autonomous landing rate. This is the headline number.
+
+Steps 1 and 2 as built: `recordClient` (`platform-client-events.ts`) writes the request's one point after the answer, carrying what `repo-usage.ts` noted: a landing's outcome and reason, its queue wait and the rounds the platform repeated it. The Traffic page reads it (`GET admin/traffic/landings`). "Retries" is what the server can see: rounds it repeated, and landings asked for again once they had landed. A client that gives up and pushes a new commit isn't one.
 
 ## Phase 4: Agents
 
@@ -85,18 +87,37 @@ Counts start on the day it's bound: there's no backfill.
 2. Build the Agents tab: active credentials, sessions, repositories reached, organizations, reads, writes, landings, failures, success rate, retry rate, concurrency.
 3. Client names (Claude Code, Codex, opencode and so on) stay labelled self-reported.
 
+As built, behind `AGENT_REPORT` (needs `REPO_ANALYTICS`), with no migration:
+
+- An agent is a `ypat_` from `yoneda login --agent`, so step 1 is agent sign-up. Each point of an agent holds 16 hex of a digest of the token's id. A managed agent isn't counted yet, and neither is a person's plain token, however automated.
+- All of an agent's reads are written, not 1 in 10, or a credential that only reads could go unseen.
+- Sessions are half hours on the clock in which a credential was seen, like Visitors. Peak concurrency is the most credentials seen in one minute.
+- Repositories reached are the ones whose authority or published head let the agent in, on any request. An organization is a repository's owner with no account row, and at most 1,000 repositories are looked at.
+- A client's name comes from a fixed list, found in the token's name or else the user agent. Neither is checked, and neither is stored.
+- An MCP call can be a read or a write, so it counts apart. A landing inside one still counts as a landing.
+- Success rate is the Definitions' landing success rate. Retry rate is the rounds repeated and landings asked for again, over landings asked for, so it can pass 100%.
+- Counts sum `_sample_interval`. Credentials, sessions and the rest count stored rows, on an index that isn't the credential's, so a sampled answer is marked as an estimate.
+
 ## Phase 5: Visitors and the funnel
 
 **Decision: a daily rotating, salted hash, no cookie.** It gives unique daily visitors and approximate sessions without tracking anyone across days.
 
-**The cost:** new versus returning visitors isn't possible. That would need a cookie, which breaks `privacy.md:147`. Add one later only with consent and the owner's word.
+**The cost:** new versus returning visitors isn't possible. That would need a cookie. Add one later only on the owner's word.
 
 1. Visitors, sessions, entry and exit pages, referrers, countries, device, browser.
 2. Store sign-up referrer and UTM in D1 against the account, so a campaign can be followed to a repository.
 3. Funnel: Visitor → Docs → Sign-up → Repository → First push → First landing.
 4. Retention: active again a week later.
 
-**Before prod:** the owner reviews `privacy.md`. Lines 6, 67, 75, 106 and 147 change. Client points aren't listed there today, which is already a gap.
+As built:
+
+- A hash is one day's, so Visitors adds up daily uniques: the same person on two days counts twice, and the page says so.
+- Sessions are half hours on the clock in which a browser was seen, so a visit across a half hour counts twice.
+- The report reads one row per browser and half hour by `index1`, and folds them in the Worker, at most 20,000 rows. It relies on no `COUNT(DISTINCT)`. Past the limit, or sampled, it's marked as an estimate.
+- Pushes and landings in the funnel are what the Home last kept (`platform_activity`), so a repository nobody has opened lately can read behind.
+- Retention uses `last_seen_at`, which holds only the newest day.
+
+**The spike is still owed.** It needs points on dev, so it can't run locally: with `VISITORS` on, send pings from a few hundred addresses, then compare the row count by `index1` with the pings sent, with and without a burst on another index. If `_sample_interval` drops rows, each browser's rows thin evenly, and the counts must be read as estimates.
 
 ## Phase 6: Repositories
 
@@ -104,10 +125,19 @@ Counts start on the day it's bound: there's no backfill.
 2. New repository Insights page beside `ctc`: activity, human versus agent, clones, landings, failed landings, contributors.
 3. Admin Repositories tab: most active, largest, fastest growing.
 
+As built, and what it can't say yet:
+
+- Human versus agent reads "People in the browser" against "Tokens and agents". With `AGENT_REPORT` on, an agent's actions read "Agents" and the rest of the tokens "Other tokens". Points from before the switch stay with the tokens.
+- Fastest growing is bytes pushed over the range: nothing keeps a repository's past sizes, and commits made through the API add no bytes. Largest stays the database size the derive job samples.
+- Clones count packs sent to a fetch that had nothing, so a partial clone's later blob fetches count too. A clone served from the import mirror isn't counted.
+- Contributors are commits the repository recorded, from the newest 5,000. A commit still in its shard joins when it lands.
+
 ## Phase 7: Operations and Infrastructure
 
 1. Operations tab: outcomes and P50/P95/P99 by operation and client.
 2. Infrastructure tab: queue depth and wait, dead letters, retries, failures, storage growth, Worker errors, D1 latency. The data is minutes old, and the page says so.
+
+As built: Operations is one SQL statement. Infrastructure asks GraphQL once per section, so a refused query leaves the others up, and ends its window 5 minutes before now. It needs `OPS_RESOURCES` (`docs/runbook.md`). Storage growth is one bucket over 7 days: Durable Object storage isn't read. Dead letters show what's waiting in a dead-letter queue, and what was moved to one over the hour.
 
 ## Phase 8: Audit
 
@@ -117,9 +147,11 @@ Counts start on the day it's bound: there's no backfill.
 4. `admin_audit` gets outcome, request id and actor kind (D1 migration, additive).
 5. Purges show requested, queued, completed, failed.
 6. Record staff reading a customer's private content, and failed admin attempts.
-7. Org log: finish `audit-events`. Landing rule changes, forced landings, webhooks and exports need the outbox migration from `docs/enterprise-plan.md`, in two waves.
+7. Org log: done by `audit-events` and `audit-gap`, with no migration: landing rule changes, forced landings, webhooks and exports are all logged (`docs/audit-log.md`), and the page has its filters and exports.
 
-Never audited: reads, or every push and landing.
+Never audited: reads, or every push and landing. The one exception is step 6.
+
+As built: System is the owner token and anything named a backfill or rebuild, so an operator running one by hand lands there too. Rows from before migration `0015` are told apart by their actor and read as done. Only one way lets staff into a repository they aren't members of (`asOwner`, the admin repository page), so a staff read is that page opening on a customer's private repository. The owner token gets no other way in: `GET /repos/<id>/refs` answers it 404. A failed action with its own row, such as an orphan purge, also gets an `admin.failed` row. Scheduled purges have no operator row to update.
 
 ## Phase 9: Later
 
@@ -137,7 +169,7 @@ All of it follows the UI rules in `AGENTS.md`.
 
 | Step | Needs |
 |---|---|
-| `TRAFFIC_EVENTS` on | Privacy text reviewed, then "ship" |
+| `TRAFFIC_EVENTS` on | "ship" |
 | `AUDIT_LOG` on | "ship" |
 | Basin bound | Dev soak, then "ship" |
 
@@ -174,9 +206,9 @@ What this changes:
 | Phase | Proof |
 |---|---|
 | 1 | Our own traffic reads 0 after a live test run; every chart follows the range |
-| 2 | Landings counted by Basin match the repository's log, on dev |
+| 2 | Landings counted by Basin match the repository's log, on dev (`tools/platform-basin-soak.mjs`) |
 | 3 | A refused landing appears with its reason; a human approval and an agent approval read differently; rollback tested on dev |
-| 4 | Two tokens read as two credentials; a person's session is never an agent |
+| 4 | Two tokens read as two credentials; a person's session is never an agent; the three statements run on the SQL API |
 | 5 | No cookie set, no IP stored; hash changes daily |
 | 6 | A clone appears on that repository only; a private repository's data reaches nobody without access |
 | 8 | Test cleanup never appears under People |

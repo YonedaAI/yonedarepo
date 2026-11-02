@@ -8,9 +8,11 @@ use super::*;
 
 const SUSPENSION: &str = "suspension";
 
-pub(super) fn handle<S: SqlStore>(db: &S, op: AccessOp, now: i64) -> Result<Value> {
+pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: AccessOp, now: i64) -> Result<Value> {
     match op {
         AccessOp::Summary => summary(db),
+        AccessOp::Place => super::place::read(db),
+        AccessOp::PlaceNote => super::place::note(db, c),
         AccessOp::Suspend => {
             account(db)?;
             let at = match suspended_at(db)? {
@@ -53,7 +55,7 @@ fn summary<S: SqlStore>(db: &S) -> Result<Value> {
     let mut summary = json!({
         "username": a["username"],
         "created_at": a["created_at"],
-        "email": a.get("email").cloned().unwrap_or(Value::Null),
+        "email": super::email::contact(&a),
         "handle": super::handles::own(db)?,
         "providers": providers,
         "password": a["verifier"].is_object(),

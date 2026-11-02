@@ -27,11 +27,18 @@
         "SUPERFAN_READ_TOKEN bearer for GET /findings, GET /status, POST /run",
         "New findings mail ADMIN_NOTIFY_EMAIL through Resend (superfan/notify.ts, the Secrets Store secret Resend-Yoneda), at most",
         "8 digests a UTC day. The same address as the platform's sign-up notice (its EMAIL_CONTACT).",
+        "POST /deploys is the deploy ledger (xtask/src/deploy_ledger.rs), same bearer. RELEASE_COMPARE=on compares each release with the one before after a deploy (superfan/release.ts).",
+        "PROBES=on runs synthetic checks on the */5 cron: /health, a page, an API read and, with the optional secret PROBE_CLONE_REPO (a small public repository's id, under 1 MiB), a clone. Never a landing on prod.",
+        "Off, the */5 cron returns at once. Budget: docs/observability-plan.md.",
+        "SERVICE_LEVELS=on writes requests that died and each synthetic result to SITE_EVENTS, the dataset the platform reads back (superfan/service-points.ts).",
         "Deployed first: the production platform names this Worker in tail_consumers."
       ],
       "secrets": [
         "CF_ANALYTICS_TOKEN",
         "SUPERFAN_READ_TOKEN"
+      ],
+      "optional_secrets": [
+        "PROBE_CLONE_REPO"
       ],
       "ephemeral": false,
       "config": {
@@ -45,7 +52,8 @@
         },
         "triggers": {
           "crons": [
-            "7 * * * *"
+            "7 * * * *",
+            "*/5 * * * *"
           ]
         },
         "vars": {
@@ -53,12 +61,24 @@
           "ADMIN_NOTIFY_EMAIL": "hello@yonedarepo.com",
           "EMAIL_FROM": "YonedaRepo <hello@yonedarepo.com>",
           "WATCH_SCRIPT": "{prefix}-platform",
-          "WATCH_URL": "https://{prefix}-platform.{subdomain}.workers.dev",
+          "WATCH_URL": "https://api.yonedarepo.com",
+          "WATCH_WIDE": "on",
+          "WATCH_FRONT_URL": "https://yonedarepo.com",
+          "DEADMAN_URL": "https://{prefix}-deadman.{subdomain}.workers.dev",
+          "RELEASE_COMPARE": "off",
+          "PROBES": "off",
+          "SERVICE_LEVELS": "on",
           "TELEMETRY_SOURCE": "cloudflare",
           "SUPERFAN_MODEL": "mimo-v2.6-flash",
           "MIMO_TOKEN_PLAN_REGION": "sgp",
           "DAILY_CAP_MICROUSD": "1000000"
         },
+        "analytics_engine_datasets": [
+          {
+            "binding": "SITE_EVENTS",
+            "dataset": "yonedarepo_prod_site_events"
+          }
+        ],
         "secrets_store_secrets": [
           {
             "binding": "MIMO_KEY",
@@ -99,10 +119,11 @@
       "file": "wrangler.prod-platform.jsonc",
       "notes": [
         "Production platform Worker (yonedarepo.com): the same source platform as dev's",
-        "(infra/envs/dev.json), with its own Durable Object namespaces, Artifacts namespace, R2, D1,",
+        "(infra/envs/dev.json), with its own Durable Object namespaces, R2, D1,",
         "queues, workflow, check containers and secrets. Browsers reach it through the front Worker's",
         "/api/v1 proxy (PLATFORM service binding); api.yonedarepo.com is its own hostname (Custom",
         "Domain plus the exact route);",
+        "GITHUB_APP_ID, GITHUB_APP_SLUG and the optional secret GITHUB_APP_PRIVATE_KEY (the App's PEM): the production GitHub App for private repository imports. Setup URL: https://yonedarepo.com/github/connected. Dev uses a separate App and key.",
         "WEB_ORIGIN is where people approve device logins (/device). Secrets, set from stdin:",
         "OWNER_TOKEN  production owner credential (~/.config/yonedarepo/prod.env)",
         "Placed next to the data (aws:us-east-1, R2 and CheckContainer in ENAM), batched landing.",
@@ -119,7 +140,7 @@
         "S3 key pair of an R2 API token with Object Read & Write on that bucket only. Without them LFS answers 501.",
         "Clone packs (platform-pack-builder.ts): one PackBuilder container per repository (cloudflare/pack-builder/Dockerfile,",
         "its own image: yoneda-pack-builder and stock Git), started for each pack-build job and destroyed after it.",
-        "No internet or credentials: it reaches the repository's Artifacts mirror and the platform's smart HTTP only",
+        "No internet or credentials: it reaches an import's stored pack and the platform's smart HTTP only",
         "through this Worker. basic: svelte's three packs (168,943 objects) peak at 386 MiB, 675 MiB rebuilding every delta.",
         "Git over SSH (platform-ssh-gateway.ts): one SshGateway container (cloudflare/ssh-gateway/Dockerfile,",
         "its own image, never the runtime's) runs yoneda-ssh-gateway, reaching the platform only through SELF.",
@@ -142,9 +163,12 @@
         "ADMIN_BILLING=on adds the operators' billing routes (platform-admin-billing.ts) and starts the managed Worker's nightly reconcile from this Worker's cron; set it on the managed Worker too.",
         "LANDING_INSTRUMENTS=on: a change's page shows its Slop and Risk cards (repo-instruments.ts).",
         "LAND_WHEN_CLEARED=on: what can clear a Landing queues a platform_land_check job, and a repository can turn on Land when cleared (repo-land-check.ts). Set it only once every Worker on the queue knows the job: deploy with it off first (docs/runbook.md).",
-        "ASYNC_STORE=on: a create answers without Artifacts and a platform_store queue job creates the store (repo-store-create.ts). Set it only once every Worker on the queue knows the job: deploy with it off first (docs/runbook.md).",
-        "DIRECT_IMPORT=on (with FAST_IMPORT, PACK_CACHE and PUSH_BUNDLES) also fetches a public GitHub repository from the Worker when it is imported, and lands main from that pack beside Artifacts' own fetch (docs/direct-import.md).",
-        "Admin pages (/api/v1/admin, platform-admin.ts): ADMIN_ACCOUNTS lists the operator accounts (comma separated; empty: only OWNER_TOKEN/Access). The sign-up notice goes to ADMIN_NOTIFY_EMAIL (empty: EMAIL_CONTACT). Credit grants and balances call the managed Worker's /admin/accounts/<account>/credit over MANAGED with MANAGED_ADMIN_TOKEN (optional secret, the managed Worker's own value; unset: grants are refused). MANAGED binds the managed Worker, which binds this one as PLATFORM: a fresh environment deploys this Worker once without MANAGED first."
+        "AGENT_SIGNUP=on: yoneda login --agent <name> signs an agent up through the device flow (worker/platform-tokens.ts). Off, a code asking for an agent is refused; agents already signed up keep working.",
+        "NEWSLETTER=on opens the Flight log sign-up at /updates (worker/platform-newsletter.ts, D1 newsletter_subscribers). It needs the optional secret NEWSLETTER_KEY, which signs unsubscribe links: never change it while the list is in use. Unset, off or without the key: no form, nothing stored, nothing sent. privacy.md must list this data first (docs/runbook.md).",
+        "Admin pages (/api/v1/admin, platform-admin.ts): ADMIN_ACCOUNTS lists the operator accounts (comma separated; empty: only OWNER_TOKEN/Access). The sign-up notice goes to ADMIN_NOTIFY_EMAIL (empty: EMAIL_CONTACT). Credit grants and balances call the managed Worker's /admin/accounts/<account>/credit over MANAGED with MANAGED_ADMIN_TOKEN (optional secret, the managed Worker's own value; unset: grants are refused). MANAGED binds the managed Worker, which binds this one as PLATFORM: a fresh environment deploys this Worker once without MANAGED first.",
+        "REQUEST_IDS=on puts the request id on every response and carries it to Durable Objects, queue jobs and containers (worker/request-scope.ts). Off, failure lines still carry it and nothing else changes. No order to deploy in: a message or request without it mints one.",
+        "SPAN_SAMPLE=<N> keeps the Server-Timing phases of 1 request in N, and of every request over 5 seconds, as a request.spans log line and one SITE_EVENTS point, after the answer (worker/repo-span-sample.ts). off keeps none.",
+        "SERVICE_LEVELS=on writes one SITE_EVENTS point per landing, clone, push and repository create and per 10 API reads, after the answer, for the admin page (shared/service-levels.ts). Set it on this Worker and Superfan together. Budget: docs/observability-plan.md."
       ],
       "secrets": [
         "OWNER_TOKEN",
@@ -157,7 +181,9 @@
       ],
       "optional_secrets": [
         "ANALYTICS_READ_TOKEN",
-        "MANAGED_ADMIN_TOKEN"
+        "MANAGED_ADMIN_TOKEN",
+        "GITHUB_APP_PRIVATE_KEY",
+        "NEWSLETTER_KEY"
       ],
       "health": "yonedarepo-platform",
       "always_on": {
@@ -195,13 +221,12 @@
           "run_worker_first": true
         },
         "vars": {
-          "ARTIFACTS_NAMESPACE": "{prefix}",
           "LAND_MODE": "batch",
           "BLOB_WRITE_THROUGH": "off",
-          "ACCOUNT_SEARCH": "off",
+          "ACCOUNT_SEARCH": "on",
           "AUDIT_LOG": "off",
-          "TRAFFIC_EVENTS": "off",
-          "TRAFFIC_REPORT": "off",
+          "TRAFFIC_EVENTS": "on",
+          "TRAFFIC_REPORT": "on",
           "REGION_SIGNALS": "off",
           "PUSH_BUNDLES": "on",
           "WEB_ORIGIN": "{origin}",
@@ -215,12 +240,24 @@
           "CF_ACCOUNT_ID": "{account_id}",
           "SITE_EVENTS_DATASET": "yonedarepo_prod_site_events",
           "ADMIN_ACCOUNTS": "magnetonio",
-          "ADMIN_BILLING": "off",
-          "ASYNC_STORE": "off",
-          "LANDING_INSTRUMENTS": "off",
-          "LAND_WHEN_CLEARED": "off",
+          "ADMIN_BILLING": "on",
+          "LANDING_INSTRUMENTS": "on",
+          "LAND_WHEN_CLEARED": "on",
+          "AGENT_SIGNUP": "on",
+          "NEWSLETTER": "on",
           "ADMIN_NOTIFY_EMAIL": "",
-          "SUPPORT_EMAIL": "support@yonedalabs.ai"
+          "SUPPORT_EMAIL": "support@yonedalabs.ai",
+          "SPAN_SAMPLE": "off",
+          "SERVICE_LEVELS": "on",
+          "REQUEST_IDS": "off",
+          "REPO_ERASE": "on",
+          "REPO_UNDO_DAYS": "30",
+          "LEGAL_HOLD": "on",
+          "REPO_STORAGE_GUARD": "on",
+          "REPO_SIZE_GUARD": "on",
+          "PACK_CACHE": "on",
+          "GITHUB_APP_ID": "5583304",
+          "GITHUB_APP_SLUG": "yonedarepo-import"
         },
         "secrets_store_secrets": [
           {
@@ -232,13 +269,6 @@
             "binding": "RESEND_API_KEY",
             "store_id": "3d9115d4fe864c54a792bcb790a763e3",
             "secret_name": "Resend-Yoneda"
-          }
-        ],
-        "artifacts": [
-          {
-            "binding": "ARTIFACTS",
-            "namespace": "{prefix}",
-            "remote": true
           }
         ],
         "durable_objects": {
@@ -256,8 +286,8 @@
               "class_name": "CheckContainer"
             },
             {
-              "name": "OBJECT_PUSHES",
-              "class_name": "ObjectPushQueue"
+              "name": "IMPORT_RUNNERS",
+              "class_name": "ImportContainer"
             },
             {
               "name": "COMMIT_SHARDS",
@@ -315,6 +345,18 @@
             "new_sqlite_classes": [
               "PackBuilder"
             ]
+          },
+          {
+            "tag": "v7",
+            "deleted_classes": [
+              "ObjectPushQueue"
+            ]
+          },
+          {
+            "tag": "v8",
+            "new_sqlite_classes": [
+              "ImportContainer"
+            ]
           }
         ],
         "containers": [
@@ -323,6 +365,21 @@
             "image": "./containers/Dockerfile",
             "image_build_context": "..",
             "instance_type": "standard-1",
+            "rollout_step_percentage": [
+              100
+            ],
+            "constraints": {
+              "regions": [
+                "ENAM"
+              ]
+            }
+          },
+          {
+            "class_name": "ImportContainer",
+            "image": "./containers/Dockerfile",
+            "image_build_context": "..",
+            "instance_type": "standard-3",
+            "max_instances": 4,
             "rollout_step_percentage": [
               100
             ],
@@ -497,7 +554,9 @@
         "and per UTC day across all accounts; unset: every refund is refused).",
         "REVENUE is this Worker's own D1, never the platform's: each ledger pushes its changed days to it",
         "with ADMIN_BILLING on (managed/ledger-rollup.ts); the platform reads /admin/billing/revenue.",
-        "Deployed before the front Worker, which binds it as MANAGED."
+        "Deployed before the front Worker, which binds it as MANAGED.",
+        "REQUEST_IDS=on puts the request id on every response and carries it to Durable Objects, queue jobs and containers (worker/request-scope.ts). Off, failure lines still carry it and nothing else changes. No order to deploy in: a message or request without it mints one.",
+        "nodejs_als gives this Worker AsyncLocalStorage, and nothing else of Node, for the shared logger (worker/log.ts)."
       ],
       "secrets": [
         "MANAGED_VAULT_KEY"
@@ -515,6 +574,9 @@
         "name": "{prefix}-agents-managed",
         "main": "managed/index.ts",
         "compatibility_date": "2026-10-07",
+        "compatibility_flags": [
+          "nodejs_als"
+        ],
         "d1_databases": [
           {
             "binding": "REVENUE",
@@ -537,10 +599,11 @@
           "PUBLIC_URL": "https://managed.yonedarepo.com",
           "AI_GATEWAY_URL": "https://gateway.ai.cloudflare.com/v1/{account_id}/{prefix}-managed-agents",
           "AI_GATEWAY_PROVIDERS": "claude=anthropic,codex=openai,zai=custom-zai,mimo=custom-mimo",
-          "ADMIN_BILLING": "off",
+          "ADMIN_BILLING": "on",
           "PROMO_CREDIT_USD": "100",
           "REFUND_MAX_USD": "500",
-          "REFUND_DAILY_USD": "1000"
+          "REFUND_DAILY_USD": "1000",
+          "REQUEST_IDS": "off"
         },
         "secrets_store_secrets": [
           {
@@ -647,6 +710,11 @@
             "binding": "REVIEWS",
             "class_name": "ManagedReviewWorkflow"
           }
+        ],
+        "tail_consumers": [
+          {
+            "service": "{prefix}-superfan"
+          }
         ]
       }
     },
@@ -676,7 +744,9 @@
         "No IP, cookie or visitor id; signed-in requests (session cookie), /api, /auth and assets are skipped.",
         "WEB_ANALYTICS_TOKEN: the Cloudflare Web Analytics site token; set, the front Worker adds the beacon to public pages; empty, none.",
         "SEO_INDEXING=on lets search engines index the site: robots.txt allows it, sitemap.xml lists it and HTML has no X-Robots-Tag (worker/seo-files.ts).",
-        "ADMIN_ACCOUNTS: the platform Worker's operator list, repeated here for the session answer's is_admin (the admin entry in the sidebar); keep the two equal."
+        "ADMIN_ACCOUNTS: the platform Worker's operator list, repeated here for the session answer's is_admin (the admin entry in the sidebar); keep the two equal.",
+        "REQUEST_IDS=on puts the request id on every response and carries it to Durable Objects, queue jobs and containers (worker/request-scope.ts). Off, failure lines still carry it and nothing else changes. No order to deploy in: a message or request without it mints one.",
+        "CLIENT_ERRORS=on: POST /api/client-error logs what browsers report, message and route only, rate limited by AUTH_LIMITER (worker/client-errors.ts). Off, it answers 204 and does nothing."
       ],
       "secrets": [
         "OWNER_TOKEN"
@@ -729,13 +799,15 @@
         },
         "vars": {
           "AUDIT_LOG": "off",
-          "TRAFFIC_EVENTS": "off",
-          "TRAFFIC_REPORT": "off",
+          "TRAFFIC_EVENTS": "on",
+          "TRAFFIC_REPORT": "on",
           "REGION_SIGNALS": "off",
           "PUBLIC_APP_ORIGIN": "{origin}",
           "WEB_ANALYTICS_TOKEN": "fd30d727a0dc4d4c949dee535977d1b2",
           "SEO_INDEXING": "on",
-          "ADMIN_ACCOUNTS": "magnetonio"
+          "ADMIN_ACCOUNTS": "magnetonio",
+          "REQUEST_IDS": "off",
+          "CLIENT_ERRORS": "off"
         },
         "services": [
           {
@@ -808,6 +880,68 @@
               "limit": 30,
               "period": 60
             }
+          }
+        ],
+        "tail_consumers": [
+          {
+            "service": "{prefix}-superfan"
+          }
+        ]
+      }
+    },
+    {
+      "role": "deadman",
+      "file": "wrangler.prod-deadman.jsonc",
+      "notes": [
+        "Prod dead-man (cloudflare/superfan/deadman.ts): says so when Superfan stops. Every five minutes it reads",
+        "Superfan's public /heartbeat over the network and mails ADMIN_NOTIFY_EMAIL through Resend after 3 bad checks",
+        "in a row, then at most every 6 hours. Its own script, cron and state, and it imports nothing from Superfan;",
+        "Superfan reads its /health in turn. A cron Worker because Cloudflare's Health Checks need a Pro zone, and",
+        "yonedarepo.com is Free; docs/incidents.md says why. No secrets of its own. Last in deploy order: Superfan",
+        "must be up before the first check."
+      ],
+      "secrets": [],
+      "ephemeral": false,
+      "config": {
+        "name": "{prefix}-deadman",
+        "main": "superfan/deadman.ts",
+        "compatibility_date": "2026-10-07",
+        "workers_dev": true,
+        "preview_urls": false,
+        "observability": {
+          "enabled": true
+        },
+        "triggers": {
+          "crons": [
+            "*/5 * * * *"
+          ]
+        },
+        "vars": {
+          "SUPERFAN_URL": "https://{prefix}-superfan.{subdomain}.workers.dev",
+          "ADMIN_NOTIFY_EMAIL": "hello@yonedarepo.com",
+          "EMAIL_FROM": "YonedaRepo <hello@yonedarepo.com>"
+        },
+        "secrets_store_secrets": [
+          {
+            "binding": "RESEND_API_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "Resend-Yoneda"
+          }
+        ],
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "STATE",
+              "class_name": "DeadmanState"
+            }
+          ]
+        },
+        "migrations": [
+          {
+            "tag": "v1",
+            "new_sqlite_classes": [
+              "DeadmanState"
+            ]
           }
         ]
       }

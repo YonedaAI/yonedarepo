@@ -9,7 +9,7 @@ use serde_json::json;
 use std::collections::{BTreeSet, HashMap};
 use yoneda_core::{
     Result,
-    git_object::{ObjectId, TreeEntry, decode_tree},
+    git_object::{ObjectId, TreeEntry, decode_tree_loose},
 };
 
 const MAX_TREES: i64 = 4096;
@@ -68,7 +68,7 @@ pub fn fill<S: SqlStore>(
         let bytes = STANDARD
             .decode(row["data_b64"].as_str().unwrap_or_default())
             .map_err(|_| corrupt("cached tree"))?;
-        trees.insert(*id, decode_tree(&bytes)?);
+        trees.insert(*id, decode_tree_loose(&bytes)?);
         found = true;
     }
     Ok(found)

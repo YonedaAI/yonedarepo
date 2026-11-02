@@ -74,6 +74,45 @@ describe('a required agent check', () => {
     expect(h.platform.checks).toHaveLength(1);
   });
 
+  describe('a run that ends with no reading', () => {
+    async function failing(script: Record<string, unknown>) {
+      const h = await connected();
+      fakeGateway();
+      h.harness.scripts = [script];
+      const message: QueueMessage = { kind: 'event', repo: h.platform.repo, event: 'change', ref: 'refs/heads/feature', commit: HEAD_A, change: 1, action: 'opened' };
+      await consume({ messages: [{ body: message, ack: vi.fn(), retry: vi.fn() }] } as unknown as MessageBatch<QueueMessage>, h.env);
+      return { h, outcome: await runAgent(h.env, h.created[0], inline) };
+    }
+
+    it('fails a required check and says so: nothing else would ever answer it', async () => {
+      const { h, outcome } = await failing({ error: 'codex exited with 1' });
+      expect(outcome.status).toBe('failed');
+      expect(h.platform.checks).toHaveLength(1);
+      expect(h.platform.checks[0]).toMatchObject({
+        name: 'code-review',
+        status: 'fail',
+        commit: HEAD_A,
+        evidence: expect.objectContaining({ value: null, no_reading: true }),
+      });
+      expect(h.platform.comments).toHaveLength(1);
+      expect(h.platform.comments[0].body).toContain('could not finish');
+      expect(h.platform.comments[0].body).toContain('Push again');
+      expect(h.platform.comments[0].body).not.toContain('codex exited');
+    });
+
+    it('says nothing on a check no landing waits for: an outage is no go-around', async () => {
+      const h = await connected();
+      h.platform.required = [];
+      fakeGateway();
+      h.harness.scripts = [{ error: 'codex exited with 1' }];
+      const message: QueueMessage = { kind: 'event', repo: h.platform.repo, event: 'change', ref: 'refs/heads/feature', commit: HEAD_A, change: 1, action: 'opened' };
+      await consume({ messages: [{ body: message, ack: vi.fn(), retry: vi.fn() }] } as unknown as MessageBatch<QueueMessage>, h.env);
+      await runAgent(h.env, h.created[0], inline);
+      expect(h.platform.checks).toEqual([]);
+      expect(h.platform.comments).toEqual([]);
+    });
+  });
+
   it('a token from before the check scopes fails the run until an owner saves the agent', async () => {
     const h = await connected();
     const stub = repoStub(h.env, h.platform.repo);

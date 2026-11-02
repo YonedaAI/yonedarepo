@@ -51,13 +51,23 @@ describe('superfan read endpoint', () => {
     const status = await (await get(e, '/status', 'fixture-read-token')).json();
     expect(status).toMatchObject({
       watching: 'yonedarepo-dev-platform',
-      tail_events_last_hour: 400,
+      tail_events_last_hour: 350,
       analytics: 'cloudflare',
       open_findings: 1,
     });
     expect((await get(e, '/findings?status=bogus', 'fixture-read-token')).status).toBe(400);
   });
 });
+
+/** Takes away what came after version 4, for a test that rebuilds an older shape. */
+function backToVersion4(sql: SqlStorage) {
+  sql.exec('DROP TABLE queue_gaps');
+  sql.exec('DROP TABLE queue_consumers');
+  sql.exec('DROP TABLE probe_results');
+  sql.exec('DROP TABLE deploys');
+  sql.exec('ALTER TABLE findings DROP COLUMN revision');
+  sql.exec('ALTER TABLE findings DROP COLUMN last_revision');
+}
 
 describe('superfan ledger schema', () => {
   it('upgrades a ledger created at the preceding schema', async () => {
@@ -67,7 +77,10 @@ describe('superfan ledger schema', () => {
     await runInDurableObject(stub, (_instance, state) => {
       const sql = state.storage.sql;
       // Rebuild the version-1 shape inside a fresh object, with a finding in it.
-      for (const t of ['tail_samples', 'tail_minutes']) sql.exec(`DROP TABLE IF EXISTS ${t}`);
+      backToVersion4(sql);
+      for (const t of ['tail_samples', 'tail_minutes', 'tail_marks', 'urgent_notices', 'beats'])
+        sql.exec(`DROP TABLE IF EXISTS ${t}`);
+      sql.exec('ALTER TABLE findings DROP COLUMN level');
       sql.exec('ALTER TABLE findings DROP COLUMN notified_at');
       sql.exec('ALTER TABLE spend_days DROP COLUMN emails');
       sql.exec('UPDATE schema_version SET version = 1');
@@ -80,6 +93,60 @@ describe('superfan ledger schema', () => {
       // A finding from before notices is not new.
       expect(sql.exec('SELECT notified_at FROM findings').one().notified_at).toBe(1);
       expect(sql.exec('SELECT emails FROM spend_days').toArray()).toEqual([]);
+    });
+  });
+
+  it('upgrades a ledger at version 3: its findings become digest level', async () => {
+    const stub = env.LEDGER.get(
+      env.LEDGER.idFromName('schema-upgrade-4'),
+    ) as DurableObjectStub<SuperfanLedger>;
+    await runInDurableObject(stub, (_instance, state) => {
+      const sql = state.storage.sql;
+      backToVersion4(sql);
+      for (const t of ['tail_marks', 'urgent_notices', 'beats'])
+        sql.exec(`DROP TABLE IF EXISTS ${t}`);
+      sql.exec('ALTER TABLE findings DROP COLUMN level');
+      sql.exec('UPDATE schema_version SET version = 3');
+      sql.exec(
+        "INSERT INTO findings (dedup_key, component, kind, status, signals, summary, narrative_status, first_seen, last_seen, notified_at) VALUES ('a:b', 'a', 'anomaly', 'open', '[]', 's', 'pending', 1, 1, 1)",
+      );
+      expect(migrate(sql)).toBe(MIGRATIONS.length);
+      expect(sql.exec('SELECT level FROM findings').one().level).toBe('digest');
+      expect(sql.exec('SELECT COUNT(*) AS n FROM tail_marks').one().n).toBe(0);
+      expect(sql.exec('SELECT COUNT(*) AS n FROM urgent_notices').one().n).toBe(0);
+      expect(sql.exec('SELECT COUNT(*) AS n FROM beats').one().n).toBe(0);
+    });
+  });
+
+  it('ends an open finding of the removed push queue, and no other', async () => {
+    const stub = env.LEDGER.get(
+      env.LEDGER.idFromName('schema-upgrade-push-queue'),
+    ) as DurableObjectStub<SuperfanLedger>;
+    await runInDurableObject(stub, (_instance, state) => {
+      const sql = state.storage.sql;
+      migrate(sql);
+      sql.exec('UPDATE schema_version SET version = ?', MIGRATIONS.length - 1);
+      const open = (key: string, component: string) =>
+        sql.exec(
+          "INSERT INTO findings (dedup_key, component, kind, status, signals, summary, narrative_status, first_seen, last_seen) VALUES (?, ?, 'anomaly', 'open', '[]', 's', 'pending', 1, 7)",
+          key,
+          component,
+        );
+      open('object_push_queue:push_retries', 'object_push_queue');
+      open('source_repository:error_rate', 'source_repository');
+      sql.exec(
+        "INSERT INTO baselines (key, value, samples, updated_at) VALUES ('object_push_queue/p95_wall_ms', 1, 1, 1), ('api_worker/p95_wall_ms', 1, 1, 1)",
+      );
+      expect(migrate(sql)).toBe(MIGRATIONS.length);
+      expect(
+        sql.exec('SELECT component, status, resolved_at FROM findings ORDER BY id').toArray(),
+      ).toEqual([
+        { component: 'object_push_queue', status: 'resolved', resolved_at: 7 },
+        { component: 'source_repository', status: 'open', resolved_at: null },
+      ]);
+      expect(sql.exec('SELECT key FROM baselines').toArray()).toEqual([
+        { key: 'api_worker/p95_wall_ms' },
+      ]);
     });
   });
 

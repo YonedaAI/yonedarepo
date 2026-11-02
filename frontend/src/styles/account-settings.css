@@ -1,11 +1,25 @@
 /* Account settings: one centered column as wide as an agent's Configure page, of sections: each
    a heading above a card of rows (text on the left, one action on the right, a thin rule between
    them). */
-.account-settings {
+.account-settings,
+.source-device {
   width: 100%;
   max-width: 1024px;
   margin: 0 auto;
   padding: 28px 32px 48px;
+}
+/* One password field: a line this short would look lost across the page's full width. */
+.source-device.reset-password {
+  max-width: 480px;
+}
+.reset-password .account-panel form {
+  margin: 0;
+}
+.reset-password .account-panel .button-link {
+  margin-top: 12px;
+}
+.reset-password .account-panel a:not(.button-link) {
+  text-decoration: underline;
 }
 .settings-head {
   display: flex;
@@ -69,6 +83,20 @@
 .settings-row-title {
   font-weight: 500;
   overflow-wrap: anywhere;
+}
+.settings-row-text .source-meta a {
+  color: var(--blue-text);
+  text-decoration: underline;
+}
+.name-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.name-form input {
+  flex: 1 1 240px;
+  width: 240px;
+  max-width: 100%;
 }
 .settings-row-mono {
   font-family: var(--mono);

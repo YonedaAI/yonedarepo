@@ -20,7 +20,12 @@ impl DurableObject for SourceRepository {
     }
 
     async fn fetch(&self, mut request: Request) -> Result<Response> {
+        // The adapter's path, never client input, asked only with REGION_HINT_TEST on.
+        if request.path() == "/where" {
+            return yoneda_cloudflare::colo_trace().await;
+        }
         let body: Value = request.json().await?;
+        crate::telemetry::serving(&request);
         let store = CloudStore::new(self.state.storage());
         // Schema digests are verified once per instance, not on every request.
         if !self.migrated.get() {
@@ -60,7 +65,7 @@ fn run(store: &CloudStore, mut command: Value) -> yoneda_core::Result<Value> {
         ));
     }
     command["now"] = json!(Date::now().as_millis() as i64);
-    yoneda_platform::execute_migrated(store, command)
+    yoneda_platform::execute_migrated(store, command).inspect_err(crate::telemetry::command_failed)
 }
 
 fn failure(e: &yoneda_core::Error) -> Value {

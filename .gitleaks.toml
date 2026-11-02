@@ -1,0 +1,34 @@
+# The default rules, minus values known to be no secret. Each entry silences the catch-all rule
+# only, so a real token format (GitHub, Cloudflare, AWS, ...) still fails anywhere.
+# `cargo xtask health secrets`; docs/code-health.md.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Made-up keys in tests"
+targetRules = ["generic-api-key"]
+paths = [
+  '''(^|/)tests?/''',
+  '''(^|/)tests\.rs$''',
+  '''_tests\.rs$''',
+  '''\.test\.[a-z]+$''',
+]
+
+[[allowlists]]
+description = "Cloudflare Web Analytics site tokens: public, sent to every browser"
+targetRules = ["generic-api-key"]
+regexTarget = "match"
+regexes = ['''WEB_ANALYTICS_TOKEN''']
+
+[[allowlists]]
+description = "Digests in the release evidence"
+targetRules = ["generic-api-key"]
+paths = ['''^docs/release-evidence\.json$''']
+regexTarget = "match"
+regexes = ['''_sha256''']
+
+[[allowlists]]
+description = "Base64 of made-up text in inline tests of the SSH gateway"
+targetRules = ["generic-api-key"]
+paths = ['''^backend/crates/yoneda-ssh-gateway/src/(host_key|tunnel)\.rs$''']
+regexes = ['''bm90IGEga2V5''', '''eyJhIjoiYWNjb3VudCJ9''']

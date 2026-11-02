@@ -1,7 +1,7 @@
 // Account addresses never reach a non-member of a repository. Accounts made before sign-up
 // named them by handle are named by their email address, and that name is in every principal
-// they leave (`user:<address>`: commits, log entries, changes, reviews, comments, sessions,
-// releases, checks, the repository's owner). A repository's answers to anyone who reads it as
+// they leave (`user:<address>`, or an agent's `agent:<address>/<name>`: commits, log entries,
+// changes, reviews, comments, sessions, releases, checks, the repository's owner). A repository's answers to anyone who reads it as
 // neither owner nor member (anonymous included) show such an account by handle,
 // `user:<handle>`, or `user:(hidden)` while it has none; members see the stored value. The
 // REST router, repository MCP and account MCP each hand their answers here, once. Git
@@ -10,14 +10,14 @@
 import { handlesOf } from './repo-paths';
 import type { Env, Json } from './types';
 
-const PRINCIPAL = /^user:([^\s@:/]+@[^\s@:/]+)$/;
+const PRINCIPAL = /^(user:|agent:)([^\s@:/]+@[^\s@:/]+)(\/[^\s/]+)?$/;
 const ADDRESS = /^[^\s@:/]+@[^\s@:/]+\.[^\s@:/]+$/;
 const HIDDEN = '(hidden)';
 
 /** The account address `text` names (as a principal, or bare), if any. */
 function address(text: string): string | null {
   const principal = PRINCIPAL.exec(text);
-  if (principal) return principal[1];
+  if (principal) return principal[2];
   return ADDRESS.test(text) ? text : null;
 }
 
@@ -39,7 +39,8 @@ function replaced(value: unknown, handles: Map<string, string>): unknown {
     const named = address(value);
     if (!named) return value;
     const shown = handles.get(named) ?? HIDDEN;
-    return value.startsWith('user:') ? `user:${shown}` : shown;
+    const principal = PRINCIPAL.exec(value);
+    return principal ? `${principal[1]}${shown}${principal[3] ?? ''}` : shown;
   }
   if (Array.isArray(value)) return value.map((item) => replaced(item, handles));
   if (value && typeof value === 'object')

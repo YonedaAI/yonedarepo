@@ -11,6 +11,7 @@
 
 import { failureCode, RETRY_AFTER_SECONDS } from './durable';
 import { noteAccount } from './internal-accounts';
+import { logFailure } from './log';
 import { sshBearer, verifySshToken } from './platform-ssh';
 import { credentials } from './repo-api';
 import { compute } from './repo-compute';
@@ -23,7 +24,9 @@ import { isLfsPath, lfsHttp } from './repo-lfs';
 import { fromBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { ANONYMOUS, admitAnonymous, limitAnonymous } from './repo-public';
-import { timed, withTimings } from './repo-timing';
+import { timedAnswer } from './repo-span-sample';
+import { timed } from './repo-timing';
+import { notePack, noteRepo, repoAnalytics } from './repo-usage';
 import type { Env } from './types';
 
 const PATH = /^\/git\/(r[0-9a-f]{20})(?:\.git)?\/(info\/refs|git-upload-pack|git-receive-pack)$/;
@@ -34,12 +37,12 @@ const STATUS: Record<string, number> = {
   ACCOUNT_SUSPENDED: 403,
   NOT_FOUND: 404,
   LEGAL_HOLD: 423,
-  IMPORT_IN_PROGRESS: 409,
   QUARANTINED: 451,
   GONE: 404,
   RATE_LIMITED: 429,
   OVERLOADED: 503,
   REPO_FULL: 507,
+  REPO_SIZE_LIMIT: 507,
 };
 
 /** A plain-text refusal Git shows as `remote: <message>` for `info/refs` (it drops the body
@@ -74,6 +77,14 @@ export async function gitCredentials(req: Request, env: Env): Promise<Credential
   );
 }
 
+/** Credentials that could not be checked: a platform failure (logged) or a refusal. */
+function authFailed(e: any) {
+  const code = failureCode(e);
+  const status = STATUS[code] ?? 500;
+  if (status >= 500 && code !== 'OVERLOADED') logFailure(e, code, status);
+  return refusal(status, String(e?.message ?? e));
+}
+
 /** The answer to a request for a repository that is not there, or that the caller may not
  * read (Git by readable path, repo-git-paths): credentials refused as `serve` refuses them,
  * then 401 without any, else 404. */
@@ -82,7 +93,7 @@ export async function unknownRepository(req: Request, env: Env): Promise<Respons
   try {
     auth = await gitCredentials(req, env);
   } catch (e: any) {
-    return refusal(STATUS[failureCode(e)] ?? 500, String(e?.message ?? e));
+    return authFailed(e);
   }
   if (!auth || '_anonymous' in auth)
     return refusal(401, 'Use a repository or personal access token as the password');
@@ -91,10 +102,8 @@ export async function unknownRepository(req: Request, env: Env): Promise<Respons
 
 /** Serves a `/git/` request, or answers why it cannot, with its phases in Server-Timing
  * (Git shows response headers under `GIT_TRACE_CURL=1`). */
-export async function gitHttp(req: Request, env: Env): Promise<Response> {
-  const { value, header } = await withTimings(() => serve(req, env));
-  if (header) value.headers.set('server-timing', header);
-  return value;
+export function gitHttp(req: Request, env: Env): Promise<Response> {
+  return timedAnswer(env, req, () => serve(req, env));
 }
 
 async function serve(req: Request, env: Env): Promise<Response> {
@@ -125,7 +134,7 @@ async function serve(req: Request, env: Env): Promise<Response> {
     noteAccount(auth);
   } catch (e: any) {
     if (failureCode(e) === 'OVERLOADED') return busy();
-    return refusal(STATUS[failureCode(e)] ?? 500, String(e?.message ?? e));
+    return authFailed(e);
   }
   if (!auth) return refusal(401, 'Use a repository or personal access token as the password');
   const signed = auth;
@@ -135,6 +144,7 @@ async function serve(req: Request, env: Env): Promise<Response> {
   const session = async () => {
     const ctx = new RepoContext(env, repo, caller(env, repo, signed));
     const access = await ctx.call({ op: 'repo_git_access', service });
+    noteRepo(env, repo);
     return { ctx, access, objects: ctx.adopt(access.object_store, access.quarantined) };
   };
   try {
@@ -153,7 +163,9 @@ async function serve(req: Request, env: Env): Promise<Response> {
       if (!sent) return v2 ? advertiseV2() : await advertise(ctx, service);
       const body = new Blob([sent]).stream();
       // A client asking for timings gets them after the pack (PackStats).
-      const stats = req.headers.get('x-yoneda-timing') === '1' ? new PackStats() : undefined;
+      const timing = req.headers.get('x-yoneda-timing') === '1';
+      const stats = timing || repoAnalytics(env) ? new PackStats(timing) : undefined;
+      if (stats) notePack(env, stats);
       return v2
         ? await uploadPackV2(ctx, objects, body, stats)
         : await uploadPack(ctx, objects, body, stats);
@@ -165,7 +177,7 @@ async function serve(req: Request, env: Env): Promise<Response> {
     if (anonymous && ['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND', 'GONE'].includes(code))
       return refusal(401, 'Use a repository or personal access token as the password');
     const status = STATUS[code] ?? (e instanceof ApiError ? 400 : 500);
-    if (status >= 500) console.error(`git ${service} failed: ${code}`);
+    if (status >= 500) logFailure(e, code, status, { service });
     if (code === 'OVERLOADED') return busy();
     return refusal(status, `${code}: ${String(e?.message ?? e).slice(0, 500)}`);
   }

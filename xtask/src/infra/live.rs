@@ -9,6 +9,9 @@ use crate::process::Result;
 use serde_json::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
+mod containers;
+use containers::containers_via_wrangler;
+
 const API: &str = "https://api.cloudflare.com/client/v4";
 
 #[derive(Clone, Debug, Default)]
@@ -81,13 +84,28 @@ impl Client {
     pub(crate) async fn get(&self, path: &str) -> Result<Value> {
         self.send(reqwest::Method::GET, path).await
     }
+    /// A read of R2 in one jurisdiction.
+    async fn get_in(&self, path: &str, jurisdiction: &str) -> Result<Value> {
+        self.send_in(reqwest::Method::GET, path, Some(jurisdiction))
+            .await
+    }
     pub(crate) async fn send(&self, method: reqwest::Method, path: &str) -> Result<Value> {
-        let response = self
+        self.send_in(method, path, None).await
+    }
+    async fn send_in(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        jurisdiction: Option<&str>,
+    ) -> Result<Value> {
+        let mut request = self
             .http
             .request(method.clone(), format!("{API}{path}"))
-            .bearer_auth(&self.token)
-            .send()
-            .await?;
+            .bearer_auth(&self.token);
+        if let Some(place) = jurisdiction {
+            request = request.header("cf-r2-jurisdiction", place);
+        }
+        let response = request.send().await?;
         let status = response.status();
         let body: Value = response.json().await.unwrap_or(Value::Null);
         if !succeeded(status, &body) {
@@ -119,6 +137,13 @@ impl Client {
         }
         Ok(all)
     }
+}
+
+fn jurisdictions(spec: &Spec) -> BTreeSet<String> {
+    spec.cells
+        .iter()
+        .filter_map(|cell| cell.jurisdiction.clone())
+        .collect()
 }
 
 fn names(items: &[Value], field: &str) -> BTreeSet<String> {
@@ -165,6 +190,19 @@ pub(crate) async fn read(spec: &Spec, token: String, workers: &[String]) -> Live
                     .unwrap_or(&[]),
                 "name",
             );
+            // A jurisdiction's buckets answer only a request that names it.
+            for place in jurisdictions(spec) {
+                let held = client
+                    .get_in(&format!("{account}/r2/buckets?per_page=1000"), &place)
+                    .await?;
+                live.r2.extend(names(
+                    held["result"]["buckets"]
+                        .as_array()
+                        .map(Vec::as_slice)
+                        .unwrap_or(&[]),
+                    "name",
+                ));
+            }
             Result::Ok(())
         }
         .await
@@ -259,27 +297,4 @@ async fn read_workers(
         out.insert(name.into(), worker);
     }
     Ok(())
-}
-
-/// Applications under the env's prefix or retired, with `max_instances` and
-/// `configuration.image`.
-fn containers_via_wrangler(spec: &Spec) -> Result<BTreeMap<String, Value>> {
-    let account = &spec.account_id;
-    let list: Value = serde_json::from_slice(&super::wrangler::output(
-        account,
-        &["containers", "list", "--json", "--per-page", "100"],
-    )?)?;
-    let mut apps = BTreeMap::new();
-    for app in list.as_array().into_iter().flatten() {
-        let (Some(name), Some(id)) = (app["name"].as_str(), app["id"].as_str()) else {
-            continue;
-        };
-        if name.starts_with(&format!("{}-", spec.prefix))
-            || spec.retired.matches(Kind::Container, name)
-        {
-            let info = super::wrangler::output(account, &["containers", "info", id, "--json"])?;
-            apps.insert(name.to_owned(), serde_json::from_slice(&info)?);
-        }
-    }
-    Ok(apps)
 }

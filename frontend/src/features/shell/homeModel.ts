@@ -39,39 +39,16 @@ export function greeting(hour: number) {
   return 'Good evening';
 }
 
-export type StatCard = { id: string; label: string; value: number; caption: string };
+export type StatCard = { id: string; label: string; value: number };
+
+export const statCards = (a: AccountActivity): StatCard[] => [
+  { id: 'repositories', label: 'Repositories', value: a.repositories },
+  { id: 'public', label: 'Public', value: a.public },
+  { id: 'capturing', label: 'With sessions, 30 days', value: a.capturing },
+  { id: 'landed', label: 'Landed, 30 days', value: a.landed },
+];
 
 const plural = (n: number, one: string, many = `${one}s`) => (n === 1 ? one : many);
-
-export function statCards(a: AccountActivity): StatCard[] {
-  const share = a.repositories ? Math.round((a.public / a.repositories) * 100) : 0;
-  return [
-    {
-      id: 'repositories',
-      label: 'Repositories',
-      value: a.repositories,
-      caption: 'across your account and organizations',
-    },
-    {
-      id: 'public',
-      label: 'Public',
-      value: a.public,
-      caption: a.repositories ? `${share}% of your repositories` : 'none yet',
-    },
-    {
-      id: 'capturing',
-      label: 'Capturing',
-      value: a.capturing,
-      caption: `${plural(a.capturing, 'repository', 'repositories')} with agent sessions, last 30 days`,
-    },
-    {
-      id: 'landed',
-      label: 'Landed',
-      value: a.landed,
-      caption: `${plural(a.landed, 'change')} landed, last 30 days`,
-    },
-  ];
-}
 
 export const DAYS = 30;
 const DAY_MS = 86_400_000;

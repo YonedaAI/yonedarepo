@@ -1,4 +1,4 @@
-// The CTC page as the server would render it: every open Landing with its state, what it waits
+// The Tower page as the server would render it: every open Landing with its state, what it waits
 // for, its place in line, what it overlaps and the last decision, and the empty, loading and
 // error states, on the pure rules beside it.
 import { createElement } from 'react';
@@ -121,14 +121,15 @@ describe('polling', () => {
 
 describe('the page', () => {
   it('reads /ctc and shows that it is loading', () => {
-    expect(page()).toContain('Loading CTC radar');
+    expect(page()).toContain('Loading Tower radar');
     expect(state.paths).toContain(`/repos/${REPO}/ctc`);
   });
 
   it('says so when nothing is open', () => {
     state.value = loaded({ land_when_cleared: true, landings: [], truncated: false });
     const html = page();
-    expect(html).toContain('No open Landings');
+    expect(html).toContain('Nothing on the radar');
+    expect(html).not.toContain('What is cleared');
     expect(html).not.toContain('<table');
   });
 
@@ -157,7 +158,8 @@ describe('the page', () => {
       ],
     });
     const html = page();
-    expect(html).toContain('<h2 id="ctc-heading">CTC</h2>');
+    expect(html).toContain('<h2 id="ctc-heading">Tower</h2>');
+    expect(html).toContain('What is cleared, what is waiting and where Landings meet.');
     expect(html).toContain(`href="/source/${REPO}/changes/7"`);
     expect(html).toContain('Retry budget');
     expect(html).toContain('Hold');
@@ -172,7 +174,7 @@ describe('the page', () => {
   it('says when the repository does not land on its own, and when the list was cut', () => {
     state.value = loaded({ land_when_cleared: false, truncated: true, landings: [landing()] });
     const html = page();
-    expect(html).toContain('nothing lands on its own');
+    expect(html).toContain('nothing lands on its own: this is what Tower would say.');
     expect(html).toContain('newest');
   });
 });

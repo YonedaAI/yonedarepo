@@ -3,19 +3,37 @@
 // one sampled Analytics Engine point, written without waiting, in the same dataset as the site's
 // events. A point holds the client kind, country, operation class and whether a token held, never
 // a repository, account, token, address or user agent. With TRAFFIC_REPORT on it also holds the
-// outcome and how long the answer took, and an account that's ours leaves no point. Budget:
-// docs/load-testing.md. Off unless TRAFFIC_EVENTS is `on`. A browser session is not a client here:
-// it counts on the site.
-import { afterAnswer } from './background';
-import { isInternal, requestAccount } from './internal-accounts';
+// outcome and how long the answer took, and an account that's ours leaves no point. With
+// REPO_ANALYTICS on, a clone, push or landing also holds the repository, bytes and how a landing
+// went (repo-usage.ts), still in the one point, indexed by repository so one busy repository
+// can't thin another's figures. With AGENT_REPORT on, an agent's point also holds a digest of its
+// token's id and a client name from a fixed list, and all its reads are written, so a credential
+// that only reads isn't missed. Budget: docs/load-testing.md. Off unless TRAFFIC_EVENTS is `on`.
+// A browser session is not a client here: it counts on the site, and only its landings count here,
+// under their own event, so the Traffic page's client figures stay the same.
+
+import { AGENT_CLIENTS } from '../../shared/platform-reports';
+import { afterAnswer, deferred } from './background';
+import { isInternal, type RequestAgent, requestAccount } from './internal-accounts';
+import { log } from './log';
 import { GIT_PATH } from './readable-paths';
+import {
+  packDetail,
+  repoAnalytics,
+  requestActor,
+  requestAgent,
+  requestUsage,
+  type Usage,
+} from './repo-usage';
 import { countryOf, isOwnTraffic } from './site-events';
+import { sha } from './storage';
 import type { Env } from './types';
 
 export type ClientKind = 'cli' | 'git' | 'mcp' | 'token';
 export type Operation = 'clone' | 'push' | 'land' | 'mcp' | 'read' | 'write';
 export type Outcome = 'success' | 'failed' | 'unauthorized' | 'rate_limited';
 type ClientRequest = { client: ClientKind; operation: Operation };
+type Seen = { client: ClientKind | 'browser'; operation: Operation };
 
 /** One point per this many requests: only reads are many enough to sample. */
 const EVERY: Record<Operation, number> = {
@@ -28,6 +46,7 @@ const EVERY: Record<Operation, number> = {
 };
 const MCP = /^\/api\/v1\/(?:repos\/r[0-9a-f]{20}\/)?mcp$/;
 const CLI_AGENT = /^yoneda-cli\//;
+const CREDENTIAL_LENGTH = 16;
 
 const plain = (method: string): Operation =>
   method === 'GET' || method === 'HEAD' ? 'read' : 'write';
@@ -58,8 +77,49 @@ export function outcomeOf(status: number): Outcome {
   return status < 400 ? 'success' : 'failed';
 }
 
+/** A landing from a browser session, which is no client but is a repository's activity. */
+const BROWSER_LANDING: Seen = { client: 'browser', operation: 'land' };
+const ACTIVITY = new Set(['land', 'mcp', 'write']);
+
+/** The client an agent names, in its token's name or else its user agent: both are its own word,
+ * so only the list's key is kept. */
+function selfReported(agent: RequestAgent, req: Request) {
+  const said = [agent.name, req.headers.get('user-agent') ?? ''].map((s) => s.toLowerCase());
+  const names = Object.keys(AGENT_CLIENTS);
+  return said.flatMap((s) => names.filter((name) => s.includes(name)))[0] ?? '';
+}
+
+/** What an agent's point adds: which credential, by a digest, and the client it named. */
+async function agentBlobs(agent: RequestAgent, req: Request) {
+  return [(await sha(agent.id)).slice(0, CREDENTIAL_LENGTH), selfReported(agent, req)];
+}
+
+/** What goes on a point with REPO_ANALYTICS on, read when it's written: a pack's point waits for
+ * its last byte. A request refused as its caller's, or for a repository it can't see, names no
+ * repository: figures can't be put on one by asking for it. */
+function usageFields(usage: Usage, seen: Seen, res: Response, agent: boolean) {
+  packDetail(usage);
+  const refused = outcomeOf(res.status) === 'unauthorized' || res.status === 404;
+  const repo = refused ? '' : (usage.repo ?? '');
+  const failed = usage.detail === 'refused' && res.status >= 500;
+  const person = agent ? 'agent' : requestActor();
+  return {
+    repo,
+    operation: usage.landing && ACTIVITY.has(seen.operation) ? 'land' : seen.operation,
+    blobs: [
+      repo,
+      // A CLI or MCP client signed in with a session is still a client, not a person's click.
+      person === 'person' && seen.client !== 'browser' ? 'personal_token' : person,
+      repo ? (usage.reason ?? '') : '',
+      repo ? (failed ? 'failed' : (usage.detail ?? '')) : '',
+    ],
+    doubles: [usage.bytes ?? 0, usage.queueMs ?? 0, usage.retries ?? 0],
+  };
+}
+
 /** Counts a finished request. It holds no work open and can't fail one; a D1 read for the internal
- * list, when one is due, happens after the answer. */
+ * list, when one is due, happens after the answer. A pack that is still going out is counted when
+ * it has gone, inside `waitUntil`. */
 export function recordClient(
   req: Request,
   res: Response,
@@ -70,41 +130,93 @@ export function recordClient(
   if (env.TRAFFIC_EVENTS !== 'on' || !env.SITE_EVENTS) return;
   try {
     if (isOwnTraffic(req)) return;
-    const seen = clientRequest(req, new URL(req.url));
+    const agent = requestAgent(env);
+    // A request that reached no repository still says which agent made it.
+    const usage = requestUsage(env) ?? (agent ? {} : null);
+    const seen = clientRequest(req, new URL(req.url)) ?? (usage?.landing ? BROWSER_LANDING : null);
     if (!seen) return;
-    const every = EVERY[seen.operation];
+    const every = agent ? 1 : EVERY[seen.operation];
     if (random() * every >= 1) return;
     const report = env.TRAFFIC_REPORT === 'on';
     const held = req.headers.has('authorization') && res.status !== 401 && res.status !== 403;
     const empty = ['', '', '', '', ''];
-    const blobs = [
-      'client',
-      '',
-      '',
-      countryOf(req),
-      ...empty,
-      'agent',
-      seen.client,
-      seen.operation,
-    ];
     const doubles = [0, 1, every, held ? 1 : 0, 1];
-    const point = report
-      ? {
-          indexes: ['client'],
-          blobs: [...blobs, outcomeOf(res.status)],
-          doubles: [...doubles, Math.max(Date.now() - started, 0)],
-        }
-      : { indexes: ['client'], blobs, doubles };
-    const write = () => env.SITE_EVENTS?.writeDataPoint(point);
+    const browser = seen.client === 'browser';
+    const write = (credential: string[] = []) => {
+      const added = usage ? usageFields(usage, seen, res, Boolean(agent)) : null;
+      if (browser && !added?.repo) return;
+      const blobs = [
+        browser ? 'repo' : 'client',
+        '',
+        '',
+        countryOf(req),
+        ...empty,
+        browser ? '' : 'agent',
+        seen.client,
+        added?.operation ?? seen.operation,
+      ];
+      const indexes = [added?.repo || 'client'];
+      const point = report
+        ? {
+            indexes,
+            blobs: [...blobs, outcomeOf(res.status), ...(added?.blobs ?? []), ...credential],
+            doubles: [...doubles, Math.max(Date.now() - started, 0), ...(added?.doubles ?? [])],
+          }
+        : { indexes, blobs, doubles };
+      env.SITE_EVENTS?.writeDataPoint(point);
+    };
     const account = report ? requestAccount() : null;
-    if (!account) {
+    const pack = usage?.pack?.ended;
+    if (!account && !pack) {
       write();
       return;
     }
-    return afterAnswer(async () => {
-      if ((await isInternal(env, account)) === false) write();
-    }).catch(() => {});
+    const finish = async () => {
+      await pack;
+      if (account && (await isInternal(env, account)) !== false) return;
+      write(agent ? await agentBlobs(agent, req) : []);
+    };
+    if (pack) {
+      // A stream can't be awaited here: nothing reads it until this answer is returned.
+      if (!deferred(finish)) void finish().catch(() => {});
+      return;
+    }
+    return afterAnswer(finish).catch(() => {});
   } catch {
     // A lost data point is acceptable; a failed request is not.
+  }
+}
+
+/** One point for what a job did to a repository, which no request carries: a check run finished,
+ * or the clearance job landed. A repository of ours leaves none. Never fails the job. */
+export async function recordJob(
+  env: Env,
+  repo: string,
+  point: { operation: 'land' | 'write'; detail: string; reason?: string; ms?: number },
+) {
+  if (!repoAnalytics(env)) return;
+  try {
+    const row = await env.INDEX.prepare('SELECT workspace FROM platform_repos WHERE id=?')
+      .bind(repo)
+      .first<{ workspace: string }>();
+    if (!row || (await isInternal(env, row.workspace)) !== false) return;
+    const empty = ['', '', '', '', '', '', '', '', ''];
+    env.SITE_EVENTS?.writeDataPoint({
+      indexes: [repo],
+      blobs: [
+        'repo',
+        ...empty,
+        'platform',
+        point.operation,
+        'success',
+        repo,
+        'platform',
+        point.reason ?? '',
+        point.detail,
+      ],
+      doubles: [0, 1, 1, 1, 1, point.ms ?? 0, 0, 0, 0],
+    });
+  } catch (e) {
+    log.warn('repo_analytics.job_point_lost', { repo, error: e });
   }
 }

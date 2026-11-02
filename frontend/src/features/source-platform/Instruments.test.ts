@@ -35,6 +35,7 @@ const risk = (level: string, score: number) => ({
   ],
 });
 const slop = (value: string) => ({ name: 'slop-review', value, recorded_at: 1 });
+const drift = (value: string) => ({ name: 'intent-drift', value, recorded_at: 1 });
 const head = (over: Partial<HeadReading>): HeadReading => ({
   commit: `c${Math.random()}`,
   at: 1_700_000_000_000,
@@ -71,6 +72,7 @@ describe('Instruments', () => {
     state.value = loaded({ number: 3, heads: [head({ risk: risk('medium', 40) as never })] });
     const page = html();
     expect(page).toContain('Risk (beta)');
+    expect(page).not.toContain('High holds');
     expect(page).not.toContain('Slop');
   });
 
@@ -91,6 +93,30 @@ describe('Instruments', () => {
     expect(page.match(/tone-good/g)).toHaveLength(1);
     expect(page.match(/tone-bad/g)).toHaveLength(1);
     expect(page.match(/tone-empty/g)).toHaveLength(2);
+  });
+
+  it('shows Intent drift beside Slop when the agent reported, and only then', () => {
+    state.value = loaded({
+      number: 3,
+      heads: [
+        head({ checks: [drift('high'), slop('low')] as never }),
+        head({ checks: [drift('low')] as never }),
+      ],
+    });
+    const page = html();
+    expect(page).toContain('Intent drift');
+    expect(page).toContain('High');
+    expect(page.match(/tone-bad/g)).toHaveLength(1);
+    expect(page).toContain('Slop');
+    state.value = loaded({ number: 3, heads: [head({ checks: [slop('low')] as never })] });
+    expect(html()).not.toContain('Intent drift');
+  });
+
+  it('shows the Intent drift card with no Slop or Risk to go with it', () => {
+    state.value = loaded({ number: 3, heads: [head({ checks: [drift('medium')] as never })] });
+    const page = html();
+    expect(page).toContain('Intent drift');
+    expect(page).toContain('Medium');
   });
 
   it('does not pass an older head off as the current Slop value', () => {
@@ -120,7 +146,8 @@ describe('Instruments', () => {
     }
     expect(page).toContain('.github/workflows/ci.yml');
     expect(page).toContain('+20');
-    expect(page).toContain('Does not affect landing');
+    expect(page).toContain('not calibrated yet');
+    expect(page).not.toContain('Does not affect landing');
     expect(page).not.toContain('%');
     expect(page.match(/tone-warn/g)).toHaveLength(1);
     expect(page.match(/tone-good/g)).toHaveLength(1);

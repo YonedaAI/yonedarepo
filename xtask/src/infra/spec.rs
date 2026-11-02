@@ -3,7 +3,9 @@
 //! A spec holds one wrangler config fragment per Worker, in cutover order. Strings may use
 //! `{prefix}`, `{account_id}`, `{subdomain}`, `{zone}` and the spec's own `vars`; D1
 //! `database_id`s come from the lock, so resource identities are never hand-edited.
+use super::cells::CellSpec;
 use super::retired::Retired;
+use super::spec_checks::derive_checks;
 use super::template::{expand, substitute};
 use crate::process::Result;
 use serde::{Deserialize, Serialize};
@@ -41,6 +43,9 @@ pub(crate) struct Spec {
     #[serde(default)]
     pub check_instances: Option<u64>,
     pub workers: Vec<WorkerSpec>,
+    /// Regions with a whole copy of the platform, each a Worker made from the platform's.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cells: Vec<CellSpec>,
     /// The env's previous names: `infra plan` orphans, deleted by `infra prune`.
     #[serde(default, skip_serializing_if = "Retired::is_empty")]
     pub retired: Retired,
@@ -61,6 +66,9 @@ pub(crate) struct WorkerSpec {
     /// file has them, skipped without failing the deploy when it does not.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub optional_secrets: Vec<String>,
+    /// A secret's name in `secrets_file`, where it isn't the Worker's: a cell's own R2 keys.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub secret_files: BTreeMap<String, String>,
     /// The `service` its `/health` reports, when it serves one.
     #[serde(default)]
     pub health: Option<String>,
@@ -121,10 +129,11 @@ impl Spec {
         }
     }
     pub(crate) fn parse(text: &str) -> Result<Self> {
-        let spec: Self = serde_json::from_str(text)?;
+        let mut spec: Self = serde_json::from_str(text)?;
         if spec.workers.is_empty() {
             return Err("A spec needs at least one Worker".into());
         }
+        super::cells::expand(&mut spec)?;
         Ok(spec)
     }
     /// The dev stack under its own prefix: workers.dev only, its own resources and secrets,
@@ -149,6 +158,21 @@ impl Spec {
         );
         self.prefix = prefix;
         self.workers.retain(|w| w.ephemeral);
+        // A copy has one cell: what names another goes with it.
+        self.cells.clear();
+        for worker in &mut self.workers {
+            if let Some(databases) = worker
+                .config
+                .get_mut("d1_databases")
+                .and_then(Value::as_array_mut)
+            {
+                databases.retain(|d| {
+                    !d["binding"]
+                        .as_str()
+                        .is_some_and(|b| b.starts_with("INDEX_"))
+                });
+            }
+        }
         // A service binding to a Worker the copy leaves out would fail its deploy; the binder
         // treats a missing binding as the feature being off (the front's MANAGED).
         let kept: Vec<Value> = self
@@ -258,6 +282,10 @@ impl Spec {
             })
             .collect()
     }
+    /// The jurisdiction `resource` must be created in, if a cell fixes one.
+    pub(crate) fn jurisdiction_of(&self, resource: &str) -> Option<String> {
+        super::cells::jurisdiction_of(self, resource)
+    }
     /// Every D1 database name the spec declares, templates expanded.
     pub(crate) fn d1_names(&self) -> Result<Vec<String>> {
         let vars = self.substitutions();
@@ -281,52 +309,4 @@ impl Spec {
             .map(|w| Ok((w.clone(), self.worker_config(w, lock)?)))
             .collect()
     }
-}
-
-const CHECK_CLASS: &str = "CheckContainer";
-const CHECK_QUEUE_BINDING: &str = "PLATFORM_CHECKS";
-
-/// Writes `check_instances` into the CheckContainer and its queue consumer.
-fn derive_checks(
-    config: &mut serde_json::Map<String, Value>,
-    instances: Option<u64>,
-) -> Result<()> {
-    let has_checks = config
-        .get("containers")
-        .and_then(Value::as_array)
-        .is_some_and(|list| list.iter().any(|c| c["class_name"] == CHECK_CLASS));
-    if !has_checks {
-        return Ok(());
-    }
-    let n = instances.ok_or("A Worker runs CheckContainer, so the spec needs check_instances")?;
-    for container in config
-        .get_mut("containers")
-        .and_then(Value::as_array_mut)
-        .into_iter()
-        .flatten()
-    {
-        if container["class_name"] == CHECK_CLASS {
-            container["max_instances"] = json!(n);
-        }
-    }
-    let queue = config["queues"]["producers"]
-        .as_array()
-        .into_iter()
-        .flatten()
-        .find(|p| p["binding"] == CHECK_QUEUE_BINDING)
-        .and_then(|p| p["queue"].as_str())
-        .map(str::to_owned)
-        .ok_or("CheckContainer without a PLATFORM_CHECKS queue producer")?;
-    for consumer in config
-        .get_mut("queues")
-        .and_then(|q| q.get_mut("consumers"))
-        .and_then(Value::as_array_mut)
-        .into_iter()
-        .flatten()
-    {
-        if consumer["queue"] == queue.as_str() {
-            consumer["max_concurrency"] = json!(n);
-        }
-    }
-    Ok(())
 }

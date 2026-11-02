@@ -2,26 +2,25 @@
 // only for problems not already written up ask the cheap model for a short finding, within
 // the daily cap. A silent or failing telemetry source is itself a finding; it never reads
 // as "all quiet", and findings are resolved only by rules that were actually evaluated. New
-// findings then go out privately by email.
-import {
-  type AnalyticsSource,
-  CloudflareAnalytics,
-  probe,
-  TelemetryError,
-  WINDOW_MS,
-} from './analytics';
-import { dailyCap, type SuperfanEnv, type WatchSite, watchSite } from './config';
-import type { SuperfanLedger } from './ledger';
+// findings then go out privately by email: urgent ones before any model call can hold them up.
+import { type AnalyticsSource, CloudflareAnalytics, TelemetryError, WINDOW_MS } from './analytics';
+import { dailyCap, probesOn, type SuperfanEnv, type WatchSite, watchSite, wideOn } from './config';
+import { readDelivery } from './delivery';
+import type { Observed, SuperfanLedger } from './ledger';
 import { FlashModel, type ModelClient, ModelError } from './model';
-import { notifyFindings } from './notify';
+import { notifyFindings, notifyUrgent } from './notify';
+import { confirmed, deadmanAge, FRONT_SERVICE, PLATFORM_SERVICE, probe } from './probes';
+import { RELEASE_KEYS, releaseOn } from './release';
 import {
   baselineSamples,
   type ComponentReport,
-  dedupKey,
   evaluate,
+  observation,
+  problems,
   type Snapshot,
-  summary,
 } from './signals';
+import { PROBE_KEYS } from './synthetic-checks';
+import { MARK_WINDOW_MS } from './tail';
 
 /** Model calls per run; the daily cap is the real limit, this bounds one bad hour. */
 const MAX_CALLS_PER_RUN = 6;
@@ -34,6 +33,8 @@ export interface WatchDeps {
   model: ModelClient | null;
   ledger: DurableObjectStub<SuperfanLedger>;
   now: () => number;
+  /** Waits between two probes of a Worker that looks down. */
+  pause: (ms: number) => Promise<void>;
 }
 export interface WatchResult {
   outcome: 'ok' | 'telemetry_failed' | 'busy';
@@ -69,7 +70,20 @@ export function productionDeps(env: SuperfanEnv): WatchDeps {
   } catch {
     // An unknown model is never replaced by another; findings keep their summaries.
   }
-  return { target, analytics, model, ledger: ledgerStub(env), now: Date.now };
+  const pause = (ms: number) => new Promise<void>((done) => setTimeout(done, ms));
+  return { target, analytics, model, ledger: ledgerStub(env), now: Date.now, pause };
+}
+
+/** What both kinds of pass read about the site. On the wide watch a Worker that looks down is
+ * probed again first, as an urgent mail rests on the answer. */
+export async function siteHealth(deps: WatchDeps, target: WatchSite) {
+  const { healthUrl, frontHealthUrl: front } = target;
+  if (!target.wide) return { health: await probe(healthUrl) };
+  const [health, frontHealth] = await Promise.all([
+    confirmed(healthUrl, PLATFORM_SERVICE, deps.pause),
+    front ? confirmed(front, FRONT_SERVICE, deps.pause) : undefined,
+  ]);
+  return { health, frontHealth };
 }
 
 function prompt(report: ComponentReport, snapshot: Snapshot) {
@@ -132,31 +146,37 @@ export async function runWatch(env: SuperfanEnv, deps = productionDeps(env)): Pr
 async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<WatchResult> {
   const { ledger } = deps;
   const now = deps.now();
-  const problems: TelemetryError[] = [];
+  const faults: TelemetryError[] = [];
   const start = Math.floor((now - WINDOW_MS) / 60_000) * 60_000;
   const tail = await ledger.tailStats(start, now);
   if (deps.target instanceof Error)
-    problems.push(new TelemetryError('config', `Configuration: ${deps.target.message}`));
+    faults.push(new TelemetryError('config', `Configuration: ${deps.target.message}`));
   else if (tail.events === 0)
-    problems.push(
+    faults.push(
       new TelemetryError('tail_silent', 'No tail events from the platform Worker this hour'),
     );
-  const [health, analytics] = await Promise.all([
-    deps.target instanceof Error ? null : probe(deps.target.healthUrl),
+  const [site, deadman, analytics, delivery] = await Promise.all([
+    deps.target instanceof Error ? null : siteHealth(deps, deps.target),
+    deps.target instanceof Error || !deps.target.deadmanHealthUrl
+      ? undefined
+      : deadmanAge(deps.target.deadmanHealthUrl, now),
     deps.analytics.collect(now).catch((error) => {
-      problems.push(
+      faults.push(
         error instanceof TelemetryError
           ? error
           : new TelemetryError('fetch_failed', 'Analytics read failed'),
       );
       return null;
     }),
+    readDelivery(deps.analytics, ledger, now).catch(() => {
+      faults.push(new TelemetryError('fetch_failed', 'Queue delivery read failed'));
+      return undefined;
+    }),
   ]);
+  const revision = site?.health.revision ?? (await ledger.latestRevision());
   const findings: number[] = [];
   const present: string[] = [];
-  for (const p of problems.filter(
-    (x, i) => problems.findIndex((y) => y.reason === x.reason) === i,
-  )) {
+  for (const p of faults.filter((x, i) => faults.findIndex((y) => y.reason === x.reason) === i)) {
     const key = `telemetry:${p.reason}`;
     present.push(key);
     const seen = await ledger.observe(
@@ -166,6 +186,7 @@ async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<Wat
         kind: 'telemetry',
         signals: [{ name: p.reason, detail: p.message }],
         summary: p.message,
+        revision,
       },
       now,
     );
@@ -173,40 +194,42 @@ async function pass(env: SuperfanEnv, deps: WatchDeps, run: number): Promise<Wat
   }
   const evaluated = TELEMETRY_REASONS.map((r) => `telemetry:${r}`);
   const tailLive = tail.events > 0 && !(deps.target instanceof Error);
-  if (!health || (!tailLive && !analytics)) {
+  if (!site || (!tailLive && !analytics)) {
     await ledger.resolveAbsent(evaluated, present, now);
     await ledger.finishRun(run, 'telemetry_failed', 0, 0, now);
     return { outcome: 'telemetry_failed', anomalies: 0, modelCalls: 0, findings };
   }
   const snapshot: Snapshot = {
     window: { start: new Date(start).toISOString(), end: new Date(now).toISOString() },
-    health,
+    ...site,
     tail: tailLive ? tail.components : {},
+    marks: await ledger.marks(now - MARK_WINDOW_MS),
     analytics,
+    ...(deadman === undefined ? {} : { deadmanAge: deadman }),
+    ...(releaseOn(env) ? { release: await ledger.compareReleases(now) } : {}),
+    ...(delivery === undefined ? {} : { delivery }),
   };
-  const reports = evaluate(snapshot, await ledger.baselines());
+  // Off, nothing evaluates these: an open one must still be able to end.
+  if (!releaseOn(env)) evaluated.push(...RELEASE_KEYS);
+  if (!probesOn(env)) evaluated.push(...PROBE_KEYS);
+  const reports = evaluate(snapshot, await ledger.baselines(), wideOn(env));
   let anomalies = 0;
-  let modelCalls = 0;
+  const seenProblems: { seen: Observed; report: ComponentReport }[] = [];
   for (const report of reports) {
     for (const s of report.signals) evaluated.push(`${report.component}:${s.name}`);
-    if (!report.anomalous) continue;
-    const key = dedupKey(report);
-    present.push(key);
-    anomalies++;
-    const seen = await ledger.observe(
-      {
-        key,
-        component: report.component,
-        kind: 'anomaly',
-        signals: { signals: report.signals, exception_samples: report.samples },
-        summary: summary(report),
-      },
-      now,
-    );
-    findings.push(seen.id);
+    for (const problem of problems(report)) {
+      present.push(problem.key);
+      anomalies++;
+      const seen = await ledger.observe(observation(report, problem, revision), now);
+      findings.push(seen.id);
+      seenProblems.push({ seen, report });
+    }
+  }
+  await notifyUrgent(env, ledger, now);
+  let modelCalls = 0;
+  for (const { seen, report } of seenProblems)
     if (seen.needsNarrative && modelCalls < MAX_CALLS_PER_RUN)
       if (await narrate(deps, env, seen.id, report, snapshot)) modelCalls++;
-  }
   await ledger.resolveAbsent(evaluated, present, now);
   await ledger.recordBaselines(baselineSamples(reports), now);
   await ledger.finishRun(run, 'ok', anomalies, modelCalls, now);

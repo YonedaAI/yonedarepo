@@ -1,9 +1,13 @@
 // The source platform's HTTP surface: /api/v1 (REST + MCP), /git (smart HTTP for stock
 // Git), /internal/ssh (the SSH gateway), account sign-in, health, and the /source web UI.
 import { accountRoute } from './accounts';
+import { forwardTo, repoElsewhere } from './cell-route';
 import { error, response } from './http';
 import { withRequestAccount } from './internal-accounts';
+import { CLOSURE_PATH, closureApi } from './platform-account-close-route';
 import { recordClient } from './platform-client-events';
+import { githubApi } from './platform-github-route';
+import { newsletterRoute } from './platform-newsletter';
 import { sshInternal } from './platform-ssh';
 import { frontDoor, sshWake } from './platform-ssh-gateway';
 import { watchWrites } from './platform-write-origin';
@@ -14,6 +18,8 @@ import { gitByPath } from './repo-git-paths';
 import type { Env } from './types';
 
 export function platformFetch(req: Request, env: Env): Promise<Response> {
+  const elsewhere = repoElsewhere(env, new URL(req.url));
+  if (elsewhere) return forwardTo(env, elsewhere, req);
   return withRequestAccount(async () => {
     const started = Date.now();
     const res = await watchWrites(req, env, () => platformRoute(req, env));
@@ -34,6 +40,10 @@ async function platformRoute(req: Request, env: Env): Promise<Response> {
       ssh: frontDoor(env),
     });
   }
+  // Public, with no credentials: the Flight log sign-up, ahead of the API's authentication.
+  if (/^\/api\/v1\/newsletter(?:\/|$)/.test(url.pathname)) return newsletterRoute(req, env);
+  if (url.pathname.startsWith('/api/v1/github/')) return githubApi(req, env);
+  if (url.pathname === CLOSURE_PATH) return closureApi(req, env);
   if (url.pathname.startsWith('/api/v1/')) return repoApi(req, env);
   // Stock Git over HTTPS: /git/<repository>.git (clone, fetch, push), and the same by
   // readable path, /<handle>/<name>.git.

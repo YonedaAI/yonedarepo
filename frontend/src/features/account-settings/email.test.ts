@@ -12,10 +12,30 @@ const render = (element: React.ReactElement) => renderToStaticMarkup(element);
 const noop = () => {};
 
 describe('confirmation page route', () => {
-  it('parses the emailed link and formats it back', () => {
+  it('reads the link from the fragment and never writes the token back', () => {
+    const route = parseSourceRoute(
+      '/verify-email',
+      '',
+      `#account=ada%40example.com&token=${token}`,
+    );
+    expect(route).toEqual({ view: 'verify-email', account: 'ada@example.com', token });
+    expect(formatSourceRoute(route)).toBe('/verify-email');
+  });
+
+  it('still opens a link emailed with its token in the query, and drops it from the address', () => {
     const route = parseSourceRoute('/verify-email', `?account=ada%40example.com&token=${token}`);
     expect(route).toEqual({ view: 'verify-email', account: 'ada@example.com', token });
-    expect(formatSourceRoute(route)).toBe(`/verify-email?account=ada%40example.com&token=${token}`);
+    expect(formatSourceRoute(route)).toBe('/verify-email');
+  });
+
+  it('prefers the fragment and reads an empty address as an incomplete link', () => {
+    expect(
+      parseSourceRoute(
+        '/verify-email',
+        `?account=old&token=${'cd'.repeat(32)}`,
+        `#account=ada&token=${token}`,
+      ),
+    ).toEqual({ view: 'verify-email', account: 'ada', token });
     expect(parseSourceRoute('/verify-email', '')).toEqual({
       view: 'verify-email',
       account: '',
@@ -50,7 +70,9 @@ describe('Settings email section', () => {
     );
     expect(html).toContain('ada@example.com');
     expect(html).toContain('Not confirmed');
-    expect(html).toContain('Resend confirmation');
+    expect(html).toContain('Send confirmation link');
+    // An address taken from the account's name was never sent a link.
+    expect(html).not.toMatch(/we sent/i);
     // The field waits behind Change.
     expect(html).toContain('>Change</button>');
     expect(html).not.toContain('<input');
@@ -65,7 +87,7 @@ describe('Settings email section', () => {
     );
     expect(html).toContain('Confirmed');
     expect(html).not.toContain('Not confirmed');
-    expect(html).not.toContain('Resend confirmation');
+    expect(html).not.toContain('Send confirmation link');
   });
 
   it('offers to add one when the account has none', () => {
@@ -74,7 +96,7 @@ describe('Settings email section', () => {
     );
     expect(html).toContain('No email address');
     expect(html).toContain('>Add</button>');
-    expect(html).not.toContain('Resend confirmation');
+    expect(html).not.toContain('Send confirmation link');
   });
 
   it('asks for the address in a dialog', () => {

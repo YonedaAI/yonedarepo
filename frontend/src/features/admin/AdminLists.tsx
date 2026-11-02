@@ -6,13 +6,12 @@ import { PublicBadge } from '../source-platform/PublicBadge';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import type { Loaded } from '../source-platform/useSource';
 import { PagedStatus, SearchBox, usePaged } from './AdminParts';
+import { RepoUsage } from './AdminRepoUsage';
 import { LargestRepos } from './AdminStorage';
 import {
   type AdminAccount,
   type AdminRepo,
-  type AuditEntry,
   accountsPath,
-  auditPath,
   nameOf,
   providerLabel,
   reposPath,
@@ -122,9 +121,7 @@ function ReposTable({ q, navigate }: { q: string; navigate: Navigate }) {
               {paged.items.map((r) => (
                 <tr key={r.id}>
                   <td>
-                    <a {...linkTo({ view: 'files', repo: r.id, path: '', ref: 'main' }, navigate)}>
-                      {r.name}
-                    </a>
+                    <a {...linkTo({ view: 'overview', repo: r.id }, navigate)}>{r.name}</a>
                     <small className="admin-sub">{r.id}</small>
                   </td>
                   <td>
@@ -151,6 +148,7 @@ export function AdminRepos({ navigate }: { navigate: Navigate }) {
   const [q, setQ] = useState('');
   return (
     <>
+      <RepoUsage navigate={navigate} />
       <LargestRepos navigate={navigate} />
       <SearchBox label="Search names and owners" value={q} onSearch={setQ} />
       <ReposTable key={q} q={q} navigate={navigate} />
@@ -193,48 +191,5 @@ export function AdminSignups({
         </li>
       ))}
     </ul>
-  );
-}
-
-const detailText = (detail: AuditEntry['detail']) =>
-  detail
-    ? Object.entries(detail)
-        .map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : String(v)}`)
-        .join(', ')
-    : '';
-
-export function AdminAudit() {
-  const paged = usePaged<AuditEntry>((before) => auditPath(before));
-  return (
-    <>
-      {paged.items.length > 0 && (
-        <div className="source-table-wrap">
-          <table className="source-table admin-table">
-            <caption className="sr-only">Operator actions, newest first</caption>
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>Operator</th>
-                <th>Action</th>
-                <th>Target</th>
-                <th>Detail</th>
-              </tr>
-            </thead>
-            <tbody>
-              {paged.items.map((e) => (
-                <tr key={e.id}>
-                  <td>{when(e.at)}</td>
-                  <td>{e.actor === '_admin' ? 'owner token' : e.actor}</td>
-                  <td>{e.action}</td>
-                  <td>{e.target}</td>
-                  <td className="admin-detail">{detailText(e.detail)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <PagedStatus paged={paged} what="the audit log" empty="No operator actions yet." />
-    </>
   );
 }

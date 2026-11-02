@@ -6,20 +6,21 @@
 // idempotent, so a retried delete repeats whatever a failed attempt left undone.
 
 import { laterIfHeld } from './platform-legal-hold';
+import { settlePurge } from './platform-operator-audit';
 import { teamEntries } from './platform-org-access';
-import { audited, auditRepoCatchUp } from './repo-audit';
+import { audited, auditRepoLeaving } from './repo-audit';
 import { unlistRepository } from './repo-create';
 import { deletedOf, forgetDeleted, parkDeleted } from './repo-deleted';
 import { forgetFork } from './repo-forks';
 import { dropDeletedHead } from './repo-head';
 import { dispatchHooks } from './repo-hooks';
-import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
+import { ApiError, type Credentials, caller, RepoContext } from './repo-ops';
 import { requirePatScope } from './repo-pat';
 import { releaseNames, withPaths } from './repo-paths';
 import { dispatchPurge } from './repo-projection';
 import { dropSummary } from './repo-search-directory';
-import { ownSpec } from './repo-stores';
 import { undoOn } from './repo-undo-window';
+import { carriedQueue } from './request-scope';
 import type { Env, Envelope } from './types';
 
 export { requirePatScope };
@@ -139,9 +140,16 @@ export async function dispatchErase(
   repo: string,
   job: 'start' | 'records' = 'start',
   delaySeconds?: number,
+  blockedSince?: number,
 ) {
-  await env.PLATFORM_QUEUE.send(
-    { v: 1, kind: ERASE, repo_id: repo, job_id: job },
+  await carriedQueue(env.PLATFORM_QUEUE).send(
+    {
+      v: 1,
+      kind: ERASE,
+      repo_id: repo,
+      job_id: job,
+      ...(blockedSince !== undefined && { blocked_since: blockedSince }),
+    },
     delaySeconds ? { delaySeconds } : undefined,
   );
 }
@@ -160,36 +168,23 @@ export async function purgePrefix(env: Env, prefix: string) {
  * an erased one names none. */
 export async function purgeObjects(env: Env, repo: string, skipWindow = false) {
   const auth = skipWindow ? { _system: 'purge', _undo_ms: 0 } : { _system: 'purge' };
-  const target: Json = await caller(env, repo, auth as Credentials)({ op: 'repo_purge_target' });
+  // Refused until the undo window has passed.
+  await caller(env, repo, auth as Credentials)({ op: 'repo_purge_target' });
   await purgePrefix(env, `platform/v1/${repo}/`);
   // Search segments, packs, symbols and facts hold file content.
   await purgePrefix(env, derivedPrefix(repo));
-  // A fork purges its own store, never the parent's it inherits from.
-  const store = ownSpec(String(target.object_store ?? ''));
-  const r2 = /^r2:([A-Za-z0-9._-]+)$/.exec(store);
-  if (r2) await purgePrefix(env, `store/v1/${r2[1]}/`);
-  // An Artifacts mirror a purge retired from it may be left to delete.
-  for (const spec of [store, String(target.retired_mirror ?? '')]) {
-    const artifacts = /^artifacts:([^/]+)\/([A-Za-z0-9._-]+)$/.exec(spec);
-    if (artifacts && artifacts[1] === env.ARTIFACTS_NAMESPACE)
-      await env.ARTIFACTS.delete(artifacts[2]).catch((e: any) => {
-        // Already gone (an earlier attempt, or an import that never created it).
-        if (!/not.?found/i.test(String(e?.message ?? e))) throw e;
-      });
-  }
 }
 
 /** The purge job: the objects, then what is left in the databases (repo-erase), which never
  * starts without a purge before it. A purge the undo window put off (`scheduled`) ends with
- * `repo.purged`, once, and leaves the schedule; the immediate kind was told by `repo.deleted`. */
+ * `repo.purged`, once, and leaves the schedule; the immediate kind was told by `repo.deleted`.
+ * Audit events copy first; those that couldn't are the erase job's, even with no erase. */
 export async function purgeRepository(
   env: Env,
   repo: string,
   { scheduled = false, skipWindow = false } = {},
 ) {
-  // Not for a failed create taken back: nobody ever saw it. An operator's purge follows a
-  // delete, whose events have already gone.
-  if (!skipWindow) await auditRepoCatchUp(env, repo);
+  const { clear } = await auditRepoLeaving(env, repo);
   await purgeObjects(env, repo, skipWindow);
   await dropSummary(env, repo);
   const done = scheduled
@@ -197,7 +192,7 @@ export async function purgeRepository(
     : null;
   if (done)
     await Promise.all((done.hooks as number[]).map((id) => dispatchHooks(env, repo, `hook:${id}`)));
-  if (eraseOn(env)) await dispatchErase(env, repo);
+  if (eraseOn(env) || !clear) await dispatchErase(env, repo);
   if (done) await forgetDeleted(env, repo, done.workspace);
 }
 
@@ -212,12 +207,14 @@ export async function purgeJob(env: Env, envelope: Envelope) {
   const run = () => purgeRepository(env, repo, { scheduled, skipWindow: kind === 'now' });
   try {
     await (scheduled ? run() : laterIfHeld(env, envelope, run));
+    await settlePurge(env, repo, 'completed');
   } catch (e: any) {
     if (e?.code === 'NOT_FOUND') return forgetDeleted(env, repo);
     if (e?.code === 'NOT_DUE') {
       const call = caller(env, repo, { _system: 'purge' });
       return parkDeleted(env, repo, await call({ op: 'repo_restore', check: true }));
     }
+    await settlePurge(env, repo, 'failed');
     if (e?.code !== 'LEGAL_HOLD') throw e;
   }
 }

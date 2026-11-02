@@ -1,11 +1,11 @@
 name: Check
 # The fast gate, on every pull request and push to main (and by hand): one job, one runner,
 # warm cargo and pnpm caches, about ten minutes. Lint, types and the unit tests of each crate,
-# the Worker Wasm build, the frontend and runtime suites. The workerd suites, the platform and
-# superfan Workers, the frontend build and the runtime image run in "Full suite" (full.yml),
-# in the ship or by hand; together they are `cargo xtask check` (xtask/src/commands.rs),
-# so keep both workflows in step with its arm. Nothing here deploys. A ship PR (dev to main)
-# runs this through ship.yml, not on its own, so it runs once.
+# the health gates (docs/code-health.md), the Worker Wasm build, the frontend and runtime
+# suites. The workerd suites, the platform and superfan Workers and the runtime image run in
+# "Full suite" (full.yml), in the ship or by hand; together they are `cargo xtask check`
+# (xtask/src/commands.rs), so keep both workflows in step with its arm. Nothing here deploys.
+# A ship PR (dev to main) runs this through ship.yml, not on its own, so it runs once.
 on:
   # Documentation-only changes (docs/, Markdown anywhere, the site's content) run nothing.
   pull_request:
@@ -44,7 +44,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # Full history: the health gates compare with the commit this change starts from.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
       # Registry, git deps, target/ (both workspaces) and ~/.cargo/bin (worker-build), saved
       # after every run so the next builds only what changed.
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -56,6 +59,25 @@ jobs:
             backend/crates/yoneda-ssh-gateway
       - uses: ./.github/actions/node
       - run: cargo xtask layers
+      # Before the xtask tests, which plant a fake secret and need the real scanner. The release
+      # binary and its checksum: gitleaks-action needs a license for an organization.
+      - name: Install gitleaks
+        run: |
+          archive=gitleaks_8.30.1_linux_x64.tar.gz
+          curl -fsSL -o "$RUNNER_TEMP/$archive" "https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/$archive"
+          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  $RUNNER_TEMP/$archive" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" gitleaks
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      # The commit a pull request or push starts from; empty or all zeros on a new branch or a
+      # manual run. The scan covers that range alone, and prints a rule and a place: never a
+      # value, an author or an email, because these logs are public.
+      - name: Health gates
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          cargo xtask health lines --base "$BASE"
+          cargo xtask health migrations --base "$BASE"
+          cargo xtask health secrets --base "$BASE"
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       # Unit tests only: no ignored tests and no integration tests (those start workerd).
@@ -74,5 +96,8 @@ jobs:
       # tsc of the Workers and biome, then tsc of the frontend.
       - run: pnpm check
       - run: pnpm --dir frontend exec tsc -b
+      # For the size budget, which also reads the Wasm built above.
+      - run: pnpm --dir frontend build
+      - run: cargo xtask health size
       - run: pnpm test:frontend
       - run: pnpm test:runtime

@@ -1,5 +1,5 @@
-// The account emails' content (platform side): the welcome email and the email-confirmation
-// email, each one plain-text and one HTML part, rendered from config and the recipient's
+// The account emails' content (platform side): the welcome, email-confirmation and password
+// reset emails, each one plain-text and one HTML part, rendered from config and the recipient's
 // confirmation link. The HTML is inline-styled with no backgrounds, images or tracking, so it
 // reads the same in light and dark mail clients.
 
@@ -103,6 +103,67 @@ export function renderVerify({
       { kind: 'contact' },
     ],
     why: `You're getting this because someone asked to use this address for a YonedaRepo account at ${origin}. If it wasn't you, ignore it or tell us at ${contact}.`,
+  });
+}
+
+export function renderPasswordReset({
+  origin,
+  contact,
+  resetUrl,
+}: Omit<WelcomeConfig, 'verifyUrl'> & { resetUrl: string }): WelcomeEmail {
+  return render(contact, {
+    subject: 'Reset your YonedaRepo password',
+    heading: 'Reset your password',
+    blocks: [
+      {
+        kind: 'link',
+        text: 'Open the link to choose a new password for your YonedaRepo account. The link works once, for 1 hour.',
+        href: resetUrl,
+        label: 'Reset your password',
+      },
+      {
+        kind: 'p',
+        text: "If you didn't ask for this, ignore this email: your password stays the same.",
+      },
+      { kind: 'contact' },
+    ],
+    why: `You're getting this because someone asked to reset the password of the YonedaRepo account that uses this address at ${origin}. If it wasn't you, ignore it or tell us at ${contact}.`,
+  });
+}
+
+/** The Flight log's double opt-in. Every Flight log email carries the unsubscribe link. */
+export function renderNewsletterConfirm({
+  origin,
+  contact,
+  confirmUrl,
+  unsubscribeUrl,
+}: Omit<WelcomeConfig, 'verifyUrl'> & {
+  confirmUrl: string;
+  unsubscribeUrl: string;
+}): WelcomeEmail {
+  return render(contact, {
+    subject: 'Confirm your YonedaRepo updates',
+    heading: 'Confirm your updates',
+    blocks: [
+      {
+        kind: 'link',
+        text: 'Open the link and press Confirm to get YonedaRepo updates. The link works for 7 days.',
+        href: confirmUrl,
+        label: 'Confirm your updates',
+      },
+      {
+        kind: 'p',
+        text: "If you didn't ask for this, ignore this email: we send nothing more unless the link is used.",
+      },
+      {
+        kind: 'link',
+        text: "Don't want to hear from us?",
+        href: unsubscribeUrl,
+        label: 'Unsubscribe',
+      },
+      { kind: 'contact' },
+    ],
+    why: `You're getting this because someone entered this address on the Flight log page at ${origin}. If it wasn't you, ignore it or tell us at ${contact}.`,
   });
 }
 

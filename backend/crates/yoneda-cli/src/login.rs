@@ -1,13 +1,19 @@
 //! `yoneda login`: the device flow (RFC 8628 shape). The CLI asks for a code, the person
 //! approves it in the browser (signed in on the website), and the CLI polls until the
 //! platform hands over a personal access token, stored 0600. `--with-token` reads a
-//! token from stdin instead (CI); `YONEDA_TOKEN` overrides whatever is stored.
+//! token from stdin instead (CI); `YONEDA_TOKEN` overrides whatever is stored. `--agent
+//! <name>` or `YONEDA_AGENT` signs an agent up, into its own slot beside the person's login.
 use crate::api::Api;
 use crate::credentials::{self, Token};
 use crate::error::{Error, Result};
 use crate::{human, note, output};
 use serde_json::{Value, json};
 use std::time::Duration;
+
+mod logout;
+mod prompt;
+
+pub use logout::logout;
 
 /// What `POST /device/code` returns.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,6 +31,8 @@ pub struct DeviceCode {
 pub struct Grant {
     pub token: String,
     pub account: Option<String>,
+    /// The agent this grant signed up, for `login --agent`.
+    pub agent: Option<String>,
     pub expires_at: Option<String>,
 }
 
@@ -89,16 +97,24 @@ pub(crate) async fn wait_for_grant(
 }
 
 /// `POST /device/code`'s body: the client, and this machine's name (up to the 64 printable
-/// characters the platform accepts) so the token it grants says where it was signed in.
-fn code_request(host: Option<String>) -> Value {
+/// characters the platform accepts) so the token it grants says where it was signed in, and
+/// the agent asking, if any (the platform checks the name).
+fn code_request(host: Option<String>, agent: Option<&str>) -> Value {
     let host: Option<String> = host
         .map(|h| h.chars().filter(|c| !c.is_control()).take(64).collect())
         .filter(|h: &String| !h.trim().is_empty());
-    json!({ "client_name": "yoneda-cli", "host": host })
+    let mut body = json!({ "client_name": "yoneda-cli", "host": host });
+    if let Some(agent) = agent {
+        body["agent"] = json!(agent);
+    }
+    body
 }
 
 /// The device flow against the platform's account API.
-pub(crate) struct HttpFlow(pub Api);
+pub(crate) struct HttpFlow {
+    pub api: Api,
+    pub agent: Option<String>,
+}
 
 fn field(value: &Value, name: &str) -> Result<String> {
     value[name]
@@ -109,13 +125,8 @@ fn field(value: &Value, name: &str) -> Result<String> {
 
 impl DeviceFlow for HttpFlow {
     async fn code(&self) -> Result<DeviceCode> {
-        let value = self
-            .0
-            .post(
-                "/device/code",
-                &code_request(crate::ssh_key_cmd::host_name()),
-            )
-            .await?;
+        let request = code_request(crate::ssh_key_cmd::host_name(), self.agent.as_deref());
+        let value = self.api.post("/device/code", &request).await?;
         Ok(DeviceCode {
             device_code: field(&value, "device_code")?,
             user_code: field(&value, "user_code")?,
@@ -130,13 +141,14 @@ impl DeviceFlow for HttpFlow {
 
     async fn poll(&self, device_code: &str) -> Result<Poll> {
         let body = json!({ "device_code": device_code });
-        match self.0.post("/device/token", &body).await {
+        match self.api.post("/device/token", &body).await {
             Ok(value) => Ok(Poll::Granted(Grant {
                 token: field(&value, "token")?,
                 account: value["account"]
                     .as_str()
                     .or_else(|| value["account"]["name"].as_str())
                     .map(str::to_owned),
+                agent: value["agent"].as_str().map(str::to_owned),
                 expires_at: value["expires_at"].as_str().map(str::to_owned),
             })),
             Err(f) => match f.code.as_str() {
@@ -151,7 +163,7 @@ impl DeviceFlow for HttpFlow {
 }
 
 /// Opens `url` in the person's browser; failure is fine (the URL is printed).
-fn open_browser(url: &str) {
+pub(crate) fn open_browser(url: &str) {
     let opener: &[&str] = if cfg!(target_os = "macos") {
         &["open"]
     } else if cfg!(windows) {
@@ -168,10 +180,32 @@ fn open_browser(url: &str) {
         .spawn();
 }
 
-/// `yoneda login`.
-pub async fn login(origin: &str, with_token: bool, browser: bool) -> Result<()> {
-    let path = credentials::default_path()?;
+/// Who a login signed in as: the account, or an agent under it.
+fn signed_in_as(grant: &Grant) -> String {
+    let account = grant.account.as_deref();
+    match (&grant.agent, account) {
+        (Some(agent), Some(account)) => format!(" as agent {agent} of {account}"),
+        (Some(agent), None) => format!(" as agent {agent}"),
+        (None, Some(account)) => format!(" as {account}"),
+        (None, None) => String::new(),
+    }
+}
+
+/// `yoneda login`, or `--agent`: the same flow, whose token acts as that agent.
+pub async fn login(
+    origin: &str,
+    with_token: bool,
+    browser: bool,
+    agent: Option<String>,
+) -> Result<()> {
+    let agent = agent.or_else(credentials::env_agent);
+    let path = credentials::path_for(agent.as_deref())?;
     if with_token {
+        if agent.is_some() {
+            return Err(Error::usage(
+                "an agent signs up through the browser, not with a token",
+            ));
+        }
         let mut line = String::new();
         std::io::stdin()
             .read_line(&mut line)
@@ -183,63 +217,68 @@ pub async fn login(origin: &str, with_token: bool, browser: bool) -> Result<()> 
         );
         output::emit(&output::Login {
             origin: origin.to_owned(),
+            agent: None,
             account: None,
             expires_at: None,
             credentials: path.display().to_string(),
         });
         return Ok(());
     }
-    let flow = HttpFlow(Api::account(origin, None)?);
+    let flow = HttpFlow {
+        api: Api::account(origin, None)?,
+        agent,
+    };
     let code = flow.code().await?;
     let link = code
         .verification_uri_complete
         .clone()
         .unwrap_or_else(|| code.verification_uri.clone());
-    note!(
-        "Open {} and enter the code {}",
-        code.verification_uri,
-        code.user_code
-    );
-    if browser {
-        open_browser(&link);
-    }
-    let grant = wait_for_grant(&flow, &mut RealClock, &code).await?;
+    let interactive = prompt::interactive(browser);
+    let keys = if interactive {
+        println!("{}", prompt::screen(&code, &link));
+        prompt::Keys::listen(&link)
+    } else {
+        note!(
+            "Open {} and enter the code {}",
+            code.verification_uri,
+            code.user_code
+        );
+        if browser {
+            open_browser(&link);
+        }
+        None
+    };
+    let granted = wait_for_grant(&flow, &mut RealClock, &code).await;
+    drop(keys);
+    let grant = granted?;
     credentials::store(&path, origin, &Token::new(&grant.token)?)?;
-    human!(
-        "Logged in to {origin}{}{}; token stored in {} (mode 0600)",
-        grant
-            .account
-            .as_ref()
-            .map(|a| format!(" as {a}"))
-            .unwrap_or_default(),
-        grant
-            .expires_at
-            .as_ref()
-            .map(|e| format!(", expires {e}"))
-            .unwrap_or_default(),
-        path.display()
-    );
-    human!("Next, for Git over SSH: yoneda ssh setup");
+    if interactive {
+        human!("{}", prompt::done(&code));
+    } else {
+        human!(
+            "Logged in to {origin}{}{}; token stored in {} (mode 0600)",
+            signed_in_as(&grant),
+            grant
+                .expires_at
+                .as_ref()
+                .map(|e| format!(", expires {e}"))
+                .unwrap_or_default(),
+            path.display()
+        );
+    }
+    match &grant.agent {
+        Some(agent) => human!(
+            "Next, to act as it: export {}={agent}",
+            credentials::AGENT_ENV
+        ),
+        None if !interactive => human!("Next, for Git over SSH: yoneda ssh setup"),
+        None => {}
+    }
     output::emit(&output::Login {
         origin: origin.to_owned(),
+        agent: grant.agent,
         account: grant.account,
         expires_at: grant.expires_at,
-        credentials: path.display().to_string(),
-    });
-    Ok(())
-}
-
-/// `yoneda logout`.
-pub fn logout(origin: Option<&str>) -> Result<()> {
-    let path = credentials::default_path()?;
-    let removed = credentials::remove(&path, origin)?;
-    if removed {
-        human!("Removed the stored token ({})", path.display());
-    } else {
-        human!("No stored token to remove");
-    }
-    output::emit(&output::Logout {
-        removed,
         credentials: path.display().to_string(),
     });
     Ok(())
@@ -250,13 +289,40 @@ mod tests {
     #[test]
     fn the_code_request_names_this_machine_within_the_platform_limits() {
         let long = format!("{}\n", "h".repeat(80));
-        assert_eq!(code_request(Some(long))["host"], json!("h".repeat(64)));
         assert_eq!(
-            code_request(Some("ada-mbp".into())),
+            code_request(Some(long), None)["host"],
+            json!("h".repeat(64))
+        );
+        assert_eq!(
+            code_request(Some("ada-mbp".into()), None),
             json!({"client_name":"yoneda-cli","host":"ada-mbp"})
         );
-        assert_eq!(code_request(Some(" \t".into()))["host"], Value::Null);
-        assert_eq!(code_request(None)["host"], Value::Null);
+        assert_eq!(code_request(Some(" \t".into()), None)["host"], Value::Null);
+        assert_eq!(code_request(None, None)["host"], Value::Null);
+    }
+
+    #[test]
+    fn an_agent_says_its_name_and_a_login_sends_none() {
+        assert_eq!(
+            code_request(Some("ci-1".into()), Some("review-bot")),
+            json!({"client_name":"yoneda-cli","host":"ci-1","agent":"review-bot"})
+        );
+    }
+
+    #[test]
+    fn a_login_says_who_it_signed_in_as() {
+        let grant = |agent: Option<&str>, account: Option<&str>| Grant {
+            token: "t".into(),
+            account: account.map(str::to_owned),
+            agent: agent.map(str::to_owned),
+            expires_at: None,
+        };
+        assert_eq!(signed_in_as(&grant(None, Some("ada"))), " as ada");
+        assert_eq!(
+            signed_in_as(&grant(Some("bot"), Some("ada"))),
+            " as agent bot of ada"
+        );
+        assert_eq!(signed_in_as(&grant(None, None)), "");
     }
 
     use super::*;
@@ -302,6 +368,7 @@ mod tests {
         Grant {
             token: "ypat_x".into(),
             account: Some("alice".into()),
+            agent: None,
             expires_at: None,
         }
     }

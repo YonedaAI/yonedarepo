@@ -25,6 +25,7 @@
 //!   `yoneda_core`.
 mod accounts;
 mod commit_store;
+mod migration_ledger;
 mod ops;
 mod platform_access;
 mod platform_build;
@@ -49,7 +50,6 @@ pub(crate) mod platform_model_check;
 mod platform_model_verdict;
 mod platform_narrative;
 mod platform_objects;
-pub mod platform_pack_stream;
 mod platform_project;
 mod platform_push;
 pub mod platform_push_reads;
@@ -65,6 +65,7 @@ pub mod shared_contracts;
 
 pub use accounts::execute_workspace;
 pub use commit_store::{execute_commit_store, migrate_commit_store, require_free_to_erase};
+pub use migration_ledger::{AppliedMigration, applied_migrations};
 pub use platform_compute::{compute as platform_compute, stack_left};
 pub use repo_store::{execute_migrated, execute_repo_store, migrate_repo_store};
 

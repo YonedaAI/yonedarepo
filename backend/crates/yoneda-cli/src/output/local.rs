@@ -10,6 +10,9 @@ use serde_json::Value;
 #[serde(deny_unknown_fields)]
 pub struct Login {
     pub origin: String,
+    /// The agent signed up, for `login --agent`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent: Option<String>,
     /// The signed-in account, when the platform names it (device login).
     pub account: Option<String>,
     pub expires_at: Option<String>,
@@ -23,6 +26,8 @@ pub struct Login {
 pub struct Logout {
     /// Whether a stored token was removed.
     pub removed: bool,
+    /// Whether the platform revoked it.
+    pub revoked: bool,
     pub credentials: String,
 }
 
@@ -90,8 +95,6 @@ pub struct Context {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum CloneMethod {
-    /// An offline checkout by `git clone` with a short-lived read token.
-    GitClone,
     /// An offline checkout from a snapshot of the branch through the API.
     ApiSnapshot,
     /// A lazy `yoneda::` clone: commits and trees; file contents when Git needs them.
@@ -133,15 +136,6 @@ pub struct LastLand {
     pub git_commit: Option<String>,
 }
 
-/// The branch's object store projection.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct Projection {
-    pub projected_version: u64,
-    pub target_version: u64,
-    pub status: String,
-}
-
 /// What the platform says about an offline checkout's branch.
 #[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -156,7 +150,6 @@ pub struct RemoteStatus {
     pub projected_version: Option<u64>,
     /// Changesets landed after that version still without a Git commit (of the first 500).
     pub awaiting_git_commit: Option<u64>,
-    pub store: Option<Projection>,
 }
 
 /// `status`.
@@ -211,14 +204,6 @@ pub struct Pull {
     pub rebased: u64,
 }
 
-/// A local commit contributed through an MCP attempt.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct AttemptCommit {
-    pub local: String,
-    pub commit: String,
-}
-
 /// The landing `sync --land` made.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -246,13 +231,6 @@ pub enum Synced {
         offline_branch: String,
         /// The landing, with `--land`.
         landing: Option<SyncLanding>,
-    },
-    /// `sync --attempt <id>`.
-    Attempt {
-        attempt: String,
-        committed: Vec<AttemptCommit>,
-        /// The attempt's status after submitting.
-        status: String,
     },
 }
 

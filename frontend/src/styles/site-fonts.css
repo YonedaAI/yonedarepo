@@ -1,0 +1,16 @@
+/* The site's face, self-hosted from its npm package (latin only): Inter, for text and headings.
+   woff2 alone: the package's own CSS adds woff, which any browser that runs this site never fetches. */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url("@fontsource/inter/files/inter-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-display: swap;
+  font-weight: 500;
+  src: url("@fontsource/inter/files/inter-latin-500-normal.woff2") format("woff2");
+}

@@ -5,7 +5,9 @@
 // module's default entrypoint class rather than as named exports. `platformCompute`
 // does not use `this`, so it is called from the prototype; the guard fails loudly if a
 // worker-build upgrade changes that shape.
+
 import RustWorker from '../../backend/crates/yoneda-worker/build/worker/shim.mjs';
+import { log } from './log';
 
 type Json = Record<string, any>;
 const exported = (
@@ -21,6 +23,8 @@ export function rustCall<T>(call: () => T): T {
   try {
     return call();
   } catch (e) {
+    // A trap, not an error Rust returned: the panic hook wrote where, this says which request.
+    if (e instanceof WebAssembly.RuntimeError) log.error('wasm.trap', { error: e });
     settleRust();
     throw e;
   }
@@ -30,7 +34,9 @@ export function rustCall<T>(call: () => T): T {
 export function settleRust() {
   try {
     if (typeof settle === 'function') settle();
-  } catch {}
+  } catch {
+    // Settling cannot help here: the next call into Rust fails as this one did, and logs.
+  }
 }
 
 /** `call` (a JSON answer from Rust), once more after settling when the instance answered
@@ -39,7 +45,7 @@ export function settleRust() {
 export function resetOnce(call: () => string): Json {
   const first = JSON.parse(rustCall(call));
   if (first.error?.code !== 'WASM_RESET') return first;
-  console.error(`wasm reset: ${first.error.message}`);
+  log.error('wasm.reset', { error: first.error.message });
   settleRust();
   return JSON.parse(rustCall(call));
 }

@@ -73,14 +73,22 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
         !workers.iter().any(|w| w.role == "bench"),
         "no bench in prod"
     );
+    assert!(
+        !workers.iter().any(|w| w.role.starts_with("region-")),
+        "no regional client in prod"
+    );
 
     let platform = &role(&workers, "platform").config;
     assert_eq!(platform["vars"]["LAND_MODE"], "batch");
+    assert!(
+        platform["vars"].get("REGION_HINT_TEST").is_none(),
+        "location hints are a dev test"
+    );
     assert_eq!(platform["vars"]["WEB_ORIGIN"], "https://yonedarepo.com");
     assert_eq!(platform["ratelimits"][0]["namespace_id"], "1001");
     assert_eq!(platform["placement"]["region"], "aws:us-east-1");
-    assert_eq!(platform["vars"]["TRAFFIC_EVENTS"], "off");
-    assert_eq!(platform["vars"]["TRAFFIC_REPORT"], "off");
+    assert_eq!(platform["vars"]["TRAFFIC_EVENTS"], "on");
+    assert_eq!(platform["vars"]["TRAFFIC_REPORT"], "on");
     assert_eq!(platform["vars"]["REGION_SIGNALS"], "off");
     assert_eq!(
         platform["analytics_engine_datasets"],
@@ -110,12 +118,15 @@ fn prod_runs_the_dev_layout_on_the_production_hosts() {
     // Sign-ins run here too, so the switch is set with the platform Worker's.
     assert_eq!(vars["AUDIT_LOG"], "off");
     // The ping and platform client counts: dev measures them first (docs/load-testing.md).
-    assert_eq!(vars["TRAFFIC_EVENTS"], "off");
+    assert_eq!(vars["TRAFFIC_EVENTS"], "on");
     // Internal accounts leave the ping too, so it is set with the platform Worker's.
-    assert_eq!(vars["TRAFFIC_REPORT"], "off");
+    assert_eq!(vars["TRAFFIC_REPORT"], "on");
     // Sign-ups run here too; off until the owner clears the privacy text.
     assert_eq!(vars["REGION_SIGNALS"], "off");
-    assert_eq!(vars.as_object().map(|v| v.len()), Some(8));
+    // Observability O1's two switches stay off until dev has run them.
+    assert_eq!(vars["REQUEST_IDS"], "off");
+    assert_eq!(vars["CLIENT_ERRORS"], "off");
+    assert_eq!(vars.as_object().map(|v| v.len()), Some(10));
     assert_eq!(
         agents["analytics_engine_datasets"],
         json!([{"binding": "SITE_EVENTS", "dataset": "yonedarepo_prod_site_events"}])
@@ -273,7 +284,8 @@ fn dev_and_prod_never_share_a_rate_limit_namespace() {
     };
     let (dev, prod) = (namespaces(&dev().1), namespaces(&prod().1));
     assert_eq!(prod, BTreeSet::from(["1001".to_owned(), "1002".to_owned()]));
-    assert_eq!(dev, BTreeSet::from(["2001".to_owned(), "2002".to_owned()]));
+    let dev_ids = ["2001", "2002", "2003", "2004"].map(str::to_owned);
+    assert_eq!(dev, BTreeSet::from(dev_ids));
 }
 
 #[test]
@@ -285,11 +297,18 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
         spec.worker_names().unwrap(),
         [
             "yonedarepo-dev-superfan",
+            "yonedarepo-dev-platform-weur",
             "yonedarepo-dev-platform",
+            "yonedarepo-dev-edge",
             "yonedarepo-dev-agents-managed",
             "yonedarepo-dev-agents",
             "yonedarepo-dev-bench",
-            "yonedarepo-dev-bench2"
+            "yonedarepo-dev-bench2",
+            "yonedarepo-dev-region-na",
+            "yonedarepo-dev-region-eu",
+            "yonedarepo-dev-region-ap",
+            "yonedarepo-dev-region-sa",
+            "yonedarepo-dev-deadman"
         ]
     );
     let hosts: Vec<Vec<(String, bool)>> = workers.iter().map(hosts_of).collect();
@@ -298,16 +317,23 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
         hosts,
         [
             vec![],
+            vec![],
             vec![
                 host("api.dev.yonedarepo.com", true),
                 host("https://api.dev.yonedarepo.com/*", false)
             ],
+            vec![host("edge.dev.yonedarepo.com", true)],
             vec![host("managed.dev.yonedarepo.com", true)],
             vec![
                 host("dev.yonedarepo.com", true),
                 host("https://dev.yonedarepo.com/*", false)
             ],
             vec![host("hook-receiver.yonedaai.org", true)],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
+            vec![],
             vec![],
         ]
     );
@@ -677,7 +703,6 @@ fn declared_names_cover_bindings_and_resources() {
         (Kind::Queue, "yonedarepo-prod-platform-dead-letter"),
         (Kind::D1, "yonedarepo-prod-platform-index"),
         (Kind::R2, "yonedarepo-prod-platform-objects"),
-        (Kind::Artifacts, "yonedarepo-prod"),
     ] {
         assert!(names.contains(&(kind, name.to_owned())), "{name}");
     }

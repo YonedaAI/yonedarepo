@@ -8,11 +8,14 @@
 // The front reaches the platform over the PLATFORM service binding and the platform itself
 // over SELF, so the front binds no platform queue. Until confirmed, the address receives only
 // the welcome and confirmation emails.
+
 import { normalizeAccountIdentifier } from '../../shared/account';
 import type { AccountCreated, SignupProvider } from './account-index';
 import { afterAnswer } from './background';
 import { error, readJson, response } from './http';
+import { log } from './log';
 import type { SignupRegion } from './region';
+import type { SignupSource } from './site-events';
 import { sha } from './storage';
 import type { Env, Principal } from './types';
 import { workspace } from './workspace';
@@ -22,8 +25,10 @@ type Outcome = { sent: true } | { sent: false; reason: string };
 type Platform = {
   accountCreated(account: string, details: AccountCreated): Promise<void>;
   verifyEmail(account: string, change?: string): Promise<Outcome>;
+  passwordReset(account: string): Promise<void>;
 };
-const platformOf = (env: Env) => (env.PLATFORM ?? env.SELF) as unknown as Platform | undefined;
+export const platformOf = (env: Env) =>
+  (env.PLATFORM ?? env.SELF) as unknown as Platform | undefined;
 
 let warnedOff = false;
 
@@ -45,13 +50,12 @@ export function accountCreated(
   account: string,
   email: string | null,
   provider: SignupProvider,
-  region: SignupRegion = {},
+  region: SignupRegion & { source?: SignupSource } = {},
 ) {
   return afterAnswer(async () => {
     const platform = platformOf(env);
     if (typeof platform?.accountCreated !== 'function') {
-      if (!warnedOff)
-        console.warn(JSON.stringify({ event: 'email.off', reason: 'no platform binding' }));
+      if (!warnedOff) log.warn('email.off', { reason: 'no platform binding' });
       warnedOff = true;
       return;
     }
@@ -59,7 +63,7 @@ export function accountCreated(
       await platform.accountCreated(account, { provider, welcome: Boolean(email), ...region });
     } catch (e: any) {
       const error = String(e?.message ?? e).slice(0, 200);
-      console.error(JSON.stringify({ event: 'account.created.enqueue_failed', error }));
+      log.error('account.created.enqueue_failed', { error });
     }
   });
 }

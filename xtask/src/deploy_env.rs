@@ -8,6 +8,7 @@
 use crate::deploy_exec::{Run, Timings};
 use crate::deploy_guard::{self as guard, Options, short};
 use crate::deploy_image::ImagePlan;
+use crate::deploy_ledger::{Entry, Kind};
 use crate::infra::inventory::{self, Deployable};
 use crate::infra::spec::{Env, Lock, Spec};
 use crate::infra::wrangler::table;
@@ -155,7 +156,8 @@ pub(crate) fn steps(
             steps.push(Step::Health { worker: index });
         }
     }
-    if !dry_run && matches!(source, Source::Local(_)) {
+    // The smoke reads every Worker; a front-only deploy leaves the rest on their revision.
+    if !dry_run && matches!(source, Source::Local(_)) && workers.len() > 1 {
         steps.push(Step::Smoke);
     }
     steps
@@ -180,7 +182,13 @@ pub(crate) async fn run(
     host_token: Option<&str>,
 ) -> Result<()> {
     guard::refuse_pending(env, lock)?;
-    let workers = inventory::deployables(spec, lock)?;
+    let mut workers = inventory::deployables(spec, lock)?;
+    if options.front_only {
+        if env.is_prod() {
+            return Err("--front is for dev".into());
+        }
+        workers.retain(|w| w.name.ends_with("-agents"));
+    }
     let mut timings = Timings::default();
     let started = Instant::now();
     let mut facts = guard::git_facts(spec)?;
@@ -229,6 +237,7 @@ pub(crate) async fn run(
         inputs,
         host_token,
         timings,
+        rollout_started: None,
     };
     let versions = |dry_run: bool| {
         (!dry_run)
@@ -237,6 +246,10 @@ pub(crate) async fn run(
     };
     let before = versions(options.dry_run);
     let outcome = run.execute(plan, &mut summary).await;
+    if let Some(started_at) = run.rollout_started {
+        let entry = Entry::new(env, &head, Kind::Deploy, outcome.is_ok(), started_at);
+        crate::deploy_ledger::record(spec, &workers, &entry).await;
+    }
     let after = versions(options.dry_run);
     for (index, row) in summary.iter_mut() {
         row.push(crate::deploy_live::rollouts(

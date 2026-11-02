@@ -1,39 +1,42 @@
-// A repository inside the shell: name, status chips and the current page (the sidebar lists
-// the pages). A public
+// A repository inside the shell: the current page (the sidebar lists the pages, and the top bar's
+// trail names it). A public
 // repository opens for anyone; a viewer who reads only because it is public (or is signed
 // out) gets the read views, with no write or admin controls.
 import { useEffect } from 'react';
 import { RepoSettings } from '../repo-settings/RepoSettings';
-import { linkTo, type Navigate, showAddress } from '../shell/useRoute';
+import { type Navigate, showAddress } from '../shell/useRoute';
 import { ChangeView } from './ChangeView';
 import { CommitView } from './CommitView';
-import { ForkButton } from './ForkButton';
 import { HistoryTab } from './HistoryTab';
-import { HistoryImportStatus, HistoryStoppedStatus, ImportStatus } from './ImportStatus';
+import { ImportStatus } from './ImportStatus';
 import { RepoHoldBanner } from './LegalHold';
-import { PublicBadge } from './PublicBadge';
 import { ShowEmailsContext } from './people';
 import { ReleaseView } from './ReleaseView';
 import { RepoAgents } from './RepoAgents';
 import { RepoChanges } from './RepoChanges';
 import { RepoContext } from './RepoContext';
 import { RepoCtc } from './RepoCtc';
+import { RepoFacts } from './RepoFacts';
 import { RepoFiles } from './RepoFiles';
+import { RepoInsights } from './RepoInsights';
 import { RepoNotFound, repoMissing, useRepoGone } from './RepoNotFound';
 import { RepoOverview } from './RepoOverview';
 import { RepoReleases } from './RepoReleases';
 import { RepoSearch } from './RepoSearch';
-import { isPublic, ReadOnlyContext, repoAccess, type Visibility } from './repoAccess';
+import { ReadOnlyContext, repoAccess, type Visibility } from './repoAccess';
+import { chosenBranch } from './repoBranch';
 import { rememberRepoName, repoNameOf } from './repoNames';
 import type { RepoStatus } from './repoStatus';
 import { SessionView } from './SessionView';
 import { Failure } from './SourceStatus';
-import { StatusChips } from './StatusChips';
 import { formatSourceRoute, type SourceRoute } from './sourceRoute';
-import { useHistoryFill, useImportProgress } from './useImportProgress';
+import { useImportProgress } from './useImportProgress';
 import { useSource } from './useSource';
 
 type RepoRoute = Extract<SourceRoute, { repo: string }>;
+
+/** What the shell keeps of the open repository. */
+export type ShownRepo = { repo: string; name: string; settings: boolean; insights: boolean };
 
 export function RepoPage({
   route,
@@ -60,15 +63,12 @@ export function RepoPage({
   onSignIn?: () => void;
   /** The loaded name and visibility, and whether the viewer may change settings, for the
    * shell's header and sidebar. */
-  onLoaded?: (repo: {
-    repo: string;
-    name: string;
-    visibility: Visibility;
-    settings: boolean;
-  }) => void;
+  onLoaded?: (repo: ShownRepo & { visibility: Visibility }) => void;
 }) {
   const repo = route.repo;
-  const status = useSource<RepoStatus & { owner_handle?: string | null }>(`/repos/${repo}`);
+  const status = useSource<RepoStatus & { owner_handle?: string | null; insights?: boolean }>(
+    `/repos/${repo}`,
+  );
   // Its readable address (`/<handle>/<name>`): the status names the owner's handle (null
   // while an email-named owner has none: the id address keeps working).
   if (status.data) rememberRepoName(repo, status.data.owner_handle, status.data.name);
@@ -81,9 +81,7 @@ export function RepoPage({
   const data = status.data;
   const access = repoAccess(data?.viewer, authenticated);
   const owner = access.settings;
-  const drift = data?.projections?.filter((p) => p.status === 'drift') ?? [];
   const progress = useImportProgress(repo, data?.refs, status.reload);
-  const history = useHistoryFill(repo, data?.history_import, status.reload);
   // biome-ignore lint/correctness/useExhaustiveDependencies: once per transition, not per render of the caller.
   useEffect(() => {
     if (missing) onMissing();
@@ -95,6 +93,7 @@ export function RepoPage({
         name: data.name,
         visibility: data.visibility ?? 'private',
         settings: owner,
+        insights: data.insights === true,
       });
   }, [data, repo, owner, onLoaded]);
   if (missing)
@@ -105,66 +104,11 @@ export function RepoPage({
     <ShowEmailsContext.Provider value={!access.readOnly}>
       <ReadOnlyContext.Provider value={access.readOnly}>
         <div className="repo-page">
-          <div className="repo-head">
-            <h1>
-              {handle && (
-                <>
-                  <a className="repo-owner" {...linkTo({ view: 'profile', handle }, navigate)}>
-                    {handle}
-                  </a>
-                  <span className="repo-owner-sep" aria-hidden="true">
-                    /
-                  </span>
-                </>
-              )}
-              {name ?? data?.name ?? repoNameOf(repo)?.name ?? repo}
-            </h1>
-            {isPublic(data?.visibility) && <PublicBadge />}
-            {data?.parent && (
-              <p className="source-meta">
-                forked from{' '}
-                <a
-                  {...linkTo(
-                    { view: 'files', repo: data.parent.repo, path: '', ref: 'main' },
-                    navigate,
-                  )}
-                >
-                  {data.parent.repo}
-                </a>{' '}
-                at v{data.parent.version}
-              </p>
-            )}
-            {data && progress.phase === 'none' && (
-              <StatusChips
-                repo={repo}
-                status={data}
-                owner={owner}
-                readOnly={access.readOnly}
-                navigate={navigate}
-              />
-            )}
-            {access.fork && data && progress.phase === 'none' && (
-              <ForkButton
-                repo={repo}
-                name={data.name}
-                onForked={(fork) =>
-                  navigate({ view: 'files', repo: fork.id, path: '', ref: 'main' })
-                }
-              />
-            )}
-          </div>
+          {/* The top bar's trail is what a sighted reader goes by; a screen reader gets the same. */}
+          <h1 className="sr-only">{name ?? data?.name ?? repoNameOf(repo)?.name ?? repo}</h1>
           {data && <RepoHoldBanner repo={repo} />}
-          {drift.map((p) => (
-            <p key={p.refname} role="alert" className="source-error">
-              {p.refname.replace(/^refs\/heads\//, '')} stopped updating for Git clients.
-            </p>
-          ))}
           {status.error && (
             <Failure error={status.error} what="this repository" onRetry={status.reload} />
-          )}
-          {!status.error && history && <HistoryImportStatus progress={history} />}
-          {!status.error && data?.history_stopped && (
-            <HistoryStoppedStatus stopped={data.history_stopped} />
           )}
           {/* Settings stay open: deleting the repository is how a failed import is tried again. */}
           {!status.error && progress.phase !== 'none' && route.view !== 'repo-settings' && (
@@ -172,10 +116,28 @@ export function RepoPage({
           )}
           {!status.error && (progress.phase === 'none' || route.view === 'repo-settings') && (
             <div className="repo-view">
-              {route.view === 'files' && (
-                <RepoFiles route={route} status={data} navigate={navigate} />
+              {route.view === 'overview' && data && (
+                <RepoOverview
+                  repo={repo}
+                  refName={route.ref ?? chosenBranch(repo)}
+                  status={data}
+                  facts={
+                    <RepoFacts
+                      repo={repo}
+                      status={data}
+                      owner={owner}
+                      readOnly={access.readOnly}
+                      canFork={access.fork}
+                      navigate={navigate}
+                    />
+                  }
+                  navigate={navigate}
+                  account={username}
+                />
               )}
-              {route.view === 'overview' && <RepoOverview route={route} onNavigate={navigate} />}
+              {route.view === 'files' && (
+                <RepoFiles route={route} status={data} navigate={navigate} account={username} />
+              )}
               {(route.view === 'history' ||
                 route.view === 'transactions' ||
                 route.view === 'branches') && (
@@ -199,6 +161,7 @@ export function RepoPage({
                   onOpen={(number) => navigate({ view: 'change', repo, number })}
                   commitHrefOf={(commit) => formatSourceRoute({ view: 'commit', repo, commit })}
                   onCommit={(commit) => navigate({ view: 'commit', repo, commit })}
+                  navigate={navigate}
                 />
               )}
               {route.view === 'change' && (
@@ -212,13 +175,14 @@ export function RepoPage({
                   navigate={navigate}
                 />
               )}
-              {route.view === 'ctc' && (
+              {route.view === 'tower' && (
                 <RepoCtc
                   repo={repo}
                   hrefOf={(number) => formatSourceRoute({ view: 'change', repo, number })}
                   onOpen={(number) => navigate({ view: 'change', repo, number })}
                 />
               )}
+              {route.view === 'insights' && <RepoInsights repo={repo} />}
               {route.view === 'agents' && (
                 <RepoAgents
                   repo={repo}
@@ -241,6 +205,7 @@ export function RepoPage({
                   owner={owner}
                   hrefOf={(tag) => formatSourceRoute({ view: 'release', repo, tag })}
                   onOpen={(tag) => navigate({ view: 'release', repo, tag })}
+                  navigate={navigate}
                 />
               )}
               {route.view === 'release' && (

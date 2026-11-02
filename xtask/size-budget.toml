@@ -1,0 +1,8 @@
+# Budget in bytes: the size measured on 2026-10-31 plus 5%, rounded up to 10 KB (docs/code-health.md).
+# A jump fails `cargo xtask health size`; a rise on purpose is a reviewed edit of this file.
+# js and dist rose on 2026-11-01 for CodeMirror and its grammars, then the Markdown parser: lazy
+# chunks, none on a first page.
+wasm = 6120000
+js = 2440000
+css = 150000
+dist = 5100000

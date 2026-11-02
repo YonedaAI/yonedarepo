@@ -82,7 +82,7 @@ pub async fn plan_for(session: &Session, local: &str, creates: bool) -> Result<P
         Some(oldest) => session.git.first_parent_of(oldest)?.is_none(),
         None => false,
     };
-    if creates && rooted {
+    if rooted && (creates || joins_the_platform(session, local).await?) {
         let pending: Vec<String> = commits.into_iter().rev().collect();
         let none = Known {
             map: &session.map,
@@ -100,6 +100,26 @@ pub async fn plan_for(session: &Session, local: &str, creates: bool) -> Result<P
         "{local} shares no commit with {}: clone it and commit on top (or use `yoneda repo import`)",
         session.url.repo
     )))
+}
+
+/// Whether a merge under `local` has a parent the platform holds, so history that started on
+/// its own has joined the branch: `git pull --allow-unrelated-histories` in a project that
+/// began elsewhere.
+async fn joins_the_platform(session: &Session, local: &str) -> Result<bool> {
+    let merges = session.git.run(&[
+        "rev-list",
+        "--first-parent",
+        "--min-parents=2",
+        "--max-count",
+        WALK_LIMIT,
+        local,
+    ])?;
+    for merge in merges.lines() {
+        if !merge_parents(session, merge).await?.is_empty() {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 /// A finished upload: the platform commit to publish, and the (platform, local) pairs of

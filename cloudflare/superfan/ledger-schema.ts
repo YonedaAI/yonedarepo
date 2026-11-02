@@ -77,6 +77,70 @@ export const MIGRATIONS: string[] = [
   `ALTER TABLE findings ADD COLUMN notified_at INTEGER;
    UPDATE findings SET notified_at = last_seen;
    ALTER TABLE spend_days ADD COLUMN emails INTEGER NOT NULL DEFAULT 0;`,
+  // Alert levels (urgent mails at once, within a limit per signal), log events counted by name,
+  // and the quick pass's heartbeat. Findings from before levels wait for the digest.
+  `ALTER TABLE findings ADD COLUMN level TEXT NOT NULL DEFAULT 'digest'
+     CHECK (level IN ('digest','urgent'));
+   CREATE TABLE tail_marks (
+     minute INTEGER NOT NULL,
+     mark TEXT NOT NULL,
+     count INTEGER NOT NULL,
+     PRIMARY KEY (minute, mark)
+   );
+   CREATE TABLE urgent_notices (
+     dedup_key TEXT PRIMARY KEY,
+     day TEXT NOT NULL,
+     sent INTEGER NOT NULL,
+     last_sent INTEGER NOT NULL,
+     previous_sent INTEGER NOT NULL
+   );
+   CREATE TABLE beats (
+     name TEXT PRIMARY KEY,
+     at INTEGER NOT NULL
+   );`,
+  // The deploy ledger, and the release each finding was first and last seen on.
+  `ALTER TABLE findings ADD COLUMN revision TEXT;
+   ALTER TABLE findings ADD COLUMN last_revision TEXT;
+   CREATE TABLE deploys (
+     id INTEGER PRIMARY KEY,
+     revision TEXT NOT NULL,
+     env TEXT NOT NULL,
+     who TEXT NOT NULL,
+     kind TEXT NOT NULL CHECK (kind IN ('deploy','rollback')),
+     outcome TEXT NOT NULL CHECK (outcome IN ('ok','failed')),
+     started_at INTEGER NOT NULL,
+     finished_at INTEGER NOT NULL,
+     UNIQUE (revision, started_at)
+   );
+   CREATE INDEX deploys_recent ON deploys(finished_at DESC);`,
+  // Synthetic checks, kept two days (ledger-probes.ts).
+  `CREATE TABLE probe_results (
+     id INTEGER PRIMARY KEY,
+     at INTEGER NOT NULL,
+     check_name TEXT NOT NULL,
+     ok INTEGER NOT NULL,
+     status INTEGER,
+     ms INTEGER NOT NULL,
+     detail TEXT,
+     revision TEXT
+   );
+   CREATE INDEX probe_results_recent ON probe_results(check_name, at DESC);`,
+  // Gaps between a queue's consumer invocations (delivery.ts).
+  `CREATE TABLE queue_consumers (
+     queue TEXT PRIMARY KEY,
+     last_end INTEGER NOT NULL
+   );
+   CREATE TABLE queue_gaps (
+     id INTEGER PRIMARY KEY,
+     queue TEXT NOT NULL,
+     from_at INTEGER NOT NULL,
+     to_at INTEGER NOT NULL
+   );
+   CREATE INDEX queue_gaps_recent ON queue_gaps(to_at);`,
+  // The object push queue is gone: nothing evaluates its rules, so an open finding could never end.
+  `UPDATE findings SET status = 'resolved', resolved_at = last_seen
+     WHERE status = 'open' AND component = 'object_push_queue';
+   DELETE FROM baselines WHERE key LIKE 'object_push_queue/%';`,
 ];
 
 /** Applies pending migrations; safe to call on every Durable Object start. */

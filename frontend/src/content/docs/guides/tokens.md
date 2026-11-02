@@ -8,6 +8,7 @@ summary: Personal access tokens, repository tokens, SSH keys and device login, a
 | Credential | Prefix | Acts for | Create it |
 |---|---|---|---|
 | Personal access token | `ypat_` | Your account, within its scopes | **Settings → Personal access tokens**, or `yoneda login` |
+| Agent token | `ypat_` | One named agent of your account | `yoneda login --agent <name>` |
 | Repository token | `yrp_` | One repository, optionally some paths | Repository **Settings → Repository tokens**, or `yoneda token create` |
 | SSH key | | Your account, for Git over SSH | `yoneda ssh setup`, **Settings → SSH keys**, or `yoneda ssh-key add` |
 | Browser session | | Your account, in the web app | Signing in |
@@ -25,6 +26,19 @@ The server keeps only a hash of each token and checks it on every request. A tok
 - On a repository where you are a member, a token holds only what both its scopes and your role allow.
 
 `yoneda login` creates one through device login and stores it for the CLI; `yoneda auth token` prints it for a script (`export YONEDA_TOKEN=$(yoneda auth token)`). Every token `yoneda login` created is listed under **Settings → Signed-in CLIs**. There is no CLI command to create a token otherwise.
+
+## Agents
+
+An agent is a named credential under your account. `yoneda login --agent review-bot` shows a code; you open the link, see the agent's name and machine, and approve it.
+
+- **Scopes:** `repo:read` and `repo:write` are ticked; `repo:land` and `repo:review` are yours to add. An agent can't hold `repo:admin` or `account:ssh-keys`.
+- **Repositories:** none are chosen until you choose. Pick some, or all repositories, including ones created later.
+- **Expiry:** 1 to 90 days, 30 unless you change it.
+- **Limits:** 10 live agents per account, and one per name. Sign one out to make room.
+- **What it can't do:** create tokens, add SSH keys or create repositories, on any route.
+- **Who it is:** commits, comments and reviews read `review-bot (agent of ada)`, not `ada`.
+- **Reviews:** you may approve what your agent wrote. It can't approve your work, or another of your agents' work, and it never adds a second approval to yours.
+- **Revoke:** **Settings → Signed-in CLIs → Sign out**. It stops on its next request.
 
 ## Repository tokens
 

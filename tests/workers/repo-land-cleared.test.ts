@@ -78,7 +78,6 @@ it('lands the head that cleared, once, as the platform, with its reasons on the 
   const why = landed.clearances[0];
   expect(why).toMatchObject({ decision: 'cleared', actor: 'platform:land-when-cleared', head: id, reasons: [] });
   expect(why.state.approved_by).toEqual(['user:lwc_lands']);
-  expect(why.state.risk.level).toBe('low');
   expect(why.landed_version).toBeGreaterThan(0);
   expect(queued.some((m) => m.kind === 'platform_derive' && m.repo_id === s.repo), 'webhooks fan out from it').toBe(true);
 
@@ -128,7 +127,7 @@ it('leaves a conflicted Landing open with its reason and never comes back on its
   expect(gates.body.land_when_cleared.refused.reason).toMatch(/a\.md/);
 });
 
-it('holds a High Risk head and says why', async () => {
+it('lands a head Risk reads High: Risk is a beta reading and holds nothing', async () => {
   const s = await setUp('lwc_risk');
   await turnOn(s);
   // Unclassified (30), a workflow and a migration (35) and a lockfile (10).
@@ -142,13 +141,10 @@ it('holds a High Risk head and says why', async () => {
   await approve(s, id);
   await deliver(s.env, jobs(s)[0]);
   const shown = await change(s);
-  expect(shown.status).toBe('open');
-  expect(shown.clearances[0]).toMatchObject({ decision: 'hold', head: id });
-  expect(shown.clearances[0].reasons[0].code).toBe('RISK_HIGH');
-  expect(shown.clearances[0].reasons[0].reason).toMatch(/Risk is High/);
-  const gates = await api(`/repos/${s.repo}/changes/1/gates`, { cookie: s.cookie }, {}, s.env);
-  expect(gates.body.land_when_cleared.reasons).toEqual(shown.clearances[0].reasons);
-  expect(await mainHead(s)).toBe(s.main);
+  expect(shown.status, JSON.stringify(shown.clearances)).toBe('landed');
+  expect(shown.clearances[0]).toMatchObject({ decision: 'cleared', head: id, reasons: [] });
+  expect(shown.clearances[0].state.risk, 'the decision never reads it').toBeUndefined();
+  expect(await mainHead(s)).toBe(id);
 });
 
 it('with the switch off a repository queues nothing and lands nothing', async () => {
@@ -176,7 +172,7 @@ it('with the platform switch off the repository switch is refused and no job run
 });
 
 it('lands a fork\'s newest head only with its own approval', async () => {
-  const local = { ...on, PLATFORM_OBJECT_STORE: 'r2', ARTIFACTS: undefined } as unknown as Env;
+  const local = { ...on } as unknown as Env;
   const alice = { cookie: await signup('lwc_alice') };
   const bob = { cookie: await signup('lwc_bob') };
   const created = await api('/repos', alice, { body: { name: 'upstream_lwc', policy: { approvals: 0, required_checks: [] }, files: [file('a.md', 'a\n')], author } }, local);

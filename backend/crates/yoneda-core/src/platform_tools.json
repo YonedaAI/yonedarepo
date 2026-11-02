@@ -1153,18 +1153,14 @@
   },
   {
     "name": "git_memory_add",
-    "description": "Leave a memory for later coding sessions (needs write): a decision, a constraint, a gotcha or a how-to that the code alone does not say, at most 2 KiB of text (refused if it holds a credential). Anchor it to the files, directories (ending in /) or symbols it is about: it is shown to later sessions when they read those files, and reads as stale once the anchored code changes on main. It is written against commit (default: the head of ref, default main). Pass session_id (your $YONEDA_SESSION_ID) to link it to your session, and supersedes to replace an older memory that is now wrong. The same memory posted again answers the first.",
+    "description": "Leave a memory for later coding sessions (needs write): a decision, a constraint, a gotcha, a how-to, a convention, a risk, a fact or a preference that the code alone does not say, at most 2 KiB of text (refused if it holds a credential). Anchor it to the files, directories (ending in /) or symbols it is about: it is shown to later sessions when they read those files, and reads as stale once the anchored code changes on main. It is written against commit (default: the head of ref, default main). Pass session_id (your $YONEDA_SESSION_ID) to link it to your session, and supersedes to replace an older memory that is now wrong. The same memory posted again answers the first.",
     "inputSchema": {
       "type": "object",
       "properties": {
         "kind": {
           "type": "string",
-          "enum": [
-            "decision",
-            "constraint",
-            "gotcha",
-            "howto"
-          ]
+          "maxLength": 32,
+          "description": "decision, constraint, gotcha, howto, convention, risk, fact or preference; or a short word of your own (up to 24 letters, digits or hyphens), which adds it to this repository's kinds. git_memory_list answers the repository's kinds."
         },
         "text": {
           "type": "string",
@@ -1217,7 +1213,7 @@
   },
   {
     "name": "git_memory_list",
-    "description": "The repository's memories newest first (default 50, at most 200), each with its anchors and whether the anchored code has changed since (stale). Filter by path (memories on that file, a directory holding it, or under a directory/), kind, status (current: the default, active and drafts; active; stale; draft; retired; superseded; all) or session_id; at reads as of a log version; pass next as before for the following page.",
+    "description": "The repository's memories newest first (default 50, at most 200), each with its anchors and whether the anchored code has changed since (stale), and kinds: the kinds to pick from, built-in and added. Filter by path (memories on that file, a directory holding it, or under a directory/), kind, status (current: the default, active and drafts; active; stale; draft; retired; superseded; all) or session_id; at reads as of a log version; pass next as before for the following page.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -1226,12 +1222,8 @@
         },
         "kind": {
           "type": "string",
-          "enum": [
-            "decision",
-            "constraint",
-            "gotcha",
-            "howto"
-          ]
+          "maxLength": 32,
+          "description": "decision, constraint, gotcha, howto, convention, risk, fact, preference, or a kind this repository added"
         },
         "status": {
           "type": "string",
@@ -2387,7 +2379,7 @@
   },
   {
     "name": "git_ctc_radar",
-    "description": "What CTC, Code Traffic Control, sees: every open Landing (the newest limit, default 25, at most 50, and always those in line) with the decision the job would make as things stand (cleared, hold or go_around, with its reasons; with land_when_cleared off, nothing lands on it), its place in line (queued tickets, then cleared, oldest first, then waiting), the other Landings on the same work (same symbol, same file, or one that read what another wrote) and the last decision recorded on it. truncated says there are more. Reading it records nothing. Needs a whole-repository credential. REST: GET /ctc.",
+    "description": "What Tower sees: every open Landing (the newest limit, default 25, at most 50, and always those in line) with the decision the job would make as things stand (cleared, hold or go_around, with its reasons; with land_when_cleared off, nothing lands on it), its place in line (queued tickets, then cleared, oldest first, then waiting), the other Landings on the same work (same symbol, same file, or one that read what another wrote) and the last decision recorded on it. truncated says there are more. Reading it records nothing. Needs a whole-repository credential. REST: GET /ctc.",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -2940,7 +2932,7 @@
   },
   {
     "name": "git_hook_create",
-    "description": "Add a webhook: signed POSTs (X-Yoneda-Signature: sha256=<hex HMAC-SHA256 of the body with the secret>, X-Yoneda-Event, X-Yoneda-Delivery) to a public https url for each event, in log order, at least once. Events: land, merged, refused, branch (created/moved/deleted), tag, check (conclusion pass/fail/error), change (change requests: X-Yoneda-Event change.opened, change.commented, change.landed, change.closed or change.deleted; titles and comment text only for hooks without paths), release (release.published or release.deleted), repo (repo.deleted, once, when the repository is deleted; repo.purged, once, when an undo window ends in its purge); all when omitted. paths limits commit messages to commits inside those paths. Returns the secret once. Needs the owner or repo:admin.",
+    "description": "Add a webhook: signed POSTs (X-Yoneda-Signature: sha256=<hex HMAC-SHA256 of the body with the secret>, X-Yoneda-Event, X-Yoneda-Delivery) to a public https url for each event, in log order, at least once. Events: land, merged, refused, branch (created/moved/deleted), tag, check (conclusion pass/fail/error), change (change requests: X-Yoneda-Event change.opened, change.commented, change.landed, change.closed or change.deleted; titles and comment text only for hooks without paths), release (release.published or release.deleted), repo (repo.deleted, once, when the repository is deleted; repo.purged, once, when an undo window ends in its purge; repo.resumed, when the owner resumes automation); all when omitted. paths limits commit messages to commits inside those paths. Returns the secret once. Needs the owner or repo:admin.",
     "inputSchema": {
       "type": "object",
       "properties": {

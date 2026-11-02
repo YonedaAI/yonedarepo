@@ -158,7 +158,7 @@ test('a relay call that fails counts its own writers as failed, not the rest', a
 
 const sample = (at, head, db_bytes, extra = {}) => ({
   at,
-  repos: [{ repo: 'r', floor: extra.floor ?? 0, head, tail_rows: extra.tail ?? head, keep_versions: 10_000, db_bytes, table_rows: { commits: head, tokens: 3 }, outbox_pending: extra.outbox ?? 0, projection_behind: 0 }],
+  repos: [{ repo: 'r', floor: extra.floor ?? 0, head, tail_rows: extra.tail ?? head, keep_versions: 10_000, db_bytes, table_rows: { commits: head, tokens: 3 }, outbox_pending: extra.outbox ?? 0 }],
   cloudflare: extra.cloudflare ?? {},
   unreadable: extra.unreadable ?? {},
 });
@@ -185,7 +185,7 @@ test('the sampler reads with GET only, and names what it could not read', async 
     call: async (method, path) => {
       seen.push([method, path]);
       if (path.endsWith('/compaction')) return { status: 404, body: { error: { code: 'NOT_FOUND' } } };
-      return { status: 200, body: { objects: { pending: 4 }, projections: [{ target_version: 9, projected_version: 7 }] } };
+      return { status: 200, body: { objects: { pending: 4 } } };
     },
   };
   const ids = [repoId(1), repoId(2), repoId(3)];
@@ -202,8 +202,8 @@ test('the sampler reads with GET only, and names what it could not read', async 
 });
 
 test('figures come from the compaction and status answers', () => {
-  const figures = repoFigures('r', { floor: 5, head: 9, tail_rows: 4, retention: { keep_versions: 64 }, storage: { db_bytes: 10, table_rows: { txlog: 9 } } }, { objects: { pending: 2 }, projections: [{ target_version: 9, projected_version: 6 }] });
-  assert.deepEqual(figures, { repo: 'r', floor: 5, head: 9, tail_rows: 4, keep_versions: 64, db_bytes: 10, table_rows: { txlog: 9 }, outbox_pending: 2, projection_behind: 3 });
+  const figures = repoFigures('r', { floor: 5, head: 9, tail_rows: 4, retention: { keep_versions: 64 }, storage: { db_bytes: 10, table_rows: { txlog: 9 } } }, { objects: { pending: 2 } });
+  assert.deepEqual(figures, { repo: 'r', floor: 5, head: 9, tail_rows: 4, keep_versions: 64, db_bytes: 10, table_rows: { txlog: 9 }, outbox_pending: 2 });
   assert.equal('outbox_pending' in repoFigures('r', {}), false);
 });
 

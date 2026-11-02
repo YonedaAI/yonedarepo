@@ -279,7 +279,9 @@ it('exports JSON and CSV, every page, with formula cells neutralised', async () 
   expect(json.headers.get('content-disposition')).toContain('acme-audit.json');
   const parsed = await json.json<{ org: string; items: Json[] }>();
   expect(parsed.org).toBe('acme');
-  expect(parsed.items).toHaveLength(451);
+  // The 451 rows, and its own: an export is in the log it was cut from.
+  expect(parsed.items).toHaveLength(452);
+  expect(parsed.items[0].kind).toBe('audit.exported');
 
   const csv = await download('/orgs/acme/audit/export?format=csv', alice);
   expect(csv.status).toBe(200);
@@ -288,9 +290,9 @@ it('exports JSON and CSV, every page, with formula cells neutralised', async () 
   const text = await csv.text();
   const lines = text.trimEnd().split('\r\n');
   expect(lines[0]).toBe('seq,at,kind,actor,source,source_seq,details,previous,hash');
-  expect(lines).toHaveLength(452);
-  expect(lines[1].split(',')[3]).toBe("'=HYPERLINK");
-  expect(lines[2].split(',')[3]).toBe("'@cmd");
+  expect(lines).toHaveLength(454);
+  expect(lines[3].split(',')[3]).toBe("'=HYPERLINK");
+  expect(lines[4].split(',')[3]).toBe("'@cmd");
   expect(text).not.toContain('_secret');
   expect(text).not.toContain('hunter2');
 

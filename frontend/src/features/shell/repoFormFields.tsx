@@ -8,12 +8,14 @@ export function OwnerField({
   orgs,
   initialOwner,
   disabled,
+  onOwner,
 }: {
   account?: string;
   orgs: OrgSummary[];
   /** Preselected owner (the open org page), when the caller owns it. */
   initialOwner?: string;
   disabled: boolean;
+  onOwner?: (owner: string) => void;
 }) {
   const owners = ownerOptions(account, orgs);
   if (owners.length <= 1) return null;
@@ -21,7 +23,12 @@ export function OwnerField({
   return (
     <label>
       Owner
-      <select name="owner" defaultValue={preselected} disabled={disabled}>
+      <select
+        name="owner"
+        defaultValue={preselected}
+        disabled={disabled}
+        onChange={(event) => onOwner?.(event.target.value)}
+      >
         {owners.map((o) => (
           <option key={o.value} value={o.value}>
             {o.label}
@@ -32,8 +39,21 @@ export function OwnerField({
   );
 }
 
-/** Private (the default) or public. */
-export function VisibilityField({ disabled }: { disabled: boolean }) {
+/** Private (the default) or public, or only private when the source is. */
+export function VisibilityField({
+  disabled,
+  onlyPrivate = false,
+}: {
+  disabled: boolean;
+  onlyPrivate?: boolean;
+}) {
+  if (onlyPrivate)
+    return (
+      <p className="source-meta">
+        <input type="hidden" name="visibility" value="private" />
+        Private, like its source on GitHub.
+      </p>
+    );
   return (
     <fieldset className="visibility-choice" disabled={disabled}>
       <legend>Visibility</legend>

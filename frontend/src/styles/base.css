@@ -17,13 +17,14 @@ button {
   justify-content: center;
   gap: 8px;
   border: 1px solid transparent;
-  background: var(--blue);
-  color: var(--on-accent);
-  padding: 9px 16px;
-  border-radius: 7px;
+  background: var(--text);
+  color: var(--bg);
+  padding: 5px 12px;
+  border-radius: 8px;
   cursor: pointer;
+  font-size: var(--text-md);
   font-weight: 500;
-  min-height: 38px;
+  min-height: var(--control-h);
 }
 button:hover {
   filter: brightness(0.96);
@@ -32,7 +33,7 @@ button:disabled {
   cursor: not-allowed;
 }
 button.quiet {
-  padding: 6px 10px;
+  padding: 5px 10px;
   font-weight: 500;
 }
 button.icon-button {
@@ -43,12 +44,13 @@ button.icon-button {
 input,
 textarea,
 select {
-  border: 1px solid var(--line-strong);
+  font-size: var(--text-control);
+  border: 1px solid var(--line);
   background: var(--surface);
-  border-radius: 5px;
-  /* Beside a button in a row: the same 38px. */
-  min-height: 38px;
-  padding: 8px 12px;
+  border-radius: 8px;
+  /* Beside a button in a row: the same 32px. */
+  min-height: var(--control-h);
+  padding: 5px 10px;
   color: var(--text);
   min-width: 0;
 }
@@ -64,9 +66,13 @@ a:focus-visible {
   outline: 3px solid var(--blue-text);
   outline-offset: 2px;
 }
+/* Browsers can keep a control's ring after a mouse pick; the keyboard still gets it. */
+:root[data-pointer] :is(select, button, a, summary):focus-visible {
+  outline: none;
+}
 code,
 pre {
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--mono);
 }
 code {
   font-size: var(--text-code);
@@ -82,11 +88,12 @@ p {
   margin-top: 0;
 }
 h1 {
+  font-family: var(--display);
   font-size: var(--text-3xl);
-  font-weight: var(--weight-heading);
-  line-height: 1.3;
+  font-weight: var(--weight-title);
+  line-height: var(--leading-title);
   max-width: 900px;
-  letter-spacing: -0.7px;
+  letter-spacing: var(--tracking-title);
 }
 h2 {
   font-size: var(--text-xl);
@@ -99,12 +106,12 @@ p {
 }
 button.quiet {
   background: var(--surface);
-  border-color: var(--faint);
+  border-color: var(--line);
   color: var(--text);
 }
 button.quiet:not(:disabled):hover {
-  background: var(--accent-soft);
-  border-color: var(--blue);
+  background: var(--surface-2);
+  border-color: var(--muted);
 }
 button.text-button {
   padding: 4px 0;
@@ -114,8 +121,8 @@ button.text-button {
   font-weight: 500;
 }
 button.icon-button {
-  min-width: 36px;
-  min-height: 36px;
+  min-width: 32px;
+  min-height: var(--control-h);
   border: 0;
 }
 button svg,
@@ -205,6 +212,10 @@ pre {
 }
 .app-crash button {
   margin-top: 16px;
+}
+/* Under the button: it arrives after the report, and must not move what a person may be clicking. */
+.app-crash .failure-reference {
+  margin-top: 12px;
 }
 
 pre {

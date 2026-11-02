@@ -25,7 +25,7 @@ vi.mock('./useSource', () => ({
   },
 }));
 
-const { ChangeTable, StatusFilter } = await import('./RepoChanges');
+const { ChangeStatusChip, ChangeTable, StatusFilter } = await import('./RepoChanges');
 const { changesPath, landedAutomatically, landingState } = await import('./changeModel');
 const { LandedAutomatically, WillLandNote } = await import('./LandWhenCleared');
 const { ChangeView } = await import('./ChangeView');
@@ -260,6 +260,24 @@ describe('changes list', () => {
     expect(only).not.toContain('No landed Landings');
   });
 
+  it("with Land when cleared on, the state is Tower's decision, not the gates alone", () => {
+    const open = { status: 'open', title: 'Retry' } as const;
+    const gates = (decision: string, ready: boolean) =>
+      ({
+        ready,
+        requirements: [],
+        land_when_cleared: { decision, reasons: [], refused: null },
+      }) as never;
+    expect(landingState(open, gates('hold', true)), 'a pause or a queue ahead').toBe('In flight');
+    expect(
+      landingState(open, gates('go_around', true)),
+      'a failed check that is not required',
+    ).toBe('Go-around');
+    expect(landingState(open, gates('go_around', false))).toBe('Go-around');
+    expect(landingState(open, gates('cleared', true))).toBe('Cleared to land');
+    expect(landingState({ ...open, title: 'Draft: retry' }, gates('hold', true))).toBe('Planned');
+  });
+
   it('asks for direct landings only with landed rows', () => {
     expect(changesPath(repo, 'open')).not.toContain('direct');
     expect(changesPath(repo, 'closed')).not.toContain('direct');
@@ -309,7 +327,7 @@ describe('changes list', () => {
   });
 });
 
-describe('CTC on a Landing', () => {
+describe('Tower on a Landing', () => {
   const clearance = (over: object) => ({ decision: 'hold', reasons: [], refused: null, ...over });
 
   it('says what an open Landing waits for', () => {
@@ -318,7 +336,7 @@ describe('CTC on a Landing', () => {
         reasons: [{ code: 'GATES', reason: 'Approvals: 0 of 1 approvals' }],
       }),
     });
-    expect(note).toContain('CTC: will land when cleared.');
+    expect(note).toContain('Tower: will land when cleared.');
     expect(note).toContain('Waiting for:');
     expect(note).toContain('Approvals: 0 of 1 approvals');
     expect(note).not.toContain('did not land');
@@ -331,7 +349,7 @@ describe('CTC on a Landing', () => {
         reasons: [{ code: 'CHECK_FAILED', reason: 'slop-review failed on this head' }],
       }),
     });
-    expect(note).toContain('CTC: go-around.');
+    expect(note).toContain('Tower: go-around.');
     expect(note).toContain('slop-review failed on this head');
     expect(note).not.toContain('will land');
   });
@@ -368,7 +386,7 @@ describe('CTC on a Landing', () => {
     };
     const trail = html(LandedAutomatically, { change });
     expect(trail).toContain('Landed automatically');
-    expect(trail).toContain('by CTC');
+    expect(trail).toContain('by Tower');
     expect(trail).toContain('Approved by ada');
     expect(trail).toContain('Passed (token:ci)');
     expect(html(LandedAutomatically, { change: { status: 'landed' } })).toBe('');
@@ -611,5 +629,29 @@ describe('merge gates', () => {
     state.paths = [];
     html(ChangeView, { repo: 'r0123456789abcdef0123', number: 3 });
     expect(state.paths).toContain('/repos/r0123456789abcdef0123/changes/3/gates');
+  });
+});
+
+describe('a Landing the gates saw land first', () => {
+  const gates = (status: string) =>
+    ({ status, ready: false, requirements: [{ enforced: true, state: 'blocked' }] }) as never;
+  const open = { status: 'open', title: 'Add a helper' } as const;
+
+  it('never reads as a go-around while its own read catches up', () => {
+    expect(landingState(open, gates('landed'))).toBe('Landed');
+    expect(landingState(open, gates('closed'))).toBe('Closed');
+    expect(landingState(open, gates('open'))).toBe('Go-around');
+  });
+});
+
+describe('the state chip', () => {
+  const chip = (status: 'open' | 'landed', state: 'Go-around' | 'In flight' | 'Landed') =>
+    renderToStaticMarkup(createElement(ChangeStatusChip, { status, state }));
+
+  it('never shows a go-around in the colour of a healthy Landing', () => {
+    expect(chip('open', 'Go-around')).toContain('source-change-around');
+    expect(chip('open', 'Go-around')).not.toContain('source-change-open');
+    expect(chip('open', 'In flight')).toContain('source-change-open');
+    expect(chip('landed', 'Landed')).toContain('source-change-landed');
   });
 });

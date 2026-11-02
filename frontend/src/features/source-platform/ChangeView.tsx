@@ -1,6 +1,6 @@
 // One change request: what it proposes, its gates and actions, its route, the conversation
 // (comments and branch pushes) and the diff from the merge base with main, with threads on its lines.
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { ChangeGates as Gates } from '../../../../shared/contracts/change-gates';
 import type { Navigate } from '../shell/useRoute';
 import { ChangeDiff } from './ChangeDiff';
@@ -17,6 +17,7 @@ import {
 } from './changeModel';
 import { FlightPlanLine } from './FlightPlanLine';
 import { Instruments, instrumentsKey } from './Instruments';
+import { useLandingWatch } from './landingWatch';
 import { MergeGates } from './MergeGates';
 import { Person } from './Person';
 import { PushItem } from './PushItem';
@@ -48,6 +49,12 @@ export function ChangeView({
   const gates = useSource<Gates>(`/repos/${repo}/changes/${number}/gates`);
   const readOnly = useReadOnly();
   const c = detail.data;
+  const [reading, setReading] = useState(0);
+  useLandingWatch(c?.status === 'open', gates, () => {
+    detail.reload();
+    setReading((n) => n + 1);
+    onChanged?.();
+  });
   const grouped = useMemo(
     () => c && groupComments(c.comments, c.head, diffAnchors(c.diff?.changes ?? [])),
     [c],
@@ -116,7 +123,9 @@ export function ChangeView({
         {c.body && <p className="source-change-body">{c.body}</p>}
         <FlightPlanLine plan={c.flight_plan} />
       </header>
-      {c.instruments && <Instruments key={instrumentsKey(c)} repo={repo} number={number} />}
+      {c.instruments && (
+        <Instruments key={instrumentsKey(c)} repo={repo} number={number} reading={reading} />
+      )}
       {c.status === 'open' && <MergeGates gates={gates} />}
       <ChangeGates
         repo={repo}

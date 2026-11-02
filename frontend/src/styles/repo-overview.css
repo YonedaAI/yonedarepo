@@ -1,0 +1,80 @@
+/* A repository's Overview (RepoOverview.tsx). */
+.repo-overview {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.repo-overview .page-toolbar {
+  margin-bottom: 0;
+}
+.repo-overview .home-section {
+  min-width: 0;
+  margin: 0;
+}
+.overview-latest {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.overview-latest .latest-commit {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+.overview-all-files {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: var(--row-y) 14px;
+  border-top: 1px solid var(--row-line);
+  color: var(--text);
+  font-size: var(--text-md);
+  font-weight: 500;
+  text-decoration: none;
+}
+.overview-all-files:hover {
+  background: var(--surface-2);
+  color: var(--blue-text);
+}
+.overview-all-files:focus-visible {
+  outline-offset: -3px;
+}
+.overview-numbers {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 24px;
+}
+/* Reserve chart space while loading, not after an empty activity result. */
+.overview-numbers:has([aria-busy="true"]) {
+  min-height: 190px;
+}
+.overview-people {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.overview-people li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: var(--text-md);
+}
+.overview-person {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (max-width: 800px) {
+  .overview-numbers {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

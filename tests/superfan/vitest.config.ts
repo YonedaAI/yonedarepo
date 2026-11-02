@@ -8,21 +8,27 @@ export default defineConfig({
   root: fileURLToPath(new URL('../../', import.meta.url)),
   plugins: [
     cloudflareTest({
-      main: fileURLToPath(new URL('../../cloudflare/superfan/index.ts', import.meta.url)),
+      // Superfan's entrypoint plus the dead-man's Durable Object, so both run in workerd.
+      main: fileURLToPath(new URL('./test-main.ts', import.meta.url)),
       miniflare: {
         name: 'yoneda-superfan-test',
         compatibilityDate: '2026-10-07',
-        durableObjects: { LEDGER: { className: 'SuperfanLedger', useSQLite: true } },
+        durableObjects: {
+          LEDGER: { className: 'SuperfanLedger', useSQLite: true },
+          STATE: { className: 'DeadmanState', useSQLite: true },
+        },
         bindings: {
           CF_ACCOUNT_ID: '0123456789abcdef0123456789abcdef',
           WATCH_SCRIPT: 'yonedarepo-dev-platform',
           WATCH_URL: 'https://yonedarepo-dev-platform.example.workers.dev',
           NS_SOURCE_REPOSITORY: '11111111111111111111111111111111',
-          NS_OBJECT_PUSH_QUEUE: '22222222222222222222222222222222',
           NS_CHECK_CONTAINER: '33333333333333333333333333333333',
           QUEUE_JOBS_ID: '44444444444444444444444444444444',
           QUEUE_DEAD_LETTER_ID: '55555555555555555555555555555555',
           CHECK_CONTAINER_APP_ID: '66666666-6666-4666-8666-666666666666',
+          QUEUE_CHECKS_ID: '77777777777777777777777777777777',
+          QUEUE_MANAGED_RUNS_ID: '88888888888888888888888888888888',
+          QUEUE_MANAGED_DEAD_LETTER_ID: '99999999999999999999999999999999',
           TELEMETRY_SOURCE: 'cloudflare',
           SUPERFAN_MODEL: 'mimo-v2.6-flash',
           MIMO_TOKEN_PLAN_REGION: 'sgp',

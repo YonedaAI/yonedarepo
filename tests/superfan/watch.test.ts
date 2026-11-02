@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { dailyCap, isWatchable } from '../../cloudflare/superfan/config';
+import { dailyCap, isWatchable, watchSite } from '../../cloudflare/superfan/config';
+import devSpec from '../../infra/envs/dev.json';
+import prodSpec from '../../infra/envs/prod.json';
 import { runWatch } from '../../cloudflare/superfan/watch';
 import {
   ANALYTICS_TOKEN,
@@ -155,11 +157,11 @@ describe('superfan watch pass', () => {
     expect(finding.summary).toContain('baseline 85ms');
   });
 
-  it('counts Artifacts push retries from platform logs', async () => {
+  it('counts push retries from platform logs', async () => {
     fakeUpstreams(analytics());
     const e = testEnv();
     const d = deps(e, { now: start });
-    const retry = { level: 'warn', message: ['object store push attempt 2 refused: busy'] };
+    const retry = { level: 'warn', message: [JSON.stringify({ event: 'object.push_retry', attempt: 2 })] };
     await feed(d.ledger, hour(recent(start), { api_worker: { count: 100, logs: [] } }), start);
     await feed(
       d.ledger,
@@ -168,7 +170,7 @@ describe('superfan watch pass', () => {
     );
     await runWatch(e, d);
     const [finding] = await d.ledger.findings('open', 1);
-    expect(finding.dedup_key).toBe('object_push_queue:push_retries');
+    expect(finding.dedup_key).toBe('source_repository:push_retries');
     expect(finding.summary).toContain('push_retries=8');
   });
 
@@ -292,6 +294,16 @@ describe('superfan watch pass', () => {
     ]);
   });
 
+  it('watches the hosts the two environments really use, and refuses plain HTTP', async () => {
+    for (const spec of [devSpec, prodSpec]) {
+      const [, url] = JSON.stringify(spec).match(/"WATCH_URL":"([^"]+)"/) ?? [];
+      expect(watchSite(testEnv({ WATCH_URL: url })).healthUrl).toBe(`${url}/health`);
+    }
+    expect(() => watchSite(testEnv({ WATCH_URL: 'http://api.yonedarepo.com' }))).toThrow(
+      'WATCH_URL must be the watched Worker over HTTPS',
+    );
+  });
+
   it('looks the ids up by name when the config sets none', async () => {
     const calls = fakeUpstreams(analytics());
     const e = testEnv(NO_IDS);
@@ -308,11 +320,9 @@ describe('superfan watch pass', () => {
     expect(variables).toMatchObject({
       namespaces: [
         '11111111111111111111111111111111',
-        '22222222222222222222222222222222',
         '33333333333333333333333333333333',
       ],
       queues: ['44444444444444444444444444444444', '55555555555555555555555555555555'],
-      jobs: '44444444444444444444444444444444',
       app: '66666666-6666-4666-8666-666666666666',
     });
   });

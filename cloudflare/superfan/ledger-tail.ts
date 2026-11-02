@@ -1,6 +1,7 @@
 // Tail counters inside the ledger: per-minute rows merged as batches arrive, read back as
 // one window per component. Rows older than two days and all but the newest samples are
-// pruned on write, so storage stays bounded under any traffic.
+// pruned on write, so storage stays bounded under any traffic. Marks (named log events) are
+// counted alone: no burst of samples can push one out.
 import {
   emptyHist,
   mergeHist,
@@ -58,12 +59,34 @@ export function ingestRows(sql: SqlStorage, rows: TailRow[], now: number) {
         s.name,
         s.message,
       );
+    for (const [mark, count] of Object.entries(r.marks))
+      sql.exec(
+        `INSERT INTO tail_marks (minute, mark, count) VALUES (?, ?, ?)
+         ON CONFLICT(minute, mark) DO UPDATE SET count = count + excluded.count`,
+        r.minute,
+        mark,
+        count,
+      );
   }
   sql.exec('DELETE FROM tail_minutes WHERE minute < ?', now - KEEP_MS);
+  sql.exec('DELETE FROM tail_marks WHERE minute < ?', now - KEEP_MS);
   sql.exec(
     'DELETE FROM tail_samples WHERE id <= (SELECT id FROM tail_samples ORDER BY id DESC LIMIT 1 OFFSET ?)',
     KEEP_SAMPLES,
   );
+}
+
+/** Marks counted in minutes from `start` on. */
+export function markWindow(sql: SqlStorage, start: number) {
+  const marks: Record<string, number> = {};
+  for (const r of sql
+    .exec<{ mark: string; n: number }>(
+      'SELECT mark, SUM(count) AS n FROM tail_marks WHERE minute >= ? GROUP BY mark',
+      start,
+    )
+    .toArray())
+    marks[r.mark] = r.n;
+  return marks;
 }
 
 /** Per-component totals for minutes in [start, end); components without events are absent. */

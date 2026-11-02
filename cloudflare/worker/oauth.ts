@@ -5,9 +5,12 @@
 // exchanges the code and signs in, links or creates the account. A provider whose secrets
 // are unset is off: its routes answer 404 and the sign-in page hides it. Failures return to
 // the page with `auth_error=<code>`; logs carry only the provider and that code.
+
 import { encodeAccountIdentifier } from '../../shared/account';
-import { randomToken, sessionCookie, signedInSession } from './accounts';
+import { homeCookie, randomToken, sessionCookie, signedInSession } from './accounts';
+import { cellOfRegion, cellsOn } from './cells';
 import { error } from './http';
+import { log } from './log';
 import { linkTo, type Outcome, signInWith } from './oauth-identity';
 import {
   authorizeUrl,
@@ -22,6 +25,7 @@ import { readSignupSource, recordSignup, takeSignupSource, withSignupSource } fr
 import { sha } from './storage';
 import type { Env, Json } from './types';
 import { publicOrigin } from './website-metadata';
+import { workspace } from './workspace';
 
 const ROUTE = /^\/auth\/([a-z]+)\/(start|callback)$/;
 const BINDING = 'yoneda_oauth';
@@ -39,7 +43,7 @@ export async function oauthRoute(req: Request, env: Env): Promise<Response | nul
   const redirect = `${origin}/auth/${provider}/callback`;
   // Without an attempt to name a return path, a failure goes to the sign-in page.
   const fail = (code: string, to = '/signin') => {
-    console.warn(JSON.stringify({ event: 'oauth.failed', provider, step: match[2], code }));
+    log.warn('oauth.failed', { provider, step: match[2], code });
     return back(origin, to, { auth_error: code, auth_provider: provider });
   };
   if (
@@ -57,10 +61,11 @@ export async function oauthRoute(req: Request, env: Env): Promise<Response | nul
     // session cookie would land on another host. Only www moves, so no config loops.
     if (url.hostname === `www.${new URL(origin).hostname}`)
       return redirectTo(`${origin}${url.pathname}${url.search}`);
-    const intent = url.searchParams.get('intent') === 'link' ? 'link' : 'signin';
+    const asked = url.searchParams.get('intent');
+    const intent = asked === 'link' ? 'link' : 'signin';
     // A sign-in that creates an account records where its visitor landed from (site-events.ts).
     const returnTo =
-      intent === 'link'
+      intent !== 'signin'
         ? '/settings'
         : withSignupSource(
             safePath(url.searchParams.get('return_to')),
@@ -117,17 +122,12 @@ export async function oauthRoute(req: Request, env: Env): Promise<Response | nul
       outcome = await linkTo(env, identity, flow.account, flow.session_hash);
     else {
       token = randomToken();
-      outcome = await signInWith(env, identity, await sha(token), signupRegion(req, env));
+      const region = signupRegion(req, env);
+      outcome = await signInWith(env, identity, await sha(token), region, source);
     }
   } catch (e) {
     if (e instanceof ProviderError) return clearBinding(req, fail(e.reason, to));
-    console.error(
-      JSON.stringify({
-        event: 'oauth.error',
-        provider,
-        error: String((e as Error)?.message ?? e).slice(0, 120),
-      }),
-    );
+    log.error('oauth.error', { provider, error: e });
     return clearBinding(req, fail('unavailable', to));
   }
   if (outcome.kind === 'error') return clearBinding(req, fail(outcome.code, to));
@@ -139,6 +139,10 @@ export async function oauthRoute(req: Request, env: Env): Promise<Response | nul
     'set-cookie',
     sessionCookie(req, `${encodeAccountIdentifier(outcome.username)}.${token}`),
   );
+  if (cellsOn(env)) {
+    const { region } = await workspace(env, outcome.username, { op: 'account_place' });
+    response.headers.append('set-cookie', homeCookie(req, cellOfRegion(env, region)));
+  }
   return clearBinding(req, response);
 }
 

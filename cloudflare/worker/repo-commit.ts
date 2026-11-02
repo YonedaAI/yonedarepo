@@ -10,13 +10,13 @@ import {
   type CachedObject,
   fromBase64,
   OVERLAP_CACHE_OBJECTS,
-  parseStore,
-  RepoObjects,
+  type RepoObjects,
   type TreeEntry,
   toBase64,
 } from './repo-objects';
 import { ApiError, batch, caller, type Json, type RepoContext, withTrees } from './repo-ops';
 import { dispatchObjects } from './repo-projection';
+import { addCommitted } from './repo-size';
 import { putRaw } from './repo-stores';
 import { timed } from './repo-timing';
 
@@ -124,14 +124,8 @@ export async function commit(
       const cached = timed('cache', () =>
         Promise.all([store.cache(written), putRaw(ctx.env, (id) => store.rawKey(id), [raw])]),
       );
-      // While the mirror is retired, the commit goes to the store replacing it.
-      const target = prepared.push_store
-        ? new RepoObjects(ctx.env, ctx.repo, parseStore(ctx.env, prepared.push_store))
-        : store;
-      // Too large to stage, so the store must exist now, however new the repository is.
-      await timed('store.ready', async () => target.store.ready?.());
       const { report, readback } = await timed('push', () =>
-        pushCommit(target, fromBase64(prepared.push_b64), prepared.commit, cached),
+        pushCommit(store, fromBase64(prepared.push_b64), prepared.commit, cached),
       );
       record = {
         op: 'repo_record_commit',
@@ -147,6 +141,7 @@ export async function commit(
       edge,
     ]);
     if (recorded.error) throw new ApiError(recorded.error.code, recorded.error.message);
+    addCommitted(ctx.env, ctx.repo, all);
     let undispatched = false;
     try {
       await timed('dispatch', () => dispatchRuns(ctx.env, ctx.repo, recorded.check_runs));

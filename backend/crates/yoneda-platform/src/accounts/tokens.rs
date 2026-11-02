@@ -26,6 +26,7 @@ const USE_RESOLUTION: i64 = 60_000;
 pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: TokenOp, now: i64) -> Result<Value> {
     match op {
         TokenOp::Create => create(db, c, now),
+        TokenOp::AgentRoom => super::agents::check_room(db, c, now),
         TokenOp::List => {
             account(db)?;
             let rows = db.query(
@@ -52,6 +53,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: TokenOp, now: i64) -> R
                 .ok_or_else(|| Error::new("UNAUTHORIZED", "Unknown, expired or revoked token"))?;
             let mut checked = public(&row)?;
             checked["orgs"] = json!(super::orgs::hints(db)?);
+            super::place::add(db, &mut checked)?;
             if row["last_used_at"]
                 .as_i64()
                 .is_none_or(|at| at + USE_RESOLUTION <= now)
@@ -152,12 +154,17 @@ fn create<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         return Err(bad("Token names are 1-64 printable characters"));
     }
     let grant = grant(c)?;
-    // Only the device flow labels a token as a login (with the CLI's host).
+    // Only the device flow labels a token, as a login or an agent (with the CLI's host).
     let origin = match &c["origin"] {
         Value::Null => None,
-        Value::String(origin) if origin == "login" => Some("login"),
-        _ => return Err(bad("origin must be login, or null")),
+        Value::String(origin) if origin == "login" => Some(origin.as_str()),
+        Value::String(origin) if super::agents::named(origin).is_some() => Some(origin.as_str()),
+        _ => return Err(bad("origin must be login, an agent, or null")),
     };
+    if let Some(agent) = origin.and_then(super::agents::named) {
+        super::agents::allow(&grant)?;
+        super::agents::room(db, agent, now)?;
+    }
     let host = label(c, "host")?;
     if origin.is_none() && host.is_some() {
         return Err(bad("Only a login token names its host"));
@@ -239,6 +246,22 @@ pub(super) fn revoke_all<S: SqlStore>(db: &S, now: i64) -> Result<i64> {
         &[json!(now)],
     )?;
     Ok(live)
+}
+
+/// Revokes every live token with the SSH keys each one added, as a single revocation does
+/// (a password reset; a recovery removes every key anyway), and answers how many of each.
+/// A removed key's fingerprint claim stays behind and grants nothing: the next add takes it.
+pub(super) fn revoke_all_with_keys<S: SqlStore>(db: &S, now: i64) -> Result<(i64, i64)> {
+    let live = db.query(
+        "SELECT id FROM account_tokens WHERE revoked_at IS NULL",
+        &[],
+    )?;
+    let mut keys = 0;
+    for token in &live {
+        let id = token["id"].as_str().ok_or_else(|| bad("Corrupt token"))?;
+        keys += super::ssh_key_tokens::remove_added_by(db, id, now)?.len() as i64;
+    }
+    Ok((revoke_all(db, now)?, keys))
 }
 
 /// A stored token without its digest.

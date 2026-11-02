@@ -2,10 +2,12 @@
 //! database. Nothing here decides. Stricter than a person's landing, who can weigh what a rule
 //! can't, so it gathers more than `land_gates::gates`, which judges checks, approvals and
 //! rejections as it does for anyone.
-use crate::platform_ctc::{LandingState, Requirement, RequirementState, RiskScore};
-use crate::repo_store::change_gates::{GateState, comments, policy};
+use crate::platform_ctc::{LandingState, Requirement, RequirementState};
+use crate::repo_store::change_gates::{GateState, policy};
 use crate::repo_store::rows::{self, CommitRow, Settings};
-use crate::repo_store::{break_glass, capacity, grants, land_gates, legal_hold, merging};
+use crate::repo_store::{
+    break_glass, capacity, go_around, grants, land_gates, legal_hold, merging,
+};
 use crate::storage::SqlStore;
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result, git_object::ObjectId, txlog::OccOutcome};
@@ -138,8 +140,7 @@ fn outside_a_grant<S: SqlStore>(
     Ok(false)
 }
 
-/// The state of `commit`, the head of `change`, landing on `refname`. `risk` as the caller has
-/// it, since only the adapter can read a diff.
+/// The state of `commit`, the head of `change`, landing on `refname`.
 pub(super) fn landing_state<S: SqlStore>(
     db: &S,
     change: &Value,
@@ -147,7 +148,6 @@ pub(super) fn landing_state<S: SqlStore>(
     refname: &str,
     settings: &Settings,
     answers: Answers,
-    risk: Option<RiskScore>,
 ) -> Result<LandingState> {
     let title = change["title"].as_str().unwrap_or_default().to_lowercase();
     let gate = land_gates::gates(db, commit, refname, settings)?;
@@ -164,10 +164,10 @@ pub(super) fn landing_state<S: SqlStore>(
         approvals: gate["approvals"].as_u64().unwrap_or(0),
         approved_by: approvers(db, &commit.id)?,
         auto_approved: gate["auto_approved"] == true,
-        rules_ask: !settings.policy.required_checks.is_empty(),
+        rules_ask: !settings.policy.required_checks.is_empty() || settings.policy.approvals > 0,
         from_fork: change["source_repo"].is_string(),
         failed_checks: failed_checks(db, commit, settings)?,
-        unresolved_comments: comments(db, &change["number"])?.state != GateState::Ready,
+        unresolved_comments: go_around::from_people(db, &change["number"])? > 0,
         base_exists: base_head.is_some(),
         conflict,
         paused_by: break_glass::paused(db)?
@@ -175,7 +175,6 @@ pub(super) fn landing_state<S: SqlStore>(
         outside_grant: outside_a_grant(db, change, commit, refname)?,
         legal_hold: None,
         repo_full: None,
-        risk,
         ahead: Vec::new(),
     };
     if let Some(c) = answers {

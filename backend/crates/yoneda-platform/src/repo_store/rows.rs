@@ -28,6 +28,8 @@ pub struct Settings {
     pub visibility: Visibility,
     /// The repository's Landing switches.
     pub auto_landings: AutoLandings,
+    /// The size of its Git objects (`capacity`); `None` until migration 0046 has run.
+    pub git_bytes: Option<u64>,
 }
 
 impl Settings {
@@ -51,6 +53,7 @@ pub struct CommitRow {
     pub principal: String,
     pub message: String,
     pub read_set: Vec<String>,
+    pub author: super::commit_authors::Authored,
 }
 
 pub fn init<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
@@ -87,7 +90,7 @@ pub fn settings<S: SqlStore>(db: &S) -> Result<Settings> {
         .query("SELECT * FROM repo_settings WHERE id='repository'", &[])?
         .into_iter()
         .next()
-        .ok_or_else(|| Error::new("NOT_FOUND", "Repository is not initialized"))?;
+        .ok_or_else(|| Error::new("NOT_FOUND", "No such repository"))?;
     let text = |key: &str| {
         row[key]
             .as_str()
@@ -111,6 +114,7 @@ pub fn settings<S: SqlStore>(db: &S) -> Result<Settings> {
         }),
         visibility: Visibility::parse(&text("visibility")?)?,
         auto_landings: AutoLandings::of(&row),
+        git_bytes: row["git_bytes"].as_u64(),
     })
 }
 
@@ -153,14 +157,13 @@ pub fn commit_row<S: SqlStore>(db: &S, id: &ObjectId) -> Result<Option<CommitRow
         principal: text("principal")?.to_owned(),
         message: text("message")?.to_owned(),
         read_set: serde_json::from_str(text("read_set")?).map_err(|_| corrupt("read set"))?,
+        author: super::commit_authors::Authored::of(&row),
     }))
 }
 
 pub fn recorded<S: SqlStore>(db: &S, id: &ObjectId) -> Result<CommitRow> {
-    match commit_row(db, id)? {
-        Some(row) => Ok(row),
-        None => Err(super::history_fill::not_recorded(db, id)?),
-    }
+    commit_row(db, id)?
+        .ok_or_else(|| Error::new("NOT_FOUND", format!("Commit {id} is not recorded")))
 }
 
 pub fn touches<S: SqlStore>(db: &S, id: &ObjectId) -> Result<Vec<PathTouch>> {

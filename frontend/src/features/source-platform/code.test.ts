@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { CommentItem } from './ChangeThread';
 import { FileTable } from './FileTable';
-import { ago, directoryActivity, type LogEntry } from './fileActivity';
+import { ago, writtenAt } from './fileActivity';
 import { blocks, Markdown } from './markdown';
 import { accountName, HIDDEN_ACCOUNT, principalName, ShowEmailsContext } from './people';
 import { apiRef } from './RepoFiles';
@@ -13,42 +13,47 @@ import { landingNeeds } from './repoStatus';
 
 const html = (type: any, props: any) => renderToStaticMarkup(createElement(type, props));
 const sha = (n: number) => String(n).repeat(40).slice(0, 40);
-const entry = (version: number, paths: string[], refname = 'refs/heads/main'): LogEntry => ({
-  version,
-  kind: 'commit',
-  refname,
-  new: sha(version),
-  paths: paths.map((path) => ({ path, op: 'modify' })),
-  actor: 'user:ada',
-  committed_at_ms: version * 1000,
+describe('a comment on a Landing', () => {
+  const body = (text: string) =>
+    html(CommentItem, {
+      comment: {
+        id: 1,
+        principal: 'token:yoneda-managed-agents',
+        body: text,
+        at: 1,
+        resolved_at: null,
+      },
+    });
+  const RUN = 'r7d8d4bee74abf3a3a49e-sl-1-db7d52c6dd26';
+
+  it('reads as written, not as its Markdown', () => {
+    const page = body('**Slop review**: low on `db7d52c6dd`\n\nNothing to tidy.');
+    expect(page).toContain('<strong>Slop review</strong>');
+    expect(page).toContain('<code>db7d52c6dd</code>');
+    expect(page).not.toContain('**');
+  });
+  it('leaves off the reference a run finds its comment by', () => {
+    for (const ref of [`${RUN}#summary`, `${RUN}#3`]) {
+      const page = body(`Done.\n\n_Slop review by YonedaRepo managed agents · ${ref}_`);
+      expect(page).toContain('<em>Slop review by YonedaRepo managed agents</em>');
+      expect(page).not.toContain(RUN);
+    }
+  });
+  it('keeps what a person wrote, and never as markup', () => {
+    expect(body('See a · b_')).toContain('See a · b_');
+    expect(body('<img src=x onerror=alert(1)>')).not.toContain('<img');
+  });
 });
 
-describe('directory activity', () => {
-  const log = [
-    entry(1, ['README.md', 'src/a.rs', 'src/net/b.rs']),
-    entry(2, ['src/net/b.rs']),
-    entry(3, ['docs/x.md'], 'refs/heads/dev'),
-    entry(4, ['src/a.rs']),
-  ];
-  it('dates each entry by the newest change under it on that branch', () => {
-    const root = directoryActivity(log, 'main', '', ['README.md', 'src', 'docs']);
-    expect(root.get('README.md')?.version).toBe(1);
-    expect(root.get('src')?.version).toBe(4);
-    expect(root.has('docs')).toBe(false); // changed only on dev
-    const src = directoryActivity(log, 'main', 'src', ['a.rs', 'net']);
-    expect(src.get('net')).toMatchObject({ version: 2, commit: sha(2), at: 2000 });
-    expect(directoryActivity(log, 'dev', '', ['docs']).get('docs')?.version).toBe(3);
-  });
-  it('reads as of a version for time travel, and never matches a name prefix', () => {
-    expect(directoryActivity(log, 'main', '', ['src'], 3).get('src')?.version).toBe(2);
-    expect(directoryActivity([entry(5, ['srcs/z'])], 'main', '', ['src']).size).toBe(0);
-  });
+describe('ages', () => {
   it('words ages and principals', () => {
     expect(ago(0, 30_000)).toBe('just now');
     expect(ago(0, 3 * 86_400_000)).toBe('3 days ago');
     expect(ago(0, 86_400_000)).toBe('yesterday');
     expect(principalName('user:ada')).toBe('ada');
     expect(principalName('token:ci')).toBe('ci (token)');
+    expect(principalName('agent:ada/review-bot')).toBe('review-bot (agent of ada)');
+    expect(principalName('agent:ada@example.com/bot')).toBe(`bot (agent of ${HIDDEN_ACCOUNT})`);
     expect(principalName('system')).toBe('system');
   });
   it('never shows an email-named account unless the page allows it', () => {
@@ -149,12 +154,13 @@ describe('file table', () => {
     { name: 'a.txt', type: 'blob', id: '3' },
   ];
   it('lists folders first, with the last change and its age, and a parent row below the root', () => {
-    const activity = directoryActivity([entry(1, ['src/a', 'a.txt'])], 'main', 'lib', []);
+    const written = { commit: sha(1), message: 'Add src', principal: 'platform:import' };
     const root = html(FileTable, {
       dir: '',
       entries,
-      activity: new Map([['src', { commit: sha(1), at: 0, actor: 'u', version: 1 }]]),
-      messages: new Map([[sha(1), 'Add src']]),
+      activity: new Map([
+        ['src', { ...written, author_name: 'Ada', authored_at: 0, recorded_at: 3_600_000 }],
+      ]),
       now: 2 * 3_600_000,
       link,
       commitLink,
@@ -162,18 +168,28 @@ describe('file table', () => {
     expect(root.indexOf('src')).toBeLessThan(root.indexOf('a.txt'));
     expect(root.indexOf('a.txt')).toBeLessThan(root.indexOf('z.txt'));
     expect(root).toContain('>Add src</a>');
+    expect(root).toContain('>Ada<');
     expect(root).toContain('2 hours ago');
+    expect(root).not.toContain('platform:import');
     expect(root).not.toContain('parent directory');
     const nested = html(FileTable, {
       dir: 'src/net',
       entries: [],
-      activity,
-      messages: new Map(),
+      activity: new Map(),
       link,
       commitLink,
     });
     expect(nested).toContain('href="/p/src"');
     expect(nested).toContain('aria-label="Files in src/net"');
+  });
+});
+
+describe('when a commit was written', () => {
+  const base = { commit: sha(1), message: 'm', principal: 'u', recorded_at: 9 };
+  it('is the author’s own time, and when it was recorded for a commit from before', () => {
+    expect(writtenAt({ ...base, authored_at: 5 })).toBe(5);
+    expect(writtenAt({ ...base, authored_at: null })).toBe(9);
+    expect(writtenAt(base)).toBe(9);
   });
 });
 

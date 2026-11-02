@@ -598,6 +598,8 @@ fn case(
 }
 
 /// Runs `count` cases (or only `YONEDA_DIFF_SEED`) and answers their outcomes, summed.
+/// `YONEDA_DIFF_SEED_START` moves the seeds: the nightly run tries new ones each night, where
+/// the same seeds on the same commit would prove nothing new.
 fn cases(count: u64, steps: usize) -> BTreeMap<String, usize> {
     cases_with(count, steps, &json!({}))
 }
@@ -605,7 +607,13 @@ fn cases(count: u64, steps: usize) -> BTreeMap<String, usize> {
 fn cases_with(count: u64, steps: usize, switches: &Value) -> BTreeMap<String, usize> {
     let seeds: Vec<u64> = match std::env::var("YONEDA_DIFF_SEED") {
         Ok(seed) => vec![seed.parse().expect("YONEDA_DIFF_SEED is a number")],
-        Err(_) => (0..count).collect(),
+        Err(_) => {
+            let start = match std::env::var("YONEDA_DIFF_SEED_START") {
+                Ok(start) => start.parse().expect("YONEDA_DIFF_SEED_START is a number"),
+                Err(_) => 0,
+            };
+            (start..start + count).collect()
+        }
     };
     let mut tally = BTreeMap::new();
     for seed in seeds {

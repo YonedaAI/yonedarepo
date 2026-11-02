@@ -36,17 +36,3 @@ h2.site-band-head,
 .site-cells > * + * {
   border-left: 1px solid var(--site-line);
 }
-
-/* Closing call to action: a band, not a floating card. */
-.site-band-cta {
-  text-align: center;
-  background: var(--site-accent-soft);
-}
-.site-band-cta h2 {
-  font-size: var(--fs-xl);
-  margin: 0 0 var(--sp-2);
-}
-.site-band-cta p {
-  color: var(--site-muted);
-  margin: 0 auto var(--sp-5);
-}

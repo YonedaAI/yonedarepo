@@ -3,9 +3,13 @@
 // the two objects to R2, reads them back byte for byte, and reports back, after which the
 // authority deletes those rows in one transaction. No network I/O happens inside it, and
 // a run that dies at any step is simply run again (the plan reseals the same bytes).
+
+import { log } from './log';
 import { archiveKey } from './repo-archive';
 import { changeLogHold, skipChangeLog } from './repo-changelog';
-import { ApiError, type Call, caller, type Json } from './repo-ops';
+import { ApiError, type Call, caller, type Json, type RepoContext } from './repo-ops';
+import { shardOutboxes, shardUsage } from './repo-shards';
+import { carriedQueue } from './request-scope';
 import type { Env, Envelope } from './types';
 
 /** Versions per segment (SEGMENT_VERSIONS in yoneda-core): nothing is due below it. */
@@ -71,9 +75,7 @@ export async function compactLog(env: Env, repo: string, call: Call, max = SEGME
   const { floor, head, tail_rows, retention, held: stopped } = last;
   // Superfan alarms on this line (tail.ts): a hold with no limit would otherwise be silent.
   if (stopped?.stalled)
-    console.error(
-      JSON.stringify({ event: 'compaction.stalled', repo, ...stopped, floor, head, tail_rows }),
-    );
+    log.error('compaction.stalled', { repo, ...stopped, floor, head, tail_rows });
   return {
     segments,
     floor,
@@ -85,6 +87,17 @@ export async function compactLog(env: Env, repo: string, call: Call, max = SEGME
   };
 }
 
+/** The owner's read of the floor, tail and database size. With `shards`, the 64 commit shards'
+ * size too: 64 more calls, asked only after the authority has allowed the read. */
+export async function compactionRead(ctx: RepoContext, shards: boolean) {
+  const [compaction, storage] = await Promise.all([
+    ctx.call({ op: 'repo_compact_status' }),
+    ctx.call({ op: 'repo_storage' }),
+  ]);
+  if (!shards) return { ...compaction, storage };
+  return { ...compaction, storage, shards: shardUsage(await shardOutboxes(ctx.env, ctx.repo)) };
+}
+
 /** One run as the platform. Never throws: a failure is logged and a later run tries again. A
  * repository that has gone has nothing to move, and that is no failure. */
 async function compactQuietly(env: Env, repo: string) {
@@ -93,14 +106,7 @@ async function compactQuietly(env: Env, repo: string) {
   } catch (e: any) {
     const code = e instanceof ApiError ? e.code : 'COMPACTION';
     if (GONE_CODES.includes(code)) return null;
-    console.error(
-      JSON.stringify({
-        event: 'compaction.failed',
-        repo,
-        code,
-        message: String(e?.message ?? e).slice(0, 200),
-      }),
-    );
+    log.error('compaction.failed', { repo, code, error: e });
     return null;
   }
 }
@@ -141,13 +147,12 @@ export async function sweepCompaction(env: Env, now = Date.now()) {
     .bind(from, to, SWEEP_LIMIT)
     .all<{ id: string }>();
   // Past the limit the same ids go unvisited every day, so it must not pass quietly.
-  if (results.length === SWEEP_LIMIT)
-    console.error(JSON.stringify({ event: 'compaction.sweep_full', from, to }));
+  if (results.length === SWEEP_LIMIT) log.error('compaction.sweep_full', { from, to });
   for (let at = 0; at < results.length; at += SEND_BATCH) {
     const jobs = results.slice(at, at + SEND_BATCH).map(({ id }) => ({
       body: { v: 1, kind: COMPACT_JOB, repo_id: id, job_id: `compact-${id}` } as Envelope,
     }));
-    await env.PLATFORM_QUEUE.sendBatch(jobs);
+    await carriedQueue(env.PLATFORM_QUEUE).sendBatch(jobs);
   }
   return results.length;
 }
@@ -155,6 +160,7 @@ export async function sweepCompaction(env: Env, now = Date.now()) {
 /** The sweep's queue job: one run, and another shortly while segments remain due. */
 export async function compactionJob(env: Env, envelope: Envelope) {
   const out = await compactQuietly(env, envelope.repo_id);
-  if (out?.more) await env.PLATFORM_QUEUE.send(envelope, { delaySeconds: AGAIN_SECONDS });
+  if (out?.more)
+    await carriedQueue(env.PLATFORM_QUEUE).send(envelope, { delaySeconds: AGAIN_SECONDS });
   return out;
 }

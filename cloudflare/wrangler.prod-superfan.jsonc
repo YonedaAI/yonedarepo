@@ -9,10 +9,20 @@
 // SUPERFAN_READ_TOKEN bearer for GET /findings, GET /status, POST /run
 // New findings mail ADMIN_NOTIFY_EMAIL through Resend (superfan/notify.ts, the Secrets Store secret Resend-Yoneda), at most
 // 8 digests a UTC day. The same address as the platform's sign-up notice (its EMAIL_CONTACT).
+// POST /deploys is the deploy ledger (xtask/src/deploy_ledger.rs), same bearer. RELEASE_COMPARE=on compares each release with the one before after a deploy (superfan/release.ts).
+// PROBES=on runs synthetic checks on the */5 cron: /health, a page, an API read and, with the optional secret PROBE_CLONE_REPO (a small public repository's id, under 1 MiB), a clone. Never a landing on prod.
+// Off, the */5 cron returns at once. Budget: docs/observability-plan.md.
+// SERVICE_LEVELS=on writes requests that died and each synthetic result to SITE_EVENTS, the dataset the platform reads back (superfan/service-points.ts).
 // Deployed first: the production platform names this Worker in tail_consumers.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
+  "analytics_engine_datasets": [
+    {
+      "binding": "SITE_EVENTS",
+      "dataset": "yonedarepo_prod_site_events"
+    }
+  ],
   "compatibility_date": "2026-10-07",
   "durable_objects": {
     "bindings": [
@@ -55,19 +65,26 @@
   ],
   "triggers": {
     "crons": [
-      "7 * * * *"
+      "7 * * * *",
+      "*/5 * * * *"
     ]
   },
   "vars": {
     "ADMIN_NOTIFY_EMAIL": "hello@yonedarepo.com",
     "CF_ACCOUNT_ID": "f011d0ee02b23cad26b4b38151b204ad",
     "DAILY_CAP_MICROUSD": "1000000",
+    "DEADMAN_URL": "https://yonedarepo-prod-deadman.mlong-f01.workers.dev",
     "EMAIL_FROM": "YonedaRepo <hello@yonedarepo.com>",
     "MIMO_TOKEN_PLAN_REGION": "sgp",
+    "PROBES": "off",
+    "RELEASE_COMPARE": "off",
+    "SERVICE_LEVELS": "on",
     "SUPERFAN_MODEL": "mimo-v2.6-flash",
     "TELEMETRY_SOURCE": "cloudflare",
+    "WATCH_FRONT_URL": "https://yonedarepo.com",
     "WATCH_SCRIPT": "yonedarepo-prod-platform",
-    "WATCH_URL": "https://yonedarepo-prod-platform.mlong-f01.workers.dev"
+    "WATCH_URL": "https://api.yonedarepo.com",
+    "WATCH_WIDE": "on"
   },
   "workers_dev": true
 }

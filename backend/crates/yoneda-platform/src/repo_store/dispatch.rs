@@ -7,10 +7,10 @@ use super::{
     activity, adopt, agent_context, agent_reads, annotated, audit_outbox, auto_landing, bisect,
     branches, capacity, change_closing, change_comments, change_delete, change_gates,
     change_instruments, change_records, change_route, changes, changesets, checks, classes,
-    contracts, flight_plans, git_http, head, history, history_fill, history_import, hook_delivery,
-    hook_events, hooks, land, land_batch, land_queue, land_tickets, land_when_cleared, legal_hold,
-    members, merging, prepare, projection, projection_plan, pushed, reads, rebase, record,
-    releases, search_records, sessions, staging, store_lineage, submitted, symbols, tags, tokens,
+    commit_authors, contracts, dir_activity, flight_plans, git_http, head, history, history_reset,
+    hook_delivery, hook_events, hooks, land, land_batch, land_queue, land_tickets,
+    land_when_cleared, legal_hold, members, merging, prepare, projection_plan, pushed, reads,
+    rebase, record, releases, search_records, sessions, staging, submitted, symbols, tags, tokens,
     version_projection,
 };
 use super::{
@@ -42,14 +42,14 @@ pub(super) fn dispatch<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     if capacity::refuses(op) {
         capacity::refuse_if_full(db, c)?;
     }
-    if history_fill::refuses(op) {
-        history_fill::refuse_if_filling(db)?;
+    if capacity::adds_objects(op) {
+        capacity::refuse_if_over_size(&settings, c)?;
     }
     // An erased tombstone holds nothing, and no longer knows its owner.
     if legal_hold::refuses(op) && !settings.erased() {
         legal_hold::require_free(c, &settings.workspace)?;
     }
-    let since = land_when_cleared::watching(db, op, &settings);
+    let since = land_when_cleared::watching(db, op, c, &settings);
     let mut result = run(db, c, op, &actor, &settings)?;
     land_when_cleared::ask_for_jobs(db, op, c, since, &mut result);
     Ok(grants::redact(op, &actor.grant, result))
@@ -74,21 +74,20 @@ fn run<S: SqlStore>(
     match op {
         R::Status => serde_json::to_value(super::status::status(db, settings, actor)?)
             .map_err(|e| yoneda_core::Error::new("ENCODING", e.to_string())),
-        R::Storage => capacity::usage(db, capacity::REPO_TABLES),
-        R::CloneAccess => quarantine::refuse_direct_clone(db)
-            .map(|()| json!({ "object_store": settings.object_store })),
+        R::Storage => capacity::repo_usage(db, settings),
+        R::SizeAdd => capacity::add_pack(db, settings, c).map(|()| json!({})),
         R::Refs => reads::refs(db, c),
         R::Snapshot => reads::snapshot(db, c),
-        R::Log => reads::log(db, c).and_then(|log| history_fill::note(db, log)),
+        R::Log => reads::log(db, c),
         R::Txlog => reads::txlog(db, c),
         R::ChangeRecords => change_records::records(db, c),
         R::Activity => activity::activity(db, c),
+        R::Insights => super::insights::insights(db, c, actor),
         R::Commit => reads::commit(db, c, settings),
         R::MergeBase => reads::merge_base(db, c),
         R::MergePlan => merging::plan(db, c),
-        R::PathHistory => {
-            history::path_history(db, c).and_then(|found| history_fill::note(db, found))
-        }
+        R::PathHistory => history::path_history(db, c),
+        R::DirActivity => dir_activity::dir_activity(db, c),
         R::RecordClasses => classes::record(db, c),
         R::ClassesPending => classes::pending(db, c),
         R::RecordSymbols => symbols::record(db, c),
@@ -102,13 +101,6 @@ fn run<S: SqlStore>(
         R::PrepareCommit => {
             prepare::prepare(db, c, principal, settings).and_then(|mut prepared| {
                 prepared["object_store"] = json!(settings.object_store);
-                // While the mirror is retired, a commit too large to stage is pushed to
-                // the store replacing it (reads still use the mirror).
-                if prepared.get("push_b64").is_some()
-                    && let Some(store) = quarantine::mirror::push_store(db)?
-                {
-                    prepared["push_store"] = json!(store);
-                }
                 prepared["quarantined"] = json!(quarantine::withheld(db)?);
                 Ok(prepared)
             })
@@ -124,16 +116,13 @@ fn run<S: SqlStore>(
         R::SessionRecord => sessions::record(db, c, actor),
         R::Sessions => sessions::list(db, c, actor),
         R::SessionList => agent_reads::session_list(db, c, actor),
-        R::SearchRecords => {
-            search_records::search(db, c, actor).and_then(|found| history_fill::note(db, found))
-        }
+        R::SearchRecords => search_records::search(db, c, actor),
         R::SessionShow => agent_reads::session_show(db, c, actor),
         R::SessionTranscript => sessions::transcript(db, c, actor),
         R::ContractList => agent_reads::contract_list(db, c),
         R::PinList => agent_reads::pin_list(db, actor),
         R::BisectList => agent_reads::bisect_list(db, c, actor),
-        R::AgentContext => agent_context::context(db, c, actor, settings)
-            .and_then(|found| history_fill::note(db, found)),
+        R::AgentContext => agent_context::context(db, c, actor, settings),
         R::FlightPlan => flight_plans::file(db, c, actor),
         R::ChangeCreate => changes::create(db, c, actor),
         R::Changes => changes::list(db, c, actor),
@@ -153,13 +142,9 @@ fn run<S: SqlStore>(
         R::CheckComplete => checks::complete(db, c, principal),
         R::SetPolicy => checks::set_policy(db, c, principal, settings),
         R::AutoLandings => auto_landing::set(db, c),
-        R::ProjectionPending => projection::pending(db),
-        R::ProjectionResult => projection::result(db, c),
         R::ObjectsPending => staging::pending(db),
         R::ObjectsProjected => staging::projected(db, c),
         R::StagedObjects => pushed::bundles::staged(db, c),
-        R::ProjectionObjects => store_lineage::unprojected(db, c),
-        R::ObjectsStored => store_lineage::stored_op(db, c),
         R::Review => record::review(db, c, principal),
         R::BranchSet => branches::set(db, c, principal),
         R::RebasePlan => rebase::plan(db, c),
@@ -187,12 +172,14 @@ fn run<S: SqlStore>(
             pushed::bundles::require_system(actor).and_then(|()| pushed::bundles::locate(db, c))
         }
         R::Delete => deletion::delete(db, c, actor, settings),
+        R::PurgeNow => undo::purge_now(db, c, actor, settings),
         R::PurgeTarget => deletion::purge_target(db, c, actor, settings),
         R::Purged => undo::purged(db, c, actor, settings),
         R::Restore => undo::restore(db, c, actor, settings),
         R::HoldOwner => Ok(json!({ "owner": settings.workspace })),
         R::AuditPending => audit_outbox::pending(db, c, settings),
         R::AuditDone => audit_outbox::done(db, c),
+        R::AuditSetAside => audit_outbox::set_aside(db, c),
         R::ErasePlan => erase::plan(db, c, settings),
         R::EraseStep => erase::step(db, c, settings),
         // `enqueue`: a landing that needs a merge joins the branch's queue in this call.
@@ -220,15 +207,20 @@ fn run<S: SqlStore>(
         R::ChangesetPlan => projection_plan::plan(db, c),
         R::Head => head::head(db, c, settings),
         R::ChangesetRecord => version_projection::record(db, c, settings),
-        R::RecordImported => history_import::record(db, c),
-        R::RecordImportedBatch => history_fill::record_batch(db, c),
-        R::RecordImportedEnd => history_fill::end(db, c),
+        R::ImportRefs => branches::import_refs(db, c, principal),
+        R::ImportReset => history_reset::step(db, c, settings),
+        R::AuthorsMissing => commit_authors::missing(db, c),
+        R::AuthorsSet => commit_authors::fill(db, c),
+        R::StoreAudit => history_reset::audit(db, settings),
         R::BreakGlass => break_glass::execute(db, c, principal, settings),
         R::Import => {
-            if !actor.can("import") {
+            let importer = actor.can("import");
+            if !importer {
                 actor.require_owner()?;
             }
-            land::import(db, c, principal)
+            let landed = land::import(db, c, principal, importer)?;
+            capacity::add_pack(db, settings, c)?;
+            Ok(landed)
         }
         R::HookCreate => hooks::create(db, c, actor),
         R::Hooks => hooks::list(db),
@@ -244,6 +236,7 @@ fn run<S: SqlStore>(
         R::SetVisibility => visibility::set(db, c, actor),
         R::Rename => visibility::rename(db, c, actor, settings),
         R::MemberPut => members::put(db, c, actor, settings),
+        R::AccountClosed => deletion::account_closed(db, c, settings),
         R::MemberRemove => members::remove(db, c, actor, settings),
     }
 }

@@ -58,10 +58,7 @@ export function SiteFeatures({ navigate }: { navigate: Navigate }) {
       <section className="site-cta" aria-labelledby="features-cta">
         <h2 id="features-cta">Try it on a repository of your own.</h2>
         <p>
-          <a
-            className="site-button site-button-large"
-            {...siteLink({ page: 'signin', mode: 'signup' }, navigate)}
-          >
+          <a className="site-button" {...siteLink({ page: 'signin', mode: 'signup' }, navigate)}>
             Get started free
           </a>{' '}
           <a className="site-more" {...siteLink({ page: 'docs', slug: 'get-started' }, navigate)}>

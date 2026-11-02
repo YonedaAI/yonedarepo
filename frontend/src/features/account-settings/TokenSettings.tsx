@@ -5,6 +5,7 @@ import { SettingsSection } from '../../components/SettingsSection';
 import { expiresIn } from '../source-platform/connect';
 import type { OrgSummary } from '../source-platform/orgModel';
 import {
+  isAgent,
   isDeviceLogin,
   onlyTokens,
   type Pat,
@@ -52,7 +53,7 @@ export function CliTable({
         <tbody>
           {list.map((t) => (
             <tr key={t.id}>
-              <td>{t.name}</td>
+              <td>{isAgent(t) ? `Agent ${t.name}` : t.name}</td>
               <td>{t.host ?? 'unknown host'}</td>
               <td>{when(t.created_at)}</td>
               <td>{t.last_used_at ? when(t.last_used_at) : 'never'}</td>
@@ -61,7 +62,7 @@ export function CliTable({
                 <button
                   type="button"
                   className="quiet"
-                  aria-label={`Sign out ${t.host ?? t.name}`}
+                  aria-label={`Sign out ${isAgent(t) ? `agent ${t.name}` : (t.host ?? t.name)}`}
                   onClick={() => onSignOut(t)}
                 >
                   Sign out
@@ -100,7 +101,8 @@ export function TokenSettings({
             setError('');
             setNotice('');
             try {
-              setNotice((await revokePat(t, tokens, 'That CLI and its agents')) ?? '');
+              const what = isAgent(t) ? 'That agent' : 'That CLI and its agents';
+              setNotice((await revokePat(t, tokens, what)) ?? '');
             } catch (e) {
               setError((e as Error).message);
             }

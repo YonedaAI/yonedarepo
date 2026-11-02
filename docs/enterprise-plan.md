@@ -1,16 +1,16 @@
 # Enterprise plan
 
-Status: plan. Written 2026-10-31 at dev `d3f67f6f`. Builders are working from it.
+Status: built behind switches, frozen on 2026-11-01. Written 2026-10-31 at dev `d3f67f6f`.
 
 Four things enterprise buyers ask about deletion and records. Nothing that works today may break; the safety rules in [global-scale-plan.md](global-scale-plan.md) apply.
 
 | Need | Status | Stage |
 |---|---|---|
 | Org owners delete their org's repos | Built and tested with a session and MCP | Add the missing token and second-owner tests |
-| Deleted data really gone | Being built | 1 |
-| Undo window | Built behind `REPO_UNDO_DAYS`, unset | 2 |
-| Legal hold | Being built | 3 |
-| Audit log | Being built | 4 |
+| Deleted data really gone | Built behind `REPO_ERASE`: on in dev, and in prod from the next ship | 1 |
+| Undo window | Built behind `REPO_UNDO_DAYS`: 30 days in dev, and in prod from the next ship | 2 |
+| Legal hold | Built behind `LEGAL_HOLD`: on in dev, and in prod from the next ship | 3 |
+| Audit log | Built behind `AUDIT_LOG`: off in both | 4 |
 
 Operators never get a general delete. Operator actions stay reversible.
 
@@ -21,7 +21,7 @@ Operators never get a general delete. Operator actions stay reversible.
 Branch `claude/erase-repos`. The mapping added:
 
 - **Live gap:** purge never touches `derived/v1/<repo>/` (search, packs, symbols, facts), which hold file content, or the 64 commit shards, though `privacy.md:101` says code is deleted.
-- Attach the wipe at the end of `purgeRepository`, after the Artifacts loop.
+- Attach the wipe at the end of `purgeRepository`.
 - Keep the `repo_settings` tombstone: without it, calls answer `NOT_FOUND`, not `GONE`, and managed cleanup silently stops (`dispatch.ts:92`).
 - `repo_purge_target` must still answer after the wipe, because the job is at-least-once.
 
@@ -62,7 +62,7 @@ Tokens stay revoked. Managed connections must reconnect.
 
 ## 3. Legal hold
 
-**Blocks:** repo delete, purge and wipe, quarantine purge, mirror retirement, release delete, change delete, vacuum, org delete.
+**Blocks:** repo delete, purge and wipe, quarantine purge, release delete, change delete, vacuum, org delete.
 
 **Doesn't block:** landing, compaction, memory retire, LFS orphan sweep, branch delete (history stays because vacuum is blocked), member removal. Quarantine still withholds content from being served.
 
@@ -82,9 +82,9 @@ Tokens stay revoked. Managed connections must reconnect.
 
 **Events to add:** login, logout, failed login, OAuth, device approval; repo token create and revoke; visibility, rename, repo delete and restore, retention, webhook create and delete; hold set and release. Org events gain their missing actor.
 
-**Delivery:** events must commit with state (`AGENTS.md`). Repo events do, with no migration: they wait in `hook_outbox` under hook id 0, which no hook has, and the adapter copies them after the answer. A copy that fails waits for the repo's next audited change or its purge. A new queue kind `platform_audit` would retry sooner, but only after every binary knows it, since unknown kinds are acknowledged and dropped.
+**Delivery:** events must commit with state (`AGENTS.md`). Repo events do, with no migration: they wait in `hook_outbox` under hook id 0, which no hook has, and the adapter copies them after the answer. A copy that fails waits for the repo's next audited change. An erase refuses until the log has them all, and its job keeps copying until then ([audit-log.md](audit-log.md)). A new queue kind `platform_audit` would retry sooner, but only after every binary knows it, since unknown kinds are acknowledged and dropped.
 
-**Integrity:** a hash chain in each row, as `txlog` does. Old rows seal to R2 under `audit/v1/<org>/`, a prefix no purge touches. Retention per org.
+**Integrity:** a hash chain in each row, as `txlog` does. Old rows seal to R2 under `audit/v1/<org>/`, a prefix no purge touches; they stay in the log too, until retention per org exists.
 
 **Read:** `GET /orgs/:org/audit?before=<seq>&kind=&actor=`, owners only, tokens need `repo:admin`. Page by `seq`. Export JSON and CSV, neutralising leading `= + - @` in cells. UI at `/orgs/:org/audit`.
 

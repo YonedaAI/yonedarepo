@@ -15,6 +15,7 @@ import { gitConfigEnv, OWN_TRAFFIC_ENV } from '../../tools/own-traffic.mjs';
 import { sandboxEnv } from '../../tools/staging/agent-sandbox.mjs';
 import { OWN_TRAFFIC, Session } from '../../tools/staging/client.mjs';
 import { CliKit } from '../../tools/staging/cli-tools.mjs';
+import { Walk } from '../../tools/staging/cli-walk-kit.mjs';
 import { McpClient } from '../../tools/staging/mcp-client.mjs';
 import { Workspace } from '../../tools/staging/realuser-git.mjs';
 
@@ -26,6 +27,7 @@ const HELPER = 'tools/own-traffic.mjs';
 const NOT_THE_PLATFORM = new Map([
   ['tools/check-setup-bench.mjs', 'a check server on this machine'],
   ['tools/platform-analytics.mjs', 'Cloudflare and Basin APIs'],
+  ['tools/platform-basin-soak.mjs', 'Cloudflare and Basin APIs'],
   ['tools/ship/find-ship.mjs', 'GitHub'],
   ['tools/ship/monitor.mjs', 'Superfan and /health, which is not a client request'],
   ['tools/staging/webhook-flow.mjs', "the bench Worker's hook box"],
@@ -36,6 +38,7 @@ const CHECKED_ELSEWHERE = new Map([
   ['tools/staging/client.mjs', 'Session.headers'],
   ['tools/staging/mcp-client.mjs', 'McpClient.headers'],
   ['tools/fanout-bench/requests.js', 'headers'],
+  ['tools/fanout-bench/region-steps.js', 'the init runStep builds, tested in region-tools.test.mjs'],
   ['tools/staging/cli-tools.mjs', "the proxy forwards the CLI's own headers"],
 ]);
 /** Stock Git over SSH: the protocol has no header to carry, so these runs stay counted. */
@@ -137,9 +140,12 @@ test('every tool that runs Git against a remote takes its environment from the h
   const unmarked = [];
   for (const file of await toolFiles()) {
     if (OVER_SSH.has(file) || LOCAL_GIT.has(file) || file === HELPER) continue;
+    // Item 48's people: `Person.env`, checked below, is the only environment they run with.
+    if (file.startsWith('tools/staging/cli-walk-')) continue;
     const source = await readFile(file, 'utf8');
     const talks = /\[\s*(?:'-c', [^\]]*?)?'(?:clone|fetch|push|pull|ls-remote)'|git\([^)]*'(?:clone|fetch|push|pull|ls-remote)'/.test(source);
-    if (talks && !/gitConfigEnv|\b(?:kit|ws)\.(?:ok|run|git|env)\(/.test(source)) unmarked.push(file);
+    // `gitSession` (tools/fanout-bench/mac-git.mjs) takes its environment from the helper too.
+    if (talks && !/gitConfigEnv|gitSession\(|\b(?:kit|ws)\.(?:ok|run|git|env)\(/.test(source)) unmarked.push(file);
   }
   assert.deepEqual(unmarked, []);
 });
@@ -221,6 +227,11 @@ test('every process the kit starts tells the CLI and Git to mark what they send'
   rmSync(user.dir, { recursive: true, force: true });
   assert.equal(seen.YONEDA_OWN_TRAFFIC, '1');
   assert.ok(Object.values(seen).includes(LINE));
+  const walk = new Walk({ api: 'https://x.test', origin: 'https://x.test', bin: '/bin' });
+  const person = walk.person('someone').env();
+  walk.dispose();
+  assert.equal(person.YONEDA_OWN_TRAFFIC, '1');
+  assert.ok(Object.values(person).includes(LINE));
 });
 
 test('agents in the sandbox are marked by configuration, in both arms', () => {

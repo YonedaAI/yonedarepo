@@ -3,7 +3,9 @@
 // authority instance first (one namespace with usernames and org names), then recorded by
 // the account, the one it replaces released, and projected for listings. Other accounts'
 // handle is their name.
+
 import { isReservedHandle, normalizeAccountIdentifier } from '../../shared/account';
+import { warned } from './log';
 import { candidates } from './oauth-identity';
 import type { ProviderIdentity } from './oauth-providers';
 import type { Env, Json } from './types';
@@ -11,15 +13,16 @@ import { workspace } from './workspace';
 
 const fail = (code: string, message: string) => Object.assign(new Error(message), { code });
 
-/** The account's handle (null while an email-named account has none), and while it has
- * none a free one made from its GitHub login (`handle_suggestion`). */
+/** The account's name and handle (null while an email-named account has none), and while it
+ * has none a free one made from its GitHub login (`handle_suggestion`). */
 export async function handleState(env: Env, account: string): Promise<Json> {
-  const { handle } = await workspace(env, account, { op: 'handle_get' });
-  if (handle) return { handle, handle_suggestion: null };
-  return { handle: null, handle_suggestion: await suggestion(env, account) };
+  const { handle, display_name } = await workspace(env, account, { op: 'handle_get' });
+  if (handle) return { handle, display_name, handle_suggestion: null };
+  return { handle: null, display_name, handle_suggestion: await suggestion(env, account) };
 }
 
 async function suggestion(env: Env, account: string): Promise<string | null> {
+  // Only a suggestion: with no identities, the form starts empty.
   const { identities } = await workspace(env, account, { op: 'identity_list' }).catch(() => ({
     identities: [],
   }));
@@ -37,6 +40,8 @@ const held = (env: Env, name: string) =>
     () => true,
     (e) => (e?.code === 'NOT_FOUND' ? false : Promise.reject(e)),
   );
+
+type HandleProjector = { handleChosen(account: string, handle: string): Promise<void> };
 
 /** `PUT /api/auth/handle {handle}` for an email-named account: HANDLE_INVALID,
  * HANDLE_RESERVED, HANDLE_TAKEN, or HANDLE_FIXED for an account named by its handle. */
@@ -59,11 +64,10 @@ export async function setHandle(env: Env, account: string, requested: unknown): 
     throw e;
   }
   if (set.previous && set.previous !== name)
-    await workspace(env, String(set.previous), { op: 'handle_release', account }).catch(() => {});
-  await env.INDEX.prepare(
-    'INSERT INTO platform_handles(workspace,handle) VALUES(?,?) ON CONFLICT(workspace) DO UPDATE SET handle=excluded.handle',
-  )
-    .bind(account, name)
-    .run();
+    await workspace(env, String(set.previous), { op: 'handle_release', account }).catch(
+      warned('handle.release_failed', { account }),
+    );
+  // D1 is the platform's; the front Worker has no database.
+  await ((env.PLATFORM ?? env.SELF) as unknown as HandleProjector).handleChosen(account, name);
   return { handle: name };
 }

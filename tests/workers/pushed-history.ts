@@ -85,10 +85,13 @@ export async function bundleKinds(repo: string) {
   return kinds;
 }
 
-/** Waits (up to 2 s) until no read of `repo`'s bundles happens for two 25 ms windows: a
- * push leaves the head holder warming the new head's trees in the background, which a
- * measurement must not count as its own. */
+/** Waits for the head holder, then (up to 2 s) until no read of `repo`'s bundles happens for
+ * two 25 ms windows: a push leaves the holder warming the new head's trees in the background,
+ * which a measurement must not count as its own, and a warm whose first read comes late (a
+ * loaded run) slips past the windows alone. */
 async function quiet(repo: string) {
+  const holders = scoped.LAND_COMBINERS as unknown as { idFromName(n: string): string; get(n: string): { idle(): Promise<void> } };
+  await holders.get(holders.idFromName(`${repo}#head`)).idle();
   const gets = vi.spyOn(scoped.OBJECTS, 'get');
   try {
     for (let calm = 0, round = 0; calm < 2 && round < 80; round++) {

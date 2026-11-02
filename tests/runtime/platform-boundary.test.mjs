@@ -11,8 +11,14 @@ const neutral = new Set([
   './http',
   './types',
   './check-container',
+  './import-container',
   // waitUntil plumbing (AsyncLocalStorage), no agent-layer knowledge.
   './background',
+  // The logger and the request's scope; they import only each other and types.
+  './log',
+  './request-scope',
+  // Work in flight in one isolate; imports nothing.
+  './flights',
   // Durable Object call with one retry on a reset instance; imports nothing.
   './durable',
   // Container SDK errors proving no instance was allocated (capacity); imports nothing.
@@ -37,13 +43,33 @@ const neutral = new Set([
   './internal-accounts',
   // Continent and region codes from `request.cf`; imports only types.
   './region',
+  // Which cell a repository, a region or a token belongs to; imports only types.
+  './cells',
+  './cell-names',
+  // A cell's view of its own bindings; imports only types.
+  './cell-env',
+  // Reaching and merging other cells, and the account's place in them: platform plumbing with no
+  // agent-layer knowledge.
+  './cell-route',
+  './cell-merge',
+  './cell-choice',
+  './account-place',
   // A digest of an account or token; imports nothing.
   './storage',
   '../../shared/site-traffic',
+  // What's measured for service targets, and its point; imports nothing.
+  '../../shared/service-levels',
+  // The Insights page's and admin reports' wire shapes; types only.
+  '../../shared/repo-insights',
+  // The admin Operations, Infrastructure, Visitors and Agents tabs' wire shapes and the clients
+  // an agent can name; imports only types.
+  '../../shared/platform-reports',
   // Token scope names, generated from Rust; types only.
   '../../shared/contracts/pat-scopes',
   // Account identifier rules (yoneda-core::account's transport counterpart); imports nothing.
   '../../shared/account',
+  // The Flight log's address rule, shared with the /updates form; imports only shared/account.
+  '../../shared/newsletter',
   // Contact support's limits and attachment types, shared with the browser; imports nothing.
   '../../shared/support',
   '../../backend/crates/yoneda-worker/build/worker/shim.mjs',
@@ -113,9 +139,9 @@ test('the front Worker reaches the platform only through its public API', async 
   }
   assert.ok(seen.has('front-routes') && seen.has('front-entrypoint'), [...seen].join());
   for (const module of seen)
-    assert.ok(!/^(repo-|platform-|check-container$|entrypoint$)/.test(module), `front Worker imports ${module}`);
+    assert.ok(!/^(repo-|platform-|check-container$|import-container$|entrypoint$)/.test(module), `front Worker imports ${module}`);
   const config = await readFile('cloudflare/wrangler.dev-agents.jsonc', 'utf8');
-  for (const binding of ['SOURCE_REPOS', 'CHECK_RUNNERS', 'OBJECT_PUSHES', 'PLATFORM_QUEUE', 'PLATFORM_IMPORT'])
+  for (const binding of ['SOURCE_REPOS', 'CHECK_RUNNERS', 'IMPORT_RUNNERS', 'PLATFORM_QUEUE', 'PLATFORM_IMPORT'])
     assert.ok(!config.includes(`"${binding}"`), `front Worker binds ${binding}`);
   assert.match(config, /"binding": "PLATFORM",\s*"service": "yonedarepo-dev-platform"/);
 });

@@ -76,6 +76,7 @@ export async function signUpWithEmail(env: Env, email: string, signup: Json): Pr
       return await workspace(env, name, { ...signup, username: name, email });
     } catch (e: any) {
       if (e?.code === 'ALREADY_EXISTS') continue;
+      // A claim left behind grants nothing (sign-in re-checks the account).
       await claims(env, key, { op: 'identity_claim_release', account: name }).catch(() => {});
       throw e;
     }

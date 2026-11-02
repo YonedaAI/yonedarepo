@@ -46,7 +46,7 @@
   color: var(--site-text);
   opacity: 0.35;
   font-family: var(--font-display);
-  font-weight: 600;
+  font-weight: 500;
   font-size: var(--fs-md);
   line-height: 1;
   white-space: nowrap;

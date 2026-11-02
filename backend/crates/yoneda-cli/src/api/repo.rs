@@ -61,7 +61,7 @@ impl Api {
         commit_info(&self.post_idempotent("/commits", &body).await?)
     }
 
-    /// Repository status: log version, refs table and projections (no projection wait).
+    /// Repository status: log version and refs table.
     pub async fn status(&self) -> std::result::Result<Value, Failure> {
         self.get("/").await
     }

@@ -1,5 +1,7 @@
 // Derived data over immutable objects: code search (over repo-search-index), path history
 // and blame. Index builds run eagerly after landing (queue) and lazily on demand.
+
+import { log } from './log';
 import { touchActivity } from './repo-activity';
 import { noteBundles } from './repo-bundles';
 import { emitChangeLog } from './repo-changelog';
@@ -19,6 +21,7 @@ import { writeSeed } from './repo-seed';
 import { sampleStorage } from './repo-storage';
 import { timed } from './repo-timing';
 import { viewFacts } from './repo-view-facts';
+import { carriedQueue } from './request-scope';
 import type { Env, Envelope } from './types';
 
 const MAX_RESULTS = 200;
@@ -221,14 +224,7 @@ export async function blame(ctx: RepoContext, args: Json) {
     .map((c) => ({ commit: c.commit, blob: c.new_blob }));
   if (versions.length === 0) throw new ApiError('NOT_FOUND', `${path} has no history on ${ref}`);
   const result = await withObjects(ctx, { op: 'blame', versions });
-  const { history_import } = history;
-  return {
-    ref,
-    path,
-    lines: result.lines,
-    versions: versions.length,
-    ...(history_import && { history_import }),
-  };
+  return { ref, path, lines: result.lines, versions: versions.length };
 }
 
 export function pathHistory(ctx: RepoContext, args: Json) {
@@ -276,7 +272,7 @@ export async function deriveAfterLanding(env: Env, envelope: Envelope) {
     noteBundles(envelope.repo_id);
     if (head.ref === 'refs/heads/main')
       await schedulePackBuild(env, envelope.repo_id, String(head.commit)).catch((e) =>
-        console.warn(`pack build not scheduled: ${e?.message ?? e}`),
+        log.warn('git.pack.not_scheduled', { error: e }),
       );
   }
   const segments = await searchSegments(ctx, head.tree);
@@ -292,5 +288,10 @@ export async function deriveAfterLanding(env: Env, envelope: Envelope) {
 }
 
 export async function dispatchDerive(env: Env, repo: string, ref: string) {
-  await env.PLATFORM_QUEUE.send({ v: 1, kind: 'platform_derive', repo_id: repo, job_id: ref });
+  await carriedQueue(env.PLATFORM_QUEUE).send({
+    v: 1,
+    kind: 'platform_derive',
+    repo_id: repo,
+    job_id: ref,
+  });
 }

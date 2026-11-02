@@ -3,9 +3,12 @@
 // parent's refs reach and the refs, never objects. A change from a fork carries the fork
 // branch's new commits into the parent (objects into its store of record first, then
 // recorded as pushed) and opens an ordinary change on the parent's mirror branch.
+
+import { noteOwnerCell } from './account-place';
+import { newRepoId, thisCell } from './cells';
 import { auditRepo } from './repo-audit';
 import { dispatchRuns } from './repo-checks';
-import { listRepository, newRepoId, owning } from './repo-create';
+import { listRepository, owning } from './repo-create';
 import { enumerate, rawObjects, waves } from './repo-git-objects';
 import { UploadSession } from './repo-git-sessions';
 import { refreshHead } from './repo-head';
@@ -13,18 +16,11 @@ import { isLarge, putLarge } from './repo-large-files';
 import { parseStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, type RepoContext } from './repo-ops';
 import { holdName } from './repo-paths';
-import { dispatchProjection } from './repo-projection';
+import { PlatformStore } from './repo-platform-store';
 import { visibilityOf } from './repo-public';
 import { markFork } from './repo-search-directory';
 import { shardOutboxes } from './repo-shards';
-import {
-  FORK_DEPTH,
-  forkDepth,
-  forkOwnStore,
-  forkSpec,
-  forkStore,
-  putRawBytes,
-} from './repo-stores';
+import { FORK_DEPTH, forkDepth, forkSpec, putRawBytes } from './repo-stores';
 import type { Env } from './types';
 
 const REPO = /^r[0-9a-f]{20}$/;
@@ -39,13 +35,15 @@ const credentialsOf = (ctx: RepoContext) => ctx.call.sign({}) as Credentials;
 export async function forkRepository(ctx: RepoContext, args: Json) {
   const { env } = ctx;
   // Forking into an organization (`owner`) needs an owner of it, as creating there does.
+  if (args.region !== undefined && args.region !== thisCell(env))
+    throw new ApiError('INVALID_INPUT', "A fork stays in its parent's region");
   const auth = await owning(env, credentialsOf(ctx), { owner: args.owner });
   // A fork is private unless asked otherwise, whatever its parent is.
   const visibility = visibilityOf(args.visibility);
   const source = await ctx.call({ op: 'repo_fork_source' });
   if (forkDepth(source.object_store) >= FORK_DEPTH)
     throw new ApiError('NOT_SUPPORTED', `Forks of forks nest at most ${FORK_DEPTH} deep`);
-  const id = newRepoId();
+  const id = newRepoId(env);
   const name = typeof args.name === 'string' && args.name ? args.name : source.name;
   // The fork's name among its owner's (a failed fork leaves it held: released with the
   // repository id it names, which never lists).
@@ -57,11 +55,7 @@ export async function forkRepository(ctx: RepoContext, args: Json) {
   )({
     op: 'repo_init',
     name,
-    object_store: forkSpec(
-      ctx.repo,
-      source.object_store,
-      forkOwnStore(env, source.object_store, id).spec,
-    ),
+    object_store: forkSpec(ctx.repo, source.object_store, new PlatformStore(env, id).spec),
     parent: { repo: ctx.repo, version: source.version },
     policy: args.policy ?? { required_checks: [], approvals: 1 },
     visibility,
@@ -75,20 +69,13 @@ export async function forkRepository(ctx: RepoContext, args: Json) {
     commits += page.commits.length;
     after = page.next;
   } while (after);
-  // After the export: every commit it named as held by the parent's Artifacts store is in
-  // an Artifacts fork of that store, whose branches lease the fork's first projections.
-  const store = await forkStore(env, source.object_store, id);
-  const held = store.inherited ? source.projections : [];
-  await platform({
-    op: 'repo_fork_refs',
-    refs: source.refs,
-    projections: Object.fromEntries(held.map((p: Json) => [p.refname, p.projected_commit])),
-  });
+  await platform({ op: 'repo_fork_refs', refs: source.refs });
   await caller(env, ctx.repo, { _system: 'fork' })({ op: 'repo_fork_register', fork: id });
   await shardOutboxes(env, id);
   await listRepository(env, id, auth._session.workspace, name, visibility);
   await markFork(env, auth._session.workspace, id);
-  await Promise.all([dispatchProjection(env, id), refreshHead(env, id)]);
+  await noteOwnerCell(env, auth._session.workspace);
+  await refreshHead(env, id);
   await auditRepo(env, id);
   return {
     id,
@@ -137,6 +124,7 @@ export async function openForkChange(ctx: RepoContext, a: Json) {
 export async function followForkChange(env: Env, parent: string, change: Json) {
   if (change.status !== 'open' || !change.source_repo) return false;
   const fork = caller(env, change.source_repo, { _system: 'fork' });
+  // A fork that cannot answer looks unmoved: the next read of the change asks again.
   const refs = await fork({ op: 'repo_refs' }).catch(() => null);
   const head = refs?.refs?.[`refs/heads/${change.source_branch}`];
   if (!head || head === change.head) return false;

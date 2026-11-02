@@ -1,5 +1,4 @@
-//! Maintenance off the commit path: vacuum (releasing hidden refs, and the pins that keep
-//! them) and log compaction (moving old versions to the object store).
+//! Maintenance off the commit path: vacuum's gate, pins and log compaction (moving old versions to the object store).
 pub(super) mod archive;
 mod compaction;
 mod retention;
@@ -15,7 +14,7 @@ use yoneda_core::{Error, Result};
 
 pub(super) fn authorize(actor: &Actor, op: M) -> Result<()> {
     match op {
-        M::VacuumPlan | M::VacuumDone if !(actor.owner || actor.can("system")) => Err(Error::new(
+        M::VacuumPlan if !(actor.owner || actor.can("system")) => Err(Error::new(
             "FORBIDDEN",
             "Vacuum is run by the owner or the platform",
         )),
@@ -25,17 +24,15 @@ pub(super) fn authorize(actor: &Actor, op: M) -> Result<()> {
         }
         M::SetRetention => actor.require_owner(),
         M::Pin => actor.require("write"),
-        M::VacuumPlan | M::VacuumDone | M::CompactStatus | M::CompactPlan | M::CompactDone => {
-            actor.require("read")
-        }
+        M::VacuumPlan | M::CompactStatus | M::CompactPlan | M::CompactDone => actor.require("read"),
     }
 }
 
 pub(super) fn run<S: SqlStore>(db: &S, c: &Value, op: M, principal: &str) -> Result<Value> {
     match op {
         M::Pin => vacuum::pin(db, c, principal),
-        M::VacuumPlan => vacuum::plan(db, c),
-        M::VacuumDone => vacuum::done(db, c),
+        // Nothing to plan: this is the gate in front of `repo_vacuum` (owner, legal hold).
+        M::VacuumPlan => Ok(serde_json::json!({})),
         M::CompactStatus => compaction::status(db, c),
         M::CompactPlan => compaction::plan(db, c),
         M::CompactDone => compaction::done(db, c),

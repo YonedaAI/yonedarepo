@@ -3,6 +3,7 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { HandleRow } from '../account-settings/HandleSettings';
 import { HandlePicker } from './HandlePicker';
 import { handleProblem, handleRefusal, needsHandle } from './handleModel';
 
@@ -39,5 +40,53 @@ describe('handle prompt', () => {
     expect(html).toContain('/ada_l/my-repo');
     expect(html).toContain('Not now');
     expect(html).not.toContain('@');
+  });
+});
+
+describe('handle in Settings', () => {
+  const row = (identity: { username: string; handle?: string | null }) =>
+    renderToStaticMarkup(createElement(HandleRow, { identity, onChange: () => {} }));
+
+  it('shows a handle that is the account name read-only', () => {
+    const html = row({ username: 'ada', handle: 'ada' });
+    expect(html).toContain('href="/ada"');
+    expect(html).toContain('/ada');
+    expect(html).toContain('account name');
+    expect(html).not.toContain('<button');
+  });
+
+  it('shows the address of an email-named account, with a way to change it', () => {
+    const html = row({ username: 'ada@example.com', handle: 'ada_l' });
+    expect(html).toContain('href="/ada_l"');
+    expect(html).toContain('>Change</button>');
+    expect(html).not.toContain('@');
+  });
+
+  it('offers a handle to an email-named account without one', () => {
+    const html = row({ username: 'ada@example.com', handle: null });
+    expect(html).toContain('>Choose</button>');
+    expect(html).not.toContain('@');
+  });
+
+  it('says nothing on a server without handles', () => {
+    expect(row({ username: 'ada@example.com' })).toBe('');
+  });
+
+  it('opens on the current handle and says what a change does', () => {
+    const html = renderToStaticMarkup(
+      createElement(HandlePicker, {
+        current: 'ada_l',
+        cancel: 'Cancel',
+        onDone: () => {},
+        onLater: () => {},
+      }),
+    );
+    expect(html).toContain('Change your handle');
+    expect(html).toContain('value="ada_l"');
+    expect(html).toContain('<code>/ada_l</code> stops working');
+    expect(html).toContain('This is your handle.');
+    expect(html).toContain('Cancel');
+    expect(html).not.toContain('Not now');
+    expect(html).toMatch(/<button[^>]*type="submit"[^>]*disabled/);
   });
 });

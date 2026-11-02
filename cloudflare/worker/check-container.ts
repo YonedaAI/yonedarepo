@@ -1,7 +1,11 @@
 // The platform's check executor: the pinned runtime image started in `check-server`
 // mode. It receives files and argv from the Worker and returns evidence; it holds no
 // platform credentials and has no network, so a check cannot reach or alter the platform.
+// ImportContainer runs the same image, with the disk and the internet an import needs.
+
 import { Container } from '@cloudflare/containers';
+import { cellEnv } from './cell-env';
+import { warned } from './log';
 import { jsonBody, STREAM_TYPE, streamBody } from './platform-check-stream';
 import {
   type CheckReport,
@@ -10,6 +14,7 @@ import {
   failCheckRun,
   withDeadline,
 } from './repo-checks';
+import { inScope, REQUEST_ID_HEADER } from './request-scope';
 import type { Env } from './types';
 
 export type CheckJob = {
@@ -17,6 +22,8 @@ export type CheckJob = {
   timeout_seconds: number;
   /** The files at the checked tree (within the runner's scope), content as raw bytes. */
   files: { path: string; type: string; data: Uint8Array }[];
+  /** The request this check descends from, for the runtime's log lines. */
+  request_id?: string;
 };
 
 /** The container operations one check needs (the Durable Object, or a test double). */
@@ -36,8 +43,15 @@ export type Started = { secret: string; startMs: number };
  * always frees it. So every path below ends in a kill.
  */
 
+/** A start beyond a check's: the internet, which no check is ever given, and what else the
+ * instance's environment holds. */
+export type StartExtras = { internet?: boolean; envVars?: Record<string, string> };
+
 /** Starts a fresh instance for one check; one that cannot start is killed. */
-export async function startCheck(instance: CheckInstance): Promise<Started> {
+export async function startCheck(
+  instance: CheckInstance,
+  extras: StartExtras = {},
+): Promise<Started> {
   const secret = crypto.randomUUID() + crypto.randomUUID();
   // Every run starts a fresh instance: this is its cold start, reported with the result.
   const starting = Date.now();
@@ -46,14 +60,15 @@ export async function startCheck(instance: CheckInstance): Promise<Started> {
       ports: [8080],
       startOptions: {
         entrypoint: ['/usr/local/bin/start-runtime', 'check-server'],
-        envVars: { CHECK_TOKEN: secret },
+        envVars: { CHECK_TOKEN: secret, ...extras.envVars },
+        enableInternet: extras.internet === true,
       },
       cancellationOptions: { portReadyTimeoutMS: 90_000 },
     });
   } catch (e) {
     // The start failure is the answer (the consumer tells capacity from other causes);
     // a kill of an instance that never ran may fail too and must not replace it.
-    await instance.destroy().catch(() => {});
+    await instance.destroy().catch(warned('container.destroy_failed'));
     throw e;
   }
   return { secret, startMs: Date.now() - starting };
@@ -67,7 +82,11 @@ export async function executeCheck(instance: CheckInstance, job: CheckJob, start
       instance.containerFetch(
         new Request(`http://check${path}`, {
           method: 'POST',
-          headers: { 'content-type': type, authorization: `Bearer ${started.secret}` },
+          headers: {
+            'content-type': type,
+            authorization: `Bearer ${started.secret}`,
+            ...(job.request_id && { [REQUEST_ID_HEADER]: job.request_id }),
+          },
           body,
           signal: AbortSignal.timeout((job.timeout_seconds + 30) * 1000),
         }),
@@ -107,7 +126,7 @@ export async function launchCheck(
   const finished = withDeadline(
     executeCheck(instance, job, started),
     executorDeadlineMs(job.timeout_seconds),
-    () => instance.destroy().catch(() => {}),
+    () => instance.destroy().catch(warned('container.destroy_failed')),
   );
   keep(
     finished.then(
@@ -123,7 +142,19 @@ export class CheckContainer extends Container<Env> {
   sleepAfter = '2m';
 
   launch(job: CheckJob, report: CheckReport): Promise<void> {
-    return launchCheck(this, this.env, job, report, (work) => this.ctx.waitUntil(work));
+    const env = cellEnv(this.env);
+    const scope = {
+      env,
+      job: {
+        repo_id: report.repo,
+        job_id: String(report.run.run_id),
+        kind: 'platform_check',
+        request_id: job.request_id,
+      },
+    };
+    return inScope(scope, () =>
+      launchCheck(this, env, job, report, (work) => this.ctx.waitUntil(work)),
+    );
   }
 
   /** An instance left idle (its caller vanished mid-run) is killed, not asked to stop. */

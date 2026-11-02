@@ -3,11 +3,11 @@
 //! and calls nothing, so the page's "what is this waiting for", the job's decision and the
 //! landing's own last check are one answer, and a recorded state replays to the same decision.
 //! Rules only: no model is asked anything. An agent's verdict reaches it only as what the
-//! repository already holds, a check result or a comment on a line.
+//! repository already holds, a check result or a comment on a line. Risk has no say: it is an
+//! uncalibrated beta reading on the Landing's page (`platform_risk`).
 //!
 //! Hold: it waits, and what it waits for can come without new work. GoAround: the work has to
 //! answer, so the Landing goes back. A go-around outranks a hold and keeps every reason.
-use crate::platform_instruments::RiskLevel;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 #[cfg(test)]
@@ -29,12 +29,13 @@ pub struct LandingState {
     pub approved_by: Vec<String>,
     /// A review class the policy auto-approves covers all it would land.
     pub auto_approved: bool,
-    /// The policy requires a check.
+    /// The policy requires a check or an approval.
     pub rules_ask: bool,
     /// Proposed from a fork.
     pub from_fork: bool,
     /// Failed on this head and not required: how an agent's `block_at` reads.
     pub failed_checks: Vec<String>,
+    /// A person's comment on a line waits for an answer.
     pub unresolved_comments: bool,
     pub base_exists: bool,
     /// The base changed what this head read.
@@ -45,8 +46,6 @@ pub struct LandingState {
     pub outside_grant: bool,
     pub legal_hold: Option<String>,
     pub repo_full: Option<String>,
-    /// `None`: not scored yet.
-    pub risk: Option<RiskScore>,
     /// Landings ahead in the queue this one has a read conflict with. Absent from a state
     /// recorded before separation, which replays as nothing ahead.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -74,15 +73,6 @@ pub enum RequirementState {
     Ready,
     Waiting,
     Blocked,
-}
-
-/// A head's Risk, as the adapter measured it from the diff (`platform_risk`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RiskScore {
-    /// `None`: it could not be scored.
-    pub level: Option<RiskLevel>,
-    pub score: u32,
-    pub why: Vec<String>,
 }
 
 /// One thing in the way.
@@ -131,16 +121,16 @@ impl Clearance {
             Self::Hold { reasons } | Self::GoAround { reasons } => reasons,
         }
     }
-
-    /// Only Risk is missing, so it's worth reading the diff.
-    pub fn needs_risk(&self) -> bool {
-        matches!(self.reasons(), [only] if only.code == RISK_NOT_SCORED)
-    }
 }
 
-const RISK_NOT_SCORED: &str = "RISK_NOT_SCORED";
+/// Held while the owner has automation paused; their resume asks again.
+pub(crate) const AUTOMATION_PAUSED: &str = "AUTOMATION_PAUSED";
 /// Held behind a Landing ahead in the queue (`repo_store::land_when_cleared::separation`).
 pub(crate) const SEPARATION: &str = "SEPARATION";
+/// Held by the owner's legal hold; its lifting asks again.
+pub(crate) const LEGAL_HOLD: &str = "LEGAL_HOLD";
+/// Held at the storage limit; room coming back asks again.
+pub(crate) const REPO_FULL: &str = "REPO_FULL";
 /// A refused attempt the work has to answer; any other is a hold.
 const GOES_AROUND: [&str; 5] = [
     "CONFLICT",
@@ -190,21 +180,6 @@ fn evidence(state: &LandingState) -> Option<Reason> {
     })
 }
 
-/// Whether a high or unscored head is held for a person, who can weigh what a score can't.
-fn risk(score: &RiskScore) -> Option<Reason> {
-    match score.level {
-        Some(RiskLevel::Low | RiskLevel::Medium) => None,
-        Some(RiskLevel::High) => Some(reason(
-            "RISK_HIGH",
-            format!("Risk is High ({}): {}", score.score, score.why.join("; ")),
-        )),
-        None => Some(reason(
-            "RISK_UNKNOWN",
-            "Risk could not be scored for this head",
-        )),
-    }
-}
-
 /// What it can wait for. `back`: the go-arounds, which already say why the gates aren't ready.
 fn holds(state: &LandingState, back: &[Reason]) -> Vec<Reason> {
     let mut wait = Vec::new();
@@ -230,7 +205,7 @@ fn holds(state: &LandingState, back: &[Reason]) -> Vec<Reason> {
     }
     if let Some(by) = &state.paused_by {
         wait.push(reason(
-            "AUTOMATION_PAUSED",
+            AUTOMATION_PAUSED,
             format!("Automation is paused by {by}"),
         ));
     }
@@ -242,15 +217,9 @@ fn holds(state: &LandingState, back: &[Reason]) -> Vec<Reason> {
         state
             .legal_hold
             .iter()
-            .map(|w| reason("LEGAL_HOLD", w.clone())),
+            .map(|w| reason(LEGAL_HOLD, w.clone())),
     );
-    wait.extend(
-        state
-            .repo_full
-            .iter()
-            .map(|w| reason("REPO_FULL", w.clone())),
-    );
-    wait.extend(state.risk.as_ref().and_then(risk));
+    wait.extend(state.repo_full.iter().map(|w| reason(REPO_FULL, w.clone())));
     wait.extend(state.ahead.iter().map(|ahead| {
         let on = ahead.paths.join(", ");
         let why = format!(
@@ -269,11 +238,6 @@ pub fn clearance(state: &LandingState) -> Clearance {
     if !back.is_empty() {
         back.append(&mut wait);
         return Clearance::GoAround { reasons: back };
-    }
-    // Reading the diff costs, so Risk is asked for last.
-    if wait.is_empty() && state.risk.is_none() {
-        let why = "Risk has not been scored for this head yet";
-        wait.push(reason(RISK_NOT_SCORED, why));
     }
     if wait.is_empty() {
         Clearance::Cleared

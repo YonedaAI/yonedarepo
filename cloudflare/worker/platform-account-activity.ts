@@ -4,6 +4,7 @@
 // the getting-started steps. Each repository's numbers come from its D1 summary (the
 // authority's `repo_activity` answer); a view re-reads at most REFRESHES authorities whose
 // summary is missing, touched since or old, and reports the rest as pending.
+import { log } from './log';
 import { accountOf, listRepositories } from './repo-admin';
 import { type Credentials, caller, type Json } from './repo-ops';
 import type { Env } from './types';
@@ -149,7 +150,7 @@ export async function accountActivity(
     read.map((id) =>
       refresh(env, id, now).then(
         (summary) => summaries.set(id, summary),
-        (e) => console.warn(`activity read failed for ${id}: ${e?.message ?? e}`),
+        (e) => log.warn('activity.read_failed', { repo: id, error: e }),
       ),
     ),
   );
@@ -197,5 +198,36 @@ export function summarize(
     sessions: sessions.sort((a, b) => b.at - a.at || b.id - a.id).slice(0, SESSIONS),
     steps,
     pending,
+  };
+}
+
+/** The Home's numbers from several cells. */
+export function mergeActivity(parts: AccountActivity[]): AccountActivity {
+  const sum = (pick: (part: AccountActivity) => number) =>
+    parts.reduce((total, part) => total + pick(part), 0);
+  const any = (pick: (steps: AccountActivity['steps']) => boolean) =>
+    parts.some((part) => pick(part.steps));
+  const hours = new Map<number, number>();
+  for (const part of parts)
+    for (const [hour, n] of part.commits) hours.set(hour, (hours.get(hour) ?? 0) + n);
+  return {
+    ...parts[0],
+    repositories: sum((p) => p.repositories),
+    public: sum((p) => p.public),
+    capturing: sum((p) => p.capturing),
+    landed: sum((p) => p.landed),
+    commits: [...hours.entries()].sort(([a], [b]) => a - b),
+    sessions: parts
+      .flatMap((p) => p.sessions)
+      .sort((a, b) => b.at - a.at || b.id - a.id)
+      .slice(0, SESSIONS),
+    steps: {
+      repository: any((s) => s.repository),
+      pushed: any((s) => s.pushed),
+      cli: any((s) => s.cli),
+      session: any((s) => s.session),
+      landed: any((s) => s.landed),
+    },
+    pending: sum((p) => p.pending),
   };
 }

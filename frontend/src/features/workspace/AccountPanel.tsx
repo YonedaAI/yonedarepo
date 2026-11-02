@@ -5,7 +5,9 @@ import {
   normalizeAccountIdentifier,
 } from '../../../../shared/account';
 import { api } from '../../lib/api';
+import { RecoveryCodeShown } from '../account-settings/RecoveryCodeShown';
 import { landingSource, tabStorage } from '../site/landingSource';
+import { ForgotPassword } from './ForgotPassword';
 import { OAuthButtons, TermsNotice } from './OAuthButtons';
 import { isProvider, oauthStartUrl, type Provider } from './oauthModel';
 
@@ -24,20 +26,33 @@ function useProviders() {
   return providers;
 }
 
+export type AccountMode = 'signup' | 'login' | 'recover' | 'forgot';
+
+const TITLES: Record<AccountMode, string> = {
+  signup: 'Create your workspace',
+  login: 'Sign in',
+  recover: 'Recover your account',
+  forgot: 'Reset your password',
+};
+export const accountTitle = (mode: AccountMode) => TITLES[mode];
+
 export function AccountPanel({
   onConnected,
   initialMode = 'signup',
   initialError = '',
   initialProviders = null,
+  onMode,
 }: {
   onConnected: () => void;
-  initialMode?: 'signup' | 'login';
+  initialMode?: AccountMode;
   /** A provider sign-in that came back refused (its `auth_error`, in words). */
   initialError?: string;
   /** Providers known before the list loads (tests render without effects). */
   initialProviders?: Provider[] | null;
+  /** Set where the page's own heading follows the form: the card leaves out its heading. */
+  onMode?: (mode: AccountMode) => void;
 }) {
-  const [mode, setMode] = useState<'signup' | 'login' | 'recover'>(initialMode);
+  const [mode, setMode] = useState<AccountMode>(initialMode);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(initialError);
   const loaded = useProviders();
@@ -46,19 +61,23 @@ export function AccountPanel({
   const [recovery, setRecovery] = useState('');
   const [recovered, setRecovered] = useState(false);
   const identifierHelp = useId();
-  const emailHelp = useId();
+  const passwordField = useId();
+  const choose = (next: AccountMode) => {
+    setMode(next);
+    onMode?.(next);
+    setError('');
+  };
   if (recovery)
     return (
       <section className="account-panel">
         <h2>Save your recovery code</h2>
-        <p>This code resets your password. Store it somewhere private; it is shown once.</p>
-        <code className="recovery-code">{recovery}</code>
+        <RecoveryCodeShown code={recovery} />
         <button
           type="button"
           onClick={() => {
             setRecovery('');
             if (recovered) {
-              setMode('login');
+              choose('login');
               setRecovered(false);
             } else onConnected();
           }}
@@ -77,24 +96,15 @@ export function AccountPanel({
             className={mode === m ? 'selected' : ''}
             aria-current={mode === m ? 'page' : undefined}
             disabled={busy}
-            onClick={() => {
-              setMode(m);
-              setError('');
-            }}
+            onClick={() => choose(m)}
           >
             {m === 'signup' ? 'Create account' : 'Sign in'}
           </button>
         ))}
       </nav>
-      <h2>
-        {mode === 'signup'
-          ? 'Create your workspace'
-          : mode === 'recover'
-            ? 'Recover your account'
-            : 'Sign in'}
-      </h2>
-      <TermsNotice />
-      {mode !== 'recover' && (
+      {!onMode && <h2>{accountTitle(mode)}</h2>}
+      {mode !== 'forgot' && <TermsNotice />}
+      {mode !== 'recover' && mode !== 'forgot' && (
         <OAuthButtons
           providers={providers}
           pending={pending}
@@ -111,131 +121,139 @@ export function AccountPanel({
           }}
         />
       )}
-      <form
-        key={mode}
-        onSubmit={async (e) => {
-          e.preventDefault();
-          const form = e.currentTarget;
-          const data = new FormData(form);
-          setBusy(true);
-          setError('');
-          try {
-            if (mode === 'signup') {
-              const email = data.get('email');
-              if (typeof email !== 'string' || !normalizeAccountIdentifier(email)?.includes('@'))
-                throw new Error('Enter a valid email address.');
-            } else {
-              const identifier = data.get('username');
-              if (typeof identifier !== 'string' || !isValidAccountIdentifier(identifier))
-                throw new Error('Enter a valid username or email address.');
+      {mode === 'forgot' ? (
+        <ForgotPassword busy={busy} onBusy={setBusy} />
+      ) : (
+        <form
+          key={mode}
+          onSubmit={async (e) => {
+            e.preventDefault();
+            const form = e.currentTarget;
+            const data = new FormData(form);
+            setBusy(true);
+            setError('');
+            try {
+              if (mode === 'signup') {
+                const email = data.get('email');
+                if (typeof email !== 'string' || !normalizeAccountIdentifier(email)?.includes('@'))
+                  throw new Error('Enter a valid email address.');
+              } else {
+                const identifier = data.get('username');
+                if (typeof identifier !== 'string' || !isValidAccountIdentifier(identifier))
+                  throw new Error('Enter a valid username or email address.');
+              }
+              const result = await api<{ recovery_code?: string }>(`auth/${mode}`, {
+                ...Object.fromEntries(data),
+                ...(mode === 'signup' ? { source: landingSource(tabStorage()) } : {}),
+              });
+              form.reset();
+              if (result.recovery_code) {
+                setRecovery(result.recovery_code);
+                setRecovered(mode === 'recover');
+              } else onConnected();
+            } catch (e) {
+              setError((e as Error).message);
+            } finally {
+              setBusy(false);
             }
-            const result = await api<{ recovery_code?: string }>(`auth/${mode}`, {
-              ...Object.fromEntries(data),
-              ...(mode === 'signup' ? { source: landingSource(tabStorage()) } : {}),
-            });
-            form.reset();
-            if (result.recovery_code) {
-              setRecovery(result.recovery_code);
-              setRecovered(mode === 'recover');
-            } else onConnected();
-          } catch (e) {
-            setError((e as Error).message);
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        {mode === 'signup' ? (
-          <>
+          }}
+        >
+          {mode === 'signup' ? (
+            <>
+              <label>
+                Email
+                <input
+                  type="email"
+                  name="email"
+                  required
+                  autoComplete="email"
+                  maxLength={MAX_ACCOUNT_IDENTIFIER_LENGTH}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  placeholder="you@example.com"
+                />
+              </label>
+            </>
+          ) : (
+            <>
+              <label>
+                Username or email
+                <input
+                  name="username"
+                  required
+                  autoComplete="username"
+                  maxLength={MAX_ACCOUNT_IDENTIFIER_LENGTH}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  aria-describedby={identifierHelp}
+                  placeholder="your_name or you@example.com"
+                />
+              </label>
+              <p id={identifierHelp} className="field-help">
+                The username or email you signed up with.
+              </p>
+            </>
+          )}
+          {mode === 'recover' && (
             <label>
-              Email
-              <input
-                type="email"
-                name="email"
-                required
-                autoComplete="email"
-                maxLength={MAX_ACCOUNT_IDENTIFIER_LENGTH}
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                aria-describedby={emailHelp}
-                placeholder="you@example.com"
-              />
+              Recovery code
+              <input name="recovery_code" required autoComplete="off" />
             </label>
-            <p id={emailHelp} className="field-help">
-              Kept private. Your public name comes from the part before the @.
-            </p>
-          </>
-        ) : (
-          <>
-            <label>
-              Username or email
-              <input
-                name="username"
-                required
-                autoComplete="username"
-                maxLength={MAX_ACCOUNT_IDENTIFIER_LENGTH}
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                aria-describedby={identifierHelp}
-                placeholder="your_name or you@example.com"
-              />
+          )}
+          {/* The link shows beside the label; after the input, so Tab reaches the password first. */}
+          <div className="account-password">
+            <label htmlFor={passwordField}>
+              {mode === 'recover' ? 'New password' : 'Password'}
             </label>
-            <p id={identifierHelp} className="field-help">
-              The username or email you signed up with.
-            </p>
-          </>
-        )}
-        {mode === 'recover' && (
-          <label>
-            Recovery code
-            <input name="recovery_code" required autoComplete="off" />
-          </label>
-        )}
-        <label>
-          {mode === 'recover' ? 'New password' : 'Password'}
-          <input
-            type="password"
-            name="password"
-            required
-            minLength={mode === 'login' ? 1 : 12}
-            maxLength={128}
-            autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-          />
-        </label>
-        {mode !== 'login' && (
-          <p className="field-help">At least 12 characters. You get a recovery code next.</p>
-        )}
-        {error && <p role="alert">{error}</p>}
-        <button disabled={busy || pending !== null} type="submit">
-          {busy
-            ? 'Connecting…'
-            : mode === 'signup'
-              ? 'Create account'
-              : mode === 'recover'
-                ? 'Reset password'
-                : 'Sign in'}
-        </button>
-      </form>
-      <div className="run-actions">
-        {(['recover'] as const)
-          .filter((m) => m !== mode)
-          .map((m) => (
-            <button
-              type="button"
-              className="text-button"
-              key={m}
-              disabled={busy}
-              onClick={() => {
-                setMode(m);
-                setError('');
-              }}
-            >
-              Use recovery code
-            </button>
-          ))}
-      </div>
+            <input
+              id={passwordField}
+              type="password"
+              name="password"
+              required
+              minLength={mode === 'login' ? 1 : 12}
+              maxLength={128}
+              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+            />
+            {mode === 'login' && (
+              <button
+                type="button"
+                className="text-button"
+                disabled={busy}
+                onClick={() => choose('forgot')}
+              >
+                Forgot password?
+              </button>
+            )}
+          </div>
+          {mode !== 'login' && (
+            <p className="field-help">At least 12 characters. You get a recovery code next.</p>
+          )}
+          {error && <p role="alert">{error}</p>}
+          <button disabled={busy || pending !== null} type="submit">
+            {busy
+              ? 'Connecting…'
+              : mode === 'signup'
+                ? 'Create account'
+                : mode === 'recover'
+                  ? 'Reset password'
+                  : 'Sign in'}
+          </button>
+        </form>
+      )}
+      {mode !== 'recover' && (
+        <div className="run-actions">
+          <button
+            type="button"
+            className="text-button"
+            disabled={busy}
+            onClick={() => choose('recover')}
+          >
+            Use recovery code
+          </button>
+        </div>
+      )}
     </section>
   );
 }

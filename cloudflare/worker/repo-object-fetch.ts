@@ -4,6 +4,7 @@
 // history with large files (claude-code's 16 MiB demo.gif, several versions) ended 503 on
 // exceeded resources. A client that asks with `large: true` gets such blobs as a stub
 // (`{id, kind, size, large}`) and downloads each one's bytes on its own request instead.
+import { log } from './log';
 import { compute } from './repo-compute';
 import { decide, outside } from './repo-grants';
 import { guardInherited } from './repo-inherit';
@@ -38,13 +39,17 @@ export const PAGE_DEADLINE = { ms: 20_000 };
  */
 export async function authorizeObjects(ctx: RepoContext, wanted: Json[], commitId: unknown) {
   if (!SHA.test(String(commitId ?? '')))
-    throw new ApiError('FORBIDDEN', 'Path-restricted callers fetch objects by commit and path');
+    throw new ApiError(
+      'FORBIDDEN',
+      "A token limited to paths can't clone or fetch: Git needs every path. Use a token with no paths, or read with yoneda grep and yoneda log",
+    );
   const where = await ctx.call({ op: 'repo_commit', commit: commitId });
   const objects = await ctx.objects();
   for (const object of wanted) {
     if (object.kind === 'commit') continue;
     const path = String(object.path ?? '');
     if (!path || !(await decide(ctx, [path])).paths[0]) throw outside();
+    // Fails closed: an object that cannot be placed under a readable path is refused.
     const entry = await walk(objects, where.tree, path).catch(() => null);
     const kind = entry?.type === 'tree' ? 'tree' : 'blob';
     if (!entry || entry.id !== object.id || kind !== object.kind) throw outside();
@@ -139,26 +144,23 @@ function logPage(page: Page, event: string, extra: Json = {}) {
   // This isolate's Wasm memory (it only grows): a page that pushed it up shows here.
   const wasm = compute({ op: 'memory' }).wasm_bytes ?? null;
   const { ctx, wanted, start, index, served, missing, bytes, read, largest, large, raw } = page;
-  console.log(
-    JSON.stringify({
-      event,
-      repo: ctx.repo,
-      requested: wanted.length,
-      after: start,
-      index,
-      served,
-      missing: missing.length,
-      bytes,
-      read,
-      largest,
-      large,
-      raw,
-      ms: Date.now() - page.began,
-      tiers: page.objects.hits,
-      wasm,
-      ...extra,
-    }),
-  );
+  log.info(event, {
+    repo: ctx.repo,
+    requested: wanted.length,
+    after: start,
+    index,
+    served,
+    missing: missing.length,
+    bytes,
+    read,
+    largest,
+    large,
+    raw,
+    ms: Date.now() - page.began,
+    tiers: page.objects.hits,
+    wasm,
+    ...extra,
+  });
 }
 
 /**
@@ -213,7 +215,7 @@ async function* readPage(page: Page): AsyncGenerator<Json> {
     );
     const results = await Promise.race([reading, late]).finally(() => clearTimeout(timer ?? null));
     if (results === 'late') {
-      reading.catch(() => {});
+      reading.catch(() => {}); // Abandoned at the deadline, which is logged below.
       logPage(page, 'objects.deadline', { phase: page.phase });
       if (page.served > 0) return;
       throw new ApiError('TIMEOUT', `Reading objects took over ${PAGE_DEADLINE.ms} ms; retry`);

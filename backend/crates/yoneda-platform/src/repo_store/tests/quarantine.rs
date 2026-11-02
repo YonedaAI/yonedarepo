@@ -1,8 +1,8 @@
 //! Quarantine: the owner (or an admin) withholds a blob or a session record's text without
 //! rewriting any id. Readers learn which blobs are withheld from every access answer
-//! (status, the published head, Git access) and are refused a direct Artifacts clone; a
-//! session record reads masked. Purge is leased and fenced like the LFS sweep, keeps the
-//! record, and a purged blob stays withheld. The table arrives by an additive migration.
+//! (status, the published head, Git access); a session record reads masked. Purge is leased
+//! and fenced like the LFS sweep, keeps the record, and a purged blob stays withheld. The
+//! table arrives by an additive migration.
 use super::*;
 use crate::storage::SqlStore;
 
@@ -94,15 +94,6 @@ fn a_quarantined_blob_is_withheld_until_purged_and_its_record_kept() {
         json!({"op":"repo_git_access","service":"git-upload-pack"}),
     );
     assert_eq!(git["quarantined"], withheld);
-    // Artifacts would serve the bytes to a direct clone: refused while anything is withheld.
-    h.ok(
-        OWNER,
-        json!({"op":"repo_member_put","account":"hugo","role":"read"}),
-    );
-    assert_eq!(
-        code(h.run("member:hugo", json!({"op":"repo_clone_access"}))),
-        "QUARANTINED"
-    );
 
     // Only the owner side lists records.
     assert_eq!(
@@ -144,18 +135,12 @@ fn a_quarantined_blob_is_withheld_until_purged_and_its_record_kept() {
     // A stale epoch is fenced; the current one marks it purged.
     let stale = json!([{"id": id, "epoch": claim["epoch"].as_i64().unwrap() - 1}]);
     assert_eq!(
-        h.ok(
-            OWNER,
-            json!({"op":"repo_quarantine_purged","claims":stale,"replacement":"platform:demo"})
-        )["purged"],
+        h.ok(OWNER, json!({"op":"repo_quarantine_purged","claims":stale}))["purged"],
         0
     );
     let done = json!([{"id": id, "epoch": claim["epoch"]}]);
     assert_eq!(
-        h.ok(
-            OWNER,
-            json!({"op":"repo_quarantine_purged","claims":done,"replacement":"platform:demo"})
-        )["purged"],
+        h.ok(OWNER, json!({"op":"repo_quarantine_purged","claims":done}))["purged"],
         1
     );
     let kept = &h.ok(OWNER, json!({"op":"repo_quarantines"}))["records"][0];
@@ -186,11 +171,11 @@ fn a_released_blob_is_served_again_under_a_new_epoch() {
     let status = h.ok(CI, json!({"op":"repo_status"}));
     assert_eq!(status["quarantined"], json!([]));
     assert!(status["quarantine_epoch"].as_u64() > epoch.as_u64());
-    h.ok(
-        OWNER,
-        json!({"op":"repo_member_put","account":"hugo","role":"read"}),
+    let git = h.ok(
+        CI,
+        json!({"op":"repo_git_access","service":"git-upload-pack"}),
     );
-    h.ok("member:hugo", json!({"op":"repo_clone_access"}));
+    assert_eq!(git["quarantined"], json!([]));
     // The same blob may be quarantined again: a new record.
     let again = h.ok(OWNER, quarantine("blob", &blob))["record"]["id"].clone();
     assert_ne!(again, id);
@@ -227,7 +212,7 @@ fn the_quarantine_job_purges_due_records_under_a_fenced_lease() {
     let report = |epoch: &Value| {
         as_quarantine_job(
             &h,
-            json!({"op":"repo_quarantine_purged","claims":[{"id":record["id"],"epoch":epoch}],"replacement":"platform:demo"}),
+            json!({"op":"repo_quarantine_purged","claims":[{"id":record["id"],"epoch":epoch}]}),
         )
         .unwrap()["purged"]
             .clone()
@@ -310,7 +295,7 @@ fn a_quarantined_session_record_reads_masked_and_purge_clears_its_text() {
         .clone();
     h.ok(
         OWNER,
-        json!({"op":"repo_quarantine_purged","claims":[{"id":id,"epoch":claim["epoch"]}],"replacement":"platform:demo"}),
+        json!({"op":"repo_quarantine_purged","claims":[{"id":id,"epoch":claim["epoch"]}]}),
     );
     let stored =
         h.db.query(
@@ -439,7 +424,7 @@ fn a_quarantined_session_withholds_its_stored_transcript_and_purge_names_it() {
     assert_eq!(claim["transcript_sha256"], "a".repeat(64));
     h.ok(
         OWNER,
-        json!({"op":"repo_quarantine_purged","claims":[{"id":id,"epoch":claim["epoch"]}],"replacement":"platform:demo"}),
+        json!({"op":"repo_quarantine_purged","claims":[{"id":id,"epoch":claim["epoch"]}]}),
     );
     let row =
         h.db.query(

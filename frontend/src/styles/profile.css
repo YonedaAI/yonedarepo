@@ -103,10 +103,10 @@
   background: var(--surface);
 }
 .profile-list .profile-repo {
-  padding: 0.9rem 0;
+  padding: var(--row-y) 0;
 }
 .profile-list .profile-repo + .profile-repo {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--row-line);
 }
 .profile-repo p {
   margin: 0;
@@ -153,22 +153,6 @@
   .profile-cards {
     grid-template-columns: minmax(0, 1fr);
   }
-}
-
-/* A repository's heading: its owner's handle (to the profile), a slash, then its name. */
-.repo-owner {
-  color: var(--muted);
-  font-weight: 500;
-  text-decoration: none;
-}
-.repo-owner:hover {
-  color: var(--blue-text);
-  text-decoration: underline;
-}
-.repo-owner-sep {
-  margin: 0 0.3em;
-  color: var(--faint);
-  font-weight: 400;
 }
 
 /* The handle prompt: "/" before the field, a status line (help, checking, available, taken). */

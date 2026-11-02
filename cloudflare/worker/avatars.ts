@@ -29,6 +29,7 @@ export async function profileAvatarUrl(
   owner: { kind: 'user' | 'org' | 'alias'; account: string; handle: string },
 ) {
   if (owner.kind === 'org') return null;
+  // No picture is the page's plain fallback: a person's initials.
   const info = await avatarInfo(env, owner.account).catch(() => null);
   return publicAvatarUrl(owner.handle, info);
 }

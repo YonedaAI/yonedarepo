@@ -15,12 +15,6 @@ pub use crate::command::*;
 use crate::error::{Error, Result};
 use parser::{Parsed, with};
 
-fn simple(rest: &[String], switches: &[&str]) -> Result<Parsed> {
-    let p = Parsed::new(rest, &["origin"], switches)?;
-    p.at_most(0)?;
-    Ok(p)
-}
-
 fn setup(rest: &[String]) -> Result<Command> {
     let p = Parsed::new(rest, &["origin"], &[])?;
     let agent = match p.exactly(1, "setup claude|codex|gemini|opencode")?[0].as_str() {
@@ -77,7 +71,7 @@ fn clone(rest: &[String]) -> Result<Command> {
         .positional
         .first()
         .cloned()
-        .ok_or_else(|| Error::usage("clone needs a repository id"))?;
+        .ok_or_else(|| Error::usage("clone needs <owner>/<name> or a repository id"))?;
     let mode = match (
         p.on("full"),
         parser::list(p.flag("sparse")),
@@ -107,16 +101,28 @@ pub fn parse(args: &[String]) -> Result<Command> {
     };
     Ok(match command.as_str() {
         "login" => {
-            let p = simple(rest, &["with-token", "no-browser"])?;
+            let p = Parsed::new(rest, &["origin", "agent"], &["with-token", "no-browser"])?;
+            p.at_most(0)?;
+            if p.on("with-token") && p.flag("agent").is_some() {
+                return Err(Error::usage(
+                    "--agent signs up through the browser, not with a token",
+                ));
+            }
             Command::Login {
                 origin: p.flag("origin"),
                 with_token: p.on("with-token"),
                 browser: !p.on("no-browser"),
+                agent: p.flag("agent"),
             }
         }
-        "logout" => Command::Logout {
-            origin: simple(rest, &[])?.flag("origin"),
-        },
+        "logout" => {
+            let p = Parsed::new(rest, &["origin", "agent"], &[])?;
+            p.at_most(0)?;
+            Command::Logout {
+                origin: p.flag("origin"),
+                agent: p.flag("agent"),
+            }
+        }
         "auth" => {
             let p = Parsed::new(rest, &["origin"], &["show"])?;
             if p.exactly(1, "auth token [--show]")?[0] != "token" {
@@ -190,12 +196,10 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "flight-plan" => sub::flight_plan(rest)?,
         "hook" => sub::hook(rest)?,
         "context" => sub::context(rest)?,
+        "completion" => sub::completion(rest)?,
         "help" | "--help" | "-h" => Command::Help,
-        other => {
-            return Err(Error::usage(format!(
-                "unknown command {other:?}\n\n{USAGE}"
-            )));
-        }
+        "version" | "--version" | "-V" => Command::Version,
+        other => return Err(Error::usage(format!("unknown command {other:?}"))),
     })
 }
 
@@ -259,14 +263,8 @@ mod tests {
             parsed("sync --land").ok(),
             Some(Command::Sync(SyncMode::Land))
         );
-        assert_eq!(
-            parsed("sync --attempt external-1").ok(),
-            Some(Command::Sync(SyncMode::Attempt {
-                id: "external-1".into(),
-                mcp_url: None
-            }))
-        );
         assert_eq!(parsed("").ok(), Some(Command::Help));
+        assert_eq!(parsed("--version").ok(), Some(Command::Version));
         assert_eq!(
             parsed("auth token").ok(),
             Some(Command::AuthToken {
@@ -337,7 +335,25 @@ mod tests {
             Some(Command::Login {
                 origin: None,
                 with_token: false,
-                browser: false
+                browser: false,
+                agent: None
+            })
+        );
+        assert_eq!(
+            parsed("login --agent review-bot").ok(),
+            Some(Command::Login {
+                origin: None,
+                with_token: false,
+                browser: true,
+                agent: Some("review-bot".into())
+            })
+        );
+        assert!(parsed("login --agent bot --with-token").is_err());
+        assert_eq!(
+            parsed("logout --agent bot").ok(),
+            Some(Command::Logout {
+                origin: None,
+                agent: Some("bot".into())
             })
         );
         assert_eq!(
@@ -674,6 +690,51 @@ mod tests {
     }
 
     #[test]
+    fn parses_repo_remote_add_and_completion() {
+        assert_eq!(
+            parsed("repo remote add origin --override ada/web").ok(),
+            Some(Command::Repo {
+                origin: None,
+                command: RepoCommand::RemoteAdd {
+                    remote: "origin".into(),
+                    repo: "ada/web".into(),
+                    replace: true
+                }
+            })
+        );
+        assert_eq!(
+            parsed("repo remote add upstream ada/web").ok(),
+            Some(Command::Repo {
+                origin: None,
+                command: RepoCommand::RemoteAdd {
+                    remote: "upstream".into(),
+                    repo: "ada/web".into(),
+                    replace: false
+                }
+            })
+        );
+        for line in [
+            "repo remote",
+            "repo remote add origin",
+            "repo remote list",
+            "repo list --override",
+            "completion",
+            "completion tcsh",
+            "completion zsh extra",
+        ] {
+            assert_eq!(
+                parsed(line).map_err(|e| e.exit_code).err(),
+                Some(64),
+                "{line}"
+            );
+        }
+        assert_eq!(
+            parsed("completion zsh").ok(),
+            Some(Command::Completion(Shell::Zsh))
+        );
+    }
+
+    #[test]
     fn parses_the_org_commands() {
         let org = |line: &str| match parsed(line) {
             Ok(Command::Org { command, .. }) => Some(command),
@@ -769,7 +830,7 @@ mod tests {
     #[test]
     fn refuses_bad_lines_with_usage_code() {
         for line in [
-            "sync --land --attempt a",
+            "sync --attempt a",
             "clone",
             "clone r1 --full --offline",
             "clone r1 --sparse ,",

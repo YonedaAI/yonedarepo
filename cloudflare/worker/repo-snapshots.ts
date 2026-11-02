@@ -8,9 +8,12 @@
 // earlier (the holder's copy, then this isolate's), never older than a version this
 // isolate already served, and never older than this isolate's own ref writes. A reader that
 // must see a write made elsewhere passes its version as `min_version`.
-import { rpcValue } from './durable';
+
+import { Flights } from './flights';
 import { readFromHead } from './repo-head';
 import { ApiError, caller, type Json, type RepoContext, target, writesTo } from './repo-ops';
+import { repoRpcValue } from './repo-rpc';
+import { noteReached } from './repo-usage';
 import type { Env } from './types';
 
 export const REFS_MS = 1000;
@@ -19,24 +22,19 @@ const PINNED_ORIGIN = 'https://snapshots.yoneda.internal';
 /** Platform reads made on behalf of callers the published head already authorized. */
 const platform = (env: Env, repo: string) => caller(env, repo, { _system: 'projection' });
 
-const loading = new Map<string, Promise<Json>>();
+const loading = new Flights<Json>();
 /** One load per key at a time in this isolate; concurrent callers share it. */
-function once(key: string, load: () => Promise<Json>) {
-  let pending = loading.get(key);
-  if (!pending) {
-    pending = load().finally(() => loading.delete(key));
-    loading.set(key, pending);
-  }
-  return pending;
-}
+const once = (key: string, load: () => Promise<Json>) => loading.join(key, load).work;
 
 /** The caller's read access and main's published head, as `readFromHead`; null also when
  * main does not exist yet (an empty repository has no published head). */
 export async function headAccess(ctx: RepoContext, minVersion = 0) {
-  return readFromHead(ctx, minVersion).catch((e) => {
+  const fromHead = await readFromHead(ctx, minVersion).catch((e) => {
     if (e?.code === 'NOT_FOUND') return null;
     throw e;
   });
+  if (fromHead) noteReached(ctx.env, ctx.repo);
+  return fromHead;
 }
 
 /** Authorizes this request's reads from the published head's access snapshot and returns
@@ -186,7 +184,9 @@ async function refsSnapshot(env: Env, repo: string, minVersion: number): Promise
   const wrote = held ? held.writes !== writes : writes > 0;
   const shared = wrote ? null : holder(env, repo);
   const floor = Math.max(minVersion, servedVersions.get(repo) ?? 0);
-  let refs = shared ? await once(`refs:${repo}`, () => rpcValue(shared.refs(repo, floor))) : null;
+  let refs = shared
+    ? await once(`refs:${repo}`, () => repoRpcValue(shared.refs(repo, floor)))
+    : null;
   if (!refs || refs.version < floor)
     refs = await once(`refs:${repo}:${writes}`, () => platform(env, repo)({ op: 'repo_refs' }));
   servedVersions.set(repo, Math.max(refs.version, servedVersions.get(repo) ?? 0));
@@ -200,7 +200,7 @@ async function refsSnapshot(env: Env, repo: string, minVersion: number): Promise
  * isolate's readers. */
 export class RefsHolder {
   #refs: { value: Json; at: number } | null = null;
-  #loading: Promise<Json> | null = null;
+  #loads = new Flights<Json>();
 
   constructor(private readonly env: Env) {}
 
@@ -211,8 +211,7 @@ export class RefsHolder {
     let value: Json = held?.value ?? {};
     for (let attempt = 0; attempt < 2; attempt++) {
       // A load already running may have started before the version this caller needs.
-      this.#loading ??= this.#load(repo);
-      value = await this.#loading;
+      value = await this.#load(repo);
       if (value.version >= minVersion) break;
     }
     return value;
@@ -221,22 +220,20 @@ export class RefsHolder {
   /** Refs moved (a landing, projection or access change): the next reader reloads. */
   forget() {
     this.#refs = null;
-    this.#loading = null;
+    this.#loads = new Flights();
   }
 
   #load(repo: string): Promise<Json> {
+    const loads = this.#loads;
     const started = Date.now();
-    const load: Promise<Json> = platform(
-      this.env,
-      repo,
-    )({ op: 'repo_refs' })
-      .then((value) => {
-        if (this.#loading === load) this.#refs = { value, at: started };
+    return loads.join(repo, () =>
+      platform(
+        this.env,
+        repo,
+      )({ op: 'repo_refs' }).then((value) => {
+        if (this.#loads === loads) this.#refs = { value, at: started };
         return value;
-      })
-      .finally(() => {
-        if (this.#loading === load) this.#loading = null;
-      });
-    return load;
+      }),
+    ).work;
   }
 }

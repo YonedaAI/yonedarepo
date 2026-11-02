@@ -2,7 +2,7 @@
 // and returns JSON; the SourceRepository Durable Object and Rust compute decide, this
 // module only moves objects between the cache tiers and those deciders.
 import { auditOn } from './account-audit';
-import { durableJson, storageGuard } from './durable';
+import { durableJson, notingFull, storageGuard } from './durable';
 import { type HoldAnswer, holdSwitch, verifiedHold } from './platform-legal-hold';
 import type { OrgAccess } from './platform-org-access';
 import { noteWriter } from './platform-write-origin';
@@ -14,9 +14,11 @@ import { compute } from './repo-compute';
 import { sendLandChecks } from './repo-land-check';
 import { type CachedObject, parseStore, RepoObjects, type TreeEntry } from './repo-objects';
 import type { PatGrant } from './repo-pat';
+import { KEEPS_REFS } from './repo-read-ops';
 import { adoptCommit, unrecorded } from './repo-shards';
 import { timed } from './repo-timing';
 import { undoSwitch } from './repo-undo-window';
+import { noteReached } from './repo-usage';
 import type { Env } from './types';
 
 export type { PatGrant, PatScope } from './repo-pat';
@@ -46,7 +48,8 @@ export type Credentials =
         | 'quarantine'
         | 'erase'
         | 'land-when-cleared'
-        | 'audit';
+        | 'audit'
+        | 'close';
       /** No undo window for this caller: a purge nobody may undo (a failed create taken back, an
        * operator's purge). */
       _undo_ms?: 0;
@@ -59,6 +62,7 @@ const CREDENTIAL_KEYS = [
   '_anonymous',
   '_system',
   '_storage_guard',
+  '_size_guard',
   '_hold',
   '_undo_ms',
   '_audit',
@@ -74,60 +78,6 @@ export class ApiError extends Error {
   }
 }
 
-/** Commands that never move a ref (reads, and commits before they land). Any other
- * command a caller in this isolate sends may, so refs snapshots taken before it are not
- * served to this isolate (repo-snapshots.ts). */
-const KEEPS_REFS = new Set([
-  'repo_prepare_commit',
-  'repo_begin_commit',
-  'repo_record_commit',
-  'repo_adopt_commit',
-  'repo_check_request',
-  'repo_session_record',
-  'repo_session_list',
-  'repo_session_show',
-  'repo_agent_context',
-  'repo_memory_add',
-  'repo_memory_retire',
-  'repo_memory_list',
-  'repo_memory_show',
-  'repo_context_relevant',
-  'repo_context_deliver',
-  'repo_context_deliveries',
-  'repo_status',
-  'repo_storage',
-  'repo_hold_owner',
-  'repo_audit_pending',
-  'repo_audit_done',
-  'repo_refs',
-  'repo_snapshot',
-  'repo_log',
-  'repo_txlog',
-  'repo_commit',
-  'repo_merge_base',
-  'repo_path_history',
-  'repo_contracts',
-  'repo_head',
-  'repo_staged_objects',
-  'repo_tokens',
-  'repo_members',
-  'repo_land_status',
-  'repo_land_clearance',
-  'repo_git_access',
-  'repo_git_walk',
-  'repo_clone_access',
-  'repo_compact_status',
-  'repo_compact_plan',
-  'repo_compact_done',
-  'repo_set_retention',
-  'repo_lfs_batch',
-  'repo_lfs_store',
-  'repo_lfs_discard',
-  'repo_lfs_usage',
-  'repo_lfs_set_quota',
-  'repo_lfs_sweep_claim',
-  'repo_lfs_sweep_done',
-]);
 const writes = new Map<string, number>();
 /** How many commands that may move refs this isolate has sent to `repo`. */
 export const writesTo = (repo: string) => writes.get(repo) ?? 0;
@@ -159,12 +109,13 @@ export function caller(env: Env, repo: string, auth: Credentials): Call {
   const once = async (command: Json, hold?: HoldAnswer) => {
     const body = JSON.stringify({ ...sign(command), ...(hold && { _hold: hold }) });
     const value = await timed(`do.${command.op}`, () =>
-      durableJson<Json>(stub, 'https://source-repository/', body),
+      notingFull(repo, command.op, durableJson<Json>(stub, 'https://source-repository/', body)),
     ).finally(() => {
       // Counted when it settles (it may have committed even if its answer was lost).
       if (!KEEPS_REFS.has(command.op)) noteWrite(repo);
     });
     if (value.error) throw new ApiError(value.error.code, value.error.message);
+    if (!('_system' in auth)) noteReached(env, repo);
     await sendLandChecks(env, repo, value);
     return value;
   };

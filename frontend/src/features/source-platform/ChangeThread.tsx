@@ -1,8 +1,9 @@
 // Comments on a change: one comment, a composer, and a line thread with reply and resolve.
 import { type FormEvent, useState } from 'react';
-import type { Anchor, ChangeComment, Thread } from './changeModel';
+import { type Anchor, type ChangeComment, commentText, type Thread } from './changeModel';
 import { Person } from './Person';
 import { usePeople } from './people';
+import { RichMarkdown } from './RichMarkdown';
 import { useReadOnly } from './repoAccess';
 import { Failure } from './SourceStatus';
 import { shortSha, sourceApi, when } from './sourceApi';
@@ -24,7 +25,7 @@ export function CommentItem({ comment }: { comment: ChangeComment }) {
         <Person principal={comment.principal} strong /> · {when(comment.at)}
         {comment.resolved_at !== null && ' · resolved'}
       </header>
-      <p>{comment.body}</p>
+      <RichMarkdown source={commentText(comment.body)} shift={3} />
     </article>
   );
 }

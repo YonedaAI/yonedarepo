@@ -11,7 +11,7 @@ import { commit, replay } from './repo-commit';
 import { recordContract, symbolContract } from './repo-contracts';
 import { blame, pathHistory, search } from './repo-derived';
 import { diff } from './repo-diff';
-import { listTree, readFile } from './repo-files';
+import { listTree, readFile, treeActivity } from './repo-files';
 import { forkRepository } from './repo-forks';
 import { hookOperations, notifyHooks } from './repo-hooks';
 import { landWithMerge } from './repo-landing';
@@ -21,12 +21,12 @@ import { explicitMerge } from './repo-merge';
 import { getObjects } from './repo-object-fetch';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 import { plan } from './repo-plan';
-import { dispatchProjection } from './repo-projection';
 import { rebase } from './repo-rebase';
 import { releaseOperations } from './repo-releases';
 import { recordSession } from './repo-session-records';
 import { mergeOutboxes, shardOutboxes } from './repo-shards';
 import { readRefs } from './repo-snapshots';
+import { noteCheck } from './repo-usage';
 import { agentView } from './repo-views';
 
 type Operation = (ctx: RepoContext, args: Json) => Promise<Json>;
@@ -46,16 +46,18 @@ export const operations: Record<string, Operation> = {
   },
   git_refs: readRefs,
   git_log: (ctx, a) =>
-    a.path
-      ? pathHistory(ctx, a)
-      : ctx.call({
-          op: 'repo_log',
-          ref: a.ref ?? 'main',
-          limit: Number(a.limit ?? 50),
-          // From a commit of the history instead of the branch head: the next page.
-          ...(a.from ? { from: String(a.from) } : {}),
-          ...version(a),
-        }),
+    a.dir !== undefined
+      ? treeActivity(ctx, a)
+      : a.path
+        ? pathHistory(ctx, a)
+        : ctx.call({
+            op: 'repo_log',
+            ref: a.ref ?? 'main',
+            limit: Number(a.limit ?? 50),
+            // From a commit of the history instead of the branch head: the next page.
+            ...(a.from ? { from: String(a.from) } : {}),
+            ...version(a),
+          }),
   git_txlog: (ctx, a) =>
     ctx.call({ op: 'repo_txlog', after: Number(a.after ?? 0), limit: Number(a.limit ?? 100) }),
   git_show: (ctx, a) => ctx.call({ op: 'repo_commit', commit: a.commit }),
@@ -86,6 +88,7 @@ export const operations: Record<string, Operation> = {
       evidence: a.evidence,
     });
     if (posted.hooks) await notifyHooks(ctx.env, ctx.repo);
+    noteCheck(ctx.env, ctx.repo, a.status);
     return posted;
   },
   git_check_run: async (ctx, a) => {
@@ -167,7 +170,6 @@ export const operations: Record<string, Operation> = {
     await notifyHooks(ctx.env, ctx.repo);
     return moved;
   },
-  // A new tag is mirrored to the object store like a protected branch.
   git_tag: async (ctx, a) => {
     // With a message the platform builds an annotated tag object.
     const created = await ctx.call({
@@ -179,8 +181,7 @@ export const operations: Record<string, Operation> = {
       // Or an annotated tag object made elsewhere (e.g. `git tag -a`), kept as is.
       tag: a.object_b64 ? { data_b64: a.object_b64 } : null,
     });
-    if (!created.already)
-      await Promise.all([dispatchProjection(ctx.env, ctx.repo), notifyHooks(ctx.env, ctx.repo)]);
+    if (!created.already) await notifyHooks(ctx.env, ctx.repo);
     return created;
   },
   ...hookOperations,
@@ -209,4 +210,27 @@ export async function branchesRoute(ctx: RepoContext, path: string[], body: () =
     return operations.git_rebase(ctx, { ...(await body().catch(() => ({}))), branch });
   }
   return operations.git_branch(ctx, await body());
+}
+
+/** `POST refs/batch`: every branch moves or none; stale expectations answer 409 naming
+ * the stale refs (`details.stale`). */
+export async function batchRefs(ctx: RepoContext, body: Json) {
+  if (!Array.isArray(body.updates))
+    throw new ApiError('INVALID_INPUT', 'updates must be a list of {ref, commit, expected}');
+  const result = await ctx.call({
+    op: 'repo_branch_batch',
+    updates: body.updates.map((u: Json) => ({
+      ref: u?.ref,
+      commit: u?.commit,
+      expected: u?.expected ?? null,
+      // An annotated tag's object (`{data_b64}`), kept beside the tag's ref.
+      ...(u?.tag ? { tag: u.tag } : {}),
+    })),
+  });
+  if (result.stale)
+    throw new ApiError('STALE_HEAD', `Stale expected heads: ${result.stale.join(', ')}`, {
+      stale: result.stale,
+    });
+  await notifyHooks(ctx.env, ctx.repo);
+  return { version: result.version, refs: result.refs };
 }

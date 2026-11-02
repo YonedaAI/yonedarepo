@@ -7,7 +7,7 @@ import { linkTo, type Navigate } from '../shell/useRoute';
 import { ALL_REPOS_LABEL, BLOCK_HELP, READY_HELP } from './agentsModel';
 import { filterRepos, parseFilters } from './setupForm';
 
-/** The level at or above which a level agent's check fails; off unless the owner chooses one. */
+/** The level at or above which a level agent's check fails: High until the owner chooses. */
 export function BlockField({
   value,
   onChange,
@@ -103,17 +103,20 @@ export function TriggerFields({
 
 /** With no repositories yet: make one here, or import one (the CLI and API do imports). */
 function NoRepos({
+  all,
   onNewRepository,
   navigate,
 }: {
+  all: boolean;
   onNewRepository?: () => void;
   navigate: Navigate;
 }) {
   return (
     <div className="agent-panel-row agent-no-repos">
       <p>
-        <strong>No repositories yet.</strong> The agent joins each one you create or import here,
-        and any other the next time you open Agents.
+        <strong>No repositories yet.</strong>
+        {all &&
+          ' The agent joins each one you create or import here, and any other the next time you open Agents.'}
       </p>
       <div className="agent-no-repos-actions">
         {onNewRepository && (
@@ -173,14 +176,13 @@ export function RepoPicker({
             type="radio"
             name="repo-scope"
             checked={!all}
-            disabled={repos.length === 0}
             onChange={() => onChange({ all_repos: false })}
           />
           <span>Only the repositories I choose</span>
         </label>
       </div>
       {repos.length === 0 ? (
-        <NoRepos onNewRepository={onNewRepository} navigate={navigate} />
+        <NoRepos all={all} onNewRepository={onNewRepository} navigate={navigate} />
       ) : (
         <fieldset className="agent-panel-row agent-repo-choice" disabled={all}>
           <legend className="sr-only">Chosen repositories</legend>

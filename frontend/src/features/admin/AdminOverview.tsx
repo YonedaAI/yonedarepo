@@ -1,5 +1,6 @@
-// Admin overview: account, activity and repository totals, sign-ups per day for 30 days, and the
-// revenue view where ADMIN_BILLING is on.
+// Admin overview: account, activity and repository totals, the Flight log's confirmed subscribers
+// where NEWSLETTER is on, sign-ups per day for 30 days, and the revenue view where ADMIN_BILLING
+// is on.
 import type { Navigate } from '../shell/useRoute';
 import { Failure, Loading } from '../source-platform/SourceStatus';
 import { useSource } from '../source-platform/useSource';
@@ -13,7 +14,7 @@ export function AdminOverview({ navigate }: { navigate: Navigate }) {
   if (overview.loading && !overview.data) return <Loading what="the overview" />;
   if (overview.error || !overview.data)
     return <Failure error={overview.error ?? ''} what="the overview" onRetry={overview.reload} />;
-  const { accounts, repos, suspended, signups_per_day: days } = overview.data;
+  const { accounts, repos, suspended, newsletter, signups_per_day: days } = overview.data;
   const tiles = [
     { label: 'Accounts', value: accounts.total, caption: `${suspended} suspended` },
     { label: 'New today', value: accounts.new_24h, caption: 'last 24 hours' },
@@ -24,6 +25,9 @@ export function AdminOverview({ navigate }: { navigate: Navigate }) {
       value: repos.public + repos.private,
       caption: `${repos.public} public`,
     },
+    ...(newsletter
+      ? [{ label: 'Flight log', value: newsletter.confirmed, caption: 'confirmed subscribers' }]
+      : []),
   ];
   return (
     <>

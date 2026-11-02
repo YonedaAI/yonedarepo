@@ -7,12 +7,28 @@
 // Containers Read (all read-only). Secrets, set from stdin (~/.config/yonedarepo/staging.env):
 // CF_ANALYTICS_TOKEN  API token with the read permissions above
 // SUPERFAN_READ_TOKEN bearer for GET /findings, GET /status, POST /run
-// New findings mail ADMIN_NOTIFY_EMAIL through Resend (superfan/notify.ts, the Secrets Store secret Resend-Yoneda), at most
-// 8 digests a UTC day. Empty here: dev's bursts fire rules on purpose, so dev mails nobody.
+// New findings mail ADMIN_NOTIFY_EMAIL through Resend (superfan/notify.ts, the Secrets Store secret Resend-Yoneda): at most
+// 8 digests a UTC day. Dev has no address, so it mails nobody.
+// WATCH_WIDE=on is the wide watch: the front and managed Workers (both name this Worker in tail_consumers), crons,
+// every Durable Object class, the land queue, every queue, reconcile mismatches and repository storage; urgent
+// findings mail at once, outside the digest cap, at most 6 a UTC day per signal, and a quick pass every five minutes
+// (*/5, the cron quick.ts names) checks only those, so a site that is down is told in minutes. The token needs no more
+// permissions. docs/incidents.md has what each alert means. Off: the hourly digest alone.
+// WATCH_FRONT_URL is the site as people reach it. DEADMAN_URL is the dead-man (role deadman), which this Worker watches back.
+// POST /deploys is the deploy ledger (xtask/src/deploy_ledger.rs), same bearer. RELEASE_COMPARE=on compares each release with the one before after a deploy (superfan/release.ts).
+// PROBES=on runs synthetic checks on the */5 cron: /health, a page, an API read and, with the optional secret PROBE_CLONE_REPO (a small public repository's id, under 1 MiB), a clone.
+// PROBE_LANDING=on, dev only, also lands every third pass on PROBE_LAND_REPO with PROBE_LAND_TOKEN (optional secrets; a repository token limited to it). Budget: docs/observability-plan.md.
+// SERVICE_LEVELS=on writes requests that died and each synthetic result to SITE_EVENTS, the dataset the platform reads back (superfan/service-points.ts).
 // Deployed first: the dev platform names this Worker in tail_consumers.
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
+  "analytics_engine_datasets": [
+    {
+      "binding": "SITE_EVENTS",
+      "dataset": "yonedarepo_dev_site_events"
+    }
+  ],
   "compatibility_date": "2026-10-07",
   "durable_objects": {
     "bindings": [
@@ -55,19 +71,26 @@
   ],
   "triggers": {
     "crons": [
-      "7 * * * *"
+      "7 * * * *",
+      "*/5 * * * *"
     ]
   },
   "vars": {
-    "ADMIN_NOTIFY_EMAIL": "",
     "CF_ACCOUNT_ID": "f011d0ee02b23cad26b4b38151b204ad",
     "DAILY_CAP_MICROUSD": "1000000",
+    "DEADMAN_URL": "https://yonedarepo-dev-deadman.mlong-f01.workers.dev",
     "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>",
     "MIMO_TOKEN_PLAN_REGION": "sgp",
+    "PROBES": "off",
+    "PROBE_LANDING": "off",
+    "RELEASE_COMPARE": "off",
+    "SERVICE_LEVELS": "on",
     "SUPERFAN_MODEL": "mimo-v2.6-flash",
     "TELEMETRY_SOURCE": "cloudflare",
+    "WATCH_FRONT_URL": "https://dev.yonedarepo.com",
     "WATCH_SCRIPT": "yonedarepo-dev-platform",
-    "WATCH_URL": "https://yonedarepo-dev-platform.mlong-f01.workers.dev"
+    "WATCH_URL": "https://api.dev.yonedarepo.com",
+    "WATCH_WIDE": "on"
   },
   "workers_dev": true
 }

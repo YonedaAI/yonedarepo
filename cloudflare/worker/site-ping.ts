@@ -6,9 +6,11 @@
 // reader of a public page counts too: the point says only that a session was there, never whose,
 // and the page is looked up without the cookie, so a private repository and the app never match.
 // With TRAFFIC_REPORT on, a reader whose session names an account that's ours leaves no point.
+// With VISITORS on, the point also holds a hash that lasts one day (site-visitors.ts).
 import { normalizeHandle } from '../../shared/account';
 import { sessionAccount } from './accounts';
 import { isInternal } from './internal-accounts';
+import { carriedHeaders } from './request-scope';
 import { appHead, siteHead } from './seo-head';
 import {
   APP_PAGES,
@@ -18,6 +20,7 @@ import {
   referrerName,
   writeSitePoint,
 } from './site-events';
+import { browserOf, visitorHash, visitorsOn } from './site-visitors';
 import { sentByBrowser } from './traffic-class';
 import type { Env } from './types';
 
@@ -50,7 +53,10 @@ async function record(req: Request, env: Env) {
   if (typeof body?.path !== 'string' || !PATH.test(body.path)) return;
   const path = await knownPage(body.path, url.origin, address, env);
   if (!path || (await isOurs(req, env))) return;
-  write(req, env, path, referrerName(body.referrer, url.hostname));
+  const hash = visitorsOn(env) ? await visitorHash(req, env) : null;
+  const agent = req.headers.get('user-agent') ?? '';
+  const visitor = hash ? { hash, browser: browserOf(agent) } : undefined;
+  write(req, env, path, referrerName(body.referrer, url.hostname), visitor);
 }
 
 async function isOurs(req: Request, env: Env) {
@@ -58,13 +64,20 @@ async function isOurs(req: Request, env: Env) {
   return account !== null && (await isInternal(env, account)) !== false;
 }
 
-function write(req: Request, env: Env, path: string, referrer: string) {
+function write(
+  req: Request,
+  env: Env,
+  path: string,
+  referrer: string,
+  visitor?: { hash: string; browser: string },
+) {
   writeSitePoint(env, 'ping', req, {
     path,
     referrer,
     source: readSignupSource(null),
     class: hasSession(req) ? 'signed_in' : 'human',
     automated: false,
+    visitor,
   });
 }
 
@@ -74,7 +87,7 @@ function write(req: Request, env: Env, path: string, referrer: string) {
 async function knownPage(path: string, origin: string, address: string, env: Env) {
   const app = APP_PAGES.get(path);
   if (app) return app;
-  const headers = { 'cf-connecting-ip': address };
+  const headers = { 'cf-connecting-ip': address, ...carriedHeaders() };
   const site = await siteHead(new Request(`${origin}${path}`), env);
   if (site) return site.canonical ?? null;
   const parts = path.split('/').filter(Boolean);

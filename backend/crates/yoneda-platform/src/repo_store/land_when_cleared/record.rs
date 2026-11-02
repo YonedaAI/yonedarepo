@@ -4,12 +4,12 @@
 //! Landing records. A decision that says what the newest says isn't added, so duplicate
 //! deliveries add nothing. A row with no state is an attempt the rules cleared that still failed.
 use super::{ACTOR, Cleared};
-use crate::platform_ctc::{Clearance, LandingState, RiskScore, attempt_failed};
+use crate::platform_ctc::{Clearance, LandingState, attempt_failed};
 use crate::repo_store::change_gates::ClearanceRefusal;
 use crate::repo_store::changes;
 use crate::storage::{SqlStore, number};
 use serde_json::{Value, json};
-use yoneda_core::{Result, git_object::ObjectId};
+use yoneda_core::Result;
 
 /// Decisions kept on a Landing, newest first.
 const MAX_DECISIONS: usize = 32;
@@ -19,14 +19,6 @@ const MAX_REASON: usize = 500;
 /// The Landing's recorded decisions, newest first.
 pub(super) fn decisions(change: &Value) -> Vec<Value> {
     change["clearances"].as_array().cloned().unwrap_or_default()
-}
-
-/// The Risk the job last scored for this head, which is how the page and a landing know it.
-pub(super) fn scored_risk(change: &Value, head: &ObjectId) -> Option<RiskScore> {
-    decisions(change)
-        .iter()
-        .filter(|row| row["head"] == json!(head))
-        .find_map(|row| serde_json::from_value(row["state"]["risk"].clone()).ok())
 }
 
 /// Adds a decision to the Landing's record, unless it says what the newest one says.

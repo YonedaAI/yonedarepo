@@ -13,11 +13,15 @@ use yoneda_core::{
     git_object::{Commit, ObjectId, ObjectKind, hash_object},
 };
 
-const MIGRATIONS: [(i64, &str); 2] = [
+pub(crate) const MIGRATIONS: [(i64, &str); 3] = [
     (1, include_str!("migrations/commit_store/0001_commits.sql")),
     (
         2,
         include_str!("migrations/commit_store/0002_path_modes.sql"),
+    ),
+    (
+        3,
+        include_str!("migrations/commit_store/0003_commit_authors.sql"),
     ),
 ];
 
@@ -94,6 +98,7 @@ fn record<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         .map(|(_, _, data)| Commit::decode(data))
         .ok_or_else(|| bad("The objects do not include the commit"))??;
     let parents = header.parents()?;
+    let (author_name, authored_at) = header.authorship();
     if json!(header.tree()?) != c["tree"] || json!(parents) != c["parents"] {
         return Err(Error::new(
             "OBJECT_INVALID",
@@ -112,10 +117,10 @@ fn record<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     }
     let now = number(c, "now")?;
     db.query(
-        "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at) VALUES(?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,author_name,authored_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
         &[json!(id.hex()), c["tree"].clone(), json!(json!(parents).to_string()), json!(number(c, "generation")?),
           json!(number(c, "base_version")?), json!(string(c, "principal")?), json!(c["message"].as_str().unwrap_or_default()),
-          json!(c["read_set"].to_string()), json!(now)],
+          json!(c["read_set"].to_string()), json!(now), json!(author_name), json!(authored_at)],
     )?;
     for touch in c["touches"].as_array().into_iter().flatten() {
         db.query(

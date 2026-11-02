@@ -17,7 +17,7 @@ usePlatformFixture();
 
 // The app's pages (static assets) answer as the app.
 const app = { fetch: async () => new Response('<!doctype html>app', { headers: { 'content-type': 'text/html' } }) };
-const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2', ASSETS: app } as unknown as Env;
+const local = { ...scoped, ASSETS: app } as unknown as Env;
 const pkt = (line: string) => `${(line.length + 4).toString(16).padStart(4, '0')}${line}`;
 const fetchCommand = (args: string[]) =>
   `${pkt('command=fetch\n')}${pkt('object-format=sha1\n')}0001${args.map((a) => pkt(`${a}\n`)).join('')}0000`;

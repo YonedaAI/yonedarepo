@@ -56,7 +56,11 @@ If a workspace owner enables a managed review agent (Code review, Security revie
 
 ### Email
 
-We send a welcome email when your account is created, an email to confirm your address, and an email when you ask to change it. We do not send marketing email.
+We send a welcome email when your account is created, an email to confirm your address, and an email when you ask to change it. We do not send marketing email unless you ask for it: the Flight log below is opt-in.
+
+### Flight log updates
+
+Only if you sign up at /updates. We keep your email address, when you signed up, when you confirmed it and when you unsubscribed. We keep only a hash of the confirmation link's code. Your address is not linked to any YonedaRepo account. Every email has an unsubscribe link.
 
 ### Request logs
 
@@ -83,6 +87,7 @@ We use this information to:
 - run the service and sign you in;
 - enforce who can read and write each repository;
 - show you your own data;
+- send Flight log updates to people who asked for them and confirmed their address;
 - run the checks and review agents a repository's owner sets up;
 - protect the platform, for example by scanning pushes for leaked credentials and limiting sign-in attempts;
 - send the emails described above;
@@ -99,6 +104,7 @@ Everything is stored and processed by Cloudflare. Requests are served from Cloud
 
 - **Sessions** expire after seven days. **Personal access tokens** expire after 1 to 90 days, and you can revoke them at any time.
 - **Deleting a repository** closes it at once: it can no longer be read, and its tokens are revoked. Its code, LFS files, release assets, check logs and transcripts are then deleted from storage, and it leaves the discovery index. The repository's own records (its log, change requests, comments, reviews and session records) are retained in its sealed database and never served again. They are not deleted automatically; we erase them when you ask at [legal@yonedarepo.com](mailto:legal@yonedarepo.com).
+- **Flight log sign-ups.** An address nobody confirms is deleted after 7 days. A confirmed address is kept until you ask us to delete it. If you unsubscribe, we keep the address and the date so we do not email you again, unless you ask us to delete it.
 - **Transaction log history** is kept according to each repository's retention settings.
 - **Managed agent transcripts and credit records** are retained while the workspace exists and are not deleted automatically. We erase them when you ask at [legal@yonedarepo.com](mailto:legal@yonedarepo.com).
 - **Model gateway logs** of review-agent requests and responses are kept until the log store reaches its cap of 10 million entries; then the oldest are deleted first. We erase them when you ask at [legal@yonedarepo.com](mailto:legal@yonedarepo.com).
@@ -115,7 +121,7 @@ At any time, in the app, the CLI or the API, you can:
 - unlink a sign-in provider;
 - delete repositories you own.
 
-Deleting an account is not self-service yet. Email us and we will delete your account, the repositories it owns and their sealed records, and confirm when it is done. We will also send you a copy of your account data on request.
+You can delete your account in Settings, under General. That deletes the repositories it owns, which are purged after the usual window and can't be restored, ends your tokens, SSH keys and sessions, and frees your email address and sign-in methods at once. Any credit left on the account is lost, so email us first if you want a refund of what you paid. We keep billing records and operators' audit entries where the law or our accounts need them, without your name or address, and our payment processor keeps its own records. If you can't sign in, email us and we will delete it for you. We will also send you a copy of your account data on request.
 
 ## When we disclose it
 

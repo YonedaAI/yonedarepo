@@ -9,10 +9,12 @@ export type Envelope = {
   token?: string;
   /** A classify job's pushed commits, parents first (repo-classify.ts). */
   commits?: string[];
-  /** Failed attempts a store job follows (repo-store-create.ts). */
-  attempt?: number;
+  /** When an erase job first found the audit log in its way (repo-erase.ts). */
+  blocked_since?: number;
   /** The Landing a clearance job looks at (repo-land-cleared.ts). */
   number?: number;
+  /** The request this job descends from (request-scope.ts). Absent on older messages. */
+  request_id?: string;
 };
 export interface Env {
   WORKSPACES: DurableObjectNamespace;
@@ -25,15 +27,13 @@ export interface Env {
   /** "request" makes a create wait for its commit shards to start, for comparing benches
    * (default: they start after the answer, see repo-create.ts). */
   SHARD_START?: string;
-  /** `on`: a create answers without Artifacts and a queue job creates the store (unset or
-   * anything else: the create waits for it; repo-store-create.ts). */
-  ASYNC_STORE?: string;
   /** Landing mode: batch (default) or changeset (see repo-changesets.ts). */
   LAND_MODE?: string;
   /** "true" lets a request choose its landing mode (x-yoneda-land-mode), for benchmarks. */
   LAND_MODE_OVERRIDE?: string;
   /** `on`: a repository's database refuses new work from 9 GB (unset or `off`: never). */
   REPO_STORAGE_GUARD?: string;
+  REPO_SIZE_GUARD?: string;
   /** `on`: a check verdict's evidence is stored once, in `checks` (unset or anything else:
    * the run keeps a copy too; repo-archive-switches.ts). */
   CHECK_EVIDENCE_ONCE?: string;
@@ -52,9 +52,6 @@ export interface Env {
   /** `on`: the operators' billing routes and the nightly reconcile exist (unset or anything
    * else: neither; platform-admin-billing.ts). Set with the managed Worker's. */
   ADMIN_BILLING?: string;
-  /** `on`: an import lands main at once and fills its history in behind it
-   * (repo-import-fill.ts; unset or anything else: history first, then main). */
-  FAST_IMPORT?: string;
   /** `on`: a change's page shows its Slop and Risk cards (repo-instruments.ts; unset or
    * anything else: no route, and the page asks for nothing). */
   LANDING_INSTRUMENTS?: string;
@@ -62,13 +59,11 @@ export interface Env {
    * when cleared (repo-land-check.ts; unset or anything else: no job, and the switch is refused).
    * Set it only once every Worker on the queue knows the job. */
   LAND_WHEN_CLEARED?: string;
-  /** `on` (with FAST_IMPORT, PACK_CACHE and PUSH_BUNDLES): a public GitHub repository's import
-   * also fetches it directly, and main lands from that (repo-import-direct.ts; unset or
-   * anything else: Artifacts' fetch alone). */
-  DIRECT_IMPORT?: string;
+  /** `on`: `yoneda login --agent <name>` signs an agent up through the device flow. */
+  AGENT_SIGNUP?: string;
   /** Platform check executors (one fresh container per run attempt). */
   CHECK_RUNNERS: DurableObjectNamespace<import('./check-container').CheckContainer>;
-  OBJECT_PUSHES: DurableObjectNamespace<import('./repo-push-queue').ObjectPushQueue>;
+  IMPORT_RUNNERS: DurableObjectNamespace<import('./import-container').ImportContainer>;
   /** Platform jobs (projection, derived data, webhooks, purges). */
   PLATFORM_QUEUE: Queue<Envelope>;
   /** Check runs on their own queue (minutes each), so they never hold derive and
@@ -81,7 +76,7 @@ export interface Env {
    * and no hold on compaction). Setup is in docs/runbook.md. */
   CHANGELOG?: { send(records: import('./repo-changelog').ChangeEvent[]): Promise<void> };
   /** Durable imports of external Git repositories into the source platform. */
-  PLATFORM_IMPORT: Workflow<import('./repo-import').ImportParams>;
+  PLATFORM_IMPORT: Workflow<import('./repo-clone').CloneParams>;
   OBJECTS: R2Bucket;
   /** R2's S3 API for Git LFS presigned URLs (repo-lfs.ts): `https://<account>.r2.cloudflarestorage.com`,
    * the OBJECTS bucket's name, and an R2 API token's S3 key pair (secrets). LFS answers 501
@@ -91,7 +86,6 @@ export interface Env {
   LFS_S3_ACCESS_KEY_ID?: string;
   LFS_S3_SECRET_ACCESS_KEY?: string;
   INDEX: D1Database;
-  ARTIFACTS: Artifacts;
   /** Public downloads: CLI releases and the Claude Code marketplace (front Worker only). */
   DOWNLOADS?: R2Bucket;
   ASSETS: Fetcher;
@@ -102,6 +96,11 @@ export interface Env {
    * secrets are set; otherwise its routes answer 404 and the sign-in page hides it. */
   GITHUB_OAUTH_CLIENT_ID?: string;
   GITHUB_OAUTH_CLIENT_SECRET?: string;
+  /** The GitHub App that reads private repositories for an import (github-app). Any of the three
+   * unset: there is no Connect, and imports are of public repositories. */
+  GITHUB_APP_ID?: string;
+  GITHUB_APP_SLUG?: string;
+  GITHUB_APP_PRIVATE_KEY?: string;
   GOOGLE_OAUTH_CLIENT_ID?: string;
   GOOGLE_OAUTH_CLIENT_SECRET?: string;
   /** Requests without credentials (public repositories), per client address. */
@@ -116,6 +115,11 @@ export interface Env {
   /** Where the operators' sign-up notice goes (platform-signup-notice.ts); EMAIL_CONTACT
    * when unset. */
   ADMIN_NOTIFY_EMAIL?: string;
+  /** `on` opens the Flight log sign-up (platform-newsletter.ts); unset or anything else, or with
+   * NEWSLETTER_KEY or email unset: nothing is stored or sent and the page says Coming soon. */
+  NEWSLETTER?: string;
+  /** Signs the Flight log's unsubscribe links; changing it breaks every link already mailed. */
+  NEWSLETTER_KEY?: string;
   /** Where contact support's emails go (platform-support.ts); unset, the form answers 503. */
   SUPPORT_EMAIL?: string;
   /** Operators: accounts (comma separated) whose browser sessions may use the admin pages
@@ -126,15 +130,12 @@ export interface Env {
   MANAGED_ADMIN_TOKEN?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
-  ARTIFACTS_NAMESPACE: string;
   /** `on` erases a deleted repository's records once its purge finishes (repo-erase); any
    * other value leaves them in its tombstone. */
   REPO_ERASE?: string;
   /** Days a deleted repository can be restored before its purge (repo-undo-window.ts). Unset or
    * 0: it purges at once. */
   REPO_UNDO_DAYS?: string;
-  /** `r2` stores new source-platform repositories' Git objects in R2 (local development). */
-  PLATFORM_OBJECT_STORE?: string;
   /** `on` writes a large push's objects as bundles (repo-bundles); reads always use them. */
   PUSH_BUNDLES?: string;
   /** `on` serves a clone's pack (full, partial or shallow) from the store when one is held,
@@ -174,8 +175,47 @@ export interface Env {
    * figure (internal-accounts.ts), and opens the Traffic page's other ranges and comparison;
    * set on both Workers. */
   TRAFFIC_REPORT?: string;
+  /** `on` adds the repository, bytes and a landing's outcome to platform points, and opens the
+   * repository Insights page and the admin landing and repository reports (repo-usage.ts). Needs
+   * TRAFFIC_EVENTS and TRAFFIC_REPORT on. */
+  REPO_ANALYTICS?: string;
+  /** `on` counts an agent credential as an agent, adds a digest of its token's id and the client
+   * it names to its points, and opens the admin Agents tab (platform-agent-report.ts). Needs
+   * REPO_ANALYTICS on. */
+  AGENT_REPORT?: string;
+  /** `on` splits the operator log, adds its filters and detail panel, and records failed admin
+   * attempts, purges' ends and staff reads (platform-operator-audit.ts). Needs D1 migration 0015. */
+  OPERATOR_AUDIT?: string;
+  /** `on` opens the admin Operations and Infrastructure tabs (platform-operations-report.ts). */
+  OPS_REPORT?: string;
+  /** What the Infrastructure tab reads, as JSON: `{"scripts":["name"],"queues":{"jobs":"<id>"},
+   * "d1":"<id>","r2":"<bucket>"}`. Ids, no secrets; a queue whose label holds `dead` counts as
+   * dead letters. Unset, the tab says it isn't set up. */
+  OPS_RESOURCES?: string;
+  /** `on` adds a daily rotating, salted hash to browser pings and opens the admin Visitors tab
+   * (site-visitors.ts); set on both Workers. */
+  VISITORS?: string;
   /** `on` records a new account's region and samples where writes come from (region.ts). */
   REGION_SIGNALS?: string;
+  /** `on`: requests find their cell, and a Worker forwards what is another's (cells.ts). Unset or
+   * anything else: this Worker serves everything it is sent, as ever. */
+  CELLS?: string;
+  /** The cell this Worker is; unset: `enam`, today's stack. */
+  CELL?: string;
+  /** A cell's own object namespaces are restricted to this jurisdiction (cell-env.ts). */
+  CELL_JURISDICTION?: string;
+  /** A new account authority's location hint in this cell (cell-env.ts). */
+  CELL_HINT?: string;
+  /** The other cells' platform Workers. */
+  CELL_ENAM?: Fetcher;
+  CELL_WEUR?: Fetcher;
+  /** The other cells' D1, for the rows that name no repository: personal tokens' look-ups and
+   * an older account's handle. */
+  INDEX_ENAM?: D1Database;
+  INDEX_WEUR?: D1Database;
+  /** `on`: a create may ask for a location hint (repo-region-hint.ts). Dev only, for the latency
+   * matrix; off or unset, a create ignores it. */
+  REGION_HINT_TEST?: string;
   /** Cloudflare Web Analytics site token (front Worker); set, public pages carry its beacon. */
   WEB_ANALYTICS_TOKEN?: string;
   /** Site traffic reports (platform Worker, platform-site-traffic.ts): the account and dataset the
@@ -208,6 +248,18 @@ export interface Env {
   /** The hostname clients use for Git over SSH (`ssh.yonedarepo.com`). */
   SSH_HOST?: string;
   BUILD_REVISION?: string;
+  /** `on`: the request id goes on every response and travels with each hop (request-scope.ts;
+   * unset or anything else: failure lines still carry it, nothing else changes). */
+  REQUEST_IDS?: string;
+  /** `on`: `POST /api/client-error` logs what browsers report (client-errors.ts; unset or
+   * anything else: it answers 204 and does nothing). */
+  CLIENT_ERRORS?: string;
+  /** A number N: 1 request in N, and every slow one, keeps its Server-Timing phases as a log line
+   * and one Analytics Engine point (repo-span-sample.ts); unset or `off`: nothing. */
+  SPAN_SAMPLE?: string;
+  /** `on`: the operations with service targets write a point each, reads 1 in 10, and the admin
+   * page reads them back (shared/service-levels.ts); unset or anything else: nothing. */
+  SERVICE_LEVELS?: string;
 }
 export type Principal = {
   workspace: string;

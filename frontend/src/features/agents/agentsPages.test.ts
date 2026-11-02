@@ -194,13 +194,17 @@ describe("an agent's pages", () => {
     expect(html).toContain('unless its title starts with Draft: or WIP:');
     expect(html).toContain('+ Add filters');
     expect(html).toContain('All repositories, including new ones');
-    expect(html.match(/type="checkbox" checked=""/g)).toHaveLength(2);
+    // Nothing is chosen for you: a paid agent starts only where you ask, and that is no error.
+    expect(html.match(/type="checkbox" checked=""/g)).toBeNull();
+    expect(html).toContain('0 of 2 selected');
+    expect(html).toContain('Choose at least one repository');
+    expect(html).not.toContain('role="alert"');
     expect(html).toMatch(/type="checkbox" role="switch" aria-checked="true" checked=""/);
-    expect(html).toMatch(/<button type="submit">Add agent<\/button>/);
+    expect(html).toMatch(/<button type="submit" disabled="">Add agent<\/button>/);
     expect(html).not.toContain('>Cancel<');
   });
 
-  it('sets up with no repositories yet: all repositories chosen, ways to make one, Add agent open', () => {
+  it('sets up with no repositories yet: nothing chosen, ways to make one, Add agent waits', () => {
     answers.byPath.set('/workspaces/ada', { data: { ...workspace, repos: [] } });
     const html = render(AgentSettingsPage, {
       workspace: 'ada',
@@ -210,12 +214,34 @@ describe("an agent's pages", () => {
       onNewRepository: () => {},
     });
     expect(html).toContain('Set up Security review');
-    expect(html).toMatch(/type="radio" name="repo-scope" checked=""\/>/);
+    // All repositories is a choice, and the other stays open to come back to.
+    expect(html).toMatch(/type="radio" name="repo-scope"\/><span>All repositories/);
+    expect(html).toMatch(/type="radio" name="repo-scope" checked=""\/><span>Only the/);
     expect(html).toContain('No repositories yet.');
+    expect(html).not.toContain('The agent joins each one');
+    expect(html).toContain('Choose at least one repository');
     expect(html).toContain('>Create a repository<');
     expect(html).toMatch(/href="\/docs\/guides\/import"[^>]*>Import from GitHub/);
     expect(html).not.toContain('agent-repo-list');
-    expect(html).toMatch(/<button type="submit">Add agent<\/button>/);
+    expect(html).toMatch(/<button type="submit" disabled="">Add agent<\/button>/);
+  });
+
+  it('says what all repositories means once an agent has it, with none yet', () => {
+    const agents = workspace.agents.map((a) =>
+      a.id === 'security-review'
+        ? { ...a, created_at: 1, created_by: 'ada', active: true, all_repos: true }
+        : a,
+    );
+    answers.byPath.set('/workspaces/ada', { data: { ...workspace, repos: [], agents } });
+    const html = render(AgentSettingsPage, {
+      workspace: 'ada',
+      agent: 'security-review',
+      account: 'ada',
+      configure: true,
+      navigate,
+    });
+    expect(html).toMatch(/type="radio" name="repo-scope" checked=""\/><span>All repositories/);
+    expect(html).toContain('The agent joins each one you create or import here');
   });
 
   it("shows a set-up agent's page: runs in UTC, what it is, when it runs, repositories, history and its menu", () => {

@@ -26,7 +26,7 @@ import {
   workspacePath,
 } from './agentsModel';
 import { BlockField, RepoPicker, TriggerFields } from './settingsParts';
-import { type AgentForm, formProblem, initialForm, updateBody } from './setupForm';
+import { type AgentForm, formProblem, initialForm, NO_REPO_CHOSEN, updateBody } from './setupForm';
 
 type Space = { workspace?: string };
 
@@ -110,7 +110,7 @@ function SetupForm({
   navigate: Navigate;
   onNewRepository?: () => void;
 }) {
-  const [form, setForm] = useState(() => initialForm(agent, state.repos));
+  const [form, setForm] = useState(() => initialForm(agent));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState('');
@@ -134,7 +134,7 @@ function SetupForm({
       });
       if (first) return navigate({ view: 'agent-settings', agent: agent.id, ...space });
       setCurrent(next);
-      setForm(initialForm(next, state.repos));
+      setForm(initialForm(next));
       setSaved('Saved.');
     } catch (e) {
       setError((e as Error).message);
@@ -187,7 +187,8 @@ function SetupForm({
           />
         </div>
       </section>
-      {(error || problem) && <Failure error={error || problem} />}
+      {problem === NO_REPO_CHOSEN && <p className="source-meta">{problem}</p>}
+      {(error || (problem && problem !== NO_REPO_CHOSEN)) && <Failure error={error || problem} />}
       {saved && (
         <p role="status" className="source-meta agent-setup-saved">
           {saved}

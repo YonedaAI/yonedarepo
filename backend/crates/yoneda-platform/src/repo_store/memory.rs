@@ -1,6 +1,8 @@
 //! Repository memories ("continuous memory"): what agents and people learned while working
-//! (a decision, a constraint, a gotcha, a how-to), kept with the code and handed to the
-//! next coding session when it is relevant, not only when the session starts.
+//! (a decision, a constraint, a gotcha, a how-to, or a kind of their own), kept with the
+//! code and handed to the next coding session when it is relevant, not only when the
+//! session starts.
+//! - `kinds`: the built-in kinds and the ones a repository added.
 //! - `records`: append-only memories anchored to paths and symbols at a commit; retiring
 //!   and superseding append rows too. Reads at a log version see what existed then.
 //! - `stale`: whether the anchored code has changed since, from the log.
@@ -12,6 +14,7 @@
 mod anchors;
 mod candidates;
 pub(super) mod deliveries;
+pub(super) mod kinds;
 mod listing;
 pub(super) mod records;
 pub(super) mod relevance;

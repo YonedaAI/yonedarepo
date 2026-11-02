@@ -216,31 +216,30 @@ describe('overview cards', () => {
 });
 
 describe('the set-up form', () => {
-  it('pre-selects every repository and Active at first set-up, all repositories with none, else what is set', () => {
-    expect(initialForm(state('code-review'), repos)).toEqual({
+  it('starts with no repository chosen and Active: adding an agent spends only where asked', () => {
+    expect(initialForm(state('code-review'))).toEqual({
       trigger: state('code-review').settings.trigger,
       block_at: null,
       all_repos: false,
-      repos: [repoA, repoB],
+      repos: [],
       active: true,
     });
-    expect(initialForm(state('code-review'), [])).toMatchObject({ all_repos: true, repos: [] });
     expect(
-      initialForm(state('code-review', setUp({ enabled_repos: [repoB], active: false })), repos),
+      initialForm(state('code-review', setUp({ enabled_repos: [repoB], active: false }))),
     ).toMatchObject({ all_repos: false, repos: [repoB], active: false });
-    expect(initialForm(state('code-review', setUp({ all_repos: true })), repos)).toMatchObject({
+    expect(initialForm(state('code-review', setUp({ all_repos: true })))).toMatchObject({
       all_repos: true,
     });
   });
 
   it('sends only the trigger, repositories and Active, never a field YonedaRepo maintains', () => {
     const fresh = state('code-review');
-    expect(updateBody(fresh, initialForm(fresh, repos))).toEqual({
-      repos: [repoA, repoB],
+    expect(updateBody(fresh, { ...initialForm(fresh), repos: [repoB] })).toEqual({
+      repos: [repoB],
       active: true,
     });
     const enabled = state('code-review', setUp());
-    const form = initialForm(enabled, repos);
+    const form = initialForm(enabled);
     expect(updateBody(enabled, form)).toEqual({});
     const ready = { ...form.trigger, when: 'ready' as const };
     expect(updateBody(enabled, { ...form, trigger: ready })).toEqual({
@@ -252,7 +251,7 @@ describe('the set-up form', () => {
     );
     expect(
       updateBody(customized, {
-        ...initialForm(customized, repos),
+        ...initialForm(customized),
         trigger: fresh.defaults.trigger,
       }),
     ).toEqual({ settings: { trigger: null } });
@@ -262,8 +261,12 @@ describe('the set-up form', () => {
     expect(updateBody(enabled, { ...form, active: false })).toEqual({ active: false });
     expect(form.block_at).toBeNull();
     const slop = state('slop-review', setUp({ enabled_repos: [repoA] }));
-    expect(updateBody(slop, { ...initialForm(slop, repos), block_at: 'high' })).toEqual({
-      settings: { block_at: 'high' },
+    expect(initialForm(slop).block_at).toBe('high');
+    expect(updateBody(slop, { ...initialForm(slop), block_at: 'medium' })).toEqual({
+      settings: { block_at: 'medium' },
+    });
+    expect(updateBody(slop, { ...initialForm(slop), block_at: null })).toEqual({
+      settings: { block_at: null },
     });
     expect(updateBody(enabled, { ...form, block_at: 'high' })).toEqual({});
     // Whatever the form holds besides, the body names only editable keys.
@@ -278,26 +281,27 @@ describe('the set-up form', () => {
 
   it('sends all repositories instead of a list, and a list again when switched back', () => {
     const fresh = state('code-review');
-    expect(updateBody(fresh, initialForm(fresh, []))).toEqual({ all_repos: true, active: true });
+    expect(updateBody(fresh, { ...initialForm(fresh), all_repos: true })).toEqual({
+      all_repos: true,
+      active: true,
+    });
     const enabled = state('code-review', setUp());
-    const form = initialForm(enabled, repos);
+    const form = initialForm(enabled);
     expect(updateBody(enabled, { ...form, all_repos: true })).toEqual({ all_repos: true });
     const all = state('code-review', setUp({ all_repos: true, enabled_repos: [repoA, repoB] }));
-    expect(updateBody(all, initialForm(all, repos))).toEqual({});
-    expect(updateBody(all, { ...initialForm(all, repos), all_repos: false })).toEqual({
+    expect(updateBody(all, initialForm(all))).toEqual({});
+    expect(updateBody(all, { ...initialForm(all), all_repos: false })).toEqual({
       repos: [repoA, repoB],
     });
   });
 
   it('flags a bad form early', () => {
     const agent = state('code-review');
-    expect(formProblem(agent, initialForm(agent, repos))).toBe('');
-    expect(formProblem(agent, initialForm(agent, []))).toBe('');
-    expect(formProblem(agent, { ...initialForm(agent, repos), repos: [] })).toMatch(
-      /at least one repository/,
-    );
+    expect(formProblem(agent, { ...initialForm(agent), repos: [repoA] })).toBe('');
+    expect(formProblem(agent, initialForm(agent))).toMatch(/at least one repository/);
+    expect(formProblem(agent, { ...initialForm(agent), all_repos: true })).toBe('');
     const many = Array.from({ length: 30 }, (_, i) => `p${i}/`);
-    const form = initialForm(agent, repos);
+    const form = initialForm(agent);
     expect(formProblem(agent, { ...form, trigger: { ...form.trigger, paths: many } })).not.toBe('');
   });
 

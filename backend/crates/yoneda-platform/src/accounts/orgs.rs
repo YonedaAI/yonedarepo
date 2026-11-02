@@ -44,39 +44,11 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: OrgOp, now: i64) -> Res
     }
 }
 
-/// Commands of the org's members: any member sees it and may leave; owners manage it.
+mod members;
+
+/// Commands of an organization's members, with its own authorization boundary.
 pub(super) fn member<S: SqlStore>(db: &S, c: &Value, op: OrgMemberOp, now: i64) -> Result<Value> {
-    let org = org(db)?;
-    let actor = string(c, "actor")?;
-    let role = role_of(db, &actor)?.ok_or_else(|| {
-        Error::new(
-            "FORBIDDEN",
-            format!("You are not a member of the {org} organization"),
-        )
-    })?;
-    let leaving = op == OrgMemberOp::MemberRemove && c["account"] == actor.as_str();
-    let reads = matches!(op, OrgMemberOp::Show | OrgMemberOp::HoldShow);
-    if !reads && role != "owner" && !leaving {
-        return Err(Error::new(
-            "FORBIDDEN",
-            format!("Only an owner of {org} can do this"),
-        ));
-    }
-    let actor = format!("user:{actor}");
-    match op {
-        OrgMemberOp::Show => show(db, &org, &role),
-        OrgMemberOp::Audit => Ok(json!({ "org": org })),
-        OrgMemberOp::Delete => delete(db, c, &org, &actor, now),
-        OrgMemberOp::MemberPut => member_put(db, c, &org, &actor, now),
-        OrgMemberOp::MemberRemove => member_remove(db, c, &org, &actor, now),
-        OrgMemberOp::TeamCreate => super::teams::create(db, c, &actor, now),
-        OrgMemberOp::TeamDelete => super::teams::delete(db, c, &actor, now),
-        OrgMemberOp::TeamMemberPut => super::teams::member_put(db, c, &actor, now),
-        OrgMemberOp::TeamMemberRemove => super::teams::member_remove(db, c, &actor, now),
-        OrgMemberOp::HoldShow => super::holds::show(db),
-        OrgMemberOp::HoldSet => super::holds::owner_set(db, c, &actor, now),
-        OrgMemberOp::HoldRelease => super::holds::owner_release(db, c, &actor, now),
-    }
+    members::handle(db, c, op, now)
 }
 
 /// The orgs a personal account joined (hints, see the module comment).
@@ -141,11 +113,10 @@ fn create<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         "ALREADY_EXISTS" => Error::new("ALREADY_EXISTS", "That name is taken"),
         _ => e,
     })?;
-    put(
-        db,
-        "account",
-        &json!({"username": name, "kind": "org", "created_at": now, "created_by": actor}),
-    )?;
+    let mut record =
+        json!({"username": name, "kind": "org", "created_at": now, "created_by": actor});
+    set_region(&mut record, c);
+    put(db, "account", &record)?;
     db.query(
         "INSERT INTO org_members(account,role,added_by,added_at) VALUES(?,'owner',?,?)",
         &[json!(actor), json!(format!("user:{actor}")), json!(now)],
@@ -177,7 +148,9 @@ fn access<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     } else {
         Vec::new()
     };
-    Ok(json!({ "org": org, "role": role, "teams": teams }))
+    let mut answer = json!({ "org": org, "role": role, "teams": teams });
+    super::place::add(db, &mut answer)?;
+    Ok(answer)
 }
 
 fn show<S: SqlStore>(db: &S, org: &str, role: &str) -> Result<Value> {

@@ -35,5 +35,13 @@ describe('app crash guard', () => {
     const html = renderToStaticMarkup(boundary.render() as ReturnType<typeof createElement>);
     expect(html).toContain('Something went wrong');
     expect(html).toContain('Reload');
+    expect(html).not.toContain('Reference');
+  });
+
+  it('shows the reference the report came back with', () => {
+    const boundary = new AppErrorBoundary({ children: null });
+    boundary.state = { failed: true, reference: '8f1c2d3e4a5b6c7d-SJC' };
+    const html = renderToStaticMarkup(boundary.render() as ReturnType<typeof createElement>);
+    expect(html).toContain('Reference 8f1c2d3e4a5b6c7d-SJC');
   });
 });

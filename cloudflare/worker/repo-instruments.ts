@@ -1,4 +1,4 @@
-// A change's Slop and Risk cards, behind `LANDING_INSTRUMENTS`: the authority's facts about its
+// A change's Slop, Intent drift and Risk cards, behind `LANDING_INSTRUMENTS`: the authority's facts about its
 // last heads (repo_store/change_instruments.rs), each head's diff measured here, and the answer
 // from Rust (platform_instruments.rs). The read shares one budget across heads, newest first,
 // and a file seen on an earlier head costs nothing, so its reads stay what one diff costs. An

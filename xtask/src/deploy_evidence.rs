@@ -11,17 +11,17 @@ use std::path::Path;
 pub(crate) const EVIDENCE_DIR: &str = ".local/staging";
 
 /// What a full kit run records: every item except those that run only when named
-/// (tools/staging-realworld.mjs, `wanted`).
-pub(crate) const FULL_KIT: [&str; 22] = [
-    "0", "browser", "31", "6", "7", "19", "20", "23", "25", "8", "9", "10", "12", "13", "14", "15",
-    "16", "18", "21", "27", "28", "17",
+/// (tools/staging-realworld.mjs, `wanted`) and 41, which a run leaves out while AUDIT_LOG is off
+/// (tools/staging/kit-gates.mjs). 34, 43 and 44 need LAND_WHEN_CLEARED and 46 AGENT_SIGNUP on dev.
+pub(crate) const FULL_KIT: [&str; 35] = [
+    "0", "browser", "48", "31", "6", "7", "19", "20", "23", "25", "8", "9", "10", "12", "13", "14",
+    "15", "16", "18", "21", "27", "28", "33", "34", "35", "36", "37", "38", "39", "40", "42", "43",
+    "44", "46", "17",
 ];
 
-/// The kit's browser gate (tools/staging/browser-flow.mjs). Like every item in the evidence, it
-/// must pass when present; while the kit can still run without it, its absence is allowed.
-/// Set to true once every kit run records it.
+/// The kit's browser gate (tools/staging/browser-flow.mjs): a prod deploy needs it in the
+/// evidence, passing.
 pub(crate) const BROWSER_ITEM: &str = "browser";
-const BROWSER_REQUIRED: bool = false;
 
 /// The newest evidence is a full kit that passed at exactly HEAD, recording HEAD's tree: what a
 /// `live-tests` status claims.
@@ -63,7 +63,7 @@ fn evidence_revisions(evidence: &Value) -> Vec<String> {
 }
 
 /// The kit must have run against this code, HEAD or a commit of HEAD's tree, and passed every
-/// item it lists: item 0 (live revisions) always, the browser item whenever it is present.
+/// item it lists, which must include item 0 (live revisions) and the browser item.
 /// A tree the evidence records (older evidence has none) must be HEAD's too.
 pub(crate) fn evidence_passes(evidence: Option<&Value>, facts: &Facts) -> Result<()> {
     let evidence = evidence.ok_or(
@@ -90,9 +90,9 @@ pub(crate) fn evidence_passes(evidence: Option<&Value>, facts: &Facts) -> Result
         )
         .into());
     }
-    if BROWSER_REQUIRED && !items.iter().any(|item| item["id"] == BROWSER_ITEM) {
+    if !items.iter().any(|item| item["id"] == BROWSER_ITEM) {
         return Err(format!(
-            "Refusing prod: the newest kit evidence has no {BROWSER_ITEM} item. Run the kit with --browser."
+            "Refusing prod: the newest kit evidence has no {BROWSER_ITEM} item. Run the full kit: `node tools/staging-realworld.mjs`."
         )
         .into());
     }

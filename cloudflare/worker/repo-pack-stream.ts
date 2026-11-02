@@ -3,6 +3,7 @@
 // into the store while a built one streams.
 
 import { deferrer } from './background';
+import { log } from './log';
 import { ReadStats } from './repo-bundles';
 import { wasmMemoryBytes } from './repo-git-sessions';
 import type { PackWriter } from './repo-pack-cache';
@@ -16,7 +17,7 @@ export const CHUNK = 65515;
  * the invocation's outcome in the tail names the limit. */
 export function logPack(event: string, repo: string, stats: PackStats, extra: object = {}) {
   const wasm_mib = Math.round(wasmMemoryBytes() / MiB);
-  console.log(JSON.stringify({ event, repo, ...stats.summary(), wasm_mib, ...extra }));
+  log.info(event, { repo, ...stats.summary(), wasm_mib, ...extra });
 }
 
 export function concat(parts: Uint8Array[]) {
@@ -43,6 +44,7 @@ export function sendStored(
   stats?: PackStats,
 ) {
   if (stats) stats.cache = 'hit';
+  stats?.begin();
   const { readable, writable } = new IdentityTransformStream();
   const write = async (bytes: Uint8Array) => {
     const writer = writable.getWriter();
@@ -56,7 +58,9 @@ export function sendStored(
     if (stats?.report) await write(sideBand(2, stats.line(), band));
     await write(new TextEncoder().encode('0000'));
     await writable.close();
-  })().catch((e) => writable.abort(e).catch(() => {}));
+  })()
+    .catch((e) => writable.abort(e).catch(() => {}))
+    .finally(() => stats?.finish());
   return new Response(readable, { headers: RESULT });
 }
 
@@ -121,11 +125,11 @@ export class Storing {
 
   #drop(why: string) {
     if (!this.writer) return;
-    console.warn(`pack not stored: ${why}`);
+    log.warn('git.pack.not_stored', { why });
     void this.abort();
     const dropped = this.dropped;
     if (dropped && !this.#defer(dropped))
-      dropped().catch((e) => console.warn(`pack hand-off failed: ${e?.message ?? e}`));
+      dropped().catch((e) => log.warn('git.pack.handoff_failed', { error: e }));
   }
 }
 
@@ -149,9 +153,30 @@ export class PackStats {
   readonly reads = new ReadStats();
   /** Whether the pack came from the store (`hit`), was stored (`stored`), or neither. */
   cache: 'off' | 'hit' | 'miss' | 'storing' | 'stored' = 'off';
+  /** The fetch had nothing: a clone. */
+  fresh = false;
+  /** Settles when a pack that began has gone, or stopped. Unset while no pack began. */
+  ended?: Promise<void>;
+  private settle?: () => void;
   private entries = 0;
   private deltas = 0;
   private bytes = 0;
+
+  /** A pack is about to stream. */
+  begin() {
+    this.ended ??= new Promise((settle) => {
+      this.settle = settle;
+    });
+  }
+
+  finish() {
+    this.settle?.();
+  }
+
+  /** Pack bytes sent so far. */
+  get sentBytes() {
+    return this.bytes;
+  }
 
   /** Counts bytes of a stored pack streamed as they are. */
   streamed(bytes: number) {

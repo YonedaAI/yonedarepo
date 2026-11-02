@@ -62,6 +62,9 @@ pub fn comment<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     if resolve && anchor.is_none() {
         return Err(bad("resolve needs the anchor's path, line and side"));
     }
+    if body.is_some() {
+        super::capacity::refuse_if_full(db, c)?;
+    }
     let commit = match c.get("commit").filter(|v| !v.is_null()) {
         Some(_) => rows::object_id(c, "commit")?,
         None => ObjectId::parse(change["head"].as_str().ok_or_else(|| {
@@ -101,10 +104,14 @@ pub fn comment<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
     }
     let mut resolved = 0;
     if resolve {
-        let open = "change_number=? AND commit_id=? AND path=? AND line=? AND side=? AND resolved_at IS NULL";
+        // A commit named is that commit's anchor. Named none, it is the anchor wherever it sits:
+        // a fix moves the head past the finding, and `yoneda change comment` names no commit.
+        let open = "change_number=?1 AND (?2 IS NULL OR commit_id=?2) AND path=?3 AND line=?4 \
+                    AND side=?5 AND resolved_at IS NULL";
+        let named = c.get("commit").filter(|v| !v.is_null());
         let key = [
             change["number"].clone(),
-            json!(commit.hex()),
+            named.map_or(Value::Null, |_| json!(commit.hex())),
             path,
             line,
             side,
@@ -115,10 +122,10 @@ pub fn comment<S: SqlStore>(db: &S, c: &Value, actor: &Actor) -> Result<Value> {
         )?[0]["n"]
             .as_i64()
             .unwrap_or(0);
-        let mut params = vec![json!(now)];
-        params.extend(key);
+        let mut params = key.to_vec();
+        params.push(json!(now));
         db.query(
-            &format!("UPDATE change_comments SET resolved_at=? WHERE {open}"),
+            &format!("UPDATE change_comments SET resolved_at=?6 WHERE {open}"),
             &params,
         )?;
         // The posted comment, when there is one, was resolved with its anchor.

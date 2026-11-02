@@ -43,15 +43,16 @@ YonedaRepo is a Git-compatible source platform for agents and API clients, built
 - Browser/adapter checks: TypeScript, formatting/lint, production build, and Cloudflare Workers runtime integration tests. Use Wrangler/workerd for platform behavior; ordinary Node mocks do not prove DO/R2/Queue behavior.
 - Test important behavior and failure boundaries, especially replay, rollback, migrations, scope isolation, duplicates, cancellation, stale HEAD, acknowledgment loss and restart recovery. Reproduce defects with a failing test before fixing them. Avoid tests that merely repeat implementation.
 - Verify browser changes in the real served app, including empty/loading/error states. Keep accessibility, keyboard navigation and clear selected-versus-published state.
-- Local tests must work without provider keys or paid inference. Live provider, container and Artifacts checks are an explicit separate command. Clearly label simulated incidents and test fixtures.
+- Local tests must work without provider keys or paid inference. Live provider and container checks are an explicit separate command. Clearly label simulated incidents and test fixtures.
 - Before declaring completion, run the relevant gates and record exact results and outstanding blockers. Distinguish source implementation, local test, deployment, live run and user acceptance. Never invent a successful run.
 
 ## Development process (owner rules)
 
 Branches and worktrees
 - All work happens in a worktree on its own `claude/<slice>` branch, **inside the repo root's `.worktrees/` folder** (`git worktree add .worktrees/<slice> -b claude/<slice> dev`; `.worktrees/` is git-ignored). Never create worktrees beside the repo (no `../yonedarepo-*`). Merge into `dev` with `--no-ff` only after its gates pass, then remove the worktree and the branch the same turn (`git worktree remove .worktrees/<slice>`, `git branch -d claude/<slice>`). A finished builder's worktree is removed even before its branch merges.
+- Never kill by name or pattern: no `pkill`, `killall` or `kill $(pgrep ...)`, in commands or scripts. On macOS `pkill -f "cat" -n` reads `-n` as a second pattern and `cat` matches every path with `Applications` in it, which closed the owner's open apps on 2026-11-01. Stop only a process you started, by the PID you recorded. The owner's Mac runs their own apps and browser beside this work.
 - `dev` stays clean: no untracked or uncommitted files. Uncommitted code found anywhere goes onto its own branch as a WIP commit; never merge it unreviewed.
-- Fast worktree start: APFS-clone `target/` (`cp -cR target/debug target/wasm32-unknown-unknown .worktrees/<slice>/target/`), symlink `node_modules` and `frontend/node_modules`, and run `worker-build --release` in the worktree's own build folder (a shared build folder ships a stale Wasm).
+- Worktree start: symlink `node_modules` and `frontend/node_modules`, then build. Never copy or clone `target/`: a from-scratch build of the workspace tests takes 21 s and the Wasm 29 s (3.8 GB in all, measured 2026-11-01), while a long-lived `target/` grows to 60 GB of stale files that are slow to copy. Run `worker-build --release` in the worktree's own build folder (a shared build folder ships a stale Wasm). At most 3 builders compile at once.
 - GitHub: `origin` is the public YonedaAI/yonedarepo (`dev` deploys dev, `main` reaches prod through the ship PR, on the owner's word). Workflow logs, PR comments, issues and artifacts are readable by anyone: no account names, emails, repository ids or monitor details there. Leave the archived MagnetonIO/yonedarepo alone. Run a secret scan (`gitleaks git --redact`) before pushing new history.
 
 Tests
@@ -83,6 +84,7 @@ Words
 - Show a requirement only when it applies to this viewer and this repository. A public clone says nothing about tokens.
 - Hints put the link first, then the action: `Settings → SSH keys: run yoneda ssh setup once.`
 - No product internals, setup steps or caveats in the main flow. If a note doesn't change what the reader does next, cut it.
+- Public pages have no "Soon" or "Coming" tags, file paths, code terms or made-up metrics. An example reads in plain words.
 
 Empty, loading and error states
 - Nothing there: the shared empty state. A centred title (`No sessions yet`), one or two plain sentences on how the first one appears, at most one action. No box, dashed border, command syntax, MCP names or list of tools.

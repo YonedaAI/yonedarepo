@@ -1,21 +1,30 @@
-// Device login approval (`/device`): `yoneda login` shows a user code; the signed-in owner
-// enters it here (or arrives with ?code=), picks scopes, expiry and repositories, and
-// approves or denies. The CLI then receives a personal access token; this page never does.
-import { type FormEvent, useState } from 'react';
+// Device login approval (`/device`), on its own with no app around it: `yoneda login` shows a
+// code and a link; the person lands here, signs in if they must, sees who they are, which machine
+// asks and the same code as their terminal, and approves. The link alone approves nothing: a
+// person has to press Approve with the code in front of them, on a page that says to close the tab
+// if this wasn't them. The CLI then receives a personal access token; this page never does.
+// Scopes, expiry and repositories sit behind Options, and `yoneda login --agent <name>` has its
+// own grant fields (DeviceAgent.tsx).
+import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
+import type { AccountIdentity } from '../../lib/types';
+import { AccountPanel } from '../workspace/AccountPanel';
+import { DEFAULT_EXPIRY_DAYS, DEVICE_PAT_SCOPES, isUserCode, normalizeUserCode } from './connect';
 import {
-  DEFAULT_EXPIRY_DAYS,
-  DEVICE_PAT_SCOPES,
-  isUserCode,
-  normalizeUserCode,
-  PAT_SCOPES,
-  type PatScope,
-} from './connect';
+  AGENT_DEFAULT_SCOPES,
+  AgentFields,
+  type AgentForm,
+  agentGrant,
+  agentProblem,
+} from './DeviceAgent';
+import { Asking, CodeEntry, DeviceOptions } from './DeviceParts';
 import { Failure, Loading } from './SourceStatus';
 import { SourceApiError, sourceApi } from './sourceApi';
-import { ExpirySelect, RepoAllowlist, type RepoSummary, ScopeChecks } from './TokenParts';
+import type { RepoSummary } from './TokenParts';
 import { useSource } from './useSource';
 
 type Outcome = 'approved' | 'denied';
+
+const TITLE = 'Sign in to YonedaRepo';
 
 /** Why an approval failed, in words for the person at the browser. */
 export function deviceFailure(error: unknown): string {
@@ -28,31 +37,64 @@ export function deviceFailure(error: unknown): string {
   return (error as Error).message;
 }
 
-export function DeviceOutcome({ outcome }: { outcome: Outcome }) {
+/** The page: a card in the middle, with nothing of the app around it. */
+function Card({ title, children }: { title: string; children: ReactNode }) {
+  useEffect(() => {
+    document.title = `${title} — YonedaRepo`;
+  }, [title]);
   return (
-    <div className="source-shown-once" role="status">
-      {outcome === 'approved' ? (
-        <>
-          <strong>Approved.</strong> Return to your terminal: yoneda login finishes on its own.
-        </>
-      ) : (
-        <>
-          <strong>Denied.</strong> The waiting yoneda login receives no token.
-        </>
-      )}
-    </div>
+    <main className="device-page">
+      <section className="device-card" aria-labelledby="device-title">
+        <img className="device-logo" src="/brand/mark.svg" alt="" width="40" height="40" />
+        <h1 id="device-title">{title}</h1>
+        {children}
+      </section>
+    </main>
   );
 }
 
-export function DevicePage({ code: initial }: { code: string }) {
+/** Where the login stands once it is decided: the card, and one line. */
+export function DeviceDone({ outcome }: { outcome: Outcome }) {
+  return outcome === 'approved' ? (
+    <Card title="Signed in">
+      <p role="status">You're signed in. You can close this tab and return to your terminal.</p>
+    </Card>
+  ) : (
+    <Card title="Sign-in denied">
+      <p role="status">The waiting yoneda login receives no token. You can close this tab.</p>
+    </Card>
+  );
+}
+
+function Approval({
+  code,
+  site,
+  identity,
+}: {
+  code: string;
+  site: string;
+  identity?: AccountIdentity | null;
+}) {
   const repos = useSource<{ repos: RepoSummary[] }>('/repos');
-  const [code, setCode] = useState(initial);
-  const [scopes, setScopes] = useState<PatScope[]>(DEVICE_PAT_SCOPES);
-  const [days, setDays] = useState(DEFAULT_EXPIRY_DAYS);
-  const [allow, setAllow] = useState<string[]>([]);
+  const pending = useSource<{ agent: string | null; host: string | null }>(
+    `/device/pending?code=${code}`,
+  );
+  const [options, setOptions] = useState(false);
+  const [grant, setGrant] = useState({
+    scopes: DEVICE_PAT_SCOPES,
+    days: DEFAULT_EXPIRY_DAYS,
+    allow: [] as string[],
+  });
+  const [form, setForm] = useState<AgentForm>({
+    scopes: AGENT_DEFAULT_SCOPES,
+    days: DEFAULT_EXPIRY_DAYS,
+    all: false,
+    repos: [],
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [outcome, setOutcome] = useState<Outcome | null>(null);
+  const agent = pending.data?.agent ?? null;
 
   async function decide(deny: boolean) {
     setBusy(true);
@@ -60,10 +102,14 @@ export function DevicePage({ code: initial }: { code: string }) {
     try {
       await sourceApi('/device/approve', {
         body: {
-          user_code: normalizeUserCode(code),
-          scopes,
-          expires_days: days,
-          ...(allow.length ? { repos: allow } : {}),
+          user_code: code,
+          ...(agent
+            ? agentGrant(form)
+            : {
+                scopes: grant.scopes,
+                expires_days: grant.days,
+                ...(grant.allow.length ? { repos: grant.allow } : {}),
+              }),
           ...(deny ? { deny: true } : {}),
         },
       });
@@ -78,51 +124,107 @@ export function DevicePage({ code: initial }: { code: string }) {
     event.preventDefault();
     void decide(false);
   };
-  const valid = isUserCode(code);
-
+  if (outcome) return <DeviceDone outcome={outcome} />;
+  const ready = agent ? !agentProblem(form) : grant.scopes.length > 0;
+  const refused = pending.error
+    ? deviceFailure(new SourceApiError(pending.code ?? '', pending.error, pending.errorStatus ?? 0))
+    : '';
+  const list = repos.data?.repos ?? [];
   return (
-    <div className="source-device">
-      <h1>Connect a device</h1>
-      {repos.loading && !repos.data && <Loading what="your account" />}
-      {repos.error && <Failure error={repos.error} onRetry={repos.reload} />}
-      {outcome && <DeviceOutcome outcome={outcome} />}
-      {repos.data && !outcome && (
-        <form onSubmit={submit} className="source-token-form">
-          <p>
-            Approve only a code that <code>yoneda login</code> just showed you.
-          </p>
-          <label htmlFor="device-code" className="source-field">
-            Code
-            <input
-              id="device-code"
-              value={code}
-              onChange={(e) => setCode(normalizeUserCode(e.target.value))}
-              placeholder="BCDF-GHJK"
-              autoComplete="off"
-              spellCheck={false}
-              aria-invalid={code !== '' && !valid}
-              required
+    <Intro site={site}>
+      {(pending.loading || (repos.loading && !repos.data)) && <Loading what="your account" />}
+      {refused && <Failure error={refused} />}
+      {repos.error && !refused && <Failure error={repos.error} onRetry={repos.reload} />}
+      {repos.data && pending.data && (
+        <form onSubmit={submit} className="device-form">
+          <Asking identity={identity} host={pending.data.host} code={code} />
+          {agent && (
+            <AgentFields
+              agent={agent}
+              host={pending.data.host}
+              repos={list}
+              form={form}
+              onChange={(next) => setForm({ ...form, ...next })}
             />
-          </label>
-          <ScopeChecks legend="Access" options={PAT_SCOPES} value={scopes} onChange={setScopes} />
-          <ExpirySelect id="device-expiry" value={days} onChange={setDays} />
-          <RepoAllowlist repos={repos.data.repos} value={allow} onChange={setAllow} />
-          <div className="source-actions">
-            <button type="submit" disabled={busy || !valid || scopes.length === 0}>
-              {busy ? 'Approving…' : 'Approve'}
+          )}
+          <button type="submit" disabled={busy || !ready}>
+            {busy ? 'Approving…' : 'Approve'}
+          </button>
+          {!agent && (
+            <button type="button" className="device-link" onClick={() => setOptions(!options)}>
+              {options ? 'Hide options' : 'Options'}
             </button>
-            <button
-              type="button"
-              className="quiet"
-              disabled={busy || !valid}
-              onClick={() => void decide(true)}
-            >
-              Deny
-            </button>
-          </div>
+          )}
+          {options && !agent && (
+            <DeviceOptions
+              repos={list}
+              {...grant}
+              busy={busy}
+              onChange={(next) => setGrant({ ...grant, ...next })}
+              onDeny={() => void decide(true)}
+            />
+          )}
         </form>
       )}
       {error && <Failure error={error} />}
-    </div>
+    </Intro>
   );
+}
+
+/** The card's words, around whatever this step asks. */
+function Intro({ children, site }: { children: ReactNode; site: string }) {
+  return (
+    <Card title={TITLE}>
+      <p>You're signing the CLI into:</p>
+      <code className="device-host">{site}</code>
+      {children}
+      <p className="device-footer">If you didn't start this from your terminal, close this tab.</p>
+    </Card>
+  );
+}
+
+export function DevicePage({
+  code: initial,
+  site = window.location.origin,
+  session,
+  signInError,
+}: {
+  code: string;
+  /** The site being signed into. */
+  site?: string;
+  session: {
+    authenticated: boolean;
+    loading: boolean;
+    identity?: AccountIdentity | null;
+    discover: () => Promise<void>;
+  };
+  /** A provider sign-in that came back here refused, in words. */
+  signInError?: string;
+}) {
+  const normalized = normalizeUserCode(initial);
+  const [code, setCode] = useState(isUserCode(normalized) ? normalized : '');
+  if (session.loading)
+    return (
+      <Intro site={site}>
+        <Loading what="your account" />
+      </Intro>
+    );
+  if (!session.authenticated)
+    return (
+      <Intro site={site}>
+        <AccountPanel
+          initialMode="login"
+          initialError={signInError}
+          onMode={() => {}}
+          onConnected={() => void session.discover()}
+        />
+      </Intro>
+    );
+  if (!code)
+    return (
+      <Intro site={site}>
+        <CodeEntry onCode={setCode} />
+      </Intro>
+    );
+  return <Approval code={code} site={site} identity={session.identity} />;
 }

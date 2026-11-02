@@ -12,8 +12,9 @@ use yoneda_core::{Error, Result};
 
 /// `change` subscribes to every change request event (`change.opened`, `change.commented`,
 /// `change.landed`, `change.closed`, `change.deleted`); `release` to `release.published` and
-/// `release.deleted`; `repo` to `repo.deleted` (sent once, when the repository is deleted) and
-/// `repo.purged` (sent once, when an undo window ends in its purge: `undo`).
+/// `release.deleted`; `repo` to `repo.deleted` (sent once, when the repository is deleted),
+/// `repo.purged` (sent once, when an undo window ends in its purge: `undo`) and `repo.resumed`
+/// (when the owner resumes automation).
 pub const EVENTS: [&str; 9] = [
     "land", "merged", "refused", "branch", "tag", "check", "change", "release", "repo",
 ];

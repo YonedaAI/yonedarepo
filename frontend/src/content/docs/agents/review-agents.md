@@ -33,7 +33,7 @@ Only an owner can turn an agent on for a repository (for an organization's repos
 | Instructions | What the agent looks for; **Reset to the maintained instructions** restores ours |
 | When to run | **On every push** (default) or **When marked ready** (once, when the change opens) |
 | Paths, Branches | Optional filters; branches take `prefix/*` |
-| Block landing at | Slop review and Intent drift: **Never (report only)** (default), **Medium or higher** or **High** |
+| Block landing at | Slop review and Intent drift: **High** (default), **Medium or higher** or **Never (report only)** |
 
 ## When they run
 
@@ -47,11 +47,13 @@ On the change:
 - **A summary comment.**
 - **A check** named after the agent (`code-review`, `security-review`, `slop-review`) on the head commit. Code review and Security review fail it when they post a high or medium finding. Slop review reports low and medium findings; its level is that of its most serious finding, or high with five or more medium findings on lines of the change. It fails the check only at or above **Block landing at**.
 
-Intent drift posts no line comments. Its summary comment gives the verdict and what drifted, and its check `intent-drift` carries the level. With no flight plan the check passes and its evidence says `no_plan`.
+Intent drift posts no line comments. Its summary comment gives the verdict and what drifted, and its check `intent-drift` carries the level: on course is low, partly on course medium, off course high. So by default an off-course change fails the check. With no flight plan the check passes and its evidence says `no_plan`.
 
 Findings that cannot be placed on a line of the diff, or that look like a credential, are left out. So are findings past the 2,000 comments a change can hold; they still count toward the check.
 
-A failed check blocks landing only when the repository's [landing rules](/docs/guides/repositories#landing-rules) list it in `required_checks`; otherwise it is advice.
+A failed check blocks landing when the repository's [landing rules](/docs/guides/repositories#landing-rules) list it in `required_checks`. With **Land when cleared** on, any failed check sends the Landing around, required or not. Otherwise it is advice. Line comments don't hold a Landing unless **Block landing on unresolved agent findings** is on.
+
+A run that can't finish leaves no reading. If the check is required it fails, and a comment says so: push again to run the agent. If it isn't, nothing is posted. A pause fails nothing: when the owner resumes automation, agents whose checks are required run on the open Landings still waiting for them, up to 20 runs in a repository. The rest run on their next push.
 
 ## Go-around
 

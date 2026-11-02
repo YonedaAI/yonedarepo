@@ -8,6 +8,8 @@ import { isReservedHandle, normalizeAccountIdentifier } from '../../shared/accou
 import { accountCreated } from './account-email';
 import type { ProviderIdentity } from './oauth-providers';
 import type { SignupRegion } from './region';
+import type { SignupSource } from './site-events';
+import { withSource } from './site-visitors';
 import { sha } from './storage';
 import type { Env, Json } from './types';
 import { workspace } from './workspace';
@@ -29,6 +31,7 @@ const fields = (i: ProviderIdentity) => ({
   login: printable(i.login) || i.provider,
   email: i.email,
   avatar_url: i.avatar,
+  name: i.name,
 });
 
 export async function claims(env: Env, key: string, command: Json): Promise<Json> {
@@ -75,6 +78,7 @@ export async function signInWith(
   identity: ProviderIdentity,
   sessionHash: string,
   region: SignupRegion = {},
+  source: SignupSource | null = null,
 ): Promise<Outcome> {
   const key = identityKey(identity);
   const held = await holder(env, key);
@@ -88,6 +92,8 @@ export async function signInWith(
         session_hash: sessionHash,
         // Each sign-in refreshes the provider's picture (an uploaded one still wins).
         avatar_url: identity.avatar,
+        // Fills a name only for an account that has never had one.
+        name: identity.name,
       });
       return signed.authenticated
         ? { kind: 'signed_in', username: held.account }
@@ -119,7 +125,8 @@ export async function signInWith(
     if (identity.email)
       await claims(env, await emailKey(identity.email), { op: 'identity_claim', account: name });
     // A new account only: later sign-ins and links never welcome again.
-    await accountCreated(env, name, identity.email, identity.provider, region);
+    const told = withSource(env, region, source);
+    await accountCreated(env, name, identity.email, identity.provider, told);
     return { kind: 'signed_in', username: name, created: true };
   }
   return { kind: 'error', code: 'unavailable' };
@@ -149,6 +156,7 @@ export async function linkTo(
       ...fields(identity),
     });
   } catch (e: any) {
+    // A claim left behind grants nothing (sign-in re-checks the account).
     if (!live) await claims(env, key, { op: 'identity_claim_release', account }).catch(() => {});
     if (e?.code === 'UNAUTHORIZED') return { kind: 'error', code: 'session' };
     if (e?.code === 'ALREADY_EXISTS') return { kind: 'error', code: 'provider_linked' };

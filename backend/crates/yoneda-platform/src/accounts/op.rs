@@ -1,4 +1,5 @@
 //! The account authority's commands, by family. Each family's handler matches its own enum.
+pub(crate) use super::op_profile::{AvatarOp, FavoriteOp, GitHubOp, NameOp};
 use crate::ops::op_names;
 use crate::storage::string;
 use serde::Deserialize;
@@ -25,6 +26,8 @@ op_names! {
         Summary = "account_summary",
         Suspend = "account_suspend",
         Unsuspend = "account_unsuspend",
+        Place = "account_place",
+        PlaceNote = "account_place_note",
     }
 }
 op_names! {
@@ -40,11 +43,22 @@ op_names! {
     }
 }
 op_names! {
+    /// A forgotten password's emailed link (the request, the link's state, the reset), and a
+    /// new recovery code for a signed-in person.
+    pub(crate) enum PasswordOp {
+        ResetRequest = "password_reset_request",
+        ResetStatus = "password_reset_status",
+        Reset = "password_reset",
+        RecoveryRegenerate = "recovery_regenerate",
+    }
+}
+op_names! {
     pub(crate) enum TokenOp {
         Create = "pat_create",
         List = "pat_list",
         Check = "pat_check",
         Revoke = "pat_revoke",
+        AgentRoom = "pat_agent_room",
     }
 }
 op_names! {
@@ -63,6 +77,7 @@ op_names! {
         Create = "device_create",
         Approve = "device_approve",
         Poll = "device_poll",
+        Show = "device_show",
     }
 }
 op_names! {
@@ -77,20 +92,11 @@ op_names! {
     }
 }
 op_names! {
-    /// The account's picture: its source, what to serve, an upload and its removal.
-    pub(crate) enum AvatarOp {
-        Get = "avatar_get",
-        Serve = "avatar_serve",
-        Upload = "avatar_upload",
-        Remove = "avatar_remove",
-    }
-}
-op_names! {
-    /// The repositories the account keeps at the top of its picker.
-    pub(crate) enum FavoriteOp {
-        List = "favorite_list",
-        Put = "favorite_put",
-        Remove = "favorite_remove",
+    /// Deleting an account (`closure`).
+    pub(crate) enum ClosureOp {
+        Plan = "account_closure_plan",
+        EndCredentials = "account_credentials_end",
+        Close = "account_close",
     }
 }
 op_names! {
@@ -158,8 +164,11 @@ op_names! {
         Pending = "audit_pending",
         Cursor = "audit_cursor",
         Append = "audit_append",
+        Exported = "audit_exported",
         Read = "audit_read",
         Verify = "audit_verify",
+        SealNext = "audit_seal_next",
+        SealDone = "audit_seal_done",
     }
 }
 
@@ -197,12 +206,16 @@ pub(crate) enum AccountOp {
     Signin(SigninOp),
     Access(AccessOp),
     Email(EmailOp),
+    Password(PasswordOp),
     Token(TokenOp),
     Ssh(SshOp),
     Device(DeviceOp),
     Identity(IdentityOp),
     Avatar(AvatarOp),
+    Name(NameOp),
     Favorite(FavoriteOp),
+    GitHub(GitHubOp),
+    Closure(ClosureOp),
     OAuth(OAuthOp),
     Org(OrgOp),
     OrgMember(OrgMemberOp),
@@ -227,12 +240,16 @@ impl AccountOp {
             Self::Signin(op) => op.name(),
             Self::Access(op) => op.name(),
             Self::Email(op) => op.name(),
+            Self::Password(op) => op.name(),
             Self::Token(op) => op.name(),
             Self::Ssh(op) => op.name(),
             Self::Device(op) => op.name(),
             Self::Identity(op) => op.name(),
             Self::Avatar(op) => op.name(),
+            Self::Name(op) => op.name(),
             Self::Favorite(op) => op.name(),
+            Self::GitHub(op) => op.name(),
+            Self::Closure(op) => op.name(),
             Self::OAuth(op) => op.name(),
             Self::Org(op) => op.name(),
             Self::OrgMember(op) => op.name(),
@@ -249,12 +266,16 @@ impl AccountOp {
         let mut all: Vec<Self> = SigninOp::ALL.iter().copied().map(Self::Signin).collect();
         all.extend(AccessOp::ALL.iter().copied().map(Self::Access));
         all.extend(EmailOp::ALL.iter().copied().map(Self::Email));
+        all.extend(PasswordOp::ALL.iter().copied().map(Self::Password));
         all.extend(TokenOp::ALL.iter().copied().map(Self::Token));
         all.extend(SshOp::ALL.iter().copied().map(Self::Ssh));
         all.extend(DeviceOp::ALL.iter().copied().map(Self::Device));
         all.extend(IdentityOp::ALL.iter().copied().map(Self::Identity));
         all.extend(AvatarOp::ALL.iter().copied().map(Self::Avatar));
+        all.extend(NameOp::ALL.iter().copied().map(Self::Name));
         all.extend(FavoriteOp::ALL.iter().copied().map(Self::Favorite));
+        all.extend(GitHubOp::ALL.iter().copied().map(Self::GitHub));
+        all.extend(ClosureOp::ALL.iter().copied().map(Self::Closure));
         all.extend(OAuthOp::ALL.iter().copied().map(Self::OAuth));
         all.extend(OrgOp::ALL.iter().copied().map(Self::Org));
         all.extend(OrgMemberOp::ALL.iter().copied().map(Self::OrgMember));

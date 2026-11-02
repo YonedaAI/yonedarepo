@@ -26,6 +26,18 @@ pub(super) fn stalled(what: &str, idle: std::time::Duration) -> Failure {
     }
 }
 
+/// `what` ended in good order after `bytes` bytes, short of what it should hold: a retryable
+/// failure, like a dropped connection.
+pub(crate) fn ended_early(what: &str, bytes: usize) -> Failure {
+    Failure {
+        status: 0,
+        code: "ENDED_EARLY".into(),
+        message: format!("{what} ended early, after {bytes} bytes"),
+        details: Value::Null,
+        retry_after: None,
+    }
+}
+
 /// A 2xx answer's body, read until it ends, the connection breaks or it sends nothing
 /// for `idle` (a stall counts as a cut: the bytes so far are kept).
 pub(super) async fn received(

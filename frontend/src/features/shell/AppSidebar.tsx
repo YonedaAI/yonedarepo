@@ -6,9 +6,11 @@ import {
   BookOpenText,
   Bot,
   Building2,
+  ChartColumn,
   Compass,
   CreditCard,
   FolderGit2,
+  FolderTree,
   GitCommitHorizontal,
   GitPullRequest,
   House,
@@ -37,6 +39,7 @@ import {
 import { unreadLabel } from '../admin/adminModel';
 import type { OrgSummary } from '../source-platform/orgModel';
 import { useUndoDays } from '../source-platform/RecentlyDeleted';
+import { noteBranch } from '../source-platform/repoBranch';
 import { Failure } from '../source-platform/SourceStatus';
 import {
   isAgentsRoute,
@@ -56,8 +59,10 @@ export const labelled = (name: string, label?: string) => (label ? `${name}, ${l
 
 export const REPO_PAGES: { id: RepoTab; label: string; Icon: typeof House }[] = [
   { id: 'overview', label: 'Overview', Icon: LayoutDashboard },
+  { id: 'files', label: 'Files', Icon: FolderTree },
   { id: 'changes', label: 'Landings', Icon: GitPullRequest },
-  { id: 'ctc', label: 'CTC', Icon: Radar },
+  { id: 'tower', label: 'Tower', Icon: Radar },
+  { id: 'insights', label: 'Insights', Icon: ChartColumn },
   { id: 'commits', label: 'Commits', Icon: GitCommitHorizontal },
   { id: 'sessions', label: 'Sessions', Icon: ScrollText },
   { id: 'memories', label: 'Memories', Icon: NotebookPen },
@@ -111,6 +116,7 @@ export function AppSidebar({
   repoName,
   missing = false,
   settings = false,
+  insights = false,
   navigate = () => {},
   onNew,
   onRetry,
@@ -133,6 +139,8 @@ export function AppSidebar({
   missing?: boolean;
   /** The viewer may change the open repository's settings. */
   settings?: boolean;
+  /** Repositories are counted here (REPO_ANALYTICS). */
+  insights?: boolean;
   navigate?: Navigate;
   onNew?: () => void;
   /** Reads the repositories again after a failed read. */
@@ -142,8 +150,10 @@ export function AppSidebar({
   admin?: { unread: number };
 }) {
   const repo = missing ? undefined : routeRepo(route);
+  noteBranch(route);
   const page = routeTab(route);
-  const pages = REPO_PAGES.filter((p) => p.id !== 'settings' || settings);
+  const hidden = { settings: !settings, insights: !insights } as Partial<Record<RepoTab, boolean>>;
+  const pages = REPO_PAGES.filter((p) => !hidden[p.id]);
   // The settings pages are about the account: its groups replace the repository ones.
   const onAccount = route.view === 'settings';
   const undoDays = useUndoDays(authenticated && onAccount);

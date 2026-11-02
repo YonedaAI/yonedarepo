@@ -77,6 +77,8 @@ export function landingRows({ changes, direct = [] }: ChangeList): LandingRow[] 
   return [...rows, ...landed].sort((a, b) => b.at - a.at).map((r) => r.row);
 }
 
+type LandingClearanceDecision = ClearanceDecision['decision'];
+
 /** What the UI calls a Landing's state. Worked out from its data, never stored or sent. */
 export type LandingState =
   | 'Planned'
@@ -86,18 +88,35 @@ export type LandingState =
   | 'Landed'
   | 'Closed';
 
+const DECIDED: Record<LandingClearanceDecision, LandingState> = {
+  cleared: 'Cleared to land',
+  hold: 'In flight',
+  go_around: 'Go-around',
+};
+
 /** `gates`, where the page has them: the list reads none, so it says only In flight. */
 export function landingState(
   change: Pick<Change, 'status' | 'title'>,
   gates?: ChangeGates | null,
 ): LandingState {
-  if (change.status === 'landed') return 'Landed';
-  if (change.status === 'closed') return 'Closed';
+  // The gates are polled, so they can hear of a landing before the Landing is read again.
+  const status = gates?.status ?? change.status;
+  if (change.status === 'landed' || status === 'landed') return 'Landed';
+  if (change.status === 'closed' || status === 'closed') return 'Closed';
   if (!readyForReview(change)) return 'Planned';
+  // With Land when cleared on, CTC's decision is the state: it weighs more than the gates do.
+  const decision = gates?.land_when_cleared?.decision;
+  if (decision) return DECIDED[decision];
   if (gates?.ready) return 'Cleared to land';
   const blocked = gates?.requirements.some((r) => r.enforced && r.state === 'blocked');
   return blocked ? 'Go-around' : 'In flight';
 }
+
+/** A managed run ends its comments with the reference a retry finds them by. */
+const RUN_REFERENCE = / · r[0-9a-f]{20}-[a-z]{2}-\d+-[0-9a-f]{12}#(?:summary|\d+)_$/;
+
+/** A comment as people read it. */
+export const commentText = (body: string) => body.replace(RUN_REFERENCE, '_');
 
 /** The decision that landed a Landing, or nothing when a person landed it. */
 export function landedAutomatically(change: Pick<Change, 'status' | 'clearances'>) {

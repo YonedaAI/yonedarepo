@@ -10,7 +10,9 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
             let username =
                 yoneda_core::account::normalize_account_identifier(&string(c, "username")?)?;
             super::handles::name_free(db, &username)?;
-            let email = contact_email(c)?;
+            // A name that is an address is the contact email, unconfirmed like any other.
+            let email =
+                contact_email(c)?.or_else(|| username.contains('@').then(|| username.clone()));
             let verifier = verifier(c)?;
             let mut a = json!({"username":username,"verifier":verifier,"recovery_hash":hash(c,"recovery_hash",&[64])?,"created_at":now});
             // Forward-only: accounts made before the field have none.
@@ -30,6 +32,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
             if valid {
                 let mut public = public_account(&account(db)?);
                 public["orgs"] = json!(super::orgs::hints(db)?);
+                super::place::add(db, &mut public)?;
                 Ok(public)
             } else if super::access::suspended_at(db)?.is_some() {
                 Ok(json!({"authenticated":false,"suspended":true}))
@@ -43,7 +46,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
         // account made without one); the send itself happens outside, from a queue job.
         SigninOp::WelcomeState => Ok(json!({
             "sent": get(db, "welcome_email").is_ok(),
-            "email": account(db).map(|a| a["email"].clone()).unwrap_or(Value::Null),
+            "email": account(db).ok().as_ref().and_then(super::email::contact),
         })),
         SigninOp::WelcomeSent => {
             account(db)?;
@@ -99,10 +102,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
                 a["verifier"] = verifier(c)?;
                 a["recovery_hash"] = json!(hash(c, "new_recovery_hash", &[64])?);
                 put(db, "account", &a)?;
-                db.query(
-                    "DELETE FROM workspace_records WHERE id LIKE 'session:%' OR id LIKE 'grant:%'",
-                    &[],
-                )?;
+                end_sessions(db)?;
+                super::password_reset::drop_tokens(db)?;
                 let tokens = super::tokens::revoke_all(db, now)?;
                 let ssh_keys = super::ssh_keys::remove_all(db, now)?;
                 super::identities::remove_all(db)?;
@@ -117,11 +118,16 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
                 session(db, c, now)?;
                 super::auth_events::note(db, c, "auth.login", now, json!({"method":"password"}))?;
             }
-            Ok(public_account(&a))
+            let mut public = public_account(&a);
+            // For the adapter's routing cookie; the browser's answer stays what it was.
+            if c["place"] == true {
+                super::place::add(db, &mut public)?;
+            }
+            Ok(public)
         }
     }
 }
-/// The sign-up's contact email (the welcome email's address), if given: normalized, and
+/// The contact email a sign-up gives (the welcome email's address), if any: normalized, and
 /// refused unless it is an email address. Stored only; never part of the public account.
 pub(super) fn contact_email(c: &Value) -> Result<Option<String>> {
     match &c["email"] {
@@ -149,6 +155,14 @@ pub(super) fn session<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<()> {
         &json!({"expires":now+LIFETIME}),
     )
 }
+/// Ends every browser session of the account.
+pub(super) fn end_sessions<S: SqlStore>(db: &S) -> Result<()> {
+    db.query(
+        "DELETE FROM workspace_records WHERE id LIKE 'session:%' OR id LIKE 'grant:%'",
+        &[],
+    )?;
+    Ok(())
+}
 fn allow_attempt<S: SqlStore>(db: &S, now: i64) -> Result<bool> {
     let mut rate = get(db, "login_rate").unwrap_or(json!({"start":now,"count":0}));
     if rate["start"].as_i64().unwrap_or_default() + 60_000 <= now {
@@ -159,7 +173,7 @@ fn allow_attempt<S: SqlStore>(db: &S, now: i64) -> Result<bool> {
     put(db, "login_rate", &rate)?;
     Ok(n < 10)
 }
-fn verifier(c: &Value) -> Result<Value> {
+pub(super) fn verifier(c: &Value) -> Result<Value> {
     let password = string(c, "password")?;
     if !(12..=128).contains(&password.len()) {
         return Err(bad("Use a password of 12–128 bytes"));

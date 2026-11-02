@@ -201,7 +201,6 @@ mod tests {
             platform: BTreeMap::new(),
             series: Vec::new(),
             last_land: None,
-            attempts: BTreeMap::new(),
         }
     }
 

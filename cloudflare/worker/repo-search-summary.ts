@@ -2,12 +2,15 @@
 // folded into one bitset, written to its owner's directory. Runs after a derive job's builds
 // and from the operators' backfill; import, create-with-files and fork never run derive, so
 // those repositories have no row, which reads as "maybe".
+
+import { log } from './log';
 import { audit } from './platform-admin-queries';
 import { compute } from './repo-compute';
 import { toBase64 } from './repo-objects';
 import { ApiError, caller, type Json, RepoContext } from './repo-ops';
 import { accountSearchOn, ownerOf, putSummary, touchSummary } from './repo-search-directory';
 import { type PartitionIndex, searchSegments, segmentsIn } from './repo-search-index';
+import { carriedQueue } from './request-scope';
 import type { Env, Envelope } from './types';
 
 export const SUMMARY_JOB = 'platform_search_summary';
@@ -59,7 +62,7 @@ export async function refreshSummary(
     await putSummary(ctx.env, owner, row, await summaryOf(ctx, indexes));
   } catch (e: any) {
     // No main yet is not a failure: there is nothing to summarize.
-    if (e?.code !== 'NOT_FOUND') console.warn(`search summary: ${e?.message ?? e}`);
+    if (e?.code !== 'NOT_FOUND') log.warn('search.summary_failed', { error: e });
   }
 }
 
@@ -86,7 +89,12 @@ export async function backfillSummaries(env: Env, actor: string, body: Json) {
   if (dryRun) return { queued: 0, repos: results.length, next };
   await Promise.all(
     results.map(({ id }) =>
-      env.PLATFORM_QUEUE.send({ v: 1, kind: SUMMARY_JOB, repo_id: id, job_id: 'backfill' }),
+      carriedQueue(env.PLATFORM_QUEUE).send({
+        v: 1,
+        kind: SUMMARY_JOB,
+        repo_id: id,
+        job_id: 'backfill',
+      }),
     ),
   );
   await audit(env, actor, 'search.backfill', body.owner, { queued: results.length });

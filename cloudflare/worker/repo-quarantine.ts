@@ -8,24 +8,22 @@
 // the bundle's index stays valid), and every derived cache and warm-start seed of the
 // repository (search indexes, stored packs, symbols, facts and views hold file content;
 // all are rebuilt on demand). Other colos' edge copies cannot be deleted from here; no
-// read reaches them, since a purged blob stays withheld. An Artifacts mirror deletes no
-// single object: a blob's purge retires the repository's mirror instead, its history
-// copied into the store of record first (repo-mirror-retire, run by the quarantine job;
-// the records show it: `mirror`). A session record's text is cleared by the authority
+// read reaches them, since a purged blob stays withheld. A session record's text is cleared by the authority
 // itself, and its stored transcript document is deleted here. A purge runs once the
 // record's retention passes (the quarantine job, leased and fenced like the LFS sweep), or
 // at once when the owner repeats the target id as `confirm`.
+
 import { derivedPrefix, purgePrefix } from './repo-admin';
 import { bundleKey, type Location, locate } from './repo-bundles';
 import { edgeDelete } from './repo-cache-tiers';
 import { accessEverywhere } from './repo-head';
-import { retireMirror } from './repo-mirror-retire';
 import { RepoObjects } from './repo-objects';
 import { ApiError, caller, type Json, type RepoContext, target, walk } from './repo-ops';
 import { voidSummary } from './repo-search-directory';
 import { seedPrefix } from './repo-seed';
 import { transcriptKey } from './repo-session-records';
-import { ownSpec, parseStore } from './repo-stores';
+import { parseStore } from './repo-stores';
+import { carriedQueue } from './request-scope';
 
 import type { Env, Envelope } from './types';
 
@@ -101,54 +99,66 @@ async function targetOf(ctx: RepoContext, args: Json): Promise<Json> {
 async function purgeNow(ctx: RepoContext, id: number, confirm: unknown) {
   const { claims } = await ctx.call({ op: 'repo_quarantine_purge', id, confirm });
   const { object_store } = await ctx.status();
-  await purgeContent(ctx.env, ctx.repo, String(object_store ?? ''), claims);
-  const reported = await ctx.call(purged(ctx.repo, claims));
-  // The mirror's retirement runs in the quarantine job, from now.
-  if (reported.mirror) await schedulePurge(ctx.env, ctx.repo, Date.now());
-  return reported;
+  const bytes = await purgeContent(ctx.env, ctx.repo, String(object_store ?? ''), claims);
+  return ctx.call(purged(claims, bytes));
 }
 
-/** The report of finished claims; a blob's purge names the store that replaces the
- * repository's Artifacts mirror (the platform's own, repo-platform-store). */
-const purged = (repo: string, claims: Claim[]) => ({
+/** The report of finished claims, with the bytes each blob's purge took from the store of
+ * record. */
+const purged = (claims: Claim[], bytes: Map<string, number>) => ({
   op: 'repo_quarantine_purged',
-  claims: claims.map(({ id, epoch }) => ({ id, epoch })),
-  replacement: `platform:${repo}`,
+  claims: claims.map(({ id, epoch, target }) => ({ id, epoch, bytes: bytes.get(target.id) ?? 0 })),
 });
 
 /** Deletes the bytes `claims` name (see the header): blobs, and the transcript documents
- * of session records (the authority clears their text). Idempotent. */
+ * of session records (the authority clears their text). Idempotent. Answers each blob's
+ * size where it was stored; a repeat finds raw files gone and reports nothing for them. */
 export async function purgeContent(env: Env, repo: string, spec: string, claims: Claim[]) {
+  const bytes = new Map<string, number>();
   const transcripts = claims
     .map((c) => c.transcript_sha256)
     .filter((sha): sha is string => typeof sha === 'string' && /^[0-9a-f]{64}$/.test(sha));
   if (transcripts.length)
     await env.OBJECTS.delete(transcripts.map((sha) => transcriptKey(repo, sha)));
   const blobs = claims.filter((c) => c.target.kind === 'blob').map((c) => c.target.id);
-  if (blobs.length === 0) return;
+  if (blobs.length === 0) return bytes;
   const objects = new RepoObjects(env, repo, parseStore(env, spec));
   const keys = blobs.flatMap((id) => [objects.rawKey(id), objects.key(id)]);
-  // A repository on the R2 object store (local development) keeps its own copy too.
-  const r2 = /^r2:([A-Za-z0-9._-]+)$/.exec(ownSpec(spec));
-  if (r2) keys.push(...blobs.map((id) => `store/v1/${r2[1]}/objects/${id}`));
+  await Promise.all(
+    blobs.map(async (id) => {
+      const size = await storedSize(env, objects.rawKey(id), objects.key(id));
+      if (size !== null) bytes.set(id, size);
+    }),
+  );
   await env.OBJECTS.delete(keys);
   await Promise.all(blobs.map((id) => edgeDelete(repo, id)));
-  await zeroBundled(env, repo, blobs);
+  await zeroBundled(env, repo, blobs, bytes);
   await purgePrefix(env, derivedPrefix(repo));
   await purgePrefix(env, seedPrefix(repo));
   await voidSummary(env, repo);
+  return bytes;
+}
+
+/** A blob's size from its raw object, or from the copy reads keep: a large API commit's file
+ * can have no other in R2, its bytes having gone to the store behind the push. */
+async function storedSize(env: Env, raw: string, copy: string) {
+  const [stored, kept] = await Promise.all([env.OBJECTS.head(raw), env.OBJECTS.head(copy)]);
+  return (stored ?? kept)?.size ?? null;
 }
 
 /** Overwrites the frames of `blobs` in the push bundles holding them with zeros, a bundle
  * at a time, streamed (offsets and sizes stay, so the bundle index needs no change). */
-async function zeroBundled(env: Env, repo: string, blobs: string[]) {
+async function zeroBundled(env: Env, repo: string, blobs: string[], bytes: Map<string, number>) {
   const where = await locate(
     env,
     repo,
     blobs.map((id) => ({ id, kind: 'blob' })),
   );
   const byBundle = new Map<string, Location[]>();
-  for (const l of where.values()) byBundle.set(l.bundle, [...(byBundle.get(l.bundle) ?? []), l]);
+  for (const l of where.values()) {
+    byBundle.set(l.bundle, [...(byBundle.get(l.bundle) ?? []), l]);
+    if (!bytes.has(l.id)) bytes.set(l.id, l.size);
+  }
   for (const [bundle, places] of byBundle) {
     const key = bundleKey(repo, bundle);
     const stored = await env.OBJECTS.get(key);
@@ -189,20 +199,14 @@ export async function schedulePurge(env: Env, repo: string, at: unknown) {
     repo_id: repo,
     job_id: `quarantine-${at}`,
   };
-  await env.PLATFORM_QUEUE.send(envelope, delaySeconds > 0 ? { delaySeconds } : undefined);
-}
-
-/** Purges `repo`'s due records and works on its mirror's retirement; answers when the job
- * is next due (null: nothing waits). */
-export async function purgeDue(env: Env, repo: string): Promise<number | null> {
-  const due = await purgeRecords(env, repo);
-  const retiring = await retireMirror(env, repo);
-  const next = [due, retiring].filter((at): at is number => typeof at === 'number');
-  return next.length ? Math.min(...next) : null;
+  await carriedQueue(env.PLATFORM_QUEUE).send(
+    envelope,
+    delaySeconds > 0 ? { delaySeconds } : undefined,
+  );
 }
 
 /** Purges `repo`'s due records; answers when they are next due (null: none waits). */
-async function purgeRecords(env: Env, repo: string): Promise<number | null> {
+export async function purgeDue(env: Env, repo: string): Promise<number | null> {
   const call = caller(env, repo, { _system: 'quarantine' });
   const { object_store } = await call({ op: 'repo_status' });
   for (let round = 0; round < ROUNDS; round++) {
@@ -211,8 +215,7 @@ async function purgeRecords(env: Env, repo: string): Promise<number | null> {
     if (claims.length === 0) return claimed.next_at ?? null;
     // Too little lease left (a slow claim): let it run out; the next run claims again.
     if (claimed.lease_until - Date.now() < MARGIN_MS) return claimed.lease_until;
-    await purgeContent(env, repo, String(object_store ?? ''), claims);
-    await call(purged(repo, claims));
+    await call(purged(claims, await purgeContent(env, repo, String(object_store ?? ''), claims)));
     if (claims.length < CLAIM) return claimed.next_at ?? null;
   }
   return Date.now();

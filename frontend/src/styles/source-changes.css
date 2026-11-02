@@ -1,15 +1,4 @@
 /* Change requests: list, status chips, conversation and line threads. */
-.source-changes-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-  margin-bottom: 8px;
-}
-.source-changes-head h2 {
-  margin: 0;
-}
 .source-changes {
   list-style: none;
   padding: 0;
@@ -20,12 +9,27 @@
   grid-template-columns: 8.5em 1fr;
   gap: 2px 10px;
   align-items: baseline;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--line);
+  padding: var(--row-y) 0;
+  border-bottom: 1px solid var(--row-line);
 }
 .source-changes li > .source-meta {
   grid-column: 2;
   overflow-wrap: anywhere;
+}
+/* The status sits above the title on a phone, which needs the width. */
+@media (max-width: 800px) {
+  .source-changes li {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .source-changes li > .source-meta {
+    grid-column: 1;
+  }
+}
+.source-changes strong {
+  font-size: var(--text-base);
+  font-weight: 500;
+  line-height: var(--leading-chrome);
 }
 .source-changes a:hover strong {
   color: var(--blue-text);
@@ -44,6 +48,10 @@
 .source-change-open {
   background: var(--success-soft);
   color: var(--success);
+}
+.source-change-around {
+  background: var(--warn-soft);
+  color: var(--warn);
 }
 .source-change-landed {
   background: var(--accent-soft);
@@ -185,6 +193,11 @@
 }
 .source-open-change .source-field {
   max-width: none;
+}
+/* The page's own width: it holds a file. */
+.source-open-change.source-commit-file {
+  max-width: none;
+  margin-bottom: 12px;
 }
 .source-reviews {
   margin: 8px 0 0;

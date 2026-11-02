@@ -33,6 +33,10 @@ impl DurableObject for CommitShard {
     }
 
     async fn fetch(&self, request: Request) -> Result<Response> {
+        // The adapter's path, never client input, asked only with REGION_HINT_TEST on.
+        if request.path() == "/where" {
+            return yoneda_cloudflare::colo_trace().await;
+        }
         let others = self.serving.get();
         self.serving.set(others + 1);
         let response = self.serve(request, others).await;
@@ -48,6 +52,7 @@ impl CommitShard {
         let fresh = !self.migrated.get();
         let mut command: Value = request.json().await?;
         let read_at = Date::now().as_millis();
+        crate::telemetry::serving(&request);
         if !command.is_object() {
             return Response::from_json(
                 &json!({"error":{"code":"INVALID_INPUT","message":"Command must be an object"}}),
@@ -87,8 +92,11 @@ impl CommitShard {
                 }
                 Response::from_json(&value)
             }
-            Err(e) => Response::from_json(&json!({"error":{"code":e.code,"message":e.message}}))
-                .map(|r| r.with_status(409)),
+            Err(e) => {
+                crate::telemetry::command_failed(&e);
+                Response::from_json(&json!({"error":{"code":e.code,"message":e.message}}))
+                    .map(|r| r.with_status(409))
+            }
         }
     }
 

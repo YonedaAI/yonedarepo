@@ -1,8 +1,9 @@
 // Read-only, repository-wide views of what agents record, for the web's agent pages:
 // session records (GET sessions, sessions/<id>, and the transcript stored for one,
 // sessions/<id>/transcript), authored contract records (GET contracts),
-// pins (GET pins) and bisects (GET bisect). The authority decides access; this only maps
-// query strings onto its operations.
+// pins (GET pins) and bisects (GET bisect), and the repository's Insights (GET insights), which
+// is no MCP tool. The authority decides access; this only maps query strings onto its operations.
+import { repoInsights } from './platform-repo-insights';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 import { readTranscript } from './repo-session-records';
 
@@ -25,6 +26,7 @@ export function agentRecords(
   sub: string | undefined,
   query: Record<string, string>,
 ): Promise<Json> | undefined {
+  if (resource === 'insights' && id === undefined) return repoInsights(ctx, query);
   if (resource === 'sessions' && id !== undefined && sub === 'transcript')
     return readTranscript(ctx, count({ id }, 'id') as number);
   if (!resource || !RESOURCES.has(resource) || sub !== undefined) return undefined;

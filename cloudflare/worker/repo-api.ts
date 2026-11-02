@@ -5,32 +5,35 @@
 // same to us.
 
 import { accountMcp } from './account-mcp';
-import { authenticate } from './auth';
-import { failureCode, RETRY_AFTER_SECONDS } from './durable';
-import { error, readJson, response } from './http';
-import { noteAccount } from './internal-accounts';
-import { accountActivity } from './platform-account-activity';
+import { mergeListed, mergeSearch } from './cell-merge';
+import { acrossCells, askCell, forwardTo, homeElsewhere, repoElsewhere } from './cell-route';
+import { error, readJson } from './http';
+import { accountActivity, mergeActivity } from './platform-account-activity';
 import { adminRoute } from './platform-admin';
 import { auditExport, auditExportOrg } from './platform-audit-export';
 import { isOwnAvatar, ownAvatar, publicAvatarName, servePublicAvatar } from './platform-avatars';
 import { favoritesRoute } from './platform-favorites';
 import { repoHold } from './platform-holds';
-import { orgAccess } from './platform-org-access';
 import { orgsRoute } from './platform-orgs';
 import { sshKeyRoute } from './platform-ssh-keys';
 import { SUPPORT_BODY_LIMIT, supportRoute } from './platform-support';
-import { deviceApprove, deviceCode, deviceToken, tokenRoute } from './platform-tokens';
+import { deviceCode, deviceRoute, deviceToken, tokenRoute } from './platform-tokens';
 import { accountSearch } from './repo-account-search';
 import { deleteRepository, listDeleted, listRepositories } from './repo-admin';
 import { agentRecords } from './repo-agent-records';
+import { answer, failure } from './repo-api-failure';
 import { audited } from './repo-audit';
 import { breakGlass } from './repo-break-glass';
 import { changeLogStatus } from './repo-changelog';
 import { changesRoute, setAutoLandings } from './repo-changes';
-import { compactLog } from './repo-compaction';
+import { compactionRead, compactLog } from './repo-compaction';
 import { createRepository, importRepository, tokenSecret } from './repo-create';
+import { credentials } from './repo-credentials';
+
+export { credentials } from './repo-credentials';
+
 import { refreshHead } from './repo-head';
-import { hooksRoute, notifyHooks } from './repo-hooks';
+import { hooksRoute } from './repo-hooks';
 import { importProgress } from './repo-import-start';
 import { lfsRoute } from './repo-lfs';
 import { repoMcp } from './repo-mcp';
@@ -38,9 +41,7 @@ import { membersRoute } from './repo-members';
 import { contextRoute, memoriesRoute } from './repo-memories';
 import { downloadBlob } from './repo-object-download';
 import { streamObjects } from './repo-object-fetch';
-import { parseStore } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
-import { refuseOutsideKeys, verifyPat } from './repo-pat';
 import { pathOf, profile, renameRepository, resolvePath, withPath } from './repo-paths';
 import { forViewer } from './repo-principal-privacy';
 import {
@@ -49,69 +50,25 @@ import {
   anonymousRead,
   anonymousRepo,
   capped,
-  explore,
+  exploreCells,
   isExplore,
   limitAnonymous,
   setVisibility,
 } from './repo-public';
+import { purgeDeleted } from './repo-purge';
 import { quarantineRoute } from './repo-quarantine';
+import { regionHintTest, whereRepository } from './repo-region-hint';
 import { releaseDownload, releasesRoute } from './repo-releases';
 import { restoreRepository } from './repo-restore';
 import { SESSION_BODY_LIMIT } from './repo-session-records';
-import { timed, withTimings } from './repo-timing';
-import { branchesRoute, operations } from './repo-tools';
+import { timedAnswer } from './repo-span-sample';
+import { timed } from './repo-timing';
+import { batchRefs, branchesRoute, operations } from './repo-tools';
 import { vacuum } from './repo-vacuum';
 import { humanView } from './repo-views';
+import { ensureScope } from './request-scope';
 import type { Env } from './types';
 
-const STATUS: Record<string, number> = {
-  NOT_FOUND: 404,
-  FORBIDDEN: 403,
-  UNAUTHORIZED: 401,
-  CONFLICT: 409,
-  MERGE_REQUIRED: 409,
-  STALE_PARENT: 409,
-  NOT_READY: 409,
-  STALE_HEAD: 409,
-  IMPORT_IN_PROGRESS: 409,
-  STALE_EPOCH: 409,
-  NOT_LANDED: 409,
-  AUTOMATION_PAUSED: 423,
-  // Under a legal hold (repo_store/legal_hold.rs), or one that could not be read.
-  LEGAL_HOLD: 423,
-  ALREADY_EXISTS: 409,
-  NAME_TAKEN: 409,
-  PUSH_FAILED: 502,
-  NOT_SUPPORTED: 400,
-  TIMEOUT: 503,
-  STALE_HANDLE: 409,
-  PARSE_FAILED: 422,
-  SECRET_DETECTED: 422,
-  GONE: 404,
-  RATE_LIMITED: 429,
-  OVERLOADED: 503,
-  // A create that failed and took back what it did: the same request can be repeated.
-  CREATE_UNAVAILABLE: 503,
-  // Contact support: no address to reply to, email not set up here, or the send failed.
-  NO_EMAIL: 409,
-  SUPPORT_UNAVAILABLE: 503,
-  SUPPORT_SEND_FAILED: 503,
-  INTERNAL: 500,
-  // The account keeps as many favorites as it may (platform-favorites.ts).
-  FAVORITES_FULL: 409,
-  // An operator suspended the account (platform-admin.ts): its credentials are refused.
-  ACCOUNT_SUSPENDED: 403,
-  // Withheld by the repository's owner (quarantine): known, deliberately not served.
-  QUARANTINED: 451,
-  // The repository's database is at its size limit: new work is refused, reads go on.
-  REPO_FULL: 507,
-  // Operators' billing: no refund key or no way to the managed Worker, and a refund a
-  // configured limit refuses, or one blocked by an open dispute.
-  NOT_CONFIGURED: 503,
-  REFUND_LIMIT: 403,
-  DISPUTED: 409,
-};
-export const statusOf = (code: string, known: boolean) => STATUS[code] ?? (known ? 400 : 500);
 const COMMIT_BODY_LIMIT = 64 * 1024 * 1024;
 const BLOB = /^\/api\/v1\/repos\/(r[0-9a-f]{20})\/objects\/([0-9a-f]{40})$/;
 const PAGE = /^\/api\/v1\/repos\/(r[0-9a-f]{20})\/objects$/;
@@ -121,51 +78,16 @@ const bodyOf = (req: Request, limit?: number) =>
     throw new ApiError('INVALID_INPUT', String(e?.message ?? e));
   });
 
-/** Session checks in flight in this isolate, by everything `authenticate` reads: requests
- * with identical credentials arriving together share one check (no result outlives it). */
-const checking = new Map<string, ReturnType<typeof authenticate>>();
-function authenticateOnce(req: Request, env: Env) {
-  const key = JSON.stringify(
-    ['origin', 'authorization', 'cookie', 'cf-access-jwt-assertion'].map((h) => req.headers.get(h)),
-  ).concat(new URL(req.url).origin);
-  let check = checking.get(key);
-  if (!check) {
-    check = authenticate(req, env).finally(() => checking.delete(key));
-    checking.set(key, check);
-  }
-  return check;
-}
-
-/** The caller of a platform request: a repository token, a personal access token (checked
- * with its account on every request), or a workspace session; null when none is valid. */
-export async function credentials(req: Request, env: Env): Promise<Credentials | null> {
-  const auth = await checkCredentials(req, env);
-  noteAccount(auth);
-  return auth;
-}
-
-async function checkCredentials(req: Request, env: Env): Promise<Credentials | null> {
-  const bearer = req.headers.get('authorization');
-  if (bearer?.startsWith('Bearer yrp_')) return { _token: bearer.slice(7) };
-  if (bearer?.startsWith('Bearer ypat_')) {
-    const grant = await verifyPat(env, bearer.slice(7));
-    if (grant) refuseOutsideKeys(grant, new URL(req.url).pathname);
-    return grant && { _pat: grant };
-  }
-  const principal = await authenticateOnce(req, env);
-  if (!principal) return null;
-  const name = principal.role === 'admin' ? 'admin' : `user:${principal.workspace}`;
-  // Only a personal account session is a person; admin bearers may be held by scripts.
-  const human = principal.role === 'user' ? { human: true as const } : {};
-  const orgs = await orgAccess(env, principal.workspace, principal.orgs ?? []);
-  return {
-    _session: { workspace: principal.workspace, principal: name, ...human, ...(orgs && { orgs }) },
-  };
-}
-
 /** A REST answer as its caller may see it: a repository's names no account address to a
  * non-member (principal-privacy). The account MCP's management tools come through here too. */
 export async function route(req: Request, env: Env, url: URL, auth: Credentials): Promise<Json> {
+  // An in-process caller (the account MCP, say) may name a repository of another cell.
+  const elsewhere = repoElsewhere(env, url);
+  if (elsewhere) {
+    const body = ['GET', 'HEAD'].includes(req.method) ? undefined : await req.text();
+    const { method, headers } = req;
+    return askCell(env, elsewhere, `${url.pathname}${url.search}`, { method, headers, body });
+  }
   const value = await routed(req, env, url, auth);
   const repo = /^\/api\/v1\/repos\/(r[0-9a-f]{20})(?:\/|$)/.exec(url.pathname)?.[1];
   return repo ? forViewer(env, value, () => caller(env, repo, auth)({ op: 'repo_status' })) : value;
@@ -177,17 +99,17 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return tokenRoute(env, auth, req.method, parts[1], () => bodyOf(req));
   if (parts[0] === 'ssh-keys' && parts.length <= 2)
     return sshKeyRoute(env, auth, req.method, parts[1], () => bodyOf(req));
-  if (
-    parts[0] === 'device' &&
-    parts[1] === 'approve' &&
-    parts.length === 2 &&
-    req.method === 'POST'
-  )
-    return deviceApprove(env, auth, await bodyOf(req));
+  if (parts[0] === 'device' && parts.length === 2)
+    return deviceRoute(env, auth, parts[1], req, url, () => bodyOf(req));
   if (parts[0] === 'activity' && parts.length === 1 && req.method === 'GET')
-    return accountActivity(env, auth);
+    return acrossCells(env, url.pathname, () => accountActivity(env, auth), mergeActivity);
   if (parts[0] === 'search' && parts.length === 1 && req.method === 'GET')
-    return accountSearch(env, auth, url, route);
+    return acrossCells(
+      env,
+      `${url.pathname}${url.search}`,
+      () => accountSearch(env, auth, url, route),
+      mergeSearch,
+    );
   if (parts[0] === 'support' && parts.length === 1 && req.method === 'POST')
     return supportRoute(env, auth, () => bodyOf(req, SUPPORT_BODY_LIMIT));
   if (parts[0] === 'favorites' && parts.length <= 2)
@@ -201,9 +123,10 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return createRepository(env, auth, await bodyOf(req, COMMIT_BODY_LIMIT));
   if (parts.length === 2 && parts[1] === 'import' && req.method === 'POST')
     return importRepository(env, auth, await bodyOf(req));
-  if (parts.length === 1 && req.method === 'GET') return listRepositories(env, auth);
+  if (parts.length === 1 && req.method === 'GET')
+    return acrossCells(env, url.pathname, () => listRepositories(env, auth), mergeListed);
   if (parts.length === 2 && parts[1] === 'deleted' && req.method === 'GET')
-    return listDeleted(env, auth);
+    return acrossCells(env, url.pathname, () => listDeleted(env, auth), mergeListed);
   const repo = parts[1];
   if (!/^r[0-9a-f]{20}$/.test(repo ?? '')) throw new ApiError('NOT_FOUND', 'Unknown repository');
   const ctx = new RepoContext(env, repo, caller(env, repo, auth));
@@ -216,6 +139,7 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return deleteRepository(env, auth, repo, url.searchParams.get('confirm') ?? '');
   if (resource === 'restore' && !sha && post)
     return restoreRepository(env, auth, repo, (await bodyOf(req).catch(() => ({}) as Json)).name);
+  if (resource === 'purge' && !sha && post) return purgeDeleted(env, auth, repo);
   if (resource === 'refs' && sha === 'batch' && !sub && post)
     return batchRefs(ctx, await bodyOf(req));
   if (!resource && get) return withPath(env, repo, await run('git_status', {}));
@@ -256,13 +180,9 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   if (resource === 'compact' && post) return compactLog(env, repo, ctx.call);
   // The owner's read of the floor, tail and database size; changes nothing (the load tests'
   // sampler, tools/fanout-bench/sampler.mjs).
-  if (resource === 'compaction' && get) {
-    const [compaction, storage] = await Promise.all([
-      ctx.call({ op: 'repo_compact_status' }),
-      ctx.call({ op: 'repo_storage' }),
-    ]);
-    return { ...compaction, storage };
-  }
+  if (resource === 'compaction' && get) return compactionRead(ctx, query.shards === '1');
+  // Where this repository's objects run (repo-region-hint.ts); off, an unknown path.
+  if (resource === 'where' && get && regionHintTest(env)) return whereRepository(ctx, auth);
   if (resource === 'retention' && req.method === 'PUT') {
     const { keep_versions, keep_days } = await bodyOf(req);
     return audited(env, repo, ctx.call({ op: 'repo_set_retention', keep_versions, keep_days }));
@@ -339,14 +259,6 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   if (resource === 'lfs' && !sha) return lfsRoute(ctx, req.method, () => bodyOf(req));
   if (resource === 'fork' && !sha && post) return run('git_fork', await bodyOf(req));
   if (resource === 'releases') return releasesRoute(ctx, req, parts.slice(3), () => bodyOf(req));
-  if (resource === 'clone' && post) {
-    // The authority admits only a person who can read the whole repository.
-    const access = await ctx.call({ op: 'repo_clone_access' });
-    const store = parseStore(env, access.object_store);
-    if (!store.cloneAccess)
-      throw new ApiError('NOT_SUPPORTED', "This repository's object store cannot be cloned");
-    return store.cloneAccess();
-  }
   if (resource === 'tokens' && get) return ctx.call({ op: 'repo_tokens' });
   if (resource === 'tokens' && !sha && post) {
     const body = await bodyOf(req);
@@ -377,29 +289,6 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   throw new ApiError('NOT_FOUND', 'Unknown API path');
 }
 
-/** `POST refs/batch`: every branch moves or none; stale expectations answer 409 naming
- * the stale refs (`details.stale`). */
-async function batchRefs(ctx: RepoContext, body: Json) {
-  if (!Array.isArray(body.updates))
-    throw new ApiError('INVALID_INPUT', 'updates must be a list of {ref, commit, expected}');
-  const result = await ctx.call({
-    op: 'repo_branch_batch',
-    updates: body.updates.map((u: Json) => ({
-      ref: u?.ref,
-      commit: u?.commit,
-      expected: u?.expected ?? null,
-      // An annotated tag's object (`{data_b64}`), kept beside the tag's ref.
-      ...(u?.tag ? { tag: u.tag } : {}),
-    })),
-  });
-  if (result.stale)
-    throw new ApiError('STALE_HEAD', `Stale expected heads: ${result.stale.join(', ')}`, {
-      stale: result.stale,
-    });
-  await notifyHooks(ctx.env, ctx.repo);
-  return { version: result.version, refs: result.refs };
-}
-
 /** Runs an access or policy change, then republishes main's head before answering (see
  * `refreshHead`): a token minted or revoked, or runners a commit must queue, hold at once. */
 async function withHeadRefresh(env: Env, repo: string, change: Promise<Json>) {
@@ -408,11 +297,11 @@ async function withHeadRefresh(env: Env, repo: string, change: Promise<Json>) {
   return done;
 }
 
-export async function repoApi(req: Request, env: Env): Promise<Response> {
+export function repoApi(req: Request, env: Env): Promise<Response> {
   // Failures outside a route (authentication, MCP framing) are mapped like a route's.
-  const { value, header } = await withTimings(() => handle(req, env).catch(failure));
-  if (header) value.headers.set('server-timing', header);
-  return value;
+  return ensureScope({ env, req }, () =>
+    timedAnswer(env, req, () => handle(req, env).catch(failure)),
+  );
 }
 
 async function handle(req: Request, env: Env): Promise<Response> {
@@ -428,7 +317,7 @@ async function handle(req: Request, env: Env): Promise<Response> {
     return answer(async () => {
       if (!req.headers.has('cookie') && !req.headers.has('authorization'))
         await limitAnonymous(env, req, url.pathname);
-      return explore(env, url.searchParams);
+      return exploreCells(env, url);
     });
   // Profiles are public listings, answered alike to everyone.
   const profiled = /^\/api\/v1\/profiles\/([^/]+)$/.exec(url.pathname);
@@ -436,7 +325,7 @@ async function handle(req: Request, env: Env): Promise<Response> {
     return answer(async () => {
       if (!req.headers.has('cookie') && !req.headers.has('authorization'))
         await limitAnonymous(env, req, url.pathname);
-      return profile(env, decodeURIComponent(profiled[1]));
+      return profile(env, decodeURIComponent(profiled[1]), url.pathname);
     });
   // Anyone's picture, like the listing: no session check per image.
   const avatar = publicAvatarName(url);
@@ -444,9 +333,11 @@ async function handle(req: Request, env: Env): Promise<Response> {
     return (async () => {
       if (!req.headers.has('cookie') && !req.headers.has('authorization'))
         await limitAnonymous(env, req, url.pathname);
-      return servePublicAvatar(env, avatar);
+      return servePublicAvatar(env, avatar, req);
     })().catch(failure);
   const signed = await timed('auth', () => credentials(req, env));
+  const home = homeElsewhere(env, req, url);
+  if (home) return forwardTo(env, home, req);
   // A readable path, or the repository one names, for whoever asks (nobody signed in sees
   // public repositories only); one that may not be read answers as one that is not there.
   const resolving = /^\/api\/v1\/resolve\/([^/]+)\/([^/]+)$/.exec(url.pathname);
@@ -520,22 +411,4 @@ async function handle(req: Request, env: Env): Promise<Response> {
       )
       .catch(failure);
   return answer(() => route(req, env, url, auth));
-}
-
-/** A JSON answer, or the API error a failure maps to. */
-const answer = (run: () => Promise<Json>) => run().then(response, failure);
-
-/** The API error a failure maps to: an overloaded or unreachable Durable Object is 503
- * OVERLOADED with Retry-After (clients retry it), anything unexpected 500 INTERNAL. */
-function failure(e: any): Response {
-  const code = failureCode(e);
-  const message = String(e?.message ?? e).slice(0, 500);
-  const status = statusOf(code, e instanceof ApiError || typeof e?.code === 'string');
-  const refused =
-    e instanceof ApiError && e.details
-      ? response({ error: { code, message, details: e.details } }, status)
-      : error(code, message, status);
-  if (code === 'OVERLOADED' || code === 'CREATE_UNAVAILABLE')
-    refused.headers.set('retry-after', String(RETRY_AFTER_SECONDS));
-  return refused;
 }

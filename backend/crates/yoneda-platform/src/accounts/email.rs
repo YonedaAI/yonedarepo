@@ -4,7 +4,9 @@
 //! clears the verification and the tokens. Resends and changes share a limit (each sends an
 //! email to an address the caller chose); the sign-up's welcome token does not count. Contact
 //! support has its own limit: a request takes a slot before its email is sent and gives it
-//! back when the email could not be.
+//! back when the email could not be. An account named by an address has that address as its
+//! contact email until it stores another (`contact`); a name proves nothing about an inbox,
+//! so it reads unconfirmed until a link is used.
 use super::op::EmailOp;
 use super::*;
 
@@ -18,7 +20,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: EmailOp, now: i64) -> R
     match op {
         EmailOp::Status => {
             let a = account(db)?;
-            let mut out = json!({"email": a["email"], "verified": verified(&a)});
+            let mut out = json!({"email": contact(&a), "verified": verified(&a)});
             if !c["token_hash"].is_null() {
                 out["token_valid"] = json!(live(db, &a, &token_hash(c)?, now));
             }
@@ -31,7 +33,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: EmailOp, now: i64) -> R
                 _ => return Err(bad("purpose must be welcome or resend")),
             };
             let a = account(db)?;
-            let Some(email) = a["email"].as_str() else {
+            let Some(email) = contact(&a) else {
                 return Ok(json!({"issued":false,"reason":"no_email"}));
             };
             if verified(&a) {
@@ -48,7 +50,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: EmailOp, now: i64) -> R
             let email = super::signin::contact_email(c)?
                 .ok_or_else(|| bad("Enter a valid email address"))?;
             let hash = token_hash(c)?;
-            if a["email"] == email {
+            if contact(&a) == Some(email.as_str()) {
                 return Ok(json!({"changed":false,"reason":"same"}));
             }
             if !allow(db, EMAIL_RATE, now)? {
@@ -60,6 +62,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: EmailOp, now: i64) -> R
             }
             put(db, "account", &a)?;
             drop_tokens(db)?;
+            super::password_reset::drop_tokens(db)?;
             issue(db, &hash, &email, now)?;
             audit(db, "account.email_changed", now, json!({}))?;
             Ok(json!({"changed":true}))
@@ -69,6 +72,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: EmailOp, now: i64) -> R
             if !live(db, &a, &token_hash(c)?, now) {
                 return Ok(json!({"verified":false}));
             }
+            a["email"] = json!(contact(&a));
             a["email_verified_at"] = json!(now);
             put(db, "account", &a)?;
             drop_tokens(db)?;
@@ -83,8 +87,18 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: EmailOp, now: i64) -> R
     }
 }
 
+/// The account's contact email: the stored one, or the address the account is named by.
+pub(super) fn contact(a: &Value) -> Option<&str> {
+    a["email"]
+        .as_str()
+        .or_else(|| a["username"].as_str().filter(|name| name.contains('@')))
+}
 fn verified(a: &Value) -> bool {
-    a["email"].is_string() && a["email_verified_at"].is_i64()
+    contact(a).is_some() && a["email_verified_at"].is_i64()
+}
+/// The account's contact email, while it is confirmed.
+pub(super) fn confirmed(a: &Value) -> Option<&str> {
+    contact(a).filter(|_| verified(a))
 }
 fn token_hash(c: &Value) -> Result<String> {
     hash(c, "token_hash", &[64])
@@ -93,8 +107,7 @@ fn token_hash(c: &Value) -> Result<String> {
 fn live<S: SqlStore>(db: &S, a: &Value, hash: &str, now: i64) -> bool {
     get(db, &format!("email_token:{hash}")).is_ok_and(|t| {
         t["expires"].as_i64().is_some_and(|at| at > now)
-            && a["email"].is_string()
-            && t["email"] == a["email"]
+            && contact(a).is_some_and(|email| t["email"] == email)
     })
 }
 fn issue<S: SqlStore>(db: &S, hash: &str, email: &str, now: i64) -> Result<()> {
@@ -116,7 +129,7 @@ fn drop_tokens<S: SqlStore>(db: &S) -> Result<()> {
     Ok(())
 }
 /// Counts one request against `record`'s window; false once the limit is reached.
-fn allow<S: SqlStore>(db: &S, record: &str, now: i64) -> Result<bool> {
+pub(super) fn allow<S: SqlStore>(db: &S, record: &str, now: i64) -> Result<bool> {
     let mut rate = get(db, record).unwrap_or(json!({"start":now,"count":0}));
     if rate["start"].as_i64().unwrap_or_default() + LIMIT_WINDOW <= now {
         rate = json!({"start":now,"count":0});

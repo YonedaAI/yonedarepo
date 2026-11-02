@@ -3,7 +3,9 @@
 // and verified pushes to it. Objects are immutable, so a cache entry keyed by id never
 // needs invalidation; keys are per repository so access follows repository auth. (Over
 // 300 lines: every tier of one read stays in this one place.)
+
 import { afterAnswer } from './background';
+import { Flights } from './flights';
 import { type Location, platformCall, readBundled, readKnown, SMALL_RANGE } from './repo-bundles';
 import { cachedCopy, edgePut } from './repo-cache-tiers';
 import { compute } from './repo-compute';
@@ -30,7 +32,6 @@ import type { Env } from './types';
 export {
   type CachedObject,
   fromBase64,
-  newStore,
   type ObjectStore,
   parseStore,
   type TreeEntry,
@@ -60,7 +61,7 @@ type Tier = keyof TierHits;
 /** A walk's answer, and its fills of the tiers above (pending only without a waitUntil). */
 type Walked = { bytes: Uint8Array; tier: Tier; filled: Promise<unknown> };
 /** Object reads in flight in this isolate, by repository, kind and id. */
-const inFlight = new Map<string, Promise<Walked>>();
+const inFlight = new Flights<Walked>();
 
 /**
  * Tiered, content-addressed reads: parsed trees in memory -> Cache API (per colo; it
@@ -178,16 +179,9 @@ export class RepoObjects {
     if (kind === 'blob') await this.refuse(id);
     // A guarded read never joins an unguarded one (which may serve inherited bytes).
     const key = `${this.repo}/${kind}/${id}${this.inherited?.guard ? '/guarded' : ''}`;
-    const shared = inFlight.get(key);
-    let reading = shared;
-    if (!reading) {
-      reading = this.walk(id, kind, stagedWith).finally(() => inFlight.delete(key));
-      inFlight.set(key, reading);
-    }
-    const { bytes, tier, filled } = shared
-      ? await timed('read.joined', () => shared)
-      : await reading;
-    if (!shared) await filled;
+    const { work, joined } = inFlight.join(key, () => this.walk(id, kind, stagedWith));
+    const { bytes, tier, filled } = joined ? await timed('read.joined', () => work) : await work;
+    if (!joined) await filled;
     this.hits[tier]++;
     return bytes;
   }
@@ -252,7 +246,6 @@ export class RepoObjects {
       !object && (await timed('read.parent', async () => this.inherited?.bytes(id, kind, true)));
     if (inherited) return { bytes: inherited, tier: 'store', filled: Promise.resolve() };
     // Commit shards last: finding a staged object there means asking every shard, and
-    // imported objects (in Artifacts only) must not pay that on each first read.
     if (!object) {
       this.#shards ??= new SharedShardAsk(this.env, this.repo);
       const shards = this.#shards;

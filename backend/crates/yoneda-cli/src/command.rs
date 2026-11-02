@@ -1,7 +1,9 @@
 //! What the command line asks for: the parsed commands and the usage text.
 mod account;
+mod reads;
 mod usage;
-pub use account::{OrgCommand, RepoCommand, SshKeyCommand, TokenCommand};
+pub use account::{OrgCommand, RepoCommand, Shell, SshKeyCommand, TokenCommand};
+pub use reads::ReadCommand;
 pub use usage::USAGE;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -10,8 +12,6 @@ pub enum SyncMode {
     Push,
     /// Push, then land the series on the base branch.
     Land,
-    /// Commit through a remote MCP contribution attempt, then submit it.
-    Attempt { id: String, mcp_url: Option<String> },
 }
 
 /// What `yoneda clone` brings.
@@ -32,49 +32,6 @@ pub enum CloneMode {
 pub struct Target {
     pub origin: Option<String>,
     pub repo: Option<String>,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum ReadCommand {
-    Log {
-        path: Option<String>,
-        branch: Option<String>,
-        limit: Option<u64>,
-        at: Option<u64>,
-    },
-    Grep {
-        query: String,
-        path: Option<String>,
-        ignore_case: bool,
-        /// Whole words only (identifier boundaries).
-        word: bool,
-        at: Option<u64>,
-    },
-    /// One query across code, memories, commits, sessions and changes (`groups`: some).
-    Search {
-        query: String,
-        groups: Option<Vec<String>>,
-        path: Option<String>,
-        branch: Option<String>,
-        limit: Option<u64>,
-        word: bool,
-        at: Option<u64>,
-    },
-    Blame {
-        path: String,
-        branch: Option<String>,
-        at: Option<u64>,
-    },
-    Diff {
-        base: Option<String>,
-        head: Option<String>,
-        path: Option<String>,
-        at: Option<u64>,
-    },
-    Symbols {
-        path: String,
-        at: Option<u64>,
-    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -130,7 +87,7 @@ pub enum ReleaseCommand {
     },
 }
 
-/// `yoneda memory …`: the repository's memories (decisions, constraints, gotchas, how-tos).
+/// `yoneda memory …`: the repository's memories (decisions, constraints, gotchas, how-tos, …).
 #[derive(Debug, PartialEq, Eq)]
 pub enum MemoryCommand {
     Add {
@@ -213,8 +170,7 @@ pub struct Anchor {
 pub enum HookEvent {
     /// Claude Code SessionStart: the repository's context, and the session id exported.
     ClaudeStart,
-    /// Claude Code PostToolUse on Read/Grep: records the files read, and adds the memories
-    /// and contracts on them that this session has not been shown yet.
+    /// Claude Code PostToolUse on Read/Grep: records the files read, adds what is unseen on them.
     ClaudeRead,
     /// Claude Code UserPromptSubmit: adds what is relevant to the prompt, not shown yet.
     ClaudePrompt,
@@ -251,16 +207,20 @@ pub enum Agent {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     Help,
+    Version,
+    /// Prints the completion script for a shell.
+    Completion(Shell),
     Login {
         origin: Option<String>,
         with_token: bool,
         browser: bool,
+        agent: Option<String>,
     },
     Logout {
         origin: Option<String>,
+        agent: Option<String>,
     },
-    /// Prints the credential the CLI sends (`YONEDA_TOKEN`, else the stored login) for a
-    /// script; to a terminal only with `show`.
+    /// Prints the credential the CLI sends, on stdout for a script; to a terminal with `show`.
     AuthToken {
         origin: Option<String>,
         show: bool,

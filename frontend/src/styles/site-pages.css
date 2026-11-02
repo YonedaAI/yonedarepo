@@ -185,6 +185,11 @@
   font-size: var(--fs-2xl);
   margin: 0 0 20px;
 }
+/* The page's heading stands in for the card's: what follows the tabs keeps its distance. */
+.site-signin .oauth-terms,
+.site-signin .account-panel > [role="status"] {
+  margin-top: 18px;
+}
 .site .account-panel {
   max-width: 100%;
   background: var(--site-surface);

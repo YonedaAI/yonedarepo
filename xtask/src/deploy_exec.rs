@@ -25,6 +25,8 @@ pub(crate) struct Run<'a> {
     /// API token for host moves (`infra up` only); never printed.
     pub host_token: Option<&'a str>,
     pub timings: Timings,
+    /// When the first Worker began to change (epoch ms); `None`: none did.
+    pub rollout_started: Option<u64>,
 }
 
 impl Run<'_> {
@@ -164,14 +166,16 @@ impl Run<'_> {
             }
             Step::Deploy { worker, dry_run } => {
                 let w = &workers[worker];
+                if !dry_run {
+                    self.rollout_started
+                        .get_or_insert_with(crate::deploy_ledger::now_ms);
+                }
                 let revision = format!("BUILD_REVISION:{head}");
                 // With a registry image, containers deploy it from a config copy.
                 let copy = crate::deploy_prebuilt::ConfigCopy::write(self.image.as_deref(), w)?;
                 let config = copy.as_ref().map_or(w.config_path.as_str(), |c| c.path());
-                let mut deploy = vec!["deploy", "--config", config, "--var", &revision];
-                if dry_run {
-                    deploy.push("--dry-run");
-                }
+                let message = crate::deploy_ledger::message(env, head);
+                let deploy = deploy_args(config, &revision, head, &message, dry_run);
                 wrangler::run(&spec.account_id, &deploy)?;
                 let state = if dry_run { "dry run" } else { "deployed" };
                 summary.insert(worker, row(w, state, "-"));
@@ -200,6 +204,33 @@ impl Run<'_> {
         };
         crate::deploy_registry::record(self.spec, &image, &inputs).await
     }
+}
+
+/// `wrangler deploy` of one Worker: `--tag` and `--message` name the commit on its Cloudflare
+/// version, so the dashboard and a tail event's `scriptVersion` can say what is running.
+pub(crate) fn deploy_args<'a>(
+    config: &'a str,
+    revision: &'a str,
+    head: &'a str,
+    message: &'a str,
+    dry_run: bool,
+) -> Vec<&'a str> {
+    let tag = crate::deploy_ledger::tag(head);
+    let mut args = vec![
+        "deploy",
+        "--config",
+        config,
+        "--var",
+        revision,
+        "--tag",
+        tag,
+        "--message",
+        message,
+    ];
+    if dry_run {
+        args.push("--dry-run");
+    }
+    args
 }
 
 fn row(w: &Deployable, state: &str, revision: &str) -> Vec<String> {

@@ -3,7 +3,9 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { addedRepo, badAddress, showsDetails } from '../source-platform/importModel';
 import { GitHubImportDialog, requestImport } from './GitHubImportDialog';
+import { GitHubRepoList } from './GitHubRepoList';
 import { NewMenu } from './NewMenu';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -21,28 +23,49 @@ describe('NewMenu', () => {
   it('names its two rows, each with an icon', () => {
     expect(html).toContain('role="menu"');
     const rows = [...html.matchAll(/role="menuitem"[^>]*>(<svg.*?<\/svg>)([^<]+)</g)];
-    expect(rows.map((row) => row[2])).toEqual(['Create repository', 'Add GitHub repository']);
+    expect(rows.map((row) => row[2])).toEqual([
+      'Create repository',
+      'Add GitHub repository',
+      'Add public repository',
+    ]);
   });
 });
 
 describe('GitHubImportDialog', () => {
-  const html = renderToStaticMarkup(
-    createElement(GitHubImportDialog, {
-      account: 'ada',
-      orgs: [{ org: 'acme', role: 'owner' }] as never,
-      onClose: () => {},
-      onImported: async () => {},
-    }),
-  );
+  const dialog = (publicAddress: boolean) =>
+    renderToStaticMarkup(
+      createElement(GitHubImportDialog, {
+        account: 'ada',
+        orgs: [{ org: 'acme', role: 'owner' }] as never,
+        publicAddress,
+        onClose: () => {},
+        onImported: async () => {},
+      }),
+    );
+  const html = dialog(true);
   it('says plainly what can be added and how much of it', () => {
-    expect(html).toContain('Public GitHub repositories only for now');
-    expect(html).toContain('The newest 5,000 commits are imported');
+    expect(html).toContain('Every branch and tag is imported');
+    expect(html).not.toContain('5,000');
   });
   it('is private by default, with the branch tucked away', () => {
     expect(html).toMatch(/<input[^>]*checked=""[^>]*value="private"/);
     expect(html).not.toMatch(/<input[^>]*checked=""[^>]*value="public"/);
     expect(html).toMatch(/<details[^>]*>\s*<summary[^>]*>Branch/);
     expect(html).not.toMatch(/<details[^>]* open/);
+  });
+  it('asks only for the repository when adding from GitHub', () => {
+    const fromGitHub = dialog(false);
+    expect(fromGitHub).toContain('name="url"');
+    expect(fromGitHub).not.toContain('Repository name');
+    expect(fromGitHub).not.toContain('Visibility');
+    expect(fromGitHub).not.toContain('Branch');
+    expect(fromGitHub).not.toContain('Add repository<');
+  });
+  it('names the public dialog for what it does, with nothing about connecting', () => {
+    expect(html).toContain('Add public repository');
+    expect(html).not.toContain('Add GitHub repository');
+    expect(html).not.toContain('Add an organization');
+    expect(html).toContain('placeholder="https://github.com/owner/repo"');
   });
   it('offers the owners the create dialog does', () => {
     expect(html).toContain('<select name="owner"');
@@ -64,5 +87,76 @@ describe('requestImport', () => {
     expect(init.method).toBe('POST');
     expect(JSON.parse(String(init.body))).toEqual({ url: 'https://github.com/a/b.git' });
     expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe('a GitHub repository already added', () => {
+  const own = {
+    id: 'r1',
+    name: 'rad-belden',
+    owner: 'user:ada',
+    owner_handle: 'ada',
+    role: 'owner',
+  };
+  const other = { id: 'r2', name: 'rad-belden', owner_handle: 'ada', role: 'read' };
+  it('is the account own repository of that name, whatever the case', () => {
+    expect(addedRepo([own], 'ada', 'Rad-Belden')?.id).toBe('r1');
+  });
+  it('finds an account signed in by its email, whose repositories carry its handle', () => {
+    const mine = { ...own, owner: 'ada@example.com', owner_handle: 'ada' };
+    expect(addedRepo([mine], 'ada@example.com', 'rad-belden')?.id).toBe('r1');
+  });
+  it('is not one under another owner, or one the account only reads', () => {
+    expect(addedRepo([own], 'acme', 'rad-belden')).toBeUndefined();
+    expect(addedRepo([other], 'ada', 'rad-belden')).toBeUndefined();
+  });
+  it('says Added on its row, and the others say what they are', () => {
+    const row = { id: 1, full_name: 'MagnetonIO/rad-belden', private: true } as never;
+    const fresh = { id: 2, full_name: 'MagnetonIO/whisper', private: false } as never;
+    const list = renderToStaticMarkup(
+      createElement(GitHubRepoList, {
+        repositories: [row, fresh],
+        matching: [row, fresh],
+        addedOf: (name: string) => (name === 'MagnetonIO/rad-belden' ? 'r1' : undefined),
+        busy: false,
+        onPick: () => {},
+        onOpen: () => {},
+        onOpenGitHub: () => {},
+      }),
+    );
+    expect(list).toMatch(/rad-belden<\/span><small>Added<\/small>/);
+    expect(list).toMatch(/whisper<\/span><small>Public<\/small>/);
+  });
+});
+
+describe('showsDetails', () => {
+  const connected = { connection: 'ok', available: true } as never;
+  const base = { publicAddress: false, github: connected, address: false, starting: false };
+  it('leaves a connected list on its own, and while it loads', () => {
+    expect(showsDetails(base)).toBe(false);
+    expect(showsDetails({ ...base, github: undefined })).toBe(false);
+  });
+  it('asks for the rest once an address is typed', () => {
+    expect(showsDetails({ ...base, address: true })).toBe(true);
+  });
+  it('asks nothing while a picked repository starts', () => {
+    expect(showsDetails({ ...base, address: true, starting: true })).toBe(false);
+  });
+  it('always asks on the public address dialog, and with no GitHub to list', () => {
+    expect(showsDetails({ ...base, publicAddress: true })).toBe(true);
+    expect(
+      showsDetails({ ...base, github: { connection: 'none', available: false } as never }),
+    ).toBe(true);
+  });
+});
+
+describe('badAddress', () => {
+  it('leaves text in a list alone: it is a search', () => {
+    expect(badAddress('magn', true)).toBe(false);
+  });
+  it('says so with no list to search, and never for an address', () => {
+    expect(badAddress('magn', false)).toBe(true);
+    expect(badAddress('acme/app', false)).toBe(false);
+    expect(badAddress('   ', false)).toBe(false);
   });
 });

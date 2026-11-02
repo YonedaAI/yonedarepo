@@ -25,12 +25,15 @@ export function TimeChart({
   title,
   unit,
   bars,
+  summed = true,
 }: {
   id: string;
   title: string;
   /** What is counted ("sign-ups", "views"). */
   unit: string;
   bars: ChartBar[];
+  /** Whether the bars add up: the same credential on two days doesn't count twice. */
+  summed?: boolean;
 }) {
   const { frame, width } = useWidth();
   const [active, setActive] = useState<number | null>(null);
@@ -71,9 +74,11 @@ export function TimeChart({
         <h2 id={id} className="home-label">
           {title}
         </h2>
-        <span className="home-total">
-          <span className="stat-number">{figure(total, estimated)}</span> {unit}
-        </span>
+        {summed && (
+          <span className="home-total">
+            <span className="stat-number">{figure(total, estimated)}</span> {unit}
+          </span>
+        )}
       </div>
       <div
         ref={frame}

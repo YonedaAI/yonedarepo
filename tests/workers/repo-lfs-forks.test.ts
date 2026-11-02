@@ -13,8 +13,8 @@ usePlatformFixture();
 
 const env = {
   ...scoped,
-  PLATFORM_OBJECT_STORE: 'r2',
-  ARTIFACTS: undefined,
+  
+  
   LFS_S3_ENDPOINT: 'https://test-account.r2.cloudflarestorage.com',
   LFS_S3_BUCKET: 'yoneda-local-test',
   LFS_S3_ACCESS_KEY_ID: 'test-fixture-key-id',

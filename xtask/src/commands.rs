@@ -15,6 +15,7 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
                 ("pnpm", vec!["--version"]),
                 ("worker-build", vec!["--version"]),
                 ("docker", vec!["version", "--format", "{{.Server.Version}}"]),
+                ("gitleaks", vec!["version"]),
             ] {
                 run(program, &arguments)?;
             }
@@ -32,11 +33,15 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
             Ok(())
         }
         "layers" => crate::layers::check(),
+        "health" => crate::health::execute(&args),
         // The complete local gate. On GitHub it is split in two (keep both in step with
         // this arm): "Check" (.github/workflows/ci.yml) runs the fast half on every PR and
         // push to main; "Full suite" (full.yml) runs the rest by hand before a prod ship.
         "check" => {
             crate::layers::check()?;
+            crate::health::check_lines(None)?;
+            crate::health::check_migrations(None)?;
+            crate::health::check_secrets(None)?;
             run("cargo", &["fmt", "--all", "--check"])?;
             run(
                 "cargo",
@@ -63,16 +68,16 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
             }
             build_wasm()?;
             run("pnpm", &["check"])?;
-            run("pnpm", &["test"])?;
+            crate::health::run_suite("test")?;
             // The source platform must pass on its own, in its platform-only test Worker.
-            run("pnpm", &["test:platform"])?;
-            run("pnpm", &["test:storage-full"])?;
-            run("pnpm", &["test:superfan"])?;
-            run("pnpm", &["test:managed"])?;
+            crate::health::run_suite("test:platform")?;
+            crate::health::run_suite("test:storage-full")?;
+            crate::health::run_suite("test:superfan")?;
+            crate::health::run_suite("test:managed")?;
             run("pnpm", &["test:runtime"])?;
-            run("pnpm", &["test:frontend"])?;
+            crate::health::run_suite("test:frontend")?;
             run("pnpm", &["--dir", FRONTEND, "build"])?;
-            Ok(())
+            crate::health::check_size()
         }
         "build" => {
             build_wasm()?;
@@ -113,7 +118,7 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
             .await
         }
         "deploy" => crate::deploy_env::deploy(&args).await,
-        "rollback" => crate::deploy_live::rollback(&args).await,
+        "rollback" => crate::deploy_rollback::rollback(&args).await,
         "status" => crate::deploy_live::status(&args).await,
         "live-check" => crate::deploy_live::live_check(&args).await,
         "live-tests" => crate::deploy_ship::mark(&args),
@@ -126,7 +131,7 @@ pub async fn execute(args: Vec<String>) -> Result<()> {
         "contracts" => crate::contracts::write(&std::env::current_dir()?),
         _ => {
             println!(
-                "cargo xtask <cloudflare-configure|cloudflare-deploy|doctor|setup|check|build|dev|deploy|rollback|status|live-check|live-tests|runtime-image|infra|admin|downloads|contracts|layers> [--env dev|prod]\ndeploy|rollback|status --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active]: spec-driven (infra/envs). deploy --env dev (no --prebuilt): the workstation deploy; token from ~/.config/yonedarepo/deploy-dev.env unless CLOUDFLARE_API_TOKEN is set; reuses the deployed runtime image when its inputs are unchanged, else builds it for linux/amd64 (busy containers stop it unless --allow-active). deploy --prebuilt <dir>: deploy a tested Wasm, frontend and runtime image build instead of building (no workflow uses it now). downloads stage|upload --env dev|prod: build and stage the CLI releases and the public Claude Code marketplace in target/downloads/<env>, then upload them to <prefix>-downloads (upload --dry-run prints the commands). admin backfill-accounts --env dev|prod: adds accounts made before the admin index to it (the deployed platform, as the owner). admin erase-backfill --env dev|prod --dry-run|--confirm [--after <cursor>] [--limit <n>] [--delay-ms <ms>] [--token-file <file>]: erases deleted repositories, one at a time (docs/runbook.md). admin search-backfill --env dev|prod --owner <account> --dry-run|--confirm [--delay-ms <ms>]: queues a search summary for each of one owner's repositories (docs/runbook.md). contracts: writes shared/contracts/*.ts from the Rust types. layers: checks crate dependencies against xtask/layers.toml. live-check --env dev: whether /health already shows HEAD (deploy=true|false to $GITHUB_OUTPUT; no workflow uses it now). live-tests [--dry-run]: after a full kit passed at the pushed tip of dev, sets the live-tests commit status a ship needs. deploy --env prod --confirm --ship-head <sha>: the deploy from a merged ship PR, in GitHub Actions; reads the statuses of the PR head (docs/ship-pipeline.md) instead of the dev Workers and the evidence file. runtime-image record --env <env> --built-from <commit>: record the deployed image's inputs.\nLocal check uses no paid inference."
+                "cargo xtask <cloudflare-configure|cloudflare-deploy|doctor|setup|check|build|dev|deploy|rollback|status|live-check|live-tests|runtime-image|infra|admin|downloads|contracts|layers|health> [--env dev|prod]\ndeploy|rollback|status --env dev|prod|ephemeral-<id> [--dry-run] [--confirm] [--allow-active]: spec-driven (infra/envs). deploy --env dev (no --prebuilt): the workstation deploy; token from ~/.config/yonedarepo/deploy-dev.env unless CLOUDFLARE_API_TOKEN is set; reuses the deployed runtime image when its inputs are unchanged, else builds it for linux/amd64 (busy containers stop it unless --allow-active). deploy --prebuilt <dir>: deploy a tested Wasm, frontend and runtime image build instead of building (no workflow uses it now). downloads stage|upload --env dev|prod: build and stage the CLI releases and the public Claude Code marketplace in target/downloads/<env>, then upload them to <prefix>-downloads (upload --dry-run prints the commands). admin backfill-accounts --env dev|prod: adds accounts made before the admin index to it (the deployed platform, as the owner). admin erase-backfill --env dev|prod --dry-run|--confirm [--after <cursor>] [--limit <n>] [--delay-ms <ms>] [--token-file <file>]: erases deleted repositories, one at a time (docs/runbook.md). admin audit-set-aside --env dev|prod --repo <id> --seq <n> --dry-run|--confirm --bytes <n>: sets one corrupt audit event aside; a healthy one is refused (docs/incidents.md). admin search-backfill --env dev|prod --owner <account> --dry-run|--confirm [--delay-ms <ms>]: queues a search summary for each of one owner's repositories (docs/runbook.md). admin imports --env dev|prod: lists what each repository needs now Artifacts has gone. admin reimport --env dev|prod --repo <id> [--url <url>] [--branch <branch>] [--confirm]: clones one again under the same id and name (docs/runbook.md). admin author-backfill --env dev|prod --dry-run|--confirm [--repo <id>]: fills in who wrote commits recorded before that was kept, from their Git objects (docs/runbook.md). admin close-account --env dev|prod --account <name> --dry-run|--confirm: deletes one account, with the refusals its owner gets (docs/runbook.md). contracts: writes shared/contracts/*.ts from the Rust types. layers: checks crate dependencies against xtask/layers.toml. health [--doc]: code health, dated values in .local/health and what moved (docs/code-health.md). health lines|migrations|secrets [--base <commit>], health size: the gates alone. health lines --update, health migrations --record: tidy their lists. health tests <vitest-json>...: keep a run's results. live-check --env dev: whether /health already shows HEAD (deploy=true|false to $GITHUB_OUTPUT; no workflow uses it now). live-tests [--dry-run]: after a full kit passed at the pushed tip of dev, sets the live-tests commit status a ship needs. deploy --env prod --confirm --ship-head <sha>: the deploy from a merged ship PR, in GitHub Actions; reads the statuses of the PR head (docs/ship-pipeline.md) instead of the dev Workers and the evidence file. runtime-image record --env <env> --built-from <commit>: record the deployed image's inputs.\nLocal check uses no paid inference."
             );
             Ok(())
         }

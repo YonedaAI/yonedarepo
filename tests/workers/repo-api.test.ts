@@ -1,12 +1,12 @@
 // Source platform end to end in workerd through the public API (see repo-fixture.ts).
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
-import type { Env } from '../../cloudflare/worker/types';
-import { api, author, bindings, executed, file, misses, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, bindings, drainObjects, executed, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
 it('commits, checks, reviews, lands and time-travels through the public API', async () => {
+  const gets = vi.spyOn(bindings.OBJECTS, 'get');
   const owner = { cookie: await signup('alice') };
   const created = await api('/repos', owner, {
     body: {
@@ -73,7 +73,7 @@ it('commits, checks, reviews, lands and time-travels through the public API', as
   const scoped = await api(`${repo}/diff?base=main&head=${sha}&path=docs`, agent);
   expect(scoped.body.changes).toEqual([]);
   // Every object read was served by the R2 tier written through at commit time.
-  expect(misses).toEqual([]);
+  expect(gets.mock.calls.map(([key]) => String(key)).filter((key) => key.includes('/git/'))).toEqual([]);
 
   const listed = await api('/repos', owner);
   expect(listed.body.repos.map((r: any) => [r.id, r.name])).toEqual([[created.body.id, 'demo-app']]);
@@ -192,27 +192,23 @@ it('runs policy checks on the exact commit and gates landing on them', async () 
   expect(runs()).toHaveLength(2);
 });
 
-it('runs the whole platform on the R2 object store with Rust-verified pushes', async () => {
-  const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2', ARTIFACTS: undefined } as unknown as Env;
-  const call = async (path: string, auth: { cookie?: string }, body?: unknown) => {
-    const headers: Record<string, string> = { 'content-type': 'application/json', cookie: auth.cookie ?? '' };
-    const response = await platformFetch(
-      new Request(`https://yoneda/api/v1${path}`, { method: body ? 'POST' : 'GET', headers, body: body ? JSON.stringify(body) : undefined }),
-      local,
-    );
-    return { status: response.status, body: await response.json<any>() };
-  };
+it('runs the whole platform on the R2 object store', async () => {
   const owner = { cookie: await signup('frank') };
-  const created = await call('/repos', owner, { name: 'local', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', 'one\n')], author });
+  const created = await api('/repos', owner, { body: { name: 'local', policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', 'one\n')], author } });
   expect(created.status).toBe(200);
-  const repo = `/repos/${created.body.id}`;
-  expect((await call(repo, owner)).body.object_store).toBe(`r2:yr-${created.body.id}`);
-  const next = await call(`${repo}/commits`, owner, { ref: 'main', changes: [file('b/c.txt', 'two\n')], message: 'two', author });
+  const id = created.body.id as string;
+  const repo = `/repos/${id}`;
+  expect((await api(repo, owner)).body.object_store).toBe(`platform:${id}`);
+  const next = await api(`${repo}/commits`, owner, { body: { ref: 'main', changes: [file('b/c.txt', 'two\n')], message: 'two', author } });
   expect(next.status).toBe(200);
-  expect((await call(`${repo}/land`, owner, { ref: 'main', commit: next.body.commit })).body.landed).toBe(true);
-  // Cold reads bypass the cache tier and come from the R2 store's own objects.
-  for (const key of (await bindings.OBJECTS.list({ prefix: `platform/v1/${created.body.id}/` })).objects)
-    await bindings.OBJECTS.delete(key.key);
-  expect((await call(`${repo}/blob?path=b/c.txt`, owner)).body.content).toBe('two\n');
-  expect((await call(`${repo}/diff?patch=1`, owner)).body.changes[0].patch).toBe('@@ -0,0 +1 @@\n+two\n');
+  expect((await api(`${repo}/land`, owner, { body: { ref: 'main', commit: next.body.commit } })).body.landed).toBe(true);
+  await drainObjects();
+  expect((await api(repo, owner)).body.objects.pending).toBe(0);
+  // Cold reads find no cached copy and no staged one: they come from the store of record.
+  for (const { key } of (await bindings.OBJECTS.list({ prefix: `platform/v1/${id}/objects/` })).objects) {
+    await bindings.OBJECTS.delete(key);
+    await caches.default.delete(new Request(`https://objects.yoneda.internal/${id}/${key.split('/').at(-1)}`));
+  }
+  expect((await api(`${repo}/blob?path=b/c.txt`, owner)).body.content).toBe('two\n');
+  expect((await api(`${repo}/diff?patch=1`, owner)).body.changes[0].patch).toBe('@@ -0,0 +1 @@\n+two\n');
 });

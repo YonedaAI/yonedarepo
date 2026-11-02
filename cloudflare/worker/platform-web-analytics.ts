@@ -5,6 +5,7 @@
 // host: the `siteTag` filter takes a tag the beacon's site token is not. A failure here reports
 // itself and leaves the rest of the Traffic page alone.
 import type { WebAnalyticsCheck } from '../../shared/site-traffic';
+import { log } from './log';
 import type { Env } from './types';
 
 const GRAPHQL = 'https://api.cloudflare.com/client/v4/graphql';
@@ -70,9 +71,7 @@ export async function webAnalytics(
       visits: number(totals[0]?.sum?.visits),
     };
   } catch (e) {
-    console.error(
-      JSON.stringify({ event: 'web_analytics.failed', error: String((e as Error)?.message ?? e) }),
-    );
+    log.error('web_analytics.failed', { error: e });
     return { ok: false, reason: 'query_failed' };
   }
 }

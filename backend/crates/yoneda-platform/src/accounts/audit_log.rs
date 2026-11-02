@@ -6,7 +6,8 @@
 //! The adapter copies events across after the action; a copy
 //! that fails is taken up by the next one, since a source keeps its events and the log keeps
 //! a cursor per source (`workspace_events` has no unique index, so the cursor is the dedupe).
-//! Rows use `seq`, `kind` and `at` as they are; everything else is in `data`.
+//! Rows use `seq`, `kind` and `at` as they are; everything else is in `data`. Sealed copies
+//! of the rows live outside this object (`audit_seal`).
 use super::audit_details::{actor, details};
 use super::op::AuditOp;
 use super::repo_names::repo_id;
@@ -24,8 +25,11 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: AuditOp) -> Result<Valu
         AuditOp::Pending => pending(db, c),
         AuditOp::Cursor => Ok(json!({ "cursor": cursor(db, &source(c)?)? })),
         AuditOp::Append => append(db, c),
+        AuditOp::Exported => exported(db, c),
         AuditOp::Read => read(db, c),
         AuditOp::Verify => verify(db, c),
+        AuditOp::SealNext => super::audit_seal::next(db, c),
+        AuditOp::SealDone => super::audit_seal::done(db, c),
     }
 }
 
@@ -62,7 +66,7 @@ fn limit(c: &Value, most: i64) -> i64 {
     c["limit"].as_i64().unwrap_or(most).clamp(1, most)
 }
 
-fn parsed(row: &Value) -> Result<Value> {
+pub(super) fn parsed(row: &Value) -> Result<Value> {
     serde_json::from_str(row["data"].as_str().unwrap_or_default())
         .map_err(|_| Error::new("DATABASE", "Corrupt audit row"))
 }
@@ -126,12 +130,51 @@ fn body(row: &Value, data: &Value) -> Value {
     })
 }
 
-/// `audit_append {org, source, events}`: appends a source's events, each once. Events the
-/// allow-list doesn't know move the cursor and leave no row.
-fn append<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+/// Refuses on anything that isn't an audit log.
+pub(super) fn only_a_log<S: SqlStore>(db: &S) -> Result<()> {
     if get(db, "account").is_ok() {
         return Err(bad("An account's authority holds no audit log"));
     }
+    Ok(())
+}
+
+/// Chains a row onto `(seq, previous)`, answering its hash. `data` is all but its links.
+fn link<S: SqlStore>(
+    db: &S,
+    (seq, previous): (i64, &str),
+    kind: &str,
+    at: i64,
+    mut data: Value,
+) -> Result<String> {
+    data["previous"] = json!(previous);
+    let row = json!({ "seq": seq, "kind": kind, "at": at });
+    let hash = chained(previous, &body(&row, &data))?;
+    data["hash"] = json!(hash);
+    db.query(
+        "INSERT INTO workspace_events(seq,kind,at,data) VALUES(?,?,?,?)",
+        &[json!(seq), json!(kind), json!(at), json!(data.to_string())],
+    )?;
+    Ok(hash)
+}
+
+/// `audit_exported {actor, format, kind?, of_actor?, before?}`: someone took a copy. The row
+/// is the log's own, in one transaction with nothing else: the adapter writes it before it
+/// reads, so no copy leaves unrecorded.
+fn exported<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+    only_a_log(db)?;
+    let details = details("audit.exported", c).ok_or_else(|| bad("Unknown audit event"))?;
+    let (seq, previous) = head(db)?;
+    let data = json!({ "actor": actor(c, "", "log"), "source": "log", "details": details });
+    let now = crate::storage::number(c, "now")?;
+    let hash = link(db, (seq + 1, &previous), "audit.exported", now, data)?;
+    put(db, HEAD, &json!({ "seq": seq + 1, "hash": hash }))?;
+    Ok(json!({ "seq": seq + 1 }))
+}
+
+/// `audit_append {org, source, events}`: appends a source's events, each once. Events the
+/// allow-list doesn't know move the cursor and leave no row.
+fn append<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
+    only_a_log(db)?;
     let org = string(c, "org")?;
     let source = source(c)?;
     let mut events = c["events"].as_array().cloned().unwrap_or_default();
@@ -157,22 +200,9 @@ fn append<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         seq += 1;
         let data = json!({
             "actor": actor(&sent, &org, &source), "source": source,
-            "source_seq": source_seq, "details": details, "previous": previous,
+            "source_seq": source_seq, "details": details,
         });
-        let row = json!({ "seq": seq, "kind": kind, "at": at });
-        let hash = chained(&previous, &body(&row, &data))?;
-        let mut stored = data;
-        stored["hash"] = json!(hash);
-        db.query(
-            "INSERT INTO workspace_events(seq,kind,at,data) VALUES(?,?,?,?)",
-            &[
-                json!(seq),
-                json!(kind),
-                json!(at),
-                json!(stored.to_string()),
-            ],
-        )?;
-        previous = hash;
+        previous = link(db, (seq, &previous), &kind, at, data)?;
         appended += 1;
     }
     put(db, &format!("{CURSOR}{source}"), &json!({ "seq": seen }))?;
@@ -180,6 +210,15 @@ fn append<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         put(db, HEAD, &json!({ "seq": seq, "hash": previous }))?;
     }
     Ok(json!({ "appended": appended, "cursor": seen }))
+}
+
+/// A row as a reader gets it, its links included.
+pub(super) fn item(row: &Value) -> Result<Value> {
+    let data = parsed(row)?;
+    let mut item = body(row, &data);
+    item["previous"] = data["previous"].clone();
+    item["hash"] = data["hash"].clone();
+    Ok(item)
 }
 
 /// `audit_read {before?, kind?, actor?, limit?}`: newest first; `next` is the `before` of
@@ -210,16 +249,7 @@ fn read<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     )?;
     let more = rows.len() as i64 > limit;
     rows.truncate(limit as usize);
-    let items = rows
-        .iter()
-        .map(|row| {
-            let data = parsed(row)?;
-            let mut item = body(row, &data);
-            item["previous"] = data["previous"].clone();
-            item["hash"] = data["hash"].clone();
-            Ok(item)
-        })
-        .collect::<Result<Vec<_>>>()?;
+    let items = rows.iter().map(item).collect::<Result<Vec<_>>>()?;
     let next = more.then(|| items.last().map(|item| item["seq"].clone()));
     Ok(json!({ "items": items, "next": next.flatten() }))
 }

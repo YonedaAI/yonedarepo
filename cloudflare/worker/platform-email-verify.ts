@@ -1,8 +1,10 @@
-// The account emails' producer side (platform): a new account's welcome job, and the
-// confirmation job a resend or an address change asks for. Each confirmation token is minted
-// here, stored by the account authority only as its digest (single use, 24 hours), and rides
-// in its queue message to the email; it is never logged. The platform entrypoint's
-// `accountCreated` and `verifyEmail` methods (RPC, no HTTP route) call these.
+// The account emails' producer side (platform): a new account's welcome job, the confirmation
+// job a resend or an address change asks for, and a forgotten password's reset job. Each token
+// is minted here, stored by the account authority only as its digest (single use, 24 hours for
+// a confirmation, 1 hour for a reset), and rides in its queue message to the email; it is never
+// logged. The platform entrypoint's `accountCreated`, `verifyEmail` and `passwordReset` methods
+// (RPC, no HTTP route) call these.
+import { carriedQueue } from './request-scope';
 import type { Env, Envelope } from './types';
 import { workspace } from './workspace';
 
@@ -14,9 +16,14 @@ export async function digest(text: string) {
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** The confirmation page (a GET shows it; only its button's POST confirms). */
+/** The confirmation page (opening it confirms nothing; only its button's POST does) and the
+ * reset page. The account and token ride in the fragment: unlike a query, it reaches no server,
+ * so no request log, analytics line or Referer header can hold the token. */
 export function verifyUrl(origin: string, account: string, token: string) {
-  return `${origin}/verify-email?account=${encodeURIComponent(account)}&token=${token}`;
+  return `${origin}/verify-email#account=${encodeURIComponent(account)}&token=${token}`;
+}
+export function resetUrl(origin: string, account: string, token: string) {
+  return `${origin}/reset-password#account=${encodeURIComponent(account)}&token=${token}`;
 }
 
 function newToken() {
@@ -27,13 +34,18 @@ function newToken() {
 
 async function enqueue(env: Env, job: Envelope) {
   if (!env.PLATFORM_QUEUE) throw new Error('PLATFORM_QUEUE is not bound');
-  await env.PLATFORM_QUEUE.send(job);
+  await carriedQueue(env.PLATFORM_QUEUE).send(job);
 }
+const JOB_IDS: Record<string, string> = {
+  account_welcome: 'welcome',
+  account_verify: 'verify',
+  account_password_reset: 'password_reset',
+};
 const job = (kind: string, account: string, token?: string): Envelope => ({
   v: 1,
   kind,
   repo_id: '',
-  job_id: kind === 'account_welcome' ? 'welcome' : 'verify',
+  job_id: JOB_IDS[kind],
   workspace: account,
   ...(token ? { token } : {}),
 });
@@ -75,4 +87,28 @@ export async function verifyEmail(
   if (!(result.issued || result.changed)) return { sent: false, reason: result.reason };
   await enqueue(env, job('account_verify', account, token));
   return { sent: true };
+}
+
+/** Whether `key` has spent its limit. */
+const limited = async (env: Env, key: string) =>
+  env.AUTH_LIMITER && !(await env.AUTH_LIMITER.limit({ key })).success;
+
+/** A forgotten password: a reset link for a confirmed address, within the limits per account
+ * and per email address (the authority's five a day holds the inbox; AUTH_LIMITER keeps a
+ * flood off the authority). The asker has had the same answer whatever happens here, so a
+ * refusal is silent. Limiter keys carry digests: an address never leaves this Worker. */
+export async function passwordReset(env: Env, account: string) {
+  const status = await workspace(env, account, { op: 'email_status' }).catch((e) => {
+    if (e?.code === 'NOT_FOUND') return null; // no such account
+    throw e;
+  });
+  if (!status?.verified) return;
+  if (await limited(env, `reset-account:${await digest(account)}`)) return;
+  if (await limited(env, `reset-email:${await digest(status.email)}`)) return;
+  const token = newToken();
+  const result = await workspace(env, account, {
+    op: 'password_reset_request',
+    token_hash: await digest(token),
+  });
+  if (result.issued) await enqueue(env, job('account_password_reset', account, token));
 }

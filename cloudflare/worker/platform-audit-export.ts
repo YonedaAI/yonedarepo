@@ -1,7 +1,8 @@
 // `GET /api/v1/orgs/:org/audit/export[?format=json|csv&kind=&actor=&before=]`: the log as a
 // file, newest first, streamed a page at a time. Its own path because `route()` answers
-// JSON. Whoever may read the log may export it. A log too long for one request fails the
-// download rather than ending it early; `before` continues from the last row received.
+// JSON. Whoever may read the log may export it, and the log says who did, before it is read:
+// no row, no file. A log too long for one request fails the download rather than ending it
+// early; `before` continues from the last row received.
 import { auditCatchUp, auditOn } from './account-audit';
 import { auditFilters } from './platform-audit-read';
 import { orgArg, orgCaller, orgCommand } from './platform-orgs';
@@ -71,6 +72,14 @@ export async function auditExport(
     throw new ApiError('INVALID_INPUT', 'format must be json or csv');
   const filters = auditFilters(query);
   await auditCatchUp(env, org);
+  await auditLog(env, org, {
+    op: 'audit_exported',
+    actor: `user:${actor}`,
+    format,
+    ...(filters.kind && { kind: filters.kind }),
+    ...(filters.actor && { of_actor: filters.actor }),
+    ...(filters.before !== undefined && { before: filters.before }),
+  });
   const file = shape(format, org);
   const encoder = new TextEncoder();
   let before: number | null | undefined = filters.before;

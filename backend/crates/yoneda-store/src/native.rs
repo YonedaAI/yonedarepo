@@ -141,6 +141,7 @@ mod tests {
             .query("INSERT INTO t VALUES(?)", &[json!("x".repeat(100_000))])
             .unwrap_err();
         assert_eq!(full.code, "REPO_FULL");
+        assert_eq!(full.message, crate::REPO_FULL_MESSAGE);
         let other = db.query("SELECT * FROM missing", &[]).unwrap_err();
         assert_eq!(other.code, "DATABASE");
     }

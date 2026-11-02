@@ -1,7 +1,7 @@
 // Settings → Billing (`/settings/billing`), a headed card each: the account's agent credit, its
 // payment method (brand and last four only; adding or replacing one is Stripe's own page), the
 // automatic top-up switch and rule, how to stop paying, the top-ups it charged, and agent usage
-// by repository and agent. Platform features are free; only managed agent runs use credit.
+// by repository and agent. Managed agent runs use credit.
 import { useState } from 'react';
 import type { BillingState } from '../../../../shared/managed-agents';
 import { SettingsRow, SettingsSection } from '../../components/SettingsSection';
@@ -37,9 +37,7 @@ export function BillingSettings({ workspace }: { workspace: string }) {
   const offerPromo = !card && billing?.credit.promo.granted === false;
   return (
     <>
-      <p className="source-meta">
-        Every platform feature is free. Managed agent runs use your credit.
-      </p>
+      <p className="source-meta">Managed agent runs use your credit.</p>
       {loadState(loaded, 'billing') ??
         (billing && totals && (
           <>

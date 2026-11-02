@@ -3,6 +3,7 @@
 // Read-only: it logs what differs (event `billing.reconcile.mismatch`) and changes nothing, here
 // or at Stripe. An open refund is no mismatch, whether or not Stripe has it yet. The revenue
 // rollup is held to the ledger the same way, so the chain Stripe, ledger, rollup is all checked.
+import { log } from '../worker/log';
 import type { ManagedEnv, QueueMessage } from './config';
 import { ledgerStub } from './ledger';
 import { activeAccounts, customerCharges } from './stripe-admin';
@@ -106,5 +107,5 @@ export async function reconcileAccount(env: ManagedEnv, account: string) {
   const { data, complete } = await customerCharges(env, customer);
   const rollup = rollup_pending ? [] : await rollupProblems(env, account, top_ups);
   for (const mismatch of [...compare(data, top_ups, complete), ...rollup])
-    console.error(JSON.stringify({ event: 'billing.reconcile.mismatch', account, ...mismatch }));
+    log.error('billing.reconcile.mismatch', { account, ...mismatch });
 }

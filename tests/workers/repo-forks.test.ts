@@ -11,7 +11,7 @@ import { api, author, bindings, drainObjects, file, scoped, signup, usePlatformF
 
 usePlatformFixture();
 
-const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2', ARTIFACTS: undefined } as unknown as Env;
+const local = { ...scoped } as unknown as Env;
 const text = new TextEncoder();
 const hex = (bytes: Uint8Array) => [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
 const raw = (hexId: string) => Uint8Array.from(hexId.match(/../g) ?? [], (h) => Number.parseInt(h, 16));
@@ -93,6 +93,31 @@ it('forks, commits on the fork, and lands a change from it on the parent', async
   expect((await api(`/repos/${parent}?confirm=upstream`, alice, { method: 'DELETE' }, local)).status).toBe(409);
   expect((await api(`/repos/${fork}?confirm=mine`, bob, { method: 'DELETE' }, local)).status).toBe(200);
   expect((await api(`/repos/${parent}?confirm=upstream`, alice, { method: 'DELETE' }, local)).status).toBe(200);
+});
+
+it('a token of a fork alone reads what a public parent gave it, and pushes on top', async () => {
+  const alice = { cookie: await signup('open_alice') };
+  const bob = { cookie: await signup('open_bob') };
+  const created = await api(
+    '/repos',
+    alice,
+    { body: { name: 'open', visibility: 'public', files: [file('a.md', 'a\n')], author } },
+    local,
+  );
+  const parent = created.body.id as string;
+  await drainObjects(local);
+  const fork = (await api(`/repos/${parent}/fork`, bob, { body: {} }, local)).body.id as string;
+  const token = (await api(`/repos/${fork}/tokens`, bob, { body: { name: 'ci', scopes: ['read', 'write'] } }, local)).body.token as string;
+  const inherited = await object('blob', text.encode('a\n'));
+
+  const read = await api(`/repos/${fork}/objects`, { token }, { body: { objects: [{ id: inherited.id, kind: 'blob' }] } }, local);
+  expect(read.status).toBe(200);
+
+  const added = await object('blob', text.encode('new\n'));
+  const tree = await object('tree', new Uint8Array([...text.encode('100644 a.md\0'), ...raw(inherited.id), ...text.encode('100644 b.md\0'), ...raw(added.id)]));
+  const who = `${author.name} <${author.email}> 1700000000 +0000`;
+  const commit = await object('commit', text.encode(`tree ${tree.id}\nparent ${created.body.commit}\nauthor ${who}\ncommitter ${who}\n\nb\n`));
+  expect(await push(fork, token, 'refs/heads/b', [commit, tree, added])).toContain('ok refs/heads/b');
 });
 
 it('serves inherited objects named by id, or omitted by a push, only to readers of the parent', async () => {

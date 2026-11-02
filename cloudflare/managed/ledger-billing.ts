@@ -3,6 +3,7 @@
 // top-up is on, and the top-ups.
 // Functions over the ledger's SQL, each called inside one of its transactions.
 import { AUTO_TOP_UP, type CardOnFile, type TopUp } from '../../shared/managed-agents';
+import { balanceOf, insertEntry } from './ledger-holds';
 
 type BillingRow = {
   customer: string | null;
@@ -92,6 +93,22 @@ export function setBillingPaused(
 
 export function forgetCard(sql: SqlStorage) {
   upsert(sql, { payment_method: null, brand: null, last4: null, card_added_at: null });
+}
+
+/** A deleted account: no card, nothing charged again, and what is left of its credit written
+ * off, as an entry, so that the books still add up. The entries stay for accounting. A later
+ * account of the same name starts at nothing, on no Stripe customer. Repeating writes nothing
+ * off twice. Answers the card to detach and what went. */
+export function closeBilling(sql: SqlStorage) {
+  const payment_method = billingRow(sql).payment_method;
+  forgetCard(sql);
+  sql.exec('UPDATE billing SET customer = NULL, auto_top_up = 0');
+  const { balance } = balanceOf(sql);
+  if (balance > 0)
+    insertEntry(sql, `forfeit:${Date.now()}`, 'grant', -balance, {
+      note: 'Account deleted: remaining credit written off',
+    });
+  return { payment_method, forfeited: Math.max(0, balance) };
 }
 
 /** An operator's pause or an open dispute stops the card being charged, whatever the

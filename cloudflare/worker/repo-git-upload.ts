@@ -8,8 +8,8 @@
 
 import { deferred } from './background';
 import { transient } from './durable';
+import { log } from './log';
 import { compute } from './repo-compute';
-import { fetchWhileFilling, mirrorClone } from './repo-git-mirror';
 import { UploadSession, wasmMemoryBytes } from './repo-git-sessions';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
@@ -78,22 +78,12 @@ export async function uploadPack(
       }).body_b64,
     );
   const band = caps.includes('side-band-64k') ? CHUNK : caps.includes('side-band') ? 995 : 0;
-  const mirror = (head: Uint8Array) => mirrorClone(ctx, objects, request, () => head, band);
-  let walk: Json;
-  try {
-    walk = await ctx.call({
-      op: 'repo_git_walk',
-      wants: request.wants,
-      haves: request.haves,
-      common_only: !request.done,
-    });
-  } catch (e: any) {
-    if (e?.code !== 'IMPORT_IN_PROGRESS') throw e;
-    // The mirror already holds all of it. Until `done`, nothing is common: only the mirror
-    // can tell which haves it shares, and it leaves them out of the pack.
-    if (!request.done) return new Response(acknowledge([]), { headers: RESULT });
-    return fetchWhileFilling(ctx, objects, request, () => acknowledge([]), band, e);
-  }
+  const walk: Json = await ctx.call({
+    op: 'repo_git_walk',
+    wants: request.wants,
+    haves: request.haves,
+    common_only: !request.done,
+  });
   const ack = acknowledge(walk.common);
   if (!request.done) return new Response(ack, { headers: RESULT });
   const commits = (walk.commits ?? []).map((c: Json) => String(c.commit));
@@ -102,16 +92,7 @@ export async function uploadPack(
     request.haves.length === 0
       ? { wants: request.wants, omit_blobs: false, depth: null, deepen_relative: false }
       : undefined;
-  return sendPack(
-    ack,
-    () => UploadSession.open(walk),
-    objects,
-    band,
-    stats,
-    commits,
-    fresh,
-    mirror,
-  );
+  return sendPack(ack, () => UploadSession.open(walk), objects, band, stats, commits, fresh);
 }
 
 /** `head`, then the pack the session lists, on side-band `band` (none when 0) and ending
@@ -125,8 +106,7 @@ export async function uploadPack(
  * a job the fetch is handed to when this isolate cannot store it. The session is opened only
  * to build.
  * A pack that would carry a quarantined blob is never started: the ERR names the blob
- * (and its path), rather than a pack Git finds incomplete. History only the mirror holds
- * comes from `mirror`, when it can serve this fetch. */
+ * (and its path), rather than a pack Git finds incomplete. */
 export async function sendPack(
   head: Uint8Array,
   open: () => UploadSession,
@@ -135,10 +115,10 @@ export async function sendPack(
   stats?: PackStats,
   commits: string[] = [],
   fresh?: Fresh,
-  mirror?: (head: Uint8Array) => Promise<Response | null>,
 ): Promise<Response> {
   // Every built pack is logged; the client gets the timing line only when it asked.
   const tally = stats ?? new PackStats(false);
+  tally.fresh = fresh !== undefined;
   let writer: PackWriter | undefined;
   let store = 'off';
   // A stored pack may carry any blob: never served or stored while any is withheld. Stored
@@ -159,8 +139,7 @@ export async function sendPack(
   } catch (e: any) {
     await writer?.abort().catch(() => {});
     if (transient(e)) throw e;
-    const served = e?.mirrorOnly && (await mirror?.(head));
-    return served || errLine(new Uint8Array(), e);
+    return errLine(new Uint8Array(), e);
   }
   const { count, chunks } = built;
   // A pack this isolate does not store, worth a build of its own, goes to a job.
@@ -168,9 +147,11 @@ export async function sendPack(
   const hand = () => handOff(objects.env, objects.repo, fresh as Fresh);
   if (worth && store === 'skipped') {
     store = 'handed off';
-    if (!deferred(hand)) await hand().catch((e) => console.warn(`pack hand-off failed: ${e}`));
+    if (!deferred(hand))
+      await hand().catch((e) => log.warn('git.pack.handoff_failed', { error: e }));
   }
   logPack('git.pack.start', objects.repo, tally, { objects: count, store });
+  tally.begin();
   const storing = new Storing(writer, tally, worth ? hand : undefined);
   const out = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -183,22 +164,23 @@ export async function sendPack(
           await storing.finish();
           logPack('git.pack.end', objects.repo, tally);
           end(controller, band, tally);
+          tally.finish();
         } else {
           const sent = band ? sideBand(1, next.value, band) : next.value;
           storing.add(sent);
           controller.enqueue(sent);
         }
       } catch (e: any) {
-        logPack('git.pack.failed', objects.repo, tally, {
-          error: `${e?.code ?? 'ERROR'}: ${String(e?.message ?? e).slice(0, 300)}`,
-        });
+        logPack('git.pack.failed', objects.repo, tally, { code: e?.code, error: e });
         await storing.abort();
         failed(controller, band, e);
+        tally.finish();
       }
     },
     async cancel() {
       // The client went away (or the pack was cut off) before the end.
       logPack('git.pack.cancelled', objects.repo, tally);
+      tally.finish();
       await storing.abort();
       await chunks.return(undefined);
     },

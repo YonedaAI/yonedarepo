@@ -2,18 +2,25 @@
 // authority round trip. Isolates copy it from the repository's head holder
 // (repo-head-holder.ts) and keep the copy for ACCESS_MS. Stale is safe for the head itself:
 // landing re-checks access and validates the base against the log, and a reader that
-// passes the version it landed at waits until the head reaches it. Access is bounded: the
-// holder reloads before an access change answers, the isolate that served the change drops
-// its copy, and every other isolate decides on a copy fetched at most ACCESS_MS ago, so a
-// revoked token or removed member is refused everywhere within ACCESS_MS of the change's
-// answer. A deletion waits that bound out before it answers (`dropDeletedHead`).
+// passes the version it landed at waits until the head reaches it. So just after a landing
+// a reader that doesn't, in an isolate that didn't land it, can see main without it: for as
+// long as its copy lasts, and a copy fetched while the holder still reloads counts from that
+// fetch. Access is bounded: the holder reloads before an access change answers, the isolate
+// that served the change drops its copy, and every other isolate decides on a copy fetched
+// at most ACCESS_MS ago, so a revoked token or removed member is refused everywhere within
+// ACCESS_MS of the change's answer. A deletion waits that bound out before it answers
+// (`dropDeletedHead`).
+
 import { rpcValue } from './durable';
+import { Flights } from './flights';
+import { log, warned } from './log';
 import { teamEntries } from './platform-org-access';
 import { awaitProjection } from './repo-changesets';
 import { compute } from './repo-compute';
 import { accessOf, fetchHead, withoutTokens } from './repo-head-holder';
 import type { TreeEntry } from './repo-objects';
 import { ApiError, caller, type Json, noteWrite, type RepoContext } from './repo-ops';
+import { repoRpcValue } from './repo-rpc';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
@@ -32,7 +39,7 @@ const landings = new Map<string, { version: number; paths: string[] | null }[]>(
 const built = new Map<string, string[]>();
 const BUILT = 1024;
 const accesses = new Map<string, Json>();
-const loading = new Map<string, Promise<Json>>();
+const loading = new Flights<Json>();
 
 type Holder = {
   head(repo: string, minVersion: number, since?: number, access?: string | null): Promise<Json>;
@@ -69,14 +76,7 @@ async function tokenDigest(credentials: Json): Promise<string | null> {
 }
 
 /** One fetch per key at a time in this isolate; concurrent callers share it. */
-function once(key: string, load: () => Promise<Json>) {
-  let pending = loading.get(key);
-  if (!pending) {
-    pending = load().finally(() => loading.delete(key));
-    loading.set(key, pending);
-  }
-  return pending;
-}
+const once = (key: string, load: () => Promise<Json>) => loading.join(key, load).work;
 
 async function headOf(env: Env, repo: string, minVersion: number): Promise<Json> {
   const cached = heads.get(repo);
@@ -110,7 +110,7 @@ async function fetchInto(env: Env, repo: string, minVersion: number) {
       return { head: withoutTokens(full), at };
     }
     const base = heads.get(repo)?.head;
-    const { access, ...next } = await rpcValue(
+    const { access, ...next } = await repoRpcValue(
       shared.head(repo, minVersion, base?.version, accesses.get(repo)?.version ?? null),
     );
     if (access) accesses.set(repo, access);
@@ -133,7 +133,7 @@ async function accessFor(env: Env, repo: string, head: Json): Promise<Json> {
   if (cached && cached.version === head.access_version) return cached;
   const shared = holder(env, repo);
   const access = await once(`access:${repo}`, async () =>
-    shared ? rpcValue(shared.access(repo)) : accessOf(await fetchHead(env, repo)),
+    shared ? repoRpcValue(shared.access(repo)) : accessOf(await fetchHead(env, repo)),
   );
   accesses.set(repo, access);
   return access;
@@ -195,9 +195,7 @@ function beginFloor(repo: string, paths: string[]) {
 export async function refreshHead(env: Env, repo: string, access = false) {
   noteWrite(repo);
   heads.delete(repo);
-  await holder(env, repo)
-    ?.refresh(repo, access)
-    .catch((e) => console.warn(`head refresh failed: ${e?.message ?? e}`));
+  await holder(env, repo)?.refresh(repo, access).catch(warned('head.refresh_failed', { repo }));
 }
 
 /** After the authority became a tombstone: drops main's published head everywhere before
@@ -244,7 +242,7 @@ export async function headTrees(
   const shared = holder(env, repo);
   if (!shared) return null;
   return rpcValue(shared.trees(repo, root, paths, commit)).catch((e) => {
-    console.warn(`head trees failed: ${e?.message ?? e}`);
+    log.warn('head.trees_failed', { error: e });
     return null;
   });
 }
@@ -316,8 +314,9 @@ function decide(head: Json, command: Json): Json | null {
     return compute({ ...command, head: access });
   } catch (e: any) {
     // NOT_FOUND: a stranger to a private repository, or a member the snapshot predates.
-    // REPO_FULL: a head from when the database was over the limit; space may be free now.
-    if (['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND', 'REPO_FULL'].includes(e.code)) return null;
+    // A limit: a head from when the repository was over it; there may be room now.
+    if (['UNAUTHORIZED', 'FORBIDDEN', 'NOT_FOUND', 'REPO_FULL', 'REPO_SIZE_LIMIT'].includes(e.code))
+      return null;
     throw new ApiError(e.code ?? 'INVALID_INPUT', e.message);
   }
 }

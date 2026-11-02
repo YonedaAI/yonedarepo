@@ -4,7 +4,7 @@
 import type { ManagedAgentDefinition, ModelChoice } from '../../shared/managed-agents';
 import { RESULT_CONTRACT, VERDICT_CONTRACT } from '../../shared/managed-instructions';
 import { resolveSettings } from '../../shared/managed-settings';
-import { gatewaySlugs, type ManagedEnv, type RunParams } from './config';
+import { AUTOMATION_PAUSED, gatewaySlugs, type ManagedEnv, type RunParams } from './config';
 import { promptDiff } from './diff-prompt';
 import { GATEWAY_HOST, PLATFORM_HOST } from './harness';
 import { Platform } from './platform';
@@ -41,7 +41,7 @@ export async function prepare(
   const connection = await repoStub(env, p.repo).connection();
   if (!connection || connection.revoked) return 'not_connected';
   const platform = new Platform(env, { token: connection.token });
-  if ((await platform.automation(p.repo)).paused) return 'automation_paused';
+  if ((await platform.automation(p.repo)).paused) return AUTOMATION_PAUSED;
   const change = await platform.change(p.repo, p.change);
   if (change.status !== 'open') return 'change_not_open';
   if (change.head !== p.head) return 'superseded';

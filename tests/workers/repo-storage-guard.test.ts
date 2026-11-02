@@ -1,15 +1,16 @@
 // The storage guard through the real authority, shards, combiner logic and D1: behind
 // REPO_STORAGE_GUARD, a repository at its limit answers 507 REPO_FULL to new work, on REST, Git
 // and batched landing (one refusal per landing), and everything already accepted keeps going.
-// No test fills 9 GB: the variable takes a byte count here, and only here.
-import { runInDurableObject } from 'cloudflare:test';
-import { expect, it } from 'vitest';
+// No test fills it: the variable takes a byte count here, and only here.
+import { createExecutionContext, runInDurableObject, waitOnExecutionContext } from 'cloudflare:test';
+import { expect, it, vi } from 'vitest';
+import { REPO_FULL_MESSAGE } from '../../cloudflare/worker/durable';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { projectChangesets } from '../../cloudflare/worker/repo-changesets';
 import { compute } from '../../cloudflare/worker/repo-compute';
 import { forgetHead } from '../../cloudflare/worker/repo-head';
 import { deliverHook, fanoutHooks } from '../../cloudflare/worker/repo-hooks';
-import { LandBatcher } from '../../cloudflare/worker/repo-land-combiner';
+import { LandBatcher } from '../../cloudflare/worker/repo-land-batcher';
 import { caller } from '../../cloudflare/worker/repo-ops';
 import { shardRecord } from '../../cloudflare/worker/repo-shards';
 import type { Env } from '../../cloudflare/worker/types';
@@ -37,6 +38,7 @@ const landOn = (repo: string, who: { cookie?: string }, commit: string, target: 
 const refusedFull = (answer: { status: number; body: any }) => {
   expect(answer.status).toBe(507);
   expect(answer.body.error.code).toBe('REPO_FULL');
+  expect(answer.body.error.message).toBe(REPO_FULL_MESSAGE);
 };
 
 /** A receive-pack body creating `refname` with one new commit on `parent`. */
@@ -64,7 +66,7 @@ async function branchPush(refname: string, parent: string) {
   return Uint8Array.from(atob(push_b64), (c) => c.charCodeAt(0));
 }
 
-it('is off unless the variable turns it on: unset, off, and on below 9 GB change nothing', async () => {
+it('is off unless the variable turns it on: unset, off, and on below the limit change nothing', async () => {
   const { owner, repo } = await repository('guard-off');
   for (const value of [undefined, '', 'off', 'on']) {
     const target = { ...scoped, REPO_STORAGE_GUARD: value } as unknown as Env;
@@ -113,8 +115,11 @@ it('compares the real database size: a repository that grows past the limit is r
 it('never takes the limit from a client: the adapter drops the field from a command', () => {
   const sign = (target: Env) => caller(target, 'r0', { _system: 'derive' }).sign({ op: 'repo_status', _storage_guard: 5 });
   expect(sign(scoped)).not.toHaveProperty('_storage_guard');
-  expect(sign({ ...scoped, REPO_STORAGE_GUARD: 'on' } as unknown as Env)._storage_guard).toBe(9e9);
+  expect(sign({ ...scoped, REPO_STORAGE_GUARD: 'on' } as unknown as Env)._storage_guard).toBe(9_400_000_000);
   expect(sign(atLimit())._storage_guard).toBe(1);
+  const sized = caller({ ...scoped, REPO_SIZE_GUARD: 'on' } as unknown as Env, 'r0', { _system: 'derive' }).sign({ op: 'repo_status', _size_guard: 5 });
+  expect(sized._size_guard).toBe(10_000_000_000);
+  expect(caller(scoped, 'r0', { _system: 'derive' }).sign({ op: 'repo_status', _size_guard: 5 })).not.toHaveProperty('_size_guard');
 });
 
 it('refuses a Git push at the limit by ref, naming REPO_FULL', async () => {
@@ -127,6 +132,62 @@ it('refuses a Git push at the limit by ref, naming REPO_FULL', async () => {
   const report = new TextDecoder().decode(await response.arrayBuffer());
   expect(report).toContain('ng refs/heads/topic');
   expect(report).toContain('REPO_FULL');
+});
+
+it('counts what a push sends, and at the size limit refuses pushes and commits with 507 before storing anything', async () => {
+  const { owner, id, repo, root, agent } = await repository('guard-size');
+  const push = async (refname: string, target: Env) =>
+    platformFetch(new Request(`https://yoneda/git/${id}.git/git-receive-pack`, { method: 'POST', headers: { authorization: `Basic ${btoa(`git:${agent.token}`)}` }, body: await branchPush(refname, root) }), target);
+  const size = async () => (await caller(scoped, id, { _system: 'derive' })({ op: 'repo_storage' })).git_bytes as number;
+  expect(await size()).toBe(0);
+  const first = await push('refs/heads/one', scoped);
+  expect(new TextDecoder().decode(await first.arrayBuffer())).toContain('ok refs/heads/one');
+  const counted = await size();
+  expect(counted).toBeGreaterThan(100);
+  const sized = { ...scoped, LAND_COMBINERS: undefined, REPO_SIZE_GUARD: String(counted) } as unknown as Env;
+  const refused = await push('refs/heads/two', sized);
+  expect(refused.status).toBe(507);
+  expect(await refused.text()).toContain('REPO_SIZE_LIMIT');
+  expect(await size()).toBe(counted);
+  const commit = await commitOn(repo, owner, 'b.txt', sized);
+  expect(commit.status).toBe(507);
+  expect(commit.body.error.code).toBe('REPO_SIZE_LIMIT');
+  expect(commit.body.error.message).toContain('10 GB');
+  expect((await api(`${repo}/blob?path=a.txt`, owner, {}, sized)).body.content).toBe('0\n');
+  const under = { ...scoped, REPO_SIZE_GUARD: String(counted + 1) } as unknown as Env;
+  expect(new TextDecoder().decode(await (await push('refs/heads/three', under)).arrayBuffer())).toContain('ok refs/heads/three');
+});
+
+it('adds what API commits store to the size once it amounts to a megabyte, not on every commit', async () => {
+  const { owner, id, repo } = await repository('guard-api-size');
+  const size = async () => (await caller(scoped, id, { _system: 'derive' })({ op: 'repo_storage' })).git_bytes as number;
+  const commit = (path: string, bytes: number) =>
+    api(`${repo}/commits`, owner, { body: { ref: 'main', changes: [file(path, 'x'.repeat(bytes))], message: path, author } });
+  expect((await commit('small.txt', 1_000)).status).toBe(200);
+  expect(await size()).toBe(0);
+  expect((await commit('large.txt', 1_100_000)).status).toBe(200);
+  await waitOnExecutionContext(createExecutionContext());
+  await vi.waitFor(async () => expect(await size()).toBeGreaterThanOrEqual(1_101_000));
+});
+
+it('takes a purged file off the size, so a repository at its limit can push again', async () => {
+  const { owner, id, repo, root, agent } = await repository('guard-purge');
+  const push = async (refname: string, target: Env) =>
+    platformFetch(new Request(`https://yoneda/git/${id}.git/git-receive-pack`, { method: 'POST', headers: { authorization: `Basic ${btoa(`git:${agent.token}`)}` }, body: await branchPush(refname, root) }), target);
+  const size = async () => (await caller(scoped, id, { _system: 'derive' })({ op: 'repo_storage' })).git_bytes as number;
+  const content = 'x'.repeat(1_100_000);
+  const committed = await api(`${repo}/commits`, owner, { body: { ref: 'main', changes: [file('large.bin', content)], message: 'large', author } });
+  expect((await landOn(repo, owner, committed.body.commit, scoped)).status).toBe(200);
+  await vi.waitFor(async () => expect(await size()).toBeGreaterThanOrEqual(1_100_000));
+  const counted = await size();
+  const sized = { ...scoped, REPO_SIZE_GUARD: String(counted) } as unknown as Env;
+  expect((await push('refs/heads/refused', sized)).status).toBe(507);
+  const made = await api(`${repo}/quarantine`, owner, { body: { path: 'large.bin', reason: 'too large' } });
+  expect(made.status).toBe(200);
+  const purged = await api(`${repo}/quarantine/${made.body.record.id}/purge`, owner, { body: { confirm: made.body.record.target.id } });
+  expect([purged.status, purged.body.purged]).toEqual([200, 1]);
+  expect(await size()).toBe(counted - 1_100_000);
+  expect(new TextDecoder().decode(await (await push('refs/heads/after', sized)).arrayBuffer())).toContain('ok refs/heads/after');
 });
 
 /** Combiners running in this test against `env`, drained by `settled`. */
@@ -144,6 +205,17 @@ function combinersOf(env: () => Env) {
     },
   };
 }
+
+it('refuses a new branch at the limit, and deletes the branches that exist', async () => {
+  const { owner, repo, root } = await repository('guard-branch');
+  const refsOf = async () => Object.keys((await api(`${repo}/refs`, owner)).body.refs);
+  await api(`${repo}/refs/batch`, owner, { body: { updates: [{ ref: 'old', commit: root, expected: null }] } });
+  refusedFull(await api(`${repo}/refs/batch`, owner, { body: { updates: [{ ref: 'new', commit: root, expected: null }] } }, atLimit()));
+  expect(await refsOf()).toEqual(['refs/heads/main', 'refs/heads/old']);
+  const gone = await api(`${repo}/refs/batch`, owner, { body: { updates: [{ ref: 'old', commit: null, expected: root }] } }, atLimit());
+  expect(gone.status).toBe(200);
+  expect(await refsOf()).toEqual(['refs/heads/main']);
+});
 
 it('in batch mode refuses each new landing alone, in one pass, and answers a landed one', async () => {
   const { owner, repo } = await repository('guard-batch', batched);
@@ -173,7 +245,10 @@ it('keeps accepted work going at the limit: projection, adoption, hooks, checks,
   // Projection of the landed changeset, then branch reads that need it.
   expect(await projectChangesets(guarded, id)).toBe(1);
   expect((await api(`${repo}/refs`, owner, {}, guarded)).status).toBe(200);
-  expect((await api(`${repo}/blob?path=b.txt`, owner, {}, guarded)).body.content).toBe('b.txt\n');
+  // This landing came straight from the authority's side, as for a reader in another isolate:
+  // the published head may not show it yet, so the reader names the version it needs.
+  const reached = `min_version=${landed.items[0].version}`;
+  expect((await api(`${repo}/blob?path=b.txt&${reached}`, owner, {}, guarded)).body.content).toBe('b.txt\n');
   // A read of a commit still in its shard adopts it; checks and reviews go on it.
   expect((await api(`${repo}/commits/${commit}`, owner, {}, guarded)).status).toBe(200);
   expect((await api(`${repo}/commits/${commit}/checks`, agent, { body: { name: 'unit', status: 'pass' } }, guarded)).status).toBe(200);

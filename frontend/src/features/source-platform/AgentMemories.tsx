@@ -1,5 +1,6 @@
 // Agents → Memories: what agents and people left for later coding sessions (decisions,
-// constraints, gotchas, how-tos), newest first, filtered by anchored path, kind and status.
+// constraints, gotchas, how-tos and any kind a repository added), newest first, filtered by
+// anchored path, kind and status.
 // Each names its anchors (linked to the file on main, marked when that code changed since),
 // the commit it was written against and the session it came from. Writers add, supersede,
 // publish a session's draft, and retire; every change appends, nothing is edited away.
@@ -9,7 +10,7 @@ import type { Navigate } from '../shell/useRoute';
 import { type ComposerStart, EMPTY_COMPOSER, MemoryComposer } from './MemoryComposer';
 import { MemoryRow } from './MemoryRow';
 import {
-  MEMORY_KINDS,
+  kindOptions,
   MEMORY_STATUSES,
   type MemoryFilters,
   type MemoryKind,
@@ -19,6 +20,7 @@ import {
   NO_MEMORY_FILTERS,
   STATUS_LABELS,
 } from './memoryModel';
+import { PageToolbar } from './PageToolbar';
 import { useReadOnly } from './repoAccess';
 import { Failure, Loading } from './SourceStatus';
 import { sourceApi } from './sourceApi';
@@ -56,6 +58,9 @@ export function AgentMemories({ repo, navigate }: { repo: string; navigate: Navi
     setFilters({ ...filters, ...change });
   };
   const unfiltered = memoriesPath(repo, filters) === memoriesPath(repo, NO_MEMORY_FILTERS);
+  const filtersOn = (Object.keys(NO_MEMORY_FILTERS) as (keyof typeof NO_MEMORY_FILTERS)[]).filter(
+    (key) => filters[key] !== NO_MEMORY_FILTERS[key],
+  ).length;
   const none = Boolean(first.data) && memories.length === 0 && unfiltered;
   if (none && !first.error && !composer)
     return (
@@ -79,62 +84,71 @@ export function AgentMemories({ repo, navigate }: { repo: string; navigate: Navi
   if (first.loading && !first.data && unfiltered) return <Loading what="memories" />;
   return (
     <section aria-labelledby="memories-heading">
-      <div className="agent-head">
-        <h2 id="memories-heading">Memories</h2>
-        <div className="agent-filters">
-          <form
-            className="agent-filter"
-            onSubmit={(e) => {
-              e.preventDefault();
-              filter({ path: pathDraft });
-            }}
-          >
-            <label htmlFor="memory-path">Path</label>
-            <input
-              id="memory-path"
-              value={pathDraft}
-              placeholder="src/net.rs or src/"
-              onChange={(e) => setPathDraft(e.target.value)}
-            />
-          </form>
-          <label className="agent-filter">
-            Kind
-            <select
-              value={filters.kind}
-              onChange={(e) => filter({ kind: e.target.value as '' | MemoryKind })}
+      <PageToolbar
+        title="Memories"
+        headingId="memories-heading"
+        search={{ repo, navigate }}
+        filtered={filtersOn}
+        filters={
+          <>
+            <form
+              className="agent-filter"
+              onSubmit={(e) => {
+                e.preventDefault();
+                filter({ path: pathDraft });
+              }}
             >
-              <option value="">Any</option>
-              {MEMORY_KINDS.map((k) => (
-                <option key={k} value={k}>
-                  {k}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="agent-filter">
-            Status
-            <select
-              value={filters.status}
-              onChange={(e) => filter({ status: e.target.value as MemoryStatus })}
-            >
-              {MEMORY_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {STATUS_LABELS[s]}
-                </option>
-              ))}
-            </select>
-          </label>
-          {!readOnly && !composer && (
+              <label htmlFor="memory-path">Path</label>
+              <input
+                id="memory-path"
+                value={pathDraft}
+                placeholder="src/net.rs or src/"
+                onChange={(e) => setPathDraft(e.target.value)}
+              />
+            </form>
+            <label className="agent-filter">
+              Kind
+              <select
+                value={filters.kind}
+                onChange={(e) => filter({ kind: e.target.value as '' | MemoryKind })}
+              >
+                <option value="">Any</option>
+                {kindOptions(first.data?.kinds, filters.kind).map((k) => (
+                  <option key={k} value={k}>
+                    {k}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="agent-filter">
+              Status
+              <select
+                value={filters.status}
+                onChange={(e) => filter({ status: e.target.value as MemoryStatus })}
+              >
+                {MEMORY_STATUSES.map((s) => (
+                  <option key={s} value={s}>
+                    {STATUS_LABELS[s]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </>
+        }
+        primary={
+          !readOnly &&
+          !composer && (
             <button type="button" onClick={() => setComposer(EMPTY_COMPOSER)}>
               Add a memory
             </button>
-          )}
-        </div>
-      </div>
+          )
+        }
+      />
       {composer && (
         <MemoryComposer
           key={composer.supersedes ?? 'new'}
           repo={repo}
+          kinds={first.data?.kinds}
           start={composer}
           onSaved={() => {
             setComposer(null);

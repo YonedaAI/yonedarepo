@@ -158,7 +158,7 @@ fn contracts(read: &Value) -> Vec<Entry> {
         .collect()
 }
 
-const RULES: &str = "- Push with plain `git push` (or `yoneda push`): the files you read are declared with it, and the platform refuses the push if one changed meanwhile or your change conflicts. On a refusal, `git pull --rebase`, re-check the named paths, then push again; never force-push main.\n- Before ending, make sure your commits are pushed; this session's summary is recorded on them.\n- Leave what the code does not say (a decision, constraint or non-obvious fix) for later sessions: `yoneda memory add` or git_memory_add.";
+const RULES: &str = "- File a flight plan first: `yoneda flight-plan -m <goal>`.\n- Push with plain `git push` (or `yoneda push`): the files you read are declared with it, and the platform refuses the push if one changed meanwhile or your change conflicts. On a refusal, `git pull --rebase`, re-check the named paths, then push again; never force-push main.\n- Before ending, make sure your commits are pushed; this session's summary is recorded on them.\n- Leave what the code does not say (a decision, constraint or non-obvious fix) for later sessions: `yoneda memory add` or git_memory_add.";
 
 /// The context text and the items it carries.
 pub struct Rendered {
@@ -198,7 +198,7 @@ pub fn render_items(read: &Value, local: &Local, max: usize, now: u64) -> Render
         (around.as_str(), findings(read)),
         (traffic::TITLE, traffic::entries(&read["traffic"])),
         (
-            "Memories (decisions, constraints, gotchas, how-tos) on the files you are changing, then the newest",
+            "Memories (decisions, constraints, gotchas, how-tos, ...) on the files you are changing, then the newest",
             memories(read),
         ),
         ("Recent sessions (newest first)", sessions(read, now)),

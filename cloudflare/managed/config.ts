@@ -15,6 +15,9 @@ import type { WorkspaceAgents } from './workspace-agents';
 export interface ManagedEnv {
   /** The deployed commit, set by `cargo xtask deploy`; /health reports it. */
   BUILD_REVISION?: string;
+  /** `on`: the request id goes on every response and travels with each hop
+   * (worker/request-scope.ts). */
+  REQUEST_IDS?: string;
   REPOS: DurableObjectNamespace<RepoAgents>;
   WORKSPACES: DurableObjectNamespace<WorkspaceAgents>;
   LEDGER: DurableObjectNamespace<CreditLedger>;
@@ -86,6 +89,8 @@ export type QueueMessage =
       at?: number;
     }
   | { kind: 'resume'; repo: string; run: string }
+  /** The owner resumed automation: start what the pause stopped. */
+  | { kind: 'resumed'; repo: string }
   /** The platform's repo.purged, or a repo.deleted with no purge to come: clear its reviews. */
   | { kind: 'deleted'; repo: string }
   /** Charge the workspace's card for the pending top-up `key`. */
@@ -97,6 +102,10 @@ export type QueueMessage =
   | { kind: 'reconcile'; account: string }
   /** Push every day of an account's ledger to the revenue rollup again. */
   | { kind: 'rollup'; account: string };
+
+/** Why a run did nothing. A run stopped for automation_paused starts again on the resume. */
+export const notReviewed = (reason: string) => `Not reviewed: ${reason}`;
+export const AUTOMATION_PAUSED = 'automation_paused';
 
 export class ConfigError extends Error {}
 

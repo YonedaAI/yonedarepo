@@ -2,6 +2,7 @@
 // the PLATFORM service binding. Runs authenticate with the repository's scoped token; enabling
 // an agent forwards the signed-in caller's own credential, so only the platform decides who
 // may mint a token or register a webhook. Nothing here can land, approve or change policy.
+import { carriedHeaders } from '../worker/request-scope';
 import type { ManagedEnv } from './config';
 
 export type Json = Record<string, any>;
@@ -41,6 +42,7 @@ export class Platform {
       }
     }
     if (body !== undefined) headers.set('content-type', 'application/json');
+    for (const [name, value] of Object.entries(carriedHeaders() ?? {})) headers.set(name, value);
     const res = await this.env.PLATFORM.fetch(
       new Request(url, {
         method,
@@ -81,6 +83,12 @@ export class Platform {
   async automation(repo: string) {
     const status = await this.status(repo);
     return { paused: Boolean(status.automation?.paused), onAuto: status.landings?.agents === true };
+  }
+  /** The checks this repository's landings wait for, and whether automation is paused. */
+  async landingChecks(repo: string) {
+    const status = await this.status(repo);
+    const required: string[] = status.policy?.required_checks ?? [];
+    return { required, paused: Boolean(status.automation?.paused) };
   }
   /** The newest 200 open changes, of one branch or of those opened on purpose when asked, so
    * the platform filters first and a repository's other rows can't push the wanted one out. */

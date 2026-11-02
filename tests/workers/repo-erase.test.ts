@@ -15,7 +15,7 @@ import { api, author, bindings, delayed, drainObjects, erasedCombiners, file, qu
 
 usePlatformFixture();
 
-const off = { ...scoped, PLATFORM_OBJECT_STORE: 'r2', ARTIFACTS: undefined } as unknown as Env;
+const off = { ...scoped } as unknown as Env;
 const on = { ...off, REPO_ERASE: 'on' } as unknown as Env;
 
 /** Runs `repo`'s queued purge and erase jobs, like the consumer, until none is left. */

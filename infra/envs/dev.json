@@ -12,6 +12,17 @@
     "public_ratelimit": "2002"
   },
   "check_instances": 4,
+  "cells": [
+    {
+      "code": "weur",
+      "placement": "aws:eu-central-1",
+      "containers": "WEUR",
+      "jurisdiction": "eu",
+      "ratelimit": "2003",
+      "public_ratelimit": "2004",
+      "bound": false
+    }
+  ],
   "workers": [
     {
       "role": "superfan",
@@ -25,13 +36,28 @@
         "Containers Read (all read-only). Secrets, set from stdin (~/.config/yonedarepo/staging.env):",
         "CF_ANALYTICS_TOKEN  API token with the read permissions above",
         "SUPERFAN_READ_TOKEN bearer for GET /findings, GET /status, POST /run",
-        "New findings mail ADMIN_NOTIFY_EMAIL through Resend (superfan/notify.ts, the Secrets Store secret Resend-Yoneda), at most",
-        "8 digests a UTC day. Empty here: dev's bursts fire rules on purpose, so dev mails nobody.",
+        "New findings mail ADMIN_NOTIFY_EMAIL through Resend (superfan/notify.ts, the Secrets Store secret Resend-Yoneda): at most",
+        "8 digests a UTC day. Dev has no address, so it mails nobody.",
+        "WATCH_WIDE=on is the wide watch: the front and managed Workers (both name this Worker in tail_consumers), crons,",
+        "every Durable Object class, the land queue, every queue, reconcile mismatches and repository storage; urgent",
+        "findings mail at once, outside the digest cap, at most 6 a UTC day per signal, and a quick pass every five minutes",
+        "(*/5, the cron quick.ts names) checks only those, so a site that is down is told in minutes. The token needs no more",
+        "permissions. docs/incidents.md has what each alert means. Off: the hourly digest alone.",
+        "WATCH_FRONT_URL is the site as people reach it. DEADMAN_URL is the dead-man (role deadman), which this Worker watches back.",
+        "POST /deploys is the deploy ledger (xtask/src/deploy_ledger.rs), same bearer. RELEASE_COMPARE=on compares each release with the one before after a deploy (superfan/release.ts).",
+        "PROBES=on runs synthetic checks on the */5 cron: /health, a page, an API read and, with the optional secret PROBE_CLONE_REPO (a small public repository's id, under 1 MiB), a clone.",
+        "PROBE_LANDING=on, dev only, also lands every third pass on PROBE_LAND_REPO with PROBE_LAND_TOKEN (optional secrets; a repository token limited to it). Budget: docs/observability-plan.md.",
+        "SERVICE_LEVELS=on writes requests that died and each synthetic result to SITE_EVENTS, the dataset the platform reads back (superfan/service-points.ts).",
         "Deployed first: the dev platform names this Worker in tail_consumers."
       ],
       "secrets": [
         "CF_ANALYTICS_TOKEN",
         "SUPERFAN_READ_TOKEN"
+      ],
+      "optional_secrets": [
+        "PROBE_CLONE_REPO",
+        "PROBE_LAND_REPO",
+        "PROBE_LAND_TOKEN"
       ],
       "ephemeral": false,
       "config": {
@@ -45,20 +71,33 @@
         },
         "triggers": {
           "crons": [
-            "7 * * * *"
+            "7 * * * *",
+            "*/5 * * * *"
           ]
         },
         "vars": {
           "CF_ACCOUNT_ID": "{account_id}",
-          "ADMIN_NOTIFY_EMAIL": "",
           "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>",
           "WATCH_SCRIPT": "{prefix}-platform",
-          "WATCH_URL": "https://{prefix}-platform.{subdomain}.workers.dev",
+          "WATCH_URL": "https://api.dev.yonedarepo.com",
+          "WATCH_WIDE": "on",
+          "WATCH_FRONT_URL": "https://dev.yonedarepo.com",
+          "DEADMAN_URL": "https://{prefix}-deadman.{subdomain}.workers.dev",
+          "RELEASE_COMPARE": "off",
+          "PROBES": "off",
+          "SERVICE_LEVELS": "on",
+          "PROBE_LANDING": "off",
           "TELEMETRY_SOURCE": "cloudflare",
           "SUPERFAN_MODEL": "mimo-v2.6-flash",
           "MIMO_TOKEN_PLAN_REGION": "sgp",
           "DAILY_CAP_MICROUSD": "1000000"
         },
+        "analytics_engine_datasets": [
+          {
+            "binding": "SITE_EVENTS",
+            "dataset": "yonedarepo_dev_site_events"
+          }
+        ],
         "secrets_store_secrets": [
           {
             "binding": "MIMO_KEY",
@@ -98,14 +137,15 @@
       "role": "platform",
       "file": "wrangler.dev-platform.jsonc",
       "notes": [
+        "GITHUB_APP_ID, GITHUB_APP_SLUG and the optional secret GITHUB_APP_PRIVATE_KEY (the App's PEM): the GitHub App that reads private repositories for an import (worker/platform-github-app.ts). Any unset: no Connect, public imports only. App setup URL: https://dev.yonedarepo.com/github/connected.",
         "Dev platform Worker (dev.yonedarepo.com stack): the source platform, with its own",
-        "Durable Object namespaces, Artifacts namespace, R2,",
+        "Durable Object namespaces, R2,",
         "D1, queues, workflow, check containers and secrets, so it shares nothing with production",
         "(yonedarepo-prod-*). Browsers reach it through the dev front Worker's",
         "/api/v1 proxy (PLATFORM service binding); workers.dev stays on for direct API benches.",
         "OWNER_TOKEN  dev-only owner credential (~/.config/yonedarepo/staging.env, name kept)",
         "Run next to the data: a commit makes about ten round trips to its repository's",
-        "Durable Object, R2 (ENAM) and Artifacts, so each costs a hop to the client's colo",
+        "Durable Object and R2 (ENAM), so each costs a hop to the client's colo",
         "otherwise. New repository objects are created near the placed Worker.",
         "The dev superfan (wrangler.dev-superfan.jsonc) receives this Worker's tail",
         "events: outcomes, logs, exceptions and CPU/wall time, with no API token.",
@@ -125,7 +165,7 @@
         "S3 key pair of an R2 API token with Object Read & Write on that bucket only. Without them LFS answers 501.",
         "Clone packs (platform-pack-builder.ts): one PackBuilder container per repository (cloudflare/pack-builder/Dockerfile,",
         "its own image: yoneda-pack-builder and stock Git), started for each pack-build job and destroyed after it.",
-        "No internet or credentials: it reaches the repository's Artifacts mirror and the platform's smart HTTP only",
+        "No internet or credentials: it reaches an import's stored pack and the platform's smart HTTP only",
         "through this Worker. basic: svelte's three packs (168,943 objects) peak at 386 MiB, 675 MiB rebuilding every delta.",
         "Git over SSH (platform-ssh-gateway.ts): one SshGateway container (cloudflare/ssh-gateway/Dockerfile,",
         "its own image, never the runtime's) runs yoneda-ssh-gateway, reaching the platform only through SELF.",
@@ -143,14 +183,21 @@
         "Site traffic (worker/platform-site-traffic.ts) reads the front Worker's yonedarepo_dev_site_events dataset (SITE_EVENTS_DATASET)",
         "through the Analytics Engine SQL API: CF_ACCOUNT_ID plus the optional secret ANALYTICS_READ_TOKEN (Account Analytics Read).",
         "The same dataset's SITE_EVENTS binding takes platform requests by client kind (worker/platform-client-events.ts) while TRAFFIC_EVENTS is on.",
-        "It also takes sampled write origins (worker/platform-write-origin.ts) while REGION_SIGNALS is on; that switch stays off until the owner clears the privacy text.",
+        "It also takes sampled write origins (worker/platform-write-origin.ts) while REGION_SIGNALS is on, as it is on dev (global regions, R1).",
+        "REGION_HINT_TEST=on lets a create of a new repository named region-hint-* ask for a Durable Object location hint and adds GET /repos/<id>/where (repo-region-hint.ts), for the latency matrix; off, neither exists. Dev only: prod has no such variable.",
         "Without the token, traffic reports are unavailable and nothing else changes.",
         "ADMIN_BILLING=on adds the operators' billing routes (platform-admin-billing.ts) and starts the managed Worker's nightly reconcile from this Worker's cron; set it on the managed Worker too.",
         "LANDING_INSTRUMENTS=on: a change's page shows its Slop and Risk cards (repo-instruments.ts).",
+        "REPO_STORAGE_GUARD=on: a repository whose history database reaches 9.4 GB answers 507 REPO_FULL to new work; reads, deletes and accepted work go on (docs/runbook.md).",
+        "REPO_SIZE_GUARD=on: a repository whose Git objects reach the published 10 GB answers 507 REPO_SIZE_LIMIT to pushes and new commits (docs/runbook.md).",
         "LAND_WHEN_CLEARED=on: what can clear a Landing queues a platform_land_check job, and a repository can turn on Land when cleared (repo-land-check.ts). Set it only once every Worker on the queue knows the job: deploy with it off first (docs/runbook.md).",
-        "ASYNC_STORE=on: a create answers without Artifacts and a platform_store queue job creates the store (repo-store-create.ts). Set it only once every Worker on the queue knows the job: deploy with it off first (docs/runbook.md).",
-        "DIRECT_IMPORT=on (with FAST_IMPORT, PACK_CACHE and PUSH_BUNDLES) also fetches a public GitHub repository from the Worker when it is imported, and lands main from that pack beside Artifacts' own fetch (docs/direct-import.md).",
-        "Admin pages (/api/v1/admin, platform-admin.ts): ADMIN_ACCOUNTS lists the operator accounts (comma separated; empty: only OWNER_TOKEN/Access). The sign-up notice goes to ADMIN_NOTIFY_EMAIL (empty: EMAIL_CONTACT). Credit grants and balances call the managed Worker's /admin/accounts/<account>/credit over MANAGED with MANAGED_ADMIN_TOKEN (optional secret, the managed Worker's own value; unset: grants are refused). MANAGED binds the managed Worker, which binds this one as PLATFORM: a fresh environment deploys this Worker once without MANAGED first."
+        "AGENT_SIGNUP=on: yoneda login --agent <name> signs an agent up through the device flow (worker/platform-tokens.ts). Off, a code asking for an agent is refused; agents already signed up keep working.",
+        "NEWSLETTER=on opens the Flight log sign-up at /updates (worker/platform-newsletter.ts, D1 newsletter_subscribers). It needs the optional secret NEWSLETTER_KEY, which signs unsubscribe links: never change it while the list is in use. Unset, off or without the key: no form, nothing stored, nothing sent. privacy.md must list this data first (docs/runbook.md).",
+        "LEGAL_HOLD=on refuses every destructive path of a held repository or org and opens the hold routes (worker/platform-legal-hold.ts).",
+        "Admin pages (/api/v1/admin, platform-admin.ts): ADMIN_ACCOUNTS lists the operator accounts (comma separated; empty: only OWNER_TOKEN/Access). The sign-up notice goes to ADMIN_NOTIFY_EMAIL (empty: EMAIL_CONTACT). Credit grants and balances call the managed Worker's /admin/accounts/<account>/credit over MANAGED with MANAGED_ADMIN_TOKEN (optional secret, the managed Worker's own value; unset: grants are refused). MANAGED binds the managed Worker, which binds this one as PLATFORM: a fresh environment deploys this Worker once without MANAGED first.",
+        "REQUEST_IDS=on puts the request id on every response and carries it to Durable Objects, queue jobs and containers (worker/request-scope.ts). Off, failure lines still carry it and nothing else changes. No order to deploy in: a message or request without it mints one.",
+        "SPAN_SAMPLE=<N> keeps the Server-Timing phases of 1 request in N, and of every request over 5 seconds, as a request.spans log line and one SITE_EVENTS point, after the answer (worker/repo-span-sample.ts). off keeps none.",
+        "SERVICE_LEVELS=on writes one SITE_EVENTS point per landing, clone, push and repository create and per 10 API reads, after the answer, for the admin page (shared/service-levels.ts). Set it on this Worker and Superfan together. Budget: docs/observability-plan.md."
       ],
       "secrets": [
         "OWNER_TOKEN",
@@ -163,7 +210,9 @@
       ],
       "optional_secrets": [
         "ANALYTICS_READ_TOKEN",
-        "MANAGED_ADMIN_TOKEN"
+        "MANAGED_ADMIN_TOKEN",
+        "GITHUB_APP_PRIVATE_KEY",
+        "NEWSLETTER_KEY"
       ],
       "health": "yonedarepo-platform",
       "always_on": {
@@ -183,7 +232,11 @@
         "workers_dev": true,
         "preview_urls": false,
         "observability": {
-          "enabled": true
+          "enabled": true,
+          "traces": {
+            "enabled": false,
+            "head_sampling_rate": 0.01
+          }
         },
         "placement": {
           "mode": "targeted",
@@ -201,17 +254,21 @@
           "run_worker_first": true
         },
         "vars": {
-          "ARTIFACTS_NAMESPACE": "{prefix}",
           "LAND_MODE": "batch",
           "REPO_ERASE": "on",
-          "FAST_IMPORT": "on",
-          "DIRECT_IMPORT": "on",
+          "REPO_UNDO_DAYS": "30",
+          "LEGAL_HOLD": "on",
+          "REPO_STORAGE_GUARD": "on",
+          "REPO_SIZE_GUARD": "on",
           "BLOB_WRITE_THROUGH": "off",
+          "GITHUB_APP_ID": "5571444",
+          "GITHUB_APP_SLUG": "yonedarepo-dev-import",
           "ACCOUNT_SEARCH": "on",
           "AUDIT_LOG": "off",
           "TRAFFIC_EVENTS": "on",
           "TRAFFIC_REPORT": "on",
-          "REGION_SIGNALS": "off",
+          "REGION_SIGNALS": "on",
+          "REGION_HINT_TEST": "on",
           "PUSH_BUNDLES": "on",
           "PACK_CACHE": "on",
           "WEB_ORIGIN": "{origin}",
@@ -226,11 +283,15 @@
           "SITE_EVENTS_DATASET": "yonedarepo_dev_site_events",
           "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
           "ADMIN_BILLING": "on",
-          "ASYNC_STORE": "on",
           "LANDING_INSTRUMENTS": "on",
-          "LAND_WHEN_CLEARED": "off",
+          "LAND_WHEN_CLEARED": "on",
+          "AGENT_SIGNUP": "on",
+          "NEWSLETTER": "on",
           "ADMIN_NOTIFY_EMAIL": "",
-          "SUPPORT_EMAIL": "support@yonedalabs.ai"
+          "SUPPORT_EMAIL": "support@yonedalabs.ai",
+          "SPAN_SAMPLE": "off",
+          "SERVICE_LEVELS": "on",
+          "REQUEST_IDS": "off"
         },
         "secrets_store_secrets": [
           {
@@ -242,13 +303,6 @@
             "binding": "RESEND_API_KEY",
             "store_id": "3d9115d4fe864c54a792bcb790a763e3",
             "secret_name": "Resend-Yoneda"
-          }
-        ],
-        "artifacts": [
-          {
-            "binding": "ARTIFACTS",
-            "namespace": "{prefix}",
-            "remote": true
           }
         ],
         "durable_objects": {
@@ -266,8 +320,8 @@
               "class_name": "CheckContainer"
             },
             {
-              "name": "OBJECT_PUSHES",
-              "class_name": "ObjectPushQueue"
+              "name": "IMPORT_RUNNERS",
+              "class_name": "ImportContainer"
             },
             {
               "name": "COMMIT_SHARDS",
@@ -325,6 +379,18 @@
             "new_sqlite_classes": [
               "PackBuilder"
             ]
+          },
+          {
+            "tag": "v7",
+            "deleted_classes": [
+              "ObjectPushQueue"
+            ]
+          },
+          {
+            "tag": "v8",
+            "new_sqlite_classes": [
+              "ImportContainer"
+            ]
           }
         ],
         "containers": [
@@ -333,6 +399,21 @@
             "image": "./containers/Dockerfile",
             "image_build_context": "..",
             "instance_type": "standard-1",
+            "rollout_step_percentage": [
+              100
+            ],
+            "constraints": {
+              "regions": [
+                "ENAM"
+              ]
+            }
+          },
+          {
+            "class_name": "ImportContainer",
+            "image": "./containers/Dockerfile",
+            "image_build_context": "..",
+            "instance_type": "standard-3",
+            "max_instances": 4,
             "rollout_step_percentage": [
               100
             ],
@@ -479,6 +560,62 @@
       }
     },
     {
+      "role": "edge",
+      "file": "wrangler.dev-edge.jsonc",
+      "notes": [
+        "Dev edge Worker (worker/edge-index.ts, docs/global-scale-plan.md, cells as built): unpinned, so it runs where a request arrives, and it passes every request to the cell it belongs in over a service binding.",
+        "It holds no data. WORKSPACES is read only to find a readable name's repository. On edge.dev.yonedarepo.com until it has passed the kit there; api.dev.yonedarepo.com moves to it last (R10)."
+      ],
+      "health": "yonedarepo-edge",
+      "ephemeral": false,
+      "config": {
+        "name": "{prefix}-edge",
+        "main": "worker/edge-index.ts",
+        "compatibility_date": "2026-10-07",
+        "compatibility_flags": [
+          "nodejs_compat"
+        ],
+        "workers_dev": true,
+        "preview_urls": false,
+        "tail_consumers": [
+          {
+            "service": "{prefix}-superfan"
+          }
+        ],
+        "observability": {
+          "enabled": true,
+          "traces": {
+            "enabled": false,
+            "head_sampling_rate": 0.01
+          }
+        },
+        "routes": [
+          {
+            "pattern": "edge.dev.yonedarepo.com",
+            "custom_domain": true
+          }
+        ],
+        "vars": {
+          "CELLS": "on"
+        },
+        "services": [
+          {
+            "binding": "PLATFORM",
+            "service": "{prefix}-platform"
+          }
+        ],
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "WORKSPACES",
+              "class_name": "WorkspaceAuthority",
+              "script_name": "{prefix}-platform"
+            }
+          ]
+        }
+      }
+    },
+    {
       "role": "agents-managed",
       "file": "wrangler.dev-agents-managed.jsonc",
       "notes": [
@@ -513,7 +650,9 @@
         "and per UTC day across all accounts; unset: every refund is refused).",
         "REVENUE is this Worker's own D1, never the platform's: each ledger pushes its changed days to it",
         "with ADMIN_BILLING on (managed/ledger-rollup.ts); the platform reads /admin/billing/revenue.",
-        "Deployed before the front Worker, which binds it as MANAGED."
+        "Deployed before the front Worker, which binds it as MANAGED.",
+        "REQUEST_IDS=on puts the request id on every response and carries it to Durable Objects, queue jobs and containers (worker/request-scope.ts). Off, failure lines still carry it and nothing else changes. No order to deploy in: a message or request without it mints one.",
+        "nodejs_als gives this Worker AsyncLocalStorage, and nothing else of Node, for the shared logger (worker/log.ts)."
       ],
       "secrets": [
         "MANAGED_VAULT_KEY"
@@ -531,6 +670,14 @@
         "name": "{prefix}-agents-managed",
         "main": "managed/index.ts",
         "compatibility_date": "2026-10-07",
+        "compatibility_flags": [
+          "nodejs_als"
+        ],
+        "tail_consumers": [
+          {
+            "service": "{prefix}-superfan"
+          }
+        ],
         "d1_databases": [
           {
             "binding": "REVENUE",
@@ -556,7 +703,8 @@
           "ADMIN_BILLING": "on",
           "PROMO_CREDIT_USD": "100",
           "REFUND_MAX_USD": "500",
-          "REFUND_DAILY_USD": "1000"
+          "REFUND_DAILY_USD": "1000",
+          "REQUEST_IDS": "off"
         },
         "secrets_store_secrets": [
           {
@@ -692,7 +840,10 @@
         "underscores, not hyphens: the dataset is a table name in Analytics Engine SQL).",
         "No IP, cookie or visitor id; signed-in requests (session cookie), /api, /auth and assets are skipped.",
         "WEB_ANALYTICS_TOKEN: the Cloudflare Web Analytics site token; set, the front Worker adds the beacon to public pages; empty, none.",
-        "ADMIN_ACCOUNTS: the platform Worker's operator list, repeated here for the session answer's is_admin (the admin entry in the sidebar); keep the two equal."
+        "ADMIN_ACCOUNTS: the platform Worker's operator list, repeated here for the session answer's is_admin (the admin entry in the sidebar); keep the two equal.",
+        "REQUEST_IDS=on puts the request id on every response and carries it to Durable Objects, queue jobs and containers (worker/request-scope.ts). Off, failure lines still carry it and nothing else changes. No order to deploy in: a message or request without it mints one.",
+        "CLIENT_ERRORS=on: POST /api/client-error logs what browsers report, message and route only, rate limited by AUTH_LIMITER (worker/client-errors.ts). Off, it answers 204 and does nothing.",
+        "Built assets are served where the request arrives, without this Worker: /assets/* and /brand/* are out of run_worker_first. Pages, /api and everything else run it first."
       ],
       "secrets": [
         "OWNER_TOKEN"
@@ -708,6 +859,11 @@
         "name": "{prefix}-agents",
         "main": "worker/front-index.ts",
         "compatibility_date": "2026-10-07",
+        "tail_consumers": [
+          {
+            "service": "{prefix}-superfan"
+          }
+        ],
         "compatibility_flags": [
           "nodejs_compat"
         ],
@@ -731,22 +887,32 @@
           }
         ],
         "observability": {
-          "enabled": true
+          "enabled": true,
+          "traces": {
+            "enabled": false,
+            "head_sampling_rate": 0.01
+          }
         },
         "assets": {
           "directory": "../frontend/dist",
           "binding": "ASSETS",
           "not_found_handling": "single-page-application",
-          "run_worker_first": true
+          "run_worker_first": [
+            "/*",
+            "!/assets/*",
+            "!/brand/*"
+          ]
         },
         "vars": {
           "AUDIT_LOG": "off",
           "TRAFFIC_EVENTS": "on",
           "TRAFFIC_REPORT": "on",
-          "REGION_SIGNALS": "off",
+          "REGION_SIGNALS": "on",
           "PUBLIC_APP_ORIGIN": "{origin}",
           "WEB_ANALYTICS_TOKEN": "70b90cc7e849429fa25cc64897ebfd2b",
-          "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com"
+          "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
+          "REQUEST_IDS": "off",
+          "CLIENT_ERRORS": "off"
         },
         "services": [
           {
@@ -902,6 +1068,340 @@
           "mode": "targeted",
           "region": "aws:us-east-1"
         }
+      }
+    },
+    {
+      "role": "region-na",
+      "file": "wrangler.dev-region-na.jsonc",
+      "notes": [
+        "Dev regional client in North America (tools/fanout-bench/region-worker.js): a client far from the data for the",
+        "latency matrix (tools/platform-region-matrix.mjs) and the real-use simulation (tools/platform-real-use.mjs).",
+        "Targeted placement holds one Worker near one cloud region, so each region needs its own Worker; bench and",
+        "bench2 stay in aws:us-east-1 for the load stages' 1-against-2 comparison.",
+        "The bindings are read by its dependency probe only, which times one read of each piece from here. It runs",
+        "only those reads, plus one small object in its own test bucket, behind BENCH_KEY (from stdin, the same value as bench's).",
+        "LAND_COMBINERS reaches the instance named region-serve:<hint>, which runs the platform's routes in that region (repo-region-serve.ts, REGION_HINT_TEST)."
+      ],
+      "secrets": [
+        "BENCH_KEY"
+      ],
+      "ephemeral": false,
+      "config": {
+        "name": "{prefix}-region-na",
+        "main": "../tools/fanout-bench/region-worker.js",
+        "compatibility_date": "2026-10-07",
+        "compatibility_flags": [
+          "global_fetch_strictly_public"
+        ],
+        "workers_dev": true,
+        "preview_urls": false,
+        "placement": {
+          "mode": "targeted",
+          "region": "aws:us-east-1"
+        },
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "SOURCE_REPOS",
+              "class_name": "SourceRepository",
+              "script_name": "{prefix}-platform"
+            },
+            {
+              "name": "COMMIT_SHARDS",
+              "class_name": "CommitShard",
+              "script_name": "{prefix}-platform"
+            },
+            {
+              "name": "LAND_COMBINERS",
+              "class_name": "LandCombiner",
+              "script_name": "{prefix}-platform"
+            },
+            {
+              "name": "WORKSPACES",
+              "class_name": "WorkspaceAuthority",
+              "script_name": "{prefix}-platform"
+            }
+          ]
+        },
+        "r2_buckets": [
+          {
+            "binding": "OBJECTS",
+            "bucket_name": "{prefix}-platform-objects"
+          }
+        ],
+        "d1_databases": [
+          {
+            "binding": "INDEX",
+            "database_name": "{prefix}-platform-index"
+          }
+        ]
+      }
+    },
+    {
+      "role": "region-eu",
+      "file": "wrangler.dev-region-eu.jsonc",
+      "notes": [
+        "Dev regional client in Europe (tools/fanout-bench/region-worker.js): a client far from the data for the",
+        "latency matrix (tools/platform-region-matrix.mjs) and the real-use simulation (tools/platform-real-use.mjs).",
+        "Targeted placement holds one Worker near one cloud region, so each region needs its own Worker; bench and",
+        "bench2 stay in aws:us-east-1 for the load stages' 1-against-2 comparison.",
+        "The bindings are read by its dependency probe only, which times one read of each piece from here. It runs",
+        "only those reads, plus one small object in its own test bucket, behind BENCH_KEY (from stdin, the same value as bench's).",
+        "REGIONAL_OBJECTS is a test bucket holding one probe object. A location hint counts only when a bucket is first made, so before the first deploy: wrangler r2 bucket create {prefix}-region-weur --location weur (docs/runbook.md).",
+        "LAND_COMBINERS reaches the instance named region-serve:<hint>, which runs the platform's routes in that region (repo-region-serve.ts, REGION_HINT_TEST)."
+      ],
+      "secrets": [
+        "BENCH_KEY"
+      ],
+      "ephemeral": false,
+      "config": {
+        "name": "{prefix}-region-eu",
+        "main": "../tools/fanout-bench/region-worker.js",
+        "compatibility_date": "2026-10-07",
+        "compatibility_flags": [
+          "global_fetch_strictly_public"
+        ],
+        "workers_dev": true,
+        "preview_urls": false,
+        "placement": {
+          "mode": "targeted",
+          "region": "aws:eu-central-1"
+        },
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "SOURCE_REPOS",
+              "class_name": "SourceRepository",
+              "script_name": "{prefix}-platform"
+            },
+            {
+              "name": "COMMIT_SHARDS",
+              "class_name": "CommitShard",
+              "script_name": "{prefix}-platform"
+            },
+            {
+              "name": "LAND_COMBINERS",
+              "class_name": "LandCombiner",
+              "script_name": "{prefix}-platform"
+            },
+            {
+              "name": "WORKSPACES",
+              "class_name": "WorkspaceAuthority",
+              "script_name": "{prefix}-platform"
+            }
+          ]
+        },
+        "r2_buckets": [
+          {
+            "binding": "OBJECTS",
+            "bucket_name": "{prefix}-platform-objects"
+          },
+          {
+            "binding": "REGIONAL_OBJECTS",
+            "bucket_name": "{prefix}-region-weur"
+          }
+        ],
+        "d1_databases": [
+          {
+            "binding": "INDEX",
+            "database_name": "{prefix}-platform-index"
+          }
+        ]
+      }
+    },
+    {
+      "role": "region-ap",
+      "file": "wrangler.dev-region-ap.jsonc",
+      "notes": [
+        "Dev regional client in Asia (tools/fanout-bench/region-worker.js): a client far from the data for the",
+        "latency matrix (tools/platform-region-matrix.mjs) and the real-use simulation (tools/platform-real-use.mjs).",
+        "Targeted placement holds one Worker near one cloud region, so each region needs its own Worker; bench and",
+        "bench2 stay in aws:us-east-1 for the load stages' 1-against-2 comparison.",
+        "The bindings are read by its dependency probe only, which times one read of each piece from here. It runs",
+        "only those reads, plus one small object in its own test bucket, behind BENCH_KEY (from stdin, the same value as bench's).",
+        "REGIONAL_OBJECTS is a test bucket holding one probe object. A location hint counts only when a bucket is first made, so before the first deploy: wrangler r2 bucket create {prefix}-region-apac --location apac (docs/runbook.md).",
+        "LAND_COMBINERS reaches the instance named region-serve:<hint>, which runs the platform's routes in that region (repo-region-serve.ts, REGION_HINT_TEST)."
+      ],
+      "secrets": [
+        "BENCH_KEY"
+      ],
+      "ephemeral": false,
+      "config": {
+        "name": "{prefix}-region-ap",
+        "main": "../tools/fanout-bench/region-worker.js",
+        "compatibility_date": "2026-10-07",
+        "compatibility_flags": [
+          "global_fetch_strictly_public"
+        ],
+        "workers_dev": true,
+        "preview_urls": false,
+        "placement": {
+          "mode": "targeted",
+          "region": "aws:ap-southeast-1"
+        },
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "SOURCE_REPOS",
+              "class_name": "SourceRepository",
+              "script_name": "{prefix}-platform"
+            },
+            {
+              "name": "COMMIT_SHARDS",
+              "class_name": "CommitShard",
+              "script_name": "{prefix}-platform"
+            },
+            {
+              "name": "LAND_COMBINERS",
+              "class_name": "LandCombiner",
+              "script_name": "{prefix}-platform"
+            },
+            {
+              "name": "WORKSPACES",
+              "class_name": "WorkspaceAuthority",
+              "script_name": "{prefix}-platform"
+            }
+          ]
+        },
+        "r2_buckets": [
+          {
+            "binding": "OBJECTS",
+            "bucket_name": "{prefix}-platform-objects"
+          },
+          {
+            "binding": "REGIONAL_OBJECTS",
+            "bucket_name": "{prefix}-region-apac"
+          }
+        ],
+        "d1_databases": [
+          {
+            "binding": "INDEX",
+            "database_name": "{prefix}-platform-index"
+          }
+        ]
+      }
+    },
+    {
+      "role": "region-sa",
+      "file": "wrangler.dev-region-sa.jsonc",
+      "notes": [
+        "Dev regional client in South America (tools/fanout-bench/region-worker.js): a client far from the data for the",
+        "latency matrix (tools/platform-region-matrix.mjs) and the real-use simulation (tools/platform-real-use.mjs).",
+        "Targeted placement holds one Worker near one cloud region, so each region needs its own Worker; bench and",
+        "bench2 stay in aws:us-east-1 for the load stages' 1-against-2 comparison.",
+        "The bindings are read by its dependency probe only, which times one read of each piece from here. It runs",
+        "only those reads, plus one small object in its own test bucket, behind BENCH_KEY (from stdin, the same value as bench's).",
+        "LAND_COMBINERS reaches the instance named region-serve:<hint>, which runs the platform's routes in that region (repo-region-serve.ts, REGION_HINT_TEST)."
+      ],
+      "secrets": [
+        "BENCH_KEY"
+      ],
+      "ephemeral": false,
+      "config": {
+        "name": "{prefix}-region-sa",
+        "main": "../tools/fanout-bench/region-worker.js",
+        "compatibility_date": "2026-10-07",
+        "compatibility_flags": [
+          "global_fetch_strictly_public"
+        ],
+        "workers_dev": true,
+        "preview_urls": false,
+        "placement": {
+          "mode": "targeted",
+          "region": "aws:sa-east-1"
+        },
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "SOURCE_REPOS",
+              "class_name": "SourceRepository",
+              "script_name": "{prefix}-platform"
+            },
+            {
+              "name": "COMMIT_SHARDS",
+              "class_name": "CommitShard",
+              "script_name": "{prefix}-platform"
+            },
+            {
+              "name": "LAND_COMBINERS",
+              "class_name": "LandCombiner",
+              "script_name": "{prefix}-platform"
+            },
+            {
+              "name": "WORKSPACES",
+              "class_name": "WorkspaceAuthority",
+              "script_name": "{prefix}-platform"
+            }
+          ]
+        },
+        "r2_buckets": [
+          {
+            "binding": "OBJECTS",
+            "bucket_name": "{prefix}-platform-objects"
+          }
+        ],
+        "d1_databases": [
+          {
+            "binding": "INDEX",
+            "database_name": "{prefix}-platform-index"
+          }
+        ]
+      }
+    },
+    {
+      "role": "deadman",
+      "file": "wrangler.dev-deadman.jsonc",
+      "notes": [
+        "Dev dead-man (cloudflare/superfan/deadman.ts): says so when Superfan stops. Every five minutes it reads",
+        "Superfan's public /heartbeat over the network and mails ADMIN_NOTIFY_EMAIL through Resend after 3 bad checks",
+        "in a row, then at most every 6 hours. Its own script, cron and state, and it imports nothing from Superfan;",
+        "Superfan reads its /health in turn. A cron Worker because Cloudflare's Health Checks need a Pro zone, and",
+        "yonedarepo.com is Free; docs/incidents.md says why. No secrets of its own. Last in deploy order: Superfan",
+        "must be up before the first check."
+      ],
+      "secrets": [],
+      "ephemeral": false,
+      "config": {
+        "name": "{prefix}-deadman",
+        "main": "superfan/deadman.ts",
+        "compatibility_date": "2026-10-07",
+        "workers_dev": true,
+        "preview_urls": false,
+        "observability": {
+          "enabled": true
+        },
+        "triggers": {
+          "crons": [
+            "*/5 * * * *"
+          ]
+        },
+        "vars": {
+          "SUPERFAN_URL": "https://{prefix}-superfan.{subdomain}.workers.dev",
+          "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>"
+        },
+        "secrets_store_secrets": [
+          {
+            "binding": "RESEND_API_KEY",
+            "store_id": "3d9115d4fe864c54a792bcb790a763e3",
+            "secret_name": "Resend-Yoneda"
+          }
+        ],
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "STATE",
+              "class_name": "DeadmanState"
+            }
+          ]
+        },
+        "migrations": [
+          {
+            "tag": "v1",
+            "new_sqlite_classes": [
+              "DeadmanState"
+            ]
+          }
+        ]
       }
     }
   ],

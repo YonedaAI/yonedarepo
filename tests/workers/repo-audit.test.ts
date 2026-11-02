@@ -6,16 +6,16 @@ import { env as bindings, runInDurableObject } from 'cloudflare:test';
 import { expect, it, vi } from 'vitest';
 import { withWaitUntil } from '../../cloudflare/worker/background';
 import { purgeJob } from '../../cloudflare/worker/repo-admin';
+import { deliverHook } from '../../cloudflare/worker/repo-hooks';
 import { caller } from '../../cloudflare/worker/repo-ops';
 import type { Env, Json } from '../../cloudflare/worker/types';
 import { auditLog } from '../../cloudflare/worker/workspace';
-import { api, author, drainObjects, fakeArtifacts, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, drainObjects, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
 const on = { ...scoped, AUDIT_LOG: 'on' } as unknown as Env;
 const undo = { ...on, REPO_UNDO_DAYS: '30' } as unknown as Env;
-const purging = { ...on, ARTIFACTS: { ...on.ARTIFACTS, delete: async () => {} } } as unknown as Env;
 const policy = { required_checks: [], approvals: 0 };
 type Auth = { cookie: string };
 
@@ -150,14 +150,13 @@ it("an account's token acts as the account", async () => {
 it('a fork and an import are creates, and a fork names its parent', async () => {
   const alice = { cookie: await signup('audit_forks') };
   await makeOrg(alice, 'acme');
-  const artifacts = { ...fakeArtifacts, get: async (name: string) => ({ ...(await fakeArtifacts.get(name)), fork: async () => ({}) }) };
   const workflows = { create: async (options: any) => ({ id: options.id }) };
-  const target = { ...on, ARTIFACTS: artifacts, PLATFORM_IMPORT: workflows } as unknown as Env;
+  const target = { ...on, PLATFORM_IMPORT: workflows } as unknown as Env;
   const parent = await makeRepo(alice, 'acme', 'app', target);
   await drainObjects(target);
   const forked = await api(`/repos/${parent}/fork`, alice, { body: { name: 'mine', owner: 'acme', policy } }, target);
   expect(forked.status, JSON.stringify(forked.body)).toBe(200);
-  const imported = await api('/repos/import', alice, { body: { name: 'pulled', owner: 'acme', url: 'https://git.example/src.git', branch: 'main', max_commits: 2 } }, target);
+  const imported = await api('/repos/import', alice, { body: { name: 'pulled', owner: 'acme', url: 'https://github.com/acme/src.git', branch: 'main' } }, target);
   expect(imported.status, JSON.stringify(imported.body)).toBe(200);
   const rows = await repoRows('acme');
   expect(rows.map((r) => r.details.name)).toEqual(['app', 'mine', 'pulled']);
@@ -196,7 +195,7 @@ it('a create that fails after the authority accepted it leaves nothing in the lo
   expect(made.status).toBe(400);
   const job = queued.find((m) => m.kind === 'platform_purge');
   expect(job).toBeDefined();
-  await purgeJob(purging, job);
+  await purgeJob(on, job);
   expect(await repoRows('acme')).toEqual([]);
 });
 
@@ -249,8 +248,19 @@ it("a purge copies what is waiting: a repository's last event outlives the erase
   vi.spyOn(console, 'warn').mockImplementation(() => {});
   await api(`/repos/${id}?confirm=app`, alice, { method: 'DELETE' }, broken());
   expect(await waiting(id)).toBe(1);
-  await purgeJob(purging, queued.find((m) => m.kind === 'platform_purge'));
+  await purgeJob(on, queued.find((m) => m.kind === 'platform_purge'));
   expect(kinds(await repoRows('acme'))).toEqual(['repo.created', 'repo.deleted']);
+});
+
+it("an owner's purge reaches the org log with who asked, before the repository goes", async () => {
+  const alice = { cookie: await signup('audit_purge_now') };
+  await makeOrg(alice, 'acme');
+  const id = await makeRepo(alice, 'acme');
+  await api(`/repos/${id}?confirm=app`, alice, { method: 'DELETE' }, undo);
+  expect((await api(`/repos/${id}/purge`, alice, { body: {} }, undo)).status).toBe(200);
+  const rows = await repoRows('acme');
+  expect(kinds(rows)).toEqual(['repo.created', 'repo.deleted', 'repo.purge_requested']);
+  expect(rows.at(-1)).toMatchObject({ actor: 'user:audit_purge_now', details: { repo: id, name: 'app' } });
 });
 
 it('copies run after the answer, so a slow log costs the action nothing', async () => {
@@ -266,4 +276,53 @@ it('copies run after the answer, so a slow log costs the action nothing', async 
   expect(later.length).toBeGreaterThan(0);
   await Promise.all(later);
   expect(kinds(await repoRows('acme'))).toContain('repo.visibility_changed');
+});
+
+it('forced landings and the other break-glass actions reach the log, once each, with the reason', async () => {
+  const alice = { cookie: await signup('audit_glass') };
+  await makeOrg(alice, 'acme');
+  const gates = { required_checks: ['unit'], approvals: 1, runners: { unit: { command: ['true'], timeout_seconds: 30 } } };
+  const created = await api('/repos', alice, { body: { name: 'app', owner: 'acme', policy: gates, files: [file('a.md', 'a\n')], author } }, on);
+  expect(created.status, JSON.stringify(created.body)).toBe(200);
+  const id = created.body.id as string;
+  const made = await api(`/repos/${id}/commits`, alice, { body: { ref: 'main', changes: [file('a.md', 'b\n')], message: 'two', author } }, on);
+  const land = { action: 'land', ref: 'main', commit: made.body.commit, expected_old: created.body.commit, reason: 'the runner is down' };
+  const forced = await api(`/repos/${id}/break-glass`, alice, { body: land }, on);
+  expect(forced.status, JSON.stringify(forced.body)).toBe(200);
+  // A retry is the same landing, and the same row.
+  expect((await api(`/repos/${id}/break-glass`, alice, { body: land }, on)).body.already).toBe(true);
+  await api(`/repos/${id}/break-glass`, alice, { body: { action: 'pause_automation', reason: 'hold on' } }, on);
+  const rows = (await repoRows('acme')).filter((row) => row.kind === 'repo.break_glass');
+  expect(rows.map((row) => row.details.action)).toEqual(['land', 'pause_automation']);
+  expect(rows[0].actor).toBe('user:audit_glass');
+  expect(rows[0].details).toMatchObject({ repo: id, name: 'app', ref: 'refs/heads/main', commit: made.body.commit, reason: 'the runner is down' });
+  expect(await waiting(id)).toBe(0);
+});
+
+it('off, a forced landing records nothing', async () => {
+  const alice = { cookie: await signup('audit_glass_off') };
+  await api('/orgs', alice, { body: { name: 'acme' } }, scoped);
+  const id = (await api('/repos', alice, { body: { name: 'app', owner: 'acme', policy, files: [file('a.md', 'a\n')], author } }, scoped)).body.id as string;
+  const paused = await api(`/repos/${id}/break-glass`, alice, { body: { action: 'pause_automation', reason: 'hold on' } }, scoped);
+  expect(paused.status, JSON.stringify(paused.body)).toBe(200);
+  expect(await waiting(id)).toBe(0);
+  expect((await auditLog(scoped, 'acme', { op: 'audit_read' })).items).toEqual([]);
+});
+
+it('a webhook switched off for its failures reaches the log, from a tombstone too', async () => {
+  const alice = { cookie: await signup('audit_hook') };
+  await makeOrg(alice, 'acme');
+  const id = await makeRepo(alice, 'acme');
+  const hook = await api(`/repos/${id}/hooks`, alice, { body: { url: 'https://ci.example.com/hook/tok3n?key=abc', events: ['repo'] } }, on);
+  expect(hook.status, JSON.stringify(hook.body)).toBe(200);
+  await runInDurableObject(bindings.SOURCE_REPOS.get(bindings.SOURCE_REPOS.idFromName(id)), (_, state) => {
+    state.storage.sql.exec('UPDATE hooks SET failures=49');
+  });
+  await api(`/repos/${id}?confirm=app`, alice, { method: 'DELETE' }, on);
+  await deliverHook(on, id, hook.body.id, async () => new Response('no', { status: 500 }));
+  const row = (await repoRows('acme')).at(-1);
+  expect(row?.kind).toBe('webhook.disabled');
+  expect(row?.actor).toBe('platform:hooks');
+  expect(row?.details).toMatchObject({ repo: id, id: String(hook.body.id), host: 'ci.example.com' });
+  expect(JSON.stringify(row)).not.toContain('tok3n');
 });

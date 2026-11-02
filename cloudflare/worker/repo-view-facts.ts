@@ -7,7 +7,9 @@
 // bundled ranged reads; the derive job builds each new head's object before anyone asks.
 // A caller limited to a directory grant never reads or writes a revision's object (it is
 // built from files the caller may not see): its view uses per-file facts instead.
+
 import { afterAnswer } from './background';
+import { log } from './log';
 import { compute } from './repo-compute';
 import { factsKey, factsName, recordsFor } from './repo-contracts';
 import { inBatches } from './repo-git-objects';
@@ -79,7 +81,7 @@ export async function viewFacts(ctx: RepoContext, tree: string): Promise<ViewFac
   // After the answer: a lost write only costs the next view its speed.
   await afterAnswer(() =>
     (whole ? storeRevision(ctx, name, built) : storeFiles(ctx, wanted, fresh)).catch((e) =>
-      console.warn(`view facts not stored: ${e?.message ?? e}`),
+      log.warn('view.facts_not_stored', { error: e }),
     ),
   );
   return built;

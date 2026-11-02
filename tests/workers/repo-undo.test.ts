@@ -9,17 +9,18 @@ import { toolsOf } from '../../cloudflare/worker/account-mcp';
 import { platformJob } from '../../cloudflare/worker/platform-entrypoint';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { sweepDeleted } from '../../cloudflare/worker/repo-deleted';
+import { purgeRepository } from '../../cloudflare/worker/repo-admin';
 import { eraseJob } from '../../cloudflare/worker/repo-erase';
 import { deliverHook } from '../../cloudflare/worker/repo-hooks';
 import { caller } from '../../cloudflare/worker/repo-ops';
 import { quarantineJob } from '../../cloudflare/worker/repo-quarantine';
 import type { Env } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
-import { api, author, bindings, drainObjects, fakeQueue, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, fakeQueue, bindings, drainObjects, failingOp, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
-const off = { ...scoped, PLATFORM_OBJECT_STORE: 'r2', ARTIFACTS: undefined, ADMIN_ACCOUNTS: 'undo_ops' } as unknown as Env;
+const off = { ...scoped, ADMIN_ACCOUNTS: 'undo_ops' } as unknown as Env;
 const on = { ...off, REPO_UNDO_DAYS: '30' } as unknown as Env;
 /** A window that has passed by the next line: the authority's clock is the real one. */
 const short = { ...off, REPO_UNDO_DAYS: '0.000001' } as unknown as Env;
@@ -39,6 +40,8 @@ const remove = (who: { cookie: string }, id: string, name: string, target: Env =
   api(`/repos/${id}?confirm=${name}`, who, del, target);
 const restore = (who: any, id: string, body: any = {}, target: Env = on) =>
   api(`/repos/${id}/restore`, who, { body }, target);
+const purge = (who: any, id: string, target: Env = on) =>
+  api(`/repos/${id}/purge`, who, { body: {} }, target);
 
 /** Delivers one queued job as the queue does, reporting how it settled. */
 async function deliver(body: any, target: Env = on) {
@@ -138,7 +141,7 @@ it('restores with reads, clones, members and the original date back, tokens stil
   expect(await advertised.text()).toContain('refs/heads/main');
   expect((await api(`/repos/${id}/refs`, { token }, {}, on)).status).toBe(401);
   // Everything a deletion stopped is started again.
-  expect(queued.map((m) => m.kind)).toEqual(expect.arrayContaining(['platform_project', 'platform_objects', 'platform_hooks', 'platform_quarantine', 'platform_lfs_sweep']));
+  expect(queued.map((m) => m.kind)).toEqual(expect.arrayContaining(['platform_objects', 'platform_hooks', 'platform_quarantine', 'platform_lfs_sweep']));
   // The repository's name is held, so its readable path resolves.
   expect((await api('/resolve/undo_back/back', who, {}, on)).body.id).toBe(id);
 });
@@ -305,11 +308,7 @@ it('the sweep sends a due purge once, small batches at a time, and looks again m
 
 it('takes back a failed create at once, window or not', async () => {
   const who = { cookie: await signup('undo_back_out') };
-  const down = { ...on, PLATFORM_QUEUE: { ...fakeQueue, send: async (message: any) => {
-    if (message.kind === 'platform_project') throw new Error('internal error; reference = abc123');
-    return fakeQueue.send(message);
-  } } } as unknown as Env;
-  const refused = await api('/repos', who, { body: { name: 'failed', files: [file('a.txt', 'a\n')], author } }, down);
+  const refused = await api('/repos', who, { body: { name: 'failed', files: [file('a.txt', 'a\n')], author } }, failingOp(on, 'repo_import'));
   expect(refused.status).toBe(503);
   const [job] = purges();
   expect(job.job_id).toMatch(/^now-r/);
@@ -395,6 +394,200 @@ it('an operator purges now, audited, and nobody else can', async () => {
   expect((await api(path, operator, { body: {} }, on)).status).toBe(200);
 });
 
+it('its owner purges it now: the row goes at once, nothing restores it, and it is audited', async () => {
+  const who = { cookie: await signup('undo_purged') };
+  const { id } = await made(who, 'forever');
+  await remove(who, id, 'forever');
+  queued.length = 0;
+
+  const done = await purge(who, id);
+  expect([done.status, done.body]).toEqual([200, { purged: true }]);
+  // Before any job has run: the list has dropped it and the mark has beaten a restore.
+  expect((await api('/repos/deleted', who, {}, on)).body.repos).toEqual([]);
+  const refused = await restore(who, id);
+  expect([refused.status, refused.body.error.code]).toEqual([404, 'GONE']);
+  expect((await stored(`platform/v1/${id}/`)).length).toBeGreaterThan(0);
+
+  const jobs = purges(id);
+  expect(jobs.map((m) => m.job_id)).toEqual([`now-${id}`]);
+  expect(await deliver(jobs[0])).toBe('ack');
+  expect(await stored(`platform/v1/${id}/`)).toEqual([]);
+  expect(await row(id)).toBeNull();
+  expect((await workspace(on, 'undo_purged', { op: 'deleted_repo_list' })).repos).toEqual([]);
+  expect((await restore(who, id)).body.error.code).toBe('GONE');
+
+  const audited = await bindings.INDEX.prepare("SELECT actor,target,detail FROM admin_audit WHERE action='repo.purge_owner'").first<any>();
+  expect(audited).toMatchObject({ actor: 'undo_purged', target: id });
+  expect(JSON.parse(audited.detail)).toMatchObject({ name: 'forever', owner: 'undo_purged', queued: true });
+  // Its name was free already, and stays so.
+  expect((await made(who, 'forever')).id).not.toBe(id);
+});
+
+it('only its owner purges it', async () => {
+  const who = { cookie: await signup('undo_mine') };
+  const admin = { cookie: await signup('undo_admin') };
+  const stranger = { cookie: await signup('undo_stranger') };
+  const { id } = await made(who, 'mine');
+  const other = await made(who, 'other');
+  expect((await api(`/repos/${id}/members`, who, { body: { account: 'undo_admin', role: 'admin' } }, on)).status).toBe(200);
+  const issue = async (name: string, grant: any) =>
+    ({ token: (await api('/tokens', who, { body: { name, ...grant } }, on)).body.token as string });
+  const reader = await issue('reader', { scopes: ['repo:read'] });
+  const elsewhere = await issue('elsewhere', { scopes: ['repo:admin'], repos: [other.id] });
+
+  const live = await purge(who, id);
+  expect([live.status, live.body.error.code]).toEqual([409, 'CONFLICT']);
+  await remove(who, id, 'mine');
+  queued.length = 0;
+  for (const [caller_, status] of [[admin, 404], [stranger, 404], [reader, 403], [elsewhere, 403]] as const)
+    expect((await purge(caller_, id)).status, JSON.stringify(caller_)).toBe(status);
+  expect(purges(id)).toEqual([]);
+  expect((await api('/repos/deleted', who, {}, on)).body.repos).toHaveLength(1);
+  // Nothing they sent got in the way of a restore.
+  expect((await restore(who, id)).status).toBe(200);
+});
+
+it('a token never purges, the owner\'s own included, and is told why', async () => {
+  const who = { cookie: await signup('undo_token_purge') };
+  const { id } = await made(who, 'kept');
+  const created = await api('/tokens', who, { body: { name: 'admin', scopes: ['repo:admin'] } }, on);
+  const token = { token: created.body.token as string };
+  // A stolen token can delete, and the window is what saves the repository from it.
+  expect((await remove(token, id, 'kept')).status).toBe(200);
+  queued.length = 0;
+  const refused = await purge(token, id);
+  expect([refused.status, refused.body.error.code]).toEqual([403, 'FORBIDDEN']);
+  expect(refused.body.error.message).toMatch(/signed in/);
+  expect(refused.body.error.message).not.toMatch(/break-glass/i);
+  const reader = (await api('/tokens', who, { body: { name: 'reader', scopes: ['repo:read'] } }, on)).body.token as string;
+  const narrow = await purge({ token: reader }, id);
+  expect([narrow.status, narrow.body.error.message]).toEqual([403, refused.body.error.message]);
+  expect(purges(id)).toEqual([]);
+  expect((await api('/repos/deleted', who, {}, on)).body.repos).toHaveLength(1);
+  expect((await bindings.INDEX.prepare("SELECT COUNT(*) AS n FROM admin_audit WHERE action='repo.purge_owner'").first<any>()).n).toBe(0);
+  expect((await restore(token, id)).status).toBe(200);
+});
+
+it('a repository under a legal hold is refused with the reason, and still restores', async () => {
+  const held = { ...on, LEGAL_HOLD: 'on' } as unknown as Env;
+  const owner = { cookie: await signup('undo_purge_held') };
+  const org = 'undo_purge_held_org';
+  expect((await api('/orgs', owner, { body: { name: org } }, held)).status).toBe(200);
+  const { id } = await made(owner, 'held', held, org);
+  await remove(owner, id, 'held', held);
+  expect((await api(`/orgs/${org}/hold`, owner, { body: {} }, held)).status).toBe(200);
+  queued.length = 0;
+
+  const refused = await purge(owner, id, held);
+  expect([refused.status, refused.body.error.code]).toEqual([423, 'LEGAL_HOLD']);
+  expect(refused.body.error.message).toMatch(/legal hold/);
+  expect(purges(id)).toEqual([]);
+  expect((await api(`/orgs/${org}/repos/deleted`, owner, {}, held)).body.repos).toHaveLength(1);
+  expect((await stored(`platform/v1/${id}/`)).length).toBeGreaterThan(0);
+  expect((await restore(owner, id, {}, held)).status).toBe(200);
+});
+
+it('a repeated purge is safe, whenever it comes', async () => {
+  const who = { cookie: await signup('undo_again') };
+  const { id } = await made(who, 'again');
+  const hook = await api(`/repos/${id}/hooks`, who, { body: { url: 'https://example.com/hook', events: ['repo'] } }, on);
+  const sent: (string | null)[] = [];
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    sent.push(new Request(input as RequestInfo, init).headers.get('x-yoneda-event'));
+    return new Response('ok');
+  });
+  await remove(who, id, 'again');
+  await deliverHook(on, id, hook.body.id);
+  queued.length = 0;
+
+  expect((await purge(who, id)).status).toBe(200);
+  expect((await purge(who, id)).status).toBe(200);
+  const jobs = purges(id);
+  expect(jobs).toHaveLength(2);
+  expect(await Promise.all(jobs.map((job) => deliver(job)))).toEqual(['ack', 'ack']);
+  await deliverHook(on, id, hook.body.id);
+  await deliverHook(on, id, hook.body.id);
+  expect(sent).toEqual(['repo.deleted', 'repo.purged']);
+  expect(await row(id)).toBeNull();
+
+  // Long after it finished: the same answer, and nothing to send.
+  queued.length = 0;
+  const later = await purge(who, id);
+  expect([later.status, later.body]).toEqual([200, { purged: true }]);
+  expect(purges(id)).toEqual([]);
+  expect(await row(id)).toBeNull();
+  expect((await workspace(on, 'undo_again', { op: 'deleted_repo_list' })).repos).toEqual([]);
+});
+
+it('a purge whose job was lost is sent again by the sweep', async () => {
+  const who = { cookie: await signup('undo_lost_job') };
+  const { id } = await made(who, 'lost');
+  await remove(who, id, 'lost');
+  expect((await purge(who, id)).status).toBe(200);
+  // Not a day of this window has passed, and the job it just sent has time to run.
+  expect(await sweep(0.1)).toEqual([]);
+  const jobs = await sweep(0.5);
+  expect(jobs.map((m) => m.job_id)).toEqual([`due-${id}`]);
+  expect(await deliver(jobs[0])).toBe('ack');
+  expect(await stored(`platform/v1/${id}/`)).toEqual([]);
+  expect(await row(id)).toBeNull();
+});
+
+it('a purge that could not be queued is finished by asking again', async () => {
+  const who = { cookie: await signup('undo_retry') };
+  const { id } = await made(who, 'retry');
+  await remove(who, id, 'retry');
+  const down = { ...on, PLATFORM_QUEUE: { ...fakeQueue, send: async () => { throw new Error('queue is down'); } } } as unknown as Env;
+  expect((await purge(who, id, down)).status).toBeGreaterThanOrEqual(500);
+  // Asked for is asked for: it can't be restored, and the row stays to be asked again.
+  expect((await restore(who, id)).body.error.code).toBe('GONE');
+  expect((await api('/repos/deleted', who, {}, on)).body.repos).toHaveLength(1);
+  queued.length = 0;
+  expect((await purge(who, id)).status).toBe(200);
+  expect(purges(id)).toHaveLength(1);
+  expect((await api('/repos/deleted', who, {}, on)).body.repos).toEqual([]);
+});
+
+it('a purged fork takes nothing from its parent', async () => {
+  const who = { cookie: await signup('undo_fork_purge') };
+  const { id: parent } = await made(who, 'parent');
+  const forked = await api(`/repos/${parent}/fork`, who, { body: { name: 'child' } }, on);
+  const fork = forked.body.id as string;
+  await remove(who, fork, 'child');
+  queued.length = 0;
+  expect((await purge(who, fork)).status).toBe(200);
+  expect(await runPurges(fork)).toEqual(['ack']);
+  expect((await api(`/repos/${parent}/blob?path=a.txt`, who, {}, on)).status).toBe(200);
+  expect((await remove(who, parent, 'parent')).status).toBe(200);
+});
+
+it('with the window off there is nothing to purge but what it promised', async () => {
+  const who = { cookie: await signup('undo_purge_off') };
+  const plain = await made(who, 'plain', off);
+  await remove(who, plain.id, 'plain', off);
+  expect((await purge(who, plain.id, off)).status).toBe(404);
+  const promised = await made(who, 'promised');
+  await remove(who, promised.id, 'promised');
+  expect((await purge(who, promised.id, off)).status).toBe(200);
+  expect((await api('/repos/deleted', who, {}, off)).body.repos).toEqual([]);
+});
+
+it('an organization\'s owners purge its repositories, and its members cannot', async () => {
+  const owner = { cookie: await signup('undo_org_purger') };
+  const member = { cookie: await signup('undo_org_helper') };
+  const org = 'undo_org_purge';
+  expect((await api('/orgs', owner, { body: { name: org } }, on)).status).toBe(200);
+  expect((await api(`/orgs/${org}/members`, owner, { body: { account: 'undo_org_helper', role: 'member' } }, on)).status).toBe(200);
+  const { id } = await made(owner, 'team', on, org);
+  await remove(owner, id, 'team');
+  expect((await purge(member, id)).status).toBe(404);
+  expect((await purge(owner, id)).status).toBe(200);
+  expect((await api(`/orgs/${org}/repos/deleted`, owner, {}, on)).body.repos).toEqual([]);
+  const audited = await bindings.INDEX.prepare("SELECT actor,detail FROM admin_audit WHERE action='repo.purge_owner' AND target=?").bind(id).first<any>();
+  expect(audited.actor).toBe('undo_org_purger');
+  expect(JSON.parse(audited.detail).owner).toBe(org);
+});
+
 it('an org lists and restores its own, and a gone org purges on schedule', async () => {
   const owner = { cookie: await signup('undo_org_owner') };
   const member = { cookie: await signup('undo_org_member') };
@@ -474,4 +667,108 @@ it('tokens need repo:admin to list or restore', async () => {
   expect((await restore(reader, id)).status).toBe(403);
   expect((await api('/repos/deleted', admin, {}, on)).body.repos).toHaveLength(1);
   expect((await restore(admin, id)).status).toBe(200);
+});
+
+// What a build older than the purge mark left: objects gone, the digest as it always was.
+async function purgedByAnOlderBuild(id: string, target: Env) {
+  await purgeRepository(target, id, { skipWindow: true });
+  const stub = bindings.SOURCE_REPOS.get(bindings.SOURCE_REPOS.idFromName(id));
+  await runInDurableObject(stub, (_: unknown, state: DurableObjectState) =>
+    state.storage.sql.exec("UPDATE repo_settings SET policy_digest='digest-of-an-older-build'"));
+}
+const tombstone = (id: string) =>
+  runInDurableObject(bindings.SOURCE_REPOS.get(bindings.SOURCE_REPOS.idFromName(id)), (_: unknown, state: DurableObjectState) =>
+    state.storage.sql.exec('SELECT name,deleted_at,policy_digest,object_store FROM repo_settings').toArray());
+const edgeCopy = (repo: string, id: string) => caches.default.match(new Request(`https://objects.yoneda.internal/${repo}/${id}`));
+
+it('refuses a tombstone an older build purged, serves nothing from the edge, and leaves it as it was', async () => {
+  const who = { cookie: await signup('undo_hollow') };
+  const { id } = await made(who, 'hollow', off);
+  const read = await api(`/repos/${id}/blob?path=a.txt`, who, {}, off);
+  expect(read.status).toBe(200);
+  await remove(who, id, 'hollow', off);
+  await purgedByAnOlderBuild(id, off);
+  expect(await stored(`platform/v1/${id}/`)).toEqual([]);
+  expect(await edgeCopy(id, read.body.id)).toBeTruthy();
+  const before = await tombstone(id);
+
+  const refused = await restore(who, id);
+  expect([refused.status, refused.body.error.code]).toEqual([404, 'GONE']);
+  expect(refused.body.error.message).toMatch(/can.t be restored|too long ago/);
+  expect(await tombstone(id)).toEqual(before);
+  expect(await row(id)).toBeNull();
+  // The edge still holds a copy, and nothing leads to it.
+  expect((await api(`/repos/${id}/blob?path=a.txt`, who, {}, on)).body.error.code).toBe('GONE');
+  expect((await api(`/repos/${id}/refs`, who, {}, on)).body.error.code).toBe('GONE');
+  expect((await api('/repos', who, {}, on)).body.repos.map((r: any) => r.id)).not.toContain(id);
+  // Its name stays free.
+  expect((await made(who, 'hollow')).id).not.toBe(id);
+});
+
+it('refuses a listed tombstone whose objects another build purged, and keeps it listed', async () => {
+  const who = { cookie: await signup('undo_rollback') };
+  const { id } = await made(who, 'rolled');
+  const read = await api(`/repos/${id}/blob?path=a.txt`, who, {}, on);
+  await remove(who, id, 'rolled');
+  await purgedByAnOlderBuild(id, on);
+  expect(await edgeCopy(id, read.body.id)).toBeTruthy();
+  const before = await tombstone(id);
+
+  const refused = await restore(who, id);
+  expect([refused.status, refused.body.error.code]).toEqual([404, 'GONE']);
+  expect(refused.body.error.message).toMatch(/can.t be restored/);
+  expect(await tombstone(id)).toEqual(before);
+  expect(await row(id)).not.toBeNull();
+  expect((await api(`/repos/${id}/blob?path=a.txt`, who, {}, on)).body.error.code).toBe('GONE');
+});
+
+it('a tombstone the window never scheduled is not restored, even with its objects in place', async () => {
+  const who = { cookie: await signup('undo_unlisted') };
+  const { id } = await made(who, 'unlisted', off);
+  await remove(who, id, 'unlisted', off);
+  expect((await stored(`platform/v1/${id}/`)).length).toBeGreaterThan(0);
+  const refused = await restore(who, id);
+  expect([refused.status, refused.body.error.code]).toEqual([404, 'GONE']);
+  expect(refused.body.error.message).toMatch(/too long ago/);
+  expect((await api(`/repos/${id}/refs`, who, {}, on)).body.error.code).toBe('GONE');
+});
+
+it('D1 losing the row costs nothing: the owner\'s record says it is on the schedule', async () => {
+  const who = { cookie: await signup('undo_lost_row') };
+  const { id } = await made(who, 'lostrow');
+  await remove(who, id, 'lostrow');
+  await bindings.INDEX.prepare('DELETE FROM platform_deleted_repos WHERE id=?').bind(id).run();
+  expect((await restore(who, id)).status).toBe(200);
+  expect((await api(`/repos/${id}/blob?path=a.txt`, who, {}, on)).status).toBe(200);
+});
+
+it('restores what has no objects to lose, and what is still only staged', async () => {
+  const who = { cookie: await signup('undo_early') };
+  const empty = await api('/repos', who, { body: { name: 'empty', policy: OPEN } }, on);
+  expect(empty.status, JSON.stringify(empty.body)).toBe(200);
+  await remove(who, empty.body.id, 'empty');
+  const back = await restore(who, empty.body.id);
+  expect(back.status, JSON.stringify(back.body)).toBe(200);
+
+  const fresh = await api('/repos', who, { body: { name: 'fresh', policy: OPEN, files: [file('a.txt', 'a\n')], author } }, on);
+  expect(fresh.status, JSON.stringify(fresh.body)).toBe(200);
+  await remove(who, fresh.body.id, 'fresh');
+  expect((await restore(who, fresh.body.id)).status).toBe(200);
+  await drainObjects(on);
+  expect((await api(`/repos/${fresh.body.id}/blob?path=a.txt`, who, {}, on)).status).toBe(200);
+});
+
+it('a look at the objects that fails restores nothing and says to try again', async () => {
+  const who = { cookie: await signup('undo_look') };
+  const { id } = await made(who, 'look');
+  await remove(who, id, 'look');
+  const before = await tombstone(id);
+  const OBJECTS = new Proxy(bindings.OBJECTS, {
+    get: (real, key) => (key === 'head' ? () => Promise.reject(new Error('R2 is down')) : Reflect.get(real, key)),
+  });
+  const failing = await restore(who, id, {}, { ...on, OBJECTS } as unknown as Env);
+  expect([failing.status, failing.body.error.code]).toEqual([503, 'OVERLOADED']);
+  expect(failing.body.error.message).toMatch(/try again/i);
+  expect(await tombstone(id)).toEqual(before);
+  expect((await restore(who, id)).status).toBe(200);
 });

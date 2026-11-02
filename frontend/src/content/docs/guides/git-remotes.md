@@ -92,7 +92,7 @@ These apply to HTTPS and SSH alike. Pushes through the [`yoneda::` helper](/docs
 | Object bytes per push | 2 GiB |
 | Push options per push | 64 |
 
-A file over 50 MB is accepted with a warning suggesting Git LFS.
+A file over 50 MB is accepted with a warning suggesting Git LFS. Every limit, and how large a repository can grow, is on [Limits](/docs/reference/limits).
 
 ## What a push accepts
 
@@ -110,6 +110,7 @@ How a push to `main` lands next to other writers is on [Concurrent pushes](/docs
 |---|---|
 | `Push exceeds 64 MiB of pack data` | Push fewer commits at a time, or push through the `yoneda::` helper |
 | `Push has an object of N MiB; the limit is 100 MiB per file` | Track the file with Git LFS |
+| `REPO_SIZE_LIMIT` or `REPO_FULL` | The repository reached a [limit](/docs/reference/limits): start a new repository or contact support |
 | `secret detected in <path>:<line>` | A file holds a credential; see [Security](/docs/security#what-a-push-is-checked-for) |
 | `Not a Git repository URL: use /git/<repository id>.git` | The URL needs the repository's id, not its name |
 | `ssh: Could not resolve hostname` or a hang on connect | The `ProxyCommand` entry is missing, or `cloudflared` is not installed: run `yoneda ssh setup` |

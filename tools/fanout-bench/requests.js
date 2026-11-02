@@ -4,6 +4,9 @@
 import { OWN_TRAFFIC } from '../own-traffic.mjs';
 
 const AUTHOR = { name: 'Fanout bench', email: 'bench@yonedarepo.invalid' };
+// The deployed client reaches only public addresses (global_fetch_strictly_public), and of
+// those only dev's: load tests never touch prod. A local run of it may target a local platform.
+export const TARGET = /^(https:\/\/(yonedarepo-dev-[a-z0-9-]+\.mlong-f01\.workers\.dev|(api\.)?dev\.yonedarepo\.com)|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/;
 
 /** Client latency (from here) and the target's Server-Timing total of one request. */
 export async function timed(url, init, timeoutMs) {
@@ -19,7 +22,9 @@ export async function timed(url, init, timeoutMs) {
   const body = await response.json().catch(() => ({}));
   const timing = response.headers.get('server-timing') ?? '';
   const server = Number(timing.match(/total;dur=([\d.]+)/)?.[1]);
-  return { ...at, status: response.status, ms: Date.now() - started, server: Number.isFinite(server) ? server : null, timing, body };
+  // The colo this request entered Cloudflare at, which is where this client really ran.
+  const edge = response.headers.get('cf-ray')?.split('-')[1] ?? null;
+  return { ...at, status: response.status, ms: Date.now() - started, server: Number.isFinite(server) ? server : null, timing, edge, body };
 }
 
 export const headers = (w) => ({
@@ -35,6 +40,7 @@ const brief = (r) =>
     ms: r.ms,
     server: r.server,
     timing: r.timing,
+    edge: r.edge,
     version: r.body?.version,
     // The snapshot a commit began from: what its declared reads were read at.
     base_version: r.body?.base_version,

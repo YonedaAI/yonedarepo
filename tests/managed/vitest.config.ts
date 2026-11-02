@@ -12,6 +12,7 @@ export default defineConfig({
       miniflare: {
         name: 'yoneda-managed-test',
         compatibilityDate: '2026-10-07',
+        compatibilityFlags: ['nodejs_als'],
         durableObjects: {
           REPOS: { className: 'RepoAgents', useSQLite: true },
           LEDGER: { className: 'CreditLedger', useSQLite: true },

@@ -31,10 +31,15 @@
 // REVENUE is this Worker's own D1, never the platform's: each ledger pushes its changed days to it
 // with ADMIN_BILLING on (managed/ledger-rollup.ts); the platform reads /admin/billing/revenue.
 // Deployed before the front Worker, which binds it as MANAGED.
+// REQUEST_IDS=on puts the request id on every response and carries it to Durable Objects, queue jobs and containers (worker/request-scope.ts). Off, failure lines still carry it and nothing else changes. No order to deploy in: a message or request without it mints one.
+// nodejs_als gives this Worker AsyncLocalStorage, and nothing else of Node, for the shared logger (worker/log.ts).
 {
   "$schema": "../node_modules/wrangler/config-schema.json",
   "account_id": "f011d0ee02b23cad26b4b38151b204ad",
   "compatibility_date": "2026-10-07",
+  "compatibility_flags": [
+    "nodejs_als"
+  ],
   "containers": [
     {
       "class_name": "HarnessContainer",
@@ -154,14 +159,20 @@
       "service": "yonedarepo-prod-platform"
     }
   ],
+  "tail_consumers": [
+    {
+      "service": "yonedarepo-prod-superfan"
+    }
+  ],
   "vars": {
-    "ADMIN_BILLING": "off",
+    "ADMIN_BILLING": "on",
     "AI_GATEWAY_PROVIDERS": "claude=anthropic,codex=openai,zai=custom-zai,mimo=custom-mimo",
     "AI_GATEWAY_URL": "https://gateway.ai.cloudflare.com/v1/f011d0ee02b23cad26b4b38151b204ad/yonedarepo-prod-managed-agents",
     "PROMO_CREDIT_USD": "100",
     "PUBLIC_URL": "https://managed.yonedarepo.com",
     "REFUND_DAILY_USD": "1000",
-    "REFUND_MAX_USD": "500"
+    "REFUND_MAX_USD": "500",
+    "REQUEST_IDS": "off"
   },
   "workers_dev": false,
   "workflows": [

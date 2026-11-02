@@ -1,6 +1,6 @@
 //! The YonedaRepo source platform authority: recorded commits, refs, the hash-chained
 //! transaction log, checks, reviews and landing. It knows API principals only, never
-//! agents or runs. Every operation is synchronous SQL; object-store I/O (Artifacts, R2)
+//! agents or runs. Every operation is synchronous SQL; object-store I/O (R2)
 //! happens in the adapter before `repo_record_commit` and never inside a transaction.
 //!
 //! Event sourcing covers refs only: the log replays to the ref map at any version
@@ -45,8 +45,10 @@ mod check_run_reads;
 mod checkpoints;
 mod checks;
 mod classes;
+mod commit_authors;
 mod contracts;
 mod deletion;
+mod dir_activity;
 mod direct_landings;
 mod dispatch;
 mod erase;
@@ -60,12 +62,12 @@ mod go_around;
 pub(crate) mod grants;
 mod head;
 mod history;
-mod history_fill;
-mod history_import;
+mod history_reset;
 mod hook_delivery;
 mod hook_events;
 mod hook_url;
 mod hooks;
+mod insights;
 mod land;
 mod land_batch;
 mod land_gates;
@@ -83,7 +85,6 @@ pub(crate) mod op;
 mod org_access;
 pub(crate) mod policy;
 pub(crate) mod prepare;
-mod projection;
 mod projection_plan;
 mod pushed;
 mod quarantine;
@@ -100,7 +101,6 @@ mod session_range;
 mod sessions;
 pub(crate) mod staging;
 pub(crate) mod status;
-mod store_lineage;
 mod submitted;
 mod symbols;
 mod tags;

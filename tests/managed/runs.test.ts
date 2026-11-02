@@ -441,7 +441,7 @@ describe('each agent on its fixtures', () => {
       const check = hit.platform.checks[0];
       expect(check.name).toBe(definition.check);
       if (definition.value_type === 'pass_fail') expect([check.status, check.evidence.value]).toEqual(['fail', 'fail']);
-      // Slop never blocks by default: it reports a level and passes the check.
+      // Slop fails its check from high by default, so a medium reading reports and passes.
       else expect([check.status, check.evidence.value]).toEqual(['pass', 'medium']);
 
       const clean = await ready(agent, 'clean');
@@ -452,7 +452,7 @@ describe('each agent on its fixtures', () => {
     });
   }
 
-  it('slop-review holds findings at medium and, by default, never blocks', async () => {
+  it('slop-review holds findings at medium, which passes by default', async () => {
     const h = await ready('slop-review');
     fakeGateway();
     const high = { summary: 's', findings: [{ ...FIXTURES['slop-review'].trigger.expected[0], severity: 'high' }] };
@@ -484,17 +484,25 @@ describe('each agent on its fixtures', () => {
       title: `Dead value ${n}`,
       why: 'Never read.',
     });
-    /** A slop review of a six-line change that reports `result`, blocking at `block_at`. */
-    async function review(result: Record<string, unknown>, block_at: 'high' | null = 'high') {
+    /** A slop review of a six-line change that reports `result`, blocking at `block_at` (left
+     * out: at the default). */
+    async function review(result: Record<string, unknown>, block_at?: 'high' | null) {
       const h = harness();
       h.platform.change({ files: [{ path: 'src/cart.ts', patch: diff }] });
       expect((await put(h, 'slop-review', { repos: [h.platform.repo] })).status).toBe(200);
-      expect((await put(h, 'slop-review', { settings: { block_at } })).status).toBe(200);
+      if (block_at !== undefined)
+        expect((await put(h, 'slop-review', { settings: { block_at } })).status).toBe(200);
       fakeGateway();
       h.harness.scripts = [{ result: { summary: 's', ...result } }];
       await deliver(h, opened(h));
       return { outcome: await run(h, h.created[0]), check: h.platform.checks[0] };
     }
+
+    it('fails the check with nothing set, and passes once an owner says Never', async () => {
+      const findings = [0, 1, 2, 3, 4].map((n) => finding(n));
+      expect((await review({ findings })).check).toMatchObject({ status: 'fail' });
+      expect((await review({ findings }, null)).check).toMatchObject({ status: 'pass' });
+    });
 
     it('comes from five medium findings on lines of the change, and blocks at high', async () => {
       const { outcome, check } = await review({ findings: [0, 1, 2, 3, 4].map((n) => finding(n)) });
@@ -502,7 +510,7 @@ describe('each agent on its fixtures', () => {
       expect(check).toMatchObject({ status: 'fail', evidence: expect.objectContaining({ value: 'high' }) });
     });
 
-    it('is only a reading until the owner blocks on it', async () => {
+    it('is only a reading once the owner says Never', async () => {
       const { check } = await review({ findings: [0, 1, 2, 3, 4].map((n) => finding(n)) }, null);
       expect(check).toMatchObject({ status: 'pass', evidence: expect.objectContaining({ value: 'high' }) });
     });

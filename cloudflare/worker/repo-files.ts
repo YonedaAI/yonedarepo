@@ -39,6 +39,16 @@ export async function listTree(ctx: RepoContext, args: Json) {
   return { commit: where.commit, path, entries };
 }
 
+/** What last changed each entry of a directory, one read for a page of the Code tab. Only what
+ * the caller may list is asked about. */
+export async function treeActivity(ctx: RepoContext, args: Json) {
+  const path = String(args.dir ?? '');
+  const { entries } = await listTree(ctx, { ...args, path });
+  const at = args.at === undefined || args.at === '' ? {} : { at: Number(args.at) };
+  const names = (entries as TreeEntry[]).map((e) => e.name);
+  return ctx.call({ op: 'repo_dir_activity', ref: args.ref ?? 'main', path, names, ...at });
+}
+
 /** A path's entry at main's published head: from the latest changeset that wrote it
  * (walked in its landed commit's tree), else from the projected head. */
 async function publishedEntry(objects: RepoObjects, head: Json, path: string) {

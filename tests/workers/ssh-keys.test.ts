@@ -360,8 +360,8 @@ it('logs the gateway\'s own state for wrangler tail, from the gateway only', asy
   const logged = vi.spyOn(console, 'log').mockImplementation(() => {});
   const exited = { event: 'tunnel.exited', detail: { exit_code: 1, tail: ['ERR failed to connect'] } };
   expect(await internal('status', exited)).toEqual({ status: 200, body: { recorded: true } });
-  expect(logged).toHaveBeenCalledWith(
-    JSON.stringify({ event: 'ssh.tunnel.exited', exit_code: 1, tail: ['ERR failed to connect'] }),
+  expect(logged.mock.calls.map(([line]) => JSON.parse(String(line)))).toContainEqual(
+    expect.objectContaining({ event: 'ssh.tunnel.exited', exit_code: 1, tail: ['ERR failed to connect'] }),
   );
   expect((await internal('status', { event: 'evil"event' })).status).toBe(400);
   expect((await internal('status', exited, 'Bearer nope')).status).toBe(401);

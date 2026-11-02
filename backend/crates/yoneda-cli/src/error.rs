@@ -32,6 +32,10 @@ impl Error {
     pub fn usage(message: impl Into<String>) -> Self {
         Self::with(message, EXIT_USAGE, ErrorCode::Usage)
     }
+    /// No usable credential on this machine.
+    pub fn auth(message: impl Into<String>) -> Self {
+        Self::with(message, 1, ErrorCode::Auth)
+    }
     pub fn conflict(message: impl Into<String>) -> Self {
         Self::with(message, EXIT_CONFLICT, ErrorCode::Conflict)
     }

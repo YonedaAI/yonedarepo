@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { SuperfanEnv } from '../../cloudflare/superfan/config';
 import { superfanFetch } from '../../cloudflare/superfan/index';
-import { DAILY_EMAIL_CAP, noticesOn, renderNotice } from '../../cloudflare/superfan/notify';
+import { mailSite, renderNotice } from '../../cloudflare/superfan/mail-render';
+import { DAILY_EMAIL_CAP, noticesOn } from '../../cloudflare/superfan/notify';
 import { runWatch } from '../../cloudflare/superfan/watch';
 import {
   analytics,
@@ -10,7 +11,6 @@ import {
   feed,
   hour,
   RESEND_KEY,
-  SCRIPT,
   testEnv,
 } from './fake-platform';
 
@@ -44,10 +44,11 @@ describe('superfan notices', () => {
     expect(mail.headers.get('authorization')).toBe(`Bearer ${RESEND_KEY}`);
     expect(mail.headers.get('idempotency-key')).toMatch(/^superfan\/[0-9a-f]{64}$/);
     expect(mail.body).toMatchObject({ to: [OWNER], from: e.EMAIL_FROM });
-    expect(mail.body.subject).toBe(`[${SCRIPT}] 1 new finding`);
-    expect(mail.body.text).toContain('SourceRepository errors at 10%');
-    expect(mail.body.text).toContain('Group SourceRepository errors by status');
-    // Exception samples stay out of the mail; the model's words and numbers go in.
+    expect(mail.body.subject).toBe('[dev] 10% of repository calls failing');
+    expect(mail.body.text).toContain('Since 20 Oct, 15:07 UTC. Seen once.');
+    expect(mail.body.html).toContain('10% of repository calls failing');
+    // Exception samples stay out of the mail, and so does the model's prose.
+    expect(mail.body.text).not.toContain('SourceRepository errors at 10%');
     expect(mail.body.text).not.toContain('abc.def.ghi');
     for (const later of [1, 2]) {
       clock.now = start + later * HOUR;
@@ -95,7 +96,7 @@ describe('superfan notices', () => {
     clock.now = Date.parse('2026-10-21T00:07:00Z');
     await pass(e, d, clock.now);
     expect(calls.mail).toHaveLength(1);
-    expect(calls.mail[0].body.subject).toBe(`[${SCRIPT}] 2 new findings`);
+    expect(calls.mail[0].body.subject).toBe('[dev] 10% of repository calls failing +1 more');
   });
 
   it('mails a reopened finding only when the last mail is older than the reopen window', async () => {
@@ -127,7 +128,7 @@ describe('superfan notices', () => {
     await pass(e, d, start);
     expect(calls.model).toHaveLength(0);
     expect(calls.mail).toHaveLength(1);
-    expect(calls.mail[0].body.text).toContain('error_rate=');
+    expect(calls.mail[0].body.text).toContain('10% of repository calls failing');
   });
 
   it('mails telemetry findings from a pass that had nothing to evaluate', async () => {
@@ -136,7 +137,7 @@ describe('superfan notices', () => {
     const d = deps(e, { now: start });
     expect(await runWatch(e, d)).toMatchObject({ outcome: 'telemetry_failed' });
     expect(calls.mail).toHaveLength(1);
-    expect(calls.mail[0].body.text).toContain('telemetry');
+    expect(calls.mail[0].body.text).toContain('Monitoring');
   });
 
   it('is off without an address, a sender or the key, and counts nothing', async () => {
@@ -184,10 +185,11 @@ describe('superfan notices', () => {
     expect(await status(testEnv())).toMatchObject({ notices: 'off' });
   });
 
-  it('renders a finding without a narrative from its summary', () => {
-    const { subject, text } = renderNotice(SCRIPT, [
+  it('renders a finding without a narrative', () => {
+    const { subject, text } = renderNotice(mailSite(testEnv()), [
       {
         id: 3,
+        dedup_key: 'telemetry:tail_silent',
         component: 'telemetry',
         kind: 'telemetry',
         occurrences: 2,
@@ -196,8 +198,7 @@ describe('superfan notices', () => {
         narrative: null,
       } as never,
     ]);
-    expect(subject).toBe(`[${SCRIPT}] 1 new finding`);
-    expect(text).toContain('#3 telemetry (telemetry)');
-    expect(text).toContain('No tail events');
+    expect(subject).toBe('[dev] Monitoring has stopped receiving events');
+    expect(text).toContain('Since 20 Oct, 15:07 UTC. Seen twice.');
   });
 });

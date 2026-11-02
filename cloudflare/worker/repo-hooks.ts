@@ -4,11 +4,14 @@
 // landings, ref moves and checks, then one delivery job per hook that sends its payloads
 // in order, signed, with retries and backoff. A job that runs out of queue retries ends
 // in the platform dead-letter queue; its payload stays first in line for the next job.
+
 import { deferred } from './background';
 import { hmacHex, toHex } from './hmac';
+import { log } from './log';
 import { touchActivity } from './repo-activity';
-import { audited } from './repo-audit';
+import { audited, auditRepo } from './repo-audit';
 import { ApiError, caller, type Json, type RepoContext } from './repo-ops';
+import { carriedQueue } from './request-scope';
 import type { Env, Envelope } from './types';
 
 const TIMEOUT_MS = 10_000;
@@ -72,7 +75,12 @@ export async function hooksRoute(
 }
 
 export async function dispatchHooks(env: Env, repo: string, job = 'fanout') {
-  await env.PLATFORM_QUEUE.send({ v: 1, kind: 'platform_hooks', repo_id: repo, job_id: job });
+  await carriedQueue(env.PLATFORM_QUEUE).send({
+    v: 1,
+    kind: 'platform_hooks',
+    repo_id: repo,
+    job_id: job,
+  });
 }
 
 /** After a request moved a ref or recorded a check: a fan-out job, sent after the response
@@ -81,9 +89,7 @@ export async function dispatchHooks(env: Env, repo: string, job = 'fanout') {
 export async function notifyHooks(env: Env, repo: string) {
   const send = () =>
     Promise.all([
-      dispatchHooks(env, repo).catch((e) =>
-        console.warn(`hook dispatch failed: ${e?.message ?? e}`),
-      ),
+      dispatchHooks(env, repo).catch((e) => log.warn('hooks.dispatch_failed', { error: e })),
       touchActivity(env, repo),
     ]);
   if (!deferred(send)) await send();
@@ -105,14 +111,7 @@ export async function fanoutHooks(env: Env, repo: string): Promise<number[]> {
     }
     await Promise.all(hooks.map((id) => dispatchHooks(env, repo, `hook:${id}`)));
   } catch (e: any) {
-    console.error(
-      JSON.stringify({
-        event: 'hooks.fanout_failed',
-        repo,
-        code: e?.code ?? 'HOOKS',
-        message: String(e?.message ?? e).slice(0, 200),
-      }),
-    );
+    log.error('hooks.fanout_failed', { repo, code: e?.code ?? 'HOOKS', error: e });
   }
   return hooks;
 }
@@ -176,7 +175,12 @@ export async function deliverHook(
       ...attempt,
     });
     if (settled.stale) return {};
-    if (!settled.delivered) return settled.active ? { retry: seconds(settled.retry_after_ms) } : {};
+    if (!settled.delivered) {
+      if (settled.active) return { retry: seconds(settled.retry_after_ms) };
+      // Switched off for its failures, which the org's log says.
+      await auditRepo(env, repo);
+      return {};
+    }
     if (!settled.more) return {};
   }
   await dispatchHooks(env, repo, `hook:${id}`);

@@ -1,11 +1,13 @@
-// The public home (`/` signed out): hero, the problems YonedaRepo answers, the "Build on
+// The public home (`/` signed out): hero, a Flight Path, the problems YonedaRepo answers, the "Build on
 // YonedaRepo" feature tour, the comparison with plain Git and a closing call to action.
 import { ArrowRight, Check } from 'lucide-react';
 import type { Navigate } from '../shell/useRoute';
 import { BUILD_ON } from './buildOn';
 import { SiteBuildOn } from './SiteBuildOn';
 import { SiteCompare } from './SiteCompare';
+import { SiteFlightPath } from './SiteFlightPath';
 import { siteLink } from './SiteLayout';
+import { SiteRadar } from './SiteRadar';
 import { SiteWorksWith } from './SiteWorksWith';
 
 /** The problem rows: the pain (struck through), our answer, and the tour panel that solves it. */
@@ -44,19 +46,18 @@ export function SiteHome({ navigate }: { navigate: Navigate }) {
       <section className="site-band site-hero" aria-labelledby="hero-heading">
         <h1 id="hero-heading">The Git platform built for agents</h1>
         <p className="site-hero-lead">
-          Git-compatible hosting where agents and people commit, review and land on the server.
-          Every session’s context stays with the code, and a thousand writers can share one branch.
+          Host, review and land code with agents on a Git platform that gives every change a Flight
+          Path, built for the scale and throughput of agentic coding.
         </p>
         <div className="site-hero-actions">
-          <a
-            className="site-button site-button-large"
-            {...siteLink({ page: 'signin', mode: 'signup' }, navigate)}
-          >
-            Get started <ArrowRight size={18} aria-hidden="true" />
+          <a className="site-button" {...siteLink({ page: 'signin', mode: 'signup' }, navigate)}>
+            Get started <ArrowRight size={14} aria-hidden="true" />
           </a>
           <SiteWorksWith />
         </div>
       </section>
+
+      <SiteFlightPath />
 
       <section className="site-band site-problem-band" aria-labelledby="problems-heading">
         <div className="site-problem-intro">
@@ -90,14 +91,17 @@ export function SiteHome({ navigate }: { navigate: Navigate }) {
       <SiteCompare />
 
       <section className="site-band site-band-cta" aria-labelledby="cta-heading">
+        <SiteRadar />
         <h2 id="cta-heading">Give your agents a repository built for them.</h2>
-        <p>Free platform. Bring stock Git, the CLI or MCP.</p>
-        <a
-          className="site-button site-button-large"
-          {...siteLink({ page: 'signin', mode: 'signup' }, navigate)}
-        >
-          Get started free
-        </a>
+        <p>Works with Git, our CLI and any MCP client.</p>
+        <div className="site-cta-actions">
+          <a className="site-button" {...siteLink({ page: 'updates' }, navigate)}>
+            Get updates
+          </a>
+          <a className="site-more" {...siteLink({ page: 'signin', mode: 'signup' }, navigate)}>
+            Get started
+          </a>
+        </div>
       </section>
     </>
   );

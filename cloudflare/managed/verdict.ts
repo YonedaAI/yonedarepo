@@ -87,3 +87,30 @@ export async function postNoPlan(env: ManagedEnv, p: RunParams, agent: ManagedAg
     no_plan: true,
   });
 }
+
+/** A run that ended with no reading, on a check a landing waits for. Nothing else would ever
+ * answer that check, so it fails and the comment says what to do. A check nobody requires stays
+ * silent: with Land when cleared any failed check goes around, and an outage is no fault of the
+ * work. Why the run failed stays on the run, for the owner: this comment is on the change. */
+export async function postNoReading(env: ManagedEnv, p: RunParams, agent: ManagedAgentDefinition) {
+  const connection = await repoStub(env, p.repo).connection();
+  if (!connection || connection.revoked) return;
+  const platform = new Platform(env, { token: connection.token });
+  const { required, paused } = await platform.landingChecks(p.repo);
+  if (paused || !required.includes(agent.check)) return;
+  const change = await platform.change(p.repo, p.change);
+  if (change.status !== 'open' || change.head !== p.head) return;
+  const ref = reference(p, 'summary');
+  if (!hasRef((change.comments ?? []) as { body?: string }[], ref)) {
+    const line = `**${agent.defaults.name}** could not finish on \`${p.head.slice(0, 10)}\`, so this head has no reading. Push again to run it.`;
+    await platform.comment(p.repo, p.change, `${line}${footer(agent, ref)}`).catch((e) => {
+      if (!commentRefused(e)) throw e;
+    });
+  }
+  await platform.check(p.repo, p.head, agent.check, 'fail', {
+    agent: agent.id,
+    run: p.run,
+    value: null,
+    no_reading: true,
+  });
+}

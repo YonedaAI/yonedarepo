@@ -7,7 +7,7 @@ use super::{
 use crate::Result;
 use std::collections::BTreeMap;
 
-/// Supplies existing trees by id (Artifacts, a cache, or a test map).
+/// Supplies existing trees by id (the object tiers, a cache, or a test map).
 pub trait TreeSource {
     fn tree(&self, id: &ObjectId) -> Result<Vec<TreeEntry>>;
 }

@@ -120,6 +120,7 @@ export class FakePlatform {
         owner: this.account,
         viewer: { owner, principal: owner ? 'user:owner' : 'user:reader' },
         automation: { paused: this.paused ? { by: 'user:owner' } : null },
+        policy: { required_checks: this.required },
         ...(this.autoAgents === undefined ? {} : { landings: { create: true, agents: this.autoAgents } }),
       });
     const del = /^\/repos\/(r[0-9a-f]{20})\/(tokens|hooks)\/([^/]+)$/.exec(path);
@@ -167,6 +168,7 @@ export class FakePlatform {
       const held = this.scopes.get(String(req.headers.get('authorization')).replace('Bearer yrp_fixture_', ''));
       if (this.required.includes(body.name) && !held?.includes(`check:${body.name}`))
         return refuse('FORBIDDEN', 403);
+      if (this.paused) return refuse('AUTOMATION_PAUSED', 409);
       this.checks.push({ commit: check[1], ...body });
       return ok({ recorded: true });
     }
@@ -225,6 +227,8 @@ export class FakeHarness {
   ended = new Set<string>();
   responses: Response[] = [];
   scripts: Script[] = [];
+  /** Runs at each poll: what happens while a run is going. */
+  onPoll?: () => void;
 
   constructor(private readonly managed: () => ManagedEnv) {}
 
@@ -250,6 +254,7 @@ export class FakeHarness {
       status: async () => {
         const script = this.scripts[index] ?? this.scripts.at(-1) ?? {};
         polls++;
+        this.onPoll?.();
         if (polls === 1)
           for (const call of script.calls ?? []) this.responses.push(await this.call(this.started[index].params, call));
         if (polls < (script.polls ?? 1)) return { phase: 'running' };

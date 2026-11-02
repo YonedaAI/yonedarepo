@@ -10,7 +10,7 @@ import { DOCS_HOME, formatSitePage, type SitePage } from './siteRoute';
 
 /** index.html's own description: the home page's, and any page's without one. */
 export const DEFAULT_DESCRIPTION =
-  'Git-compatible hosting where agents and people commit, review and land on the server. Every session’s context stays with the code.';
+  'Host, review and land code with agents on a Git platform that gives every change a Flight Path, built for the scale and throughput of agentic coding. Every session’s context stays with the code.';
 const HOME_TITLE = 'YonedaRepo — The Git platform built for agents';
 
 export type SeoRoute = {
@@ -61,6 +61,9 @@ export function pageTitle(site: SitePage): string {
       return LEGAL_PAGES[site.doc].title;
     case 'signin':
       return site.mode === 'login' ? 'Sign in' : 'Create your account';
+    case 'updates':
+    case 'updates-link':
+      return 'Flight log';
   }
 }
 
@@ -97,7 +100,7 @@ export function seoManifest(): SeoManifest {
     ...FEATURE_PAGES.map((page) => route({ page: 'feature', slug: page.slug }, page.headline)),
     route(
       { page: 'pricing' },
-      `Every platform feature is free. Metered usage is billed at our provider's list cost plus ${margin}%.`,
+      `Metered usage is billed at our provider's list cost plus ${margin}%.`,
     ),
     ...Object.values(DOCS_PAGES).map((page) => {
       const site: SitePage = { page: 'docs', slug: page.slug };
@@ -121,6 +124,10 @@ export function seoManifest(): SeoManifest {
     route({ page: 'vision' }, COMPANY_PAGES.vision.summary),
     route({ page: 'legal', doc: 'terms' }, LEGAL_PAGES.terms.summary),
     route({ page: 'legal', doc: 'privacy' }, LEGAL_PAGES.privacy.summary),
+    route(
+      { page: 'updates' },
+      'Release, feature and engineering updates from YonedaRepo, by email.',
+    ),
     route({ page: 'signin', mode: 'login' }, '', { sitemap: false }),
     route({ page: 'signin', mode: 'signup' }, '', { sitemap: false }),
   ];

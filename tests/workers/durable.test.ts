@@ -1,7 +1,7 @@
 // A Durable Object reset (deploy, eviction) mid-call is retried once on a fresh stub;
 // other failures are not.
-import { expect, it } from 'vitest';
-import { durableJson, failureCode, transient } from '../../cloudflare/worker/durable';
+import { expect, it, vi } from 'vitest';
+import { durableJson, failureCode, noteFull, REPO_FULL_MESSAGE, transient } from '../../cloudflare/worker/durable';
 
 const stubs = (failures: unknown[]) => {
   let made = 0;
@@ -43,6 +43,22 @@ it.each(['Exceeded the maximum database size.', 'database or disk is full: SQLIT
   const failure = await durableJson(s.stub, 'https://x/', '{}').catch((e) => e);
   expect(s.made).toBe(1);
   expect(failure.code).toBe('REPO_FULL');
+  expect(failure.message).toBe(REPO_FULL_MESSAGE);
   expect(failureCode(failure)).toBe('REPO_FULL');
   expect(transient(failure)).toBe(false);
+});
+
+// A full repository stops landing, so nothing runs the job that samples its size: the
+// refusal itself has to tell an operator, once in a while rather than per request.
+it('logs a refusal for a full repository at most once in ten minutes per repository', () => {
+  const lines = vi.spyOn(console, 'warn').mockImplementation(() => {});
+  const seen = () => lines.mock.calls.map(([line]) => JSON.parse(String(line))).filter((l) => l.event === 'repo.full');
+  noteFull('r-note', 'repo_land', 1_000);
+  noteFull('r-note', 'repo_land', 1_000 + 9 * 60_000);
+  noteFull('r-other', 'repo_land', 1_000);
+  expect(seen().map((l) => l.repo)).toEqual(['r-note', 'r-other']);
+  noteFull('r-note', 'repo_land', 1_000 + 10 * 60_000);
+  expect(seen()).toHaveLength(3);
+  expect(seen()[0].operation).toBe('repo_land');
+  lines.mockRestore();
 });

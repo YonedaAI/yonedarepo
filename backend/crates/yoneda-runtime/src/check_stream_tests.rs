@@ -135,3 +135,60 @@ async fn the_server_takes_a_streamed_check_with_its_secret_only() {
         .unwrap();
     assert_eq!(ok.json::<Value>().await.unwrap()["outcome"], "pass");
 }
+
+/// Collects what a subscriber writes, as the container's stderr would.
+#[derive(Clone, Default)]
+struct Written(std::sync::Arc<std::sync::Mutex<Vec<u8>>>);
+impl std::io::Write for Written {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0.lock().unwrap().extend_from_slice(bytes);
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn a_check_logs_the_request_it_descends_from() {
+    let written = Written::default();
+    let sink = written.clone();
+    // Global, not `set_default`: with one subscriber, a test on another thread that reaches an
+    // event first caches it as disabled. Other tests' lines carry no id, so they are filtered.
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::fmt()
+            .json()
+            .with_writer(move || sink.clone())
+            .finish(),
+    )
+    .unwrap();
+    let app = crate::check_server::router("s3cret".into());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let answer = reqwest::Client::new()
+        .post(format!("http://{address}/check/stream"))
+        .bearer_auth("s3cret")
+        .header("x-request-id", "8f1c2d3e4a5b6c7d-SJC")
+        .body(body(
+            &["sh", "-c", "cat a.txt; exit 1"],
+            &[(1, "a.txt", b"private")],
+            true,
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(answer.status(), 200);
+    let text = String::from_utf8(written.0.lock().unwrap().clone()).unwrap();
+    let lines: Vec<serde_json::Value> = text
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let events: Vec<&str> = lines
+        .iter()
+        .filter(|l| l["fields"]["request_id"] == "8f1c2d3e4a5b6c7d-SJC")
+        .filter_map(|l| l["fields"]["event"].as_str())
+        .collect();
+    assert_eq!(events, ["check.started", "check.finished"]);
+    assert!(!text.contains("private"), "{text}");
+}

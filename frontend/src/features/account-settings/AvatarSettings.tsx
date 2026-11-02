@@ -1,8 +1,10 @@
 // Account settings → Profile: the account's picture and name. The picture is the one shown now
 // (an upload, the GitHub or Google picture from the last sign-in, or the initial), an upload
 // (PNG, JPEG or WebP up to 1 MB; the platform checks the bytes too) and removing an upload.
+
 import { useRef, useState } from 'react';
 import { SettingsRow } from '../../components/SettingsSection';
+import { accountName } from '../../lib/accountName';
 import type { AccountIdentity } from '../../lib/types';
 import { Avatar } from '../shell/Avatar';
 import { Failure } from '../source-platform/SourceStatus';
@@ -60,11 +62,12 @@ export function AvatarSettings({
     }
   }
   const source = identity.avatar_source ?? 'none';
+  const name = accountName(identity) ?? 'Your picture';
   return (
     <>
       <SettingsRow
-        media={<Avatar name={identity.username} src={identity.avatar_url} size={44} />}
-        title={identity.username}
+        media={<Avatar name={name} src={identity.avatar_url} size={44} />}
+        title={name}
         detail={`${SOURCE_TEXT[source]} PNG, JPEG or WebP, up to 1 MB.`}
         action={
           onChange && (

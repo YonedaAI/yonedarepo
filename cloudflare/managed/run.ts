@@ -4,14 +4,16 @@
 // finally post. The configured model comes first; the agent's listed fallbacks follow only
 // when it fails, and each switch is recorded on the run. Model calls are metered by the
 // container's outbound handler (harness.ts), container time here.
+
 import {
   CONTAINER_USD_PER_MINUTE,
   type ManagedAgentDefinition,
   type ModelChoice,
   managedAgent,
 } from '../../shared/managed-agents';
+import { log, warned } from '../worker/log';
 import { requestTopUp } from './billing';
-import type { ManagedEnv, RunParams } from './config';
+import { AUTOMATION_PAUSED, type ManagedEnv, notReviewed, type RunParams } from './config';
 import { type HarnessParams, harnessStub } from './harness';
 import { ledgerStub } from './ledger';
 import { PlatformError } from './platform';
@@ -19,7 +21,7 @@ import { repoStub } from './repo-agents';
 import { postReport } from './report';
 import { type Prepared, prepare, spec } from './run-prepare';
 import { redact } from './sanitize';
-import { postNoPlan, postVerdict, verdictOf } from './verdict';
+import { postNoPlan, postNoReading, postVerdict, verdictOf } from './verdict';
 
 /** The durable step runner (a Workflow's `step`, or an inline runner in tests). */
 export interface Steps {
@@ -65,7 +67,7 @@ export async function runAgent(env: ManagedEnv, p: RunParams, step: Steps): Prom
       return { status: 'stopped', reason: prepared };
     }
     if (typeof prepared === 'string') {
-      await repo.finish(p.run, p.attempt, 'failed', { error: `Not reviewed: ${prepared}` });
+      await repo.finish(p.run, p.attempt, 'failed', { error: notReviewed(prepared) });
       return { status: 'stopped', reason: prepared };
     }
     let collected: Collected = { result: null, error: 'No model was tried', stop: null };
@@ -89,6 +91,7 @@ export async function runAgent(env: ManagedEnv, p: RunParams, step: Steps): Prom
     }
     if (!collected.result) {
       await repo.finish(p.run, p.attempt, 'failed', { error: collected.error });
+      await tellLanding(p, agent, env, step);
       return { status: 'failed', error: collected.error ?? 'failed' };
     }
     const result = collected.result;
@@ -114,14 +117,23 @@ export async function runAgent(env: ManagedEnv, p: RunParams, step: Steps): Prom
       withheld: report.withheld.length,
     };
   } catch (e: any) {
+    // Paused as it reported: the resume runs it again, and no landing has anything to hear.
+    if (e instanceof PlatformError && e.code === 'AUTOMATION_PAUSED') {
+      const error = notReviewed(AUTOMATION_PAUSED);
+      await repo.finish(p.run, p.attempt, 'failed', { error });
+      return { status: 'failed', error };
+    }
     const error =
       e instanceof PlatformError && (e.status === 401 || e.status === 403)
         ? 'The repository token was refused; disable and enable the agent to reconnect'
         : `${e?.code ?? 'ERROR'}: ${String(e?.message ?? e)}`;
     await repo.finish(p.run, p.attempt, 'failed', { error });
+    await tellLanding(p, agent, env, step);
     return { status: 'failed', error };
   } finally {
-    await step.do('close', () => ledger.closeRun(p.run, p.attempt)).catch(() => {});
+    await step
+      .do('close', () => ledger.closeRun(p.run, p.attempt))
+      .catch((e) => log.error('managed.close_run_failed', { run: p.run, error: e }));
   }
 }
 
@@ -170,7 +182,12 @@ async function attempt(
   }
   return step.do(`collect-${i}`, async () => {
     const box = harnessStub(env, name);
-    const status = stop ? {} : await box.status().catch(() => ({}) as Record<string, any>);
+    const status = stop
+      ? {}
+      : await box.status().catch((e) => {
+          log.warn('managed.harness_status_failed', { run: p.run, error: e });
+          return {} as Record<string, any>;
+        });
     await box.end();
     const seconds = Math.max(1, Math.ceil((Date.now() - started.at) / 1000));
     const charged = Math.ceil((seconds / 60) * CONTAINER_USD_PER_MINUTE * 1_000_000);
@@ -189,7 +206,7 @@ async function attempt(
       await env.TRANSCRIPTS.put(
         `transcripts/${p.repo}/${p.run}/${p.attempt}-${i}.txt`,
         redact(transcript).slice(-TRANSCRIPT_MAX),
-      ).catch(() => {});
+      ).catch(warned('managed.transcript_not_kept', { run: p.run }));
     const reported =
       status.phase === 'done' && status.result && typeof status.result === 'object'
         ? (status.result as Record<string, unknown>)
@@ -211,6 +228,12 @@ async function attempt(
     return { result, error, stop } satisfies Collected;
   });
 }
+
+/** A failed run is already recorded: a Landing that couldn't be told is no second failure. */
+const tellLanding = (p: RunParams, agent: ManagedAgentDefinition, env: ManagedEnv, step: Steps) =>
+  step
+    .do('no-reading', () => postNoReading(env, p, agent))
+    .catch((e) => log.warn('managed.no_reading_not_posted', { run: p.run, error: e }));
 
 async function pause(env: ManagedEnv, p: RunParams): Promise<Outcome> {
   await repoStub(env, p.repo).pause(p.run, p.attempt);

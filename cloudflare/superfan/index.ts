@@ -1,8 +1,16 @@
-// Superfan Worker: the platform-only Worker's tail consumer, an hourly cron pass over its
-// telemetry, and an authenticated read endpoint for findings. Findings reach the owner by
-// private email (notify.ts) and nowhere public.
-import { isWatchable, type SuperfanEnv } from './config';
+// Superfan Worker: the tail consumer of an environment's Workers, an hourly cron pass over
+// their telemetry, a five-minute quick pass for urgent signals on the wide watch, synthetic checks
+// on the same cron, the deploy ledger, and an authenticated read endpoint for findings. Findings reach the owner by private email (notify.ts)
+// and nowhere public. /heartbeat is public: the dead-man (deadman.ts) reads it, and it says only
+// when passes last ran.
+import { isWatchable, probesOn, type SuperfanEnv, wideOn } from './config';
+import { deliveries } from './delivery';
+import { parseDeploy } from './ledger-deploys';
 import { noticesOn } from './notify';
+import { QUICK_CRON, runQuick } from './quick';
+import { releaseOn } from './release';
+import { recordDeaths } from './service-points';
+import { runProbes } from './synthetic';
 import { aggregate } from './tail';
 import { ledgerStub, runWatch } from './watch';
 
@@ -29,14 +37,26 @@ async function authorized(req: Request, env: SuperfanEnv) {
 
 export async function superfanFetch(req: Request, env: SuperfanEnv): Promise<Response> {
   const url = new URL(req.url);
-  if (!['/findings', '/status', '/run'].includes(url.pathname)) return refuse('NOT_FOUND', 404);
+  if (url.pathname === '/heartbeat')
+    return json({ ...(await ledgerStub(env).beats()), notices: noticesOn(env) });
+  if (!['/findings', '/status', '/run', '/deploys', '/probes'].includes(url.pathname))
+    return refuse('NOT_FOUND', 404);
   if (!(await authorized(req, env))) return refuse('UNAUTHORIZED', 401);
   const ledger = ledgerStub(env);
   if (url.pathname === '/run') {
     if (req.method !== 'POST') return refuse('METHOD_NOT_ALLOWED', 405);
     return json(await runWatch(env));
   }
+  if (url.pathname === '/deploys' && req.method === 'POST') {
+    const row = parseDeploy(await req.json().catch(() => null), env.WATCH_SCRIPT);
+    if (!row) return refuse('INVALID_DEPLOY', 400);
+    await ledger.recordDeploy(row);
+    return json({ recorded: true });
+  }
   if (req.method !== 'GET') return refuse('METHOD_NOT_ALLOWED', 405);
+  const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 200);
+  if (url.pathname === '/deploys') return json({ deploys: await ledger.deploys(limit) });
+  if (url.pathname === '/probes') return json({ probes: await ledger.probes(limit) });
   if (url.pathname === '/status') {
     const now = Date.now();
     return json({
@@ -50,21 +70,26 @@ export async function superfanFetch(req: Request, env: SuperfanEnv): Promise<Res
             : 'waiting_on_token',
       model: env.SUPERFAN_MODEL,
       notices: noticesOn(env) ? 'email' : 'off',
+      wide: wideOn(env),
+      probes: probesOn(env),
+      release_compare: releaseOn(env),
+      last_deploy: (await ledger.deploys(1))[0] ?? null,
       ...(await ledger.status(now)),
     });
   }
   const status = url.searchParams.get('status') ?? 'open';
   if (status !== 'open' && status !== 'resolved' && status !== 'all')
     return refuse('INVALID_STATUS', 400);
-  const limit = Math.min(Math.max(Number(url.searchParams.get('limit')) || 50, 1), 200);
   return json({ findings: await ledger.findings(status, limit) });
 }
 
-/** Counts one batch of the platform Worker's tail events; other producers are ignored. */
+/** Counts one batch of the watched Workers' tail events; other producers are ignored. */
 export async function superfanTail(events: TraceItem[], env: SuperfanEnv) {
   if (!isWatchable(env.WATCH_SCRIPT)) return;
-  const rows = aggregate(events, env.WATCH_SCRIPT);
-  if (rows.length) await ledgerStub(env).ingest(rows, Date.now());
+  const rows = aggregate(events, env.WATCH_SCRIPT, wideOn(env));
+  recordDeaths(env, events);
+  const delivered = deliveries(events, env.WATCH_SCRIPT);
+  if (rows.length) await ledgerStub(env).ingest(rows, Date.now(), delivered);
 }
 
 export default {
@@ -72,7 +97,12 @@ export default {
   async tail(events, env) {
     await superfanTail(events, env);
   },
-  async scheduled(_controller, env, ctx) {
-    ctx.waitUntil(runWatch(env));
+  async scheduled(controller, env, ctx) {
+    if (controller.cron !== QUICK_CRON) {
+      ctx.waitUntil(runWatch(env));
+      return;
+    }
+    ctx.waitUntil(runQuick(env));
+    ctx.waitUntil(runProbes(env));
   },
 } satisfies ExportedHandler<SuperfanEnv>;

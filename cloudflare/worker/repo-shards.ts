@@ -2,7 +2,7 @@
 // Durable Objects chosen by commit id, so concurrent writers spread out instead of
 // queueing on the repository authority. A commit id names its shard, so any Worker reads
 // it back at once. The authority adopts a commit (parents first) when it first needs it.
-import { durableJson, storageGuard } from './durable';
+import { durableJson, noteFull, storageGuard } from './durable';
 import { holdSwitch } from './platform-legal-hold';
 import type { CachedObject } from './repo-stores';
 import { record, timed } from './repo-timing';
@@ -35,6 +35,7 @@ export async function shardCall(env: Env, repo: string, shard: number, command: 
     'https://commit-shard/',
     JSON.stringify({ ...holdSwitch(env), ...command, ...SYSTEM, ...storageGuard(env) }),
   );
+  if (value.error?.code === 'REPO_FULL') noteFull(repo, String(command.op));
   if (value.error) throw fail(value.error);
   return value;
 }
@@ -181,6 +182,16 @@ export function shardOutboxes(env: Env, repo: string): Promise<Json[]> {
   );
 }
 
+/** What the shards hold in all, from their status: bytes, and their row estimates by table. */
+export function shardUsage(statuses: Json[]) {
+  const table_rows: Record<string, number> = {};
+  for (const status of statuses)
+    for (const [table, rows] of Object.entries(status?.table_rows ?? {}))
+      table_rows[table] = (table_rows[table] ?? 0) + Number(rows);
+  const db_bytes = statuses.reduce((n, status) => n + Number(status?.db_bytes ?? 0), 0);
+  return { db_bytes, table_rows };
+}
+
 /** One view of several outboxes: total pending and the oldest entry. */
 export function mergeOutboxes(outboxes: Json[]) {
   const oldest = outboxes
@@ -218,6 +229,7 @@ export async function shardLanded(
       op: 'store_staged_objects',
       commit,
       ...(withRecord ? { with_record: true } : {}),
+      // A shard that cannot answer leaves the object to the slower tiers.
     }).catch(() => ({ objects: [] }));
     if (found.objects.length || found.record)
       return { objects: found.objects as CachedObject[], record: found.record ?? null };

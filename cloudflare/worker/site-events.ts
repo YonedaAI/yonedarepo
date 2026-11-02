@@ -30,10 +30,23 @@ export const SITE_EVENT_BLOBS = {
   class: 'blob10',
   /** Platform points only (platform-client-events.ts). */
   client: 'blob11',
+  /** Pings with VISITORS on, whose index is the visitor hash (site-visitors.ts). */
+  browser: 'blob11',
   operation: 'blob12',
   /** `write_origin` points only (platform-write-origin.ts); `index1` is the writer's digest. */
   continent: 'blob13',
   writerKind: 'blob14',
+  /** Platform points, in the same places: `outcome` with TRAFFIC_REPORT on, the rest with
+   * REPO_ANALYTICS on (repo-usage.ts). `repo` is empty unless the request was admitted. */
+  outcome: 'blob13',
+  repo: 'blob14',
+  actor: 'blob15',
+  reason: 'blob16',
+  detail: 'blob17',
+  /** Platform points of an agent with AGENT_REPORT on: 16 hex of a digest of the token's id, and
+   * the client it named, from AGENT_CLIENTS. */
+  credential: 'blob18',
+  agentClient: 'blob19',
 } as const;
 /** `double1`: 1 when the request looked automated, else 0. */
 export const SITE_EVENT_BOT = 'double1';
@@ -49,6 +62,12 @@ export const SITE_EVENT_MARKED = 'double5';
 /** Platform points with TRAFFIC_REPORT on: milliseconds until the answer's headers. A streamed
  * clone or push goes on after that. */
 export const SITE_EVENT_DURATION = 'double6';
+/** Platform points with REPO_ANALYTICS on: the pack's bytes, the wait in a landing's queue in
+ * milliseconds, and the rounds the platform repeated a landing. With a pack, `double6` runs to
+ * its last byte. */
+export const SITE_EVENT_BYTES = 'double7';
+export const SITE_EVENT_QUEUE = 'double8';
+export const SITE_EVENT_RETRIES = 'double9';
 /** Our own tools send this, set to `1` (tools/own-traffic.mjs): they are not counted. It unlocks
  * nothing: anyone sending it only leaves the analytics. */
 export const OWN_TRAFFIC_HEADER = 'x-yoneda-own-traffic';
@@ -68,8 +87,19 @@ const SESSION_COOKIE = 'yoneda_account';
 const UTM_LENGTH = 64;
 const HOST =
   /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
-// The signed-in app's own pages: not part of the public site even when fetched signed out.
-const APP_ROOTS = new Set(['settings', 'admin', 'device', 'new', 'auth', 'api']);
+// The signed-in app's own pages: not part of the public site even when fetched signed out. The
+// emailed links' pages are here for their tokens: the beacon must never run where the URL holds
+// one, and a confirmation link sent before the fragment still has its token in the query.
+const APP_ROOTS = new Set([
+  'settings',
+  'admin',
+  'device',
+  'new',
+  'auth',
+  'api',
+  'reset-password',
+  'verify-email',
+]);
 // The app's one public page, which stays out of search and so has no canonical address.
 export const APP_PAGES = new Map([
   ['/explore', '/source/explore'],
@@ -190,11 +220,13 @@ export function writeSitePoint(
     provider?: SignupProvider;
     class: SiteClass | '';
     automated: boolean;
+    /** A ping's visitor hash and browser family (site-visitors.ts). */
+    visitor?: { hash: string; browser: string };
   },
 ) {
   try {
     env.SITE_EVENTS?.writeDataPoint({
-      indexes: [event],
+      indexes: [point.visitor?.hash ?? event],
       blobs: [
         event,
         point.path,
@@ -206,6 +238,7 @@ export function writeSitePoint(
         point.source.utm_campaign,
         point.provider ?? '',
         point.class,
+        ...(point.visitor ? [point.visitor.browser] : []),
       ],
       doubles: [point.automated ? 1 : 0, 1],
     });

@@ -1,9 +1,9 @@
 // The public site's page switch, inside its own frame (no app sidebar), plus sign-in and
 // sign-up (`/signin`, `/signup`), which hand over to the app once the session exists.
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import type { Session } from '../../hooks/useSession';
+import { takeDeleted } from '../account-settings/deleteAccountModel';
 import type { Navigate } from '../shell/useRoute';
-import { AccountPanel } from '../workspace/AccountPanel';
 import { SiteBlog } from './SiteBlog';
 import { SiteFeaturePage } from './SiteFeaturePage';
 import { SiteFeatures } from './SiteFeatures';
@@ -11,7 +11,9 @@ import { SiteHome } from './SiteHome';
 import { SiteLayout } from './SiteLayout';
 import { SiteCompany, SiteLegal } from './SitePages';
 import { SitePricing } from './SitePricing';
-import { documentTitle, pageTitle } from './seo';
+import { SiteSignIn } from './SiteSignIn';
+import { SiteUpdates, SiteUpdatesLink } from './SiteUpdates';
+import { documentTitle } from './seo';
 import { SIGNED_IN_HINT, type SitePage } from './siteRoute';
 
 // The docs (their pages, search index and layout) load on the first docs visit; the page
@@ -41,8 +43,12 @@ export function SiteRoot({
   /** Why a provider sign-in came back refused (shown on the sign-in page). */
   signInError?: string;
 }) {
-  const title = pageTitle(site);
   const tabTitle = documentTitle(site);
+  // After the first paint, as the page is prerendered without it.
+  const [deleted, setDeleted] = useState(false);
+  useEffect(() => {
+    if (takeDeleted()) setDeleted(true);
+  }, []);
   useEffect(() => {
     if (site.page !== 'docs') document.title = tabTitle;
   }, [site.page, tabTitle]);
@@ -53,6 +59,11 @@ export function SiteRoot({
   }, [signedInOnSignIn, navigate]);
   return (
     <SiteLayout page={site} authenticated={session.authenticated} navigate={navigate}>
+      {deleted && (
+        <p className="workspace-notice" role="status">
+          Your account was deleted.
+        </p>
+      )}
       {site.page === 'home' && <SiteHome navigate={navigate} />}
       {site.page === 'features' && <SiteFeatures navigate={navigate} />}
       {site.page === 'feature' && (
@@ -70,20 +81,21 @@ export function SiteRoot({
         <SiteCompany page={site.page} navigate={navigate} />
       )}
       {site.page === 'legal' && <SiteLegal doc={site.doc} navigate={navigate} />}
+      {site.page === 'updates' && <SiteUpdates />}
+      {site.page === 'updates-link' && (
+        <SiteUpdatesLink action={site.action} token={site.token} navigate={navigate} />
+      )}
       {site.page === 'signin' && (
-        <section className="site-signin" aria-labelledby="signin-heading">
-          <h1 id="signin-heading">{title}</h1>
-          <AccountPanel
-            key={site.mode}
-            initialMode={site.mode}
-            initialError={signInError}
-            onConnected={() => {
-              signedInHint(true);
-              void session.discover();
-              navigate({ view: 'home' });
-            }}
-          />
-        </section>
+        <SiteSignIn
+          key={site.mode}
+          mode={site.mode}
+          error={signInError}
+          onConnected={() => {
+            signedInHint(true);
+            void session.discover();
+            navigate({ view: 'home' });
+          }}
+        />
       )}
     </SiteLayout>
   );

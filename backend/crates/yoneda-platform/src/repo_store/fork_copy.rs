@@ -17,18 +17,13 @@ const FORK_COMMITS: usize = 20_000;
 const PAGE_COMMITS: usize = 500;
 const PAGE_TOUCHES: usize = 20_000;
 
-/// `repo_fork_source`: the refs a fork copies, at the current version, and the parent's
-/// settled projections (the values an Artifacts fork of its store holds).
+/// `repo_fork_source`: the refs a fork copies, at the current version.
 pub(super) fn source<S: SqlStore>(db: &S, settings: &Settings) -> Result<Value> {
     let version = rows::current_version(db)?;
     let refs = reads::refs_at(db, &json!({ "at": version }), version)?;
-    let projections = db.query(
-        "SELECT refname,projected_commit FROM ref_projections WHERE status='ok' AND projected_commit IS NOT NULL",
-        &[],
-    )?;
     Ok(json!({
         "version": version, "refs": refs, "name": settings.name,
-        "object_store": settings.object_store, "projections": projections,
+        "object_store": settings.object_store,
     }))
 }
 
@@ -95,7 +90,7 @@ pub(super) fn export<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
 fn exported<S: SqlStore>(db: &S, id: &str, touches: &mut usize) -> Result<Value> {
     let row = db
         .query(
-            "SELECT id,tree,parents,generation,principal,message,recorded_at,artifacts_at FROM commits WHERE id=?",
+            "SELECT id,tree,parents,generation,principal,message,recorded_at,author_name,authored_at FROM commits WHERE id=?",
             &[json!(id)],
         )?
         .into_iter()
@@ -103,17 +98,8 @@ fn exported<S: SqlStore>(db: &S, id: &str, touches: &mut usize) -> Result<Value>
         .ok_or_else(|| corrupt("commit graph"))?;
     let paths = rows::touches(db, &ObjectId::parse(id)?)?;
     *touches += paths.len();
-    let objects = if row["artifacts_at"].is_null() {
-        db.query(
-            "SELECT id,kind FROM commit_objects WHERE commit_id=? ORDER BY id",
-            &[json!(id)],
-        )?
-    } else {
-        Vec::new()
-    };
     let mut exported = row;
     exported["touches"] = json!(paths);
-    exported["objects"] = json!(objects);
     Ok(exported)
 }
 
@@ -146,11 +132,11 @@ pub(super) fn record<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             serde_json::from_str(item["parents"].as_str().unwrap_or_default())
                 .map_err(|_| bad("parents must be a JSON list of ids"))?;
         db.query(
-            "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,origin,hidden_ref,artifacts_at) VALUES(?,?,?,?,0,?,?,'[]',?,'fork',0,?)",
+            "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,origin,hidden_ref,artifacts_at,author_name,authored_at) VALUES(?,?,?,?,0,?,?,'[]',?,'fork',0,?,?,?)",
             &[json!(id.hex()), json!(object_id(item, "tree")?.hex()), json!(json!(parents).to_string()),
               json!(number(item, "generation")?), json!(string(item, "principal")?),
               json!(item["message"].as_str().unwrap_or_default()), json!(number(item, "recorded_at")?),
-              item["artifacts_at"].clone()],
+              json!(number(item, "recorded_at")?), item["author_name"].clone(), item["authored_at"].clone()],
         )?;
         let touches: Vec<PathTouch> = serde_json::from_value(item["touches"].clone())
             .map_err(|e| bad(&format!("Invalid touches: {e}")))?;
@@ -162,32 +148,16 @@ pub(super) fn record<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
                 &[json!(id.hex()), t["path"].clone(), t["op"].clone(), t["old_blob"].clone(), t["new_blob"].clone(), t["mode"].clone()],
             )?;
         }
-        for object in item["objects"].as_array().into_iter().flatten() {
-            let kind = object["kind"].as_str().unwrap_or_default();
-            if !matches!(kind, "commit" | "tree" | "blob") {
-                return Err(bad("Object kind must be commit, tree or blob"));
-            }
-            db.query(
-                "INSERT INTO commit_objects(commit_id,id,kind) VALUES(?,?,?) ON CONFLICT DO NOTHING",
-                &[json!(id.hex()), json!(object_id(object, "id")?.hex()), json!(kind)],
-            )?;
-        }
         recorded += 1;
     }
     Ok(json!({ "recorded": recorded }))
 }
 
-/// `repo_fork_refs {refs, projections}`: the fork's refs as copied, each logged as an
-/// import. `projections` (refname to commit) are the values the fork's own store already
-/// holds (an Artifacts fork of the parent's): they are the expected-old leases of its
-/// first projections. A ref without one is projected only once the fork moves it.
+/// `repo_fork_refs {refs}`: the fork's refs as copied, each logged as an import.
 pub(super) fn refs<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
     no_refs_yet(db)?;
     let refs: BTreeMap<String, ObjectId> =
         serde_json::from_value(c["refs"].clone()).map_err(|_| bad("refs must map names to ids"))?;
-    let held: BTreeMap<String, ObjectId> =
-        serde_json::from_value(c.get("projections").cloned().unwrap_or(json!({})))
-            .map_err(|_| bad("projections must map names to ids"))?;
     let mut version = rows::current_version(db)?;
     for (name, id) in &refs {
         if !(name.starts_with("refs/heads/") || rows::is_tag(name)) {
@@ -200,14 +170,6 @@ pub(super) fn refs<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Va
             "INSERT INTO fork_origin(refname,commit_id) VALUES(?,?)",
             &[json!(name), json!(id.hex())],
         )?;
-        match held.get(name) {
-            Some(projected) => db.query(
-                "UPDATE ref_projections SET projected_commit=?1,projected_version=CASE WHEN target_commit=?1 THEN target_version ELSE 0 END,\
-                 status=CASE WHEN target_commit=?1 THEN 'ok' ELSE 'pending' END WHERE refname=?2",
-                &[json!(projected.hex()), json!(name)],
-            )?,
-            None => db.query("DELETE FROM ref_projections WHERE refname=?", &[json!(name)])?,
-        };
     }
     Ok(json!({ "refs": refs.len(), "version": version }))
 }

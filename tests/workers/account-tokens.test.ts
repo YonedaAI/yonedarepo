@@ -3,6 +3,7 @@
 // repository allowlist and expiry, and revocable.
 import { runInDurableObject } from 'cloudflare:test';
 import { expect, it } from 'vitest';
+import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import type { Env } from '../../cloudflare/worker/types';
 import { api, author, bindings, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
@@ -94,11 +95,15 @@ it('clones and lists with a personal token, and creates repositories with repo:a
   const cookie = await signup('pat_cloner');
   const id = await repo(cookie, 'cloned');
   const reader = await issue(cookie, { name: 'reader', scopes: ['repo:read'] });
-  const access = await api(`/repos/${id}/clone`, { token: reader.token }, { body: {} });
+  const clone = (token: string) =>
+    platformFetch(new Request(`https://yoneda/git/${id}.git/info/refs?service=git-upload-pack`, {
+      headers: { authorization: `Basic ${btoa(`x:${token}`)}` },
+    }), scoped);
+  const access = await clone(reader.token);
   expect(access.status).toBe(200);
-  expect(access.body.remote).toMatch(/^https:\/\/artifacts\.test\//);
+  expect(await access.text()).toContain('refs/heads/main');
   const writer = await issue(cookie, { name: 'writer', scopes: ['repo:write'] });
-  expect((await api(`/repos/${id}/clone`, { token: writer.token }, { body: {} })).status).toBe(403);
+  expect((await clone(writer.token)).status).toBe(403);
   expect((await api('/repos', { token: reader.token })).body.repos.map((r: any) => r.name)).toEqual(['cloned']);
 
   const admin = await issue(cookie, { name: 'cli', scopes: ['repo:admin'] });
@@ -169,6 +174,28 @@ it('logs a device in: pending, slow down, approved once', async () => {
   await sql(`device:${compact(started.user_code)}`, 'UPDATE device_codes SET last_poll_at=NULL');
   const spent = await poll(started.device_code);
   expect([spent.status, spent.body.error.code]).toEqual([400, 'EXPIRED_TOKEN']);
+});
+
+it('a login token signs itself out, and no other token can', async () => {
+  const cookie = await signup('self_signout');
+  const started = await deviceCode();
+  const approval = { user_code: started.user_code, scopes: ['repo:read'], expires_days: 1 };
+  expect((await api('/device/approve', { cookie }, { body: approval })).status).toBe(200);
+  await sql(`device:${compact(started.user_code)}`, 'UPDATE device_codes SET last_poll_at=NULL');
+  const { token } = (await poll(started.device_code)).body;
+  const made = await api('/tokens', { cookie }, { body: { name: 'ci', scopes: ['repo:read'] } });
+  const out = (who: { token?: string; cookie?: string }) => api('/device/token', who, { method: 'DELETE' });
+
+  const pasted = await out({ token: made.body.token });
+  expect([pasted.status, pasted.body.revoked]).toEqual([200, false]);
+  expect((await api('/repos', { token: made.body.token })).status).toBe(200);
+  expect((await out({ cookie })).status).toBe(400);
+
+  const signedOut = await out({ token });
+  expect([signedOut.status, signedOut.body.revoked]).toEqual([200, true]);
+  expect((await api('/repos', { token })).status).toBe(401);
+  const names = (await api('/tokens', { cookie })).body.tokens.filter((t: any) => t.revoked_at == null);
+  expect(names.map((t: any) => t.name)).toEqual(['ci']);
 });
 
 it('denies and expires device codes', async () => {

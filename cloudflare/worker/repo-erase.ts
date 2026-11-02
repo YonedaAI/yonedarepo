@@ -4,15 +4,18 @@
 // commit shard, the combiners, and in small transactions the authority's own records. The
 // tombstone stays, answering GONE. Each part is repeatable and the authority's rows go last,
 // because they name the combiners to clear, so a job that dies anywhere is simply run again.
-// Logs carry counts and ids, never content.
+// Logs carry counts and ids, never content. With AUDIT_LOG on, this job also carries a deleted
+// repository's audit events to its org's log, erase or no erase, before anything goes.
 //
 // Other per-repository objects hold nothing to erase: PackBuilder's storage is its
-// container's lifecycle state, CheckContainer's the same, and ObjectPushQueue keeps none.
+// container's lifecycle state, and CheckContainer's the same.
 
 import { durableJson } from './durable';
+import { log } from './log';
 import { audit } from './platform-admin-queries';
 import { currentHold } from './platform-legal-hold';
 import { dispatchErase, eraseOn, purgeObjects } from './repo-admin';
+import { auditRepoLeaving } from './repo-audit';
 import { inBatches } from './repo-git-objects';
 import { dispatchHooks } from './repo-hooks';
 import { ApiError, caller, type Json } from './repo-ops';
@@ -27,17 +30,22 @@ const STEPS_PER_JOB = 100;
 /** Seconds between looks while hooks are delivered (each look sends their jobs again, as
  * one that ran out of queue retries is otherwise never replaced). */
 const HOOK_WAIT_SECONDS = 300;
+/** Seconds between looks while the audit log can't be reached, or has more to take. */
+const AUDIT_WAIT_SECONDS = 300;
+/** How long the audit log may hold an erase before someone is told: past one outage of the kind
+ * that heals alone, well inside any promise about deleted data. Every later look says so
+ * again, and the erase keeps waiting: the alert changes who knows, not what happens. */
+const AUDIT_ALERT_MS = 60 * 60_000;
 /** Objects cleared at once (an invocation keeps six connections open). */
 const WIDTH = 6;
 
 function progress(repo: string, phase: string, details: Json = {}) {
-  console.log(JSON.stringify({ event: 'repo.erase', repo, phase, ...details }));
+  log.info('repo.erase', { repo, phase, ...details });
 }
 
 type Erasable = { erase(): Promise<void> };
 
-/** Every commit shard and combiner of `repo`. A combiner is named by its ref as the caller
- * spelled it, so each ref is cleared both ways. */
+/** Every commit shard of `repo`, sealed for good, then its combiners. */
 async function clearObjects(env: Env, repo: string, refs: string[]) {
   const shards = Array.from({ length: SHARDS }, (_, shard) => shard);
   const _hold = await currentHold(env, repo, caller(env, repo, { _system: 'purge' }));
@@ -45,6 +53,12 @@ async function clearObjects(env: Env, repo: string, refs: string[]) {
     await inBatches(shards, WIDTH, (shard) =>
       shardCall(env, repo, shard, { op: 'store_erase', _hold }),
     );
+  await clearCombiners(env, repo, refs);
+}
+
+/** Every combiner of `repo`, which may be used again. A combiner is named by its ref as the
+ * caller spelled it, so each ref is cleared both ways. */
+export async function clearCombiners(env: Env, repo: string, refs: string[]) {
   const combiners = env.LAND_COMBINERS;
   if (!combiners) return;
   const names = new Set([`${repo}#head`, `${repo}#projector`]);
@@ -59,8 +73,17 @@ async function clearObjects(env: Env, repo: string, refs: string[]) {
 
 /** The `platform_erase` queue job (see the module comment). */
 export async function eraseJob(env: Env, envelope: Envelope) {
-  if (!eraseOn(env)) return;
   const repo = envelope.repo_id;
+  const { clear, seq } = await auditRepoLeaving(env, repo);
+  if (!clear) {
+    const job = envelope.job_id === 'records' ? 'records' : 'start';
+    const since = envelope.blocked_since ?? Date.now();
+    const elapsed_ms = Date.now() - since;
+    if (elapsed_ms >= AUDIT_ALERT_MS) log.error('audit.erase_blocked', { repo, seq, elapsed_ms });
+    await dispatchErase(env, repo, job, AUDIT_WAIT_SECONDS, since);
+    return progress(repo, 'audit', { seq, elapsed_ms });
+  }
+  if (!eraseOn(env)) return;
   const call = caller(env, repo, { _system: 'erase' });
   if (envelope.job_id !== 'records') {
     const plan: Json = await call({ op: 'repo_erase_plan' }).catch((e) => {

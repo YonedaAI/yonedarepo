@@ -64,7 +64,7 @@ async function deliver(target: Env, job: Envelope) {
   return got[0] as { to: string[]; subject: string; text: string; html: string } | undefined;
 }
 const link = (text: string) => {
-  const match = text.match(/https:\/\/yonedarepo\.test\/verify-email\?account=([^&\s]+)&token=([0-9a-f]{64})/);
+  const match = text.match(/https:\/\/yonedarepo\.test\/verify-email#account=([^&\s]+)&token=([0-9a-f]{64})/);
   expect(match, text).toBeTruthy();
   return { account: decodeURIComponent(match?.[1] ?? ''), token: match?.[2] ?? '' };
 };
@@ -97,6 +97,31 @@ it('puts a single-use link in the welcome email that verifies only by POST', asy
   for (const bad of [{ account, token: 'x' }, { account: 'nobody', token }, {}]) {
     expect((await call(target, 'email/verify', bad)).status).toBe(400);
   }
+});
+
+it('takes the address an account is named by as its email, unconfirmed until its link', async () => {
+  const target = front();
+  const email = 'named.by.address@example.com';
+  // Sign-up no longer names accounts this way; those it did still sign in by the address.
+  await workspace(target, email, {
+    op: 'signup',
+    username: email,
+    password: 'a long test password',
+    salt: '01'.repeat(16),
+    session_hash: await sha('f'.repeat(64)),
+    recovery_hash: 'b'.repeat(64),
+  });
+  const login = await call(target, 'login', { username: email, password: 'a long test password' });
+  expect(login.status).toBe(200);
+  const cookie = (login.headers.get('set-cookie') ?? '').split(';')[0];
+  expect((await call(target, 'email', undefined, cookie)).body).toEqual({ email, verified: false });
+  expect((await call(target, 'email/resend', {}, cookie)).body).toEqual({ sent: true });
+  const sent = await deliver(target, queued[0]);
+  expect(sent?.to).toEqual([email]);
+  const { account, token } = link(sent?.text ?? '');
+  expect(account).toBe(email);
+  expect((await call(target, 'email/verify', { account, token })).body).toEqual({ verified: true });
+  expect((await call(target, 'email', undefined, cookie)).body).toEqual({ email, verified: true });
 });
 
 it('shows the address and resends a link from Settings, at most five a day', async () => {

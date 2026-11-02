@@ -14,6 +14,7 @@ import { moved } from './repo-merge';
 import { ApiError, batch, caller, type Json, RepoContext } from './repo-ops';
 import { adoptCommit, forgetChain, shardChain, shardRecord } from './repo-shards';
 import { record, timed } from './repo-timing';
+import { noteLanded, noteQueued, noteRefused, noteRetry } from './repo-usage';
 
 const LAND_DEADLINE_MS = 120_000;
 const WAIT_ROUND_MS = 20_000;
@@ -41,11 +42,15 @@ async function adoptAndLand(ctx: RepoContext, sha: string, land: Json) {
   if (!deferred(forget)) await forget();
   if (landed.error?.code === 'PROJECTION_PENDING') {
     // A fast-forward-only landing compares against the latest version's Git commit.
+    noteRetry(ctx.env);
     await awaitProjection(ctx.env, ctx.repo);
     return ctx.call(land);
   }
   // A concurrent window reaching archived versions: the caller fetches them and retries.
-  if (landed.error?.code === 'TXLOG_ARCHIVED') return ctx.call(land);
+  if (landed.error?.code === 'TXLOG_ARCHIVED') {
+    noteRetry(ctx.env);
+    return ctx.call(land);
+  }
   if (landed.error) throw new ApiError(landed.error.code, landed.error.message);
   return landed;
 }
@@ -94,7 +99,13 @@ export async function landWithMerge(
   inAuthority = false,
   guard: Json = {},
 ) {
-  const landed = await landOn(ctx, ref, sha, fastForwardOnly, mode, inAuthority, guard);
+  const landed = await landOn(ctx, ref, sha, fastForwardOnly, mode, inAuthority, guard).catch(
+    (e) => {
+      noteRefused(ctx.env, ctx.repo, e);
+      throw e;
+    },
+  );
+  noteLanded(ctx.env, ctx.repo, (landed as Json).already === true);
   // This isolate's next read and begin see its own landing (others pass min_version).
   forgetHead(ctx.repo, typeof landed.version === 'number' ? landed.version : undefined, sha);
   return landed;
@@ -164,13 +175,20 @@ async function landSubmitted(ctx: RepoContext, ref: string, sha: string, own: Js
     });
     // Without a combiner, the landing takes the queued path (which polls).
     if (out === undefined) return null;
-    if (!out) continue;
+    if (!out) {
+      noteRetry(ctx.env);
+      continue;
+    }
     if (out.batch) record('land.batch', out.batch.ms, out.batch.size);
-    if (out.queued_ms !== undefined) record('land.queued', out.queued_ms);
+    if (out.queued_ms !== undefined) {
+      record('land.queued', out.queued_ms);
+      noteQueued(ctx.env, out.queued_ms);
+    }
     if (out.status === 'landed')
       return { landed: true, ref, commit: sha, version: out.version, git_commit: null };
     // A commit on unlanded parents needs the merge path, which adopts its whole chain.
     if (out.status === 'need_chain') {
+      noteRetry(ctx.env);
       item = { ...item, records: await shardChain(ctx.env, ctx.repo, sha) };
       continue;
     }
@@ -196,6 +214,11 @@ async function awaitTicket(
     ctx.repo,
     caller(ctx.env, ctx.repo, { _system: 'merge' }),
   );
+  const queued = Date.now();
+  const settled = (status: Json) => {
+    noteQueued(ctx.env, Date.now() - queued);
+    return outcome(sha, status);
+  };
   // The branch's combiner lands the batches and answers when this ticket settles; waiting
   // there costs the authority nothing. Without one (or if it is evicted), poll.
   const combiners = ctx.env.LAND_COMBINERS;
@@ -205,16 +228,16 @@ async function awaitTicket(
     ) as unknown as Combiner;
     try {
       while (Date.now() < deadline) {
-        const settled = await timed('land.wait', () =>
+        const status = await timed('land.wait', () =>
           rpcValue(
             combiner.wait(ctx.repo, ref, ticket, Math.min(WAIT_ROUND_MS, deadline - Date.now())),
           ),
         );
-        if (settled) return outcome(sha, settled);
+        if (status) return settled(status);
       }
     } catch (e) {
       if (e instanceof ApiError) throw e;
     }
   }
-  return outcome(sha, await pollLanding(merger, ref, ticket, deadline));
+  return settled(await pollLanding(merger, ref, ticket, deadline));
 }

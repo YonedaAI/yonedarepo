@@ -4,6 +4,7 @@
 // it reloads in the background; an access change reloads it before that change answers,
 // so the access snapshot it serves is never older than the last change it was told of.
 // It also serves the trees commits build on (see `trees`).
+import { warned } from './log';
 import { parseStore, RepoObjects, type TreeEntry } from './repo-objects';
 import { caller, type Json } from './repo-ops';
 import { TreeMemo } from './repo-tree-memo';
@@ -45,6 +46,8 @@ export class HeadHolder {
   #loading: Promise<Json> | null = null;
   /** Bumped by an access change: loads started before it never set the head. */
   #generation = 0;
+  /** Bumped by each refresh: a load started before the last one may not hold what it told of. */
+  #refreshes = 0;
   #trees = new TreeMemo(HOLDER_TREES);
   #objects: { spec: string; objects: RepoObjects } | null = null;
   #hot = new Set<string>();
@@ -64,7 +67,7 @@ export class HeadHolder {
   ): Promise<Json> {
     let head = this.#head;
     if (head && head.version >= minVersion) {
-      if (this.#stale) void this.#load(repo, 0).catch(() => {});
+      if (this.#stale && !this.#loading) this.#reload(repo);
     } else head = await this.#load(repo, minVersion);
     const access =
       accessVersion !== undefined && accessVersion !== head.access_version
@@ -90,8 +93,9 @@ export class HeadHolder {
    * fails, nothing is served until one succeeds. */
   async refresh(repo: string, access = false) {
     this.#stale = true;
+    this.#refreshes++;
     if (!access) {
-      void this.#load(repo, 0).catch(() => {});
+      this.#reload(repo);
       return;
     }
     this.#generation++;
@@ -184,7 +188,7 @@ export class HeadHolder {
     if (typeof root !== 'string') return;
     const dirs = new Set(['', ...this.#hot]);
     const warming: Promise<unknown> = this.#walk(repo, root, dirs, head.head.id, before)
-      .catch(() => {})
+      .catch(() => {}) // A warm start missed: the first read walks the tree itself.
       .finally(() => {
         if (this.#warming === warming) this.#warming = null;
       });
@@ -194,7 +198,7 @@ export class HeadHolder {
   /** Settles once no load or warming is running (tests stop in-process holders with it). */
   async idle() {
     while (this.#loading || this.#warming) {
-      await this.#loading?.catch(() => {});
+      await this.#loading?.catch(() => {}); // Only waiting: its own caller has the failure.
       await this.#warming;
     }
   }
@@ -209,11 +213,17 @@ export class HeadHolder {
     return this.#head as Json;
   }
 
+  /** Reloads in the background; a failed reload leaves the head stale for the next caller. */
+  #reload(repo: string) {
+    void this.#load(repo, 0).catch(warned('head.reload_failed', { repo }));
+  }
+
   #fetch(repo: string): Promise<Json> {
     const generation = this.#generation;
+    const refreshes = this.#refreshes;
     const current = () => generation === this.#generation;
+    let loaded = false;
     const loading: Promise<Json> = (async () => {
-      this.#stale = false;
       const head = await fetchHead(this.env, repo).catch((e) => {
         // A deleted repository's head is never served again.
         if (e?.code === 'GONE' && current()) this.#head = null;
@@ -224,9 +234,13 @@ export class HeadHolder {
         this.#head = head;
         if (head.head?.tree !== before) this.#warm(repo, head, before);
       }
+      if (refreshes === this.#refreshes) this.#stale = false;
+      loaded = true;
       return head;
     })().finally(() => {
       if (this.#loading === loading) this.#loading = null;
+      // A refresh came while this load ran: its answer may predate what that refresh told of.
+      if (loaded && this.#stale && !this.#loading) this.#reload(repo);
     });
     return loading;
   }

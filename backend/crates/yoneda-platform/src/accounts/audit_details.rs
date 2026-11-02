@@ -25,6 +25,25 @@ use Field::{Count, Text, UrlHost, Word, Words};
 
 /// Each kind's fields. A kind is added here on purpose, with the fields a reader needs.
 const KINDS: &[(&str, &[(&str, Field)])] = &[
+    (
+        "audit.exported",
+        &[
+            ("format", Word),
+            ("kind", Word),
+            ("of_actor", Word),
+            ("before", Count),
+        ],
+    ),
+    (
+        "audit.row_set_aside",
+        &[
+            ("repo", Word),
+            ("name", Word),
+            ("row", Count),
+            ("of_kind", Word),
+            ("bytes", Count),
+        ],
+    ),
     ("org.created", &[("org", Word)]),
     ("org.deleted", &[("org", Word)]),
     (
@@ -68,6 +87,11 @@ const KINDS: &[(&str, &[(&str, Field)])] = &[
         "account.recovered",
         &[("tokens", Count), ("ssh_keys", Count)],
     ),
+    (
+        "account.password_reset",
+        &[("tokens", Count), ("ssh_keys", Count)],
+    ),
+    ("account.recovery_regenerated", &[]),
     // A repository's events: `repo` is its id, `name` what it was called then.
     (
         "repo.created",
@@ -79,6 +103,7 @@ const KINDS: &[(&str, &[(&str, Field)])] = &[
         ],
     ),
     ("repo.deleted", &[("repo", Word), ("name", Word)]),
+    ("repo.purge_requested", &[("repo", Word), ("name", Word)]),
     (
         "repo.restored",
         &[("repo", Word), ("name", Word), ("previous", Word)],
@@ -130,6 +155,19 @@ const KINDS: &[(&str, &[(&str, Field)])] = &[
         ],
     ),
     (
+        "repo.break_glass",
+        &[
+            ("repo", Word),
+            ("name", Word),
+            ("action", Word),
+            ("ref", Word),
+            ("commit", Word),
+            ("target", Word),
+            ("version", Count),
+            ("reason", Text),
+        ],
+    ),
+    (
         "repo.retention_changed",
         &[
             ("repo", Word),
@@ -149,6 +187,15 @@ const KINDS: &[(&str, &[(&str, Field)])] = &[
     ),
     (
         "webhook.deleted",
+        &[
+            ("repo", Word),
+            ("name", Word),
+            ("id", Word),
+            ("url", UrlHost),
+        ],
+    ),
+    (
+        "webhook.disabled",
         &[
             ("repo", Word),
             ("name", Word),

@@ -2,8 +2,10 @@
 // device login (`/api/v1/device/*`, RFC 8628 shape). A token is issued only to a person
 // signed in to their account (session cookie), directly or by approving a device code;
 // the device then redeems its code once for the token. Codes live in their own authority
-// instance (`device:<user code>`) for ten minutes and hold no token, only grants.
+// instance (`device:<user code>`) for ten minutes and hold no token, only grants. With
+// AGENT_SIGNUP on, a code can ask for an agent: `yoneda login --agent <name>`.
 import { auditDevice } from './account-audit';
+import { cellOfRegion, cellsOn, FIRST_CELL } from './cells';
 import { releaseClaims } from './platform-ssh-keys';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import { base64url, issuePat, requirePatScope, revokePat, sha } from './repo-pat';
@@ -39,6 +41,17 @@ function manager(auth: Credentials): string {
     return auth._pat.workspace;
   }
   return person(auth);
+}
+
+const agentsOn = (env: Env) => env.AGENT_SIGNUP === 'on';
+
+/** A user code as typed (`BCDF-GHJK`) in the form its authority is named by. */
+function userCode(typed: unknown) {
+  const code = String(typed ?? '')
+    .toUpperCase()
+    .replace(/-/g, '');
+  if (!USER_CODE.test(code)) throw new ApiError('INVALID_INPUT', 'Unknown code format');
+  return code;
 }
 
 async function limited(req: Request, env: Env) {
@@ -80,12 +93,22 @@ function newUserCode() {
   return out.join('');
 }
 
+/** The cell a device's token belongs to: its account's home, which this poll has no other way
+ * to know. It has no credentials yet. */
+async function tokenCellOf(env: Env, account: string) {
+  if (!cellsOn(env)) return FIRST_CELL;
+  const { region } = await workspace(env, account, { op: 'account_place' });
+  return cellOfRegion(env, region);
+}
+
 /** `POST /api/v1/device/code`: a new code pair for a device (no credentials). */
 export async function deviceCode(req: Request, env: Env, body: Json, url: URL) {
   await limited(req, env);
   const client = typeof body.client_name === 'string' ? body.client_name : '';
   // The CLI's machine name labels the token it receives (the authority validates it).
   const host = body.host ?? null;
+  const agent = body.agent ?? null;
+  if (agent !== null && !agentsOn(env)) throw new ApiError('NOT_SUPPORTED', 'Agent sign-up is off');
   for (let attempt = 0; ; attempt++) {
     const code = newUserCode();
     const secret = base64url(crypto.getRandomValues(new Uint8Array(32)));
@@ -95,6 +118,7 @@ export async function deviceCode(req: Request, env: Env, body: Json, url: URL) {
         secret_hash: await sha(secret),
         client_name: client,
         host,
+        agent,
       });
       const shown = `${code.slice(0, 4)}-${code.slice(4)}`;
       const site = (env.WEB_ORIGIN || url.origin).replace(/\/$/, '');
@@ -112,24 +136,67 @@ export async function deviceCode(req: Request, env: Env, body: Json, url: URL) {
   }
 }
 
+/** `GET /api/v1/device/pending?code=`: who is asking, for the page approving a code. */
+async function devicePending(env: Env, auth: Credentials, url: URL) {
+  person(auth);
+  const code = userCode(url.searchParams.get('code'));
+  if (!agentsOn(env)) return { agent: null, host: null };
+  const { agent, host } = await device(env, code, { op: 'device_show' });
+  return { agent: agent ?? null, host: host ?? null };
+}
+
 /** `POST /api/v1/device/approve`: the signed-in person grants (or denies) a device. */
-export async function deviceApprove(env: Env, auth: Credentials, body: Json) {
+async function deviceApprove(env: Env, auth: Credentials, body: Json) {
   const account = person(auth);
-  const code = String(body.user_code ?? '')
-    .toUpperCase()
-    .replace(/-/g, '');
-  if (!USER_CODE.test(code)) throw new ApiError('INVALID_INPUT', 'Unknown code format');
+  const code = userCode(body.user_code);
+  const deny = body.deny === true;
+  if (agentsOn(env) && !deny) {
+    // Asked here too, so that a full account refuses before the code is spent on it.
+    const { agent } = await device(env, code, { op: 'device_show' });
+    if (agent) await workspace(env, account, { op: 'pat_agent_room', name: agent });
+  }
   const approved = await device(env, code, {
     op: 'device_approve',
     account,
     scopes: body.scopes,
     repos: body.repos ?? null,
+    all_repos: body.all_repos === true,
     org: body.org ?? null,
     expires_days: body.expires_days ?? 30,
-    deny: body.deny === true,
+    deny,
+    agent_signup: agentsOn(env),
   });
   await auditDevice(env, account, approved);
   return { approved: approved.approved === true };
+}
+
+/** `DELETE /api/v1/device/token`: `yoneda logout`. A token `yoneda login` made ends itself, with
+ * the SSH keys it added, as Sign out does in Settings, and needs no scope to. A token made by hand
+ * stays: it may be in use elsewhere, and stored here only by `--with-token`. */
+async function deviceLogout(env: Env, auth: Credentials) {
+  if (!('_pat' in auth)) throw new ApiError('INVALID_INPUT', 'Only a login token signs itself out');
+  const { workspace: account, id } = auth._pat;
+  const { tokens } = await workspace(env, account, { op: 'pat_list' });
+  const mine = (tokens as Json[]).find((token) => token.id === id);
+  if (!mine?.origin) return { revoked: false };
+  const revoked = await revokePat(env, account, id);
+  await releaseClaims(env, account, revoked.removed_ssh_keys);
+  return { revoked: true };
+}
+
+/** `/api/v1/device/*` for a signed-in caller. */
+export async function deviceRoute(
+  env: Env,
+  auth: Credentials,
+  action: string,
+  req: Request,
+  url: URL,
+  body: () => Promise<Json>,
+): Promise<Json> {
+  if (action === 'approve' && req.method === 'POST') return deviceApprove(env, auth, await body());
+  if (action === 'pending' && req.method === 'GET') return devicePending(env, auth, url);
+  if (action === 'token' && req.method === 'DELETE') return deviceLogout(env, auth);
+  throw new ApiError('NOT_FOUND', 'Unknown API path');
 }
 
 /** `POST /api/v1/device/token`: the device redeems its approved code, once. */
@@ -156,17 +223,19 @@ export async function deviceToken(req: Request, env: Env, body: Json) {
     );
   }
   const grant = polled.grant;
+  const agent: string | null = polled.agent ?? null;
   const issued = await issuePat(
     env,
     polled.account,
     {
-      name: polled.client_name,
+      name: agent ?? polled.client_name,
       scopes: grant.scopes,
       repos: grant.repos,
       org: grant.org ?? null,
       expires_days: grant.expires_days,
     },
-    { origin: 'login', host: polled.host ?? null },
+    { origin: agent ? `agent:${agent}` : 'login', host: polled.host ?? null },
+    await tokenCellOf(env, polled.account),
   );
   return {
     token: issued.token,
@@ -174,5 +243,6 @@ export async function deviceToken(req: Request, env: Env, body: Json) {
     repos: issued.repos,
     expires_at: issued.expires_at,
     account: polled.account,
+    agent,
   };
 }

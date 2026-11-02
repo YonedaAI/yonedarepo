@@ -247,8 +247,8 @@ export function RevenueReport({ report, navigate }: { report: AdminRevenue; navi
       <Usage report={report} />
       <Accounts report={report} navigate={navigate} />
       <p className="source-meta">
-        Amounts are the ledger's, by UTC day. The nightly reconcile checks them against Stripe and
-        logs any difference.
+        Amounts come from our billing records, by UTC day. A nightly check compares them with
+        Stripe.
       </p>
     </>
   );

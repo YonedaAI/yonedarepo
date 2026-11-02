@@ -8,7 +8,10 @@
 // Only accounts are known here. A repository token names none without a lookup its path must
 // not gain (platform-write-origin.ts), and a signed-out reader has none: our tools mark those
 // requests themselves (OWN_TRAFFIC_HEADER).
+
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { Flights } from './flights';
+import { log } from './log';
 import type { Env } from './types';
 
 const LIST_MS = 5 * 60 * 1000;
@@ -16,15 +19,33 @@ const LIST_LIMIT = 10_000;
 /** The owner token's and operators' scripts: ours, whoever runs them. */
 const OPERATOR = '_admin';
 
-type Noted = { account: string | null };
+/** Who a request's credentials were. A person is a signed-in session. A token is a script or a
+ * person at a terminal, or an agent with AGENT_REPORT on (`RequestAgent`). */
+export type CredentialKind = 'person' | 'agent' | 'personal_token' | 'repo_token' | 'anonymous';
+/** An agent's credential: its token's id, and the name it signed up with. */
+export type RequestAgent = { id: string; name: string };
+type Noted = {
+  account: string | null;
+  actor?: CredentialKind;
+  agent?: RequestAgent;
+  /** What the request did to a repository (repo-usage.ts, which the front Worker never loads). */
+  usage?: object;
+};
 /** What of `Credentials` (repo-ops.ts) names an account. Both Workers load this module, and the
  * front Worker imports no platform module, so it says so here. */
-type Named = { _pat?: { workspace: string }; _session?: { workspace: string } };
+type Named = {
+  _pat?: { workspace: string; id?: string; principal?: string };
+  _session?: { workspace: string; human?: true };
+  _token?: string;
+  _anonymous?: true;
+};
 type Platform = { internalAccounts(): Promise<string[]> };
+
+const AGENT_PRINCIPAL = 'agent:';
 
 const noted = new AsyncLocalStorage<Noted>();
 let held: { at: number; accounts: Set<string> } | null = null;
-let reading: Promise<void> | null = null;
+const reading = new Flights<void>();
 
 /** Runs a platform request with a place for `noteAccount` to leave its account. */
 export const withRequestAccount = <T>(run: () => T) => noted.run({ account: null }, run);
@@ -33,12 +54,23 @@ export const withRequestAccount = <T>(run: () => T) => noted.run({ account: null
 export function noteAccount(auth: object | null) {
   const request = noted.getStore();
   if (!request || !auth) return;
-  const { _pat, _session } = auth as Named;
+  const { _pat, _session, _token, _anonymous } = auth as Named;
   request.account = _pat?.workspace ?? _session?.workspace ?? request.account;
+  if (_session?.human) request.actor = 'person';
+  else if (_pat || _session) request.actor = 'personal_token';
+  else if (_token) request.actor = 'repo_token';
+  else if (_anonymous) request.actor = 'anonymous';
+  // `agent:<account>/<name>`: the platform's own reading of the token's origin, never a claim.
+  const principal = _pat?.principal ?? '';
+  if (_pat?.id && principal.startsWith(AGENT_PRINCIPAL))
+    request.agent = { id: _pat.id, name: principal.slice(principal.lastIndexOf('/') + 1) };
 }
 
 /** The account the running request's credentials named, or null. */
 export const requestAccount = () => noted.getStore()?.account ?? null;
+
+/** The running request's note, for what else it records (repo-usage.ts). */
+export const requestNote = () => noted.getStore();
 
 async function read(env: Env): Promise<string[]> {
   if (!env.INDEX) return (env.PLATFORM as unknown as Platform).internalAccounts();
@@ -53,17 +85,15 @@ async function read(env: Env): Promise<string[]> {
 /** Refreshes the list; a failed read keeps the last one and tries again next time. */
 async function refresh(env: Env, now: number) {
   if (held && now - held.at < LIST_MS) return;
-  reading ??= read(env)
-    .then((accounts) => {
-      held = { at: now, accounts: new Set(accounts) };
-    })
-    .catch((e) => {
-      console.warn(`internal accounts unread: ${e?.message ?? e}`);
-    })
-    .finally(() => {
-      reading = null;
-    });
-  await reading;
+  await reading.join('list', () =>
+    read(env)
+      .then((accounts) => {
+        held = { at: now, accounts: new Set(accounts) };
+      })
+      .catch((e) => {
+        log.warn('internal_accounts.unread', { error: e });
+      }),
+  ).work;
 }
 
 /** The accounts flagged internal, as this isolate holds them; null when it has never read them. */

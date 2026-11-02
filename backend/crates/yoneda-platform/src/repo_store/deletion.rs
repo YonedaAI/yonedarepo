@@ -24,7 +24,8 @@ pub fn gone() -> Error {
 /// Whether `op` still runs on a tombstone: the purge's and the erase's own ops, and until it
 /// is erased, the (idempotent) delete, whose hold is whose (a hold may be placed on a tombstone
 /// until it is purged), and the delivery of hook payloads and audit events already queued
-/// (`repo.deleted` among them). Until a purge reaches it, a restore (`undo`), and the quarantine job, whose
+/// (`repo.deleted` among them), and the owner's purge, which a repeat finishes (`undo`). Until a
+/// purge reaches it, a restore (`undo`), and the quarantine job, whose
 /// deadlines the undo window must not push back; it alone gets those (`_system`, set by the
 /// adapter), before anyone is told who they are.
 pub fn allowed_when_deleted(op: StoreOp, c: &Value, settings: &Settings) -> bool {
@@ -32,25 +33,21 @@ pub fn allowed_when_deleted(op: StoreOp, c: &Value, settings: &Settings) -> bool
         StoreOp::Repo(
             RepoOp::PurgeTarget | RepoOp::Purged | RepoOp::ErasePlan | RepoOp::EraseStep,
         ) => true,
+        StoreOp::Repo(RepoOp::AccountClosed) => !settings.erased(),
         StoreOp::Repo(
             RepoOp::Delete
+            | RepoOp::PurgeNow
             | RepoOp::HoldOwner
             | RepoOp::HookClaim
             | RepoOp::HookSettle
             | RepoOp::AuditPending
-            | RepoOp::AuditDone,
+            | RepoOp::AuditDone
+            | RepoOp::AuditSetAside,
         ) => !settings.erased(),
         StoreOp::Repo(RepoOp::Restore) => !settings.purge_started(),
-        StoreOp::Repo(RepoOp::Status)
-        | StoreOp::Quarantine(
-            Q::Claim
-            | Q::Purged
-            | Q::MirrorClaim
-            | Q::MirrorCopied
-            | Q::MirrorSwitch
-            | Q::MirrorRetired
-            | Q::MirrorFailed,
-        ) => c["_system"] == "quarantine" && !settings.purge_started(),
+        StoreOp::Repo(RepoOp::Status) | StoreOp::Quarantine(Q::Claim | Q::Purged) => {
+            c["_system"] == "quarantine" && !settings.purge_started()
+        }
         _ => false,
     }
 }
@@ -58,16 +55,20 @@ pub fn allowed_when_deleted(op: StoreOp, c: &Value, settings: &Settings) -> bool
 /// On a tombstone, hook delivery, audit events and the erase belong to their platform jobs
 /// alone, and who owns it to the platform: anyone else is answered GONE, as for every other
 /// operation. So is a restore, but for the owner's account and the platform reading what it
-/// lists.
+/// lists, and a purge asked for now, but for the owner's account: its token goes on to
+/// `authorize`, which tells it a person must ask.
 pub fn tombstone_caller(op: StoreOp, c: &Value, actor: &Actor, settings: &Settings) -> Result<()> {
     if settings.deleted_at.is_none() {
         return Ok(());
     }
     let job = match op {
         StoreOp::Repo(RepoOp::HookClaim | RepoOp::HookSettle) => Some("hooks"),
-        StoreOp::Repo(RepoOp::AuditPending | RepoOp::AuditDone) => Some("audit"),
+        StoreOp::Repo(RepoOp::AuditPending | RepoOp::AuditDone | RepoOp::AuditSetAside) => {
+            Some("audit")
+        }
         StoreOp::Repo(RepoOp::ErasePlan | RepoOp::EraseStep) => Some("erase"),
         StoreOp::Repo(RepoOp::HoldOwner | RepoOp::Purged) => Some("system"),
+        StoreOp::Repo(RepoOp::AccountClosed) => Some("close"),
         StoreOp::Repo(RepoOp::Restore) if !(actor.can("system") && c["check"] == true) => {
             return if actor.repo_owner() {
                 Ok(())
@@ -75,6 +76,7 @@ pub fn tombstone_caller(op: StoreOp, c: &Value, actor: &Actor, settings: &Settin
                 Err(gone())
             };
         }
+        StoreOp::Repo(RepoOp::PurgeNow) if !actor.repo_owner() => return Err(gone()),
         _ => None,
     };
     if job.is_some_and(|scope| !actor.can(scope)) {
@@ -89,7 +91,7 @@ pub(super) fn notify<S: SqlStore>(
     db: &S,
     event: &'static str,
     action: &str,
-    actor: &Actor,
+    actor: &str,
     now: i64,
     extra: Option<(&str, Value)>,
 ) -> Result<Vec<Value>> {
@@ -99,7 +101,7 @@ pub(super) fn notify<S: SqlStore>(
         at_ms: now,
         fields: [
             ("action".to_owned(), json!(action)),
-            ("actor".to_owned(), json!(actor.principal)),
+            ("actor".to_owned(), json!(actor)),
         ]
         .into_iter()
         .chain(extra.map(|(k, v)| (k.to_owned(), v)))
@@ -166,14 +168,20 @@ pub fn delete<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings
     )?;
     let told = undo::facts(c, settings, Some(now))["purge_at"].as_i64();
     let purge_at = told.map(|at| ("purge_at", json!(super::hooks::iso(at))));
-    let hooks = notify(db, "repo.deleted", "deleted", actor, now, purge_at)?;
+    let hooks = notify(
+        db,
+        "repo.deleted",
+        "deleted",
+        &actor.principal,
+        now,
+        purge_at,
+    )?;
     audit_outbox::record(db, c, "repo.deleted", &actor.principal, json!({}))?;
     Ok(answer(false, hooks, now))
 }
 
-/// `repo_purge_target`: the store a deleted repository's objects live in (purger only),
-/// and an Artifacts mirror retired from it but not deleted yet (`retired_mirror`). Refused
-/// until the undo window has passed; the first to pass ends it (`undo`).
+/// `repo_purge_target`: the store a deleted repository's objects live in (purger only).
+/// Refused until the undo window has passed; the first to pass ends it (`undo`).
 pub fn purge_target<S: SqlStore>(
     db: &S,
     c: &Value,
@@ -188,12 +196,28 @@ pub fn purge_target<S: SqlStore>(
     }
     undo::require_due(c, settings)?;
     undo::start_purge(db, settings)?;
-    let retired = db.query(
-        "SELECT mirror FROM mirror_retirement WHERE state='switched'",
-        &[],
-    )?;
-    Ok(
-        json!({ "name": settings.name, "object_store": settings.object_store,
-               "retired_mirror": retired.first().map(|r| r["mirror"].clone()) }),
-    )
+    Ok(json!({ "name": settings.name, "object_store": settings.object_store }))
+}
+
+/// `repo_account_closed {account, successor?}`: a deleted account is no member here, and with
+/// `successor`, a tombstone it owned has a name no session can hold. Its handle is free for
+/// someone else at once, and nobody but the account may bring its repositories back.
+pub(super) fn account_closed<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Value> {
+    let account = string(c, "account")?;
+    let keys: Vec<Value> = db
+        .query(
+            "DELETE FROM members WHERE account=? RETURNING account",
+            &[json!(account)],
+        )?
+        .into_iter()
+        .map(|r| r["account"].clone())
+        .collect();
+    let owned = settings.deleted_at.is_some() && settings.workspace == account;
+    if let (true, Some(successor)) = (owned, c["successor"].as_str()) {
+        db.query(
+            "UPDATE repo_settings SET workspace=?1,owner=?1 WHERE id='repository'",
+            &[json!(successor)],
+        )?;
+    }
+    Ok(json!({ "keys": keys, "owned": owned }))
 }

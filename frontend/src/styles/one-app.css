@@ -14,63 +14,76 @@
 }
 /* Home */
 .home-repos {
-  max-width: 880px;
-  padding: 32px;
+  padding: 24px;
 }
 .home-repos h1 {
   margin: 0;
 }
 .home-repo-list {
   list-style: none;
+  overflow: hidden;
   padding: 0;
-  margin: 20px 0 0;
-  display: grid;
-  gap: 8px;
+  margin: 12px 0 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.home-repo-list li + li {
+  border-top: 1px solid var(--row-line);
 }
 .home-repo-list a {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 16px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  min-height: var(--row-h);
+  padding: 5px 16px;
 }
 .home-repo-list a:hover {
-  border-color: var(--blue);
+  background: var(--surface-2);
+}
+.home-repo-list a:focus-visible {
+  outline-offset: -3px;
 }
 .home-repo-text {
   display: grid;
-  gap: 2px;
   min-width: 0;
   flex: 1;
 }
 .home-repo-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
   font-weight: 500;
+  line-height: var(--leading-chrome);
   overflow-wrap: anywhere;
+}
+.home-repo-name .visibility-badge {
+  padding-block: 0;
+  line-height: 16px;
 }
 .home-repo-meta {
   color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-label);
 }
 .home-repo-list svg {
   color: var(--muted);
 }
 /* A repository */
 .repo-page {
-  padding: 24px 32px 48px;
+  padding: 24px 24px 48px;
   min-width: 0;
 }
-.repo-head {
+.repo-facts {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 16px;
+  gap: 6px 10px;
   margin-bottom: 12px;
 }
-.repo-head h1 {
-  font-size: var(--text-3xl);
+.repo-facts p {
   margin: 0;
-  overflow-wrap: anywhere;
 }
 .status-chips {
   display: flex;
@@ -93,7 +106,7 @@ a.chip:hover {
   color: var(--blue-text);
 }
 /* Fork sits beside the chips at their height, not a full-size button's. */
-.repo-head button.fork-button {
+.repo-facts button.fork-button {
   min-height: 0;
   gap: 6px;
   padding: 3px 10px;
@@ -101,6 +114,7 @@ a.chip:hover {
   font-size: var(--text-sm);
   line-height: inherit;
 }
+.import-notice a,
 .source-note a,
 .readme-body a {
   color: var(--blue-text);
@@ -141,10 +155,12 @@ a.chip:hover {
   align-items: center;
   gap: 6px;
   list-style: none;
-  padding: 7px 14px;
-  border-radius: 7px;
-  background: var(--blue);
-  color: var(--on-accent);
+  min-height: 32px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: var(--text-md);
   font-weight: 500;
 }
 .clone-menu > summary::-webkit-details-marker {
@@ -234,8 +250,8 @@ a.chip:hover {
   font-size: var(--text-md);
 }
 .file-table td {
-  padding: 8px 14px;
-  border-top: 1px solid var(--line);
+  padding: var(--row-y) 14px;
+  border-top: 1px solid var(--row-line);
 }
 .file-table tr:hover td {
   background: var(--surface-2);
@@ -260,6 +276,9 @@ a.chip:hover {
 }
 .file-icon-tree {
   color: var(--blue-text);
+}
+.file-author {
+  margin-left: 8px;
 }
 .file-message {
   color: var(--muted);
@@ -298,9 +317,13 @@ a.chip:hover {
   color: var(--text);
 }
 .readme-body pre {
-  background: var(--bg);
+  background: var(--code-bg);
   padding: 12px;
   border-radius: 6px;
+}
+.readme-body img {
+  max-width: 100%;
+  height: auto;
 }
 .readme-body blockquote {
   margin: 0 0 12px;
@@ -313,27 +336,41 @@ a.chip:hover {
   margin: 0;
   padding: 0;
   min-width: 0;
+  max-width: 100%;
   display: inline-flex;
-  border: 1px solid var(--line-strong);
-  border-radius: 7px;
-  overflow: hidden;
+  border: 0;
+  overflow-x: auto; /* Too wide for a phone: it scrolls, a segment never breaks in two. */
 }
-.segmented button {
+/* The segments carry the edge, so one is as tall as the controls beside it. */
+.segmented :is(button, a) {
+  flex: none;
+  height: var(--control-h);
+  min-height: 0;
+  display: inline-flex;
+  align-items: center;
   background: var(--surface);
   color: var(--text);
+  white-space: nowrap;
+  border: 1px solid var(--line-strong);
   border-radius: 0;
-  min-height: 34px;
-  padding: 6px 12px;
+  padding: 0 12px;
   font-size: var(--text-md);
 }
-.segmented button + button {
-  border-left: 1px solid var(--line-strong);
+.segmented :is(button, a) + :is(button, a) {
+  margin-left: -1px;
 }
-.segmented button[aria-pressed="true"] {
+.segmented :is(button, a):first-of-type {
+  border-radius: 7px 0 0 7px;
+}
+.segmented :is(button, a):last-of-type {
+  border-radius: 0 7px 7px 0;
+}
+.segmented button[aria-pressed="true"],
+.segmented a[aria-current="page"] {
   background: var(--accent-soft);
   color: var(--blue-text);
 }
-.segmented button:focus-visible {
+.segmented :is(button, a):focus-visible {
   outline-offset: -3px;
 }
 /* Settings */
@@ -465,7 +502,8 @@ a.chip:hover {
   .repo-page,
   .home-repos,
   .org-page,
-  .account-settings {
+  .account-settings,
+  .source-device {
     padding: 16px;
   }
   .repo-settings {
@@ -484,6 +522,10 @@ a.chip:hover {
   .source-toolbar-end {
     margin-left: 0;
   }
+  /* Beside the branch picker a long name would stand one letter wide. */
+  .source-crumbs {
+    flex-basis: 100%;
+  }
   .file-name {
     width: auto;
     white-space: normal;
@@ -494,33 +536,12 @@ a.chip:hover {
   }
 }
 .page-heading h1 {
-  font-size: var(--text-3xl);
-  font-weight: 600;
   margin-bottom: 6px;
 }
 .page-heading p {
   margin-bottom: 0;
 }
 /* A repository until its import lands. */
-.import-history {
-  margin: 0 0 16px;
-  padding: 10px 14px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-}
-.import-history p:first-child {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-}
-.import-history .source-meta {
-  margin: 4px 0 0;
-  overflow-wrap: anywhere;
-}
-.import-history strong {
-  color: var(--text);
-}
 .import-notice strong {
   color: var(--text);
 }

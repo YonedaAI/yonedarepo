@@ -163,7 +163,7 @@ pub fn materialize(root: &Path, files: &[CheckFile]) -> Result<()> {
 }
 
 /// Hands the materialized tree to the unprivileged check UID (deployed: runtime is root).
-fn hand_over(root: &Path) -> Result<()> {
+pub(crate) fn hand_over(root: &Path) -> Result<()> {
     #[cfg(target_os = "linux")]
     if unsafe { libc::geteuid() } == 0 {
         for entry in walkdir::WalkDir::new(root) {

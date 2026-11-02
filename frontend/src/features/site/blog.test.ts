@@ -1,4 +1,4 @@
-// The blog: every post's front matter and hero image, the category filter, "More posts",
+// The blog: every post's front matter and any hero image, the category filter, "More posts",
 // figures in a body, and the index and post pages as rendered.
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -25,11 +25,12 @@ const PUBLIC = Object.keys(
 const words = (text: string) => text.split(/\s+/).filter(Boolean).length;
 
 describe('blog posts', () => {
-  it.each(BLOG_POSTS.map((p) => p.slug))('%s has its front matter and hero image', (slug) => {
+  it.each(BLOG_POSTS.map((p) => p.slug))('%s has its front matter and any hero image', (slug) => {
     const [post] = BLOG_POSTS.filter((p) => p.slug === slug);
     expect(BLOG_CATEGORIES).toContain(post.category);
     expect(post.author).not.toBe('');
     expect(post.summary.length).toBeGreaterThan(40);
+    if (!post.image) return;
     expect(post.image).toMatch(new RegExp(`^/blog/${slug}/[\\w-]+\\.(webp|png|svg)$`));
     expect(PUBLIC).toContain(post.image);
     expect(post.imageAlt.length).toBeGreaterThan(20);
@@ -41,6 +42,7 @@ describe('blog posts', () => {
     expect(papers.length).toBeGreaterThanOrEqual(5);
     for (const post of papers) {
       expect(post.category).toBe('Research');
+      expect(post.image).not.toBe('');
       expect(post.paper).toMatch(/^https:\/\/yonedarepo-research\.vercel\.app\/papers\/[a-z-]+\/$/);
       expect(post.body).toContain(post.paper.replace(/\/$/, ''));
       const prose = bodyParts(post.body)
@@ -177,11 +179,15 @@ describe('blog pages', () => {
       else expect(list).not.toContain(`href="/blog/${post.slug}"`);
   });
 
-  it.each(BLOG_POSTS.map((p) => p.slug))('renders post %s with its hero and more posts', (slug) => {
+  it.each(BLOG_POSTS.map((p) => p.slug))('renders post %s and more posts', (slug) => {
     const [post] = BLOG_POSTS.filter((p) => p.slug === slug);
     const html = render(createElement(SiteBlog, { slug, navigate }));
-    expect(html).toContain(`src="${post.image}"`);
-    expect(html).toContain(`<figcaption>`);
+    if (post.image) {
+      expect(html).toContain(`src="${post.image}"`);
+      expect(html).toContain(`<figcaption>`);
+    } else {
+      expect(html.slice(0, html.indexOf('blog-body'))).not.toContain('<img');
+    }
     expect(html).toContain(`${readingMinutes(post.body)} min read`);
     expect(html).toContain('More posts');
     const more = html.slice(html.indexOf('More posts'));

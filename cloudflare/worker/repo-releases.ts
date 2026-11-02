@@ -6,6 +6,7 @@
 // first uploads of one name write different keys (unless their bytes are equal) and only
 // one is recorded, so a download, which streams the key the record names, always serves
 // the recorded bytes, sent with that sha256 in `x-yoneda-sha256`.
+import { warned } from './log';
 import { notifyHooks } from './repo-hooks';
 import { fromBase64, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
@@ -137,7 +138,8 @@ export const releaseOperations = {
     const keys = (deleted.assets as Json[]).map((a) =>
       assetKey(ctx.repo, deleted.tag, a.sha256, a.name),
     );
-    if (keys.length > 0) await ctx.env.OBJECTS.delete(keys).catch(() => {});
+    if (keys.length > 0)
+      await ctx.env.OBJECTS.delete(keys).catch(warned('release.bytes_kept', { repo: ctx.repo }));
     await notifyHooks(ctx.env, ctx.repo);
     return deleted;
   },

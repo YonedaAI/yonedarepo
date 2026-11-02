@@ -120,7 +120,7 @@
   margin-left: auto;
   font-weight: 400;
   color: var(--site-muted);
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--mono);
 }
 .mock-gates {
   list-style: none;

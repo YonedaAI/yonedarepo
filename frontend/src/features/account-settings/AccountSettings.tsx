@@ -1,6 +1,6 @@
 // Account settings, one page per section (`settingsRoute.ts`; the sidebar's Account group moves
-// between them): General (the profile, its email, its connected accounts, the theme, a way to
-// Billing), Billing, Tokens, SSH keys, Organizations and, where deleted repositories can be
+// between them): General (the profile, its email, its connected accounts, its recovery code,
+// the theme, a way to Billing), Billing, Tokens, SSH keys, Organizations and, where deleted repositories can be
 // restored, Recently deleted. Each page is its title (Organizations adds a description and
 // Create organization), then headed cards of rows.
 import { SettingsRow, SettingsSection } from '../../components/SettingsSection';
@@ -16,7 +16,11 @@ import type { RepoSummary } from '../source-platform/TokenParts';
 import type { Loaded } from '../source-platform/useSource';
 import { AvatarSettings } from './AvatarSettings';
 import { BillingSettings } from './BillingSettings';
+import { DeleteAccount } from './DeleteAccount';
 import { EmailSettings } from './EmailSettings';
+import { HandleRow } from './HandleSettings';
+import { NameRow } from './NameRow';
+import { RecoverySettings } from './RecoverySettings';
 import { SignInMethods } from './SignInMethods';
 import { ACCOUNT_SECTION_TITLES, type AccountSection, formatSettingsRoute } from './settingsRoute';
 import { TokenSettings } from './TokenSettings';
@@ -31,8 +35,10 @@ interface Props {
   /** The account's organizations (the shell's copy, so the sidebar follows a new one). */
   orgs?: Loaded<{ orgs: OrgSummary[] }>;
   navigate?: Navigate;
+  /** A new handle for the signed-in account: the shell reads the session again. */
+  onHandle?: (handle: string) => void;
   /** A new picture for the signed-in account (the shell's copy, so the menu follows it). */
-  onAvatar?: (picture: Pick<AccountIdentity, 'avatar_url' | 'avatar_source'>) => void;
+  onIdentity?: (change: Partial<AccountIdentity>) => void;
   /** A repository came back: the shell's lists follow. */
   onRestored?: () => void;
 }
@@ -43,12 +49,20 @@ const BILLING = { view: 'settings', section: 'billing' } as const;
 const NoAccount = ({ loading }: { loading?: boolean }) =>
   loading ? <Loading what="your account" /> : <p className="source-meta">Sign in to see it.</p>;
 
-function General({ identity, loading, onAvatar, navigate }: Props) {
+function General({ identity, loading, onIdentity, onHandle, navigate }: Props) {
   return (
     <>
       <SettingsSection id="profile" title="Profile">
         {identity ? (
-          <AvatarSettings identity={identity} onChange={onAvatar} />
+          <>
+            <AvatarSettings identity={identity} onChange={onIdentity} />
+            <NameRow
+              key={identity.display_name}
+              identity={identity}
+              onChange={(display_name) => onIdentity?.({ display_name })}
+            />
+            <HandleRow identity={identity} navigate={navigate} onChange={onHandle ?? (() => {})} />
+          </>
         ) : (
           <div className="settings-block">
             <NoAccount loading={loading} />
@@ -57,6 +71,7 @@ function General({ identity, loading, onAvatar, navigate }: Props) {
       </SettingsSection>
       {identity && <EmailSettings />}
       {identity && <SignInMethods />}
+      {identity && <RecoverySettings />}
       <SettingsSection id="appearance" title="Appearance">
         <SettingsRow
           title="Theme"
@@ -68,7 +83,7 @@ function General({ identity, loading, onAvatar, navigate }: Props) {
         <SettingsSection id="general-billing" title="Billing">
           <SettingsRow
             title="Agent credit and usage"
-            detail="Platform features are free. Managed agent runs use credit."
+            detail="Managed agent runs use credit."
             action={
               <a
                 className="button-link quiet"
@@ -80,6 +95,7 @@ function General({ identity, loading, onAvatar, navigate }: Props) {
           />
         </SettingsSection>
       )}
+      {identity && <DeleteAccount identity={identity} />}
     </>
   );
 }

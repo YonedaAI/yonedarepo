@@ -11,7 +11,12 @@
 //! repository past its due time that a legal hold kept from purging still restores. The mark
 //! is `policy_digest`, as `erase` marks `object_store`: it needs no migration, an older binary
 //! never reads it on a tombstone, and nothing bound to the digest can run again, as a marked
-//! tombstone never comes back. `repo_purged` closes it, once, queueing `repo.purged`.
+//! tombstone never comes back. `repo_purged` closes it, once, queueing `repo.purged`. The owner,
+//! signed in, need not wait for the due time: `repo_purge_now` puts the same mark, under the same
+//! legal hold, so a restore loses from that commit on, before any job has run. No token can ask:
+//! one can delete, and this window is what survives a stolen one. A build
+//! older than the mark purged without it, so `repo_restore {check}` also names the store and the
+//! head, and the adapter looks for them before it commits (`repo-restore-held.ts`).
 use super::audit_outbox;
 use super::auth::Actor;
 use super::deletion;
@@ -77,6 +82,21 @@ pub(super) fn facts(c: &Value, settings: &Settings, deleted_at: Option<i64>) -> 
     })
 }
 
+/// What a restore looks for: main's head, or the newest ref's, and where a push keeps it.
+/// Null with no refs: such a repository has nothing to lose.
+fn head<S: SqlStore>(db: &S) -> Result<Value> {
+    let rows = db.query(
+        "SELECT r.commit_id AS commit_id,\
+         (SELECT bundle FROM bundled_objects WHERE id=r.commit_id) AS bundle,\
+         EXISTS(SELECT 1 FROM staged_objects WHERE id=r.commit_id) AS staged \
+         FROM refs r ORDER BY r.name='refs/heads/main' DESC,r.version DESC LIMIT 1",
+        &[],
+    )?;
+    Ok(rows.first().map_or(Value::Null, |row| {
+        json!({ "commit": row["commit_id"], "bundle": row["bundle"], "staged": row["staged"] == 1 })
+    }))
+}
+
 /// `repo_restore {name?, check?}`: the owner's account brings a tombstone no purge has reached
 /// back (`deletion::allowed_when_deleted`), under `name` when it names one. With `check`,
 /// changes nothing: the adapter first holds the name and re-registers a fork. Again on a live
@@ -106,7 +126,43 @@ pub(super) fn restore<S: SqlStore>(
     let mut answer = facts(c, settings, settings.deleted_at);
     answer["name"] = json!(name);
     answer["already"] = json!(already);
+    if c["check"] == true && !already {
+        answer["object_store"] = json!(settings.object_store);
+        answer["head"] = head(db)?;
+    }
     Ok(answer)
+}
+
+/// The refusal for anything but the owner, signed in. The adapter says the same to a token.
+pub(super) fn needs_a_person() -> Error {
+    Error::new(
+        "FORBIDDEN",
+        "Only the owner, signed in, can delete a repository for good. A token can't",
+    )
+}
+
+/// `repo_purge_now`: the owner, signed in, gives up the rest of the window. From this commit on
+/// nothing restores it, so the adapter's steps after it repeat safely: asking again is what
+/// finishes an attempt that died, and `finished` says there is nothing left to send. Recorded
+/// once, by whoever marked it; the sweep's own purge records nothing here.
+pub(super) fn purge_now<S: SqlStore>(
+    db: &S,
+    c: &Value,
+    actor: &Actor,
+    settings: &Settings,
+) -> Result<Value> {
+    if settings.deleted_at.is_none() {
+        return Err(Error::new("CONFLICT", "That repository is not deleted"));
+    }
+    if !settings.purge_started() {
+        start_purge(db, settings)?;
+        audit_outbox::record(db, c, "repo.purge_requested", &actor.principal, json!({}))?;
+    }
+    Ok(json!({
+        "name": settings.name,
+        "workspace": settings.workspace,
+        "finished": settings.policy_digest == PURGED,
+    }))
 }
 
 /// `repo_purged`: the purge job's last report. Queues `repo.purged` once and answers the hooks
@@ -122,7 +178,7 @@ pub(super) fn purged<S: SqlStore>(
     }
     if settings.policy_digest != PURGED && !settings.erased() {
         let now = number(c, "now")?;
-        deletion::notify(db, "repo.purged", "purged", actor, now, None)?;
+        deletion::notify(db, "repo.purged", "purged", &actor.principal, now, None)?;
         db.query(
             "UPDATE repo_settings SET policy_digest=? WHERE id='repository'",
             &[json!(PURGED)],

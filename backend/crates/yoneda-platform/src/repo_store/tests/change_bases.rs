@@ -117,3 +117,67 @@ fn a_change_whose_base_is_gone_does_not_reopen() {
         "NOT_FOUND"
     );
 }
+
+/// A base can be created after a commit's base version, at the commit's own parent. That move
+/// changes nothing the commit read, so what lands on the base later is all that counts.
+fn reader_on(h: &Harness, root: &str, message: &str) -> String {
+    let tree = h.ok(
+        OWNER,
+        json!({"op":"repo_commit","commit":root,"brief":true}),
+    )["tree"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let (reader, mut item) = super::pushed::pushed(root, &tree, message);
+    item["read_set"] = json!(["README.md"]);
+    super::pushed::record(h, AGENT, json!([item])).unwrap();
+    reader
+}
+
+#[test]
+fn a_base_made_at_a_commits_parent_changes_nothing_it_read() {
+    let (h, root) = seeded();
+    let reader = reader_on(&h, &root, "reads the readme");
+    h.ok(
+        AGENT,
+        json!({"op":"repo_branch_set","ref":"stage","commit":root,"expected":null}),
+    );
+    let elsewhere = h
+        .commit(
+            AGENT,
+            Some(&root),
+            1,
+            json!([file("docs/stage.md", "x\n")]),
+            json!([]),
+        )
+        .unwrap();
+    h.ok(
+        AGENT,
+        json!({"op":"repo_land","ref":"stage","commit":elsewhere}),
+    );
+    let merge = h
+        .run(
+            AGENT,
+            json!({"op":"repo_land","ref":"stage","commit":reader}),
+        )
+        .unwrap_err();
+    assert_eq!(merge.code, "MERGE_REQUIRED", "{}", merge.message);
+}
+
+#[test]
+fn a_base_moved_anywhere_else_still_cannot_be_proven_independent() {
+    let (h, root) = seeded();
+    let reader = reader_on(&h, &root, "reads the readme");
+    let other = branch(&h, "other", &root, "docs/other.md");
+    h.ok(
+        AGENT,
+        json!({"op":"repo_branch_set","ref":"stage","commit":other,"expected":null}),
+    );
+    let stale = h
+        .run(
+            AGENT,
+            json!({"op":"repo_land","ref":"stage","commit":reader}),
+        )
+        .unwrap_err();
+    assert_eq!(stale.code, "CONFLICT", "{}", stale.message);
+}

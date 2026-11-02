@@ -97,6 +97,9 @@
 //          an agent do better with memory and context than with a plain clone? Real opencode agents
 //          in the Docker sandbox, one fresh fork per run. Prints its estimate and starts only with
 //          --yes: tools/staging/memory-flow.mjs)
+//        node tools/staging-realworld.mjs --feature-tests [--headed]
+//          (= --only 0,12,33-48,17, no model: tools/staging/feature-items.mjs; --flight-path: 43, 44;
+//          --cli-walk [--cli-bin <dir>]: 48)
 //        node tools/staging-realworld.mjs --memory-page [--headed]
 //          (= --only 0,12,32,17, dev only, no model: a session record, its transcript and context
 //          delivery behind a change, read by API and in Chrome: tools/staging/memory-page-flow.mjs)
@@ -115,6 +118,8 @@ import { cliConcurrency, cliLoginRepo, cliTransactional } from './staging/cli-fl
 import { CliKit } from './staging/cli-tools.mjs';
 import { Recorder, Session, accountSession, kitCredentials, purgeWhatIsDeleted, readEnvFile, secondAccount, treeOf } from './staging/client.mjs';
 import { agentHooks } from './staging/agent-hooks-flow.mjs';
+import { featureItems } from './staging/feature-items.mjs';
+import { chosenItems, FEATURE_FLAGS, FEATURE_ITEMS, featureRun, offSwitches } from './staging/kit-gates.mjs';
 import { agentRun } from './staging/agent-run-flow.mjs';
 import { forkFlow } from './staging/fork-flow.mjs';
 import { gitSemantics } from './staging/git-semantics-flow.mjs';
@@ -208,46 +213,16 @@ const { values } = parseArgs({
     'memory-runs': { type: 'string' },
     'memory-parallel': { type: 'string' },
     yes: { type: 'boolean', default: false },
-    // Item 32 alone, with the CLI sign-in and cleanup it needs.
-    'memory-page': { type: 'boolean', default: false },
+    // Item 32, the week's features (33-48) or the Flight Path (43, 44), with their sign-in and cleanup.
+    ...FEATURE_FLAGS,
   },
 });
 const root = fileURLToPath(new URL('../', import.meta.url));
-const only = values['git-semantics']
-  ? new Set(['0', '12', '13', '18', '21', '23', '27', '17', ...(values.ssh ? ['26'] : [])])
-  : values['agent-hooks']
-  ? new Set(['0', '12', '28', '17'])
-  : values['memory-page']
-  ? new Set(['0', '12', '32', '17'])
-  : values.agents
-  ? new Set(['0', '12', '29', '17'])
-  : values.ssh
-  ? new Set(['0', '26'])
-  : values.visibility
-  ? new Set(['0', '31'])
-  : values.orgs
-  ? new Set(['0', '24'])
-  : values.lfs
-  ? new Set(['0', '25'])
-  : values['model-check']
-  ? new Set(['0', 'model'])
-  : values.webhooks
-    ? new Set(['0', 'hooks'])
-    : values.members
-      ? new Set(['0', 'members'])
-      : values.forks
-        ? new Set(['0', '22'])
-      : values['reads-sessions']
-        ? new Set(['0', 'reads'])
-        : values.browser
-          ? new Set(['0', 'browser'])
-          : values.only
-            ? new Set(values.only.split(','))
-            : null;
+const only = chosenItems(values);
 // The model check needs the platform's review key, the webhook gate a receiver and the
 // members, forks (22) and orgs (24) gates a second account, and real agents (29) spend on a
 // model, so a full kit run leaves them out unless named.
-const wanted = (id) => (only ? only.has(id) : !['model', 'hooks', 'members', 'reads', '22', '24', '26', '29', '32'].includes(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
+const wanted = (id) => (only ? only.has(id) : !['model', 'hooks', 'members', 'reads', '22', '24', '26', '29', '32', '45', 'f1'].includes(id)) && !(values['skip-bursts'] && ['8', '9', '10'].includes(id));
 
 if (values.prod)
   Object.assign(values, {
@@ -313,7 +288,7 @@ await step('browser', 'Browser: sign in, source pages, a change landed, releases
 await step('31', 'Visibility: anonymous stock-Git clone and page of a public repository; private refuses within 1 s', (m) =>
   visibilityFlow({ origin: values.origin, api: values.api, platform: platformAccount }, m),
 );
-await step('6', 'git clone protected main = API tree (bytes)', (m) => cloneMatchesApi(platformAccount, m));
+await step('6', 'git clone protected main = API tree (bytes)', (m) => cloneMatchesApi({ api: values.api, platform: platformAccount }, m));
 await step('7', 'Check run in a container, 0 left after', (m) => containerCheck(platformAccount, m));
 await step('19', 'Big clone: partial (blob:none, lazy blobs, < 10% of full), shallow, deepen, fsck', (m) =>
   bigClone({ api: values.api, platform: platformAccount, bigFiles: Number(values['big-files']) }, m),
@@ -374,7 +349,7 @@ await step('9', '1000-writer burst (platform API)', (m) => fanout(1000, m));
 await step('10', 'Many-repo burst (20 repos x 10 writers)', (m) =>
   BENCH_KEY ? manyRepoBurst(platformAccount, { client: values.client, key: BENCH_KEY, target: values.platform }, m) : { skip: 'BENCH_KEY not in staging-bench.env' },
 );
-if (['12', '13', '14', '15', '16', '17', '18', '21', '27', '28', '29', '32'].some(wanted)) {
+if (['12', '13', '14', '15', '16', '17', '18', '21', '27', '28', '29', '32', '45', 'f1', ...FEATURE_ITEMS].some(wanted)) {
   const cli = new CliKit({ api: values.api, bin: values['cli-bin'] ?? resolve(root, 'target/release'), platformAccount });
   const repo = {};
   try {
@@ -407,6 +382,7 @@ if (['12', '13', '14', '15', '16', '17', '18', '21', '27', '28', '29', '32'].som
     await step('32', 'Change evidence (no model): session record, transcript and context delivery, by API and in Chrome', (m) =>
       memoryPage(cli, { browser: { origin: values.origin, kit, headed: values.headed } }, m),
     );
+    await featureItems(step, { cli, kit, account, platformAccount, values, root });
     await step('17', 'Delete kit repos via yoneda, 404 after, PAT revoked', (m) => cliCleanup(cli, m));
   } finally {
     // Never leave a live token behind; leftover repos: --cleanup-repos kit-cli / kit-mcp.
@@ -419,13 +395,16 @@ if (['12', '13', '14', '15', '16', '17', '18', '21', '27', '28', '29', '32'].som
 // Only the model check calls a model (the platform's own AI check, < $0.01).
 // The tree of the commit item 0 saw live: the prod guard takes a merge commit of the same tree.
 const tree = treeOf(root, rec.items.find((i) => i.id === '0')?.metrics.front);
-const evidence = { schema: 1, origin: values.origin, platform: values.platform, tree, recorded_at: new Date().toISOString(), items: rec.items };
+const { ran, notRun } = offSwitches(rec.items, only);
+rec.items = ran;
+const evidence = { schema: 1, origin: values.origin, platform: values.platform, tree, recorded_at: new Date().toISOString(), items: ran, not_run: notRun };
 await mkdir(resolve(root, '.local/staging'), { recursive: true });
 // Smoke-only evidence keeps its own name: the prod guard reads the newest realworld*.json.
 const smoke = ['model', 'hooks', 'members', 'reads', 'browser', '22', '24', '25', '26', '31'].find((id) => only?.has(id) && [...only].every((i) => ['0', id].includes(i)));
-const gate = values['git-semantics'] ? 'git-semantics-gate' : values['agent-hooks'] ? 'agent-hooks-gate' : values.agents ? 'agents-gate' : values['memory-page'] ? 'memory-page-gate' : null;
+const gate = featureRun(only) ? 'feature-gate' : values['git-semantics'] ? 'git-semantics-gate' : values['agent-hooks'] ? 'agent-hooks-gate' : values.agents ? 'agents-gate' : values['memory-page'] ? 'memory-page-gate' : null;
 const prefix = gate ?? { model: 'model-check', hooks: 'webhook-gate', members: 'members-gate', reads: 'reads-gate', browser: 'browser-gate', 22: 'forks-gate', 24: 'orgs-gate', 25: 'lfs-gate', 31: 'visibility-gate' }[smoke] ?? (values.prod ? 'prod-smoke' : 'realworld');
 const file = resolve(root, `.local/staging/${prefix}-${Date.now()}.json`);
 await writeFile(file, `${JSON.stringify(evidence, null, 2)}\n`);
 console.log(`\n${rec.table()}\n\nEvidence: ${file}`);
+for (const { id, reason } of notRun) console.log(`NOT RUN ${id}: ${reason}`);
 process.exitCode = rec.items.some((i) => i.status === 'fail') ? 1 : 0;
