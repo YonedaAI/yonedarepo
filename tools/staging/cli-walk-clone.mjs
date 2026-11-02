@@ -285,6 +285,7 @@ async function helperRows(w, me, tree) {
   await w.row('git push --delete a branch through the helper', async () => {
     const dir = join(work, 'fresh');
     await me.gitOk(dir, 'push', '-q', 'origin', 'HEAD:refs/heads/doomed');
+    await w.soon(async () => /refs\/heads\/doomed/.test(await me.gitOk(dir, 'ls-remote', 'origin')), 'the branch in ls-remote');
     const gone = await me.git(dir, 'push', 'origin', '--delete', 'doomed');
     assert.equal(gone.code, 0, short(gone.stderr));
     assert.ok(!(await me.api.get(`/repos/${tree.id}/refs`)).refs['refs/heads/doomed'], 'the branch is still there');

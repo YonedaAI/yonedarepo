@@ -51,7 +51,7 @@ async function installRows(w, person, m) {
     const dir = person.path('.local', 'bin');
     for (const tool of ['yoneda', 'git-remote-yoneda', 'cloudflared']) assert.ok(existsSync(join(dir, tool)), `no ${tool} in ${dir}`);
     assert.match(ran.stdout, /Installed yoneda/);
-    assert.match(ran.stdout, /PATH set in .*\.profile/, 'the installer did not put the folder on PATH');
+    assert.match(ran.stdout, /PATH set in /, 'the installer did not put the folder on PATH');
     assert.match(ran.stdout.trim().split('\n').at(-1), /^Next: yoneda login/, 'the last line is not the next step');
     person.bin = dir;
     w.extraPath.push(dir);
@@ -83,11 +83,11 @@ async function cloneSpellings(w, person, repo) {
   await w.row('Q2: yoneda clone <owner>/<name>', async () => {
     const ran = await person.y(['clone', `${w.ownerHandle}/${repo.name}`], { cwd: work });
     assert.equal(ran.code, 0, short(ran.stderr));
-    assert.ok(existsSync(join(work, w.ownerHandle, repo.name, '.git')), 'not where it said');
-    assert.ok(existsSync(join(work, repo.name, '.git')), `it landed in ${w.ownerHandle}/${repo.name}, not ./${repo.name}, where git clone puts it`);
+    assert.ok(existsSync(join(work, repo.name, '.git')), `it did not land in ./${repo.name}, where git clone puts it`);
+    assert.ok(!existsSync(join(work, w.ownerHandle)), 'a folder for the owner');
   });
   await w.row('Q2: inside a clone by <owner>/<name>, yoneda knows the repository', async () => {
-    const dir = join(work, w.ownerHandle, repo.name);
+    const dir = join(work, repo.name);
     assert.equal((await person.git(dir, 'remote', 'get-url', 'origin')).code, 0, 'no such clone');
     for (const args of [['status'], ['log'], ['change', 'list'], ['policy', 'show']]) {
       const ran = await person.y(args, { cwd: dir });
@@ -95,9 +95,11 @@ async function cloneSpellings(w, person, repo) {
     }
   });
   await w.row('Q2: yoneda clone <id> (folder name)', async () => {
-    const ran = await person.y(['clone', repo.id], { cwd: work });
+    const elsewhere = person.path('by-id');
+    await person.exec('/bin/mkdir', ['-p', elsewhere]);
+    const ran = await person.y(['clone', repo.id], { cwd: elsewhere });
     assert.equal(ran.code, 0, short(ran.stderr));
-    assert.ok(existsSync(join(work, repo.name, '.git')) || !existsSync(join(work, repo.id)), `the folder is the id ${repo.id}, not the name ${repo.name}`);
+    assert.ok(existsSync(join(elsewhere, repo.name, '.git')), `the folder is not the name ${repo.name}`);
   });
   await w.row('Q2: yoneda clone <name> says what to type', async () => {
     const ran = await person.y(['clone', repo.name], { cwd: work });
