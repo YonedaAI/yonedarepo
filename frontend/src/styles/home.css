@@ -85,6 +85,7 @@
 }
 .stat-value {
   font-size: var(--text-4xl);
+  font-weight: 700;
   line-height: 1.1;
 }
 .stat-caption {

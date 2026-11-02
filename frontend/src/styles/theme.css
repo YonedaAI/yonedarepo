@@ -6,17 +6,17 @@
   font-synthesis: none;
   font-size: var(--text-base);
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --text-xs: 11px; /* uppercase section labels */
-  --text-sm: 12px; /* labels and metadata */
-  --text-md: 13px; /* secondary text, tables, toolbars */
-  --text-base: 14px; /* body text, sidebar rows */
-  --text-lg: 15px; /* card titles, page body copy */
-  --text-xl: 16px; /* section headings */
-  --text-2xl: 18px; /* a change's title, large figures */
-  --text-3xl: 20px; /* page headings */
-  --text-4xl: 24px; /* dashboard figures */
-  --text-mono: 13px; /* code fields */
-  --text-mono-dense: 12px; /* code and diff views */
+  --text-xs: 12px; /* uppercase section labels */
+  --text-sm: 13px; /* labels and metadata */
+  --text-md: 14px; /* secondary text, tables, toolbars */
+  --text-base: 15px; /* body text, sidebar rows */
+  --text-lg: 16px; /* card titles, page body copy */
+  --text-xl: 18px; /* section headings */
+  --text-2xl: 22px; /* a change's title, large figures */
+  --text-3xl: 30px; /* page headings */
+  --text-4xl: 36px; /* dashboard figures */
+  --text-mono: 14px; /* code fields */
+  --text-mono-dense: 13px; /* code and diff views */
   --text-code: max(
     var(--text-sm),
     0.93em
