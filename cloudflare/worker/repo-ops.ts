@@ -100,6 +100,7 @@ const KEEPS_REFS = new Set([
   'repo_storage',
   'repo_size_add',
   'repo_hold_owner',
+  'repo_store_audit',
   'repo_audit_pending',
   'repo_audit_done',
   'repo_audit_set_aside',

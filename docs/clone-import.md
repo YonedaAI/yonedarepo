@@ -14,7 +14,7 @@ Written before the code. **Nothing here is measured on dev.** The cold start is 
 | The remote asked before a container starts | 1 request, under 300 ms |
 | A remote that is private or gone | no container started |
 | Container | 1 instance, 1 of the class's slots, under 180 s to start |
-| `git clone` | at most 60 min, 10 GB of pack; 5.8 GB of disk free on `standard-1` at worst |
+| `git clone` | at most 60 min, 10 GB of pack; about 13.8 GB of disk free on `standard-3` (16 GB, less the 2.19 GB image) |
 | The objects | 1 R2 write per 4 MiB, at most 3 at once, 1 index call per 5,000 objects. A file over 8 MiB is 1 R2 write of its own |
 | The commits | 1 authority call per 100 commits or 1 MiB of changes |
 | The refs | 1 authority call for main, then 1 per 100 refs |
@@ -33,7 +33,7 @@ Bench: `tools/import-bench.mjs`, 3 runs of each repository, server-side timing, 
 4. Steps read what it holds, each time-boxed, so that no Worker fits a repository into one call:
    - `/clone/objects`: every commit, tree and file, framed as a push's, to `storeBundle`, and a large file to its own raw object.
    - `/clone/commits`: every commit, parents first, each with its bytes and its changes against its first parent, to `repo_record_pushed`.
-   - `/clone/refs`: `repo_import` lands the default branch as main, then `repo_import_refs` makes every other branch and tag. An annotated tag keeps its object, so its id stays Git's.
+   - `/clone/refs`: `repo_import` lands main, then `repo_import_refs` makes every other branch and tag. An annotated tag keeps its object, so its id stays Git's.
    - `/clone/pack`: stored under the key a whole `git clone` of those refs asks for, and kept as the seed later pack builds start from. A failure here ends nothing: a clone is then built from the objects.
 5. The instance is destroyed.
 
@@ -41,7 +41,15 @@ Bench: `tools/import-bench.mjs`, 3 runs of each repository, server-side timing, 
 
 Refs come last, so an import is nothing or all of it. While it runs, the repository has no refs and `GET /repos/<id>/import` answers `{status: "running"}`; its page says `Importing this repository…`.
 
-The default branch lands as main, since that is the branch the platform protects. A branch called main on a remote whose default is another one stays, as `imported/main`.
+Every branch and tag keeps its name and commit. `master` stays `master`, and a remote with no `main` gets one beside it at the same commit, so the repository holds both:
+
+| The remote | `main` starts at | Other refs |
+|---|---|---|
+| Has a `main` | its own `main`, whatever the default | as they are |
+| No `main`, default `master` | `master` | `master` stays |
+| `branch` asked for | that branch | that branch stays; a `main` of the remote's own becomes `imported/main` |
+
+The trunk has to exist as `main`: it is a fixed name in the code rather than a setting of each repository. `HEAD` in Git over HTTP, protected branches, landings and direct landings, the ref chain, traffic warnings, the pack jobs, the CLI and the UI's defaults all name it: 169 lines in 88 files. A default branch per repository would be a schema change and a refactor of each of those.
 
 ## Rules of the instance
 
@@ -91,7 +99,7 @@ Locally, 2026-11-01, on a Mac and in the real image, not on dev.
 | pallets/flask | 73 | 5,607 | 26,372 | 1.6 | 7.3 | 0 |
 | expressjs/express | 331 | 6,449 | 33,707 | 1.5 | 18.3 | 0 |
 
-`master` lands as main in pflag and express, at GitHub's commit. These are local R2 and Durable Objects, so hosted times will be longer.
+`master` is the default in pflag and express. Main stood at GitHub's commit, as it does now, though these runs predate `master` keeping its name beside it. These are local R2 and Durable Objects, so hosted times will be longer.
 
 - Flask's clone built from R2 objects alone, with no stored pack: real Git's `index-pack` takes it, `fsck --connectivity-only` passes, and all 5,607 commits are reachable from its 73 refs.
 

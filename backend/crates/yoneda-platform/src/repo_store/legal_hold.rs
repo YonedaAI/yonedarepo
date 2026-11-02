@@ -40,6 +40,7 @@ pub(crate) fn refuses(op: StoreOp) -> bool {
                 | R::ReleaseDelete
                 | R::ChangeDelete
                 | R::AuditSetAside
+                | R::ImportReset
         ) | StoreOp::Maintenance(M::VacuumPlan)
             | StoreOp::Quarantine(Q::Purge | Q::Claim)
     )

@@ -100,6 +100,8 @@ op_names! {
         RecordCommit = "repo_record_commit",
         RecordContract = "repo_record_contract",
         ImportRefs = "repo_import_refs",
+        ImportReset = "repo_import_reset",
+        StoreAudit = "repo_store_audit",
         RecordPushed = "repo_record_pushed",
         RecordRepair = "repo_record_repair",
         RecordSymbols = "repo_record_symbols",

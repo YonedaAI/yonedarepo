@@ -121,7 +121,7 @@ const INDEXES: [&str; 5] = [
 const PAGE: usize = 64;
 
 #[derive(Default)]
-pub(super) struct Spent {
+pub(crate) struct Spent {
     pub rows: u32,
     pub bytes: u64,
     /// Every table is empty.
@@ -176,6 +176,11 @@ fn measure<S: SqlStore>(db: &S, table: &Table, spent: &mut Spent) -> Result<Opti
 
 /// One transaction's worth: deletes rows under the budgets, table by table.
 pub(super) fn batch<S: SqlStore>(db: &S) -> Result<Spent> {
+    batch_of(db, |_| true)
+}
+
+/// `batch` over the tables `chosen` names.
+pub(crate) fn batch_of<S: SqlStore>(db: &S, chosen: impl Fn(&str) -> bool) -> Result<Spent> {
     for index in INDEXES {
         db.query(
             &format!("INSERT INTO {index}({index},rank) VALUES('secure-delete',1)"),
@@ -183,7 +188,7 @@ pub(super) fn batch<S: SqlStore>(db: &S) -> Result<Spent> {
         )?;
     }
     let mut spent = Spent::default();
-    for table in TABLES {
+    for table in TABLES.iter().filter(|t| chosen(t.name)) {
         // A repository that has not run the table's migration holds none of its rows.
         if table.name == flight_plans::TABLE && !flight_plans::available(db)? {
             continue;
@@ -203,7 +208,7 @@ pub(super) fn batch<S: SqlStore>(db: &S) -> Result<Spent> {
 }
 
 /// Clears what the deletes left in the now empty indexes: empty pages.
-pub(super) fn reset_indexes<S: SqlStore>(db: &S) -> Result<()> {
+pub(crate) fn reset_indexes<S: SqlStore>(db: &S) -> Result<()> {
     for index in INDEXES {
         db.query(
             &format!("INSERT INTO {index}({index}) VALUES('rebuild')"),

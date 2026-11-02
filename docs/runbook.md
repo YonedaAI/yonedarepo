@@ -213,6 +213,15 @@ An import is a `git clone` in a check container: every branch and tag, with ever
 - **Result.** A finished import's `output` has `commit` (main), `refs`, `left_out`, `commits`, `objects` and `pack_bytes`.
 - **Cost.** One check slot for the clone. The runtime image must hold `/clone`.
 - **Failure.** No ref moves. Delete the repository and add it again.
+- **Find what needs a re-import.** `cargo xtask admin imports --env dev|prod` lists every repository with what it needs, and read-only:
+
+| `needs` | Meaning |
+|---|---|
+| `reimport` | Commits an older import recorded, whose objects stayed in Artifacts, or main's commit or top tree cannot be read back |
+| `check` | A commit too large to stage went whole to the old store, so older files may be missing though main reads back. Or the audit failed (`error`) |
+| `nothing` | Its objects are in R2 |
+
+- **Re-import.** `cargo xtask admin reimport --env dev|prod --repo <id> [--url <url>] [--branch <branch>]` says what it would do; add `--confirm` to do it. The address defaults to the one the import recorded. It keeps the id, name, members, tokens, hooks, sessions and LFS objects, and empties history first, so landings, changes and checks start again. A push during the clone fails the clone: tell the repository's people first. A run that dies is run again. A fork is refused, since it reads its parent; a forced push upstream can leave a fork's base commit out of the new history. A legal hold refuses it.
 - **Bench.** `tools/import-bench.mjs`.
 
 ## Repository size
@@ -275,7 +284,7 @@ Stage A of `docs/global-scale-plan.md`, item 3. All four switches are off until 
 
 ## The object store
 
-R2 is the only object store. A repository's `object_store` is `platform:<id>`, and a fork's carries the parent it inherits from. Commits, pushes, reads and clones go through its authority and R2, so a create makes nothing else. `git clone` over HTTPS and SSH and `yoneda clone` read it; `yoneda clone --offline` takes an API snapshot of the branch.
+R2 is the only object store. A repository's `object_store` is `platform:<id>`, and a fork's carries the parent it inherits from. An `artifacts:` or `r2:` spec from before reads as `platform:<id>`; `cargo xtask admin imports` shows which repositories had history only in the old store. Commits, pushes, reads and clones go through its authority and R2, so a create makes nothing else. `git clone` over HTTPS and SSH and `yoneda clone` read it; `yoneda clone --offline` takes an API snapshot of the branch.
 
 `node tools/staging/create-bench.mjs --runs 3 --creates 20` (the kit account on dev) prints min, median and max of the create and of each server-side phase. Budget of a seeded create: median under 2 s, slowest under 4 s.
 

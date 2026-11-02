@@ -47,6 +47,9 @@ export interface ObjectStore {
 /** Forks of forks nest their parents' specs; this many levels at most. */
 export const FORK_DEPTH = 4;
 const FORK = /^fork:/;
+/** What repositories made before R2 became the store of record have on file, `yr-<repo>` by
+ * name. Their objects are read the same way as any other's, so no spec ever fails to parse. */
+const RETIRED_SPEC = /^(?:artifacts:[^/]+\/|r2:)(?:yr-)?([A-Za-z0-9._-]+)$/;
 
 /** A fork's store spec: its own store and its parent's (repository and spec), whose
  * objects it inherits (repo-objects reads fall back to them; nothing is copied). */
@@ -62,8 +65,11 @@ export function ownSpec(spec: string): string {
   return FORK.test(spec) ? String(JSON.parse(spec.slice(5)).own) : spec;
 }
 
-/** Parses a recorded store: `platform:<repo>`, or a fork's (`forkSpec`): its own store, carrying
- * the parent it inherits from. */
+/** Whether `spec` names a store that has gone (a fork: by its own store). */
+export const retiredSpec = (spec: string) => RETIRED_SPEC.test(ownSpec(spec));
+
+/** Parses a recorded store: `platform:<repo>`, a retired one (`RETIRED_SPEC`), or a fork's
+ * (`forkSpec`): its own store, carrying the parent it inherits from. */
 export function parseStore(env: Env, spec: string): ObjectStore {
   if (FORK.test(spec)) {
     const fork = JSON.parse(spec.slice(5));
@@ -72,7 +78,7 @@ export function parseStore(env: Env, spec: string): ObjectStore {
     const own = parseStore(env, fork.own);
     return Object.assign(own, { inherits: { repo: fork.parent, spec: String(fork.store) } });
   }
-  const platform = PLATFORM_SPEC.exec(spec);
+  const platform = PLATFORM_SPEC.exec(spec) ?? RETIRED_SPEC.exec(spec);
   if (platform) return new PlatformStore(env, platform[1]);
   throw new Error('Repository object store is outside this deployment');
 }

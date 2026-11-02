@@ -7,10 +7,10 @@ use super::{
     activity, adopt, agent_context, agent_reads, annotated, audit_outbox, auto_landing, bisect,
     branches, capacity, change_closing, change_comments, change_delete, change_gates,
     change_instruments, change_records, change_route, changes, changesets, checks, classes,
-    contracts, flight_plans, git_http, head, history, hook_delivery, hook_events, hooks, land,
-    land_batch, land_queue, land_tickets, land_when_cleared, legal_hold, members, merging, prepare,
-    projection_plan, pushed, reads, rebase, record, releases, search_records, sessions, staging,
-    submitted, symbols, tags, tokens, version_projection,
+    contracts, flight_plans, git_http, head, history, history_reset, hook_delivery, hook_events,
+    hooks, land, land_batch, land_queue, land_tickets, land_when_cleared, legal_hold, members,
+    merging, prepare, projection_plan, pushed, reads, rebase, record, releases, search_records,
+    sessions, staging, submitted, symbols, tags, tokens, version_projection,
 };
 use super::{
     authorize::authorize, break_glass, deletion, erase, forks, grants, lfs, maintenance, memory,
@@ -206,6 +206,8 @@ fn run<S: SqlStore>(
         R::Head => head::head(db, c, settings),
         R::ChangesetRecord => version_projection::record(db, c, settings),
         R::ImportRefs => branches::import_refs(db, c, principal),
+        R::ImportReset => history_reset::step(db, c, settings),
+        R::StoreAudit => history_reset::audit(db, settings),
         R::BreakGlass => break_glass::execute(db, c, principal, settings),
         R::Import => {
             let importer = actor.can("import");

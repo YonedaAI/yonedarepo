@@ -60,6 +60,7 @@ mod go_around;
 pub(crate) mod grants;
 mod head;
 mod history;
+mod history_reset;
 mod hook_delivery;
 mod hook_events;
 mod hook_url;

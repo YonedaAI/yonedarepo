@@ -100,7 +100,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         ),
         // A clone's refs are set by the platform importer alone: they arrive whole, with no
         // landing and no gate, into a repository nobody has worked in yet.
-        R::ImportRefs if !actor.can("import") => Err(Error::new(
+        R::ImportRefs | R::ImportReset | R::StoreAudit if !actor.can("import") => Err(Error::new(
             "FORBIDDEN",
             "Only the platform importer sets imported refs",
         )),
@@ -173,6 +173,8 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::HooksFanout
         | R::Import
         | R::ImportRefs
+        | R::ImportReset
+        | R::StoreAudit
         | R::LandBatch
         | R::LandChangesets
         | R::LandClaim

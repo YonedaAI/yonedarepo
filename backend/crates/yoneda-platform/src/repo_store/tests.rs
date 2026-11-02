@@ -1546,6 +1546,7 @@ mod flight_plans;
 mod forks;
 mod git_shallow;
 mod go_around;
+mod history_reset;
 mod hooks;
 mod import_refs;
 mod insights;

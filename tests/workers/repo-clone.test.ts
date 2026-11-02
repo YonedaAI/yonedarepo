@@ -10,9 +10,10 @@ import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { type CloneParams, cloneRepository, MAX_PACK_BYTES } from '../../cloudflare/worker/repo-clone';
 import { caller } from '../../cloudflare/worker/repo-ops';
 import { packKey, seedOf, wholeClone } from '../../cloudflare/worker/repo-pack-cache';
+import { reimportRepository } from '../../cloudflare/worker/repo-reimport';
 import type { Env } from '../../cloudflare/worker/types';
 import { asGit } from './git-answer';
-import { api, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 import { binary, join, object, type Obj, pack, pkt, text, tree } from './synthetic-pack';
 
 usePlatformFixture();
@@ -321,10 +322,9 @@ describe('a repository cloned', () => {
     expect(seed).toEqual({ key: await packKey(id, wholeClone(tips)), tips: [...new Set(tips)] });
   });
 
-  it('lands a default branch of another name as main, and keeps a branch called main', async () => {
+  it('keeps a default branch of another name under that name, with main beside it', async () => {
     const h = await history();
     h.remote.refs = h.remote.refs.map((r) => (r.ref === 'refs/heads/main' ? { ...r, ref: 'refs/heads/master' } : r));
-    h.remote.branch('main', h.other);
     github();
     const box = await container(h.remote, { default_branch: 'master' });
     const { env, owner, repo, params } = await asked('master', box.fake);
@@ -332,12 +332,27 @@ describe('a repository cloned', () => {
     await cloneRepository(env, params, running);
 
     const refs = await refsOf(repo, owner, env);
+    expect(refs['refs/heads/master']).toBe(h.merge.id);
     expect(refs['refs/heads/main']).toBe(h.merge.id);
-    expect(refs['refs/heads/imported/main']).toBe(h.other.id);
-    expect(refs['refs/heads/master']).toBeUndefined();
   });
 
-  it('lands the branch asked for as main', async () => {
+  it('leaves the remote’s own main as main, whatever its default branch', async () => {
+    const h = await history();
+    h.remote.refs = h.remote.refs.map((r) => (r.ref === 'refs/heads/main' ? { ...r, ref: 'refs/heads/master' } : r));
+    h.remote.branch('main', h.other);
+    github();
+    const box = await container(h.remote, { default_branch: 'master' });
+    const { env, owner, repo, params } = await asked('both', box.fake);
+
+    await cloneRepository(env, params, running);
+
+    const refs = await refsOf(repo, owner, env);
+    expect(refs['refs/heads/main']).toBe(h.other.id);
+    expect(refs['refs/heads/master']).toBe(h.merge.id);
+    expect(refs['refs/heads/imported/main']).toBeUndefined();
+  });
+
+  it('starts main at the branch asked for, keeps that branch, and moves only the remote’s main aside', async () => {
     const h = await history();
     github();
     const box = await container(h.remote);
@@ -345,7 +360,29 @@ describe('a repository cloned', () => {
 
     await cloneRepository(env, { ...params, branch: 'side' }, running);
 
-    expect((await refsOf(repo, owner, env))['refs/heads/main']).toBe(h.sideTwo.id);
+    const refs = await refsOf(repo, owner, env);
+    expect(refs['refs/heads/main']).toBe(h.sideTwo.id);
+    expect(refs['refs/heads/side']).toBe(h.sideTwo.id);
+    expect(refs['refs/heads/imported/main']).toBe(h.merge.id);
+  });
+
+  it('after a re-import is the same repository again, and takes a commit', async () => {
+    const h = await history();
+    github();
+    const box = await container(h.remote);
+    const { env, owner, repo, id, params } = await asked('twice', box.fake);
+    await cloneRepository(env, params, running);
+    const first = await refsOf(repo, owner, env);
+    const created: any[] = [];
+    const target = { ...env, PLATFORM_IMPORT: { create: async (o: any) => created.push(o), get: async () => ({ status: async () => ({ status: 'complete' }) }) } } as unknown as Env;
+
+    await reimportRepository(target, 'operator', id, { url: params.url, confirm: true });
+    expect(await refsOf(repo, owner, env)).toEqual({});
+    await cloneRepository(env, created[0].params, running);
+
+    expect(await refsOf(repo, owner, env)).toEqual(first);
+    const commit = await api(`${repo}/commits`, owner, { body: { ref: 'main', message: 'after', author, changes: [file('after.txt', 'yes\n')] } }, env);
+    expect(commit.status).toBe(200);
   });
 
   it('every step repeats harmlessly', async () => {
