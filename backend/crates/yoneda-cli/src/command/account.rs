@@ -31,6 +31,13 @@ pub enum RepoCommand {
         /// An organization to own it (the caller must be one of its owners).
         owner: Option<String>,
     },
+    /// Points this project's Git remote `remote` at a repository (`<owner>/<name>` or an id).
+    RemoteAdd {
+        remote: String,
+        repo: String,
+        /// Replace a remote that points elsewhere.
+        replace: bool,
+    },
 }
 
 /// `yoneda org …`: organizations, their members and teams.

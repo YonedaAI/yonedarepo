@@ -14,6 +14,15 @@ pub enum SyncMode {
     Attempt { id: String, mcp_url: Option<String> },
 }
 
+/// The shells `yoneda completion` writes a script for.
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Shell {
+    Bash,
+    Zsh,
+    Fish,
+    Powershell,
+}
+
 /// What `yoneda clone` brings.
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum CloneMode {
@@ -250,6 +259,8 @@ pub enum Agent {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     Help,
+    /// Prints the completion script for a shell.
+    Completion(Shell),
     Login {
         origin: Option<String>,
         with_token: bool,

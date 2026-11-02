@@ -55,6 +55,7 @@ pub fn all() -> Vec<(&'static str, Value)> {
         entry::<RepoDelete>(),
         entry::<RepoImport>(),
         entry::<RepoFork>(),
+        entry::<RepoRemote>(),
         entry::<OrgList>(),
         entry::<OrgCreate>(),
         entry::<OrgShow>(),

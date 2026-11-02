@@ -130,6 +130,11 @@ pub async fn run(origin: Option<&str>, command: RepoCommand) -> Result<()> {
                 files: files as u64,
             });
         }
+        RepoCommand::RemoteAdd {
+            remote,
+            repo,
+            replace,
+        } => crate::repo_remote::add(&origin, &remote, &repo, replace).await?,
         RepoCommand::Fork { id, name, owner } => {
             if !crate::api::valid_repo_id(&id) {
                 return Err(Error::usage(format!("{id:?} is not a repository id")));

@@ -64,6 +64,10 @@ async fn run(command: Command) -> Result<()> {
             println!("{}", args::USAGE);
             Ok(())
         }
+        Command::Completion(shell) => {
+            print!("{}", crate::completion::script(shell));
+            Ok(())
+        }
         Command::Login {
             origin,
             with_token,

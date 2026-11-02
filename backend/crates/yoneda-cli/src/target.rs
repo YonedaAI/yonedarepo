@@ -56,6 +56,17 @@ pub struct Clone {
     pub remote_name: Option<String>,
 }
 
+/// The repository a remote's URL names, by id or by `/<handle>/<name>`, whose id the helper or
+/// `yoneda` noted in this clone (`url::id_key`).
+pub fn known_remote(git: &Git, configured: &str) -> Option<RemoteUrl> {
+    url::parse(configured).ok().or_else(|| {
+        let (origin, handle, name) = url::parse_path(configured)?;
+        let key = url::id_key(&origin, &handle, &name);
+        let repo = git.run(&["config", "--get", &key]).ok()?;
+        crate::api::valid_repo_id(&repo).then_some(RemoteUrl { origin, repo })
+    })
+}
+
 /// The repository containing the current directory and its yoneda remote (preferring
 /// `origin`), or an offline checkout's pinned repository.
 pub fn current_clone() -> Option<Clone> {
@@ -74,7 +85,7 @@ pub fn current_clone() -> Option<Clone> {
                 .strip_prefix("remote.")?
                 .strip_suffix(".url")?
                 .to_owned();
-            Some((name != "origin", name, url::parse(value).ok()?))
+            Some((name != "origin", name, known_remote(&probe, value)?))
         })
         .collect();
     remotes.sort_by_key(|(not_origin, _, _)| *not_origin);
