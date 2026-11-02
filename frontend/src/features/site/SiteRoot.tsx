@@ -60,7 +60,7 @@ export function SiteRoot({
   return (
     <SiteLayout page={site} authenticated={session.authenticated} navigate={navigate}>
       {deleted && (
-        <p className="site-notice" role="status">
+        <p className="workspace-notice" role="status">
           Your account was deleted.
         </p>
       )}

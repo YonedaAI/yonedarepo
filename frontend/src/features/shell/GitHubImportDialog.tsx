@@ -2,7 +2,7 @@
 // the New repository dialog. A connected account's repositories are offered in the same field,
 // as it holds an address too. The import runs in the background, so what can only be known
 // later (no such repository, a private one) is the new repository's page to say.
-import { type FormEvent, useId, useState } from 'react';
+import { type FormEvent, useEffect, useId, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import {
   CONNECT_PATH,
@@ -79,6 +79,11 @@ export function GitHubImportDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const picked = pickedRepository(source, github?.repositories);
+  // Adding from GitHub starts on GitHub. Back from there, the dialog stays to say what happened.
+  const unconnected = github?.available === true && !connected;
+  useEffect(() => {
+    if (unconnected && connectResult === null) window.location.assign(CONNECT_PATH);
+  }, [unconnected, connectResult]);
   function changeSource(next: string) {
     setSource(next);
     setInvalid(false);
