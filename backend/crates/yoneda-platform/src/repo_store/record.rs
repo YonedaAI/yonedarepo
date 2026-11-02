@@ -58,7 +58,7 @@ pub fn record<S: SqlStore>(
         .as_array()
         .ok_or_else(|| rows::corrupt("touches"))?;
     db.query(
-        "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,hidden_ref,artifacts_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO commits(id,tree,parents,generation,base_version,principal,message,read_set,recorded_at,hidden_ref,artifacts_at,author_name,authored_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
         &[
             json!(id.hex()),
             prepared["tree"].clone(),
@@ -73,6 +73,8 @@ pub fn record<S: SqlStore>(
             // with the first protected ref that includes it.
             json!(i64::from(!staged)),
             json!((!staged).then_some(now)),
+            prepared["author_name"].clone(),
+            prepared["authored_at"].clone(),
         ],
     )?;
     for touch in touches {

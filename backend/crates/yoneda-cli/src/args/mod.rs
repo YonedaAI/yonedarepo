@@ -71,7 +71,7 @@ fn clone(rest: &[String]) -> Result<Command> {
         .positional
         .first()
         .cloned()
-        .ok_or_else(|| Error::usage("clone needs a repository id"))?;
+        .ok_or_else(|| Error::usage("clone needs <owner>/<name> or a repository id"))?;
     let mode = match (
         p.on("full"),
         parser::list(p.flag("sparse")),
@@ -196,6 +196,7 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "flight-plan" => sub::flight_plan(rest)?,
         "hook" => sub::hook(rest)?,
         "context" => sub::context(rest)?,
+        "completion" => sub::completion(rest)?,
         "help" | "--help" | "-h" => Command::Help,
         other => {
             return Err(Error::usage(format!(
@@ -694,6 +695,51 @@ mod tests {
                 agent: Agent::Codex,
                 origin: None
             })
+        );
+    }
+
+    #[test]
+    fn parses_repo_remote_add_and_completion() {
+        assert_eq!(
+            parsed("repo remote add origin --override ada/web").ok(),
+            Some(Command::Repo {
+                origin: None,
+                command: RepoCommand::RemoteAdd {
+                    remote: "origin".into(),
+                    repo: "ada/web".into(),
+                    replace: true
+                }
+            })
+        );
+        assert_eq!(
+            parsed("repo remote add upstream ada/web").ok(),
+            Some(Command::Repo {
+                origin: None,
+                command: RepoCommand::RemoteAdd {
+                    remote: "upstream".into(),
+                    repo: "ada/web".into(),
+                    replace: false
+                }
+            })
+        );
+        for line in [
+            "repo remote",
+            "repo remote add origin",
+            "repo remote list",
+            "repo list --override",
+            "completion",
+            "completion tcsh",
+            "completion zsh extra",
+        ] {
+            assert_eq!(
+                parsed(line).map_err(|e| e.exit_code).err(),
+                Some(64),
+                "{line}"
+            );
+        }
+        assert_eq!(
+            parsed("completion zsh").ok(),
+            Some(Command::Completion(Shell::Zsh))
         );
     }
 

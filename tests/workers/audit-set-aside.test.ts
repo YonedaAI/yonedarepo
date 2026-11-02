@@ -11,7 +11,7 @@ import { api, author, delayed, file, queued, scoped, signup, usePlatformFixture 
 
 usePlatformFixture();
 
-const on = { ...scoped, PLATFORM_OBJECT_STORE: 'r2', ARTIFACTS: undefined, ADMIN_ACCOUNTS: 'audit_operator', REPO_ERASE: 'on', AUDIT_LOG: 'on' } as unknown as Env;
+const on = { ...scoped, ADMIN_ACCOUNTS: 'audit_operator', REPO_ERASE: 'on', AUDIT_LOG: 'on' } as unknown as Env;
 const holds = { ...on, LEGAL_HOLD: 'on' } as unknown as Env;
 const logOff = { ...on, AUDIT_LOG: 'off' } as unknown as Env;
 const policy = { required_checks: [], approvals: 0 };

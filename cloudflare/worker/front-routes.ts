@@ -20,6 +20,8 @@ import type { Env } from './types';
 import { withWebAnalytics } from './web-analytics';
 import { publicOrigin, websitePage } from './website-metadata';
 
+const GITHUB_PAGES = new Set(['/github/connect', '/github/connected']);
+
 export async function frontFetch(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   if (url.pathname === '/health')
@@ -32,6 +34,11 @@ export async function frontFetch(req: Request, env: Env): Promise<Response> {
     const handled = await oauthRoute(req, env);
     if (handled) return handled;
   }
+  // Connecting GitHub is the platform's, on its own paths: the App's setup URL is one of them.
+  if (GITHUB_PAGES.has(url.pathname) && env.PLATFORM)
+    return env.PLATFORM.fetch(
+      carriedRequest(new Request(`${url.origin}/api/v1${url.pathname}${url.search}`, req)),
+    );
   // Git over HTTPS by readable path is the platform's (`/<handle>/<name>.git`).
   if (GIT_PATH.test(url.pathname))
     return env.PLATFORM

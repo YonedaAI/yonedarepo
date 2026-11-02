@@ -24,7 +24,6 @@ export const RESEND_URL = 'https://api.resend.com/emails';
 export const RESEND_KEY = 're_fixture_key_not_real';
 const NS = {
   repo: '11111111111111111111111111111111',
-  push: '22222222222222222222222222222222',
   check: '33333333333333333333333333333333',
 };
 const JOBS = '44444444444444444444444444444444';
@@ -38,7 +37,6 @@ const ACCOUNT = '0123456789abcdef0123456789abcdef';
 /** The id variables, unset: the watcher then looks the ids up by name. */
 export const NO_IDS = {
   NS_SOURCE_REPOSITORY: undefined,
-  NS_OBJECT_PUSH_QUEUE: undefined,
   NS_CHECK_CONTAINER: undefined,
   QUEUE_JOBS_ID: undefined,
   QUEUE_DEAD_LETTER_ID: undefined,
@@ -53,7 +51,6 @@ export function lookup(path: string): Response | null {
       bindings: [
         { name: 'WORKSPACES', type: 'durable_object_namespace', class_name: 'WorkspaceAuthority', namespace_id: 'f'.repeat(32) },
         { name: 'SOURCE_REPOS', type: 'durable_object_namespace', class_name: 'SourceRepository', namespace_id: NS.repo },
-        { name: 'OBJECT_PUSHES', type: 'durable_object_namespace', class_name: 'ObjectPushQueue', namespace_id: NS.push },
         { name: 'CHECK_RUNNERS', type: 'durable_object_namespace', class_name: 'CheckContainer', namespace_id: NS.check },
         { name: 'LAND_MODE', type: 'plain_text', text: 'batch' },
       ],
@@ -132,7 +129,6 @@ export function account(t: Traffic = {}) {
 
 const CLASSES: Partial<Record<TailComponent, string>> = {
   source_repository: 'SourceRepository',
-  object_push_queue: 'ObjectPushQueue',
   check_runs: 'CheckContainer',
   land_queue: 'LandCombiner',
   commit_shards: 'CommitShard',
@@ -193,7 +189,6 @@ export function hour(at: number, overrides: Partial<Record<TailComponent, Partia
   const base: Calls[] = [
     { component: 'api_worker', count: 100, wallMs: 50 },
     { component: 'source_repository', count: 200, wallMs: 80 },
-    { component: 'object_push_queue', count: 50, wallMs: 700 },
     { component: 'check_runs', count: 20, wallMs: 9000 },
     { component: 'derived_jobs', count: 30, wallMs: 300 },
   ];

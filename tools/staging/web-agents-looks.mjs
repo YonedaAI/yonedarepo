@@ -32,7 +32,7 @@ export async function lookAtForm(s) {
     await form.waitFor();
     await form.getByLabel('File').fill('src/a.js');
     await form.getByLabel('Branch').fill('main');
-    await form.getByRole('button', { name: 'Commit' }).click();
+    await form.getByRole('button', { name: 'Save' }).click();
     await form.getByText(/Main moves only by landing/).waitFor();
     await s.shot(`form-${size}`);
   });

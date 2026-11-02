@@ -86,6 +86,18 @@ pub struct RepoImport {
     pub remote: String,
 }
 
+/// `repo remote add`.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct RepoRemote {
+    /// The Git remote's name.
+    pub remote: String,
+    /// The URL it now has.
+    pub url: String,
+    /// What it pointed at before, when `--override` replaced it.
+    pub replaced: Option<String>,
+}
+
 /// `repo fork`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -302,6 +314,7 @@ super::report! {
     RepoDelete => "repo-delete",
     RepoImport => "repo-import",
     RepoFork => "repo-fork",
+    RepoRemote => "repo-remote",
     OrgList => "org-list",
     OrgCreate => "org-create",
     OrgShow => "org-show",

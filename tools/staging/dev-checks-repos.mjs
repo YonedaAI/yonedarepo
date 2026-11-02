@@ -4,7 +4,7 @@
 // the flows against a stand-in. Nothing here deletes what `ctx.ledger` did not record.
 import assert from 'node:assert/strict';
 import { b64 } from './client.mjs';
-import { D1_ROWS, mirrorOf, NAME_PREFIX, r2Prefixes, refusal } from './dev-checks-lib.mjs';
+import { D1_ROWS, NAME_PREFIX, r2Prefixes, refusal } from './dev-checks-lib.mjs';
 
 export const OPEN = { required_checks: [], approvals: 0 };
 export const author = { name: 'Dev checks', email: 'dev-checks@yonedarepo.invalid' };
@@ -75,11 +75,9 @@ export async function snapshot(ctx, repo) {
   }
   const r2 = {};
   for (const prefix of r2Prefixes(repo.id, repo.store)) r2[prefix] = await ctx.cf.r2(prefix);
-  const mirror = mirrorOf(repo.store);
   return {
     d1,
     r2,
-    artifacts: mirror ? await ctx.cf.mirror(mirror) : null,
     object: repo.object ? await objectState(ctx, repo.object) : null,
   };
 }

@@ -8,7 +8,7 @@ import type { Env } from '../../cloudflare/worker/types';
 import { api, author, executed, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
-const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2' } as unknown as Env;
+const local = { ...scoped } as unknown as Env;
 const policy = { required_checks: ['unit'], approvals: 0, runners: { unit: { command: ['sh', '-c', 'test'], timeout_seconds: 30 } } };
 
 async function checked(owner: { cookie: string }, repo: string, changes: unknown[]) {

@@ -16,8 +16,6 @@ export default defineConfig({
         d1Databases: ['INDEX'],
         bindings: {
           OWNER_TOKEN: 'local-test-owner',
-          ARTIFACTS_NAMESPACE: 'yoneda-test',
-          PLATFORM_OBJECT_STORE: 'r2',
         },
       },
     }),

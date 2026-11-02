@@ -215,7 +215,7 @@ it('stops starting repositories at the page limit and reports those still runnin
 });
 
 it('leaves an unchanged fork out, and searches it once it has landed', async () => {
-  const local = { ...on, PLATFORM_OBJECT_STORE: 'r2' } as unknown as Env;
+  const local = { ...on } as unknown as Env;
   const owner = { cookie: await signup('search_forks') };
   const parent = await repoWith(owner, 'parent', 'fork_needle\n', { visibility: 'public' }, local);
   await derive(parent, 'main', local);
@@ -272,7 +272,7 @@ it('removes the row on delete and purge, and voids it on quarantine and visibili
   await runInDurableObject(bindings.WORKSPACES.get(bindings.WORKSPACES.idFromName(`search:${account}`)), async (_instance, state) => {
     state.storage.sql.exec("INSERT INTO workspace_records(id,payload) VALUES(?,'{}')", `search:${deleted}`);
   });
-  const purging = { ...on, ARTIFACTS: { ...on.ARTIFACTS, delete: async () => {} } } as unknown as Env;
+  const purging = on as unknown as Env;
   await purgeJob(purging, { v: 1, kind: 'platform_purge', repo_id: deleted, job_id: 'test' } as any);
   expect(await row(account, deleted)).toBeNull();
 });

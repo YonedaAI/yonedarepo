@@ -80,7 +80,7 @@ async function clearAgents(platform) {
 async function approveOnPage(web, code, name, repo, m) {
   await withChrome({ ...web.chrome, name: 'agent-signup' }, m, async ({ page, shot }) => {
     await page.goto(`${web.chrome.origin}/device?code=${code}`);
-    await see(page.getByRole('heading', { name: 'Connect an agent' }), 'the agent approval page');
+    await see(page.getByRole('heading', { name: 'Sign in to YonedaRepo' }), 'the agent approval page');
     await see(page.getByText(name), "the agent's name");
     const approve = page.getByRole('button', { name: 'Approve', exact: true });
     assert.equal(await approve.isDisabled(), true, 'Approve is open with no repository chosen');

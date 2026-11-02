@@ -7,7 +7,6 @@
 export type TailComponent =
   | 'api_worker'
   | 'source_repository'
-  | 'object_push_queue'
   | 'check_runs'
   | 'derived_jobs'
   | 'land_queue'
@@ -46,7 +45,6 @@ export interface TailStats extends TailCounts {
 /** Durable Object classes of the platform Worker, by tail `entrypoint`. */
 const OBJECT_CLASSES: Record<string, TailComponent> = {
   SourceRepository: 'source_repository',
-  ObjectPushQueue: 'object_push_queue',
   CheckContainer: 'check_runs',
   LandCombiner: 'land_queue',
   CommitShard: 'commit_shards',
@@ -55,11 +53,11 @@ const OBJECT_CLASSES: Record<string, TailComponent> = {
   WorkspaceAuthority: 'workspace_authority',
 };
 const RESOURCE_KILLS = new Set(['exceededCpu', 'exceededMemory']);
-/** Logged by pushCommit (repo-object-push.ts) when Artifacts refuses a push and it retries: as
- * text, or as JSON from the shared logger. Superfan deploys first, so it reads both. */
 /** Every deploy restarts Durable Objects, and calls in flight then throw this: it isn't a fault. */
 const DEPLOY_RESET = /Durable Object reset because its code was updated/;
-const PUSH_RETRY = /^object store push attempt \d+|"event":"object\.push_retry"/;
+/** Logged by pushCommit (repo-object-push.ts) when the object store refuses a commit's pack and
+ * it is sent again. */
+const PUSH_RETRY = /"event":"object\.push_retry"/;
 /** Logged by compactLog (repo-compaction.ts) when a hold has stalled a repository's log. */
 export const STALL_SAMPLE = 'compaction.stalled';
 /**
@@ -237,7 +235,7 @@ export function aggregate(events: TraceItem[], script: string, wide = false): Ta
     if (owner === undefined) continue;
     const minute = Math.floor((item.eventTimestamp ?? Date.now()) / 60_000) * 60_000;
     const retries = item.logs.filter((l) => PUSH_RETRY.test(text(l.message))).length;
-    if (retries) row(minute, 'object_push_queue').pushRetries += retries;
+    if (retries) row(minute, 'source_repository').pushRetries += retries;
     const component = owner ?? classify(item);
     const named = item.logs.map((l) => markOf(l.message)).filter((m) => m !== null);
     // A mark counts whichever invocation logged it, one this watcher has no component for too.

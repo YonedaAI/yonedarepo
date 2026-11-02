@@ -2,7 +2,7 @@
 use super::parser::{Parsed, list, split_sub, with};
 use crate::command::{
     CheckCommand, Command, HookEvent, OpencodeEvent, ReadsCommand, RepoCommand, SessionCommand,
-    SyncMode, TokenCommand,
+    Shell, SyncMode, TokenCommand,
 };
 use crate::error::{Error, Result};
 
@@ -11,8 +11,11 @@ pub fn repo(rest: &[String]) -> Result<Command> {
     let p = Parsed::new(
         &rest,
         &["origin", "confirm", "name", "batch-files", "owner"],
-        &["public"],
+        &["public", "override"],
     )?;
+    if p.on("override") && sub != "remote" {
+        return Err(Error::usage("only repo remote add takes --override"));
+    }
     if p.flag("owner").is_some() && sub != "create" && sub != "fork" {
         return Err(Error::usage("only repo create and repo fork take --owner"));
     }
@@ -63,6 +66,17 @@ pub fn repo(rest: &[String]) -> Result<Command> {
             name: p.flag("name"),
             owner: p.flag("owner"),
         },
+        "remote" => {
+            let usage = "repo remote add <remote> [--override] <owner>/<name>";
+            match p.exactly(3, usage)? {
+                [add, remote, repo] if add == "add" => RepoCommand::RemoteAdd {
+                    remote: remote.clone(),
+                    repo: repo.clone(),
+                    replace: p.on("override"),
+                },
+                _ => return Err(Error::usage(format!("expected {usage}"))),
+            }
+        }
         other => return Err(Error::usage(format!("unknown repo command {other:?}"))),
     };
     Ok(Command::Repo {
@@ -209,6 +223,20 @@ pub fn flight_plan(rest: &[String]) -> Result<Command> {
         change: p.number("change")?,
         session_id: p.flag("session-id"),
     })
+}
+
+pub fn completion(rest: &[String]) -> Result<Command> {
+    let p = Parsed::new(rest, &[], &[])?;
+    let usage = "completion bash|zsh|fish|powershell";
+    Ok(Command::Completion(
+        match p.exactly(1, usage)?[0].as_str() {
+            "bash" => Shell::Bash,
+            "zsh" => Shell::Zsh,
+            "fish" => Shell::Fish,
+            "powershell" => Shell::Powershell,
+            other => return Err(Error::usage(format!("unknown shell {other:?}; {usage}"))),
+        },
+    ))
 }
 
 pub fn context(rest: &[String]) -> Result<Command> {

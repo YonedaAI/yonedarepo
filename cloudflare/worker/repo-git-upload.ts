@@ -10,7 +10,6 @@ import { deferred } from './background';
 import { transient } from './durable';
 import { log } from './log';
 import { compute } from './repo-compute';
-import { fetchWhileFilling, mirrorClone } from './repo-git-mirror';
 import { UploadSession, wasmMemoryBytes } from './repo-git-sessions';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
@@ -79,22 +78,12 @@ export async function uploadPack(
       }).body_b64,
     );
   const band = caps.includes('side-band-64k') ? CHUNK : caps.includes('side-band') ? 995 : 0;
-  const mirror = (head: Uint8Array) => mirrorClone(ctx, objects, request, () => head, band);
-  let walk: Json;
-  try {
-    walk = await ctx.call({
-      op: 'repo_git_walk',
-      wants: request.wants,
-      haves: request.haves,
-      common_only: !request.done,
-    });
-  } catch (e: any) {
-    if (e?.code !== 'IMPORT_IN_PROGRESS') throw e;
-    // The mirror already holds all of it. Until `done`, nothing is common: only the mirror
-    // can tell which haves it shares, and it leaves them out of the pack.
-    if (!request.done) return new Response(acknowledge([]), { headers: RESULT });
-    return fetchWhileFilling(ctx, objects, request, () => acknowledge([]), band, e);
-  }
+  const walk: Json = await ctx.call({
+    op: 'repo_git_walk',
+    wants: request.wants,
+    haves: request.haves,
+    common_only: !request.done,
+  });
   const ack = acknowledge(walk.common);
   if (!request.done) return new Response(ack, { headers: RESULT });
   const commits = (walk.commits ?? []).map((c: Json) => String(c.commit));
@@ -103,16 +92,7 @@ export async function uploadPack(
     request.haves.length === 0
       ? { wants: request.wants, omit_blobs: false, depth: null, deepen_relative: false }
       : undefined;
-  return sendPack(
-    ack,
-    () => UploadSession.open(walk),
-    objects,
-    band,
-    stats,
-    commits,
-    fresh,
-    mirror,
-  );
+  return sendPack(ack, () => UploadSession.open(walk), objects, band, stats, commits, fresh);
 }
 
 /** `head`, then the pack the session lists, on side-band `band` (none when 0) and ending
@@ -126,8 +106,7 @@ export async function uploadPack(
  * a job the fetch is handed to when this isolate cannot store it. The session is opened only
  * to build.
  * A pack that would carry a quarantined blob is never started: the ERR names the blob
- * (and its path), rather than a pack Git finds incomplete. History only the mirror holds
- * comes from `mirror`, when it can serve this fetch. */
+ * (and its path), rather than a pack Git finds incomplete. */
 export async function sendPack(
   head: Uint8Array,
   open: () => UploadSession,
@@ -136,7 +115,6 @@ export async function sendPack(
   stats?: PackStats,
   commits: string[] = [],
   fresh?: Fresh,
-  mirror?: (head: Uint8Array) => Promise<Response | null>,
 ): Promise<Response> {
   // Every built pack is logged; the client gets the timing line only when it asked.
   const tally = stats ?? new PackStats(false);
@@ -161,8 +139,7 @@ export async function sendPack(
   } catch (e: any) {
     await writer?.abort().catch(() => {});
     if (transient(e)) throw e;
-    const served = e?.mirrorOnly && (await mirror?.(head));
-    return served || errLine(new Uint8Array(), e);
+    return errLine(new Uint8Array(), e);
   }
   const { count, chunks } = built;
   // A pack this isolate does not store, worth a build of its own, goes to a job.

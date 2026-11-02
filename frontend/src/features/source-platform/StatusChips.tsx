@@ -23,7 +23,7 @@ export function StatusChips({
   const text = `Landing needs: ${needs.length ? needs.join(' · ') : 'nothing (lands at once)'}`;
   return (
     <div className="status-chips">
-      <a className="chip" {...linkTo({ view: 'transactions', repo }, navigate)}>
+      <a className="chip" {...linkTo({ view: 'branches', repo }, navigate)}>
         <GitCommitVertical size={14} aria-hidden="true" />
         main @ v{status.version}
       </a>

@@ -8,9 +8,9 @@ use yoneda_core::{Error, Result};
 /// doesn't know it (`SCHEMA_TOO_NEW`), so a migration ships in two waves: wave 1 adds its
 /// entry, wave 2 raises this line. Rollback from wave 2 goes to wave 1, never earlier. While
 /// prod has no users, the owner ships both waves in one deploy.
-pub(crate) const APPLY_THROUGH: i64 = 47;
+pub(crate) const APPLY_THROUGH: i64 = 48;
 
-pub(crate) const MIGRATIONS: [(i64, &str); 47] = [
+pub(crate) const MIGRATIONS: [(i64, &str); 48] = [
     (1, include_str!("../migrations/repo_store/0001_source.sql")),
     (
         2,
@@ -184,6 +184,10 @@ pub(crate) const MIGRATIONS: [(i64, &str); 47] = [
     (
         47,
         include_str!("../migrations/repo_store/0047_memory_kinds.sql"),
+    ),
+    (
+        48,
+        include_str!("../migrations/repo_store/0048_commit_authors.sql"),
     ),
 ];
 

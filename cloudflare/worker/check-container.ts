@@ -1,6 +1,7 @@
 // The platform's check executor: the pinned runtime image started in `check-server`
 // mode. It receives files and argv from the Worker and returns evidence; it holds no
 // platform credentials and has no network, so a check cannot reach or alter the platform.
+// ImportContainer runs the same image, with the disk and the internet an import needs.
 
 import { Container } from '@cloudflare/containers';
 import { warned } from './log';
@@ -41,8 +42,15 @@ export type Started = { secret: string; startMs: number };
  * always frees it. So every path below ends in a kill.
  */
 
+/** A start beyond a check's: the internet, which no check is ever given, and what else the
+ * instance's environment holds. */
+export type StartExtras = { internet?: boolean; envVars?: Record<string, string> };
+
 /** Starts a fresh instance for one check; one that cannot start is killed. */
-export async function startCheck(instance: CheckInstance): Promise<Started> {
+export async function startCheck(
+  instance: CheckInstance,
+  extras: StartExtras = {},
+): Promise<Started> {
   const secret = crypto.randomUUID() + crypto.randomUUID();
   // Every run starts a fresh instance: this is its cold start, reported with the result.
   const starting = Date.now();
@@ -51,7 +59,8 @@ export async function startCheck(instance: CheckInstance): Promise<Started> {
       ports: [8080],
       startOptions: {
         entrypoint: ['/usr/local/bin/start-runtime', 'check-server'],
-        envVars: { CHECK_TOKEN: secret },
+        envVars: { CHECK_TOKEN: secret, ...extras.envVars },
+        enableInternet: extras.internet === true,
       },
       cancellationOptions: { portReadyTimeoutMS: 90_000 },
     });

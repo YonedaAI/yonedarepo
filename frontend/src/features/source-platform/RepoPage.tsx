@@ -5,11 +5,12 @@
 import { useEffect } from 'react';
 import { RepoSettings } from '../repo-settings/RepoSettings';
 import { linkTo, type Navigate, showAddress } from '../shell/useRoute';
+import { ownerRepos } from '../workspace/breadcrumbs';
 import { ChangeView } from './ChangeView';
 import { CommitView } from './CommitView';
 import { ForkButton } from './ForkButton';
 import { HistoryTab } from './HistoryTab';
-import { HistoryImportStatus, HistoryStoppedStatus, ImportStatus } from './ImportStatus';
+import { ImportStatus } from './ImportStatus';
 import { RepoHoldBanner } from './LegalHold';
 import { PublicBadge } from './PublicBadge';
 import { ShowEmailsContext } from './people';
@@ -21,7 +22,6 @@ import { RepoCtc } from './RepoCtc';
 import { RepoFiles } from './RepoFiles';
 import { RepoInsights } from './RepoInsights';
 import { RepoNotFound, repoMissing, useRepoGone } from './RepoNotFound';
-import { RepoOverview } from './RepoOverview';
 import { RepoReleases } from './RepoReleases';
 import { RepoSearch } from './RepoSearch';
 import { isPublic, ReadOnlyContext, repoAccess, type Visibility } from './repoAccess';
@@ -30,8 +30,8 @@ import type { RepoStatus } from './repoStatus';
 import { SessionView } from './SessionView';
 import { Failure } from './SourceStatus';
 import { StatusChips } from './StatusChips';
-import { formatSourceRoute, type SourceRoute } from './sourceRoute';
-import { useHistoryFill, useImportProgress } from './useImportProgress';
+import { formatSourceRoute, type SourceRoute, tabRoute } from './sourceRoute';
+import { useImportProgress } from './useImportProgress';
 import { useSource } from './useSource';
 
 type RepoRoute = Extract<SourceRoute, { repo: string }>;
@@ -44,6 +44,7 @@ export function RepoPage({
   name,
   authenticated,
   username,
+  ownHandle,
   navigate,
   onDeleted,
   onMissing,
@@ -57,6 +58,8 @@ export function RepoPage({
   authenticated: boolean;
   /** The signed-in account's username. */
   username?: string;
+  /** The signed-in account's handle: their own name leads to their Repositories page. */
+  ownHandle?: string;
   navigate: Navigate;
   onDeleted: () => void;
   /** The repository is not there for this viewer (deleted, unknown, private or not theirs). */
@@ -82,9 +85,7 @@ export function RepoPage({
   const data = status.data;
   const access = repoAccess(data?.viewer, authenticated);
   const owner = access.settings;
-  const drift = data?.projections?.filter((p) => p.status === 'drift') ?? [];
   const progress = useImportProgress(repo, data?.refs, status.reload);
-  const history = useHistoryFill(repo, data?.history_import, status.reload);
   // biome-ignore lint/correctness/useExhaustiveDependencies: once per transition, not per render of the caller.
   useEffect(() => {
     if (missing) onMissing();
@@ -111,7 +112,7 @@ export function RepoPage({
             <h1>
               {handle && (
                 <>
-                  <a className="repo-owner" {...linkTo({ view: 'profile', handle }, navigate)}>
+                  <a className="repo-owner" {...linkTo(ownerRepos(handle, ownHandle), navigate)}>
                     {handle}
                   </a>
                   <span className="repo-owner-sep" aria-hidden="true">
@@ -119,7 +120,9 @@ export function RepoPage({
                   </span>
                 </>
               )}
-              {name ?? data?.name ?? repoNameOf(repo)?.name ?? repo}
+              <a className="repo-title" {...linkTo(tabRoute('overview', repo), navigate)}>
+                {name ?? data?.name ?? repoNameOf(repo)?.name ?? repo}
+              </a>
             </h1>
             {isPublic(data?.visibility) && <PublicBadge />}
             {data?.parent && (
@@ -156,17 +159,8 @@ export function RepoPage({
             )}
           </div>
           {data && <RepoHoldBanner repo={repo} />}
-          {drift.map((p) => (
-            <p key={p.refname} role="alert" className="source-error">
-              {p.refname.replace(/^refs\/heads\//, '')} stopped updating for Git clients.
-            </p>
-          ))}
           {status.error && (
             <Failure error={status.error} what="this repository" onRetry={status.reload} />
-          )}
-          {!status.error && history && <HistoryImportStatus progress={history} />}
-          {!status.error && data?.history_stopped && (
-            <HistoryStoppedStatus stopped={data.history_stopped} />
           )}
           {/* Settings stay open: deleting the repository is how a failed import is tried again. */}
           {!status.error && progress.phase !== 'none' && route.view !== 'repo-settings' && (
@@ -177,7 +171,6 @@ export function RepoPage({
               {route.view === 'files' && (
                 <RepoFiles route={route} status={data} navigate={navigate} account={username} />
               )}
-              {route.view === 'overview' && <RepoOverview route={route} onNavigate={navigate} />}
               {(route.view === 'history' ||
                 route.view === 'transactions' ||
                 route.view === 'branches') && (

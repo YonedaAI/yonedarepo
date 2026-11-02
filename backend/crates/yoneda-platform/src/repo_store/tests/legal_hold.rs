@@ -33,6 +33,7 @@ fn destructive() -> Vec<(&'static str, Value)> {
             json!({"op":"repo_audit_set_aside","seq":1,"check":true,"_audit":"on"}),
         ),
         ("platform:erase", json!({"op":"repo_erase_step"})),
+        ("platform:import", json!({"op":"repo_import_reset"})),
         (OWNER, json!({"op":"repo_release_delete","tag":"v1"})),
         (OWNER, json!({"op":"repo_change_delete","number":1})),
         (OWNER, json!({"op":"repo_vacuum_plan"})),
@@ -40,11 +41,6 @@ fn destructive() -> Vec<(&'static str, Value)> {
         (
             "platform:quarantine",
             json!({"op":"repo_quarantine_claim","limit":1}),
-        ),
-        ("platform:quarantine", json!({"op":"repo_mirror_claim"})),
-        (
-            "platform:quarantine",
-            json!({"op":"repo_mirror_switch","epoch":1}),
         ),
     ]
 }
@@ -66,8 +62,7 @@ fn the_list_is_exactly_the_destructive_ops() {
             "repo_change_delete",
             "repo_delete",
             "repo_erase_step",
-            "repo_mirror_claim",
-            "repo_mirror_switch",
+            "repo_import_reset",
             "repo_purge_now",
             "repo_purge_target",
             "repo_quarantine_claim",

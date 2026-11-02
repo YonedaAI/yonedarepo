@@ -66,7 +66,7 @@ export const isAuthor = (principal: string, username: string | undefined) =>
   Boolean(username) && principal === `user:${username}`;
 
 export function commitPanel(
-  commit: { landings: Landing[]; gates: Gates; principal?: string },
+  commit: { landings: Landing[]; gates: Gates; principal?: string; on_main?: boolean },
   viewer: Viewer | undefined,
   policy: Policy | undefined,
   username?: string,
@@ -74,6 +74,8 @@ export function commitPanel(
   const runChecks = writer(viewer) && checksConfigured(policy);
   if (commit.landings.length > 0)
     return { state: 'landed', landings: commit.landings, revert: writer(viewer), runChecks };
+  // Under a landed head: nothing is left to land, and it has no landing to report.
+  if (commit.on_main) return { state: 'landed', landings: [], revert: false, runChecks: false };
   const { gates } = commit;
   const needs = gateNeeds(gates);
   const reviewable = gates.approvals_required > 0 && !gates.auto_approved;

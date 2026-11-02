@@ -1,6 +1,6 @@
 //! Stateless commits recorded in a commit shard, then adopted by the authority when it
 //! needs them: begin authorizes, the shard verifies and stages, adoption brings parents
-//! first and keeps gates, landing and projection exactly as for prepared commits.
+//! first and keeps gates and landing exactly as for prepared commits.
 use super::*;
 use crate::commit_store::{execute_commit_store, migrate_commit_store};
 use crate::platform_compute;
@@ -103,7 +103,7 @@ fn shard_commits_are_adopted_parents_first_and_land_like_any_other() {
     );
     assert_eq!(shown["parents"], json!([first["commit"]]));
     assert_eq!(shown["review_classes"]["overall"], "logic");
-    // Gates, landing and projection treat it like a prepared commit.
+    // Gates and landing treat it like a prepared commit.
     for c in [&first, &second] {
         h.approve_and_check(c["commit"].as_str().unwrap());
         h.ok(
@@ -111,12 +111,10 @@ fn shard_commits_are_adopted_parents_first_and_land_like_any_other() {
             json!({"op": "repo_land", "ref": "main", "commit": c["commit"]}),
         );
     }
-    let plan = h.ok(
-        "platform:projection",
-        json!({"op": "repo_projection_objects", "refname": "refs/heads/main"}),
+    assert_eq!(
+        h.ok(OWNER, json!({"op": "repo_refs"}))["refs"]["refs/heads/main"],
+        second["commit"]
     );
-    assert_eq!(plan["commits"].as_array().unwrap().len(), 2);
-    assert!(!plan["commits"][0]["objects"].as_array().unwrap().is_empty());
 }
 
 #[test]

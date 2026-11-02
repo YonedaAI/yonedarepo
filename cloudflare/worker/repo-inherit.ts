@@ -104,22 +104,28 @@ export const REFUSED = ['FORBIDDEN', 'UNAUTHORIZED', 'NOT_FOUND', 'GONE'];
 
 /**
  * Serves `objects`' inherited objects to this request only if its caller can read the
- * whole parent now (a platform job always can): asked once, of the parent's authority,
- * with the caller's own credentials.
+ * whole parent now (a platform job always can, and anyone can read a public parent): asked
+ * once, of the parent's authority.
  */
 export function guardInherited(ctx: RepoContext, objects: RepoObjects) {
   const inherited = objects.inherited;
   const auth = ctx.call.sign({}) as Credentials;
   if (!inherited || '_system' in auth) return;
+  const read = (who: Credentials) =>
+    caller(
+      ctx.env,
+      inherited.parent.repo,
+      who,
+    )({
+      op: 'repo_git_access',
+      service: 'git-upload-pack',
+    });
   inherited.guard = async () => {
     try {
-      await caller(
-        ctx.env,
-        inherited.parent.repo,
-        auth,
-      )({
-        op: 'repo_git_access',
-        service: 'git-upload-pack',
+      // A token of the fork alone holds nothing on the parent, yet anyone reads a public one.
+      await read(auth).catch((e) => {
+        if (REFUSED.includes(e?.code) && !('_anonymous' in auth)) return read({ _anonymous: true });
+        throw e;
       });
     } catch (e: any) {
       if (!REFUSED.includes(e?.code)) throw e;

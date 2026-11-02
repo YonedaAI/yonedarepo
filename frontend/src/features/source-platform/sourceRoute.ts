@@ -68,7 +68,6 @@ export type SourceRoute =
   | NamedRoute
   /** `line`: that line of the file is marked and scrolled to. */
   | { view: 'files'; repo: string; path: string; ref: string; at?: number; line?: number }
-  | { view: 'overview'; repo: string; path: string; ref: string; at?: number }
   | { view: 'history'; repo: string; ref: string }
   | { view: 'commit'; repo: string; commit: string }
   | { view: 'transactions'; repo: string }
@@ -180,9 +179,10 @@ export function parseSourceRoute(pathname: string, search: string, hash = ''): S
     return { view: 'commit', repo, commit: rest[0] };
   const at = Number(params.get('at'));
   const line = params.get('line') ?? '';
+  // An old `/overview/<path>` link opens that path's files.
   const path = view === 'files' || view === 'overview' ? rest.join('/') : '';
   return {
-    view: view === 'overview' ? 'overview' : 'files',
+    view: 'files',
     repo,
     path,
     ref,
@@ -292,8 +292,6 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.at !== undefined) query.set('at', String(route.at));
   if (route.view === 'files' && route.line && path) query.set('line', String(route.line));
   const suffix = query.size ? `?${query}` : '';
-  if (route.view === 'overview')
-    return path ? `${base}/overview/${path}${suffix}` : `${base}/overview${suffix}`;
   return path ? `${base}/files/${path}${suffix}` : `${base}${suffix}`;
 }
 
@@ -305,7 +303,6 @@ export const routeRepo = (route: SourceRoute): string | undefined =>
 export function routeTab(route: SourceRoute): RepoTab | undefined {
   switch (route.view) {
     case 'files':
-    case 'overview':
       return 'overview';
     case 'history':
     case 'transactions':

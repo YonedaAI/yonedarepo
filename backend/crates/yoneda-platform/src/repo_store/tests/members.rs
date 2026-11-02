@@ -66,7 +66,11 @@ fn roles_map_to_scopes_and_strangers_stay_out() {
         "read"
     );
     assert_eq!(
-        code(member(&h, "rita", json!({"op":"repo_clone_access"}))),
+        code(member(
+            &h,
+            "rita",
+            json!({"op":"repo_git_access","service":"git-upload-pack"})
+        )),
         "OK"
     );
     assert_eq!(code(member(&h, "rita", branch(&root, "r"))), "FORBIDDEN");
@@ -277,7 +281,7 @@ fn personal_tokens_hold_what_both_token_and_role_allow() {
         pat(
             "lana",
             json!(["repo:read"]),
-            json!({"op":"repo_clone_access"})
+            json!({"op":"repo_git_access","service":"git-upload-pack"})
         ),
         "OK"
     );

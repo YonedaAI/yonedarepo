@@ -38,11 +38,24 @@ export function httpsCloneUrl(origin: string, repo: string) {
 /** Stock Git over HTTPS, with a token as the password. */
 export const httpsCloneCommand = (origin: string, repo: string, dir?: string) =>
   gitClone(httpsCloneUrl(origin, repo), dir);
+/** A repository as a person types it: `<owner>/<name>` once known, else its id. */
+export function repoAddress(repo: string) {
+  const named = repoNameOf(repo);
+  return named ? `${named.owner}/${named.name}` : repo;
+}
 /** The yoneda remote helper. */
 export const cloneCommand = (origin: string, repo: string, dir?: string) =>
-  gitClone(`yoneda::${origin}/${repo}`, dir);
+  gitClone(`yoneda::${origin}/${repoAddress(repo)}`, dir);
+/** The same with the CLI, which also picks the folder. */
+export const yonedaCloneCommand = (repo: string) => `yoneda clone ${repoAddress(repo)}`;
+/** Points a project that has its history already at this repository. */
+export const setUpstreamCommand = (repo: string) =>
+  `yoneda repo remote add origin ${repoAddress(repo)}`;
+/** Where `yoneda login` goes when nothing names a platform (the CLI's DEFAULT_ORIGIN). */
+const DEFAULT_ORIGIN = 'https://api.yonedarepo.com';
 /** Signs the yoneda CLI in once; the remote helper then pulls and pushes with that login. */
-export const loginCommand = (origin: string) => `yoneda login --origin ${origin}`;
+export const loginCommand = (origin: string) =>
+  origin === DEFAULT_ORIGIN ? 'yoneda login' : `yoneda login --origin ${origin}`;
 export const mcpUrl = (origin: string) => `${origin}/api/v1/mcp`;
 
 /** The site beside an API origin, where downloads live: `https://api.x` → `https://x`. */

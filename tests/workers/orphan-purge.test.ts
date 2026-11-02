@@ -10,7 +10,7 @@ import { api, author, bindings, drainObjects, file, queued, scoped, signup, useP
 
 usePlatformFixture();
 
-const off = { ...scoped, PLATFORM_OBJECT_STORE: 'r2', ARTIFACTS: undefined, ADMIN_ACCOUNTS: 'orphan_ops' } as unknown as Env;
+const off = { ...scoped, ADMIN_ACCOUNTS: 'orphan_ops' } as unknown as Env;
 const on = { ...off, REPO_UNDO_DAYS: '30' } as unknown as Env;
 const holds = { ...off, LEGAL_HOLD: 'on' } as unknown as Env;
 const OPEN = { required_checks: [], approvals: 0 };

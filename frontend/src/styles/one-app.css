@@ -141,10 +141,12 @@ a.chip:hover {
   align-items: center;
   gap: 6px;
   list-style: none;
-  padding: 7px 14px;
-  border-radius: 7px;
-  background: var(--blue);
-  color: var(--on-accent);
+  min-height: 32px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: var(--text-md);
   font-weight: 500;
 }
 .clone-menu > summary::-webkit-details-marker {
@@ -261,6 +263,9 @@ a.chip:hover {
 .file-icon-tree {
   color: var(--blue-text);
 }
+.file-author {
+  margin-left: 8px;
+}
 .file-message {
   color: var(--muted);
   max-width: 0;
@@ -298,9 +303,13 @@ a.chip:hover {
   color: var(--text);
 }
 .readme-body pre {
-  background: var(--bg);
+  background: var(--code-bg);
   padding: 12px;
   border-radius: 6px;
+}
+.readme-body img {
+  max-width: 100%;
+  height: auto;
 }
 .readme-body blockquote {
   margin: 0 0 12px;
@@ -485,6 +494,10 @@ a.chip:hover {
   .source-toolbar-end {
     margin-left: 0;
   }
+  /* Beside the branch picker a long name would stand one letter wide. */
+  .source-crumbs {
+    flex-basis: 100%;
+  }
   .file-name {
     width: auto;
     white-space: normal;
@@ -503,25 +516,6 @@ a.chip:hover {
   margin-bottom: 0;
 }
 /* A repository until its import lands. */
-.import-history {
-  margin: 0 0 16px;
-  padding: 10px 14px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-}
-.import-history p:first-child {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-}
-.import-history .source-meta {
-  margin: 4px 0 0;
-  overflow-wrap: anywhere;
-}
-.import-history strong {
-  color: var(--text);
-}
 .import-notice strong {
   color: var(--text);
 }

@@ -36,20 +36,12 @@
     "run_worker_first": true
   },
   "vars": {
-    "PUBLIC_APP_ORIGIN": "https://yonedarepo.com",
-    "ARTIFACTS_NAMESPACE": "yoneda-dev"
+    "PUBLIC_APP_ORIGIN": "https://yonedarepo.com"
   },
   "services": [
     {
       "binding": "SELF",
       "service": "yonedarepo-dev"
-    }
-  ],
-  "artifacts": [
-    {
-      "binding": "ARTIFACTS",
-      "namespace": "yoneda-dev",
-      "remote": true
     }
   ],
   "durable_objects": {
@@ -67,8 +59,8 @@
         "class_name": "CheckContainer"
       },
       {
-        "name": "OBJECT_PUSHES",
-        "class_name": "ObjectPushQueue"
+        "name": "IMPORT_RUNNERS",
+        "class_name": "ImportContainer"
       }
     ]
   },
@@ -131,6 +123,18 @@
         "LiveRoom",
         "AgentSandbox"
       ]
+    },
+    {
+      "tag": "v10",
+      "deleted_classes": [
+        "ObjectPushQueue"
+      ]
+    },
+    {
+      "tag": "v11",
+      "new_sqlite_classes": [
+        "ImportContainer"
+      ]
     }
   ],
   "containers": [
@@ -140,6 +144,16 @@
       "image_build_context": "..",
       "max_instances": 8,
       "instance_type": "standard-1",
+      "rollout_step_percentage": [
+        100
+      ]
+    },
+    {
+      "class_name": "ImportContainer",
+      "image": "./containers/Dockerfile",
+      "image_build_context": "..",
+      "max_instances": 4,
+      "instance_type": "standard-3",
       "rollout_step_percentage": [
         100
       ]

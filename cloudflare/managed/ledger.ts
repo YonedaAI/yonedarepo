@@ -16,6 +16,7 @@ import {
 import {
   billingRow,
   cardOf,
+  closeBilling,
   forgetCard,
   type PendingTopUp,
   recordCard,
@@ -245,6 +246,11 @@ export class CreditLedger extends LedgerAdmin {
       forgetCard(sql);
       return pm;
     });
+  }
+
+  /** A deleted account (`closeBilling`). */
+  closeAccount() {
+    return this.tx(closeBilling);
   }
 
   pendingTopUp(key: string): PendingTopUp | null {

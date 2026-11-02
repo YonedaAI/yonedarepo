@@ -121,7 +121,7 @@ At any time, in the app, the CLI or the API, you can:
 - unlink a sign-in provider;
 - delete repositories you own.
 
-Deleting an account is not self-service yet. Email us and we will delete your account, the repositories it owns and their sealed records, and confirm when it is done. We will also send you a copy of your account data on request.
+You can delete your account in Settings, under General. That deletes the repositories it owns, which are purged after the usual window and can't be restored, ends your tokens, SSH keys and sessions, and frees your email address and sign-in methods at once. Any credit left on the account is lost, so email us first if you want a refund of what you paid. We keep billing records and operators' audit entries where the law or our accounts need them, without your name or address, and our payment processor keeps its own records. If you can't sign in, email us and we will delete it for you. We will also send you a copy of your account data on request.
 
 ## When we disclose it
 

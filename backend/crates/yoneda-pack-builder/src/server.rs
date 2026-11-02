@@ -9,7 +9,7 @@
 //!
 //! Every route but /health takes `Authorization: Bearer <PACK_TOKEN>`, the secret its Worker
 //! started this container with. Nothing here holds a credential for anything else: the
-//! mirror and the platform are reached through the Worker, which adds its own.
+//! stored pack and the platform are reached through the Worker, which adds its own.
 use crate::git::{self, Builder, Shape, log, quote};
 use crate::http::{Chunked, Request, read_request, respond};
 use std::io::{BufReader, Write};

@@ -1,5 +1,7 @@
 mod admin;
 mod audit_set_aside;
+mod author_backfill;
+mod close_account;
 mod cloudflare;
 mod cloudflare_deploy;
 mod commands;
@@ -29,6 +31,7 @@ mod layout;
 mod local_config;
 mod newsletter_export;
 mod process;
+mod reimport;
 mod revenue_rebuild;
 mod search_backfill;
 use std::path::PathBuf;

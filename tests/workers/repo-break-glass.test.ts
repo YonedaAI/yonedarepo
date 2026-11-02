@@ -8,7 +8,7 @@ import { api, author, file, queued, scoped, signup, usePlatformFixture } from '.
 
 usePlatformFixture();
 
-const healthy = { ...scoped, PLATFORM_OBJECT_STORE: 'r2', ARTIFACTS: undefined } as unknown as Env;
+const healthy = { ...scoped } as unknown as Env;
 const refuse = async () => {
   throw new Error('Queue unavailable');
 };

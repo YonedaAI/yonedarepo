@@ -23,12 +23,16 @@ export type CommitDetail = {
   commit: string;
   message: string;
   principal: string;
+  author_name?: string | null;
+  authored_at?: number | null;
   parents: string[];
   read_set: string[];
   checks: { name: string; status: string; principal: string; recorded_at: number }[];
   check_runs: { id: string; name: string; status: string; epoch: number }[];
   reviews: { principal: string; decision: string; reason?: string; recorded_at: number }[];
   landings: Landing[];
+  /** Already in main's history, with or without a landing of its own. */
+  on_main?: boolean;
   repairs: Repair[];
   review_classes: ReviewClasses;
   break_glass: BreakGlassRecord[];

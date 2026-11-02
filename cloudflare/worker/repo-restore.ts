@@ -10,7 +10,6 @@
 // Repository tokens stay revoked: whoever took the repository over may hold them. A managed
 // agents connection has one: its owner saves the agent once, which mints a new token.
 
-import { asyncStore, dispatchStore } from './repo-artifacts-store';
 import { audited } from './repo-audit';
 import { listRepository } from './repo-create';
 import { forgetDeleted, isDeletedListed } from './repo-deleted';
@@ -21,7 +20,7 @@ import { scheduleSweep } from './repo-lfs-sweep';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { requirePatScope } from './repo-pat';
 import { handleOf, holdName, releaseNames } from './repo-paths';
-import { dispatchObjects, dispatchProjection } from './repo-projection';
+import { dispatchObjects } from './repo-projection';
 import { schedulePurge } from './repo-quarantine';
 import { requireHeld } from './repo-restore-held';
 import { undoOn } from './repo-undo-window';
@@ -57,18 +56,15 @@ async function relist(ctx: RepoContext, facts: Json, name: string) {
   if (rows.length) await env.INDEX.batch(rows);
 }
 
-/** Everything a deletion stopped: its projections, hooks and the two sweeps' chains, which
+/** Everything a deletion stopped: its object drain, hooks and the two sweeps' chains, which
  * end at a tombstone. Each finds nothing to do if nothing waits. */
 async function rearm(env: Env, repo: string) {
   const now = Date.now();
   await Promise.all([
-    dispatchProjection(env, repo),
     dispatchObjects(env, repo),
     dispatchHooks(env, repo),
     schedulePurge(env, repo, now),
     scheduleSweep(env, repo, now),
-    // A store job that found the tombstone left the store to this restore.
-    ...(asyncStore(env) ? [dispatchStore(env, repo)] : []),
   ]);
 }
 

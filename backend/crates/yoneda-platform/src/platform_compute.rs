@@ -18,7 +18,7 @@ pub const MAX_PATCH_BYTES: usize = 2 * 1024 * 1024;
 mod merge;
 mod refs;
 use merge::{merge, replay_changes};
-use refs::{push_outcome, push_report, receive_pack, ref_delete, ref_update};
+use refs::{push_outcome, push_report};
 
 /// This Wasm instance's linear memory in bytes (it only grows; null natively): what the
 /// object page probes measure (tests/workers/repo-objects-memory.test.ts).
@@ -44,7 +44,6 @@ pub fn compute(c: Value) -> Result<Value> {
     match string(&c, "op")?.as_str() {
         "tree_diff" => tree_diff(&c),
         "file_patch" => file_patch(&c),
-        "receive_pack" => receive_pack(&c),
         "replay_changes" => replay_changes(&c),
         "merge_trees" => merge(&c),
         "grant_check" => grant_check(&c),
@@ -66,15 +65,8 @@ pub fn compute(c: Value) -> Result<Value> {
         "human_view" => crate::platform_views::human_view(&c),
         "session_transcript" => crate::platform_transcript::session_transcript(&c),
         "secret_scan" => secret_scan(&c),
-        "ref_update" => ref_update(&c),
-        "ref_delete" => ref_delete(&c),
         "push_report" => push_report(&c),
         "push_outcome" => push_outcome(&c),
-        "push_combine" => crate::platform_push::push_combine(&c),
-        "push_split" => crate::platform_push::push_split(&c),
-        "staged_push" => crate::platform_push::staged_push(&c),
-        "carrier_push" => crate::platform_push::carrier_push(&c),
-        "large_carrier" => crate::platform_push::large_carrier(&c),
         "branch_push" => crate::platform_push::branch_push(&c),
         "parse_objects" => crate::platform_push::parse_objects(&c),
         "memory" => Ok(json!({ "wasm_bytes": wasm_bytes(), "stack_bytes": stack_left() })),
@@ -274,26 +266,13 @@ mod tests {
     }
 
     #[test]
-    fn ref_updates_carry_an_empty_pack_and_reports_classify() {
-        let new = blob("commit stand-in");
-        let update = compute(
-            json!({"op": "ref_update", "refname": "refs/heads/main", "old": null, "new": new}),
-        )
-        .unwrap();
-        let received =
-            compute(json!({"op": "receive_pack", "body_b64": update["push_b64"]})).unwrap();
-        assert_eq!(received["objects"], json!([]));
-        assert_eq!(received["contains_new"], false);
-        assert_eq!(received["ref"], "refs/heads/main");
+    fn reports_classify() {
         let refused = compute(
             json!({"op": "push_report", "refname": "refs/heads/main", "refused": "stale info"}),
         )
         .unwrap();
         let outcome = compute(json!({"op": "push_outcome", "refname": "refs/heads/main", "report_b64": refused["report_b64"]})).unwrap();
         assert_eq!(outcome, json!({"accepted": false, "refused": "stale info"}));
-        assert!(
-            compute(json!({"op": "ref_update", "refname": "refs/yoneda/c/x", "new": new})).is_err()
-        );
     }
 
     #[test]

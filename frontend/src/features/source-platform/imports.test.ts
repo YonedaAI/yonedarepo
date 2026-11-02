@@ -3,15 +3,16 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { HistoryImportStatus, HistoryStoppedStatus, ImportStatus } from './ImportStatus';
+import { ImportStatus } from './ImportStatus';
 import {
+  connectMessage,
   defaultRepoName,
   importBody,
   importFailure,
   importView,
-  MAX_IMPORT_COMMITS,
   mayBeImport,
   parseGitHubRepo,
+  pickedRepository,
 } from './importModel';
 import type { ImportProgress } from './useImportProgress';
 
@@ -83,13 +84,11 @@ describe('defaultRepoName', () => {
 });
 
 describe('importBody', () => {
-  it('always asks for the newest 5,000 commits and states the visibility', () => {
-    expect(MAX_IMPORT_COMMITS).toBe(5000);
+  it('states the visibility', () => {
     expect(importBody(remote, 'mdbook', '', 'private')).toEqual({
       url: remote,
       name: 'mdbook',
       visibility: 'private',
-      max_commits: 5000,
     });
   });
   it('is private unless told otherwise', () => {
@@ -102,7 +101,6 @@ describe('importBody', () => {
       owner: 'acme',
       visibility: 'public',
       branch: 'next',
-      max_commits: 5000,
     });
     expect(importBody(remote, 'mdbook', '', 'public', '   ')).not.toHaveProperty('branch');
   });
@@ -114,6 +112,21 @@ describe('importFailure', () => {
       title:
         "This repository is private, or it doesn't exist. Only public GitHub repositories can be added for now.",
       reason: 'authentication required',
+      connect: false,
+    });
+    expect(importFailure('REMOTE_AUTH_REQUIRED: 401. Connect GitHub to add one')).toMatchObject({
+      title: "This repository is private, or it doesn't exist.",
+      connect: true,
+    });
+    // Hosted Workflows put the error's class before the message.
+    expect(
+      importFailure(
+        'NonRetryableError: REMOTE_AUTH_REQUIRED: The remote answered 401. Connect GitHub to add a private repository',
+      ),
+    ).toMatchObject({ title: "This repository is private, or it doesn't exist.", connect: true });
+    expect(importFailure('GITHUB_RECONNECT: Connect GitHub again')).toMatchObject({
+      title: "This import can't read GitHub any more.",
+      connect: true,
     });
     expect(importFailure('NOT_FOUND: no such remote')).toEqual({
       title: "This repository or branch wasn't found.",
@@ -217,31 +230,49 @@ describe('ImportStatus', () => {
   });
 });
 
-describe('a history filling in behind a landed main', () => {
-  it('ends the wait for the code as soon as main has landed', () => {
-    const history = { recorded: 1, total: 233 };
-    expect(importView({ status: 'running', history }).phase).toBe('complete');
-    expect(importView({ status: 'running', history: null }).phase).toBe('running');
+describe('a connected GitHub', () => {
+  const repositories = [
+    { id: 7, full_name: 'Ada/Secret', private: true },
+    { id: 8, full_name: 'ada/open', private: false },
+  ];
+  it('finds the repository the field names, however it is written', () => {
+    expect(pickedRepository('ada/secret', repositories)?.id).toBe(7);
+    expect(pickedRepository('https://github.com/ada/open.git', repositories)?.id).toBe(8);
+    expect(pickedRepository('ada/other', repositories)).toBeUndefined();
+    expect(pickedRepository('nonsense', repositories)).toBeUndefined();
+    expect(pickedRepository('ada/secret')).toBeUndefined();
   });
-
-  it('says how far it has come, and never that the history is whole', () => {
-    const progress = { recorded: 120, total: 233 };
-    const shown = renderToStaticMarkup(createElement(HistoryImportStatus, { progress }));
-    expect(shown).toContain('Importing 120 of 233 commits');
-    expect(shown).toContain('fill in as commits arrive');
-    expect(shown).toContain('role="status"');
+  it('sends a picked repository by its id and no address', () => {
+    const body = importBody(
+      'https://github.com/ada/secret.git',
+      's',
+      '',
+      'private',
+      '',
+      repositories[0],
+    );
+    expect(body).toEqual({ github_repository: 7, name: 's', visibility: 'private' });
   });
-
-  it('says plainly what is missing when it ended early, and asks nothing of anyone', () => {
-    const stopped = {
-      recorded: 51,
-      total: 300,
-      reason: 'One commit changes more than 10,000 files.',
-    };
-    const shown = renderToStaticMarkup(createElement(HistoryStoppedStatus, { stopped }));
-    expect(shown).toContain('Only the newest 51 of 300 commits were imported.');
-    expect(shown).toContain(stopped.reason);
-    expect(shown).toContain('older commits are missing');
-    expect(shown).not.toContain('delete');
+  it('says plainly what a trip to GitHub came back with', () => {
+    expect(connectMessage(null)).toBe('');
+    expect(connectMessage('connected')).toBe('');
+    expect(connectMessage('org')).toContain('your own GitHub account');
+    expect(connectMessage('other_account')).toContain('linked');
+    expect(connectMessage('unavailable')).toContain('Try again');
+    expect(connectMessage('state')).toContain('Try again');
+    for (const code of ['org', 'other_account', 'unavailable', 'state', 'x'])
+      expect(connectMessage(code).length).toBeLessThanOrEqual(76);
+  });
+  it('offers Connect on a failure that needs it, in place of the reason', () => {
+    const html = renderToStaticMarkup(
+      createElement(ImportStatus, {
+        repo: 'r00000000000000000001',
+        owner: true,
+        navigate: () => {},
+        progress: { phase: 'failed', title: 'No', reason: 'GitHub answered 404', connect: true },
+      }),
+    );
+    expect(html).toContain('href="/github/connect"');
+    expect(html).not.toContain('GitHub answered');
   });
 });

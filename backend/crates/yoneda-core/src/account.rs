@@ -60,6 +60,7 @@ pub const RESERVED_HANDLES: &[&str] = &[
     "favicon",
     "features",
     "git",
+    "github",
     "health",
     "help",
     "home",

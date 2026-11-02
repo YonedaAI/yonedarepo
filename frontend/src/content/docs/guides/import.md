@@ -1,41 +1,43 @@
 ---
 title: Import a repository
-summary: Bring code in from a public Git remote such as GitHub, with its recent history, or from a local directory as one snapshot.
+summary: Bring code in from a GitHub repository with its whole history, or from a local directory as one snapshot.
 ---
 
 ## Two ways in
 
 | You have | Use | Brings |
 |---|---|---|
-| A public HTTPS Git remote (for example on GitHub) | `POST /api/v1/repos/import` | The branch's newest commits, up to 5,000 |
+| A GitHub repository | The web app, or `POST /api/v1/repos/import` for a public one | Every branch and tag, with every commit |
 | A local checkout or directory | `yoneda repo import <dir>` | The files at HEAD, as one snapshot |
 
-## From a public Git remote
+## From GitHub
 
 ```sh
 curl -X POST https://api.yonedarepo.com/api/v1/repos/import \
   -H "Authorization: Bearer $YONEDA_TOKEN" -H "Content-Type: application/json" \
-  -d '{"url": "https://github.com/owner/project.git", "name": "project", "max_commits": 500}'
+  -d '{"url": "https://github.com/owner/project.git", "name": "project"}'
 ```
 
 | Field | Meaning |
 |---|---|
-| `url` | An `https://` Git remote. Required. |
-| `branch` | The branch to import; default the remote's default branch |
-| `max_commits` | How many of the newest commits to bring; default 100, from 1 to 5,000 |
+| `url` | `https://github.com/<owner>/<repo>`. Required. |
+| `branch` | The branch that becomes `main`; default the repository's default branch |
 | `name`, `visibility`, `owner` | The new repository's name (default its id), `public` or `private`, and an organization to own it |
 | `policy` | Its landing rules; default one required approval |
 
-The answer names the new repository's `id`. The import runs in the background; follow it with:
+The answer names the new repository's `id`. The import runs in the background; follow it until `status` reads `complete`:
 
 ```sh
 curl -H "Authorization: Bearer $YONEDA_TOKEN" \
   https://api.yonedarepo.com/api/v1/repos/<id>/import
 ```
 
-- Commit messages are kept up to 4,000 characters.
-- **Public remotes only.** A remote that needs credentials fails the import; there is no field for a remote token.
-- In the web app, choose the + button, then **Add GitHub repository**: public GitHub repositories, newest 5,000 commits. There is no CLI command for remotes yet.
+- Branches and tags all arrive at the end, so the repository is empty until `status` reads `complete`.
+- Every branch keeps its name. `master` stays `master`, with a `main` beside it at the same commit when the repository has none.
+- **Up to 10 GB.** A larger repository fails the import, and nothing lands.
+- **After a failure,** delete the repository and add it again.
+- **Private repositories** are added from the web app: choose the + button, then **Add GitHub repository**, and connect your own GitHub account. A private repository stays private here. Organization accounts can't connect yet.
+- A private repository's address without a connection fails the import. There is no field for a token, and no CLI command for remotes yet.
 
 ## From a local directory
 

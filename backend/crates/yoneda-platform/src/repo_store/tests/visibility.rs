@@ -86,7 +86,6 @@ fn the_access_matrix_holds_for_every_caller() {
         json!({"op":"repo_hooks"}),
         json!({"op":"repo_set_policy","policy":{"required_checks":[],"approvals":0}}),
         json!({"op":"repo_set_visibility","visibility":"private"}),
-        json!({"op":"repo_clone_access"}),
     ];
     let callers = [
         ("anonymous", anonymous()),
@@ -128,17 +127,15 @@ fn the_access_matrix_holds_for_every_caller() {
                 );
             }
             for op in &admin {
-                let got = code(as_caller(&h, credentials.clone(), op.clone()));
-                let refused = match (outsider, public, *who) {
-                    (true, false, _) => got == "NOT_FOUND",
-                    (true, true, "anonymous") => got == "UNAUTHORIZED",
-                    _ => got == "FORBIDDEN",
+                let expected = match (outsider, public, *who) {
+                    (true, false, _) => "NOT_FOUND",
+                    (true, true, "anonymous") => "UNAUTHORIZED",
+                    _ => "FORBIDDEN",
                 };
-                // A member's clone access is a person's whole-repository read: allowed.
-                let member_clone = !outsider && op["op"] == "repo_clone_access";
-                assert!(
-                    refused || (member_clone && got == "OK"),
-                    "{who} public={public} {op}: {got}"
+                assert_eq!(
+                    code(as_caller(&h, credentials.clone(), op.clone())),
+                    expected,
+                    "{who} public={public} {op}"
                 );
             }
         }

@@ -11,7 +11,7 @@ import { commit, replay } from './repo-commit';
 import { recordContract, symbolContract } from './repo-contracts';
 import { blame, pathHistory, search } from './repo-derived';
 import { diff } from './repo-diff';
-import { listTree, readFile } from './repo-files';
+import { listTree, readFile, treeActivity } from './repo-files';
 import { forkRepository } from './repo-forks';
 import { hookOperations, notifyHooks } from './repo-hooks';
 import { landWithMerge } from './repo-landing';
@@ -21,7 +21,6 @@ import { explicitMerge } from './repo-merge';
 import { getObjects } from './repo-object-fetch';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 import { plan } from './repo-plan';
-import { dispatchProjection } from './repo-projection';
 import { rebase } from './repo-rebase';
 import { releaseOperations } from './repo-releases';
 import { recordSession } from './repo-session-records';
@@ -47,16 +46,18 @@ export const operations: Record<string, Operation> = {
   },
   git_refs: readRefs,
   git_log: (ctx, a) =>
-    a.path
-      ? pathHistory(ctx, a)
-      : ctx.call({
-          op: 'repo_log',
-          ref: a.ref ?? 'main',
-          limit: Number(a.limit ?? 50),
-          // From a commit of the history instead of the branch head: the next page.
-          ...(a.from ? { from: String(a.from) } : {}),
-          ...version(a),
-        }),
+    a.dir !== undefined
+      ? treeActivity(ctx, a)
+      : a.path
+        ? pathHistory(ctx, a)
+        : ctx.call({
+            op: 'repo_log',
+            ref: a.ref ?? 'main',
+            limit: Number(a.limit ?? 50),
+            // From a commit of the history instead of the branch head: the next page.
+            ...(a.from ? { from: String(a.from) } : {}),
+            ...version(a),
+          }),
   git_txlog: (ctx, a) =>
     ctx.call({ op: 'repo_txlog', after: Number(a.after ?? 0), limit: Number(a.limit ?? 100) }),
   git_show: (ctx, a) => ctx.call({ op: 'repo_commit', commit: a.commit }),
@@ -169,7 +170,6 @@ export const operations: Record<string, Operation> = {
     await notifyHooks(ctx.env, ctx.repo);
     return moved;
   },
-  // A new tag is mirrored to the object store like a protected branch.
   git_tag: async (ctx, a) => {
     // With a message the platform builds an annotated tag object.
     const created = await ctx.call({
@@ -181,8 +181,7 @@ export const operations: Record<string, Operation> = {
       // Or an annotated tag object made elsewhere (e.g. `git tag -a`), kept as is.
       tag: a.object_b64 ? { data_b64: a.object_b64 } : null,
     });
-    if (!created.already)
-      await Promise.all([dispatchProjection(ctx.env, ctx.repo), notifyHooks(ctx.env, ctx.repo)]);
+    if (!created.already) await notifyHooks(ctx.env, ctx.repo);
     return created;
   },
   ...hookOperations,

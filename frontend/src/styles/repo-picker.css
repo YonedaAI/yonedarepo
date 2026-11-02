@@ -12,6 +12,42 @@
 .picker-row {
   position: relative;
 }
+.repo-picker.compact .picker-button {
+  width: auto;
+  max-width: 220px;
+  min-height: 30px;
+  padding: 3px 8px;
+  gap: 6px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text);
+}
+.repo-picker.compact .picker-button:hover,
+.repo-picker.compact .picker-button[aria-expanded="true"] {
+  background: var(--surface-2);
+}
+.repo-picker.compact .picker-option {
+  flex-direction: row-reverse;
+  justify-content: flex-end;
+}
+.repo-picker.compact .picker-option-name {
+  flex: 0 1 auto;
+}
+.picker-search {
+  position: relative;
+}
+.picker-search svg {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  color: var(--muted);
+  transform: translateY(-50%);
+}
+.picker-panel .picker-search input {
+  width: 100%;
+  padding-left: 32px;
+}
 .picker-button {
   width: 100%;
   justify-content: flex-start;

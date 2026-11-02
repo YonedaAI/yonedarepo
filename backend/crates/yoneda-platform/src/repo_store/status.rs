@@ -2,7 +2,6 @@
 //! readable path the Worker adds. The answer's JSON Schema generates
 //! `shared/contracts/repo-status.ts` (`cargo xtask contracts`).
 use super::auth::Actor;
-use super::history_fill::{HistoryFill, HistoryStopped};
 use super::members::Role;
 use super::rows::{self, AutoLandings, Policy, Settings, Visibility};
 use crate::storage::SqlStore;
@@ -21,7 +20,6 @@ pub struct RepoStatus {
     pub policy: Policy,
     pub policy_digest: String,
     pub refs: Vec<RefHead>,
-    pub projections: Vec<Projection>,
     /// Object projection progress (the adapter merges shard outboxes into it).
     pub objects: Value,
     /// Whether any pushed bundle still waits to be unpacked.
@@ -43,10 +41,6 @@ pub struct RepoStatus {
     pub quarantined: Vec<Withheld>,
     /// Changes whenever `quarantined` does: caches derived from content are keyed by it.
     pub quarantine_epoch: u64,
-    /// How far an imported history has been recorded, while it is still partial.
-    pub history_import: Option<HistoryFill>,
-    /// Set when an imported history ended early: older commits are not here.
-    pub history_stopped: Option<HistoryStopped>,
 }
 
 /// What `GET /repos/:id` answers: the repository's status with its readable path. The Worker
@@ -75,29 +69,6 @@ pub struct RefHead {
     pub name: String,
     pub commit_id: String,
     pub version: u64,
-}
-
-/// A ref's Git projection: the target the log decided and how far Git has caught up.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct Projection {
-    pub refname: String,
-    pub target_commit: String,
-    pub target_version: u64,
-    pub projected_commit: Option<String>,
-    pub projected_version: u64,
-    pub status: ProjectionStatus,
-    pub detail: Option<String>,
-    pub updated_at: i64,
-}
-
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "lowercase")]
-pub enum ProjectionStatus {
-    /// The target waits for Git to catch up.
-    Pending,
-    Ok,
-    /// Git moved elsewhere; an owner resolves it.
-    Drift,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -136,7 +107,6 @@ pub fn status<S: SqlStore>(db: &S, settings: &Settings, actor: &Actor) -> Result
         policy: settings.policy.clone(),
         policy_digest: settings.policy_digest.clone(),
         refs: typed(refs, "refs")?,
-        projections: typed(super::projection::list(db)?, "ref_projections")?,
         objects: super::staging::status(db)?,
         bundled: super::pushed::bundles::any(db)?,
         automation: super::break_glass::state(db)?,
@@ -163,7 +133,5 @@ pub fn status<S: SqlStore>(db: &S, settings: &Settings, actor: &Actor) -> Result
             })
             .collect(),
         quarantine_epoch: super::quarantine::epoch(db)?,
-        history_import: super::history_fill::filling(db)?,
-        history_stopped: super::history_fill::stopped(db)?,
     })
 }

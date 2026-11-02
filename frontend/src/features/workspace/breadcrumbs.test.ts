@@ -10,6 +10,55 @@ const home = { label: 'ada', to: { view: 'home' } };
 const agents = { label: 'Agents', to: { view: 'agents-home' } };
 
 describe('breadcrumbs', () => {
+  it('leads from every repository page back to the repository and the owner', () => {
+    const repo = 'r0123456789abcdef0123';
+    const trail = breadcrumbs(
+      { view: 'tower', repo },
+      'ada@x.io',
+      { owner: 'ada', name: 'app' },
+      'ada',
+    );
+    expect(trail).toEqual([
+      { label: 'ada', to: { view: 'repositories' } },
+      {
+        label: 'app',
+        to: { view: 'files', repo, path: '', ref: 'main' },
+        switcher: true,
+      },
+      { label: 'Tower' },
+    ]);
+  });
+
+  it("leads another owner's name to their repositories", () => {
+    const repo = 'r0123456789abcdef0123';
+    const trail = breadcrumbs({ view: 'tower', repo }, 'ada', { owner: 'bob', name: 'app' }, 'ada');
+    expect(trail?.[0].to).toEqual({ view: 'profile', handle: 'bob', tab: 'repositories' });
+  });
+
+  it('shows the repository crumb as the switcher, with no link to click', () => {
+    const repo = 'r0123456789abcdef0123';
+    const html = renderToStaticMarkup(
+      createElement(WorkspaceHeader, {
+        title: 'app',
+        crumbs: breadcrumbs({ view: 'tower', repo }, 'ada', { owner: 'ada', name: 'app' }, 'ada'),
+        switcher: createElement('button', { type: 'button' }, 'app'),
+        loading: false,
+        onRefresh: () => {},
+        authenticated: true,
+        identity: null,
+        onSignIn: () => {},
+        onSignOut: async () => {},
+        onError: () => {},
+      }),
+    );
+    expect(html).toContain('<button type="button">app</button>');
+    expect(html).not.toContain('>app</a>');
+  });
+
+  it('shows the title until the repository has a name', () => {
+    expect(breadcrumbs({ view: 'tower', repo: 'r0123456789abcdef0123' }, 'ada')).toBeNull();
+  });
+
   it('trails every Agents page back to the account and the Agents page', () => {
     expect(breadcrumbs({ view: 'agents-home' }, 'ada')).toEqual([home, { label: 'Agents' }]);
     expect(breadcrumbs({ view: 'agent-settings', agent: 'code-review' }, 'ada')).toEqual([

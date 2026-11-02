@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { CommentItem } from './ChangeThread';
 import { FileTable } from './FileTable';
-import { ago, directoryActivity, type LogEntry } from './fileActivity';
+import { ago, writtenAt } from './fileActivity';
 import { blocks, Markdown } from './markdown';
 import { accountName, HIDDEN_ACCOUNT, principalName, ShowEmailsContext } from './people';
 import { apiRef } from './RepoFiles';
@@ -13,16 +13,6 @@ import { landingNeeds } from './repoStatus';
 
 const html = (type: any, props: any) => renderToStaticMarkup(createElement(type, props));
 const sha = (n: number) => String(n).repeat(40).slice(0, 40);
-const entry = (version: number, paths: string[], refname = 'refs/heads/main'): LogEntry => ({
-  version,
-  kind: 'commit',
-  refname,
-  new: sha(version),
-  paths: paths.map((path) => ({ path, op: 'modify' })),
-  actor: 'user:ada',
-  committed_at_ms: version * 1000,
-});
-
 describe('a comment on a Landing', () => {
   const body = (text: string) =>
     html(CommentItem, {
@@ -55,26 +45,7 @@ describe('a comment on a Landing', () => {
   });
 });
 
-describe('directory activity', () => {
-  const log = [
-    entry(1, ['README.md', 'src/a.rs', 'src/net/b.rs']),
-    entry(2, ['src/net/b.rs']),
-    entry(3, ['docs/x.md'], 'refs/heads/dev'),
-    entry(4, ['src/a.rs']),
-  ];
-  it('dates each entry by the newest change under it on that branch', () => {
-    const root = directoryActivity(log, 'main', '', ['README.md', 'src', 'docs']);
-    expect(root.get('README.md')?.version).toBe(1);
-    expect(root.get('src')?.version).toBe(4);
-    expect(root.has('docs')).toBe(false); // changed only on dev
-    const src = directoryActivity(log, 'main', 'src', ['a.rs', 'net']);
-    expect(src.get('net')).toMatchObject({ version: 2, commit: sha(2), at: 2000 });
-    expect(directoryActivity(log, 'dev', '', ['docs']).get('docs')?.version).toBe(3);
-  });
-  it('reads as of a version for time travel, and never matches a name prefix', () => {
-    expect(directoryActivity(log, 'main', '', ['src'], 3).get('src')?.version).toBe(2);
-    expect(directoryActivity([entry(5, ['srcs/z'])], 'main', '', ['src']).size).toBe(0);
-  });
+describe('ages', () => {
   it('words ages and principals', () => {
     expect(ago(0, 30_000)).toBe('just now');
     expect(ago(0, 3 * 86_400_000)).toBe('3 days ago');
@@ -183,12 +154,13 @@ describe('file table', () => {
     { name: 'a.txt', type: 'blob', id: '3' },
   ];
   it('lists folders first, with the last change and its age, and a parent row below the root', () => {
-    const activity = directoryActivity([entry(1, ['src/a', 'a.txt'])], 'main', 'lib', []);
+    const written = { commit: sha(1), message: 'Add src', principal: 'platform:import' };
     const root = html(FileTable, {
       dir: '',
       entries,
-      activity: new Map([['src', { commit: sha(1), at: 0, actor: 'u', version: 1 }]]),
-      messages: new Map([[sha(1), 'Add src']]),
+      activity: new Map([
+        ['src', { ...written, author_name: 'Ada', authored_at: 0, recorded_at: 3_600_000 }],
+      ]),
       now: 2 * 3_600_000,
       link,
       commitLink,
@@ -196,18 +168,28 @@ describe('file table', () => {
     expect(root.indexOf('src')).toBeLessThan(root.indexOf('a.txt'));
     expect(root.indexOf('a.txt')).toBeLessThan(root.indexOf('z.txt'));
     expect(root).toContain('>Add src</a>');
+    expect(root).toContain('>Ada<');
     expect(root).toContain('2 hours ago');
+    expect(root).not.toContain('platform:import');
     expect(root).not.toContain('parent directory');
     const nested = html(FileTable, {
       dir: 'src/net',
       entries: [],
-      activity,
-      messages: new Map(),
+      activity: new Map(),
       link,
       commitLink,
     });
     expect(nested).toContain('href="/p/src"');
     expect(nested).toContain('aria-label="Files in src/net"');
+  });
+});
+
+describe('when a commit was written', () => {
+  const base = { commit: sha(1), message: 'm', principal: 'u', recorded_at: 9 };
+  it('is the author’s own time, and when it was recorded for a commit from before', () => {
+    expect(writtenAt({ ...base, authored_at: 5 })).toBe(5);
+    expect(writtenAt({ ...base, authored_at: null })).toBe(9);
+    expect(writtenAt(base)).toBe(9);
   });
 });
 

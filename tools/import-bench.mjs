@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-// Bench of importing public repositories (`FAST_IMPORT`, and `DIRECT_IMPORT` when it is on):
-// docs/load-testing.md and docs/direct-import.md hold the budgets. The bar is a `git clone`: each repository is first cloned from GitHub, as stock Git
-// does, then imported under a new name. A run times the request to main usable (files read,
-// the server's own stages from the Workflow's timing), a real `git clone` of ours started
-// that moment (checked against the commit count and with `git fsck`), and history's fill. It
-// deletes its repository unless --keep. It also times what the client waits for: the import's
-// answer, a poll seeing main and the first read, each with its Server-Timing. Credentials come from the environment
-// (YONEDA_USERNAME / YONEDA_PASSWORD, or DEV_OWNER_USERNAME / DEV_OWNER_PASSWORD); a token
-// reaches Git through the environment only. Evidence: .local/import-bench/<time>.json.
+// Bench of importing public repositories: docs/clone-import.md holds the budget. The bar is a
+// `git clone`: each repository is first cloned from GitHub, as stock Git does, then imported
+// under a new name. An import lands its refs last, so a run watches `GET /repos/<id>/import` to
+// `complete`, then reads the refs and files and starts a real `git clone` of ours (checked
+// against the commit count and with `git fsck`). It deletes its repository unless --keep. It
+// times what the client waits for: the import's answer, the import done and the first read, each
+// with its Server-Timing. The import's output holds counts, no stages. Credentials come from the
+// environment (YONEDA_USERNAME / YONEDA_PASSWORD, or DEV_OWNER_USERNAME / DEV_OWNER_PASSWORD); a
+// token reaches Git through the environment only. Evidence: .local/import-bench/<time>.json.
 // Usage: node tools/import-bench.mjs --url https://<platform host> [--git https://<Git host>]
 //   [--repos spf13/pflag,openai/whisper,spf13/cobra] [--runs 3] [--keep]
 import assert from 'node:assert/strict';
@@ -32,7 +32,8 @@ const url = values.url.replace(/\/$/, '');
 const gitHost = (values.git ?? url).replace(/\/$/, '');
 const RUNS = Number(values.runs);
 const POLL_MS = 500;
-const LIMIT_MS = 20 * 60 * 1000;
+/** A `git clone` may take its 60 minutes, and the steps behind it their own. */
+const LIMIT_MS = 2 * 60 * 60 * 1000;
 
 const login = await fetch(`${url}/api/auth/login`, {
   method: 'POST',
@@ -86,7 +87,7 @@ async function timedClone(remote, env, options = []) {
     await git(['clone', '-q', ...options, remote, join(dir, 'r')], env);
     const clone_s = seconds(started);
     const head = await git(['-C', join(dir, 'r'), 'rev-parse', 'HEAD']);
-    const commits = Number(await git(['-C', join(dir, 'r'), 'rev-list', '--first-parent', '--count', 'HEAD']));
+    const commits = Number(await git(['-C', join(dir, 'r'), 'rev-list', '--count', '--all']));
     await git(['-C', join(dir, 'r'), 'fsck', '--connectivity-only']);
     return { clone_s, head, commits };
   } finally {
@@ -118,60 +119,42 @@ async function run(source, n) {
   const name = `bench-${source.replace('/', '-')}-${Date.now()}-${n}`.slice(0, 100);
   const started = performance.now();
   const created = await call('/repos/import', {
-    body: { url: `https://github.com/${source}.git`, name, visibility: 'private', max_commits: 5000 },
+    body: { url: `https://github.com/${source}.git`, name, visibility: 'private' },
   });
   assert.equal(created.status, 200, JSON.stringify(created.body));
   const repo = created.body.id;
   const result = { source, repo, answer_s: seconds(started), answer_timing: created.timing };
-  let head = null;
-  let progress = 0;
-  let clone = null;
   try {
     for (;;) {
       assert.ok(performance.now() - started < LIMIT_MS, 'The import ran past the bench limit');
-      const status = await call(`/repos/${repo}`);
-      head ??= status.body.refs?.find((r) => r.name === 'refs/heads/main')?.commit_id ?? null;
-      if (head && !result.usable_s) {
-        result.main_seen_s = seconds(started);
-        const reading = performance.now();
-        const tree = await call(`/repos/${repo}/tree?ref=main`);
-        assert.equal(tree.status, 200, 'Main landed but its files do not read');
-        result.usable_s = seconds(started);
-        result.read_s = seconds(reading);
-        result.read_timing = tree.timing;
-        result.filling_at_usable = status.body.history_import ?? null;
-        // Started the moment it should work, whatever history is doing.
-        clone = ownClone(repo);
-        clone.catch(() => {});
-      }
-      const fill = status.body.history_import;
-      if (fill) {
-        assert.ok(fill.recorded >= progress, 'Progress went backwards');
-        progress = fill.recorded;
-        result.progress_seen = true;
-      }
       const looking = performance.now();
       const answer = await call(`/repos/${repo}/import`);
       result.import_look_s = Math.max(result.import_look_s ?? 0, seconds(looking));
       if (answer.body.status === 'errored' || answer.body.status === 'terminated')
         throw new Error(`The import ${answer.body.status}: ${JSON.stringify(answer.body.error)}`);
       if (answer.body.status === 'complete') {
-        result.total_s = seconds(started);
-        result.imported = answer.body.output?.commits;
-        result.timing = answer.body.output?.timing ?? null;
-        result.stopped = answer.body.output?.stopped;
+        result.complete_s = seconds(started);
+        const { commit, commits, objects, refs, left_out, pack_bytes } = answer.body.output ?? {};
+        Object.assign(result, { imported: commits, objects, refs_imported: refs, left_out, pack_bytes, landed: commit });
         break;
       }
       await wait(POLL_MS);
     }
-    const log = await call(`/repos/${repo}/log?ref=main&limit=1`);
-    assert.equal(log.body.history_import, undefined, 'A finished import still reads as partial');
-    Object.assign(result, await clone);
-    assert.equal(result.head, head, 'Our clone is not at main');
-    // What the Workflow says it recorded, then what the clone holds: on a history that
-    // ended early (`stopped`), the clone has it all and the log the part recorded.
-    assert.equal(result.stopped, undefined, `History ended early: ${JSON.stringify(result.stopped)}`);
-    assert.equal(result.imported, result.commits, 'Recorded commits differ from the clone\'s');
+    const status = await call(`/repos/${repo}`);
+    const main = status.body.refs?.find((r) => r.name === 'refs/heads/main')?.commit_id;
+    assert.equal(main, result.landed, 'Main is not the commit the import landed');
+    result.refs = status.body.refs.length;
+    assert.equal(result.refs + result.left_out, result.refs_imported, 'Refs differ from what the import made');
+    const reading = performance.now();
+    const tree = await call(`/repos/${repo}/tree?ref=main`);
+    assert.equal(tree.status, 200, 'Main landed but its files do not read');
+    result.usable_s = seconds(started);
+    result.read_s = seconds(reading);
+    result.read_timing = tree.timing;
+    Object.assign(result, await ownClone(repo));
+    assert.equal(result.head, main, 'Our clone is not at main');
+    // A ref left out takes the commits only it reaches with it.
+    if (!result.left_out) assert.equal(result.imported, result.commits, "Recorded commits differ from the clone's");
   } finally {
     if (!values.keep) await call(`/repos/${repo}?confirm=${encodeURIComponent(name)}`, { method: 'DELETE' });
   }
@@ -182,30 +165,14 @@ const spread = (list) => {
   const sorted = list.filter((v) => typeof v === 'number').sort((a, b) => a - b);
   return sorted.length ? `${sorted[0]} / ${sorted[sorted.length >> 1]} / ${sorted.at(-1)}` : 'n/a';
 };
-const server = (key) => (r) => (r.timing ? r.timing[key] / 1000 : undefined);
 const MEASURES = [
   ['usable: request to files read, s (client)', (r) => r.usable_s],
   ['  the import request answered, s (client)', (r) => r.answer_s],
-  ['  main seen by a poll, s (client)', (r) => r.main_seen_s],
+  ['  the import complete, s (client)', (r) => r.complete_s],
   ['  the first read of files, s (client)', (r) => r.read_s],
   ['  slowest look at the import, s (client)', (r) => r.import_look_s],
-  ['  server landed to files read, s', (r) => (r.timing ? Number((r.usable_s - r.timing.usable_ms / 1000).toFixed(1)) : undefined)],
-  ['  request to Artifacts asked, s (server)', server('start_ms')],
-  ['  request to the Workflow running, s (server)', server('workflow_ms')],
-  ['  Artifacts fetching the remote, s (server)', server('artifacts_ms')],
-  ['  direct: GitHub naming its head, s (server)', server('remote_ms')],
-  ['  direct: the pack arriving and read, s (server)', server('pack_ms')],
-  ['  direct: the chain listed, s (server)', server('read_ms')],
-  ['  direct: head and pack stored, s (server)', server('store_ms')],
-  ['  reading the log, s (server)', server('chain_ms')],
-  ['  landing the head, s (server)', server('land_ms')],
   ['our git clone, s (client)', (r) => r.clone_s],
   ['our git clone --depth 1, s (client)', (r) => r.depth_clone_s],
-  ['history, s (server)', server('history_ms')],
-  ['history, commits/s (server)', (r) => r.timing?.commits_per_s],
-  ['  log, s (server)', server('log_ms')],
-  ['  trees, s (server)', server('trees_ms')],
-  ['  authority, s (server)', server('authority_ms')],
 ];
 
 const results = [];
@@ -219,12 +186,10 @@ for (const source of values.repos.split(',')) {
     runs.push(result);
   }
   results.push({ source, baseline, runs });
-  console.log(`\n${source}: ${runs[0].imported} commits, ${RUNS} runs (min / median / max)`);
-  console.log(`  landed by: ${runs.map((r) => r.timing?.landed_by ?? 'unknown').join(', ')}`);
+  const { imported, objects, refs, pack_bytes } = runs[0];
+  console.log(`\n${source}: ${imported} commits, ${objects} objects, ${refs} refs, ${pack_bytes} pack bytes, ${RUNS} runs (min / median / max)`);
   console.log(`  git clone from GitHub, s (client): ${spread(baseline.map((b) => b.clone_s))}`);
   for (const [label, read] of MEASURES) console.log(`  ${label}: ${spread(runs.map(read))}`);
-  if (!runs.every((r) => r.timing?.usable_ms !== undefined))
-    console.log('  no server timing in the output: is FAST_IMPORT on for this Worker?');
 }
 await mkdir('.local/import-bench', { recursive: true });
 const evidence = `.local/import-bench/${new Date().toISOString().replace(/[:.]/g, '-')}.json`;

@@ -213,7 +213,7 @@ pub fn precheck<S: SqlStore>(db: &S, op: StoreOp, c: &Value, grant: &Grant) -> R
                 require_ref_move(db, update, &refname, grant)?;
             }
         }
-        StoreOp::Repo(R::PathHistory | R::RecordContract) => {
+        StoreOp::Repo(R::PathHistory | R::DirActivity | R::RecordContract) => {
             require(grant, c["path"].as_str().unwrap_or_default())?
         }
         StoreOp::Repo(R::Contracts) => {

@@ -5,7 +5,7 @@
 // partial, shallow and negotiated fetches; version 0 stays as it was.
 import { expect, it } from 'vitest';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
-import { api, author, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -117,11 +117,9 @@ it('creates lightweight tags over REST, lists and advertises them, and never mov
   const owner = { cookie };
   const { refs } = (await api(`/repos/${id}/refs`, owner)).body;
   const main = refs['refs/heads/main'];
-  queued.length = 0;
   const made = await api(`/repos/${id}/tags`, owner, { body: { name: 'v1', commit: main } });
   expect(made.status).toBe(200);
   expect(made.body).toMatchObject({ ref: 'refs/tags/v1', commit: main });
-  expect(queued.some((m) => m.kind === 'platform_project')).toBe(true); // mirrored like main
   expect((await api(`/repos/${id}/refs`, owner)).body.refs['refs/tags/v1']).toBe(main);
   expect((await api(`/repos/${id}/tags`, owner, { body: { name: 'v1', commit: main } })).body.already).toBe(true);
 

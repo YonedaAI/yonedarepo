@@ -41,6 +41,7 @@ pub fn path_history<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             commits.push(json!({
                 "commit": next, "path": touch.path, "op": touch.op, "old_blob": touch.old_blob,
                 "new_blob": touch.new_blob, "message": row.message, "principal": row.principal,
+                "author_name": row.author.name, "authored_at": row.author.at,
             }));
         }
         if commits.len() >= limit {
@@ -83,7 +84,8 @@ fn from_chain<S: SqlStore>(
     let mut commits = Vec::new();
     for (chain, depth) in spans {
         let rows = db.query(
-            "SELECT p.commit_id,p.path,p.op,p.old_blob,p.new_blob,m.message,m.principal \
+            "SELECT p.commit_id,p.path,p.op,p.old_blob,p.new_blob,m.message,m.principal,\
+             m.author_name,m.authored_at \
              FROM commit_paths p \
              JOIN ref_chain c ON c.ref=? AND c.commit_id=p.commit_id AND c.depth<=? \
              JOIN commits m ON m.id=p.commit_id \
@@ -108,6 +110,7 @@ fn from_chain<S: SqlStore>(
             commits.push(json!({
                 "commit": commit, "path": touched, "op": row["op"], "old_blob": row["old_blob"],
                 "new_blob": row["new_blob"], "message": row["message"], "principal": row["principal"],
+                "author_name": row["author_name"], "authored_at": row["authored_at"],
             }));
         }
         if left == 0 {

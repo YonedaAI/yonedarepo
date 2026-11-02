@@ -1,12 +1,11 @@
 // Creating a repository: every step of the request is accounted for in Server-Timing, also
 // when one fails, so a slow or stalled create names the step responsible. A failed create
 // leaves nothing in the way of repeating it, and says so with a retryable answer.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { withWaitUntil } from '../../cloudflare/worker/background';
-import { STORE_ATTEMPT_MS, STORE_BACKOFF_MS } from '../../cloudflare/worker/repo-store-create';
 import { SHARDS } from '../../cloudflare/worker/repo-shards';
 import type { Env } from '../../cloudflare/worker/types';
-import { api, author, fakeArtifacts, fakeQueue, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, failingOp, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -22,7 +21,6 @@ it('accounts for every step of a seeded create in Server-Timing', async () => {
     expect.arrayContaining([
       'create.owner',
       'create.name',
-      'create.store',
       'do.repo_init',
       'create.shards',
       'shard.status',
@@ -30,7 +28,6 @@ it('accounts for every step of a seeded create in Server-Timing', async () => {
       'create.tokens',
       'create.commit',
       'do.repo_import',
-      'create.project',
       'create.head',
     ]),
   );
@@ -38,97 +35,22 @@ it('accounts for every step of a seeded create in Server-Timing', async () => {
 
 it('names the step that failed in Server-Timing', async () => {
   const owner = { cookie: await signup('failing') };
-  const down = { ...fakeArtifacts, create: async () => Promise.reject(new Error('internal error; reference = abc123')) };
-  const env = { ...scoped, ARTIFACTS: down } as unknown as Env;
-  const created = await api('/repos', owner, { body: seed('failing') }, env);
+  const created = await api('/repos', owner, { body: seed('failing') }, failingOp(scoped, 'repo_import'));
   expect(created.status).toBe(503);
-  expect(phases(created.headers)).toEqual(expect.arrayContaining(['create.name', 'create.store']));
+  expect(phases(created.headers)).toEqual(expect.arrayContaining(['create.name', 'create.commit']));
 });
 
-const artifactsWith = (create: (name: string) => Promise<unknown>) =>
-  ({ ...scoped, ARTIFACTS: { ...fakeArtifacts, create } }) as unknown as Env;
-const stalled = () => new Promise<never>(() => {});
 const names = async (cookie: string) => (await api('/repos', { cookie })).body.repos.map((r: any) => r.name);
 const purges = () => queued.filter((m) => m.kind === 'platform_purge').map((m) => m.repo_id);
 
-/** Each attempt at the store and the backoff after it, waited out on fake timers; `attempts`:
- * how many it sees. */
-async function waitedOut<T>(pending: Promise<T>, attempts: () => number, count: number) {
-  for (let attempt = 1; attempt <= count; attempt++) {
-    await vi.waitFor(() => expect(attempts()).toBe(attempt));
-    await vi.advanceTimersByTimeAsync(STORE_ATTEMPT_MS + STORE_BACKOFF_MS * attempt);
-  }
-  return pending;
-}
-
-describe('a stalled object store', () => {
-  beforeEach(() => void vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }));
-  afterEach(() => void vi.useRealTimers());
-
-  it('answers a retryable 503 after three attempts, frees the name, and the same name then works', async () => {
-    const owner = { cookie: await signup('stalled') };
-    let attempts = 0;
-    const env = artifactsWith(() => {
-      attempts++;
-      return stalled();
-    });
-    const refused = await waitedOut(api('/repos', owner, { body: seed('stalled') }, env), () => attempts, 3);
-    expect(attempts).toBe(3);
-    expect(refused.status).toBe(503);
-    expect(refused.body.error.code).toBe('CREATE_UNAVAILABLE');
-    expect(refused.headers.get('retry-after')).toBe('1');
-    expect(await names(owner.cookie)).toEqual([]);
-    vi.useRealTimers();
-    const retried = await api('/repos', owner, { body: seed('stalled') });
-    expect(retried.status, JSON.stringify(retried.body)).toBe(200);
-    expect(await names(owner.cookie)).toEqual(['stalled']);
-  });
-
-  it('takes a store whose first attempt landed late as created', async () => {
-    const owner = { cookie: await signup('late') };
-    let attempts = 0;
-    const env = artifactsWith(() => {
-      attempts++;
-      if (attempts === 1) return stalled();
-      return Promise.reject(Object.assign(new Error('Repository exists'), { code: 'ALREADY_EXISTS' }));
-    });
-    const body = { name: 'late', policy: { required_checks: [], approvals: 0 } };
-    const created = await waitedOut(api('/repos', owner, { body }, env), () => attempts, 1);
-    expect(created.status, JSON.stringify(created.body)).toBe(200);
-  });
-
-  it('waits out a first attempt Artifacts is still working on', async () => {
-    const owner = { cookie: await signup('inprogress') };
-    let attempts = 0;
-    const env = artifactsWith(() => {
-      attempts++;
-      if (attempts === 1) return stalled();
-      const code = attempts === 2 ? 'CREATE_IN_PROGRESS' : 'ALREADY_EXISTS';
-      return Promise.reject(Object.assign(new Error(code), { code }));
-    });
-    const body = { name: 'inprogress', policy: { required_checks: [], approvals: 0 } };
-    const asked = api('/repos', owner, { body }, env);
-    await vi.waitFor(() => expect(attempts).toBe(1));
-    await vi.advanceTimersByTimeAsync(STORE_ATTEMPT_MS + STORE_BACKOFF_MS);
-    await vi.waitFor(() => expect(attempts).toBe(2));
-    await vi.advanceTimersByTimeAsync(2 * STORE_BACKOFF_MS);
-    const created = await asked;
-    expect(attempts).toBe(3);
-    expect(created.status, JSON.stringify(created.body)).toBe(200);
-  });
-});
-
-describe('a create that fails after the store', () => {
+describe('a create that fails part way', () => {
   it('takes back all it did when the listing has the repository, so the same name works', async () => {
     const owner = { cookie: await signup('undone') };
-    const down = { ...scoped, PLATFORM_QUEUE: { ...fakeQueue, send: async (message: any) => {
-      if (message.kind === 'platform_project') throw new Error('internal error; reference = abc123');
-      return fakeQueue.send(message);
-    } } } as unknown as Env;
-    const refused = await api('/repos', owner, { body: seed('undone') }, down);
+    const refused = await api('/repos', owner, { body: seed('undone') }, failingOp(scoped, 'repo_import'));
     expect(refused.status).toBe(503);
     expect(refused.body.error.code).toBe('CREATE_UNAVAILABLE');
     expect(refused.body.error.message).not.toContain('reference');
+    expect(refused.headers.get('retry-after')).toBe('1');
     expect(await names(owner.cookie)).toEqual([]);
     expect(purges()).toHaveLength(1);
     expect((await api('/repos', owner, { body: seed('undone') })).status).toBe(200);

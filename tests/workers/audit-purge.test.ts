@@ -13,7 +13,7 @@ import { api, author, delayed, file, queued, scoped, signup, usePlatformFixture 
 
 usePlatformFixture();
 
-const r2 = { ...scoped, PLATFORM_OBJECT_STORE: 'r2', ARTIFACTS: undefined, ADMIN_ACCOUNTS: 'audit_operator' } as unknown as Env;
+const r2 = { ...scoped, ADMIN_ACCOUNTS: 'audit_operator' } as unknown as Env;
 /** Erasing, and logging. */
 const on = { ...r2, REPO_ERASE: 'on', AUDIT_LOG: 'on' } as unknown as Env;
 const noErase = { ...on, REPO_ERASE: undefined } as unknown as Env;

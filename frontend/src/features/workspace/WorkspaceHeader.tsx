@@ -13,6 +13,7 @@ import type { Crumb } from './breadcrumbs';
 export function WorkspaceHeader({
   title,
   crumbs,
+  switcher,
   loading,
   onRefresh,
   authenticated,
@@ -30,6 +31,8 @@ export function WorkspaceHeader({
   title: string;
   /** The way back to this page's parents; shown instead of the title. */
   crumbs?: Crumb[] | null;
+  /** The repository switcher, shown as the crumb that asks for it. */
+  switcher?: ReactNode;
   loading: boolean;
   onRefresh: () => void;
   authenticated: boolean;
@@ -70,7 +73,9 @@ export function WorkspaceHeader({
               {crumbs.map((crumb, i) => (
                 // A link's address, else the current page's label (never starts with "/").
                 <li key={crumb.to ? formatSourceRoute(crumb.to) : crumb.label}>
-                  {i === crumbs.length - 1 || !crumb.to ? (
+                  {crumb.switcher && switcher ? (
+                    switcher
+                  ) : i === crumbs.length - 1 || !crumb.to ? (
                     <span aria-current={i === crumbs.length - 1 ? 'page' : undefined}>
                       {crumb.label}
                     </span>

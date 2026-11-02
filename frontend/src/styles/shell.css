@@ -194,6 +194,7 @@ main {
 }
 .topbar-crumbs li {
   display: flex;
+  align-items: center;
   gap: 8px;
   min-width: 0;
 }
@@ -214,4 +215,33 @@ main {
   color: var(--text);
   font-weight: 600;
   text-overflow: ellipsis;
+}
+
+/* A notice floats over the page, so it never moves what is under it. */
+.workspace-notice {
+  position: fixed;
+  z-index: 40;
+  top: 64px;
+  right: 16px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 10px 8px 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 28%);
+  color: var(--text);
+  font-size: var(--text-md);
+  line-height: 1.45;
+}
+.workspace-notice span {
+  padding-top: 3px;
+}
+.workspace-notice button.icon-button {
+  flex: none;
+  min-width: 26px;
+  min-height: 26px;
+  padding: 3px;
 }

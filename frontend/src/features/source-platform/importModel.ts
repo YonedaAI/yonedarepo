@@ -1,10 +1,6 @@
-// Adding a public GitHub repository: what the dialog's field accepts, the request it makes
+// Adding a GitHub repository: what the dialog's field accepts, the request it makes
 // (`POST /repos/import`), and what `GET /repos/<id>/import` means on the repository's page.
-import type { HistoryFill } from '../../../../shared/contracts/repo-status';
 import type { Visibility } from './repoAccess';
-
-/** The server's most commits per import; the dialog always asks for all of them. */
-export const MAX_IMPORT_COMMITS = 5000;
 
 export const IMPORT_HINT =
   'Use a GitHub repository address, like https://github.com/owner/repo or owner/repo.';
@@ -51,52 +47,122 @@ export function parseGitHubRepo(input: string) {
 export const defaultRepoName = (repo: string) => repo.replace(/^\.+/, '');
 
 /** The import request's body, in `createBody`'s manner: `owner` only for an organization,
- * `branch` only when one was named (none: the remote's default), `visibility` always. */
+ * `branch` only when one was named (none: the remote's default), `visibility` always. A
+ * repository picked from a connection goes by its id, and GitHub says what it is. */
 export function importBody(
   url: string,
   name: string,
   owner: string,
   visibility: Visibility = 'private',
   branch = '',
+  picked?: GitHubRepository,
 ) {
   return {
-    url,
+    ...(picked ? { github_repository: picked.id } : { url }),
     name,
     ...(owner ? { owner } : {}),
     visibility,
     ...(branch.trim() ? { branch: branch.trim() } : {}),
-    max_commits: MAX_IMPORT_COMMITS,
   };
 }
 
-/** What `GET /repos/<id>/import` answers: the import Workflow's status, and how far its
- * history has come while main has landed ahead of it. */
+/** Where Connect starts; the Worker takes it from there. */
+export const CONNECT_PATH = '/github/connect';
+
+const PENDING = 'github-import-source';
+
+/** The address waiting on a trip to GitHub, kept for the way back. Storage can be unavailable:
+ * the person then types it again. */
+export function keepPending(source: string) {
+  try {
+    window.sessionStorage.setItem(PENDING, source);
+  } catch {}
+}
+
+export function takePending() {
+  try {
+    const source = window.sessionStorage.getItem(PENDING) ?? '';
+    window.sessionStorage.removeItem(PENDING);
+    return source;
+  } catch {
+    return '';
+  }
+}
+
+/** Linking GitHub is the first half of connecting: go on to the install if an import waits. */
+export function continueToGitHub() {
+  try {
+    if (window.sessionStorage.getItem(PENDING)) window.location.assign(CONNECT_PATH);
+  } catch {}
+}
+
+export type GitHubRepository = { id: number; full_name: string; private: boolean };
+
+/** What `GET /github/repositories` answers: no `available`, no Connect on this site. */
+export type GitHubConnection = {
+  available: boolean;
+  connection?: 'none' | 'lost' | 'ok';
+  login?: string;
+  repositories?: GitHubRepository[];
+  more?: boolean;
+};
+
+/** The connected repository the field names, if it names one. */
+export function pickedRepository(source: string, repositories: readonly GitHubRepository[] = []) {
+  const parsed = parseGitHubRepo(source);
+  const name = parsed && `${parsed.owner}/${parsed.repo}`.toLowerCase();
+  return repositories.find((r) => r.full_name.toLowerCase() === name);
+}
+
+/** What a trip to GitHub came back with, in `?github=`, read once. */
+export function connectMessage(result: string | null) {
+  switch (result) {
+    case null:
+    case 'connected':
+      return '';
+    case 'org':
+      return "Organizations can't connect yet. Install it on your own GitHub account.";
+    case 'other_account':
+      return "That isn't the GitHub account linked here. Install it on the linked one.";
+    case 'unavailable':
+      return "GitHub didn't answer. Try again in a moment.";
+    default:
+      return "Connecting didn't finish. Try again.";
+  }
+}
+
+/** What `GET /repos/<id>/import` answers: the import Workflow's status. */
 export type ImportAnswer = {
   status?: string;
   error?: { name?: string; message?: string } | null;
-  history?: HistoryFill | null;
 };
 
-/** What a failed import says: a final failure's message is `<Artifacts code>: <its reason>`.
+/** What a failed import says: a final failure's message is `<code>: <its reason>`.
  * GitHub refuses a private repository and a missing one with the same answer. */
 export function importFailure(message: string | undefined) {
-  const [, code = '', reason = message ?? ''] =
-    /^([A-Z][A-Z0-9_]+): (.*)$/s.exec(message ?? '') ?? [];
-  if (code === 'REMOTE_AUTH_REQUIRED')
+  // A hosted Workflow puts the error's class first: `NonRetryableError: <code>: <reason>`.
+  const said = (message ?? '').replace(/^[A-Za-z]*Error: /, '');
+  const [, code = '', reason = said] = /^([A-Z][A-Z0-9_]+): (.*)$/s.exec(said) ?? [];
+  if (code === 'REMOTE_AUTH_REQUIRED') {
+    const connect = reason.includes('Connect GitHub');
     return {
-      title:
-        "This repository is private, or it doesn't exist. Only public GitHub repositories can be added for now.",
+      title: connect
+        ? "This repository is private, or it doesn't exist."
+        : "This repository is private, or it doesn't exist. Only public GitHub repositories can be added for now.",
       reason,
+      connect,
     };
+  }
+  if (code === 'GITHUB_RECONNECT')
+    return { title: "This import can't read GitHub any more.", reason, connect: true };
   if (code === 'NOT_FOUND') return { title: "This repository or branch wasn't found.", reason };
   return { title: "Couldn't import this repository.", reason };
 }
 
 /** The import as its page shows it. Anything short of an end is still running: `waiting` is a
- * step retrying, and a status added later should not read as a failure. Main landing ahead of
- * its history ends the wait for the code, whatever then happens to the history. */
+ * step retrying, and a status added later should not read as a failure. */
 export function importView(answer: ImportAnswer) {
-  if (answer.history || answer.status === 'complete') return { phase: 'complete' as const };
+  if (answer.status === 'complete') return { phase: 'complete' as const };
   if (answer.status === 'terminated')
     return { phase: 'failed' as const, title: 'This import was stopped.', reason: '' };
   if (answer.status === 'errored')

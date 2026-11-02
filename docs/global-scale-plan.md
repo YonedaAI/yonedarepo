@@ -1,6 +1,6 @@
 # Scale and global plan
 
-Status: frozen on 2026-11-01. Built: item 1, erase, item 5 (`ACCOUNT_SEARCH`, on in dev, and in prod from the next ship) and archive stage A (four switches, off). Regions stopped at R1's sampling and a same-region test. The rest is plan. Written 2026-10-30 at dev `169fb5b0`.
+Status: regions are the priority work again, on the owner's word of 2026-11-01; the freeze of that morning no longer applies. Built: item 1, erase, item 5 (`ACCOUNT_SEARCH`, on in dev, and in prod from the next ship) and archive stage A (four switches, off). Regions: R1's sampling and a same-region test, then [cells as built](#cells-as-built). Written 2026-10-30 at dev `169fb5b0`.
 
 ## Context
 
@@ -161,7 +161,7 @@ Measured beside this: a one-file landing costs 4 KB all told (1,024 landings in 
 
 **Goal:** raise a repo's life about 5× (estimate; recompute from item 2). This is not unlimited; the skeleton still grows, and step 6 of item 1 is the final stop.
 
-**Never leaves SQL:** `commits` skeleton (id, parents, generation, tree) and everything on the must-stay list: ref tips, fork origins, pins, queued landings, unprojected changesets, commits not yet in Artifacts, hidden refs, repair commits, running bisects, tags.
+**Never leaves SQL:** `commits` skeleton (id, parents, generation, tree) and everything on the must-stay list: ref tips, fork origins, pins, queued landings, unprojected changesets, commits not yet in R2, hidden refs, repair commits, running bisects, tags.
 
 ### Stage A: cheap fixes, no cold reads
 
@@ -394,7 +394,7 @@ Medians in ms at the client. A person there adds their own last mile. North Amer
 3. **Then R2.** It's the largest piece left: one read is 140 ms from Europe and 277 ms from Asia, against 33 and 102 ms from a bucket made in that region. It's what's holding search and push.
 4. **Then D1.** Every `ypat_` request and every create pays it: 99 ms from Europe, 234 ms from Asia. **The plan's suspicion was half right:** D1 is the floor, but the account authority isn't once it's local (11 and 8 ms). **Read replicas work when a read reaches one:** 18 ms in Europe and 48 ms in Asia, on 13 of 20 reads. The other 7 still went to the primary, at 102 and 266 ms.
 5. **Queues and background work have no in-region answer.** Asia needs another way to run them.
-6. **What doesn't move:** Asia can't get a guarantee, and Artifacts and Queues have no Asian placement at all. See below.
+6. **What doesn't move:** Asia can't get a guarantee, and Queues have no Asian placement at all. See below.
 
 **Also seen:** static assets come through the pin too. `cf-placement: remote-IAD` on a 982 KB bundle cost Europe 502 ms and Asia 1,233 ms, and that can change on its own, with no region work. In 10 measured operations **no foreground request called the Artifacts binding**, which helps an Artifacts-free Asia.
 
@@ -405,15 +405,14 @@ Medians in ms at the client. A person there adds their own last mile. North Amer
 3. **One R2 bucket per region,** chosen by the repository's region.
 4. **D1 leaves the hot path.** No `ypat_` request can wait on a primary an ocean away. A replica answered only 13 of 20 reads, and it can lag behind a revoked token, so replicas with bookmarks, or a token lookup that doesn't need D1, must be proven first.
 5. **Background work runs in the region.** Europe: queues with jurisdiction `eu`, which holds the messages there but [not the consumer](#r3-spikes-rechecked-2026-11-01). Asia: no queue can promise that, so Durable Object alarms.
-6. **Artifacts:** a new `eu` namespace for Europe. Asia runs on R2 alone, which is untested on dev.
-7. **Containers per region,** one entry each, accepting that a container may not sit beside its object.
-8. **What exists stays in `enam`** until a copy tool exists.
+6. **Containers per region,** one entry each, accepting that a container may not sit beside its object.
+7. **What exists stays in `enam`** until a copy tool exists.
 
 **Status:** hop map read from code and config, then checked against this test.
 
 #### Hop map: where each operation goes today
 
-For a person or agent in Europe or Asia. **Crosses** means the hop leaves their continent. Read from code and `infra/envs/dev.json`. Measured on 2026-11-01: requests from Frankfurt and Singapore enter there and answer `cf-placement: remote-IAD`, assets included; every object on this path ran in a US colo (IAD, EWR, ORD, ATL, MIA); R2 and D1 report `ENAM`. Where a queue runs, and where Artifacts does, stays unknown.
+For a person or agent in Europe or Asia. **Crosses** means the hop leaves their continent. Read from code and `infra/envs/dev.json`. Measured on 2026-11-01: requests from Frankfurt and Singapore enter there and answer `cf-placement: remote-IAD`, assets included; every object on this path ran in a US colo (IAD, EWR, ORD, ATL, MIA); R2 and D1 report `ENAM`. Where a queue runs stays unknown.
 
 | Operation | Hop | Runs in | Crosses? |
 |---|---|---|---|
@@ -426,15 +425,14 @@ For a person or agent in Europe or Asia. **Crosses** means the hop leaves their 
 | Any cookie request | Account authority (`session`), then any org authority | Near the Worker | **Yes** |
 | `yrp_` request | No D1 and no account authority; the repository decides | – | No extra hop |
 | Read, list | Head holder (a `LandCombiner`), then the repository authority for what it lacks | Near the Worker | **Yes** |
-| Read | Object tiers: memory, Cache API in the Worker's colo, R2, then shard or Artifacts | R2 `ENAM`; Artifacts unknown | **Yes** on a miss |
+| Read | Object tiers: memory, Cache API in the Worker's colo, R2, then shard | R2 `ENAM` | **Yes** on a miss |
 | Clone | Repository authority for access, refs and the walk; R2 for bundles and stored packs | Near the Worker; R2 `ENAM` | **Yes** |
-| Clone, imported history | Artifacts | Unknown | Unknown |
 | Push | R2 writes (bundles), authority records, queue sends | R2 `ENAM`; queue location undocumented | **Yes** |
 | Commit | Head holder, then a commit shard | Near the Worker | **Yes** |
 | Land | Shard read, the branch's combiner, the repository authority | Near the Worker | **Yes** |
 | Search | D1 listing, the owner's `search:` directory, each repository's head and R2 index segments | D1 `ENAM`; R2 `ENAM` | **Yes** |
-| Repository create | Account authority (name), repository authority, D1 listing, queue (Artifacts store), 64 shards, head holder | All of the above | **Yes** |
-| After any write | Queue consumer on the pinned Worker: projection to Artifacts, derive, compaction, hooks | `aws:us-east-1` | **Yes** |
+| Repository create | Account authority (name), repository authority, D1 listing, 64 shards, head holder | All of the above | **Yes** |
+| After any write | Queue consumer on the pinned Worker: staged objects to R2, derive, compaction, hooks | `aws:us-east-1` | **Yes** |
 | Large pushes | Pack build in a container | Constrained to `ENAM` | **Yes** |
 | Checks, managed agents | Containers | Constrained to `ENAM` | **Yes** |
 
@@ -456,17 +454,15 @@ Read in Cloudflare's docs on 2026-10-31. Measured figures for what this saves ar
 | Cached objects | [Cache API](https://developers.cloudflare.com/workers/runtime-apis/cache/) in each colo; our objects are immutable, so it's safe | Per colo, never replicated. `cache.put` doesn't work with Tiered Cache. Our own comment says it stores nothing on `workers.dev`, so it needs a custom domain. A first read in each colo still reaches R2 |
 | Queues | [Jurisdiction](https://developers.cloudflare.com/queues/configuration/data-location/) `eu`, `us` or `fedramp`, at creation only | **No location hint, and nothing for Asia.** By default messages are handled "across Cloudflare's global network". Where a consumer runs isn't stated |
 | Workflows | Nothing documented | No location or jurisdiction on the limits page. Not checked further |
-| Artifacts | [Namespace jurisdiction](https://developers.cloudflare.com/artifacts/guides/data-localization/) `eu` or `us`, at creation only, for every repo in it | **No hints and nothing for Asia.** Ours has none and can't take one, so Europe needs a new namespace |
 | Containers | [`constraints.regions`](https://developers.cloudflare.com/containers/platform-details/placement/) (`WEUR`, `EEUR`, `APAC`, …) or `jurisdiction` per container entry | [A container isn't guaranteed to run where its Durable Object does](https://developers.cloudflare.com/containers/platform-details/architecture/). The April changelog lists only ENAM, WNAM, EEUR and WEUR; the placement page adds APAC. Unverified until tried. One entry per class, so a region is a class or a Worker of its own (safety rule 4) |
 | Metadata | [Customer Metadata Boundary](https://developers.cloudflare.com/data-localization/compatibility/) | Logs and analytics for Durable Objects aren't available outside the US under it. A Durable Object's id is logged outside its jurisdiction. Analytics Engine has no region control. These hold metadata, not repository content |
 
 **What can't be done on Cloudflare today:**
 
 1. **A guarantee in Asia.** Durable Objects, R2 and D1 take hints there, which are best effort. No jurisdiction exists.
-2. **Artifacts in Asia.** No hint and no jurisdiction. R2 is already the store of record (`repo-projection.ts`), so an Asian repository has to run without Artifacts. `R2Store` exists, used only locally today. Imports refuse it (`repo-create.ts:240`), and it has never run on dev.
-3. **Queues in Asia.** Background work there has no way to stay put. The alternative is Durable Object alarms in the repository's own object, which runs where it landed.
-4. **Moving what exists.** Objects, buckets, namespaces and D1 jurisdictions are fixed at creation, so today's repositories stay in `enam` until a copy tool exists.
-5. **A global write from a region.** Names, handles and sign-in lookups have one home.
+2. **Queues in Asia.** Background work there has no way to stay put. The alternative is Durable Object alarms in the repository's own object, which runs where it landed.
+3. **Moving what exists.** Objects, buckets, namespaces and D1 jurisdictions are fixed at creation, so today's repositories stay in `enam` until a copy tool exists.
+4. **A global write from a region.** Names, handles and sign-in lookups have one home.
 
 #### Same-region test
 
@@ -480,11 +476,11 @@ Read in Cloudflare's docs on 2026-10-31. Measured figures for what this saves ar
 | Code | Pinned platform Worker | Platform routes in the region's serving object |
 | Repository objects | `enam` | Hinted: region's `enam`, `weur` or `apac` |
 | Account | Signed up through the pinned path | Signed up in the region, so its authority starts there |
-| R2, D1, queues, Artifacts | As today | **As today, on purpose:** these are what the test counts |
+| R2, D1, queues | As today | **As today, on purpose:** these are what the test counts |
 
 **What it reports:**
 
-1. **Which hops still leave.** Each binding that can leave is wrapped, and each call lands in `Server-Timing` as `hop.r2`, `hop.d1`, `hop.authority`, `hop.queue`, `hop.artifacts`, `hop.shard`, `hop.combiner`. That makes the hop map above measured. What a combiner or repository object calls for itself isn't counted.
+1. **Which hops still leave.** Each binding that can leave is wrapped, and each call lands in `Server-Timing` as `hop.r2`, `hop.d1`, `hop.authority`, `hop.queue`, `hop.shard`, `hop.combiner`. That makes the hop map above measured. What a combiner or repository object calls for itself isn't counted.
 2. **Where it ran.** `GET /repos/<id>/where` has the code, each object and the account authority fetch Cloudflare's trace page and answer their colo. That's how [Where Durable Objects Live](https://where.durableobjects.live) works; Cloudflare documents no API for it.
 3. **Each piece from each region,** through a binding: D1 by primary and through a session, R2 in the platform's bucket and in a test bucket made with that region's hint, the account authority, the repository objects.
 
@@ -638,6 +634,83 @@ Every page was reread on this date; the date in each row is the page's own. **Th
 | Where do Workflows run? | [Not stated](https://developers.cloudflare.com/workflows/reference/limits/), 2026-09-21 | A trace from a step. Managed agents stay single, so this can wait |
 
 Two smaller notes: `cf-placement`, which the region tools read, "may be removed before Smart Placement exits beta", and [Regional Services](https://developers.cloudflare.com/data-localization/how-to/workers/) (2026-07-23) applies only to a custom domain and names no Asian region.
+
+### Cells as built
+
+Written before the code, on 2026-11-01. Three things here change the plan above, and each is marked.
+
+**A cell is a whole copy of the platform in its own Worker:** the same code, its own repository, shard and combiner classes, its own bucket, D1, queues, workflow and containers. Only `WORKSPACES`, the accounts, is shared, by `script_name` on today's Worker. `enam` is today's stack under today's names. Inside a cell no code asks where it is: `env.OBJECTS` is already the right bucket.
+
+| Part | `enam` | `weur` |
+|---|---|---|
+| Worker | `{prefix}-platform`, as today | `{prefix}-platform-weur`, pinned to `aws:eu-central-1` |
+| Repository, shard, combiner objects | As today | Own classes, in jurisdiction `eu` |
+| R2, D1, both queues | As today | `*-weur`, jurisdiction `eu` |
+| Containers | `ENAM` | `WEUR`; no SSH gateway |
+| Accounts | Shared namespace | Shared namespace, hint `weur` on first `get` |
+
+**Why `eu`, not the hint the test measured.** Both are fixed at creation, and only the jurisdiction is a guarantee. A cell's objects have no earlier names, so the id change costs nothing. Unmeasured: R8 measures it. If it's too slow, dev's cell is remade with hints before anything real is in it.
+
+**Change 1: a repository's cell is in its id, and there is no directory.** A cell's new ids end in that cell's six-digit tag: `r` plus 14 random hex digits plus `eea001`. The format stays `r` and 20 hex digits, so all 35 checks and installed CLIs still pass. `enam` ids carry no tag, and its generator rerolls the one id in 16 million that would. The plan rejected a tag as ambiguous: it is ambiguous only against old ids, and that can be counted once, with one query on each environment, before the switch goes on. Why this beats the directory: routing reads nothing, so `yrp_` keeps no D1 dependency (safety rule 8), D1 leaves the routing path altogether, a directory that's down can't exist, replica lag can't hide a new repository, and create doesn't pay a write to a primary an ocean away. Region is fixed, so the id can hold it. A later copy tool gets a new id. This replaces R4's repo → cell table and rules 1 to 5 of "How routing works".
+
+**Change 2: D1 is per cell too.** Keeping one D1 would keep every European address and repository name in the US, and it's the reason create and search got worse. `env.INDEX` is the cell's. The readers that span cells are few and named below.
+
+**Change 3: nothing can be answered wrongly, only slowly.** Every platform Worker forwards a request for another cell's repository to that cell, whoever sent it. Routing at the edge saves the ocean; it isn't what makes the answer right. So `NOT_FOUND` from the wrong cell can't happen, and `api.` keeps working unmoved.
+
+**Which cell serves which code** (R7's question): `enam` and `sam` go to `enam`; Cloudflare starts `sam` objects in eastern North America. `weur` and `afr` go to `weur`. `apac` and `oc` go to `enam` until they have a cell, as every account there does today. An account keeps the code it signed up with, so it reads right when that cell opens.
+
+**How a request finds its cell**, first match, no reads except the third:
+
+| Request | Cell |
+|---|---|
+| A path with a repository id | The id |
+| A body that names a region, on create | The receiving cell forwards it |
+| A readable Git or resolve path | Ask the owner's authority at the edge, kept for the isolate; on failure `enam`, which forwards |
+| A `ypat_` from a cell | The token's tag, the first 3 characters; it only orders the look-ups |
+| A browser | The `yoneda_home` cookie, a routing hint that grants nothing |
+| Sign-up and sign-in with no cookie | The request's continent |
+| Anything else | `enam` |
+
+**Account-wide reads.** The authority's `session`, `pat_check` and `org_access` answers add the account's `region` and `cells`, the other cells it has repositories or memberships in. They come back with the check every request already makes. An account-wide request that lands outside its home cell is forwarded there; it then reads its own D1 plus the D1 of each cell in `cells`. Today's accounts have an empty list, so they read what they read today. `cells` is kept in `workspace_records`, with no migration, and a new op notes a cell when a repository or membership lands in one.
+
+**Agents.** `yoneda login --agent` runs under a person's account, so an agent has no sign-up of its own. The token is issued to the poll, which comes from where the agent runs: its continent becomes the token's region, the token's tag and the default for repositories it creates.
+
+**Switches**
+
+| Switch | Off | On |
+|---|---|---|
+| `CELLS` (`on`), on every Worker | Today, on every path | Routing, forwarding, `region` in the API |
+| `CELL` (`weur`), on a cell's Worker | Unset: `enam` | Ids, tokens and sign-ups in this cell |
+| `REGION_SIGNALS` | No region recorded | As R1 |
+
+**Request budget.** One operation in `weur`, from Europe, by an account homed there. Each row is the most it may do; **ocean** counts calls that leave the continent.
+
+| Operation | D1 | Account authority | R2 | Queue | Ocean |
+|---|---|---|---|---|---|
+| Read, `yrp_` | 0 | 0 | 0 on a hit | 0 | **0** |
+| Read, `ypat_` | 1 | 1 + orgs | 0 on a hit | 0 | **0** |
+| Commit, land | 0 | 0 | 0 | After the answer | **0** |
+| Push | 0 | 0 | As today | As today | **0** |
+| Clone | 0 | 0 | About 5 | 0 | **0** |
+| Search, 1 page | At most 5 | Directory, at most 16 | Segments | 0 | **0** |
+| Create | 3 | 2 | 0 | 3 | **0** |
+| Sign-in | 0 | 3 | 0 | 0 | **0** |
+| Sign-up | 1 | As today | 0 | 2 | **0** |
+| `GET /repos` | 1 | 1 + orgs | 0 | 0 | **0**, plus 1 per cell in `cells` |
+
+What it costs elsewhere, all of it new and all of it bounded:
+
+| Case | Added |
+|---|---|
+| Any request on `enam`, switch on | One path test; no I/O |
+| A readable Git path, first in an isolate | 2 authority calls at the edge, as the Worker makes today, then cached |
+| A person on a repository in another cell | One forward, and their own account's check crosses: their choice of region |
+| A `ypat_` from `enam` on a `weur` repository | 1 D1 read and 1 authority call across |
+| A sign-in by an `enam` account arriving in Europe with no cookie | 3 authority calls across, once; the cookie then sends it home |
+
+Off, every row is today's.
+
+**What the routing tests must show:** a wrong-cell request is forwarded, for each kind of path; `enam` ids can't take a tag; a `yrp_` request needs no D1 or authority at the edge; with `CELLS` off, no path changes.
 
 ### Known hard parts
 

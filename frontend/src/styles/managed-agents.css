@@ -89,10 +89,10 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 38px;
-  padding: 6px 14px;
-  border: 1px solid var(--line-strong);
-  border-radius: 7px;
+  min-height: 32px;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
   background: var(--surface);
   color: var(--text);
   font-size: var(--text-base);

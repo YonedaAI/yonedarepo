@@ -1,5 +1,4 @@
-// Packs copied whole into the store of record: a retired mirror's history
-// (repo-mirror-retire) and the commits pushed to a repository that has no mirror
+// Packs copied whole into the store of record: a commit too large to stage
 // (repo-platform-store). The pack streams into a Rust receive session that resolves it as
 // it arrives (files over 8 MiB spill straight into R2); then every commit, tree and blob it
 // holds comes out framed and is written like a push's verified objects: a bundle per batch
@@ -12,7 +11,7 @@ import { putRawBytes } from './repo-r2-writes';
 import type { Env } from './types';
 
 /** Object bytes per batch written (a bundle). */
-const WRITE_BUDGET = 4 * 1024 * 1024;
+export const WRITE_BUDGET = 4 * 1024 * 1024;
 /** Pack bytes fed to the session at once: what it holds of a spilled file's pack bytes. */
 const FEED_BYTES = 1024 * 1024;
 const WRITES = 64;

@@ -22,7 +22,7 @@ curl -H "Authorization: Bearer $YONEDA_TOKEN" https://api.yonedarepo.com/api/v1/
 | `GET /repos` | Repositories you can use |
 | `GET /repos/deleted` | Your deleted repositories that can still be restored, where the platform keeps them for a time |
 | `POST /repos` | Create a repository, optionally with files and a policy |
-| `POST /repos/import` | Import a public HTTPS Git remote as a new repository; see [Import](/docs/guides/import) |
+| `POST /repos/import` | Import a public GitHub repository as a new repository; see [Import](/docs/guides/import) |
 | `GET`, `POST`, `DELETE /tokens[/<id>]` | Personal access tokens (create from a signed-in session) |
 | `GET`, `POST`, `DELETE /ssh-keys[/<id>]` | SSH keys |
 | `GET`, `PUT`, `DELETE /account/avatar` | Your picture: `PUT` the image as the body (PNG, JPEG or WebP, up to 1 MB; signed-in session only); `DELETE` falls back to your GitHub or Google picture |
@@ -111,7 +111,6 @@ All paths start with `/repos/<id>`.
 | `STALE_HEAD` | 409 | A branch moved since the value you expected; read it again |
 | `CONFLICT` | 409 | A merge, rebase, revert or landing conflicts; details name the paths |
 | `NOT_READY` | 409 | A commit cannot land yet: its gates are not met |
-| `IMPORT_IN_PROGRESS` | 409 | An imported repository's history is still arriving: its files can be read, and it takes no changes until it ends |
 | `ALREADY_EXISTS` | 409 | A tag, release, asset or open change of that name exists |
 | `SECRET_DETECTED` | 422 | The content holds a credential |
 | `AUTOMATION_PAUSED` | 423 | The owner paused automation |

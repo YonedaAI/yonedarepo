@@ -184,6 +184,8 @@ fn ephemeral_env_shares_nothing_with_dev() {
         }
         let mut strings = Vec::new();
         all_strings(&config, &mut strings);
+        // The App's name is GitHub's, not a resource here: without its key, Connect is off.
+        strings.retain(|s| s != "yonedarepo-dev-import");
         assert!(
             !strings
                 .iter()
@@ -688,7 +690,7 @@ fn job_summary_tables_are_markdown_with_escaped_cells() {
 /// Prod runs what dev runs. A variable may differ only for the reason given here.
 #[test]
 fn prod_has_every_switch_dev_has() {
-    const OWN: [(&str, &str); 11] = [
+    const OWN: [(&str, &str); 14] = [
         ("EMAIL_FROM", "its own sender"),
         ("ADMIN_NOTIFY_EMAIL", "dev mails nobody"),
         ("ADMIN_ACCOUNTS", "its own operators"),
@@ -700,6 +702,9 @@ fn prod_has_every_switch_dev_has() {
         ("WEB_ANALYTICS_TOKEN", "its own site"),
         ("SEO_INDEXING", "only prod is indexed"),
         ("REGION_HINT_TEST", "a dev test"),
+        ("REGION_SIGNALS", "dev first: prod with its first cell"),
+        ("GITHUB_APP_ID", "a dev App: none on prod yet"),
+        ("GITHUB_APP_SLUG", "a dev App: none on prod yet"),
     ];
     const DEV_TEST: (&str, &str) = ("PROBE_LANDING", "a dev test: off, and frozen");
     let parse = |text: &str| serde_json::from_str::<serde_json::Value>(text).unwrap();
@@ -732,5 +737,29 @@ fn prod_has_every_switch_dev_has() {
                 in_prod[&name]
             );
         }
+    }
+}
+
+#[test]
+fn imports_have_their_own_class_with_the_disk_and_checks_stay_on_their_price() {
+    let prod = include_str!("../../../infra/envs/prod.json");
+    let prod_lock = include_str!("../../../infra/envs/prod.lock.json");
+    for (text, locked) in [(DEV, DEV_LOCK), (prod, prod_lock)] {
+        let spec = Spec::parse(text).unwrap();
+        let platform = spec.workers.iter().find(|w| w.role == "platform").unwrap();
+        let config = spec.worker_config(platform, &lock(locked)).unwrap();
+        let containers = config["containers"].as_array().unwrap();
+        let class = |name: &str| containers.iter().find(|c| c["class_name"] == name).unwrap();
+        assert_eq!(class("CheckContainer")["instance_type"], "standard-1");
+        assert_eq!(class("ImportContainer")["instance_type"], "standard-3");
+        assert_eq!(
+            class("ImportContainer")["image"],
+            class("CheckContainer")["image"]
+        );
+        let migrations = config["migrations"].as_array().unwrap();
+        assert_eq!(
+            migrations.last().unwrap()["new_sqlite_classes"],
+            json!(["ImportContainer"])
+        );
     }
 }

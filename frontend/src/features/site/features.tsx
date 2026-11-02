@@ -186,7 +186,6 @@ export const FEATURES: Feature[] = [
     points: [
       'Code search over an index rebuilt only where files changed.',
       'Blame, path history and diffs, each readable at an earlier landed version.',
-      'Overview: a generated map of subsystems, their symbols and how they reference each other.',
     ],
     mock: (
       <figure className="site-mock site-panel" aria-label="Code search results">
@@ -250,7 +249,7 @@ export const FEATURES: Feature[] = [
         label="Signing in and connecting an agent"
         lines={[
           ['in', 'yoneda login'],
-          ['out', 'Open https://yonedarepo.com/device and enter the code WDJB-MJHT'],
+          ['out', '✓ Login complete (signed in at https://yonedarepo.com).'],
           ['in', 'yoneda setup claude'],
           ['in', 'yoneda change create retry --title "Retry on 503"'],
         ]}

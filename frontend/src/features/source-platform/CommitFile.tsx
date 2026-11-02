@@ -1,6 +1,8 @@
 // Add or edit one file from the Files page. The commit lands on a working branch: the one on
 // screen, or a new one when the page shows main, which moves only by landing.
 import { type FormEvent, useState } from 'react';
+import { CodeBlock } from './CodeBlock';
+import { FileHeader } from './FileHeader';
 import {
   branchFor,
   type CommitPlace,
@@ -67,55 +69,61 @@ export function CommitFile({
         if (e.key === 'Escape') onCancel();
       }}
     >
-      <label className="source-field">
-        File
-        <input
-          value={path}
-          required
-          readOnly={Boolean(editing)}
-          placeholder="src/app.ts"
-          spellCheck={false}
-          // biome-ignore lint/a11y/noAutofocus: the form opens because the user asked for it.
-          autoFocus={!editing}
-          onChange={(e) => setPath(e.target.value)}
-        />
-      </label>
-      <label className="source-field source-field-wide">
-        Contents
-        <textarea
-          value={content}
-          rows={14}
-          spellCheck={false}
-          // biome-ignore lint/a11y/noAutofocus: the form opens because the user asked for it.
-          autoFocus={Boolean(editing)}
-          onChange={(e) => setContent(e.target.value)}
-        />
-      </label>
-      <label className="source-field">
-        Commit message
-        <input value={message} required onChange={(e) => setMessage(e.target.value)} />
-      </label>
-      <label className="source-field">
-        Branch
-        <input
-          value={branch}
-          required
-          spellCheck={false}
-          onChange={(e) => setBranch(e.target.value)}
-        />
-      </label>
-      <label className="source-field">
-        Flight plan
-        <input
-          value={goal}
-          maxLength={2000}
-          placeholder="What this work sets out to do"
-          onChange={(e) => setGoal(e.target.value)}
-        />
-      </label>
+      <div className="source-file code-editor">
+        {editing ? (
+          <FileHeader path={editing.path}>
+            <button type="button" className="quiet" disabled={busy} onClick={onCancel}>
+              Cancel
+            </button>
+          </FileHeader>
+        ) : (
+          <header className="file-header">
+            <label className="source-field">
+              File
+              <input
+                value={path}
+                required
+                placeholder="src/app.ts"
+                spellCheck={false}
+                // biome-ignore lint/a11y/noAutofocus: the form opens because the user asked for it.
+                autoFocus
+                onChange={(e) => setPath(e.target.value)}
+              />
+            </label>
+            <button type="button" className="quiet" disabled={busy} onClick={onCancel}>
+              Cancel
+            </button>
+          </header>
+        )}
+        <CodeBlock value={content} path={path} label="Contents" onChange={setContent} />
+      </div>
+      <div className="code-editor-fields">
+        <label className="source-field code-editor-message">
+          Commit message
+          <input value={message} required onChange={(e) => setMessage(e.target.value)} />
+        </label>
+        <label className="source-field">
+          Branch
+          <input
+            value={branch}
+            required
+            spellCheck={false}
+            onChange={(e) => setBranch(e.target.value)}
+          />
+        </label>
+        <label className="source-field">
+          Flight plan
+          <input
+            value={goal}
+            maxLength={2000}
+            placeholder="What this work sets out to do"
+            onChange={(e) => setGoal(e.target.value)}
+          />
+        </label>
+      </div>
       <div className="source-actions">
         <button type="submit" disabled={busy}>
-          {busy ? 'Committing…' : 'Commit'}
+          {busy ? 'Saving…' : 'Save'}
         </button>
         <button type="button" className="quiet" disabled={busy} onClick={onCancel}>
           Cancel

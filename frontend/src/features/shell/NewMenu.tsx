@@ -1,11 +1,18 @@
 // The rail's + button: a menu of the ways to get a repository. Built like the account menu
 // (a <details>, closed by a press elsewhere) with the arrow keys of a menu button.
-import { FolderPlus, Plus } from 'lucide-react';
+import { FolderPlus, Globe, Plus } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { ProviderMark } from '../workspace/OAuthButtons';
 import { menuStep, useMenuDismiss } from './menuDismiss';
 
-export function NewMenu({ onCreate, onImport }: { onCreate: () => void; onImport: () => void }) {
+export function NewMenu({
+  onCreate,
+  onImport,
+}: {
+  onCreate: () => void;
+  /** `publicAddress`: by address alone, with no trip to GitHub first. */
+  onImport: (publicAddress?: boolean) => void;
+}) {
   const [open, setOpen] = useState(false);
   const menu = useRef<HTMLDetailsElement>(null);
   useMenuDismiss(menu);
@@ -70,9 +77,23 @@ export function NewMenu({ onCreate, onImport }: { onCreate: () => void; onImport
           <FolderPlus size={15} aria-hidden="true" />
           Create repository
         </button>
-        <button type="button" role="menuitem" className="account-item" onClick={pick(onImport)}>
+        <button
+          type="button"
+          role="menuitem"
+          className="account-item"
+          onClick={pick(() => onImport())}
+        >
           <ProviderMark provider="github" size={15} />
           Add GitHub repository
+        </button>
+        <button
+          type="button"
+          role="menuitem"
+          className="account-item"
+          onClick={pick(() => onImport(true))}
+        >
+          <Globe size={15} aria-hidden="true" />
+          Add public repository
         </button>
       </div>
     </details>

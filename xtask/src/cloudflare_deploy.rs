@@ -22,10 +22,8 @@ pub(crate) async fn deploy(args: &[String]) -> Result<()> {
     if config["name"] != manifest["name"] {
         return Err("Config Worker name differs from deployment manifest".into());
     }
-    if config["vars"]["ARTIFACTS_NAMESPACE"] != manifest["namespace"]
-        || config["d1_databases"][0]["database_id"] != manifest["database_id"]
-    {
-        return Err("Config namespace or database differs from deployment manifest".into());
+    if config["d1_databases"][0]["database_id"] != manifest["database_id"] {
+        return Err("Config database differs from deployment manifest".into());
     }
     crate::commands::build_wasm()?;
     run("pnpm", &["--dir", crate::layout::FRONTEND, "build"])?;

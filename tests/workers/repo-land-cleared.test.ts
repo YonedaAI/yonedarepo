@@ -172,7 +172,7 @@ it('with the platform switch off the repository switch is refused and no job run
 });
 
 it('lands a fork\'s newest head only with its own approval', async () => {
-  const local = { ...on, PLATFORM_OBJECT_STORE: 'r2', ARTIFACTS: undefined } as unknown as Env;
+  const local = { ...on } as unknown as Env;
   const alice = { cookie: await signup('lwc_alice') };
   const bob = { cookie: await signup('lwc_bob') };
   const created = await api('/repos', alice, { body: { name: 'upstream_lwc', policy: { approvals: 0, required_checks: [] }, files: [file('a.md', 'a\n')], author } }, local);

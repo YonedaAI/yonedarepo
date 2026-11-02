@@ -1,5 +1,5 @@
 //! Pack v2: undeltified, the smallest pack Git's receive-pack accepts, so the server can
-//! push freshly built objects to Artifacts without a Git CLI; a fetch's pack may also
+//! build and store objects without a Git CLI; a fetch's pack may also
 //! carry REF_DELTA entries against objects in the same pack.
 use super::{ObjectId, ObjectKind, invalid};
 use crate::Result;

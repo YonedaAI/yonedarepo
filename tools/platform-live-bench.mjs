@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // Hosted counterpart of tools/platform-load.mjs (N4) plus the Scion S12 cache gate, run
-// against a deployed platform Worker with real Artifacts, DO SQLite, R2 and Cache API. An
+// against a deployed platform Worker with real DO SQLite, R2 and Cache API. An
 // explicit, separate command: it creates two repositories and many commits on the target.
 // Credentials come from YONEDA_USERNAME / YONEDA_PASSWORD. Evidence goes to
 // .local/platform-live/bench.json.
 // S19 baseline: time to first edit and bytes moved, `git clone` (the old agent flow) versus
 // one API read (the platform flow), on the large repository.
-// Usage: node tools/platform-live-bench.mjs --url https://<deployment> [--writers 100] [--large 10000]
+// Usage: node tools/platform-live-bench.mjs --url https://<deployment> [--git https://<Git host>] [--writers 100] [--large 10000]
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -21,6 +21,7 @@ import { gitConfigEnv, OWN_TRAFFIC } from './own-traffic.mjs';
 const { values } = parseArgs({
   options: {
     url: { type: 'string' },
+    git: { type: 'string' },
     writers: { type: 'string', default: '100' },
     large: { type: 'string', default: '10000' },
     // `session`: every writer uses the owner's session; `tokens`: each writer is its own
@@ -30,6 +31,7 @@ const { values } = parseArgs({
 });
 assert.ok(values.url, 'Pass --url of the deployed platform');
 const url = values.url.replace(/\/$/, '');
+const gitHost = (values.git ?? url).replace(/\/$/, '');
 const WRITERS = Number(values.writers);
 const LARGE = Number(values.large);
 const root = fileURLToPath(new URL('../', import.meta.url));
@@ -159,20 +161,15 @@ for (let k = 5; k < 65; k++) {
 
 // S19: the old flow cloned the repository before the first edit; the platform reads one file.
 async function cloneBaseline(id) {
-  const access = must(await call(`/repos/${id}/clone`, {}), 'clone access');
-  const head = must(await call(`/repos/${id}/refs`), 'refs').refs['refs/heads/main'];
-  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', ...gitConfigEnv({ token: access.token }) };
+  const reader = must(await call(`/repos/${id}/tokens`, { name: 'bench-clone', scopes: ['read'] }), 'clone token');
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', ...gitConfigEnv({ token: reader.token }) };
   const git = (args, cwd) => execFileSync('git', args, { cwd, env, encoding: 'utf8' }).trim();
-  for (let waited = 0; git(['ls-remote', access.remote, 'refs/heads/main']).split(/\s/)[0] !== head; waited += 2000) {
-    assert.ok(waited < 180_000, 'large repository main was not projected');
-    await new Promise((r) => setTimeout(r, 2000));
-  }
   const runs = {};
   for (const [name, extra] of [['full', []], ['depth1', ['--depth=1']]]) {
     const dir = mkdtempSync(join(tmpdir(), 'yoneda-bench-'));
     try {
       const started = performance.now();
-      git(['clone', '--quiet', ...extra, access.remote, dir]);
+      git(['clone', '--quiet', ...extra, `${gitHost}/git/${id}.git`, dir]);
       const ms = performance.now() - started;
       const pack = Number(git(['count-objects', '-v'], dir).match(/size-pack: (\d+)/)?.[1] ?? 0) * 1024;
       runs[name] = { ms: Math.round(ms), pack_bytes: pack };

@@ -22,7 +22,7 @@ fn the_ssh_keys_scope_grants_nothing_on_a_repository() {
     let only = json!(["account:ssh-keys"]);
     for op in [
         json!({"op":"repo_status"}),
-        json!({"op":"repo_clone_access"}),
+        json!({"op":"repo_git_access","service":"git-upload-pack"}),
         json!({"op":"repo_tokens"}),
         json!({"op":"repo_branch_set","ref":"x","commit":root,"expected":null}),
     ] {
@@ -67,19 +67,10 @@ fn personal_tokens_hold_only_their_repository_scopes() {
         )),
         "FORBIDDEN"
     );
-    // A token can read the whole repository through a clone; break-glass stays human-only.
-    assert_eq!(
-        code(pat(&h, read.clone(), json!({"op":"repo_clone_access"}))),
-        "OK"
-    );
-    assert_eq!(
-        code(pat(
-            &h,
-            json!(["repo:write"]),
-            json!({"op":"repo_clone_access"})
-        )),
-        "FORBIDDEN"
-    );
+    // A token can read the whole repository through a clone; write alone reads nothing.
+    let clone = json!({"op":"repo_git_access","service":"git-upload-pack"});
+    assert_eq!(code(pat(&h, read.clone(), clone.clone())), "OK");
+    assert_eq!(code(pat(&h, json!(["repo:write"]), clone)), "FORBIDDEN");
     let write = json!(["repo:read", "repo:write"]);
     let moved = pat(
         &h,

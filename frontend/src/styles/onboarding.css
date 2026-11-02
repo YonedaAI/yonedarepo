@@ -172,6 +172,15 @@ details.account-panel[open] {
 }
 /* Sign-in with GitHub / Google: light buttons with each provider's own mark (Google's
    sign-in branding: white, a grey outline, dark text). */
+.account-panel button[type="submit"] {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+}
+.account-panel button[type="submit"]:hover:not(:disabled) {
+  background: var(--surface-2);
+  border-color: var(--muted);
+}
 .oauth-buttons {
   display: grid;
   gap: 10px;
@@ -183,13 +192,14 @@ button.oauth-button {
   justify-content: center;
   gap: 10px;
   min-height: 40px;
-  background: #fff;
-  color: #1f1f1f;
-  border: 1px solid #747775;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
   font-weight: 500;
 }
 button.oauth-button:hover:not(:disabled) {
-  background: #f3f5f9;
+  background: var(--surface-2);
+  border-color: var(--muted);
 }
 button.oauth-button:disabled {
   opacity: 0.6;

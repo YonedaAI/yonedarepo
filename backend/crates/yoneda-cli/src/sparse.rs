@@ -87,12 +87,12 @@ fn yoneda_remote(git: &Git) -> Result<(String, url::RemoteUrl)> {
     for name in names {
         let configured = git.run(&["remote", "get-url", &name])?;
         if configured.starts_with("yoneda:")
-            && let Ok(parsed) = url::parse(&configured)
+            && let Some(parsed) = crate::target::known_remote(git, &configured)
         {
             return Ok((name, parsed));
         }
     }
     Err(Error::usage(
-        "this clone has no yoneda:: remote; clone with `yoneda clone <repo-id> --sparse <dir,...>`",
+        "this clone has no yoneda:: remote; clone with `yoneda clone <owner>/<name> --sparse <dir,...>`",
     ))
 }

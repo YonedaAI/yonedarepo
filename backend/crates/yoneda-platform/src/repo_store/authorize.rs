@@ -89,34 +89,23 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         R::CheckClaim
         | R::CheckRelease
         | R::CheckComplete
-        | R::ProjectionPending
-        | R::ProjectionResult
         | R::ChangesetPlan
         | R::Head
         | R::ChangesetRecord
         | R::RecordRepair => actor.require("system"),
         // Only the platform's object projector reads or settles the object outbox: a false
         // "projected" would drop the only copy of accepted objects.
-        R::ObjectsPending
-        | R::ObjectsProjected
-        | R::StagedObjects
-        | R::ProjectionObjects
-        | R::ObjectsStored
-            if !actor.can("system") =>
-        {
-            Err(Error::new(
-                "FORBIDDEN",
-                "Only the platform projects staged objects",
-            ))
-        }
-        // Imported history is only recorded by the platform importer, which read it from
-        // the object store; nobody else can declare commits into existence.
-        R::RecordImported | R::RecordImportedBatch | R::RecordImportedEnd
+        R::ObjectsPending | R::ObjectsProjected | R::StagedObjects if !actor.can("system") => Err(
+            Error::new("FORBIDDEN", "Only the platform projects staged objects"),
+        ),
+        // A clone's refs are set by the platform importer alone: they arrive whole, with no
+        // landing and no gate, into a repository nobody has worked in yet.
+        R::ImportRefs | R::ImportReset | R::StoreAudit | R::AuthorsMissing | R::AuthorsSet
             if !actor.can("import") =>
         {
             Err(Error::new(
                 "FORBIDDEN",
-                "Only the platform importer records imported history",
+                "Only the platform importer sets imported refs",
             ))
         }
         R::Review => actor.require("review"),
@@ -138,6 +127,10 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         R::SetPolicy | R::AutoLandings => actor.require_owner(),
         // Admins manage other members; only the owner manages admins (`members`).
         R::Members | R::MemberPut | R::MemberRemove => actor.require_owner(),
+        R::AccountClosed if !actor.can("close") => Err(Error::new(
+            "FORBIDDEN",
+            "Only the platform closes an account",
+        )),
         // Hooks reveal repository events to an outside URL: the owner (or repo:admin) decides.
         R::HookCreate | R::Hooks | R::HookDelete | R::HookDeliveries => actor.require_owner(),
         // Only the platform's hook job fans out, reads secrets and settles deliveries.
@@ -154,7 +147,6 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         }
         R::BreakGlass => actor.require_human_owner(),
         R::SetVisibility | R::Rename => actor.require_repo_owner(),
-        R::CloneAccess => actor.require_human_reader(),
         // Every other op, and a guarded op above whose caller passes its guard, reads.
         R::Activity
         | R::AdoptCommit
@@ -188,6 +180,12 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::HookSettle
         | R::HooksFanout
         | R::Import
+        | R::ImportRefs
+        | R::ImportReset
+        | R::StoreAudit
+        | R::AccountClosed
+        | R::AuthorsMissing
+        | R::AuthorsSet
         | R::LandBatch
         | R::LandChangesets
         | R::LandClaim
@@ -200,15 +198,11 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::MergePlan
         | R::ObjectsPending
         | R::ObjectsProjected
-        | R::ObjectsStored
         | R::PathHistory
+        | R::DirActivity
         | R::PinList
-        | R::ProjectionObjects
         | R::Purged
         | R::RecordClasses
-        | R::RecordImported
-        | R::RecordImportedBatch
-        | R::RecordImportedEnd
         | R::RecordPushed
         | R::RecordSymbols
         | R::Refs

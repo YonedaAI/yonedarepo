@@ -8,7 +8,7 @@ import { api, author, bindings, drainObjects, file, queued, scoped, signup, useP
 
 usePlatformFixture();
 
-const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2' } as unknown as Env;
+const local = { ...scoped } as unknown as Env;
 
 async function keys(prefix: string) {
   return (await bindings.OBJECTS.list({ prefix })).objects.map((o) => o.key);

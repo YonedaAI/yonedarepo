@@ -46,9 +46,8 @@ impl Visibility {
 
 /// What a public reader may run: reads of code, history, changes, releases, agent records,
 /// LFS downloads, Git fetches (served from the authority's refs) and the parent's side of
-/// forking. Everything else (writes, settings, tokens, members, hooks, policy, and direct
-/// object-store credentials through `repo_clone_access`) stays with owners and members,
-/// even where the operation itself would accept `read`.
+/// forking. Everything else (writes, settings, tokens, members, hooks and policy) stays with
+/// owners and members, even where the operation itself would accept `read`.
 fn public_read(op: StoreOp) -> bool {
     matches!(
         op,
@@ -61,6 +60,7 @@ fn public_read(op: StoreOp) -> bool {
                 | R::Commit
                 | R::MergeBase
                 | R::PathHistory
+                | R::DirActivity
                 | R::Contracts
                 | R::ContractList
                 | R::Sessions

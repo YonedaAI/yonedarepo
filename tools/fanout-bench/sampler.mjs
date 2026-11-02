@@ -1,5 +1,5 @@
 // A read-only view of the server during a run: GETs on watched repositories (their log floor and
-// tail, database size, object outbox and projection lag) and Cloudflare's analytics (queue depth,
+// tail, database size and object outbox) and Cloudflare's analytics (queue depth,
 // dead letters, resource kills, D1 traffic). Nothing here writes, and a source that cannot be
 // read is named in `unreadable` rather than read as quiet. Its cost is in `requestsPerSample`.
 const SEGMENT_VERSIONS = 1024;
@@ -36,7 +36,7 @@ export function repoFigures(repo, compaction, status) {
     keep_versions: compaction.retention?.keep_versions ?? null,
     db_bytes: compaction.storage?.db_bytes ?? null,
     table_rows: compaction.storage?.table_rows ?? null,
-    ...(status ? { outbox_pending: status.objects?.pending ?? null, projection_behind: Math.max(0, ...(status.projections ?? []).map((p) => p.target_version - p.projected_version)) } : {}),
+    ...(status ? { outbox_pending: status.objects?.pending ?? null } : {}),
   };
 }
 
@@ -123,7 +123,7 @@ export function summarizeSamples(samples) {
     samples: samples.length,
     repos: ids.map((repo) => {
       const rows = rowsOf(repo);
-      return { repo, growth: growthOf(rows), compaction: compactionOf(rows), outbox: span(rows.map((r) => r.outbox_pending)), projection_behind: span(rows.map((r) => r.projection_behind)) };
+      return { repo, growth: growthOf(rows), compaction: compactionOf(rows), outbox: span(rows.map((r) => r.outbox_pending)) };
     }),
     queues: { jobs: span(samples.map((s) => s.cloudflare.backlog?.jobs)), checks: span(samples.map((s) => s.cloudflare.backlog?.checks)), dead_letter: span(samples.map((s) => s.cloudflare.backlog?.dead_letter)) },
     workers: last.workers ?? null,

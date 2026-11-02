@@ -10,10 +10,6 @@ export type RepoStatus = {
   forks: number;
   /** The paths a path-scoped token may read (null: the whole repository). */
   grant: string[] | null;
-  /** How far an imported history has been recorded, while it is still partial. */
-  history_import: HistoryFill | null;
-  /** Set when an imported history ended early: older commits are not here. */
-  history_stopped: HistoryStopped | null;
   /** Whether a push opens a Landing, and whether agents run on those. */
   landings: AutoLandings;
   name: string;
@@ -29,7 +25,6 @@ export type RepoStatus = {
   path: string | null;
   policy: Policy;
   policy_digest: string;
-  projections: Projection[];
   /** Changes whenever `quarantined` does: caches derived from content are keyed by it. */
   quarantine_epoch: number;
   /** Blobs no read serves (quarantined or purged); trees still name them. */
@@ -58,19 +53,6 @@ export type ForkParent = {
   version: number;
 };
 
-/** How far an imported history has been recorded behind its landed head. */
-export type HistoryFill = {
-  recorded: number;
-  total: number;
-};
-
-/** An imported history that ended early: how much of it is here, and why. */
-export type HistoryStopped = {
-  reason: string;
-  recorded: number;
-  total: number;
-};
-
 /** Landing policy: which checks must pass and how many independent approvals are needed. `runners` are owner-defined checks the platform executes itself (a command, or one model review call); definitions come from policy, never from the commit under test, so a change cannot weaken its own check. */
 export type Policy = {
   approvals: number;
@@ -83,20 +65,6 @@ export type Policy = {
   /** Secret-scan false positives the owner accepted, by path and rule. Omitted when empty. */
   secret_allow?: SecretAllow[];
 };
-
-/** A ref's Git projection: the target the log decided and how far Git has caught up. */
-export type Projection = {
-  detail: string | null;
-  projected_commit: string | null;
-  projected_version: number;
-  refname: string;
-  status: ProjectionStatus;
-  target_commit: string;
-  target_version: number;
-  updated_at: number;
-};
-
-export type ProjectionStatus = "ok" | "pending" | "drift";
 
 export type RefHead = {
   commit_id: string;
@@ -192,50 +160,6 @@ export const repoStatusSchema = {
       ],
       "type": "object"
     },
-    "HistoryFill": {
-      "description": "How far an imported history has been recorded behind its landed head.",
-      "properties": {
-        "recorded": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "total": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "recorded",
-        "total"
-      ],
-      "type": "object"
-    },
-    "HistoryStopped": {
-      "description": "An imported history that ended early: how much of it is here, and why.",
-      "properties": {
-        "reason": {
-          "type": "string"
-        },
-        "recorded": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "total": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        }
-      },
-      "required": [
-        "recorded",
-        "total",
-        "reason"
-      ],
-      "type": "object"
-    },
     "Policy": {
       "additionalProperties": false,
       "description": "Landing policy: which checks must pass and how many independent approvals are needed.\n`runners` are owner-defined checks the platform executes itself (a command, or one model\nreview call); definitions come from policy, never from the commit under test, so a\nchange cannot weaken its own check.",
@@ -298,77 +222,6 @@ export const repoStatusSchema = {
         "approvals"
       ],
       "type": "object"
-    },
-    "Projection": {
-      "description": "A ref's Git projection: the target the log decided and how far Git has caught up.",
-      "properties": {
-        "detail": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "projected_commit": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "projected_version": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "refname": {
-          "type": "string"
-        },
-        "status": {
-          "$ref": "#/$defs/ProjectionStatus"
-        },
-        "target_commit": {
-          "type": "string"
-        },
-        "target_version": {
-          "format": "uint64",
-          "minimum": 0,
-          "type": "integer"
-        },
-        "updated_at": {
-          "format": "int64",
-          "type": "integer"
-        }
-      },
-      "required": [
-        "refname",
-        "target_commit",
-        "target_version",
-        "projected_commit",
-        "projected_version",
-        "status",
-        "detail",
-        "updated_at"
-      ],
-      "type": "object"
-    },
-    "ProjectionStatus": {
-      "oneOf": [
-        {
-          "enum": [
-            "ok"
-          ],
-          "type": "string"
-        },
-        {
-          "const": "pending",
-          "description": "The target waits for Git to catch up.",
-          "type": "string"
-        },
-        {
-          "const": "drift",
-          "description": "Git moved elsewhere; an owner resolves it.",
-          "type": "string"
-        }
-      ]
     },
     "RefHead": {
       "properties": {
@@ -584,28 +437,6 @@ export const repoStatusSchema = {
         "null"
       ]
     },
-    "history_import": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/HistoryFill"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "How far an imported history has been recorded, while it is still partial."
-    },
-    "history_stopped": {
-      "anyOf": [
-        {
-          "$ref": "#/$defs/HistoryStopped"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "description": "Set when an imported history ended early: older commits are not here."
-    },
     "landings": {
       "$ref": "#/$defs/AutoLandings",
       "description": "Whether a push opens a Landing, and whether agents run on those."
@@ -653,12 +484,6 @@ export const repoStatusSchema = {
     "policy_digest": {
       "type": "string"
     },
-    "projections": {
-      "items": {
-        "$ref": "#/$defs/Projection"
-      },
-      "type": "array"
-    },
     "quarantine_epoch": {
       "description": "Changes whenever `quarantined` does: caches derived from content are keyed by it.",
       "format": "uint64",
@@ -699,7 +524,6 @@ export const repoStatusSchema = {
     "policy",
     "policy_digest",
     "refs",
-    "projections",
     "objects",
     "bundled",
     "automation",
@@ -711,8 +535,6 @@ export const repoStatusSchema = {
     "grant",
     "quarantined",
     "quarantine_epoch",
-    "history_import",
-    "history_stopped",
     "owner_handle",
     "path"
   ],

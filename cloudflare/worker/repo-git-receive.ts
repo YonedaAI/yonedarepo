@@ -32,7 +32,7 @@ import { largeWarnings, SpilledFiles } from './repo-large-files';
 import { fromBase64, type RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Json, type RepoContext } from './repo-ops';
 import { framed } from './repo-pack-copy';
-import { dispatchObjects, dispatchProjection } from './repo-projection';
+import { dispatchObjects } from './repo-projection';
 import { putRawBytes } from './repo-stores';
 import { record, timed } from './repo-timing';
 import { notePush } from './repo-usage';
@@ -118,10 +118,6 @@ export async function receivePack(
       if (atomic) await moveAll(ctx, going, outcomes, messages);
       else for (const c of going) outcomes.set(c.ref, await moveOne(ctx, c, fresh, messages));
     });
-    // New tags are mirrored to the object store like protected branches (a lost message
-    // only delays that).
-    if (going.some((c) => c.ref.startsWith('refs/tags/') && !outcomes.get(c.ref)))
-      await timed('git.projection', () => dispatchProjection(ctx.env, ctx.repo).catch(() => {}));
     // Webhooks for every ref the push moved (branch moves never reach the derive job).
     if (going.some((c) => !outcomes.get(c.ref))) await notifyHooks(ctx.env, ctx.repo);
     return answer(commands, outcomes, null, sideBand, messages);

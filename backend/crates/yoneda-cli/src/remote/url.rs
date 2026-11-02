@@ -44,6 +44,65 @@ pub fn parse(url: &str) -> Result<RemoteUrl> {
     })
 }
 
+/// A repository as a person names it on a command line.
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum Spec {
+    Id(String),
+    Named { handle: String, name: String },
+}
+
+impl Spec {
+    /// `<owner>/<name>` or a repository id.
+    pub fn parse(text: &str) -> Option<Self> {
+        if valid_repo_id(text) {
+            return Some(Self::Id(text.to_owned()));
+        }
+        let (handle, name) = handle_and_name(text.trim_end_matches('/'))?;
+        Some(Self::Named { handle, name })
+    }
+
+    /// The URL to give `git clone` or `git remote add`.
+    pub fn git_url(&self, origin: &str) -> String {
+        match self {
+            Self::Id(id) => format!("yoneda::{origin}/{id}"),
+            Self::Named { handle, name } => format!("yoneda::{origin}/{handle}/{name}"),
+        }
+    }
+
+    /// The folder a clone lands in by default.
+    pub fn folder(&self) -> &str {
+        match self {
+            Self::Id(id) => id,
+            Self::Named { name, .. } => name,
+        }
+    }
+}
+
+/// The Git config key holding the id of the repository `/<handle>/<name>` names on `origin`.
+/// The helper and `yoneda` write it, so commands in a clone by name need no network to know
+/// their repository. It is keyed by the name, so changing a remote's URL can't leave a stale id.
+pub fn id_key(origin: &str, handle: &str, name: &str) -> String {
+    format!("yoneda.{origin}/{handle}/{name}.id")
+}
+
+/// `<handle>/<name>`, each as the platform allows it.
+fn handle_and_name(path: &str) -> Option<(String, String)> {
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    let (handle, name) = path.split_once('/')?;
+    let handle_ok = (3..=32).contains(&handle.len())
+        && handle.as_bytes()[0].is_ascii_alphabetic()
+        && handle
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_');
+    let name_ok = !name.is_empty()
+        && name.len() <= 100
+        && !name.starts_with('.')
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
+    (handle_ok && name_ok).then(|| (handle.to_ascii_lowercase(), name.to_owned()))
+}
+
 /// A remote named by readable path (`yoneda::https://<platform>/<handle>/<name>`, any
 /// spelling `parse` takes): its origin, the owner's handle and the repository's name, for
 /// the platform to resolve to an id (`GET /api/v1/resolve/<handle>/<name>`).
@@ -57,27 +116,8 @@ pub fn parse_path(url: &str) -> Option<(String, String, String)> {
     let scheme_end = url.find("://")? + 3;
     let slash = url[scheme_end..].find('/')? + scheme_end;
     let (origin, path) = url.split_at(slash);
-    let path = path.trim_end_matches('/');
-    let path = path.strip_suffix(".git").unwrap_or(path);
-    let (handle, name) = path.strip_prefix('/')?.split_once('/')?;
-    let handle_ok = (3..=32).contains(&handle.len())
-        && handle.as_bytes()[0].is_ascii_alphabetic()
-        && handle
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || b == b'_');
-    let name_ok = !name.is_empty()
-        && name.len() <= 100
-        && !name.starts_with('.')
-        && name
-            .bytes()
-            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
-    (handle_ok && name_ok).then(|| {
-        Some((
-            normalize_origin(origin).ok()?,
-            handle.to_ascii_lowercase(),
-            name.to_owned(),
-        ))
-    })?
+    let (handle, name) = handle_and_name(path.trim_end_matches('/').strip_prefix('/')?)?;
+    Some((normalize_origin(origin).ok()?, handle, name))
 }
 
 /// Whether `url` (a remote's configured URL) is the platform's: a `yoneda:` remote for the

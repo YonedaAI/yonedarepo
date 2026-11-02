@@ -75,6 +75,7 @@ impl Harness {
             None if principal == "platform:fork" => c["_system"] = json!("fork"),
             None if principal == "platform:lfs" => c["_system"] = json!("lfs"),
             None if principal == "platform:purge" => c["_system"] = json!("purge"),
+            None if principal == "platform:close" => c["_system"] = json!("close"),
             None if principal == "platform:quarantine" => c["_system"] = json!("quarantine"),
             None if principal.starts_with("member:") => {
                 let account = &principal["member:".len()..];
@@ -864,109 +865,6 @@ fn commits_files_larger_than_short_field_limits() {
 }
 
 #[test]
-fn ref_projection_tracks_targets_leases_and_drift() {
-    let (h, root) = seeded();
-    const PROJECTOR: &str = "platform:projection";
-    let pending = |h: &Harness| {
-        h.run(PROJECTOR, json!({"op":"repo_projection_pending"}))
-            .unwrap()["pending"]
-            .clone()
-    };
-    assert_eq!(pending(&h)[0]["target_commit"], root);
-    assert_eq!(pending(&h)[0]["projected_commit"], Value::Null);
-    assert_eq!(
-        code(h.run(AGENT, json!({"op":"repo_projection_pending"}))),
-        "FORBIDDEN"
-    );
-    h.run(PROJECTOR, json!({"op":"repo_projection_result","refname":"refs/heads/main","version":1,"outcome":"ok","commit":root})).unwrap();
-    assert_eq!(pending(&h), json!([]));
-
-    let child = h
-        .commit(
-            AGENT,
-            Some(&root),
-            1,
-            json!([file("x.txt", "x\n")]),
-            json!([]),
-        )
-        .unwrap();
-    h.approve_and_check(&child);
-    h.ok(OWNER, json!({"op":"repo_land","ref":"main","commit":child}));
-    assert_eq!(
-        pending(&h)[0]["projected_commit"],
-        root,
-        "the last projected value is the lease"
-    );
-    // A late result for an older version never regresses the projection.
-    let late = h.run(PROJECTOR, json!({"op":"repo_projection_result","refname":"refs/heads/main","version":0,"outcome":"ok","commit":root})).unwrap();
-    assert_eq!(late["ignored"], true);
-    h.run(PROJECTOR, json!({"op":"repo_projection_result","refname":"refs/heads/main","version":2,"outcome":"drift","detail":"stale info"})).unwrap();
-    assert_eq!(pending(&h), json!([]), "drift waits for an owner");
-    let status = h.ok(OWNER, json!({"op":"repo_status"}));
-    assert_eq!(status["projections"][0]["status"], "drift");
-    assert_eq!(status["projections"][0]["detail"], "stale info");
-}
-
-#[test]
-fn imported_history_lands_with_a_truncated_boundary() {
-    let h = Harness::new();
-    const IMPORTER: &str = "platform:import";
-    let blob = |t: &str| yoneda_core::git_object::hash_object(ObjectKind::Blob, t.as_bytes());
-    let (boundary, first, second) = ("a".repeat(40), "b".repeat(40), "c".repeat(40));
-    let record = |id: &str, parents: Value, touches: Value| {
-        h.run(
-            IMPORTER,
-            json!({"op":"repo_record_imported","commit":id,"tree":"d".repeat(40),
-            "parents":parents,"message":"imported","touches":touches}),
-        )
-    };
-    // Owners and tokens cannot declare imported commits.
-    assert_eq!(code(h.run(OWNER, json!({"op":"repo_record_imported","commit":first,"tree":"d".repeat(40),"parents":[],"touches":[]}))), "FORBIDDEN");
-    record(
-        &first,
-        json!([boundary]),
-        json!([{"path":"a.txt","op":"add","old_blob":null,"new_blob":blob("a")}]),
-    )
-    .unwrap();
-    let second_row = record(
-        &second,
-        json!([first]),
-        json!([{"path":"a.txt","op":"modify","old_blob":blob("a"),"new_blob":blob("b")}]),
-    )
-    .unwrap();
-    assert_eq!(second_row["generation"], 2);
-    assert_eq!(
-        record(&second, json!([first]), json!([])).unwrap()["already"],
-        true
-    );
-    assert_eq!(
-        h.run(
-            IMPORTER,
-            json!({"op":"repo_import","ref":"main","commit":second})
-        )
-        .unwrap()["version"],
-        1
-    );
-    let log = h.ok(OWNER, json!({"op":"repo_log","ref":"main"}));
-    assert_eq!(
-        log["commits"].as_array().unwrap().len(),
-        2,
-        "the walk stops at the import boundary"
-    );
-    assert_eq!(
-        h.ok(
-            OWNER,
-            json!({"op":"repo_merge_base","left":second,"right":first})
-        )["merge_bases"][0]["commit"],
-        first
-    );
-    assert_eq!(
-        code(record(&"e".repeat(40), json!([]), json!([]))),
-        "ALREADY_EXISTS"
-    );
-}
-
-#[test]
 fn verified_platform_merges_land_under_the_merged_commits_gates() {
     let (h, root) = seeded();
     const MERGER: &str = "platform:merge";
@@ -1209,8 +1107,7 @@ fn queued_landings_batch_under_a_fenced_lease() {
 }
 
 #[test]
-fn path_history_bisect_and_vacuum_follow_the_log() {
-    use crate::storage::SqlStore;
+fn path_history_and_bisect_follow_the_log() {
     let (h, root) = seeded();
     let mut set = runner_policy(60);
     set["policy"]["required_checks"] = json!([]);
@@ -1277,52 +1174,16 @@ fn path_history_bisect_and_vacuum_follow_the_log() {
         tested <= 4,
         "bisect halves the range ({tested} checks for 8 commits)"
     );
+}
 
-    // Vacuum: landed work is covered only once its branch projection caught up; old
-    // unlanded work expires unless pinned or still in flight.
-    let orphan = h
-        .commit(
-            AGENT,
-            Some(&root),
-            1,
-            json!([file("o.txt", "o\n")]),
-            json!([]),
-        )
-        .unwrap();
-    let pinned = h
-        .commit(
-            AGENT,
-            Some(&root),
-            1,
-            json!([file("p.txt", "p\n")]),
-            json!([]),
-        )
-        .unwrap();
-    h.ok(
-        AGENT,
-        json!({"op":"repo_pin","commit":pinned,"reason":"long job"}),
-    );
-    *h.now.borrow_mut() += 8 * 24 * 60 * 60 * 1000;
-    let plan = h.ok(OWNER, json!({"op":"repo_vacuum_plan"}));
-    assert_eq!(plan["covered"], json!([]), "nothing is projected yet");
-    let expired: Vec<String> = serde_json::from_value(plan["expired"].clone()).unwrap();
-    assert!(
-        expired.contains(&orphan) && !expired.contains(&pinned) && !expired.contains(&chain[8])
-    );
-    h.db.query("UPDATE ref_projections SET status='ok',projected_version=target_version,projected_commit=target_commit", &[]).unwrap();
-    let covered: Vec<String> =
-        serde_json::from_value(h.ok(OWNER, json!({"op":"repo_vacuum_plan"}))["covered"].clone())
-            .unwrap();
-    assert!(covered.contains(&chain[8]) && !covered.contains(&pinned));
-    assert_eq!(
-        code(h.run(AGENT, json!({"op":"repo_vacuum_plan"}))),
-        "FORBIDDEN"
-    );
-    h.ok(OWNER, json!({"op":"repo_vacuum_done","commits":[orphan]}));
-    let again: Vec<String> =
-        serde_json::from_value(h.ok(OWNER, json!({"op":"repo_vacuum_plan"}))["expired"].clone())
-            .unwrap();
-    assert!(!again.contains(&orphan));
+/// The plan is only the gate in front of a vacuum, so it has nothing to say.
+#[test]
+fn only_the_owner_or_the_platform_passes_the_vacuum_gate() {
+    let (h, _) = seeded();
+    let plan = json!({"op":"repo_vacuum_plan"});
+    assert_eq!(h.ok(OWNER, plan.clone()), json!({}));
+    assert_eq!(h.ok(SYSTEM, plan.clone()), json!({}));
+    assert_eq!(code(h.run(AGENT, plan)), "FORBIDDEN");
 }
 
 #[test]
@@ -1676,18 +1537,21 @@ mod check_evidence;
 mod check_posters;
 mod check_release;
 mod checkpoints;
+mod commit_authors;
 mod compaction;
 mod compaction_writes;
 mod contract_paths;
 mod ctc_radar;
 mod differential;
+mod dir_activity;
 mod erase;
 mod flight_plans;
 mod forks;
 mod git_shallow;
 mod go_around;
-mod history_fill;
+mod history_reset;
 mod hooks;
+mod import_refs;
 mod insights;
 mod land_cas;
 mod land_shapes;
@@ -1698,7 +1562,6 @@ mod lfs;
 mod lfs_sweep;
 mod members;
 mod memories;
-mod mirror_retirement;
 mod model_runner;
 mod ops;
 mod orgs;

@@ -46,8 +46,8 @@ mod tests {
             versions.map(|m| m.version).max()
         };
         assert_eq!(last("repo_store"), Some(APPLY_THROUGH));
-        assert_eq!(last("commit_store"), Some(2));
-        assert_eq!(last("accounts"), Some(10));
+        assert_eq!(last("commit_store"), Some(3));
+        assert_eq!(last("accounts"), Some(11));
     }
 
     #[test]

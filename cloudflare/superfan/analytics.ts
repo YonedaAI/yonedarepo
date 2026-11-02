@@ -98,7 +98,6 @@ export function parseAccount(
     window,
     objectKills: {
       source_repository: kills(target.namespaces.source_repository),
-      object_push_queue: kills(target.namespaces.object_push_queue),
       check_runs: kills(target.namespaces.check_runs),
     },
     queue: { ...stats(queues.jobs), deadLetterBacklog: waiting(queues.deadLetter) },
@@ -153,7 +152,6 @@ export async function resolveIds(site: WatchSite, token: string): Promise<WatchI
     : [];
   const found = {
     SourceRepository: namespace('SourceRepository'),
-    ObjectPushQueue: namespace('ObjectPushQueue'),
     CheckContainer: namespace('CheckContainer'),
     [`${site.script}-jobs`]: queue(`${site.script}-jobs`),
     [`${site.script}-dead-letter`]: queue(`${site.script}-dead-letter`),
@@ -170,13 +168,13 @@ export async function resolveIds(site: WatchSite, token: string): Promise<WatchI
     );
   const v = Object.values(found) as string[];
   return {
-    namespaces: { source_repository: v[0], object_push_queue: v[1], check_runs: v[2] },
+    namespaces: { source_repository: v[0], check_runs: v[1] },
     queues: {
-      jobs: v[3],
-      deadLetter: v[4],
-      ...(site.wide ? { checks: v[6], managedRuns: v[7], managedDeadLetter: v[8] } : {}),
+      jobs: v[2],
+      deadLetter: v[3],
+      ...(site.wide ? { checks: v[5], managedRuns: v[6], managedDeadLetter: v[7] } : {}),
     },
-    checkApp: v[5],
+    checkApp: v[4],
   };
 }
 

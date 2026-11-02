@@ -9,7 +9,7 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 use yoneda_core::{
     Error, Result,
-    git_object::{ObjectId, merge_bases},
+    git_object::{ObjectId, is_ancestor, merge_bases},
     txlog::replay_projected,
 };
 
@@ -156,7 +156,8 @@ pub fn log<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         )?;
         commits.push(json!({
             "commit": id, "tree": row.tree, "parents": row.parents, "message": row.message,
-            "principal": row.principal, "landed": landed.first(),
+            "principal": row.principal, "author_name": row.author.name,
+            "authored_at": row.author.at, "landed": landed.first(),
             "break_glass": broke_glass.first().map(|r| r["action"].clone()),
         }));
         next = match row.parents.first() {
@@ -211,6 +212,7 @@ pub fn commit<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Val
     Ok(json!({
         "commit": id, "tree": row.tree, "parents": row.parents, "generation": row.generation,
         "base_version": row.base_version, "principal": row.principal, "message": row.message,
+        "author_name": row.author.name, "authored_at": row.author.at,
         "read_set": row.read_set, "paths": rows::touches(db, &id)?,
         "checks": db.query("SELECT name,status,evidence,principal,recorded_at FROM checks WHERE commit_id=? ORDER BY name", &key)?,
         "reviews": db.query("SELECT principal,decision,reason,recorded_at FROM reviews WHERE commit_id=? ORDER BY recorded_at", &key)?,
@@ -221,7 +223,37 @@ pub fn commit<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Val
         "symbol_touches": super::symbols::as_json(&super::symbols::for_commit(db, &id)?),
         "break_glass": super::break_glass::for_commit(db, &id)?,
         "gates": gates(db, &row, &target, settings)?,
+        "on_main": on_main(db, &id, row.generation)?,
     }))
+}
+
+/// Generations a commit's page walks under main's head before it stops asking.
+const ON_MAIN_WALK: u64 = 5_000;
+
+/// Whether `id` is already in main's history. Only the head of a landing or an import has a
+/// landing of its own; what lies under it has nothing left to land. The ref chain answers for
+/// first parents, and a bounded walk for a commit a merge brought in.
+fn on_main<S: SqlStore>(db: &S, id: &ObjectId, generation: u64) -> Result<bool> {
+    if super::ref_chain::branches_holding(db, id)?
+        .iter()
+        .any(|name| name == "refs/heads/main")
+    {
+        return Ok(true);
+    }
+    let main = db.query(
+        "SELECT commit_id FROM refs WHERE name='refs/heads/main'",
+        &[],
+    )?;
+    let Some(head) = main.first().and_then(|r| r["commit_id"].as_str()) else {
+        return Ok(false);
+    };
+    let head = ObjectId::parse(head)?;
+    let Some(tip) = rows::commit_row(db, &head)? else {
+        return Ok(false);
+    };
+    Ok(tip.generation >= generation
+        && tip.generation - generation <= ON_MAIN_WALK
+        && is_ancestor(&rows::RecordedGraph(db), id, &head)?)
 }
 
 /// Best common ancestors of two recorded commits, with their trees.

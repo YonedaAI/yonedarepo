@@ -141,7 +141,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--site-muted);
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--mono);
 }
 .mock-log .mock-ok {
   color: var(--site-good);
