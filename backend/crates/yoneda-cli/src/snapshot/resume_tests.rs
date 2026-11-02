@@ -167,6 +167,87 @@ async fn a_page_that_never_parses_gives_up_and_says_which_request() -> Result<()
     Ok(())
 }
 
+/// A large blob's download that ends in good order short of its size carries on from the bytes
+/// it has, as a dropped connection does.
+#[tokio::test]
+async fn resumes_a_large_blob_download_that_ended_in_good_order() -> Result<()> {
+    let data: Vec<u8> = (0..3_000_000u32).map(|i| (i % 251) as u8).collect();
+    let id = hash_object(ObjectKind::Blob, &data).hex();
+    let (served, name) = (data.clone(), id.clone());
+    let (origin, log) = fake::serve(move |seen, earlier| {
+        if seen.method == "POST" {
+            let stub = json!({ "id": name, "kind": "blob", "size": served.len(), "large": true });
+            return Reply::ok("application/json", fake::page(&[stub], &[]));
+        }
+        let offset = seen
+            .range
+            .as_deref()
+            .and_then(|v| v.strip_prefix("bytes="))
+            .and_then(|v| v.strip_suffix('-'))
+            .and_then(|v| v.parse::<usize>().ok());
+        match offset {
+            Some(from) => {
+                let mut reply = Reply::ok("application/octet-stream", served[from..].to_vec());
+                reply.status = 206;
+                reply.headers.push((
+                    "content-range".into(),
+                    format!("bytes {from}-{}/{}", served.len() - 1, served.len()),
+                ));
+                reply
+            }
+            None if earlier.iter().any(|e| e.method == "GET") => {
+                Reply::ok("application/octet-stream", served.clone())
+            }
+            None => Reply::ok("application/octet-stream", served.clone()).ended(served.len() / 2),
+        }
+    })
+    .await?;
+    let api = Api::account(&origin, None)?;
+    let (fetched, _) = request(&api, &wants(std::slice::from_ref(&id)), false).await?;
+    verified(&fetched[0])?;
+    let entries = log.lock().map(|l| l.clone()).unwrap_or_default();
+    let gets: Vec<&Seen> = entries
+        .iter()
+        .map(|(s, _)| s)
+        .filter(|s| s.method == "GET")
+        .collect();
+    assert_eq!(gets.len(), 2, "{gets:?}");
+    let wanted = format!("bytes={}-", data.len() / 2);
+    assert_eq!(gets[1].range.as_deref(), Some(wanted.as_str()));
+    Ok(())
+}
+
+/// A download that keeps ending with nothing new gets the same few tries, then says so.
+#[tokio::test]
+async fn a_large_blob_that_never_arrives_gives_up_and_says_which_request() -> Result<()> {
+    let data = vec![b'z'; 3_000_000];
+    let id = hash_object(ObjectKind::Blob, &data).hex();
+    let name = id.clone();
+    let (origin, _) = fake::serve(move |seen, _| {
+        if seen.method == "POST" {
+            let stub = json!({ "id": name, "kind": "blob", "size": 3_000_000, "large": true });
+            return Reply::ok("application/json", fake::page(&[stub], &[]));
+        }
+        Reply::ok("application/octet-stream", vec![b'z'; 3_000_000]).ended(0)
+    })
+    .await?;
+    let api = Api::account(&origin, None)?;
+    let failure = request(&api, &wants(std::slice::from_ref(&id)), false)
+        .await
+        .expect_err("nothing arrived");
+    assert!(
+        failure.message.contains(&format!("GET /objects/{id}")),
+        "{}",
+        failure.message
+    );
+    assert!(
+        failure.message.contains("ended early"),
+        "{}",
+        failure.message
+    );
+    Ok(())
+}
+
 /// A large blob's download cut halfway resumes with `Range` from the bytes it has; a
 /// platform that ignores the range (200, the whole blob) is handled too. Either way the
 /// bytes are verified against the id.

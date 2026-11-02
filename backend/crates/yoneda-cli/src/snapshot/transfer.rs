@@ -4,7 +4,8 @@
 //! - A page cut off mid-body, or ending before it closes, keeps every object that arrived
 //!   whole; the next request asks from the first incomplete one (the platform serves in
 //!   request order, so the ids it skipped before the last whole object are the ones it lacks).
-//! - A large blob's download cut off resumes with `Range` from the bytes it has.
+//! - A large blob's download cut off, or ending short of its size, resumes with `Range` from
+//!   the bytes it has.
 //! - Concurrent callers of one `Api` wanting the same object share one request.
 //! - A request that goes quiet for the idle timeout counts as cut (`api::Timeouts`); a
 //!   fetch past its total budget ends naming the request it waited on and how far it got.
@@ -235,6 +236,7 @@ async fn pages(
 /// cut download from the bytes already here, and verified against the id.
 async fn download(api: &Api, stub: &Value, tracker: &Tracker) -> Result<Value> {
     let id = object_id(stub, "id")?;
+    let size = stub["size"].as_u64();
     let path = format!("/objects/{id}");
     let mut bytes: Vec<u8> = Vec::new();
     let mut failures = 0;
@@ -256,10 +258,13 @@ async fn download(api: &Api, stub: &Value, tracker: &Tracker) -> Result<Value> {
                 }
                 let progressed = bytes.len() as u64 + received.bytes.len() as u64 > have;
                 bytes.extend_from_slice(&received.bytes);
+                // A body can end in good order short of the blob, like a stream that failed.
+                let short = size.is_some_and(|size| (bytes.len() as u64) < size);
                 match received.cut {
-                    None => break,
-                    Some(_) if progressed => None,
+                    None if !short => break,
+                    _ if progressed => None,
                     Some(cut) => Some(cut),
+                    None => Some(api::ended_early("a large blob", bytes.len())),
                 }
             }
             Err(failure) if api::transient(&failure) => Some(failure),

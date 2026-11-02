@@ -29,13 +29,14 @@ async function helpRows(w, me) {
 
 async function loginRows(w, me, other) {
   await w.row('login (opens the browser)', async () => {
-    const { done, token } = await me.login({ args: [] });
+    const { done } = await me.login({ args: [] });
     assert.match(done.stdout, /Logged in to .* as /);
     const opened = readFileSync(me.path('opened-urls'), 'utf8').trim();
     assert.match(opened, new RegExp(`^${w.origin}/device`), `the browser was sent to ${opened}`);
     assert.equal(mode(me.credentialsFile()), '600', 'the stored token is not 0600');
     assert.equal(me.remember().origin, w.api, 'the token is stored for another origin');
-    assert.ok(token.host, 'the token does not say which machine signed in');
+    const { tokens } = await w.owner.get('/tokens');
+    assert.ok(tokens.some((t) => t.origin === 'login' && t.host), 'no token says which machine signed in');
     return `${(await me.j(['repo', 'list'])).repos.length} repositories visible`;
   });
   await w.row('login --no-browser --origin', async () => {
@@ -66,6 +67,7 @@ async function agentRows(w, me, repo) {
     assert.equal(mode(slot), '600', "the agent's token is not 0600");
     const { token } = JSON.parse(readFileSync(slot, 'utf8'));
     w.secrets.add(token);
+    w.tokens.push(token);
     const log = await me.y(['log', '--repo', repo.id], { env: me.env(agent) });
     assert.equal(log.code, 0, `the agent cannot read its repository: ${log.stderr}`);
     const refused = await me.y(['repo', 'create', w.name('agent-refused')], { env: me.env(agent) });
@@ -78,8 +80,6 @@ async function agentRows(w, me, repo) {
     const none = await me.y(['log', '--repo', repo.id], { env: me.env(agent) });
     assert.notEqual(none.code, 0, 'the logged-out agent borrowed the login');
   });
-  const { tokens } = await w.owner.get('/tokens');
-  for (const token of tokens.filter((t) => t.origin === `agent:${name}` || t.origin?.startsWith(`agent:${name}`))) await w.owner.call('DELETE', `/tokens/${token.id}`);
 }
 
 async function logoutRows(w, other) {
@@ -93,7 +93,7 @@ async function logoutRows(w, other) {
     assert.equal(out.removed, true, 'nothing was removed');
     assert.equal(out.revoked, true, 'the token was not revoked');
     assert.ok(!existsSync(other.credentialsFile()), 'the credentials file is still there');
-    w.tokens = w.tokens.filter((t) => t.id !== other.patId);
+    w.tokens = w.tokens.filter((token) => token !== other.token);
     await other.refused(['repo', 'list', '--origin', w.api], 1, /login/i);
     assert.equal((await other.j(['logout'])).removed, false, 'a second logout removed something');
     await w.soon(async () => (await other.api.raw('GET', '/repos')).status === 401, 'the token to stop working');
