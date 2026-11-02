@@ -1,6 +1,6 @@
 # Handoff
 
-Written 2026-11-01, at dev `45b765b3`, deployed to dev.
+Written 2026-11-01, corrected 2026-11-02, at dev `a86ce1f0`, deployed to dev.
 
 Rules for this work are in `AGENTS.md`. Plans are linked under each task.
 
@@ -8,7 +8,7 @@ Rules for this work are in `AGENTS.md`. Plans are linked under each task.
 
 1. **Regions are not on.** Every repository still lives in the US, so the site's "global" claim is false.
 2. **Your region rule isn't built.** Nobody gets a region at login, and nobody can change one.
-3. **Dev isn't known to be green.** The last kit run failed 7 items, on older UI, and no full run has passed since.
+3. **Dev isn't proven green.** The last full kit on dev, at 18:32, was 33 pass and 1 fail, before tonight's UI work. Nothing since has re-run it.
 4. **No complete UI walk has run on today's UI.** 30 frontend commits landed after the last one.
 
 ## What's running
@@ -36,6 +36,16 @@ Rules for this work are in `AGENTS.md`. Plans are linked under each task.
 
 ## 1. GitHub import
 
+**Review of 2026-11-02, open defects in the import dialog:**
+
+| # | Defect | Source |
+|---|---|---|
+| 1 | Typing a repository's full name starts its import with no Enter. Typing `MagnetonIO/agent` on the way to `agent-vault` would import the wrong one if both exist | Code: the effect on `pickedId`. Not run, as it would start a real import |
+| 2 | A public GitHub repository picked from the list is imported private, without saying so | Code: `visibility` defaults to private |
+| 3 | Typing `owner/part` shows the name, visibility and Add repository for a repository that may not exist | Code: `showsDetails` |
+| 4 | Search text left before the list loads shows the red address error | Code: `badAddress(source, connected)` |
+| 5 | `Added` needs `role: 'owner'`. Whether an org's repositories answer that is unchecked | Code |
+
 **Merged and deployed, not tried:** `claude/org-installs` (`df7525e5`): organizations can connect, and the dialog has Add another repository.
 
 **Done and live:** adding from GitHub shows only the repository field and the list. Name, visibility, branch and the buttons appear only for a typed address, or always on Add public repository.
@@ -58,7 +68,7 @@ Plan: `docs/global-scale-plan.md`. Branch: `claude/global` (`cd997993`), 13 comm
 |---|---|
 | Europe's database, storage and queues | Created on dev |
 | Europe Worker, edge Worker | Deployed, `edge.dev.yonedarepo.com` answers 200 |
-| Edge kit | Failed twice: a local DNS failure, now clear, and a browser item. The fix is on `claude/global` |
+| Edge kit | Last run 21:55: 7 pass, 10 fail, 15 skipped. 8 fails are local DNS, now clear. `browser` has its fix on `claude/global`. Item 40 timed out and is unexplained |
 | Regions on (`bound: true` in `infra/envs/dev.json`) | On `claude/global`, not merged |
 | Region choice on New repository, region under General | On `claude/global`, not run live |
 | Kit item 49, cell bench | On `claude/global`, not run |
@@ -113,20 +123,16 @@ Start with rows 1 to 4: they're on nearly every page.
 
 ## 4. Kit
 
-Last full result, `.local/staging/realworld-1793577972479.json`, on the owner account: 27 pass, 7 fail.
+Last full result on dev, `.local/staging/realworld-1793579550489.json`, 18:32: 33 pass, 1 fail, 41 not run.
 
-| Item | Failure |
+| Item | State |
 |---|---|
-| browser | The Clone menu's HTTPS line |
-| 31 | An old repository address moves to its readable one |
-| 34 | Timed out waiting for a Landing to land |
-| 35 | "Landed directly" isn't on the row |
-| 38 | The clone commands aren't shown |
-| 39 | A non-operator read revenue: 200. May only be the owner account |
-| 42 | "Nothing has landed yet" at /changes |
+| 39 | A non-operator read revenue: 200. Failed in the 18:06 run too. May only be the owner account, unproven |
 | 41 | Not run: `AUDIT_LOG` is off |
 
-Causes are unproven. The UI has changed since, and some text checks may simply be out of date. Never loosen a test to pass it. `Switch repository` matching 2 buttons is fixed on `claude/global` only.
+The UI has changed a lot since. Run the full kit at the tip before trusting this. Never loosen a test to pass it. `Switch repository` matching 2 buttons is fixed on `claude/global` only.
+
+The kit has no browser test of the import dialog: nothing in `tools/` opens Add GitHub repository or Add public repository. Add one.
 
 ## 5. Demo repositories
 
@@ -181,5 +187,5 @@ No platform code: it's a tool beside the kit.
 ## Clean-up
 
 1. Delete merged branches: `claude/display-name`, `claude/gfm`, `claude/org-installs`, `claude/ui-pass`.
-2. Dev is ahead of `origin/dev` by at least 5 commits. Scan with `gitleaks git --redact`, run `pnpm check`, then push.
+2. Dev is 25 commits ahead of `origin/dev`. Scan with `gitleaks git --redact`, run `pnpm check`, then push.
 3. Prod: leave it until the owner says ship.
