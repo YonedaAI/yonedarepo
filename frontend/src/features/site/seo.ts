@@ -100,7 +100,7 @@ export function seoManifest(): SeoManifest {
     ...FEATURE_PAGES.map((page) => route({ page: 'feature', slug: page.slug }, page.headline)),
     route(
       { page: 'pricing' },
-      `Every platform feature is free. Metered usage is billed at our provider's list cost plus ${margin}%.`,
+      `Metered usage is billed at our provider's list cost plus ${margin}%.`,
     ),
     ...Object.values(DOCS_PAGES).map((page) => {
       const site: SitePage = { page: 'docs', slug: page.slug };

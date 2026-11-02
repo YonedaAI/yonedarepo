@@ -38,7 +38,7 @@ The service limits request rates, sizes and sign-in attempts. Automated use thro
 
 ## Credit and fees
 
-Every platform feature is free today. Managed review agents and metered usage draw on your workspace's credit, which starts with a promotional grant; when it runs out, those runs pause. The [pricing page](/pricing) shows the rates we plan to charge. Billing is not live yet and no account is charged. We will publish final rates and give you notice before charging starts.
+Managed review agents and metered usage draw on your workspace's credit, which starts with a promotional grant; when it runs out, those runs pause. The [pricing page](/pricing) shows the rates we plan to charge. Billing is not live yet and no account is charged. We will publish final rates and give you notice before charging starts.
 
 ## Refunds
 
