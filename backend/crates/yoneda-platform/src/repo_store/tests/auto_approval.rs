@@ -457,8 +457,10 @@ fn a_refused_landing_says_why_in_plain_words() {
         "a reviewer rejected it"
     );
     assert_eq!(
-        gate(json!({"failing_checks": ["unit"], "missing_checks": ["e2e", "lint"],
-                    "open_findings": 2, "approvals": 0, "approvals_required": 1})),
+        gate(
+            json!({"failing_checks": ["unit"], "missing_checks": ["e2e", "lint"],
+                    "open_findings": 2, "approvals": 0, "approvals_required": 1})
+        ),
         "checks failed: unit; 2 open findings; waiting for checks: e2e, lint; needs 1 approval from another person, has 0"
     );
     assert_eq!(

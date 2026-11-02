@@ -201,7 +201,7 @@ fn missing(origin: &str, agent: Option<&str>) -> String {
 /// the same origin.
 pub fn load(path: &Path, origin: &str, env: Option<String>) -> Result<Token> {
     load_optional(path, origin, env)?
-        .ok_or_else(|| Error::new(missing(origin, env_agent().as_deref())))
+        .ok_or_else(|| Error::auth(missing(origin, env_agent().as_deref())))
 }
 
 /// The token for `origin` as `load` finds it, or `None` when there is none (a caller that
