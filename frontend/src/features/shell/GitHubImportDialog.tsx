@@ -5,12 +5,14 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import {
+  ADD_CONNECTION_PATH,
   CONNECT_PATH,
   connectMessage,
   defaultRepoName,
   type GitHubConnection,
   IMPORT_HINT,
   importBody,
+  installationLabel,
   keepPending,
   parseGitHubRepo,
   pickedRepository,
@@ -20,6 +22,8 @@ import type { OrgSummary } from '../source-platform/orgModel';
 import type { Visibility } from '../source-platform/repoAccess';
 import { SourceApiError, sourceApi } from '../source-platform/sourceApi';
 import { useSource } from '../source-platform/useSource';
+import { useBackToTab } from './backToTab';
+import { GitHubRepoList } from './GitHubRepoList';
 import {
   CREATE_TIMEOUT_MS,
   type Created,
@@ -68,8 +72,16 @@ export function GitHubImportDialog({
 }) {
   const hint = useId();
   const [connectResult] = useState(takeConnectResult);
-  const github = useSource<GitHubConnection>('/github/repositories').data;
+  const [from, setFrom] = useState<number>();
+  const listing = useSource<GitHubConnection>(
+    `/github/repositories${from ? `?installation=${from}` : ''}`,
+  );
+  // A failed refetch keeps the list: it says nothing about the connection.
+  const lastListing = useRef<GitHubConnection | undefined>(undefined);
+  if (listing.data) lastListing.current = listing.data;
+  const github = listing.data ?? lastListing.current;
   const connected = github?.connection === 'ok';
+  const installations = github?.installations ?? [];
   const [source, setSource] = useState(takePending);
   const [invalid, setInvalid] = useState(false);
   const [name, setName] = useState(() => {
@@ -86,10 +98,18 @@ export function GitHubImportDialog({
   const matching = (github?.repositories ?? []).filter((r) =>
     r.full_name.toLowerCase().includes(typed),
   );
+  // What the field held on coming back from GitHub. A repository added there can complete what
+  // was typed: that is no choice made here, so it waits for Add repository.
+  const typedBefore = useRef<string | null>(null);
+  const openedGitHub = useBackToTab(() => {
+    typedBefore.current = source;
+    listing.reload();
+  });
   // Choosing a repository from the list is the whole request: it starts straight away.
   const pickedId = picked?.id;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once per repository picked
   useEffect(() => {
-    if (pickedId !== undefined) form.current?.requestSubmit();
+    if (pickedId !== undefined && typedBefore.current !== source) form.current?.requestSubmit();
   }, [pickedId]);
   // Adding from GitHub starts on GitHub, and a public address needs none of that. Back from
   // there, the dialog stays to say what happened.
@@ -120,7 +140,15 @@ export function GitHubImportDialog({
     setError('');
     try {
       const created = await requestImport(
-        importBody(parsed.url, name.trim(), owner, visibility, branch, picked),
+        importBody(
+          parsed.url,
+          name.trim(),
+          owner,
+          visibility,
+          branch,
+          picked,
+          github?.installation,
+        ),
       );
       await onImported({ repo: created.id, owner });
     } catch (e) {
@@ -152,13 +180,37 @@ export function GitHubImportDialog({
             </a>
           )}
           {github?.available && !connected && ' to add a private repository.'}
+          {connected && <a href={ADD_CONNECTION_PATH}>Add an organization</a>}
         </p>
         {connectResult && connectMessage(connectResult) && (
-          <p role="alert" className="form-error">
+          // GitHub waiting on an owner is news, not a failure.
+          <p
+            role={connectResult === 'requested' ? 'status' : 'alert'}
+            className={connectResult === 'requested' ? 'source-note' : 'form-error'}
+          >
             {connectMessage(connectResult)}
           </p>
         )}
         <OwnerField account={account} orgs={orgs} initialOwner={initialOwner} disabled={busy} />
+        {installations.length > 1 && (
+          <label>
+            GitHub account
+            <select
+              value={github?.installation}
+              onChange={(event) => {
+                lastListing.current = undefined;
+                setFrom(Number(event.target.value));
+              }}
+              disabled={busy}
+            >
+              {installations.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {installationLabel(i)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label>
           GitHub repository
           <input
@@ -179,17 +231,15 @@ export function GitHubImportDialog({
             disabled={busy}
           />
         </label>
-        {connected && !picked && matching.length > 0 && (
-          <ul className="github-repo-list" aria-label="Your GitHub repositories">
-            {matching.map((r) => (
-              <li key={r.id}>
-                <button type="button" disabled={busy} onClick={() => changeSource(r.full_name)}>
-                  <span>{r.full_name}</span>
-                  <small>{r.private ? 'Private' : 'Public'}</small>
-                </button>
-              </li>
-            ))}
-          </ul>
+        {connected && !picked && (
+          <GitHubRepoList
+            repositories={github?.repositories ?? []}
+            matching={matching}
+            manageUrl={github?.manage_url}
+            busy={busy}
+            onPick={changeSource}
+            onOpenGitHub={openedGitHub}
+          />
         )}
         {invalid && (
           <p id={hint} role="alert" className="form-error">

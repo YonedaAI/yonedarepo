@@ -184,13 +184,20 @@ async function leaveOrgs(env: Env, account: string, orgs: string[]) {
   }
 }
 
+/** The installation closing this account takes off GitHub: their own, never an organization's,
+ * which the organization's other owners rely on. */
+export async function heldToUninstall(env: Env, account: string) {
+  const held = await connection(env, account);
+  return held.state === 'ok' && held.type === 'User' ? held.installation : null;
+}
+
 /** Takes the App off their GitHub account, if it is still theirs to take off. A failure leaves
  * an installation nothing here points to, which grants nothing. */
 async function disconnectGitHub(env: Env, account: string) {
   if (!githubAppOn(env)) return;
   try {
-    const held = await connection(env, account);
-    if (held.state === 'ok') await uninstall(env, held.installation);
+    const installation = await heldToUninstall(env, account);
+    if (installation) await uninstall(env, installation);
   } catch (e) {
     log.warn('account.uninstall_failed', { error: e });
   }

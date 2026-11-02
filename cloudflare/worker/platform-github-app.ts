@@ -103,6 +103,8 @@ async function github(
 /** An installation as GitHub says it is. */
 export type Installation = {
   id: number;
+  /** GitHub's own page for it, where its repositories are chosen. */
+  html_url?: string;
   target_type?: string;
   suspended_at?: string | null;
   /** An enterprise's has no `type`. */

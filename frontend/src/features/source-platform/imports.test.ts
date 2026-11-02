@@ -10,6 +10,7 @@ import {
   importBody,
   importFailure,
   importView,
+  installationLabel,
   mayBeImport,
   parseGitHubRepo,
   pickedRepository,
@@ -256,7 +257,7 @@ describe('a connected GitHub', () => {
   it('says plainly what a trip to GitHub came back with', () => {
     expect(connectMessage(null)).toBe('');
     expect(connectMessage('connected')).toBe('');
-    expect(connectMessage('org')).toContain('your own GitHub account');
+    expect(connectMessage('org')).toContain('personal accounts and organizations');
     expect(connectMessage('other_account')).toContain('linked');
     expect(connectMessage('unavailable')).toContain('Try again');
     expect(connectMessage('state')).toContain('Try again');
@@ -274,5 +275,45 @@ describe('a connected GitHub', () => {
     );
     expect(html).toContain('href="/github/connect"');
     expect(html).not.toContain('GitHub answered');
+  });
+});
+
+describe('connecting an organization', () => {
+  it('says in plain words what a trip to GitHub came back with', () => {
+    expect(connectMessage('requested')).toContain('owner');
+    expect(connectMessage('requested')).toContain('approve');
+    expect(connectMessage('org_owner')).toContain('Only an owner');
+    expect(connectMessage('not_member')).toContain('member');
+    expect(connectMessage('org_blocked')).toContain('owner can allow');
+    expect(connectMessage('org_denied')).toContain('confirm');
+    expect(connectMessage('lost')).toContain('suspended');
+    expect(connectMessage('org')).not.toContain("can't connect yet");
+    for (const code of [
+      'requested',
+      'org_owner',
+      'not_member',
+      'org_blocked',
+      'org_denied',
+      'lost',
+    ])
+      expect(connectMessage(code).length).toBeLessThanOrEqual(76);
+  });
+
+  it('asks for a picked repository from its installation', () => {
+    const picked = { id: 12, full_name: 'acme/app', private: true };
+    expect(importBody('u', 'app', '', 'private', '', picked, 7102)).toMatchObject({
+      github_repository: 12,
+      github_installation: 7102,
+    });
+    expect(importBody('u', 'app', '', 'private', '', undefined, 7102)).not.toHaveProperty(
+      'github_installation',
+    );
+  });
+
+  it('names what an installation is', () => {
+    expect(installationLabel({ id: 1, login: 'ada', type: 'User' })).toBe('ada');
+    expect(installationLabel({ id: 2, login: 'acme', type: 'Organization' })).toBe(
+      'acme (organization)',
+    );
   });
 });

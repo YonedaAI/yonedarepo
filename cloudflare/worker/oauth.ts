@@ -11,6 +11,7 @@ import { homeCookie, randomToken, sessionCookie, signedInSession } from './accou
 import { cellOfRegion, cellsOn } from './cells';
 import { error } from './http';
 import { log } from './log';
+import { ORG_SCOPE, orgTicket, provedOwner } from './oauth-github-org';
 import { linkTo, type Outcome, signInWith } from './oauth-identity';
 import {
   authorizeUrl,
@@ -61,10 +62,15 @@ export async function oauthRoute(req: Request, env: Env): Promise<Response | nul
     // session cookie would land on another host. Only www moves, so no config loops.
     if (url.hostname === `www.${new URL(origin).hostname}`)
       return redirectTo(`${origin}${url.pathname}${url.search}`);
-    const intent = url.searchParams.get('intent') === 'link' ? 'link' : 'signin';
+    const asked = url.searchParams.get('intent');
+    const owner = asked === 'github_org';
+    const ticket =
+      owner && provider === 'github' ? await orgTicket(env, url.searchParams.get('ticket')) : null;
+    if (owner && !ticket) return clearBinding(req, fail('state', '/settings'));
+    const intent = owner ? 'github_org' : asked === 'link' ? 'link' : 'signin';
     // A sign-in that creates an account records where its visitor landed from (site-events.ts).
     const returnTo =
-      intent === 'link'
+      intent !== 'signin'
         ? '/settings'
         : withSignupSource(
             safePath(url.searchParams.get('return_to')),
@@ -83,14 +89,17 @@ export async function oauthRoute(req: Request, env: Env): Promise<Response | nul
       verifier,
       nonce,
       intent,
-      account: session?.account,
-      session_hash: session?.sessionHash,
+      account: ticket?.account ?? session?.account,
+      session_hash: ticket?.ticketHash ?? session?.sessionHash,
       return_to: returnTo,
     });
     const challenge = base64url(
       new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))),
     );
-    const response = redirectTo(authorizeUrl(provider, app, redirect, { state, challenge, nonce }));
+    const scope = owner ? ORG_SCOPE : undefined;
+    const response = redirectTo(
+      authorizeUrl(provider, app, redirect, { state, challenge, nonce }, scope),
+    );
     response.headers.append('set-cookie', bindingCookie(req, binding));
     return response;
   }
@@ -105,6 +114,11 @@ export async function oauthRoute(req: Request, env: Env): Promise<Response | nul
     binding_hash: binding ? await sha(binding) : '0'.repeat(64),
   });
   if (flow.status !== 'ok') return clearBinding(req, fail('state'));
+  if (flow.intent === 'github_org') {
+    const code = url.searchParams.get('error') ? null : url.searchParams.get('code');
+    const github = await provedOwner(env, app, redirect, flow, code);
+    return clearBinding(req, back(origin, '/settings', { github }));
+  }
   const { path: to, source } = takeSignupSource(flow.return_to as string);
   const denied = url.searchParams.get('error');
   const code = url.searchParams.get('code');

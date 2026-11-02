@@ -80,12 +80,27 @@ A signed-in owner connects GitHub in the import dialog, picks a repository, and 
 
 **A token lasts an hour.** Only `POST /clone` uses it, and Git's requests all start in the first seconds of the clone: the refs, then one fetch whose answer is the pack. The steps after that read the instance's disk. A clone may run 60 minutes and its token is minted up to 3 minutes before, so the very longest clone's pack would still be arriving past the hour. GitHub's docs don't say whether an answer already streaming is cut off at expiry. **Not measured.** If it is, the clone fails, nothing lands and the import is run again.
 
-**An organization's installation is refused.** GitHub's docs give two ways to prove someone belongs to one, and the App has neither:
+**An organization connects through its owner.** Its installation names no person, so nothing in the App proves who may use it. The App holds no user token and no Members permission, so the proof comes from the sign-in OAuth app, with no new app and no change to the App's settings:
 
-| What it would take | What it proves | Cost |
+| Step | Who | What happens |
 |---|---|---|
-| The App's user token: its client secret, plus "Request user authorization during installation", then `GET /user/installations` | The person can reach that installation. GitHub's documented check | A second OAuth exchange |
-| The App's organization permission Members: read, then `GET /orgs/{org}/members/{login}` | Membership, not ownership. Every organization must accept the new permission | A wider permission on the App |
+| 1 | Platform | `/github/connected` reads the installation with the App's JWT. On an organization it writes a ticket to the account's store (a hash, once, ten minutes) and sends the browser on |
+| 2 | Front Worker | `/auth/github/start?intent=github_org` checks the ticket and starts the usual OAuth attempt with `read:org` added. A return from GitHub brings no session, so the ticket names the account |
+| 3 | Front Worker | The callback exchanges the code and calls `GET /user/memberships/orgs/{org}` with that token, inside `exchange`, once. The token is dropped there and stored nowhere |
+| 4 | Front Worker | It requires the GitHub user this account linked, and `state: active` with `role: admin`. Only then is the installation stored, with the organization's id and who connected it |
+
+| Answer | What the person is told |
+|---|---|
+| 404: not in the organization, as with a forged `installation_id` | `not_member`. Nothing stored, no token minted |
+| Member, billing manager, or a pending invitation | `org_owner` |
+| 403: the organization restricts this OAuth app, or needs SSO | `org_blocked`: an owner allows it on GitHub |
+| `setup_action=request` | `requested`: GitHub is waiting on an owner, nothing is installed, and no id comes back |
+
+The re-check on each use reads the installation: still an organization, the same id, not suspended, and the GitHub user who proved it still linked here. It does not ask again whether they own it, as no token is kept. A person who stops being an owner keeps the connection until the installation is removed or their link is undone.
+
+**Adding a repository is GitHub's.** The dialog links to the page for the installation it shows: `html_url` from GitHub's own answer (`https://github.com/settings/installations/<id>`, or `https://github.com/organizations/<org>/settings/installations/<id>`), checked to be on github.com and built from those shapes if it is missing. The page opens in a new tab, as nothing brings a person back from it. Coming back to this tab refetches the list, so a repository added there appears with no reload. It does not start an import, even if it completes what was typed.
+
+An account holds its own installation and any number of organizations'. The import dialog lists those that hold, and a request names which one. Closing an account takes its own installation off GitHub and never an organization's.
 
 ## What can go wrong
 

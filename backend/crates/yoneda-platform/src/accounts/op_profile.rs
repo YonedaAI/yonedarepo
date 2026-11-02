@@ -26,9 +26,14 @@ op_names! {
     }
 }
 op_names! {
-    /// The GitHub App installation an account connected.
+    /// The GitHub App installations an account connected, and the ticket that carries an
+    /// organization's across the OAuth round proving an owner.
     pub(crate) enum GitHubOp {
         Get = "github_installation_get",
+        List = "github_installation_list",
         Put = "github_installation_put",
+        TicketPut = "github_org_ticket_put",
+        TicketGet = "github_org_ticket_get",
+        TicketTake = "github_org_ticket_take",
     }
 }

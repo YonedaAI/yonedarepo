@@ -41,6 +41,7 @@ async function needsConnection(env: Env, requester: Credentials, url: string) {
 /** What `POST /repos/import` clones. `hidden`: GitHub says the source is private. */
 export async function importSource(env: Env, requester: Credentials, body: Json) {
   const repository = body.github_repository;
+  const wanted = body.github_installation;
   if (repository === undefined) {
     const url = githubRemote(String(body.url ?? ''));
     if (!url) throw new ApiError('INVALID_INPUT', 'url must be a public GitHub repository');
@@ -49,8 +50,10 @@ export async function importSource(env: Env, requester: Credentials, body: Json)
   }
   if (!Number.isSafeInteger(repository) || repository <= 0)
     throw new ApiError('INVALID_INPUT', 'github_repository must be a GitHub repository id');
+  if (wanted !== undefined && (!Number.isSafeInteger(wanted) || wanted <= 0))
+    throw new ApiError('INVALID_INPUT', 'github_installation must be a GitHub installation id');
   if (!githubAppOn(env)) throw new ApiError('NOT_FOUND', 'GitHub is not connected here');
-  const held = await connection(env, personOf(requester));
+  const held = await connection(env, personOf(requester), wanted);
   if (held.state !== 'ok') throw new ApiError('GITHUB_NOT_CONNECTED', RECONNECT);
   const access = await repositoryAccess(env, held.installation, repository).catch((e) => {
     if (accessGone(e)) throw new ApiError('GITHUB_NOT_CONNECTED', RECONNECT);

@@ -116,7 +116,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
     }))
 }
 /// Digest-pinned, forward-only account migrations (version, SQL), applied in order.
-pub(crate) const MIGRATIONS: [(i64, &str); 12] = [
+pub(crate) const MIGRATIONS: [(i64, &str); 13] = [
     (1, include_str!("accounts/migrations/0001_accounts.sql")),
     (
         2,
@@ -140,6 +140,10 @@ pub(crate) const MIGRATIONS: [(i64, &str); 12] = [
     (
         12,
         include_str!("accounts/migrations/0012_display_name.sql"),
+    ),
+    (
+        13,
+        include_str!("accounts/migrations/0013_github_org_installations.sql"),
     ),
 ];
 fn migrate<S: SqlStore>(store: &S) -> Result<()> {

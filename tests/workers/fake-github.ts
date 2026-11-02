@@ -7,7 +7,7 @@ import { workspace } from '../../cloudflare/worker/workspace';
 const API = 'https://api.github.com';
 const encoder = new TextEncoder();
 
-type Installed = { id: number; account: { id: number; login: string; type: string }; target_type: string; suspended_at?: string | null; repositories: Repo[] };
+type Installed = { id: number; html_url?: string; account: { id: number; login: string; type: string }; target_type: string; suspended_at?: string | null; repositories: Repo[] };
 export type Repo = { id: number; full_name: string; private: boolean };
 
 const decode = (part: string) => atob(part.replaceAll('-', '+').replaceAll('_', '/'));
@@ -16,6 +16,12 @@ export class FakeGitHub {
   installations = new Map<number, Installed>();
   minted: { installation: number; scope: any; token: string }[] = [];
   asked: string[] = [];
+  /** Who is at the keyboard when the browser reaches GitHub's consent page. */
+  person = { id: 0, login: '' };
+  /** What `GET /user/memberships/orgs/{org}` answers, by `login:org`; `blocked` is its 403. */
+  memberships = new Map<string, { state: string; role: string } | 'blocked'>();
+  /** Every OAuth token handed out, for proving none is kept. */
+  tokens: string[] = [];
   key = '';
   #public?: CryptoKey;
 
@@ -38,7 +44,10 @@ export class FakeGitHub {
   }
 
   install(id: number, subject: number, login: string, repositories: Repo[] = [], type = 'User') {
-    const installed = { id, account: { id: subject, login, type }, target_type: type, suspended_at: null, repositories };
+    const html_url = type === 'Organization'
+      ? `https://github.com/organizations/${login}/settings/installations/${id}`
+      : `https://github.com/settings/installations/${id}`;
+    const installed = { id, html_url, account: { id: subject, login, type }, target_type: type, suspended_at: null, repositories };
     this.installations.set(id, installed);
     return installed;
   }
@@ -58,10 +67,25 @@ export class FakeGitHub {
 
   /** GitHub's answer to `url`, or null for anywhere else. */
   async handle(url: string, init?: RequestInit): Promise<Response | null> {
+    if (url === 'https://github.com/login/oauth/access_token') {
+      const token = `gho_${this.tokens.length + 1}`;
+      this.tokens.push(token);
+      return Response.json({ access_token: token, token_type: 'bearer' });
+    }
     if (!url.startsWith(API)) return null;
     const { pathname, searchParams } = new URL(url);
     this.asked.push(`${init?.method ?? 'GET'} ${pathname}`);
     const none = () => Response.json({ message: 'Not Found' }, { status: 404 });
+    if (pathname === '/user' || pathname.startsWith('/user/')) {
+      const bearer = new Headers(init?.headers).get('authorization')?.replace('Bearer ', '');
+      if (!this.tokens.includes(bearer ?? '')) return Response.json({}, { status: 401 });
+      if (pathname === '/user') return Response.json({ ...this.person, name: null, avatar_url: null });
+      if (pathname === '/user/emails') return Response.json([]);
+      const org = /^\/user\/memberships\/orgs\/([^/]+)$/.exec(pathname)?.[1];
+      const held = org && this.memberships.get(`${this.person.login}:${org}`);
+      if (held === 'blocked') return Response.json({ message: 'Forbidden' }, { status: 403 });
+      return held ? Response.json(held) : none();
+    }
     if (pathname === '/installation/repositories') {
       const token = String((init?.headers as any)?.authorization).replace('Bearer ', '');
       const grant = this.minted.find((m) => m.token === token);
