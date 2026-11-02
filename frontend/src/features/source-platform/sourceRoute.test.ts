@@ -41,8 +41,6 @@ describe('source routes', () => {
       { view: 'insights', repo },
       { view: 'search', repo, query: 'retry with' },
       { view: 'search', repo, query: 'test', word: true },
-      { view: 'overview', repo, path: '', ref: 'main' },
-      { view: 'overview', repo, path: 'src/net', ref: 'dev', at: 4 },
       { view: 'changes', repo },
       { view: 'change', repo, number: 12 },
       { view: 'releases', repo },
@@ -181,9 +179,16 @@ describe('source routes', () => {
 });
 
 describe('repository pages', () => {
+  it('opens an old overview link at its files', () => {
+    expect(parseSourceRoute(`/source/${repo}/overview/src`, '?ref=dev')).toMatchObject({
+      view: 'files',
+      path: 'src',
+      ref: 'dev',
+    });
+  });
+
   it('groups views under their sidebar page and starts each page at its first view', () => {
     expect(routeTab({ view: 'files', repo, path: 'src', ref: 'main' })).toBe('overview');
-    expect(routeTab({ view: 'overview', repo, path: '', ref: 'main' })).toBe('overview');
     expect(routeTab({ view: 'transactions', repo })).toBe('commits');
     expect(routeTab({ view: 'commit', repo, commit: sha })).toBe('commits');
     expect(routeTab({ view: 'repo-settings', repo, section: 'tokens' })).toBe('settings');

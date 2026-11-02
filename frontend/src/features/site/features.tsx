@@ -186,7 +186,6 @@ export const FEATURES: Feature[] = [
     points: [
       'Code search over an index rebuilt only where files changed.',
       'Blame, path history and diffs, each readable at an earlier landed version.',
-      'Overview: a generated map of subsystems, their symbols and how they reference each other.',
     ],
     mock: (
       <figure className="site-mock site-panel" aria-label="Code search results">

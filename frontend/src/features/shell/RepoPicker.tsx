@@ -39,6 +39,7 @@ export function RepoPicker({
   onOpenChange,
   navigate,
   onNew,
+  compact = false,
 }: {
   rows: RepoRow[];
   /** The open repository's id. */
@@ -54,6 +55,8 @@ export function RepoPicker({
   onOpenChange: (open: boolean) => void;
   navigate: Navigate;
   onNew?: () => void;
+  /** Only the switch button, for a breadcrumb that already shows the name. */
+  compact?: boolean;
 }) {
   const [query, setQuery] = useState('');
   const [activeId, setActiveId] = useState<string>();
@@ -152,7 +155,7 @@ export function RepoPicker({
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: a focus handler; it takes no input.
     <div
-      className="repo-picker"
+      className={`repo-picker${compact ? ' compact' : ''}`}
       ref={root}
       onBlur={(event) => {
         // Tabbed past the popup; a click on its scrollbar moves focus to nothing.
@@ -160,7 +163,7 @@ export function RepoPicker({
         if (open && to && !root.current?.contains(to)) onOpenChange(false);
       }}
     >
-      <div className={`picker-row${current ? ' hearted' : ''}`}>
+      <div className={`picker-row${current && !compact ? ' hearted' : ''}`}>
         <button
           ref={button}
           type="button"
@@ -172,11 +175,11 @@ export function RepoPicker({
           aria-label={name ? `Switch repository (current: ${name})` : 'Choose a repository'}
           onClick={() => (open ? close() : onOpenChange(true))}
         >
-          <GitBranch size={15} aria-hidden="true" />
-          <span className="picker-name">{name ?? 'Choose a repository'}</span>
+          {!compact && <GitBranch size={15} aria-hidden="true" />}
+          {!compact && <span className="picker-name">{name ?? 'Choose a repository'}</span>}
           <ChevronsUpDown size={14} aria-hidden="true" />
         </button>
-        {current && (
+        {current && !compact && (
           <HeartButton
             name={name ?? current}
             on={ids.has(current)}
@@ -184,7 +187,7 @@ export function RepoPicker({
           />
         )}
       </div>
-      {!open && trouble}
+      {!open && !compact && trouble}
       {open && (
         <PickerPanel
           id={id}

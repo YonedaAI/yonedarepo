@@ -13,6 +13,7 @@ import type { Crumb } from './breadcrumbs';
 export function WorkspaceHeader({
   title,
   crumbs,
+  switcher,
   loading,
   onRefresh,
   authenticated,
@@ -30,6 +31,8 @@ export function WorkspaceHeader({
   title: string;
   /** The way back to this page's parents; shown instead of the title. */
   crumbs?: Crumb[] | null;
+  /** The repository switcher, for the crumb that asks for it. */
+  switcher?: ReactNode;
   loading: boolean;
   onRefresh: () => void;
   authenticated: boolean;
@@ -77,6 +80,7 @@ export function WorkspaceHeader({
                   ) : (
                     <a {...linkTo(crumb.to, navigate)}>{crumb.label}</a>
                   )}
+                  {crumb.switcher && switcher}
                 </li>
               ))}
             </ol>
