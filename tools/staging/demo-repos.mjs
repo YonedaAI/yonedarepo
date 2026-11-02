@@ -105,7 +105,9 @@ async function prepareRepos(rows) {
     const minted = await mint(`demo-${r.key}-${ts}`, ['repo:read', 'repo:write'], [r.id]);
     Object.assign(r, { token: minted.token, tokenId: minted.id, base: ctx.ws.path(`base-${r.key}`) });
     await ctx.ws.ok('git', ['clone', '-q', `${ctx.ws.api}/git/${r.id}.git`, r.base], { token: r.token });
-    for (const memory of REPOS[r.key].memories.filter((m) => m.trapOf)) await scanHidden({ ws: ctx.ws, scanned: new Map() }, TRAPS.find((t) => t.id === memory.trapOf), r.base);
+    // Once a Landing has landed, the rule is in the history because the agent followed it.
+    const untouched = !(await owner.get(`/repos/${r.id}/changes?status=landed`)).changes.length;
+    if (untouched) for (const memory of REPOS[r.key].memories.filter((m) => m.trapOf)) await scanHidden({ ws: ctx.ws, scanned: new Map() }, TRAPS.find((t) => t.id === memory.trapOf), r.base);
   }
 }
 
