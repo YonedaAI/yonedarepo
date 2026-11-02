@@ -105,7 +105,9 @@ describe('Settings → Billing', () => {
   it('draws the page around a slow or failed read', () => {
     answers.byPath.set('/workspaces/ada/billing', { loading: true });
     expect(render(BillingSettings, { workspace: 'ada' })).toContain('Loading billing');
-    expect(render(BillingSettings, { workspace: 'ada' })).toContain('Every platform feature');
+    expect(render(BillingSettings, { workspace: 'ada' })).toContain(
+      'Managed agent runs use your credit.',
+    );
     answers.byPath.set('/workspaces/ada/billing', { error: 'boom' });
     expect(render(BillingSettings, { workspace: 'ada' })).toContain('Retry');
   });
