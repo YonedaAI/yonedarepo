@@ -2,8 +2,11 @@
    use these, never sizes or colors of their own. The public site keeps a smaller scale on the
    same names (site-frame.css). */
 :root {
-  font-family: "IBM Plex Sans", sans-serif;
+  font-family: "Inter", sans-serif;
   font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   font-size: var(--text-base);
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --text-xs: 12px; /* uppercase section labels */

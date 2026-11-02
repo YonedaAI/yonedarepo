@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { AccountSection } from '../account-settings/settingsRoute';
 import { agentsReturnPath, RETURN_PATH } from '../agents/billingModel';
 import { patchRows } from './patchRows';
+import { noteBranch } from './repoBranch';
 import { forgetRepoNames, rememberRepoName, repoBase } from './repoNames';
 import {
   formatSourceRoute,
@@ -179,6 +180,21 @@ describe('source routes', () => {
 });
 
 describe('repository pages', () => {
+  it('keeps the chosen branch across Overview, Files and Commits', () => {
+    noteBranch({ view: 'files', repo, path: '', ref: 'dev' });
+    expect(tabRoute('overview', repo)).toEqual({ view: 'overview', repo, ref: 'dev' });
+    expect(tabRoute('files', repo)).toMatchObject({ view: 'files', ref: 'dev' });
+    expect(tabRoute('commits', repo)).toMatchObject({ view: 'history', ref: 'dev' });
+    expect(formatSourceRoute(tabRoute('overview', repo))).toContain('/overview?ref=dev');
+    expect(parseSourceRoute(`/source/${repo}/overview`, '?ref=dev')).toEqual({
+      view: 'overview',
+      repo,
+      ref: 'dev',
+    });
+    noteBranch({ view: 'files', repo, path: '', ref: 'main' });
+    expect(tabRoute('overview', repo)).toEqual({ view: 'overview', repo });
+  });
+
   it('opens an old overview link at its files', () => {
     expect(parseSourceRoute(`/source/${repo}/overview/src`, '?ref=dev')).toMatchObject({
       view: 'files',

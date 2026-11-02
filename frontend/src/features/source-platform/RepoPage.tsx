@@ -24,6 +24,7 @@ import { RepoOverview } from './RepoOverview';
 import { RepoReleases } from './RepoReleases';
 import { RepoSearch } from './RepoSearch';
 import { ReadOnlyContext, repoAccess, type Visibility } from './repoAccess';
+import { chosenBranch } from './repoBranch';
 import { rememberRepoName, repoNameOf } from './repoNames';
 import type { RepoStatus } from './repoStatus';
 import { SessionView } from './SessionView';
@@ -118,6 +119,7 @@ export function RepoPage({
               {route.view === 'overview' && data && (
                 <RepoOverview
                   repo={repo}
+                  refName={route.ref ?? chosenBranch(repo)}
                   status={data}
                   facts={
                     <RepoFacts

@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { TimeChart } from '../admin/TimeChart';
 import { Avatar, avatarOf } from '../shell/Avatar';
 import { linkTo, type Navigate } from '../shell/useRoute';
-import { CloneButton, LatestCommit } from './CodeParts';
+import { BranchPicker, CloneButton, LatestCommit } from './CodeParts';
 import { useListing } from './codeData';
 import type { LogCommit } from './commitLog';
 import { currentApiOrigin } from './connect';
@@ -85,23 +85,26 @@ function Activity({ commits }: { commits: LogCommit[] }) {
 
 export function RepoOverview({
   repo,
+  refName,
   status,
   facts,
   navigate,
   account,
 }: {
   repo: string;
+  /** The branch on show. */
+  refName: string;
   status: RepoStatus;
   /** The row saying what this repository is (RepoFacts). */
   facts: ReactNode;
   navigate: Navigate;
   account?: string;
 }) {
-  const listing = useListing(repo, 'main', '');
+  const listing = useListing(repo, refName, '');
   const log = useSource<{ commits: LogCommit[] }>(
-    `/repos/${repo}/log?ref=main&limit=${OVERVIEW_COMMITS}`,
+    `/repos/${repo}/log?ref=${encodeURIComponent(refName)}&limit=${OVERVIEW_COMMITS}`,
   );
-  const files = { view: 'files', repo, path: '', ref: 'main' } as const;
+  const files = { view: 'files', repo, path: '', ref: refName } as const;
   if (listing.empty)
     return (
       <>
@@ -115,7 +118,16 @@ export function RepoOverview({
   return (
     <section className="repo-overview" aria-label="Overview">
       <PageToolbar
-        view={facts}
+        view={
+          <>
+            <BranchPicker
+              refs={status.refs ?? []}
+              value={refName}
+              onChange={(ref) => navigate({ view: 'overview', repo, ref })}
+            />
+            {facts}
+          </>
+        }
         search={{ repo, navigate }}
         primary={
           <CloneButton
@@ -149,7 +161,7 @@ export function RepoOverview({
         {commits && <Activity commits={commits} />}
         {commits && <Contributors people={contributors(commits)} cut={logCut(commits)} />}
       </div>
-      {readme && <Readme repo={repo} ref="main" path={readme.name} />}
+      {readme && <Readme repo={repo} ref={refName} path={readme.name} />}
     </section>
   );
 }

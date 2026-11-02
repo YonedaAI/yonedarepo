@@ -11,7 +11,13 @@ import './styles.css';
 // How the reader last moved: base.css keeps a select's focus ring for the keyboard only.
 const html = document.documentElement;
 document.addEventListener('pointerdown', () => html.setAttribute('data-pointer', ''), true);
-document.addEventListener('keydown', () => html.removeAttribute('data-pointer'), true);
+document.addEventListener(
+  'keydown',
+  (event) => {
+    if (event.key === 'Tab') html.removeAttribute('data-pointer');
+  },
+  true,
+);
 
 // Vite reports a failed dynamic import of a replaced chunk after a deploy.
 window.addEventListener('vite:preloadError', (event) => {

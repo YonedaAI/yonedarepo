@@ -69,7 +69,7 @@ export type SourceRoute =
   | { view: 'site'; site: SitePage }
   | NamedRoute
   /** The repository's front page. */
-  | { view: 'overview'; repo: string }
+  | { view: 'overview'; repo: string; ref?: string }
   /** `line`: that line of the file is marked and scrolled to. */
   | { view: 'files'; repo: string; path: string; ref: string; at?: number; line?: number }
   | { view: 'history'; repo: string; ref: string }
@@ -170,6 +170,8 @@ export function parseSourceRoute(pathname: string, search: string, hash = ''): S
   // An old `/overview/<path>` link opens that path's files; an old root with a ref or a version
   // opens that place in the files, not the front page.
   const path = view === 'files' || view === 'overview' ? rest.join('/') : '';
+  if (view === 'overview' && !path && params.has('ref') && !params.has('at'))
+    return { view: 'overview', repo, ref };
   if (view !== 'files' && !path && !params.has('ref') && !params.has('at'))
     return { view: 'overview', repo };
   return {
@@ -277,7 +279,10 @@ export function formatSourceRoute(route: SourceRoute): string {
     return route.section === 'sessions' ? `${base}/agents` : `${base}/agents/${route.section}`;
   if (route.view === 'session') return `${base}/agents/sessions/${route.id}`;
   if (route.view === 'context' || route.view === 'insights') return `${base}/${route.view}`;
-  if (route.view === 'overview') return base;
+  if (route.view === 'overview')
+    return route.ref && route.ref !== 'main'
+      ? `${base}/overview?${new URLSearchParams({ ref: route.ref })}`
+      : base;
   const query = new URLSearchParams();
   const path = route.path.split('/').filter(Boolean).map(encodeURIComponent).join('/');
   if (route.ref !== 'main') query.set('ref', route.ref);
