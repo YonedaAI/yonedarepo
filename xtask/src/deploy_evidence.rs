@@ -13,10 +13,10 @@ pub(crate) const EVIDENCE_DIR: &str = ".local/staging";
 /// What a full kit run records: every item except those that run only when named
 /// (tools/staging-realworld.mjs, `wanted`) and 41, which a run leaves out while AUDIT_LOG is off
 /// (tools/staging/kit-gates.mjs). 34, 43 and 44 need LAND_WHEN_CLEARED and 46 AGENT_SIGNUP on dev.
-pub(crate) const FULL_KIT: [&str; 34] = [
-    "0", "browser", "31", "6", "7", "19", "20", "23", "25", "8", "9", "10", "12", "13", "14", "15",
-    "16", "18", "21", "27", "28", "33", "34", "35", "36", "37", "38", "39", "40", "42", "43", "44",
-    "46", "17",
+pub(crate) const FULL_KIT: [&str; 35] = [
+    "0", "browser", "48", "31", "6", "7", "19", "20", "23", "25", "8", "9", "10", "12", "13", "14",
+    "15", "16", "18", "21", "27", "28", "33", "34", "35", "36", "37", "38", "39", "40", "42", "43",
+    "44", "46", "17",
 ];
 
 /// The kit's browser gate (tools/staging/browser-flow.mjs): a prod deploy needs it in the

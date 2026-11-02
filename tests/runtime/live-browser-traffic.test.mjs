@@ -15,6 +15,7 @@ import { gitConfigEnv, OWN_TRAFFIC_ENV } from '../../tools/own-traffic.mjs';
 import { sandboxEnv } from '../../tools/staging/agent-sandbox.mjs';
 import { OWN_TRAFFIC, Session } from '../../tools/staging/client.mjs';
 import { CliKit } from '../../tools/staging/cli-tools.mjs';
+import { Walk } from '../../tools/staging/cli-walk-kit.mjs';
 import { McpClient } from '../../tools/staging/mcp-client.mjs';
 import { Workspace } from '../../tools/staging/realuser-git.mjs';
 
@@ -139,6 +140,8 @@ test('every tool that runs Git against a remote takes its environment from the h
   const unmarked = [];
   for (const file of await toolFiles()) {
     if (OVER_SSH.has(file) || LOCAL_GIT.has(file) || file === HELPER) continue;
+    // Item 48's people: `Person.env`, checked below, is the only environment they run with.
+    if (file.startsWith('tools/staging/cli-walk-')) continue;
     const source = await readFile(file, 'utf8');
     const talks = /\[\s*(?:'-c', [^\]]*?)?'(?:clone|fetch|push|pull|ls-remote)'|git\([^)]*'(?:clone|fetch|push|pull|ls-remote)'/.test(source);
     // `gitSession` (tools/fanout-bench/mac-git.mjs) takes its environment from the helper too.
@@ -224,6 +227,11 @@ test('every process the kit starts tells the CLI and Git to mark what they send'
   rmSync(user.dir, { recursive: true, force: true });
   assert.equal(seen.YONEDA_OWN_TRAFFIC, '1');
   assert.ok(Object.values(seen).includes(LINE));
+  const walk = new Walk({ api: 'https://x.test', origin: 'https://x.test', bin: '/bin' });
+  const person = walk.person('someone').env();
+  walk.dispose();
+  assert.equal(person.YONEDA_OWN_TRAFFIC, '1');
+  assert.ok(Object.values(person).includes(LINE));
 });
 
 test('agents in the sandbox are marked by configuration, in both arms', () => {
