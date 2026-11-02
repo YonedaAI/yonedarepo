@@ -147,12 +147,12 @@
   z-index: 2;
 }
 
-/* Cancel stays in reach however far down a long file the editor has gone: it sits under the
-   56 px top bar, and the file's box must not clip it. */
+/* Save, Cancel and a failed save stay in reach however far down a long file the editor has gone:
+   they sit under the 56 px top bar, and the file's box must not clip them. */
 .source-file.code-editor {
   overflow: visible;
 }
-.code-editor .file-header {
+.code-editor-top {
   position: sticky;
   z-index: 3;
   top: 56px;

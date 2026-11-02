@@ -94,6 +94,25 @@ describe('the commit form', () => {
   it('starts a new file in the folder on screen', () => {
     expect(form({ dir: 'src/net' })).toContain('value="src/net/"');
   });
+  it('keeps Save and Cancel together in the file header, once each', () => {
+    for (const editing of [undefined, { path: 'a.txt', content: 'hello' }]) {
+      const html = renderToStaticMarkup(
+        createElement(CommitFile, {
+          repo: REPO,
+          place: { from: 'main', base: HEAD } as never,
+          dir: '',
+          editing,
+          onCancel: () => {},
+          onCommitted: () => {},
+        }),
+      );
+      const header = html.slice(html.indexOf('file-header'), html.indexOf('</header>'));
+      expect(header).toContain('>Save<');
+      expect(header).toContain('>Cancel<');
+      expect(html.match(/>Save</g)).toHaveLength(1);
+      expect(html.match(/>Cancel</g)).toHaveLength(1);
+    }
+  });
   it('opens an edit on the file, with its name fixed and its text in place', () => {
     const html = form({ editing: { path: 'src/a.ts', content: 'const a = 1;' } });
     expect(html).toContain('const a = 1;');
