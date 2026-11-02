@@ -63,6 +63,7 @@ export interface Env {
   AGENT_SIGNUP?: string;
   /** Platform check executors (one fresh container per run attempt). */
   CHECK_RUNNERS: DurableObjectNamespace<import('./check-container').CheckContainer>;
+  IMPORT_RUNNERS: DurableObjectNamespace<import('./import-container').ImportContainer>;
   /** Platform jobs (projection, derived data, webhooks, purges). */
   PLATFORM_QUEUE: Queue<Envelope>;
   /** Check runs on their own queue (minutes each), so they never hold derive and

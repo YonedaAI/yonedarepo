@@ -7,6 +7,7 @@ export {
   WorkspaceAuthority,
 } from '../../backend/crates/yoneda-worker/build/worker/shim.mjs';
 export { CheckContainer } from './check-container';
+export { ImportContainer } from './import-container';
 export { PlatformEntrypoint as default } from './platform-entrypoint';
 export { PackBuilder } from './platform-pack-builder';
 export { SshGateway } from './platform-ssh-gateway';

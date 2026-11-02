@@ -1,8 +1,7 @@
 // The platform's check executor: the pinned runtime image started in `check-server`
 // mode. It receives files and argv from the Worker and returns evidence; it holds no
-// platform credentials and has no network, so a check cannot reach or alter the platform. One
-// other job runs on this image: an import's `git clone`, the only instance with the internet
-// (`repo-clone`), which runs no repository's code and is destroyed like a check's.
+// platform credentials and has no network, so a check cannot reach or alter the platform.
+// ImportContainer runs the same image, with the disk and the internet an import needs.
 
 import { Container } from '@cloudflare/containers';
 import { warned } from './log';
@@ -14,7 +13,6 @@ import {
   failCheckRun,
   withDeadline,
 } from './repo-checks';
-import { type CloneParams, CloneSession, type Stage } from './repo-clone';
 import { inScope, REQUEST_ID_HEADER } from './request-scope';
 import type { Env } from './types';
 
@@ -106,16 +104,6 @@ export async function executeCheck(instance: CheckInstance, job: CheckJob, start
   }
 }
 
-/** A clone's session on `instance`: a fresh start with the internet, and a credential only
- * in that start's environment. */
-export const cloneSession = (instance: CheckInstance, env: Env) =>
-  new CloneSession(instance, env, (credential) =>
-    startCheck(instance, {
-      internet: true,
-      envVars: credential ? { CLONE_CREDENTIAL: credential } : {},
-    }),
-  );
-
 /**
  * Starts a claimed run's check and returns once its container is up: the check runs on in
  * the background (`keep`: the object's waitUntil) and completes the run itself, so the
@@ -165,17 +153,6 @@ export class CheckContainer extends Container<Env> {
     return inScope(scope, () =>
       launchCheck(this, this.env, job, report, (work) => this.ctx.waitUntil(work)),
     );
-  }
-
-  #clone: CloneSession | null = null;
-
-  /** One step of a clone (`cloneRepository`'s Workflow calls this). An instance left idle
-   * between steps is killed below, and the steps start over. */
-  cloneStep(stage: Stage, params: CloneParams, credential?: string) {
-    const job = { repo_id: params.repo, job_id: 'clone', kind: 'clone' };
-    this.#clone ??= cloneSession(this, this.env);
-    const clone = this.#clone;
-    return inScope({ env: this.env, job }, () => clone.step(stage, params, credential));
   }
 
   /** An instance left idle (its caller vanished mid-run) is killed, not asked to stop. */
