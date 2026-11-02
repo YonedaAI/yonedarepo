@@ -1,6 +1,6 @@
 // The web half of demo-repos.mjs: one Chrome signed in as the dev owner (the saved login, so a
-// rerun is no new session) creates a repository and turns on what a person would turn on, through
-// the pages web-agents-flow.mjs drives. Each step reads first, so a rerun skips it.
+// rerun is no new session) turns on what a person would turn on, through the pages
+// web-agents-flow.mjs drives. Each step reads first, so a rerun skips it.
 import assert from 'node:assert/strict';
 import { existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -33,29 +33,9 @@ export async function openWeb({ origin, sessionFile }) {
   return { browser, context, page, api, close };
 }
 
-/** A new, empty repository from the New repository dialog, unless it exists. */
-async function createFromPage(web, { origin }, name, evidence) {
-  const { page, api } = web;
-  const mine = (await api('/api/v1/repos')).repos.find((r) => r.name === name);
-  if (mine) return mine;
-  await page.goto(`${origin}/repositories`);
-  await page.getByRole('button', { name: 'New repository' }).first().click();
-  await page.getByRole('menuitem', { name: 'Create repository' }).click();
-  const dialog = page.getByRole('dialog', { name: 'New repository' });
-  await dialog.getByLabel('Repository name').fill(name);
-  await dialog.getByRole('button', { name: 'Create repository' }).click();
-  await page.getByRole('button', { name: 'Add file' }).waitFor();
-  await page.screenshot({ path: join(evidence, `${name}-created.png`), fullPage: true });
-  const made = (await api('/api/v1/repos')).repos.find((r) => r.name === name);
-  assert.ok(made, `${name} is not listed after the form`);
-  return made;
-}
-
 /** A repository's rules and agents, from the Settings and agent pages. */
-export async function setUpRepository(web, { origin, evidence, name, history, log }) {
+export async function setUpRepository(web, { origin, evidence, name, repo, log }) {
   const { page, api, context } = web;
-  const repo = await createFromPage(web, { origin }, name, evidence);
-  await history(repo.id);
   const session = await api('/api/auth/session');
   const managed = `/api/managed/workspaces/${encodeURIComponent(session.username)}`;
   const state = await api(managed);

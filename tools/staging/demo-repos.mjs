@@ -35,7 +35,7 @@ import { TRAPS } from './memory-traps.mjs';
 import { Workspace } from './realuser-git.mjs';
 import { scrubber } from './realuser-plan.mjs';
 
-const PHASES = ['setup', 'memories', 'clean', 'sloppy', 'fix', 'config', 'suggest', 'suggest2', 'drift', 'approvals', 'approval', 'release', 'report'];
+const PHASES = ['setup', 'memories', 'smoke', 'clean', 'sloppy', 'fix', 'config', 'suggest', 'suggest2', 'drift', 'approvals', 'approval', 'release', 'report'];
 const CLAUDE_CAP_USD = 20;
 const GATEWAY = 'https://gateway.ai.cloudflare.com/v1/f011d0ee02b23cad26b4b38151b204ad/yonedarepo-dev-managed-agents';
 const MIMO_PROXY = 'https://yonedarepo-dev-model-proxy.mlong-f01.workers.dev';
@@ -112,7 +112,6 @@ async function prepareRepos(rows) {
 /** The parent's whole main, read with a read-only token, into new repository `id`, once. */
 async function pushHistory(key, parent, id) {
   const { ws } = ctx;
-  if ((await owner.get(`/repos/${id}/refs`)).refs['refs/heads/main']) return;
   const dir = ws.path(`history-${key}`);
   const reader = await mint(`demo-read-${key}-${ts}`, ['repo:read'], [parent]);
   const writer = await mint(`demo-history-${key}-${ts}`, ['repo:read', 'repo:write'], [id]);
@@ -136,7 +135,14 @@ async function setup(web) {
     const parent = repos.find((r) => r.name === `oss-${key}`);
     assert.ok(parent, `no oss-${key}`);
     state.parents[parent.id] ??= { name: parent.name, refs: await parentRefs(parent.id), memories: (await owner.get(`/repos/${parent.id}/memories?limit=50`)).memories.length };
-    const made = await setUpRepository(web, { origin, evidence: join(local, 'shots'), name: `flight-${key}`, history: (id) => pushHistory(key, parent.id, id), log });
+    const name = `flight-${key}`;
+    // Empty, so history can be main: the New repository dialog seeds a first commit.
+    let repo = (await owner.get('/repos')).repos.find((r) => r.name === name);
+    if (!repo) {
+      repo = await owner.post('/repos', { name, visibility: 'private', policy: { approvals: 0, required_checks: [] } });
+      await pushHistory(key, parent.id, repo.id);
+    }
+    const made = await setUpRepository(web, { origin, evidence: join(local, 'shots'), name, repo, log });
     state.repos[key] = { flights: {}, ...state.repos[key], id: made.id, parent: parent.id };
     state.managed = made.managed;
   }
@@ -205,6 +211,14 @@ async function flight(r, id) {
   record[id] = { ...settled, run, base: clone.base, proof: spec.oracle ? await proofOf(r, spec, settled, clone.base) : undefined };
   save();
   log(`${r.key} ${id}: #${settled.number} ${settled.outcome} (wanted ${want}); slop ${settled.slop.value}, drift ${settled.drift.value}${record[id].proof ? `; proof ${JSON.stringify(record[id].proof)}` : ''}${settled.reasons.length ? `; ${settled.reasons.join(' | ').slice(0, 160)}` : ''}`);
+}
+
+/** Each kind answers one word on a clone that pushes nothing, before any real work. */
+async function smoke(r, kind) {
+  await ctx.egressFor(kind);
+  const clone = await agentClone(ctx, r, `smoke-${kind}`, { branch: `smoke-${kind}`, start: 'origin/main' });
+  const run = await flyAgent(ctx, r, `smoke-${kind}`, kind, clone, 'Run: yoneda status --brief. Then answer with the single word ok. Change nothing and push nothing.');
+  log(`${r.key} smoke ${kind}: ${JSON.stringify(run)}`);
 }
 
 async function spendCheck() {
@@ -281,8 +295,8 @@ ctx.egressFor = (kind) => {
 };
 
 /** Keys in memory only, for the kinds these phases fly. */
-async function modelCredentials(rows, agentPhases) {
-  const kinds = new Set(rows.flatMap((r) => agentPhases.filter((p) => REPOS[r.key].order.includes(p)).map((p) => specOf(r.key, p).agent ?? REPOS[r.key].agent)));
+async function modelCredentials(rows, agentPhases, also) {
+  const kinds = new Set([...also, ...rows.flatMap((r) => agentPhases.filter((p) => REPOS[r.key].order.includes(p)).map((p) => specOf(r.key, p).agent ?? REPOS[r.key].agent))]);
   if (kinds.has('glm')) {
     ctx.glmCredential = await modelCredential(AGENTS_BY_KIND.glm.model, ctx.ws.dir);
     for (const entry of JSON.parse(ctx.glmCredential)) for (const v of [entry.value?.key, entry.value?.access]) if (v) secrets.add(v);
@@ -300,7 +314,7 @@ async function modelCredentials(rows, agentPhases) {
 }
 
 async function main() {
-  const agentPhases = phases.filter((p) => !['setup', 'memories', 'approvals', 'release', 'report'].includes(p));
+  const agentPhases = phases.filter((p) => !['setup', 'memories', 'smoke', 'approvals', 'release', 'report'].includes(p));
   const web = phases.some((p) => ['setup', 'memories', 'approvals'].includes(p)) ? await openWeb({ origin, sessionFile }) : null;
   ctx.ws = new Workspace({ api: values.api, bin: join(root, 'target/release'), scrub });
   try {
@@ -309,12 +323,13 @@ async function main() {
     ctx.managed = state.managed;
     const rows = keys.map((key) => ({ key, ...state.repos[key] }));
     await prepareRepos(rows);
-    if (agentPhases.length) {
+    const kindsOf = (r) => [...new Set([REPOS[r.key].agent, ...REPOS[r.key].order.map((p) => REPOS[r.key].flights[p]?.agent).filter(Boolean)])];
+    if (agentPhases.length || phases.includes('smoke')) {
       assert.ok(dockerAvailable(), 'Docker is not available, and agents run only in the sandbox');
       const sandbox = await buildSandbox(dirname(dirname(dirname(import.meta.filename))));
       ctx.image = sandbox.image;
       ctx.budget = spendBudget(Number.POSITIVE_INFINITY);
-      await modelCredentials(rows, agentPhases);
+      await modelCredentials(rows, agentPhases, phases.includes('smoke') ? rows.flatMap(kindsOf) : []);
       log(`sandbox ${sandbox.image.slice(0, 19)}, opencode ${sandbox.opencode}`);
     }
     const watched = [root];
@@ -322,6 +337,9 @@ async function main() {
     try {
       for (const phase of phases) {
         if (phase === 'memories') for (const r of rows) await memories(web, r);
+        else if (phase === 'smoke') await eachRepo(rows, phase, async (r) => {
+          for (const kind of kindsOf(r)) await smoke(r, kind);
+        });
         else if (phase === 'approvals') for (const r of rows) await approvals(web, r);
         else if (agentPhases.includes(phase)) {
           await eachRepo(rows.filter((r) => REPOS[r.key].order.includes(phase)), phase, (r) => flight(r, phase));

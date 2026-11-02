@@ -3,7 +3,7 @@
 // prompt and is recorded as this session's delivery, Codex runs, and its pushed commit gets a
 // session record with a transcript. Arguments: the model, then the task. Codex's JSON events go to
 // stdout for the run's evidence.
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { createInterface } from 'node:readline';
@@ -49,7 +49,7 @@ for await (const line of createInterface({ input: codex.stdout })) {
 }
 const code = await new Promise((done) => codex.on('close', done));
 const branch = execFileSync('git', ['branch', '--show-current'], { encoding: 'utf8' }).trim();
-const pushed = execFileSync('git', ['rev-parse', `refs/remotes/origin/${branch}`], { encoding: 'utf8' }).trim();
+const pushed = spawnSync('git', ['rev-parse', '--verify', '-q', `refs/remotes/origin/${branch}`], { encoding: 'utf8' }).stdout.trim();
 const head = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
 if (pushed === head) {
   writeFileSync('/tmp/codex-transcript.json', JSON.stringify({ context: packet, turns }));
