@@ -98,6 +98,8 @@ A signed-in owner connects GitHub in the import dialog, picks a repository, and 
 
 The re-check on each use reads the installation: still an organization, the same id, not suspended, and the GitHub user who proved it still linked here. It does not ask again whether they own it, as no token is kept. A person who stops being an owner keeps the connection until the installation is removed or their link is undone.
 
+**Adding a repository is GitHub's.** The dialog links to the page for the installation it shows: `html_url` from GitHub's own answer (`https://github.com/settings/installations/<id>`, or `https://github.com/organizations/<org>/settings/installations/<id>`), checked to be on github.com and built from those shapes if it is missing. The page opens in a new tab, as nothing brings a person back from it. Coming back to this tab refetches the list, so a repository added there appears with no reload. It does not start an import, even if it completes what was typed.
+
 An account holds its own installation and any number of organizations'. The import dialog lists those that hold, and a request names which one. Closing an account takes its own installation off GitHub and never an organization's.
 
 ## What can go wrong

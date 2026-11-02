@@ -7,7 +7,7 @@ import { workspace } from '../../cloudflare/worker/workspace';
 const API = 'https://api.github.com';
 const encoder = new TextEncoder();
 
-type Installed = { id: number; account: { id: number; login: string; type: string }; target_type: string; suspended_at?: string | null; repositories: Repo[] };
+type Installed = { id: number; html_url?: string; account: { id: number; login: string; type: string }; target_type: string; suspended_at?: string | null; repositories: Repo[] };
 export type Repo = { id: number; full_name: string; private: boolean };
 
 const decode = (part: string) => atob(part.replaceAll('-', '+').replaceAll('_', '/'));
@@ -44,7 +44,10 @@ export class FakeGitHub {
   }
 
   install(id: number, subject: number, login: string, repositories: Repo[] = [], type = 'User') {
-    const installed = { id, account: { id: subject, login, type }, target_type: type, suspended_at: null, repositories };
+    const html_url = type === 'Organization'
+      ? `https://github.com/organizations/${login}/settings/installations/${id}`
+      : `https://github.com/settings/installations/${id}`;
+    const installed = { id, html_url, account: { id: subject, login, type }, target_type: type, suspended_at: null, repositories };
     this.installations.set(id, installed);
     return installed;
   }

@@ -280,6 +280,37 @@ describe('several installations', () => {
     expect(org.repositories.map((r: Repo) => r.full_name)).toEqual(['globex/site']);
   });
 
+  it('names GitHub’s own page for the installation shown', async () => {
+    const { cookie } = await three();
+    const own = (await shown(cookie)).body;
+    expect(own.manage_url).toBe('https://github.com/settings/installations/7100');
+    const org = (await shown(cookie, '?installation=7102')).body;
+    expect(org.manage_url).toBe('https://github.com/organizations/globex/settings/installations/7102');
+  });
+
+  it('builds that page when GitHub leaves it out, and never links elsewhere', async () => {
+    const { cookie } = await three();
+    const installed = hub.installations.get(7101) as any;
+    installed.html_url = undefined;
+    const missing = (await shown(cookie, '?installation=7101')).body;
+    expect(missing.manage_url).toBe('https://github.com/organizations/acme/settings/installations/7101');
+    installed.html_url = 'https://evil.example/settings/installations/7101';
+    const elsewhere = (await shown(cookie, '?installation=7101')).body;
+    expect(elsewhere.manage_url).toBe('https://github.com/organizations/acme/settings/installations/7101');
+    (hub.installations.get(7100) as any).html_url = undefined;
+    expect((await shown(cookie)).body.manage_url).toBe('https://github.com/settings/installations/7100');
+  });
+
+  it('still names the page when the installation has no repositories', async () => {
+    serve();
+    const { cookie } = await person('gh_empty', 213, 'empty');
+    hub.install(7300, 213, 'empty', []);
+    await installed(cookie, 7300);
+    const body = (await shown(cookie)).body;
+    expect(body.repositories).toEqual([]);
+    expect(body.manage_url).toBe('https://github.com/settings/installations/7300');
+  });
+
   it('shows nothing of an installation this account did not connect', async () => {
     const { cookie } = await three();
     hub.install(7199, 912, 'victim-corp', [repo(13, 'victim-corp/payroll')], 'Organization');

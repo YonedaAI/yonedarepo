@@ -110,6 +110,8 @@ export type GitHubConnection = {
   /** The installation shown, and all those that hold: its own first, then organizations. */
   installation?: number;
   installations?: GitHubInstallation[];
+  /** GitHub's page for that installation, where more repositories are added. */
+  manage_url?: string;
   repositories?: GitHubRepository[];
   more?: boolean;
 };

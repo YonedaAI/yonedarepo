@@ -149,6 +149,17 @@ async function stillHeld(env: Env, account: string, row: Held, seen: Installatio
   return linked === true;
 }
 
+/** GitHub's page for an installation, where a person changes its repositories. GitHub names it
+ * in the installation, on the right account's settings; the docs give no address to build, so
+ * these are only for an answer without one, and nothing but github.com is ever linked. */
+function managePage(row: Held, seen: Installation | null) {
+  const named = seen?.html_url;
+  if (named?.startsWith('https://github.com/')) return named;
+  const owner =
+    row.target_type === 'Organization' ? `organizations/${encodeURIComponent(row.login)}/` : '';
+  return `https://github.com/${owner}settings/installations/${row.installation}`;
+}
+
 const keep = (env: Env, account: string, seen: Installation) =>
   workspace(env, account, {
     op: 'github_installation_put',
@@ -231,7 +242,12 @@ async function proven(env: Env, account: string) {
         throw e;
       });
       const ok = seen ? await stillHeld(env, account, row, seen) : false;
-      return { row, ok, login: seen?.account?.login ?? row.login };
+      return {
+        row,
+        ok,
+        login: seen?.account?.login ?? row.login,
+        manageUrl: managePage(row, seen),
+      };
     }),
   );
 }
@@ -247,7 +263,7 @@ function chosen(rows: Proven, wanted?: number) {
   if (!pick) return { state: 'none' as const };
   if (!pick.ok) return { state: 'lost' as const };
   const { installation, target_type: type } = pick.row;
-  return { state: 'ok' as const, installation, login: pick.login, type };
+  return { state: 'ok' as const, installation, login: pick.login, type, manageUrl: pick.manageUrl };
 }
 
 /** The installation `account` may use right now. */
@@ -266,8 +282,9 @@ export async function githubRepositories(env: Env, auth: Credentials, wanted?: n
   if (held.state !== 'ok') return { available: true, connection: held.state, ...offered };
   try {
     const listed = await installationRepositories(env, held.installation);
-    const { installation, login } = held;
-    return { available: true, connection: 'ok', login, installation, ...offered, ...listed };
+    const { installation, login, manageUrl: manage_url } = held;
+    const named = { login, installation, manage_url };
+    return { available: true, connection: 'ok', ...named, ...offered, ...listed };
   } catch (e) {
     if (accessGone(e)) return { available: true, connection: 'lost', ...offered };
     throw e;
