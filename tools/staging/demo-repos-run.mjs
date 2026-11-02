@@ -14,6 +14,7 @@ import { clientEnv, HOOK_LOG, sandboxArgs, sandboxEnv, WORKDIR } from './agent-s
 import { AGENTS_BY_KIND } from './demo-repos-plan.mjs';
 import { opencodeUsage } from './memory-plan.mjs';
 import { AGENTS } from './web-agents-pages.mjs';
+import { LIMITS } from './agent-sandbox/gateway-limits.mjs';
 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 const TERMINAL = new Set(['passed', 'findings', 'failed', 'superseded', 'cancelled', 'paused']);
@@ -50,7 +51,13 @@ function launch(ctx, kind, title, text) {
     };
   if (harness === 'codex') return { command: ['node', '/opt/yoneda/codex-run.mjs', model, text], env: { ...shim(), ...QUIET, SANDBOX_SHIM_KEY: 'sandbox-shim', NODE_USE_ENV_PROXY: '1' } };
   const command = ['opencode', ...opencodeArgs({ model, title, text })];
-  if (kind === 'glm') return { command, env: {}, credential: ctx.glmCredential };
+  // OpenCode v2.2's schema uses agents/providers; provider model body overlays reach the API.
+  // https://github.com/anomalyco/opencode/tree/v2.2.0/packages/schema/src/config
+  if (kind === 'glm') return { command, env: { SANDBOX_GATEWAY_PROVIDER: 'zai', SANDBOX_GATEWAY_URL: 'https://api.z.ai/api/coding/paas/v4', SANDBOX_GATEWAY_TOKEN: ctx.glmKey, SANDBOX_GATEWAY_MODEL: 'glm-5.3' }, opencode: {
+    default_agent: 'build',
+    agents: { build: { steps: LIMITS.requests }, general: { disabled: true }, explore: { disabled: true } },
+    providers: { 'zai-coding-plan': { settings: { baseURL: `${SHIM}/glm`, apiKey: 'sandbox-shim' }, models: { 'glm-5.3': { limit: { output: LIMITS.outputTokens }, body: { max_tokens: LIMITS.outputTokens } } } } },
+  } };
   throw new Error(`Unsupported sandbox agent: ${kind}`);
 }
 

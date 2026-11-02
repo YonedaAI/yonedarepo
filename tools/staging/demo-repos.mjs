@@ -53,6 +53,8 @@ const keys = values.only.split(',').map((x) => x.trim());
 const phases = values.phases.split(',').map((x) => x.trim());
 for (const key of keys) assert.ok(REPOS[key], `--only takes ${Object.keys(REPOS).join(', ')}`);
 for (const phase of phases) assert.ok(PHASES.includes(phase), `--phases takes ${PHASES.join(', ')}`);
+assert.ok(Number.isSafeInteger(Number(values['agent-timeout'])) && Number(values['agent-timeout']) > 0, '--agent-timeout must be a positive integer');
+assert.ok(Number.isFinite(Number(values['cap-usd'])) && Number(values['cap-usd']) > 0, '--cap-usd must be positive');
 
 if (values['dry-run']) {
   console.log(JSON.stringify({ repositories: keys, phases, models: Object.fromEntries(Object.entries(AGENTS_BY_KIND).map(([kind, agent]) => [kind, agent.model])), managed_cap_usd: Number(values['cap-usd']), claude_cap_usd: CLAUDE_CAP_USD }));
@@ -210,6 +212,8 @@ async function modelCredentials(rows, agentPhases, also) {
   const kinds = new Set([...also, ...rows.flatMap((r) => agentPhases.filter((p) => REPOS[r.key].order.includes(p)).map((p) => specOf(r.key, p).agent ?? REPOS[r.key].agent))]);
   if (kinds.has('glm')) {
     ctx.glmCredential = await modelCredential(AGENTS_BY_KIND.glm.model, ctx.ws.dir);
+    ctx.glmKey = JSON.parse(ctx.glmCredential).map(entry => entry.value?.key ?? entry.value?.access).find(Boolean);
+    assert.ok(ctx.glmKey, 'The coding-plan credential has no key');
     for (const entry of JSON.parse(ctx.glmCredential)) for (const v of [entry.value?.key, entry.value?.access]) if (v) secrets.add(v);
   }
   if (kinds.has('claude') || kinds.has('codex')) {

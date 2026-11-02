@@ -30,7 +30,7 @@ if [ -n "${SANDBOX_GATEWAY_URL:-}" ]; then
     tries=$((tries + 1))
     [ "$tries" -lt 50 ] || fail "the gateway shim did not start"
   done
-  unset SANDBOX_GATEWAY_URL SANDBOX_GATEWAY_TOKEN SANDBOX_GATEWAY_MODEL
+  unset SANDBOX_GATEWAY_URL SANDBOX_GATEWAY_TOKEN SANDBOX_GATEWAY_MODEL SANDBOX_GATEWAY_PROVIDER
 fi
 unset SANDBOX_CREDENTIAL SANDBOX_EXPECTED_ORIGIN
 exec "$@" </dev/null

@@ -38,7 +38,7 @@ COPY tests/agents/fake-opencode.mjs tests/agents/fake-memory-agent.mjs /opt/yone
 COPY tools/staging/opencode-fake.mjs /opt/yoneda/fake/tools/staging/
 # The egress proxy (run as its own container from this image) and the agent's egress check.
 COPY tools/staging/agent-sandbox/egress-proxy.mjs tools/staging/agent-sandbox/egress-check.mjs /opt/yoneda/
-COPY tools/staging/agent-sandbox/gateway-shim.mjs tools/staging/agent-sandbox/codex-run.mjs /opt/yoneda/
+COPY tools/staging/agent-sandbox/gateway-shim.mjs tools/staging/agent-sandbox/gateway-limits.mjs tools/staging/agent-sandbox/codex-run.mjs /opt/yoneda/
 COPY --chmod=755 tools/staging/agent-sandbox/sandbox-init.sh /usr/local/sbin/sandbox-init
 COPY --chmod=755 tools/staging/agent-sandbox/sandbox-agent.sh /usr/local/bin/sandbox-agent
 LABEL yoneda.agent-sandbox="1"
