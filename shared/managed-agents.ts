@@ -189,7 +189,7 @@ export const HARNESS_LABELS: Record<Harness, string> = {
 export const AGENT_MARGIN = 1.3;
 /** Promotional credit added on a workspace's first run; no card is asked for. */
 export const STARTING_CREDIT_USD = 5;
-/** Container time per run (standard-1), billed at the pricing page's check-minute rate. */
+/** Container time per run (standard-1, the harness container's class). */
 export const CONTAINER_USD_PER_MINUTE = 0.0017;
 
 /** Provider list prices in USD per million tokens, by usage category. */

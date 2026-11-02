@@ -11,7 +11,7 @@ import { api, author, bindings, drainObjects, file, scoped, signup, usePlatformF
 
 usePlatformFixture();
 
-const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2', ARTIFACTS: undefined } as unknown as Env;
+const local = { ...scoped } as unknown as Env;
 const text = new TextEncoder();
 const hex = (bytes: Uint8Array) => [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
 const raw = (hexId: string) => Uint8Array.from(hexId.match(/../g) ?? [], (h) => Number.parseInt(h, 16));

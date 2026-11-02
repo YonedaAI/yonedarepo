@@ -55,7 +55,6 @@ const status = (viewer: Viewer, policy = noChecks): RepoStatus => ({
     { name: 'refs/heads/main', commit_id: 'b'.repeat(40), version: 2 },
     { name: 'refs/heads/dev', commit_id: 'c'.repeat(40), version: 1 },
   ],
-  projections: [],
   objects: {},
   bundled: false,
   automation: null,
@@ -65,8 +64,6 @@ const status = (viewer: Viewer, policy = noChecks): RepoStatus => ({
   grant: null,
   quarantined: [],
   quarantine_epoch: 0,
-  history_import: null,
-  history_stopped: null,
   visibility: 'private',
 });
 const page = (d: CommitDetail, s: RepoStatus) =>

@@ -1,25 +1,11 @@
 // Staged commits: accepted once the authority holds their objects, then written to R2 (the
-// store of record) by the projector; protected refs carry them on to Artifacts. An outage
-// of either store after acceptance loses nothing: the commit stays readable, the outbox
-// stays visible, refs wait without drift, and a later (or repeated) projection settles it.
+// store of record) by the projector. An outage of R2 after acceptance loses nothing: the
+// commit stays readable, the outbox stays visible, landing goes on, and a later (or
+// repeated) projection settles it.
 import { expect, it } from 'vitest';
-import { projectObjects, projectRefs } from '../../cloudflare/worker/repo-projection';
+import { projectObjects } from '../../cloudflare/worker/repo-projection';
 import type { Env } from '../../cloudflare/worker/types';
-import {
-  api,
-  artifacts,
-  author,
-  bindings,
-  drainObjects,
-  file,
-  misses,
-  pushes,
-  queued,
-  receivePacks,
-  scoped,
-  signup,
-  usePlatformFixture,
-} from './repo-fixture';
+import { api, author, bindings, drainObjects, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 const EDGE = 'https://objects.yoneda.internal';
@@ -28,7 +14,7 @@ async function repo(name: string) {
   const owner = { cookie: await signup(name) };
   const created = await api('/repos', owner, { body: { name, policy: { required_checks: [], approvals: 0 }, files: [file('a.txt', '0\n')], author } });
   await drainObjects();
-  for (const message of queued.splice(0).filter((m) => m.kind === 'platform_project')) await projectRefs(scoped, message);
+  queued.length = 0;
   return { owner, id: created.body.id as string, path: `/repos/${created.body.id}` };
 }
 
@@ -65,36 +51,26 @@ it('keeps an accepted commit readable and pending through store outages', async 
   expect(status.objects.oldest).toMatchObject({ commit_id: made.body.commit, attempts: 1 });
   expect(status.objects.oldest.detail).toContain('R2 unavailable');
 
-  // Without cached copies, reads fall through R2 and Artifacts to the shard's staged copy.
+  // Without cached copies, reads fall through R2 to the shard's staged copy.
   const tree = (await api(`${path}/commits/${made.body.commit}`, owner)).body.tree;
   const listed = (await api(`${path}/tree?commit=${made.body.commit}&path=dir`, owner)).body;
   for (const object of [tree, ...listed.entries.map((e: any) => e.id)]) {
     await caches.default.delete(new Request(`${EDGE}/${id}/${object}`));
     await bindings.OBJECTS.delete(`platform/v1/${id}/objects/${object}`);
+    expect(await bindings.OBJECTS.head(`platform/v1/${id}/git/${object}`)).toBeNull();
   }
-  misses.length = 0;
   const read = await api(`${path}/blob?commit=${made.body.commit}&path=dir/b.txt`, owner);
   expect(read.body.content).toBe('b\n');
-  expect(misses.length).toBeGreaterThan(0); // Artifacts did not have them
 
-  // Artifacts is down too: main lands, its projection fails and retries; never drift.
-  receivePacks.down = true;
+  // Main lands through the outage, and what it holds stays readable.
   expect((await api(`${path}/land`, owner, { body: { ref: 'main', commit: made.body.commit } })).body.landed).toBe(true);
-  const project = queued.splice(0).find((m) => m.kind === 'platform_project');
-  await expect(projectRefs(scoped, project)).rejects.toThrow();
-  expect((await api(path, owner)).body.projections[0].status).toBe('pending');
+  expect((await api(`${path}/blob?path=dir/b.txt`, owner)).body.content).toBe('b\n');
+  expect((await api(path, owner)).body.objects.pending).toBe(1);
 
-  // Artifacts recovers first: the ref goes out with objects read from the staged copy.
-  receivePacks.down = false;
-  await projectRefs(scoped, project);
-  expect(pushes.at(-1)).toMatch(new RegExp(`${made.body.commit} refs/heads/main$`));
-  expect(artifacts.get(`yr-${id}`)?.get(made.body.commit)?.kind).toBe('commit');
-  // Then R2: the outbox drains into the store of record.
+  // R2 recovers: the outbox drains into the store of record.
   r2.state.down = false;
   await projectObjects(r2.env, id, jobs[0].job_id);
-  const settled = (await api(path, owner)).body;
-  expect(settled.objects.pending).toBe(0);
-  expect(settled.projections[0]).toMatchObject({ status: 'ok', projected_commit: made.body.commit });
+  expect((await api(path, owner)).body.objects.pending).toBe(0);
   expect(await bindings.OBJECTS.head(`platform/v1/${id}/git/${made.body.commit}`)).not.toBeNull();
 });
 

@@ -205,7 +205,7 @@ Written before the first run:
 | Time | About 6 minutes a run, 21 an arm with its import (estimate) |
 | Both arms | About 6,000 requests, 24 container check runs, under $0.25 at list price. No model |
 
-**Source:** `expressjs/express`, imported at most 5,000 commits. It has 6,183 commits and 3,913 on main's first-parent chain (counted 2026-11-01), so a branch copies thousands of rows and doesn't stop at the 5,000-row bound. Not the owner's repositories: `--baseline` only reads those, and the tool refuses to write to anything not named `archive-measure-*`.
+**Source:** `expressjs/express`. It has 6,183 commits and 3,913 on main's first-parent chain (counted 2026-11-01), so a branch copies thousands of rows and doesn't stop at the 5,000-row bound. Not the owner's repositories: `--baseline` only reads those, and the tool refuses to write to anything not named `archive-measure-*`.
 
 **The change for the on arm,** in the platform Worker's `vars` in `infra/envs/dev.json`, then `cargo xtask infra gen --env dev` and a deploy:
 
@@ -278,23 +278,9 @@ Do landings counted by Basin match the repository's log, and what does the strea
 
 Catalog operations have no metric this tool reads, so they're named as not counted. A sink rolls a file a minute on dev, so a day of steady landings writes about 1,440 files, and Basin SQL slows as files add up.
 
-### GitHub import (`FAST_IMPORT`)
+### GitHub import
 
-Written before the code, from the hosted numbers we hold (a Worker to Durable Object call 10-50 ms, an R2 write 200-1000 ms). **Not measured on dev yet.**
-
-Today's cost of one commit: 2-3 new trees, each read down every tier (Cache API, R2 twice or more, the authority's staged read, then Artifacts) and then written up to R2 and the edge. A Workflow lends no `waitUntil`, so those writes are awaited. Then one authority call, and one Workflow step per 20 commits. Measured on dev: 1.5 commits/s (233 commits in 149 s).
-
-| Measure | Budget |
-|---|---|
-| **Click to usable (files read, `git clone` of ours working)** | **Artifacts' fetch plus a few seconds. The bar is a `git clone` of the same repository: 1.0-1.5 s from GitHub to a Mac, 2026-10-31 (pflag 1.1 s, whisper 1.5 s, cobra 1.4 s; 3 runs each)** |
-| Artifacts finished to files shown | under 1.5 s: from the request, not the Workflow (dev, 2026-10-31: 1-4 s from request to Artifacts asked, most of it the Workflow starting). A look every 0.25 s, 1 log call per 1,000 commits, 3-6 tree reads, 3 authority calls, the page reading every 0.5 s. Recording history is no part of it |
-| Floor, dev, 2026-10-31 | Artifacts' fetch: 2.8-4.2 s (pflag, whisper), against a whole `git clone` at 0.8-1.3 s |
-| History | at least 50 commits/s: 5,000 commits under 2 minutes |
-| One wave, 250 commits, one Workflow step | under 5 s: 1 log call, about 750 tree reads straight from Artifacts 32 at a time, no R2 or edge writes, 1-4 authority calls |
-| One authority transaction | at most 250 commits and 1 MiB of changed paths (a single larger commit goes alone, at most 10,000 paths); well under the 19 MB the size spike deleted safely in one transaction |
-| Progress | polled every 1 s, moves at least once per wave |
-
-Bench: `tools/import-bench.mjs`. Report the Workflow's own timing (`output.timing`), at least 3 runs, min, median and max. `DIRECT_IMPORT` has its own budget: `docs/direct-import.md`.
+Budget, bench and what is proved: [clone-import.md](clone-import.md).
 
 ## Stages
 

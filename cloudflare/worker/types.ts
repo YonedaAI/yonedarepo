@@ -9,8 +9,6 @@ export type Envelope = {
   token?: string;
   /** A classify job's pushed commits, parents first (repo-classify.ts). */
   commits?: string[];
-  /** Failed attempts a store job follows (repo-store-create.ts). */
-  attempt?: number;
   /** When an erase job first found the audit log in its way (repo-erase.ts). */
   blocked_since?: number;
   /** The Landing a clearance job looks at (repo-land-cleared.ts). */
@@ -29,9 +27,6 @@ export interface Env {
   /** "request" makes a create wait for its commit shards to start, for comparing benches
    * (default: they start after the answer, see repo-create.ts). */
   SHARD_START?: string;
-  /** `on`: a create answers without Artifacts and a queue job creates the store (unset or
-   * anything else: the create waits for it; repo-store-create.ts). */
-  ASYNC_STORE?: string;
   /** Landing mode: batch (default) or changeset (see repo-changesets.ts). */
   LAND_MODE?: string;
   /** "true" lets a request choose its landing mode (x-yoneda-land-mode), for benchmarks. */
@@ -57,9 +52,6 @@ export interface Env {
   /** `on`: the operators' billing routes and the nightly reconcile exist (unset or anything
    * else: neither; platform-admin-billing.ts). Set with the managed Worker's. */
   ADMIN_BILLING?: string;
-  /** `on`: an import lands main at once and fills its history in behind it
-   * (repo-import-fill.ts; unset or anything else: history first, then main). */
-  FAST_IMPORT?: string;
   /** `on`: a change's page shows its Slop and Risk cards (repo-instruments.ts; unset or
    * anything else: no route, and the page asks for nothing). */
   LANDING_INSTRUMENTS?: string;
@@ -69,13 +61,8 @@ export interface Env {
   LAND_WHEN_CLEARED?: string;
   /** `on`: `yoneda login --agent <name>` signs an agent up through the device flow. */
   AGENT_SIGNUP?: string;
-  /** `on` (with FAST_IMPORT, PACK_CACHE and PUSH_BUNDLES): a public GitHub repository's import
-   * also fetches it directly, and main lands from that (repo-import-direct.ts; unset or
-   * anything else: Artifacts' fetch alone). */
-  DIRECT_IMPORT?: string;
   /** Platform check executors (one fresh container per run attempt). */
   CHECK_RUNNERS: DurableObjectNamespace<import('./check-container').CheckContainer>;
-  OBJECT_PUSHES: DurableObjectNamespace<import('./repo-push-queue').ObjectPushQueue>;
   /** Platform jobs (projection, derived data, webhooks, purges). */
   PLATFORM_QUEUE: Queue<Envelope>;
   /** Check runs on their own queue (minutes each), so they never hold derive and
@@ -88,7 +75,7 @@ export interface Env {
    * and no hold on compaction). Setup is in docs/runbook.md. */
   CHANGELOG?: { send(records: import('./repo-changelog').ChangeEvent[]): Promise<void> };
   /** Durable imports of external Git repositories into the source platform. */
-  PLATFORM_IMPORT: Workflow<import('./repo-import').ImportParams>;
+  PLATFORM_IMPORT: Workflow<import('./repo-clone').CloneParams>;
   OBJECTS: R2Bucket;
   /** R2's S3 API for Git LFS presigned URLs (repo-lfs.ts): `https://<account>.r2.cloudflarestorage.com`,
    * the OBJECTS bucket's name, and an R2 API token's S3 key pair (secrets). LFS answers 501
@@ -98,7 +85,6 @@ export interface Env {
   LFS_S3_ACCESS_KEY_ID?: string;
   LFS_S3_SECRET_ACCESS_KEY?: string;
   INDEX: D1Database;
-  ARTIFACTS: Artifacts;
   /** Public downloads: CLI releases and the Claude Code marketplace (front Worker only). */
   DOWNLOADS?: R2Bucket;
   ASSETS: Fetcher;
@@ -138,15 +124,12 @@ export interface Env {
   MANAGED_ADMIN_TOKEN?: string;
   ACCESS_TEAM_DOMAIN?: string;
   ACCESS_AUD?: string;
-  ARTIFACTS_NAMESPACE: string;
   /** `on` erases a deleted repository's records once its purge finishes (repo-erase); any
    * other value leaves them in its tombstone. */
   REPO_ERASE?: string;
   /** Days a deleted repository can be restored before its purge (repo-undo-window.ts). Unset or
    * 0: it purges at once. */
   REPO_UNDO_DAYS?: string;
-  /** `r2` stores new source-platform repositories' Git objects in R2 (local development). */
-  PLATFORM_OBJECT_STORE?: string;
   /** `on` writes a large push's objects as bundles (repo-bundles); reads always use them. */
   PUSH_BUNDLES?: string;
   /** `on` serves a clone's pack (full, partial or shallow) from the store when one is held,

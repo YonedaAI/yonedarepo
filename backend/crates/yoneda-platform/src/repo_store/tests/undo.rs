@@ -483,13 +483,9 @@ fn quarantine_keeps_running_on_a_tombstone_until_its_purge_starts() {
     let claims = claimed["claims"].as_array().unwrap();
     assert_eq!(claims.len(), 1);
     assert_eq!(claims[0]["target"]["id"], target.as_str());
-    let reported = json!({"op":"repo_quarantine_purged","replacement":format!("platform:{REPO}"),
+    let reported = json!({"op":"repo_quarantine_purged",
         "claims":[{"id":claims[0]["id"],"epoch":claims[0]["epoch"]}]});
     assert_eq!(code(h.run(QUARANTINE, reported)), "OK");
-    assert_eq!(
-        code(h.run(QUARANTINE, json!({"op":"repo_mirror_claim"}))),
-        "OK"
-    );
 
     pass_window(&h);
     purge_target(&h).unwrap();

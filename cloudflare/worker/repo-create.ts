@@ -2,32 +2,30 @@
 // a repository, optionally seeded with files or imported from a Git remote, and may issue its
 // first repository tokens in the same request.
 
-import { afterAnswer, deferred } from './background';
+import { afterAnswer } from './background';
 import { bounded, boundedRetry, failureCode } from './durable';
 import { log } from './log';
 import { orgArg, orgCaller, orgCommand } from './platform-orgs';
-import { asyncStore, dispatchStore } from './repo-artifacts-store';
 import { auditRepo, auditRepoForget } from './repo-audit';
 import { commit } from './repo-commit';
+import { githubRemote } from './repo-git-remote';
 import { refreshHead } from './repo-head';
-import { defaultBranchSoon, startImport } from './repo-import';
 import { startWorkflow } from './repo-import-start';
-import { newStore, type ObjectStore, RepoObjects, toBase64 } from './repo-objects';
+import { type ObjectStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { requirePatScope } from './repo-pat';
 import { holdName, releaseNames } from './repo-paths';
-import { dispatchProjection, dispatchPurge } from './repo-projection';
+import { PlatformStore } from './repo-platform-store';
+import { dispatchPurge } from './repo-projection';
 import { visibilityOf } from './repo-public';
 import { hintedEnv, placeCombiners, regionHint } from './repo-region-hint';
 import { shardOutboxes } from './repo-shards';
-import { createStore } from './repo-store-create';
 import { timed } from './repo-timing';
 import type { Env } from './types';
 
-// Bounds on what a create waits for, from dev's 20 creates of 2026-10-30 (slowest: store
-// 3.3 s, repo_init 0.7 s, shards 4.5 s). The dialog's own bound (CREATE_TIMEOUT_MS, 45 s) sits
-// above their sum (the store's 28 s, repo-store-create; 10 s here; 5 s taking back), so a stall
-// reaches people as this code's answer, not as its timeout.
+// Bounds on what a create waits for, from dev's 20 creates of 2026-10-30 (slowest: repo_init
+// 0.7 s, shards 4.5 s). The dialog's own bound (CREATE_TIMEOUT_MS, 45 s) sits above their sum,
+// so a stall reaches people as this code's answer, not as its timeout.
 const INIT_MS = 10_000;
 const SHARD_START_MS = 12_000;
 const TAKE_BACK_MS = 5_000;
@@ -173,14 +171,7 @@ async function create(env: Env, requester: Credentials, body: Json) {
   const ctx = new RepoContext(env, id, caller(env, id, auth));
   let accepted = false;
   try {
-    const store = newStore(env, `yr-${id}`);
-    const later = asyncStore(env);
-    if (!later)
-      await timed('create.store', () =>
-        createStore(store).catch((e) => {
-          throw unavailable(e);
-        }),
-      );
+    const store = new PlatformStore(env, id);
     await bounded(
       INIT_MS,
       ctx.call({
@@ -192,8 +183,6 @@ async function create(env: Env, requester: Credentials, body: Json) {
       }),
     );
     accepted = true;
-    // Asked for before anyone can see the repository, so none is left without its store.
-    if (later) await timed('create.queue', () => bounded(INIT_MS, dispatchStore(env, id)));
     const created = await populate(env, ctx, store, { name, visibility, owner }, body);
     await startShards(env, id);
     // Only now: a create that failed is taken back as if it never was.
@@ -228,32 +217,22 @@ async function populate(
   );
   const landed = await ctx.call({ op: 'repo_import', ref: 'main', commit: seeded.commit });
   // Main's head is published (and its holder started) before the first commits need it.
-  await Promise.all([
-    timed('create.project', () => dispatchProjection(env, id)),
-    timed('create.head', () => refreshHead(env, id)),
-  ]);
+  await timed('create.head', () => refreshHead(env, id));
   return { id, commit: seeded.commit, tree: seeded.tree, version: landed.version, ...tokens };
 }
 
-/** Starts a durable import of an external Git repository (Artifacts-backed only). */
+/** Starts a durable import of a public Git repository (`cloneRepository`). */
 export async function importRepository(env: Env, requester: Credentials, body: Json) {
   const auth = await timed('import.owner', () => owning(env, requester, body));
   const asked_at = Date.now();
-  if (env.PLATFORM_OBJECT_STORE === 'r2')
-    throw new ApiError('NOT_SUPPORTED', 'Importing a remote needs the Artifacts object store');
-  const fast = env.FAST_IMPORT === 'on';
   const visibility = visibilityOf(body.visibility);
-  const url = String(body.url ?? '');
-  if (!/^https:\/\/[^\s]+$/.test(url))
-    throw new ApiError('INVALID_INPUT', 'url must be an HTTPS Git remote');
-  // None named: the remote's default branch (its HEAD), whatever it is called.
+  const url = githubRemote(String(body.url ?? ''));
+  if (!url) throw new ApiError('INVALID_INPUT', 'url must be a public GitHub repository');
+  // None named: the remote's default branch lands as main.
   const branch = typeof body.branch === 'string' && body.branch ? body.branch : undefined;
-  const max = Math.min(Math.max(Number(body.max_commits ?? 100) || 100, 1), 5000);
   const id = newRepoId();
   const name = typeof body.name === 'string' && body.name ? body.name : id;
   const owner = auth._session.workspace;
-  // Beside the writes below, so that Artifacts can be asked as soon as they end.
-  const named = fast && !branch ? defaultBranchSoon(url) : Promise.resolve(null);
   await timed('import.name', () => holdName(env, owner, id, name));
   const ctx = new RepoContext(env, id, caller(env, id, auth));
   await timed('import.init', () =>
@@ -261,8 +240,7 @@ export async function importRepository(env: Env, requester: Credentials, body: J
       .call({
         op: 'repo_init',
         name,
-        // Artifacts creates the store itself during import.
-        object_store: `artifacts:${env.ARTIFACTS_NAMESPACE}/yr-${id}`,
+        object_store: new PlatformStore(env, id).spec,
         policy: body.policy ?? { required_checks: [], approvals: 1 },
         visibility,
       })
@@ -271,15 +249,13 @@ export async function importRepository(env: Env, requester: Credentials, body: J
         throw e;
       }),
   );
-  const remote = await timed('import.branch', () => named);
-  const params = { repo: id, url, branch: branch ?? remote ?? undefined, max, asked_at };
-  // Beside the writes below: nothing of it reads them.
-  if (fast) deferred(() => startImport(env, params));
   await timed('import.list', () => listRepository(env, id, owner, name, visibility));
   const tokens = await timed('import.tokens', () => issueTokens(ctx, body.tokens));
-  const workflow = await timed('import.workflow', () => startWorkflow(env, params));
+  const workflow = await timed('import.workflow', () =>
+    startWorkflow(env, { repo: id, url, branch, asked_at }),
+  );
   await auditRepo(env, id);
-  return { id, import: workflow, branch: branch ?? null, max_commits: max, ...tokens };
+  return { id, import: workflow, branch: branch ?? null, ...tokens };
 }
 
 /** The listing row of a repository the authority accepted (a fork's too, or one restored,

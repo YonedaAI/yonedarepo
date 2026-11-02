@@ -60,7 +60,7 @@ const assets = {
     return new Response(template(page[pathname]), { headers: { 'content-type': 'text/html; charset=utf-8' } });
   },
 };
-const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2', PUBLIC_APP_ORIGIN: ORIGIN, ASSETS: assets } as unknown as Env;
+const local = { ...scoped, PUBLIC_APP_ORIGIN: ORIGIN, ASSETS: assets } as unknown as Env;
 const dev = { ...local, PLATFORM: { fetch: (req: Request) => platformFetch(req, local) } } as unknown as Env;
 const prod = { ...dev, SEO_INDEXING: 'on' } as unknown as Env;
 

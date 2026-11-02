@@ -60,6 +60,7 @@ import { backfillObject } from './repo-erase';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { dispatchPurge } from './repo-projection';
 import { quarantineRoute } from './repo-quarantine';
+import { importAudit, reimportRepository } from './repo-reimport';
 import { backfillSummaries } from './repo-search-summary';
 import type { Env } from './types';
 
@@ -155,6 +156,7 @@ async function operatorRoute(
       return setInternal(env, actor, account, (await body()).internal === true);
   }
   if (section === 'orgs' && id && hold) return operatorOrgHold(env, actor, orgArg(id), method);
+  if (section === 'imports' && !id && get) return importAudit(env, query.get('after'));
   if (section === 'repos' && !id && get) return listRepos(env, query.get('q'), query.get('before'));
   if (section === 'repos' && id === 'largest' && !action && get) return largestRepos(env);
   if (section === 'repos' && id === 'usage' && !action && get) return repoUsageReport(env, query);
@@ -170,6 +172,8 @@ async function operatorRoute(
     if (action === 'audit-set-aside' && !record && post)
       return setAsideAuditRow(env, actor, id, await body());
     if (action === 'purge-now' && !record && post) return purgeNow(env, actor, id);
+    if (action === 'reimport' && !record && post)
+      return reimportRepository(env, actor, id, await body());
     if (action === 'purge-orphan' && !record && post)
       return purgeOrphan(env, actor, id, await body());
   }

@@ -13,18 +13,11 @@ import { isLarge, putLarge } from './repo-large-files';
 import { parseStore, RepoObjects, toBase64 } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, type RepoContext } from './repo-ops';
 import { holdName } from './repo-paths';
-import { dispatchProjection } from './repo-projection';
+import { PlatformStore } from './repo-platform-store';
 import { visibilityOf } from './repo-public';
 import { markFork } from './repo-search-directory';
 import { shardOutboxes } from './repo-shards';
-import {
-  FORK_DEPTH,
-  forkDepth,
-  forkOwnStore,
-  forkSpec,
-  forkStore,
-  putRawBytes,
-} from './repo-stores';
+import { FORK_DEPTH, forkDepth, forkSpec, putRawBytes } from './repo-stores';
 import type { Env } from './types';
 
 const REPO = /^r[0-9a-f]{20}$/;
@@ -57,11 +50,7 @@ export async function forkRepository(ctx: RepoContext, args: Json) {
   )({
     op: 'repo_init',
     name,
-    object_store: forkSpec(
-      ctx.repo,
-      source.object_store,
-      forkOwnStore(env, source.object_store, id).spec,
-    ),
+    object_store: forkSpec(ctx.repo, source.object_store, new PlatformStore(env, id).spec),
     parent: { repo: ctx.repo, version: source.version },
     policy: args.policy ?? { required_checks: [], approvals: 1 },
     visibility,
@@ -75,20 +64,12 @@ export async function forkRepository(ctx: RepoContext, args: Json) {
     commits += page.commits.length;
     after = page.next;
   } while (after);
-  // After the export: every commit it named as held by the parent's Artifacts store is in
-  // an Artifacts fork of that store, whose branches lease the fork's first projections.
-  const store = await forkStore(env, source.object_store, id);
-  const held = store.inherited ? source.projections : [];
-  await platform({
-    op: 'repo_fork_refs',
-    refs: source.refs,
-    projections: Object.fromEntries(held.map((p: Json) => [p.refname, p.projected_commit])),
-  });
+  await platform({ op: 'repo_fork_refs', refs: source.refs });
   await caller(env, ctx.repo, { _system: 'fork' })({ op: 'repo_fork_register', fork: id });
   await shardOutboxes(env, id);
   await listRepository(env, id, auth._session.workspace, name, visibility);
   await markFork(env, auth._session.workspace, id);
-  await Promise.all([dispatchProjection(env, id), refreshHead(env, id)]);
+  await refreshHead(env, id);
   await auditRepo(env, id);
   return {
     id,

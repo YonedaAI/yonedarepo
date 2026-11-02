@@ -34,6 +34,14 @@ export type Fresh = {
   deepen_relative: boolean;
 };
 
+/** What a clone of `wants` and nothing else asks for. */
+export const wholeClone = (wants: string[]): Fresh => ({
+  wants,
+  omit_blobs: false,
+  depth: null,
+  deepen_relative: false,
+});
+
 export const packCacheOn = (env: Env) => env.PACK_CACHE === 'on';
 export const packsPrefix = (repo: string) => `derived/v1/${repo}/packs/v2/`;
 const recentKey = (repo: string) => `${packsPrefix(repo)}recent`;
@@ -59,8 +67,30 @@ export async function packKey(repo: string, fresh: Fresh) {
 export const storedPack = (env: Env, key: string) => env.OBJECTS.get(key);
 
 /** A stored pack's entry in the repository's recent list: built by a job for main's
- * `tip` (deleted once a later tip's are built), or stored by a clone (no tip). */
-type Kept = { key: string; tip?: string };
+ * `tip` (deleted once a later tip's are built), stored by a clone (no tip), or the `seed` an
+ * import left, which stays. */
+type Kept = { key: string; tip?: string; seed?: boolean };
+
+const seedKey = (repo: string) => `${packsPrefix(repo)}seed.json`;
+
+/** The pack an import stored and what it was the clone of: what a pack build starts from
+ * (`seedSource`), so that only what came after it travels through the Worker. */
+export type Seed = { key: string; tips: string[] };
+
+/** Marks the stored pack at `key`, the clone of `tips`, as `repo`'s seed. */
+export async function keepSeed(env: Env, repo: string, key: string, tips: string[]) {
+  await env.OBJECTS.put(seedKey(repo), JSON.stringify({ key, tips } satisfies Seed));
+  const listed = await env.OBJECTS.get(recentKey(repo));
+  const recent = listed ? (await listed.json<(Kept | string)[]>()).map(entry) : [];
+  const others = recent.filter((k) => k.key !== key);
+  await env.OBJECTS.put(recentKey(repo), JSON.stringify([{ key, seed: true }, ...others]));
+}
+
+/** `repo`'s seed, if it has one. */
+export async function seedOf(env: Env, repo: string): Promise<Seed | null> {
+  const stored = await env.OBJECTS.get(seedKey(repo));
+  return stored ? stored.json<Seed>() : null;
+}
 
 /** Stores a pack as it streams (`R2Parts`), keeping it only when worth it, and the most
  * recent packs of the repository. */
@@ -115,7 +145,8 @@ export class PackWriter {
     const recent = listed ? (await listed.json<(Kept | string)[]>()).map(entry) : [];
     const all = [{ key: this.key, tip: this.tip }, ...recent.filter((k) => k.key !== this.key)];
     const superseded = (k: Kept) => this.tip !== undefined && k.tip && k.tip !== this.tip;
-    const kept = all.filter((k) => !superseded(k)).slice(0, KEPT);
+    const seeds = all.filter((k) => k.seed);
+    const kept = [...seeds, ...all.filter((k) => !k.seed && !superseded(k)).slice(0, KEPT)];
     await this.env.OBJECTS.put(recentKey(this.repo), JSON.stringify(kept));
     const evicted = all
       .filter((k) => !kept.includes(k) && k.key.startsWith(packsPrefix(this.repo)))

@@ -67,7 +67,6 @@ export function undoSteps(ctx) {
       const during = await snapshot(ctx, s.repo);
       const prefix = `platform/v1/${s.repo.id}/`;
       assert.equal(during.r2[prefix].keys, s.copies.r2[prefix].keys, 'R2 keeps every object through the window');
-      if (s.copies.artifacts) assert.equal(during.artifacts.exists, s.copies.artifacts.exists, 'the mirror stays');
       assert.equal(during.object.state, 'tombstone', 'the object is a tombstone');
       s.objectBefore = during.object;
       Object.assign(m, { r2_keys_kept: during.r2[prefix].keys, purge_at: s.entry.purge_at });

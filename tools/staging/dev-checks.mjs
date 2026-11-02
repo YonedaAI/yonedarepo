@@ -77,16 +77,6 @@ const script = `${spec.prefix}-platform`;
 const cloudflareEnv = { ...process.env, CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID: spec.account_id, WRANGLER_SEND_METRICS: 'false' };
 const wranglerBin = join(root, 'node_modules/.bin/wrangler');
 
-/** Wrangler's answer, in full; its token stays in the child's environment. */
-const wrangler = (args) =>
-  new Promise((done) => {
-    const child = spawn(wranglerBin, args, { cwd: root, env: cloudflareEnv });
-    const [stdout, stderr] = [[], []];
-    child.stdout.on('data', (d) => stdout.push(d));
-    child.stderr.on('data', (d) => stderr.push(d));
-    child.on('close', (status) => done({ status, stdout: Buffer.concat(stdout).toString(), stderr: Buffer.concat(stderr).toString() }));
-  });
-
 const tails = new Set();
 /** A tail of the platform Worker filtered to `repo`, kept as evidence. */
 async function tail(repo) {
@@ -150,7 +140,6 @@ const cf = cloudflare({
   database: /"database_id":\s*"([0-9a-f-]{36})"/.exec(config)?.[1],
   bucket: `${script}-objects`,
   script,
-  wrangler,
 });
 const ctx = {
   stamp,

@@ -473,7 +473,7 @@ describe('pricing', () => {
       expect(meterPrice(meter)).toBeGreaterThanOrEqual(meter.cost * MARGIN);
       expect(meter.basis.length).toBeGreaterThan(0);
     }
-    expect(METERS.filter((m) => m.id === 'check-minutes').map(meterPrice)).toEqual([0.0017]);
+    expect(METERS.filter((m) => m.id === 'check-minutes').map(meterPrice)).toEqual([0.0048]);
   });
 
   it('renders every rate, allowance, the credit and the preview label', () => {

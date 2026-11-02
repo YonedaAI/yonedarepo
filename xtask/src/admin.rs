@@ -5,7 +5,8 @@
 //! `erase_backfill`, `admin audit-set-aside` in `audit_set_aside`,
 //! `admin search-backfill` in `search_backfill`,
 //! `admin revenue-rebuild` in `revenue_rebuild`, `admin internal` in `internal_accounts`,
-//! `admin newsletter-export` in `newsletter_export`.
+//! `admin newsletter-export` in `newsletter_export`, `admin imports` and `admin reimport` in
+//! `reimport`.
 use crate::infra::inventory::{self, Deployable};
 use crate::infra::spec::{Env, Lock, Spec};
 use crate::process::Result;
@@ -21,8 +22,10 @@ pub(crate) async fn execute(args: &[String]) -> Result<()> {
         Some("revenue-rebuild") => crate::revenue_rebuild::execute(args).await,
         Some("internal") => crate::internal_accounts::execute(args).await,
         Some("newsletter-export") => crate::newsletter_export::execute(args).await,
+        Some("imports") => crate::reimport::list(args).await,
+        Some("reimport") => crate::reimport::execute(args).await,
         _ => Err(
-            "cargo xtask admin backfill-accounts|audit-set-aside|erase-backfill|search-backfill|revenue-rebuild|internal|newsletter-export --env dev|prod"
+            "cargo xtask admin backfill-accounts|audit-set-aside|erase-backfill|search-backfill|revenue-rebuild|internal|newsletter-export|imports|reimport --env dev|prod"
                 .into(),
         ),
     }

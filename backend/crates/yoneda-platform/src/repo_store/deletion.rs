@@ -44,16 +44,9 @@ pub fn allowed_when_deleted(op: StoreOp, c: &Value, settings: &Settings) -> bool
             | RepoOp::AuditSetAside,
         ) => !settings.erased(),
         StoreOp::Repo(RepoOp::Restore) => !settings.purge_started(),
-        StoreOp::Repo(RepoOp::Status)
-        | StoreOp::Quarantine(
-            Q::Claim
-            | Q::Purged
-            | Q::MirrorClaim
-            | Q::MirrorCopied
-            | Q::MirrorSwitch
-            | Q::MirrorRetired
-            | Q::MirrorFailed,
-        ) => c["_system"] == "quarantine" && !settings.purge_started(),
+        StoreOp::Repo(RepoOp::Status) | StoreOp::Quarantine(Q::Claim | Q::Purged) => {
+            c["_system"] == "quarantine" && !settings.purge_started()
+        }
         _ => false,
     }
 }
@@ -185,9 +178,8 @@ pub fn delete<S: SqlStore>(db: &S, c: &Value, actor: &Actor, settings: &Settings
     Ok(answer(false, hooks, now))
 }
 
-/// `repo_purge_target`: the store a deleted repository's objects live in (purger only),
-/// and an Artifacts mirror retired from it but not deleted yet (`retired_mirror`). Refused
-/// until the undo window has passed; the first to pass ends it (`undo`).
+/// `repo_purge_target`: the store a deleted repository's objects live in (purger only).
+/// Refused until the undo window has passed; the first to pass ends it (`undo`).
 pub fn purge_target<S: SqlStore>(
     db: &S,
     c: &Value,
@@ -202,12 +194,5 @@ pub fn purge_target<S: SqlStore>(
     }
     undo::require_due(c, settings)?;
     undo::start_purge(db, settings)?;
-    let retired = db.query(
-        "SELECT mirror FROM mirror_retirement WHERE state='switched'",
-        &[],
-    )?;
-    Ok(
-        json!({ "name": settings.name, "object_store": settings.object_store,
-               "retired_mirror": retired.first().map(|r| r["mirror"].clone()) }),
-    )
+    Ok(json!({ "name": settings.name, "object_store": settings.object_store }))
 }

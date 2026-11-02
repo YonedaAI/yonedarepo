@@ -1,5 +1,6 @@
 //! HTTP surface of the check executor inside the platform's check Container. One bearer
 //! secret per container start; the Worker is the only caller.
+use crate::clone_git::Credential;
 use crate::{check_runner, check_stream, err};
 use serde_json::json;
 use yoneda_core::Result;
@@ -14,6 +15,8 @@ pub(crate) fn router(secret: String) -> axum::Router {
         routing::{get, post},
     };
     let json_secret = secret.clone();
+    let credential = Credential::new(std::env::var("CLONE_CREDENTIAL").ok());
+    let clones = crate::clone_import::routes_holding(secret.clone(), credential, None);
     Router::new()
         .route("/health", get(|| async { Json(json!({"check_runner": 1})) }))
         .route(
@@ -50,10 +53,11 @@ pub(crate) fn router(secret: String) -> axum::Router {
                 }
             }),
         )
+        .merge(clones)
         .layer(axum::extract::DefaultBodyLimit::max(BODY_LIMIT))
 }
 
-fn authorized(secret: &str, headers: &axum::http::HeaderMap) -> bool {
+pub(crate) fn authorized(secret: &str, headers: &axum::http::HeaderMap) -> bool {
     !secret.is_empty()
         && headers.get("authorization").and_then(|v| v.to_str().ok())
             == Some(format!("Bearer {secret}").as_str())
@@ -90,7 +94,7 @@ async fn traced<T>(
     result
 }
 
-fn forbidden() -> axum::response::Response {
+pub(crate) fn forbidden() -> axum::response::Response {
     use axum::{Json, http::StatusCode, response::IntoResponse};
     (
         StatusCode::FORBIDDEN,
@@ -99,7 +103,7 @@ fn forbidden() -> axum::response::Response {
         .into_response()
 }
 
-fn answer(result: Result<serde_json::Value>) -> axum::response::Response {
+pub(crate) fn answer(result: Result<serde_json::Value>) -> axum::response::Response {
     use axum::{Json, http::StatusCode, response::IntoResponse};
     match result {
         Ok(result) => Json(result).into_response(),

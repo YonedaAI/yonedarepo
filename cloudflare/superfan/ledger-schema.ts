@@ -137,6 +137,10 @@ export const MIGRATIONS: string[] = [
      to_at INTEGER NOT NULL
    );
    CREATE INDEX queue_gaps_recent ON queue_gaps(to_at);`,
+  // The object push queue is gone: nothing evaluates its rules, so an open finding could never end.
+  `UPDATE findings SET status = 'resolved', resolved_at = last_seen
+     WHERE status = 'open' AND component = 'object_push_queue';
+   DELETE FROM baselines WHERE key LIKE 'object_push_queue/%';`,
 ];
 
 /** Applies pending migrations; safe to call on every Durable Object start. */

@@ -1,7 +1,7 @@
 // Bundles: with PUSH_BUNDLES=on a large stock Git push writes its objects as one R2 bundle
 // per batch (its commits and trees apart from its files), indexed by the authority, instead of one R2 object per Git object. Every
 // reader serves them (file reads, a v2 partial clone's lazy fetch, a thin follow-up push,
-// the Artifacts projection), compaction and vacuum leave them readable, a repository
+// a whole clone), compaction and vacuum leave them readable, a repository
 // delete purges them, and a push that dies between the bundle and its index leaves only
 // an unreferenced bundle.
 import { expect, it, vi } from 'vitest';
@@ -9,10 +9,9 @@ import { platformJob } from '../../cloudflare/worker/platform-entrypoint';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { isolateLocations, platformCall } from '../../cloudflare/worker/repo-bundles';
 import { compute } from '../../cloudflare/worker/repo-compute';
-import { projectObjects, projectRefs } from '../../cloudflare/worker/repo-projection';
 import { isolateTrees } from '../../cloudflare/worker/repo-tree-memo';
 import type { Env } from '../../cloudflare/worker/types';
-import { api, artifacts, author, bindings, countingOps, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, bindings, countingOps, drainObjects, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -135,20 +134,18 @@ it('writes a large push as bundles (commits and trees, then files) and serves th
   heads.mockRestore();
   expect((await api(`/repos/${repo}/blob?path=f0300.txt`, { cookie }, {}, on)).body.content).toBe('added\n');
 
-  // The Artifacts projection reads both commits' objects from the bundles: in a fresh
-  // consumer isolate, located in bulk because the repository's status says it holds bundles.
+  // A whole clone reads both commits' objects from the bundles: in a fresh isolate, located
+  // in bulk because the repository's status says it holds bundles. Every object of the three
+  // commits: the seed's commit, tree and file, then two of each, 300 files and one more.
+  await drainObjects(on);
   isolateLocations.clear();
-  const { env: consumer, take } = countingOps(on);
-  for (const message of queued.splice(0)) {
-    if (message.kind === 'platform_objects') await projectObjects(consumer, message.repo_id);
-    if (message.kind === 'platform_project') await projectRefs(consumer, message);
-  }
-  // (Without the status, each 64 objects that missed R2 would cost a staged read: 5 here.)
+  const { env: reader, take } = countingOps(on);
+  expect(await fetchV2(reader, repo, token, [`want ${next.commit.id}`, 'done'])).toBe(308);
+  // A call per round of the walk and the pack, never per object. (Without the status, each 64
+  // objects that missed R2 would cost a staged read: 5 here.)
   const ops = take();
-  expect(ops.repo_bundle_locate).toBe(1);
+  expect(ops.repo_bundle_locate).toBeLessThanOrEqual(10);
   expect(ops.repo_staged_objects ?? 0).toBeLessThanOrEqual(1);
-  const held = artifacts.get(`yr-${repo}`);
-  for (const id of [commit.id, tree.id, blobs[299].id, next.commit.id, added.id]) expect(held?.has(id), id).toBe(true);
 });
 
 it('reads a bundled file in a fresh isolate through the staged read, with no locate call', async () => {
@@ -220,12 +217,11 @@ it('leaves only an unreferenced bundle when a push dies before or while indexing
 });
 
 it('purges a deleted repository bundles with the rest of its objects', async () => {
-  const local = { ...on, PLATFORM_OBJECT_STORE: 'r2' } as unknown as Env;
-  const { repo, cookie } = await bundledPush('bundle_delete', local);
+  const { repo, cookie } = await bundledPush('bundle_delete');
   expect(await bundleKeys(repo)).toHaveLength(2);
-  expect((await api(`/repos/${repo}?confirm=bundle_delete`, { cookie }, { method: 'DELETE' }, local)).body).toEqual({ deleted: true });
+  expect((await api(`/repos/${repo}?confirm=bundle_delete`, { cookie }, { method: 'DELETE' }, on)).body).toEqual({ deleted: true });
   const purge = queued.find((m) => m.kind === 'platform_purge' && m.repo_id === repo);
-  await platformJob(local, { body: purge, attempts: 1, ack: () => {}, retry: () => {} } as unknown as Message<any>);
+  await platformJob(on, { body: purge, attempts: 1, ack: () => {}, retry: () => {} } as unknown as Message<any>);
   expect(await bundleKeys(repo)).toEqual([]);
   expect((await bindings.OBJECTS.list({ prefix: `platform/v1/${repo}/` })).objects).toEqual([]);
 });

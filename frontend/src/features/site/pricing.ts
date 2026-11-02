@@ -6,9 +6,7 @@
 // - Containers (https://developers.cloudflare.com/containers/pricing/): memory
 //   $0.0000025 per GiB-second, CPU $0.000020 per vCPU-second (active use only), disk
 //   $0.00000007 per GB-second; egress $0.025/GB in North America and Europe ($0.04–0.05
-//   elsewhere). Checks run on `standard-1`: 1/2 vCPU, 4 GiB, 8 GB (cloudflare/wrangler.*-platform.jsonc).
-// - Artifacts (https://developers.cloudflare.com/artifacts/platform/pricing/): storage
-//   $0.50 per GB-month (billing begins 2026-11-12).
+//   elsewhere). Checks run on `standard-3`: 2 vCPU, 8 GiB, 16 GB (cloudflare/wrangler.*-platform.jsonc).
 // - R2 (https://developers.cloudflare.com/r2/pricing/): Standard storage $0.015 per GB-month;
 //   egress free.
 // - Durable Objects (https://developers.cloudflare.com/durable-objects/platform/pricing/):
@@ -30,7 +28,7 @@ import {
 /** Price = Cloudflare cost × MARGIN, rounded up by `roundUpClean`, unless `price` is set. */
 export const MARGIN = 1.3;
 
-const CHECK_INSTANCE = { vcpu: 0.5, memoryGiB: 4, diskGB: 8 }; // standard-1
+const CHECK_INSTANCE = { vcpu: 2, memoryGiB: 8, diskGB: 16 }; // standard-3
 const CONTAINER = { perGiBSecond: 0.0000025, perVcpuSecond: 0.00002, perGBSecond: 0.00000007 };
 
 export type Meter = {
@@ -62,7 +60,7 @@ export const METERS: Meter[] = [
       (CHECK_INSTANCE.memoryGiB * CONTAINER.perGiBSecond +
         CHECK_INSTANCE.vcpu * CONTAINER.perVcpuSecond +
         CHECK_INSTANCE.diskGB * CONTAINER.perGBSecond),
-    basis: 'Container compute list price: 1/2 vCPU, 4 GiB memory, 8 GB disk',
+    basis: 'Container compute list price: 2 vCPU, 8 GiB memory, 16 GB disk',
   },
   {
     id: 'git-storage',

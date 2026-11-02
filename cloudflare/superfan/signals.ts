@@ -66,18 +66,14 @@ function platformReports(s: Snapshot, baselines: Baselines, wide: boolean): Comp
       ...invocationSignals('api_worker', s, baselines),
       healthSignal(s.health, '/health must answer 200 as yonedarepo-platform'),
     ]),
-    // Commit and land both run inside the repository authority.
+    // Commit and land both run inside the repository authority. A retry is logged when the
+    // object store refuses a commit's pack and it is sent again.
     report('source_repository', s, [
       ...invocationSignals('source_repository', s, baselines),
       kills('source_repository', s),
-    ]),
-    // Retries are logged when Artifacts refuses a push (receive-pack busy) and it is resent.
-    report('object_push_queue', s, [
-      ...invocationSignals('object_push_queue', s, baselines),
-      kills('object_push_queue', s),
       threshold(
         'push_retries',
-        s.tail.object_push_queue?.pushRetries ?? 0,
+        s.tail.source_repository?.pushRetries ?? 0,
         'count',
         MAX_PUSH_RETRIES,
       ),

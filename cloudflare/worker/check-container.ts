@@ -1,6 +1,8 @@
 // The platform's check executor: the pinned runtime image started in `check-server`
 // mode. It receives files and argv from the Worker and returns evidence; it holds no
-// platform credentials and has no network, so a check cannot reach or alter the platform.
+// platform credentials and has no network, so a check cannot reach or alter the platform. One
+// other job runs on this image: an import's `git clone`, the only instance with the internet
+// (`repo-clone`), which runs no repository's code and is destroyed like a check's.
 
 import { Container } from '@cloudflare/containers';
 import { warned } from './log';
@@ -12,6 +14,7 @@ import {
   failCheckRun,
   withDeadline,
 } from './repo-checks';
+import { type CloneParams, CloneSession, type Stage } from './repo-clone';
 import { inScope, REQUEST_ID_HEADER } from './request-scope';
 import type { Env } from './types';
 
@@ -41,8 +44,15 @@ export type Started = { secret: string; startMs: number };
  * always frees it. So every path below ends in a kill.
  */
 
+/** A start beyond a check's: the internet, which no check is ever given, and what else the
+ * instance's environment holds. */
+export type StartExtras = { internet?: boolean; envVars?: Record<string, string> };
+
 /** Starts a fresh instance for one check; one that cannot start is killed. */
-export async function startCheck(instance: CheckInstance): Promise<Started> {
+export async function startCheck(
+  instance: CheckInstance,
+  extras: StartExtras = {},
+): Promise<Started> {
   const secret = crypto.randomUUID() + crypto.randomUUID();
   // Every run starts a fresh instance: this is its cold start, reported with the result.
   const starting = Date.now();
@@ -51,7 +61,8 @@ export async function startCheck(instance: CheckInstance): Promise<Started> {
       ports: [8080],
       startOptions: {
         entrypoint: ['/usr/local/bin/start-runtime', 'check-server'],
-        envVars: { CHECK_TOKEN: secret },
+        envVars: { CHECK_TOKEN: secret, ...extras.envVars },
+        enableInternet: extras.internet === true,
       },
       cancellationOptions: { portReadyTimeoutMS: 90_000 },
     });
@@ -94,6 +105,16 @@ export async function executeCheck(instance: CheckInstance, job: CheckJob, start
     await instance.destroy();
   }
 }
+
+/** A clone's session on `instance`: a fresh start with the internet, and a credential only
+ * in that start's environment. */
+export const cloneSession = (instance: CheckInstance, env: Env) =>
+  new CloneSession(instance, env, (credential) =>
+    startCheck(instance, {
+      internet: true,
+      envVars: credential ? { CLONE_CREDENTIAL: credential } : {},
+    }),
+  );
 
 /**
  * Starts a claimed run's check and returns once its container is up: the check runs on in
@@ -144,6 +165,17 @@ export class CheckContainer extends Container<Env> {
     return inScope(scope, () =>
       launchCheck(this, this.env, job, report, (work) => this.ctx.waitUntil(work)),
     );
+  }
+
+  #clone: CloneSession | null = null;
+
+  /** One step of a clone (`cloneRepository`'s Workflow calls this). An instance left idle
+   * between steps is killed below, and the steps start over. */
+  cloneStep(stage: Stage, params: CloneParams, credential?: string) {
+    const job = { repo_id: params.repo, job_id: 'clone', kind: 'clone' };
+    this.#clone ??= cloneSession(this, this.env);
+    const clone = this.#clone;
+    return inScope({ env: this.env, job }, () => clone.step(stage, params, credential));
   }
 
   /** An instance left idle (its caller vanished mid-run) is killed, not asked to stop. */

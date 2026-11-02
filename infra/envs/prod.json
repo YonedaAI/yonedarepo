@@ -119,7 +119,7 @@
       "file": "wrangler.prod-platform.jsonc",
       "notes": [
         "Production platform Worker (yonedarepo.com): the same source platform as dev's",
-        "(infra/envs/dev.json), with its own Durable Object namespaces, Artifacts namespace, R2, D1,",
+        "(infra/envs/dev.json), with its own Durable Object namespaces, R2, D1,",
         "queues, workflow, check containers and secrets. Browsers reach it through the front Worker's",
         "/api/v1 proxy (PLATFORM service binding); api.yonedarepo.com is its own hostname (Custom",
         "Domain plus the exact route);",
@@ -139,7 +139,7 @@
         "S3 key pair of an R2 API token with Object Read & Write on that bucket only. Without them LFS answers 501.",
         "Clone packs (platform-pack-builder.ts): one PackBuilder container per repository (cloudflare/pack-builder/Dockerfile,",
         "its own image: yoneda-pack-builder and stock Git), started for each pack-build job and destroyed after it.",
-        "No internet or credentials: it reaches the repository's Artifacts mirror and the platform's smart HTTP only",
+        "No internet or credentials: it reaches an import's stored pack and the platform's smart HTTP only",
         "through this Worker. basic: svelte's three packs (168,943 objects) peak at 386 MiB, 675 MiB rebuilding every delta.",
         "Git over SSH (platform-ssh-gateway.ts): one SshGateway container (cloudflare/ssh-gateway/Dockerfile,",
         "its own image, never the runtime's) runs yoneda-ssh-gateway, reaching the platform only through SELF.",
@@ -164,8 +164,6 @@
         "LAND_WHEN_CLEARED=on: what can clear a Landing queues a platform_land_check job, and a repository can turn on Land when cleared (repo-land-check.ts). Set it only once every Worker on the queue knows the job: deploy with it off first (docs/runbook.md).",
         "AGENT_SIGNUP=on: yoneda login --agent <name> signs an agent up through the device flow (worker/platform-tokens.ts). Off, a code asking for an agent is refused; agents already signed up keep working.",
         "NEWSLETTER=on opens the Flight log sign-up at /updates (worker/platform-newsletter.ts, D1 newsletter_subscribers). It needs the optional secret NEWSLETTER_KEY, which signs unsubscribe links: never change it while the list is in use. Unset, off or without the key: no form, nothing stored, nothing sent. privacy.md must list this data first (docs/runbook.md).",
-        "ASYNC_STORE=on: a create answers without Artifacts and a platform_store queue job creates the store (repo-store-create.ts). Set it only once every Worker on the queue knows the job: deploy with it off first (docs/runbook.md).",
-        "DIRECT_IMPORT=on (with FAST_IMPORT, PACK_CACHE and PUSH_BUNDLES) also fetches a public GitHub repository from the Worker when it is imported, and lands main from that pack beside Artifacts' own fetch (docs/direct-import.md).",
         "Admin pages (/api/v1/admin, platform-admin.ts): ADMIN_ACCOUNTS lists the operator accounts (comma separated; empty: only OWNER_TOKEN/Access). The sign-up notice goes to ADMIN_NOTIFY_EMAIL (empty: EMAIL_CONTACT). Credit grants and balances call the managed Worker's /admin/accounts/<account>/credit over MANAGED with MANAGED_ADMIN_TOKEN (optional secret, the managed Worker's own value; unset: grants are refused). MANAGED binds the managed Worker, which binds this one as PLATFORM: a fresh environment deploys this Worker once without MANAGED first.",
         "REQUEST_IDS=on puts the request id on every response and carries it to Durable Objects, queue jobs and containers (worker/request-scope.ts). Off, failure lines still carry it and nothing else changes. No order to deploy in: a message or request without it mints one.",
         "SPAN_SAMPLE=<N> keeps the Server-Timing phases of 1 request in N, and of every request over 5 seconds, as a request.spans log line and one SITE_EVENTS point, after the answer (worker/repo-span-sample.ts). off keeps none.",
@@ -221,7 +219,6 @@
           "run_worker_first": true
         },
         "vars": {
-          "ARTIFACTS_NAMESPACE": "{prefix}",
           "LAND_MODE": "batch",
           "BLOB_WRITE_THROUGH": "off",
           "ACCOUNT_SEARCH": "on",
@@ -242,7 +239,6 @@
           "SITE_EVENTS_DATASET": "yonedarepo_prod_site_events",
           "ADMIN_ACCOUNTS": "magnetonio",
           "ADMIN_BILLING": "on",
-          "ASYNC_STORE": "on",
           "LANDING_INSTRUMENTS": "on",
           "LAND_WHEN_CLEARED": "on",
           "AGENT_SIGNUP": "on",
@@ -257,8 +253,6 @@
           "LEGAL_HOLD": "on",
           "REPO_STORAGE_GUARD": "on",
           "REPO_SIZE_GUARD": "on",
-          "FAST_IMPORT": "on",
-          "DIRECT_IMPORT": "on",
           "PACK_CACHE": "on"
         },
         "secrets_store_secrets": [
@@ -271,13 +265,6 @@
             "binding": "RESEND_API_KEY",
             "store_id": "3d9115d4fe864c54a792bcb790a763e3",
             "secret_name": "Resend-Yoneda"
-          }
-        ],
-        "artifacts": [
-          {
-            "binding": "ARTIFACTS",
-            "namespace": "{prefix}",
-            "remote": true
           }
         ],
         "durable_objects": {
@@ -293,10 +280,6 @@
             {
               "name": "CHECK_RUNNERS",
               "class_name": "CheckContainer"
-            },
-            {
-              "name": "OBJECT_PUSHES",
-              "class_name": "ObjectPushQueue"
             },
             {
               "name": "COMMIT_SHARDS",
@@ -354,6 +337,12 @@
             "new_sqlite_classes": [
               "PackBuilder"
             ]
+          },
+          {
+            "tag": "v7",
+            "deleted_classes": [
+              "ObjectPushQueue"
+            ]
           }
         ],
         "containers": [
@@ -361,7 +350,7 @@
             "class_name": "CheckContainer",
             "image": "./containers/Dockerfile",
             "image_build_context": "..",
-            "instance_type": "standard-1",
+            "instance_type": "standard-3",
             "rollout_step_percentage": [
               100
             ],

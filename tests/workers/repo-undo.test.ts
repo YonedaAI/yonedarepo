@@ -16,11 +16,11 @@ import { caller } from '../../cloudflare/worker/repo-ops';
 import { quarantineJob } from '../../cloudflare/worker/repo-quarantine';
 import type { Env } from '../../cloudflare/worker/types';
 import { workspace } from '../../cloudflare/worker/workspace';
-import { api, author, bindings, drainObjects, fakeQueue, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, fakeQueue, bindings, drainObjects, failingOp, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
-const off = { ...scoped, PLATFORM_OBJECT_STORE: 'r2', ARTIFACTS: undefined, ADMIN_ACCOUNTS: 'undo_ops' } as unknown as Env;
+const off = { ...scoped, ADMIN_ACCOUNTS: 'undo_ops' } as unknown as Env;
 const on = { ...off, REPO_UNDO_DAYS: '30' } as unknown as Env;
 /** A window that has passed by the next line: the authority's clock is the real one. */
 const short = { ...off, REPO_UNDO_DAYS: '0.000001' } as unknown as Env;
@@ -141,7 +141,7 @@ it('restores with reads, clones, members and the original date back, tokens stil
   expect(await advertised.text()).toContain('refs/heads/main');
   expect((await api(`/repos/${id}/refs`, { token }, {}, on)).status).toBe(401);
   // Everything a deletion stopped is started again.
-  expect(queued.map((m) => m.kind)).toEqual(expect.arrayContaining(['platform_project', 'platform_objects', 'platform_hooks', 'platform_quarantine', 'platform_lfs_sweep']));
+  expect(queued.map((m) => m.kind)).toEqual(expect.arrayContaining(['platform_objects', 'platform_hooks', 'platform_quarantine', 'platform_lfs_sweep']));
   // The repository's name is held, so its readable path resolves.
   expect((await api('/resolve/undo_back/back', who, {}, on)).body.id).toBe(id);
 });
@@ -308,11 +308,7 @@ it('the sweep sends a due purge once, small batches at a time, and looks again m
 
 it('takes back a failed create at once, window or not', async () => {
   const who = { cookie: await signup('undo_back_out') };
-  const down = { ...on, PLATFORM_QUEUE: { ...fakeQueue, send: async (message: any) => {
-    if (message.kind === 'platform_project') throw new Error('internal error; reference = abc123');
-    return fakeQueue.send(message);
-  } } } as unknown as Env;
-  const refused = await api('/repos', who, { body: { name: 'failed', files: [file('a.txt', 'a\n')], author } }, down);
+  const refused = await api('/repos', who, { body: { name: 'failed', files: [file('a.txt', 'a\n')], author } }, failingOp(on, 'repo_import'));
   expect(refused.status).toBe(503);
   const [job] = purges();
   expect(job.job_id).toMatch(/^now-r/);

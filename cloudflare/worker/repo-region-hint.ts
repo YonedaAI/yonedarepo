@@ -43,7 +43,7 @@ function hinted(namespace: DurableObjectNamespace, hint: string): DurableObjectN
 /**
  * This create's bindings: the objects made for one repository start near `hint`, and its shards
  * start before the answer, so a request that follows cannot be the first `get` of one. The
- * object pushes stay out: they feed Artifacts, which no hint moves.
+ * object pushes stay out.
  */
 export function hintedEnv(env: Env, hint: string): Env {
   const namespaces: Partial<Env> = { SOURCE_REPOS: hinted(env.SOURCE_REPOS, hint) };

@@ -16,7 +16,7 @@ use yoneda_core::{
     Error, Result,
     git_object::{
         Commit, FileMode, ObjectId, ObjectKind, PackReader, TreeChange, TreeEntry, TreeLookup,
-        Walk, decode_tree, decode_tree_loose, diff_trees_in,
+        Walk, decode_tree, diff_trees_in,
     },
     txlog::{PathOp, PathTouch},
 };
@@ -76,20 +76,6 @@ impl Verifier {
     }
     pub fn add_present(&mut self, id: ObjectId) {
         self.present.insert(id);
-    }
-
-    /// A lookup of `pack`'s trees as history already in Git, read as Git reads them, decoded
-    /// on demand (an import's walk: `import_commits`).
-    pub(crate) fn history_trees<'a>(
-        &'a mut self,
-        pack: &'a mut PackReader,
-    ) -> impl TreeLookup + 'a {
-        PackTrees {
-            supplied: &self.trees,
-            pack,
-            decoded: &mut self.decoded,
-            decode: decode_tree_loose,
-        }
     }
 
     pub fn verify(&mut self, pack: &mut PackReader, tips: &[ObjectId]) -> Result<Step> {

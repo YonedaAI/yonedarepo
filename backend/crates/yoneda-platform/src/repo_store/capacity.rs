@@ -96,8 +96,6 @@ pub(super) fn refuses(op: StoreOp) -> bool {
                 | R::RecordCommit
                 | R::RecordPushed
                 | R::Import
-                | R::RecordImported
-                | R::RecordImportedBatch
                 | R::TagCreate
                 | R::ChangeCreate
                 | R::ReleaseCreate

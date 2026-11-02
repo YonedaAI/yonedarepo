@@ -1,8 +1,8 @@
 //! The builds, with stock Git in a bare repository the container throws away.
 //!
-//! `fetch` takes the repository's history from its mirror (the Artifacts remote, through the
-//! Worker) and anything the mirror lacks of what is wanted from the platform's own smart
-//! HTTP (through the Worker too; with the mirror's refs as haves, only the lag travels), then
+//! `fetch` takes the repository's history from the pack its import stored (`mirror`, answered
+//! by the Worker) and anything that lacks of what is wanted from the platform's own smart
+//! HTTP (through the Worker too; with its tips as haves, only what came after travels), then
 //! counts the objects the wants reach. `pack` writes one clone's pack: `git rev-list
 //! --objects` lists what a fetch with no haves gets (with `--filter=blob:none` for a partial
 //! clone, `--no-walk` for depth 1: each wanted commit with its whole tree) and `git

@@ -1,10 +1,9 @@
 // N5: derived data recomputes only changed partitions; blame, path history and renames
 // come from the log and objects; bisect finds an injected bad commit using platform
-// check runs; vacuum releases only safe hidden refs.
+// check runs.
 import { expect, it } from 'vitest';
 import { executeCheckRun } from '../../cloudflare/worker/repo-checks';
-import { projectRefs } from '../../cloudflare/worker/repo-projection';
-import { api, author, executed, file, pushes, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, executed, file, queued, scoped, signup, usePlatformFixture } from './repo-fixture';
 
 usePlatformFixture();
 
@@ -121,21 +120,6 @@ it('bisects to the first bad commit through platform check runs', async () => {
   }
   expect(tested.size).toBeLessThanOrEqual(3);
   expect(tested.has(commits[3])).toBe(true);
-});
-
-it('vacuums only hidden refs that are safe to release', async () => {
-  const policy = { required_checks: [], approvals: 0 };
-  // Too many objects to stage: pushed under its own hidden ref before it was accepted.
-  const many = Array.from({ length: 300 }, (_, i) => file(`bulk/${i}.txt`, `${i}\n`));
-  const { owner, repo, root } = await setup('vacuumer', policy, [file('a.txt', 'a\n'), ...many]);
-  const unprojected = await api(`${repo}/vacuum`, owner, { body: {} });
-  expect(unprojected.body).toMatchObject({ covered: 0, released: 0 });
-  for (const message of queued.splice(0).filter((m) => m.kind === 'platform_project')) await projectRefs(scoped, message);
-  const swept = await api(`${repo}/vacuum`, owner, { body: {} });
-  expect(swept.body).toMatchObject({ covered: 1, released: 1, failed: [] });
-  expect(pushes.at(-1)).toBe(`${root} ${'0'.repeat(40)} refs/yoneda/c/${root}`);
-  expect((await api(`${repo}/vacuum`, owner, { body: {} })).body.released).toBe(0);
-  expect((await api(`${repo}/blob?path=a.txt`, owner)).body.content).toBe('a\n');
 });
 
 it('pre-builds search segments after landing so queries find them ready', async () => {

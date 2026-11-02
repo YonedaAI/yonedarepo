@@ -50,7 +50,6 @@ pub(crate) mod platform_model_check;
 mod platform_model_verdict;
 mod platform_narrative;
 mod platform_objects;
-pub mod platform_pack_stream;
 mod platform_project;
 mod platform_push;
 pub mod platform_push_reads;

@@ -242,7 +242,7 @@ const fakeQueue = () => {
   };
 };
 const scopeOn = { env: { REQUEST_IDS: 'on' }, req: new Request('https://x', { headers: { 'cf-ray': '8f1c2d3e4a5b6c7d-SJC' } }) };
-const body = { v: 1, kind: 'platform_project', repo_id: REPO, job_id: 'refs' } as Envelope;
+const body = { v: 1, kind: 'platform_objects', repo_id: REPO, job_id: 'objects' } as Envelope;
 
 it('stamps a queue message only while REQUEST_IDS is on, sends and batches alike', async () => {
   const queue = fakeQueue();
@@ -262,18 +262,18 @@ const failingJob = (message: object) => {
 };
 it('a queue job logs the id its message carries, as a Worker from before or after a deploy reads it', async () => {
   const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
-  const job = { v: 1, kind: 'platform_project', repo_id: REPO, job_id: 'refs', request_id: '8f1c2d3e4a5b6c7d-SJC', later_field: { any: 'shape' } };
+  const job = { v: 1, kind: 'platform_objects', repo_id: REPO, job_id: 'objects', request_id: '8f1c2d3e4a5b6c7d-SJC', later_field: { any: 'shape' } };
   const { batch, retry } = failingJob(job);
   await entry(broken('the queue job fell over')).queue(batch);
   expect(retry).toHaveBeenCalledOnce();
   expect(lines(errors)).toContainEqual(
-    expect.objectContaining({ event: 'job.failed', request_id: '8f1c2d3e4a5b6c7d-SJC', repo: REPO, job: 'refs', kind: 'platform_project', error: 'the queue job fell over' }),
+    expect.objectContaining({ event: 'job.failed', request_id: '8f1c2d3e4a5b6c7d-SJC', repo: REPO, job: 'objects', kind: 'platform_objects', error: 'the queue job fell over' }),
   );
 });
 
 it('a message from before the field still runs, under an id of its own', async () => {
   const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
-  const { batch, retry } = failingJob({ v: 1, kind: 'platform_project', repo_id: REPO, job_id: 'refs' });
+  const { batch, retry } = failingJob({ v: 1, kind: 'platform_objects', repo_id: REPO, job_id: 'objects' });
   await entry(broken('the queue job fell over')).queue(batch);
   expect(retry).toHaveBeenCalledOnce();
   const [line] = lines(errors).filter((l) => l.event === 'job.failed');

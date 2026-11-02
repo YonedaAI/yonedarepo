@@ -1,17 +1,15 @@
-// A Git client of a public GitHub repository, for an import that fetches it itself
-// (repo-import-direct): protocol version 2 over smart HTTP, its head (`ls-refs`, so a large
-// repository's pull refs never travel) and the whole pack of that one commit, streamed.
+// What an import asks of a public GitHub repository before it starts a container
+// (repo-clone): protocol version 2 over smart HTTP, its head (`ls-refs`, so a large
+// repository's pull refs never travel).
 //
 // The URL comes from a user, so this speaks to github.com and nothing else: `githubRemote`
 // takes only a plain repository address and builds the URL again from its two names, every
-// request refuses a redirect (Git follows one; a renamed repository takes the mirror's path),
-// no credential or cookie is ever sent, and the caller bounds the bytes and the time. Pack
-// bytes are untrusted: the session hashes every object and checks the trailer.
-import { bandOne, type ShallowLines } from './repo-mirror-git';
+// request refuses a redirect, no credential or cookie is ever sent, and the caller bounds the
+// time.
 
 const GITHUB =
   /^https:\/\/github\.com\/([A-Za-z0-9][A-Za-z0-9-]{0,38})\/([A-Za-z0-9._-]{1,100})\/?$/;
-/** A ref name safe in a pkt-line, stricter than Git's: anything else takes the mirror's path. */
+/** A ref name safe in a pkt-line, stricter than Git's. */
 const BRANCH = /^[A-Za-z0-9._][A-Za-z0-9._/-]{0,199}$/;
 /** What `ls-refs` for a head may answer: more is many branches sharing a name's start. */
 const REFS_BYTES = 64 * 1024;
@@ -88,18 +86,4 @@ export async function remoteHead(remote: string, branch: string | undefined, sig
     if (named) return { head, branch: named };
   }
   throw new Error(`The remote has no ${prefix}`);
-}
-
-/** The whole pack of `head`, as it arrives: no thin pack, so every delta's base is in it. A
- * body cut short fails, here or at the pack's trailer. */
-export async function* remotePack(
-  remote: string,
-  head: string,
-  signal: AbortSignal,
-): AsyncGenerator<Uint8Array> {
-  const body =
-    `${pkt('command=fetch\n')}${pkt('object-format=sha1')}0001${pkt('ofs-delta\n')}` +
-    `${pkt('no-progress\n')}${pkt(`want ${head}\n`)}${pkt('done\n')}0000`;
-  const none: ShallowLines = { shallow: [], unshallow: [] };
-  yield* bandOne(await asked(remote, body, signal), none, false);
 }

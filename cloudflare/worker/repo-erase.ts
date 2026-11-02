@@ -8,7 +8,7 @@
 // repository's audit events to its org's log, erase or no erase, before anything goes.
 //
 // Other per-repository objects hold nothing to erase: PackBuilder's storage is its
-// container's lifecycle state, CheckContainer's the same, and ObjectPushQueue keeps none.
+// container's lifecycle state, and CheckContainer's the same.
 
 import { durableJson } from './durable';
 import { log } from './log';
@@ -45,8 +45,7 @@ function progress(repo: string, phase: string, details: Json = {}) {
 
 type Erasable = { erase(): Promise<void> };
 
-/** Every commit shard and combiner of `repo`. A combiner is named by its ref as the caller
- * spelled it, so each ref is cleared both ways. */
+/** Every commit shard of `repo`, sealed for good, then its combiners. */
 async function clearObjects(env: Env, repo: string, refs: string[]) {
   const shards = Array.from({ length: SHARDS }, (_, shard) => shard);
   const _hold = await currentHold(env, repo, caller(env, repo, { _system: 'purge' }));
@@ -54,6 +53,12 @@ async function clearObjects(env: Env, repo: string, refs: string[]) {
     await inBatches(shards, WIDTH, (shard) =>
       shardCall(env, repo, shard, { op: 'store_erase', _hold }),
     );
+  await clearCombiners(env, repo, refs);
+}
+
+/** Every combiner of `repo`, which may be used again. A combiner is named by its ref as the
+ * caller spelled it, so each ref is cleared both ways. */
+export async function clearCombiners(env: Env, repo: string, refs: string[]) {
   const combiners = env.LAND_COMBINERS;
   if (!combiners) return;
   const names = new Set([`${repo}#head`, `${repo}#projector`]);

@@ -7,7 +7,6 @@
 //! and which objects a fetch sends are decided by the platform.
 mod protocol;
 mod protocol_v2;
-mod push_batch;
 mod smart_http;
 
 pub use protocol::{
@@ -18,7 +17,6 @@ pub use protocol_v2::{
     DELIM, FetchArgs, FetchHead, INFINITE_DEPTH, LsRefs, V2Command, ls_refs_answer,
     v2_capabilities, v2_request,
 };
-pub use push_batch::{combine_receive_pack_requests, split_receive_pack_report};
 pub use smart_http::{
     CommandList, FLUSH, RefCommand, UploadRequest, advertisement, command_list, pkt_line,
     report_status, side_band, upload_request,

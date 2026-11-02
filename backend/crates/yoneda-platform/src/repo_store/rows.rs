@@ -160,10 +160,8 @@ pub fn commit_row<S: SqlStore>(db: &S, id: &ObjectId) -> Result<Option<CommitRow
 }
 
 pub fn recorded<S: SqlStore>(db: &S, id: &ObjectId) -> Result<CommitRow> {
-    match commit_row(db, id)? {
-        Some(row) => Ok(row),
-        None => Err(super::history_fill::not_recorded(db, id)?),
-    }
+    commit_row(db, id)?
+        .ok_or_else(|| Error::new("NOT_FOUND", format!("Commit {id} is not recorded")))
 }
 
 pub fn touches<S: SqlStore>(db: &S, id: &ObjectId) -> Result<Vec<PathTouch>> {

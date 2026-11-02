@@ -49,7 +49,7 @@ fn undelivered<S: SqlStore>(db: &S) -> Result<Vec<Value>> {
 }
 
 /// The refs that may have a combiner: branches, and every ref ever queued for landing.
-fn combiner_refs<S: SqlStore>(db: &S) -> Result<Vec<Value>> {
+pub(super) fn combiner_refs<S: SqlStore>(db: &S) -> Result<Vec<Value>> {
     Ok(db
         .query(
             &format!(

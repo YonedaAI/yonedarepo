@@ -696,7 +696,6 @@ fn declared_names_cover_bindings_and_resources() {
         (Kind::Queue, "yonedarepo-prod-platform-dead-letter"),
         (Kind::D1, "yonedarepo-prod-platform-index"),
         (Kind::R2, "yonedarepo-prod-platform-objects"),
-        (Kind::Artifacts, "yonedarepo-prod"),
     ] {
         assert!(names.contains(&(kind, name.to_owned())), "{name}");
     }

@@ -7,6 +7,13 @@ mod check_server;
 pub mod check_stream;
 #[cfg(all(test, unix))]
 mod check_stream_tests;
+mod clone_git;
+mod clone_history;
+mod clone_import;
+#[cfg(all(test, unix))]
+mod clone_import_tests;
+mod clone_read;
+mod clone_remote;
 mod process_privileges;
 mod telemetry;
 pub use check_server::serve_checks;

@@ -10,7 +10,7 @@ import { ChangeView } from './ChangeView';
 import { CommitView } from './CommitView';
 import { ForkButton } from './ForkButton';
 import { HistoryTab } from './HistoryTab';
-import { HistoryImportStatus, HistoryStoppedStatus, ImportStatus } from './ImportStatus';
+import { ImportStatus } from './ImportStatus';
 import { RepoHoldBanner } from './LegalHold';
 import { PublicBadge } from './PublicBadge';
 import { ShowEmailsContext } from './people';
@@ -31,7 +31,7 @@ import { SessionView } from './SessionView';
 import { Failure } from './SourceStatus';
 import { StatusChips } from './StatusChips';
 import { formatSourceRoute, type SourceRoute, tabRoute } from './sourceRoute';
-import { useHistoryFill, useImportProgress } from './useImportProgress';
+import { useImportProgress } from './useImportProgress';
 import { useSource } from './useSource';
 
 type RepoRoute = Extract<SourceRoute, { repo: string }>;
@@ -85,9 +85,7 @@ export function RepoPage({
   const data = status.data;
   const access = repoAccess(data?.viewer, authenticated);
   const owner = access.settings;
-  const drift = data?.projections?.filter((p) => p.status === 'drift') ?? [];
   const progress = useImportProgress(repo, data?.refs, status.reload);
-  const history = useHistoryFill(repo, data?.history_import, status.reload);
   // biome-ignore lint/correctness/useExhaustiveDependencies: once per transition, not per render of the caller.
   useEffect(() => {
     if (missing) onMissing();
@@ -161,17 +159,8 @@ export function RepoPage({
             )}
           </div>
           {data && <RepoHoldBanner repo={repo} />}
-          {drift.map((p) => (
-            <p key={p.refname} role="alert" className="source-error">
-              {p.refname.replace(/^refs\/heads\//, '')} stopped updating for Git clients.
-            </p>
-          ))}
           {status.error && (
             <Failure error={status.error} what="this repository" onRetry={status.reload} />
-          )}
-          {!status.error && history && <HistoryImportStatus progress={history} />}
-          {!status.error && data?.history_stopped && (
-            <HistoryStoppedStatus stopped={data.history_stopped} />
           )}
           {/* Settings stay open: deleting the repository is how a failed import is tried again. */}
           {!status.error && progress.phase !== 'none' && route.view !== 'repo-settings' && (

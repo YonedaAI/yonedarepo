@@ -68,7 +68,8 @@ pub fn supplied_trees(c: &Value) -> Result<HashMap<ObjectId, Vec<TreeEntry>>> {
 /// either way checked against `id`.
 pub fn supplied_tree(id: &ObjectId, tree: &Value) -> Result<Vec<TreeEntry>> {
     let entries = match tree.get("data_b64").and_then(Value::as_str) {
-        Some(data) => decode_tree(
+        // History is read as Git reads it: what a push refuses of a new tree it may hold.
+        Some(data) => decode_tree_loose(
             &STANDARD
                 .decode(data)
                 .map_err(|_| bad("Tree data is not base64"))?,
@@ -100,7 +101,7 @@ pub fn supplied_tree(id: &ObjectId, tree: &Value) -> Result<Vec<TreeEntry>> {
 pub fn object_json(id: ObjectId, kind: ObjectKind, data: &[u8]) -> Result<Value> {
     Ok(match kind {
         ObjectKind::Tree => {
-            json!({"id": id, "kind": "tree", "entries": entries_json(&decode_tree(data)?)})
+            json!({"id": id, "kind": "tree", "entries": entries_json(&decode_tree_loose(data)?)})
         }
         ObjectKind::Commit => {
             let commit = Commit::decode(data)?;

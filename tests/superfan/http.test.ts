@@ -51,7 +51,7 @@ describe('superfan read endpoint', () => {
     const status = await (await get(e, '/status', 'fixture-read-token')).json();
     expect(status).toMatchObject({
       watching: 'yonedarepo-dev-platform',
-      tail_events_last_hour: 400,
+      tail_events_last_hour: 350,
       analytics: 'cloudflare',
       open_findings: 1,
     });
@@ -115,6 +115,38 @@ describe('superfan ledger schema', () => {
       expect(sql.exec('SELECT COUNT(*) AS n FROM tail_marks').one().n).toBe(0);
       expect(sql.exec('SELECT COUNT(*) AS n FROM urgent_notices').one().n).toBe(0);
       expect(sql.exec('SELECT COUNT(*) AS n FROM beats').one().n).toBe(0);
+    });
+  });
+
+  it('ends an open finding of the removed push queue, and no other', async () => {
+    const stub = env.LEDGER.get(
+      env.LEDGER.idFromName('schema-upgrade-push-queue'),
+    ) as DurableObjectStub<SuperfanLedger>;
+    await runInDurableObject(stub, (_instance, state) => {
+      const sql = state.storage.sql;
+      migrate(sql);
+      sql.exec('UPDATE schema_version SET version = ?', MIGRATIONS.length - 1);
+      const open = (key: string, component: string) =>
+        sql.exec(
+          "INSERT INTO findings (dedup_key, component, kind, status, signals, summary, narrative_status, first_seen, last_seen) VALUES (?, ?, 'anomaly', 'open', '[]', 's', 'pending', 1, 7)",
+          key,
+          component,
+        );
+      open('object_push_queue:push_retries', 'object_push_queue');
+      open('source_repository:error_rate', 'source_repository');
+      sql.exec(
+        "INSERT INTO baselines (key, value, samples, updated_at) VALUES ('object_push_queue/p95_wall_ms', 1, 1, 1), ('api_worker/p95_wall_ms', 1, 1, 1)",
+      );
+      expect(migrate(sql)).toBe(MIGRATIONS.length);
+      expect(
+        sql.exec('SELECT component, status, resolved_at FROM findings ORDER BY id').toArray(),
+      ).toEqual([
+        { component: 'object_push_queue', status: 'resolved', resolved_at: 7 },
+        { component: 'source_repository', status: 'open', resolved_at: null },
+      ]);
+      expect(sql.exec('SELECT key FROM baselines').toArray()).toEqual([
+        { key: 'api_worker/p95_wall_ms' },
+      ]);
     });
   });
 

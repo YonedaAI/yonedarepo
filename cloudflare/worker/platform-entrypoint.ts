@@ -23,7 +23,6 @@ import { sshFrontDoor, sshKeepAlive } from './platform-ssh-gateway';
 import { visitorSalt } from './platform-visitor-salt';
 import { welcomeJob } from './platform-welcome-email';
 import { ERASE, purgeJob } from './repo-admin';
-import { STORE_JOB } from './repo-artifacts-store';
 import { executeCheckRun } from './repo-checks';
 import { CLASSIFY, classifyJob } from './repo-classify';
 import { COMPACT_JOB, compactionJob, sweepCompaction } from './repo-compaction';
@@ -35,10 +34,9 @@ import { LAND_CHECK } from './repo-land-check';
 import { landCheckJob } from './repo-land-cleared';
 import { lfsSweepJob } from './repo-lfs-sweep';
 import { PACK_BUILD, packBuildJob } from './repo-pack-jobs';
-import { projectObjects, projectRefs } from './repo-projection';
+import { projectObjects } from './repo-projection';
 import { quarantineJob } from './repo-quarantine';
 import { SUMMARY_JOB, summaryJob } from './repo-search-summary';
-import { storeAwaited, storeJob } from './repo-store-create';
 import { inScope } from './request-scope';
 import type { Env, Envelope } from './types';
 
@@ -65,15 +63,6 @@ export async function platformJob(
   const envelope = message.body;
   if (envelope.kind === 'platform_check') {
     await executeCheckRun(env, envelope);
-    message.ack();
-  } else if (envelope.kind === 'platform_project') {
-    const outcome = await oneAtATime(() =>
-      storeAwaited(() => projectRefs(env, envelope, message.attempts)),
-    );
-    if (outcome.retry) message.retry({ delaySeconds: outcome.retry });
-    else message.ack();
-  } else if (envelope.kind === STORE_JOB) {
-    await storeJob(env, envelope);
     message.ack();
   } else if (envelope.kind === 'platform_objects') {
     await oneAtATime(() => projectObjects(env, envelope.repo_id, envelope.job_id));

@@ -6,9 +6,7 @@
     "nodejs_compat"
   ],
   "vars": {
-    "OWNER_TOKEN": "local-test-owner",
-    "ARTIFACTS_NAMESPACE": "yoneda-test",
-    "PLATFORM_OBJECT_STORE": "r2"
+    "OWNER_TOKEN": "local-test-owner"
   },
   "services": [
     {
@@ -27,10 +25,6 @@
         "class_name": "SourceRepository"
       },
       {
-        "name": "OBJECT_PUSHES",
-        "class_name": "ObjectPushQueue"
-      },
-      {
         "name": "COMMIT_SHARDS",
         "class_name": "CommitShard"
       },
@@ -46,7 +40,6 @@
       "new_sqlite_classes": [
         "WorkspaceAuthority",
         "SourceRepository",
-        "ObjectPushQueue",
         "CommitShard",
         "LandCombiner"
       ]

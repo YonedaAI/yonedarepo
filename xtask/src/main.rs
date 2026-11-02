@@ -29,6 +29,7 @@ mod layout;
 mod local_config;
 mod newsletter_export;
 mod process;
+mod reimport;
 mod revenue_rebuild;
 mod search_backfill;
 use std::path::PathBuf;

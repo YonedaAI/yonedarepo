@@ -1,10 +1,6 @@
 // Adding a public GitHub repository: what the dialog's field accepts, the request it makes
 // (`POST /repos/import`), and what `GET /repos/<id>/import` means on the repository's page.
-import type { HistoryFill } from '../../../../shared/contracts/repo-status';
 import type { Visibility } from './repoAccess';
-
-/** The server's most commits per import; the dialog always asks for all of them. */
-export const MAX_IMPORT_COMMITS = 5000;
 
 export const IMPORT_HINT =
   'Use a GitHub repository address, like https://github.com/owner/repo or owner/repo.';
@@ -65,19 +61,16 @@ export function importBody(
     ...(owner ? { owner } : {}),
     visibility,
     ...(branch.trim() ? { branch: branch.trim() } : {}),
-    max_commits: MAX_IMPORT_COMMITS,
   };
 }
 
-/** What `GET /repos/<id>/import` answers: the import Workflow's status, and how far its
- * history has come while main has landed ahead of it. */
+/** What `GET /repos/<id>/import` answers: the import Workflow's status. */
 export type ImportAnswer = {
   status?: string;
   error?: { name?: string; message?: string } | null;
-  history?: HistoryFill | null;
 };
 
-/** What a failed import says: a final failure's message is `<Artifacts code>: <its reason>`.
+/** What a failed import says: a final failure's message is `<code>: <its reason>`.
  * GitHub refuses a private repository and a missing one with the same answer. */
 export function importFailure(message: string | undefined) {
   const [, code = '', reason = message ?? ''] =
@@ -93,10 +86,9 @@ export function importFailure(message: string | undefined) {
 }
 
 /** The import as its page shows it. Anything short of an end is still running: `waiting` is a
- * step retrying, and a status added later should not read as a failure. Main landing ahead of
- * its history ends the wait for the code, whatever then happens to the history. */
+ * step retrying, and a status added later should not read as a failure. */
 export function importView(answer: ImportAnswer) {
-  if (answer.history || answer.status === 'complete') return { phase: 'complete' as const };
+  if (answer.status === 'complete') return { phase: 'complete' as const };
   if (answer.status === 'terminated')
     return { phase: 'failed' as const, title: 'This import was stopped.', reason: '' };
   if (answer.status === 'errored')

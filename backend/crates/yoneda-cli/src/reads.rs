@@ -137,23 +137,6 @@ pub(crate) fn print_search(found: &Value) -> Result<Search> {
     Ok(report)
 }
 
-/// What a log leaves out, when its imported history is partial: on stderr, so that a `--json`
-/// reader's answer keeps its shape and nobody takes the list for the whole history.
-fn partial_history(log: &serde_json::Value) -> Option<String> {
-    if let Some(fill) = log.get("history_import").filter(|f| f.is_object()) {
-        return Some(format!(
-            "history is still importing: {} of {} commits so far",
-            fill["recorded"], fill["total"]
-        ));
-    }
-    let stopped = log.get("history_stopped").filter(|s| s.is_object())?;
-    let reason = stopped["reason"].as_str().unwrap_or_default();
-    Some(format!(
-        "only the newest {} of {} commits were imported. {reason}",
-        stopped["recorded"], stopped["total"]
-    ))
-}
-
 pub async fn read(t: &Resolved, command: ReadCommand) -> Result<()> {
     let at = |v: Option<u64>| v.map(|v| v.to_string());
     match command {
@@ -185,9 +168,6 @@ pub async fn read(t: &Resolved, command: ReadCommand) -> Result<()> {
                     version,
                     message: message.to_owned(),
                 });
-            }
-            if let Some(note) = partial_history(&log) {
-                eprintln!("{note}");
             }
             output::emit(&output::Log { commits });
         }
@@ -321,26 +301,5 @@ mod tests {
         let broken = serde_json::json!({"groups": [], "commits": {"count": "x"}});
         assert!(print_search(&broken).is_err());
         Ok(())
-    }
-}
-
-#[cfg(test)]
-mod partial_history_tests {
-    use super::partial_history;
-    use serde_json::json;
-
-    #[test]
-    fn a_partial_log_says_so_and_a_whole_one_says_nothing() {
-        assert_eq!(partial_history(&json!({"commits": []})), None);
-        let filling = json!({"history_import": {"recorded": 3, "total": 950}});
-        assert_eq!(
-            partial_history(&filling).as_deref(),
-            Some("history is still importing: 3 of 950 commits so far")
-        );
-        let stopped = json!({"history_stopped": {"recorded": 99, "total": 950, "reason": "Why."}});
-        assert_eq!(
-            partial_history(&stopped).as_deref(),
-            Some("only the newest 99 of 950 commits were imported. Why.")
-        );
     }
 }

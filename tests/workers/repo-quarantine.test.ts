@@ -1,6 +1,6 @@
 // Quarantine through the Worker: once the owner quarantines a blob, no read path serves its
 // bytes (file reads at main and at a commit, the object fetch and download, blame, diff
-// patches, search, Git over HTTPS, a direct clone), in this isolate and in a fresh one; a
+// patches, search, Git over HTTPS), in this isolate and in a fresh one; a
 // partial clone without it still works. Purge deletes its bytes from R2 and the derived
 // caches, and a quarantined session record reads masked.
 import { runInDurableObject } from 'cloudflare:test';
@@ -16,7 +16,6 @@ import { fakeBuilders } from './repo-pack-fixture';
 
 usePlatformFixture();
 
-const local = { ...scoped, PLATFORM_OBJECT_STORE: 'r2' } as unknown as Env;
 const SECRET = 'staging password: hunter2-quarantine\n';
 
 async function blobId(text: string) {
@@ -30,7 +29,7 @@ const pkt = (line: string) => `${(line.length + 4).toString(16).padStart(4, '0')
 const fetchCommand = (args: string[]) =>
   `${pkt('command=fetch\n')}${pkt('agent=git/2.47.0\n')}${pkt('object-format=sha1\n')}0001${args.map((a) => pkt(`${a}\n`)).join('')}0000`;
 
-async function setUp(name: string, env: Env = local) {
+async function setUp(name: string, env: Env = scoped) {
   const cookie = await signup(name);
   const created = await api('/repos', { cookie }, {
     body: {
@@ -69,16 +68,16 @@ it('serves a quarantined blob on no read path, in any isolate, until and after p
   const { cookie, id, commit, reader, writer } = await setUp('quarantine_owner');
   const repo = `/repos/${id}`;
   const blob = await blobId(SECRET);
-  const read = (path: string) => api(`${repo}/blob?path=${path}`, reader, {}, local);
+  const read = (path: string) => api(`${repo}/blob?path=${path}`, reader, {}, scoped);
   expect((await read('config/staging.txt')).body.content).toBe(SECRET);
   // Built before the quarantine: the index would hold the content.
-  expect((await api(`${repo}/search?query=hunter2`, reader, {}, local)).body.results).toHaveLength(1);
+  expect((await api(`${repo}/search?query=hunter2`, reader, {}, scoped)).body.results).toHaveLength(1);
 
   // Only the owner side quarantines.
   const ask = { path: 'config/staging.txt', reason: 'a staging password' };
   for (const who of [reader, writer])
-    expect((await api(`${repo}/quarantine`, who, { body: ask }, local)).status).toBe(403);
-  const made = await api(`${repo}/quarantine`, { cookie }, { body: ask }, local);
+    expect((await api(`${repo}/quarantine`, who, { body: ask }, scoped)).status).toBe(403);
+  const made = await api(`${repo}/quarantine`, { cookie }, { body: ask }, scoped);
   expect(made.status).toBe(200);
   expect(made.body.record).toMatchObject({ target: { kind: 'blob', id: blob }, path: 'config/staging.txt', state: 'quarantined' });
   // The job is scheduled for when the retention ends.
@@ -91,25 +90,25 @@ it('serves a quarantined blob on no read path, in any isolate, until and after p
     expect(JSON.stringify(answer.body), what).not.toContain('hunter2');
   };
   const everyRead = async (call: typeof api) => {
-    await refused(call(`${repo}/blob?path=config/staging.txt`, reader, {}, local), 'main');
-    await refused(call(`${repo}/blob?path=config/staging.txt&commit=${commit}`, reader, {}, local), 'commit');
-    await refused(call(`${repo}/blame?path=config/staging.txt`, reader, {}, local), 'blame');
-    await refused(call(`${repo}/objects`, reader, { body: { objects: [{ id: blob, kind: 'blob' }] } }, local), 'objects');
+    await refused(call(`${repo}/blob?path=config/staging.txt`, reader, {}, scoped), 'main');
+    await refused(call(`${repo}/blob?path=config/staging.txt&commit=${commit}`, reader, {}, scoped), 'commit');
+    await refused(call(`${repo}/blame?path=config/staging.txt`, reader, {}, scoped), 'blame');
+    await refused(call(`${repo}/objects`, reader, { body: { objects: [{ id: blob, kind: 'blob' }] } }, scoped), 'objects');
     // The other file still reads.
-    expect((await call(`${repo}/blob?path=src/app.txt`, reader, {}, local)).body.content).toBe('hello\n');
+    expect((await call(`${repo}/blob?path=src/app.txt`, reader, {}, scoped)).body.content).toBe('hello\n');
   };
   await everyRead(api);
-  const download = await api(`${repo}/objects/${blob}`, reader, {}, local);
+  const download = await api(`${repo}/objects/${blob}`, reader, {}, scoped);
   expect(download.status).toBe(451);
   // A diff lists the change and withholds its patch.
-  const diff = await api(`${repo}/diff?head=${commit}&patch=1`, reader, {}, local);
+  const diff = await api(`${repo}/diff?head=${commit}&patch=1`, reader, {}, scoped);
   const change = diff.body.changes.find((c: any) => c.path === 'config/staging.txt');
   expect([diff.status, change.patch_omitted]).toEqual([200, 'quarantined']);
   expect(JSON.stringify(diff.body)).not.toContain('hunter2');
   // Search: the index is rebuilt without the content; the path still matches.
-  const byContent = await api(`${repo}/search?query=hunter2`, reader, {}, local);
+  const byContent = await api(`${repo}/search?query=hunter2`, reader, {}, scoped);
   expect(byContent.body.results, JSON.stringify(byContent.body)).toEqual([]);
-  const byPath = await api(`${repo}/search?query=staging`, reader, {}, local);
+  const byPath = await api(`${repo}/search?query=staging`, reader, {}, scoped);
   expect(byPath.body.results).toEqual([
     { path: 'config/staging.txt', id: blob, match: 'path', hits: 0, lines: [] },
   ]);
@@ -136,26 +135,26 @@ it('serves a quarantined blob on no read path, in any isolate, until and after p
 
   // Purge needs the blob id as confirmation, then deletes the bytes and derived copies.
   const record = made.body.record.id;
-  const wrong = await call(`${repo}/quarantine/${record}/purge`, { cookie }, { body: { confirm: 'x' } }, local);
+  const wrong = await call(`${repo}/quarantine/${record}/purge`, { cookie }, { body: { confirm: 'x' } }, scoped);
   expect(wrong.status).toBe(400);
   const stored = [`platform/v1/${id}/git/${blob}`, `store/v1/yr-${id}/objects/${blob}`];
   const present = (await Promise.all(stored.map((k) => bindings.OBJECTS.head(k)))).filter(Boolean);
   expect(present.length).toBeGreaterThan(0);
   expect((await keys(`derived/v1/${id}/search/`)).length).toBeGreaterThan(0);
-  const purged = await call(`${repo}/quarantine/${record}/purge`, { cookie }, { body: { confirm: blob } }, local);
+  const purged = await call(`${repo}/quarantine/${record}/purge`, { cookie }, { body: { confirm: blob } }, scoped);
   expect([purged.status, purged.body.purged]).toEqual([200, 1]);
   for (const key of [...stored, `platform/v1/${id}/objects/${blob}`])
     expect(await bindings.OBJECTS.head(key), key).toBeNull();
   expect(await keys(`derived/v1/${id}/search/`)).toEqual([]);
   expect(await keys(`platform/v1/${id}/seeds/`)).toEqual([]);
-  const listed = await call(`${repo}/quarantine`, { cookie }, {}, local);
+  const listed = await call(`${repo}/quarantine`, { cookie }, {}, scoped);
   expect(listed.body.records[0]).toMatchObject({ state: 'purged', reason: 'a staging password' });
   await everyRead(call);
   await everyRead(isolate);
 });
 
 it('refuses a Git fetch that needs a quarantined blob, naming it, and serves one without it', async () => {
-  const { cookie, id, reader } = await setUp('quarantine_git', scoped);
+  const { cookie, id, reader } = await setUp('quarantine_git');
   const blob = await blobId(SECRET);
   const main = (await api(`/repos/${id}/refs`, { cookie })).body.refs['refs/heads/main'];
   const git = async (body: string) => {
@@ -183,9 +182,6 @@ it('refuses a Git fetch that needs a quarantined blob, naming it, and serves one
   expect(partial.text).toContain('packfile');
   const lazy = await git(fetchCommand([`want ${blob}`, 'filter blob:none', 'done']));
   expect(lazy.text).toContain('ERR QUARANTINED');
-  // A direct Artifacts clone would serve every blob: refused while any is withheld.
-  const clone = await api(`/repos/${id}/clone`, { cookie }, { body: {} });
-  expect([clone.status, clone.body.error?.code]).toEqual([451, 'QUARANTINED']);
 
   // Released: served again.
   const released = await api(`/repos/${id}/quarantine/${made.body.record.id}/release`, { cookie }, { body: {} });
@@ -199,39 +195,39 @@ it('purges due records in the quarantine job, and withholds a quarantined sessio
   const transcript = { context: 'main at abc1234', turns: [{ kind: 'prompt', text: 'the password is hunter2' }] };
   const session = await api(`${repo}/commits/${commit}/sessions`, { cookie }, {
     body: { cli: 'claude-code', summary: 'used the staging password', transcript },
-  }, local);
+  }, scoped);
   expect(session.status, JSON.stringify(session.body)).toBe(200);
   const sid = session.body.session;
-  const sha = (await api(`${repo}/sessions/${sid}`, reader, {}, local)).body.session.transcript.sha256 as string;
+  const sha = (await api(`${repo}/sessions/${sid}`, reader, {}, scoped)).body.session.transcript.sha256 as string;
   expect(await bindings.OBJECTS.head(transcriptKey(id, sha))).not.toBeNull();
-  await api(`${repo}/quarantine`, { cookie }, { body: { session: sid, reason: 'names a password', retain_days: 1 } }, local);
-  const shown = await api(`${repo}/sessions/${sid}`, reader, {}, local);
+  await api(`${repo}/quarantine`, { cookie }, { body: { session: sid, reason: 'names a password', retain_days: 1 } }, scoped);
+  const shown = await api(`${repo}/sessions/${sid}`, reader, {}, scoped);
   expect(shown.body.session).toMatchObject({ summary: null, transcript_ref: null, transcript: null, quarantined: true });
-  const document = await api(`${repo}/sessions/${sid}/transcript`, reader, {}, local);
+  const document = await api(`${repo}/sessions/${sid}/transcript`, reader, {}, scoped);
   expect([document.status, document.body.error?.code]).toEqual([451, 'QUARANTINED']);
   expect(JSON.stringify(document.body)).not.toContain('hunter2');
   const blob = await blobId(SECRET);
-  await api(`${repo}/quarantine`, { cookie }, { body: { blob, reason: 'leak', retain_days: 1 } }, local);
+  await api(`${repo}/quarantine`, { cookie }, { body: { blob, reason: 'leak', retain_days: 1 } }, scoped);
   const job = delayed.find((m) => m.kind === 'platform_quarantine' && m.repo_id === id);
   // Not due yet: nothing is purged.
-  const run = () => platformJob(local, { body: job, attempts: 1, ack: () => {}, retry: () => {} } as unknown as Message<any>);
+  const run = () => platformJob(scoped, { body: job, attempts: 1, ack: () => {}, retry: () => {} } as unknown as Message<any>);
   await run();
-  expect((await api(`${repo}/quarantine`, { cookie }, {}, local)).body.records.map((r: any) => r.state)).toEqual(['quarantined', 'quarantined']);
+  expect((await api(`${repo}/quarantine`, { cookie }, {}, scoped)).body.records.map((r: any) => r.state)).toEqual(['quarantined', 'quarantined']);
   // Test-only: the retention has passed (the authority's clock cannot be moved).
   await runInDurableObject(bindings.SOURCE_REPOS.get(bindings.SOURCE_REPOS.idFromName(id)), async (_i, state) => {
     state.storage.sql.exec('UPDATE quarantine SET purge_after=1');
   });
   await run();
-  const records = (await api(`${repo}/quarantine`, { cookie }, {}, local)).body.records;
+  const records = (await api(`${repo}/quarantine`, { cookie }, {}, scoped)).body.records;
   expect(records.map((r: any) => [r.target.kind, r.state, r.purged_by])).toEqual([
     ['blob', 'purged', 'platform:quarantine'],
     ['session', 'purged', 'platform:quarantine'],
   ]);
   expect(await bindings.OBJECTS.head(`platform/v1/${id}/git/${blob}`)).toBeNull();
-  expect((await api(`${repo}/sessions/${sid}`, reader, {}, local)).body.session.summary).toBeNull();
+  expect((await api(`${repo}/sessions/${sid}`, reader, {}, scoped)).body.session.summary).toBeNull();
   // The transcript document is gone; the record still refuses it.
   expect(await bindings.OBJECTS.head(transcriptKey(id, sha))).toBeNull();
-  expect((await api(`${repo}/sessions/${sid}/transcript`, reader, {}, local)).status).toBe(451);
+  expect((await api(`${repo}/sessions/${sid}/transcript`, reader, {}, scoped)).status).toBe(451);
 });
 
 it("withholds a blob a fork inherits once its parent quarantines it", async () => {
@@ -239,20 +235,20 @@ it("withholds a blob a fork inherits once its parent quarantines it", async () =
   const bob = { cookie: await signup('quarantine_forker') };
   const created = await api('/repos', alice, {
     body: { name: 'upstream', files: [file('config/staging.txt', SECRET), file('a.md', 'a\n')], author },
-  }, local);
+  }, scoped);
   const parent = created.body.id as string;
-  await drainObjects(local);
-  await api(`/repos/${parent}/members`, alice, { body: { account: 'quarantine_forker', role: 'read' } }, local);
-  const fork = (await api(`/repos/${parent}/fork`, bob, { body: { name: 'mine' } }, local)).body.id as string;
-  expect((await api(`/repos/${fork}/blob?path=config/staging.txt`, bob, {}, local)).body.content).toBe(SECRET);
+  await drainObjects(scoped);
+  await api(`/repos/${parent}/members`, alice, { body: { account: 'quarantine_forker', role: 'read' } }, scoped);
+  const fork = (await api(`/repos/${parent}/fork`, bob, { body: { name: 'mine' } }, scoped)).body.id as string;
+  expect((await api(`/repos/${fork}/blob?path=config/staging.txt`, bob, {}, scoped)).body.content).toBe(SECRET);
 
   const blob = await blobId(SECRET);
-  expect((await api(`/repos/${parent}/quarantine`, alice, { body: { blob, reason: 'leak' } }, local)).status).toBe(200);
+  expect((await api(`/repos/${parent}/quarantine`, alice, { body: { blob, reason: 'leak' } }, scoped)).status).toBe(200);
   for (const path of [`/repos/${fork}/blob?path=config/staging.txt`, `/repos/${fork}/objects/${blob}`]) {
-    const read = await api(path, bob, {}, local);
+    const read = await api(path, bob, {}, scoped);
     expect([read.status, read.body.error?.code], path).toEqual([451, 'QUARANTINED']);
   }
-  expect((await api(`/repos/${fork}/blob?path=a.md`, bob, {}, local)).body.content).toBe('a\n');
+  expect((await api(`/repos/${fork}/blob?path=a.md`, bob, {}, scoped)).body.content).toBe('a\n');
 });
 
 it('never serves or builds a stored pack of any kind while a blob is withheld, and purge deletes them', async () => {
@@ -305,7 +301,7 @@ it('answers Git with a framed refusal when the tip holds a withheld blob, and se
   const { cookie, id, reader } = await setUp('quarantine_tip');
   const blob = await blobId(SECRET);
   const app = await blobId('hello\n');
-  const main = (await api(`/repos/${id}/refs`, { cookie }, {}, local)).body.refs['refs/heads/main'];
+  const main = (await api(`/repos/${id}/refs`, { cookie }, {}, scoped)).body.refs['refs/heads/main'];
   const fetch = async (args: string[], v2 = true) => {
     const body = v2
       ? fetchCommand(args)
@@ -316,14 +312,14 @@ it('answers Git with a framed refusal when the tip holds a withheld blob, and se
         headers: { authorization: `Basic ${btoa(`git:${reader.token}`)}`, ...(v2 ? { 'git-protocol': 'version=2' } : {}) },
         body,
       }),
-      local,
+      scoped,
     );
     return asGit(new Uint8Array(await response.arrayBuffer()), v2);
   };
-  const record = (await api(`/repos/${id}/quarantine`, { cookie }, { body: { path: 'config/staging.txt', reason: 'leak' } }, local)).body.record;
+  const record = (await api(`/repos/${id}/quarantine`, { cookie }, { body: { path: 'config/staging.txt', reason: 'leak' } }, scoped)).body.record;
   for (const stage of ['quarantined', 'purged']) {
     if (stage === 'purged')
-      expect((await api(`/repos/${id}/quarantine/${record.id}/purge`, { cookie }, { body: { confirm: blob } }, local)).status).toBe(200);
+      expect((await api(`/repos/${id}/quarantine/${record.id}/purge`, { cookie }, { body: { confirm: blob } }, scoped)).status).toBe(200);
     // A full clone and a shallow one would lack the file: refused, naming it, in a way Git reads.
     for (const [args, v2] of [[[`want ${main}`, 'done'], true], [[`want ${main}`, 'deepen 1', 'done'], true], [[`want ${main}`], false]] as const) {
       const answer = await fetch([...args], v2);

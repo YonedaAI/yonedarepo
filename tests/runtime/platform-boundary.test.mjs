@@ -129,7 +129,7 @@ test('the front Worker reaches the platform only through its public API', async 
   for (const module of seen)
     assert.ok(!/^(repo-|platform-|check-container$|entrypoint$)/.test(module), `front Worker imports ${module}`);
   const config = await readFile('cloudflare/wrangler.dev-agents.jsonc', 'utf8');
-  for (const binding of ['SOURCE_REPOS', 'CHECK_RUNNERS', 'OBJECT_PUSHES', 'PLATFORM_QUEUE', 'PLATFORM_IMPORT'])
+  for (const binding of ['SOURCE_REPOS', 'CHECK_RUNNERS', 'PLATFORM_QUEUE', 'PLATFORM_IMPORT'])
     assert.ok(!config.includes(`"${binding}"`), `front Worker binds ${binding}`);
   assert.match(config, /"binding": "PLATFORM",\s*"service": "yonedarepo-dev-platform"/);
 });

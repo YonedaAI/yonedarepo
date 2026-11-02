@@ -38,7 +38,6 @@ import { membersRoute } from './repo-members';
 import { contextRoute, memoriesRoute } from './repo-memories';
 import { downloadBlob } from './repo-object-download';
 import { streamObjects } from './repo-object-fetch';
-import { parseStore } from './repo-objects';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { refuseOutsideKeys, verifyPat } from './repo-pat';
 import { pathOf, profile, renameRepository, resolvePath, withPath } from './repo-paths';
@@ -287,14 +286,6 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   if (resource === 'lfs' && !sha) return lfsRoute(ctx, req.method, () => bodyOf(req));
   if (resource === 'fork' && !sha && post) return run('git_fork', await bodyOf(req));
   if (resource === 'releases') return releasesRoute(ctx, req, parts.slice(3), () => bodyOf(req));
-  if (resource === 'clone' && post) {
-    // The authority admits only a person who can read the whole repository.
-    const access = await ctx.call({ op: 'repo_clone_access' });
-    const store = parseStore(env, access.object_store);
-    if (!store.cloneAccess)
-      throw new ApiError('NOT_SUPPORTED', "This repository's object store cannot be cloned");
-    return store.cloneAccess();
-  }
   if (resource === 'tokens' && get) return ctx.call({ op: 'repo_tokens' });
   if (resource === 'tokens' && !sha && post) {
     const body = await bodyOf(req);

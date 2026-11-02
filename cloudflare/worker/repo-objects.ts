@@ -32,7 +32,6 @@ import type { Env } from './types';
 export {
   type CachedObject,
   fromBase64,
-  newStore,
   type ObjectStore,
   parseStore,
   type TreeEntry,
@@ -247,7 +246,6 @@ export class RepoObjects {
       !object && (await timed('read.parent', async () => this.inherited?.bytes(id, kind, true)));
     if (inherited) return { bytes: inherited, tier: 'store', filled: Promise.resolve() };
     // Commit shards last: finding a staged object there means asking every shard, and
-    // imported objects (in Artifacts only) must not pay that on each first read.
     if (!object) {
       this.#shards ??= new SharedShardAsk(this.env, this.repo);
       const shards = this.#shards;

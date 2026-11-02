@@ -36,20 +36,12 @@
     "run_worker_first": true
   },
   "vars": {
-    "PUBLIC_APP_ORIGIN": "https://yonedarepo.com",
-    "ARTIFACTS_NAMESPACE": "yoneda-dev"
+    "PUBLIC_APP_ORIGIN": "https://yonedarepo.com"
   },
   "services": [
     {
       "binding": "SELF",
       "service": "yonedarepo-dev"
-    }
-  ],
-  "artifacts": [
-    {
-      "binding": "ARTIFACTS",
-      "namespace": "yoneda-dev",
-      "remote": true
     }
   ],
   "durable_objects": {
@@ -65,10 +57,6 @@
       {
         "name": "CHECK_RUNNERS",
         "class_name": "CheckContainer"
-      },
-      {
-        "name": "OBJECT_PUSHES",
-        "class_name": "ObjectPushQueue"
       }
     ]
   },
@@ -130,6 +118,12 @@
         "RepositoryAuthority",
         "LiveRoom",
         "AgentSandbox"
+      ]
+    },
+    {
+      "tag": "v10",
+      "deleted_classes": [
+        "ObjectPushQueue"
       ]
     }
   ],

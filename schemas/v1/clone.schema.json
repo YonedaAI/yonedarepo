@@ -4,11 +4,6 @@
       "description": "How `clone` brought the repository in.",
       "oneOf": [
         {
-          "const": "git_clone",
-          "description": "An offline checkout by `git clone` with a short-lived read token.",
-          "type": "string"
-        },
-        {
           "const": "api_snapshot",
           "description": "An offline checkout from a snapshot of the branch through the API.",
           "type": "string"

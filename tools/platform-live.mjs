@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// Live source-platform check against a deployed Worker backed by real Artifacts. It is an
-// explicit, separate command (never part of local gates): it creates one repository,
-// commits on the server (receive-pack to refs/yoneda/c/<commit> plus readback), diffs,
-// approves and lands, then `git clone`s the Artifacts repository once the branch ref is
-// projected and checks it holds exactly the landed commit. Credentials come from
-// YONEDA_USERNAME / YONEDA_PASSWORD; the clone token travels in Git's environment config.
-// Usage: node tools/platform-live.mjs --url https://<deployment>
+// Live source-platform check against a deployed Worker and its real R2 store. It is an
+// explicit, separate command (never part of local gates): it creates one repository, commits
+// on the server (the commit's pack stored, then read back), diffs, approves and lands, then
+// `git clone`s it through the platform's own Git with a read token and checks it holds exactly
+// the landed commit. Credentials come from YONEDA_USERNAME / YONEDA_PASSWORD; the clone token
+// travels in Git's environment config.
+// Usage: node tools/platform-live.mjs --url https://<deployment> [--git https://<Git host>]
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
@@ -14,9 +14,10 @@ import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { gitConfigEnv, OWN_TRAFFIC } from './own-traffic.mjs';
 
-const { values } = parseArgs({ options: { url: { type: 'string' } } });
+const { values } = parseArgs({ options: { url: { type: 'string' }, git: { type: 'string' } } });
 assert.ok(values.url, 'Pass --url of the deployed platform');
 const url = values.url.replace(/\/$/, '');
+const gitHost = (values.git ?? url).replace(/\/$/, '');
 const login = await fetch(`${url}/api/auth/login`, {
   method: 'POST',
   headers: { 'content-type': 'application/json', ...OWN_TRAFFIC },
@@ -44,7 +45,7 @@ const repo = await call('/repos', {
   files: [{ path: 'README.md', content_b64: b64('# live\n') }],
   author,
 });
-assert.match((await call(`/repos/${repo.id}`)).object_store, /^artifacts:/);
+assert.equal((await call(`/repos/${repo.id}`)).object_store, `platform:${repo.id}`);
 const commit = await call(`/repos/${repo.id}/commits`, {
   ref: 'main',
   changes: [{ path: 'src/a.txt', content_b64: b64('a\n') }],
@@ -75,29 +76,22 @@ assert.equal(
   true,
 );
 
-// Any Git client sees the platform's ids: main is projected to the head the API reports
-// (the landed commit itself, or the Git commit built for a changeset).
+// Any Git client sees the platform's ids: main is the head the API reports (the landed commit
+// itself, or the Git commit built for a changeset).
 const head = (await call(`/repos/${repo.id}/refs`)).refs['refs/heads/main'];
-const access = await call(`/repos/${repo.id}/clone`, {});
+const reader = await call(`/repos/${repo.id}/tokens`, { name: 'live-clone', scopes: ['read'] });
+const remote = `${gitHost}/git/${repo.id}.git`;
 const gitEnv = {
   ...process.env,
   GIT_TERMINAL_PROMPT: '0',
-  ...gitConfigEnv({ token: access.token }),
+  ...gitConfigEnv({ token: reader.token }),
 };
 const git = (args, cwd) => execFileSync('git', args, { cwd, env: gitEnv, encoding: 'utf8' }).trim();
-const projectedAt = Date.now();
-let remoteMain = '';
-while (Date.now() - projectedAt < 120_000) {
-  remoteMain = git(['ls-remote', access.remote, 'refs/heads/main']).split(/\s/)[0] ?? '';
-  if (remoteMain === head) break;
-  await new Promise((r) => setTimeout(r, 2000));
-}
-assert.equal(remoteMain, head, 'main was not projected to the landed head');
 const dir = mkdtempSync(join(tmpdir(), 'yoneda-live-'));
 try {
   const started = Date.now();
-  git(['clone', '--quiet', access.remote, dir]);
-  console.log(`git clone ${Date.now() - started}ms; projection visible after ${started - projectedAt}ms`);
+  git(['clone', '--quiet', remote, dir]);
+  console.log(`git clone ${Date.now() - started}ms`);
   assert.equal(git(['rev-parse', 'HEAD'], dir), head);
   assert.equal(readFileSync(join(dir, 'src/a.txt'), 'utf8'), 'a\n');
   assert.equal(readFileSync(join(dir, 'docs/ünïcode.md'), 'utf8'), 'u\n');

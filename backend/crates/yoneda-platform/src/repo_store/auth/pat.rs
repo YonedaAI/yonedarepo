@@ -62,7 +62,6 @@ pub(super) fn account_token(
         owner: admin && role.is_none_or(|r| r == Role::Admin),
         member: role,
         human: false,
-        account_token: true,
         scopes,
         grant: None,
         public: false,

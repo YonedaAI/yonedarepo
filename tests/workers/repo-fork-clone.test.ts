@@ -7,15 +7,14 @@ import { expect, it, vi } from 'vitest';
 import { isolateLocations } from '../../cloudflare/worker/repo-bundles';
 import { isolateTrees } from '../../cloudflare/worker/repo-tree-memo';
 import type { Env } from '../../cloudflare/worker/types';
-import { api, author, countingOps, drainObjects, fakeArtifacts, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, countingOps, drainObjects, scoped, signup, usePlatformFixture } from './repo-fixture';
 import { count, fetchV2, on, pushedRepo } from './repo-pack-fixture';
 import { git, join, type Obj, object, pack, pkt, text, tree } from './synthetic-pack';
 
 usePlatformFixture();
 
-// Artifacts as on dev (a store with `cloneAccess`, which a fork of it is too); packs always built.
-const artifacts = { ...fakeArtifacts, get: async (name: string) => ({ ...(await fakeArtifacts.get(name)), fork: async () => ({}) }) };
-const env = { ...on, ARTIFACTS: artifacts, PACK_CACHE: 'off' } as unknown as Env;
+// Packs always built.
+const env = { ...on, PACK_CACHE: 'off' } as unknown as Env;
 
 async function forked(name: string) {
   const parent = await pushedRepo(name, env, 9);

@@ -14,7 +14,7 @@ export const ARMS = ['off', 'on'];
 export const MIN_RUNS = 3;
 /** express: 6,183 commits and 3,913 on main's first-parent chain (counted 2026-11-01), so a
  * branch copies thousands of rows without reaching the 5,000-row bound. */
-export const DEFAULTS = { runs: MIN_RUNS, branches: 20, landings: 200, checks: 4, source: 'expressjs/express', maxCommits: 5000 };
+export const DEFAULTS = { runs: MIN_RUNS, branches: 20, landings: 200, checks: 4, source: 'expressjs/express' };
 /** Not required, so nothing gates a landing; a run is asked for by name. */
 export const POLICY = { required_checks: [], approvals: 0, runners: { unit: { command: ['sh', '-c', 'echo measured'], timeout_seconds: 120 } } };
 export const CHECK_NAME = 'unit';
@@ -53,7 +53,7 @@ export function estimate(options = {}) {
 
 export function describe(e) {
   return [
-    `Archive stage A: ${e.runs_per_arm} runs in each of ${ARMS.length} arms, each on its own import of ${e.source}, at most ${e.maxCommits} commits.`,
+    `Archive stage A: ${e.runs_per_arm} runs in each of ${ARMS.length} arms, each on its own import of ${e.source}.`,
     `One run: ${e.branches} branches, ${e.landings} landings, ${e.checks} check runs. About ${e.requests_per_run} requests and ${e.minutes_per_run} minutes; an arm about ${e.minutes_per_arm} minutes with its import.`,
     `Both arms: about ${e.requests_all} requests and ${e.container_runs_all} container check runs, under $0.25 at list price. No model. A deploy with the switches comes between the arms.`,
   ].join('\n');

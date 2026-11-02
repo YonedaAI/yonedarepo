@@ -69,16 +69,6 @@ const objects = (real: DurableObjectNamespace, phase: string) =>
       );
   });
 
-function artifacts(real: NonNullable<Env['ARTIFACTS']>) {
-  const reads = ['readBlob', 'readTree', 'readCommit', 'info', 'createToken', 'revokeToken'];
-  return proxied(real, (key, call) => {
-    if (key === 'create') return (...args) => timed('hop.artifacts', async () => call(...args));
-    if (key !== 'get') return call;
-    return async (...args) =>
-      hops(await timed('hop.artifacts', async () => call(...args)), 'hop.artifacts', reads);
-  });
-}
-
 /** `env` with every binding that can leave the region counted. */
 export function meteredEnv(env: Env): Env {
   return {
@@ -92,7 +82,6 @@ export function meteredEnv(env: Env): Env {
     ...(env.PLATFORM_CHECKS && {
       PLATFORM_CHECKS: hops(env.PLATFORM_CHECKS, 'hop.queue', ['send', 'sendBatch']),
     }),
-    ...(env.ARTIFACTS && { ARTIFACTS: artifacts(env.ARTIFACTS) }),
     ...(env.AUTH_LIMITER && { AUTH_LIMITER: hops(env.AUTH_LIMITER, 'hop.limiter', ['limit']) }),
   };
 }

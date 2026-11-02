@@ -1,6 +1,6 @@
 // Shared workerd fixture for source-platform tests: real SourceRepository DO SQLite, R2
-// and D1, with Artifacts faked at its binding and receive-pack endpoint, and platform
-// queue/check containers recorded. Scripted clients only — no agents or providers.
+// and D1, with platform queue/check containers recorded. Scripted clients only — no agents
+// or providers.
 import { env } from 'cloudflare:workers';
 import { reset } from 'cloudflare:test';
 import { afterEach, beforeEach, expect, vi } from 'vitest';
@@ -19,56 +19,13 @@ import adminAuditDetail from '../../cloudflare/migrations/0015_admin_audit_detai
 import visitors from '../../cloudflare/migrations/0016_platform_visitors.sql?raw';
 import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { type CheckReport, completeContainerCheck } from '../../cloudflare/worker/repo-checks';
-import { compute } from '../../cloudflare/worker/repo-compute';
 import { HeadHolder } from '../../cloudflare/worker/repo-head-holder';
-import { toBase64 } from '../../cloudflare/worker/repo-objects';
 import { LandBatcher } from '../../cloudflare/worker/repo-land-batcher';
 import { projectObjects } from '../../cloudflare/worker/repo-projection';
-import { PushBatcher } from '../../cloudflare/worker/repo-push-queue';
 import type { Env } from '../../cloudflare/worker/types';
 
 export const bindings = env as unknown as Env;
 
-export const misses: string[] = [];
-/** What each fake Artifacts repository received, by name then object id. */
-export const artifacts = new Map<string, Map<string, any>>();
-const held = (name: string) => artifacts.get(name) ?? artifacts.set(name, new Map()).get(name)!;
-export const fakeArtifacts = {
-  create: async (name: string) => ({ name }),
-  get: async (name: string) => ({
-    [Symbol.dispose]() {},
-    info: async () => ({ remote: `https://artifacts.test/${name}` }),
-    createToken: async () => ({ id: 'token-1', plaintext: 'artifact-write-token' }),
-    revokeToken: async () => true,
-    readCommit: async (id: string) => {
-      const commit = held(name).get(id);
-      return commit?.kind === 'commit' ? { hash: id, treeHash: commit.tree, parents: commit.parents } : null;
-    },
-    readTree: async (id: string) => {
-      const tree = held(name).get(id);
-      if (tree?.kind === 'tree') return tree.entries.map((e: any) => ({ name: e.name, type: e.type, hash: e.id }));
-      misses.push(`tree:${id}`);
-      return null;
-    },
-    readBlob: async (id: string) => {
-      const blob = held(name).get(id);
-      if (blob?.kind === 'blob') return new Blob([Uint8Array.from(atob(blob.data_b64), (c) => c.charCodeAt(0))]);
-      misses.push(`blob:${id}`);
-      return null;
-    },
-  }),
-};
-/** Unpacks a receive-pack body's objects (like the store) with platform compute. */
-function unpack(body: Uint8Array, first: string) {
-  const at = body.findIndex((_, i) => body[i] === 0x50 && new TextDecoder().decode(body.subarray(i, i + 4)) === 'PACK');
-  if (at < 0) return [];
-  const line = `${first}\0report-status\n`;
-  const head = new TextEncoder().encode(`${(line.length + 4).toString(16).padStart(4, '0')}${line}0000`);
-  const single = new Uint8Array(head.length + body.length - at);
-  single.set(head);
-  single.set(body.subarray(at), head.length);
-  return compute({ op: 'receive_pack', body_b64: toBase64(single) }).objects as any[];
-}
 // Platform jobs and check containers: the queue records messages (delayed ones apart, as
 // they are not delivered yet); the executor stands in for the Container by evaluating the
 // shipped files (the real one is tested in Rust).
@@ -86,23 +43,6 @@ export const fakeQueue = {
     void (options?.delaySeconds ? delayed : queued).push(body),
   sendBatch: async (messages: { body: any }[]) => void queued.push(...messages.map((m) => m.body)),
 };
-/** Ref updates the fake Artifacts receive-pack saw (`old new ref`), and refs it refuses. */
-export const pushes: string[] = [];
-export const refusals = new Set<string>();
-/** Receive-pack requests the fake saw, how many more it answers "busy" like Artifacts,
- * whether it is down (answers 503), and a gate that holds each answer until it settles. */
-export const receivePacks = { requests: 0, busy: 0, down: false, hold: null as Promise<void> | null };
-const pkt = (line: string) => `${(line.length + 4).toString(16).padStart(4, '0')}${line}`;
-/** The ref-update commands of a receive-pack body, up to its flush packet. */
-function commands(body: Uint8Array) {
-  const out: string[] = [];
-  for (let at = 0; ; ) {
-    const length = Number.parseInt(new TextDecoder().decode(body.subarray(at, at + 4)), 16);
-    if (!length) return out;
-    out.push(new TextDecoder().decode(body.subarray(at + 4, at + length)).split('\0')[0].trim());
-    at += length;
-  }
-}
 /** CHECK_RUNNERS standing in for the CheckContainer: `run` evaluates the shipped files at
  * once, then the run completes the way the container completes it. */
 export const runners = (run: (job: any, name: string) => Promise<any>) => ({
@@ -118,16 +58,6 @@ export const fakeRunners = runners(async (job, name) => {
   return { outcome: ok ? 'pass' : 'fail', exit_code: ok ? 0 : 1, timed_out: false, duration_ms: 5,
     output_bytes: 4, output_sha256: 'f'.repeat(64), output_tail: ok ? 'ok\n' : 'bad\n' };
 });
-// The push queue's batching runs in-process, so its receive-packs reach the fake endpoint.
-const batchers = new Map<string, PushBatcher>();
-export const fakePushQueues = {
-  idFromName: (name: string) => name,
-  get: (name: string) => {
-    if (!batchers.has(name)) batchers.set(name, new PushBatcher());
-    return batchers.get(name);
-  },
-};
-// Platform tests choose their object store explicitly; the agent-layer default is R2.
 // Land combiners run in-process too, so their post-land dispatches reach the fakes above.
 // Each keeps its due timers and its running step, so a test's teardown can stop them.
 type InProcess = { batcher: LandBatcher; timers: Set<ReturnType<typeof setTimeout>>; running: Promise<void> | null };
@@ -193,9 +123,9 @@ async function quiesceCombiners() {
   await Promise.all([...holders.values()].map((h) => h.idle()));
   holders.clear();
 }
-export const scoped = { ...bindings, PLATFORM_OBJECT_STORE: undefined, ARTIFACTS: fakeArtifacts, PLATFORM_QUEUE: fakeQueue, CHECK_RUNNERS: fakeRunners, OBJECT_PUSHES: fakePushQueues, LAND_COMBINERS: fakeCombiners } as unknown as Env;
+export const scoped = { ...bindings, PLATFORM_QUEUE: fakeQueue, CHECK_RUNNERS: fakeRunners, LAND_COMBINERS: fakeCombiners } as unknown as Env;
 
-/** Registers per-test reset, the D1 schema and the Artifacts push endpoint. */
+/** Registers per-test reset and the D1 schema. */
 export function usePlatformFixture() {
 afterEach(async () => {
   vi.restoreAllMocks();
@@ -213,43 +143,9 @@ beforeEach(async () => {
         .catch((e) => {
           if (!/duplicate column/i.test(String(e?.message ?? e))) throw e;
         });
-  misses.length = 0;
-  artifacts.clear();
-  pushes.length = 0;
-  refusals.clear();
-  receivePacks.requests = 0;
-  receivePacks.busy = 0;
-  receivePacks.down = false;
-  receivePacks.hold = null;
   queued.length = 0;
   delayed.length = 0;
   executed.length = 0;
-  const original = globalThis.fetch;
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-    const url = String(input instanceof Request ? input.url : input);
-    if (!url.startsWith('https://artifacts.test/')) return original(input, init);
-    expect(url).toMatch(/\/git-receive-pack$/);
-    // A large file's push streams its body (repo-large-files `largeReceivePack`).
-    const body = new Uint8Array(init?.body instanceof ReadableStream ? await new Response(init.body).arrayBuffer() : (init?.body as ArrayBuffer));
-    receivePacks.requests++;
-    if (receivePacks.hold) await receivePacks.hold;
-    if (receivePacks.down) return new Response('unavailable', { status: 503 });
-    const headers = { 'content-type': 'application/x-git-receive-pack-result' };
-    if (receivePacks.busy > 0) {
-      receivePacks.busy--;
-      return new Response(pkt('ERR artifacts_git_receive_pack_busy'), { headers });
-    }
-    const name = url.slice('https://artifacts.test/'.length).split('/')[0];
-    const received = commands(body);
-    if (received[0]) for (const object of unpack(body, received[0])) held(name).set(object.id, object);
-    let report = pkt('unpack ok\n');
-    for (const command of received) {
-      const ref = command.split(' ')[2];
-      pushes.push(command);
-      report += pkt(refusals.has(ref) ? `ng ${ref} stale info\n` : `ok ${ref}\n`);
-    }
-    return new Response(`${report}0000`, { headers });
-  });
 });
 }
 
@@ -287,6 +183,25 @@ export async function api(
 export const file = (path: string, text: string) => ({ path, content_b64: btoa(text) });
 export const author = { name: 'Scripted Client', email: 'client@example.com' };
 
+
+/** `target` whose authority fails command `op` as an outage does. */
+export function failingOp(target: Env, op: string) {
+  const namespace = target.SOURCE_REPOS;
+  const SOURCE_REPOS = {
+    idFromName: (name: string) => namespace.idFromName(name),
+    get: (id: DurableObjectId) => {
+      const stub = namespace.get(id);
+      return {
+        fetch: (url: string, init: RequestInit) => {
+          const body = JSON.parse(String(init.body));
+          if ([body].flat().some((c) => c.op === op)) return Promise.reject(new Error('internal error; reference = abc123'));
+          return stub.fetch(url, init);
+        },
+      };
+    },
+  };
+  return { ...target, SOURCE_REPOS } as unknown as Env;
+}
 
 /** `target` with every authority and commit-shard command counted by op; `take` answers
  * the counts since the last take. */

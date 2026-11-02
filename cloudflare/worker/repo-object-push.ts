@@ -23,8 +23,7 @@ function pushOutcome(report: Uint8Array, refname: string): { accepted: boolean; 
 }
 /**
  * Pushes a commit's pack to its hidden ref and reads the commit back from the object store
- * itself, never the cache. Artifacts can refuse or lag pushes when several land on one
- * repository at once, so a refusal is retried with jittered backoff and a missing readback
+ * itself, never the cache. A refusal is retried with jittered backoff and a missing readback
  * is re-read before the push counts as failed. Pushes are idempotent: same objects, same
  * hidden ref. `ready` (the cache write running alongside) settles before the readback.
  */

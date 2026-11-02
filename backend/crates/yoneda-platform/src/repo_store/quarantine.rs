@@ -17,7 +17,6 @@ use crate::storage::{SqlStore, bad, number};
 use serde_json::{Value, json};
 use yoneda_core::{Error, Result};
 mod memories;
-pub(super) mod mirror;
 mod purge;
 mod sessions;
 pub(super) use memories::Withheld as WithheldMemories;
@@ -58,7 +57,7 @@ const MAX_REASON: usize = 512;
 const MAX_PATH: usize = 4096;
 const LISTED: i64 = 500;
 const COLUMNS: &str = "id,target_kind,target_id,path,state,reason,actor,at,purge_after,\
-                       purged_at,purged_by,released_at,released_by,mirror";
+                       purged_at,purged_by,released_at,released_by";
 
 /// The owner (or an admin) quarantines, lists, releases and purges; the platform's
 /// quarantine job claims due records and reports them purged.
@@ -71,17 +70,6 @@ pub(super) fn authorize(actor: &Actor, op: Q) -> Result<()> {
         )),
         Q::Purged if actor.can("quarantine") => Ok(()),
         Q::Put | Q::List | Q::Release | Q::Purge | Q::Purged => actor.require_owner(),
-        Q::MirrorClaim | Q::MirrorCopied | Q::MirrorSwitch | Q::MirrorRetired | Q::MirrorFailed
-            if actor.can("quarantine") =>
-        {
-            Ok(())
-        }
-        Q::MirrorClaim | Q::MirrorCopied | Q::MirrorSwitch | Q::MirrorRetired | Q::MirrorFailed => {
-            Err(Error::new(
-                "FORBIDDEN",
-                "Only the platform's quarantine job retires a mirror",
-            ))
-        }
     }
 }
 
@@ -94,16 +82,11 @@ pub(super) fn run<S: SqlStore>(db: &S, c: &Value, op: Q, actor: &Actor) -> Resul
     }
     match op {
         Q::Put => put(db, c, actor),
-        Q::List => Ok(json!({ "records": records(db, "1", &[])?, "mirror": mirror::status(db)? })),
+        Q::List => Ok(json!({ "records": records(db, "1", &[])? })),
         Q::Release => release(db, c, actor),
         Q::Purge => purge::now(db, c),
         Q::Claim => purge::claim(db, c),
         Q::Purged => purge::done(db, c, actor),
-        Q::MirrorClaim => mirror::claim(db, c),
-        Q::MirrorCopied => mirror::copied(db, c),
-        Q::MirrorSwitch => mirror::switch(db, c),
-        Q::MirrorRetired => mirror::retired(db, c),
-        Q::MirrorFailed => mirror::failed(db, c),
     }
 }
 
@@ -115,8 +98,6 @@ fn shaped(row: &Value) -> Value {
         "actor": row["actor"], "at": row["at"], "purge_after": row["purge_after"],
         "purged_at": row["purged_at"], "purged_by": row["purged_by"],
         "released_at": row["released_at"], "released_by": row["released_by"],
-        // The retirement of the repository's Artifacts mirror this purge started.
-        "mirror": row["mirror"],
     })
 }
 
@@ -287,17 +268,4 @@ pub(crate) fn epoch<S: SqlStore>(db: &S) -> Result<u64> {
         &[],
     )?;
     Ok(row.first().and_then(|r| r["n"].as_u64()).unwrap_or(0))
-}
-
-/// A direct clone of the object store serves every blob it holds: refused while any is
-/// withheld (Git over HTTPS refuses only a fetch that needs one).
-pub(super) fn refuse_direct_clone<S: SqlStore>(db: &S) -> Result<()> {
-    if withheld(db)?.is_empty() {
-        return Ok(());
-    }
-    Err(Error::new(
-        "QUARANTINED",
-        "This repository withholds quarantined content, which a direct object-store clone \
-         would serve; clone over Git HTTPS instead",
-    ))
 }

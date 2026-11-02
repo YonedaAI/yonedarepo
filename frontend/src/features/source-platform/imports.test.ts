@@ -3,13 +3,12 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
-import { HistoryImportStatus, HistoryStoppedStatus, ImportStatus } from './ImportStatus';
+import { ImportStatus } from './ImportStatus';
 import {
   defaultRepoName,
   importBody,
   importFailure,
   importView,
-  MAX_IMPORT_COMMITS,
   mayBeImport,
   parseGitHubRepo,
 } from './importModel';
@@ -83,13 +82,11 @@ describe('defaultRepoName', () => {
 });
 
 describe('importBody', () => {
-  it('always asks for the newest 5,000 commits and states the visibility', () => {
-    expect(MAX_IMPORT_COMMITS).toBe(5000);
+  it('states the visibility', () => {
     expect(importBody(remote, 'mdbook', '', 'private')).toEqual({
       url: remote,
       name: 'mdbook',
       visibility: 'private',
-      max_commits: 5000,
     });
   });
   it('is private unless told otherwise', () => {
@@ -102,7 +99,6 @@ describe('importBody', () => {
       owner: 'acme',
       visibility: 'public',
       branch: 'next',
-      max_commits: 5000,
     });
     expect(importBody(remote, 'mdbook', '', 'public', '   ')).not.toHaveProperty('branch');
   });
@@ -214,34 +210,5 @@ describe('ImportStatus', () => {
     expect(shown({ ...failed, reason: '' })).not.toContain('Reason:');
     const html = shown({ ...failed, reason: 'D1_ERROR: internal error' });
     expect(html).not.toContain('D1_ERROR');
-  });
-});
-
-describe('a history filling in behind a landed main', () => {
-  it('ends the wait for the code as soon as main has landed', () => {
-    const history = { recorded: 1, total: 233 };
-    expect(importView({ status: 'running', history }).phase).toBe('complete');
-    expect(importView({ status: 'running', history: null }).phase).toBe('running');
-  });
-
-  it('says how far it has come, and never that the history is whole', () => {
-    const progress = { recorded: 120, total: 233 };
-    const shown = renderToStaticMarkup(createElement(HistoryImportStatus, { progress }));
-    expect(shown).toContain('Importing 120 of 233 commits');
-    expect(shown).toContain('fill in as commits arrive');
-    expect(shown).toContain('role="status"');
-  });
-
-  it('says plainly what is missing when it ended early, and asks nothing of anyone', () => {
-    const stopped = {
-      recorded: 51,
-      total: 300,
-      reason: 'One commit changes more than 10,000 files.',
-    };
-    const shown = renderToStaticMarkup(createElement(HistoryStoppedStatus, { stopped }));
-    expect(shown).toContain('Only the newest 51 of 300 commits were imported.');
-    expect(shown).toContain(stopped.reason);
-    expect(shown).toContain('older commits are missing');
-    expect(shown).not.toContain('delete');
   });
 });

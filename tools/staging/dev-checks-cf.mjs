@@ -1,12 +1,11 @@
 // What only Cloudflare can see of a repository, read from outside the platform (dev-checks.mjs):
-// D1 rows, R2 keys, the Artifacts mirror, the repository objects' ids, and analytics. Reads only:
+// D1 rows, R2 keys, the repository objects' ids, and analytics. Reads only:
 // `d1` refuses anything but a SELECT, and nothing here writes. A probe that fails throws: only a
 // clean answer of nothing may ever count as gone. The token arrives from a 0600 file, goes in a
 // header or the child's environment, and appears in no argument or log.
 import { keyKind, LIMITS } from './dev-checks-lib.mjs';
 
 const API = 'https://api.cloudflare.com/client/v4';
-const GONE = /not.?found|does not exist|no such|\b404\b/i;
 
 const QUERIES = {
   r2: `query R2($account: string!, $start: Time!, $end: Time!, $bucket: string!) {
@@ -28,7 +27,7 @@ const QUERIES = {
 /** For a test: every query only reads. */
 export const queryTexts = () => Object.values(QUERIES);
 
-export function cloudflare({ token, analyticsToken, account, database, bucket, script, wrangler, fetchImpl = fetch }) {
+export function cloudflare({ token, analyticsToken, account, database, bucket, script, fetchImpl = fetch }) {
   const rest = async (method, path, body) => {
     const response = await fetchImpl(`${API}/accounts/${account}${path}`, {
       method,
@@ -82,13 +81,6 @@ export function cloudflare({ token, analyticsToken, account, database, bucket, s
         cursor = page.result_info?.is_truncated ? page.result_info.cursor : '';
         if (!cursor) return seen;
       }
-    },
-    /** Whether the Artifacts repository exists; a failure of any other kind throws. */
-    async mirror({ namespace: ns, name }) {
-      const { status, stdout, stderr } = await wrangler(['artifacts', 'repos', 'get', name, '--namespace', ns, '--json']);
-      if (status === 0) return { name, exists: Boolean(stdout.trim()) };
-      if (GONE.test(stderr) || GONE.test(stdout)) return { name, exists: false };
-      throw new Error(`Artifacts ${name}: wrangler exited ${status}`);
     },
     /** The ids of every repository object holding data. */
     async objects() {
