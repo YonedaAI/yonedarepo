@@ -1,45 +1,51 @@
 #!/usr/bin/env node
 // Three repositories that stay in the dev owner's account, full of real work, so the Flight Path,
-// memory and context pages have something to show. Each is a fork of a real-history repository, set
-// up through the pages a person uses (demo-repos-web.mjs); memories arrive by web, CLI and MCP; real
-// opencode agents in the Docker sandbox do small tasks (demo-repos-plan.mjs) and the real managed
-// review agents read them. Dev only. It deletes no repository and changes no parent: their refs
-// are compared at the end. Every step reads .local/demo-repos/state.json, so a rerun carries on.
+// memory and context pages have something to show. Each holds the history of a real repository in
+// the account (not a fork: review agents can't clone a fork yet), set up through the pages a person
+// uses (demo-repos-web.mjs); memories arrive by web, CLI and MCP; stock agents in the Docker sandbox
+// build a real feature (demo-repos-plan.mjs) and the real managed review agents read it. Dev only.
+// It deletes no repository and changes no parent: their refs are compared at the end. Every step
+// reads .local/demo-repos/state.json, so a rerun carries on.
 //
 //   set -a; . ~/.config/yonedarepo/dev-owner.env; set +a
 //   node tools/staging/demo-repos.mjs [--only cobra,commander,click] [--phases ...] [--cap-usd 2.4]
 //
-// Paid: each pushed head costs two review runs of managed credit, and the run stops before the cap.
-// Agents' tokens are the owner's, limited to the fork and its parent for a day (a token of the fork
-// alone is refused objects it inherits: repo-inherit.ts) and revoked at the end.
+// Paid: each pushed head costs two review runs of managed credit, and the run stops before the cap;
+// Claude Code stops before CLAUDE_CAP_USD in all. Agents' tokens are the owner's, limited to the one
+// repository for a day and revoked at the end. MiMo needs tools/staging/model-proxy deployed.
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { parseArgs } from 'node:util';
 import { hostProblems, spendBudget } from './agent-run-flow.mjs';
 import { NO_SESSION } from './agent-hooks-flow.mjs';
 import { egressAllowlist, sandboxOrigin } from './agent-sandbox.mjs';
 import { buildSandbox, dockerAvailable, hostState, modelCredential, startEgress } from './agent-sandbox-host.mjs';
-import { accountSession, Session } from './client.mjs';
+import { accountSession, readEnvFile, Session } from './client.mjs';
 import { agentClone, flyAgent, settleLanding } from './demo-repos-run.mjs';
-import { fixPrompt, REPOS, workPrompt } from './demo-repos-plan.mjs';
+import { AGENTS_BY_KIND, fixPrompt, REPOS, workPrompt } from './demo-repos-plan.mjs';
 import { readBack } from './demo-repos-report.mjs';
 import { memoryFromPage, openWeb, setUpRepository, writeJson } from './demo-repos-web.mjs';
 import { McpClient } from './mcp-client.mjs';
+import { judgeTrap } from './memory-plan.mjs';
+import { scanHidden } from './memory-run.mjs';
+import { TRAPS } from './memory-traps.mjs';
 import { Workspace } from './realuser-git.mjs';
 import { scrubber } from './realuser-plan.mjs';
 
-const PHASES = ['setup', 'memories', 'clean', 'sloppy', 'fix', 'drift', 'approvals', 'approval', 'release', 'report'];
+const PHASES = ['setup', 'memories', 'clean', 'sloppy', 'fix', 'config', 'suggest', 'suggest2', 'drift', 'approvals', 'approval', 'release', 'report'];
+const CLAUDE_CAP_USD = 20;
+const GATEWAY = 'https://gateway.ai.cloudflare.com/v1/f011d0ee02b23cad26b4b38151b204ad/yonedarepo-dev-managed-agents';
+const MIMO_PROXY = 'https://yonedarepo-dev-model-proxy.mlong-f01.workers.dev';
 const { values } = parseArgs({
   options: {
     origin: { type: 'string', default: 'https://dev.yonedarepo.com' },
     api: { type: 'string', default: 'https://api.dev.yonedarepo.com' },
     only: { type: 'string', default: Object.keys(REPOS).join(',') },
     phases: { type: 'string', default: PHASES.join(',') },
-    model: { type: 'string', default: 'zai-coding-plan/glm-5.3' },
-    'agent-timeout': { type: 'string', default: '420' },
+    'agent-timeout': { type: 'string', default: '900' },
     'cap-usd': { type: 'string', default: '2.4' },
   },
 });
@@ -75,17 +81,47 @@ const signedIn = (base) => {
 };
 const owner = signedIn(`${origin}/api/v1`);
 const account = signedIn(origin);
-const ctx = { origin, owner, account, ws: null, evidence, containers: [], model: values.model, timeoutS: Number(values['agent-timeout']), sandboxOrigin: sandboxOrigin(values.api).origin };
+const ctx = { origin, owner, account, ws: null, evidence, containers: [], egress: {}, timeoutS: Number(values['agent-timeout']), sandboxOrigin: sandboxOrigin(values.api).origin };
+ctx.claudeSpent = (usd) => {
+  state.claude_usd = Number(((state.claude_usd ?? 0) + usd).toFixed(4));
+  save();
+};
+/** What the next Claude Code run may spend: a run stops itself at this. */
+ctx.claudeBudget = () => {
+  const left = CLAUDE_CAP_USD - (state.claude_usd ?? 0) - 1;
+  assert.ok(left > 0.5, `Claude Code has spent $${state.claude_usd}, at its cap`);
+  return Math.min(6, Number(left.toFixed(2)));
+};
+
+const mint = async (name, scopes, repos) => {
+  const minted = await owner.post('/tokens', { name, scopes, repos, expires_days: 1 });
+  secrets.add(minted.token);
+  return minted;
+};
 
 /** Everything agents and Git need from here on: a run's own clones and tokens. */
 async function prepareRepos(rows) {
-  ctx.ws = new Workspace({ api: values.api, bin: join(root, 'target/release'), scrub });
   for (const r of rows) {
-    const minted = await owner.post('/tokens', { name: `demo-${r.key}-${ts}`, scopes: ['repo:read', 'repo:write'], repos: [r.parent, r.id], expires_days: 1 });
-    secrets.add(minted.token);
+    const minted = await mint(`demo-${r.key}-${ts}`, ['repo:read', 'repo:write'], [r.id]);
     Object.assign(r, { token: minted.token, tokenId: minted.id, base: ctx.ws.path(`base-${r.key}`) });
     await ctx.ws.ok('git', ['clone', '-q', `${ctx.ws.api}/git/${r.id}.git`, r.base], { token: r.token });
+    for (const memory of REPOS[r.key].memories.filter((m) => m.trapOf)) await scanHidden({ ws: ctx.ws, scanned: new Map() }, TRAPS.find((t) => t.id === memory.trapOf), r.base);
   }
+}
+
+/** The parent's whole main, read with a read-only token, into new repository `id`, once. */
+async function pushHistory(key, parent, id) {
+  const { ws } = ctx;
+  if ((await owner.get(`/repos/${id}/refs`)).refs['refs/heads/main']) return;
+  const dir = ws.path(`history-${key}`);
+  const reader = await mint(`demo-read-${key}-${ts}`, ['repo:read'], [parent]);
+  const writer = await mint(`demo-history-${key}-${ts}`, ['repo:read', 'repo:write'], [id]);
+  await ws.ok('git', ['clone', '-q', '--single-branch', '--branch', 'main', `${ws.api}/git/${parent}.git`, dir], { token: reader.token });
+  await ws.git(dir, null, 'remote', 'set-url', 'origin', `${ws.api}/git/${id}.git`);
+  await ws.ok('git', ['push', '-q', 'origin', 'main'], { cwd: dir, token: writer.token });
+  log(`${key}: ${await ws.git(dir, null, 'rev-list', '--count', 'main')} commits of ${state.parents[parent].name} pushed`);
+  for (const t of [reader, writer]) await owner.raw('DELETE', `/tokens/${t.id}`);
+  rmSync(dir, { recursive: true, force: true });
 }
 
 const parentRefs = async (id) => {
@@ -100,7 +136,7 @@ async function setup(web) {
     const parent = repos.find((r) => r.name === `oss-${key}`);
     assert.ok(parent, `no oss-${key}`);
     state.parents[parent.id] ??= { name: parent.name, refs: await parentRefs(parent.id), memories: (await owner.get(`/repos/${parent.id}/memories?limit=50`)).memories.length };
-    const made = await setUpRepository(web, { origin, evidence: join(local, 'shots'), parent: parent.id, name: `flight-${key}`, log });
+    const made = await setUpRepository(web, { origin, evidence: join(local, 'shots'), name: `flight-${key}`, history: (id) => pushHistory(key, parent.id, id), log });
     state.repos[key] = { flights: {}, ...state.repos[key], id: made.id, parent: parent.id };
     state.managed = made.managed;
   }
@@ -141,24 +177,34 @@ async function memories(web, r) {
   }
 }
 
-const WANT = { clean: 'landed', sloppy: 'go_around', fix: 'landed', drift: 'go_around', approval: 'hold' };
+const specOf = (key, id) => REPOS[key].flights[id === 'fix' ? 'sloppy' : id];
+const wantOf = (key, id) => (id === 'fix' ? 'landed' : specOf(key, id).want);
+
+/** Whether the proof's commit followed the memory: the diff, read through the API. */
+async function proofOf(r, spec, settled, base) {
+  const { changes } = await owner.get(`/repos/${r.id}/diff?${new URLSearchParams({ base, head: settled.head, patch: '1' })}`);
+  return judgeTrap({ oracle: spec.oracle }, { head: settled.head, base, changes });
+}
 
 /** One flight of a repository, once. */
 async function flight(r, id) {
   const record = state.repos[r.key].flights;
-  if (record[id]?.outcome === WANT[id]) return log(`${r.key} ${id}: already ${record[id].outcome}`);
+  const want = wantOf(r.key, id);
+  if (record[id]?.outcome === want) return log(`${r.key} ${id}: already ${want}`);
   const plan = REPOS[r.key];
-  const spec = plan.flights[id === 'fix' ? 'sloppy' : id];
+  const spec = specOf(r.key, id);
+  const kind = spec.agent ?? plan.agent;
   const again = id === 'fix' || record[id]?.number;
   const prompt = id === 'fix' ? fixPrompt(plan, spec, record.sloppy.number) : workPrompt(plan, spec);
-  log(`${r.key} ${id}: agent starts on ${spec.branch}`);
+  log(`${r.key} ${id}: ${AGENTS_BY_KIND[kind].label} starts on ${spec.branch}`);
+  await ctx.egressFor(kind);
   const clone = await agentClone(ctx, r, id, { branch: spec.branch, start: again ? `origin/${spec.branch}` : 'origin/main' });
-  const run = await flyAgent(ctx, r, id, clone, prompt);
-  log(`${r.key} ${id}: agent done in ${Math.round(run.ms / 1000)} s, ${run.hook_calls} hook calls`);
-  const settled = await settleLanding(ctx, r, spec.branch, WANT[id]);
-  record[id] = { ...settled, run };
+  const run = await flyAgent(ctx, r, id, kind, clone, prompt);
+  log(`${r.key} ${id}: done in ${Math.round(run.ms / 1000)} s, ${run.input} in, ${run.output} out, $${run.usd.toFixed(4)}`);
+  const settled = await settleLanding(ctx, r, spec.branch, want);
+  record[id] = { ...settled, run, base: clone.base, proof: spec.oracle ? await proofOf(r, spec, settled, clone.base) : undefined };
   save();
-  log(`${r.key} ${id}: #${settled.number} ${settled.outcome} (wanted ${WANT[id]}); slop ${settled.slop.value}, drift ${settled.drift.value}${settled.reasons.length ? `; ${settled.reasons.join(' | ').slice(0, 160)}` : ''}`);
+  log(`${r.key} ${id}: #${settled.number} ${settled.outcome} (wanted ${want}); slop ${settled.slop.value}, drift ${settled.drift.value}${record[id].proof ? `; proof ${JSON.stringify(record[id].proof)}` : ''}${settled.reasons.length ? `; ${settled.reasons.join(' | ').slice(0, 160)}` : ''}`);
 }
 
 async function spendCheck() {
@@ -222,9 +268,41 @@ async function eachRepo(rows, what, body) {
   return done.every((d) => d.status === 'fulfilled');
 }
 
+/** The agent's way out, one proxy per kind: the platform and that kind's model route alone. */
+ctx.egressFor = (kind) => {
+  ctx.starting ??= {};
+  ctx.starting[kind] ??= (async () => {
+    const hosts = { glm: egressAllowlist({ origin: ctx.sandboxOrigin, model: AGENTS_BY_KIND.glm.model }), mimo: [`${new URL(MIMO_PROXY).hostname}:443`], claude: ['gateway.ai.cloudflare.com:443'], codex: ['gateway.ai.cloudflare.com:443'] }[kind];
+    const allow = [...new Set([...egressAllowlist({ origin: ctx.sandboxOrigin }), ...hosts])].sort();
+    ctx.egress[kind] = await startEgress({ image: ctx.image, allow, run: `demo${ts}${kind}` });
+    log(`${kind} egress: ${allow.join(', ')}`);
+  })();
+  return ctx.starting[kind];
+};
+
+/** Keys in memory only, for the kinds these phases fly. */
+async function modelCredentials(rows, agentPhases) {
+  const kinds = new Set(rows.flatMap((r) => agentPhases.filter((p) => REPOS[r.key].order.includes(p)).map((p) => specOf(r.key, p).agent ?? REPOS[r.key].agent)));
+  if (kinds.has('glm')) {
+    ctx.glmCredential = await modelCredential(AGENTS_BY_KIND.glm.model, ctx.ws.dir);
+    for (const entry of JSON.parse(ctx.glmCredential)) for (const v of [entry.value?.key, entry.value?.access]) if (v) secrets.add(v);
+  }
+  if (kinds.has('mimo')) {
+    const token = readFileSync(join(local, 'model-proxy.env'), 'utf8').match(/^PROXY_TOKEN=(.+)$/m)[1];
+    secrets.add(token);
+    ctx.mimo = { url: MIMO_PROXY, token };
+  }
+  if (kinds.has('claude') || kinds.has('codex')) {
+    const token = readEnvFile('sandbox-ai-gateway.env').CF_AIG_TOKEN;
+    secrets.add(token);
+    ctx.gateway = { url: GATEWAY, token };
+  }
+}
+
 async function main() {
-  const agentPhases = phases.filter((p) => WANT[p]);
+  const agentPhases = phases.filter((p) => !['setup', 'memories', 'approvals', 'release', 'report'].includes(p));
   const web = phases.some((p) => ['setup', 'memories', 'approvals'].includes(p)) ? await openWeb({ origin, sessionFile }) : null;
+  ctx.ws = new Workspace({ api: values.api, bin: join(root, 'target/release'), scrub });
   try {
     if (phases.includes('setup')) await setup(web);
     assert.ok(state.managed, 'run the setup phase first');
@@ -233,12 +311,10 @@ async function main() {
     await prepareRepos(rows);
     if (agentPhases.length) {
       assert.ok(dockerAvailable(), 'Docker is not available, and agents run only in the sandbox');
-      const sandbox = await buildSandbox(root);
+      const sandbox = await buildSandbox(dirname(dirname(dirname(import.meta.filename))));
       ctx.image = sandbox.image;
-      ctx.credential = await modelCredential(ctx.model, ctx.ws.dir);
-      for (const entry of JSON.parse(ctx.credential)) for (const v of [entry.value?.key, entry.value?.access]) if (v) secrets.add(v);
       ctx.budget = spendBudget(Number.POSITIVE_INFINITY);
-      ctx.egress = await startEgress({ image: sandbox.image, allow: egressAllowlist({ origin: ctx.sandboxOrigin, model: ctx.model }), run: `demo${ts}` });
+      await modelCredentials(rows, agentPhases);
       log(`sandbox ${sandbox.image.slice(0, 19)}, opencode ${sandbox.opencode}`);
     }
     const watched = [root];
@@ -247,8 +323,8 @@ async function main() {
       for (const phase of phases) {
         if (phase === 'memories') for (const r of rows) await memories(web, r);
         else if (phase === 'approvals') for (const r of rows) await approvals(web, r);
-        else if (WANT[phase]) {
-          await eachRepo(rows, phase, (r) => flight(r, phase));
+        else if (agentPhases.includes(phase)) {
+          await eachRepo(rows.filter((r) => REPOS[r.key].order.includes(phase)), phase, (r) => flight(r, phase));
           await spendCheck();
         } else if (phase === 'release') await eachRepo(rows, phase, release);
         else if (phase === 'report') {
@@ -265,10 +341,10 @@ async function main() {
         }
       }
     } finally {
-      if (ctx.egress) {
-        for (const name of ctx.containers) spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
-        const stopped = await ctx.egress.stop();
-        log(`egress refused: ${stopped.refused.join(', ') || 'nothing'}`);
+      for (const name of ctx.containers) spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
+      for (const [kind, egress] of Object.entries(ctx.egress)) {
+        const stopped = await egress.stop();
+        log(`${kind} egress refused: ${[...new Set(stopped.refused)].join(', ') || 'nothing'}`);
       }
       if (before) {
         const drift = await hostProblems(before, watched);

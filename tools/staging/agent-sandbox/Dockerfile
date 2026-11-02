@@ -1,5 +1,5 @@
-# The sandbox every kit item 29 agent runs in (tools/staging/agent-sandbox.mjs): opencode, Git,
-# Node, and this checkout's `yoneda` CLI and opencode plugin, but nothing of the host. The run
+# The sandbox every kit item 29 agent runs in (tools/staging/agent-sandbox.mjs): opencode, Claude
+# Code, Codex, Git, Node, and this checkout's `yoneda` CLI and opencode plugin, but nothing of the host. The run
 # mounts only the agent's clone at /work, starts as root just long enough for sandbox-init to
 # install the egress rules, and then is the unprivileged `agent` user without capabilities.
 # The same image runs the egress proxy, the agents' only way out (egress-proxy.mjs).
@@ -25,14 +25,20 @@ FROM node
 RUN apt-get update && apt-get install -y --no-install-recommends git ca-certificates iptables ripgrep \
     && rm -rf /var/lib/apt/lists/* \
     && usermod --login agent --home /home/agent --move-home node && groupmod --new-name agent node
+# Claude Code and Codex, pinned, for the runs that compare stock agents. npm's optional platform
+# packages bring each CLI's own Linux build; no postinstall reaches the network afterwards.
+RUN npm install -g --no-fund --no-audit @anthropic-ai/claude-code@2.1.316 @openai/codex@0.166.0 \
+    && claude --version && codex --version
 COPY --from=build /usr/local/bin/yoneda /usr/local/bin/git-remote-yoneda /usr/local/bin/opencode /usr/local/bin/
 COPY plugins/opencode/yoneda /opt/yoneda/plugin
+COPY plugins/yoneda /opt/yoneda/claude-plugin
 # The scripted stand-ins for opencode (tests/agents/e2e.mjs --fake-agents, --memory-stub), in
 # their source layout.
 COPY tests/agents/fake-opencode.mjs tests/agents/fake-memory-agent.mjs /opt/yoneda/fake/tests/agents/
 COPY tools/staging/opencode-fake.mjs /opt/yoneda/fake/tools/staging/
 # The egress proxy (run as its own container from this image) and the agent's egress check.
 COPY tools/staging/agent-sandbox/egress-proxy.mjs tools/staging/agent-sandbox/egress-check.mjs /opt/yoneda/
+COPY tools/staging/agent-sandbox/gateway-shim.mjs tools/staging/agent-sandbox/codex-run.mjs /opt/yoneda/
 COPY --chmod=755 tools/staging/agent-sandbox/sandbox-init.sh /usr/local/sbin/sandbox-init
 COPY --chmod=755 tools/staging/agent-sandbox/sandbox-agent.sh /usr/local/bin/sandbox-agent
 LABEL yoneda.agent-sandbox="1"
