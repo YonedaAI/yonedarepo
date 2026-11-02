@@ -75,7 +75,7 @@ export function App() {
     signInError && route.view !== 'settings' && route.view !== 'site' ? 'account' : null,
   );
   const [creating, setCreating] = useState(false);
-  const [adding, setAdding] = useState(backFromGitHub);
+  const [adding, setAdding] = useState<boolean | 'public'>(backFromGitHub);
   const [picking, setPicking] = useState(false);
   const [notice, setNotice] = useNotice(
     returned && 'linked' in returned
@@ -86,8 +86,7 @@ export function App() {
     signInError,
   );
   const [tick, setTick] = useState(0);
-  // The open repository's name as its status gives it (another account's public repository
-  // is in no sidebar row), and whether the viewer may change its settings.
+  // The open repository as its status gives it: another account's is in no sidebar row.
   const [shown, setShown] = useState<ShownRepo>();
   const onLoaded = useCallback((loaded: ShownRepo) => setShown(loaded), []);
   const [missing, setMissing] = useState<string>();
@@ -236,9 +235,9 @@ export function App() {
           setMenuOpen(false);
           setCreating(true);
         }}
-        onImport={() => {
+        onImport={(publicAddress) => {
           setMenuOpen(false);
-          setAdding(true);
+          setAdding(publicAddress ? 'public' : true);
         }}
       />
       <AppSidebar
@@ -491,6 +490,7 @@ export function App() {
           account={session.identity?.username}
           orgs={orgs.data?.orgs ?? []}
           initialOwner={newOwner}
+          publicAddress={adding === 'public'}
           onClose={() => setAdding(false)}
           onImported={created}
         />

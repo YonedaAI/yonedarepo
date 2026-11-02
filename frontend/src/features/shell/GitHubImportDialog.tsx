@@ -53,6 +53,7 @@ export function GitHubImportDialog({
   account,
   orgs = [],
   initialOwner,
+  publicAddress = false,
   onClose,
   onImported,
 }: {
@@ -60,6 +61,8 @@ export function GitHubImportDialog({
   orgs?: OrgSummary[];
   /** Preselected owner (the open org page), when the caller owns it. */
   initialOwner?: string;
+  /** A public repository by its address: nothing here needs GitHub connected. */
+  publicAddress?: boolean;
   onClose: () => void;
   onImported: (created: Created) => Promise<void>;
 }) {
@@ -79,8 +82,9 @@ export function GitHubImportDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const picked = pickedRepository(source, github?.repositories);
-  // Adding from GitHub starts on GitHub. Back from there, the dialog stays to say what happened.
-  const unconnected = github?.available === true && !connected;
+  // Adding from GitHub starts on GitHub, and a public address needs none of that. Back from
+  // there, the dialog stays to say what happened.
+  const unconnected = !publicAddress && github?.available === true && !connected;
   useEffect(() => {
     if (unconnected && connectResult === null) window.location.assign(CONNECT_PATH);
   }, [unconnected, connectResult]);
