@@ -1,25 +1,11 @@
-import { commitTime, type LogCommit } from './commitLog';
+import { commitDays, filesLabel, type LogCommit } from './commitLog';
 import { Person } from './Person';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha } from './sourceApi';
 import { formatSourceRoute, type SourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
 
-const dayName = (at: number) =>
-  new Date(at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-
-/** The list in its own order, a heading each time the day changes. */
-function commitDays(commits: LogCommit[]) {
-  const days: { day: string; commits: LogCommit[] }[] = [];
-  for (const commit of commits) {
-    const at = commitTime(commit);
-    const day = at ? dayName(at) : 'Unknown date';
-    const last = days.at(-1);
-    if (last?.day === day) last.commits.push(commit);
-    else days.push({ day, commits: [commit] });
-  }
-  return days;
-}
+const LOG_PAGE = 100;
 
 export function RepoHistory({
   repo,
@@ -31,7 +17,7 @@ export function RepoHistory({
   onNavigate: (r: SourceRoute) => void;
 }) {
   const log = useSource<{ commits: LogCommit[]; version: number }>(
-    `/repos/${repo}/log?ref=${encodeURIComponent(refName)}&limit=100`,
+    `/repos/${repo}/log?ref=${encodeURIComponent(refName)}&limit=${LOG_PAGE}`,
   );
   if (log.error) return <Failure error={log.error} onRetry={log.reload} />;
   if (!log.data) return <Loading what="history" />;
@@ -39,9 +25,12 @@ export function RepoHistory({
     return <p className="source-empty">No commits on {refName}.</p>;
   return (
     <div className="source-history">
-      {commitDays(log.data.commits).map(({ day, commits }) => (
+      {commitDays(log.data.commits, LOG_PAGE).map(({ day, count, commits }) => (
         <section key={day} aria-label={`Commits on ${day}`}>
-          <h3>{day}</h3>
+          <h3>
+            {day}
+            <span>{count}</span>
+          </h3>
           <ol>
             {commits.map((c) => (
               <li key={c.commit}>
@@ -65,7 +54,10 @@ export function RepoHistory({
                     )}
                   </span>
                 </div>
-                <code>{shortSha(c.commit)}</code>
+                <span className="source-history-end">
+                  {filesLabel(c.files_changed)}
+                  <code>{shortSha(c.commit)}</code>
+                </span>
               </li>
             ))}
           </ol>

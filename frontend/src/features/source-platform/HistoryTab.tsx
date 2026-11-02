@@ -43,6 +43,7 @@ export function HistoryTab({
             {toggle('branches', 'Branches and tags', { view: 'branches', repo: route.repo })}
           </fieldset>
         }
+        extra={segment === 'history' && ref !== 'main' && <span className="chip">{ref}</span>}
         search={{ repo: route.repo, navigate }}
         filtered={ref === 'main' ? 0 : 1}
         filters={
