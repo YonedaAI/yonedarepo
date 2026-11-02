@@ -14,7 +14,6 @@ const trapOf = (id) => TRAPS.find((t) => t.id === id);
 /** Who flies: what launches it (demo-repos-run.mjs) and how it is priced, dollars per million. */
 export const AGENTS_BY_KIND = {
   glm: { harness: 'opencode', label: 'GLM 5.3 on opencode', model: 'zai-coding-plan/glm-5.3', rates: null },
-  mimo: { harness: 'opencode', label: 'MiMo V2.6 Flash on opencode', model: 'yoneda/mimo-v2.6-flash', rates: { input: 0.14, cache_read: 0.14, output: 0.28 } },
   codex: { harness: 'codex', label: 'GPT-5.6 Luna on Codex', model: 'gpt-5.6-luna', rates: { input: 0.2, cache_read: 0.02, output: 1.2 } },
   claude: { harness: 'claude', label: 'Sonnet 5.5 on Claude Code', model: 'claude-sonnet-5-5', rates: null },
 };
@@ -93,7 +92,7 @@ export const REPOS = {
   },
   commander: {
     project: 'tj/commander.js (a Node.js command-line parser)',
-    agent: 'mimo',
+    agent: 'glm',
     feature: 'Near-miss hints for choices and excess arguments, with an off switch',
     order: ['clean', 'sloppy', 'fix', 'drift', 'strict', 'sloppy3', 'relax', 'fix3', 'approvals', 'approval'],
     memories: [

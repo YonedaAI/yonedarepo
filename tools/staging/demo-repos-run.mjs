@@ -38,7 +38,6 @@ export async function agentClone(ctx, r, name, { branch, start }) {
 
 const SHIM = 'http://127.0.0.1:8719';
 const QUIET = { DISABLE_TELEMETRY: '1', DISABLE_AUTOUPDATER: '1', DO_NOT_TRACK: '1', NO_UPDATE_NOTIFIER: '1' };
-const MIMO_ID = 'mimo-v2.6-flash';
 
 /** The command, extra environment and stdin of one run of `kind`. */
 function launch(ctx, kind, title, text) {
@@ -52,8 +51,7 @@ function launch(ctx, kind, title, text) {
   if (harness === 'codex') return { command: ['node', '/opt/yoneda/codex-run.mjs', model, text], env: { ...shim(), ...QUIET, SANDBOX_SHIM_KEY: 'sandbox-shim', NODE_USE_ENV_PROXY: '1' } };
   const command = ['opencode', ...opencodeArgs({ model, title, text })];
   if (kind === 'glm') return { command, env: {}, credential: ctx.glmCredential };
-  const provider = { npm: '@ai-sdk/anthropic', name: 'MiMo through the dev proxy', options: { baseURL: `${ctx.mimo.url}/anthropic/v1`, apiKey: '{env:MIMO_PROXY_TOKEN}' }, models: { [MIMO_ID]: {} } };
-  return { command, env: { MIMO_PROXY_TOKEN: ctx.mimo.token }, opencode: { model, small_model: model, provider: { yoneda: provider } } };
+  throw new Error(`Unsupported sandbox agent: ${kind}`);
 }
 
 /** Tokens and dollars out of a run's events. GLM's plan and the opencode cost field say $0. */
