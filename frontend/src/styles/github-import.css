@@ -39,3 +39,15 @@
   color: var(--blue-text);
   text-decoration: underline;
 }
+.github-repo-taken {
+  margin: 0;
+}
+.github-repo-taken button {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--blue-text);
+  font: inherit;
+  text-decoration: underline;
+}
