@@ -36,7 +36,7 @@ import { ownerLogin } from './realuser-flow.mjs';
 import { Workspace } from './realuser-git.mjs';
 import { scrubber } from './realuser-plan.mjs';
 
-const PHASES = ['setup', 'memories', 'smoke', 'clean', 'sloppy', 'fix', 'config', 'sloppy2', 'fix2', 'suggest', 'suggest2', 'drift', 'approvals', 'approval', 'release', 'report'];
+const PHASES = ['setup', 'memories', 'smoke', 'clean', 'sloppy', 'fix', 'config', 'sloppy2', 'fix2', 'config2', 'suggest', 'suggest2', 'drift', 'approvals', 'approval', 'release', 'report'];
 const CLAUDE_CAP_USD = 20;
 const GATEWAY = 'https://gateway.ai.cloudflare.com/v1/f011d0ee02b23cad26b4b38151b204ad/yonedarepo-dev-managed-agents';
 const MIMO_PROXY = 'https://yonedarepo-dev-model-proxy.mlong-f01.workers.dev';
@@ -238,7 +238,7 @@ function usageFromEvidence(key, id, kind) {
 
 /** The open or landed Landing a first run already pushed, if any: it is settled, not flown again. */
 async function pushedBefore(r, id, spec) {
-  if (FIXES[id] || state.repos[r.key].flights[id]) return null;
+  if (FIXES[id] || spec.continues || state.repos[r.key].flights[id]) return null;
   for (const status of ['open', 'landed']) {
     const found = (await owner.get(`/repos/${r.id}/changes?status=${status}`)).changes.find((c) => c.branch === spec.branch);
     if (found) return found;
@@ -261,7 +261,7 @@ async function flight(r, id) {
     save();
     return log(`${r.key} ${id}: adopted #${settled.number} ${settled.outcome} (wanted ${want}); slop ${settled.slop.value}, drift ${settled.drift.value}; proof ${JSON.stringify(record[id].proof ?? null)}`);
   }
-  const again = FIXES[id] || record[id]?.number;
+  const again = FIXES[id] || spec.continues || record[id]?.number;
   const prompt = FIXES[id] ? fixPrompt(plan, spec, record[FIXES[id]].number) : workPrompt(plan, spec);
   log(`${r.key} ${id}: ${AGENTS_BY_KIND[kind].label} starts on ${spec.branch}`);
   await ctx.egressFor(kind);

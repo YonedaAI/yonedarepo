@@ -153,7 +153,7 @@ export const REPOS = {
     project: 'pallets/click (a Python command-line toolkit)',
     agent: 'codex',
     feature: 'Configuration files for options, by Codex; near-miss hints for Choice, by Claude Code',
-    order: ['clean', 'sloppy', 'fix', 'config', 'sloppy2', 'fix2', 'suggest', 'suggest2', 'drift', 'approvals', 'approval'],
+    order: ['clean', 'sloppy', 'fix', 'config', 'sloppy2', 'fix2', 'config2', 'suggest', 'suggest2', 'drift', 'approvals', 'approval'],
     memories: [
       { via: 'web', kind: 'gotcha', anchors: ['src/click/types.py'], text: 'ParamType.fail raises BadParameter with the parameter and context attached, so a type never builds the usage error itself.' },
       { via: 'web', kind: 'fact', anchors: ['src/click/types.py'], text: 'Choice compares normalized values and keeps the original choices for its answer, so a message has to show what the user can really type.' },
@@ -196,6 +196,14 @@ export const REPOS = {
         branch: 'feat/config-file-option',
         work: 'Configuration files, part 3. Add a decorator click.config_file_option(*param_decls, **kwargs) in src/click/decorators.py, next to version_option: an eager option, --config PATH by default, not exposed to the callback, whose own callback picks the loader from src/click/_config.py by file extension and sets ctx.default_map from the file. Export it from src/click/__init__.py. Add tests/test_config_file_option.py, using CliRunner with a real file: a value from the file becomes the default, the command line wins over it, and a broken file exits with the code of ConfigFileError.',
         message: 'Add config_file_option',
+      },
+      // Slop's run on the first push failed, and only a new push asks for another.
+      config2: {
+        want: 'landed',
+        continues: true,
+        branch: 'feat/config-file-option',
+        work: 'Configuration files, part 3, continued. Add one more test to tests/test_config_file_option.py: a file that does not exist exits with the code of ConfigFileError and names the file. Change nothing else.',
+        message: 'Test config_file_option with a missing file',
       },
       suggest: {
         agent: 'claude',
