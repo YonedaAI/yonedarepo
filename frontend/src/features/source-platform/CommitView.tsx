@@ -38,7 +38,8 @@ export function CommitView({
       <header>
         <h2>{d.message.split('\n')[0]}</h2>
         <p className="source-meta">
-          <code>{d.commit}</code> by <Person principal={d.principal} />
+          <code>{d.commit}</code> by {d.author_name ?? <Person principal={d.principal} />}
+          {d.authored_at && ` · ${when(d.authored_at)}`}
           {d.parents.map((p) => (
             <span key={p}>
               {' · parent '}

@@ -7,10 +7,11 @@ use super::{
     activity, adopt, agent_context, agent_reads, annotated, audit_outbox, auto_landing, bisect,
     branches, capacity, change_closing, change_comments, change_delete, change_gates,
     change_instruments, change_records, change_route, changes, changesets, checks, classes,
-    contracts, flight_plans, git_http, head, history, history_reset, hook_delivery, hook_events,
-    hooks, land, land_batch, land_queue, land_tickets, land_when_cleared, legal_hold, members,
-    merging, prepare, projection_plan, pushed, reads, rebase, record, releases, search_records,
-    sessions, staging, submitted, symbols, tags, tokens, version_projection,
+    commit_authors, contracts, dir_activity, flight_plans, git_http, head, history, history_reset,
+    hook_delivery, hook_events, hooks, land, land_batch, land_queue, land_tickets,
+    land_when_cleared, legal_hold, members, merging, prepare, projection_plan, pushed, reads,
+    rebase, record, releases, search_records, sessions, staging, submitted, symbols, tags, tokens,
+    version_projection,
 };
 use super::{
     authorize::authorize, break_glass, deletion, erase, forks, grants, lfs, maintenance, memory,
@@ -86,6 +87,7 @@ fn run<S: SqlStore>(
         R::MergeBase => reads::merge_base(db, c),
         R::MergePlan => merging::plan(db, c),
         R::PathHistory => history::path_history(db, c),
+        R::DirActivity => dir_activity::dir_activity(db, c),
         R::RecordClasses => classes::record(db, c),
         R::ClassesPending => classes::pending(db, c),
         R::RecordSymbols => symbols::record(db, c),
@@ -207,6 +209,8 @@ fn run<S: SqlStore>(
         R::ChangesetRecord => version_projection::record(db, c, settings),
         R::ImportRefs => branches::import_refs(db, c, principal),
         R::ImportReset => history_reset::step(db, c, settings),
+        R::AuthorsMissing => commit_authors::missing(db, c),
+        R::AuthorsSet => commit_authors::fill(db, c),
         R::StoreAudit => history_reset::audit(db, settings),
         R::BreakGlass => break_glass::execute(db, c, principal, settings),
         R::Import => {

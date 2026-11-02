@@ -2,7 +2,7 @@
 // Up and Down move between the name links (Home and End to the ends).
 import { File, Folder, FolderUp, Link2 } from 'lucide-react';
 import type { KeyboardEvent, ReactNode } from 'react';
-import { type Activity, ago, sortEntries } from './fileActivity';
+import { type Activity, ago, sortEntries, writtenAt } from './fileActivity';
 
 export type TreeEntry = { name: string; type: string; id: string };
 
@@ -26,7 +26,6 @@ export function FileTable({
   dir,
   entries,
   activity,
-  messages,
   now = Date.now(),
   link,
   commitLink,
@@ -34,8 +33,6 @@ export function FileTable({
   dir: string;
   entries: TreeEntry[];
   activity: Map<string, Activity>;
-  /** First lines of commit messages, by commit id, as they load. */
-  messages: Map<string, string>;
   now?: number;
   /** A link to a path in this directory listing ('' is the root). */
   link: (
@@ -94,12 +91,14 @@ export function FileTable({
                   )}
                 </td>
                 <td className="file-message">
-                  {last &&
-                    commitLink(last.commit, messages.get(last.commit) ?? last.commit.slice(0, 10))}
+                  {last && commitLink(last.commit, last.message || last.commit.slice(0, 10))}
+                  {last?.author_name && <span className="file-author">{last.author_name}</span>}
                 </td>
                 <td className="file-age">
                   {last && (
-                    <time dateTime={new Date(last.at).toISOString()}>{ago(last.at, now)}</time>
+                    <time dateTime={new Date(writtenAt(last)).toISOString()}>
+                      {ago(writtenAt(last), now)}
+                    </time>
                   )}
                 </td>
               </tr>

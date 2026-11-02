@@ -1,5 +1,6 @@
 mod admin;
 mod audit_set_aside;
+mod author_backfill;
 mod cloudflare;
 mod cloudflare_deploy;
 mod commands;

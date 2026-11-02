@@ -8,6 +8,8 @@ type LogCommit = {
   commit: string;
   message: string;
   principal: string;
+  author_name?: string | null;
+  authored_at?: number | null;
   landed?: { version: number; landed_at: number };
   break_glass?: string | null;
 };
@@ -42,8 +44,20 @@ export function RepoHistory({
             <strong>{c.message.split('\n')[0]}</strong>
           </a>
           <span>
-            <code>{shortSha(c.commit)}</code> · <Person principal={c.principal} />
-            {c.landed && ` · landed v${c.landed.version} · ${when(c.landed.landed_at)}`}
+            <code>{shortSha(c.commit)}</code> ·{' '}
+            {c.author_name ?? <Person principal={c.principal} />}
+            {c.authored_at && ` · ${when(c.authored_at)}`}
+            {c.landed && (
+              <>
+                {` · landed v${c.landed.version} `}
+                {c.author_name && (
+                  <>
+                    by <Person principal={c.principal} />{' '}
+                  </>
+                )}
+                {`· ${when(c.landed.landed_at)}`}
+              </>
+            )}
             {c.break_glass && (
               <>
                 {' · '}

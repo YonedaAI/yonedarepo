@@ -156,7 +156,8 @@ pub fn log<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
         )?;
         commits.push(json!({
             "commit": id, "tree": row.tree, "parents": row.parents, "message": row.message,
-            "principal": row.principal, "landed": landed.first(),
+            "principal": row.principal, "author_name": row.author.name,
+            "authored_at": row.author.at, "landed": landed.first(),
             "break_glass": broke_glass.first().map(|r| r["action"].clone()),
         }));
         next = match row.parents.first() {
@@ -211,6 +212,7 @@ pub fn commit<S: SqlStore>(db: &S, c: &Value, settings: &Settings) -> Result<Val
     Ok(json!({
         "commit": id, "tree": row.tree, "parents": row.parents, "generation": row.generation,
         "base_version": row.base_version, "principal": row.principal, "message": row.message,
+        "author_name": row.author.name, "authored_at": row.author.at,
         "read_set": row.read_set, "paths": rows::touches(db, &id)?,
         "checks": db.query("SELECT name,status,evidence,principal,recorded_at FROM checks WHERE commit_id=? ORDER BY name", &key)?,
         "reviews": db.query("SELECT principal,decision,reason,recorded_at FROM reviews WHERE commit_id=? ORDER BY recorded_at", &key)?,

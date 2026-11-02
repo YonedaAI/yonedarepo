@@ -4,6 +4,7 @@
 // against real Git) of a history built here: several branches, some diverged, a merge, and
 // lightweight and annotated tags. No test here reaches any other object store: R2 and the
 // authority are real, and a clone is read back through the platform's own Git.
+import { runInDurableObject } from 'cloudflare:test';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type CheckInstance, startCheck } from '../../cloudflare/worker/check-container';
 import { cloneSession } from '../../cloudflare/worker/import-container';
@@ -11,11 +12,12 @@ import { platformFetch } from '../../cloudflare/worker/platform-routes';
 import { type CloneParams, cloneRepository, MAX_PACK_BYTES } from '../../cloudflare/worker/repo-clone';
 import { caller } from '../../cloudflare/worker/repo-ops';
 import { packKey, seedOf, wholeClone } from '../../cloudflare/worker/repo-pack-cache';
+import { authorBackfill } from '../../cloudflare/worker/repo-author-backfill';
 import { reimportRepository } from '../../cloudflare/worker/repo-reimport';
 import type { Env } from '../../cloudflare/worker/types';
 import { asGit } from './git-answer';
 import { FakeGitHub, linkGitHub } from './fake-github';
-import { api, author, file, scoped, signup, usePlatformFixture } from './repo-fixture';
+import { api, author, bindings, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 import { binary, join, object, type Obj, pack, pkt, text, tree } from './synthetic-pack';
 
 usePlatformFixture();
@@ -388,6 +390,46 @@ describe('a repository cloned', () => {
     expect(await refsOf(repo, owner, env)).toEqual(first);
     const commit = await api(`${repo}/commits`, owner, { body: { ref: 'main', message: 'after', author, changes: [file('after.txt', 'yes\n')] } }, env);
     expect(commit.status).toBe(200);
+  });
+
+  it('tells who wrote each commit, not who imported it, and fills in commits from before', async () => {
+    const h = await history();
+    github();
+    const box = await container(h.remote);
+    const { env, owner, repo, id, params } = await asked('authors', box.fake);
+    await cloneRepository(env, params, running);
+
+    const log = await api(`${repo}/log?ref=main&limit=1`, owner, {}, env);
+    expect(log.body.commits[0]).toMatchObject({ author_name: 'A', authored_at: 1700000000000, principal: 'platform:import' });
+
+    const stub = bindings.SOURCE_REPOS.get(bindings.SOURCE_REPOS.idFromName(id));
+    await runInDurableObject(stub, (_: unknown, state: DurableObjectState) => {
+      state.storage.sql.exec('UPDATE commits SET author_name=NULL,authored_at=NULL');
+    });
+    const dry = await authorBackfill(env, 'operator', id, { dry_run: true });
+    expect(dry.missing).toBeGreaterThan(0);
+    expect((await api(`${repo}/log?ref=main&limit=1`, owner, {}, env)).body.commits[0].author_name).toBeNull();
+
+    const done = await authorBackfill(env, 'operator', id, {});
+
+    expect(done).toMatchObject({ filled: dry.missing, unreadable: 0 });
+    expect((await api(`${repo}/log?ref=main&limit=1`, owner, {}, env)).body.commits[0].author_name).toBe('A');
+    expect((await authorBackfill(env, 'operator', id, {})).missing).toBe(0);
+  });
+
+  it('gives every entry of a directory its last commit, though the clone is one landing', async () => {
+    const h = await history();
+    github();
+    const box = await container(h.remote);
+    const { env, owner, repo, params } = await asked('folders', box.fake);
+    await cloneRepository(env, params, running);
+
+    const root = await api(`${repo}/log?ref=main&dir=`, owner, {}, env);
+
+    expect(root.status).toBe(200);
+    expect(root.body.activity['a.txt']).toMatchObject({ commit: h.second.id, message: 'second', author_name: 'A' });
+    expect(root.body.activity['b.txt'].commit).toBe(h.third.id);
+    expect(root.body.partial).toBe(false);
   });
 
   it('every step repeats harmlessly', async () => {

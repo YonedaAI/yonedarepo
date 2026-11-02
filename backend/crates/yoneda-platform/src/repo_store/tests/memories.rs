@@ -1044,7 +1044,7 @@ fn a_new_repository_has_no_list_of_kinds_in_its_schema() {
     assert_eq!(
         db.query("SELECT MAX(version) AS v FROM repo_schema_migrations", &[])
             .unwrap()[0]["v"],
-        47
+        48
     );
     assert!(
         db.query(

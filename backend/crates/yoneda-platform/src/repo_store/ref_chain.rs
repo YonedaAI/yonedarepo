@@ -162,3 +162,15 @@ fn truncate<S: SqlStore>(db: &S, refname: &str, depth: i64) -> Result<()> {
 pub fn forget<S: SqlStore>(db: &S, refname: &str) -> Result<()> {
     truncate(db, refname, i64::MIN)
 }
+
+/// Whether `refname`'s chain starts part way through its history (`PARTIAL`).
+pub fn truncated<S: SqlStore>(db: &S, refname: &str) -> Result<bool> {
+    let rows = db.query(
+        "SELECT MIN(depth) AS low FROM ref_chain WHERE ref=?",
+        &[json!(refname)],
+    )?;
+    Ok(rows
+        .first()
+        .and_then(|r| r["low"].as_i64())
+        .is_some_and(|low| low > PARTIAL))
+}

@@ -55,6 +55,7 @@ import { landingReport, repoUsageReport } from './platform-repo-reports';
 import { serviceLevels } from './platform-service-levels';
 import { trafficReport } from './platform-site-traffic';
 import { visitorReport } from './platform-visitor-report';
+import { authorBackfill } from './repo-author-backfill';
 import { rebuildDeleted } from './repo-deleted';
 import { backfillObject } from './repo-erase';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
@@ -174,6 +175,8 @@ async function operatorRoute(
     if (action === 'purge-now' && !record && post) return purgeNow(env, actor, id);
     if (action === 'reimport' && !record && post)
       return reimportRepository(env, actor, id, await body());
+    if (action === 'author-backfill' && !record && post)
+      return authorBackfill(env, actor, id, await body());
     if (action === 'purge-orphan' && !record && post)
       return purgeOrphan(env, actor, id, await body());
   }

@@ -108,6 +108,7 @@ pub fn prepare<S: SqlStore>(
     let prepared = json!({
         "tree": built.root, "parents": parents, "generation": generation,
         "base_version": base_version, "touches": touches, "read_set": read_set, "message": message,
+        "author_name": built.author_name, "authored_at": built.authored_at,
     });
     db.query(
         "INSERT INTO prepared_commits(commit_id,principal,payload,expires_at) VALUES(?,?,?,?) \

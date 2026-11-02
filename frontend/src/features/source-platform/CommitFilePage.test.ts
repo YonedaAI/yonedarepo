@@ -11,7 +11,6 @@ vi.mock('./codeData', async (actual) => ({
   ...(await actual<typeof import('./codeData')>()),
   useListing: () => ({ value: listing.value, reload: () => {} }),
   useActivity: () => new Map(),
-  useCommitMessages: () => new Map(),
 }));
 vi.mock('./useSource', () => ({
   useSource: () => ({ loading: true, reload: () => {} }),
