@@ -10,7 +10,8 @@ const state: { value: Loaded<any> } = { value: { loading: true, reload: () => {}
 vi.mock('./useSource', () => ({ useSource: () => state.value }));
 
 const { ConnectPanel, DeleteRepository } = await import('./ConnectPanel');
-const { DeviceOutcome, DevicePage, deviceFailure } = await import('./DevicePage');
+const { DeviceDone, DevicePage, deviceFailure } = await import('./DevicePage');
+const { DeviceOptions } = await import('./DeviceParts');
 const { AGENT_DEFAULT_SCOPES, agentGrant, agentProblem } = await import('./DeviceAgent');
 const { isDeviceLogin, PatDialog, PatTable } = await import('./PersonalTokens');
 const { RepoTokenTable, RepoTokens } = await import('./RepoTokens');
@@ -25,6 +26,16 @@ const loaded = (value: Partial<Loaded<any>>): Loaded<any> => ({
   ...value,
 });
 const signedOut = loaded({ error: 'Sign in or use a repository token' });
+const site = 'https://dev.yonedarepo.com';
+const person = {
+  site,
+  session: {
+    authenticated: true,
+    loading: false,
+    identity: { username: 'ada@x.test', handle: 'ada' },
+  },
+};
+const nobody = { site, session: { authenticated: false, loading: false, identity: null } };
 const api = 'https://api.dev.yonedarepo.com';
 const repo = 'r0123456789abcdef0123';
 const repos = [
@@ -43,8 +54,7 @@ describe('an agent asking through device login', () => {
 
   it('says who is asking, with no repository chosen and thirty days', () => {
     state.value = loaded({ data: asking });
-    const page = html(DevicePage, { code: 'BCDF-GHJK' });
-    expect(page).toContain('Connect an agent');
+    const page = html(DevicePage, { ...person, code: 'BCDF-GHJK' });
     expect(page).toContain('review-bot');
     expect(page).toContain('ci-1');
     expect(page).toContain('Choose at least one repository, or all repositories.');
@@ -56,7 +66,7 @@ describe('an agent asking through device login', () => {
 
   it('offers repository work and nothing else, reading and writing ticked', () => {
     state.value = loaded({ data: asking });
-    const page = html(DevicePage, { code: 'BCDF-GHJK' });
+    const page = html(DevicePage, { ...person, code: 'BCDF-GHJK' });
     expect(page).toMatch(/checked=""\/>Read/);
     expect(page).toMatch(/checked=""\/>Write/);
     expect(page).toMatch(/type="checkbox"\/>Land/);
@@ -67,7 +77,7 @@ describe('an agent asking through device login', () => {
 
   it('with no repositories yet, says so and leaves all repositories as the choice', () => {
     state.value = loaded({ data: { ...asking, repos: [] } });
-    const page = html(DevicePage, { code: 'BCDF-GHJK' });
+    const page = html(DevicePage, { ...person, code: 'BCDF-GHJK' });
     expect(page).toContain('No repositories yet.');
     expect(page).toContain('All repositories, including ones created later');
   });
@@ -89,11 +99,11 @@ describe('an agent asking through device login', () => {
     expect(agentProblem({ ...form, scopes: [] })).toMatch(/access/);
   });
 
-  it('a person asking stays on the login form', () => {
+  it('a person asking gets the plain card, with its grant behind Options', () => {
     state.value = loaded({ data: { repos, agent: null, host: null } });
-    const page = html(DevicePage, { code: 'BCDF-GHJK' });
-    expect(page).toContain('Connect a device');
-    expect(page).toContain('SSH keys');
+    const page = html(DevicePage, { ...person, code: 'BCDF-GHJK' });
+    expect(page).toContain('Sign in to YonedaRepo');
+    expect(page).not.toContain('SSH keys');
   });
 
   it('a signed-in agent reads as one and is signed out in the same table', () => {
@@ -306,31 +316,84 @@ describe('repository tokens', () => {
 });
 
 describe('device approval', () => {
-  it('needs a session: loading, then the sign-in prompt for a signed-out visitor', () => {
-    expect(html(DevicePage, { code: 'BCDF-GHJK' })).toContain('Loading your account');
+  const pending = { repos, agent: null, host: 'ada-laptop' };
+  const footer = 'If you didn&#x27;t start this from your terminal, close this tab.';
+
+  it('is one card: logo, title, the site being signed into, and the footer', () => {
+    state.value = loaded({ data: pending });
+    for (const props of [person, nobody]) {
+      const page = html(DevicePage, { ...props, code: 'BCDF-GHJK' });
+      expect(page).toContain('/brand/mark.svg');
+      expect(page).toContain('Sign in to YonedaRepo');
+      expect(page).toContain('You&#x27;re signing the CLI into:');
+      expect(page).toContain(`<code class="device-host">${site}</code>`);
+      expect(page).toContain(footer);
+    }
+  });
+  it('signed out: the sign-in form, and no way to approve', () => {
     state.value = signedOut;
-    const out = html(DevicePage, { code: 'BCDF-GHJK' });
-    expect(out).toContain('You are signed out');
-    expect(out).not.toContain('Approve');
+    const page = html(DevicePage, { ...nobody, code: 'BCDF-GHJK' });
+    expect(page).toContain('account-panel');
+    expect(page).toContain('Sign in');
+    expect(page).not.toContain('Approve');
+    expect(page).not.toContain('BCDF-GHJK');
   });
-  it('prefills the code and offers Approve and Deny', () => {
-    state.value = loaded({ data: { repos } });
-    const page = html(DevicePage, { code: 'BCDF-GHJK' });
-    expect(page).toContain('value="BCDF-GHJK"');
+  it('while the session loads: neither the form nor Approve', () => {
+    const page = html(DevicePage, {
+      ...nobody,
+      session: { loading: true, authenticated: false },
+      code: 'BCDF-GHJK',
+    });
+    expect(page).toContain('Loading your account');
+    expect(page).not.toContain('account-panel');
+    expect(page).not.toContain('Approve');
+  });
+  it('signed in: who, this machine, the code and one Approve, the rest behind Options', () => {
+    state.value = loaded({ data: pending });
+    const page = html(DevicePage, { ...person, code: 'BCDF-GHJK' });
+    expect(page).toContain('ada');
+    expect(page).toContain('ada-laptop');
+    expect(page).toContain('BCDF-GHJK');
+    expect(page.match(/<button/g)).toHaveLength(2);
     expect(page).toContain('>Approve</button>');
-    expect(page).toContain('>Deny</button>');
+    expect(page).toContain('>Options</button>');
+    expect(page).not.toContain('Deny');
+    expect(page).not.toContain('type="checkbox"');
     expect(page).not.toMatch(/<button type="submit" disabled="">Approve/);
-    const empty = html(DevicePage, { code: '' });
-    expect(empty).toMatch(/<button type="submit" disabled="">Approve/);
   });
-  it('ticks SSH keys for a CLI login and says plainly what it does', () => {
+  it('a machine with no name leaves its line out', () => {
+    state.value = loaded({ data: { ...pending, host: null } });
+    expect(html(DevicePage, { ...person, code: 'BCDF-GHJK' })).not.toContain('This machine');
+  });
+  it('with no code in the address it asks for one, and approves nothing yet', () => {
     state.value = loaded({ data: { repos } });
-    const page = html(DevicePage, { code: 'BCDF-GHJK' });
+    const page = html(DevicePage, { ...person, code: '' });
+    expect(page).toContain('id="device-code"');
+    expect(page).not.toContain('Approve');
+  });
+  it('a code the platform does not know says so, with no Approve', () => {
+    state.value = loaded({ error: 'x', code: 'NOT_FOUND', errorStatus: 404 });
+    const page = html(DevicePage, { ...person, code: 'BCDF-GHJK' });
+    expect(page).toContain('unknown or was already used');
+    expect(page).not.toContain('Approve');
+  });
+  it('Options offers the scopes, expiry and repositories, with SSH keys ticked', () => {
+    const page = html(DeviceOptions, {
+      repos,
+      scopes: ['repo:read', 'repo:write', 'repo:land', 'account:ssh-keys'],
+      days: 30,
+      allow: [],
+      busy: false,
+      onChange: () => {},
+      onDeny: () => {},
+    });
     expect(page).toMatch(
       /checked=""\/>SSH keys<span[^>]*> \(add and remove keys on your account\)/,
     );
     expect(page).toMatch(/checked=""\/>Read/);
     expect(page).toMatch(/type="checkbox"\/>Admin/);
+    expect(page).toContain('demo');
+    expect(page).toContain('>Deny</button>');
   });
   it('explains unknown and expired codes, and the outcome', () => {
     expect(deviceFailure(new SourceApiError('NOT_FOUND', 'x', 404))).toMatch(
@@ -340,8 +403,17 @@ describe('device approval', () => {
     expect(deviceFailure(new SourceApiError('INVALID_INPUT', 'bad scopes', 400))).toBe(
       'bad scopes',
     );
-    expect(html(DeviceOutcome, { outcome: 'approved' })).toContain('Return to your terminal');
-    expect(html(DeviceOutcome, { outcome: 'denied' })).toContain('receives no token');
+  });
+  it('after approval the card says one thing', () => {
+    const done = html(DeviceDone, { outcome: 'approved' });
+    expect(done).toContain('/brand/mark.svg');
+    expect(done).toContain('>Signed in</h1>');
+    expect(done).toContain(
+      'You&#x27;re signed in. You can close this tab and return to your terminal.',
+    );
+    expect(done).not.toContain('<code');
+    expect(done).not.toContain('close this tab.</p><p');
+    expect(html(DeviceDone, { outcome: 'denied' })).toContain('receives no token');
   });
 });
 

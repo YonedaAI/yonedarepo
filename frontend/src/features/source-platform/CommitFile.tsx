@@ -71,7 +71,11 @@ export function CommitFile({
     >
       <div className="source-file code-editor">
         {editing ? (
-          <FileHeader path={editing.path} />
+          <FileHeader path={editing.path}>
+            <button type="button" className="quiet" disabled={busy} onClick={onCancel}>
+              Cancel
+            </button>
+          </FileHeader>
         ) : (
           <header className="file-header">
             <label className="source-field">
@@ -86,6 +90,9 @@ export function CommitFile({
                 onChange={(e) => setPath(e.target.value)}
               />
             </label>
+            <button type="button" className="quiet" disabled={busy} onClick={onCancel}>
+              Cancel
+            </button>
           </header>
         )}
         <CodeBlock value={content} path={path} label="Contents" onChange={setContent} />

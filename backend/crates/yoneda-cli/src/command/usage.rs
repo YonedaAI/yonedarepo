@@ -5,9 +5,9 @@ usage: yoneda <command> [options]
 
 clone (a yoneda:: Git remote; lazy: commits and trees now, each file's contents when Git
 first needs it)
-  clone <repo-id> [dir] [--origin <url>]    lazy clone (git clone yoneda::<origin>/<repo-id>)
-  clone <repo-id> [dir] --full              every object (or git clone -c yoneda.lazy=false)
-  clone <repo-id> [dir] --sparse <dir,...>  only these directories (and the top's files)
+  clone <owner>/<name> [dir] [--origin <url>]    lazy clone, into ./<name> (or <repo-id>)
+  clone <owner>/<name> [dir] --full              every object (or git clone -c yoneda.lazy=false)
+  clone <owner>/<name> [dir] --sparse <dir,...>  only these directories (and the top's files)
   sparse [--add] <dir>...                   this clone: check out only these directories (--add:
                                             these too)
 
@@ -21,7 +21,10 @@ account
   repo visibility <id> public|private   public: anyone reads (no sign-in), only members write
   repo import <dir> [--name <name>] [--batch-files <n>]  files at HEAD (or a plain dir)
   repo fork <id> [--name <name>] [--owner <org>]         a fork on your account or org (needs read)
+  repo remote add <remote> [--override] <owner>/<name>   point this project at a repository
+                                                         (--override replaces the remote)
   setup claude|codex|gemini|opencode                     a coding agent's skill or plugin and MCP config
+  completion bash|zsh|fish|powershell                    a shell's completion script
   ssh setup [--origin <url>]             this machine's key, ~/.ssh/config and a clone line, once
   ssh-key add [--title <t>] <file.pub|->  | ssh-key list | ssh-key rm <id>   keys for Git over SSH
 
@@ -92,11 +95,11 @@ declared reads (closure coverage: landing refuses a push whose reads changed mea
                                       agent hook entry points (JSON on stdin; plugins/)
 
 offline checkouts (kept for existing scripts)
-  clone <repo-id> [dir] --offline [--origin <url>]
-  status [--brief] | sync [--land | --attempt <id> [--mcp-url <url>]] | pull
+  clone <owner>/<name> [dir] --offline [--origin <url>]
+  status [--brief] | sync [--land] | pull
 
---json (any command but help, push and hook): one JSON document on stdout, schema
+--json (any command but help, completion, push and hook): one JSON document on stdout, schema
 yoneda.cli.<command>.v1 (schemas/v1), or yoneda.cli.error.v1 with a stable code.
 
-Git: git clone yoneda::https://api.yonedarepo.com/<repo-id> (lazy), then fetch, pull and push.
+Git: git clone yoneda::https://api.yonedarepo.com/<owner>/<name> (lazy), then fetch, pull and push.
 The token comes from YONEDA_TOKEN when set, else from `yoneda login`.";

@@ -249,7 +249,7 @@ export const FEATURES: Feature[] = [
         label="Signing in and connecting an agent"
         lines={[
           ['in', 'yoneda login'],
-          ['out', 'Open https://yonedarepo.com/device and enter the code WDJB-MJHT'],
+          ['out', '✓ Login complete (signed in at https://yonedarepo.com).'],
           ['in', 'yoneda setup claude'],
           ['in', 'yoneda change create retry --title "Retry on 503"'],
         ]}

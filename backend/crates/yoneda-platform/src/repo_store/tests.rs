@@ -527,7 +527,10 @@ fn tokens_are_scoped_and_revocable() {
         )),
         "FORBIDDEN"
     );
-    h.ok(OWNER, json!({"op":"repo_token_revoke","name":"agent"}));
+    let revoke = |name: &str| h.ok(OWNER, json!({"op":"repo_token_revoke","name":name}));
+    assert_eq!(revoke("agent")["revoked"], true);
+    assert_eq!(revoke("agent")["revoked"], false, "it was gone already");
+    assert_eq!(revoke("nobody")["revoked"], false, "no such token");
     assert_eq!(
         code(h.run(AGENT, json!({"op":"repo_status"}))),
         "UNAUTHORIZED"

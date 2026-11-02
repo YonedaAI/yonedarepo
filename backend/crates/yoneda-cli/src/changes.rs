@@ -45,13 +45,13 @@ impl Change {
 
     /// The platform API's change object (with the `expect` precondition).
     pub fn api_json(&self) -> Value {
-        let mut value = self.mcp_json();
+        let mut value = self.content_json();
         value["expect"] = json!(self.old_blob);
         value
     }
 
-    /// The remote MCP `attempt_commit` change object.
-    pub fn mcp_json(&self) -> Value {
+    /// The change's path and content, as the platform's commit requests take them.
+    fn content_json(&self) -> Value {
         match &self.target {
             Target::Delete => json!({ "path": self.path, "delete": true }),
             Target::Write {

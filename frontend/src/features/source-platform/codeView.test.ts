@@ -121,13 +121,15 @@ describe('syntax colors', () => {
   };
   it('read on the code surface in both themes', () => {
     const themes = [
-      ...css.matchAll(/--bg: (#[0-9a-f]{6});(?:(?!--bg:)[\s\S])*?--syntax-tag: #[0-9a-f]{6};/g),
+      ...css.matchAll(
+        /--bg: (#[0-9a-f]{6});(?:(?!--bg:)[\s\S])*?--syntax-property: #[0-9a-f]{6};/g,
+      ),
     ];
     expect(themes).toHaveLength(3);
     for (const theme of themes) {
       const [block, bg] = theme;
       const colors = [...block.matchAll(/--syntax-\w+: (#[0-9a-f]{6})/g)].map((m) => m[1]);
-      expect(colors).toHaveLength(7);
+      expect(colors).toHaveLength(8);
       for (const color of colors) expect(contrast(color, bg), color).toBeGreaterThanOrEqual(4.5);
     }
   });

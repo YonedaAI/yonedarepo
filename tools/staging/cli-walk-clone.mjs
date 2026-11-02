@@ -37,12 +37,53 @@ export async function seedTree(w, me) {
   return { id: made.id, name, dir, files, a, b, t, version: { a: refs.version, b: after.version } };
 }
 
+/** By name, on a repository with nothing in it: what Git prints, and `yoneda` knows the clone. */
+async function namedRows(w, me, work) {
+  const name = w.name('named');
+  const made = await me.j(['repo', 'create', name]);
+  w.repos.push({ id: made.id, name });
+  const address = `${w.ownerHandle}/${name}`;
+  await w.row('clone <owner>/<name>, empty: Git\'s own lines, into ./<name>', async () => {
+    const ran = await me.ok(['clone', address], { cwd: work });
+    assert.match(ran.stdout, new RegExp(`^Cloning yoneda::${w.api}/${address}$`, 'm'), ran.stdout);
+    assert.match(ran.stderr, new RegExp(`Cloning into '${name}'\\.\\.\\.`), ran.stderr);
+    assert.match(ran.stderr, /cloned an empty repository/, ran.stderr);
+    assert.ok(existsSync(join(work, name, '.git')), `not in ./${name}`);
+    assert.ok(!existsSync(join(work, w.ownerHandle)), 'a folder for the owner');
+    assert.match((await me.ok(['status'], { cwd: join(work, name) })).stdout, new RegExp(made.id), 'yoneda does not know this clone');
+    await me.refused(['clone', name], 64, /<owner>\/<name>/, { cwd: work });
+  });
+  await w.row('repo remote add --override', async () => {
+    const dir = await plainRepo(me);
+    await me.refused(['repo', 'remote', 'add', 'origin', `${w.ownerHandle}/no-such-${name}`], 64, /not a repository you can read/, { cwd: dir });
+    const added = await me.j(['repo', 'remote', 'add', 'origin', address], { cwd: dir });
+    assert.equal(added.url, `yoneda::${w.api}/${address}`);
+    assert.equal(await me.gitOk(dir, 'remote', 'get-url', 'origin'), added.url);
+    await me.gitOk(dir, 'remote', 'set-url', 'origin', 'https://example.test/x.git');
+    await me.refused(['repo', 'remote', 'add', 'origin', address], 64, /add --override/, { cwd: dir });
+    assert.equal(await me.gitOk(dir, 'remote', 'get-url', 'origin'), 'https://example.test/x.git', 'it replaced a remote unasked');
+    assert.equal((await me.j(['repo', 'remote', 'add', 'origin', '--override', address], { cwd: dir })).replaced, 'https://example.test/x.git');
+    assert.equal(await me.gitOk(dir, 'remote', 'get-url', 'origin'), added.url);
+    await me.gitOk(dir, 'remote', 'remove', 'origin');
+  });
+  await w.row('completion bash, zsh, fish, powershell', async () => {
+    assert.match((await me.ok(['completion', 'bash'])).stdout, /complete -o default -F _yoneda yoneda/);
+    assert.match((await me.ok(['completion', 'zsh'])).stdout, /compdef _yoneda yoneda/);
+    assert.match((await me.ok(['completion', 'fish'])).stdout, /complete -c yoneda/);
+    assert.match((await me.ok(['completion', 'powershell'])).stdout, /Register-ArgumentCompleter/);
+    await me.refused(['completion', 'tcsh'], 64, /unknown shell/);
+    const offered = await me.exec('/bin/bash', ['-c', 'eval "$(yoneda completion bash)"; COMP_WORDS=(yoneda repo r); COMP_CWORD=2; _yoneda; echo "${COMPREPLY[@]}"']);
+    assert.equal(offered.stdout, 'remote', `bash offers: ${offered.stdout} ${offered.stderr}`);
+  });
+}
+
 async function cloneRows(w, me, tree) {
   const work = me.path('clones');
   mkdirSync(work, { recursive: true });
+  await namedRows(w, me, work);
   await w.row('clone <id> (lazy)', async () => {
     const out = await me.j(['clone', tree.id], { cwd: work });
-    const dir = join(work, tree.id);
+    const dir = join(work, tree.name);
     assert.equal(out.method, 'lazy');
     assert.equal(out.repo, tree.id);
     assert.equal(await me.gitOk(dir, 'config', 'remote.origin.partialclonefilter'), 'blob:none');
@@ -180,12 +221,8 @@ async function offlineRows(w, me, tree) {
     await me.refused(['pull'], 1, /commit or stash/, { cwd: dir });
     await me.gitOk(dir, 'checkout', '--', 'keep.txt');
   });
-  await w.row('sync --attempt --mcp-url', async () => {
-    const ran = await me.y(['sync', '--attempt', 'walk-attempt', '--mcp-url', `${w.api}/api/v1/mcp`], { cwd: dir });
-    assert.equal(ran.code, 0, `a command in help that no platform answers: ${short(ran.stderr)}`);
-  });
   await w.row('sync and pull outside an offline checkout', async () => {
-    await me.refused(['sync', '--land', '--attempt', 'a'], 64, /either --land or --attempt/);
+    await me.refused(['sync', '--attempt', 'a'], 64, /unknown option --attempt/);
     const ran = await me.y(['sync'], { cwd: tree.dir });
     assert.notEqual(ran.code, 0, 'sync ran in a Git clone');
     assert.match(ran.stderr, /is not a yoneda checkout/, short(ran.stderr));
@@ -248,9 +285,13 @@ async function helperRows(w, me, tree) {
   await w.row('git push --delete a branch through the helper', async () => {
     const dir = join(work, 'fresh');
     await me.gitOk(dir, 'push', '-q', 'origin', 'HEAD:refs/heads/doomed');
+    await w.soon(async () => /refs\/heads\/doomed/.test(await me.gitOk(dir, 'ls-remote', 'origin')), 'the branch in ls-remote');
     const gone = await me.git(dir, 'push', 'origin', '--delete', 'doomed');
     assert.equal(gone.code, 0, short(gone.stderr));
-    assert.ok(!(await me.api.get(`/repos/${tree.id}/refs`)).refs['refs/heads/doomed'], 'the branch is still there');
+    await w.soon(async () => !(await me.api.get(`/repos/${tree.id}/refs`)).refs['refs/heads/doomed'], 'the branch to go');
+    const main = await me.git(dir, 'push', 'origin', '--delete', 'main');
+    assert.notEqual(main.code, 0, 'main was deleted');
+    assert.match(main.stderr, /Protected branches/, short(main.stderr));
   });
   await w.row('git-remote-yoneda refuses a bad remote plainly', async () => {
     const ran = await me.git(work, 'clone', '-q', 'yoneda::not-a-url', 'bad');

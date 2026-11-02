@@ -6,12 +6,12 @@ summary: The git-remote-yoneda helper clones commits and trees at once and fetch
 ## Clone
 
 ```sh
-yoneda clone <repo-id> demo
+yoneda clone <owner>/demo
 # the same thing with Git itself:
-git clone yoneda::https://api.yonedarepo.com/<repo-id> demo
+git clone yoneda::https://api.yonedarepo.com/<owner>/demo demo
 ```
 
-Both need the [CLI](/docs/guides/cli) installed, which brings the `git-remote-yoneda` helper. The remote URL is `yoneda::https://<platform>/<repo-id>` (or `yoneda://<platform>/<repo-id>`). After cloning, `git fetch`, `git pull` and `git push` work as usual.
+Both need the [CLI](/docs/guides/cli) installed, which brings the `git-remote-yoneda` helper. The remote URL is `yoneda::https://<platform>/<owner>/<name>` or `yoneda::https://<platform>/<repo-id>` (or the same with `yoneda://<platform>/…`). After cloning, `git fetch`, `git pull` and `git push` work as usual.
 
 ## Lazy by default
 

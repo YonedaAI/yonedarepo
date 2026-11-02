@@ -5,23 +5,25 @@
   font-family: "IBM Plex Sans", sans-serif;
   font-synthesis: none;
   font-size: var(--text-base);
-  --mono: "IBM Plex Mono", ui-monospace, monospace;
-  --text-xs: 12px; /* uppercase section labels */
-  --text-sm: 13px; /* labels and metadata */
-  --text-md: 14px; /* secondary text, tables, toolbars */
-  --text-base: 15px; /* body text, sidebar rows */
-  --text-lg: 16px; /* card titles, page body copy */
-  --text-xl: 18px; /* section headings */
-  --text-2xl: 22px; /* a change's title, large figures */
-  --text-3xl: 26px; /* page headings */
-  --text-4xl: 30px; /* dashboard figures */
-  --text-mono: 14px; /* code fields */
-  --text-mono-dense: 13px; /* code and diff views */
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --text-xs: 11px; /* uppercase section labels */
+  --text-sm: 12px; /* labels and metadata */
+  --text-md: 13px; /* secondary text, tables, toolbars */
+  --text-base: 14px; /* body text, sidebar rows */
+  --text-lg: 15px; /* card titles, page body copy */
+  --text-xl: 16px; /* section headings */
+  --text-2xl: 18px; /* a change's title, large figures */
+  --text-3xl: 20px; /* page headings */
+  --text-4xl: 24px; /* dashboard figures */
+  --text-mono: 13px; /* code fields */
+  --text-mono-dense: 12px; /* code and diff views */
   --text-code: max(
     var(--text-sm),
     0.93em
-  ); /* code inside text: follows the text, never below 13px */
+  ); /* code inside text: follows the text, never below 12px */
   --weight-heading: 600;
+  --control-h: 32px; /* every control in a row: buttons, fields, segments */
+  --row-y: 7px; /* the padding above and below a list or table row */
   color: var(--text);
   background: var(--bg);
   /* Light unless the viewer chose Dark, or chose nothing (System) on a dark device; the
@@ -36,6 +38,7 @@
   --muted: #5d6c80;
   --faint: #5f6e82;
   --line: #e1e6ed;
+  --row-line: #edf0f4; /* between rows: quieter than a panel's edge */
   --line-strong: #c5d6e1;
   --blue: #245de8;
   /* Blue as text, links and focus outlines; --blue itself is the fill behind --on-accent. */
@@ -62,6 +65,7 @@
   --overlay: #15243665;
   --bubble: #245de8;
   --code-bg: var(--bg);
+  --code-line: #e8edf3;
   --syntax-keyword: #7a2dbf;
   --syntax-string: #0f6b3a;
   --syntax-comment: #5d6c80;
@@ -69,6 +73,7 @@
   --syntax-type: #0b6585;
   --syntax-function: #245de8;
   --syntax-tag: #b4232c;
+  --syntax-property: #1d5c7a;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -82,6 +87,7 @@
     --muted: #9d9d9d;
     --faint: #939393;
     --line: #2b2b2b;
+    --row-line: #232323;
     --line-strong: #3d3d3d;
     --blue: #3566dc;
     --blue-text: #7aa0f8;
@@ -106,6 +112,7 @@
     --overlay: #000000a0;
     --bubble: #4d80f5;
     --code-bg: var(--bg);
+    --code-line: #232323;
     --syntax-keyword: #c792ea;
     --syntax-string: #9ece6a;
     --syntax-comment: #9d9d9d;
@@ -113,6 +120,7 @@
     --syntax-type: #7dcfff;
     --syntax-function: #7aa0f8;
     --syntax-tag: #ff8b8b;
+    --syntax-property: #b4d0ff;
   }
 }
 :root[data-theme="dark"] {
@@ -126,6 +134,7 @@
   --muted: #9d9d9d;
   --faint: #939393;
   --line: #2b2b2b;
+  --row-line: #232323;
   --line-strong: #3d3d3d;
   --blue: #3566dc;
   --blue-text: #7aa0f8;
@@ -150,6 +159,7 @@
   --overlay: #000000a0;
   --bubble: #4d80f5;
   --code-bg: var(--bg);
+  --code-line: #232323;
   --syntax-keyword: #c792ea;
   --syntax-string: #9ece6a;
   --syntax-comment: #9d9d9d;
@@ -157,4 +167,5 @@
   --syntax-type: #7dcfff;
   --syntax-function: #7aa0f8;
   --syntax-tag: #ff8b8b;
+  --syntax-property: #b4d0ff;
 }

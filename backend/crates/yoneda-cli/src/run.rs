@@ -3,35 +3,31 @@ use crate::args::{self, Command, SyncMode};
 use crate::checkout::Checkout;
 use crate::error::{Error, Result};
 use crate::{
-    account, agent_hook, attempt, brief, change_cmd, clone, context_cmd, declared_reads,
-    flight_plan, login, memory_cmd, pull, reads, release_cmd, repo_ops, session_cmd, setup, sparse,
-    status, sync, target,
+    account, agent_hook, brief, change_cmd, clone, context_cmd, declared_reads, flight_plan, login,
+    memory_cmd, pull, reads, release_cmd, repo_ops, session_cmd, setup, sparse, status, sync,
+    target,
 };
 use crate::{human, output};
+use std::io::Write;
 
 async fn sync_checkout(mode: SyncMode) -> Result<()> {
     let mut co = Checkout::open()?;
-    match mode {
-        SyncMode::Attempt { id, mcp_url } => attempt::sync(&mut co, &id, mcp_url.as_deref()).await,
-        SyncMode::Push | SyncMode::Land => {
-            let (made, adopted) = sync::push(&mut co).await?;
-            human!(
-                "Pushed {made} platform commit(s) to {}",
-                co.state.offline_branch
-            );
-            let landing = match mode {
-                SyncMode::Land => Some(sync::land(&mut co).await?),
-                _ => None,
-            };
-            output::emit(&output::Synced::Push {
-                pushed: made as u64,
-                adopted: adopted as u64,
-                offline_branch: co.state.offline_branch.clone(),
-                landing,
-            });
-            Ok(())
-        }
-    }
+    let (made, adopted) = sync::push(&mut co).await?;
+    human!(
+        "Pushed {made} platform commit(s) to {}",
+        co.state.offline_branch
+    );
+    let landing = match mode {
+        SyncMode::Land => Some(sync::land(&mut co).await?),
+        SyncMode::Push => None,
+    };
+    output::emit(&output::Synced::Push {
+        pushed: made as u64,
+        adopted: adopted as u64,
+        offline_branch: co.state.offline_branch.clone(),
+        landing,
+    });
+    Ok(())
 }
 
 /// `status`: an offline checkout's full status, else the Git clone's summary line.
@@ -62,6 +58,11 @@ async fn run(command: Command) -> Result<()> {
     match command {
         Command::Help => {
             println!("{}", args::USAGE);
+            Ok(())
+        }
+        Command::Completion(shell) => {
+            // A shell that stops reading is no failure, and `print!` would panic on it.
+            let _ = std::io::stdout().write_all(crate::completion::script(shell).as_bytes());
             Ok(())
         }
         Command::Login {
@@ -137,7 +138,7 @@ async fn run(command: Command) -> Result<()> {
             repo_ops::policy(&target::resolve(&target)?, set.as_deref()).await
         }
         Command::Token { target, command } => {
-            repo_ops::token(&target::resolve(&target)?, command).await
+            crate::token_cmd::token(&target::resolve(&target)?, command).await
         }
         Command::Read { target, command } => reads::read(&target::resolve(&target)?, command).await,
         Command::Check { target, command } => {

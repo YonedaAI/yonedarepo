@@ -158,6 +158,21 @@ impl Git {
         }
     }
 
+    /// Runs git with its output on this process's own, for the person to read.
+    pub fn show(&self, args: &[&str]) -> Result<()> {
+        let status = self
+            .command(&[])
+            .args(args)
+            .stdin(Stdio::null())
+            .status()
+            .context("running git (is it installed?)")?;
+        if status.success() {
+            Ok(())
+        } else {
+            Err(Error::new(format!("git {} failed", args[0])))
+        }
+    }
+
     pub fn run(&self, args: &[&str]) -> Result<String> {
         let out = self.output(args, None, &[])?;
         Ok(String::from_utf8_lossy(&out).trim().to_owned())

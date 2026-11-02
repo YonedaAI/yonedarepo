@@ -26,7 +26,9 @@ export function AgentPins({ repo, navigate }: { repo: string; navigate: Navigate
     );
   return (
     <section aria-labelledby="pins-heading">
-      <h2 id="pins-heading">Kept commits</h2>
+      <h2 id="pins-heading" className="sr-only">
+        Kept commits
+      </h2>
       <p className="agent-subtitle">Commits kept from cleanup, even after their branch is gone.</p>
       <ul className="agent-list" aria-label="Kept commits">
         {pins.map((p) => (
@@ -94,7 +96,9 @@ export function AgentBisects({ repo, navigate }: { repo: string; navigate: Navig
     );
   return (
     <section aria-labelledby="bisects-heading">
-      <h2 id="bisects-heading">Find a breaking commit</h2>
+      <h2 id="bisects-heading" className="sr-only">
+        Find a breaking commit
+      </h2>
       <p className="agent-subtitle">Searches for the first commit that broke a check.</p>
       <ul className="agent-list" aria-label="Searches for a breaking commit">
         {bisects.map((b) => (

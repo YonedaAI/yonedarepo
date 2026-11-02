@@ -1,4 +1,4 @@
-// This week's features as kit items (33-44, 46), no model: CTC, Landings, flight plan and go-around,
+// This week's features as kit items (33-44, 46, 48), no model: CTC, Landings, flight plan and go-around,
 // search across repositories, the Clone panel, admin Revenue and Traffic, org delete during
 // create, the audit log, the empty states and the whole Flight Path, by API, CLI, Git, MCP and in
 // Chrome. They hold one session: the browser items reuse the run's cookie and the second account
@@ -6,6 +6,7 @@
 import { adminPages } from './admin-pages-flow.mjs';
 import { agentSignup } from './agent-signup-flow.mjs';
 import { auditFlow } from './audit-flow.mjs';
+import { cliWalk } from './cli-walk-flow.mjs';
 import { clonePanel } from './clone-panel-flow.mjs';
 import { secondAccount } from './client.mjs';
 import { ctcTraffic } from './ctc-flow.mjs';
@@ -43,6 +44,9 @@ export async function featureItems(step, { cli, kit, account, platformAccount, v
   await step('44', 'Flight Path failures: stale head, failed check, path limits, fork, races, pause, no rules, rollback (needs LAND_WHEN_CLEARED)', (m) => flightFailures(cli, { web, credentials }, m));
   await step('f1', 'F1, the stale head, repeated with the platform\'s own times (F1_RUNS, default 10): --only 0,12,f1,17', (m) => flightTimes(cli, { credentials }, m));
   await step('46', 'Agent sign-up: the real login and page, an actor of its own, its repositories, no minting, reviews, limits, sign-out (needs AGENT_SIGNUP)', (m) => agentSignup(cli, web, m));
+  await step('48', 'Every yoneda command, for real, in throwaway HOMEs on the dev owner\'s account: install, sign-in, repositories, orgs, Git, Landings, sessions, hooks, refusals', (m) =>
+    cliWalk({ origin, api: values.api, bin: cli.bin, root, headed, prod, kitName: account.name, kitSession: platformAccount }, m),
+  );
   const { 'agent-model': model, 'agent-timeout': timeoutS, 'agent-budget': budgetUsd, yes } = values;
   await step('45', `Flight Path with a real agent (${model}) in the sandbox: --only 0,12,45,17 --yes, a model's quota`, (m) =>
     flightAgent(cli, { root, web, credentials, model, timeoutS: Number(timeoutS), budgetUsd: Number(budgetUsd), yes }, m),

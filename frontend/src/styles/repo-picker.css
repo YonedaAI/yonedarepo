@@ -15,7 +15,7 @@
 .repo-picker.compact .picker-button {
   width: auto;
   max-width: 220px;
-  min-height: 30px;
+  min-height: var(--control-h);
   padding: 3px 8px;
   gap: 6px;
   border: 0;

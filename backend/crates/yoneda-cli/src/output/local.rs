@@ -202,14 +202,6 @@ pub struct Pull {
     pub rebased: u64,
 }
 
-/// A local commit contributed through an MCP attempt.
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct AttemptCommit {
-    pub local: String,
-    pub commit: String,
-}
-
 /// The landing `sync --land` made.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -237,13 +229,6 @@ pub enum Synced {
         offline_branch: String,
         /// The landing, with `--land`.
         landing: Option<SyncLanding>,
-    },
-    /// `sync --attempt <id>`.
-    Attempt {
-        attempt: String,
-        committed: Vec<AttemptCommit>,
-        /// The attempt's status after submitting.
-        status: String,
     },
 }
 

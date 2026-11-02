@@ -174,7 +174,7 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
   const ssh = (await account.raw('GET', '/api/v1/ssh-keys')).body?.ssh;
   await page.locator('.clone-menu > summary').click();
   const cloneMenu = page.locator('.clone-dropdown');
-  await cloneLines(page, cloneMenu, { api, id, name, path: await repoPath(account, id) }, 'the Clone menu');
+  await cloneLines(page, cloneMenu, { api, name, path: await repoPath(account, id) }, 'the Clone menu');
   const sshBlock = cloneMenu.locator('.source-copy', { has: page.getByText('SSH', { exact: true }) });
   if (ssh?.front_door && ssh.host) {
     m.ssh_clone = await sshBlock.locator('code').innerText();
@@ -203,7 +203,7 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
   await page.getByRole('navigation', { name: 'Settings sections' }).getByRole('link', { name: 'Connect' }).click();
   await page.getByRole('heading', { name: 'Clone with git' }).waitFor();
   // Git, the CLI and MCP live on the platform API host, never the app's own origin.
-  m.clone_url = await cloneLines(page, page.locator('.source-connect'), { api, id, name, path: await repoPath(account, id) }, 'Connect');
+  m.clone_url = await cloneLines(page, page.locator('.source-connect'), { api, name, path: await repoPath(account, id) }, 'Connect');
   await shot('source-connect');
   await accountSettings(page, 'Tokens');
   await page.getByRole('heading', { name: 'Personal access tokens' }).waitFor();
@@ -213,19 +213,18 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
 }
 
 /**
- * The clone commands in `scope` (Clone menu or Connect): the recommended yoneda remote helper
- * first with its one-time `yoneda login` on the API origin, then HTTPS pointing at Settings →
- * Personal tokens; each a whole command into a directory named after the repository.
+ * The clone commands in `scope` (Clone menu or Connect): the yoneda remote helper with its one
+ * `yoneda login`, then HTTPS with its token; each a whole command into the repository's name.
  */
-export async function cloneLines(page, scope, { api, id, name, path }, what) {
+export async function cloneLines(page, scope, { api, name, path }, what) {
   const blocks = scope.locator('.source-copy');
   await blocks.first().waitFor();
   const labels = await blocks.locator('.source-copy-head > span').allInnerTexts();
   assert.deepEqual(labels.slice(0, 2), ['yoneda remote helper (recommended)', 'HTTPS'], `${what}: clone entries out of order`);
-  assert.equal(await blocks.nth(0).locator('code').innerText(), `git clone yoneda::${api}/${id} ${name}`, `${what}: the yoneda line`);
+  assert.equal(await blocks.nth(0).locator('code').innerText(), `git clone yoneda::${api}${path} ${name}`, `${what}: the yoneda line`);
   const https = await blocks.nth(1).locator('code').innerText();
   assert.equal(https, `git clone ${api}${path}.git ${name}`, `${what}: the HTTPS line`);
-  await scope.getByText(`yoneda login --origin ${api}`, { exact: true }).first().waitFor();
+  await scope.getByText(api === 'https://api.yonedarepo.com' ? 'yoneda login' : `yoneda login --origin ${api}`, { exact: true }).first().waitFor();
   assert.equal(await scope.getByRole('link', { name: 'Settings → Personal tokens' }).getAttribute('href'), '/settings/tokens', `${what}: the personal token link`);
   return https;
 }
@@ -270,6 +269,7 @@ export async function changeLanded(page, { origin, kit, account, repo: { id, nam
   const api = (path) => `/api/v1/repos/${id}${path}`;
   const member = await secondAccount(origin, kit);
   await account.post(api('/members'), { account: member.name, role: 'write' });
+  await account.call('PUT', api('/policy'), { policy: { required_checks: [], approvals: 1 } });
   const base = (await account.get(api('/refs'))).refs['refs/heads/main'];
   await member.session.post(`/repos/${id}/branches`, { ref: 'kit-rebase', commit: base, expected: null });
   const made = await member.session.post(`/repos/${id}/commits`, {

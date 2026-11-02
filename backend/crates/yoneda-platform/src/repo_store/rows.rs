@@ -90,7 +90,7 @@ pub fn settings<S: SqlStore>(db: &S) -> Result<Settings> {
         .query("SELECT * FROM repo_settings WHERE id='repository'", &[])?
         .into_iter()
         .next()
-        .ok_or_else(|| Error::new("NOT_FOUND", "Repository is not initialized"))?;
+        .ok_or_else(|| Error::new("NOT_FOUND", "No such repository"))?;
     let text = |key: &str| {
         row[key]
             .as_str()

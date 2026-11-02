@@ -44,6 +44,10 @@ fn note(tracker: &Tracker, update: impl FnOnce(&mut Progress)) {
 
 /// `failure` ended the request `doing` names.
 fn failed(tracker: &Tracker, failure: api::Failure) -> Error {
+    // A refusal is about the caller, not the request it stopped at.
+    if matches!(failure.status, 401 | 403) {
+        return failure.into();
+    }
     let doing = tracker.lock().map(|p| p.doing.clone()).unwrap_or_default();
     Error::new(format!("{doing}: {failure}"))
 }

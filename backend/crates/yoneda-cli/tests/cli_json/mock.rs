@@ -130,11 +130,16 @@ pub fn tokens() -> Value {
 }
 
 pub fn blame() -> Value {
-    json!({ "path": "src/a.rs", "lines": [{ "line": 1, "commit": COMMIT }] })
+    json!({ "path": "src/a.rs", "lines": [
+        { "line": 1, "commit": COMMIT, "text": "fn main() {" },
+        { "line": 12, "commit": COMMIT, "text": "}" },
+    ] })
 }
 
 pub fn symbols() -> Value {
-    json!({ "path": "src/a.rs", "symbols": [{ "name": "main", "kind": "fn", "line": 1 }] })
+    json!({ "path": "src/a.rs", "symbols": [
+        { "name": "main", "kind": "fn", "symbol_path": "main", "start_line": 1, "end_line": 12 },
+    ] })
 }
 
 pub fn org() -> Value {
@@ -159,7 +164,8 @@ fn answer(method: &str, path: &str, body: &str) -> (&'static str, Value) {
         ("GET", "" | "/") if local.is_some() => ok(status()),
         ("POST", "/tokens") => ok(json!({ "token": "ydr_fixture_secret" })),
         ("GET", "/tokens") => ok(tokens()),
-        ("DELETE", "/tokens/ci") => ok(json!({})),
+        ("DELETE", "/tokens/ci") => ok(json!({ "name": "ci", "revoked": true })),
+        ("DELETE", "/tokens/nobody") => ok(json!({ "name": "nobody", "revoked": false })),
         ("POST", p) if p == format!("/commits/{COMMIT}/check-runs") => ok(check_run()),
         ("GET", "/check-runs/run1") => ok(check_run()),
         ("GET", p) if p == format!("/commits/{COMMIT}") => ok(commit_record()),
@@ -180,7 +186,7 @@ fn answer(method: &str, path: &str, body: &str) -> (&'static str, Value) {
             { "path": "src/a.rs", "lines": [{ "line": 3, "text": "fn main" }] }] })),
         ("GET", "/blame") => ok(blame()),
         ("GET", "/diff") => ok(json!({ "changes": [
-            { "path": "a.txt", "status": "M", "patch": "--- a/a.txt\n+++ b/a.txt\n" },
+            { "path": "a.txt", "status": "M", "patch": "@@ -1 +1 @@\n-old\n+new\n" },
             { "path": "b.txt", "status": "D" }] })),
         ("GET", "/symbols") => ok(symbols()),
         ("GET", "/refs") => ok(json!({ "version": 9, "refs": { "refs/heads/main": COMMIT } })),

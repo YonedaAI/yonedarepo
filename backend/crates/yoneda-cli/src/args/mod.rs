@@ -71,7 +71,7 @@ fn clone(rest: &[String]) -> Result<Command> {
         .positional
         .first()
         .cloned()
-        .ok_or_else(|| Error::usage("clone needs a repository id"))?;
+        .ok_or_else(|| Error::usage("clone needs <owner>/<name> or a repository id"))?;
     let mode = match (
         p.on("full"),
         parser::list(p.flag("sparse")),
@@ -196,6 +196,7 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "flight-plan" => sub::flight_plan(rest)?,
         "hook" => sub::hook(rest)?,
         "context" => sub::context(rest)?,
+        "completion" => sub::completion(rest)?,
         "help" | "--help" | "-h" => Command::Help,
         other => {
             return Err(Error::usage(format!(
@@ -264,13 +265,6 @@ mod tests {
         assert_eq!(
             parsed("sync --land").ok(),
             Some(Command::Sync(SyncMode::Land))
-        );
-        assert_eq!(
-            parsed("sync --attempt external-1").ok(),
-            Some(Command::Sync(SyncMode::Attempt {
-                id: "external-1".into(),
-                mcp_url: None
-            }))
         );
         assert_eq!(parsed("").ok(), Some(Command::Help));
         assert_eq!(
@@ -698,6 +692,51 @@ mod tests {
     }
 
     #[test]
+    fn parses_repo_remote_add_and_completion() {
+        assert_eq!(
+            parsed("repo remote add origin --override ada/web").ok(),
+            Some(Command::Repo {
+                origin: None,
+                command: RepoCommand::RemoteAdd {
+                    remote: "origin".into(),
+                    repo: "ada/web".into(),
+                    replace: true
+                }
+            })
+        );
+        assert_eq!(
+            parsed("repo remote add upstream ada/web").ok(),
+            Some(Command::Repo {
+                origin: None,
+                command: RepoCommand::RemoteAdd {
+                    remote: "upstream".into(),
+                    repo: "ada/web".into(),
+                    replace: false
+                }
+            })
+        );
+        for line in [
+            "repo remote",
+            "repo remote add origin",
+            "repo remote list",
+            "repo list --override",
+            "completion",
+            "completion tcsh",
+            "completion zsh extra",
+        ] {
+            assert_eq!(
+                parsed(line).map_err(|e| e.exit_code).err(),
+                Some(64),
+                "{line}"
+            );
+        }
+        assert_eq!(
+            parsed("completion zsh").ok(),
+            Some(Command::Completion(Shell::Zsh))
+        );
+    }
+
+    #[test]
     fn parses_the_org_commands() {
         let org = |line: &str| match parsed(line) {
             Ok(Command::Org { command, .. }) => Some(command),
@@ -793,7 +832,7 @@ mod tests {
     #[test]
     fn refuses_bad_lines_with_usage_code() {
         for line in [
-            "sync --land --attempt a",
+            "sync --attempt a",
             "clone",
             "clone r1 --full --offline",
             "clone r1 --sparse ,",

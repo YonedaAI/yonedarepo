@@ -14,6 +14,7 @@ import {
   stateLabel,
   visibleEvery,
 } from './ctcModel';
+import { PageToolbar } from './PageToolbar';
 import { Person } from './Person';
 import { Failure, Loading } from './SourceStatus';
 import { when } from './sourceApi';
@@ -107,12 +108,15 @@ export function RepoCtc({ repo, ...links }: Links & { repo: string }) {
   if (radar.data) kept.current = radar.data;
   const data = radar.data ?? kept.current;
   const head = (
-    <div className="source-changes-head">
-      <h2 id="ctc-heading">Tower</h2>
-      <button type="button" className="quiet" onClick={reload}>
-        Refresh
-      </button>
-    </div>
+    <PageToolbar
+      title="Tower"
+      headingId="ctc-heading"
+      extra={
+        <button type="button" className="quiet" onClick={reload}>
+          Refresh
+        </button>
+      }
+    />
   );
   return (
     <section aria-labelledby="ctc-heading" className="ctc" aria-busy={radar.loading}>
@@ -134,7 +138,7 @@ export function RepoCtc({ repo, ...links }: Links & { repo: string }) {
       )}
       {data?.landings.length === 0 && (
         <EmptyState title="Nothing on the radar">
-          When Landings are open, you'll see what's cleared, what's waiting and where they overlap.
+          Open Landings show here: cleared, waiting or overlapping.
         </EmptyState>
       )}
       {data && data.landings.length > 0 && (

@@ -35,9 +35,6 @@ pub struct State {
     pub series: Vec<Pushed>,
     #[serde(default)]
     pub last_land: Option<Landed>,
-    /// Remote MCP attempts: attempt id → last local commit committed through it.
-    #[serde(default)]
-    pub attempts: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -146,7 +143,6 @@ mod tests {
                 version: 9,
                 git_commit: None,
             }),
-            attempts: BTreeMap::new(),
         }
     }
 

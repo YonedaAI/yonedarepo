@@ -28,9 +28,29 @@ pub struct Failure {
     pub retry_after: Option<u64>,
 }
 
+impl Failure {
+    /// What to do about a refused credential: `yoneda login` mends both.
+    fn next_step(&self) -> &'static str {
+        match self.status {
+            401 => ". Run `yoneda login` to sign in again",
+            403 if self.message.starts_with("Token lacks") => {
+                ". Run `yoneda login` again and tick it under Options"
+            }
+            _ => "",
+        }
+    }
+}
+
 impl fmt::Display for Failure {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} ({}): {}", self.code, self.status, self.message)
+        write!(
+            f,
+            "{} ({}): {}{}",
+            self.code,
+            self.status,
+            self.message,
+            self.next_step()
+        )
     }
 }
 
@@ -402,6 +422,30 @@ mod tests {
         );
         server.abort();
         Ok(())
+    }
+
+    #[test]
+    fn a_refused_credential_says_what_mends_it() {
+        let failure = |status, code: &str, message: &str| Failure {
+            status,
+            code: code.to_owned(),
+            message: message.to_owned(),
+            details: Value::Null,
+            retry_after: None,
+        };
+        assert_eq!(
+            failure(401, "UNAUTHORIZED", "Unknown or revoked token").to_string(),
+            "UNAUTHORIZED (401): Unknown or revoked token. Run `yoneda login` to sign in again"
+        );
+        assert!(
+            failure(403, "FORBIDDEN", "Token lacks the repo:admin scope")
+                .to_string()
+                .ends_with("tick it under Options")
+        );
+        assert_eq!(
+            failure(403, "FORBIDDEN", "Authors cannot review").to_string(),
+            "FORBIDDEN (403): Authors cannot review"
+        );
     }
 
     #[test]

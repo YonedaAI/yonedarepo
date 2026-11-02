@@ -171,23 +171,21 @@ export function App() {
             ? 'Search'
             : route.view === 'settings'
               ? 'Settings'
-              : route.view === 'device'
-                ? 'Approve a device'
-                : isEmailLink(route)
-                  ? emailLinkTitle(route)
-                  : route.view === 'org'
-                    ? route.org
-                    : route.view === 'profile'
-                      ? route.handle
-                      : route.view === 'repo-name'
-                        ? route.name
-                        : isAgentsRoute(route)
-                          ? 'Agents'
-                          : route.view === 'admin'
-                            ? 'Admin'
-                            : gone
-                              ? 'Repository not found'
-                              : (row?.name ?? loaded?.name ?? repo ?? '');
+              : isEmailLink(route)
+                ? emailLinkTitle(route)
+                : route.view === 'org'
+                  ? route.org
+                  : route.view === 'profile'
+                    ? route.handle
+                    : route.view === 'repo-name'
+                      ? route.name
+                      : isAgentsRoute(route)
+                        ? 'Agents'
+                        : route.view === 'admin'
+                          ? 'Admin'
+                          : gone
+                            ? 'Repository not found'
+                            : (row?.name ?? loaded?.name ?? repo ?? '');
   const activityError = activity.error && !/Sign in/.test(activity.error) ? activity.error : '';
   const refresh = () => {
     setTick((t) => t + 1);
@@ -213,6 +211,8 @@ export function App() {
         signInError={signInError}
       />
     );
+  if (route.view === 'device')
+    return <DevicePage code={route.code} session={session} signInError={signInError} />;
   return (
     // An open picker shows the sidebar it lives in, whether collapsed or the phone menu.
     <div
@@ -411,7 +411,6 @@ export function App() {
                   <p className="source-empty">The admin pages are for operators only.</p>
                 )
               ))}
-            {route.view === 'device' && <DevicePage code={route.code} />}
             {isEmailLink(route) && <EmailLinkPage route={route} />}
             {route.view === 'org' && (
               <OrgPage
@@ -444,7 +443,6 @@ export function App() {
                 name={row?.name}
                 authenticated={session.authenticated}
                 username={session.identity?.username}
-                ownHandle={session.identity?.handle ?? undefined}
                 navigate={navigate}
                 onSignIn={() => setPanel('account')}
                 onLoaded={onLoaded}

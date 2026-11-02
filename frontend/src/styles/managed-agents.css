@@ -365,12 +365,7 @@
   overflow-wrap: anywhere;
 }
 .agent-run-filter a {
-  padding: 6px 12px;
-  color: var(--text);
   text-decoration: none;
-}
-.agent-run-filter a[aria-current="page"] {
-  background: var(--accent-soft);
 }
 .agent-runs-table .chip {
   margin-left: 4px;
@@ -786,8 +781,8 @@ input.agent-fixed:focus-visible,
 }
 /* A repository's managed agents. */
 .repo-agents-reviewers {
-  margin: 0 0 10px;
-  font-size: var(--text-base);
+  font-size: var(--text-md);
+  white-space: nowrap;
 }
 .repo-managed-agents {
   display: flex;

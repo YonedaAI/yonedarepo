@@ -94,6 +94,28 @@ export function languageOf(path: string): string | null {
   return (extension && BY_EXTENSION.get(extension)) || null;
 }
 
+const FENCES = new Map(
+  Object.entries({
+    javascript: 'js',
+    typescript: 'ts',
+    python: 'py',
+    python3: 'py',
+    rust: 'rs',
+    golang: 'go',
+    'c++': 'cpp',
+    shell: 'sh',
+    console: 'sh',
+    shellsession: 'sh',
+  }),
+);
+
+/** The extension a fence's language stands for, or null when no grammar reads it. */
+export function fenceExtension(lang: string) {
+  const name = lang.toLowerCase();
+  const extension = FENCES.get(name) ?? name;
+  return BY_EXTENSION.has(extension) ? extension : null;
+}
+
 /** The grammar of `path`, loaded, or null for plain text and files past the limit. */
 export async function grammarOf(path: string, size: number): Promise<Extension | null> {
   const language = languageOf(path);

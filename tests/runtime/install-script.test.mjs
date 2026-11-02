@@ -30,7 +30,8 @@ function release() {
     const dir = join(work, `build-${target}`);
     mkdirSync(dir, { recursive: true });
     for (const bin of ['yoneda', 'git-remote-yoneda']) {
-      writeFileSync(join(dir, bin), `#!/bin/sh\necho ${bin} ${target}\n`);
+      // A build older than `completion` is the variable's to play.
+      writeFileSync(join(dir, bin), `#!/bin/sh\n[ "$1 $YONEDA_TEST_OLD" = "completion 1" ] && exit 64\necho ${bin} ${target}\n`);
       chmodSync(join(dir, bin), 0o755);
     }
     const name = `yoneda-${VERSION}-${target}.tar.gz`;
@@ -127,6 +128,107 @@ test('installs both programs for the target, at the latest version', async () =>
     }
     assert.match(run.stdout, new RegExp(`Installed yoneda ${VERSION.replaceAll('.', '\\.')} \\(${target}\\)`));
   }
+});
+
+/** A home of its own for one person's run, with `shell` as their login shell. */
+function person(shell) {
+  const HOME = mkdtempSync(join(work, 'home-'));
+  return { HOME, SHELL: shell ? `/bin/${shell}` : '', read: (file) => (existsSync(join(HOME, file)) ? readFileSync(join(HOME, file), 'utf8') : '') };
+}
+const lines = (text, needle) => text.split('\n').filter((line) => line.includes(needle)).length;
+
+test('prints each step as it happens and ends with one next step', async () => {
+  const { HOME, SHELL } = person('zsh');
+  const run = await install({ YONEDA_TARGET: 'linux-x64', HOME, SHELL });
+  assert.equal(run.status, 0, run.stderr);
+  const steps = [`Platform: linux-x64`, `Version: ${VERSION}`, `Downloading yoneda-${VERSION}-linux-x64.tar.gz`, 'Checksum verified', `Installing to ${run.dir}`, `Installed yoneda ${VERSION}`, 'Done'];
+  let at = -1;
+  for (const step of steps) {
+    const next = run.stdout.indexOf(step, at + 1);
+    assert.ok(next > at, `${step} is missing or out of order in:\n${run.stdout}`);
+    at = next;
+  }
+  assert.match(run.stdout.trim().split('\n').at(-1), /^Next: yoneda login/);
+  assert.doesNotMatch(run.stdout, /export PATH/, 'nothing to paste');
+});
+
+test('puts the folder on PATH and sets up completion in the shell start file, once', async () => {
+  const cases = [
+    ['zsh', 'linux-x64', '.zshrc', 'zsh'],
+    ['bash', 'linux-x64', '.bashrc', 'bash'],
+    ['bash', 'darwin-arm64', '.bash_profile', 'bash'],
+  ];
+  for (const [shell, target, file, name] of cases) {
+    const { HOME, SHELL, read } = person(shell);
+    const dir = join(HOME, 'bin');
+    for (let i = 0; i < 2; i += 1) {
+      const run = await install({ YONEDA_TARGET: target, HOME, SHELL, YONEDA_INSTALL_DIR: dir });
+      assert.equal(run.status, 0, run.stderr);
+      assert.match(run.stdout, new RegExp(file.replace('.', '\\.')), `${file} is not named`);
+    }
+    assert.equal(lines(read(file), 'export PATH="$HOME/bin:$PATH"'), 1, `PATH in ${file}: ${read(file)}`);
+    assert.equal(lines(read(file), `yoneda completion ${name}`), 1, `completion in ${file}: ${read(file)}`);
+    assert.equal(lines(read(file), '# Added by the YonedaRepo installer'), 1, read(file));
+    const started = spawnSync('sh', ['-c', `. "${join(HOME, file)}" 2>/dev/null; case ":$PATH:" in *":${dir}:"*) echo on ;; esac`], { encoding: 'utf8', env: { HOME, PATH: pathWithout('cloudflared') } });
+    assert.equal(started.stdout.trim().split('\n').at(-1), 'on', `a new shell does not find it: ${started.stderr}`);
+  }
+});
+
+test('fish gets a file of its own, and another shell gets PATH in .profile with no completion', async () => {
+  const fish = person('fish');
+  for (let i = 0; i < 2; i += 1) await install({ YONEDA_TARGET: 'linux-x64', ...fish, read: undefined, YONEDA_INSTALL_DIR: join(fish.HOME, 'bin') });
+  const conf = fish.read('.config/fish/conf.d/yoneda.fish');
+  assert.equal(lines(conf, 'fish_add_path $HOME/bin'), 1, conf);
+  assert.equal(lines(conf, 'yoneda completion fish | source'), 1, conf);
+  const other = person('ksh');
+  const run = await install({ YONEDA_TARGET: 'linux-x64', HOME: other.HOME, SHELL: other.SHELL, YONEDA_INSTALL_DIR: join(other.HOME, 'bin') });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(lines(other.read('.profile'), 'export PATH="$HOME/bin:$PATH"'), 1);
+  assert.equal(lines(other.read('.profile'), 'yoneda completion'), 0);
+});
+
+test('a folder already on PATH is not added; completion still is', async () => {
+  const { HOME, SHELL, read } = person('zsh');
+  const dir = join(HOME, 'bin');
+  const run = await install({ YONEDA_TARGET: 'linux-x64', HOME, SHELL, YONEDA_INSTALL_DIR: dir, PATH: `${dir}:${pathWithout('cloudflared')}` });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(lines(read('.zshrc'), 'export PATH'), 0);
+  assert.equal(lines(read('.zshrc'), 'yoneda completion zsh'), 1);
+});
+
+test('a build with no completion command gets no line that would fail every new shell', async () => {
+  const { HOME, SHELL, read } = person('zsh');
+  const run = await install({ YONEDA_TARGET: 'linux-x64', HOME, SHELL, YONEDA_TEST_OLD: '1' });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(lines(read('.zshrc'), 'yoneda completion'), 0);
+});
+
+test('YONEDA_NO_SHELL_SETUP leaves the start file alone and says what to add', async () => {
+  const { HOME, SHELL, read } = person('zsh');
+  const run = await install({ YONEDA_TARGET: 'linux-x64', HOME, SHELL, YONEDA_NO_SHELL_SETUP: '1' });
+  assert.equal(run.status, 0, run.stderr);
+  assert.equal(read('.zshrc'), '');
+  assert.match(run.stdout, /Add .* to your PATH/);
+});
+
+test('a start file that cannot be written warns, says what to add, and the install stands', async () => {
+  const { HOME, SHELL } = person('zsh');
+  mkdirSync(join(HOME, '.zshrc'));
+  const run = await install({ YONEDA_TARGET: 'linux-x64', HOME, SHELL });
+  assert.equal(run.status, 0, run.stderr);
+  assert.match(run.stderr, /could not write .*\.zshrc/);
+  assert.equal(existsSync(join(run.dir, 'yoneda')), true);
+  assert.match(run.stdout.trim().split('\n').at(-1), /^Next: yoneda login/);
+});
+
+test('the next step names the platform unless it is the one the CLI defaults to', () => {
+  const text = readFileSync(script, 'utf8');
+  const body = /^login_command\(\) \{[\s\S]*?^\}$/m.exec(text)?.[0];
+  assert.ok(body, 'no login_command function');
+  const ask = (site) => spawnSync('sh', ['-c', `${body}\nsite=${site}\nlogin_command`], { encoding: 'utf8' }).stdout.trim();
+  assert.equal(ask('https://yonedarepo.com'), 'yoneda login');
+  assert.equal(ask('https://dev.yonedarepo.com'), 'yoneda login --origin https://api.dev.yonedarepo.com');
+  assert.equal(ask('http://127.0.0.1:8787'), 'yoneda login --origin http://127.0.0.1:8787');
 });
 
 test('refuses an archive whose checksum does not match, installing nothing', async () => {
@@ -255,6 +357,18 @@ test('install.ps1 installs both programs and the pinned cloudflared', pwsh, asyn
     assert.match(run.stdout, new RegExp(`Installed yoneda ${VERSION.replaceAll('.', '\\.')} \\(${target}\\)`));
     assert.match(run.stdout, /Next: yoneda login/);
     assert.match(run.stdout, /still in the session/);
+  }
+});
+
+test('install.ps1 prints each step and ends with one next step', pwsh, async () => {
+  files.set(cloudflaredPath('cloudflared-windows-amd64.exe'), CLOUDFLARED);
+  const run = await installOnWindows({ YONEDA_TARGET: 'windows-x64' }, CLOUDFLARED);
+  assert.equal(run.status, 0, run.stderr);
+  let at = -1;
+  for (const step of ['Platform: windows-x64', `Version: ${VERSION}`, `Downloading yoneda-${VERSION}-windows-x64.zip`, 'Checksum verified', 'Installing to', `Installed yoneda ${VERSION}`, 'Done', 'Next: yoneda login']) {
+    const next = run.stdout.indexOf(step, at + 1);
+    assert.ok(next > at, `${step} is missing or out of order in:\n${run.stdout}`);
+    at = next;
   }
 });
 
