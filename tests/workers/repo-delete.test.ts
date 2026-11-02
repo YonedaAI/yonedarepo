@@ -98,6 +98,27 @@ it('answers GONE in every isolate once the delete has answered', async () => {
   expect([read.status, read.body.error?.code]).toEqual([404, 'GONE']);
 });
 
+it('preserves a deleted repository refusal across the real head-holder RPC', async () => {
+  const target = { ...local, LAND_COMBINERS: bindings.LAND_COMBINERS } as unknown as Env;
+  const cookie = await signup('rpc_deleter');
+  const created = await api('/repos', { cookie }, {
+    body: { name: 'rpc-doomed', files: [file('a.txt', 'a\n')], author },
+  }, target);
+  expect(created.status).toBe(200);
+  const repo = `/repos/${created.body.id}`;
+  expect((await api(`${repo}/refs`, { cookie }, {}, target)).status).toBe(200);
+  expect((await api(`${repo}?confirm=rpc-doomed`, { cookie }, { method: 'DELETE' }, target)).status).toBe(200);
+  // Domain refusals must travel as data: a remote runtime may drop custom Error fields.
+  const holder = bindings.LAND_COMBINERS.get(bindings.LAND_COMBINERS.idFromName(`${created.body.id}#head`)) as any;
+  for (const call of [() => holder.head(created.body.id, 0), () => holder.access(created.body.id), () => holder.refs(created.body.id, 0)]) {
+    await expect(call()).resolves.toEqual({ error: { code: 'GONE', message: 'Repository was deleted' } });
+  }
+  for (const path of ['/refs', '/tree?path=', '/log']) {
+    const gone = await api(`${repo}${path}`, { cookie }, {}, target);
+    expect([gone.status, gone.body.error?.code], path).toEqual([404, 'GONE']);
+  }
+});
+
 it('sends repo.deleted to hooks subscribed to repo, from the tombstone', async () => {
   const cookie = await signup('hookdel');
   const created = await api('/repos', { cookie }, { body: { name: 'watched', files: [file('a.txt', 'a\n')], author } }, local);
