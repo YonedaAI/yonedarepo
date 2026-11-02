@@ -58,7 +58,7 @@ yoneda login --agent review-bot   # sign an agent up, for you to approve
 
 `yoneda login --agent <name>` is the same flow for an agent running in its own place: the approval page names it, and the token acts as that agent. See [Agents](/docs/guides/tokens#agents). The name is 1 to 32 lowercase letters, digits, `-` and `_`. The token is stored like any other, so run it as the agent's own user, not your own.
 
-`yoneda logout` removes the stored token.
+`yoneda logout` revokes the token on the platform and removes it from this machine, with any SSH keys it added. A token you pasted in with `--with-token` is only removed here: it may be in use elsewhere, so revoke it under **Settings → Personal tokens**.
 
 ## Configuration
 

@@ -1,6 +1,7 @@
 //! A fault-injecting platform stand-in for the object transfer tests: every request is
-//! recorded, and a reply can be delayed or cut off part way through its body (the
-//! connection drops before the announced content-length arrives).
+//! recorded, and a reply can be delayed or cut off part way through its body: the connection
+//! drops before the announced content-length arrives, or the body ends early in good order, as
+//! a Worker's stream that failed between two objects reaches the client.
 use crate::error::{Error, Result};
 use serde_json::Value;
 use std::sync::{Arc, Mutex};
@@ -27,6 +28,9 @@ pub struct Reply {
     pub stall: bool,
     /// Hold the connection open without answering at all (not even headers).
     pub silent: bool,
+    /// End the body at `cut_at` properly (chunked, with its final chunk), so no transport
+    /// error says it was cut.
+    pub ended: bool,
     pub delay_ms: u64,
 }
 
@@ -39,6 +43,7 @@ impl Reply {
             cut_at: None,
             stall: false,
             silent: false,
+            ended: false,
             delay_ms: 0,
         }
     }
@@ -52,6 +57,13 @@ impl Reply {
     pub fn stall(mut self, at: usize) -> Self {
         self.cut_at = Some(at);
         self.stall = true;
+        self
+    }
+
+    /// Sends `at` body bytes and ends the answer in good order.
+    pub fn ended(mut self, at: usize) -> Self {
+        self.cut_at = Some(at);
+        self.ended = true;
         self
     }
 
@@ -111,17 +123,27 @@ where
                     .cut_at
                     .unwrap_or(reply.body.len())
                     .min(reply.body.len());
+                let framing = if reply.ended {
+                    "transfer-encoding: chunked".to_owned()
+                } else {
+                    format!("content-length: {}", reply.body.len())
+                };
                 let mut head = format!(
-                    "HTTP/1.1 {} X\r\ncontent-length: {}\r\nconnection: close\r\n",
-                    reply.status,
-                    reply.body.len()
+                    "HTTP/1.1 {} X\r\n{framing}\r\nconnection: close\r\n",
+                    reply.status
                 );
                 for (name, value) in &reply.headers {
                     head.push_str(&format!("{name}: {value}\r\n"));
                 }
                 head.push_str("\r\n");
                 let _ = socket.write_all(head.as_bytes()).await;
+                if reply.ended {
+                    let _ = socket.write_all(format!("{sent:x}\r\n").as_bytes()).await;
+                }
                 let _ = socket.write_all(&reply.body[..sent]).await;
+                if reply.ended {
+                    let _ = socket.write_all(b"\r\n0\r\n\r\n").await;
+                }
                 let _ = socket.flush().await;
                 if let Ok(mut log) = seen.lock()
                     && let Some(entry) = log.get_mut(index)

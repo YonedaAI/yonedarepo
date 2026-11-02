@@ -176,6 +176,28 @@ it('logs a device in: pending, slow down, approved once', async () => {
   expect([spent.status, spent.body.error.code]).toEqual([400, 'EXPIRED_TOKEN']);
 });
 
+it('a login token signs itself out, and no other token can', async () => {
+  const cookie = await signup('self_signout');
+  const started = await deviceCode();
+  const approval = { user_code: started.user_code, scopes: ['repo:read'], expires_days: 1 };
+  expect((await api('/device/approve', { cookie }, { body: approval })).status).toBe(200);
+  await sql(`device:${compact(started.user_code)}`, 'UPDATE device_codes SET last_poll_at=NULL');
+  const { token } = (await poll(started.device_code)).body;
+  const made = await api('/tokens', { cookie }, { body: { name: 'ci', scopes: ['repo:read'] } });
+  const out = (who: { token?: string; cookie?: string }) => api('/device/token', who, { method: 'DELETE' });
+
+  const pasted = await out({ token: made.body.token });
+  expect([pasted.status, pasted.body.revoked]).toEqual([200, false]);
+  expect((await api('/repos', { token: made.body.token })).status).toBe(200);
+  expect((await out({ cookie })).status).toBe(400);
+
+  const signedOut = await out({ token });
+  expect([signedOut.status, signedOut.body.revoked]).toEqual([200, true]);
+  expect((await api('/repos', { token })).status).toBe(401);
+  const names = (await api('/tokens', { cookie })).body.tokens.filter((t: any) => t.revoked_at == null);
+  expect(names.map((t: any) => t.name)).toEqual(['ci']);
+});
+
 it('denies and expires device codes', async () => {
   const cookie = await signup('device_denier');
   const denied = await deviceCode();

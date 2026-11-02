@@ -62,6 +62,7 @@ const COMMANDS: &[(&str, &[&str])] = &[
     ("symbols", &[]),
     ("sync", &[]),
     ("token", &["create", "list", "revoke"]),
+    ("version", &[]),
 ];
 
 const BASH: &str = r#"_yoneda() {

@@ -23,7 +23,7 @@ first needs it)
 account
   login [--origin <url>] [--with-token] [--no-browser]   device login (or a token on stdin)
         [--agent <name>]                                 sign an agent up, for you to approve
-  logout [--origin <url>]
+  logout [--origin <url>]                                 forget this login and revoke its token
   auth token [--show]                                    the token this CLI sends, on stdout for a pipe
                                                          (export YONEDA_TOKEN=$(yoneda auth token))
   repo create <name> [--owner <org>] [--public] | repo list | repo delete <id> --confirm <name>
@@ -34,6 +34,7 @@ account
                                                          (--override replaces the remote)
   setup claude|codex|gemini|opencode                     a coding agent's skill or plugin and MCP config
   completion bash|zsh|fish|powershell                    a shell's completion script
+  version                                                this CLI's version (or --version)
   ssh setup [--origin <url>]             this machine's key, ~/.ssh/config and a clone line, once
   ssh-key add [--title <t>] <file.pub|->  | ssh-key list | ssh-key rm <id>   keys for Git over SSH
 ```
@@ -127,7 +128,7 @@ offline checkouts (kept for existing scripts)
 ## JSON output
 
 ```text
---json (any command but help, completion, push and hook): one JSON document on stdout, schema
+--json (any command but help, version, completion, push and hook): one JSON document on stdout, schema
 yoneda.cli.<command>.v1 (schemas/v1), or yoneda.cli.error.v1 with a stable code.
 ```
 

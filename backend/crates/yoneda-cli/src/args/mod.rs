@@ -198,11 +198,8 @@ pub fn parse(args: &[String]) -> Result<Command> {
         "context" => sub::context(rest)?,
         "completion" => sub::completion(rest)?,
         "help" | "--help" | "-h" => Command::Help,
-        other => {
-            return Err(Error::usage(format!(
-                "unknown command {other:?}\n\n{USAGE}"
-            )));
-        }
+        "version" | "--version" | "-V" => Command::Version,
+        other => return Err(Error::usage(format!("unknown command {other:?}"))),
     })
 }
 
@@ -267,6 +264,7 @@ mod tests {
             Some(Command::Sync(SyncMode::Land))
         );
         assert_eq!(parsed("").ok(), Some(Command::Help));
+        assert_eq!(parsed("--version").ok(), Some(Command::Version));
         assert_eq!(
             parsed("auth token").ok(),
             Some(Command::AuthToken {

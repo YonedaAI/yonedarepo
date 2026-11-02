@@ -76,6 +76,9 @@ mod tests {
             .map(|o| o["id"].clone())
             .collect();
         assert_eq!(ids, vec![json!("a"), json!("b")]);
+        // A stream that stopped between two objects: nothing after the last brace.
+        let ended = whole_objects(br#"{"objects":[{"id":"a"},{"id":"b"}"#);
+        assert_eq!(ended.len(), 2);
         assert!(whole_objects(br#"{"missing":[],"objects":[{"id":"a"}"#).is_empty());
         assert!(whole_objects(b"").is_empty());
     }

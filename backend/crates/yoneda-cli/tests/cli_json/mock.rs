@@ -164,6 +164,7 @@ fn answer(method: &str, path: &str, body: &str) -> (&'static str, Value) {
         ("GET", "" | "/") if local.is_some() => ok(status()),
         ("POST", "/tokens") => ok(json!({ "token": "ydr_fixture_secret" })),
         ("GET", "/tokens") => ok(tokens()),
+        ("DELETE", "/device/token") => ok(json!({ "revoked": true })),
         ("DELETE", "/tokens/ci") => ok(json!({ "name": "ci", "revoked": true })),
         ("DELETE", "/tokens/nobody") => ok(json!({ "name": "nobody", "revoked": false })),
         ("POST", p) if p == format!("/commits/{COMMIT}/check-runs") => ok(check_run()),

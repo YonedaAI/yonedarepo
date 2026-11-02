@@ -470,7 +470,7 @@ fn cases() -> Vec<Case> {
         case(
             "logout",
             "logout",
-            "Removed the stored token ({TMP}/config/yoneda/credentials)\n",
+            "Removed the stored token ({TMP}/config/yoneda/credentials) and revoked it\n",
         ),
         in_clone(
             "reads add src/a.rs",
@@ -641,9 +641,14 @@ fn failures_print_the_error_document_and_keep_their_exit_codes() -> TestResult {
             return Err(format!("{line}: {document}"));
         }
         let message = String::from_utf8_lossy(&human.stderr);
+        let hint = if exit == 64 {
+            "Run `yoneda help` to see the commands.\n"
+        } else {
+            ""
+        };
         if data["message"]
             .as_str()
-            .map(|m| format!("yoneda: {m}\n"))
+            .map(|m| format!("yoneda: {m}\n{hint}"))
             .as_deref()
             != Some(&*message)
         {

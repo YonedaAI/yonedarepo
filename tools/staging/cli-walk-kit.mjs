@@ -27,7 +27,7 @@ const scrubbed = (text, secrets) => [...secrets].reduce((all, s) => all.split(s)
 /** One throwaway HOME. `walk` owns it; `bin` holds the yoneda under test. */
 export class Person {
   constructor(walk, name, bin = walk.bin) {
-    Object.assign(this, { walk, name, bin, home: join(walk.dir, name), token: null, patId: null });
+    Object.assign(this, { walk, name, bin, home: join(walk.dir, name), token: null });
     mkdirSync(join(this.home, 'bin'), { recursive: true });
     // `login` opens the browser and `ssh setup` fills the clipboard: these write it down instead,
     // so neither reaches this machine's. `ssh` stays inside this HOME.
@@ -112,6 +112,8 @@ export class Person {
     return new Session(`${this.walk.api}/api/v1`, { bearer: this.token });
   }
   credentialsFile = () => this.path('.config', 'yoneda', 'credentials');
+  /** The platform's sign-out for this person's login, by the token itself: nothing to look up. */
+  signOut = (token = this.token) => new Session(`${this.walk.api}/api/v1`, { bearer: token }).raw('DELETE', '/device/token');
   /** Remembers the stored token, so it can be scrubbed, used and revoked. */
   remember() {
     const stored = JSON.parse(readFileSync(this.credentialsFile(), 'utf8'));
@@ -143,12 +145,8 @@ export class Person {
   async login({ args = ['--no-browser'], scopes = ALL_SCOPES, approver = this.walk.owner } = {}) {
     const done = await this.device(args, { scopes }, approver);
     this.remember();
-    const { tokens } = await approver.get('/tokens');
-    const mine = tokens.filter((t) => t.name === 'yoneda-cli').sort((a, b) => b.created_at - a.created_at)[0];
-    assert.ok(mine, 'the login token is not listed under /tokens');
-    this.patId = mine.id;
-    this.walk.tokens.push({ session: approver, id: mine.id });
-    return { done, token: mine };
+    this.walk.tokens.push(this.token);
+    return { done };
   }
 }
 

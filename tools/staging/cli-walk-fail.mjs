@@ -84,8 +84,8 @@ async function signInRows(w, me, tree) {
   await w.row('expired sign-in: yoneda says to sign in again', async () => {
     await gone.login();
     await gone.gitOk(gone.home, 'clone', '-q', `yoneda::${w.api}/${tree.id}`, dir);
-    await w.owner.call('DELETE', `/tokens/${gone.patId}`);
-    w.tokens = w.tokens.filter((t) => t.id !== gone.patId);
+    assert.equal((await gone.signOut()).status, 200, 'the sign-out failed');
+    w.tokens = w.tokens.filter((token) => token !== gone.token);
     await w.soon(async () => (await gone.y(['repo', 'list'])).code !== 0, 'the revoked token to stop');
     await jsonError(w, gone, ['repo', 'list'], 'auth');
     await gone.refused(['repo', 'list'], 1, /yoneda login/);

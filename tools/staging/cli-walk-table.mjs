@@ -7,6 +7,7 @@ import { join } from 'node:path';
 export const TABLE = [
   'help, --help, -h, no arguments',
   'unknown command, unknown option',
+  'version, --version, -V',
   'login (opens the browser)',
   'login --no-browser --origin',
   'login --with-token',

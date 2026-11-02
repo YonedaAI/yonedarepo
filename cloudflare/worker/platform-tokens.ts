@@ -170,6 +170,20 @@ async function deviceApprove(env: Env, auth: Credentials, body: Json) {
   return { approved: approved.approved === true };
 }
 
+/** `DELETE /api/v1/device/token`: `yoneda logout`. A token `yoneda login` made ends itself, with
+ * the SSH keys it added, as Sign out does in Settings, and needs no scope to. A token made by hand
+ * stays: it may be in use elsewhere, and stored here only by `--with-token`. */
+async function deviceLogout(env: Env, auth: Credentials) {
+  if (!('_pat' in auth)) throw new ApiError('INVALID_INPUT', 'Only a login token signs itself out');
+  const { workspace: account, id } = auth._pat;
+  const { tokens } = await workspace(env, account, { op: 'pat_list' });
+  const mine = (tokens as Json[]).find((token) => token.id === id);
+  if (!mine?.origin) return { revoked: false };
+  const revoked = await revokePat(env, account, id);
+  await releaseClaims(env, account, revoked.removed_ssh_keys);
+  return { revoked: true };
+}
+
 /** `/api/v1/device/*` for a signed-in caller. */
 export async function deviceRoute(
   env: Env,
@@ -181,6 +195,7 @@ export async function deviceRoute(
 ): Promise<Json> {
   if (action === 'approve' && req.method === 'POST') return deviceApprove(env, auth, await body());
   if (action === 'pending' && req.method === 'GET') return devicePending(env, auth, url);
+  if (action === 'token' && req.method === 'DELETE') return deviceLogout(env, auth);
   throw new ApiError('NOT_FOUND', 'Unknown API path');
 }
 
