@@ -83,11 +83,11 @@ async function separation(kit, reviewer, m) {
     assert.ok(held.reasons.some((r) => r.reason.includes(`Landing ${line.front.number}`) && r.reason.includes(READ)), `what it waits for: ${JSON.stringify(held.reasons)}`);
     assert.equal((await change(kit, repo, reader.number)).status, 'open', 'it landed past the ticket');
     m.separation = held.reasons.find((r) => r.code === 'SEPARATION').reason;
-    await line.release();
+    // Closed before the resume: a resume asks again, and the front would land past what this read.
+    await line.cancel();
+    await kit.pat().post(repo.path(`/changes/${line.front.number}/close`));
+    await line.resume();
     released = true;
-    // The resume asks again too, so what stood in front may land first; closing it does the same.
-    const closed = await kit.pat().raw('POST', repo.path(`/changes/${line.front.number}/close`));
-    assert.ok(closed.ok || /landed/.test(closed.body?.error?.message ?? ''), `closing the front: ${closed.status}`);
     const landed = await settled(async () => {
       const read = await change(kit, repo, reader.number);
       return read.status === 'landed' && read;
