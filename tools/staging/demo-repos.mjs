@@ -321,21 +321,20 @@ async function release(r) {
   const tags = (await ws.git(r.base, null, 'tag')).split('\n');
   if (!tags.includes('flight-1')) await ws.git(r.base, null, 'tag', '-a', 'flight-1', flights.clean.landed_commit, '-m', `First flight: ${REPOS[r.key].flights.clean.message}`);
   if (!tags.includes('flight-2')) await ws.git(r.base, null, 'tag', '-a', 'flight-2', flights.fix.landed_commit, '-m', 'Second flight: the go-around, answered');
-  // Tags need land, which no agent's token holds: a token for this push alone.
+  // Tags and releases need land, which no agent's token holds: a token for this step alone.
   const name = `demo-tags-${ts}`;
   const tagger = await owner.post(`/repos/${r.id}/tokens`, { name, scopes: ['read', 'write', 'land'] });
   secrets.add(tagger.token);
   try {
     await ws.git(r.base, tagger.token, 'push', '-q', 'origin', 'refs/tags/flight-1', 'refs/tags/flight-2');
+    if ((await owner.get(`/repos/${r.id}/releases`)).releases.some((x) => x.tag === 'flight-2')) return;
+    const archive = ws.path(`flight-${r.key}-2.tar.gz`);
+    await ws.git(r.base, null, 'archive', '--format=tar.gz', '-o', archive, 'flight-2');
+    const notes = [`Landed: ${REPOS[r.key].flights.clean.message} (#${flights.clean.number}) and ${REPOS[r.key].flights.sloppy.message} (#${flights.fix.number}), after review.`, 'Tags flight-1 and flight-2 mark each landing.'].join('\n');
+    await ws.ok(join(ws.bin, 'yoneda'), ['release', 'create', 'flight-2', '--title', `flight-${r.key} 2`, '-m', notes, '--asset', archive], { cwd: r.base, token: tagger.token, extra: NO_SESSION });
   } finally {
     await owner.raw('DELETE', `/repos/${r.id}/tokens/${name}`);
   }
-  const { releases } = await owner.get(`/repos/${r.id}/releases`);
-  if (releases.some((x) => x.tag === 'flight-2')) return;
-  const archive = ws.path(`flight-${r.key}-2.tar.gz`);
-  await ws.git(r.base, null, 'archive', '--format=tar.gz', '-o', archive, 'flight-2');
-  const notes = [`Landed: ${REPOS[r.key].flights.clean.message} (#${flights.clean.number}) and ${REPOS[r.key].flights.sloppy.message} (#${flights.sloppy.number}), after a go-around.`, 'Tags flight-1 and flight-2 mark each landing.'].join('\n');
-  await ws.ok(join(ws.bin, 'yoneda'), ['release', 'create', 'flight-2', '--title', `flight-${r.key} 2`, '-m', notes, '--asset', archive], { cwd: r.base, token: r.token, extra: NO_SESSION });
 }
 
 /** Runs `body` on every repository together; a repository's failure leaves the others flying. */
