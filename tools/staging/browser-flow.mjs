@@ -168,7 +168,7 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
   });
   await page.getByRole('button', { name: `Switch repository (current: ${name})` }).waitFor();
   await atRepo(page, account, id);
-  await page.getByRole('region', { name: 'Files' }).getByText('README.md').first().waitFor();
+  await page.getByRole('region', { name: 'Overview' }).getByText('README.md').first().waitFor();
   await shot('source-code');
   // The Clone menu: the SSH line exactly when the platform says Git over SSH is open.
   const ssh = (await account.raw('GET', '/api/v1/ssh-keys')).body?.ssh;

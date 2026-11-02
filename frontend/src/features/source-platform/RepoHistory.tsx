@@ -1,18 +1,9 @@
+import { commitTime, type LogCommit } from './commitLog';
 import { Person } from './Person';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha } from './sourceApi';
 import { formatSourceRoute, type SourceRoute } from './sourceRoute';
 import { useSource } from './useSource';
-
-type LogCommit = {
-  commit: string;
-  message: string;
-  principal: string;
-  author_name?: string | null;
-  authored_at?: number | null;
-  landed?: { version: number; landed_at: number };
-  break_glass?: string | null;
-};
 
 const dayName = (at: number) =>
   new Date(at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
@@ -21,7 +12,7 @@ const dayName = (at: number) =>
 function commitDays(commits: LogCommit[]) {
   const days: { day: string; commits: LogCommit[] }[] = [];
   for (const commit of commits) {
-    const at = commit.authored_at ?? commit.landed?.landed_at;
+    const at = commitTime(commit);
     const day = at ? dayName(at) : 'Unknown date';
     const last = days.at(-1);
     if (last?.day === day) last.commits.push(commit);

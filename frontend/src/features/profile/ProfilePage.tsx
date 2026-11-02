@@ -27,9 +27,7 @@ function RepoCard({ repo, navigate }: { repo: ProfileRepo; navigate: Navigate })
     <li className="profile-repo">
       <p className="profile-repo-name">
         <GitBranch size={16} aria-hidden="true" />
-        <a {...linkTo({ view: 'files', repo: repo.id, path: '', ref: 'main' }, navigate)}>
-          {repo.name}
-        </a>
+        <a {...linkTo({ view: 'overview', repo: repo.id }, navigate)}>{repo.name}</a>
         {repo.visibility !== 'private' && <PublicBadge />}
       </p>
       {repo.description && <p className="profile-repo-description">{repo.description}</p>}

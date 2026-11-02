@@ -8,12 +8,7 @@ import { fullName, optionLabel, type PickerGroup } from './pickerModel';
 import type { RepoRow } from './repoRows';
 import { linkTo, type Navigate } from './useRoute';
 
-export const repoHome = (repo: string): SourceRoute => ({
-  view: 'files',
-  repo,
-  path: '',
-  ref: 'main',
-});
+export const repoHome = (repo: string): SourceRoute => ({ view: 'overview', repo });
 
 /** The DOM id of `row`'s option in the picker `id`. */
 export const optionDomId = (id: string, row: RepoRow) => `${id}-${row.repo}`;

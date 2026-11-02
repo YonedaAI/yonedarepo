@@ -10,6 +10,7 @@ import {
   Compass,
   CreditCard,
   FolderGit2,
+  FolderTree,
   GitCommitHorizontal,
   GitPullRequest,
   House,
@@ -57,6 +58,7 @@ export const labelled = (name: string, label?: string) => (label ? `${name}, ${l
 
 export const REPO_PAGES: { id: RepoTab; label: string; Icon: typeof House }[] = [
   { id: 'overview', label: 'Overview', Icon: LayoutDashboard },
+  { id: 'files', label: 'Files', Icon: FolderTree },
   { id: 'changes', label: 'Landings', Icon: GitPullRequest },
   { id: 'tower', label: 'Tower', Icon: Radar },
   { id: 'insights', label: 'Insights', Icon: ChartColumn },

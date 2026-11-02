@@ -227,6 +227,7 @@
   gap: 6px;
 }
 .memory-text {
+  max-width: 60ch;
   margin: 0;
   color: var(--text);
   white-space: pre-wrap;

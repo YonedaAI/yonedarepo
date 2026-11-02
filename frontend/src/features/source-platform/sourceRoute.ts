@@ -27,6 +27,8 @@ import { AGENT_SECTIONS, type AgentSection } from './agentModel';
 import { normalizeUserCode } from './connect';
 import { formatNamedRoute, type NamedRoute, parseNamedPath, REPO_ID, repoBase } from './repoNames';
 
+export { type RepoTab, routeTab, tabRoute } from './repoTabs';
+
 export const REPO_SETTINGS_SECTIONS = [
   'rules',
   'checks',
@@ -66,6 +68,8 @@ export type SourceRoute =
   | { view: 'admin'; section: AdminSection; account?: string }
   | { view: 'site'; site: SitePage }
   | NamedRoute
+  /** The repository's front page. */
+  | { view: 'overview'; repo: string }
   /** `line`: that line of the file is marked and scrolled to. */
   | { view: 'files'; repo: string; path: string; ref: string; at?: number; line?: number }
   | { view: 'history'; repo: string; ref: string }
@@ -83,22 +87,6 @@ export type SourceRoute =
   | { view: 'context'; repo: string }
   | { view: 'insights'; repo: string }
   | { view: 'repo-settings'; repo: string; section: RepoSettingsSection };
-
-/** The repository's sidebar pages, each highlighted on every route it holds: Commits holds
- * `history`, `transactions`, `branches` and `commit`, and Landings holds `change`. */
-export type RepoTab =
-  | 'overview'
-  | 'changes'
-  | 'tower'
-  | 'agents'
-  | 'commits'
-  | 'sessions'
-  | 'context'
-  | 'insights'
-  | 'memories'
-  | 'releases'
-  | 'search'
-  | 'settings';
 
 /** An organization's name: an account name without email (the two share one namespace). */
 export const ORG_NAME = /^[a-z][a-z0-9_]{2,31}$/;
@@ -179,8 +167,11 @@ export function parseSourceRoute(pathname: string, search: string, hash = ''): S
     return { view: 'commit', repo, commit: rest[0] };
   const at = Number(params.get('at'));
   const line = params.get('line') ?? '';
-  // An old `/overview/<path>` link opens that path's files.
+  // An old `/overview/<path>` link opens that path's files; an old root with a ref or a version
+  // opens that place in the files, not the front page.
   const path = view === 'files' || view === 'overview' ? rest.join('/') : '';
+  if (view !== 'files' && !path && !params.has('ref') && !params.has('at'))
+    return { view: 'overview', repo };
   return {
     view: 'files',
     repo,
@@ -286,68 +277,16 @@ export function formatSourceRoute(route: SourceRoute): string {
     return route.section === 'sessions' ? `${base}/agents` : `${base}/agents/${route.section}`;
   if (route.view === 'session') return `${base}/agents/sessions/${route.id}`;
   if (route.view === 'context' || route.view === 'insights') return `${base}/${route.view}`;
+  if (route.view === 'overview') return base;
   const query = new URLSearchParams();
   const path = route.path.split('/').filter(Boolean).map(encodeURIComponent).join('/');
   if (route.ref !== 'main') query.set('ref', route.ref);
   if (route.at !== undefined) query.set('at', String(route.at));
   if (route.view === 'files' && route.line && path) query.set('line', String(route.line));
   const suffix = query.size ? `?${query}` : '';
-  return path ? `${base}/files/${path}${suffix}` : `${base}${suffix}`;
+  return path ? `${base}/files/${path}${suffix}` : `${base}/files${suffix}`;
 }
 
 /** The repository a route shows, if any. */
 export const routeRepo = (route: SourceRoute): string | undefined =>
   'repo' in route ? route.repo : undefined;
-
-/** The sidebar page a repository route belongs to. */
-export function routeTab(route: SourceRoute): RepoTab | undefined {
-  switch (route.view) {
-    case 'files':
-      return 'overview';
-    case 'history':
-    case 'transactions':
-    case 'branches':
-    case 'commit':
-      return 'commits';
-    case 'changes':
-    case 'change':
-      return 'changes';
-    case 'tower':
-      return 'tower';
-    case 'releases':
-    case 'release':
-      return 'releases';
-    case 'agents':
-      return route.section === 'sessions'
-        ? 'sessions'
-        : route.section === 'memories'
-          ? 'memories'
-          : 'agents';
-    case 'session':
-      return 'sessions';
-    case 'context':
-    case 'insights':
-      return route.view;
-    case 'search':
-      return 'search';
-    case 'repo-settings':
-      return 'settings';
-    default:
-      return undefined;
-  }
-}
-
-/** Where a page starts. */
-export function tabRoute(tab: RepoTab, repo: string): SourceRoute {
-  if (tab === 'overview') return { view: 'files', repo, path: '', ref: 'main' };
-  if (tab === 'commits') return { view: 'history', repo, ref: 'main' };
-  if (tab === 'changes') return { view: 'changes', repo };
-  if (tab === 'tower') return { view: 'tower', repo };
-  if (tab === 'releases') return { view: 'releases', repo };
-  if (tab === 'sessions') return { view: 'agents', repo, section: 'sessions' };
-  if (tab === 'agents') return { view: 'agents', repo, section: 'contracts' };
-  if (tab === 'context' || tab === 'insights') return { view: tab, repo };
-  if (tab === 'memories') return { view: 'agents', repo, section: 'memories' };
-  if (tab === 'search') return { view: 'search', repo, query: '' };
-  return { view: 'repo-settings', repo, section: 'rules' };
-}

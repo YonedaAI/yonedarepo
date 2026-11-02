@@ -22,7 +22,7 @@ describe('breadcrumbs', () => {
       { label: 'ada', to: { view: 'repositories' } },
       {
         label: 'app',
-        to: { view: 'files', repo, path: '', ref: 'main' },
+        to: { view: 'overview', repo },
         switcher: true,
       },
       { label: 'Tower' },
