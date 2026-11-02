@@ -2,7 +2,7 @@
 // the New repository dialog. A connected account's repositories are offered in the same field,
 // as it holds an address too. The import runs in the background, so what can only be known
 // later (no such repository, a private one) is the new repository's page to say.
-import { type FormEvent, useEffect, useId, useState } from 'react';
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import {
   CONNECT_PATH,
@@ -82,6 +82,12 @@ export function GitHubImportDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const picked = pickedRepository(source, github?.repositories);
+  const form = useRef<HTMLFormElement>(null);
+  // Choosing a repository from the list is the whole request: it starts straight away.
+  const pickedId = picked?.id;
+  useEffect(() => {
+    if (pickedId !== undefined) form.current?.requestSubmit();
+  }, [pickedId]);
   // Adding from GitHub starts on GitHub, and a public address needs none of that. Back from
   // there, the dialog stays to say what happened.
   const unconnected = !publicAddress && github?.available === true && !connected;
@@ -131,7 +137,7 @@ export function GitHubImportDialog({
       locked={busy}
       initialFocus='input[name="url"]'
     >
-      <form className="new-repository" onSubmit={add}>
+      <form ref={form} className="new-repository" onSubmit={add}>
         <p className="source-meta import-notice">
           {github && !github.available && (
             <strong>Public GitHub repositories only for now. </strong>
