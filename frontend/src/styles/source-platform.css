@@ -204,8 +204,7 @@ button.danger:not(:disabled) {
 .source-patch {
   width: 100%;
   border-collapse: collapse;
-  font:
-    var(--text-mono-dense) / 1.45 var(--mono);
+  font: var(--text-mono-dense) / 1.45 var(--mono);
 }
 .source-patch td {
   padding: 0 8px;
@@ -404,8 +403,7 @@ button.danger:not(:disabled) {
   margin: 0;
   padding: 10px 12px;
   overflow: auto;
-  font:
-    var(--text-mono-dense) / 1.5 var(--mono);
+  font: var(--text-mono-dense) / 1.5 var(--mono);
 }
 .source-shown-once {
   border: 1px solid var(--success);
