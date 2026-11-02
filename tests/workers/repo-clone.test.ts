@@ -806,9 +806,13 @@ describe('what reaches a clone', () => {
 
     it('points a refused address to Connect, where there is one', async () => {
       const hub = await new FakeGitHub().keys();
-      github(() => new Response('', { status: 401 }));
       const box = await container(new Remote());
-      const { env, params } = await asked('hint', box.fake, hub.env({} as Env));
+      // Readable when asked (no App, no question), private by the time the Workflow looks.
+      const app = hub.env({} as Env);
+      const offWhenAsked = { ...app, GITHUB_APP_ID: undefined } as unknown as Env;
+      const { env: asking, params } = await asked('hint', box.fake, offWhenAsked);
+      const env = { ...asking, GITHUB_APP_ID: app.GITHUB_APP_ID } as unknown as Env;
+      github(() => new Response('', { status: 401 }));
 
       await expect(cloneRepository(env, params, running)).rejects.toThrow(/^REMOTE_AUTH_REQUIRED: .*Connect GitHub/);
 
