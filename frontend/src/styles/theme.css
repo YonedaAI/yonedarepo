@@ -62,6 +62,7 @@
   --overlay: #15243665;
   --bubble: #245de8;
   --code-bg: var(--bg);
+  --code-line: #e8edf3;
   --syntax-keyword: #7a2dbf;
   --syntax-string: #0f6b3a;
   --syntax-comment: #5d6c80;
@@ -69,6 +70,7 @@
   --syntax-type: #0b6585;
   --syntax-function: #245de8;
   --syntax-tag: #b4232c;
+  --syntax-property: #1d5c7a;
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
@@ -106,6 +108,7 @@
     --overlay: #000000a0;
     --bubble: #4d80f5;
     --code-bg: var(--bg);
+    --code-line: #232323;
     --syntax-keyword: #c792ea;
     --syntax-string: #9ece6a;
     --syntax-comment: #9d9d9d;
@@ -113,6 +116,7 @@
     --syntax-type: #7dcfff;
     --syntax-function: #7aa0f8;
     --syntax-tag: #ff8b8b;
+    --syntax-property: #b4d0ff;
   }
 }
 :root[data-theme="dark"] {
@@ -150,6 +154,7 @@
   --overlay: #000000a0;
   --bubble: #4d80f5;
   --code-bg: var(--bg);
+  --code-line: #232323;
   --syntax-keyword: #c792ea;
   --syntax-string: #9ece6a;
   --syntax-comment: #9d9d9d;
@@ -157,4 +162,5 @@
   --syntax-type: #7dcfff;
   --syntax-function: #7aa0f8;
   --syntax-tag: #ff8b8b;
+  --syntax-property: #b4d0ff;
 }

@@ -1,12 +1,12 @@
 // The code on screen, read or written: CodeMirror, on this chunk alone, so that no other page
-// carries it. A file's text is only ever a document here, never markup. Reading, a click on a
-// line number links to that line. Writing, Tab indents, and Escape then Tab leaves the editor,
-// as CodeMirror's own rule for keyboard users has it; Escape never reaches the form around it.
-import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-import { bracketMatching, indentOnInput, syntaxHighlighting } from '@codemirror/language';
-import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search';
+// carries it. A file's text is only ever a document here, never markup. `codeSetup` says what it
+// can do. Reading, a click on a line number links to that line, and so does Enter on the line the
+// caret is on. Writing, Tab indents, and Escape then Tab leaves the editor, as CodeMirror's own
+// rule for keyboard users has it; Escape never reaches the form around it.
+import { gotoLine, openSearchPanel } from '@codemirror/search';
 import {
   Compartment,
+  EditorSelection,
   EditorState,
   type Extension,
   RangeSet,
@@ -16,15 +16,13 @@ import {
 import {
   Decoration,
   type DecorationSet,
-  drawSelection,
   EditorView,
   GutterMarker,
   gutterLineClass,
-  keymap,
   lineNumbers,
 } from '@codemirror/view';
 import { useEffect, useRef } from 'react';
-import { codeHighlight, codeTheme } from './codeTheme';
+import { editingState, indentOf, viewingState } from './codeSetup';
 import { grammarOf } from './fileFacts';
 
 export type CodeSurfaceProps = {
@@ -37,7 +35,11 @@ export type CodeSurfaceProps = {
   onLine?: (line: number) => void;
   /** Present, the text can be edited. */
   onChange?: (value: string) => void;
+  /** Hands over what the page's own buttons do, and takes it back. */
+  onCommands?: (commands: CodeCommands | null) => void;
 };
+
+export type CodeCommands = { find: () => void; goToLine: () => void };
 
 const markLine = StateEffect.define<number | null>();
 const MARK = Decoration.line({ class: 'cm-line-target' });
@@ -59,12 +61,21 @@ const markedNumber = gutterLineClass.compute([marked], (state) => {
   return first.value ? RangeSet.of(numberMark.range(first.from)) : RangeSet.empty;
 });
 
-function reading(label: string, onLine?: (line: number) => void): Extension {
+function reading(
+  label: string,
+  text: string,
+  path: string,
+  onLine?: (line: number) => void,
+): Extension {
+  const linkCaret = (view: EditorView) => {
+    onLine?.(view.state.doc.lineAt(view.state.selection.main.head).number);
+    return true;
+  };
   return [
-    EditorState.readOnly.of(true),
-    // Not editable, so a phone's keyboard stays down; still focusable, to scroll and search.
-    EditorView.editable.of(false),
-    EditorView.contentAttributes.of({ tabindex: '0', 'aria-label': label }),
+    // It stays editable to the browser, for a caret and the keyboard, and asks a phone for no
+    // keyboard. The state refuses every change.
+    viewingState(indentOf(text, path), [{ key: 'Enter', run: linkCaret }]),
+    EditorView.contentAttributes.of({ 'aria-label': label, inputmode: 'none' }),
     lineNumbers({
       domEventHandlers: {
         click(view, block) {
@@ -73,25 +84,30 @@ function reading(label: string, onLine?: (line: number) => void): Extension {
         },
       },
     }),
-    keymap.of(searchKeymap),
   ];
 }
 
-function writing(label: string, onChange: (value: string) => void): Extension {
+function writing(
+  label: string,
+  text: string,
+  path: string,
+  onChange: (value: string) => void,
+): Extension {
   return [
+    editingState(indentOf(text, path)),
     EditorView.contentAttributes.of({ 'aria-label': label }),
     lineNumbers(),
-    history(),
-    drawSelection(),
-    indentOnInput(),
-    bracketMatching(),
-    highlightSelectionMatches(),
-    keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
     EditorView.updateListener.of((update) => {
       if (update.docChanged) onChange(update.state.doc.toString());
     }),
   ];
 }
+
+/** Whether a key press belongs to the page: typing in a field, or a dialog over it. */
+const elsewhere = (target: EventTarget | null) =>
+  target instanceof HTMLElement &&
+  (target.closest('input, textarea, select, [contenteditable="true"]') !== null ||
+    document.querySelector('dialog[open]') !== null);
 
 export default function CodeSurface({
   value,
@@ -100,6 +116,7 @@ export default function CodeSurface({
   line,
   onLine,
   onChange,
+  onCommands,
 }: CodeSurfaceProps) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<EditorView>(null);
@@ -118,19 +135,35 @@ export default function CodeSurface({
         doc: value,
         extensions: [
           grammar.current.of([]),
-          codeTheme,
-          syntaxHighlighting(codeHighlight),
-          search({ top: true }),
           marked,
           markedNumber,
           editable
-            ? writing(label, (next) => onChangeNow.current?.(next))
-            : reading(label, (at) => onLineNow.current?.(at)),
+            ? writing(label, value, path, (next) => onChangeNow.current?.(next))
+            : reading(label, value, path, (at) => onLineNow.current?.(at)),
         ],
       }),
     });
     view.current = made;
+    const find = () => {
+      made.focus();
+      openSearchPanel(made);
+    };
+    const goToLine = () => {
+      made.focus();
+      gotoLine(made);
+    };
+    onCommands?.({ find, goToLine });
+    // Lines off screen are not in the page, so the browser's find can't see them. Ours can.
+    const findHere = (event: KeyboardEvent) => {
+      const asked = (event.metaKey || event.ctrlKey) && !event.altKey && event.key === 'f';
+      if (!asked || elsewhere(event.target) || made.hasFocus) return;
+      event.preventDefault();
+      find();
+    };
+    if (!editable) window.addEventListener('keydown', findHere);
     return () => {
+      window.removeEventListener('keydown', findHere);
+      onCommands?.(null);
       view.current = null;
       made.destroy();
     };
@@ -157,6 +190,7 @@ export default function CodeSurface({
     }
     const { from } = doc.line(line);
     code.dispatch({
+      selection: EditorSelection.cursor(from),
       effects: [markLine.of(from), EditorView.scrollIntoView(from, { y: 'center' })],
     });
   }, [line]);

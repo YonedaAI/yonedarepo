@@ -1,8 +1,9 @@
 // One file on the page: its header row, then its code, its Markdown read, or its blame. The
 // code area reads the same as the editor, so that editing a file changes nothing but the caret.
-import { useState } from 'react';
+import { Hash, Search } from 'lucide-react';
+import { useRef, useState } from 'react';
 import type { Navigate } from '../shell/useRoute';
-import { CodeBlock } from './CodeBlock';
+import { CodeBlock, type CodeCommands } from './CodeBlock';
 import type { FileBody } from './codeData';
 import { FileBlame } from './FileBlame';
 import { CopyButton, FileHeader } from './FileHeader';
@@ -35,11 +36,35 @@ export function FileView({
   const text = isText(file);
   const previewable = text && file.size > 0 && !line && isMarkdown(path);
   const large = file.size > PLAIN_BYTES;
+  const showsCode = text && file.size > 0 && !blaming && (!previewable || source);
+  const commands = useRef<CodeCommands | null>(null);
   return (
     <article className="source-file">
       <FileHeader path={path} size={file.size} executable={file.executable}>
         {previewable && !blaming && (
           <PreviewToggle preview={!source} onChange={(preview) => setSource(!preview)} />
+        )}
+        {showsCode && (
+          <>
+            <button
+              type="button"
+              className="quiet file-icon-button"
+              aria-label="Find in file"
+              title="Find in file"
+              onClick={() => commands.current?.find()}
+            >
+              <Search size={14} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="quiet file-icon-button"
+              aria-label="Go to line"
+              title="Go to line"
+              onClick={() => commands.current?.goToLine()}
+            >
+              <Hash size={14} aria-hidden="true" />
+            </button>
+          </>
         )}
         {text && file.size > 0 && (
           <CopyButton text={file.content} label="Copy contents">
@@ -87,6 +112,9 @@ export function FileView({
             label={`Contents of ${path}`}
             line={line}
             onLine={onLine}
+            onCommands={(ready) => {
+              commands.current = ready;
+            }}
           />
         </>
       )}

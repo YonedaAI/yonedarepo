@@ -1,12 +1,14 @@
 // The code area and its loader: CodeMirror's chunk loads the first time a file is on screen, so
 // nothing else pays for it, and until then the text stands plain in the same place.
 import { lazy, Suspense } from 'react';
-import type { CodeSurfaceProps } from './CodeSurface';
+import type { CodeCommands, CodeSurfaceProps } from './CodeSurface';
 import { FileText } from './FileText';
 import { PLAIN_BYTES } from './fileFacts';
 import { Loading } from './SourceStatus';
 
 const CodeSurface = lazy(() => import('./CodeSurface'));
+
+export type { CodeCommands };
 
 export function CodeBlock(props: CodeSurfaceProps) {
   const { value, line, onChange } = props;
