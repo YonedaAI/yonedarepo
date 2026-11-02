@@ -53,7 +53,8 @@ async function installRows(w, person, m) {
     assert.match(ran.stdout, /Installed yoneda/);
     assert.match(ran.stdout, /PATH set in /, 'the installer did not put the folder on PATH');
     assert.match(ran.stdout.trim().split('\n').at(-1), /^Next: yoneda login/, 'the last line is not the next step');
-    person.bin = dir;
+    // CLI_WALK_LOCAL_CLI: a change not in a release yet, with the installer's rows otherwise as they are.
+    if (!process.env.CLI_WALK_LOCAL_CLI) person.bin = dir;
     w.extraPath.push(dir);
     m.installed = ran.stdout.split('\n')[0].replace(w.dir, '');
   });
