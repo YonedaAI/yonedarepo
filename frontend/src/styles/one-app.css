@@ -60,17 +60,15 @@
   padding: 24px 32px 48px;
   min-width: 0;
 }
-.repo-head {
+.repo-facts {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px 16px;
+  gap: 6px 10px;
   margin-bottom: 12px;
 }
-.repo-head h1 {
-  font-size: var(--text-3xl);
+.repo-facts p {
   margin: 0;
-  overflow-wrap: anywhere;
 }
 .status-chips {
   display: flex;
@@ -93,7 +91,7 @@ a.chip:hover {
   color: var(--blue-text);
 }
 /* Fork sits beside the chips at their height, not a full-size button's. */
-.repo-head button.fork-button {
+.repo-facts button.fork-button {
   min-height: 0;
   gap: 6px;
   padding: 3px 10px;
