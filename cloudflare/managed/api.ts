@@ -83,6 +83,7 @@ async function agentState(
   env: ManagedEnv,
   workspace: string,
   agent: ManagedAgentDefinition,
+  owned: { id: string }[],
 ): Promise<AgentState> {
   const ws = workspaceStub(env, workspace);
   const [stored, meta] = await Promise.all([ws.settings(agent.id), ws.meta(agent.id)]);
@@ -100,7 +101,8 @@ async function agentState(
         .map(([r, o]) => [r, customizedFields(o)] as const)
         .filter(([, fields]) => fields.length > 0),
     ),
-    enabled_repos: stored.enabled,
+    // A deleted repository stays stored until the next save, which a form must be able to send.
+    enabled_repos: stored.enabled.filter((r) => owned.some((o) => o.id === r)),
     history: runs.slice(0, 6).map(({ id, repo, change, value, status, created_at }) => ({
       id,
       repo,
@@ -184,7 +186,7 @@ async function update(
     for (const repo of (await ws.settings(agent.id)).enabled)
       await repoStub(env, repo).setEnabled(agent.id, body.active, by);
   }
-  return agentState(env, workspace, agent);
+  return agentState(env, workspace, agent, owned);
 }
 
 export async function managedApi(req: Request, env: ManagedEnv, parts: string[]): Promise<Json> {
@@ -198,7 +200,7 @@ export async function managedApi(req: Request, env: ManagedEnv, parts: string[])
   if (!resource && get)
     return {
       workspace,
-      agents: await Promise.all(MANAGED_AGENTS.map((a) => agentState(env, workspace, a))),
+      agents: await Promise.all(MANAGED_AGENTS.map((a) => agentState(env, workspace, a, owned))),
       credit: await credit(env, workspace),
       billing: stripeEnabled(env) ? 'stripe' : 'coming',
       repos: owned,
@@ -207,13 +209,13 @@ export async function managedApi(req: Request, env: ManagedEnv, parts: string[])
   if (resource === 'agents' && id) {
     const agent = MANAGED_AGENTS.find((a) => a.id === id);
     if (!agent) throw new ApiRefusal('NOT_FOUND', 'Unknown agent', 404);
-    if (get && !sub) return agentState(env, workspace, agent);
+    if (get && !sub) return agentState(env, workspace, agent, owned);
     if (req.method === 'PUT' && !sub) return update(env, req, workspace, agent, owned);
     if (req.method === 'POST' && sub === 'run') return runNow(env, workspace, agent);
     if (req.method === 'POST' && sub === 'archive') {
       await setRepos(env, req, workspace, agent, [], false);
       await workspaceStub(env, workspace).archive(agent.id);
-      return agentState(env, workspace, agent);
+      return agentState(env, workspace, agent, owned);
     }
   }
   if (resource === 'sync' && !id && req.method === 'POST') return sync(env, req, workspace, owned);
