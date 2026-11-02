@@ -227,9 +227,7 @@ export function AdminUser({
           <ul className="admin-feed">
             {a.repos.map((r) => (
               <li key={r.id}>
-                <a {...linkTo({ view: 'files', repo: r.id, path: '', ref: 'main' }, navigate)}>
-                  {r.name}
-                </a>
+                <a {...linkTo({ view: 'overview', repo: r.id }, navigate)}>{r.name}</a>
                 {r.visibility === 'public' && <PublicBadge />}
                 <span className="admin-sub">created {when(r.created_at)}</span>
               </li>

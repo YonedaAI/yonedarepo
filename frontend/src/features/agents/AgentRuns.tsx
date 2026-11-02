@@ -69,7 +69,7 @@ function RunsTable({
                 </a>
               </td>
               <td>
-                <a {...linkTo({ view: 'files', repo: run.repo, path: '', ref: 'main' }, navigate)}>
+                <a {...linkTo({ view: 'overview', repo: run.repo }, navigate)}>
                   {names.get(run.repo) ?? run.repo}
                 </a>
               </td>

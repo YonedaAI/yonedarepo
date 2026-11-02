@@ -28,12 +28,7 @@ export function RepoFacts({
       {status.parent && (
         <p className="source-meta">
           Forked from{' '}
-          <a
-            {...linkTo(
-              { view: 'files', repo: status.parent.repo, path: '', ref: 'main' },
-              navigate,
-            )}
-          >
+          <a {...linkTo({ view: 'overview', repo: status.parent.repo }, navigate)}>
             {status.parent.repo}
           </a>{' '}
           at v{status.parent.version}
@@ -50,7 +45,7 @@ export function RepoFacts({
         <ForkButton
           repo={repo}
           name={status.name}
-          onForked={(fork) => navigate({ view: 'files', repo: fork.id, path: '', ref: 'main' })}
+          onForked={(fork) => navigate({ view: 'overview', repo: fork.id })}
         />
       )}
     </div>

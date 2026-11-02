@@ -1,46 +1,27 @@
-// The Code tab: branch or tag, path, version (time travel) and Clone; the latest commit; the
+// The Files page: branch or tag, path, version (time travel) and Clone; the latest commit; the
 // directory as a file table with its README below, or one file with blame.
 import { type ReactNode, useState } from 'react';
 import { EmptyState } from '../../components/EmptyState';
 import { linkTo, type Navigate } from '../shell/useRoute';
 import { BranchPicker, CloneButton, LatestCommit } from './CodeParts';
 import { CommitFile } from './CommitFile';
-import { readQuery, useActivity, useListing } from './codeData';
+import { useActivity, useListing } from './codeData';
 import { currentApiOrigin } from './connect';
 import { FileTable } from './FileTable';
 import { FileView } from './FileView';
+import { findReadme, Readme } from './Readme';
 import { RepoFirstSteps } from './RepoFirstSteps';
-import { RepoMarkdown } from './RepoMarkdown';
 import { canMoveBranches, type RepoStatus } from './repoStatus';
 import { Failure, Loading } from './SourceStatus';
 import type { SourceRoute } from './sourceRoute';
-import { useSource } from './useSource';
 import { VersionPicker } from './VersionPicker';
 
 type Route = Extract<SourceRoute, { view: 'files' }>;
-const README = /^readme(\.(md|markdown))?$/i;
 
 /** The ref the API reads: a branch name, or a tag's commit (tags never move). */
 export function apiRef(ref: string, refs: RepoStatus['refs'] | undefined): string | undefined {
   if (!ref.startsWith('refs/tags/')) return ref;
   return refs?.find((r) => r.name === ref)?.commit_id;
-}
-
-function Readme({ repo, ref, path, at }: { repo: string; ref: string; path: string; at?: number }) {
-  const file = useSource<{ encoding: string; content: string }>(
-    `/repos/${repo}/blob?${readQuery(ref, path, at)}`,
-  );
-  if (file.error) return <Failure error={file.error} onRetry={file.reload} />;
-  if (!file.data) return <Loading what="README" />;
-  if (file.data.encoding !== 'utf-8') return null;
-  return (
-    <article className="source-file readme" aria-label={path}>
-      <header>
-        <code>{path.split('/').pop()}</code>
-      </header>
-      <RepoMarkdown source={file.data.content} place={{ repo, ref, path, at }} />
-    </article>
-  );
 }
 
 export function RepoFiles({
@@ -79,7 +60,7 @@ export function RepoFiles({
     <a {...linkTo({ view: 'commit', repo: route.repo, commit }, navigate)}>{children}</a>
   );
   const crumbs = route.path.split('/').filter(Boolean);
-  const readme = tree?.entries.find((e) => e.type !== 'tree' && README.test(e.name));
+  const readme = tree && findReadme(tree.entries);
   return (
     <section className="source-files" aria-label="Files">
       <div className="source-toolbar">

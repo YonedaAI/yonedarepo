@@ -27,7 +27,7 @@ export async function lookAtForm(s) {
   const { page } = s;
   const form = page.getByRole('form', { name: 'Add a file' });
   const seen = await eachSize(s, async (size) => {
-    await page.goto(`${s.origin}${s.base}`);
+    await page.goto(`${s.origin}${s.base}/files`);
     await page.getByRole('button', { name: 'Add file' }).click();
     await form.waitFor();
     await form.getByLabel('File').fill('src/a.js');

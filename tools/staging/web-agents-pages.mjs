@@ -58,7 +58,7 @@ export async function createRepository(s) {
   await s.shot('new-repository');
   await dialog.getByRole('button', { name: 'Create repository' }).click();
   await s.page.waitForURL(/\/source\/r[0-9a-f]{20}|\/[^/]+\/[^/]+$/);
-  await s.page.getByRole('button', { name: 'Add file' }).waitFor();
+  await s.page.getByRole('link', { name: 'View all files' }).waitFor();
   s.repo = (await s.api('/api/v1/repos')).repos.find((r) => r.name === s.name).id;
   s.base = `/source/${s.repo}`;
   s.out.repo = s.repo;
@@ -136,7 +136,7 @@ export async function addAgent(s, agent, block) {
 }
 
 /** The Files page's form, filled as a person would, on the branch or file `at` points to. */
-export async function commitFromPage(s, c, { at = '', edit = false } = {}) {
+export async function commitFromPage(s, c, { at = '/files', edit = false } = {}) {
   const { page } = s;
   await page.goto(`${s.origin}${s.base}${at}`);
   await page.getByRole('button', { name: edit ? 'Edit' : 'Add file' }).click();

@@ -45,7 +45,7 @@ function Table({
               {rows.map((r) => (
                 <tr key={r.id}>
                   <td className="admin-key">
-                    <a {...linkTo({ view: 'files', repo: r.id, path: '', ref: 'main' }, navigate)}>
+                    <a {...linkTo({ view: 'overview', repo: r.id }, navigate)}>
                       {r.handle ? `${r.handle}/${r.name}` : r.name}
                     </a>
                   </td>

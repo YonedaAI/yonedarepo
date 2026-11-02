@@ -56,9 +56,7 @@ function Row({
     <>
       <tr>
         <td>
-          <a {...linkTo({ view: 'files', repo: repo.id, path: '', ref: 'main' }, navigate)}>
-            {repo.name}
-          </a>
+          <a {...linkTo({ view: 'overview', repo: repo.id }, navigate)}>{repo.name}</a>
           <small className="admin-sub">{repo.id}</small>
         </td>
         <td>{repo.handle ?? repo.owner}</td>

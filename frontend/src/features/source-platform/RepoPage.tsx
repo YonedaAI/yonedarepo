@@ -20,6 +20,7 @@ import { RepoFacts } from './RepoFacts';
 import { RepoFiles } from './RepoFiles';
 import { RepoInsights } from './RepoInsights';
 import { RepoNotFound, repoMissing, useRepoGone } from './RepoNotFound';
+import { RepoOverview } from './RepoOverview';
 import { RepoReleases } from './RepoReleases';
 import { RepoSearch } from './RepoSearch';
 import { ReadOnlyContext, repoAccess, type Visibility } from './repoAccess';
@@ -112,18 +113,26 @@ export function RepoPage({
           {!status.error && progress.phase !== 'none' && route.view !== 'repo-settings' && (
             <ImportStatus repo={repo} progress={progress} owner={owner} navigate={navigate} />
           )}
-          {data && progress.phase === 'none' && route.view === 'files' && !route.path && (
-            <RepoFacts
-              repo={repo}
-              status={data}
-              owner={owner}
-              readOnly={access.readOnly}
-              canFork={access.fork}
-              navigate={navigate}
-            />
-          )}
           {!status.error && (progress.phase === 'none' || route.view === 'repo-settings') && (
             <div className="repo-view">
+              {route.view === 'overview' && data && (
+                <RepoOverview
+                  repo={repo}
+                  status={data}
+                  facts={
+                    <RepoFacts
+                      repo={repo}
+                      status={data}
+                      owner={owner}
+                      readOnly={access.readOnly}
+                      canFork={access.fork}
+                      navigate={navigate}
+                    />
+                  }
+                  navigate={navigate}
+                  account={username}
+                />
+              )}
               {route.view === 'files' && (
                 <RepoFiles route={route} status={data} navigate={navigate} account={username} />
               )}

@@ -101,7 +101,7 @@ function OrgRepos({
     <ul className="org-repos">
       {list.map((r) => (
         <li key={r.id}>
-          <a {...linkTo({ view: 'files', repo: r.id, path: '', ref: 'main' }, navigate)}>
+          <a {...linkTo({ view: 'overview', repo: r.id }, navigate)}>
             <GitBranch size={16} aria-hidden="true" /> {r.name}
           </a>{' '}
           <span className="source-meta">created {when(r.created_at)}</span>
