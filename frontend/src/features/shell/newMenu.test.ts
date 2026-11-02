@@ -85,6 +85,10 @@ describe('a GitHub repository already added', () => {
   it('is the account own repository of that name, whatever the case', () => {
     expect(addedRepo([own], 'ada', 'Rad-Belden')?.id).toBe('r1');
   });
+  it('finds an account signed in by its email, whose repositories carry its handle', () => {
+    const mine = { ...own, owner: 'ada@example.com', owner_handle: 'ada' };
+    expect(addedRepo([mine], 'ada@example.com', 'rad-belden')?.id).toBe('r1');
+  });
   it('is not one under another owner, or one the account only reads', () => {
     expect(addedRepo([own], 'acme', 'rad-belden')).toBeUndefined();
     expect(addedRepo([other], 'ada', 'rad-belden')).toBeUndefined();
