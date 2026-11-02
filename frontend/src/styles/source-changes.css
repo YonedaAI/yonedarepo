@@ -16,6 +16,21 @@
   grid-column: 2;
   overflow-wrap: anywhere;
 }
+/* The status sits above the title on a phone, which needs the width. */
+@media (max-width: 800px) {
+  .source-changes li {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+  .source-changes li > .source-meta {
+    grid-column: 1;
+  }
+}
+.source-changes strong {
+  font-size: var(--text-base);
+  font-weight: 500;
+  line-height: var(--leading-chrome);
+}
 .source-changes a:hover strong {
   color: var(--blue-text);
 }

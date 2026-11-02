@@ -79,16 +79,12 @@ export function HomeDashboard({
               refresh in a moment.
             </p>
           )}
-          <section aria-labelledby="home-repositories" className="home-section">
-            <h2 id="home-repositories" className="home-label">
-              Repositories
-            </h2>
+          <section aria-label="Your numbers" className="home-section">
             <ul className="stat-cards">
               {statCards(activity).map((card) => (
                 <li key={card.id} className="stat-card">
-                  <span className="stat-label">{card.label}</span>
                   <span className="stat-value">{card.value.toLocaleString('en-US')}</span>
-                  <span className="stat-caption">{card.caption}</span>
+                  <span className="stat-label">{card.label}</span>
                 </li>
               ))}
             </ul>

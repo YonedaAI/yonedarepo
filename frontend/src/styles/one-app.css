@@ -22,35 +22,51 @@
 }
 .home-repo-list {
   list-style: none;
+  overflow: hidden;
   padding: 0;
-  margin: 20px 0 0;
-  display: grid;
-  gap: 8px;
+  margin: 12px 0 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+.home-repo-list li + li {
+  border-top: 1px solid var(--row-line);
 }
 .home-repo-list a {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 16px;
-  background: var(--surface);
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  min-height: var(--row-h);
+  padding: 5px 16px;
 }
 .home-repo-list a:hover {
-  border-color: var(--blue);
+  background: var(--surface-2);
+}
+.home-repo-list a:focus-visible {
+  outline-offset: -3px;
 }
 .home-repo-text {
   display: grid;
-  gap: 2px;
   min-width: 0;
   flex: 1;
 }
 .home-repo-name {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
   font-weight: 500;
+  line-height: var(--leading-chrome);
   overflow-wrap: anywhere;
+}
+.home-repo-name .visibility-badge {
+  padding-block: 0;
+  line-height: 16px;
 }
 .home-repo-meta {
   color: var(--muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-label);
 }
 .home-repo-list svg {
   color: var(--muted);
@@ -520,8 +536,6 @@ a.chip:hover {
   }
 }
 .page-heading h1 {
-  font-size: var(--text-3xl);
-  font-weight: 600;
   margin-bottom: 6px;
 }
 .page-heading p {

@@ -14,9 +14,6 @@
 }
 .home-greeting h1 {
   margin: 0;
-  font-size: var(--text-3xl);
-  font-weight: var(--weight-heading);
-  letter-spacing: -0.02em;
 }
 .home-greeting p {
   margin: 6px 0 0;
@@ -41,12 +38,15 @@
   justify-content: space-between;
   gap: 12px;
 }
-.home-label {
+.home-label,
+.stat-label {
   margin: 0;
   color: var(--faint);
+  font-family: var(--mono);
   font-size: var(--text-xs);
-  font-weight: 600;
-  letter-spacing: 1.2px;
+  font-weight: 400;
+  line-height: var(--leading-label);
+  letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }
 .stat-cards {
@@ -71,10 +71,6 @@
 }
 .stat-label {
   color: var(--muted);
-  font-size: var(--text-xs);
-  font-weight: 600;
-  letter-spacing: 1.1px;
-  text-transform: uppercase;
 }
 .stat-value,
 .stat-number {
@@ -87,7 +83,7 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
-  line-height: 1.1;
+  line-height: var(--leading-stat);
 }
 .stat-caption {
   color: var(--muted);
@@ -224,8 +220,5 @@
   }
   .home-greeting {
     flex-direction: column;
-  }
-  .stat-value {
-    font-size: var(--text-3xl);
   }
 }

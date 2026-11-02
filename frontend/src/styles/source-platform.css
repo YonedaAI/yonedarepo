@@ -117,7 +117,8 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: var(--row-y) 12px;
+  min-height: var(--row-h);
+  padding: 5px 12px; /* With the 1 px line and two text lines, 48 high. */
 }
 .source-history li + li {
   border-top: 1px solid var(--row-line);
@@ -129,6 +130,7 @@
 .source-history a {
   overflow: hidden;
   color: var(--text);
+  line-height: var(--leading-chrome);
   text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
