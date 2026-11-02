@@ -213,9 +213,13 @@ pub async fn token(t: &Resolved, command: TokenCommand) -> Result<()> {
             output::emit(&output::TokenList { tokens });
         }
         TokenCommand::Revoke { name } => {
-            t.api
+            let done = t
+                .api
                 .delete(&format!("/tokens/{}", crate::api::encode(&name)))
                 .await?;
+            if done["revoked"] == false {
+                return Err(Error::new(format!("{} has no live token {name}", t.repo)));
+            }
             human!("Revoked {name}");
             output::emit(&output::TokenRevoke {
                 repo: t.repo.clone(),
