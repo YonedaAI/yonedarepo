@@ -21,7 +21,8 @@ async function emptyPage(w, chrome, repo, m) {
     await shot('empty-repository-clone');
     const lines = [...new Set(await page.locator('.clone-menu code, .clone-menu pre').allInnerTexts())];
     const text = await page.locator('.clone-menu').innerText();
-    return { says, lines, text };
+    const steps = await page.locator('.repo-first-steps code').allInnerTexts();
+    return { says, lines, text, steps };
   });
 }
 
@@ -50,7 +51,8 @@ async function installRows(w, person, m) {
     const dir = person.path('.local', 'bin');
     for (const tool of ['yoneda', 'git-remote-yoneda', 'cloudflared']) assert.ok(existsSync(join(dir, tool)), `no ${tool} in ${dir}`);
     assert.match(ran.stdout, /Installed yoneda/);
-    assert.match(ran.stdout, /Add it to your PATH/, 'the installer does not say where it put the programs');
+    assert.match(ran.stdout, /PATH set in .*\.profile/, 'the installer did not put the folder on PATH');
+    assert.match(ran.stdout.trim().split('\n').at(-1), /^Next: yoneda login/, 'the last line is not the next step');
     person.bin = dir;
     w.extraPath.push(dir);
     m.installed = ran.stdout.split('\n')[0].replace(w.dir, '');
@@ -108,14 +110,10 @@ async function cloneSpellings(w, person, repo) {
 async function existingProject(w, person, repo) {
   const dir = person.path('existing-project');
   await person.exec('/bin/mkdir', ['-p', dir]);
-  await w.row('Q3: yoneda repo remote add (there is no such command)', async () => {
-    const ran = await person.refused(['repo', 'remote', 'add', 'origin', `${w.ownerHandle}/${repo.name}`], 64, /unknown repo command "remote"/, { cwd: dir });
-    return ran.stderr.split('\n')[0];
-  });
-  await w.row('Q3: git remote add origin yoneda::<origin>/<id>, git push', async () => {
+  await w.row('Q3: yoneda repo remote add origin <owner>/<name>, git push', async () => {
     await person.gitOk(dir, 'init', '-q');
     const head = await person.commit(dir, { 'app.txt': 'an existing project\n' }, 'Existing project');
-    await person.gitOk(dir, 'remote', 'add', 'origin', `yoneda::${w.api}/${repo.id}`);
+    await person.ok(['repo', 'remote', 'add', 'origin', `${w.ownerHandle}/${repo.name}`], { cwd: dir });
     const pushed = await person.git(dir, 'push', '-u', 'origin', 'main');
     assert.equal(pushed.code, 0, short(pushed.stderr));
     const refs = await person.api.get(`/repos/${repo.id}/refs`);
@@ -165,7 +163,10 @@ async function followThePage(w, person, repos, page) {
   await w.row('Q4: the page says how to start', async () => {
     assert.match(page.says, /Push a first commit/);
     assert.match(page.text, /yoneda login --origin/);
-    assert.match(page.text, /install\.sh/, 'the page never says how to get `yoneda` or git-remote-yoneda: `git clone yoneda::` fails without it');
+    const [install, clone, upstream] = page.steps;
+    assert.match(install ?? '', /install\.sh/, 'the page never says how to get `yoneda` or git-remote-yoneda: `git clone yoneda::` fails without it');
+    assert.equal(clone, `yoneda clone ${w.ownerHandle}/${repos.page.name}`);
+    assert.equal(upstream, `yoneda repo remote add origin ${w.ownerHandle}/${repos.page.name}`);
   });
   await w.row('Q4: the page\'s helper clone line, commit, push', async () => {
     const shown = line(page.lines, /^git clone yoneda::/);

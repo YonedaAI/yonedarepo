@@ -1,6 +1,5 @@
 //! The `yoneda` command: parse, dispatch, report.
 use crate::args::{self, Command, SyncMode};
-use std::io::Write;
 use crate::checkout::Checkout;
 use crate::error::{Error, Result};
 use crate::{
@@ -9,6 +8,7 @@ use crate::{
     status, sync, target,
 };
 use crate::{human, output};
+use std::io::Write;
 
 async fn sync_checkout(mode: SyncMode) -> Result<()> {
     let mut co = Checkout::open()?;
