@@ -3,7 +3,9 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { addedRepo } from '../source-platform/importModel';
 import { GitHubImportDialog, requestImport } from './GitHubImportDialog';
+import { GitHubRepoList } from './GitHubRepoList';
 import { NewMenu } from './NewMenu';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -68,5 +70,40 @@ describe('requestImport', () => {
     expect(init.method).toBe('POST');
     expect(JSON.parse(String(init.body))).toEqual({ url: 'https://github.com/a/b.git' });
     expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+});
+
+describe('a GitHub repository already added', () => {
+  const own = {
+    id: 'r1',
+    name: 'rad-belden',
+    owner: 'user:ada',
+    owner_handle: 'ada',
+    role: 'owner',
+  };
+  const other = { id: 'r2', name: 'rad-belden', owner_handle: 'ada', role: 'read' };
+  it('is the account own repository of that name, whatever the case', () => {
+    expect(addedRepo([own], 'ada', 'Rad-Belden')?.id).toBe('r1');
+  });
+  it('is not one under another owner, or one the account only reads', () => {
+    expect(addedRepo([own], 'acme', 'rad-belden')).toBeUndefined();
+    expect(addedRepo([other], 'ada', 'rad-belden')).toBeUndefined();
+  });
+  it('says Added on its row, and the others say what they are', () => {
+    const row = { id: 1, full_name: 'MagnetonIO/rad-belden', private: true } as never;
+    const fresh = { id: 2, full_name: 'MagnetonIO/whisper', private: false } as never;
+    const list = renderToStaticMarkup(
+      createElement(GitHubRepoList, {
+        repositories: [row, fresh],
+        matching: [row, fresh],
+        addedOf: (name: string) => (name === 'MagnetonIO/rad-belden' ? 'r1' : undefined),
+        busy: false,
+        onPick: () => {},
+        onOpen: () => {},
+        onOpenGitHub: () => {},
+      }),
+    );
+    expect(list).toMatch(/rad-belden<\/span><small>Added<\/small>/);
+    expect(list).toMatch(/whisper<\/span><small>Public<\/small>/);
   });
 });

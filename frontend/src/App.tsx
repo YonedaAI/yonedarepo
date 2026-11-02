@@ -23,6 +23,7 @@ import { HomePage } from './features/shell/HomePage';
 import type { AccountActivity } from './features/shell/homeModel';
 import { type Created, NewRepositoryDialog } from './features/shell/NewRepositoryDialog';
 import { Notice, useNotice } from './features/shell/Notice';
+import { repoHome } from './features/shell/PickerPanel';
 import { pickerShortcut, saveRecent } from './features/shell/pickerModel';
 import { CrumbSwitcher } from './features/shell/RepoPicker';
 import { RepositoriesPage } from './features/shell/RepositoriesPage';
@@ -488,9 +489,14 @@ export function App() {
           account={session.identity?.username}
           orgs={orgs.data?.orgs ?? []}
           initialOwner={newOwner}
+          repos={platform.data?.repos ?? []}
           publicAddress={adding === 'public'}
           onClose={() => setAdding(false)}
           onImported={created}
+          onOpen={(repo) => {
+            navigate(repoHome(repo));
+            setAdding(false);
+          }}
         />
       )}
       <HandlePrompt identity={creating || adding ? null : session.identity} onSet={handleChosen} />

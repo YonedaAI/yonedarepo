@@ -128,6 +128,19 @@ export function pickedRepository(source: string, repositories: readonly GitHubRe
   return repositories.find((r) => r.full_name.toLowerCase() === name);
 }
 
+/** The owner's repository of this name, if they have one: importing again could only fail. */
+export function addedRepo<
+  Repo extends { name: string; owner?: string; owner_handle?: string | null; role?: string },
+>(repos: readonly Repo[], owner: string | undefined, name: string) {
+  const wanted = name.toLowerCase();
+  return repos.find(
+    (r) =>
+      r.role === 'owner' &&
+      r.name.toLowerCase() === wanted &&
+      (r.owner_handle ?? r.owner) === owner,
+  );
+}
+
 /** What a trip to GitHub came back with, in `?github=`, read once. */
 export function connectMessage(result: string | null) {
   switch (result) {

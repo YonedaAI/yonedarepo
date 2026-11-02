@@ -6,6 +6,7 @@ import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import {
   ADD_CONNECTION_PATH,
+  addedRepo,
   CONNECT_PATH,
   connectMessage,
   defaultRepoName,
@@ -31,6 +32,7 @@ import {
   REPO_NAME_PATTERN,
 } from './NewRepositoryDialog';
 import { OwnerField, VisibilityField } from './repoFormFields';
+import type { PlatformRepo } from './repoRows';
 
 /** Asks for the import, giving up after `timeoutMs`; the answer comes before the import ends. */
 export const requestImport = (body: unknown, timeoutMs = CREATE_TIMEOUT_MS) =>
@@ -56,19 +58,24 @@ function takeConnectResult() {
 export function GitHubImportDialog({
   account,
   orgs = [],
+  repos = [],
   initialOwner,
   publicAddress = false,
   onClose,
   onImported,
+  onOpen,
 }: {
   account?: string;
   orgs?: OrgSummary[];
+  /** The account's repositories: one already added opens instead of failing to import. */
+  repos?: PlatformRepo[];
   /** Preselected owner (the open org page), when the caller owns it. */
   initialOwner?: string;
   /** A public repository by its address: nothing here needs GitHub connected. */
   publicAddress?: boolean;
   onClose: () => void;
   onImported: (created: Created) => Promise<void>;
+  onOpen?: (repo: string) => void;
 }) {
   const hint = useId();
   const [connectResult] = useState(takeConnectResult);
@@ -93,6 +100,15 @@ export function GitHubImportDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const picked = pickedRepository(source, github?.repositories);
+  const [owner, setOwner] = useState(() =>
+    orgs.some((o) => o.org === initialOwner && o.role === 'owner') ? initialOwner : undefined,
+  );
+  const ownerName = owner || account;
+  const taken = name.trim() ? addedRepo(repos, ownerName, name.trim()) : undefined;
+  const addedOf = (fullName: string) => {
+    const parsed = parseGitHubRepo(fullName);
+    return parsed ? addedRepo(repos, ownerName, defaultRepoName(parsed.repo))?.id : undefined;
+  };
   const form = useRef<HTMLFormElement>(null);
   const typed = source.trim().toLowerCase();
   const matching = (github?.repositories ?? []).filter((r) =>
@@ -109,7 +125,8 @@ export function GitHubImportDialog({
   const pickedId = picked?.id;
   // biome-ignore lint/correctness/useExhaustiveDependencies: once per repository picked
   useEffect(() => {
-    if (pickedId !== undefined && typedBefore.current !== source) form.current?.requestSubmit();
+    if (pickedId !== undefined && typedBefore.current !== source && !taken)
+      form.current?.requestSubmit();
   }, [pickedId]);
   // Adding from GitHub starts on GitHub, and a public address needs none of that. Back from
   // there, the dialog stays to say what happened.
@@ -191,7 +208,13 @@ export function GitHubImportDialog({
             {connectMessage(connectResult)}
           </p>
         )}
-        <OwnerField account={account} orgs={orgs} initialOwner={initialOwner} disabled={busy} />
+        <OwnerField
+          account={account}
+          orgs={orgs}
+          initialOwner={initialOwner}
+          disabled={busy}
+          onOwner={setOwner}
+        />
         {installations.length > 1 && (
           <label>
             GitHub account
@@ -236,8 +259,10 @@ export function GitHubImportDialog({
             repositories={github?.repositories ?? []}
             matching={matching}
             manageUrl={github?.manage_url}
+            addedOf={addedOf}
             busy={busy}
             onPick={changeSource}
+            onOpen={(repo) => onOpen?.(repo)}
             onOpenGitHub={openedGitHub}
           />
         )}
@@ -264,6 +289,15 @@ export function GitHubImportDialog({
             disabled={busy}
           />
         </label>
+        {taken && (
+          <p role="status" className="source-meta github-repo-taken">
+            You already have {taken.name}.{' '}
+            <button type="button" onClick={() => onOpen?.(taken.id)}>
+              Open it
+            </button>{' '}
+            or choose another name.
+          </p>
+        )}
         <VisibilityField disabled={busy} onlyPrivate={picked?.private} />
         <details className="source-details">
           <summary>Branch (optional)</summary>
@@ -289,7 +323,7 @@ export function GitHubImportDialog({
           <button type="button" className="quiet" disabled={busy} onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" disabled={busy}>
+          <button type="submit" disabled={busy || Boolean(taken)}>
             {busy ? 'Adding…' : 'Add repository'}
           </button>
         </div>
