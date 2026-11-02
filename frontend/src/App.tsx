@@ -211,17 +211,8 @@ export function App() {
         signInError={signInError}
       />
     );
-  // A login from the terminal gets one card, with nothing of the app around it.
   if (route.view === 'device')
-    return (
-      <DevicePage
-        code={route.code}
-        site={window.location.origin}
-        session={session}
-        signInError={signInError}
-        onConnected={() => void session.discover()}
-      />
-    );
+    return <DevicePage code={route.code} session={session} signInError={signInError} />;
   return (
     // An open picker shows the sidebar it lives in, whether collapsed or the phone menu.
     <div
