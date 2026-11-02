@@ -5,14 +5,17 @@
 //!
 //! Stored per repository in `$GIT_DIR/yoneda/<repo>.heads`, one `commit version` line per
 //! head, appended (the highest version wins).
+//! `@refs version` lines also retain a read floor without claiming main moved.
 use crate::error::{Context, Error, Result};
 use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
 pub struct MainHeads {
     path: PathBuf,
     versions: HashMap<String, u64>,
+    observed: AtomicU64,
 }
 
 impl MainHeads {
@@ -21,6 +24,7 @@ impl MainHeads {
         let mut heads = Self {
             path,
             versions: HashMap::new(),
+            observed: AtomicU64::new(0),
         };
         let text = match std::fs::read_to_string(&heads.path) {
             Ok(text) => text,
@@ -30,10 +34,13 @@ impl MainHeads {
         for line in text.lines() {
             // A torn last line (a crash mid-append) is skipped, never trusted.
             if let Some((commit, version)) = line.split_once(' ')
-                && commit.len() == 40
                 && let Ok(version) = version.parse()
             {
-                heads.insert(commit, version);
+                if commit == "@refs" {
+                    heads.observed.fetch_max(version, Ordering::Relaxed);
+                } else if commit.len() == 40 && commit.bytes().all(|b| b.is_ascii_hexdigit()) {
+                    heads.insert(commit, version);
+                }
             }
         }
         Ok(heads)
@@ -42,6 +49,7 @@ impl MainHeads {
     fn insert(&mut self, commit: &str, version: u64) {
         let entry = self.versions.entry(commit.to_owned()).or_default();
         *entry = (*entry).max(version);
+        self.observed.fetch_max(version, Ordering::Relaxed);
     }
 
     /// Records that `commit` was main's head at `version` (durably, once).
@@ -49,6 +57,27 @@ impl MainHeads {
         if self.version(commit) >= version {
             return Ok(());
         }
+        self.append(commit, version)?;
+        self.insert(commit, version);
+        Ok(())
+    }
+
+    /// The newest repository version this clone has read or published.
+    pub fn minimum_version(&self) -> u64 {
+        self.observed.load(Ordering::Relaxed)
+    }
+
+    /// Keeps a version floor across helper processes, independently of main's head.
+    pub fn observe(&self, version: u64) -> Result<()> {
+        if version <= self.minimum_version() {
+            return Ok(());
+        }
+        self.append("@refs", version)?;
+        self.observed.fetch_max(version, Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn append(&self, commit: &str, version: u64) -> Result<()> {
         if let Some(dir) = self.path.parent() {
             std::fs::create_dir_all(dir).context(format!("creating {}", dir.display()))?;
         }
@@ -60,7 +89,6 @@ impl MainHeads {
         file.write_all(format!("{commit} {version}\n").as_bytes())
             .and_then(|()| file.sync_all())
             .context(format!("writing {}", self.path.display()))?;
-        self.insert(commit, version);
         Ok(())
     }
 
@@ -73,6 +101,22 @@ impl MainHeads {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_ref_write_advances_the_read_floor_without_relabeling_main() -> Result<()> {
+        let dir = tempfile::tempdir().context("tempdir")?;
+        let repo = "r0123456789abcdef0123";
+        let main = "a".repeat(40);
+        let mut heads = MainHeads::open(dir.path(), repo)?;
+        heads.record(&main, 3)?;
+        heads.observe(7)?;
+        heads.observe(5)?;
+        let heads = MainHeads::open(dir.path(), repo)?;
+        assert_eq!(heads.minimum_version(), 7);
+        assert_eq!(heads.version(&main), 3);
+        assert_eq!(heads.version(&"b".repeat(40)), 0);
+        Ok(())
+    }
 
     #[test]
     fn keeps_the_newest_version_of_each_head_across_reloads() -> Result<()> {
