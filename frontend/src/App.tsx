@@ -72,6 +72,9 @@ function takeAuthResult() {
   return authResult;
 }
 
+/** How long a notice stays before it clears itself. */
+const NOTICE_MS = 6000;
+
 export function App() {
   const session = useSession();
   const [route, go] = useRoute();
@@ -104,6 +107,13 @@ export function App() {
         ? signInError
         : '',
   );
+  // Good news goes by itself, so "Repository deleted." never outlasts the moment; a refused
+  // sign-in stays until it is read.
+  useEffect(() => {
+    if (!notice || notice === signInError) return;
+    const timer = setTimeout(() => setNotice(''), NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [notice, signInError]);
   const [tick, setTick] = useState(0);
   // The open repository's name as its status gives it (another account's public repository
   // is in no sidebar row), and whether the viewer may change its settings.
