@@ -3,6 +3,7 @@
 import { RepoBranches } from '../repo-settings/RepoBranches';
 import type { Navigate } from '../shell/useRoute';
 import { OpenChangeButton } from './OpenChange';
+import { PageToolbar } from './PageToolbar';
 import { RepoHistory } from './RepoHistory';
 import { RepoTransactions } from './RepoTransactions';
 import { useReadOnly } from './repoAccess';
@@ -33,38 +34,50 @@ export function HistoryTab({
   );
   return (
     <section aria-label="History">
-      <div className="source-toolbar">
-        <fieldset className="segmented">
-          <legend className="sr-only">Show</legend>
-          {toggle('history', 'Commits', { view: 'history', repo: route.repo, ref })}
-          {toggle('transactions', 'Landed versions', { view: 'transactions', repo: route.repo })}
-          {toggle('branches', 'Branches and tags', { view: 'branches', repo: route.repo })}
-        </fieldset>
-        {segment === 'history' && branches.length > 1 && (
-          <label className="source-version">
-            Branch
-            <select
-              value={ref}
-              onChange={(e) => navigate({ view: 'history', repo: route.repo, ref: e.target.value })}
-            >
-              {branches.map((b) => (
-                <option key={b} value={b}>
-                  {b}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {segment === 'history' && !readOnly && (
-          <OpenChangeButton
-            key={ref}
-            repo={route.repo}
-            branch={ref}
-            parent={status?.parent?.repo}
-            onOpened={(change, repo) => navigate({ view: 'change', repo, number: change.number })}
-          />
-        )}
-      </div>
+      <PageToolbar
+        view={
+          <fieldset className="segmented">
+            <legend className="sr-only">Show</legend>
+            {toggle('history', 'Commits', { view: 'history', repo: route.repo, ref })}
+            {toggle('transactions', 'Landed versions', { view: 'transactions', repo: route.repo })}
+            {toggle('branches', 'Branches and tags', { view: 'branches', repo: route.repo })}
+          </fieldset>
+        }
+        search={{ repo: route.repo, navigate }}
+        filtered={ref === 'main' ? 0 : 1}
+        filters={
+          segment === 'history' &&
+          branches.length > 1 && (
+            <label className="agent-filter">
+              Branch
+              <select
+                value={ref}
+                onChange={(e) =>
+                  navigate({ view: 'history', repo: route.repo, ref: e.target.value })
+                }
+              >
+                {branches.map((b) => (
+                  <option key={b} value={b}>
+                    {b}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )
+        }
+        primary={
+          segment === 'history' &&
+          !readOnly && (
+            <OpenChangeButton
+              key={ref}
+              repo={route.repo}
+              branch={ref}
+              parent={status?.parent?.repo}
+              onOpened={(change, repo) => navigate({ view: 'change', repo, number: change.number })}
+            />
+          )
+        }
+      />
       {route.view === 'history' && (
         <RepoHistory repo={route.repo} refName={route.ref} onNavigate={navigate} />
       )}

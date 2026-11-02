@@ -13,6 +13,7 @@ import { AgentMemories } from './AgentMemories';
 import { AgentSessions } from './AgentSessions';
 import { AgentBisects, AgentPins } from './AgentUpkeep';
 import type { AgentSection } from './agentModel';
+import { PageToolbar } from './PageToolbar';
 
 /** The Agent tools page's tabs. */
 const TOOLS = ['contracts', 'pins', 'bisects'] as const satisfies readonly AgentSection[];
@@ -42,24 +43,30 @@ export function RepoAgents({
   return (
     <div className="repo-agents">
       {tools && (
-        <p className="repo-agents-reviewers">
-          <a {...linkTo({ view: 'agents', repo, section: 'reviewers' }, navigate)}>
-            Managed agents reviewing this repository
-          </a>
-        </p>
-      )}
-      {tools && (
-        <nav className="segmented agent-sections" aria-label="Agent tools">
-          {TOOLS.map((s) => (
+        <PageToolbar
+          view={
+            <nav className="segmented" aria-label="Agent tools">
+              {TOOLS.map((s) => (
+                <a
+                  key={s}
+                  aria-current={s === section ? 'page' : undefined}
+                  {...linkTo({ view: 'agents', repo, section: s }, navigate)}
+                >
+                  {LABELS[s]}
+                </a>
+              ))}
+            </nav>
+          }
+          search={{ repo, navigate }}
+          extra={
             <a
-              key={s}
-              aria-current={s === section ? 'page' : undefined}
-              {...linkTo({ view: 'agents', repo, section: s }, navigate)}
+              className="repo-agents-reviewers"
+              {...linkTo({ view: 'agents', repo, section: 'reviewers' }, navigate)}
             >
-              {LABELS[s]}
+              Managed agents
             </a>
-          ))}
-        </nav>
+          }
+        />
       )}
       {section === 'sessions' && (
         <AgentSessions repo={repo} branches={branches} navigate={navigate} />

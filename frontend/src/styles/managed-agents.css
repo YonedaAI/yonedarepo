@@ -781,8 +781,8 @@ input.agent-fixed:focus-visible,
 }
 /* A repository's managed agents. */
 .repo-agents-reviewers {
-  margin: 0 0 10px;
-  font-size: var(--text-base);
+  font-size: var(--text-md);
+  white-space: nowrap;
 }
 .repo-managed-agents {
   display: flex;

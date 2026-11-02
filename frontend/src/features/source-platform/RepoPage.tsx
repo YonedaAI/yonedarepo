@@ -150,6 +150,7 @@ export function RepoPage({
                   onOpen={(number) => navigate({ view: 'change', repo, number })}
                   commitHrefOf={(commit) => formatSourceRoute({ view: 'commit', repo, commit })}
                   onCommit={(commit) => navigate({ view: 'commit', repo, commit })}
+                  navigate={navigate}
                 />
               )}
               {route.view === 'change' && (
@@ -193,6 +194,7 @@ export function RepoPage({
                   owner={owner}
                   hrefOf={(tag) => formatSourceRoute({ view: 'release', repo, tag })}
                   onOpen={(tag) => navigate({ view: 'release', repo, tag })}
+                  navigate={navigate}
                 />
               )}
               {route.view === 'release' && (
