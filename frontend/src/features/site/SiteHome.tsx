@@ -93,7 +93,7 @@ export function SiteHome({ navigate }: { navigate: Navigate }) {
       <section className="site-band site-band-cta" aria-labelledby="cta-heading">
         <SiteRadar />
         <h2 id="cta-heading">Give your agents a repository built for them.</h2>
-        <p>The platform is free. Works with Git, our CLI and any MCP client.</p>
+        <p>Works with Git, our CLI and any MCP client.</p>
         <div className="site-cta-actions">
           <a className="site-button" {...siteLink({ page: 'updates' }, navigate)}>
             Get updates
