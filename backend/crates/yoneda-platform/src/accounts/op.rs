@@ -25,6 +25,8 @@ op_names! {
         Summary = "account_summary",
         Suspend = "account_suspend",
         Unsuspend = "account_unsuspend",
+        Place = "account_place",
+        PlaceNote = "account_place_note",
     }
 }
 op_names! {

@@ -2,7 +2,11 @@
 // a repository, optionally seeded with files or imported from a Git remote, and may issue its
 // first repository tokens in the same request.
 
+import { noteOwnerCell } from './account-place';
 import { afterAnswer } from './background';
+import { cellForNew } from './cell-choice';
+import { askCell } from './cell-route';
+import { cellsOn, newRepoId, thisCell } from './cells';
 import { bounded, boundedRetry, failureCode } from './durable';
 import { log } from './log';
 import { importSource } from './platform-github-import';
@@ -99,12 +103,6 @@ async function issueTokens(ctx: RepoContext, requested: unknown) {
   return { tokens };
 }
 
-/** A new repository id: `r` and 20 hex digits. */
-export function newRepoId() {
-  const random = crypto.getRandomValues(new Uint8Array(10));
-  return `r${[...random].map((b) => b.toString(16).padStart(2, '0')).join('')}`;
-}
-
 function unavailable(cause: any) {
   log.warn('repo.create_failed', { error: cause });
   return new ApiError('CREATE_UNAVAILABLE', 'The repository could not be created now; try again');
@@ -153,8 +151,14 @@ async function takeBack(
 }
 
 export async function createRepository(env: Env, requester: Credentials, body: Json) {
+  const cell = await cellForNew(env, body);
+  if (cell !== thisCell(env))
+    return askCell(env, cell, '/api/v1/repos', { method: 'POST', body: JSON.stringify(body) });
   const hint = regionHint(env, body);
-  if (!hint) return create(env, requester, body);
+  if (!hint) {
+    const created = await create(env, requester, body);
+    return cellsOn(env) ? { ...created, region: cell } : created;
+  }
   const near = hintedEnv(env, hint);
   const created = await create(near, requester, body);
   await timed('create.place', () => placeCombiners(near, created.id));
@@ -164,7 +168,7 @@ export async function createRepository(env: Env, requester: Credentials, body: J
 async function create(env: Env, requester: Credentials, body: Json) {
   const auth = await timed('create.owner', () => owning(env, requester, body));
   const visibility = visibilityOf(body.visibility);
-  const id = newRepoId();
+  const id = newRepoId(env);
   const name = typeof body.name === 'string' && body.name ? body.name : id;
   const owner = auth._session.workspace;
   await timed('create.name', () => holdName(env, owner, id, name));
@@ -185,6 +189,7 @@ async function create(env: Env, requester: Credentials, body: Json) {
     accepted = true;
     const created = await populate(env, ctx, store, { name, visibility, owner }, body);
     await startShards(env, id);
+    await noteOwnerCell(env, owner);
     // Only now: a create that failed is taken back as if it never was.
     await auditRepo(env, id);
     return created;
@@ -223,6 +228,12 @@ async function populate(
 
 /** Starts a durable import of a public Git repository (`cloneRepository`). */
 export async function importRepository(env: Env, requester: Credentials, body: Json) {
+  const cell = await cellForNew(env, body);
+  if (cell !== thisCell(env))
+    return askCell(env, cell, '/api/v1/repos/import', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    });
   const auth = await timed('import.owner', () => owning(env, requester, body));
   const asked_at = Date.now();
   const { url, github, hidden } = await timed('import.source', () =>
@@ -232,7 +243,7 @@ export async function importRepository(env: Env, requester: Credentials, body: J
   const visibility = hidden ? 'private' : visibilityOf(body.visibility);
   // None named: the remote's default branch lands as main.
   const branch = typeof body.branch === 'string' && body.branch ? body.branch : undefined;
-  const id = newRepoId();
+  const id = newRepoId(env);
   const name = typeof body.name === 'string' && body.name ? body.name : id;
   const owner = auth._session.workspace;
   await timed('import.name', () => holdName(env, owner, id, name));
@@ -252,6 +263,7 @@ export async function importRepository(env: Env, requester: Credentials, body: J
       }),
   );
   await timed('import.list', () => listRepository(env, id, owner, name, visibility));
+  await noteOwnerCell(env, owner);
   const tokens = await timed('import.tokens', () => issueTokens(ctx, body.tokens));
   const workflow = await timed('import.workflow', () =>
     startWorkflow(env, { repo: id, url, branch, asked_at, ...(github && { github }) }),

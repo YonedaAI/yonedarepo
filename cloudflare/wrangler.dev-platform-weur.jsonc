@@ -1,0 +1,291 @@
+// Generated from infra/envs/dev.json by `cargo xtask infra up`; edit the spec, not this file.
+// The weur cell (docs/global-scale-plan.md, cells as built): the platform Worker's config with its own
+// objects, bucket, D1, queues, workflow and containers. Accounts are the platform Worker's, by script_name.
+// Made by xtask/src/infra/cells.rs: change the platform Worker, or the spec's cells, not this.
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "account_id": "f011d0ee02b23cad26b4b38151b204ad",
+  "analytics_engine_datasets": [
+    {
+      "binding": "SITE_EVENTS",
+      "dataset": "yonedarepo_dev_site_events"
+    }
+  ],
+  "assets": {
+    "binding": "ASSETS",
+    "directory": "../frontend/dist",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  },
+  "compatibility_date": "2026-10-07",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "containers": [
+    {
+      "class_name": "CheckContainer",
+      "constraints": {
+        "jurisdiction": "eu",
+        "regions": [
+          "WEUR"
+        ]
+      },
+      "image": "./containers/Dockerfile",
+      "image_build_context": "..",
+      "instance_type": "standard-1",
+      "max_instances": 4,
+      "rollout_step_percentage": [
+        100
+      ]
+    },
+    {
+      "class_name": "ImportContainer",
+      "constraints": {
+        "jurisdiction": "eu",
+        "regions": [
+          "WEUR"
+        ]
+      },
+      "image": "./containers/Dockerfile",
+      "image_build_context": "..",
+      "instance_type": "standard-3",
+      "max_instances": 4,
+      "rollout_step_percentage": [
+        100
+      ]
+    },
+    {
+      "class_name": "PackBuilder",
+      "constraints": {
+        "jurisdiction": "eu",
+        "regions": [
+          "WEUR"
+        ]
+      },
+      "image": "./pack-builder/Dockerfile",
+      "image_build_context": "..",
+      "instance_type": "basic",
+      "max_instances": 4,
+      "rollout_step_percentage": [
+        100
+      ]
+    }
+  ],
+  "d1_databases": [
+    {
+      "binding": "INDEX",
+      "database_id": "pending",
+      "database_name": "yonedarepo-dev-platform-index-weur",
+      "migrations_dir": "migrations"
+    },
+    {
+      "binding": "INDEX_ENAM",
+      "database_id": "ec419fb5-308e-4c52-8252-6d321302d771",
+      "database_name": "yonedarepo-dev-platform-index"
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "class_name": "WorkspaceAuthority",
+        "name": "WORKSPACES",
+        "script_name": "yonedarepo-dev-platform"
+      },
+      {
+        "class_name": "SourceRepository",
+        "name": "SOURCE_REPOS"
+      },
+      {
+        "class_name": "CheckContainer",
+        "name": "CHECK_RUNNERS"
+      },
+      {
+        "class_name": "ImportContainer",
+        "name": "IMPORT_RUNNERS"
+      },
+      {
+        "class_name": "CommitShard",
+        "name": "COMMIT_SHARDS"
+      },
+      {
+        "class_name": "LandCombiner",
+        "name": "LAND_COMBINERS"
+      },
+      {
+        "class_name": "PackBuilder",
+        "name": "PACK_BUILDERS"
+      }
+    ]
+  },
+  "limits": {
+    "cpu_ms": 300000,
+    "subrequests": 50000
+  },
+  "main": "worker/platform-index.ts",
+  "migrations": [
+    {
+      "new_sqlite_classes": [
+        "SourceRepository",
+        "CheckContainer",
+        "CommitShard",
+        "LandCombiner",
+        "PackBuilder",
+        "ImportContainer"
+      ],
+      "tag": "v1"
+    }
+  ],
+  "name": "yonedarepo-dev-platform-weur",
+  "observability": {
+    "enabled": true,
+    "traces": {
+      "enabled": false,
+      "head_sampling_rate": 0.01
+    }
+  },
+  "placement": {
+    "mode": "targeted",
+    "region": "aws:eu-central-1"
+  },
+  "preview_urls": false,
+  "queues": {
+    "consumers": [
+      {
+        "dead_letter_queue": "yonedarepo-dev-platform-dead-letter-weur",
+        "max_batch_size": 10,
+        "max_batch_timeout": 1,
+        "max_concurrency": 20,
+        "max_retries": 3,
+        "queue": "yonedarepo-dev-platform-jobs-weur"
+      },
+      {
+        "dead_letter_queue": "yonedarepo-dev-platform-dead-letter-weur",
+        "max_batch_size": 1,
+        "max_concurrency": 4,
+        "max_retries": 3,
+        "queue": "yonedarepo-dev-platform-checks-weur"
+      }
+    ],
+    "producers": [
+      {
+        "binding": "PLATFORM_QUEUE",
+        "queue": "yonedarepo-dev-platform-jobs-weur"
+      },
+      {
+        "binding": "PLATFORM_CHECKS",
+        "queue": "yonedarepo-dev-platform-checks-weur"
+      }
+    ]
+  },
+  "r2_buckets": [
+    {
+      "binding": "OBJECTS",
+      "bucket_name": "yonedarepo-dev-platform-objects-weur",
+      "jurisdiction": "eu"
+    }
+  ],
+  "ratelimits": [
+    {
+      "name": "AUTH_LIMITER",
+      "namespace_id": "2003",
+      "simple": {
+        "limit": 30,
+        "period": 60
+      }
+    },
+    {
+      "name": "PUBLIC_LIMITER",
+      "namespace_id": "2004",
+      "simple": {
+        "limit": 300,
+        "period": 60
+      }
+    }
+  ],
+  "secrets_store_secrets": [
+    {
+      "binding": "REVIEW_MODEL_KEY",
+      "secret_name": "ZAI",
+      "store_id": "3d9115d4fe864c54a792bcb790a763e3"
+    },
+    {
+      "binding": "RESEND_API_KEY",
+      "secret_name": "Resend-Yoneda",
+      "store_id": "3d9115d4fe864c54a792bcb790a763e3"
+    }
+  ],
+  "services": [
+    {
+      "binding": "SELF",
+      "service": "yonedarepo-dev-platform-weur"
+    },
+    {
+      "binding": "MANAGED",
+      "service": "yonedarepo-dev-agents-managed"
+    },
+    {
+      "binding": "CELL_ENAM",
+      "service": "yonedarepo-dev-platform"
+    }
+  ],
+  "tail_consumers": [
+    {
+      "service": "yonedarepo-dev-superfan"
+    }
+  ],
+  "triggers": {
+    "crons": [
+      "* * * * *"
+    ]
+  },
+  "vars": {
+    "ACCOUNT_SEARCH": "on",
+    "ADMIN_ACCOUNTS": "magnetonio,mlong168@gmail.com",
+    "ADMIN_BILLING": "off",
+    "ADMIN_NOTIFY_EMAIL": "",
+    "AGENT_SIGNUP": "on",
+    "AUDIT_LOG": "off",
+    "BLOB_WRITE_THROUGH": "off",
+    "CELL": "weur",
+    "CELLS": "on",
+    "CELL_HINT": "weur",
+    "CELL_JURISDICTION": "eu",
+    "CF_ACCOUNT_ID": "f011d0ee02b23cad26b4b38151b204ad",
+    "EMAIL_CONTACT": "hello@yonedarepo.com",
+    "EMAIL_FROM": "YonedaRepo (dev) <hello@yonedarepo.com>",
+    "GITHUB_APP_ID": "5571444",
+    "GITHUB_APP_SLUG": "yonedarepo-dev-import",
+    "LANDING_INSTRUMENTS": "on",
+    "LAND_MODE": "batch",
+    "LAND_WHEN_CLEARED": "on",
+    "LEGAL_HOLD": "on",
+    "LFS_S3_BUCKET": "yonedarepo-dev-platform-objects-weur",
+    "LFS_S3_ENDPOINT": "https://f011d0ee02b23cad26b4b38151b204ad.eu.r2.cloudflarestorage.com",
+    "NEWSLETTER": "off",
+    "PACK_CACHE": "on",
+    "PUSH_BUNDLES": "on",
+    "REGION_SIGNALS": "on",
+    "REPO_ERASE": "on",
+    "REPO_SIZE_GUARD": "on",
+    "REPO_STORAGE_GUARD": "on",
+    "REPO_UNDO_DAYS": "30",
+    "REQUEST_IDS": "off",
+    "SERVICE_LEVELS": "on",
+    "SITE_EVENTS_DATASET": "yonedarepo_dev_site_events",
+    "SPAN_SAMPLE": "off",
+    "SSH_FRONT_DOOR": "off",
+    "SUPPORT_EMAIL": "support@yonedalabs.ai",
+    "TRAFFIC_EVENTS": "on",
+    "TRAFFIC_REPORT": "on",
+    "WEB_ORIGIN": "https://dev.yonedarepo.com",
+    "WORKERS_SUBDOMAIN": "mlong-f01"
+  },
+  "workers_dev": true,
+  "workflows": [
+    {
+      "binding": "PLATFORM_IMPORT",
+      "class_name": "PlatformImportWorkflow",
+      "name": "yonedarepo-dev-platform-import-weur"
+    }
+  ]
+}

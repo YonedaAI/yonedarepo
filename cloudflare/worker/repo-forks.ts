@@ -3,9 +3,12 @@
 // parent's refs reach and the refs, never objects. A change from a fork carries the fork
 // branch's new commits into the parent (objects into its store of record first, then
 // recorded as pushed) and opens an ordinary change on the parent's mirror branch.
+
+import { noteOwnerCell } from './account-place';
+import { newRepoId, thisCell } from './cells';
 import { auditRepo } from './repo-audit';
 import { dispatchRuns } from './repo-checks';
-import { listRepository, newRepoId, owning } from './repo-create';
+import { listRepository, owning } from './repo-create';
 import { enumerate, rawObjects, waves } from './repo-git-objects';
 import { UploadSession } from './repo-git-sessions';
 import { refreshHead } from './repo-head';
@@ -32,13 +35,15 @@ const credentialsOf = (ctx: RepoContext) => ctx.call.sign({}) as Credentials;
 export async function forkRepository(ctx: RepoContext, args: Json) {
   const { env } = ctx;
   // Forking into an organization (`owner`) needs an owner of it, as creating there does.
+  if (args.region !== undefined && args.region !== thisCell(env))
+    throw new ApiError('INVALID_INPUT', "A fork stays in its parent's region");
   const auth = await owning(env, credentialsOf(ctx), { owner: args.owner });
   // A fork is private unless asked otherwise, whatever its parent is.
   const visibility = visibilityOf(args.visibility);
   const source = await ctx.call({ op: 'repo_fork_source' });
   if (forkDepth(source.object_store) >= FORK_DEPTH)
     throw new ApiError('NOT_SUPPORTED', `Forks of forks nest at most ${FORK_DEPTH} deep`);
-  const id = newRepoId();
+  const id = newRepoId(env);
   const name = typeof args.name === 'string' && args.name ? args.name : source.name;
   // The fork's name among its owner's (a failed fork leaves it held: released with the
   // repository id it names, which never lists).
@@ -69,6 +74,7 @@ export async function forkRepository(ctx: RepoContext, args: Json) {
   await shardOutboxes(env, id);
   await listRepository(env, id, auth._session.workspace, name, visibility);
   await markFork(env, auth._session.workspace, id);
+  await noteOwnerCell(env, auth._session.workspace);
   await refreshHead(env, id);
   await auditRepo(env, id);
   return {

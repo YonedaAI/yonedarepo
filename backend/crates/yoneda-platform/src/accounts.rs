@@ -52,6 +52,9 @@ mod orgs_tests;
 mod password_reset;
 #[cfg(test)]
 mod password_reset_tests;
+mod place;
+#[cfg(test)]
+mod place_tests;
 mod repo_names;
 mod search_directory;
 #[cfg(test)]
@@ -85,7 +88,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             .ok_or_else(|| bad("Trusted clock required"))?;
         match op::AccountOp::parse(&command)? {
             op::AccountOp::Signin(op) => signin::handle(&db, &command, op, now),
-            op::AccountOp::Access(op) => access::handle(&db, op, now),
+            op::AccountOp::Access(op) => access::handle(&db, &command, op, now),
             op::AccountOp::Email(op) => email::handle(&db, &command, op, now),
             op::AccountOp::Password(op) => password_reset::handle(&db, &command, op, now),
             op::AccountOp::Token(op) => tokens::handle(&db, &command, op, now),

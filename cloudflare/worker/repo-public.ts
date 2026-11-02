@@ -9,11 +9,15 @@
 // discovery listing on the side that never lists a private repository, and republish main's
 // head before answering, so a repository made private stops serving anonymous reads
 // everywhere within ACCESS_MS.
+import { mergeListed } from './cell-merge';
+import { acrossCells, askedHere } from './cell-route';
+import { allCells, cellsOn, thisCell } from './cells';
 import { audited } from './repo-audit';
 import { refreshHead } from './repo-head';
 import { ApiError, type Credentials, type Json, type RepoContext } from './repo-ops';
 import { withPaths } from './repo-paths';
 import { voidSummary } from './repo-search-directory';
+import { currentScope } from './request-scope';
 import type { Env } from './types';
 
 export const ANONYMOUS: Credentials = { _anonymous: true };
@@ -112,6 +116,24 @@ export async function setVisibility(ctx: RepoContext, body: Json) {
   if (visibility === 'public') await listVisibility(ctx.env, ctx.repo, visibility);
   await voidSummary(ctx.env, ctx.repo);
   return changed;
+}
+
+const EXPLORED_MS = 30_000;
+const explored = new Map<string, { at: number; value: Promise<Json> }>();
+
+/** The public listing of every cell: a public answer, so an isolate keeps it for 30 seconds
+ * and a person on one cell pays for the ocean once. A cell's own part stays uncached. */
+export function exploreCells(env: Env, url: URL, now = Date.now()) {
+  const local = () => explore(env, url.searchParams);
+  const others = allCells(env).filter((cell) => cell !== thisCell(env));
+  const asked = currentScope()?.req;
+  if (!cellsOn(env) || others.length === 0 || (asked && askedHere(asked))) return local();
+  const kept = explored.get(url.search);
+  if (kept && now - kept.at < EXPLORED_MS) return kept.value;
+  const value = acrossCells(env, `${url.pathname}${url.search}`, local, mergeListed, others);
+  if (explored.size > 100) explored.clear();
+  explored.set(url.search, { at: now, value });
+  return value;
 }
 
 /** `GET /explore?limit&before`: public repositories, newest first; `before` (a creation

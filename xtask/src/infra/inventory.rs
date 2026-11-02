@@ -33,6 +33,8 @@ pub(crate) struct Deployable {
     pub secrets: Vec<String>,
     /// Uploaded when the secrets file has them; never required.
     pub optional_secrets: Vec<String>,
+    /// A secret's name in the secrets file, where it isn't the Worker's.
+    pub secret_files: BTreeMap<String, String>,
     pub health: Option<(String, String)>,
     pub has_containers: bool,
     /// Always-on container applications (by application name) and what a rollout drops.
@@ -73,6 +75,7 @@ fn deployable(spec: &Spec, worker: &WorkerSpec, config: Value) -> Result<Deploya
         always_on,
         secrets: worker.secrets.clone(),
         optional_secrets: worker.optional_secrets.clone(),
+        secret_files: worker.secret_files.clone(),
         health,
         name,
         config,

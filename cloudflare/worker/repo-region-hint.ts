@@ -4,6 +4,7 @@
 // a new repository named `region-hint-*` can take one: a location hint counts only at an object's
 // first `get`, a create's id is always new, and nothing here touches an existing object. No
 // request is routed by this: the platform Worker stays where it is pinned.
+import { hinted } from './cell-env';
 import { ApiError, type Credentials, type Json, type RepoContext } from './repo-ops';
 import type { Env } from './types';
 
@@ -25,19 +26,6 @@ export function regionHint(env: Env, body: Json): string | null {
   if (typeof body.name !== 'string' || !TEST_NAME.test(body.name))
     throw new ApiError('INVALID_INPUT', 'region_hint is for repositories named region-hint-*');
   return body.region_hint;
-}
-
-/** `namespace` with every `get` asking for `hint`; a hint counts only on an object's first. */
-function hinted(namespace: DurableObjectNamespace, hint: string): DurableObjectNamespace {
-  return new Proxy(namespace, {
-    get(target, key) {
-      if (key === 'get')
-        return (id: DurableObjectId, options?: DurableObjectNamespaceGetDurableObjectOptions) =>
-          target.get(id, { ...options, locationHint: hint as DurableObjectLocationHint });
-      const value = Reflect.get(target, key);
-      return typeof value === 'function' ? value.bind(target) : value;
-    },
-  });
 }
 
 /**

@@ -8,9 +8,11 @@ use super::*;
 
 const SUSPENSION: &str = "suspension";
 
-pub(super) fn handle<S: SqlStore>(db: &S, op: AccessOp, now: i64) -> Result<Value> {
+pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: AccessOp, now: i64) -> Result<Value> {
     match op {
         AccessOp::Summary => summary(db),
+        AccessOp::Place => super::place::read(db),
+        AccessOp::PlaceNote => super::place::note(db, c),
         AccessOp::Suspend => {
             account(db)?;
             let at = match suspended_at(db)? {

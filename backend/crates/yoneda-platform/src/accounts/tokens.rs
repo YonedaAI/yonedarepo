@@ -53,6 +53,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: TokenOp, now: i64) -> R
                 .ok_or_else(|| Error::new("UNAUTHORIZED", "Unknown, expired or revoked token"))?;
             let mut checked = public(&row)?;
             checked["orgs"] = json!(super::orgs::hints(db)?);
+            super::place::add(db, &mut checked)?;
             if row["last_used_at"]
                 .as_i64()
                 .is_none_or(|at| at + USE_RESOLUTION <= now)

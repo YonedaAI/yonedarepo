@@ -673,7 +673,7 @@ Written before the code, on 2026-11-01. Three things here change the plan above,
 
 **Account-wide reads.** The authority's `session`, `pat_check` and `org_access` answers add the account's `region` and `cells`, the other cells it has repositories or memberships in. They come back with the check every request already makes. An account-wide request that lands outside its home cell is forwarded there; it then reads its own D1 plus the D1 of each cell in `cells`. Today's accounts have an empty list, so they read what they read today. `cells` is kept in `workspace_records`, with no migration, and a new op notes a cell when a repository or membership lands in one.
 
-**Agents.** `yoneda login --agent` runs under a person's account, so an agent has no sign-up of its own. The token is issued to the poll, which comes from where the agent runs: its continent becomes the token's region, the token's tag and the default for repositories it creates.
+**Agents.** `yoneda login --agent` runs under a person's account, and an agent can't create a repository (`agents.rs`: no `repo:admin`), so a region of its own would change nothing. A sign-up sent from where an agent runs takes that continent, as any sign-up does. Where agents really write is R1's `write_origin` sample. A token's tag is always its account's home: a tag by location would put the look-up row an ocean from the repositories the agent works on.
 
 **Switches**
 

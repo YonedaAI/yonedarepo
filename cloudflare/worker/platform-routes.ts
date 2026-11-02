@@ -1,6 +1,7 @@
 // The source platform's HTTP surface: /api/v1 (REST + MCP), /git (smart HTTP for stock
 // Git), /internal/ssh (the SSH gateway), account sign-in, health, and the /source web UI.
 import { accountRoute } from './accounts';
+import { forwardTo, repoElsewhere } from './cell-route';
 import { error, response } from './http';
 import { withRequestAccount } from './internal-accounts';
 import { CLOSURE_PATH, closureApi } from './platform-account-close-route';
@@ -17,6 +18,8 @@ import { gitByPath } from './repo-git-paths';
 import type { Env } from './types';
 
 export function platformFetch(req: Request, env: Env): Promise<Response> {
+  const elsewhere = repoElsewhere(env, new URL(req.url));
+  if (elsewhere) return forwardTo(env, elsewhere, req);
   return withRequestAccount(async () => {
     const started = Date.now();
     const res = await watchWrites(req, env, () => platformRoute(req, env));

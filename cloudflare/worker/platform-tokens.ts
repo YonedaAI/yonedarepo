@@ -5,6 +5,7 @@
 // instance (`device:<user code>`) for ten minutes and hold no token, only grants. With
 // AGENT_SIGNUP on, a code can ask for an agent: `yoneda login --agent <name>`.
 import { auditDevice } from './account-audit';
+import { cellOfRegion, cellsOn, FIRST_CELL } from './cells';
 import { releaseClaims } from './platform-ssh-keys';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import { base64url, issuePat, requirePatScope, revokePat, sha } from './repo-pat';
@@ -90,6 +91,14 @@ function newUserCode() {
     }
   }
   return out.join('');
+}
+
+/** The cell a device's token belongs to: its account's home, which this poll has no other way
+ * to know. It has no credentials yet. */
+async function tokenCellOf(env: Env, account: string) {
+  if (!cellsOn(env)) return FIRST_CELL;
+  const { region } = await workspace(env, account, { op: 'account_place' });
+  return cellOfRegion(env, region);
 }
 
 /** `POST /api/v1/device/code`: a new code pair for a device (no credentials). */
@@ -211,6 +220,7 @@ export async function deviceToken(req: Request, env: Env, body: Json) {
       expires_days: grant.expires_days,
     },
     { origin: agent ? `agent:${agent}` : 'login', host: polled.host ?? null },
+    await tokenCellOf(env, polled.account),
   );
   return {
     token: issued.token,

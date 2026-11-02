@@ -20,6 +20,7 @@
 // blob was withheld meanwhile.
 
 import { Container } from '@cloudflare/containers';
+import { cellEnv } from './cell-env';
 import { warned } from './log';
 import { requestBody } from './repo-git-http';
 import { advertiseV2, uploadPackV2 } from './repo-git-v2';
@@ -207,7 +208,8 @@ const system = (env: Env, repo: string) =>
 
 /** http://mirror.internal: the repository's stored seed as a Git remote of version 2, which
  * lists its tips and sends it whole. */
-export async function seedSource(req: Request, env: Env, ctx: { containerId: string }) {
+export async function seedSource(req: Request, bound: Env, ctx: { containerId: string }) {
+  const env = cellEnv(bound);
   const own = ownRepo(req, env, ctx.containerId);
   if (!own) return refused();
   if (own.path === 'info/refs') return advertiseV2();
@@ -224,7 +226,8 @@ export async function seedSource(req: Request, env: Env, ctx: { containerId: str
 
 /** http://platform.internal: the platform's smart HTTP (version 2) for the repository. The
  * fetch is served as built (never from or into the pack store: that is what is building). */
-export async function platformSource(req: Request, env: Env, ctx: { containerId: string }) {
+export async function platformSource(req: Request, bound: Env, ctx: { containerId: string }) {
+  const env = cellEnv(bound);
   const own = ownRepo(req, env, ctx.containerId);
   if (!own) return refused();
   if (!(req.headers.get('git-protocol') ?? '').includes('version=2'))
@@ -241,8 +244,9 @@ export class PackBuilder extends Container<Env> {
 
   /** Builds `plan`'s packs (pack-build jobs call this; repo-pack-jobs). */
   build(plan: BuildPlan) {
-    const withheld = async () => (await system(this.env, plan.repo).objects()).withholdsAny();
-    return buildPacks(this, this.env, plan, withheld);
+    const env = cellEnv(this.env);
+    const withheld = async () => (await system(env, plan.repo).objects()).withholdsAny();
+    return buildPacks(this, env, plan, withheld);
   }
 
   /** An instance left running (its build's caller vanished) is killed, not asked to stop. */

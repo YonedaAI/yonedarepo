@@ -81,13 +81,28 @@ impl Client {
     pub(crate) async fn get(&self, path: &str) -> Result<Value> {
         self.send(reqwest::Method::GET, path).await
     }
+    /// A read of R2 in one jurisdiction.
+    async fn get_in(&self, path: &str, jurisdiction: &str) -> Result<Value> {
+        self.send_in(reqwest::Method::GET, path, Some(jurisdiction))
+            .await
+    }
     pub(crate) async fn send(&self, method: reqwest::Method, path: &str) -> Result<Value> {
-        let response = self
+        self.send_in(method, path, None).await
+    }
+    async fn send_in(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        jurisdiction: Option<&str>,
+    ) -> Result<Value> {
+        let mut request = self
             .http
             .request(method.clone(), format!("{API}{path}"))
-            .bearer_auth(&self.token)
-            .send()
-            .await?;
+            .bearer_auth(&self.token);
+        if let Some(place) = jurisdiction {
+            request = request.header("cf-r2-jurisdiction", place);
+        }
+        let response = request.send().await?;
         let status = response.status();
         let body: Value = response.json().await.unwrap_or(Value::Null);
         if !succeeded(status, &body) {
@@ -119,6 +134,13 @@ impl Client {
         }
         Ok(all)
     }
+}
+
+fn jurisdictions(spec: &Spec) -> BTreeSet<String> {
+    spec.cells
+        .iter()
+        .filter_map(|cell| cell.jurisdiction.clone())
+        .collect()
 }
 
 fn names(items: &[Value], field: &str) -> BTreeSet<String> {
@@ -165,6 +187,19 @@ pub(crate) async fn read(spec: &Spec, token: String, workers: &[String]) -> Live
                     .unwrap_or(&[]),
                 "name",
             );
+            // A jurisdiction's buckets answer only a request that names it.
+            for place in jurisdictions(spec) {
+                let held = client
+                    .get_in(&format!("{account}/r2/buckets?per_page=1000"), &place)
+                    .await?;
+                live.r2.extend(names(
+                    held["result"]["buckets"]
+                        .as_array()
+                        .map(Vec::as_slice)
+                        .unwrap_or(&[]),
+                    "name",
+                ));
+            }
             Result::Ok(())
         }
         .await

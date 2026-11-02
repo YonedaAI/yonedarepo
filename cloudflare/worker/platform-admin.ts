@@ -23,6 +23,7 @@ import {
   setSuspended,
 } from './platform-admin-accounts';
 import { adminBilling, adminBillingOn } from './platform-admin-billing';
+import { everyCell, mergeOverview, mergePages, mergeSignups } from './platform-admin-cells';
 import { setInternal } from './platform-admin-internal';
 import {
   audit,
@@ -110,12 +111,21 @@ async function operatorRoute(
   const hold = action === 'hold' && !record && (post || method === 'DELETE');
   if (section === 'overview' && !id && get) {
     const newsletter = await subscriberCount(env);
-    return { ...(await overview(env)), billing: adminBillingOn(env), newsletter };
+    const totals = await everyCell(
+      env,
+      '/api/v1/admin/overview',
+      () => overview(env),
+      mergeOverview,
+    );
+    return { ...totals, billing: adminBillingOn(env), newsletter };
   }
   if (section === 'newsletter' && !id && get)
     return exportSubscribers(env, actor, query.get('after'));
-  if (section === 'signups' && !id && get)
-    return { ...(await signups(env, query.get('since'))), reports: adminReports(env) };
+  if (section === 'signups' && !id && get) {
+    const path = `/api/v1/admin/signups?${query}`;
+    const feed = await everyCell(env, path, () => signups(env, query.get('since')), mergeSignups);
+    return { ...feed, reports: adminReports(env) };
+  }
   if (section === 'audit' && !id && get)
     return operatorAudit(env) ? operatorLog(env, query) : auditLog(env, query.get('before'));
   if (section === 'traffic' && !id && get) return trafficReport(env, query);
@@ -137,7 +147,12 @@ async function operatorRoute(
   if (section === 'deleted-repos' && id === 'rebuild' && !action && post)
     return rebuildSchedule(env, actor, await body());
   if (section === 'accounts' && !id && get)
-    return listAccounts(env, query.get('q'), query.get('before'));
+    return everyCell(
+      env,
+      `/api/v1/admin/accounts?${query}`,
+      () => listAccounts(env, query.get('q'), query.get('before')),
+      mergePages,
+    );
   if (section === 'revenue' && adminBillingOn(env)) {
     if (!id && get) return revenue(env, query);
     if (id === 'rebuild' && !action && post) return rebuildRollup(env, actor, await body());
@@ -160,7 +175,13 @@ async function operatorRoute(
   }
   if (section === 'orgs' && id && hold) return operatorOrgHold(env, actor, orgArg(id), method);
   if (section === 'imports' && !id && get) return importAudit(env, query.get('after'));
-  if (section === 'repos' && !id && get) return listRepos(env, query.get('q'), query.get('before'));
+  if (section === 'repos' && !id && get)
+    return everyCell(
+      env,
+      `/api/v1/admin/repos?${query}`,
+      () => listRepos(env, query.get('q'), query.get('before')),
+      mergePages,
+    );
   if (section === 'repos' && id === 'largest' && !action && get) return largestRepos(env);
   if (section === 'repos' && id === 'usage' && !action && get) return repoUsageReport(env, query);
   if (section === 'repos' && id) {

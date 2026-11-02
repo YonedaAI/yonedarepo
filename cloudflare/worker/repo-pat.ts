@@ -4,6 +4,8 @@
 // account. The SourceRepository maps the scopes (`_pat` credentials) onto its own.
 import type { PatScope } from '../../shared/contracts/pat-scopes';
 import { auditMember } from './account-audit';
+import { homeCell, noteHome } from './account-place';
+import { allCells, cellsOn, FIRST_CELL, indexOf, tokenCell, tokenPrefix } from './cells';
 import { type OrgAccess, orgAccess } from './platform-org-access';
 import { ApiError, type Json } from './repo-ops';
 import { toBase64 } from './repo-stores';
@@ -36,14 +38,28 @@ const hex = (bytes: Uint8Array) => [...bytes].map((b) => b.toString(16).padStart
 export const sha = async (secret: string) =>
   hex(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(secret))));
 
+/** A token's look-up row, in the D1 its tag names. The tag only orders the look-ups: an older
+ * token that happens to start with one is in `enam`. */
+async function tokenRow(env: Env, token: string, tokenHash: string) {
+  const cell = cellsOn(env) ? tokenCell(token) : FIRST_CELL;
+  for (const name of cell === FIRST_CELL ? [cell] : [cell, FIRST_CELL]) {
+    const index = indexOf(env, name);
+    const row = await index
+      .prepare('SELECT workspace FROM platform_tokens WHERE token_hash=?')
+      .bind(tokenHash)
+      .first<{ workspace: string }>();
+    if (row) return { row, index };
+  }
+  return null;
+}
+
 /** The account and grant behind a `ypat_` bearer, or null (unknown, expired, revoked). */
 export async function verifyPat(env: Env, token: string): Promise<PatGrant | null> {
   if (!FORMAT.test(token)) return null;
   const tokenHash = await sha(token);
-  const row = await env.INDEX.prepare('SELECT workspace FROM platform_tokens WHERE token_hash=?')
-    .bind(tokenHash)
-    .first<{ workspace: string }>();
-  if (!row) return null;
+  const held = await tokenRow(env, token, tokenHash);
+  if (!held) return null;
+  const { row, index } = held;
   const checked = await workspace(env, row.workspace, {
     op: 'pat_check',
     token_hash: tokenHash,
@@ -55,9 +71,10 @@ export async function verifyPat(env: Env, token: string): Promise<PatGrant | nul
   });
   if (!checked) {
     // The account refused it for good (expired or revoked): drop the lookup row.
-    await env.INDEX.prepare('DELETE FROM platform_tokens WHERE token_hash=?').bind(tokenHash).run();
+    await index.prepare('DELETE FROM platform_tokens WHERE token_hash=?').bind(tokenHash).run();
     return null;
   }
+  noteHome(env, checked);
   const agent = agentOf(checked.origin);
   const org: string | null = checked.org ?? null;
   // An org-limited token acts only through that org.
@@ -84,8 +101,17 @@ export type PatLabel = { origin: 'login' | `agent:${string}`; host: string | nul
 const agentOf = (origin: unknown) =>
   typeof origin === 'string' && origin.startsWith('agent:') ? origin.slice('agent:'.length) : null;
 
-export async function issuePat(env: Env, account: string, request: Json, label?: PatLabel) {
-  const token = `ypat_${base64url(crypto.getRandomValues(new Uint8Array(32)))}`;
+export async function issuePat(
+  env: Env,
+  account: string,
+  request: Json,
+  label?: PatLabel,
+  cell = homeCell(),
+) {
+  const prefix = cellsOn(env) ? tokenPrefix(cell) : '';
+  const secret = base64url(crypto.getRandomValues(new Uint8Array(32)));
+  // The same length as ever: a client may check it.
+  const token = `ypat_${prefix}${secret.slice(prefix.length)}`;
   const id = `pat_${hex(crypto.getRandomValues(new Uint8Array(8)))}`;
   const tokenHash = await sha(token);
   const created = await workspace(env, account, {
@@ -100,9 +126,8 @@ export async function issuePat(env: Env, account: string, request: Json, label?:
     origin: label?.origin ?? null,
     host: label?.host ?? null,
   });
-  await env.INDEX.prepare(
-    'INSERT INTO platform_tokens(token_hash,workspace,id,expires_at) VALUES(?,?,?,?)',
-  )
+  await indexOf(env, cell)
+    .prepare('INSERT INTO platform_tokens(token_hash,workspace,id,expires_at) VALUES(?,?,?,?)')
     .bind(tokenHash, account, id, created.expires_at)
     .run();
   await auditMember(env, account);
@@ -123,9 +148,15 @@ export async function issuePat(env: Env, account: string, request: Json, label?:
  * SSH keys the token added in the same transaction and answers with them. */
 export async function revokePat(env: Env, account: string, id: string) {
   const revoked = await workspace(env, account, { op: 'pat_revoke', id });
-  await env.INDEX.prepare('DELETE FROM platform_tokens WHERE workspace=? AND id=?')
-    .bind(account, id)
-    .run();
+  // Its row is in the cell it was issued for, which only the secret says.
+  await Promise.all(
+    (cellsOn(env) ? allCells(env) : [FIRST_CELL]).map((cell) =>
+      indexOf(env, cell)
+        .prepare('DELETE FROM platform_tokens WHERE workspace=? AND id=?')
+        .bind(account, id)
+        .run(),
+    ),
+  );
   await auditMember(env, account);
   return revoked;
 }

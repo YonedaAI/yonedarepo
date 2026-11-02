@@ -8,6 +8,7 @@
 // repository's own access changes (repo-head.ts). Joining a team or an org is bounded the
 // same way: another isolate may list and decide without it for under ACCESS_MS (unlike a
 // repository grant, which a refused read asks the head holder about again at once).
+import { noteOrg } from './account-place';
 import { ACCESS_MS } from './repo-head';
 import type { Env, Json } from './types';
 import { workspace } from './workspace';
@@ -59,7 +60,9 @@ export async function orgAccess(
   const access: OrgAccess = {};
   orgs.forEach((org, i) => {
     const answer = answered[i];
-    if (answer) access[org] = { role: answer.role, teams: answer.teams ?? [] };
+    if (!answer) return;
+    access[org] = { role: answer.role, teams: answer.teams ?? [] };
+    noteOrg(env, answer);
   });
   return Object.keys(access).length ? access : undefined;
 }
