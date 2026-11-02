@@ -13,6 +13,7 @@
 
 import { accountSummary } from './account-index';
 import { isAdminAccount } from './admin-auth';
+import { closeByOperator } from './platform-account-close-route';
 import { backfillAccounts } from './platform-accounts';
 import {
   accountDetail,
@@ -151,6 +152,7 @@ async function operatorRoute(
     const account = accountParam(id);
     if (!action && get) return accountDetail(env, account);
     if (action === 'credit' && post) return grantCredit(env, actor, account, await body());
+    if (action === 'close' && post) return closeByOperator(env, actor, account, await body());
     if ((action === 'suspend' || action === 'unsuspend') && post)
       return setSuspended(env, actor, account, action === 'suspend');
     if (action === 'internal' && post)

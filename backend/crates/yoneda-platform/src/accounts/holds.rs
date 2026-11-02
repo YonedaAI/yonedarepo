@@ -58,6 +58,16 @@ fn any<S: SqlStore>(db: &S) -> Result<bool> {
 }
 
 /// `LEGAL_HOLD` when a hold stands here, unless the adapter's switch is off.
+pub(super) fn refuse_account_close<S: SqlStore>(db: &S, c: &Value) -> Result<()> {
+    if c["_hold"] != "off" && any(db)? {
+        return Err(Error::new(
+            "LEGAL_HOLD",
+            "This account is under a legal hold: it cannot be deleted until the hold is released",
+        ));
+    }
+    Ok(())
+}
+
 pub(super) fn refuse_org_delete<S: SqlStore>(db: &S, c: &Value) -> Result<()> {
     if c["_hold"] != "off" && any(db)? {
         return Err(Error::new(

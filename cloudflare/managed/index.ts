@@ -7,6 +7,7 @@ import { inScope } from '../worker/request-scope';
 import { adminBilling, adminPlatform } from './admin-billing';
 import { ApiRefusal, managedApi, workspaceName } from './api';
 import { BillingRefusal, stripeWebhook } from './billing';
+import { closeWorkspace } from './close';
 import type { ManagedEnv, QueueMessage } from './config';
 import { REPO_ID } from './config';
 import { consume, receiveHook } from './dispatch';
@@ -93,6 +94,14 @@ export async function managedFetch(req: Request, env: ManagedEnv): Promise<Respo
     const account = workspaceName(parts[2]);
     if (!account) return refuse('NOT_FOUND', 'Unknown account', 404);
     return req.method === 'GET' ? creditState(env, account) : grantCredit(req, env, account);
+  }
+  if (parts[0] === 'admin' && parts[1] === 'accounts' && parts[3] === 'close') {
+    if (parts.length !== 4 || req.method !== 'POST')
+      return refuse('METHOD_NOT_ALLOWED', 'POST only', 405);
+    if (!(await admin(req, env))) return refuse('UNAUTHORIZED', 'Admin token required', 401);
+    const account = workspaceName(parts[2]);
+    if (!account) return refuse('NOT_FOUND', 'Unknown account', 404);
+    return json(await closeWorkspace(env, account));
   }
   if (parts[0] === 'admin' && parts[1] === 'billing' && parts.length === 3) {
     if (!(await admin(req, env))) return refuse('UNAUTHORIZED', 'Admin token required', 401);

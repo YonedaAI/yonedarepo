@@ -75,9 +75,14 @@ async function appJwt(env: Env) {
 }
 
 /** One call. A refusal says only its status: a token or a body has no place in an error. */
-async function github(path: string, bearer: string, body?: Json): Promise<Json> {
+async function github(
+  path: string,
+  bearer: string,
+  body?: Json,
+  method = body ? 'POST' : 'GET',
+): Promise<Json> {
   const answer = await fetch(`${API}${path}`, {
-    method: body ? 'POST' : 'GET',
+    method,
     headers: {
       accept: 'application/vnd.github+json',
       authorization: `Bearer ${bearer}`,
@@ -92,7 +97,7 @@ async function github(path: string, bearer: string, body?: Json): Promise<Json> 
     await answer.body?.cancel();
     throw new GitHubAccessError(answer.status);
   }
-  return answer.json<Json>();
+  return answer.status === 204 ? {} : answer.json<Json>();
 }
 
 /** An installation as GitHub says it is. */
@@ -117,6 +122,10 @@ export async function installationOfUser(env: Env, login: string) {
     },
   );
 }
+
+/** Takes the App off the account it was installed on. */
+export const uninstall = async (env: Env, installation: number) =>
+  github(`/app/installations/${installation}`, await appJwt(env), undefined, 'DELETE');
 
 const mint = async (env: Env, installation: number, scope: Json) =>
   github(`/app/installations/${installation}/access_tokens`, await appJwt(env), scope);

@@ -19,6 +19,9 @@ mod auth_events;
 mod avatars;
 #[cfg(test)]
 mod avatars_tests;
+mod closure;
+#[cfg(test)]
+mod closure_tests;
 mod deleted_repos;
 #[cfg(test)]
 mod deleted_repos_tests;
@@ -92,6 +95,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             op::AccountOp::Avatar(op) => avatars::handle(&db, &command, op, now),
             op::AccountOp::Favorite(op) => favorites::handle(&db, &command, op, now),
             op::AccountOp::GitHub(op) => github_installation::handle(&db, &command, op, now),
+            op::AccountOp::Closure(op) => closure::handle(&db, &command, op, now),
             op::AccountOp::OAuth(op) => oauth_flows::handle(&db, &command, op, now),
             op::AccountOp::Org(op) => orgs::handle(&db, &command, op, now),
             op::AccountOp::OrgMember(op) => orgs::member(&db, &command, op, now),

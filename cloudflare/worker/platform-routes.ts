@@ -3,6 +3,7 @@
 import { accountRoute } from './accounts';
 import { error, response } from './http';
 import { withRequestAccount } from './internal-accounts';
+import { CLOSURE_PATH, closureApi } from './platform-account-close-route';
 import { recordClient } from './platform-client-events';
 import { githubApi } from './platform-github-route';
 import { newsletterRoute } from './platform-newsletter';
@@ -39,6 +40,7 @@ async function platformRoute(req: Request, env: Env): Promise<Response> {
   // Public, with no credentials: the Flight log sign-up, ahead of the API's authentication.
   if (/^\/api\/v1\/newsletter(?:\/|$)/.test(url.pathname)) return newsletterRoute(req, env);
   if (url.pathname.startsWith('/api/v1/github/')) return githubApi(req, env);
+  if (url.pathname === CLOSURE_PATH) return closureApi(req, env);
   if (url.pathname.startsWith('/api/v1/')) return repoApi(req, env);
   // Stock Git over HTTPS: /git/<repository>.git (clone, fetch, push), and the same by
   // readable path, /<handle>/<name>.git.

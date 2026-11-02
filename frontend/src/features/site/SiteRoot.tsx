@@ -1,7 +1,8 @@
 // The public site's page switch, inside its own frame (no app sidebar), plus sign-in and
 // sign-up (`/signin`, `/signup`), which hand over to the app once the session exists.
-import { lazy, Suspense, useEffect } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import type { Session } from '../../hooks/useSession';
+import { takeDeleted } from '../account-settings/deleteAccountModel';
 import type { Navigate } from '../shell/useRoute';
 import { SiteBlog } from './SiteBlog';
 import { SiteFeaturePage } from './SiteFeaturePage';
@@ -43,6 +44,11 @@ export function SiteRoot({
   signInError?: string;
 }) {
   const tabTitle = documentTitle(site);
+  // After the first paint, as the page is prerendered without it.
+  const [deleted, setDeleted] = useState(false);
+  useEffect(() => {
+    if (takeDeleted()) setDeleted(true);
+  }, []);
   useEffect(() => {
     if (site.page !== 'docs') document.title = tabTitle;
   }, [site.page, tabTitle]);
@@ -53,6 +59,11 @@ export function SiteRoot({
   }, [signedInOnSignIn, navigate]);
   return (
     <SiteLayout page={site} authenticated={session.authenticated} navigate={navigate}>
+      {deleted && (
+        <p className="site-notice" role="status">
+          Your account was deleted.
+        </p>
+      )}
       {site.page === 'home' && <SiteHome navigate={navigate} />}
       {site.page === 'features' && <SiteFeatures navigate={navigate} />}
       {site.page === 'feature' && (

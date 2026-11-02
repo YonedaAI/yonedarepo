@@ -494,3 +494,40 @@ fn quarantine_keeps_running_on_a_tombstone_until_its_purge_starts() {
         "GONE"
     );
 }
+
+#[test]
+fn a_closed_accounts_tombstone_is_nobodys_to_restore_though_the_name_comes_back() {
+    let h = seeded().0;
+    delete(&h);
+    let closed = json!({"op":"repo_account_closed","account":"ws-1","successor":"closed:1"});
+    assert_eq!(code(h.run(OWNER, closed.clone())), "GONE");
+    let done = h.ok("platform:close", closed.clone());
+    assert_eq!(done["owned"], true);
+    h.ok("platform:close", closed);
+    let asked = windowed(json!({"op":"repo_restore"}));
+    assert_eq!(code(h.run(OWNER, asked)), "NOT_FOUND");
+    assert_eq!(
+        h.ok("platform:purge", json!({"op":"repo_hold_owner"}))["owner"],
+        "closed:1"
+    );
+    pass_window(&h);
+    purge_target(&h).unwrap();
+}
+
+#[test]
+fn a_closed_account_is_no_member_of_a_live_repository() {
+    let (h, _) = seeded();
+    h.ok(
+        OWNER,
+        json!({"op":"repo_member_put","account":"grace","role":"write"}),
+    );
+    let closed = json!({"op":"repo_account_closed","account":"grace"});
+    assert_eq!(code(h.run(OWNER, closed.clone())), "FORBIDDEN");
+    assert_eq!(
+        h.ok("platform:close", closed.clone())["keys"],
+        json!(["grace"])
+    );
+    assert_eq!(h.ok("platform:close", closed)["keys"], json!([]));
+    let members = h.ok(OWNER, json!({"op":"repo_members"}));
+    assert!(!members.to_string().contains("grace"));
+}

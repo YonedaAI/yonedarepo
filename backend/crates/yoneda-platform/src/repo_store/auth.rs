@@ -164,7 +164,7 @@ pub fn actor_with(
     if let Some(
         system @ ("checks" | "projection" | "import" | "merge" | "repair" | "derive" | "commits"
         | "purge" | "hooks" | "compact" | "fork" | "lfs" | "quarantine" | "erase"
-        | "land-when-cleared" | "audit"),
+        | "land-when-cleared" | "audit" | "close"),
     ) = c.get("_system").and_then(Value::as_str)
     {
         let roles: &[&str] = match system {
@@ -178,6 +178,8 @@ pub fn actor_with(
             "compact" => &["compact"],
             // Empties a tombstone (erase).
             "erase" => &["erase"],
+            // Takes a deleted account off a repository (`deletion::account_closed`).
+            "close" => &["close"],
             // Copies a repository's events to its org's audit log (audit_outbox).
             "audit" => &["audit"],
             // Sweeps LFS bytes no object references (lfs::sweep).

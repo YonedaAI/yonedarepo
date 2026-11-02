@@ -226,6 +226,22 @@ An import is a `git clone` in an `ImportContainer`, the check image on `standard
 - **Re-import.** `cargo xtask admin reimport --env dev|prod --repo <id> [--url <url>] [--branch <branch>]` says what it would do; add `--confirm` to do it. The address defaults to the one the import recorded. It keeps the id, name, members, tokens, hooks, sessions and LFS objects, and empties history first, so landings, changes and checks start again. A push during the clone fails the clone: tell the repository's people first. A run that dies is run again. A fork is refused, since it reads its parent; a forced push upstream can leave a fork's base commit out of the new history. A legal hold refuses it.
 - **Bench.** `tools/import-bench.mjs`.
 
+## Deleting an account
+
+Settings → General → Delete account, or `cargo xtask admin close-account --env dev|prod --account <name> --dry-run|--confirm`. `--dry-run` says what would go and what refuses. The same refusals apply to both.
+
+| Refused | Next |
+|---|---|
+| It alone owns an organization | Make someone else an owner, or delete an organization with no one else in it |
+| A legal hold on one of its repositories | Release it |
+| A repository is importing | Wait for it to finish |
+| Someone else forked one of its repositories | They delete the fork: a fork reads its parent's objects |
+
+- **Replay.** Each step repeats safely and the account goes last. If a run dies, the owner signs in and deletes again, or an operator runs the command again.
+- **What stays.** Its repositories wait out the undo window under `closed:<hash>`, so nobody can restore them, and purge on schedule. `admin_audit` keeps its rows under that name. The credit ledger keeps its entries, with what was left written off (`Account deleted`) and no Stripe customer. Principals in other repositories' history stay as they were.
+- **The name** is free at once, for a sign-up too. A new account of that name inherits nothing, and gets no second starting credit, as the ledger is keyed by name.
+- **The newsletter** is a separate subscription and stays.
+
 ## Repository size
 
 A repository has two limits. **Size** is its Git objects, which live in object storage; the published cap is 10 GB (`frontend/src/content/docs/reference/limits.md`, held to the code by `tests/runtime/limits-page.test.mjs`). **The history database** is the next section: it grows with activity, not code, and its limit is internal.

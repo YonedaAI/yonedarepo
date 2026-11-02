@@ -84,7 +84,7 @@ The service and the content in it can link to other sites. We do not control the
 
 ## Suspension and termination
 
-You can stop using YonedaRepo at any time, delete your repositories, and ask us to delete your account. We may suspend or end your access if you break these terms, if the law requires it, or if your use puts the service or other people at risk. Where we can, we give notice and a chance to export your content. These sections continue after your account ends: your content, our intellectual property, feedback, disclaimers, limitation of liability, indemnification, disputes and general terms.
+You can stop using YonedaRepo at any time, and delete your repositories or your account in Settings. We may suspend or end your access if you break these terms, if the law requires it, or if your use puts the service or other people at risk. Where we can, we give notice and a chance to export your content. These sections continue after your account ends: your content, our intellectual property, feedback, disclaimers, limitation of liability, indemnification, disputes and general terms.
 
 ## Disclaimers
 

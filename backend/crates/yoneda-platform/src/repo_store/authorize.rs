@@ -127,6 +127,10 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         R::SetPolicy | R::AutoLandings => actor.require_owner(),
         // Admins manage other members; only the owner manages admins (`members`).
         R::Members | R::MemberPut | R::MemberRemove => actor.require_owner(),
+        R::AccountClosed if !actor.can("close") => Err(Error::new(
+            "FORBIDDEN",
+            "Only the platform closes an account",
+        )),
         // Hooks reveal repository events to an outside URL: the owner (or repo:admin) decides.
         R::HookCreate | R::Hooks | R::HookDelete | R::HookDeliveries => actor.require_owner(),
         // Only the platform's hook job fans out, reads secrets and settles deliveries.
@@ -179,6 +183,7 @@ pub(super) fn authorize(actor: &Actor, op: StoreOp, c: &Value) -> Result<()> {
         | R::ImportRefs
         | R::ImportReset
         | R::StoreAudit
+        | R::AccountClosed
         | R::AuthorsMissing
         | R::AuthorsSet
         | R::LandBatch
