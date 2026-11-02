@@ -26,7 +26,13 @@ pub async fn send(
         return;
     }
     let body = json!({ "updates": updates });
-    if let Err(failure) = session.api.post("/refs/batch", &body).await {
+    let done = session
+        .api
+        .post("/refs/batch", &body)
+        .await
+        .map_err(|failure| failure.to_string())
+        .and_then(|reply| super::list::observe_write(session, &reply));
+    if let Err(failure) = done {
         for update in updates {
             let dst = update["ref"].as_str().unwrap_or_default().to_owned();
             outcomes.insert(dst, Err(failure.to_string()));

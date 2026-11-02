@@ -37,7 +37,9 @@ pub(super) fn create_at<S: crate::storage::SqlStore>(
         if annotated::tag_id(db, refname)? != tag {
             return Err(already(refname, &commit.id));
         }
-        return Ok(json!({ "ref": refname, "commit": commit.id, "tag": tag, "already": true }));
+        return Ok(
+            json!({ "ref": refname, "commit": commit.id, "tag": tag, "already": true, "version": rows::current_version(db)? }),
+        );
     }
     let version = move_ref(db, c, refname, None, &commit, principal)?;
     if let Some(annotation) = annotation {
