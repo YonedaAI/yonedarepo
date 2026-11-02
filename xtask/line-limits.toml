@@ -18,7 +18,7 @@
 "cloudflare/worker/repo-bundles.ts" = 364
 "cloudflare/worker/repo-git-objects.ts" = 353
 "cloudflare/worker/repo-objects.ts" = 410
-"frontend/src/App.tsx" = 498
+"frontend/src/App.tsx" = 497
 "frontend/src/features/source-platform/sourceRoute.ts" = 341
 "shared/managed-agents.ts" = 504
 "tools/staging-realworld.mjs" = 405
