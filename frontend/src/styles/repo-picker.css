@@ -31,6 +31,9 @@
   flex-direction: row-reverse;
   justify-content: flex-end;
 }
+.repo-picker.compact .picker-option-name {
+  flex: 0 1 auto;
+}
 .picker-search {
   position: relative;
 }
