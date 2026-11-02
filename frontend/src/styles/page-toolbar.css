@@ -9,8 +9,17 @@
   margin-bottom: 12px;
 }
 .page-toolbar-view {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 10px;
   min-width: 0;
   max-width: 100%;
+}
+.page-toolbar-view select {
+  width: auto;
+  max-width: 260px;
+  field-sizing: content;
 }
 .page-toolbar h2 {
   margin: 0;
