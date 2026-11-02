@@ -141,10 +141,12 @@ a.chip:hover {
   align-items: center;
   gap: 6px;
   list-style: none;
-  padding: 7px 14px;
-  border-radius: 7px;
-  background: var(--blue);
-  color: var(--on-accent);
+  min-height: 32px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  background: var(--text);
+  color: var(--bg);
+  font-size: var(--text-md);
   font-weight: 500;
 }
 .clone-menu > summary::-webkit-details-marker {
