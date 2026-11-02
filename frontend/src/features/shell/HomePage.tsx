@@ -35,7 +35,7 @@ export function HomePage({
     );
   return (
     <HomeDashboard
-      username={session.identity?.username}
+      username={session.identity?.handle ?? session.identity?.username?.split('@')[0]}
       activity={activity}
       loading={activityLoading}
       error={activityError}
