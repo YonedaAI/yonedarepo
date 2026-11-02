@@ -44,7 +44,7 @@ export const glass = async (kit, repo, body) => {
 /**
  * Puts a Landing writing `READ` in line on `repo`'s line base, the approval `reviewer`
  * gives included. Answers `{ front, ticket, release }`; `release()` cancels the ticket and
- * resumes automation.
+ * resumes automation; `cancel` and `resume` are its two halves.
  */
 export async function lineUp(kit, repo, dir, reviewer) {
   const api = kit.pat();
@@ -67,10 +67,14 @@ export async function lineUp(kit, repo, dir, reviewer) {
     const { landings } = await api.get(repo.path('/ctc'));
     return landings.find((l) => l.number === front.number)?.place?.ticket;
   }, 'the Landing to hold a ticket in line', 20_000);
-  const release = async () => {
-    await glass(kit, repo, { action: 'release_land_lease', ref: LINE_BASE, expected_epoch: null, cancel_pending: true });
+  const cancel = () => glass(kit, repo, { action: 'release_land_lease', ref: LINE_BASE, expected_epoch: null, cancel_pending: true });
+  const resume = async () => {
     await glass(kit, repo, { action: 'resume_automation' });
     return landing;
   };
-  return { front, ticket, release };
+  const release = async () => {
+    await cancel();
+    return resume();
+  };
+  return { front, ticket, cancel, resume, release };
 }

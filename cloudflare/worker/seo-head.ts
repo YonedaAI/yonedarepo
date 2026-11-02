@@ -41,6 +41,7 @@ const APP_ROOTS = new Set([
   'auth',
   'device',
   'repositories',
+  'reset-password',
   'search',
   'settings',
   'source',

@@ -62,6 +62,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: EmailOp, now: i64) -> R
             }
             put(db, "account", &a)?;
             drop_tokens(db)?;
+            super::password_reset::drop_tokens(db)?;
             issue(db, &hash, &email, now)?;
             audit(db, "account.email_changed", now, json!({}))?;
             Ok(json!({"changed":true}))
@@ -95,6 +96,10 @@ pub(super) fn contact(a: &Value) -> Option<&str> {
 fn verified(a: &Value) -> bool {
     contact(a).is_some() && a["email_verified_at"].is_i64()
 }
+/// The account's contact email, while it is confirmed.
+pub(super) fn confirmed(a: &Value) -> Option<&str> {
+    contact(a).filter(|_| verified(a))
+}
 fn token_hash(c: &Value) -> Result<String> {
     hash(c, "token_hash", &[64])
 }
@@ -124,7 +129,7 @@ fn drop_tokens<S: SqlStore>(db: &S) -> Result<()> {
     Ok(())
 }
 /// Counts one request against `record`'s window; false once the limit is reached.
-fn allow<S: SqlStore>(db: &S, record: &str, now: i64) -> Result<bool> {
+pub(super) fn allow<S: SqlStore>(db: &S, record: &str, now: i64) -> Result<bool> {
     let mut rate = get(db, record).unwrap_or(json!({"start":now,"count":0}));
     if rate["start"].as_i64().unwrap_or_default() + LIMIT_WINDOW <= now {
         rate = json!({"start":now,"count":0});

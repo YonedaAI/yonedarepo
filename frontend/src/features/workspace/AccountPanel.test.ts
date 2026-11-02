@@ -4,9 +4,10 @@
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
+import { SiteSignIn } from '../site/SiteSignIn';
 import { AccountPanel } from './AccountPanel';
 
-const render = (initialMode: 'signup' | 'login') =>
+const render = (initialMode: 'signup' | 'login' | 'forgot') =>
   renderToStaticMarkup(createElement(AccountPanel, { onConnected: () => {}, initialMode }));
 
 describe('account form', () => {
@@ -27,6 +28,43 @@ describe('account form', () => {
     const names = [...html.matchAll(/<input[^>]*name="([^"]+)"/g)].map((m) => m[1]);
     expect(names).toEqual(['username', 'password']);
     expect(html).toContain('Username or email');
+  });
+
+  it('puts Forgot password? beside the password and keeps the recovery code below', () => {
+    const html = render('login');
+    const field = html.match(/<div class="account-password">.*?<\/div>/)?.[0] ?? '';
+    expect(field).toContain('>Password</label>');
+    // After the input: Tab reaches the password first, and CSS shows it beside the label.
+    expect(field.indexOf('name="password"')).toBeLessThan(field.indexOf('Forgot password?'));
+    const footer = html.match(/<div class="run-actions">.*<\/div>/)?.[0] ?? '';
+    expect(footer).toContain('Use recovery code');
+    expect(footer).not.toContain('Forgot password?');
+    expect(render('signup')).not.toContain('Forgot password?');
+  });
+
+  it('ties the password label to its input', () => {
+    const html = render('login');
+    const id = html.match(/<label for="([^"]+)">Password/)?.[1];
+    expect(html).toContain(`id="${id}"`);
+  });
+
+  it('asks a forgotten password for the name or address only, and keeps the recovery code', () => {
+    const html = render('forgot');
+    const names = [...html.matchAll(/<input[^>]*name="([^"]+)"/g)].map((m) => m[1]);
+    expect(names).toEqual(['username']);
+    expect(html).toContain('Reset your password');
+    expect(html).toContain('Send reset link');
+    expect(html).toContain('Use recovery code');
+    expect(html).not.toContain('By signing in');
+  });
+
+  it('leaves the heading to a page that has its own', () => {
+    const page = (mode: 'login' | 'signup') =>
+      renderToStaticMarkup(createElement(SiteSignIn, { mode, onConnected: () => {} }));
+    expect(page('login')).toContain('>Sign in</h1>');
+    expect(page('signup')).toContain('>Create your account</h1>');
+    expect(page('login')).not.toContain('<h2');
+    expect(render('login')).toContain('<h2>Sign in</h2>');
   });
 
   it.each(['signup', 'login'] as const)(

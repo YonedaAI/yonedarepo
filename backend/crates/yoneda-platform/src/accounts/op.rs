@@ -40,6 +40,16 @@ op_names! {
     }
 }
 op_names! {
+    /// A forgotten password's emailed link (the request, the link's state, the reset), and a
+    /// new recovery code for a signed-in person.
+    pub(crate) enum PasswordOp {
+        ResetRequest = "password_reset_request",
+        ResetStatus = "password_reset_status",
+        Reset = "password_reset",
+        RecoveryRegenerate = "recovery_regenerate",
+    }
+}
+op_names! {
     pub(crate) enum TokenOp {
         Create = "pat_create",
         List = "pat_list",
@@ -202,6 +212,7 @@ pub(crate) enum AccountOp {
     Signin(SigninOp),
     Access(AccessOp),
     Email(EmailOp),
+    Password(PasswordOp),
     Token(TokenOp),
     Ssh(SshOp),
     Device(DeviceOp),
@@ -232,6 +243,7 @@ impl AccountOp {
             Self::Signin(op) => op.name(),
             Self::Access(op) => op.name(),
             Self::Email(op) => op.name(),
+            Self::Password(op) => op.name(),
             Self::Token(op) => op.name(),
             Self::Ssh(op) => op.name(),
             Self::Device(op) => op.name(),
@@ -254,6 +266,7 @@ impl AccountOp {
         let mut all: Vec<Self> = SigninOp::ALL.iter().copied().map(Self::Signin).collect();
         all.extend(AccessOp::ALL.iter().copied().map(Self::Access));
         all.extend(EmailOp::ALL.iter().copied().map(Self::Email));
+        all.extend(PasswordOp::ALL.iter().copied().map(Self::Password));
         all.extend(TokenOp::ALL.iter().copied().map(Self::Token));
         all.extend(SshOp::ALL.iter().copied().map(Self::Ssh));
         all.extend(DeviceOp::ALL.iter().copied().map(Self::Device));
