@@ -6,6 +6,8 @@ mod config;
 mod key;
 mod tools;
 
+pub(crate) use tools::copy;
+
 use crate::api::{Api, Failure};
 use crate::error::{Error, Result};
 use crate::{credentials, human, note, output, ssh_key_cmd, target};

@@ -1,0 +1,50 @@
+{
+  "$defs": {
+    "RepoRemote": {
+      "additionalProperties": false,
+      "description": "`repo remote add`.",
+      "properties": {
+        "remote": {
+          "description": "The Git remote's name.",
+          "type": "string"
+        },
+        "replaced": {
+          "description": "What it pointed at before, when `--override` replaced it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "url": {
+          "description": "The URL it now has.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "remote",
+        "url",
+        "replaced"
+      ],
+      "title": "RepoRemote",
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "The `yoneda --json` document of `repo-remote`.",
+  "properties": {
+    "data": {
+      "$ref": "#/$defs/RepoRemote"
+    },
+    "schema": {
+      "const": "yoneda.cli.repo-remote.v1",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "data"
+  ],
+  "title": "yoneda.cli.repo-remote.v1",
+  "type": "object"
+}

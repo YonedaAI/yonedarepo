@@ -8,6 +8,7 @@ use crate::{
     status, sync, target,
 };
 use crate::{human, output};
+use std::io::Write;
 
 async fn sync_checkout(mode: SyncMode) -> Result<()> {
     let mut co = Checkout::open()?;
@@ -62,6 +63,11 @@ async fn run(command: Command) -> Result<()> {
     match command {
         Command::Help => {
             println!("{}", args::USAGE);
+            Ok(())
+        }
+        Command::Completion(shell) => {
+            // A shell that stops reading is no failure, and `print!` would panic on it.
+            let _ = std::io::stdout().write_all(crate::completion::script(shell).as_bytes());
             Ok(())
         }
         Command::Login {

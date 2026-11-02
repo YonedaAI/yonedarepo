@@ -10,6 +10,8 @@ use crate::{human, note, output};
 use serde_json::{Value, json};
 use std::time::Duration;
 
+mod prompt;
+
 /// What `POST /device/code` returns.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeviceCode {
@@ -158,7 +160,7 @@ impl DeviceFlow for HttpFlow {
 }
 
 /// Opens `url` in the person's browser; failure is fine (the URL is printed).
-fn open_browser(url: &str) {
+pub(crate) fn open_browser(url: &str) {
     let opener: &[&str] = if cfg!(target_os = "macos") {
         &["open"]
     } else if cfg!(windows) {
@@ -228,32 +230,46 @@ pub async fn login(
         .verification_uri_complete
         .clone()
         .unwrap_or_else(|| code.verification_uri.clone());
-    note!(
-        "Open {} and enter the code {}",
-        code.verification_uri,
-        code.user_code
-    );
-    if browser {
-        open_browser(&link);
-    }
-    let grant = wait_for_grant(&flow, &mut RealClock, &code).await?;
+    let interactive = prompt::interactive(browser);
+    let keys = if interactive {
+        println!("{}", prompt::screen(&code, &link));
+        prompt::Keys::listen(&link)
+    } else {
+        note!(
+            "Open {} and enter the code {}",
+            code.verification_uri,
+            code.user_code
+        );
+        if browser {
+            open_browser(&link);
+        }
+        None
+    };
+    let granted = wait_for_grant(&flow, &mut RealClock, &code).await;
+    drop(keys);
+    let grant = granted?;
     credentials::store(&path, origin, &Token::new(&grant.token)?)?;
-    human!(
-        "Logged in to {origin}{}{}; token stored in {} (mode 0600)",
-        signed_in_as(&grant),
-        grant
-            .expires_at
-            .as_ref()
-            .map(|e| format!(", expires {e}"))
-            .unwrap_or_default(),
-        path.display()
-    );
+    if interactive {
+        human!("{}", prompt::done(&code));
+    } else {
+        human!(
+            "Logged in to {origin}{}{}; token stored in {} (mode 0600)",
+            signed_in_as(&grant),
+            grant
+                .expires_at
+                .as_ref()
+                .map(|e| format!(", expires {e}"))
+                .unwrap_or_default(),
+            path.display()
+        );
+    }
     match &grant.agent {
         Some(agent) => human!(
             "Next, to act as it: export {}={agent}",
             credentials::AGENT_ENV
         ),
-        None => human!("Next, for Git over SSH: yoneda ssh setup"),
+        None if !interactive => human!("Next, for Git over SSH: yoneda ssh setup"),
+        None => {}
     }
     output::emit(&output::Login {
         origin: origin.to_owned(),

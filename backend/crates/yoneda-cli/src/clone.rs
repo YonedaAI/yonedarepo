@@ -1,4 +1,5 @@
-//! `yoneda clone`: a `git clone` through the `yoneda::` remote helper, lazy by default
+//! `yoneda clone <owner>/<name>` (or a repository id), into `./<name>`, with Git's own output:
+//! a `git clone` through the `yoneda::` remote helper, lazy by default
 //! (commits and trees; Git fetches each file's contents when it first needs them), with
 //! `--full` for every object or `--sparse <dir,...>` for a checkout of only those
 //! directories (Git's cone mode, so nothing outside them is fetched).
@@ -12,7 +13,8 @@ use crate::error::{Context, Error, Result};
 use crate::git::Git;
 use crate::human;
 use crate::output::{self, CloneMethod, Cloned};
-use crate::remote::url::RemoteUrl;
+use crate::remote::resolved;
+use crate::remote::url::Spec;
 use crate::state::{self, State};
 use crate::{snapshot, sparse};
 use std::path::{Path, PathBuf};
@@ -25,6 +27,11 @@ pub async fn clone(
     origin: Option<&str>,
     mode: CloneMode,
 ) -> Result<()> {
+    let spec = Spec::parse(repo).ok_or_else(|| {
+        Error::usage(format!(
+            "{repo:?} is not a repository: use <owner>/<name> or a repository id"
+        ))
+    })?;
     let path = credentials::default_path()?;
     let origin = match origin
         .map(str::to_owned)
@@ -37,7 +44,7 @@ pub async fn clone(
             ));
         }
     };
-    let target = PathBuf::from(dir.unwrap_or(repo));
+    let target = PathBuf::from(dir.unwrap_or(spec.folder()));
     if target.exists()
         && std::fs::read_dir(&target)
             .map(|mut d| d.next().is_some())
@@ -48,60 +55,64 @@ pub async fn clone(
             target.display()
         )));
     }
-    let url = RemoteUrl {
-        origin: origin.clone(),
-        repo: repo.to_owned(),
-    }
-    .git_url();
+    let id = match &spec {
+        Spec::Id(id) => id.clone(),
+        Spec::Named { handle, name } => resolved(&origin, handle, name).await?.repo,
+    };
+    let url = spec.git_url(&origin);
     let (parent, name) = parent_and_name(&target)?;
     let git = Git::new(parent);
-    let (how, method, done) = match mode {
-        CloneMode::Offline => return offline(repo, &origin, &path, &target).await,
+    let (method, done) = match mode {
+        CloneMode::Offline => return offline(&id, &origin, &path, &target).await,
         CloneMode::Full => {
-            git.output(
-                &["clone", "-q", "-c", "yoneda.lazy=false", &url, name],
-                None,
-                &[],
-            )?;
-            ("every object".to_owned(), CloneMethod::Full, None)
+            human!("Cloning {url}");
+            git_clone(&git, &["-c", "yoneda.lazy=false", &url, name])?;
+            (CloneMethod::Full, None)
         }
         CloneMode::Lazy => {
-            git.output(
-                &["clone", "-q", "--filter=blob:none", &url, name],
-                None,
-                &[],
-            )?;
-            ("lazily".to_owned(), CloneMethod::Lazy, None)
+            human!("Cloning {url}");
+            git_clone(&git, &["--filter=blob:none", &url, name])?;
+            (CloneMethod::Lazy, None)
         }
         CloneMode::Sparse(dirs) => {
             let dirs = snapshot::normalize_scope(&dirs)?;
             let scope: Vec<String> = dirs.iter().map(|d| format!("yoneda.scope={d}")).collect();
-            let mut args = vec!["clone", "-q", "--filter=blob:none", "--no-checkout"];
+            let mut args = vec!["--filter=blob:none", "--no-checkout"];
             for setting in &scope {
                 args.extend(["-c", setting.as_str()]);
             }
             args.extend([url.as_str(), name]);
-            git.output(&args, None, &[])?;
-            (
-                format!("only {}", dirs.join(", ")),
-                CloneMethod::Sparse,
-                Some(dirs),
-            )
+            human!("Cloning {url}");
+            git_clone(&git, &args)?;
+            (CloneMethod::Sparse, Some(dirs))
         }
     };
     let scope = done.unwrap_or_default();
     if !scope.is_empty() {
         sparse::check_out(&Git::new(&target), &scope)?;
+        human!("Checked out only {}", scope.join(", "));
     }
-    human!("Cloned {repo} into {} ({how})", target.display());
     output::emit(&Cloned {
-        repo: repo.to_owned(),
+        repo: id.clone(),
         dir: target.display().to_string(),
-        version: main_version(&target, repo),
+        version: main_version(&target, &id),
         method,
         scope,
     });
     Ok(())
+}
+
+/// `git clone args`: Git's own words for a person, quiet under `--json`, whose stdout is one
+/// document and whose failures carry Git's message.
+fn git_clone(git: &Git, args: &[&str]) -> Result<()> {
+    let mut all = vec!["clone"];
+    if output::json() {
+        all.push("-q");
+        all.extend(args);
+        return git.output(&all, None, &[]).map(|_| ());
+    }
+    all.extend(args);
+    git.show(&all)
 }
 
 /// The log version at which the clone saw main (the helper records it, `remote::heads`).

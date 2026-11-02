@@ -9,6 +9,7 @@ import { readQuery, useActivity, useListing } from './codeData';
 import { currentApiOrigin } from './connect';
 import { FileTable } from './FileTable';
 import { FileView } from './FileView';
+import { RepoFirstSteps } from './RepoFirstSteps';
 import { RepoMarkdown } from './RepoMarkdown';
 import { canMoveBranches, type RepoStatus } from './repoStatus';
 import { Failure, Loading } from './SourceStatus';
@@ -140,6 +141,13 @@ export function RepoFiles({
           {!route.path && route.at === undefined && 'Push a first commit to see your code here.'}
         </EmptyState>
       )}
+      {listing.empty &&
+        status &&
+        !route.path &&
+        route.at === undefined &&
+        canMoveBranches(status.viewer) && (
+          <RepoFirstSteps repo={route.repo} origin={currentApiOrigin()} />
+        )}
       {/* No files means little until the status says why: the repository may be importing. */}
       {!listing.value && !listing.error && (!listing.empty || !status) && <Loading what="files" />}
       {listing.value && route.at === undefined && (
