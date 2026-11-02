@@ -25,6 +25,18 @@ fn first_line(text: &str) -> &str {
     text.lines().next().unwrap_or_default()
 }
 
+/// What to say for a file with no symbols to list.
+fn no_symbols(symbols: &Value, path: &str) -> Option<String> {
+    if symbols["symbols"].as_array().is_some_and(|s| !s.is_empty()) {
+        return None;
+    }
+    Some(if symbols["supported"] == false {
+        format!("{path}: this language isn't parsed")
+    } else {
+        format!("{path} has no symbols")
+    })
+}
+
 /// A file's lines, each with the commit that last changed it and its number.
 fn print_blame(blame: &Value) {
     let lines = blame["lines"].as_array().cloned().unwrap_or_default();
@@ -266,8 +278,11 @@ pub async fn read(t: &Resolved, command: ReadCommand) -> Result<()> {
             output::emit(&output::Diff { changes });
         }
         ReadCommand::Symbols { path, at: version } => {
-            let q = query(&[("path", Some(path)), ("at", at(version))]);
+            let q = query(&[("path", Some(path.clone())), ("at", at(version))]);
             let symbols = t.api.get(&format!("/symbols{q}")).await?;
+            if let Some(line) = no_symbols(&symbols, &path) {
+                human!("{line}");
+            }
             for symbol in symbols["symbols"].as_array().into_iter().flatten() {
                 human!(
                     "{} {} {}-{}",
@@ -286,6 +301,23 @@ pub async fn read(t: &Resolved, command: ReadCommand) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_file_with_no_symbols_says_why() {
+        let path = "src/a.py";
+        let unparsed = serde_json::json!({ "supported": false, "symbols": [] });
+        assert_eq!(
+            no_symbols(&unparsed, path).as_deref(),
+            Some("src/a.py: this language isn't parsed")
+        );
+        let empty = serde_json::json!({ "supported": true, "symbols": [] });
+        assert_eq!(
+            no_symbols(&empty, path).as_deref(),
+            Some("src/a.py has no symbols")
+        );
+        let some = serde_json::json!({ "symbols": [{ "name": "main" }] });
+        assert_eq!(no_symbols(&some, path), None);
+    }
 
     #[test]
     fn builds_queries_from_set_parameters() {
