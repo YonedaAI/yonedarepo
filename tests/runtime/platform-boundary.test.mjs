@@ -43,6 +43,17 @@ const neutral = new Set([
   './internal-accounts',
   // Continent and region codes from `request.cf`; imports only types.
   './region',
+  // Which cell a repository, a region or a token belongs to; imports only types.
+  './cells',
+  './cell-names',
+  // A cell's view of its own bindings; imports only types.
+  './cell-env',
+  // Reaching and merging other cells, and the account's place in them: platform plumbing with no
+  // agent-layer knowledge.
+  './cell-route',
+  './cell-merge',
+  './cell-choice',
+  './account-place',
   // A digest of an account or token; imports nothing.
   './storage',
   '../../shared/site-traffic',
