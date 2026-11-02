@@ -13,8 +13,13 @@ export const PAT_SCOPES = [
 ] as const;
 export type PatScope = (typeof PAT_SCOPES)[number]['scope'];
 export const DEFAULT_PAT_SCOPES: PatScope[] = ['repo:read', 'repo:write', 'repo:land'];
-/** A CLI login: the same, with what `yoneda ssh setup` needs. Hand-made tokens start without. */
-export const DEVICE_PAT_SCOPES: PatScope[] = [...DEFAULT_PAT_SCOPES, 'account:ssh-keys'];
+/** A CLI login: the same, with what `yoneda repo create` and `yoneda ssh setup` need. Hand-made
+ * tokens start without. */
+export const DEVICE_PAT_SCOPES: PatScope[] = [
+  ...DEFAULT_PAT_SCOPES,
+  'repo:admin',
+  'account:ssh-keys',
+];
 export const REPO_TOKEN_SCOPES = ['read', 'write', 'check', 'review', 'land'] as const;
 export const EXPIRY_DAYS = [1, 7, 30, 90] as const;
 export const DEFAULT_EXPIRY_DAYS = 30;
