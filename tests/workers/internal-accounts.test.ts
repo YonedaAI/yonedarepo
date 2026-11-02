@@ -66,6 +66,26 @@ it('asks the platform where there is no D1, as on the front Worker', async () =>
   expect(list).toHaveBeenCalledTimes(1);
 });
 
+it('a flag change starts a fresh read and an older read cannot replace its result', async () => {
+  let release!: (value: { results: { account: string }[] }) => void;
+  const old = new Promise<{ results: { account: string }[] }>(resolve => { release = resolve; });
+  const all = vi.fn().mockImplementationOnce(() => old).mockResolvedValue({ results: [{ account: 'team' }] });
+  const env = { INDEX: { prepare: () => ({ bind: () => ({ all }) }) } } as unknown as Env;
+  const before = internalAccounts(env, NOW);
+  forgetInternalAccounts();
+  const after = internalAccounts(env, NOW + 1);
+  try {
+    expect(all).toHaveBeenCalledTimes(2);
+    expect(await after).toEqual(['team']);
+    release({ results: [] });
+    await before;
+    expect(await internalAccounts(env, NOW + 2)).toEqual(['team']);
+  } finally {
+    release({ results: [] });
+    await Promise.allSettled([before, after]);
+  }
+});
+
 it('notes the account credentials name, and nothing for those that name none', () => {
   const pat = { _pat: { workspace: 'alice' } } as unknown as Credentials;
   const session = { _session: { workspace: 'bob', principal: 'user:bob' } } as Credentials;
