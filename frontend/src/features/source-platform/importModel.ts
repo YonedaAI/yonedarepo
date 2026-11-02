@@ -113,8 +113,9 @@ export type ImportAnswer = {
 /** What a failed import says: a final failure's message is `<code>: <its reason>`.
  * GitHub refuses a private repository and a missing one with the same answer. */
 export function importFailure(message: string | undefined) {
-  const [, code = '', reason = message ?? ''] =
-    /^([A-Z][A-Z0-9_]+): (.*)$/s.exec(message ?? '') ?? [];
+  // A hosted Workflow puts the error's class first: `NonRetryableError: <code>: <reason>`.
+  const said = (message ?? '').replace(/^[A-Za-z]*Error: /, '');
+  const [, code = '', reason = said] = /^([A-Z][A-Z0-9_]+): (.*)$/s.exec(said) ?? [];
   if (code === 'REMOTE_AUTH_REQUIRED') {
     const connect = reason.includes('Connect GitHub');
     return {
