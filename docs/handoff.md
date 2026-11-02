@@ -1,6 +1,6 @@
 # Handoff
 
-Written 2026-11-01 at 22:50, at dev `8b3a6028` plus the GitHub import fix.
+Written 2026-11-01, at dev `45b765b3`, deployed to dev.
 
 Rules for this work are in `AGENTS.md`. Plans are linked under each task.
 
@@ -10,7 +10,6 @@ Rules for this work are in `AGENTS.md`. Plans are linked under each task.
 2. **Your region rule isn't built.** Nobody gets a region at login, and nobody can change one.
 3. **Dev isn't known to be green.** The last kit run failed 7 items, on older UI, and no full run has passed since.
 4. **No complete UI walk has run on today's UI.** 30 frontend commits landed after the last one.
-5. **Don't start subagents.** Claude's weekly limit reads 97%, which is the agent-usage STOP level. Check it first.
 
 ## What's running
 
@@ -21,7 +20,7 @@ Rules for this work are in `AGENTS.md`. Plans are linked under each task.
 | `demo-repos` | Stopped; its worktree remains |
 | `global` | Idle |
 | `clone-import` | Finished. Listed as running, but its last step was its handover |
-| Dev deploy of `8b3a6028` | Finished, exit 0 |
+| Dev deploy | Finished, exit 0: `45b765b3` is live |
 
 ## Order of work
 
@@ -37,16 +36,15 @@ Rules for this work are in `AGENTS.md`. Plans are linked under each task.
 
 ## 1. GitHub import
 
-**Done in code:** merged `claude/org-installs` (`df7525e5`): organizations can connect, and the dialog has Add another repository.
+**Merged and deployed, not tried:** `claude/org-installs` (`df7525e5`): organizations can connect, and the dialog has Add another repository.
 
-**Done in code:** the fix for your screenshots. A repository you already added says `Added`, and pressing it opens it. A typed address for one you have says "You already have rad-belden", with a link, and Add repository stays off. 176 shell tests pass, tsc and biome are clean.
+**Done and live:** the fix for the "already has a repository" error. A repository you already added says `Added`, and pressing it opens it. A typed address for one you have says "You already have rad-belden", with a link, and Add repository stays off. 177 tests pass, tsc and biome are clean. Seen on dev at 1440 dark: list, opening, and the typed address. Seen at 375 light: the list only, with no sideways scroll.
 
 Left to do:
 
-1. Look at it in the served app, wide and 375 px, light and dark.
-2. Connect a real organization. It needs D1 migration 13 applied by the deploy.
-3. `Added` matches by owner and name, because a repository stores no import source. A different repository with the same name also reads `Added`. Store the source to make it exact.
-4. `magnetonio/whisper` needs a re-import: 169 commits are unreadable. That's the owner's call.
+1. Connect a real organization. It needs D1 migration 13, which the deploy applies.
+2. `Added` matches by owner and name, because a repository stores no import source. A different repository with the same name also reads `Added`. Store the source to make it exact.
+3. `magnetonio/whisper` needs a re-import: 169 commits are unreadable. That's the owner's call.
 
 ## 2. Global
 
