@@ -38,14 +38,17 @@ Rules for this work are in `AGENTS.md`. Plans are linked under each task.
 
 **Merged and deployed, not tried:** `claude/org-installs` (`df7525e5`): organizations can connect, and the dialog has Add another repository.
 
+**Done and live:** adding from GitHub shows only the repository field and the list. Name, visibility, branch and the buttons appear only for a typed address, or always on Add public repository.
+
 **Done and live:** the fix for the "already has a repository" error. A repository you already added says `Added`, and pressing it opens it. A typed address for one you have says "You already have rad-belden", with a link, and Add repository stays off. 177 tests pass, tsc and biome are clean. Seen on dev at 1440 dark: list, opening, and the typed address. Seen at 375 light: the list only, with no sideways scroll.
 
 Left to do:
 
 1. Connect a real organization. It needs D1 migration 13, which the deploy applies.
    Also unproven on real GitHub: Add another repository's page, the real browser's return to the tab (the test sent its own `focus` event), the org fallback address (from memory, not GitHub's docs) and the "requested" message, which nobody has viewed.
-2. `Added` matches by owner and name, because a repository stores no import source. A different repository with the same name also reads `Added`. Store the source to make it exact.
-3. `magnetonio/whisper` needs a re-import: 169 commits are unreadable. That's the owner's call.
+2. **Org connect fails on most new organizations.** It proves ownership through the sign-in OAuth app, and GitHub turns OAuth app restrictions on by default for new organizations. `contextfs` answered "blocked" this way on 2026-11-01. GitHub's docs don't name the status code, so the 403 reading is the code's, unproven. Today's way round: Settings → Third-party Access → OAuth app policy → Review → Grant access. The fix: give the GitHub App `Members: read` and ask `GET /orgs/{org}/memberships/{username}` with the installation token, since these restrictions don't cover GitHub Apps. That's an App settings change, and installs must accept it.
+3. `Added` matches by owner and name, because a repository stores no import source. A different repository with the same name also reads `Added`. Store the source to make it exact.
+4. `magnetonio/whisper` needs a re-import: 169 commits are unreadable. That's the owner's call.
 
 ## 2. Global
 
