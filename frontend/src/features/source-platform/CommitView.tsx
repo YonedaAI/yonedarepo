@@ -75,23 +75,25 @@ export function CommitView({
         {d.checks.length === 0 && d.check_runs.length === 0 && (
           <p className="source-empty">No checks recorded.</p>
         )}
-        <ul className="source-checks">
-          {d.checks.map((c) => (
-            <li key={c.name} className={`source-check-${c.status}`}>
-              {c.name}: {c.status} · {people.principal(c.principal)} · {when(c.recorded_at)}
-            </li>
-          ))}
-          {d.check_runs
-            .filter(
-              (r) => r.status === 'queued' || r.status === 'running' || r.status === 'errored',
-            )
-            .map((r) => (
-              <li key={r.id}>
-                {r.name}: run {r.status}
-                {r.epoch > 0 && ` (attempt ${r.epoch})`}
+        {(d.checks.length > 0 || d.check_runs.length > 0) && (
+          <ul className="source-checks">
+            {d.checks.map((c) => (
+              <li key={c.name} className={`source-check-${c.status}`}>
+                {c.name}: {c.status} · {people.principal(c.principal)} · {when(c.recorded_at)}
               </li>
             ))}
-        </ul>
+            {d.check_runs
+              .filter(
+                (r) => r.status === 'queued' || r.status === 'running' || r.status === 'errored',
+              )
+              .map((r) => (
+                <li key={r.id}>
+                  {r.name}: run {r.status}
+                  {r.epoch > 0 && ` (attempt ${r.epoch})`}
+                </li>
+              ))}
+          </ul>
+        )}
       </section>
       <CommitRepairs repo={repo} repairs={d.repairs} onNavigate={onNavigate} />
       <CommitSessions repo={repo} commit={commit} navigate={onNavigate} />

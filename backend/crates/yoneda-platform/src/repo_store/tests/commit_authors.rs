@@ -83,6 +83,30 @@ fn a_clones_log_says_who_wrote_each_commit_and_when_not_who_imported_it() {
 }
 
 #[test]
+fn an_imported_commit_under_mains_head_is_on_main_with_no_landing_of_its_own() {
+    let (h, root, main) = cloned();
+    let old = h.ok(OWNER, json!({"op":"repo_commit","commit":root}));
+    assert_eq!(old["landings"], json!([]));
+    assert_eq!(old["on_main"], true);
+    assert_eq!(
+        h.ok(OWNER, json!({"op":"repo_commit","commit":main}))["on_main"],
+        true
+    );
+}
+
+#[test]
+fn a_commit_still_on_its_branch_is_not_on_main() {
+    let (h, _, main) = cloned();
+    let tree = "2".repeat(40);
+    let (side, item, _) = written(&[&main], &tree, &writer("Ada", WRITTEN), "side", &["b.txt"]);
+    record(&h, OWNER, json!([item])).unwrap();
+    assert_eq!(
+        h.ok(OWNER, json!({"op":"repo_commit","commit":side}))["on_main"],
+        false
+    );
+}
+
+#[test]
 fn a_path_log_and_a_commits_page_say_the_same() {
     let (h, _, main) = cloned();
     let history = h.ok(

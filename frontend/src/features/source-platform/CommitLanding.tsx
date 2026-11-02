@@ -118,6 +118,7 @@ export function CommitLanding({
     <section className="source-gates" aria-label="Clearance">
       {panel.state === 'landed' ? (
         <>
+          {panel.landings.length === 0 && <p className="source-change-banner">On main</p>}
           {panel.landings.map((l) => (
             <LandedLine key={l.refname} repo={repo} landing={l} />
           ))}
