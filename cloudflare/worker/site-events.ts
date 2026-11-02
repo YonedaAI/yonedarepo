@@ -87,8 +87,9 @@ const SESSION_COOKIE = 'yoneda_account';
 const UTM_LENGTH = 64;
 const HOST =
   /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
-// The signed-in app's own pages: not part of the public site even when fetched signed out.
-const APP_ROOTS = new Set(['settings', 'admin', 'device', 'new', 'auth', 'api']);
+// The signed-in app's own pages: not part of the public site even when fetched signed out. The
+// reset page is here for its link: the beacon must never run where the URL holds a token.
+const APP_ROOTS = new Set(['settings', 'admin', 'device', 'new', 'auth', 'api', 'reset-password']);
 // The app's one public page, which stays out of search and so has no canonical address.
 export const APP_PAGES = new Map([
   ['/explore', '/source/explore'],

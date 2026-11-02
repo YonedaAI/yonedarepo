@@ -8,6 +8,7 @@ import { auditMember } from './account-audit';
 import { accountCreated, emailRoute } from './account-email';
 import { handleState, setHandle } from './account-handles';
 import { noteSeen } from './account-index';
+import { passwordRoute } from './account-password';
 import { isAdminAccount } from './admin-auth';
 import { avatarInfo, ownAvatarUrl } from './avatars';
 import { accountFor, signUpWithEmail, signupEmail } from './email-accounts';
@@ -134,6 +135,8 @@ export async function accountRoute(req: Request, env: Env): Promise<Response | n
       else return error('NOT_FOUND', 'Unknown authentication route', 404);
     } else if (action === 'email' || action.startsWith('email/')) {
       result = await emailRoute(req, env, action, () => accountPrincipal(req, env));
+    } else if (action.startsWith('password/') || action === 'recovery-code') {
+      result = await passwordRoute(req, env, action, () => signedInSession(req, env));
     } else if (action === 'logout' && req.method === 'POST') {
       const session = sessionValue(req);
       if (session)

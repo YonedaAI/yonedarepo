@@ -87,6 +87,8 @@ const KINDS: &[(&str, &[(&str, Field)])] = &[
         "account.recovered",
         &[("tokens", Count), ("ssh_keys", Count)],
     ),
+    ("account.password_reset", &[]),
+    ("account.recovery_regenerated", &[]),
     // A repository's events: `repo` is its id, `name` what it was called then.
     (
         "repo.created",

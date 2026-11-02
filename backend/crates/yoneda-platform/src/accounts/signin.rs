@@ -101,10 +101,8 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
                 a["verifier"] = verifier(c)?;
                 a["recovery_hash"] = json!(hash(c, "new_recovery_hash", &[64])?);
                 put(db, "account", &a)?;
-                db.query(
-                    "DELETE FROM workspace_records WHERE id LIKE 'session:%' OR id LIKE 'grant:%'",
-                    &[],
-                )?;
+                end_sessions(db)?;
+                super::password_reset::drop_tokens(db)?;
                 let tokens = super::tokens::revoke_all(db, now)?;
                 let ssh_keys = super::ssh_keys::remove_all(db, now)?;
                 super::identities::remove_all(db)?;
@@ -151,6 +149,14 @@ pub(super) fn session<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<()> {
         &json!({"expires":now+LIFETIME}),
     )
 }
+/// Ends every browser session of the account.
+pub(super) fn end_sessions<S: SqlStore>(db: &S) -> Result<()> {
+    db.query(
+        "DELETE FROM workspace_records WHERE id LIKE 'session:%' OR id LIKE 'grant:%'",
+        &[],
+    )?;
+    Ok(())
+}
 fn allow_attempt<S: SqlStore>(db: &S, now: i64) -> Result<bool> {
     let mut rate = get(db, "login_rate").unwrap_or(json!({"start":now,"count":0}));
     if rate["start"].as_i64().unwrap_or_default() + 60_000 <= now {
@@ -161,7 +167,7 @@ fn allow_attempt<S: SqlStore>(db: &S, now: i64) -> Result<bool> {
     put(db, "login_rate", &rate)?;
     Ok(n < 10)
 }
-fn verifier(c: &Value) -> Result<Value> {
+pub(super) fn verifier(c: &Value) -> Result<Value> {
     let password = string(c, "password")?;
     if !(12..=128).contains(&password.len()) {
         return Err(bad("Use a password of 12–128 bytes"));

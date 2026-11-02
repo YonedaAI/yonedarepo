@@ -10,6 +10,12 @@
 // Search page across repositories is `/search` (`search/searchRoute.ts`).
 import { isCanonicalAccountIdentifier } from '../../../../shared/account';
 import {
+  type EmailLinkRoute,
+  formatEmailLink,
+  isEmailLink,
+  parseEmailLink,
+} from '../account-settings/emailLinkRoute';
+import {
   formatSettingsRoute,
   parseSettingsPath,
   type SettingsRoute,
@@ -43,8 +49,7 @@ export type SourceRoute =
   | SettingsRoute
   | SearchRoute
   | { view: 'device'; code: string }
-  /** The contact email's confirmation page (the emailed link; its button confirms). */
-  | { view: 'verify-email'; account: string; token: string }
+  | EmailLinkRoute
   | { view: 'org'; org: string; tab?: 'audit' }
   /** The workspace's managed agents (`/agents`); `workspace` (an org) defaults to the account.
    * `cardAdded`: back from Stripe (`?billing=added`), kept here because the page reads it once
@@ -106,19 +111,15 @@ const isSection = (value: string | undefined): value is RepoSettingsSection =>
 const isAgentSection = (value: string | undefined): value is AgentSection =>
   (AGENT_SECTIONS as readonly string[]).includes(value ?? '');
 
-/** `hash` matters only to the old single settings page's anchors. */
+/** `hash` matters only to the old single settings page's anchors and the reset link. */
 export function parseSourceRoute(pathname: string, search: string, hash = ''): SourceRoute {
   const params = new URLSearchParams(search);
   const parts = pathname.split('/').filter(Boolean).map(decodeURIComponent);
   const [root, repo, view, ...rest] = parts;
   if (root === 'device')
     return { view: 'device', code: normalizeUserCode(params.get('code') ?? '') };
-  if (root === 'verify-email' && !repo)
-    return {
-      view: 'verify-email',
-      account: params.get('account') ?? '',
-      token: params.get('token') ?? '',
-    };
+  const emailLink = repo ? null : parseEmailLink(root, params, hash);
+  if (emailLink) return emailLink;
   if (root === 'settings') return parseSettingsPath(parts.slice(1), params, hash);
   if (root === 'repositories' && !repo) return { view: 'repositories' };
   if (root === 'search' && !repo) return parseSearchParams(params);
@@ -261,8 +262,7 @@ export function formatSourceRoute(route: SourceRoute): string {
   if (route.view === 'profile' || route.view === 'repo-name') return formatNamedRoute(route);
   if (route.view === 'device')
     return route.code ? `/device?code=${encodeURIComponent(route.code)}` : '/device';
-  if (route.view === 'verify-email')
-    return `/verify-email?account=${encodeURIComponent(route.account)}&token=${encodeURIComponent(route.token)}`;
+  if (isEmailLink(route)) return formatEmailLink(route);
   const base = repoBase(route.repo);
   if (route.view === 'history')
     return route.ref === 'main'

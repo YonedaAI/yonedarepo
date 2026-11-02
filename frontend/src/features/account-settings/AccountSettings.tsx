@@ -1,6 +1,6 @@
 // Account settings, one page per section (`settingsRoute.ts`; the sidebar's Account group moves
-// between them): General (the profile, its email, its connected accounts, the theme, a way to
-// Billing), Billing, Tokens, SSH keys, Organizations and, where deleted repositories can be
+// between them): General (the profile, its email, its connected accounts, its recovery code,
+// the theme, a way to Billing), Billing, Tokens, SSH keys, Organizations and, where deleted repositories can be
 // restored, Recently deleted. Each page is its title (Organizations adds a description and
 // Create organization), then headed cards of rows.
 import { SettingsRow, SettingsSection } from '../../components/SettingsSection';
@@ -18,6 +18,7 @@ import { AvatarSettings } from './AvatarSettings';
 import { BillingSettings } from './BillingSettings';
 import { EmailSettings } from './EmailSettings';
 import { HandleRow } from './HandleSettings';
+import { RecoverySettings } from './RecoverySettings';
 import { SignInMethods } from './SignInMethods';
 import { ACCOUNT_SECTION_TITLES, type AccountSection, formatSettingsRoute } from './settingsRoute';
 import { TokenSettings } from './TokenSettings';
@@ -63,6 +64,7 @@ function General({ identity, loading, onAvatar, onHandle, navigate }: Props) {
       </SettingsSection>
       {identity && <EmailSettings />}
       {identity && <SignInMethods />}
+      {identity && <RecoverySettings />}
       <SettingsSection id="appearance" title="Appearance">
         <SettingsRow
           title="Theme"

@@ -97,8 +97,12 @@ details.account-panel[open] {
   padding-top: 18px;
   border-top: 1px solid var(--line);
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 12px;
+  gap: 4px 12px;
+}
+.account-panel .run-actions .text-button {
+  white-space: nowrap;
 }
 .account-tabs {
   display: flex;
@@ -118,11 +122,6 @@ details.account-panel[open] {
   background: var(--surface);
   color: var(--text);
   box-shadow: 0 1px 3px var(--shadow);
-}
-.recovery-code {
-  display: block;
-  overflow-wrap: anywhere;
-  padding: 18px 0;
 }
 .workspace-loading {
   text-align: center;

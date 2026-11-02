@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { AccountPanel } from './AccountPanel';
 
-const render = (initialMode: 'signup' | 'login') =>
+const render = (initialMode: 'signup' | 'login' | 'forgot') =>
   renderToStaticMarkup(createElement(AccountPanel, { onConnected: () => {}, initialMode }));
 
 describe('account form', () => {
@@ -27,6 +27,23 @@ describe('account form', () => {
     const names = [...html.matchAll(/<input[^>]*name="([^"]+)"/g)].map((m) => m[1]);
     expect(names).toEqual(['username', 'password']);
     expect(html).toContain('Username or email');
+  });
+
+  it('offers a forgotten password and the recovery code on the sign-in form', () => {
+    const html = render('login');
+    expect(html).toContain('Forgot password?');
+    expect(html).toContain('Use recovery code');
+    expect(render('signup')).not.toContain('Forgot password?');
+  });
+
+  it('asks a forgotten password for the name or address only, and keeps the recovery code', () => {
+    const html = render('forgot');
+    const names = [...html.matchAll(/<input[^>]*name="([^"]+)"/g)].map((m) => m[1]);
+    expect(names).toEqual(['username']);
+    expect(html).toContain('Reset your password');
+    expect(html).toContain('Send reset link');
+    expect(html).toContain('Use recovery code');
+    expect(html).not.toContain('By signing in');
   });
 
   it.each(['signup', 'login'] as const)(

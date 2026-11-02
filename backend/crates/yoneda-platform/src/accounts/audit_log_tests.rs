@@ -623,6 +623,38 @@ fn an_account_recovery_tells_its_orgs_what_it_revoked() {
     assert_eq!(items[0]["details"], json!({"tokens":1,"ssh_keys":1}));
 }
 
+#[test]
+fn a_password_reset_and_a_new_recovery_code_reach_the_orgs() {
+    let alice = person();
+    joined(&alice);
+    ok(
+        &alice,
+        json!({"op":"recovery_regenerate","session_hash":"a".repeat(64),"recovery_hash":"d".repeat(64)}),
+    );
+    ok(
+        &alice,
+        json!({"op":"email_change","email":"alice@example.com","token_hash":"e".repeat(64)}),
+    );
+    ok(
+        &alice,
+        json!({"op":"email_verify","token_hash":"e".repeat(64)}),
+    );
+    ok(
+        &alice,
+        json!({"op":"password_reset_request","token_hash":"f".repeat(64)}),
+    );
+    ok(
+        &alice,
+        json!({"op":"password_reset","token_hash":"f".repeat(64),"password":"another long password","salt":"02".repeat(16),"new_recovery_hash":"0".repeat(64)}),
+    );
+    let db = log();
+    copy(&alice, BOB, &db);
+    let items = rows(&db);
+    assert_eq!(items[0]["kind"], "account.password_reset");
+    assert_eq!(items[1]["kind"], "account.recovery_regenerated");
+    assert_eq!(items[0]["details"], json!({}));
+}
+
 /// Sign-in rows of the person's own log, oldest first: `(kind, data)`.
 fn own(db: &NativeStore) -> Vec<(String, Value)> {
     db.query(

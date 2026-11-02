@@ -26,7 +26,11 @@ export function useRoute(): [SourceRoute, Navigate] {
     // Home keeps its query: the workspace's `?repo=&run=` link is read from it.
     if (parsed.view !== 'home') {
       const canonical = formatSourceRoute(parsed);
-      if (canonical !== `${window.location.pathname}${window.location.search}`)
+      // The reset link's token leaves the address bar and the history with this replace.
+      if (
+        parsed.view === 'reset-password' ||
+        canonical !== `${window.location.pathname}${window.location.search}`
+      )
         window.history.replaceState(null, '', canonical);
     }
     return () => window.removeEventListener('popstate', sync);
