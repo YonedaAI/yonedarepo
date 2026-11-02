@@ -2941,7 +2941,7 @@ checksum = "3ad82d2a33cdc9674dc7465672f271e096168fcdbe0f799d9e6db8c5892679dc"
 
 [[package]]
 name = "xtask"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "reqwest",
  "serde",
@@ -2980,7 +2980,7 @@ dependencies = [
 
 [[package]]
 name = "yoneda-cli"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "base64",
  "crossterm",
@@ -2997,7 +2997,7 @@ dependencies = [
 
 [[package]]
 name = "yoneda-cloudflare"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "js-sys",
  "serde_json",
@@ -3009,7 +3009,7 @@ dependencies = [
 
 [[package]]
 name = "yoneda-core"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "imara-diff",
  "miniz_oxide",
@@ -3025,7 +3025,7 @@ dependencies = [
 
 [[package]]
 name = "yoneda-platform"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "argon2",
  "base64",
@@ -3047,11 +3047,11 @@ dependencies = [
 
 [[package]]
 name = "yoneda-refmodel"
-version = "0.3.2"
+version = "0.3.3"
 
 [[package]]
 name = "yoneda-runtime"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "axum",
  "base64",
@@ -3072,7 +3072,7 @@ dependencies = [
 
 [[package]]
 name = "yoneda-store"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "rusqlite",
  "serde_json",
@@ -3081,7 +3081,7 @@ dependencies = [
 
 [[package]]
 name = "yoneda-worker"
-version = "0.3.2"
+version = "0.3.3"
 dependencies = [
  "serde_json",
  "worker",

@@ -248,6 +248,7 @@ async fn set_branch(
     let body = json!({ "ref": item.spec.dst, "commit": done.tip, "expected": item.current });
     match session.api.post_idempotent("/branches", &body).await {
         Ok(moved) => {
+            super::list::observe_write(session, &moved)?;
             change_hint(&item.spec.dst, &moved);
             Ok(())
         }
@@ -294,7 +295,9 @@ async fn batch(
         .post("/refs/batch", &json!({ "updates": updates }))
         .await
     {
-        Ok(_) => Ok(()),
+        Ok(moved) => super::list::observe_write(session, &moved).map_err(|message| {
+            Box::new(move |_: &str| message.clone()) as Box<dyn Fn(&str) -> String>
+        }),
         Err(f) if f.code == "STALE_HEAD" => {
             let stale: Vec<String> = f.details["stale"]
                 .as_array()

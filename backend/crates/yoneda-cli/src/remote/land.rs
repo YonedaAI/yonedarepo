@@ -16,16 +16,9 @@ pub async fn land(session: &mut Session, local: &str, done: &Uploaded) -> Result
         Err(f) if f.code == "CONFLICT" => return Err(conflict(session, &f)),
         Err(f) => return Err(format!("{}: {}", f.code, f.message)),
     };
-    let (latest, head) = session
-        .api
-        .branch_at_latest("main")
-        .await
-        .map_err(|f| format!("landed, but reading main back failed ({f}); run git pull"))?;
+    let (latest, head) = read_back(session, &landed).await?;
     let version = landed["version"].as_u64().unwrap_or(latest);
     let _ = std::fs::remove_file(session.conflict_path());
-    if let Err(e) = session.heads.record(&head, latest) {
-        say(&e.message);
-    }
     if head == done.tip {
         say(&format!("landed as {} at version {version}", short(local)));
     } else {
@@ -36,6 +29,24 @@ pub async fn land(session: &mut Session, local: &str, done: &Uploaded) -> Result
         ));
     }
     Ok(())
+}
+
+/// Remember the acknowledged landing before reading a potentially cached main back.
+async fn read_back(session: &mut Session, landed: &Value) -> Result<(u64, String), String> {
+    super::list::observe_write(session, landed)?;
+    let listed = super::list::branches(session)
+        .await
+        .map_err(|error| format!("landed, but reading main back failed ({error}); run git pull"))?;
+    let head = listed
+        .heads
+        .get(super::list::MAIN)
+        .cloned()
+        .ok_or_else(|| "landed, but the platform returned no main; run git pull".to_owned())?;
+    session
+        .heads
+        .record(&head, listed.version)
+        .map_err(|error| format!("landed, but recording main failed ({error}); run git pull"))?;
+    Ok((listed.version, head))
 }
 
 fn short(id: &str) -> &str {
@@ -114,6 +125,29 @@ pub fn conflict_paths(details: &Value) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn landing_readback_cannot_drop_the_committed_version() {
+        use std::io::{Read, Write};
+        let dir = tempfile::tempdir().unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            let mut input = [0; 4096];
+            let n = socket.read(&mut input).unwrap();
+            let fresh = String::from_utf8_lossy(&input[..n]).contains("min_version=7");
+            let body = json!({"version": if fresh {7} else {6}, "refs":{"refs/heads/main": if fresh {"b".repeat(40)} else {"a".repeat(40)}}, "annotated":{}}).to_string();
+            write!(socket, "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}", body.len()).unwrap();
+        });
+        let mut session = super::super::test_support::session(&origin, dir.path()).unwrap();
+        let (_, head) = read_back(&mut session, &json!({"version":7}))
+            .await
+            .unwrap();
+        assert_eq!(session.heads.minimum_version(), 7);
+        assert_eq!(head, "b".repeat(40));
+        server.join().unwrap();
+    }
 
     #[test]
     fn reads_conflict_paths_in_either_shape() {

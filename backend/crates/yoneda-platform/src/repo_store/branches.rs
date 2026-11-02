@@ -24,7 +24,9 @@ pub fn set<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> {
     let expected = expected_of(c)?;
     let current = rows::ref_value(db, &refname)?;
     if current == Some(commit.id) {
-        return Ok(json!({ "ref": refname, "commit": commit.id, "already": true }));
+        return Ok(
+            json!({ "ref": refname, "commit": commit.id, "already": true, "version": current_version(db)? }),
+        );
     }
     if current != expected {
         return Err(Error::new(
@@ -88,7 +90,9 @@ pub fn delete<S: SqlStore>(db: &S, c: &Value, principal: &str) -> Result<Value> 
     }
     let current = rows::ref_value(db, &refname)?;
     let Some(old) = current else {
-        return Ok(json!({ "ref": refname, "deleted": true, "already": true }));
+        return Ok(
+            json!({ "ref": refname, "deleted": true, "already": true, "version": current_version(db)? }),
+        );
     };
     if Some(old) != expected_of(c)? {
         return Err(Error::new(

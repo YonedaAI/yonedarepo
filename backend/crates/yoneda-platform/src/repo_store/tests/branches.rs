@@ -16,6 +16,28 @@ fn branch(
 }
 
 #[test]
+fn replayed_ref_commands_report_the_current_version_without_another_write() {
+    let (h, root) = seeded();
+    branch(&h, OWNER, "topic", &root, Value::Null).unwrap();
+    let tag = json!({"op":"repo_tag_create","name":"v1","commit":root});
+    let current = h.ok(OWNER, tag.clone())["version"].clone();
+    let replayed = branch(&h, OWNER, "topic", &root, Value::Null).unwrap();
+    assert_eq!(replayed["already"], true);
+    assert_eq!(replayed["version"], current);
+    assert_eq!(h.ok(OWNER, tag)["version"], current);
+    let delete = json!({"op":"repo_branch_batch","updates":[{"ref":"refs/heads/topic","commit":null,"expected":root}]});
+    let deleted = h.ok(OWNER, delete.clone())["version"].clone();
+    let replayed = h.ok(OWNER, delete);
+    assert_eq!(replayed["version"], deleted);
+    assert_eq!(h.ok(OWNER, json!({"op":"repo_refs"}))["version"], deleted);
+    for op in ["repo_land", "repo_land_enqueue"] {
+        let replayed = h.ok(OWNER, json!({"op":op,"ref":"main","commit":root}));
+        assert_eq!(replayed["already"], true);
+        assert_eq!(replayed["version"], deleted);
+    }
+}
+
+#[test]
 fn branches_move_by_compare_and_swap_and_main_is_protected() {
     let (h, root) = seeded();
     let child = h

@@ -19,7 +19,9 @@ pub fn enqueue<S: SqlStore>(
     if rows::projected_ref(db, &refname)? == Some(commit.id)
         || landed_version(db, &commit.id, &refname)?.is_some()
     {
-        return Ok(json!({ "landed": true, "already": true, "ref": refname, "commit": commit.id }));
+        return Ok(
+            json!({ "landed": true, "already": true, "ref": refname, "commit": commit.id, "version": rows::current_version(db)? }),
+        );
     }
     if super::capacity::landing_refused(db, c, &refname, &commit.id)? {
         return Err(super::capacity::refusal());
