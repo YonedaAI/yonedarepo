@@ -6,22 +6,24 @@
   font-synthesis: none;
   font-size: var(--text-base);
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --text-xs: 12px; /* uppercase section labels */
-  --text-sm: 13px; /* labels and metadata */
-  --text-md: 14px; /* secondary text, tables, toolbars */
-  --text-base: 15px; /* body text, sidebar rows */
-  --text-lg: 16px; /* card titles, page body copy */
-  --text-xl: 18px; /* section headings */
-  --text-2xl: 22px; /* a change's title, large figures */
-  --text-3xl: 26px; /* page headings */
-  --text-4xl: 30px; /* dashboard figures */
-  --text-mono: 14px; /* code fields */
-  --text-mono-dense: 13px; /* code and diff views */
+  --text-xs: 11px; /* uppercase section labels */
+  --text-sm: 12px; /* labels and metadata */
+  --text-md: 13px; /* secondary text, tables, toolbars */
+  --text-base: 14px; /* body text, sidebar rows */
+  --text-lg: 15px; /* card titles, page body copy */
+  --text-xl: 16px; /* section headings */
+  --text-2xl: 18px; /* a change's title, large figures */
+  --text-3xl: 20px; /* page headings */
+  --text-4xl: 24px; /* dashboard figures */
+  --text-mono: 13px; /* code fields */
+  --text-mono-dense: 12px; /* code and diff views */
   --text-code: max(
     var(--text-sm),
     0.93em
-  ); /* code inside text: follows the text, never below 13px */
+  ); /* code inside text: follows the text, never below 12px */
   --weight-heading: 600;
+  --control-h: 32px; /* every control in a row: buttons, fields, segments */
+  --row-y: 7px; /* the padding above and below a list or table row */
   color: var(--text);
   background: var(--bg);
   /* Light unless the viewer chose Dark, or chose nothing (System) on a dark device; the
@@ -36,6 +38,7 @@
   --muted: #5d6c80;
   --faint: #5f6e82;
   --line: #e1e6ed;
+  --row-line: #edf0f4; /* between rows: quieter than a panel's edge */
   --line-strong: #c5d6e1;
   --blue: #245de8;
   /* Blue as text, links and focus outlines; --blue itself is the fill behind --on-accent. */
@@ -84,6 +87,7 @@
     --muted: #9d9d9d;
     --faint: #939393;
     --line: #2b2b2b;
+    --row-line: #232323;
     --line-strong: #3d3d3d;
     --blue: #3566dc;
     --blue-text: #7aa0f8;
@@ -130,6 +134,7 @@
   --muted: #9d9d9d;
   --faint: #939393;
   --line: #2b2b2b;
+  --row-line: #232323;
   --line-strong: #3d3d3d;
   --blue: #3566dc;
   --blue-text: #7aa0f8;

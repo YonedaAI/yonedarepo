@@ -103,10 +103,10 @@
   background: var(--surface);
 }
 .profile-list .profile-repo {
-  padding: 0.9rem 0;
+  padding: var(--row-y) 0;
 }
 .profile-list .profile-repo + .profile-repo {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--row-line);
 }
 .profile-repo p {
   margin: 0;

@@ -24,7 +24,7 @@ button {
   cursor: pointer;
   font-size: var(--text-md);
   font-weight: 500;
-  min-height: 32px;
+  min-height: var(--control-h);
 }
 button:hover {
   filter: brightness(0.96);
@@ -48,7 +48,7 @@ select {
   background: var(--surface);
   border-radius: 8px;
   /* Beside a button in a row: the same 32px. */
-  min-height: 32px;
+  min-height: var(--control-h);
   padding: 5px 10px;
   color: var(--text);
   min-width: 0;
@@ -120,7 +120,7 @@ button.text-button {
 }
 button.icon-button {
   min-width: 32px;
-  min-height: 32px;
+  min-height: var(--control-h);
   border: 0;
 }
 button svg,
