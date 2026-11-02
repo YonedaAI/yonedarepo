@@ -1,4 +1,5 @@
-// A small Markdown reader for READMEs and the site's own pages: headings, paragraphs, lists,
+// A small Markdown reader for the site's own pages, and what stands in while `RichMarkdown` loads
+// the full one: headings, paragraphs, lists,
 // quotes, fenced code, pipe tables, rules, and inline code, emphasis and links. It builds
 // React elements (never HTML strings), so repository content cannot inject markup; only
 // http(s) and mailto links are live, plus same-site `/` paths when the caller resolves them.

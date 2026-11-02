@@ -12,6 +12,8 @@
 @import "./styles/actions.css";
 @import "./styles/source-platform.css";
 @import "./styles/code-view.css";
+@import "./styles/markdown.css";
+@import "./styles/app-fonts.css";
 @import "./styles/source-search.css";
 @import "./styles/source-views.css";
 @import "./styles/one-app.css";

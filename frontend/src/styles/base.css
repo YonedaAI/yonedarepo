@@ -71,7 +71,7 @@ a:focus-visible {
 }
 code,
 pre {
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--mono);
 }
 code {
   font-size: var(--text-code);

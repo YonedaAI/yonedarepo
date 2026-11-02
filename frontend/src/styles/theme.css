@@ -5,7 +5,7 @@
   font-family: "IBM Plex Sans", sans-serif;
   font-synthesis: none;
   font-size: var(--text-base);
-  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --text-xs: 12px; /* uppercase section labels */
   --text-sm: 13px; /* labels and metadata */
   --text-md: 14px; /* secondary text, tables, toolbars */
