@@ -627,6 +627,7 @@ fn an_account_recovery_tells_its_orgs_what_it_revoked() {
 fn a_password_reset_and_a_new_recovery_code_reach_the_orgs() {
     let alice = person();
     joined(&alice);
+    ok(&alice, token(json!("acme")));
     ok(
         &alice,
         json!({"op":"recovery_regenerate","session_hash":"a".repeat(64),"recovery_hash":"d".repeat(64)}),
@@ -650,9 +651,13 @@ fn a_password_reset_and_a_new_recovery_code_reach_the_orgs() {
     let db = log();
     copy(&alice, BOB, &db);
     let items = rows(&db);
+    let items: Vec<_> = items
+        .iter()
+        .filter(|i| i["kind"] != "pat.created")
+        .collect();
     assert_eq!(items[0]["kind"], "account.password_reset");
+    assert_eq!(items[0]["details"], json!({"tokens":1,"ssh_keys":0}));
     assert_eq!(items[1]["kind"], "account.recovery_regenerated");
-    assert_eq!(items[0]["details"], json!({}));
 }
 
 /// Sign-in rows of the person's own log, oldest first: `(kind, data)`.

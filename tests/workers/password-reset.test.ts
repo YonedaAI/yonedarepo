@@ -248,6 +248,24 @@ it('a link sets the password, ends sessions, kills the old code and works once',
   expect(reused.body.recovery_code).toBeUndefined();
 });
 
+it('revokes tokens with the reset, so a takeover leaves nothing behind', async () => {
+  const target = front();
+  const { account, token } = await requested(target, 'zora');
+  await workspace(target, account, {
+    op: 'pat_create',
+    id: 'pat_0123456789abcdef',
+    name: 'ci',
+    token_hash: 'c'.repeat(64),
+    scopes: ['repo:read'],
+    expires_days: 30,
+    repos: null,
+  });
+  const check = () => workspace(target, account, { op: 'pat_check', token_hash: 'c'.repeat(64) });
+  expect((await check()).id).toBe('pat_0123456789abcdef');
+  expect((await call(target, 'password/reset', { account, token, password: NEW_PASSWORD })).status).toBe(200);
+  await expect(check()).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+});
+
 it('leaves an audit event without a secret in it', async () => {
   const target = front();
   const { account, token } = await requested(target, 'lena');
@@ -470,6 +488,9 @@ it('keeps the reset page out of analytics and search', async () => {
   });
   const req = new Request('https://yonedarepo.test/reset-password');
   expect(isPublicPage(req, page)).toBe(false);
+  // The confirmation page holds a token the same way, and an old link in its query.
+  const confirming = new Request(`https://yonedarepo.test/verify-email?account=a&token=${'a'.repeat(64)}`);
+  expect(isPublicPage(confirming, page)).toBe(false);
   const { response } = await websitePage(req, {
     ...bindings,
     ASSETS: { fetch: async () => page.clone() },

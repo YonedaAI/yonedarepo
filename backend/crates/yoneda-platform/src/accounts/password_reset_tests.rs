@@ -151,14 +151,58 @@ fn a_reset_ends_sessions_replaces_both_secrets_and_leaves_an_audit_event() {
     assert!(!data.contains(&hash('c')) && !data.contains(&hash('d')));
 }
 
+const SSH_KEY: &str =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIJCFG1MqHVbmDrGBB3CKcDmbsEQFHjzlqaEVG/RtBvA8";
+const OTHER_SSH_KEY: &str =
+    "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMF8BBDJrJYSUSkzOVKqBwaNAv8Q7wXSzKwXd2kSjL2V";
+const WEBSITE_TOKEN: &str = "pat_0123456789abcdef";
+const CLI_TOKEN: &str = "pat_fedcba9876543210";
+
+fn token(db: &NativeStore, id: &str, hashed: char, origin: Value) {
+    at(db, 1, json!({"op":"pat_create","id":id,"name":"ci","token_hash":hash(hashed),"scopes":["repo:admin"],"expires_days":30,"repos":null,"origin":origin})).unwrap();
+}
+fn usable(db: &NativeStore, now: i64, hashed: char) -> bool {
+    at(db, now, json!({"op":"pat_check","token_hash":hash(hashed)})).is_ok()
+}
+fn live_keys(db: &NativeStore) -> Vec<String> {
+    at(db, 9, json!({"op":"ssh_key_list"})).unwrap()["keys"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|k| k["id"].as_str().unwrap().to_owned())
+        .collect()
+}
+
 #[test]
-fn a_reset_keeps_personal_tokens() {
+fn a_reset_revokes_tokens_and_cli_sign_ins() {
     let db = confirmed();
-    at(&db, 1, json!({"op":"pat_create","id":"pat_0123456789abcdef","name":"ci","token_hash":hash('9'),"scopes":["repo:read"],"expires_days":30,"repos":null})).unwrap();
+    token(&db, WEBSITE_TOKEN, '9', Value::Null);
+    token(&db, CLI_TOKEN, '6', json!("login"));
+    assert!(usable(&db, 2, '9') && usable(&db, 2, '6'));
     request(&db, 2, 'c');
     reset(&db, 3, 'c', 'd').unwrap();
-    let tokens = at(&db, 4, json!({"op":"pat_list"})).unwrap();
-    assert_eq!(tokens["tokens"].as_array().unwrap().len(), 1);
+    assert!(!usable(&db, 4, '9'));
+    assert!(!usable(&db, 4, '6'));
+    let audit = events(&db, "account.password_reset");
+    let data: Value = serde_json::from_str(audit[0]["data"].as_str().unwrap()).unwrap();
+    assert_eq!(data["tokens"], 2);
+}
+
+#[test]
+fn a_reset_removes_the_keys_a_token_added_like_any_revocation() {
+    let db = confirmed();
+    token(&db, WEBSITE_TOKEN, '9', Value::Null);
+    let by_token = "ssh_0123456789abcdef";
+    let by_person = "ssh_fedcba9876543210";
+    at(&db, 1, json!({"op":"ssh_key_add","id":by_token,"title":"laptop","public_key":SSH_KEY,"token_id":WEBSITE_TOKEN})).unwrap();
+    at(&db, 1, json!({"op":"ssh_key_add","id":by_person,"title":"desk","public_key":OTHER_SSH_KEY,"token_id":null})).unwrap();
+    request(&db, 2, 'c');
+    reset(&db, 3, 'c', 'd').unwrap();
+    assert_eq!(live_keys(&db), vec![by_person.to_owned()]);
+    let audit = events(&db, "account.password_reset");
+    let data: Value = serde_json::from_str(audit[0]["data"].as_str().unwrap()).unwrap();
+    assert_eq!(data["ssh_keys"], 1);
+    assert_eq!(events(&db, "ssh_key.removed").len(), 1);
 }
 
 #[test]

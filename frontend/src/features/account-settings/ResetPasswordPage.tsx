@@ -2,7 +2,7 @@
 // in the URL's fragment, which reaches no server, and useRoute takes them out of the address bar
 // and the history as soon as the page opens. Reloading it asks for the email's link again. The
 // token, like the new recovery code, lives only in this page's memory. Works signed in or out;
-// a reset ends every session, so it leads to the sign-in page (a full load, which forgets both).
+// a reset ends every session and token, so it leads to the sign-in page (a full load, which forgets both).
 import { type FormEvent, useState } from 'react';
 import { api } from '../../lib/api';
 import { RecoveryCodeShown } from './RecoveryCodeShown';
@@ -77,6 +77,7 @@ export function ResetPasswordPage({ account, token }: { account: string; token: 
               />
             </label>
             <p className="field-help">At least 12 characters. You get a recovery code next.</p>
+            <p className="field-help">This also revokes every token and CLI sign-in.</p>
             {error && (
               <p role="alert" className="form-error">
                 {error} <SignInLink />

@@ -46,6 +46,7 @@ describe('reset page', () => {
     ])
       expect(input).toContain(attribute);
     expect(html).toContain('At least 12 characters.');
+    expect(html).toContain('This also revokes every token and CLI sign-in.');
   });
 
   it('gives a password manager the account, and never prints the token', () => {

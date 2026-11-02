@@ -42,9 +42,9 @@ After sign-up you get an email with a confirmation link. Open it and press the b
 2. Open the link in the email and choose a new password of 12 to 128 characters. The link works once, for 1 hour.
 3. Save the **new** recovery code it shows. The old one no longer works.
 
-The page says the same thing whether or not the account exists, and the email goes only to a confirmed address. You can ask five times a day. A new request replaces the last link, and changing your address cancels it.
+The email goes only to a confirmed address, up to five times a day. A new request replaces the last link.
 
-A reset signs you out of every browser and ends the old recovery code. Personal access tokens, CLI sign-ins, SSH keys and linked GitHub or Google accounts keep working; if someone else may have had your password, remove them in **Settings**, or use your recovery code instead.
+A reset ends every browser session and revokes every personal access token and CLI sign-in, with any SSH key a token added, so whoever had your account loses that access. Create new tokens and run `yoneda login` again afterwards. SSH keys you added yourself and linked GitHub or Google accounts stay: check them in **Settings**, or use your recovery code, which removes those too.
 
 ## Recover an account with the recovery code
 

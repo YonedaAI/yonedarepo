@@ -1,6 +1,6 @@
-// The contact email's confirmation page (`/verify-email?account=…&token=…`, the emailed
-// link). Opening it confirms nothing, so a mail scanner that follows links cannot: only the
-// Confirm button POSTs the token. Works signed in or out.
+// The contact email's confirmation page (`/verify-email#account=…&token=…`, the emailed link;
+// emailLinkRoute.ts). Opening it confirms nothing, so a mail scanner that follows links cannot:
+// only the Confirm button POSTs the token. Works signed in or out.
 import { type FormEvent, useState } from 'react';
 import { api } from '../../lib/api';
 

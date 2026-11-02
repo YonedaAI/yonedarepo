@@ -88,8 +88,18 @@ const UTM_LENGTH = 64;
 const HOST =
   /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
 // The signed-in app's own pages: not part of the public site even when fetched signed out. The
-// reset page is here for its link: the beacon must never run where the URL holds a token.
-const APP_ROOTS = new Set(['settings', 'admin', 'device', 'new', 'auth', 'api', 'reset-password']);
+// emailed links' pages are here for their tokens: the beacon must never run where the URL holds
+// one, and a confirmation link sent before the fragment still has its token in the query.
+const APP_ROOTS = new Set([
+  'settings',
+  'admin',
+  'device',
+  'new',
+  'auth',
+  'api',
+  'reset-password',
+  'verify-email',
+]);
 // The app's one public page, which stays out of search and so has no canonical address.
 export const APP_PAGES = new Map([
   ['/explore', '/source/explore'],

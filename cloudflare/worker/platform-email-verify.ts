@@ -16,13 +16,12 @@ export async function digest(text: string) {
   return [...bytes].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** The confirmation page (a GET shows it; only its button's POST confirms). */
+/** The confirmation page (opening it confirms nothing; only its button's POST does) and the
+ * reset page. The account and token ride in the fragment: unlike a query, it reaches no server,
+ * so no request log, analytics line or Referer header can hold the token. */
 export function verifyUrl(origin: string, account: string, token: string) {
-  return `${origin}/verify-email?account=${encodeURIComponent(account)}&token=${token}`;
+  return `${origin}/verify-email#account=${encodeURIComponent(account)}&token=${token}`;
 }
-
-/** The reset page. The account and token ride in the fragment: unlike a query, it reaches no
- * server, so no request log, analytics line or Referer header can hold the token. */
 export function resetUrl(origin: string, account: string, token: string) {
   return `${origin}/reset-password#account=${encodeURIComponent(account)}&token=${token}`;
 }

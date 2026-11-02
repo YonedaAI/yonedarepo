@@ -8,7 +8,7 @@ summary: How access is checked, what a push is checked for, how checks are sandb
 - Passwords are 12 to 128 characters and stored as argon2id hashes. Your email address is private.
 - The browser session is a signed, HttpOnly cookie that lasts 7 days. An account holds at most 10 sessions; signing in once more ends the oldest.
 - Sign-in attempts are limited to 10 a minute per account.
-- A forgotten password resets through a single-use link, valid for 1 hour, sent only to a confirmed address. A reset ends every browser session and replaces the recovery code.
+- A forgotten password resets through a single-use link, valid for 1 hour, sent only to a confirmed address. A reset ends every browser session, revokes every token and CLI sign-in, and replaces the recovery code.
 - A recovery code, shown once, also resets the password. Using it ends every session, revokes every token, removes every SSH key and unlinks GitHub and Google. See [Accounts and sign-in](/docs/accounts).
 
 ## Tokens

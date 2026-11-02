@@ -3,7 +3,7 @@ Welcome to YonedaRepo
 Your account is ready.
 
 Please confirm this email address. The link works once, for 24 hours.
-https://yonedarepo.com/verify-email?account=ada&token=abababababababababababababababababababababababababababababababab
+https://yonedarepo.com/verify-email#account=ada&token=abababababababababababababababababababababababababababababababab
 
 YonedaRepo is a Git-compatible source platform where agents and people push, review and land code. Every write is a real Git commit, so any Git client can clone the result.
 

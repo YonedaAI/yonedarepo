@@ -3,9 +3,11 @@
 //! (`reset_token:<digest>`, with the confirmed address it was issued for). An account holds at
 //! most one: a new request replaces the last, and an address change, a recovery or a reset
 //! drops it. Requests count against their own daily limit, apart from confirmation emails.
-//! A reset ends the browser sessions and replaces the password and the recovery code; it
-//! keeps tokens, SSH keys and linked sign-ins, which only a recovery clears. Nothing here
-//! says why a request was refused: the adapter gives every asker the same answer.
+//! A reset ends the browser sessions, revokes every token (CLI sign-ins and agents are tokens)
+//! with the SSH keys those added, and replaces the password and the recovery code: whoever
+//! took the account should lose it. SSH keys added by a signed-in person and linked sign-ins
+//! stay; only a recovery clears those. Nothing here says why a request was refused: the
+//! adapter gives every asker the same answer.
 use super::op::PasswordOp;
 use super::*;
 
@@ -67,8 +69,14 @@ fn reset<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     put(db, "account", &a)?;
     super::signin::end_sessions(db)?;
     drop_tokens(db)?;
+    let (tokens, ssh_keys) = super::tokens::revoke_all_with_keys(db, now)?;
     let orgs = super::orgs::hints(db)?;
-    audit(db, "account.password_reset", now, json!({ "orgs": orgs }))?;
+    audit(
+        db,
+        "account.password_reset",
+        now,
+        json!({"tokens":tokens,"ssh_keys":ssh_keys,"orgs":orgs}),
+    )?;
     Ok(public_account(&a))
 }
 

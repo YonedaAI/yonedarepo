@@ -100,7 +100,7 @@ function resend(answers: { status: number; name?: string }[] = []) {
 
 it('renders the confirmation link in the welcome email and its own email (snapshots)', async () => {
   const config = { origin: 'https://yonedarepo.com', contact: 'hello@yonedarepo.com' };
-  const verifyUrl = `https://yonedarepo.com/verify-email?account=ada&token=${'ab'.repeat(32)}`;
+  const verifyUrl = `https://yonedarepo.com/verify-email#account=ada&token=${'ab'.repeat(32)}`;
   const welcome = renderWelcome({ ...config, verifyUrl });
   await expect(welcome.text).toMatchFileSnapshot('./__snapshots__/welcome-email-confirm.txt');
   const confirm = renderVerify({ ...config, verifyUrl });
@@ -190,7 +190,7 @@ it('posts the welcome email to Resend with its key and a per-account idempotency
   const email = renderWelcome({
     origin: 'https://yonedarepo.test',
     contact: 'hello@yonedarepo.test',
-    verifyUrl: `https://yonedarepo.test/verify-email?account=grace&token=${queued[0].token}`,
+    verifyUrl: `https://yonedarepo.test/verify-email#account=grace&token=${queued[0].token}`,
   });
   expect(request.json).toEqual({
     from: 'YonedaRepo <hello@yonedarepo.test>',

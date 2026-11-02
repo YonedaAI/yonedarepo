@@ -64,7 +64,7 @@ async function deliver(target: Env, job: Envelope) {
   return got[0] as { to: string[]; subject: string; text: string; html: string } | undefined;
 }
 const link = (text: string) => {
-  const match = text.match(/https:\/\/yonedarepo\.test\/verify-email\?account=([^&\s]+)&token=([0-9a-f]{64})/);
+  const match = text.match(/https:\/\/yonedarepo\.test\/verify-email#account=([^&\s]+)&token=([0-9a-f]{64})/);
   expect(match, text).toBeTruthy();
   return { account: decodeURIComponent(match?.[1] ?? ''), token: match?.[2] ?? '' };
 };
