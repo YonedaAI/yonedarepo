@@ -114,6 +114,7 @@ a.chip:hover {
   font-size: var(--text-sm);
   line-height: inherit;
 }
+.import-notice a,
 .source-note a,
 .readme-body a {
   color: var(--blue-text);

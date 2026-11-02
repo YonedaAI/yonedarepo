@@ -55,7 +55,8 @@ fn put_flow<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     let intent = string(c, "intent")?;
     let (account, session) = match intent.as_str() {
         "signin" => (Value::Null, Value::Null),
-        "link" => (
+        // `session_hash` here is the ticket's hash: a return from GitHub brings no session.
+        "link" | "github_org" => (
             json!(string(c, "account")?),
             json!(hash(c, "session_hash", &[64])?),
         ),

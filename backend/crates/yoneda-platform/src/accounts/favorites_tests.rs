@@ -109,9 +109,9 @@ fn the_favorites_migration_is_fresh_repeatable_and_upgrades_a_version_nine_store
     };
     // Fresh, then repeated by the next command.
     let fresh = signed_up();
-    assert_eq!(versions(&fresh), 12);
+    assert_eq!(versions(&fresh), 13);
     listed(&fresh);
-    assert_eq!(versions(&fresh), 12);
+    assert_eq!(versions(&fresh), 13);
 
     // Upgrade: a version-9 store keeps its account and starts with no favorites.
     let db = NativeStore::memory().unwrap();
@@ -152,7 +152,7 @@ fn the_favorites_migration_is_fresh_repeatable_and_upgrades_a_version_nine_store
     )
     .unwrap();
     assert_eq!(listed(&db), Vec::<String>::new());
-    assert_eq!(versions(&db), 12);
+    assert_eq!(versions(&db), 13);
     add(&db, 10, &repo(1)).unwrap();
     assert_eq!(listed(&db), [repo(1)]);
 }

@@ -133,9 +133,9 @@ fn the_name_migration_is_fresh_repeatable_and_upgrades_a_version_eleven_store() 
     };
     let fresh = NativeStore::memory().unwrap();
     signup(&fresh, json!("Ada"));
-    assert_eq!(versions(&fresh), 12);
+    assert_eq!(versions(&fresh), 13);
     assert_eq!(shown(&fresh), "Ada");
-    assert_eq!(versions(&fresh), 12);
+    assert_eq!(versions(&fresh), 13);
 
     let db = NativeStore::memory().unwrap();
     db.query(
@@ -155,6 +155,6 @@ fn the_name_migration_is_fresh_repeatable_and_upgrades_a_version_eleven_store() 
         .unwrap();
     }
     signup(&db, json!("Ada"));
-    assert_eq!(versions(&db), 12);
+    assert_eq!(versions(&db), 13);
     assert_eq!(shown(&db), "Ada");
 }

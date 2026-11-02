@@ -5,12 +5,14 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import {
+  ADD_CONNECTION_PATH,
   CONNECT_PATH,
   connectMessage,
   defaultRepoName,
   type GitHubConnection,
   IMPORT_HINT,
   importBody,
+  installationLabel,
   keepPending,
   parseGitHubRepo,
   pickedRepository,
@@ -68,8 +70,12 @@ export function GitHubImportDialog({
 }) {
   const hint = useId();
   const [connectResult] = useState(takeConnectResult);
-  const github = useSource<GitHubConnection>('/github/repositories').data;
+  const [from, setFrom] = useState<number>();
+  const github = useSource<GitHubConnection>(
+    `/github/repositories${from ? `?installation=${from}` : ''}`,
+  ).data;
   const connected = github?.connection === 'ok';
+  const installations = github?.installations ?? [];
   const [source, setSource] = useState(takePending);
   const [invalid, setInvalid] = useState(false);
   const [name, setName] = useState(() => {
@@ -120,7 +126,15 @@ export function GitHubImportDialog({
     setError('');
     try {
       const created = await requestImport(
-        importBody(parsed.url, name.trim(), owner, visibility, branch, picked),
+        importBody(
+          parsed.url,
+          name.trim(),
+          owner,
+          visibility,
+          branch,
+          picked,
+          github?.installation,
+        ),
       );
       await onImported({ repo: created.id, owner });
     } catch (e) {
@@ -152,13 +166,34 @@ export function GitHubImportDialog({
             </a>
           )}
           {github?.available && !connected && ' to add a private repository.'}
+          {connected && <a href={ADD_CONNECTION_PATH}>Add an organization</a>}
         </p>
         {connectResult && connectMessage(connectResult) && (
-          <p role="alert" className="form-error">
+          // GitHub waiting on an owner is news, not a failure.
+          <p
+            role={connectResult === 'requested' ? 'status' : 'alert'}
+            className={connectResult === 'requested' ? 'source-note' : 'form-error'}
+          >
             {connectMessage(connectResult)}
           </p>
         )}
         <OwnerField account={account} orgs={orgs} initialOwner={initialOwner} disabled={busy} />
+        {installations.length > 1 && (
+          <label>
+            GitHub account
+            <select
+              value={github?.installation}
+              onChange={(event) => setFrom(Number(event.target.value))}
+              disabled={busy}
+            >
+              {installations.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {installationLabel(i)}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         <label>
           GitHub repository
           <input

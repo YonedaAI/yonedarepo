@@ -16,6 +16,12 @@ export class FakeGitHub {
   installations = new Map<number, Installed>();
   minted: { installation: number; scope: any; token: string }[] = [];
   asked: string[] = [];
+  /** Who is at the keyboard when the browser reaches GitHub's consent page. */
+  person = { id: 0, login: '' };
+  /** What `GET /user/memberships/orgs/{org}` answers, by `login:org`; `blocked` is its 403. */
+  memberships = new Map<string, { state: string; role: string } | 'blocked'>();
+  /** Every OAuth token handed out, for proving none is kept. */
+  tokens: string[] = [];
   key = '';
   #public?: CryptoKey;
 
@@ -58,10 +64,25 @@ export class FakeGitHub {
 
   /** GitHub's answer to `url`, or null for anywhere else. */
   async handle(url: string, init?: RequestInit): Promise<Response | null> {
+    if (url === 'https://github.com/login/oauth/access_token') {
+      const token = `gho_${this.tokens.length + 1}`;
+      this.tokens.push(token);
+      return Response.json({ access_token: token, token_type: 'bearer' });
+    }
     if (!url.startsWith(API)) return null;
     const { pathname, searchParams } = new URL(url);
     this.asked.push(`${init?.method ?? 'GET'} ${pathname}`);
     const none = () => Response.json({ message: 'Not Found' }, { status: 404 });
+    if (pathname === '/user' || pathname.startsWith('/user/')) {
+      const bearer = new Headers(init?.headers).get('authorization')?.replace('Bearer ', '');
+      if (!this.tokens.includes(bearer ?? '')) return Response.json({}, { status: 401 });
+      if (pathname === '/user') return Response.json({ ...this.person, name: null, avatar_url: null });
+      if (pathname === '/user/emails') return Response.json([]);
+      const org = /^\/user\/memberships\/orgs\/([^/]+)$/.exec(pathname)?.[1];
+      const held = org && this.memberships.get(`${this.person.login}:${org}`);
+      if (held === 'blocked') return Response.json({ message: 'Forbidden' }, { status: 403 });
+      return held ? Response.json(held) : none();
+    }
     if (pathname === '/installation/repositories') {
       const token = String((init?.headers as any)?.authorization).replace('Bearer ', '');
       const grant = this.minted.find((m) => m.token === token);
