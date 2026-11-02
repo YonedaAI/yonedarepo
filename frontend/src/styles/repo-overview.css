@@ -41,12 +41,14 @@
 .overview-all-files:focus-visible {
   outline-offset: -3px;
 }
-/* Holds the chart's height while it loads, so the README below doesn't jump. */
 .overview-numbers {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   align-items: start;
   gap: 24px;
+}
+/* Reserve chart space while loading, not after an empty activity result. */
+.overview-numbers:has([aria-busy="true"]) {
   min-height: 190px;
 }
 .overview-people {

@@ -1,13 +1,11 @@
-// Browser gate (kit item `browser`): headless system Chrome (playwright-core, channel `chrome`)
-// drives the served app as a person does, with zero model spend. It signs the kit account in
+// Browser gate: Chrome drives the served app with zero model spend. It signs the kit account in
 // through the real login form, creates a repository with the shell's "New repository" dialog,
 // opens its Code tab and Clone menu (the SSH line exactly when Git over SSH is open), History
 // (where it creates a branch under "Branches and tags" and deletes it again),
 // Landings (the empty list) and Settings (Landing rules, Connect) tabs
 // and the account Settings page. Then the second kit account (a member at write) commits on a
-// branch by API, the kit account opens a change for it and approves and lands it in the Change
-// page (the platform refuses an author's own approval); the page and the API must both read it
-// back landed. A second branch, cut from main before that landing, is then behind main: its
+// branch by API. The kit account approves and lands it; API and page must read back landed.
+// A second branch, cut from main before that landing, is then behind main: its
 // Change page's "Rebase on main" replays it onto main. The Agents tab then shows a session
 // recorded by API (browser-agent-flow.mjs). Releases, forks and organizations follow
 // (browser-collab-flow.mjs), then tokens, deleting an org and a repository deleted while its
@@ -24,6 +22,7 @@ import { managedAgentPages } from './browser-managed-agents-flow.mjs';
 import { forkPages, orgPages, releasePages } from './browser-collab-flow.mjs';
 import { b64, OWN_TRAFFIC, Session, secondAccount, sleep, until } from './client.mjs';
 import { atRepo, openRepo, repoPath } from './repo-urls.mjs';
+import { overviewStates } from './overview-layout.mjs';
 
 const author = { name: 'Browser gate', email: 'kit@yonedarepo.invalid' };
 
@@ -169,6 +168,7 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
   await page.getByRole('button', { name: `Switch repository (current: ${name})` }).waitFor();
   await atRepo(page, account, id);
   await page.getByRole('region', { name: 'Overview' }).getByText('README.md').first().waitFor();
+  await overviewStates(page, { repo: id, shot });
   await shot('source-code');
   // The Clone menu: the SSH line exactly when the platform says Git over SSH is open.
   const ssh = (await account.raw('GET', '/api/v1/ssh-keys')).body?.ssh;
