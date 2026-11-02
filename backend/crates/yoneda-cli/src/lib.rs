@@ -62,6 +62,7 @@ mod sync;
 mod target;
 #[cfg(test)]
 mod testkit;
+mod token_cmd;
 mod traffic;
 
 pub use run::main;

@@ -6,7 +6,7 @@
 use super::list::{MAIN, branches};
 use super::tags::{TAGS, create_tag, tag_refusal, tag_update};
 use super::upload::{self, Uploaded};
-use super::{Session, declared, land, say};
+use super::{Session, declared, delete, land, say};
 use crate::error::{Error, Result};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
@@ -105,17 +105,8 @@ pub async fn push(session: &mut Session, specs: Vec<Spec>) -> String {
     let mut doomed = Vec::new();
     for spec in &specs {
         if spec.src.is_empty() {
-            let outcome = match listed.heads.get(&spec.dst) {
-                _ if spec.dst.starts_with(TAGS) => {
-                    Err("tags are immutable and cannot be deleted".to_owned())
-                }
-                Some(current) => {
-                    doomed.push(json!({ "ref": spec.dst, "commit": null, "expected": current }));
-                    Ok(())
-                }
-                None => Err("no such branch on the platform".to_owned()),
-            };
-            outcomes.insert(spec.dst.clone(), outcome);
+            let update = delete::update(&spec.dst, listed.heads.get(&spec.dst));
+            outcomes.insert(spec.dst.clone(), update.map(|u| doomed.push(u)));
             continue;
         }
         let local = match session.git.commit_of(&spec.src) {
@@ -159,13 +150,7 @@ pub async fn push(session: &mut Session, specs: Vec<Spec>) -> String {
         ready.clear();
     }
     if !session.options.dry_run && !doomed.is_empty() {
-        let body = json!({ "updates": doomed });
-        if let Err(failure) = session.api.post("/refs/batch", &body).await {
-            for update in &doomed {
-                let dst = update["ref"].as_str().unwrap_or_default().to_owned();
-                outcomes.insert(dst, Err(failure.to_string()));
-            }
-        }
+        delete::send(session, &doomed, &mut outcomes).await;
     }
     if !session.options.dry_run && !ready.is_empty() {
         match declared::reads(session) {

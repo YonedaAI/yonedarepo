@@ -138,7 +138,7 @@ async fn run(command: Command) -> Result<()> {
             repo_ops::policy(&target::resolve(&target)?, set.as_deref()).await
         }
         Command::Token { target, command } => {
-            repo_ops::token(&target::resolve(&target)?, command).await
+            crate::token_cmd::token(&target::resolve(&target)?, command).await
         }
         Command::Read { target, command } => reads::read(&target::resolve(&target)?, command).await,
         Command::Check { target, command } => {

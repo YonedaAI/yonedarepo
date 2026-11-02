@@ -11,6 +11,7 @@
 //! default (`lazy`): history arrives as commits and trees, blobs when Git needs them.
 pub mod convert;
 mod declared;
+mod delete;
 mod fetch;
 pub mod heads;
 mod land;

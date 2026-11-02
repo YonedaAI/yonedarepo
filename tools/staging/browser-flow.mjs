@@ -213,9 +213,8 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
 }
 
 /**
- * The clone commands in `scope` (Clone menu or Connect): the recommended yoneda remote helper
- * first with its one-time `yoneda login` on the API origin, then HTTPS pointing at Settings →
- * Personal tokens; each a whole command into a directory named after the repository.
+ * The clone commands in `scope` (Clone menu or Connect): the yoneda remote helper with its one
+ * `yoneda login`, then HTTPS with its token; each a whole command into the repository's name.
  */
 export async function cloneLines(page, scope, { api, name, path }, what) {
   const blocks = scope.locator('.source-copy');
@@ -270,7 +269,6 @@ export async function changeLanded(page, { origin, kit, account, repo: { id, nam
   const api = (path) => `/api/v1/repos/${id}${path}`;
   const member = await secondAccount(origin, kit);
   await account.post(api('/members'), { account: member.name, role: 'write' });
-  // A new personal repository lands at once; this one has someone to ask.
   await account.call('PUT', api('/policy'), { policy: { required_checks: [], approvals: 1 } });
   const base = (await account.get(api('/refs'))).refs['refs/heads/main'];
   await member.session.post(`/repos/${id}/branches`, { ref: 'kit-rebase', commit: base, expected: null });
