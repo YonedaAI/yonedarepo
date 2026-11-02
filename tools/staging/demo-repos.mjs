@@ -36,7 +36,7 @@ import { ownerLogin } from './realuser-flow.mjs';
 import { Workspace } from './realuser-git.mjs';
 import { scrubber } from './realuser-plan.mjs';
 
-const PHASES = ['setup', 'memories', 'smoke', 'clean', 'sloppy', 'fix', 'config', 'sloppy2', 'fix2', 'config2', 'suggest', 'suggest2', 'drift', 'approvals', 'approval', 'release', 'report'];
+const PHASES = ['setup', 'memories', 'smoke', 'clean', 'sloppy', 'fix', 'config', 'sloppy2', 'fix2', 'config2', 'suggest', 'suggest2', 'drift', 'strict', 'sloppy3', 'relax', 'fix3', 'approvals', 'approval', 'release', 'report'];
 const CLAUDE_CAP_USD = 20;
 const GATEWAY = 'https://gateway.ai.cloudflare.com/v1/f011d0ee02b23cad26b4b38151b204ad/yonedarepo-dev-managed-agents';
 const MIMO_PROXY = 'https://yonedarepo-dev-model-proxy.mlong-f01.workers.dev';
@@ -46,7 +46,7 @@ const { values } = parseArgs({
     api: { type: 'string', default: 'https://api.dev.yonedarepo.com' },
     only: { type: 'string', default: Object.keys(REPOS).join(',') },
     phases: { type: 'string', default: PHASES.join(',') },
-    'agent-timeout': { type: 'string', default: '1500' },
+    'agent-timeout': { type: 'string', default: '2400' },
     'cap-usd': { type: 'string', default: '2.9' },
   },
 });
@@ -219,7 +219,7 @@ async function memories(web, r) {
   }
 }
 
-const FIXES = { fix: 'sloppy', fix2: 'sloppy2' };
+const FIXES = { fix: 'sloppy', fix2: 'sloppy2', fix3: 'sloppy3' };
 const specOf = (key, id) => REPOS[key].flights[FIXES[id] ?? id];
 const wantOf = (key, id) => (FIXES[id] ? 'landed' : specOf(key, id).want);
 
@@ -238,7 +238,9 @@ function usageFromEvidence(key, id, kind) {
 
 /** The open or landed Landing a first run already pushed, if any: it is settled, not flown again. */
 async function pushedBefore(r, id, spec) {
-  if (FIXES[id] || spec.continues || state.repos[r.key].flights[id]) return null;
+  if (spec.continues || state.repos[r.key].flights[id]) return null;
+  const was = state.repos[r.key].flights[FIXES[id]]?.head;
+  if (FIXES[id]) return (await owner.get(`/repos/${r.id}/changes?status=open`)).changes.find((c) => c.branch === spec.branch && c.head !== was) ?? null;
   for (const status of ['open', 'landed']) {
     const found = (await owner.get(`/repos/${r.id}/changes?status=${status}`)).changes.find((c) => c.branch === spec.branch);
     if (found) return found;
@@ -382,7 +384,7 @@ async function modelCredentials(rows, agentPhases, also) {
 }
 
 async function main() {
-  const agentPhases = phases.filter((p) => !['setup', 'memories', 'smoke', 'approvals', 'release', 'report'].includes(p));
+  const agentPhases = phases.filter((p) => !['setup', 'memories', 'smoke', 'strict', 'relax', 'approvals', 'release', 'report'].includes(p));
   const web = phases.some((p) => ['setup', 'memories'].includes(p)) ? await openWeb({ origin, sessionFile }) : null;
   ctx.ws = new Workspace({ api: values.api, bin: join(root, 'target/release'), scrub });
   try {
@@ -408,7 +410,13 @@ async function main() {
         else if (phase === 'smoke') await eachRepo(rows, phase, async (r) => {
           for (const kind of kindsOf(r)) await smoke(r, kind);
         });
-        else if (phase === 'approvals') {
+        else if (phase === 'strict' || phase === 'relax') {
+          // Slop's reading of the same slop varies between high and medium, and only high blocks by
+          // default, so the go-around flight has the owner's level at medium for its one head.
+          const level = phase === 'strict' ? 'medium' : 'high';
+          await account.call('PUT', `${state.managed}/agents/slop-review`, { settings: { block_at: level } });
+          log(`Slop blocks at ${level}`);
+        } else if (phase === 'approvals') {
           cookie = await savedCookie();
           const late = await openWeb({ origin, sessionFile });
           try {

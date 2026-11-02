@@ -95,7 +95,7 @@ export const REPOS = {
     project: 'tj/commander.js (a Node.js command-line parser)',
     agent: 'mimo',
     feature: 'Near-miss hints for choices and excess arguments, with an off switch',
-    order: ['clean', 'sloppy', 'fix', 'sloppy2', 'fix2', 'drift', 'approvals', 'approval'],
+    order: ['clean', 'sloppy', 'fix', 'drift', 'strict', 'sloppy3', 'relax', 'fix3', 'approvals', 'approval'],
     memories: [
       { via: 'web', kind: 'gotcha', anchors: ['lib/argument.js'], text: '_collectValue starts a new array while the previous value is still the default, so a variadic default is replaced by the first value, not added to.' },
       { via: 'web', kind: 'fact', anchors: ['lib/option.js'], text: 'A list passed to .choices() is copied with slice, so changing the caller\'s array afterwards has no effect.' },
@@ -126,7 +126,7 @@ export const REPOS = {
         message: 'Add hints for excess arguments',
         fix: 'Then call excessArgumentHint from Command._excessArguments in lib/command.js, so the error about too many arguments ends with the hint, and add tests/nearMiss.test.js.',
       },
-      sloppy2: {
+      sloppy3: {
         want: 'go_around',
         branch: 'feat/hint-tables',
         work: `Near-miss hints, part 3. Add a new file lib/hintTable.js exporting six functions, commandHints(command), optionHints(command), argumentHints(command), aliasHints(command), choiceHints(option) and envHints(option), each returning an array of { name, hint } for the matching items. ${WORSE_STYLE}`,
@@ -153,7 +153,7 @@ export const REPOS = {
     project: 'pallets/click (a Python command-line toolkit)',
     agent: 'codex',
     feature: 'Configuration files for options, by Codex; near-miss hints for Choice, by Claude Code',
-    order: ['clean', 'sloppy', 'fix', 'config', 'sloppy2', 'fix2', 'config2', 'suggest', 'suggest2', 'drift', 'approvals', 'approval'],
+    order: ['clean', 'sloppy', 'fix', 'config', 'sloppy2', 'fix2', 'config2', 'suggest', 'suggest2', 'drift', 'strict', 'sloppy3', 'relax', 'fix3', 'approvals', 'approval'],
     memories: [
       { via: 'web', kind: 'gotcha', anchors: ['src/click/types.py'], text: 'ParamType.fail raises BadParameter with the parameter and context attached, so a type never builds the usage error itself.' },
       { via: 'web', kind: 'fact', anchors: ['src/click/types.py'], text: 'Choice compares normalized values and keeps the original choices for its answer, so a message has to show what the user can really type.' },
@@ -197,6 +197,13 @@ export const REPOS = {
         work: 'Configuration files, part 3. Add a decorator click.config_file_option(*param_decls, **kwargs) in src/click/decorators.py, next to version_option: an eager option, --config PATH by default, not exposed to the callback, whose own callback picks the loader from src/click/_config.py by file extension and sets ctx.default_map from the file. Export it from src/click/__init__.py. Add tests/test_config_file_option.py, using CliRunner with a real file: a value from the file becomes the default, the command line wins over it, and a broken file exits with the code of ConfigFileError.',
         message: 'Add config_file_option',
       },
+      sloppy3: {
+        want: 'go_around',
+        branch: 'feat/config-schema',
+        work: `Configuration files, part 5. Add a new file src/click/_config_schema.py with six functions, check_int_value(config, key), check_str_value(config, key), check_bool_value(config, key), check_path_value(config, key), check_choice_value(config, key, choices) and check_list_value(config, key), each returning the value when it has the right type. ${WORSE_STYLE}`,
+        message: 'Add configuration value checks',
+        fix: 'Raise ConfigFileError for a bad value instead of ignoring errors, and add tests/test_config_schema.py.',
+      },
       // Slop's run on the first push failed, and only a new push asks for another.
       config2: {
         want: 'landed',
@@ -231,7 +238,7 @@ export const REPOS = {
       approval: {
         want: 'hold',
         branch: 'docs/config-files',
-        work: 'Configuration files, part 5. In docs/commands.md, after the part about Context.default_map, add a short section "Loading defaults from a file" on config_file_option, with one TOML example and what happens with a broken file. Change no other file.',
+        work: 'Configuration files, part 6. In docs/commands.md, after the part about Context.default_map, add a short section "Loading defaults from a file" on config_file_option, with one TOML example and what happens with a broken file. Change no other file.',
         message: 'Docs: loading defaults from a file',
       },
     },
@@ -246,6 +253,7 @@ const opening = (repo, branch) => [
 ];
 const closing = (branch) => [
   'Never push to main or any other branch, never force-push, and do not open or land anything: the platform does that.',
+  'Work quickly: commit and push as soon as the change is done, with no extra review passes.',
   'When the push has succeeded, answer in two sentences: what you changed, and which rule from your session context shaped it, if any.',
 ];
 
