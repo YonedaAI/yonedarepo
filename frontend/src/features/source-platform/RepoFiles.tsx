@@ -8,6 +8,7 @@ import { CommitFile } from './CommitFile';
 import { readQuery, useActivity, useListing } from './codeData';
 import { currentApiOrigin } from './connect';
 import { FileBlame } from './FileBlame';
+import { FilePreview, isMarkdown, PreviewToggle } from './FilePreview';
 import { FileTable } from './FileTable';
 import { FileText } from './FileText';
 import { Markdown } from './markdown';
@@ -62,6 +63,7 @@ export function RepoFiles({
   const { line, ...place } = route;
   const listing = useListing(route.repo, ref, route.path, route.at);
   const [blaming, setBlaming] = useState(false);
+  const [source, setSource] = useState(false);
   // The place the form was opened on: moving to another closes it.
   const here = `${route.ref}:${route.path}`;
   const [writingAt, setWritingAt] = useState<string | null>(null);
@@ -83,6 +85,11 @@ export function RepoFiles({
   );
   const crumbs = route.path.split('/').filter(Boolean);
   const readme = tree?.entries.find((e) => e.type !== 'tree' && README.test(e.name));
+  const previewable =
+    listing.value?.kind === 'file' &&
+    listing.value.encoding === 'utf-8' &&
+    !line &&
+    isMarkdown(route.path);
   return (
     <section className="source-files" aria-label="Files">
       <div className="source-toolbar">
@@ -200,6 +207,9 @@ export function RepoFiles({
             <span>
               {listing.value.size} bytes{listing.value.executable ? ' · executable' : ''}
             </span>
+            {previewable && !blaming && (
+              <PreviewToggle preview={!source} onChange={(preview) => setSource(!preview)} />
+            )}
             {canCommit && listing.value.encoding === 'utf-8' && !writing && (
               <button type="button" className="quiet" onClick={() => setWritingAt(here)}>
                 Edit
@@ -218,6 +228,8 @@ export function RepoFiles({
           </header>
           {blaming && route.at === undefined && ref ? (
             <FileBlame repo={route.repo} path={route.path} refName={ref} onNavigate={navigate} />
+          ) : previewable && !source ? (
+            <FilePreview content={listing.value.content} />
           ) : listing.value.encoding === 'utf-8' ? (
             <FileText content={listing.value.content} line={line} />
           ) : (
