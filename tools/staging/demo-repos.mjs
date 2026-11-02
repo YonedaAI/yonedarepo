@@ -32,6 +32,7 @@ import { McpClient } from './mcp-client.mjs';
 import { judgeTrap } from './memory-plan.mjs';
 import { scanHidden } from './memory-run.mjs';
 import { TRAPS } from './memory-traps.mjs';
+import { ownerLogin } from './realuser-flow.mjs';
 import { Workspace } from './realuser-git.mjs';
 import { scrubber } from './realuser-plan.mjs';
 
@@ -68,7 +69,20 @@ const save = () => writeJson(stateFile, state);
 const log = (line) => console.log(`${new Date().toISOString().slice(11, 19)} ${line}`);
 
 const sessionFile = join(root, '.local/agents-live/session.json');
-const cookie = JSON.parse(readFileSync(sessionFile, 'utf8')).cookies.filter((c) => c.name === 'yoneda_account').map((c) => `${c.name}=${c.value}`).join('; ');
+/** The saved login, renewed by one sign-in when it has lapsed, so a rerun is no new session. */
+async function savedCookie() {
+  const saved = JSON.parse(readFileSync(sessionFile, 'utf8'));
+  const row = saved.cookies.find((c) => c.name === 'yoneda_account');
+  const live = await new Session(origin, { cookie: `${row.name}=${row.value}` }).raw('GET', '/api/auth/session');
+  if (!live.body?.authenticated) {
+    const { DEV_OWNER_USERNAME: username, DEV_OWNER_PASSWORD: password } = process.env;
+    assert.ok(username && password, 'set -a; . ~/.config/yonedarepo/dev-owner.env; set +a');
+    row.value = (await ownerLogin(origin, username, password)).split(';')[0].split('=').slice(1).join('=');
+    writeJson(sessionFile, saved);
+  }
+  return `${row.name}=${row.value}`;
+}
+const cookie = await savedCookie();
 const secrets = new Set([cookie.split('=').slice(1).join('=')]);
 const scrub = scrubber(secrets);
 
