@@ -64,6 +64,10 @@ a:focus-visible {
   outline: 3px solid var(--blue-text);
   outline-offset: 2px;
 }
+/* Browsers keep a chosen select's ring after a mouse pick; the keyboard still gets it. */
+:root[data-pointer] select:focus-visible {
+  outline: none;
+}
 code,
 pre {
   font-family: "IBM Plex Mono", monospace;
