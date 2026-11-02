@@ -55,8 +55,9 @@ fn uploads(
     values: &BTreeMap<String, String>,
 ) -> std::result::Result<Map<String, Value>, String> {
     let mut upload = Map::new();
+    let in_file = |name: &String| worker.secret_files.get(name).unwrap_or(name).clone();
     for name in worker.secrets.iter().filter(|s| !present.contains(*s)) {
-        let value = values.get(name).ok_or_else(|| name.clone())?;
+        let value = values.get(&in_file(name)).ok_or_else(|| name.clone())?;
         upload.insert(name.clone(), Value::String(value.clone()));
     }
     for name in worker
@@ -64,7 +65,7 @@ fn uploads(
         .iter()
         .filter(|s| !present.contains(*s))
     {
-        if let Some(value) = values.get(name).filter(|v| !v.is_empty()) {
+        if let Some(value) = values.get(&in_file(name)).filter(|v| !v.is_empty()) {
             upload.insert(name.clone(), Value::String(value.clone()));
         }
     }
@@ -81,6 +82,7 @@ mod tests {
             role: "agents".into(),
             config_path: "cloudflare/x.jsonc".into(),
             config: Value::Null,
+            secret_files: BTreeMap::new(),
             secrets: vec!["OWNER_TOKEN".into()],
             optional_secrets: vec![
                 "GITHUB_OAUTH_CLIENT_ID".into(),

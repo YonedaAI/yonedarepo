@@ -12,6 +12,17 @@
     "public_ratelimit": "2002"
   },
   "check_instances": 4,
+  "cells": [
+    {
+      "code": "weur",
+      "placement": "aws:eu-central-1",
+      "containers": "WEUR",
+      "jurisdiction": "eu",
+      "ratelimit": "2003",
+      "public_ratelimit": "2004",
+      "bound": false
+    }
+  ],
   "workers": [
     {
       "role": "superfan",
@@ -544,6 +555,62 @@
         "triggers": {
           "crons": [
             "* * * * *"
+          ]
+        }
+      }
+    },
+    {
+      "role": "edge",
+      "file": "wrangler.dev-edge.jsonc",
+      "notes": [
+        "Dev edge Worker (worker/edge-index.ts, docs/global-scale-plan.md, cells as built): unpinned, so it runs where a request arrives, and it passes every request to the cell it belongs in over a service binding.",
+        "It holds no data. WORKSPACES is read only to find a readable name's repository. On edge.dev.yonedarepo.com until it has passed the kit there; api.dev.yonedarepo.com moves to it last (R10)."
+      ],
+      "health": "yonedarepo-edge",
+      "ephemeral": false,
+      "config": {
+        "name": "{prefix}-edge",
+        "main": "worker/edge-index.ts",
+        "compatibility_date": "2026-10-07",
+        "compatibility_flags": [
+          "nodejs_compat"
+        ],
+        "workers_dev": true,
+        "preview_urls": false,
+        "tail_consumers": [
+          {
+            "service": "{prefix}-superfan"
+          }
+        ],
+        "observability": {
+          "enabled": true,
+          "traces": {
+            "enabled": false,
+            "head_sampling_rate": 0.01
+          }
+        },
+        "routes": [
+          {
+            "pattern": "edge.dev.yonedarepo.com",
+            "custom_domain": true
+          }
+        ],
+        "vars": {
+          "CELLS": "on"
+        },
+        "services": [
+          {
+            "binding": "PLATFORM",
+            "service": "{prefix}-platform"
+          }
+        ],
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "WORKSPACES",
+              "class_name": "WorkspaceAuthority",
+              "script_name": "{prefix}-platform"
+            }
           ]
         }
       }
@@ -1199,6 +1266,73 @@
           {
             "binding": "REGIONAL_OBJECTS",
             "bucket_name": "{prefix}-region-apac"
+          }
+        ],
+        "d1_databases": [
+          {
+            "binding": "INDEX",
+            "database_name": "{prefix}-platform-index"
+          }
+        ]
+      }
+    },
+    {
+      "role": "region-sa",
+      "file": "wrangler.dev-region-sa.jsonc",
+      "notes": [
+        "Dev regional client in South America (tools/fanout-bench/region-worker.js): a client far from the data for the",
+        "latency matrix (tools/platform-region-matrix.mjs) and the real-use simulation (tools/platform-real-use.mjs).",
+        "Targeted placement holds one Worker near one cloud region, so each region needs its own Worker; bench and",
+        "bench2 stay in aws:us-east-1 for the load stages' 1-against-2 comparison.",
+        "The bindings are read by its dependency probe only, which times one read of each piece from here. It runs",
+        "only those reads, plus one small object in its own test bucket, behind BENCH_KEY (from stdin, the same value as bench's).",
+        "LAND_COMBINERS reaches the instance named region-serve:<hint>, which runs the platform's routes in that region (repo-region-serve.ts, REGION_HINT_TEST)."
+      ],
+      "secrets": [
+        "BENCH_KEY"
+      ],
+      "ephemeral": false,
+      "config": {
+        "name": "{prefix}-region-sa",
+        "main": "../tools/fanout-bench/region-worker.js",
+        "compatibility_date": "2026-10-07",
+        "compatibility_flags": [
+          "global_fetch_strictly_public"
+        ],
+        "workers_dev": true,
+        "preview_urls": false,
+        "placement": {
+          "mode": "targeted",
+          "region": "aws:sa-east-1"
+        },
+        "durable_objects": {
+          "bindings": [
+            {
+              "name": "SOURCE_REPOS",
+              "class_name": "SourceRepository",
+              "script_name": "{prefix}-platform"
+            },
+            {
+              "name": "COMMIT_SHARDS",
+              "class_name": "CommitShard",
+              "script_name": "{prefix}-platform"
+            },
+            {
+              "name": "LAND_COMBINERS",
+              "class_name": "LandCombiner",
+              "script_name": "{prefix}-platform"
+            },
+            {
+              "name": "WORKSPACES",
+              "class_name": "WorkspaceAuthority",
+              "script_name": "{prefix}-platform"
+            }
+          ]
+        },
+        "r2_buckets": [
+          {
+            "binding": "OBJECTS",
+            "bucket_name": "{prefix}-platform-objects"
           }
         ],
         "d1_databases": [

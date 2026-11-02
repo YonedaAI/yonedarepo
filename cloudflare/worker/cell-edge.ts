@@ -119,7 +119,7 @@ export function signInEnv(req: Request, env: Env): Env {
 }
 
 /** The edge Worker: every request passed to its cell. */
-export function edgeFetch(req: Request, env: Env): Promise<Response> | Response {
+export async function edgeFetch(req: Request, env: Env): Promise<Response> {
   const url = new URL(req.url);
   if (url.pathname === '/health')
     return response({

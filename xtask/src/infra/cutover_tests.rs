@@ -284,7 +284,8 @@ fn dev_and_prod_never_share_a_rate_limit_namespace() {
     };
     let (dev, prod) = (namespaces(&dev().1), namespaces(&prod().1));
     assert_eq!(prod, BTreeSet::from(["1001".to_owned(), "1002".to_owned()]));
-    assert_eq!(dev, BTreeSet::from(["2001".to_owned(), "2002".to_owned()]));
+    let dev_ids = ["2001", "2002", "2003", "2004"].map(str::to_owned);
+    assert_eq!(dev, BTreeSet::from(dev_ids));
 }
 
 #[test]
@@ -296,7 +297,9 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
         spec.worker_names().unwrap(),
         [
             "yonedarepo-dev-superfan",
+            "yonedarepo-dev-platform-weur",
             "yonedarepo-dev-platform",
+            "yonedarepo-dev-edge",
             "yonedarepo-dev-agents-managed",
             "yonedarepo-dev-agents",
             "yonedarepo-dev-bench",
@@ -304,6 +307,7 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
             "yonedarepo-dev-region-na",
             "yonedarepo-dev-region-eu",
             "yonedarepo-dev-region-ap",
+            "yonedarepo-dev-region-sa",
             "yonedarepo-dev-deadman"
         ]
     );
@@ -313,16 +317,19 @@ fn dev_is_renamed_on_the_same_hosts_and_secrets() {
         hosts,
         [
             vec![],
+            vec![],
             vec![
                 host("api.dev.yonedarepo.com", true),
                 host("https://api.dev.yonedarepo.com/*", false)
             ],
+            vec![host("edge.dev.yonedarepo.com", true)],
             vec![host("managed.dev.yonedarepo.com", true)],
             vec![
                 host("dev.yonedarepo.com", true),
                 host("https://dev.yonedarepo.com/*", false)
             ],
             vec![host("hook-receiver.yonedaai.org", true)],
+            vec![],
             vec![],
             vec![],
             vec![],
