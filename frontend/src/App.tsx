@@ -24,6 +24,7 @@ import { HomePage } from './features/shell/HomePage';
 import type { AccountActivity } from './features/shell/homeModel';
 import { type Created, NewRepositoryDialog } from './features/shell/NewRepositoryDialog';
 import { pickerShortcut, saveRecent } from './features/shell/pickerModel';
+import { RepoPicker } from './features/shell/RepoPicker';
 import { RepositoriesPage } from './features/shell/RepositoriesPage';
 import { type PlatformRepo, repoRows } from './features/shell/repoRows';
 import { saveCollapsed, storedCollapsed } from './features/shell/theme';
@@ -35,7 +36,11 @@ import { DevicePage } from './features/source-platform/DevicePage';
 import { OrgPage } from './features/source-platform/OrgPage';
 import type { OrgSummary } from './features/source-platform/orgModel';
 import { RepoPage, type ShownRepo } from './features/source-platform/RepoPage';
-import { forgetRepoNames, rememberRepoName } from './features/source-platform/repoNames';
+import {
+  forgetRepoNames,
+  rememberRepoName,
+  repoNameOf,
+} from './features/source-platform/repoNames';
 import { managedApi } from './features/source-platform/sourceApi';
 import { isAgentsRoute, routeRepo } from './features/source-platform/sourceRoute';
 import { useSource } from './features/source-platform/useSource';
@@ -91,6 +96,7 @@ export function App() {
   const [creating, setCreating] = useState(false);
   const [adding, setAdding] = useState(false);
   const [picking, setPicking] = useState(false);
+  const [crumbPicking, setCrumbPicking] = useState(false);
   const [notice, setNotice] = useState(
     returned && 'linked' in returned
       ? `${PROVIDER_LABEL[returned.linked]} is linked: you can sign in with it now.`
@@ -279,7 +285,26 @@ export function App() {
       <main id="workspace">
         <WorkspaceHeader
           title={title}
-          crumbs={breadcrumbs(route, session.identity?.username)}
+          crumbs={breadcrumbs(
+            route,
+            session.identity?.username,
+            { owner: repo ? repoNameOf(repo)?.owner : undefined, name: row?.name ?? loaded?.name },
+            session.identity?.handle ?? undefined,
+          )}
+          switcher={
+            <RepoPicker
+              compact
+              rows={rows}
+              current={repo}
+              currentName={row?.name ?? loaded?.name}
+              loading={platform.loading}
+              error={rowsError}
+              favorites={session.authenticated ? favorites : undefined}
+              open={crumbPicking}
+              onOpenChange={setCrumbPicking}
+              navigate={navigate}
+            />
+          }
           loading={session.loading || platform.loading}
           authenticated={session.authenticated}
           identity={session.identity}
@@ -454,6 +479,7 @@ export function App() {
                 name={row?.name}
                 authenticated={session.authenticated}
                 username={session.identity?.username}
+                ownHandle={session.identity?.handle ?? undefined}
                 navigate={navigate}
                 onSignIn={() => setPanel('account')}
                 onLoaded={onLoaded}

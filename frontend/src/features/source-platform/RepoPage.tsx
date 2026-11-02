@@ -5,6 +5,7 @@
 import { useEffect } from 'react';
 import { RepoSettings } from '../repo-settings/RepoSettings';
 import { linkTo, type Navigate, showAddress } from '../shell/useRoute';
+import { ownerRepos } from '../workspace/breadcrumbs';
 import { ChangeView } from './ChangeView';
 import { CommitView } from './CommitView';
 import { ForkButton } from './ForkButton';
@@ -21,7 +22,6 @@ import { RepoCtc } from './RepoCtc';
 import { RepoFiles } from './RepoFiles';
 import { RepoInsights } from './RepoInsights';
 import { RepoNotFound, repoMissing, useRepoGone } from './RepoNotFound';
-import { RepoOverview } from './RepoOverview';
 import { RepoReleases } from './RepoReleases';
 import { RepoSearch } from './RepoSearch';
 import { isPublic, ReadOnlyContext, repoAccess, type Visibility } from './repoAccess';
@@ -30,7 +30,7 @@ import type { RepoStatus } from './repoStatus';
 import { SessionView } from './SessionView';
 import { Failure } from './SourceStatus';
 import { StatusChips } from './StatusChips';
-import { formatSourceRoute, type SourceRoute } from './sourceRoute';
+import { formatSourceRoute, type SourceRoute, tabRoute } from './sourceRoute';
 import { useHistoryFill, useImportProgress } from './useImportProgress';
 import { useSource } from './useSource';
 
@@ -44,6 +44,7 @@ export function RepoPage({
   name,
   authenticated,
   username,
+  ownHandle,
   navigate,
   onDeleted,
   onMissing,
@@ -57,6 +58,8 @@ export function RepoPage({
   authenticated: boolean;
   /** The signed-in account's username. */
   username?: string;
+  /** The signed-in account's handle: their own name leads to their Repositories page. */
+  ownHandle?: string;
   navigate: Navigate;
   onDeleted: () => void;
   /** The repository is not there for this viewer (deleted, unknown, private or not theirs). */
@@ -111,7 +114,7 @@ export function RepoPage({
             <h1>
               {handle && (
                 <>
-                  <a className="repo-owner" {...linkTo({ view: 'profile', handle }, navigate)}>
+                  <a className="repo-owner" {...linkTo(ownerRepos(handle, ownHandle), navigate)}>
                     {handle}
                   </a>
                   <span className="repo-owner-sep" aria-hidden="true">
@@ -119,7 +122,9 @@ export function RepoPage({
                   </span>
                 </>
               )}
-              {name ?? data?.name ?? repoNameOf(repo)?.name ?? repo}
+              <a className="repo-title" {...linkTo(tabRoute('overview', repo), navigate)}>
+                {name ?? data?.name ?? repoNameOf(repo)?.name ?? repo}
+              </a>
             </h1>
             {isPublic(data?.visibility) && <PublicBadge />}
             {data?.parent && (
@@ -177,7 +182,6 @@ export function RepoPage({
               {route.view === 'files' && (
                 <RepoFiles route={route} status={data} navigate={navigate} account={username} />
               )}
-              {route.view === 'overview' && <RepoOverview route={route} onNavigate={navigate} />}
               {(route.view === 'history' ||
                 route.view === 'transactions' ||
                 route.view === 'branches') && (
