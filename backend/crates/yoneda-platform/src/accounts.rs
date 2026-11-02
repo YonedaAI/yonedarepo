@@ -29,6 +29,9 @@ mod email_tests;
 mod favorites;
 #[cfg(test)]
 mod favorites_tests;
+mod github_installation;
+#[cfg(test)]
+mod github_installation_tests;
 mod handles;
 #[cfg(test)]
 mod handles_tests;
@@ -88,6 +91,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             op::AccountOp::Identity(op) => identities::handle(&db, &command, op, now),
             op::AccountOp::Avatar(op) => avatars::handle(&db, &command, op, now),
             op::AccountOp::Favorite(op) => favorites::handle(&db, &command, op, now),
+            op::AccountOp::GitHub(op) => github_installation::handle(&db, &command, op, now),
             op::AccountOp::OAuth(op) => oauth_flows::handle(&db, &command, op, now),
             op::AccountOp::Org(op) => orgs::handle(&db, &command, op, now),
             op::AccountOp::OrgMember(op) => orgs::member(&db, &command, op, now),
@@ -100,7 +104,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
     }))
 }
 /// Digest-pinned, forward-only account migrations (version, SQL), applied in order.
-pub(crate) const MIGRATIONS: [(i64, &str); 10] = [
+pub(crate) const MIGRATIONS: [(i64, &str); 11] = [
     (1, include_str!("accounts/migrations/0001_accounts.sql")),
     (
         2,
@@ -117,6 +121,10 @@ pub(crate) const MIGRATIONS: [(i64, &str); 10] = [
     ),
     (9, include_str!("accounts/migrations/0009_avatars.sql")),
     (10, include_str!("accounts/migrations/0010_favorites.sql")),
+    (
+        11,
+        include_str!("accounts/migrations/0011_github_installation.sql"),
+    ),
 ];
 fn migrate<S: SqlStore>(store: &S) -> Result<()> {
     store.query("CREATE TABLE IF NOT EXISTS workspace_migrations(version INTEGER PRIMARY KEY,digest TEXT NOT NULL)", &[])?;

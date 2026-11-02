@@ -1,13 +1,13 @@
 ---
 title: Import a repository
-summary: Bring code in from a public GitHub repository with its whole history, or from a local directory as one snapshot.
+summary: Bring code in from a GitHub repository with its whole history, or from a local directory as one snapshot.
 ---
 
 ## Two ways in
 
 | You have | Use | Brings |
 |---|---|---|
-| A public GitHub repository | `POST /api/v1/repos/import` | Every branch and tag, with every commit |
+| A GitHub repository | The web app, or `POST /api/v1/repos/import` for a public one | Every branch and tag, with every commit |
 | A local checkout or directory | `yoneda repo import <dir>` | The files at HEAD, as one snapshot |
 
 ## From GitHub
@@ -33,11 +33,11 @@ curl -H "Authorization: Bearer $YONEDA_TOKEN" \
 ```
 
 - Branches and tags all arrive at the end, so the repository is empty until `status` reads `complete`.
-- The default branch becomes `main`. Another branch called `main` is kept as `imported/main`.
+- Every branch keeps its name. `master` stays `master`, with a `main` beside it at the same commit when the repository has none.
 - **Up to 10 GB.** A larger repository fails the import, and nothing lands.
 - **After a failure,** delete the repository and add it again.
-- **Public repositories only.** One that needs credentials fails the import; there is no field for a token.
-- In the web app, choose the + button, then **Add GitHub repository**. There is no CLI command for remotes yet.
+- **Private repositories** are added from the web app: choose the + button, then **Add GitHub repository**, and connect your own GitHub account. A private repository stays private here. Organization accounts can't connect yet.
+- A private repository's address without a connection fails the import. There is no field for a token, and no CLI command for remotes yet.
 
 ## From a local directory
 

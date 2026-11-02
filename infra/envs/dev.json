@@ -126,6 +126,7 @@
       "role": "platform",
       "file": "wrangler.dev-platform.jsonc",
       "notes": [
+        "GITHUB_APP_ID, GITHUB_APP_SLUG and the optional secret GITHUB_APP_PRIVATE_KEY (the App's PEM): the GitHub App that reads private repositories for an import (worker/platform-github-app.ts). Any unset: no Connect, public imports only. App setup URL: https://dev.yonedarepo.com/github/connected.",
         "Dev platform Worker (dev.yonedarepo.com stack): the source platform, with its own",
         "Durable Object namespaces, R2,",
         "D1, queues, workflow, check containers and secrets, so it shares nothing with production",
@@ -199,6 +200,7 @@
       "optional_secrets": [
         "ANALYTICS_READ_TOKEN",
         "MANAGED_ADMIN_TOKEN",
+        "GITHUB_APP_PRIVATE_KEY",
         "NEWSLETTER_KEY"
       ],
       "health": "yonedarepo-platform",
@@ -248,6 +250,8 @@
           "REPO_STORAGE_GUARD": "on",
           "REPO_SIZE_GUARD": "on",
           "BLOB_WRITE_THROUGH": "off",
+          "GITHUB_APP_ID": "5571444",
+          "GITHUB_APP_SLUG": "yonedarepo-dev-import",
           "ACCOUNT_SEARCH": "on",
           "AUDIT_LOG": "off",
           "TRAFFIC_EVENTS": "on",

@@ -2,6 +2,7 @@
 import { LoaderCircle } from 'lucide-react';
 import { EmptyState } from '../../components/EmptyState';
 import { linkTo, type Navigate } from '../shell/useRoute';
+import { CONNECT_PATH } from './importModel';
 import { describeFailure, Loading } from './SourceStatus';
 import type { ImportProgress } from './useImportProgress';
 
@@ -34,11 +35,13 @@ export function ImportStatus({
           : "The code appears here when it's ready. The import keeps running if you leave this page."}
       </EmptyState>
     );
-  const reason = progress.reason && `Reason: ${describeFailure(progress.reason).text}`;
+  const reason =
+    !progress.connect && progress.reason && `Reason: ${describeFailure(progress.reason).text}`;
   return (
     <EmptyState role="alert" title={progress.title}>
+      {progress.connect && <a href={CONNECT_PATH}>Connect GitHub</a>}
       {reason}
-      {reason && owner && <br />}
+      {(reason || progress.connect) && owner && <br />}
       {owner && (
         <>
           To try again,{' '}

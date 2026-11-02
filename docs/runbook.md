@@ -213,6 +213,7 @@ An import is a `git clone` in an `ImportContainer`, the check image on `standard
 - **Result.** A finished import's `output` has `commit` (main), `refs`, `left_out`, `commits`, `objects` and `pack_bytes`.
 - **Cost.** One `ImportContainer` for the clone, 4 at once at most, and none of the check slots. The runtime image must hold `/clone`.
 - **Failure.** No ref moves. Delete the repository and add it again.
+- **Private repositories.** Dev only, through the GitHub App in `infra/envs/dev.json`. Set the key with `wrangler secret put GITHUB_APP_PRIVATE_KEY --name yonedarepo-dev-platform < <the .pem>`. Without it there is no Connect, and imports are of public repositories. Personal GitHub accounts only; [clone-import.md](clone-import.md) says why.
 - **Find what needs a re-import.** `cargo xtask admin imports --env dev|prod` lists every repository with what it needs, and read-only:
 
 | `needs` | Meaning |

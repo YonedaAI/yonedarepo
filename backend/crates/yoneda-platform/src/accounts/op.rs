@@ -106,6 +106,13 @@ op_names! {
     }
 }
 op_names! {
+    /// The GitHub App installation an account connected.
+    pub(crate) enum GitHubOp {
+        Get = "github_installation_get",
+        Put = "github_installation_put",
+    }
+}
+op_names! {
     /// OAuth sign-in attempts and identity claims, each on its own authority instance.
     pub(crate) enum OAuthOp {
         FlowPut = "oauth_flow_put",
@@ -219,6 +226,7 @@ pub(crate) enum AccountOp {
     Identity(IdentityOp),
     Avatar(AvatarOp),
     Favorite(FavoriteOp),
+    GitHub(GitHubOp),
     OAuth(OAuthOp),
     Org(OrgOp),
     OrgMember(OrgMemberOp),
@@ -250,6 +258,7 @@ impl AccountOp {
             Self::Identity(op) => op.name(),
             Self::Avatar(op) => op.name(),
             Self::Favorite(op) => op.name(),
+            Self::GitHub(op) => op.name(),
             Self::OAuth(op) => op.name(),
             Self::Org(op) => op.name(),
             Self::OrgMember(op) => op.name(),
@@ -273,6 +282,7 @@ impl AccountOp {
         all.extend(IdentityOp::ALL.iter().copied().map(Self::Identity));
         all.extend(AvatarOp::ALL.iter().copied().map(Self::Avatar));
         all.extend(FavoriteOp::ALL.iter().copied().map(Self::Favorite));
+        all.extend(GitHubOp::ALL.iter().copied().map(Self::GitHub));
         all.extend(OAuthOp::ALL.iter().copied().map(Self::OAuth));
         all.extend(OrgOp::ALL.iter().copied().map(Self::Org));
         all.extend(OrgMemberOp::ALL.iter().copied().map(Self::OrgMember));

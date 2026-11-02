@@ -1,4 +1,4 @@
-// Adding a public GitHub repository: what the dialog's field accepts, the request it makes
+// Adding a GitHub repository: what the dialog's field accepts, the request it makes
 // (`POST /repos/import`), and what `GET /repos/<id>/import` means on the repository's page.
 import type { Visibility } from './repoAccess';
 
@@ -47,21 +47,61 @@ export function parseGitHubRepo(input: string) {
 export const defaultRepoName = (repo: string) => repo.replace(/^\.+/, '');
 
 /** The import request's body, in `createBody`'s manner: `owner` only for an organization,
- * `branch` only when one was named (none: the remote's default), `visibility` always. */
+ * `branch` only when one was named (none: the remote's default), `visibility` always. A
+ * repository picked from a connection goes by its id, and GitHub says what it is. */
 export function importBody(
   url: string,
   name: string,
   owner: string,
   visibility: Visibility = 'private',
   branch = '',
+  picked?: GitHubRepository,
 ) {
   return {
-    url,
+    ...(picked ? { github_repository: picked.id } : { url }),
     name,
     ...(owner ? { owner } : {}),
     visibility,
     ...(branch.trim() ? { branch: branch.trim() } : {}),
   };
+}
+
+/** Where Connect starts; the Worker takes it from there. */
+export const CONNECT_PATH = '/github/connect';
+
+export type GitHubRepository = { id: number; full_name: string; private: boolean };
+
+/** What `GET /github/repositories` answers: no `available`, no Connect on this site. */
+export type GitHubConnection = {
+  available: boolean;
+  connection?: 'none' | 'lost' | 'ok';
+  login?: string;
+  repositories?: GitHubRepository[];
+  more?: boolean;
+};
+
+/** The connected repository the field names, if it names one. */
+export function pickedRepository(source: string, repositories: readonly GitHubRepository[] = []) {
+  const parsed = parseGitHubRepo(source);
+  const name = parsed && `${parsed.owner}/${parsed.repo}`.toLowerCase();
+  return repositories.find((r) => r.full_name.toLowerCase() === name);
+}
+
+/** What a trip to GitHub came back with, in `?github=`, read once. */
+export function connectMessage(result: string | null) {
+  switch (result) {
+    case null:
+    case 'connected':
+      return '';
+    case 'org':
+      return "Organizations can't connect yet. Install it on your own GitHub account.";
+    case 'other_account':
+      return "That isn't the GitHub account linked here. Install it on the linked one.";
+    case 'unavailable':
+      return "GitHub didn't answer. Try again in a moment.";
+    default:
+      return "Connecting didn't finish. Try again.";
+  }
 }
 
 /** What `GET /repos/<id>/import` answers: the import Workflow's status. */
@@ -75,12 +115,18 @@ export type ImportAnswer = {
 export function importFailure(message: string | undefined) {
   const [, code = '', reason = message ?? ''] =
     /^([A-Z][A-Z0-9_]+): (.*)$/s.exec(message ?? '') ?? [];
-  if (code === 'REMOTE_AUTH_REQUIRED')
+  if (code === 'REMOTE_AUTH_REQUIRED') {
+    const connect = reason.includes('Connect GitHub');
     return {
-      title:
-        "This repository is private, or it doesn't exist. Only public GitHub repositories can be added for now.",
+      title: connect
+        ? "This repository is private, or it doesn't exist."
+        : "This repository is private, or it doesn't exist. Only public GitHub repositories can be added for now.",
       reason,
+      connect,
     };
+  }
+  if (code === 'GITHUB_RECONNECT')
+    return { title: "This import can't read GitHub any more.", reason, connect: true };
   if (code === 'NOT_FOUND') return { title: "This repository or branch wasn't found.", reason };
   return { title: "Couldn't import this repository.", reason };
 }

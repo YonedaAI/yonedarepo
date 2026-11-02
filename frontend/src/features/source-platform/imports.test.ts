@@ -5,12 +5,14 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { ImportStatus } from './ImportStatus';
 import {
+  connectMessage,
   defaultRepoName,
   importBody,
   importFailure,
   importView,
   mayBeImport,
   parseGitHubRepo,
+  pickedRepository,
 } from './importModel';
 import type { ImportProgress } from './useImportProgress';
 
@@ -110,6 +112,15 @@ describe('importFailure', () => {
       title:
         "This repository is private, or it doesn't exist. Only public GitHub repositories can be added for now.",
       reason: 'authentication required',
+      connect: false,
+    });
+    expect(importFailure('REMOTE_AUTH_REQUIRED: 401. Connect GitHub to add one')).toMatchObject({
+      title: "This repository is private, or it doesn't exist.",
+      connect: true,
+    });
+    expect(importFailure('GITHUB_RECONNECT: Connect GitHub again')).toMatchObject({
+      title: "This import can't read GitHub any more.",
+      connect: true,
     });
     expect(importFailure('NOT_FOUND: no such remote')).toEqual({
       title: "This repository or branch wasn't found.",
@@ -210,5 +221,52 @@ describe('ImportStatus', () => {
     expect(shown({ ...failed, reason: '' })).not.toContain('Reason:');
     const html = shown({ ...failed, reason: 'D1_ERROR: internal error' });
     expect(html).not.toContain('D1_ERROR');
+  });
+});
+
+describe('a connected GitHub', () => {
+  const repositories = [
+    { id: 7, full_name: 'Ada/Secret', private: true },
+    { id: 8, full_name: 'ada/open', private: false },
+  ];
+  it('finds the repository the field names, however it is written', () => {
+    expect(pickedRepository('ada/secret', repositories)?.id).toBe(7);
+    expect(pickedRepository('https://github.com/ada/open.git', repositories)?.id).toBe(8);
+    expect(pickedRepository('ada/other', repositories)).toBeUndefined();
+    expect(pickedRepository('nonsense', repositories)).toBeUndefined();
+    expect(pickedRepository('ada/secret')).toBeUndefined();
+  });
+  it('sends a picked repository by its id and no address', () => {
+    const body = importBody(
+      'https://github.com/ada/secret.git',
+      's',
+      '',
+      'private',
+      '',
+      repositories[0],
+    );
+    expect(body).toEqual({ github_repository: 7, name: 's', visibility: 'private' });
+  });
+  it('says plainly what a trip to GitHub came back with', () => {
+    expect(connectMessage(null)).toBe('');
+    expect(connectMessage('connected')).toBe('');
+    expect(connectMessage('org')).toContain('your own GitHub account');
+    expect(connectMessage('other_account')).toContain('linked');
+    expect(connectMessage('unavailable')).toContain('Try again');
+    expect(connectMessage('state')).toContain('Try again');
+    for (const code of ['org', 'other_account', 'unavailable', 'state', 'x'])
+      expect(connectMessage(code).length).toBeLessThanOrEqual(76);
+  });
+  it('offers Connect on a failure that needs it, in place of the reason', () => {
+    const html = renderToStaticMarkup(
+      createElement(ImportStatus, {
+        repo: 'r00000000000000000001',
+        owner: true,
+        navigate: () => {},
+        progress: { phase: 'failed', title: 'No', reason: 'GitHub answered 404', connect: true },
+      }),
+    );
+    expect(html).toContain('href="/github/connect"');
+    expect(html).not.toContain('GitHub answered');
   });
 });

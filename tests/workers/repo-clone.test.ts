@@ -14,6 +14,7 @@ import { packKey, seedOf, wholeClone } from '../../cloudflare/worker/repo-pack-c
 import { reimportRepository } from '../../cloudflare/worker/repo-reimport';
 import type { Env } from '../../cloudflare/worker/types';
 import { asGit } from './git-answer';
+import { FakeGitHub, linkGitHub } from './fake-github';
 import { api, author, file, scoped, signup, usePlatformFixture } from './repo-fixture';
 import { binary, join, object, type Obj, pack, pkt, text, tree } from './synthetic-pack';
 
@@ -177,11 +178,13 @@ async function container(remote: Remote, behavior: Behavior = {}) {
 }
 
 /** What GitHub answers when asked for a head. */
-function github(answer: () => Response | null = () => null) {
+function github(answer: () => Response | null = () => null, api?: FakeGitHub) {
   const asked: { url: string; init?: RequestInit }[] = [];
   const original = globalThis.fetch;
   vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = String(input instanceof Request ? input.url : input);
+    const called = await api?.handle(url, init);
+    if (called) return called;
     if (!url.startsWith('https://github.com/')) return original(input, init);
     asked.push({ url, init });
     const body = String(init?.body ?? '');
@@ -195,7 +198,7 @@ function github(answer: () => Response | null = () => null) {
 }
 
 /** A repository waiting for its clone, as an import's request leaves it. */
-async function asked(name: string, instance: CheckInstance, extra: object = {}) {
+async function asked(name: string, instance: CheckInstance, extra: object = {}, source?: (cookie: string) => Promise<object>) {
   const owner = { cookie: await signup(`clone_${name}`) };
   let session: ReturnType<typeof cloneSession> | undefined;
   let started: any;
@@ -213,7 +216,8 @@ async function asked(name: string, instance: CheckInstance, extra: object = {}) 
   const workflows = { create: async (o: any) => ((started = o), { id: o.id }), get: async () => ({ status: async () => ({ status: 'running' }) }) };
   const env = { ...scoped, IMPORT_RUNNERS, PLATFORM_IMPORT: workflows, PACK_CACHE: 'on', PUSH_BUNDLES: 'on', ...extra } as unknown as Env;
   holder.env = env;
-  const created = await api('/repos/import', owner, { body: { name, url: URL_OF, policy: { required_checks: [], approvals: 0 } } }, env);
+  const from = source ? await source(owner.cookie) : { url: URL_OF };
+  const created = await api('/repos/import', owner, { body: { name, ...from, policy: { required_checks: [], approvals: 0 } } }, env);
   expect(created.status).toBe(200);
   const id = created.body.id as string;
   const repo = `/repos/${id}`;
@@ -615,7 +619,7 @@ describe('what reaches a clone', () => {
     const box = await container(h.remote);
     const { env, params } = await asked('credential', box.fake);
 
-    await cloneRepository(env, params, running, 's3cret');
+    await cloneRepository(env, params, running, async () => 's3cret');
 
     expect(box.starts[0].startOptions.envVars.CLONE_CREDENTIAL).toBe('s3cret');
     expect(JSON.stringify(box.asks)).not.toContain('s3cret');
@@ -624,6 +628,151 @@ describe('what reaches a clone', () => {
     const second = await asked('nocredential', clean.fake);
     await cloneRepository(second.env, second.params, running);
     expect(clean.starts[0].startOptions.envVars.CLONE_CREDENTIAL).toBeUndefined();
+  });
+
+  describe('from a connected GitHub', () => {
+    /** A repository picked from a connection, as far as the request takes it. */
+    async function picked(name: string, hub: FakeGitHub, instance: CheckInstance) {
+      const subject = 500 + hub.installations.size;
+      const installed = hub.install(subject, subject, `gh${subject}`, [{ id: 7000, full_name: 'acme/src', private: true }]);
+      const source = async (cookie: string) => {
+        await linkGitHub(hub.env(scoped), cookie, subject, installed.account.login);
+        await platformFetch(new Request('https://yoneda/api/v1/github/connect', { headers: { cookie } }), hub.env(scoped));
+        return { github_repository: 7000 };
+      };
+      return { installed, ...(await asked(name, instance, hub.env({} as Env), source)) };
+    }
+
+    const newest = (hub: FakeGitHub) => hub.minted[hub.minted.length - 1];
+
+    it('takes a token of its own, for that repository, by the instance’s environment alone', async () => {
+      const hub = await new FakeGitHub().keys();
+      const h = await history();
+      const heads = github(() => null, hub);
+      const box = await container(h.remote);
+      const { env, owner, repo, params } = await picked('picked', hub, box.fake);
+      const names: string[] = [];
+      const results: unknown[] = [];
+      const step = {
+        do: async <T>(name: string, config: unknown, work: () => Promise<T>) => {
+          names.push(name);
+          const done = await running.do(name, config, work);
+          results.push(done);
+          return done;
+        },
+      };
+      const said: string[] = [];
+      for (const level of ['log', 'info', 'warn', 'error'] as const)
+        vi.spyOn(console, level).mockImplementation((...args) => void said.push(args.join(' ')));
+
+      await cloneRepository(env, params, step);
+
+      expect(hub.minted.at(-1)?.scope).toEqual({ repository_ids: [7000], permissions: { contents: 'read' } });
+      const sent = box.starts[0].startOptions.envVars.CLONE_CREDENTIAL;
+      expect(sent).toBe(newest(hub).token);
+      const header = (heads.at(-1)?.init?.headers as any).authorization;
+      expect(atob(header.replace('Basic ', '')).split(':')[0]).toBe('x-access-token');
+      const secrets = hub.minted.map((m) => m.token);
+      const kept = JSON.stringify([params, names, results, box.asks, said]);
+      for (const secret of secrets) expect(kept).not.toContain(secret);
+      const stored = await env.OBJECTS.list({ prefix: `platform/v1/${params.repo}/import` });
+      for (const object of stored.objects) {
+        const text = await (await env.OBJECTS.get(object.key))?.text();
+        for (const secret of secrets) expect(text).not.toContain(secret);
+      }
+      expect(Object.keys(await refsOf(repo, owner, env))).toHaveLength(5);
+      expect((await api(repo, owner, {}, env)).body.visibility).toBe('private');
+    });
+
+    it('mints another when the clone starts again', async () => {
+      const hub = await new FakeGitHub().keys();
+      const h = await history();
+      github(() => null, hub);
+      const box = await container(h.remote);
+      const { env, params } = await picked('again', hub, box.fake);
+      let lost = true;
+      const step = {
+        do: async <T>(name: string, config: unknown, work: () => Promise<T>) => {
+          if (name.startsWith('commits') && lost) {
+            lost = false;
+            await box.fake.destroy();
+            throw new Error('The clone is gone');
+          }
+          return running.do(name, config, work);
+        },
+      };
+
+      await cloneRepository(env, params, step);
+
+      const [first, second] = box.starts.map((s) => s.startOptions.envVars.CLONE_CREDENTIAL);
+      expect(first).toBeTruthy();
+      expect(second).toBeTruthy();
+      expect(second).not.toBe(first);
+    });
+
+    it('says to connect again, with no container started, when the installation has gone', async () => {
+      const hub = await new FakeGitHub().keys();
+      const h = await history();
+      github(() => null, hub);
+      const box = await container(h.remote);
+      const { env, params, installed } = await picked('revoked', hub, box.fake);
+      hub.installations.delete(installed.id);
+
+      await expect(cloneRepository(env, params, running)).rejects.toThrow(/^GITHUB_RECONNECT: Connect GitHub again/);
+
+      expect(box.calls).not.toContain('start');
+    });
+
+    it('says the same when the repository was taken out of the installation mid-way', async () => {
+      const hub = await new FakeGitHub().keys();
+      const h = await history();
+      github(() => null, hub);
+      const box = await container(h.remote);
+      const { env, params, installed } = await picked('unshared', hub, box.fake);
+      const step = {
+        do: async <T>(name: string, config: unknown, work: () => Promise<T>) => {
+          if (name.startsWith('clone')) installed.repositories = [];
+          return running.do(name, config, work);
+        },
+      };
+
+      await expect(cloneRepository(env, params, step)).rejects.toThrow(/^GITHUB_RECONNECT: /);
+
+      expect(box.calls).not.toContain('start');
+    });
+
+    it('a re-import keeps its access, for that address alone', async () => {
+      const hub = await new FakeGitHub().keys();
+      const h = await history();
+      github(() => null, hub);
+      const box = await container(h.remote);
+      const { env, owner, repo, id, params } = await picked('reimported', hub, box.fake);
+      await cloneRepository(env, params, running);
+      const first = await refsOf(repo, owner, env);
+      const created: any[] = [];
+      const target = { ...env, PLATFORM_IMPORT: { create: async (o: any) => created.push(o), get: async () => ({ status: async () => ({ status: 'complete' }) }) } } as unknown as Env;
+
+      await reimportRepository(target, 'operator', id, { confirm: true });
+      expect(created[0].params.github).toEqual(params.github);
+      await cloneRepository(env, created[0].params, running);
+      expect(await refsOf(repo, owner, env)).toEqual(first);
+      expect((await api(repo, owner, {}, env)).body.visibility).toBe('private');
+
+      await reimportRepository(target, 'operator', id, { url: 'https://github.com/acme/other', confirm: true });
+      expect(created[1].params.github).toBeUndefined();
+    });
+
+    it('points a refused address to Connect, where there is one', async () => {
+      const hub = await new FakeGitHub().keys();
+      github(() => new Response('', { status: 401 }));
+      const box = await container(new Remote());
+      const { env, params } = await asked('hint', box.fake, hub.env({} as Env));
+
+      await expect(cloneRepository(env, params, running)).rejects.toThrow(/^REMOTE_AUTH_REQUIRED: .*Connect GitHub/);
+
+      const off = { ...env, GITHUB_APP_ID: undefined } as unknown as Env;
+      await expect(cloneRepository(off, params, running)).rejects.not.toThrow(/Connect GitHub/);
+    });
   });
 
   it('a check still starts with no internet', async () => {

@@ -19,7 +19,7 @@ import { SearchPage } from './features/search/SearchPage';
 import { AppRail } from './features/shell/AppRail';
 import { AppSidebar } from './features/shell/AppSidebar';
 import { GettingStarted } from './features/shell/GettingStarted';
-import { GitHubImportDialog } from './features/shell/GitHubImportDialog';
+import { backFromGitHub, GitHubImportDialog } from './features/shell/GitHubImportDialog';
 import { HomePage } from './features/shell/HomePage';
 import type { AccountActivity } from './features/shell/homeModel';
 import { type Created, NewRepositoryDialog } from './features/shell/NewRepositoryDialog';
@@ -97,7 +97,7 @@ export function App() {
     signInError && route.view !== 'settings' && route.view !== 'site' ? 'account' : null,
   );
   const [creating, setCreating] = useState(false);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState(backFromGitHub);
   const [picking, setPicking] = useState(false);
   const [crumbPicking, setCrumbPicking] = useState(false);
   const [notice, setNotice] = useState(

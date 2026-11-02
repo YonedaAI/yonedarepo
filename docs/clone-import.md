@@ -2,7 +2,7 @@
 
 An import is a `git clone`. `cloneRepository` (`cloudflare/worker/repo-clone.ts`) runs Git in an `ImportContainer` and hands what it fetched to what a push stores and records with, with no public Git endpoint in between. The result is an ordinary repository: every object in R2, every commit of every branch and tag recorded under its own id, and each ref as it stood on the remote.
 
-Public GitHub repositories only for now. A credential goes by the instance's environment alone, so private access plugs in later (see **Private repositories**).
+Public GitHub repositories, and private ones from a connected personal GitHub account (see **Private repositories**).
 
 ## Budget
 
@@ -66,14 +66,34 @@ The trunk has to exist as `main`: it is a fixed name in the code rather than a s
 
 ## Private repositories
 
-`cloneRepository(env, params, step, credential?)` takes a credential. It reaches the instance's environment for that start and Git's environment for that one command, is taken out of anything Git says, and is in no Workflow state, step name or log. The platform holds no GitHub token today, so nothing passes one yet: a caller reads it inside its own step.
+A signed-in owner connects GitHub in the import dialog, picks a repository, and gets the same clone, through a GitHub App with Contents read-only. No OAuth flow or app is added: the proof is the GitHub identity the account linked by signing in with GitHub.
+
+| Step | What happens |
+|---|---|
+| Connect | `/github/connect` sends someone with no linked GitHub to the link step. Otherwise it goes to the App's install page with a signed state. The session cookie is `SameSite=Strict` and does not come back from github.com, so the state names the account and a `Lax` cookie ties it to the browser |
+| Back | `/github/connected` trusts neither the `installation_id` nor anything else on the address. It reads `GET /app/installations/{id}` with the App's JWT, and keeps the installation only when `account.id` is the account's linked GitHub identity. The account authority stores the installation id and login, never a token |
+| Every use | The same proof again, so an undone link, a suspended or removed installation, or a changed account ends access at once |
+| Picker | `GET /installation/repositories`, 1,000 at most |
+| Import | `POST /repos/import {github_repository: <id>}`. A token limited to that id with `contents: read` is minted and dropped: a repository outside the installation mints nothing, and GitHub's answer gives its name and whether it is private. A private source imports as private, whatever was asked |
+| Clone | The Workflow's payload holds two ids. `cloneRepository` mints a token inside the step that uses it: one for the head, one per instance start. It goes by the instance's environment and Git's environment for that one command, is taken out of anything Git says, and is in no Workflow state, step name or log |
+| Re-import | Keeps the same ids for the same address. Another address drops them |
+
+**A token lasts an hour.** Only `POST /clone` uses it, and Git's requests all start in the first seconds of the clone: the refs, then one fetch whose answer is the pack. The steps after that read the instance's disk. A clone may run 60 minutes and its token is minted up to 3 minutes before, so the very longest clone's pack would still be arriving past the hour. GitHub's docs don't say whether an answer already streaming is cut off at expiry. **Not measured.** If it is, the clone fails, nothing lands and the import is run again.
+
+**An organization's installation is refused.** GitHub's docs give two ways to prove someone belongs to one, and the App has neither:
+
+| What it would take | What it proves | Cost |
+|---|---|---|
+| The App's user token: its client secret, plus "Request user authorization during installation", then `GET /user/installations` | The person can reach that installation. GitHub's documented check | A second OAuth exchange |
+| The App's organization permission Members: read, then `GET /orgs/{org}/members/{login}` | Membership, not ownership. Every organization must accept the new permission | A wider permission on the App |
 
 ## What can go wrong
 
 | Case | What happens |
 |---|---|
 | A pack over 10 GB, or more than the instance's disk holds | The import errors with `REPO_TOO_LARGE`, saying so. Nothing lands |
-| A remote that is private or gone | `REMOTE_AUTH_REQUIRED`, no container started |
+| A remote that is private or gone | `REMOTE_AUTH_REQUIRED`, no container started, and a pointer to Connect where the App is set up |
+| An installation removed or suspended, or a repository taken out of it | `GITHUB_RECONNECT`, no container started when it is known before the clone, and the page offers Connect |
 | No container free, the clone fails or times out, a stream is cut short | The import errors, saying what failed. No ref moved, and the repository is deleted and added again |
 | The instance goes between steps | The steps start again on a fresh one, once. Objects and commits are keyed by id, so what they find stored stays |
 | A step repeats | Harmless: a commit recorded and a ref at its commit stay |
