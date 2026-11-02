@@ -67,7 +67,6 @@ export function GitHubImportDialog({
   onImported: (created: Created) => Promise<void>;
 }) {
   const hint = useId();
-  const list = useId();
   const [connectResult] = useState(takeConnectResult);
   const github = useSource<GitHubConnection>('/github/repositories').data;
   const connected = github?.connection === 'ok';
@@ -83,6 +82,10 @@ export function GitHubImportDialog({
   const [error, setError] = useState('');
   const picked = pickedRepository(source, github?.repositories);
   const form = useRef<HTMLFormElement>(null);
+  const typed = source.trim().toLowerCase();
+  const matching = (github?.repositories ?? []).filter((r) =>
+    r.full_name.toLowerCase().includes(typed),
+  );
   // Choosing a repository from the list is the whole request: it starts straight away.
   const pickedId = picked?.id;
   useEffect(() => {
@@ -169,7 +172,6 @@ export function GitHubImportDialog({
             placeholder={
               connected ? 'Choose, or paste an address' : 'https://github.com/owner/repo'
             }
-            list={connected ? list : undefined}
             inputMode="url"
             spellCheck={false}
             autoCapitalize="none"
@@ -177,14 +179,17 @@ export function GitHubImportDialog({
             disabled={busy}
           />
         </label>
-        {connected && (
-          <datalist id={list}>
-            {github?.repositories?.map((r) => (
-              <option key={r.id} value={r.full_name}>
-                {r.private ? 'Private' : 'Public'}
-              </option>
+        {connected && !picked && matching.length > 0 && (
+          <ul className="github-repo-list" aria-label="Your GitHub repositories">
+            {matching.map((r) => (
+              <li key={r.id}>
+                <button type="button" disabled={busy} onClick={() => changeSource(r.full_name)}>
+                  <span>{r.full_name}</span>
+                  <small>{r.private ? 'Private' : 'Public'}</small>
+                </button>
+              </li>
             ))}
-          </datalist>
+          </ul>
         )}
         {invalid && (
           <p id={hint} role="alert" className="form-error">

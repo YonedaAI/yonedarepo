@@ -1,0 +1,34 @@
+.github-repo-list {
+  display: grid;
+  max-height: 220px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.github-repo-list button {
+  display: flex;
+  width: 100%;
+  min-height: 36px;
+  justify-content: space-between;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.github-repo-list button:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.github-repo-list span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.github-repo-list small {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
