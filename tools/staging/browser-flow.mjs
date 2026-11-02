@@ -165,9 +165,8 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
     assert.equal((await account.raw('GET', `/api/v1/repos/${id}`)).status, 404, 'Deleted repository is still served');
     m.repo_deleted = true;
   });
-  await page.getByRole('button', { name: `Switch repository (current: ${name})` }).waitFor();
-  await atRepo(page, account, id);
-  await page.getByRole('region', { name: 'Overview' }).getByText('README.md').first().waitFor();
+  await page.getByRole('complementary', { name: 'Sidebar' }).getByRole('button', { name: `Switch repository (current: ${name})` }).waitFor();
+  await atRepo(page, account, id, '/files');
   await overviewStates(page, { repo: id, shot });
   await shot('source-code');
   // The Clone menu: the SSH line exactly when the platform says Git over SSH is open.
@@ -190,7 +189,7 @@ export async function sourcePages(page, origin, account, { api, shot, cleanup },
   await page.keyboard.press('Escape');
   const tabs = page.getByRole('navigation', { name: 'Repository' });
   await tabs.getByRole('link', { name: 'Commits' }).click();
-  await page.getByRole('list', { name: 'History of main' }).getByRole('listitem').first().waitFor();
+  await page.getByRole('region', { name: /^Commits on / }).getByRole('listitem').first().waitFor();
   await shot('source-history');
   await branchesPage(page, account, id, shot, m);
   await tabs.getByRole('link', { name: 'Landings' }).click();

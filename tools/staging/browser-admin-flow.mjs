@@ -162,12 +162,12 @@ export async function deletedRepoPage(page, { origin, account, shot, cleanup }, 
   cleanup.push(async () => {
     if (!deleted) await remove();
   });
-  const rail = page.getByRole('button', { name: `Switch repository (current: ${name})` });
+  const rail = page.getByRole('complementary', { name: 'Sidebar' }).getByRole('button', { name: `Switch repository (current: ${name})` });
   await rail.waitFor();
-  await atRepo(page, account, id);
+  await atRepo(page, account, id, '/files');
   const tabs = page.getByRole('navigation', { name: 'Repository' });
   await tabs.getByRole('link', { name: 'Commits' }).click();
-  await page.getByRole('list', { name: 'History of main' }).getByRole('listitem').first().waitFor();
+  await page.getByRole('region', { name: /^Commits on / }).getByRole('listitem').first().waitFor();
   const done = await remove();
   assert.ok(done.ok, `Delete repository: ${done.status} ${done.body?.error?.code ?? ''}`);
   deleted = true;
