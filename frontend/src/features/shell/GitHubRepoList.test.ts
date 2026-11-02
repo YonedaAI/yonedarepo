@@ -4,13 +4,11 @@ import { describe, expect, it } from 'vitest';
 import { GitHubRepoList } from './GitHubRepoList';
 
 const repo = { id: 1, full_name: 'acme/app', private: true };
-const page = 'https://github.com/organizations/acme/settings/installations/7';
 const list = (props: Partial<Parameters<typeof GitHubRepoList>[0]>) =>
   renderToStaticMarkup(
     createElement(GitHubRepoList, {
       repositories: [repo],
       matching: [repo],
-      manageUrl: page,
       busy: false,
       onPick: () => {},
       onOpenGitHub: () => {},
@@ -19,9 +17,9 @@ const list = (props: Partial<Parameters<typeof GitHubRepoList>[0]>) =>
   );
 
 describe('GitHubRepoList', () => {
-  it('ends with the installation’s own page, in a new tab', () => {
+  it('ends with GitHub’s install page, for any account or organization, in a new tab', () => {
     const html = list({});
-    expect(html).toContain(`href="${page}"`);
+    expect(html).toContain('href="/github/connect?add=1"');
     expect(html).toContain('target="_blank"');
     expect(html).toContain('rel="noreferrer"');
     expect(html).toContain('Add another repository');

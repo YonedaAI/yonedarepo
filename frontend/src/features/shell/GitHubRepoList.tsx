@@ -1,13 +1,12 @@
 // The connected account's repositories in the import dialog: picking one starts its import, and
-// one already added opens it. Which repositories are listed is chosen on GitHub, so the list ends
-// with the way there.
-import type { GitHubRepository } from '../source-platform/importModel';
+// one already added opens it. Which repositories are listed is chosen on GitHub's install page, for
+// an account or an organization alike, so the list ends with the way there.
+import { ADD_CONNECTION_PATH, type GitHubRepository } from '../source-platform/importModel';
 
 export function GitHubRepoList({
   repositories,
   matching,
   addedOf = () => undefined,
-  manageUrl,
   busy,
   onPick,
   onOpen = () => {},
@@ -18,8 +17,6 @@ export function GitHubRepoList({
   matching: GitHubRepository[];
   /** The repository here that a GitHub repository is already added as. */
   addedOf?: (fullName: string) => string | undefined;
-  /** GitHub's page for the installation shown. */
-  manageUrl?: string;
   busy: boolean;
   onPick: (fullName: string) => void;
   onOpen?: (repo: string) => void;
@@ -46,15 +43,13 @@ export function GitHubRepoList({
           })}
         </ul>
       )}
-      {manageUrl && (
-        <p className="source-meta github-repo-more">
-          {repositories.length === 0 && 'No repositories shared yet. '}
-          <a href={manageUrl} target="_blank" rel="noreferrer" onClick={onOpenGitHub}>
-            Add another repository
-            <span className="sr-only"> (opens GitHub in a new tab)</span>
-          </a>
-        </p>
-      )}
+      <p className="source-meta github-repo-more">
+        {repositories.length === 0 && 'No repositories shared yet. '}
+        <a href={ADD_CONNECTION_PATH} target="_blank" rel="noreferrer" onClick={onOpenGitHub}>
+          Add another repository
+          <span className="sr-only"> (opens GitHub in a new tab)</span>
+        </a>
+      </p>
     </>
   );
 }

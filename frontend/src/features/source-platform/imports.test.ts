@@ -10,7 +10,6 @@ import {
   importBody,
   importFailure,
   importView,
-  installationLabel,
   mayBeImport,
   parseGitHubRepo,
   pickedRepository,
@@ -282,38 +281,19 @@ describe('connecting an organization', () => {
   it('says in plain words what a trip to GitHub came back with', () => {
     expect(connectMessage('requested')).toContain('owner');
     expect(connectMessage('requested')).toContain('approve');
-    expect(connectMessage('org_owner')).toContain('Only an owner');
-    expect(connectMessage('not_member')).toContain('member');
-    expect(connectMessage('org_blocked')).toContain('Third-party Access');
-    expect(connectMessage('org_denied')).toContain('confirm');
+    expect(connectMessage('not_member')).toContain("can't reach");
     expect(connectMessage('lost')).toContain('suspended');
     expect(connectMessage('org')).not.toContain("can't connect yet");
-    for (const code of [
-      'requested',
-      'org_owner',
-      'not_member',
-      'org_blocked',
-      'org_denied',
-      'lost',
-    ])
+    for (const code of ['requested', 'not_member', 'lost'])
       expect(connectMessage(code).length).toBeLessThanOrEqual(76);
   });
 
   it('asks for a picked repository from its installation', () => {
-    const picked = { id: 12, full_name: 'acme/app', private: true };
-    expect(importBody('u', 'app', '', 'private', '', picked, 7102)).toMatchObject({
+    const picked = { id: 12, full_name: 'acme/app', private: true, installation: 7102 };
+    expect(importBody('u', 'app', '', 'private', '', picked)).toMatchObject({
       github_repository: 12,
       github_installation: 7102,
     });
-    expect(importBody('u', 'app', '', 'private', '', undefined, 7102)).not.toHaveProperty(
-      'github_installation',
-    );
-  });
-
-  it('names what an installation is', () => {
-    expect(installationLabel({ id: 1, login: 'ada', type: 'User' })).toBe('ada');
-    expect(installationLabel({ id: 2, login: 'acme', type: 'Organization' })).toBe(
-      'acme (organization)',
-    );
+    expect(importBody('u', 'app', '', 'private')).not.toHaveProperty('github_installation');
   });
 });

@@ -5,8 +5,8 @@
 // one (`importCredential`), so none is in its payload, state or logs.
 
 import { NonRetryableError } from 'cloudflare:workflows';
-import { githubAppOn, repositoryAccess } from './platform-github-app';
-import { connection, personOf } from './platform-github-connect';
+import { githubAppOn, reachesRepository, repositoryAccess } from './platform-github-app';
+import { connection, linkedLogin, personOf } from './platform-github-connect';
 import { accessGone } from './platform-github-refused';
 import { githubRemote, remoteHead } from './repo-git-remote';
 import { ApiError, type Credentials, type Json } from './repo-ops';
@@ -59,6 +59,13 @@ export async function importSource(env: Env, requester: Credentials, body: Json)
     if (accessGone(e)) throw new ApiError('GITHUB_NOT_CONNECTED', RECONNECT);
     throw e;
   });
+  // On an organization, a private repository is for those GitHub counts on it.
+  if (held.type === 'Organization' && access.repository.private) {
+    const person = await linkedLogin(env, personOf(requester));
+    const reached =
+      person && (await reachesRepository(env, held.installation, access.repository, person));
+    if (!reached) throw new ApiError('FORBIDDEN', "GitHub didn't find this repository for you.");
+  }
   const url = githubRemote(`https://github.com/${access.repository.full_name}`);
   if (!url) throw new ApiError('INVALID_INPUT', 'That repository has an unusual name');
   const github: GitHubSource = { installation: held.installation, repository };

@@ -7,7 +7,7 @@ import { workspace } from '../../cloudflare/worker/workspace';
 const API = 'https://api.github.com';
 const encoder = new TextEncoder();
 
-type Installed = { id: number; html_url?: string; account: { id: number; login: string; type: string }; target_type: string; suspended_at?: string | null; repositories: Repo[] };
+type Installed = { id: number; account: { id: number; login: string; type: string }; target_type: string; suspended_at?: string | null; repositories: Repo[] };
 export type Repo = { id: number; full_name: string; private: boolean };
 
 const decode = (part: string) => atob(part.replaceAll('-', '+').replaceAll('_', '/'));
@@ -18,8 +18,10 @@ export class FakeGitHub {
   asked: string[] = [];
   /** Who is at the keyboard when the browser reaches GitHub's consent page. */
   person = { id: 0, login: '' };
-  /** What `GET /user/memberships/orgs/{org}` answers, by `login:org`; `blocked` is its 403. */
-  memberships = new Map<string, { state: string; role: string } | 'blocked'>();
+  /** Who GitHub counts on a repository, as `owner/repo:login`. */
+  collaborators = new Set<string>();
+  /** GitHub's id for each login. */
+  logins = new Map<string, number>();
   /** Every OAuth token handed out, for proving none is kept. */
   tokens: string[] = [];
   key = '';
@@ -44,10 +46,7 @@ export class FakeGitHub {
   }
 
   install(id: number, subject: number, login: string, repositories: Repo[] = [], type = 'User') {
-    const html_url = type === 'Organization'
-      ? `https://github.com/organizations/${login}/settings/installations/${id}`
-      : `https://github.com/settings/installations/${id}`;
-    const installed = { id, html_url, account: { id: subject, login, type }, target_type: type, suspended_at: null, repositories };
+    const installed = { id, account: { id: subject, login, type }, target_type: type, suspended_at: null, repositories };
     this.installations.set(id, installed);
     return installed;
   }
@@ -81,10 +80,17 @@ export class FakeGitHub {
       if (!this.tokens.includes(bearer ?? '')) return Response.json({}, { status: 401 });
       if (pathname === '/user') return Response.json({ ...this.person, name: null, avatar_url: null });
       if (pathname === '/user/emails') return Response.json([]);
-      const org = /^\/user\/memberships\/orgs\/([^/]+)$/.exec(pathname)?.[1];
-      const held = org && this.memberships.get(`${this.person.login}:${org}`);
-      if (held === 'blocked') return Response.json({ message: 'Forbidden' }, { status: 403 });
-      return held ? Response.json(held) : none();
+      return none();
+    }
+    const on = /^\/repos\/([^/]+\/[^/]+)\/collaborators\/([^/]+)$/.exec(pathname);
+    const named = /^\/users\/([^/]+)$/.exec(pathname)?.[1];
+    if (on || named) {
+      const token = String((init?.headers as any)?.authorization).replace('Bearer ', '');
+      const grant = this.minted.find((m) => m.token === token);
+      if (!grant) return Response.json({}, { status: 401 });
+      if (on) return this.collaborators.has(`${on[1]}:${on[2]}`) ? new Response(null, { status: 204 }) : none();
+      const id = this.logins.get(named as string);
+      return id ? Response.json({ id, login: named }) : none();
     }
     if (pathname === '/installation/repositories') {
       const token = String((init?.headers as any)?.authorization).replace('Bearer ', '');
@@ -96,6 +102,7 @@ export class FakeGitHub {
       return Response.json({ total_count: all.length, repositories: all.slice((page - 1) * size, page * size) });
     }
     if (!(await this.#jwt(init))) return Response.json({ message: 'Bad credentials' }, { status: 401 });
+    if (pathname === '/app/installations') return Response.json([...this.installations.values()]);
     const user = /^\/users\/([^/]+)\/installation$/.exec(pathname)?.[1];
     if (user) return Response.json([...this.installations.values()].find((i) => i.account.login === user) ?? null, { status: [...this.installations.values()].some((i) => i.account.login === user) ? 200 : 404 });
     const [, id, tokens] = /^\/app\/installations\/(\d+)(\/access_tokens)?$/.exec(pathname) ?? [];

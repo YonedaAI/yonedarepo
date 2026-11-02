@@ -5,7 +5,6 @@
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import {
-  ADD_CONNECTION_PATH,
   addedRepo,
   badAddress,
   CONNECT_PATH,
@@ -14,7 +13,6 @@ import {
   type GitHubConnection,
   IMPORT_HINT,
   importBody,
-  installationLabel,
   keepPending,
   parseGitHubRepo,
   pickedRepository,
@@ -77,17 +75,13 @@ export function GitHubImportDialog({
 }) {
   const hint = useId();
   const [connectResult] = useState(takeConnectResult);
-  const [from, setFrom] = useState<number>();
   // A public address needs nothing from GitHub, so the dialog asks it nothing.
-  const listing = useSource<GitHubConnection>(
-    publicAddress ? null : `/github/repositories${from ? `?installation=${from}` : ''}`,
-  );
+  const listing = useSource<GitHubConnection>(publicAddress ? null : '/github/repositories');
   // A failed refetch keeps the list: it says nothing about the connection.
   const lastListing = useRef<GitHubConnection | undefined>(undefined);
   if (listing.data) lastListing.current = listing.data;
   const github = listing.data ?? lastListing.current;
   const connected = github?.connection === 'ok';
-  const installations = github?.installations ?? [];
   const [source, setSource] = useState(takePending);
   const [invalid, setInvalid] = useState(false);
   const [name, setName] = useState(() => {
@@ -163,15 +157,7 @@ export function GitHubImportDialog({
     setError('');
     try {
       const created = await requestImport(
-        importBody(
-          parsed.url,
-          name.trim(),
-          owner,
-          visibility,
-          branch,
-          picked,
-          github?.installation,
-        ),
+        importBody(parsed.url, name.trim(), owner, visibility, branch, picked),
       );
       await onImported({ repo: created.id, owner });
     } catch (e) {
@@ -203,7 +189,6 @@ export function GitHubImportDialog({
             </a>
           )}
           {github?.available && !connected && ' to add a private repository.'}
-          {connected && <a href={ADD_CONNECTION_PATH}>Add an organization</a>}
         </p>
         {connectResult && connectMessage(connectResult) && (
           // GitHub waiting on an owner is news, not a failure.
@@ -221,25 +206,6 @@ export function GitHubImportDialog({
           disabled={busy}
           onOwner={setOwner}
         />
-        {installations.length > 1 && (
-          <label>
-            GitHub account
-            <select
-              value={github?.installation}
-              onChange={(event) => {
-                lastListing.current = undefined;
-                setFrom(Number(event.target.value));
-              }}
-              disabled={busy}
-            >
-              {installations.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {installationLabel(i)}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
         <label>
           GitHub repository
           <input
@@ -264,7 +230,6 @@ export function GitHubImportDialog({
           <GitHubRepoList
             repositories={github?.repositories ?? []}
             matching={matching}
-            manageUrl={github?.manage_url}
             addedOf={addedOf}
             busy={busy}
             onPick={changeSource}
