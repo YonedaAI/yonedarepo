@@ -1,6 +1,6 @@
 // "Add GitHub repository": imports a GitHub repository as a new repository, in the manner of
 // the New repository dialog. A connected account's repositories are offered in the same field,
-// as it holds an address too. The import runs in the background, so what can only be known
+// as it holds an address too. "Add public repository" is the address alone. The import runs in the background, so what can only be known
 // later (no such repository, a private one) is the new repository's page to say.
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
@@ -77,8 +77,9 @@ export function GitHubImportDialog({
   const hint = useId();
   const [connectResult] = useState(takeConnectResult);
   const [from, setFrom] = useState<number>();
+  // A public address needs nothing from GitHub, so the dialog asks it nothing.
   const listing = useSource<GitHubConnection>(
-    `/github/repositories${from ? `?installation=${from}` : ''}`,
+    publicAddress ? null : `/github/repositories${from ? `?installation=${from}` : ''}`,
   );
   // A failed refetch keeps the list: it says nothing about the connection.
   const lastListing = useRef<GitHubConnection | undefined>(undefined);
@@ -184,7 +185,7 @@ export function GitHubImportDialog({
   }
   return (
     <Dialog
-      title="Add GitHub repository"
+      title={publicAddress ? 'Add public repository' : 'Add GitHub repository'}
       onClose={onClose}
       locked={busy}
       initialFocus='input[name="url"]'

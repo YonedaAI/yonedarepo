@@ -61,6 +61,12 @@ describe('GitHubImportDialog', () => {
     expect(fromGitHub).not.toContain('Branch');
     expect(fromGitHub).not.toContain('Add repository<');
   });
+  it('names the public dialog for what it does, with nothing about connecting', () => {
+    expect(html).toContain('Add public repository');
+    expect(html).not.toContain('Add GitHub repository');
+    expect(html).not.toContain('Add an organization');
+    expect(html).toContain('placeholder="https://github.com/owner/repo"');
+  });
   it('offers the owners the create dialog does', () => {
     expect(html).toContain('<select name="owner"');
     expect(html).toContain('acme');
