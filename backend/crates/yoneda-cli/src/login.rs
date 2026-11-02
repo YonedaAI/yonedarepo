@@ -10,7 +10,10 @@ use crate::{human, note, output};
 use serde_json::{Value, json};
 use std::time::Duration;
 
+mod logout;
 mod prompt;
+
+pub use logout::logout;
 
 /// What `POST /device/code` returns.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -276,22 +279,6 @@ pub async fn login(
         agent: grant.agent,
         account: grant.account,
         expires_at: grant.expires_at,
-        credentials: path.display().to_string(),
-    });
-    Ok(())
-}
-
-/// `yoneda logout`, or `--agent`: removes that one store and leaves any other.
-pub fn logout(origin: Option<&str>, agent: Option<String>) -> Result<()> {
-    let path = credentials::path_for(agent.or_else(credentials::env_agent).as_deref())?;
-    let removed = credentials::remove(&path, origin)?;
-    if removed {
-        human!("Removed the stored token ({})", path.display());
-    } else {
-        human!("No stored token to remove");
-    }
-    output::emit(&output::Logout {
-        removed,
         credentials: path.display().to_string(),
     });
     Ok(())

@@ -146,6 +146,7 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
     assert_eq!(
         migrations,
         [
+            "yonedarepo-dev-platform-index-weur",
             "yonedarepo-dev-platform-index",
             "yonedarepo-dev-managed-revenue"
         ]
@@ -176,12 +177,13 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
             Step::Secrets { worker: 2 },
             Step::Health { worker: 2 },
             d(3),
-            Step::Secrets { worker: 3 },
             Step::Health { worker: 3 },
             d(4),
             Step::Secrets { worker: 4 },
+            Step::Health { worker: 4 },
             d(5),
             Step::Secrets { worker: 5 },
+            Step::Health { worker: 5 },
             d(6),
             Step::Secrets { worker: 6 },
             d(7),
@@ -189,8 +191,14 @@ fn real_runs_build_migrate_then_deploy_verify_in_cutover_order() {
             d(8),
             Step::Secrets { worker: 8 },
             d(9),
+            Step::Secrets { worker: 9 },
+            d(10),
+            Step::Secrets { worker: 10 },
+            d(11),
+            Step::Secrets { worker: 11 },
+            d(12),
         ],
-        "superfan (no /health), platform, agents-managed (optional secrets), agents, bench, bench2 and the regional clients (BENCH_KEY, no /health), deadman (no secrets, no /health)"
+        "superfan (no /health), the cell, platform, edge (no secrets), agents-managed (optional secrets), agents, bench, bench2 and the regional clients (BENCH_KEY, no /health), deadman (no secrets, no /health)"
     );
     assert!(
         !plan.iter().any(|s| matches!(s, Step::ActiveGate { .. })),
@@ -912,6 +920,10 @@ fn each_d1_database_migrates_under_its_own_workers_config() {
     assert_eq!(
         migrations,
         [
+            (
+                "yonedarepo-dev-platform-index-weur",
+                "cloudflare/wrangler.dev-platform-weur.jsonc"
+            ),
             (
                 "yonedarepo-dev-platform-index",
                 "cloudflare/wrangler.dev-platform.jsonc"

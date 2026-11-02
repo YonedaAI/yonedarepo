@@ -108,10 +108,9 @@ export function AgentContracts({ repo, navigate }: { repo: string; navigate: Nav
     );
   return (
     <section aria-labelledby="contracts-heading">
-      <h2 id="contracts-heading">Contracts</h2>
-      <p className="agent-subtitle">
-        Short notes on functions and types that agents read before changing them.
-      </p>
+      <h2 id="contracts-heading" className="sr-only">
+        Contracts
+      </h2>
       <ul className="agent-contracts" aria-label="Contracts">
         {groupContracts(records).map((g) => (
           <ContractRow key={`${g.path}:${g.symbol}`} repo={repo} group={g} navigate={navigate} />

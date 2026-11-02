@@ -12,8 +12,8 @@ export default defineConfig({
         name: 'yoneda-test',
         compatibilityDate: '2026-10-07',
         compatibilityFlags: ['nodejs_compat'],
-        r2Buckets: ['OBJECTS'],
-        d1Databases: ['INDEX'],
+        r2Buckets: ['OBJECTS', 'OBJECTS_WEUR'],
+        d1Databases: ['INDEX', 'INDEX_WEUR'],
         bindings: {
           OWNER_TOKEN: 'local-test-owner',
         },

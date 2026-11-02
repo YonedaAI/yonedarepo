@@ -256,7 +256,7 @@ describe('a connected GitHub', () => {
   it('says plainly what a trip to GitHub came back with', () => {
     expect(connectMessage(null)).toBe('');
     expect(connectMessage('connected')).toBe('');
-    expect(connectMessage('org')).toContain('your own GitHub account');
+    expect(connectMessage('org')).toContain('personal accounts and organizations');
     expect(connectMessage('other_account')).toContain('linked');
     expect(connectMessage('unavailable')).toContain('Try again');
     expect(connectMessage('state')).toContain('Try again');
@@ -274,5 +274,26 @@ describe('a connected GitHub', () => {
     );
     expect(html).toContain('href="/github/connect"');
     expect(html).not.toContain('GitHub answered');
+  });
+});
+
+describe('connecting an organization', () => {
+  it('says in plain words what a trip to GitHub came back with', () => {
+    expect(connectMessage('requested')).toContain('owner');
+    expect(connectMessage('requested')).toContain('approve');
+    expect(connectMessage('not_member')).toContain("can't reach");
+    expect(connectMessage('lost')).toContain('suspended');
+    expect(connectMessage('org')).not.toContain("can't connect yet");
+    for (const code of ['requested', 'not_member', 'lost'])
+      expect(connectMessage(code).length).toBeLessThanOrEqual(76);
+  });
+
+  it('asks for a picked repository from its installation', () => {
+    const picked = { id: 12, full_name: 'acme/app', private: true, installation: 7102 };
+    expect(importBody('u', 'app', '', 'private', '', picked)).toMatchObject({
+      github_repository: 12,
+      github_installation: 7102,
+    });
+    expect(importBody('u', 'app', '', 'private')).not.toHaveProperty('github_installation');
   });
 });

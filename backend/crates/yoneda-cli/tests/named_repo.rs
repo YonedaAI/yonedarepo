@@ -2,7 +2,7 @@
 //! `yoneda clone` prints what Git prints and lands in `./<name>`, also for an empty repository;
 //! `yoneda` works inside any clone by name; `yoneda repo remote add` points a project at one.
 use serde_json::{Value, json};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -12,8 +12,29 @@ const OTHER: &str = "rfedcba9876543210fedc";
 
 type TestResult<T = ()> = Result<T, String>;
 
-fn answer(path: &str) -> (&'static str, Value) {
-    let refs = json!({ "version": 0, "refs": {} });
+/// A commit on a branch of `OTHER`, for a push that deletes it.
+const DOOMED: &str = "cccccccccccccccccccccccccccccccccccccccc";
+
+fn answer(method: &str, path: &str, body: &str) -> (&'static str, Value) {
+    if method == "DELETE" && path == "/api/v1/device/token" {
+        return ("200 OK", json!({ "revoked": true }));
+    }
+    if path.ends_with("/refs/batch") {
+        // What a delete must send: the branch, no new commit, and what it expects to find.
+        let updates = serde_json::from_str::<Value>(body).unwrap_or_default();
+        let wanted = json!([{ "ref": "refs/heads/doomed", "commit": null, "expected": DOOMED }]);
+        return if updates["updates"] == wanted {
+            ("200 OK", json!({ "version": 2, "refs": {} }))
+        } else {
+            let error = json!({ "code": "INVALID_INPUT", "message": updates.to_string() });
+            ("400 Bad Request", json!({ "error": error }))
+        };
+    }
+    let refs = if path.contains(OTHER) {
+        json!({ "version": 1, "refs": { "refs/heads/doomed": DOOMED } })
+    } else {
+        json!({ "version": 0, "refs": {} })
+    };
     let status = json!({ "name": "empty", "visibility": "private", "version": 0, "refs": [] });
     match path {
         "/api/v1/resolve/ada/empty" => ("200 OK", json!({ "id": EMPTY })),
@@ -31,15 +52,24 @@ fn serve(mut stream: TcpStream) -> std::io::Result<()> {
     let mut reader = BufReader::new(stream.try_clone()?);
     let mut first = String::new();
     reader.read_line(&mut first)?;
+    let mut length = 0usize;
     loop {
         let mut header = String::new();
         reader.read_line(&mut header)?;
         if header.trim().is_empty() {
             break;
         }
+        if let Some(value) = header.to_ascii_lowercase().strip_prefix("content-length:") {
+            length = value.trim().parse().unwrap_or(0);
+        }
     }
-    let target = first.split_whitespace().nth(1).unwrap_or_default();
-    let (status, body) = answer(target.split('?').next().unwrap_or_default());
+    let mut sent = vec![0u8; length];
+    reader.read_exact(&mut sent)?;
+    let mut line = first.split_whitespace();
+    let method = line.next().unwrap_or_default();
+    let target = line.next().unwrap_or_default();
+    let path = target.split('?').next().unwrap_or_default();
+    let (status, body) = answer(method, path, &String::from_utf8_lossy(&sent));
     let text = body.to_string();
     write!(
         stream,
@@ -183,6 +213,16 @@ fn yoneda_works_inside_a_clone_by_name() -> TestResult {
 }
 
 #[test]
+fn clone_by_id_lands_in_the_repository_name_too() -> TestResult {
+    let w = World::new()?;
+    let out = w.yoneda(&w.work(), &["clone", EMPTY])?;
+    ensure(out.status.success(), said(&out))?;
+    ensure(said(&out).contains("Cloning into 'empty'..."), said(&out))?;
+    ensure(w.work().join("empty/.git").exists(), "not in ./empty")?;
+    ensure(!w.work().join(EMPTY).exists(), "a folder named by the id")
+}
+
+#[test]
 fn clone_refuses_what_is_neither_a_name_nor_an_id() -> TestResult {
     let w = World::new()?;
     let bare = w.yoneda(&w.work(), &["clone", "empty"])?;
@@ -248,6 +288,78 @@ fn repo_remote_add_refuses_an_unknown_repository_and_a_plain_folder() -> TestRes
     let outside = w.yoneda(&w.work(), &["repo", "remote", "add", "origin", "ada/empty"])?;
     ensure(!outside.status.success(), said(&outside))?;
     ensure(said(&outside).contains("Git repository"), said(&outside))
+}
+
+#[test]
+fn git_push_delete_removes_a_branch_and_refuses_one_that_is_not_there() -> TestResult {
+    let w = World::new()?;
+    let dir = w.project()?;
+    let url = format!("yoneda::{}/ada/other", w.origin);
+    w.git(&dir, &["remote", "add", "origin", &url])?;
+    let gone = w.command("git", &dir, &["push", "origin", "--delete", "doomed"])?;
+    ensure(gone.status.success(), said(&gone))?;
+    let missing = w.command("git", &dir, &["push", "origin", "--delete", "nobody"])?;
+    ensure(!missing.status.success(), said(&missing))
+}
+
+#[test]
+fn version_prints_the_version() -> TestResult {
+    let w = World::new()?;
+    let wanted = format!("yoneda {}\n", env!("CARGO_PKG_VERSION"));
+    for flag in ["--version", "-V", "version"] {
+        let out = w.yoneda(&w.work(), &[flag])?;
+        ensure(out.status.success(), said(&out))?;
+        ensure(said(&out) == wanted, format!("{flag}: {}", said(&out)))?;
+    }
+    Ok(())
+}
+
+#[test]
+fn a_usage_error_is_one_line_and_a_hint() -> TestResult {
+    let w = World::new()?;
+    for args in [
+        &["frobnicate"][..],
+        &["repo", "list", "--nope"],
+        &["repo"],
+        &["token", "bogus"],
+    ] {
+        let out = w.yoneda(&w.work(), args)?;
+        ensure(out.status.code() == Some(64), said(&out))?;
+        let text = said(&out);
+        let lines: Vec<&str> = text.lines().collect();
+        ensure(lines.len() == 2, format!("{args:?}: {text}"))?;
+        ensure(lines[0].starts_with("yoneda: "), text.clone())?;
+        ensure(
+            lines[1] == "Run `yoneda help` to see the commands.",
+            text.clone(),
+        )?;
+    }
+    Ok(())
+}
+
+#[test]
+fn logout_ends_the_token_on_the_platform_and_says_so() -> TestResult {
+    let w = World::new()?;
+    let out = w.yoneda(&w.work(), &["logout", "--json"])?;
+    ensure(out.status.success(), said(&out))?;
+    let report: Value = serde_json::from_slice(&out.stdout).map_err(|e| e.to_string())?;
+    ensure(report["data"]["removed"] == true, said(&out))?;
+    ensure(report["data"]["revoked"] == true, said(&out))?;
+    let stored = w.root.join("config/yoneda/credentials");
+    ensure(!stored.exists(), "the stored token stayed")
+}
+
+#[test]
+fn logout_with_the_platform_gone_still_forgets_the_token_and_says_it_is_live() -> TestResult {
+    let w = World::new()?;
+    let stored = w.root.join("config/yoneda/credentials");
+    let gone = json!({ "origin": "http://127.0.0.1:9", "token": "ypat_fixture" }).to_string();
+    std::fs::write(&stored, gone).map_err(|e| e.to_string())?;
+    let out = w.yoneda(&w.work(), &["logout"])?;
+    ensure(out.status.success(), said(&out))?;
+    ensure(!stored.exists(), "the stored token stayed")?;
+    ensure(said(&out).contains("still live"), said(&out))?;
+    ensure(said(&out).contains("Signed-in CLIs"), said(&out))
 }
 
 #[test]

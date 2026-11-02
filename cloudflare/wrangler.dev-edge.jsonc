@@ -1,0 +1,51 @@
+// Generated from infra/envs/dev.json by `cargo xtask infra up`; edit the spec, not this file.
+// Dev edge Worker (worker/edge-index.ts, docs/global-scale-plan.md, cells as built): unpinned, so it runs where a request arrives, and it passes every request to the cell it belongs in over a service binding.
+// It holds no data. WORKSPACES is read only to find a readable name's repository. On edge.dev.yonedarepo.com until it has passed the kit there; api.dev.yonedarepo.com moves to it last (R10).
+{
+  "$schema": "../node_modules/wrangler/config-schema.json",
+  "account_id": "f011d0ee02b23cad26b4b38151b204ad",
+  "compatibility_date": "2026-10-07",
+  "compatibility_flags": [
+    "nodejs_compat"
+  ],
+  "durable_objects": {
+    "bindings": [
+      {
+        "class_name": "WorkspaceAuthority",
+        "name": "WORKSPACES",
+        "script_name": "yonedarepo-dev-platform"
+      }
+    ]
+  },
+  "main": "worker/edge-index.ts",
+  "name": "yonedarepo-dev-edge",
+  "observability": {
+    "enabled": true,
+    "traces": {
+      "enabled": false,
+      "head_sampling_rate": 0.01
+    }
+  },
+  "preview_urls": false,
+  "routes": [
+    {
+      "custom_domain": true,
+      "pattern": "edge.dev.yonedarepo.com"
+    }
+  ],
+  "services": [
+    {
+      "binding": "PLATFORM",
+      "service": "yonedarepo-dev-platform"
+    }
+  ],
+  "tail_consumers": [
+    {
+      "service": "yonedarepo-dev-superfan"
+    }
+  ],
+  "vars": {
+    "CELLS": "on"
+  },
+  "workers_dev": true
+}

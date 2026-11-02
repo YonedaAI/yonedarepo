@@ -19,6 +19,7 @@ import { BillingSettings } from './BillingSettings';
 import { DeleteAccount } from './DeleteAccount';
 import { EmailSettings } from './EmailSettings';
 import { HandleRow } from './HandleSettings';
+import { NameRow } from './NameRow';
 import { RecoverySettings } from './RecoverySettings';
 import { SignInMethods } from './SignInMethods';
 import { ACCOUNT_SECTION_TITLES, type AccountSection, formatSettingsRoute } from './settingsRoute';
@@ -37,7 +38,7 @@ interface Props {
   /** A new handle for the signed-in account: the shell reads the session again. */
   onHandle?: (handle: string) => void;
   /** A new picture for the signed-in account (the shell's copy, so the menu follows it). */
-  onAvatar?: (picture: Pick<AccountIdentity, 'avatar_url' | 'avatar_source'>) => void;
+  onIdentity?: (change: Partial<AccountIdentity>) => void;
   /** A repository came back: the shell's lists follow. */
   onRestored?: () => void;
 }
@@ -48,13 +49,18 @@ const BILLING = { view: 'settings', section: 'billing' } as const;
 const NoAccount = ({ loading }: { loading?: boolean }) =>
   loading ? <Loading what="your account" /> : <p className="source-meta">Sign in to see it.</p>;
 
-function General({ identity, loading, onAvatar, onHandle, navigate }: Props) {
+function General({ identity, loading, onIdentity, onHandle, navigate }: Props) {
   return (
     <>
       <SettingsSection id="profile" title="Profile">
         {identity ? (
           <>
-            <AvatarSettings identity={identity} onChange={onAvatar} />
+            <AvatarSettings identity={identity} onChange={onIdentity} />
+            <NameRow
+              key={identity.display_name}
+              identity={identity}
+              onChange={(display_name) => onIdentity?.({ display_name })}
+            />
             <HandleRow identity={identity} navigate={navigate} onChange={onHandle ?? (() => {})} />
           </>
         ) : (

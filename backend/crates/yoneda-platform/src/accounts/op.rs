@@ -1,4 +1,5 @@
 //! The account authority's commands, by family. Each family's handler matches its own enum.
+pub(crate) use super::op_profile::{AvatarOp, FavoriteOp, GitHubOp, NameOp};
 use crate::ops::op_names;
 use crate::storage::string;
 use serde::Deserialize;
@@ -25,6 +26,8 @@ op_names! {
         Summary = "account_summary",
         Suspend = "account_suspend",
         Unsuspend = "account_unsuspend",
+        Place = "account_place",
+        PlaceNote = "account_place_note",
     }
 }
 op_names! {
@@ -89,35 +92,11 @@ op_names! {
     }
 }
 op_names! {
-    /// The account's picture: its source, what to serve, an upload and its removal.
-    pub(crate) enum AvatarOp {
-        Get = "avatar_get",
-        Serve = "avatar_serve",
-        Upload = "avatar_upload",
-        Remove = "avatar_remove",
-    }
-}
-op_names! {
-    /// The repositories the account keeps at the top of its picker.
-    pub(crate) enum FavoriteOp {
-        List = "favorite_list",
-        Put = "favorite_put",
-        Remove = "favorite_remove",
-    }
-}
-op_names! {
     /// Deleting an account (`closure`).
     pub(crate) enum ClosureOp {
         Plan = "account_closure_plan",
         EndCredentials = "account_credentials_end",
         Close = "account_close",
-    }
-}
-op_names! {
-    /// The GitHub App installation an account connected.
-    pub(crate) enum GitHubOp {
-        Get = "github_installation_get",
-        Put = "github_installation_put",
     }
 }
 op_names! {
@@ -233,6 +212,7 @@ pub(crate) enum AccountOp {
     Device(DeviceOp),
     Identity(IdentityOp),
     Avatar(AvatarOp),
+    Name(NameOp),
     Favorite(FavoriteOp),
     GitHub(GitHubOp),
     Closure(ClosureOp),
@@ -266,6 +246,7 @@ impl AccountOp {
             Self::Device(op) => op.name(),
             Self::Identity(op) => op.name(),
             Self::Avatar(op) => op.name(),
+            Self::Name(op) => op.name(),
             Self::Favorite(op) => op.name(),
             Self::GitHub(op) => op.name(),
             Self::Closure(op) => op.name(),
@@ -291,6 +272,7 @@ impl AccountOp {
         all.extend(DeviceOp::ALL.iter().copied().map(Self::Device));
         all.extend(IdentityOp::ALL.iter().copied().map(Self::Identity));
         all.extend(AvatarOp::ALL.iter().copied().map(Self::Avatar));
+        all.extend(NameOp::ALL.iter().copied().map(Self::Name));
         all.extend(FavoriteOp::ALL.iter().copied().map(Self::Favorite));
         all.extend(GitHubOp::ALL.iter().copied().map(Self::GitHub));
         all.extend(ClosureOp::ALL.iter().copied().map(Self::Closure));

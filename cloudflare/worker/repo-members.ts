@@ -5,6 +5,7 @@
 // name gets nothing), keeps the D1 membership index that lists shared repositories, and
 // marks the published head stale so a change of access reaches stateless reads at once.
 import { ACCOUNT_IDENTIFIER_HELP, normalizeAccountIdentifier } from '../../shared/account';
+import { noteOwnerCell } from './account-place';
 import { teamKey } from './platform-org-access';
 import { audited } from './repo-audit';
 import { refreshHead } from './repo-head';
@@ -56,6 +57,7 @@ export const memberOperations = {
         ),
       ),
     ]);
+    await noteOwnerCell(ctx.env, team ? team[1] : account);
     await refreshHead(ctx.env, ctx.repo, true);
     return put;
   },

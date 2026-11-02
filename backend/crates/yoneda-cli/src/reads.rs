@@ -25,11 +25,31 @@ fn first_line(text: &str) -> &str {
     text.lines().next().unwrap_or_default()
 }
 
-fn print_json(value: &Value) {
-    human!(
-        "{}",
-        serde_json::to_string_pretty(value).unwrap_or_else(|_| value.to_string())
-    );
+/// What to say for a file with no symbols to list.
+fn no_symbols(symbols: &Value, path: &str) -> Option<String> {
+    if symbols["symbols"].as_array().is_some_and(|s| !s.is_empty()) {
+        return None;
+    }
+    Some(if symbols["supported"] == false {
+        format!("{path}: this language isn't parsed")
+    } else {
+        format!("{path} has no symbols")
+    })
+}
+
+/// A file's lines, each with the commit that last changed it and its number.
+fn print_blame(blame: &Value) {
+    let lines = blame["lines"].as_array().cloned().unwrap_or_default();
+    let width = lines.last().map_or(1, |l| l["line"].to_string().len());
+    for line in &lines {
+        let commit = line["commit"].as_str().unwrap_or("?");
+        human!(
+            "{} {:>width$} {}",
+            commit.get(..12).unwrap_or(commit),
+            line["line"].to_string(),
+            line["text"].as_str().unwrap_or_default()
+        );
+    }
 }
 
 /// One line per search hit: `path:line: text` where the platform names them.
@@ -216,7 +236,7 @@ pub async fn read(t: &Resolved, command: ReadCommand) -> Result<()> {
         } => {
             let q = query(&[("path", Some(path)), ("ref", branch), ("at", at(version))]);
             let blame = t.api.get(&format!("/blame{q}")).await?;
-            print_json(&blame);
+            print_blame(&blame);
             output::emit(&output::Blame { blame });
         }
         ReadCommand::Diff {
@@ -238,7 +258,14 @@ pub async fn read(t: &Resolved, command: ReadCommand) -> Result<()> {
                 let status = change["status"].as_str().unwrap_or("M");
                 let patch = change["patch"].as_str();
                 match patch {
-                    Some(patch) if !output::json() => print!("{patch}"),
+                    Some(patch) if !output::json() => {
+                        // The platform's patch is hunks alone, which say nothing of the file.
+                        if !patch.starts_with("--- ") {
+                            let path = change["path"].as_str().unwrap_or("?");
+                            println!("--- a/{path}\n+++ b/{path}");
+                        }
+                        print!("{patch}");
+                    }
                     Some(_) => {}
                     None => human!("{status} {}", change["path"].as_str().unwrap_or("?")),
                 }
@@ -251,9 +278,20 @@ pub async fn read(t: &Resolved, command: ReadCommand) -> Result<()> {
             output::emit(&output::Diff { changes });
         }
         ReadCommand::Symbols { path, at: version } => {
-            let q = query(&[("path", Some(path)), ("at", at(version))]);
+            let q = query(&[("path", Some(path.clone())), ("at", at(version))]);
             let symbols = t.api.get(&format!("/symbols{q}")).await?;
-            print_json(&symbols);
+            if let Some(line) = no_symbols(&symbols, &path) {
+                human!("{line}");
+            }
+            for symbol in symbols["symbols"].as_array().into_iter().flatten() {
+                human!(
+                    "{} {} {}-{}",
+                    symbol["kind"].as_str().unwrap_or("symbol"),
+                    symbol["symbol_path"].as_str().unwrap_or("?"),
+                    symbol["start_line"],
+                    symbol["end_line"]
+                );
+            }
             output::emit(&output::Symbols { symbols });
         }
     }
@@ -263,6 +301,23 @@ pub async fn read(t: &Resolved, command: ReadCommand) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_file_with_no_symbols_says_why() {
+        let path = "src/a.py";
+        let unparsed = serde_json::json!({ "supported": false, "symbols": [] });
+        assert_eq!(
+            no_symbols(&unparsed, path).as_deref(),
+            Some("src/a.py: this language isn't parsed")
+        );
+        let empty = serde_json::json!({ "supported": true, "symbols": [] });
+        assert_eq!(
+            no_symbols(&empty, path).as_deref(),
+            Some("src/a.py has no symbols")
+        );
+        let some = serde_json::json!({ "symbols": [{ "name": "main" }] });
+        assert_eq!(no_symbols(&some, path), None);
+    }
 
     #[test]
     fn builds_queries_from_set_parameters() {

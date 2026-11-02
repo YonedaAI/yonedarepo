@@ -35,7 +35,7 @@ export function GettingStarted({
   };
   const where: Partial<Record<StepId, SourceRoute>> = repo
     ? {
-        pushed: { view: 'files', repo, path: '', ref: 'main' },
+        pushed: { view: 'overview', repo },
         session: { view: 'agents', repo, section: 'sessions' },
         landed: { view: 'changes', repo },
       }

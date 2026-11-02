@@ -1,22 +1,5 @@
 {
   "$defs": {
-    "AttemptCommit": {
-      "additionalProperties": false,
-      "description": "A local commit contributed through an MCP attempt.",
-      "properties": {
-        "commit": {
-          "type": "string"
-        },
-        "local": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "local",
-        "commit"
-      ],
-      "type": "object"
-    },
     "SyncLanding": {
       "additionalProperties": false,
       "description": "The landing `sync --land` made.",
@@ -103,36 +86,6 @@
             "adopted",
             "offline_branch",
             "landing"
-          ],
-          "type": "object"
-        },
-        {
-          "additionalProperties": false,
-          "description": "`sync --attempt <id>`.",
-          "properties": {
-            "attempt": {
-              "type": "string"
-            },
-            "committed": {
-              "items": {
-                "$ref": "#/$defs/AttemptCommit"
-              },
-              "type": "array"
-            },
-            "mode": {
-              "const": "attempt",
-              "type": "string"
-            },
-            "status": {
-              "description": "The attempt's status after submitting.",
-              "type": "string"
-            }
-          },
-          "required": [
-            "mode",
-            "attempt",
-            "committed",
-            "status"
           ],
           "type": "object"
         }

@@ -23,6 +23,7 @@ import { HomePage } from './features/shell/HomePage';
 import type { AccountActivity } from './features/shell/homeModel';
 import { type Created, NewRepositoryDialog } from './features/shell/NewRepositoryDialog';
 import { Notice, useNotice } from './features/shell/Notice';
+import { repoHome } from './features/shell/PickerPanel';
 import { pickerShortcut, saveRecent } from './features/shell/pickerModel';
 import { CrumbSwitcher } from './features/shell/RepoPicker';
 import { RepositoriesPage } from './features/shell/RepositoriesPage';
@@ -211,17 +212,8 @@ export function App() {
         signInError={signInError}
       />
     );
-  // A login from the terminal gets one card, with nothing of the app around it.
   if (route.view === 'device')
-    return (
-      <DevicePage
-        code={route.code}
-        site={window.location.origin}
-        session={session}
-        signInError={signInError}
-        onConnected={() => void session.discover()}
-      />
-    );
+    return <DevicePage code={route.code} session={session} signInError={signInError} />;
   return (
     // An open picker shows the sidebar it lives in, whether collapsed or the phone menu.
     <div
@@ -386,7 +378,7 @@ export function App() {
                 repos={rows.map((r) => ({ id: r.repo, name: r.name }))}
                 orgs={orgs}
                 navigate={navigate}
-                onAvatar={session.setAvatar}
+                onIdentity={session.patchIdentity}
                 onHandle={handleChosen}
                 onRestored={() => {
                   platform.reload();
@@ -452,7 +444,6 @@ export function App() {
                 name={row?.name}
                 authenticated={session.authenticated}
                 username={session.identity?.username}
-                ownHandle={session.identity?.handle ?? undefined}
                 navigate={navigate}
                 onSignIn={() => setPanel('account')}
                 onLoaded={onLoaded}
@@ -498,9 +489,14 @@ export function App() {
           account={session.identity?.username}
           orgs={orgs.data?.orgs ?? []}
           initialOwner={newOwner}
+          repos={platform.data?.repos ?? []}
           publicAddress={adding === 'public'}
           onClose={() => setAdding(false)}
           onImported={created}
+          onOpen={(repo) => {
+            navigate(repoHome(repo));
+            setAdding(false);
+          }}
         />
       )}
       <HandlePrompt identity={creating || adding ? null : session.identity} onSet={handleChosen} />

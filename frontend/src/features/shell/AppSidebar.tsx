@@ -10,6 +10,7 @@ import {
   Compass,
   CreditCard,
   FolderGit2,
+  FolderTree,
   GitCommitHorizontal,
   GitPullRequest,
   House,
@@ -38,6 +39,7 @@ import {
 import { unreadLabel } from '../admin/adminModel';
 import type { OrgSummary } from '../source-platform/orgModel';
 import { useUndoDays } from '../source-platform/RecentlyDeleted';
+import { noteBranch } from '../source-platform/repoBranch';
 import { Failure } from '../source-platform/SourceStatus';
 import {
   isAgentsRoute,
@@ -57,6 +59,7 @@ export const labelled = (name: string, label?: string) => (label ? `${name}, ${l
 
 export const REPO_PAGES: { id: RepoTab; label: string; Icon: typeof House }[] = [
   { id: 'overview', label: 'Overview', Icon: LayoutDashboard },
+  { id: 'files', label: 'Files', Icon: FolderTree },
   { id: 'changes', label: 'Landings', Icon: GitPullRequest },
   { id: 'tower', label: 'Tower', Icon: Radar },
   { id: 'insights', label: 'Insights', Icon: ChartColumn },
@@ -147,6 +150,7 @@ export function AppSidebar({
   admin?: { unread: number };
 }) {
   const repo = missing ? undefined : routeRepo(route);
+  noteBranch(route);
   const page = routeTab(route);
   const hidden = { settings: !settings, insights: !insights } as Partial<Record<RepoTab, boolean>>;
   const pages = REPO_PAGES.filter((p) => !hidden[p.id]);

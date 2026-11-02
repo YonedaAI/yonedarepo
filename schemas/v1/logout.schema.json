@@ -10,10 +10,15 @@
         "removed": {
           "description": "Whether a stored token was removed.",
           "type": "boolean"
+        },
+        "revoked": {
+          "description": "Whether the platform revoked it.",
+          "type": "boolean"
         }
       },
       "required": [
         "removed",
+        "revoked",
         "credentials"
       ],
       "title": "Logout",

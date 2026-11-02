@@ -92,7 +92,14 @@ describe('connecting', () => {
     expect(done.headers.get('set-cookie')).toMatch(/Max-Age=0/);
     const held = await workspace(env, account, { op: 'github_installation_get' });
     expect(held).toMatchObject({ installation: 9001, login: 'ada' });
-    expect(Object.keys(held).sort()).toEqual(['connected_at', 'installation', 'login']);
+    expect(Object.keys(held).sort()).toEqual([
+      'connected_at',
+      'connected_by',
+      'installation',
+      'login',
+      'target_id',
+      'target_type',
+    ]);
   });
 
   it('refuses a forged installation_id: someone else’s installation reaches no one', async () => {
@@ -115,17 +122,6 @@ describe('connecting', () => {
     const done = await arrive(424242, await leave(cookie));
 
     expect(done.headers.get('location')).toContain('github=other_account');
-    expect(await workspace(env, account, { op: 'github_installation_get' })).toEqual({});
-  });
-
-  it('refuses an installation on an organization, even one with the person’s id', async () => {
-    serve();
-    const { cookie, account } = await person('gh_orgs', 104, 'orgs');
-    hub.install(9004, 104, 'acme', [repo(4, 'acme/app')], 'Organization');
-
-    const done = await arrive(9004, await leave(cookie));
-
-    expect(done.headers.get('location')).toContain('github=org');
     expect(await workspace(env, account, { op: 'github_installation_get' })).toEqual({});
   });
 
@@ -175,7 +171,7 @@ describe('connecting', () => {
 
     const done = await visit(`/github/connected?setup_action=request&state=${encodeURIComponent(trip.state)}`, trip.binding);
 
-    expect(done.headers.get('location')).toContain('github=org');
+    expect(done.headers.get('location')).toContain('github=requested');
   });
 
   it('sends someone with no linked GitHub to the link step first', async () => {
@@ -262,7 +258,7 @@ describe('the repositories shown', () => {
     expect(seen.body.login).toBe('lister');
     expect(seen.body.more).toBe(false);
     expect(seen.body.repositories).toHaveLength(130);
-    expect(seen.body.repositories[129]).toEqual(repo(1129, 'lister/r129'));
+    expect(seen.body.repositories[129]).toEqual({ ...repo(1129, 'lister/r129'), installation: 9012 });
     expect(JSON.stringify(seen.body)).not.toContain('ghs_');
   });
 

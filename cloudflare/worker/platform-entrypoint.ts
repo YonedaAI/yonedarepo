@@ -6,8 +6,11 @@
 
 import { WorkerEntrypoint } from 'cloudflare:workers';
 import type { AccountCreated } from './account-index';
+import { cellEnv } from './cell-env';
 import { internalAccounts } from './internal-accounts';
 import { log, served } from './log';
+import { closeCell, unlist } from './platform-account-close';
+import { closurePart } from './platform-account-close-part';
 import { accountCreated, SIGNUP_NOTICE } from './platform-accounts';
 import { nightlyReconcile } from './platform-admin-billing';
 import { passwordReset, verifyEmail } from './platform-email-verify';
@@ -122,6 +125,10 @@ export async function platformJob(
 }
 
 export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
+  constructor(ctx: ExecutionContext, env: Env) {
+    super(ctx, cellEnv(env));
+  }
+
   fetch(req: Request) {
     const waitUntil = (work: Promise<unknown>) => this.ctx.waitUntil(work);
     return served({ env: this.env, req, waitUntil }, () => platformFetch(req, this.env));
@@ -153,6 +160,16 @@ export class PlatformEntrypoint extends WorkerEntrypoint<Env> {
    * above): a new confirmation token and email, or why not. */
   verifyEmail(account: string, change?: string) {
     return verifyEmail(this.env, account, change);
+  }
+  /** What deleting an account takes in this cell, and doing it (RPC from the cell closing it). */
+  closurePart(account: string) {
+    return closurePart(this.env, account);
+  }
+  closeCell(account: string) {
+    return closeCell(this.env, account);
+  }
+  unlistCell(account: string) {
+    return unlist(this.env, account);
   }
   /** A forgotten password's link, or nothing (RPC, as above). */
   passwordReset(account: string) {

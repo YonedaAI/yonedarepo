@@ -127,21 +127,19 @@ export function noteCheck(env: Env, repo: string, status: unknown) {
 }
 
 const GATE = 'Commit cannot land yet: ';
+/** The refusal's words (land_gates.rs `why_not`), in the order it says them. */
+const REASONS: [string, string][] = [
+  ['rejected', 'rejected'],
+  ['checks failed', 'checks_failed'],
+  ['open finding', 'open_findings'],
+  ['waiting for checks', 'checks_missing'],
+  ['approval', 'needs_approval'],
+];
 
 /** The gate that held a commit back, first of those that did. */
 function gateReason(message: string) {
   if (!message.startsWith(GATE)) return 'not_ready';
-  try {
-    const gate = JSON.parse(message.slice(GATE.length));
-    if (gate.rejected) return 'rejected';
-    if (gate.failing_checks?.length) return 'checks_failed';
-    if (gate.open_findings > 0) return 'open_findings';
-    if (gate.missing_checks?.length) return 'checks_missing';
-    if (gate.approvals < gate.approvals_required) return 'needs_approval';
-  } catch {
-    // A gate that can't be read is still a refusal.
-  }
-  return 'not_ready';
+  return REASONS.find(([words]) => message.includes(words))?.[1] ?? 'not_ready';
 }
 
 /** Why a landing was refused: the gate, or the error's code in lower case. */

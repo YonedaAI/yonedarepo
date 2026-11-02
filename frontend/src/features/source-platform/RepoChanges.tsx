@@ -2,6 +2,7 @@
 // default), filtered by status, with the landings no change names.
 import { useState } from 'react';
 import { EmptyState } from '../../components/EmptyState';
+import type { Navigate } from '../shell/useRoute';
 import {
   CHANGE_FILTERS,
   type Change,
@@ -13,6 +14,7 @@ import {
   landingRows,
   landingState,
 } from './changeModel';
+import { PageToolbar } from './PageToolbar';
 import { Person } from './Person';
 import { Failure, Loading } from './SourceStatus';
 import { shortSha, when } from './sourceApi';
@@ -168,6 +170,7 @@ export function RepoChanges({
   commitHrefOf,
   onCommit,
   initialFilter = 'open',
+  navigate,
 }: {
   repo: string;
   onOpen: (n: number) => void;
@@ -175,15 +178,18 @@ export function RepoChanges({
   commitHrefOf?: (id: string) => string;
   onCommit?: (id: string) => void;
   initialFilter?: ChangeFilter;
+  navigate: Navigate;
 }) {
   const [filter, setFilter] = useState<ChangeFilter>(initialFilter);
   const changes = useSource<ChangeList>(changesPath(repo, filter));
   return (
     <section aria-labelledby="changes-heading">
-      <div className="source-changes-head">
-        <h2 id="changes-heading">Landings</h2>
-        <StatusFilter value={filter} onChange={setFilter} />
-      </div>
+      <PageToolbar
+        title="Landings"
+        headingId="changes-heading"
+        view={<StatusFilter value={filter} onChange={setFilter} />}
+        search={{ repo, navigate }}
+      />
       <ChangeTable
         changes={changes}
         filter={filter}

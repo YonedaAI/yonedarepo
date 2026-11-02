@@ -10,7 +10,8 @@ const state: { value: Loaded<any> } = { value: { loading: true, reload: () => {}
 vi.mock('./useSource', () => ({ useSource: () => state.value }));
 
 const { ConnectPanel, DeleteRepository } = await import('./ConnectPanel');
-const { DeviceDone, DeviceOptions, DevicePage, deviceFailure } = await import('./DevicePage');
+const { DeviceDone, DevicePage, deviceFailure } = await import('./DevicePage');
+const { DeviceOptions } = await import('./DeviceParts');
 const { AGENT_DEFAULT_SCOPES, agentGrant, agentProblem } = await import('./DeviceAgent');
 const { isDeviceLogin, PatDialog, PatTable } = await import('./PersonalTokens');
 const { RepoTokenTable, RepoTokens } = await import('./RepoTokens');
@@ -33,13 +34,8 @@ const person = {
     loading: false,
     identity: { username: 'ada@x.test', handle: 'ada' },
   },
-  onConnected: () => {},
 };
-const nobody = {
-  site,
-  session: { authenticated: false, loading: false, identity: null },
-  onConnected: () => {},
-};
+const nobody = { site, session: { authenticated: false, loading: false, identity: null } };
 const api = 'https://api.dev.yonedarepo.com';
 const repo = 'r0123456789abcdef0123';
 const repos = [
@@ -254,6 +250,16 @@ describe('the account settings pages', () => {
       expect(shown).not.toContain('<form');
       expect(shown).not.toContain('<textarea');
     }
+  });
+
+  it('shows the name in Profile, with its way to change it', () => {
+    const named = html(AccountSettings, {
+      identity: { ...identity, display_name: 'Ada Lovelace' },
+      repos,
+      section: 'general',
+    } as never);
+    expect(named).toContain('Ada Lovelace');
+    expect(named).toContain('>Change<');
   });
 
   it('gives Organizations a description and its create button, once signed in', () => {

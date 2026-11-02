@@ -3,6 +3,8 @@
 // The path is resolved by name (repo-paths) and the request served as by id. A path that
 // names nothing, and a repository the caller may not read, answer exactly alike, so the path
 // tells nobody whether a private repository exists.
+import { forwardTo } from './cell-route';
+import { cellOfRepo, cellsOn, thisCell } from './cells';
 import { gitCredentials, gitHttp, unknownRepository } from './repo-git-http';
 import { readableBy, repoAt } from './repo-paths';
 
@@ -19,6 +21,8 @@ export async function gitByPath(req: Request, env: Env, path: RegExpExecArray) {
   const [, handle, name, action] = path;
   const repo = await repoAt(env, handle, name);
   if (!repo) return unknownRepository(req, env);
+  const cell = cellOfRepo(repo);
+  if (cellsOn(env) && cell !== thisCell(env)) return forwardTo(env, cell, req);
   const answer = await gitHttp(byId(req, repo, action), env);
   // Refused as not there, or to someone who may not read it at all: as for a path that
   // names nothing (the repository's own refusal may word it otherwise).

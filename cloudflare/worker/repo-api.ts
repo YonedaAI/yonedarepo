@@ -6,9 +6,11 @@
 
 import { accountMcp } from './account-mcp';
 import { authenticate } from './auth';
+import { mergeListed, mergeSearch } from './cell-merge';
+import { acrossCells, askCell, forwardTo, homeElsewhere, repoElsewhere } from './cell-route';
 import { error, readJson } from './http';
 import { noteAccount } from './internal-accounts';
-import { accountActivity } from './platform-account-activity';
+import { accountActivity, mergeActivity } from './platform-account-activity';
 import { adminRoute } from './platform-admin';
 import { auditExport, auditExportOrg } from './platform-audit-export';
 import { isOwnAvatar, ownAvatar, publicAvatarName, servePublicAvatar } from './platform-avatars';
@@ -48,7 +50,7 @@ import {
   anonymousRead,
   anonymousRepo,
   capped,
-  explore,
+  exploreCells,
   isExplore,
   limitAnonymous,
   setVisibility,
@@ -121,6 +123,13 @@ async function checkCredentials(req: Request, env: Env): Promise<Credentials | n
 /** A REST answer as its caller may see it: a repository's names no account address to a
  * non-member (principal-privacy). The account MCP's management tools come through here too. */
 export async function route(req: Request, env: Env, url: URL, auth: Credentials): Promise<Json> {
+  // An in-process caller (the account MCP, say) may name a repository of another cell.
+  const elsewhere = repoElsewhere(env, url);
+  if (elsewhere) {
+    const body = ['GET', 'HEAD'].includes(req.method) ? undefined : await req.text();
+    const { method, headers } = req;
+    return askCell(env, elsewhere, `${url.pathname}${url.search}`, { method, headers, body });
+  }
   const value = await routed(req, env, url, auth);
   const repo = /^\/api\/v1\/repos\/(r[0-9a-f]{20})(?:\/|$)/.exec(url.pathname)?.[1];
   return repo ? forViewer(env, value, () => caller(env, repo, auth)({ op: 'repo_status' })) : value;
@@ -135,9 +144,14 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
   if (parts[0] === 'device' && parts.length === 2)
     return deviceRoute(env, auth, parts[1], req, url, () => bodyOf(req));
   if (parts[0] === 'activity' && parts.length === 1 && req.method === 'GET')
-    return accountActivity(env, auth);
+    return acrossCells(env, url.pathname, () => accountActivity(env, auth), mergeActivity);
   if (parts[0] === 'search' && parts.length === 1 && req.method === 'GET')
-    return accountSearch(env, auth, url, route);
+    return acrossCells(
+      env,
+      `${url.pathname}${url.search}`,
+      () => accountSearch(env, auth, url, route),
+      mergeSearch,
+    );
   if (parts[0] === 'support' && parts.length === 1 && req.method === 'POST')
     return supportRoute(env, auth, () => bodyOf(req, SUPPORT_BODY_LIMIT));
   if (parts[0] === 'favorites' && parts.length <= 2)
@@ -151,9 +165,10 @@ async function routed(req: Request, env: Env, url: URL, auth: Credentials): Prom
     return createRepository(env, auth, await bodyOf(req, COMMIT_BODY_LIMIT));
   if (parts.length === 2 && parts[1] === 'import' && req.method === 'POST')
     return importRepository(env, auth, await bodyOf(req));
-  if (parts.length === 1 && req.method === 'GET') return listRepositories(env, auth);
+  if (parts.length === 1 && req.method === 'GET')
+    return acrossCells(env, url.pathname, () => listRepositories(env, auth), mergeListed);
   if (parts.length === 2 && parts[1] === 'deleted' && req.method === 'GET')
-    return listDeleted(env, auth);
+    return acrossCells(env, url.pathname, () => listDeleted(env, auth), mergeListed);
   const repo = parts[1];
   if (!/^r[0-9a-f]{20}$/.test(repo ?? '')) throw new ApiError('NOT_FOUND', 'Unknown repository');
   const ctx = new RepoContext(env, repo, caller(env, repo, auth));
@@ -344,7 +359,7 @@ async function handle(req: Request, env: Env): Promise<Response> {
     return answer(async () => {
       if (!req.headers.has('cookie') && !req.headers.has('authorization'))
         await limitAnonymous(env, req, url.pathname);
-      return explore(env, url.searchParams);
+      return exploreCells(env, url);
     });
   // Profiles are public listings, answered alike to everyone.
   const profiled = /^\/api\/v1\/profiles\/([^/]+)$/.exec(url.pathname);
@@ -352,7 +367,7 @@ async function handle(req: Request, env: Env): Promise<Response> {
     return answer(async () => {
       if (!req.headers.has('cookie') && !req.headers.has('authorization'))
         await limitAnonymous(env, req, url.pathname);
-      return profile(env, decodeURIComponent(profiled[1]));
+      return profile(env, decodeURIComponent(profiled[1]), url.pathname);
     });
   // Anyone's picture, like the listing: no session check per image.
   const avatar = publicAvatarName(url);
@@ -360,9 +375,11 @@ async function handle(req: Request, env: Env): Promise<Response> {
     return (async () => {
       if (!req.headers.has('cookie') && !req.headers.has('authorization'))
         await limitAnonymous(env, req, url.pathname);
-      return servePublicAvatar(env, avatar);
+      return servePublicAvatar(env, avatar, req);
     })().catch(failure);
   const signed = await timed('auth', () => credentials(req, env));
+  const home = homeElsewhere(env, req, url);
+  if (home) return forwardTo(env, home, req);
   // A readable path, or the repository one names, for whoever asks (nobody signed in sees
   // public repositories only); one that may not be read answers as one that is not there.
   const resolving = /^\/api\/v1\/resolve\/([^/]+)\/([^/]+)$/.exec(url.pathname);

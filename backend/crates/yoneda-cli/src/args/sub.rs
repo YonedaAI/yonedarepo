@@ -133,18 +133,13 @@ pub fn check(rest: &[String]) -> Result<Command> {
 }
 
 pub fn sync(rest: &[String]) -> Result<Command> {
-    let p = Parsed::new(rest, &["attempt", "mcp-url"], &["land"])?;
+    let p = Parsed::new(rest, &[], &["land"])?;
     p.at_most(0)?;
-    let mode = match (p.on("land"), p.flag("attempt")) {
-        (true, Some(_)) => return Err(Error::usage("choose either --land or --attempt")),
-        (true, None) => SyncMode::Land,
-        (false, Some(id)) => SyncMode::Attempt {
-            id,
-            mcp_url: p.flag("mcp-url"),
-        },
-        (false, None) => SyncMode::Push,
-    };
-    Ok(Command::Sync(mode))
+    Ok(Command::Sync(if p.on("land") {
+        SyncMode::Land
+    } else {
+        SyncMode::Push
+    }))
 }
 
 pub fn declared_reads(rest: &[String]) -> Result<Command> {

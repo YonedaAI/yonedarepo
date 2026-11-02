@@ -32,7 +32,9 @@ export function createBody(
     name,
     ...(owner ? { owner } : {}),
     visibility,
-    policy: { required_checks: [], approvals: 1 },
+    // Alone on a personal repository there is nobody to approve: it lands at once until its
+    // owner sets rules. An organization has people to ask.
+    policy: { required_checks: [], approvals: owner ? 1 : 0 },
     files: [{ path: 'README.md', content_b64: readmeSeed(name, description) }],
     author: { name: 'Repository owner', email: 'owner@yonedarepo.invalid' },
   };

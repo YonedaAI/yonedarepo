@@ -82,8 +82,10 @@
 }
 .agents-heading {
   margin: 0;
+  font-family: var(--display);
   font-size: var(--text-3xl);
-  font-weight: var(--weight-heading);
+  font-weight: var(--weight-title);
+  line-height: var(--leading-title);
 }
 .button-link {
   display: inline-flex;
@@ -95,7 +97,7 @@
   border-radius: 8px;
   background: var(--surface);
   color: var(--text);
-  font-size: var(--text-base);
+  font-size: var(--text-md);
   font-weight: 500;
   text-decoration: none;
 }
@@ -365,12 +367,7 @@
   overflow-wrap: anywhere;
 }
 .agent-run-filter a {
-  padding: 6px 12px;
-  color: var(--text);
   text-decoration: none;
-}
-.agent-run-filter a[aria-current="page"] {
-  background: var(--accent-soft);
 }
 .agent-runs-table .chip {
   margin-left: 4px;
@@ -443,7 +440,7 @@
   border-radius: 5px;
   background: none;
   color: var(--text);
-  font-size: var(--text-base);
+  font-size: var(--text-md);
   text-align: left;
 }
 .agent-menu-list button:hover:not(:disabled),
@@ -488,8 +485,6 @@
 }
 .agent-setup-head h1 {
   margin: 0;
-  font-size: var(--text-3xl);
-  font-weight: var(--weight-heading);
 }
 .agent-setup-head p {
   margin: 4px 0 0;
@@ -731,8 +726,6 @@ input.agent-fixed:focus-visible,
   align-items: center;
   gap: 8px;
   margin: 0;
-  font-size: var(--text-3xl);
-  font-weight: var(--weight-heading);
 }
 .agent-detail-grid {
   display: grid;
@@ -786,8 +779,8 @@ input.agent-fixed:focus-visible,
 }
 /* A repository's managed agents. */
 .repo-agents-reviewers {
-  margin: 0 0 10px;
-  font-size: var(--text-base);
+  font-size: var(--text-md);
+  white-space: nowrap;
 }
 .repo-managed-agents {
   display: flex;

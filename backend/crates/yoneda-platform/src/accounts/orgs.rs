@@ -141,11 +141,10 @@ fn create<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         "ALREADY_EXISTS" => Error::new("ALREADY_EXISTS", "That name is taken"),
         _ => e,
     })?;
-    put(
-        db,
-        "account",
-        &json!({"username": name, "kind": "org", "created_at": now, "created_by": actor}),
-    )?;
+    let mut record =
+        json!({"username": name, "kind": "org", "created_at": now, "created_by": actor});
+    set_region(&mut record, c);
+    put(db, "account", &record)?;
     db.query(
         "INSERT INTO org_members(account,role,added_by,added_at) VALUES(?,'owner',?,?)",
         &[json!(actor), json!(format!("user:{actor}")), json!(now)],
@@ -177,7 +176,9 @@ fn access<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     } else {
         Vec::new()
     };
-    Ok(json!({ "org": org, "role": role, "teams": teams }))
+    let mut answer = json!({ "org": org, "role": role, "teams": teams });
+    super::place::add(db, &mut answer)?;
+    Ok(answer)
 }
 
 fn show<S: SqlStore>(db: &S, org: &str, role: &str) -> Result<Value> {

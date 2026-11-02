@@ -7,6 +7,10 @@
 
 import { ACCOUNT_IDENTIFIER_HELP, normalizeAccountIdentifier } from '../../shared/account';
 import { auditOn, auditOrg } from './account-audit';
+import { homeCell } from './account-place';
+import { mergeListed } from './cell-merge';
+import { acrossCells } from './cell-route';
+import { cellsOn } from './cells';
 import { log } from './log';
 import { auditPage, auditVerify } from './platform-audit-read';
 import { orgHold } from './platform-holds';
@@ -102,16 +106,29 @@ async function orgRepos(env: Env, org: string, account: string) {
     } ORDER BY created_at DESC LIMIT 200`,
   )
     .bind(org, ...(all ? [] : [JSON.stringify(keys)]))
-    .all<{ owner: string; name: string }>();
+    .all<{ id: string; owner: string; name: string; created_at: number }>();
   return { repos: await withPaths(env, listed.results) };
 }
+
+const orgReposAcross = (env: Env, org: string, account: string) =>
+  acrossCells(
+    env,
+    `/api/v1/orgs/${org}/repos`,
+    () => orgRepos(env, org, account),
+    mergeListed<Awaited<ReturnType<typeof orgRepos>>>,
+  );
 
 /** `GET /orgs/:org/repos/deleted`: what its owners can still restore. */
 async function orgDeleted(env: Env, org: string, actor: string) {
   const { role } = await orgCommand(env, org, { op: 'org_show', actor });
   if (role !== 'owner')
     throw new ApiError('FORBIDDEN', `Only an owner of ${org} sees its deleted repositories`);
-  return deletedOf(env, org);
+  return acrossCells(
+    env,
+    `/api/v1/orgs/${org}/repos/deleted`,
+    () => deletedOf(env, org),
+    mergeListed,
+  );
 }
 
 /** `DELETE /orgs/:org?confirm=<org>`: an owner retires an org that owns no repositories: none
@@ -124,10 +141,12 @@ async function deleteOrg(env: Env, org: string, actor: string, confirm: string) 
   )
     .bind(org)
     .first<{ n: number }>();
-  if ((owned?.n ?? 0) > 0)
+  const inCells = await orgReposAcross(env, org, actor);
+  const count = Math.max(owned?.n ?? 0, inCells.repos.length);
+  if (count > 0)
     throw new ApiError(
       'CONFLICT',
-      `${org} owns ${owned?.n} repositories; delete them before the organization`,
+      `${org} owns ${count} repositories; delete them before the organization`,
     );
   const deleted = await orgCommand(env, org, {
     op: 'org_delete',
@@ -197,15 +216,18 @@ async function orgRoute(
       throw new ApiError('FORBIDDEN', 'An organization-limited token cannot create orgs');
     const { account } = orgCaller(auth, true);
     const org = orgArg((await body()).name);
-    const created = await orgCommand(env, org, { op: 'org_create', org, actor: account }).catch(
-      async (e) => {
-        // A retry after the hint failed: the creator already owns it, so finish the hint.
-        if (!(e instanceof ApiError && e.code === 'ALREADY_EXISTS')) throw e;
-        const access = await orgCommand(env, org, { op: 'org_access', account }).catch(() => null);
-        if (access?.role !== 'owner') throw e;
-        return { org, role: 'owner', created_at: null };
-      },
-    );
+    const created = await orgCommand(env, org, {
+      op: 'org_create',
+      org,
+      actor: account,
+      ...(cellsOn(env) && { region: homeCell() }),
+    }).catch(async (e) => {
+      // A retry after the hint failed: the creator already owns it, so finish the hint.
+      if (!(e instanceof ApiError && e.code === 'ALREADY_EXISTS')) throw e;
+      const access = await orgCommand(env, org, { op: 'org_access', account }).catch(() => null);
+      if (access?.role !== 'owner') throw e;
+      return { org, role: 'owner', created_at: null };
+    });
     await hint(env, account, org, true);
     forgetOrgAccess(org);
     return created;
@@ -222,7 +244,7 @@ async function orgRoute(
     return auditOn(env) ? { ...shown, audit_log: true } : shown;
   }
   if (!resource && del) return deleteOrg(env, org, actor, query.get('confirm') ?? '');
-  if (resource === 'repos' && !item && get) return orgRepos(env, org, actor);
+  if (resource === 'repos' && !item && get) return orgReposAcross(env, org, actor);
   if (resource === 'repos' && item === 'deleted' && !sub && get) return orgDeleted(env, org, actor);
   if (resource === 'hold' && !item) return orgHold(env, auth, org, method, run);
   if (resource === 'repos' && item && sub === 'hold' && !target)

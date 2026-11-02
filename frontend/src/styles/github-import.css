@@ -1,0 +1,55 @@
+.github-repo-list {
+  display: grid;
+  /* One long name must not widen every row past the dialog. */
+  grid-template-columns: minmax(0, 1fr);
+  max-height: 220px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.github-repo-list button {
+  display: flex;
+  width: 100%;
+  min-height: 36px;
+  justify-content: space-between;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+.github-repo-list button:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+.github-repo-list span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.github-repo-list small {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.github-repo-more {
+  margin: 0;
+}
+.github-repo-more a {
+  color: var(--blue-text);
+  text-decoration: underline;
+}
+.github-repo-taken {
+  margin: 0;
+}
+.github-repo-taken button {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--blue-text);
+  font: inherit;
+  text-decoration: underline;
+}

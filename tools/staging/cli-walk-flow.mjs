@@ -27,7 +27,8 @@ async function cleanUp(w, m) {
   for (const org of w.orgs) await attempt(`organization ${org}`, () => w.owner.call('DELETE', `/orgs/${org}?confirm=${encodeURIComponent(org)}`));
   const { keys = [] } = await w.owner.get('/ssh-keys').catch(() => ({}));
   for (const key of keys.filter((k) => w.keys.includes(k.id) || w.keys.includes(k.fingerprint))) await attempt(`SSH key ${key.id}`, () => w.owner.call('DELETE', `/ssh-keys/${key.id}`));
-  for (const { session, id } of w.tokens) await attempt(`token ${id}`, () => session.call('DELETE', `/tokens/${id}`));
+  const signOut = (token) => new Session(`${w.api}/api/v1`, { bearer: token }).call('DELETE', '/device/token');
+  for (const [at, token] of w.tokens.entries()) await attempt(`login token ${at}`, () => signOut(token));
   m.left_behind = left;
 }
 

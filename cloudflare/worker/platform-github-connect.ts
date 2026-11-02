@@ -9,9 +9,9 @@
 // as sign-in's binding does (oauth.ts). The app's page after that finds its session as any
 // page does, by asking: `/settings`, which needs nothing of the document's own request.
 //
-// An installation on an organization is refused. Proving a person belongs to it takes either
-// the App's Members permission or a user token from the App, and it has neither.
-// docs/clone-import.md has what would change that.
+// An organization names no person, so GitHub is asked whether the linked GitHub user is on one of
+// its repositories (platform-github-org.ts). An account holds its own installation and any number
+// of organizations'.
 
 import { hmacHex } from './hmac';
 import { log } from './log';
@@ -22,6 +22,7 @@ import {
   installationOfUser,
   installationRepositories,
 } from './platform-github-app';
+import { joinOrganization, joinReachable, onOrganization } from './platform-github-org';
 import { accessGone } from './platform-github-refused';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import type { Env } from './types';
@@ -89,7 +90,7 @@ async function stateAccount(env: Env, state: string | null, binding: string) {
 }
 
 /** The GitHub login this account linked, or null. */
-async function linkedLogin(env: Env, account: string): Promise<string | null> {
+export async function linkedLogin(env: Env, account: string): Promise<string | null> {
   const { identities } = await workspace(env, account, { op: 'identity_list' });
   return (identities as Json[]).find((i) => i.provider === 'github')?.login ?? null;
 }
@@ -107,6 +108,28 @@ async function proof(env: Env, account: string, seen: Installation) {
   return seen.suspended_at ? ('lost' as const) : ('connected' as const);
 }
 
+type Held = {
+  installation: number;
+  login: string;
+  target_type: 'User' | 'Organization';
+  target_id: number | null;
+  connected_by: string | null;
+};
+
+/** Whether `seen` is still what `row` proved. An organization's is read again, and needs the
+ * GitHub user who proved it still linked here. */
+async function stillHeld(env: Env, account: string, row: Held, seen: Installation) {
+  if (row.target_type === 'User') return (await proof(env, account, seen)) === 'connected';
+  if (!onOrganization(seen) || seen.account?.id !== row.target_id || seen.suspended_at)
+    return false;
+  const { linked } = await workspace(env, account, {
+    op: 'identity_check',
+    provider: 'github',
+    subject: row.connected_by,
+  });
+  return linked === true;
+}
+
 const keep = (env: Env, account: string, seen: Installation) =>
   workspace(env, account, {
     op: 'github_installation_put',
@@ -119,7 +142,9 @@ const keep = (env: Env, account: string, seen: Installation) =>
 async function connect(env: Env, url: URL, account: string) {
   const login = await linkedLogin(env, account);
   if (!login) return redirect(`${url.origin}${LINK}`);
-  const found = await installationOfUser(env, login);
+  // `add`: another account or organization, past the one already there.
+  const adding = url.searchParams.get('add') === '1';
+  const found = adding ? null : await installationOfUser(env, login);
   if (found && (await proof(env, account, found)) === 'connected') {
     await keep(env, account, found);
     return back(url, 'connected');
@@ -138,15 +163,25 @@ async function connected(env: Env, url: URL, binding: string) {
   const asked = url.searchParams;
   const account = await stateAccount(env, asked.get('state'), binding);
   if (!account) return back(url, 'state');
-  // An organization's owner has yet to approve: nothing is installed.
-  if (asked.get('setup_action') === 'request') return back(url, 'org');
+  const login = await linkedLogin(env, account);
+  // GitHub stops someone who isn't an owner here: nothing new is installed, though the App may
+  // already be on an organization they can reach.
+  if (asked.get('setup_action') === 'request') {
+    const joined = login ? await joinReachable(env, account, login) : false;
+    return back(url, joined ? 'connected' : 'requested');
+  }
   const id = Number(asked.get('installation_id'));
   if (!Number.isSafeInteger(id) || id <= 0) return back(url, 'state');
-  if (!(await linkedLogin(env, account))) return redirect(`${url.origin}${LINK}`);
+  if (!login) return redirect(`${url.origin}${LINK}`);
   const seen = await installationById(env, id).catch((e) => {
     if (accessGone(e)) return null;
     throw e;
   });
+  if (seen && onOrganization(seen))
+    return back(
+      url,
+      seen.suspended_at ? 'lost' : await joinOrganization(env, account, login, seen),
+    );
   const result = seen ? await proof(env, account, seen) : 'other_account';
   if (result === 'connected') await keep(env, account, seen as Installation);
   return back(url, result);
@@ -175,31 +210,80 @@ export function personOf(auth: Credentials) {
   throw new ApiError('FORBIDDEN', 'Connect GitHub from the website');
 }
 
-/** The installation `account` may use right now. `none`: never connected. `lost`: removed,
- * suspended, or no longer on the GitHub user this account links. */
-export async function connection(env: Env, account: string) {
-  const row = await workspace(env, account, { op: 'github_installation_get' });
-  if (!row.installation) return { state: 'none' as const };
-  const seen = await installationById(env, row.installation).catch((e) => {
-    if (accessGone(e)) return null;
-    throw e;
-  });
-  const held = seen && (await proof(env, account, seen)) === 'connected';
-  return held
-    ? { state: 'ok' as const, installation: row.installation as number, login: row.login as string }
-    : { state: 'lost' as const };
+/** Each installation `account` connected, with whether it still holds. */
+async function proven(env: Env, account: string) {
+  const { installations } = await workspace(env, account, { op: 'github_installation_list' });
+  return Promise.all(
+    (installations as Held[]).map(async (row) => {
+      const seen = await installationById(env, row.installation).catch((e) => {
+        if (accessGone(e)) return null;
+        throw e;
+      });
+      const ok = seen ? await stillHeld(env, account, row, seen) : false;
+      return {
+        row,
+        ok,
+        login: seen?.account?.login ?? row.login,
+      };
+    }),
+  );
 }
 
-/** `GET /github/repositories`: what the import dialog shows. */
+type Proven = Awaited<ReturnType<typeof proven>>;
+
+/** `wanted`, or the first that holds. `none`: never connected. `lost`: removed, suspended, or no
+ * longer on the GitHub user this account links. */
+function chosen(rows: Proven, wanted?: number) {
+  const pick = wanted
+    ? rows.find((r) => r.row.installation === wanted)
+    : (rows.find((r) => r.ok) ?? rows[0]);
+  if (!pick) return { state: 'none' as const };
+  if (!pick.ok) return { state: 'lost' as const };
+  const { installation, target_type: type } = pick.row;
+  return { state: 'ok' as const, installation, login: pick.login, type };
+}
+
+/** The installation `account` may use right now. */
+export const connection = async (env: Env, account: string, wanted?: number) =>
+  chosen(await proven(env, account), wanted);
+
+/** One installation's repositories, each saying which it came through; nothing if it's gone. */
+async function listOf(env: Env, account: string, { row }: Proven[number]) {
+  const person =
+    row.target_type === 'Organization' ? ((await linkedLogin(env, account)) ?? '') : undefined;
+  const { installation } = row;
+  return installationRepositories(env, installation, person).then(
+    ({ repositories, more }) => ({
+      repositories: repositories.map((r) => ({ ...r, installation })),
+      more,
+    }),
+    (e) => {
+      if (accessGone(e)) return { repositories: [], more: false };
+      throw e;
+    },
+  );
+}
+
+/** `GET /github/repositories`: everything the import dialog can offer, an account's own first and
+ * then each organization's, so one search covers them all. */
 export async function githubRepositories(env: Env, auth: Credentials) {
   if (!githubAppOn(env)) return { available: false };
-  const held = await connection(env, personOf(auth));
-  if (held.state !== 'ok') return { available: true, connection: held.state };
-  try {
-    const listed = await installationRepositories(env, held.installation);
-    return { available: true, connection: 'ok', login: held.login, ...listed };
-  } catch (e) {
-    if (accessGone(e)) return { available: true, connection: 'lost' };
-    throw e;
-  }
+  const account = personOf(auth);
+  const rows = await proven(env, account);
+  const held = rows.filter((r) => r.ok);
+  if (!held.length) return { available: true, connection: chosen(rows).state };
+  const lists = await Promise.all(held.map((r) => listOf(env, account, r)));
+  const seen = new Set<number>();
+  const repositories = lists
+    .flatMap((list) => list.repositories)
+    .filter((r) => !seen.has(r.id) && seen.add(r.id));
+  const { row, login } = held[0] as Proven[number];
+  return {
+    available: true,
+    connection: 'ok',
+    login,
+    installation: row.installation,
+    repositories,
+    more: lists.some((list) => list.more),
+  };
 }

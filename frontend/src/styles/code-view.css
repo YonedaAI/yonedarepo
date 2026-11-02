@@ -58,20 +58,16 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 32px;
-  height: 32px;
+  min-height: var(--control-h);
+  height: var(--control-h);
   padding: 0 10px;
   font-size: var(--text-sm);
 }
 .file-header button.file-icon-button {
   flex: none;
-  width: 32px;
+  width: var(--control-h);
   padding: 0;
   justify-content: center;
-}
-.file-header .segmented button {
-  height: 30px;
-  min-height: 30px;
 }
 .file-header .source-field {
   flex: 1;
@@ -151,9 +147,14 @@
   z-index: 2;
 }
 
-/* Cancel stays in reach however far down a long file the editor has gone. */
-.code-editor .file-header {
+/* Save, Cancel and a failed save stay in reach however far down a long file the editor has gone:
+   they sit under the 56 px top bar, and the file's box must not clip them. */
+.source-file.code-editor {
+  overflow: visible;
+}
+.code-editor-top {
   position: sticky;
   z-index: 3;
-  top: 0;
+  top: 56px;
+  background: var(--surface);
 }

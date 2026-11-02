@@ -47,7 +47,7 @@ mod tests {
         };
         assert_eq!(last("repo_store"), Some(APPLY_THROUGH));
         assert_eq!(last("commit_store"), Some(3));
-        assert_eq!(last("accounts"), Some(11));
+        assert_eq!(last("accounts"), Some(13));
     }
 
     #[test]

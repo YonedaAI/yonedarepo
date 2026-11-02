@@ -274,7 +274,7 @@ fn the_identity_migration_upgrades_a_version_six_store_and_keeps_its_account() {
     let versions = db
         .query("SELECT version FROM workspace_migrations", &[])
         .unwrap();
-    assert_eq!(versions.len(), 11);
+    assert_eq!(versions.len(), 13);
 }
 
 #[test]

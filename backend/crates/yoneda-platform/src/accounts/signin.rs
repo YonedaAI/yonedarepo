@@ -32,6 +32,7 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
             if valid {
                 let mut public = public_account(&account(db)?);
                 public["orgs"] = json!(super::orgs::hints(db)?);
+                super::place::add(db, &mut public)?;
                 Ok(public)
             } else if super::access::suspended_at(db)?.is_some() {
                 Ok(json!({"authenticated":false,"suspended":true}))
@@ -117,7 +118,12 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: SigninOp, now: i64) -> 
                 session(db, c, now)?;
                 super::auth_events::note(db, c, "auth.login", now, json!({"method":"password"}))?;
             }
-            Ok(public_account(&a))
+            let mut public = public_account(&a);
+            // For the adapter's routing cookie; the browser's answer stays what it was.
+            if c["place"] == true {
+                super::place::add(db, &mut public)?;
+            }
+            Ok(public)
         }
     }
 }

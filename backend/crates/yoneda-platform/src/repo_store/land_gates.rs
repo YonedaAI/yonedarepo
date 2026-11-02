@@ -34,10 +34,57 @@ pub(super) fn require_gates<S: SqlStore>(
     if gate["ready"] != true {
         return Err(Error::new(
             "NOT_READY",
-            format!("Commit cannot land yet: {gate}"),
+            format!("Commit cannot land yet: {}", why_not(&gate)),
         ));
     }
     Ok(())
+}
+
+fn names(list: &Value) -> String {
+    let names: Vec<&str> = list
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .collect();
+    names.join(", ")
+}
+
+/// A gate's refusal in words, the holdup that matters most first: `refusalReason` in the
+/// Worker reads the same words back for the usage record.
+pub(super) fn why_not(gate: &Value) -> String {
+    let mut why = Vec::new();
+    if gate["rejected"] == true {
+        why.push("a reviewer rejected it".to_owned());
+    }
+    let failing = names(&gate["failing_checks"]);
+    if !failing.is_empty() {
+        why.push(format!("checks failed: {failing}"));
+    }
+    match gate["open_findings"].as_u64().unwrap_or(0) {
+        0 => {}
+        1 => why.push("1 open finding".to_owned()),
+        many => why.push(format!("{many} open findings")),
+    }
+    let missing = names(&gate["missing_checks"]);
+    if !missing.is_empty() {
+        why.push(format!("waiting for checks: {missing}"));
+    }
+    let (have, need) = (
+        gate["approvals"].as_u64().unwrap_or(0),
+        gate["approvals_required"].as_u64().unwrap_or(0),
+    );
+    if have < need && gate["auto_approved"] != true {
+        why.push(match need {
+            1 => format!("needs 1 approval from another person, has {have}"),
+            _ => format!("needs {need} approvals from other people, has {have}"),
+        });
+    }
+    if why.is_empty() {
+        "the landing rules are not met".to_owned()
+    } else {
+        why.join("; ")
+    }
 }
 
 /// A commit's review class: its `overall` and `files`, when one is recorded.

@@ -121,9 +121,7 @@ function ReposTable({ q, navigate }: { q: string; navigate: Navigate }) {
               {paged.items.map((r) => (
                 <tr key={r.id}>
                   <td>
-                    <a {...linkTo({ view: 'files', repo: r.id, path: '', ref: 'main' }, navigate)}>
-                      {r.name}
-                    </a>
+                    <a {...linkTo({ view: 'overview', repo: r.id }, navigate)}>{r.name}</a>
                     <small className="admin-sub">{r.id}</small>
                   </td>
                   <td>

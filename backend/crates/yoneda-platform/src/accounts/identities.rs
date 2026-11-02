@@ -58,6 +58,7 @@ fn signup<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
     set_region(&mut a, c);
     put(db, "account", &a)?;
     insert(db, &identity, now)?;
+    super::names::prefill(db, c, now)?;
     super::signin::session(db, c, now)?;
     audit(
         db,
@@ -87,6 +88,7 @@ fn signin<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
             json!(provider),
         ],
     )?;
+    super::names::prefill(db, c, now)?;
     super::signin::session(db, c, now)?;
     super::auth_events::note(db, c, "auth.login", now, json!({"method":provider}))?;
     Ok(public_account(&a))
@@ -115,6 +117,7 @@ fn link<S: SqlStore>(db: &S, c: &Value, now: i64) -> Result<Value> {
         ));
     }
     insert(db, &identity, now)?;
+    super::names::prefill(db, c, now)?;
     audit(
         db,
         "identity.linked",

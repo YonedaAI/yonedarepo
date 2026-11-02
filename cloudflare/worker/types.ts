@@ -197,6 +197,22 @@ export interface Env {
   VISITORS?: string;
   /** `on` records a new account's region and samples where writes come from (region.ts). */
   REGION_SIGNALS?: string;
+  /** `on`: requests find their cell, and a Worker forwards what is another's (cells.ts). Unset or
+   * anything else: this Worker serves everything it is sent, as ever. */
+  CELLS?: string;
+  /** The cell this Worker is; unset: `enam`, today's stack. */
+  CELL?: string;
+  /** A cell's own object namespaces are restricted to this jurisdiction (cell-env.ts). */
+  CELL_JURISDICTION?: string;
+  /** A new account authority's location hint in this cell (cell-env.ts). */
+  CELL_HINT?: string;
+  /** The other cells' platform Workers. */
+  CELL_ENAM?: Fetcher;
+  CELL_WEUR?: Fetcher;
+  /** The other cells' D1, for the rows that name no repository: personal tokens' look-ups and
+   * an older account's handle. */
+  INDEX_ENAM?: D1Database;
+  INDEX_WEUR?: D1Database;
   /** `on`: a create may ask for a location hint (repo-region-hint.ts). Dev only, for the latency
    * matrix; off or unset, a create ignores it. */
   REGION_HINT_TEST?: string;

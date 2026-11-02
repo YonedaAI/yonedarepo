@@ -44,14 +44,21 @@ mod holds_tests;
 mod identities;
 #[cfg(test)]
 mod identities_tests;
+mod names;
+#[cfg(test)]
+mod names_tests;
 mod oauth_flows;
 mod op;
+mod op_profile;
 mod orgs;
 #[cfg(test)]
 mod orgs_tests;
 mod password_reset;
 #[cfg(test)]
 mod password_reset_tests;
+mod place;
+#[cfg(test)]
+mod place_tests;
 mod repo_names;
 mod search_directory;
 #[cfg(test)]
@@ -85,7 +92,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             .ok_or_else(|| bad("Trusted clock required"))?;
         match op::AccountOp::parse(&command)? {
             op::AccountOp::Signin(op) => signin::handle(&db, &command, op, now),
-            op::AccountOp::Access(op) => access::handle(&db, op, now),
+            op::AccountOp::Access(op) => access::handle(&db, &command, op, now),
             op::AccountOp::Email(op) => email::handle(&db, &command, op, now),
             op::AccountOp::Password(op) => password_reset::handle(&db, &command, op, now),
             op::AccountOp::Token(op) => tokens::handle(&db, &command, op, now),
@@ -93,6 +100,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             op::AccountOp::Device(op) => device::handle(&db, &command, op, now),
             op::AccountOp::Identity(op) => identities::handle(&db, &command, op, now),
             op::AccountOp::Avatar(op) => avatars::handle(&db, &command, op, now),
+            op::AccountOp::Name(op) => names::handle(&db, &command, op, now),
             op::AccountOp::Favorite(op) => favorites::handle(&db, &command, op, now),
             op::AccountOp::GitHub(op) => github_installation::handle(&db, &command, op, now),
             op::AccountOp::Closure(op) => closure::handle(&db, &command, op, now),
@@ -108,7 +116,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
     }))
 }
 /// Digest-pinned, forward-only account migrations (version, SQL), applied in order.
-pub(crate) const MIGRATIONS: [(i64, &str); 11] = [
+pub(crate) const MIGRATIONS: [(i64, &str); 13] = [
     (1, include_str!("accounts/migrations/0001_accounts.sql")),
     (
         2,
@@ -128,6 +136,14 @@ pub(crate) const MIGRATIONS: [(i64, &str); 11] = [
     (
         11,
         include_str!("accounts/migrations/0011_github_installation.sql"),
+    ),
+    (
+        12,
+        include_str!("accounts/migrations/0012_display_name.sql"),
+    ),
+    (
+        13,
+        include_str!("accounts/migrations/0013_github_org_installations.sql"),
     ),
 ];
 fn migrate<S: SqlStore>(store: &S) -> Result<()> {

@@ -12,8 +12,9 @@ import { ApiError, type Json, type RepoContext } from './repo-ops';
 import type { Env } from './types';
 
 /** How long a look at the import waits for the Workflow's status before saying what it
- * knows: a page polling every 0.5 s learns of main from this answer. */
-const STATUS_WAIT_MS = 300;
+ * knows. Under what that read really takes (over 400 ms on dev), a finished import reads as
+ * running for good and its page never ends. */
+const STATUS_WAIT_MS = 3_000;
 /** How long the request's own create may take before a look at the import tries again: past
  * its 30 s behind the answer it has failed. */
 const CREATE_WAIT_MS = 30_000;

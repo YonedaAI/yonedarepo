@@ -16,6 +16,14 @@ export class FakeGitHub {
   installations = new Map<number, Installed>();
   minted: { installation: number; scope: any; token: string }[] = [];
   asked: string[] = [];
+  /** Who is at the keyboard when the browser reaches GitHub's consent page. */
+  person = { id: 0, login: '' };
+  /** Who GitHub counts on a repository, as `owner/repo:login`. */
+  collaborators = new Set<string>();
+  /** GitHub's id for each login. */
+  logins = new Map<string, number>();
+  /** Every OAuth token handed out, for proving none is kept. */
+  tokens: string[] = [];
   key = '';
   #public?: CryptoKey;
 
@@ -58,10 +66,32 @@ export class FakeGitHub {
 
   /** GitHub's answer to `url`, or null for anywhere else. */
   async handle(url: string, init?: RequestInit): Promise<Response | null> {
+    if (url === 'https://github.com/login/oauth/access_token') {
+      const token = `gho_${this.tokens.length + 1}`;
+      this.tokens.push(token);
+      return Response.json({ access_token: token, token_type: 'bearer' });
+    }
     if (!url.startsWith(API)) return null;
     const { pathname, searchParams } = new URL(url);
     this.asked.push(`${init?.method ?? 'GET'} ${pathname}`);
     const none = () => Response.json({ message: 'Not Found' }, { status: 404 });
+    if (pathname === '/user' || pathname.startsWith('/user/')) {
+      const bearer = new Headers(init?.headers).get('authorization')?.replace('Bearer ', '');
+      if (!this.tokens.includes(bearer ?? '')) return Response.json({}, { status: 401 });
+      if (pathname === '/user') return Response.json({ ...this.person, name: null, avatar_url: null });
+      if (pathname === '/user/emails') return Response.json([]);
+      return none();
+    }
+    const on = /^\/repos\/([^/]+\/[^/]+)\/collaborators\/([^/]+)$/.exec(pathname);
+    const named = /^\/users\/([^/]+)$/.exec(pathname)?.[1];
+    if (on || named) {
+      const token = String((init?.headers as any)?.authorization).replace('Bearer ', '');
+      const grant = this.minted.find((m) => m.token === token);
+      if (!grant) return Response.json({}, { status: 401 });
+      if (on) return this.collaborators.has(`${on[1]}:${on[2]}`) ? new Response(null, { status: 204 }) : none();
+      const id = this.logins.get(named as string);
+      return id ? Response.json({ id, login: named }) : none();
+    }
     if (pathname === '/installation/repositories') {
       const token = String((init?.headers as any)?.authorization).replace('Bearer ', '');
       const grant = this.minted.find((m) => m.token === token);
@@ -72,6 +102,7 @@ export class FakeGitHub {
       return Response.json({ total_count: all.length, repositories: all.slice((page - 1) * size, page * size) });
     }
     if (!(await this.#jwt(init))) return Response.json({ message: 'Bad credentials' }, { status: 401 });
+    if (pathname === '/app/installations') return Response.json([...this.installations.values()]);
     const user = /^\/users\/([^/]+)\/installation$/.exec(pathname)?.[1];
     if (user) return Response.json([...this.installations.values()].find((i) => i.account.login === user) ?? null, { status: [...this.installations.values()].some((i) => i.account.login === user) ? 200 : 404 });
     const [, id, tokens] = /^\/app\/installations\/(\d+)(\/access_tokens)?$/.exec(pathname) ?? [];

@@ -10,7 +10,6 @@ mod agent_hook;
 mod agent_transcript;
 pub mod api;
 pub mod args;
-mod attempt;
 mod auth_token;
 mod brief;
 mod change_cmd;
@@ -63,6 +62,7 @@ mod sync;
 mod target;
 #[cfg(test)]
 mod testkit;
+mod token_cmd;
 mod traffic;
 
 pub use run::main;

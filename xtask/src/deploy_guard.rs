@@ -11,6 +11,8 @@ pub(crate) struct Options {
     pub dry_run: bool,
     pub confirm: bool,
     pub allow_active: bool,
+    /// Dev only: the front Worker alone, for a change that touches nothing else.
+    pub front_only: bool,
     /// `--prebuilt <dir>`: deploy CI's tested outputs instead of building (deploy_prebuilt).
     pub prebuilt: Option<std::path::PathBuf>,
     /// `--ship-head <sha>`: the merged ship PR's head, on a runner (deploy_ship).
@@ -24,6 +26,7 @@ impl Options {
             dry_run: flag("--dry-run"),
             confirm: flag("--confirm"),
             allow_active: flag("--allow-active"),
+            front_only: flag("--front"),
             prebuilt: crate::deploy_prebuilt::dir_arg(args)?,
             ship_head: crate::deploy_ship::head_arg(args)?,
         })

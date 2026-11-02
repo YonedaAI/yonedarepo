@@ -201,7 +201,7 @@ fn missing(origin: &str, agent: Option<&str>) -> String {
 /// the same origin.
 pub fn load(path: &Path, origin: &str, env: Option<String>) -> Result<Token> {
     load_optional(path, origin, env)?
-        .ok_or_else(|| Error::new(missing(origin, env_agent().as_deref())))
+        .ok_or_else(|| Error::auth(missing(origin, env_agent().as_deref())))
 }
 
 /// The token for `origin` as `load` finds it, or `None` when there is none (a caller that
@@ -225,6 +225,17 @@ pub fn load_optional(path: &Path, origin: &str, env: Option<String>) -> Result<O
 
 /// Deletes the stored token when it belongs to `origin` (any origin when `None`);
 /// returns whether one was removed.
+/// The stored login at `path`, on `origin` if one is named: its origin and token.
+pub fn stored(path: &Path, origin: Option<&str>) -> Option<(String, Token)> {
+    let raw = std::fs::read(path).ok()?;
+    let stored: Stored = serde_json::from_slice(&raw).ok()?;
+    let at = normalize_origin(&stored.origin).ok()?;
+    if origin.is_some_and(|wanted| wanted != at) {
+        return None;
+    }
+    Some((at, Token::new(&stored.token).ok()?))
+}
+
 pub fn remove(path: &Path, origin: Option<&str>) -> Result<bool> {
     let Some(stored) = stored_origin(path) else {
         return Ok(false);

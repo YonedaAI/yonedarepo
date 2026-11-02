@@ -24,7 +24,11 @@ pub(super) fn handle<S: SqlStore>(db: &S, c: &Value, op: HandleOp, now: i64) -> 
         }
         HandleOp::Lookup => lookup(db),
         HandleOp::Set => set(db, c, now),
-        HandleOp::Get => Ok(json!({ "handle": own(db)? })),
+        // With the name: the session reads both, so one call answers it.
+        HandleOp::Get => Ok(json!({
+            "handle": own(db)?,
+            "display_name": super::names::own(db)?,
+        })),
         HandleOp::RepoClaim => super::repo_names::claim(db, c, now),
         HandleOp::RepoRelease => super::repo_names::release(db, c),
         HandleOp::RepoResolve => super::repo_names::resolve(db, c),

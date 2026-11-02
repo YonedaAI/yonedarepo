@@ -200,3 +200,34 @@ export function summarize(
     pending,
   };
 }
+
+/** The Home's numbers from several cells. */
+export function mergeActivity(parts: AccountActivity[]): AccountActivity {
+  const sum = (pick: (part: AccountActivity) => number) =>
+    parts.reduce((total, part) => total + pick(part), 0);
+  const any = (pick: (steps: AccountActivity['steps']) => boolean) =>
+    parts.some((part) => pick(part.steps));
+  const hours = new Map<number, number>();
+  for (const part of parts)
+    for (const [hour, n] of part.commits) hours.set(hour, (hours.get(hour) ?? 0) + n);
+  return {
+    ...parts[0],
+    repositories: sum((p) => p.repositories),
+    public: sum((p) => p.public),
+    capturing: sum((p) => p.capturing),
+    landed: sum((p) => p.landed),
+    commits: [...hours.entries()].sort(([a], [b]) => a - b),
+    sessions: parts
+      .flatMap((p) => p.sessions)
+      .sort((a, b) => b.at - a.at || b.id - a.id)
+      .slice(0, SESSIONS),
+    steps: {
+      repository: any((s) => s.repository),
+      pushed: any((s) => s.pushed),
+      cli: any((s) => s.cli),
+      session: any((s) => s.session),
+      landed: any((s) => s.landed),
+    },
+    pending: sum((p) => p.pending),
+  };
+}

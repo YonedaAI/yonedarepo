@@ -56,7 +56,7 @@ export function ExplorePage({ navigate }: { navigate: Navigate }) {
         <ul className="home-repo-list" aria-label="Public repositories" aria-busy={busy}>
           {repos.map((r) => (
             <li key={r.id}>
-              <a {...linkTo({ view: 'files', repo: r.id, path: '', ref: 'main' }, navigate)}>
+              <a {...linkTo({ view: 'overview', repo: r.id }, navigate)}>
                 <GitBranch size={18} aria-hidden="true" />
                 <span className="home-repo-text">
                   <strong className="home-repo-name">

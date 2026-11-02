@@ -57,7 +57,7 @@ export function RepositoriesPage({
       <ul className="home-repo-list">
         {shown.map((row) => (
           <li key={row.repo}>
-            <a {...linkTo({ view: 'files', repo: row.repo, path: '', ref: 'main' }, navigate)}>
+            <a {...linkTo({ view: 'overview', repo: row.repo }, navigate)}>
               <GitBranch size={18} aria-hidden="true" />
               <span className="home-repo-text">
                 <strong className="home-repo-name">

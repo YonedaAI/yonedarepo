@@ -1,10 +1,12 @@
 // "Add GitHub repository": imports a GitHub repository as a new repository, in the manner of
 // the New repository dialog. A connected account's repositories are offered in the same field,
-// as it holds an address too. The import runs in the background, so what can only be known
+// as it holds an address too. "Add public repository" is the address alone. The import runs in the background, so what can only be known
 // later (no such repository, a private one) is the new repository's page to say.
-import { type FormEvent, useEffect, useId, useState } from 'react';
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import { Dialog } from '../../components/Dialog';
 import {
+  addedRepo,
+  badAddress,
   CONNECT_PATH,
   connectMessage,
   defaultRepoName,
@@ -14,19 +16,19 @@ import {
   keepPending,
   parseGitHubRepo,
   pickedRepository,
+  showsDetails,
   takePending,
 } from '../source-platform/importModel';
 import type { OrgSummary } from '../source-platform/orgModel';
 import type { Visibility } from '../source-platform/repoAccess';
 import { SourceApiError, sourceApi } from '../source-platform/sourceApi';
 import { useSource } from '../source-platform/useSource';
-import {
-  CREATE_TIMEOUT_MS,
-  type Created,
-  createFailure,
-  REPO_NAME_PATTERN,
-} from './NewRepositoryDialog';
-import { OwnerField, VisibilityField } from './repoFormFields';
+import { useBackToTab } from './backToTab';
+import { GitHubRepoList } from './GitHubRepoList';
+import { ImportDetails } from './ImportDetails';
+import { CREATE_TIMEOUT_MS, type Created, createFailure } from './NewRepositoryDialog';
+import { OwnerField } from './repoFormFields';
+import type { PlatformRepo } from './repoRows';
 
 /** Asks for the import, giving up after `timeoutMs`; the answer comes before the import ends. */
 export const requestImport = (body: unknown, timeoutMs = CREATE_TIMEOUT_MS) =>
@@ -52,24 +54,33 @@ function takeConnectResult() {
 export function GitHubImportDialog({
   account,
   orgs = [],
+  repos = [],
   initialOwner,
   publicAddress = false,
   onClose,
   onImported,
+  onOpen,
 }: {
   account?: string;
   orgs?: OrgSummary[];
+  /** The account's repositories: one already added opens instead of failing to import. */
+  repos?: PlatformRepo[];
   /** Preselected owner (the open org page), when the caller owns it. */
   initialOwner?: string;
   /** A public repository by its address: nothing here needs GitHub connected. */
   publicAddress?: boolean;
   onClose: () => void;
   onImported: (created: Created) => Promise<void>;
+  onOpen?: (repo: string) => void;
 }) {
   const hint = useId();
-  const list = useId();
   const [connectResult] = useState(takeConnectResult);
-  const github = useSource<GitHubConnection>('/github/repositories').data;
+  // A public address needs nothing from GitHub, so the dialog asks it nothing.
+  const listing = useSource<GitHubConnection>(publicAddress ? null : '/github/repositories');
+  // A failed refetch keeps the list: it says nothing about the connection.
+  const lastListing = useRef<GitHubConnection | undefined>(undefined);
+  if (listing.data) lastListing.current = listing.data;
+  const github = listing.data ?? lastListing.current;
   const connected = github?.connection === 'ok';
   const [source, setSource] = useState(takePending);
   const [invalid, setInvalid] = useState(false);
@@ -82,6 +93,41 @@ export function GitHubImportDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const picked = pickedRepository(source, github?.repositories);
+  const [owner, setOwner] = useState(() =>
+    orgs.some((o) => o.org === initialOwner && o.role === 'owner') ? initialOwner : undefined,
+  );
+  const ownerName = owner || account;
+  const taken = name.trim() ? addedRepo(repos, ownerName, name.trim()) : undefined;
+  const addedOf = (fullName: string) => {
+    const parsed = parseGitHubRepo(fullName);
+    return parsed ? addedRepo(repos, ownerName, defaultRepoName(parsed.repo))?.id : undefined;
+  };
+  const form = useRef<HTMLFormElement>(null);
+  const typed = source.trim().toLowerCase();
+  const matching = (github?.repositories ?? []).filter((r) =>
+    r.full_name.toLowerCase().includes(typed),
+  );
+  // What the field held on coming back from GitHub. A repository added there can complete what
+  // was typed: that is no choice made here, so it waits for Add repository.
+  const typedBefore = useRef<string | null>(null);
+  const starting = Boolean(picked) && !taken && !error && typedBefore.current !== source;
+  const details = showsDetails({
+    publicAddress,
+    github,
+    address: parseGitHubRepo(source) !== null,
+    starting,
+  });
+  const openedGitHub = useBackToTab(() => {
+    typedBefore.current = source;
+    listing.reload();
+  });
+  // Choosing a repository from the list is the whole request: it starts straight away.
+  const pickedId = picked?.id;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once per repository picked
+  useEffect(() => {
+    if (pickedId !== undefined && typedBefore.current !== source && !taken)
+      form.current?.requestSubmit();
+  }, [pickedId]);
   // Adding from GitHub starts on GitHub, and a public address needs none of that. Back from
   // there, the dialog stays to say what happened.
   const unconnected = !publicAddress && github?.available === true && !connected;
@@ -126,12 +172,12 @@ export function GitHubImportDialog({
   }
   return (
     <Dialog
-      title="Add GitHub repository"
+      title={publicAddress ? 'Add public repository' : 'Add GitHub repository'}
       onClose={onClose}
       locked={busy}
       initialFocus='input[name="url"]'
     >
-      <form className="new-repository" onSubmit={add}>
+      <form ref={form} className="new-repository" onSubmit={add}>
         <p className="source-meta import-notice">
           {github && !github.available && (
             <strong>Public GitHub repositories only for now. </strong>
@@ -145,11 +191,21 @@ export function GitHubImportDialog({
           {github?.available && !connected && ' to add a private repository.'}
         </p>
         {connectResult && connectMessage(connectResult) && (
-          <p role="alert" className="form-error">
+          // GitHub waiting on an owner is news, not a failure.
+          <p
+            role={connectResult === 'requested' ? 'status' : 'alert'}
+            className={connectResult === 'requested' ? 'source-note' : 'form-error'}
+          >
             {connectMessage(connectResult)}
           </p>
         )}
-        <OwnerField account={account} orgs={orgs} initialOwner={initialOwner} disabled={busy} />
+        <OwnerField
+          account={account}
+          orgs={orgs}
+          initialOwner={initialOwner}
+          disabled={busy}
+          onOwner={setOwner}
+        />
         <label>
           GitHub repository
           <input
@@ -157,13 +213,12 @@ export function GitHubImportDialog({
             required
             value={source}
             onChange={(event) => changeSource(event.target.value)}
-            onBlur={() => setInvalid(Boolean(source.trim()) && !parseGitHubRepo(source))}
+            onBlur={() => setInvalid(badAddress(source, connected))}
             aria-invalid={invalid || undefined}
             aria-describedby={invalid ? hint : undefined}
             placeholder={
               connected ? 'Choose, or paste an address' : 'https://github.com/owner/repo'
             }
-            list={connected ? list : undefined}
             inputMode="url"
             spellCheck={false}
             autoCapitalize="none"
@@ -171,67 +226,38 @@ export function GitHubImportDialog({
             disabled={busy}
           />
         </label>
-        {connected && (
-          <datalist id={list}>
-            {github?.repositories?.map((r) => (
-              <option key={r.id} value={r.full_name}>
-                {r.private ? 'Private' : 'Public'}
-              </option>
-            ))}
-          </datalist>
+        {connected && !picked && (
+          <GitHubRepoList
+            repositories={github?.repositories ?? []}
+            matching={matching}
+            addedOf={addedOf}
+            busy={busy}
+            onPick={changeSource}
+            onOpen={(repo) => onOpen?.(repo)}
+            onOpenGitHub={openedGitHub}
+          />
         )}
         {invalid && (
           <p id={hint} role="alert" className="form-error">
             {IMPORT_HINT}
           </p>
         )}
-        <label>
-          Repository name
-          <input
-            name="name"
-            required
-            maxLength={100}
-            pattern={REPO_NAME_PATTERN}
-            title="Letters, digits, . _ and -; not starting with a dot"
-            value={name}
-            onChange={(event) => {
-              setName(event.target.value);
-              setNamed(event.target.value !== '');
+        {starting && !details && <p role="status">Adding {picked?.full_name}…</p>}
+        {details && (
+          <ImportDetails
+            name={name}
+            onName={(next) => {
+              setName(next);
+              setNamed(next !== '');
             }}
-            placeholder="my-service"
-            autoComplete="off"
-            disabled={busy}
+            onlyPrivate={picked?.private}
+            taken={taken}
+            error={error}
+            busy={busy}
+            onOpen={onOpen}
+            onClose={onClose}
           />
-        </label>
-        <VisibilityField disabled={busy} onlyPrivate={picked?.private} />
-        <details className="source-details">
-          <summary>Branch (optional)</summary>
-          <label>
-            Branch to import
-            <input
-              name="branch"
-              maxLength={255}
-              placeholder="The repository's default branch"
-              spellCheck={false}
-              autoCapitalize="none"
-              autoComplete="off"
-              disabled={busy}
-            />
-          </label>
-        </details>
-        {error && (
-          <p role="alert" className="form-error">
-            {error}
-          </p>
         )}
-        <div className="new-repository-actions">
-          <button type="button" className="quiet" disabled={busy} onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" disabled={busy}>
-            {busy ? 'Adding…' : 'Add repository'}
-          </button>
-        </div>
       </form>
     </Dialog>
   );

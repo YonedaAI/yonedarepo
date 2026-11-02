@@ -39,7 +39,10 @@ export const PAGE_DEADLINE = { ms: 20_000 };
  */
 export async function authorizeObjects(ctx: RepoContext, wanted: Json[], commitId: unknown) {
   if (!SHA.test(String(commitId ?? '')))
-    throw new ApiError('FORBIDDEN', 'Path-restricted callers fetch objects by commit and path');
+    throw new ApiError(
+      'FORBIDDEN',
+      "A token limited to paths can't clone or fetch: Git needs every path. Use a token with no paths, or read with yoneda grep and yoneda log",
+    );
   const where = await ctx.call({ op: 'repo_commit', commit: commitId });
   const objects = await ctx.objects();
   for (const object of wanted) {

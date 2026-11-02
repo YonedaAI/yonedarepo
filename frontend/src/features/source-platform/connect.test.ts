@@ -126,7 +126,7 @@ describe('connect snippets', () => {
   it('offers every scope the platform knows, SSH keys ticked only for a CLI login', () => {
     expect(PAT_SCOPES.map((s) => s.scope)).toEqual(patScopesSchema.enum);
     expect(DEFAULT_PAT_SCOPES).not.toContain('account:ssh-keys');
-    expect(DEVICE_PAT_SCOPES).toEqual([...DEFAULT_PAT_SCOPES, 'account:ssh-keys']);
+    expect(DEVICE_PAT_SCOPES).toEqual([...DEFAULT_PAT_SCOPES, 'repo:admin', 'account:ssh-keys']);
   });
   it('gives Windows its own one-line install, from the site not the API', () => {
     expect(installCommand(api)).toBe('curl -fsSL https://dev.yonedarepo.com/install.sh | sh');

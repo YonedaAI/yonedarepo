@@ -6,6 +6,8 @@
 // Repositories, Git, tokens and MCP all live on the platform Worker.
 
 import { accountRoute } from './accounts';
+import { frontEnv, signInEnv } from './cell-edge';
+import { cellsOn } from './cells';
 import { clientError } from './client-errors';
 import { isInstaller, serveDownload, serveInstallScript } from './downloads';
 import { error, response } from './http';
@@ -22,7 +24,8 @@ import { publicOrigin, websitePage } from './website-metadata';
 
 const GITHUB_PAGES = new Set(['/github/connect', '/github/connected']);
 
-export async function frontFetch(req: Request, env: Env): Promise<Response> {
+export async function frontFetch(req: Request, bound: Env): Promise<Response> {
+  const env = frontEnv(bound);
   const url = new URL(req.url);
   if (url.pathname === '/health')
     return response({ service: 'yonedarepo', v: 1, revision: env.BUILD_REVISION ?? 'development' });
@@ -31,7 +34,7 @@ export async function frontFetch(req: Request, env: Env): Promise<Response> {
   if (url.pathname.startsWith('/downloads/')) return serveDownload(req, env);
   if (isSeoFile(url.pathname)) return seoFile(req, env);
   if (url.pathname.startsWith('/auth/')) {
-    const handled = await oauthRoute(req, env);
+    const handled = await oauthRoute(req, signInEnv(req, env));
     if (handled) return handled;
   }
   // Connecting GitHub is the platform's, on its own paths: the App's setup URL is one of them.
@@ -63,6 +66,9 @@ export async function frontFetch(req: Request, env: Env): Promise<Response> {
     return env.MANAGED
       ? env.MANAGED.fetch(carriedRequest(req))
       : error('NOT_FOUND', 'Managed agents are not available here', 404);
+  // Sign-in stays on a pinned Worker: its limiter is one count per cell, not one per location.
+  if (cellsOn(env) && env.PLATFORM && url.pathname.startsWith('/api/auth/'))
+    return env.PLATFORM.fetch(carriedRequest(req));
   try {
     const authResponse = await accountRoute(req, env);
     if (authResponse) return authResponse;

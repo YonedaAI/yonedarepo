@@ -51,9 +51,10 @@ async function installRows(w, person, m) {
     const dir = person.path('.local', 'bin');
     for (const tool of ['yoneda', 'git-remote-yoneda', 'cloudflared']) assert.ok(existsSync(join(dir, tool)), `no ${tool} in ${dir}`);
     assert.match(ran.stdout, /Installed yoneda/);
-    assert.match(ran.stdout, /PATH set in .*\.profile/, 'the installer did not put the folder on PATH');
+    assert.match(ran.stdout, /PATH set in /, 'the installer did not put the folder on PATH');
     assert.match(ran.stdout.trim().split('\n').at(-1), /^Next: yoneda login/, 'the last line is not the next step');
-    person.bin = dir;
+    // CLI_WALK_LOCAL_CLI: a change not in a release yet, with the installer's rows otherwise as they are.
+    if (!process.env.CLI_WALK_LOCAL_CLI) person.bin = dir;
     w.extraPath.push(dir);
     m.installed = ran.stdout.split('\n')[0].replace(w.dir, '');
   });
@@ -83,11 +84,11 @@ async function cloneSpellings(w, person, repo) {
   await w.row('Q2: yoneda clone <owner>/<name>', async () => {
     const ran = await person.y(['clone', `${w.ownerHandle}/${repo.name}`], { cwd: work });
     assert.equal(ran.code, 0, short(ran.stderr));
-    assert.ok(existsSync(join(work, w.ownerHandle, repo.name, '.git')), 'not where it said');
-    assert.ok(existsSync(join(work, repo.name, '.git')), `it landed in ${w.ownerHandle}/${repo.name}, not ./${repo.name}, where git clone puts it`);
+    assert.ok(existsSync(join(work, repo.name, '.git')), `it did not land in ./${repo.name}, where git clone puts it`);
+    assert.ok(!existsSync(join(work, w.ownerHandle)), 'a folder for the owner');
   });
   await w.row('Q2: inside a clone by <owner>/<name>, yoneda knows the repository', async () => {
-    const dir = join(work, w.ownerHandle, repo.name);
+    const dir = join(work, repo.name);
     assert.equal((await person.git(dir, 'remote', 'get-url', 'origin')).code, 0, 'no such clone');
     for (const args of [['status'], ['log'], ['change', 'list'], ['policy', 'show']]) {
       const ran = await person.y(args, { cwd: dir });
@@ -95,9 +96,11 @@ async function cloneSpellings(w, person, repo) {
     }
   });
   await w.row('Q2: yoneda clone <id> (folder name)', async () => {
-    const ran = await person.y(['clone', repo.id], { cwd: work });
+    const elsewhere = person.path('by-id');
+    await person.exec('/bin/mkdir', ['-p', elsewhere]);
+    const ran = await person.y(['clone', repo.id], { cwd: elsewhere });
     assert.equal(ran.code, 0, short(ran.stderr));
-    assert.ok(existsSync(join(work, repo.name, '.git')) || !existsSync(join(work, repo.id)), `the folder is the id ${repo.id}, not the name ${repo.name}`);
+    assert.ok(existsSync(join(elsewhere, repo.name, '.git')), `the folder is not the name ${repo.name}`);
   });
   await w.row('Q2: yoneda clone <name> says what to type', async () => {
     const ran = await person.y(['clone', repo.name], { cwd: work });
@@ -124,11 +127,11 @@ async function existingProject(w, person, repo) {
   });
 }
 
-/** A repository as the web's New repository dialog makes it: a README, and one approval. */
+/** A repository as the web's New repository dialog makes it: a README, landing at once. */
 async function webRepo(w, what) {
   const name = w.name(what);
   const files = [{ path: 'README.md', content_b64: Buffer.from(`# ${name}\n`).toString('base64') }];
-  const made = await w.owner.post('/repos', { name, visibility: 'private', policy: { required_checks: [], approvals: 1 }, files, author: { name: 'Repository owner', email: 'owner@yonedarepo.invalid' } });
+  const made = await w.owner.post('/repos', { name, visibility: 'private', policy: { required_checks: [], approvals: 0 }, files, author: { name: 'Repository owner', email: 'owner@yonedarepo.invalid' } });
   w.repos.push({ id: made.id, name });
   return { id: made.id, name };
 }
@@ -150,9 +153,11 @@ async function webCreatedRows(w, person) {
     await person.commit(project, { 'app.txt': 'an existing project\n' }, 'Existing project');
     await person.gitOk(project, 'remote', 'add', 'origin', `yoneda::${w.api}/${repo.id}`);
     await person.gitOk(project, 'pull', '-q', '--no-rebase', '--no-edit', '--allow-unrelated-histories', 'origin', 'main');
-    // The merge holds main, so the one thing to say about it is that it still needs its approval.
     const pushed = await person.git(project, 'push', '-u', 'origin', 'main');
-    assert.doesNotMatch(pushed.stderr, /shares no commit/, `the merged project, which holds main, is refused: ${short(pushed.stderr)}`);
+    assert.equal(pushed.code, 0, `the merged project, which holds main, is refused: ${short(pushed.stderr)}`);
+    const copy = person.path('web-copy');
+    await person.gitOk(person.home, 'clone', '-q', `yoneda::${w.api}/${repo.id}`, copy);
+    for (const file of ['app.txt', 'README.md']) assert.ok(existsSync(join(copy, file)), `main lacks ${file}`);
   });
 }
 

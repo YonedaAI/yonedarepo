@@ -10,6 +10,7 @@
 // and `<repo>#head`, is the repository's changeset projector and published-head holder.
 
 import { DurableObject } from 'cloudflare:workers';
+import { cellEnv } from './cell-env';
 import { log } from './log';
 import { ProjectionRunner } from './repo-changesets';
 import { HeadHolder } from './repo-head-holder';
@@ -21,6 +22,10 @@ import { RefsHolder } from './repo-snapshots';
 import type { Env } from './types';
 
 export class LandCombiner extends DurableObject<Env> {
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, cellEnv(env));
+  }
+
   // Steps due now run here at once (one at a time); later ones wait for an alarm, which
   // also restarts the combiner after an eviction.
   #batcher = new LandBatcher(this.env, async (ms) => {

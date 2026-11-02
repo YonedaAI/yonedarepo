@@ -2,19 +2,24 @@
    use these, never sizes or colors of their own. The public site keeps a smaller scale on the
    same names (site-frame.css). */
 :root {
-  font-family: "IBM Plex Sans", sans-serif;
+  font-family: "Inter", sans-serif;
   font-synthesis: none;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   font-size: var(--text-base);
+  --display: "Inter", "IBM Plex Sans", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --text-xs: 12px; /* uppercase section labels */
-  --text-sm: 13px; /* labels and metadata */
-  --text-md: 14px; /* secondary text, tables, toolbars */
-  --text-base: 15px; /* body text, sidebar rows */
-  --text-lg: 16px; /* card titles, page body copy */
+  --text-xs: 12px; /* section and stat labels, sidebar group labels */
+  --text-sm: 13px; /* metadata under a row's title */
+  --text-md: 14px; /* chrome: sidebar, breadcrumbs, tables, toolbars, controls */
+  --text-base: 16px; /* the page default: reading text and row titles */
+  --text-control: 14px; /* what a field shows */
+  --text-lg: 16px; /* card titles */
   --text-xl: 18px; /* section headings */
   --text-2xl: 22px; /* a change's title, large figures */
-  --text-3xl: 26px; /* page headings */
-  --text-4xl: 30px; /* dashboard figures */
+  --text-3xl: 30px; /* page headings and the greeting */
+  --text-4xl: 36px; /* stat numbers */
   --text-mono: 14px; /* code fields */
   --text-mono-dense: 13px; /* code and diff views */
   --text-code: max(
@@ -22,6 +27,16 @@
     0.93em
   ); /* code inside text: follows the text, never below 13px */
   --weight-heading: 600;
+  --weight-title: 400; /* page headings: size carries them, not weight */
+  --leading-title: 36px;
+  --leading-stat: 40px;
+  --leading-label: 16px;
+  --leading-chrome: 20px;
+  --tracking-title: 0;
+  --tracking-label: 0.5px;
+  --control-h: 32px; /* every control in a row: buttons, fields, segments */
+  --row-h: 48px; /* a two-line row: title and metadata */
+  --row-y: 6px; /* the padding above and below a list or table row */
   color: var(--text);
   background: var(--bg);
   /* Light unless the viewer chose Dark, or chose nothing (System) on a dark device; the
@@ -36,6 +51,7 @@
   --muted: #5d6c80;
   --faint: #5f6e82;
   --line: #e1e6ed;
+  --row-line: #edf0f4; /* between rows: quieter than a panel's edge */
   --line-strong: #c5d6e1;
   --blue: #245de8;
   /* Blue as text, links and focus outlines; --blue itself is the fill behind --on-accent. */
@@ -84,6 +100,7 @@
     --muted: #9d9d9d;
     --faint: #939393;
     --line: #2b2b2b;
+    --row-line: #232323;
     --line-strong: #3d3d3d;
     --blue: #3566dc;
     --blue-text: #7aa0f8;
@@ -130,6 +147,7 @@
   --muted: #9d9d9d;
   --faint: #939393;
   --line: #2b2b2b;
+  --row-line: #232323;
   --line-strong: #3d3d3d;
   --blue: #3566dc;
   --blue-text: #7aa0f8;

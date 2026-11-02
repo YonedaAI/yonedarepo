@@ -5,6 +5,8 @@ export type AccountIdentity = {
   /** The account's handle (`/<handle>`); null while an email-named account has none. Absent
    * from a server without handles. */
   handle?: string | null;
+  /** The name the person goes by; null while they have none. */
+  display_name?: string | null;
   /** A free handle made from the account's GitHub login, offered while it has none. */
   handle_suggestion?: string | null;
   avatar_url?: string | null;

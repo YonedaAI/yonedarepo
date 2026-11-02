@@ -86,28 +86,42 @@
   background: var(--code-bg);
   font: var(--text-mono-dense) / 1.5 var(--mono);
 }
+.source-history section {
+  overflow: hidden;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
 .source-history h3 {
-  margin: 16px 0 6px;
-  color: var(--muted);
-  font-size: var(--text-md);
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0;
+  padding: var(--row-y) 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: var(--text-sm);
   font-weight: 500;
+}
+.source-history h3 span {
+  font-variant-numeric: tabular-nums;
 }
 .source-history ol {
   margin: 0;
   padding: 0;
   list-style: none;
-  border: 1px solid var(--line);
-  border-radius: 8px;
 }
 .source-history li {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 8px 12px;
+  min-height: var(--row-h);
+  padding: 5px 12px; /* With the 1 px line and two text lines, 48 high. */
 }
 .source-history li + li {
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--row-line);
 }
 .source-history li > div {
   display: grid;
@@ -116,6 +130,7 @@
 .source-history a {
   overflow: hidden;
   color: var(--text);
+  line-height: var(--leading-chrome);
   text-decoration: none;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -126,6 +141,16 @@
 .source-history span {
   color: var(--muted);
   font-size: var(--text-sm);
+}
+.source-history span.source-badge-danger {
+  color: var(--on-accent);
+}
+.source-history-end {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
 }
 .source-history code {
   flex: none;
@@ -260,8 +285,8 @@ button.danger:not(:disabled) {
 .source-table th,
 .source-table td {
   text-align: left;
-  padding: 6px 10px;
-  border-bottom: 1px solid var(--line);
+  padding: var(--row-y) 10px;
+  border-bottom: 1px solid var(--row-line);
   white-space: nowrap;
 }
 .source-class {

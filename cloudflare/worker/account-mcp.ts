@@ -5,6 +5,8 @@
 // each with the caller's own credentials (session, personal access token or repository
 // token), so scopes and allowlists are enforced exactly where they are for REST.
 import platformTools from '../../backend/crates/yoneda-core/src/platform_tools.json';
+import { askCell } from './cell-route';
+import { cellOfRepo, cellsOn, thisCell } from './cells';
 import { operation, serveMcp } from './repo-mcp';
 import { ApiError, type Credentials, caller, type Json, RepoContext } from './repo-ops';
 import { forViewer } from './repo-principal-privacy';
@@ -226,6 +228,25 @@ export function toolsOf(env: Env) {
   return accountSearchOn(env) ? [searchTool, ...described] : described;
 }
 
+/** A platform tool on a repository of another cell: asked of that repository's own MCP, with
+ * the caller's credentials, as an agent could ask it. */
+async function toolElsewhere(env: Env, cell: string, repo: string, name: string, args: Json) {
+  const { result, error } = await askCell(env, cell, `/api/v1/repos/${repo}/mcp`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'tools/call',
+      params: { name, arguments: args },
+    }),
+  });
+  if (error) throw new ApiError('REQUEST_FAILED', String(error.message));
+  // Its words as they are: an agent reads the code they start with.
+  if (result.isError) throw new Error(String(result.content?.[0]?.text));
+  return result.structuredContent as Json;
+}
+
 export function accountMcp(req: Request, env: Env, auth: Credentials, route: Route) {
   const origin = new URL(req.url).origin;
   const rest = (method: string, path: string, body?: Json) => {
@@ -269,6 +290,9 @@ export function accountMcp(req: Request, env: Env, auth: Credentials, route: Rou
       const run = operation(name);
       const { repo, ...toolArgs } = args;
       const id = await resolve(repo);
+      const cell = cellOfRepo(id);
+      if (cellsOn(env) && cell !== thisCell(env))
+        return toolElsewhere(env, cell, id, name, toolArgs);
       const ctx = new RepoContext(env, id, caller(env, id, auth));
       // A non-member sees accounts by handle, never by address (principal-privacy).
       return forViewer(env, await run(ctx, toolArgs), () => ctx.status());

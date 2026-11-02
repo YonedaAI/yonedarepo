@@ -60,6 +60,18 @@ export function CommitFile({
     }
   }
 
+  // In the header, which stays on screen, so a long file never hides them.
+  const actions = (
+    <>
+      <button type="button" className="quiet" disabled={busy} onClick={onCancel}>
+        Cancel
+      </button>
+      <button type="submit" disabled={busy}>
+        {busy ? 'Saving…' : 'Save'}
+      </button>
+    </>
+  );
+
   return (
     <form
       className="source-token-form source-open-change source-commit-file"
@@ -70,31 +82,28 @@ export function CommitFile({
       }}
     >
       <div className="source-file code-editor">
-        {editing ? (
-          <FileHeader path={editing.path}>
-            <button type="button" className="quiet" disabled={busy} onClick={onCancel}>
-              Cancel
-            </button>
-          </FileHeader>
-        ) : (
-          <header className="file-header">
-            <label className="source-field">
-              File
-              <input
-                value={path}
-                required
-                placeholder="src/app.ts"
-                spellCheck={false}
-                // biome-ignore lint/a11y/noAutofocus: the form opens because the user asked for it.
-                autoFocus
-                onChange={(e) => setPath(e.target.value)}
-              />
-            </label>
-            <button type="button" className="quiet" disabled={busy} onClick={onCancel}>
-              Cancel
-            </button>
-          </header>
-        )}
+        <div className="code-editor-top">
+          {editing ? (
+            <FileHeader path={editing.path}>{actions}</FileHeader>
+          ) : (
+            <header className="file-header">
+              <label className="source-field">
+                File
+                <input
+                  value={path}
+                  required
+                  placeholder="src/app.ts"
+                  spellCheck={false}
+                  // biome-ignore lint/a11y/noAutofocus: the form opens because the user asked for it.
+                  autoFocus
+                  onChange={(e) => setPath(e.target.value)}
+                />
+              </label>
+              <span className="file-actions">{actions}</span>
+            </header>
+          )}
+          {error && <Failure error={error} />}
+        </div>
         <CodeBlock value={content} path={path} label="Contents" onChange={setContent} />
       </div>
       <div className="code-editor-fields">
@@ -121,15 +130,6 @@ export function CommitFile({
           />
         </label>
       </div>
-      <div className="source-actions">
-        <button type="submit" disabled={busy}>
-          {busy ? 'Saving…' : 'Save'}
-        </button>
-        <button type="button" className="quiet" disabled={busy} onClick={onCancel}>
-          Cancel
-        </button>
-      </div>
-      {error && <Failure error={error} />}
     </form>
   );
 }

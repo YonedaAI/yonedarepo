@@ -129,6 +129,9 @@ pub fn snapshot<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
     )
 }
 
+/// Where `files_changed` stops counting a commit's files.
+const FILES_COUNTED: u64 = 1_001;
+
 /// First-parent history from a branch head, newest first; with `from` (a recorded commit),
 /// from that commit instead, so a client pages a long history 200 commits a request rather
 /// than one generation per object fetch.
@@ -165,7 +168,25 @@ pub fn log<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {
             _ => None,
         };
     }
+    files_changed(db, &mut commits)?;
     Ok(json!({ "version": version, "ref": refname, "commits": commits }))
+}
+
+/// Adds how many files each log entry changed. The count stops at `FILES_COUNTED`, which holds a
+/// page of the log to a known number of rows whatever its commits touched.
+fn files_changed<S: SqlStore>(db: &S, commits: &mut [Value]) -> Result<()> {
+    let ids: Vec<&Value> = commits.iter().map(|c| &c["commit"]).collect();
+    let counts = db.query(
+        "SELECT j.value AS id,(SELECT COUNT(*) FROM (SELECT 1 FROM commit_paths \
+         WHERE commit_id=j.value LIMIT ?)) AS files FROM json_each(?) j",
+        &[json!(FILES_COUNTED), json!(json!(ids).to_string())],
+    )?;
+    for count in counts {
+        if let Some(commit) = commits.iter_mut().find(|c| c["commit"] == count["id"]) {
+            commit["files_changed"] = count["files"].clone();
+        }
+    }
+    Ok(())
 }
 
 pub fn txlog<S: SqlStore>(db: &S, c: &Value) -> Result<Value> {

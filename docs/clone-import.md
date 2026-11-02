@@ -80,12 +80,20 @@ A signed-in owner connects GitHub in the import dialog, picks a repository, and 
 
 **A token lasts an hour.** Only `POST /clone` uses it, and Git's requests all start in the first seconds of the clone: the refs, then one fetch whose answer is the pack. The steps after that read the instance's disk. A clone may run 60 minutes and its token is minted up to 3 minutes before, so the very longest clone's pack would still be arriving past the hour. GitHub's docs don't say whether an answer already streaming is cut off at expiry. **Not measured.** If it is, the clone fails, nothing lands and the import is run again.
 
-**An organization's installation is refused.** GitHub's docs give two ways to prove someone belongs to one, and the App has neither:
+**An organization connects like an account.** Add another repository opens GitHub's install page, which lists the person's account and organizations. On the way back the redirect's `installation_id` is believed only once GitHub says the same: the App asks `GET /repos/{repo}/collaborators/{login}` about the GitHub user this account linked, on the installation's repositories until one says yes. That call needs only the metadata every installation token has, so the App needs no Members permission. OAuth app restrictions don't cover GitHub Apps, so an organization has nothing to approve, and no OAuth round or owner check is involved. GitHub counts owners, team members, members by default access and outside collaborators. Tested 2026-11-02 against a personal installation: 204 for the owner, 404 for a stranger, on a private and a public repository. **Not yet tested on a real organization.**
 
-| What it would take | What it proves | Cost |
-|---|---|---|
-| The App's user token: its client secret, plus "Request user authorization during installation", then `GET /user/installations` | The person can reach that installation. GitHub's documented check | A second OAuth exchange |
-| The App's organization permission Members: read, then `GET /orgs/{org}/members/{login}` | Membership, not ownership. Every organization must accept the new permission | A wider permission on the App |
+| Case | What happens |
+|---|---|
+| On none of its repositories, as with a forged `installation_id` | `not_member`. Nothing stored |
+| Nothing shared with the App | `not_member`: there is no repository to ask about |
+| The login now names another GitHub id | `other_account` |
+| `setup_action=request`: GitHub stopped someone who isn't an owner | Organizations already holding the App are checked and connected where this person is on a repository. Otherwise `requested` |
+
+The import dialog lists every repository of every installation that holds, an account's own first, in one list and one search. On an organization a private repository shows only if GitHub counts this person on it, asked ten at a time and at most 300 for one answer; past that it's left out and `more` is set. Importing one asks again. A public one is listed for all.
+
+Re-checks: each use reads the installation (still an organization, the same id, not suspended) and needs the GitHub user who connected it still linked here. Closing an account takes its own installation off GitHub and leaves an organization's.
+
+`github_org_ticket_*` in the account authority are unused since this change. Migration 13 stays; removing the ops is separate work.
 
 ## What can go wrong
 

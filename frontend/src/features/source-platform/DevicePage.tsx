@@ -8,14 +8,7 @@
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react';
 import type { AccountIdentity } from '../../lib/types';
 import { AccountPanel } from '../workspace/AccountPanel';
-import {
-  DEFAULT_EXPIRY_DAYS,
-  DEVICE_PAT_SCOPES,
-  isUserCode,
-  normalizeUserCode,
-  PAT_SCOPES,
-  type PatScope,
-} from './connect';
+import { DEFAULT_EXPIRY_DAYS, DEVICE_PAT_SCOPES, isUserCode, normalizeUserCode } from './connect';
 import {
   AGENT_DEFAULT_SCOPES,
   AgentFields,
@@ -23,9 +16,10 @@ import {
   agentGrant,
   agentProblem,
 } from './DeviceAgent';
+import { Asking, CodeEntry, DeviceOptions } from './DeviceParts';
 import { Failure, Loading } from './SourceStatus';
 import { SourceApiError, sourceApi } from './sourceApi';
-import { ExpirySelect, RepoAllowlist, type RepoSummary, ScopeChecks } from './TokenParts';
+import type { RepoSummary } from './TokenParts';
 import { useSource } from './useSource';
 
 type Outcome = 'approved' | 'denied';
@@ -69,72 +63,6 @@ export function DeviceDone({ outcome }: { outcome: Outcome }) {
     <Card title="Sign-in denied">
       <p role="status">The waiting yoneda login receives no token. You can close this tab.</p>
     </Card>
-  );
-}
-
-/** The grant a person can change; the defaults are what Approve sends without opening this. */
-export function DeviceOptions({
-  repos,
-  scopes,
-  days,
-  allow,
-  busy,
-  onChange,
-  onDeny,
-}: {
-  repos: RepoSummary[];
-  scopes: PatScope[];
-  days: number;
-  allow: string[];
-  busy: boolean;
-  onChange: (next: Partial<{ scopes: PatScope[]; days: number; allow: string[] }>) => void;
-  onDeny: () => void;
-}) {
-  return (
-    <div className="device-options">
-      <ScopeChecks
-        legend="Access"
-        options={PAT_SCOPES}
-        value={scopes}
-        onChange={(next) => onChange({ scopes: next })}
-      />
-      <ExpirySelect id="device-expiry" value={days} onChange={(next) => onChange({ days: next })} />
-      <RepoAllowlist repos={repos} value={allow} onChange={(next) => onChange({ allow: next })} />
-      <button type="button" className="quiet" disabled={busy} onClick={onDeny}>
-        Deny
-      </button>
-    </div>
-  );
-}
-
-/** Who, which machine and which code: what the person checks before approving. */
-function Asking({
-  identity,
-  host,
-  code,
-}: {
-  identity?: AccountIdentity | null;
-  host?: string | null;
-  code: string;
-}) {
-  return (
-    <>
-      <dl className="device-facts">
-        <dt>Signed in as</dt>
-        <dd>{identity?.handle ?? identity?.username}</dd>
-        {host && (
-          <>
-            <dt>This machine</dt>
-            <dd>{host}</dd>
-          </>
-        )}
-        <dt>Code</dt>
-        <dd>
-          <code>{code}</code>
-        </dd>
-      </dl>
-      <p className="device-hint">Check this code matches your terminal.</p>
-    </>
   );
 }
 
@@ -255,42 +183,23 @@ function Intro({ children, site }: { children: ReactNode; site: string }) {
   );
 }
 
-/** Asks for the code `yoneda login` showed, when the address didn't bring it. */
-function CodeEntry({ onCode }: { onCode: (code: string) => void }) {
-  const [typed, setTyped] = useState('');
-  return (
-    <label htmlFor="device-code" className="source-field device-code-entry">
-      Code from your terminal
-      <input
-        id="device-code"
-        value={typed}
-        onChange={(e) => {
-          const next = normalizeUserCode(e.target.value);
-          setTyped(next);
-          if (isUserCode(next)) onCode(next);
-        }}
-        placeholder="BCDF-GHJK"
-        autoComplete="off"
-        spellCheck={false}
-      />
-    </label>
-  );
-}
-
 export function DevicePage({
   code: initial,
-  site,
+  site = window.location.origin,
   session,
   signInError,
-  onConnected,
 }: {
   code: string;
-  /** The site being signed into, as this page's address has it. */
-  site: string;
-  session: { authenticated: boolean; loading: boolean; identity?: AccountIdentity | null };
+  /** The site being signed into. */
+  site?: string;
+  session: {
+    authenticated: boolean;
+    loading: boolean;
+    identity?: AccountIdentity | null;
+    discover: () => Promise<void>;
+  };
   /** A provider sign-in that came back here refused, in words. */
   signInError?: string;
-  onConnected: () => void;
 }) {
   const normalized = normalizeUserCode(initial);
   const [code, setCode] = useState(isUserCode(normalized) ? normalized : '');
@@ -307,7 +216,7 @@ export function DevicePage({
           initialMode="login"
           initialError={signInError}
           onMode={() => {}}
-          onConnected={onConnected}
+          onConnected={() => void session.discover()}
         />
       </Intro>
     );

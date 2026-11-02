@@ -5,6 +5,7 @@
 // instance (`device:<user code>`) for ten minutes and hold no token, only grants. With
 // AGENT_SIGNUP on, a code can ask for an agent: `yoneda login --agent <name>`.
 import { auditDevice } from './account-audit';
+import { cellOfRegion, cellsOn, FIRST_CELL } from './cells';
 import { releaseClaims } from './platform-ssh-keys';
 import { ApiError, type Credentials, type Json } from './repo-ops';
 import { base64url, issuePat, requirePatScope, revokePat, sha } from './repo-pat';
@@ -92,6 +93,14 @@ function newUserCode() {
   return out.join('');
 }
 
+/** The cell a device's token belongs to: its account's home, which this poll has no other way
+ * to know. It has no credentials yet. */
+async function tokenCellOf(env: Env, account: string) {
+  if (!cellsOn(env)) return FIRST_CELL;
+  const { region } = await workspace(env, account, { op: 'account_place' });
+  return cellOfRegion(env, region);
+}
+
 /** `POST /api/v1/device/code`: a new code pair for a device (no credentials). */
 export async function deviceCode(req: Request, env: Env, body: Json, url: URL) {
   await limited(req, env);
@@ -161,6 +170,20 @@ async function deviceApprove(env: Env, auth: Credentials, body: Json) {
   return { approved: approved.approved === true };
 }
 
+/** `DELETE /api/v1/device/token`: `yoneda logout`. A token `yoneda login` made ends itself, with
+ * the SSH keys it added, as Sign out does in Settings, and needs no scope to. A token made by hand
+ * stays: it may be in use elsewhere, and stored here only by `--with-token`. */
+async function deviceLogout(env: Env, auth: Credentials) {
+  if (!('_pat' in auth)) throw new ApiError('INVALID_INPUT', 'Only a login token signs itself out');
+  const { workspace: account, id } = auth._pat;
+  const { tokens } = await workspace(env, account, { op: 'pat_list' });
+  const mine = (tokens as Json[]).find((token) => token.id === id);
+  if (!mine?.origin) return { revoked: false };
+  const revoked = await revokePat(env, account, id);
+  await releaseClaims(env, account, revoked.removed_ssh_keys);
+  return { revoked: true };
+}
+
 /** `/api/v1/device/*` for a signed-in caller. */
 export async function deviceRoute(
   env: Env,
@@ -172,6 +195,7 @@ export async function deviceRoute(
 ): Promise<Json> {
   if (action === 'approve' && req.method === 'POST') return deviceApprove(env, auth, await body());
   if (action === 'pending' && req.method === 'GET') return devicePending(env, auth, url);
+  if (action === 'token' && req.method === 'DELETE') return deviceLogout(env, auth);
   throw new ApiError('NOT_FOUND', 'Unknown API path');
 }
 
@@ -211,6 +235,7 @@ export async function deviceToken(req: Request, env: Env, body: Json) {
       expires_days: grant.expires_days,
     },
     { origin: agent ? `agent:${agent}` : 'login', host: polled.host ?? null },
+    await tokenCellOf(env, polled.account),
   );
   return {
     token: issued.token,

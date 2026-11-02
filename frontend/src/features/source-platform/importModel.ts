@@ -59,6 +59,7 @@ export function importBody(
 ) {
   return {
     ...(picked ? { github_repository: picked.id } : { url }),
+    ...(picked?.installation ? { github_installation: picked.installation } : {}),
     name,
     ...(owner ? { owner } : {}),
     visibility,
@@ -68,6 +69,8 @@ export function importBody(
 
 /** Where Connect starts; the Worker takes it from there. */
 export const CONNECT_PATH = '/github/connect';
+/** To GitHub's install page, past an installation already there. */
+export const ADD_CONNECTION_PATH = '/github/connect?add=1';
 
 const PENDING = 'github-import-source';
 
@@ -96,13 +99,21 @@ export function continueToGitHub() {
   } catch {}
 }
 
-export type GitHubRepository = { id: number; full_name: string; private: boolean };
+export type GitHubRepository = {
+  id: number;
+  full_name: string;
+  private: boolean;
+  /** The installation it came through, an account's own or an organization's. */
+  installation?: number;
+};
 
 /** What `GET /github/repositories` answers: no `available`, no Connect on this site. */
 export type GitHubConnection = {
   available: boolean;
   connection?: 'none' | 'lost' | 'ok';
   login?: string;
+  /** The installation shown, and all those that hold: its own first, then organizations. */
+  installation?: number;
   repositories?: GitHubRepository[];
   more?: boolean;
 };
@@ -114,6 +125,44 @@ export function pickedRepository(source: string, repositories: readonly GitHubRe
   return repositories.find((r) => r.full_name.toLowerCase() === name);
 }
 
+/** The owner's repository of this name, if they have one: importing again could only fail. */
+export function addedRepo<
+  Repo extends { name: string; owner?: string; owner_handle?: string | null; role?: string },
+>(repos: readonly Repo[], owner: string | undefined, name: string) {
+  const wanted = name.toLowerCase();
+  return repos.find(
+    (r) =>
+      r.role === 'owner' &&
+      r.name.toLowerCase() === wanted &&
+      (r.owner === owner || r.owner_handle === owner),
+  );
+}
+
+/** Text left in the field that can't be an address. Over a list it's a search, so it's fine. */
+export const badAddress = (text: string, overList: boolean) =>
+  !overList && Boolean(text.trim()) && !parseGitHubRepo(text);
+
+/**
+ * Whether the import dialog asks for a name, visibility and branch. A repository from the list
+ * needs none of them: picking it is the whole request. A pasted address does.
+ */
+export function showsDetails({
+  publicAddress,
+  github,
+  address,
+  starting,
+}: {
+  publicAddress: boolean;
+  github?: GitHubConnection;
+  /** The field holds a repository's address. */
+  address: boolean;
+  /** A picked repository is on its way. */
+  starting: boolean;
+}) {
+  if (publicAddress || (github && github.connection !== 'ok')) return true;
+  return address && !starting;
+}
+
 /** What a trip to GitHub came back with, in `?github=`, read once. */
 export function connectMessage(result: string | null) {
   switch (result) {
@@ -121,7 +170,13 @@ export function connectMessage(result: string | null) {
     case 'connected':
       return '';
     case 'org':
-      return "Organizations can't connect yet. Install it on your own GitHub account.";
+      return 'Only personal accounts and organizations can connect.';
+    case 'requested':
+      return 'GitHub asked an owner to approve. Once they do, come back and add it.';
+    case 'not_member':
+      return "Your GitHub account can't reach that organization's repositories.";
+    case 'lost':
+      return 'That installation is suspended on GitHub. Turn it back on, then connect.';
     case 'other_account':
       return "That isn't the GitHub account linked here. Install it on the linked one.";
     case 'unavailable':

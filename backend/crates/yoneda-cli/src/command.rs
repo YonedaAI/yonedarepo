@@ -1,7 +1,9 @@
 //! What the command line asks for: the parsed commands and the usage text.
 mod account;
+mod reads;
 mod usage;
-pub use account::{OrgCommand, RepoCommand, SshKeyCommand, TokenCommand};
+pub use account::{OrgCommand, RepoCommand, Shell, SshKeyCommand, TokenCommand};
+pub use reads::ReadCommand;
 pub use usage::USAGE;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -10,17 +12,6 @@ pub enum SyncMode {
     Push,
     /// Push, then land the series on the base branch.
     Land,
-    /// Commit through a remote MCP contribution attempt, then submit it.
-    Attempt { id: String, mcp_url: Option<String> },
-}
-
-/// The shells `yoneda completion` writes a script for.
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum Shell {
-    Bash,
-    Zsh,
-    Fish,
-    Powershell,
 }
 
 /// What `yoneda clone` brings.
@@ -41,49 +32,6 @@ pub enum CloneMode {
 pub struct Target {
     pub origin: Option<String>,
     pub repo: Option<String>,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum ReadCommand {
-    Log {
-        path: Option<String>,
-        branch: Option<String>,
-        limit: Option<u64>,
-        at: Option<u64>,
-    },
-    Grep {
-        query: String,
-        path: Option<String>,
-        ignore_case: bool,
-        /// Whole words only (identifier boundaries).
-        word: bool,
-        at: Option<u64>,
-    },
-    /// One query across code, memories, commits, sessions and changes (`groups`: some).
-    Search {
-        query: String,
-        groups: Option<Vec<String>>,
-        path: Option<String>,
-        branch: Option<String>,
-        limit: Option<u64>,
-        word: bool,
-        at: Option<u64>,
-    },
-    Blame {
-        path: String,
-        branch: Option<String>,
-        at: Option<u64>,
-    },
-    Diff {
-        base: Option<String>,
-        head: Option<String>,
-        path: Option<String>,
-        at: Option<u64>,
-    },
-    Symbols {
-        path: String,
-        at: Option<u64>,
-    },
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -259,6 +207,7 @@ pub enum Agent {
 #[derive(Debug, PartialEq, Eq)]
 pub enum Command {
     Help,
+    Version,
     /// Prints the completion script for a shell.
     Completion(Shell),
     Login {

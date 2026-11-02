@@ -2,6 +2,7 @@
 //! Specs live in `infra/envs/`; generated wrangler configs in `cloudflare/`.
 pub(crate) mod api_origin;
 pub(crate) mod apply;
+pub(crate) mod cells;
 pub(crate) mod consumers;
 pub(crate) mod drift;
 pub(crate) mod env;
