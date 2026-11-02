@@ -43,6 +43,7 @@ Rules for this work are in `AGENTS.md`. Plans are linked under each task.
 Left to do:
 
 1. Connect a real organization. It needs D1 migration 13, which the deploy applies.
+   Also unproven on real GitHub: Add another repository's page, the real browser's return to the tab (the test sent its own `focus` event), the org fallback address (from memory, not GitHub's docs) and the "requested" message, which nobody has viewed.
 2. `Added` matches by owner and name, because a repository stores no import source. A different repository with the same name also reads `Added`. Store the source to make it exact.
 3. `magnetonio/whisper` needs a re-import: 169 commits are unreadable. That's the owner's call.
 
