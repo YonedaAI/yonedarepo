@@ -83,6 +83,52 @@ fn a_clones_log_says_who_wrote_each_commit_and_when_not_who_imported_it() {
 }
 
 #[test]
+fn a_log_says_how_many_files_each_commit_changed() {
+    let h = Harness::new();
+    let tree = "2".repeat(40);
+    let ada = writer("Ada", WRITTEN);
+    let (root, first, _) = written(&[], &tree, &ada, "root", &["a.txt"]);
+    let three = ["b.txt", "c/d.txt", "e.txt"];
+    let (next, second, _) = written(&[&root], &tree, &ada, "three", &three);
+    let (tip, third, _) = written(&[&next], &tree, &ada, "none", &[]);
+    record(&h, IMPORTER, json!([first, second, third])).unwrap();
+    h.ok(
+        IMPORTER,
+        json!({"op":"repo_import","ref":"main","commit":tip}),
+    );
+    let log = h.ok(OWNER, json!({"op":"repo_log","ref":"main"}));
+    let changed: Vec<(&str, &Value)> = log["commits"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|c| (c["commit"].as_str().unwrap(), &c["files_changed"]))
+        .collect();
+    assert_eq!(
+        changed,
+        [
+            (tip.as_str(), &json!(0)),
+            (next.as_str(), &json!(3)),
+            (root.as_str(), &json!(1)),
+        ]
+    );
+}
+
+#[test]
+fn a_huge_commit_stops_counting_files() {
+    let h = Harness::new();
+    let names: Vec<String> = (0..1_100).map(|i| format!("f{i}.txt")).collect();
+    let paths: Vec<&str> = names.iter().map(String::as_str).collect();
+    let (big, item, _) = written(&[], &"2".repeat(40), &writer("Ada", WRITTEN), "big", &paths);
+    record(&h, IMPORTER, json!([item])).unwrap();
+    h.ok(
+        IMPORTER,
+        json!({"op":"repo_import","ref":"main","commit":big}),
+    );
+    let log = h.ok(OWNER, json!({"op":"repo_log","ref":"main"}));
+    assert_eq!(log["commits"][0]["files_changed"], 1_001);
+}
+
+#[test]
 fn an_imported_commit_under_mains_head_is_on_main_with_no_landing_of_its_own() {
     let (h, root, main) = cloned();
     let old = h.ok(OWNER, json!({"op":"repo_commit","commit":root}));
