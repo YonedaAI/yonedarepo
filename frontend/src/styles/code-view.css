@@ -141,3 +141,12 @@
 .latest-commit .latest-meta {
   flex: none;
 }
+/* Clipped, not a scroller of its own, so the find panel can stick to the page's. */
+.source-file:has(.code-surface) {
+  overflow: clip;
+}
+/* The find panel stops under the top bar, not behind it. */
+.code-surface .cm-panels-top {
+  top: 56px !important;
+  z-index: 2;
+}
