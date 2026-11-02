@@ -56,11 +56,10 @@ export function importBody(
   visibility: Visibility = 'private',
   branch = '',
   picked?: GitHubRepository,
-  installation?: number,
 ) {
   return {
     ...(picked ? { github_repository: picked.id } : { url }),
-    ...(picked && installation ? { github_installation: installation } : {}),
+    ...(picked?.installation ? { github_installation: picked.installation } : {}),
     name,
     ...(owner ? { owner } : {}),
     visibility,
@@ -100,7 +99,13 @@ export function continueToGitHub() {
   } catch {}
 }
 
-export type GitHubRepository = { id: number; full_name: string; private: boolean };
+export type GitHubRepository = {
+  id: number;
+  full_name: string;
+  private: boolean;
+  /** The installation it came through, an account's own or an organization's. */
+  installation?: number;
+};
 
 /** What `GET /github/repositories` answers: no `available`, no Connect on this site. */
 export type GitHubConnection = {
@@ -109,17 +114,9 @@ export type GitHubConnection = {
   login?: string;
   /** The installation shown, and all those that hold: its own first, then organizations. */
   installation?: number;
-  installations?: GitHubInstallation[];
-  /** GitHub's page for that installation, where more repositories are added. */
-  manage_url?: string;
   repositories?: GitHubRepository[];
   more?: boolean;
 };
-
-export type GitHubInstallation = { id: number; login: string; type: 'User' | 'Organization' };
-
-export const installationLabel = ({ login, type }: GitHubInstallation) =>
-  type === 'Organization' ? `${login} (organization)` : login;
 
 /** The connected repository the field names, if it names one. */
 export function pickedRepository(source: string, repositories: readonly GitHubRepository[] = []) {
@@ -175,15 +172,9 @@ export function connectMessage(result: string | null) {
     case 'org':
       return 'Only personal accounts and organizations can connect.';
     case 'requested':
-      return 'GitHub asked an owner to approve. An owner can then connect it here.';
-    case 'org_owner':
-      return 'Only an owner of the organization can connect it. Ask one to do it here.';
+      return 'GitHub asked an owner to approve. Once they do, come back and add it.';
     case 'not_member':
-      return "You aren't a member of that organization on GitHub.";
-    case 'org_blocked':
-      return 'GitHub org settings → Third-party Access: approve this app, then connect.';
-    case 'org_denied':
-      return 'GitHub needs your OK to confirm you own it. Try again and allow it.';
+      return "Your GitHub account can't reach that organization's repositories.";
     case 'lost':
       return 'That installation is suspended on GitHub. Turn it back on, then connect.';
     case 'other_account':

@@ -14,6 +14,9 @@ const DRIFT_SECONDS = 60;
 /** A page of repositories, GitHub's largest, and how many a picker shows. */
 const PER_PAGE = 100;
 const MOST_PAGES = 10;
+/** Repositories asked about at once for one person, and in all for one answer. */
+const AT_ONCE = 10;
+const MOST_CHECKS = 300;
 
 const encoder = new TextEncoder();
 
@@ -103,8 +106,6 @@ async function github(
 /** An installation as GitHub says it is. */
 export type Installation = {
   id: number;
-  /** GitHub's own page for it, where its repositories are chosen. */
-  html_url?: string;
   target_type?: string;
   suspended_at?: string | null;
   /** An enterprise's has no `type`. */
@@ -148,9 +149,31 @@ export async function repositoryAccess(env: Env, installation: number, repositor
   return { token: minted.token, repository: named };
 }
 
-/** The repositories `installation` was given, up to what a picker shows. `more`: there are others. */
-export async function installationRepositories(env: Env, installation: number) {
-  const { token } = await mint(env, installation, { permissions: { metadata: 'read' } });
+/** Every installation of the App, as far as one page goes. */
+export const appInstallations = async (env: Env) =>
+  (await github(
+    `/app/installations?per_page=${PER_PAGE}`,
+    await appJwt(env),
+  )) as unknown as Installation[];
+
+/** Whether GitHub counts `person` on a repository: its owners, teams, members by default access
+ * and outside collaborators all count. Needs only the metadata every installation token has, and
+ * no organization's OAuth app restrictions apply to a GitHub App. */
+async function collaborates(token: string, fullName: string, person: string) {
+  const path = `/repos/${fullName}/collaborators/${encodeURIComponent(person)}`;
+  return github(path, token).then(
+    () => true,
+    (e) => {
+      if (e instanceof GitHubAccessError && e.status === 404) return false;
+      throw e;
+    },
+  );
+}
+
+const metadataToken = async (env: Env, installation: number) =>
+  (await mint(env, installation, { permissions: { metadata: 'read' } })).token as string;
+
+async function everyRepository(token: string) {
   const repositories: GitHubRepository[] = [];
   for (let page = 1; ; page++) {
     const seen = await github(
@@ -163,4 +186,58 @@ export async function installationRepositories(env: Env, installation: number) {
     if (!more || page === MOST_PAGES || seen.repositories.length === 0)
       return { repositories, more };
   }
+}
+
+/** The ids of those of `repositories` that `person` can reach, stopping at the first if `first`. */
+async function reachedBy(
+  token: string,
+  repositories: GitHubRepository[],
+  person: string,
+  first = false,
+) {
+  const reached = new Set<number>();
+  const asked = repositories.slice(0, MOST_CHECKS);
+  for (let at = 0; at < asked.length; at += AT_ONCE) {
+    const batch = asked.slice(at, at + AT_ONCE);
+    const answers = await Promise.all(batch.map((r) => collaborates(token, r.full_name, person)));
+    for (const [i, r] of batch.entries()) if (answers[i]) reached.add(r.id);
+    if (first && reached.size) break;
+  }
+  return reached;
+}
+
+/** The repositories `installation` was given, up to what a picker shows. `more`: there are others.
+ * With `person`, only those they can reach: a public one is anyone's, a private one is asked, and
+ * past what one answer can ask it is left out rather than shown. */
+export async function installationRepositories(env: Env, installation: number, person?: string) {
+  const token = await metadataToken(env, installation);
+  const listed = await everyRepository(token);
+  if (!person) return listed;
+  const hidden = listed.repositories.filter((r) => r.private);
+  const reached = await reachedBy(token, hidden, person);
+  return {
+    repositories: listed.repositories.filter((r) => !r.private || reached.has(r.id)),
+    more: listed.more || hidden.length > MOST_CHECKS,
+  };
+}
+
+/** GitHub's id for `person`, if they can reach any repository of `installation`; else null. */
+export async function personOnInstallation(env: Env, installation: number, person: string) {
+  const token = await metadataToken(env, installation);
+  const { repositories } = await everyRepository(token);
+  if (!(await reachedBy(token, repositories, person, true)).size) return null;
+  const found = await github(`/users/${encodeURIComponent(person)}`, token);
+  return Number.isSafeInteger(found.id) ? String(found.id) : null;
+}
+
+/** Whether `person` can reach one repository of `installation`. */
+export async function reachesRepository(
+  env: Env,
+  installation: number,
+  repository: GitHubRepository,
+  person: string,
+) {
+  const scope = { repository_ids: [repository.id], permissions: { metadata: 'read' } };
+  const { token } = await mint(env, installation, scope);
+  return collaborates(token as string, repository.full_name, person);
 }

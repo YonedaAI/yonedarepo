@@ -80,27 +80,20 @@ A signed-in owner connects GitHub in the import dialog, picks a repository, and 
 
 **A token lasts an hour.** Only `POST /clone` uses it, and Git's requests all start in the first seconds of the clone: the refs, then one fetch whose answer is the pack. The steps after that read the instance's disk. A clone may run 60 minutes and its token is minted up to 3 minutes before, so the very longest clone's pack would still be arriving past the hour. GitHub's docs don't say whether an answer already streaming is cut off at expiry. **Not measured.** If it is, the clone fails, nothing lands and the import is run again.
 
-**An organization connects through its owner.** Its installation names no person, so nothing in the App proves who may use it. The App holds no user token and no Members permission, so the proof comes from the sign-in OAuth app, with no new app and no change to the App's settings:
+**An organization connects like an account.** Add another repository opens GitHub's install page, which lists the person's account and organizations. On the way back the redirect's `installation_id` is believed only once GitHub says the same: the App asks `GET /repos/{repo}/collaborators/{login}` about the GitHub user this account linked, on the installation's repositories until one says yes. That call needs only the metadata every installation token has, so the App needs no Members permission. OAuth app restrictions don't cover GitHub Apps, so an organization has nothing to approve, and no OAuth round or owner check is involved. GitHub counts owners, team members, members by default access and outside collaborators. Tested 2026-11-02 against a personal installation: 204 for the owner, 404 for a stranger, on a private and a public repository. **Not yet tested on a real organization.**
 
-| Step | Who | What happens |
-|---|---|---|
-| 1 | Platform | `/github/connected` reads the installation with the App's JWT. On an organization it writes a ticket to the account's store (a hash, once, ten minutes) and sends the browser on |
-| 2 | Front Worker | `/auth/github/start?intent=github_org` checks the ticket and starts the usual OAuth attempt with `read:org` added. A return from GitHub brings no session, so the ticket names the account |
-| 3 | Front Worker | The callback exchanges the code and calls `GET /user/memberships/orgs/{org}` with that token, inside `exchange`, once. The token is dropped there and stored nowhere |
-| 4 | Front Worker | It requires the GitHub user this account linked, and `state: active` with `role: admin`. Only then is the installation stored, with the organization's id and who connected it |
-
-| Answer | What the person is told |
+| Case | What happens |
 |---|---|
-| 404: not in the organization, as with a forged `installation_id` | `not_member`. Nothing stored, no token minted |
-| Member, billing manager, or a pending invitation | `org_owner` |
-| 403: the organization restricts this OAuth app, or needs SSO | `org_blocked`: an owner allows it on GitHub |
-| `setup_action=request` | `requested`: GitHub is waiting on an owner, nothing is installed, and no id comes back |
+| On none of its repositories, as with a forged `installation_id` | `not_member`. Nothing stored |
+| Nothing shared with the App | `not_member`: there is no repository to ask about |
+| The login now names another GitHub id | `other_account` |
+| `setup_action=request`: GitHub stopped someone who isn't an owner | Organizations already holding the App are checked and connected where this person is on a repository. Otherwise `requested` |
 
-The re-check on each use reads the installation: still an organization, the same id, not suspended, and the GitHub user who proved it still linked here. It does not ask again whether they own it, as no token is kept. A person who stops being an owner keeps the connection until the installation is removed or their link is undone.
+The import dialog lists every repository of every installation that holds, an account's own first, in one list and one search. On an organization a private repository shows only if GitHub counts this person on it, asked ten at a time and at most 300 for one answer; past that it's left out and `more` is set. Importing one asks again. A public one is listed for all.
 
-**Adding a repository is GitHub's.** The dialog links to the page for the installation it shows: `html_url` from GitHub's own answer (`https://github.com/settings/installations/<id>`, or `https://github.com/organizations/<org>/settings/installations/<id>`), checked to be on github.com and built from those shapes if it is missing. The page opens in a new tab, as nothing brings a person back from it. Coming back to this tab refetches the list, so a repository added there appears with no reload. It does not start an import, even if it completes what was typed.
+Re-checks: each use reads the installation (still an organization, the same id, not suspended) and needs the GitHub user who connected it still linked here. Closing an account takes its own installation off GitHub and leaves an organization's.
 
-An account holds its own installation and any number of organizations'. The import dialog lists those that hold, and a request names which one. Closing an account takes its own installation off GitHub and never an organization's.
+`github_org_ticket_*` in the account authority are unused since this change. Migration 13 stays; removing the ops is separate work.
 
 ## What can go wrong
 

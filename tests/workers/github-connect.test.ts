@@ -258,7 +258,7 @@ describe('the repositories shown', () => {
     expect(seen.body.login).toBe('lister');
     expect(seen.body.more).toBe(false);
     expect(seen.body.repositories).toHaveLength(130);
-    expect(seen.body.repositories[129]).toEqual(repo(1129, 'lister/r129'));
+    expect(seen.body.repositories[129]).toEqual({ ...repo(1129, 'lister/r129'), installation: 9012 });
     expect(JSON.stringify(seen.body)).not.toContain('ghs_');
   });
 

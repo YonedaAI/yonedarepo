@@ -14,6 +14,5 @@ export async function githubApi(req: Request, env: Env): Promise<Response> {
   if (!url.pathname.endsWith('/github/repositories') || req.method !== 'GET')
     return error('NOT_FOUND', 'Unknown API path', 404);
   if (!signed) return error('UNAUTHORIZED', 'Sign in to connect GitHub', 401);
-  const wanted = Number(url.searchParams.get('installation')) || undefined;
-  return answer(() => githubRepositories(env, signed, wanted)).catch(failure);
+  return answer(() => githubRepositories(env, signed)).catch(failure);
 }
