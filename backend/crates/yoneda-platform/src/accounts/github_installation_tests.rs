@@ -69,9 +69,9 @@ fn the_migration_is_fresh_repeatable_and_upgrades_a_version_ten_store() {
             .len()
     };
     let fresh = signed_up();
-    assert_eq!(versions(&fresh), 11);
+    assert_eq!(versions(&fresh), 12);
     held(&fresh);
-    assert_eq!(versions(&fresh), 11);
+    assert_eq!(versions(&fresh), 12);
 
     // Upgrade: a version-10 store keeps its account and starts with no installation.
     let db = NativeStore::memory().unwrap();
@@ -113,7 +113,7 @@ fn the_migration_is_fresh_repeatable_and_upgrades_a_version_ten_store() {
     )
     .unwrap();
     assert_eq!(held(&db), json!({}));
-    assert_eq!(versions(&db), 11);
+    assert_eq!(versions(&db), 12);
     at(&db, 10, put(7, "ada")).unwrap();
     assert_eq!(held(&db)["installation"], 7);
 }

@@ -252,6 +252,16 @@ describe('the account settings pages', () => {
     }
   });
 
+  it('shows the name in Profile, with its way to change it', () => {
+    const named = html(AccountSettings, {
+      identity: { ...identity, display_name: 'Ada Lovelace' },
+      repos,
+      section: 'general',
+    } as never);
+    expect(named).toContain('Ada Lovelace');
+    expect(named).toContain('>Change<');
+  });
+
   it('gives Organizations a description and its create button, once signed in', () => {
     const props = { orgs: loaded({ data: { orgs: [] } }), navigate: () => {} };
     const orgsPage = html(AccountSettings, {

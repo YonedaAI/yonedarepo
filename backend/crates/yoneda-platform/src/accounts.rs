@@ -44,8 +44,12 @@ mod holds_tests;
 mod identities;
 #[cfg(test)]
 mod identities_tests;
+mod names;
+#[cfg(test)]
+mod names_tests;
 mod oauth_flows;
 mod op;
+mod op_profile;
 mod orgs;
 #[cfg(test)]
 mod orgs_tests;
@@ -96,6 +100,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
             op::AccountOp::Device(op) => device::handle(&db, &command, op, now),
             op::AccountOp::Identity(op) => identities::handle(&db, &command, op, now),
             op::AccountOp::Avatar(op) => avatars::handle(&db, &command, op, now),
+            op::AccountOp::Name(op) => names::handle(&db, &command, op, now),
             op::AccountOp::Favorite(op) => favorites::handle(&db, &command, op, now),
             op::AccountOp::GitHub(op) => github_installation::handle(&db, &command, op, now),
             op::AccountOp::Closure(op) => closure::handle(&db, &command, op, now),
@@ -111,7 +116,7 @@ pub fn execute_workspace<S: SqlStore>(store: &S, command: Value) -> Result<Value
     }))
 }
 /// Digest-pinned, forward-only account migrations (version, SQL), applied in order.
-pub(crate) const MIGRATIONS: [(i64, &str); 11] = [
+pub(crate) const MIGRATIONS: [(i64, &str); 12] = [
     (1, include_str!("accounts/migrations/0001_accounts.sql")),
     (
         2,
@@ -131,6 +136,10 @@ pub(crate) const MIGRATIONS: [(i64, &str); 11] = [
     (
         11,
         include_str!("accounts/migrations/0011_github_installation.sql"),
+    ),
+    (
+        12,
+        include_str!("accounts/migrations/0012_display_name.sql"),
     ),
 ];
 fn migrate<S: SqlStore>(store: &S) -> Result<()> {

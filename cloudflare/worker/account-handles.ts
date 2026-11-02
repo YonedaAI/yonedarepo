@@ -13,12 +13,12 @@ import { workspace } from './workspace';
 
 const fail = (code: string, message: string) => Object.assign(new Error(message), { code });
 
-/** The account's handle (null while an email-named account has none), and while it has
- * none a free one made from its GitHub login (`handle_suggestion`). */
+/** The account's name and handle (null while an email-named account has none), and while it
+ * has none a free one made from its GitHub login (`handle_suggestion`). */
 export async function handleState(env: Env, account: string): Promise<Json> {
-  const { handle } = await workspace(env, account, { op: 'handle_get' });
-  if (handle) return { handle, handle_suggestion: null };
-  return { handle: null, handle_suggestion: await suggestion(env, account) };
+  const { handle, display_name } = await workspace(env, account, { op: 'handle_get' });
+  if (handle) return { handle, display_name, handle_suggestion: null };
+  return { handle: null, display_name, handle_suggestion: await suggestion(env, account) };
 }
 
 async function suggestion(env: Env, account: string): Promise<string | null> {

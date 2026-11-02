@@ -33,7 +33,7 @@ it('a handle chosen on the front Worker is projected by the platform', async () 
     [email, 'front_handle'],
     [email, 'next_handle'],
   ]);
-  await expect(workspace(bindings, email, { op: 'handle_get' })).resolves.toEqual({
+  await expect(workspace(bindings, email, { op: 'handle_get' })).resolves.toMatchObject({
     handle: 'next_handle',
   });
   await expect(workspace(bindings, 'front_handle', { op: 'handle_lookup' })).rejects.toMatchObject({

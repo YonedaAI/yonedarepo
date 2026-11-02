@@ -14,6 +14,8 @@ export type ProviderIdentity = {
   provider: ProviderName;
   subject: string;
   login: string;
+  /** The name the provider holds for them, if any. */
+  name: string | null;
   email: string | null;
   /** The provider's picture URL as it reported it (GitHub `avatar_url`, Google `picture`);
    * the account authority keeps it only on the provider's own image hosts. */
@@ -101,6 +103,7 @@ export async function exchange(
       provider,
       subject: String(user.id),
       login: user.login,
+      name: typeof user.name === 'string' ? user.name : null,
       email: typeof email === 'string' ? email.toLowerCase() : null,
       avatar: typeof user.avatar_url === 'string' ? user.avatar_url : null,
     };
@@ -127,6 +130,7 @@ export async function exchange(
     provider,
     subject: claims.sub,
     login: email.split('@')[0] ?? '',
+    name: typeof claims.name === 'string' ? claims.name : null,
     email,
     avatar: typeof claims.picture === 'string' ? claims.picture : null,
   };
