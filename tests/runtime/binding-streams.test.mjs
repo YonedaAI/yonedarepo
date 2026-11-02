@@ -59,17 +59,21 @@ test('slow uploads through a binding finish without post-response runtime except
   }));
   try {
     const origin = await mf.ready;
-    for (const [path, status, text] of [
-      ['/ignored', 200, '{"connected":0}'],
-      ['/refused', 401, ''],
-      ['/duplex', 200, '{}'],
+    for (const [method, path, status, text] of [
+      ['POST', '/ignored', 200, '{"connected":0}'],
+      ['POST', '/refused', 401, ''],
+      ['POST', '/duplex', 200, '{}'],
+      // HTTP clients can send these bodies, although Fetch Request constructors forbid them.
+      ['GET', '/ignored', 200, '{"connected":0}'],
+      ['HEAD', '/ignored', 200, ''],
     ]) {
       const start = traces.length;
+      let tailTimer;
       const tails = new Promise((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('Worker tail events missing')), 5_000);
+        tailTimer = setTimeout(() => reject(new Error('Worker tail events missing')), 5_000);
         received = () => {
           if (traces.length < start + 2) return;
-          clearTimeout(timer);
+          clearTimeout(tailTimer);
           resolve();
         };
       });
@@ -77,7 +81,7 @@ test('slow uploads through a binding finish without post-response runtime except
       let finish;
       try {
         const response = await new Promise((resolve, reject) => {
-          request = http.request(new URL(path, origin), { method: 'POST' }, res => {
+          request = http.request(new URL(path, origin), { method, headers: { 'transfer-encoding': 'chunked' } }, res => {
             let body = '';
             res.on('data', chunk => { body += chunk; });
             res.on('error', reject);
@@ -87,10 +91,11 @@ test('slow uploads through a binding finish without post-response runtime except
           request.write('{');
           finish = setTimeout(() => request.end('}'), 100);
         });
+        assert.deepEqual(response, { status, body: text }, `${method} ${path}`);
         await tails;
-        assert.deepEqual(response, { status, body: text }, path);
-        assert.deepEqual(traces.slice(start).flatMap(t => t.exceptions), [], path);
+        assert.deepEqual(traces.slice(start).flatMap(t => t.exceptions), [], `${method} ${path}`);
       } finally {
+        clearTimeout(tailTimer);
         clearTimeout(finish);
         request?.destroy();
       }
